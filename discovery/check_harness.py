@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -135,6 +136,31 @@ def main():
                     os.kill(child, 9)
                     raise RuntimeError("runner-detached: app survived launcher cleanup")
             checks.append(f"runner-{mode}")
+
+        # Execute the actual shell run() failure branch. Diagnostics must not
+        # replace a scenario failure with a secondary copy failure.
+        binaries = work / "bin"
+        binaries.mkdir()
+        container = work / "container" / "Documents"
+        container.mkdir(parents=True)
+        (container / "trace.jsonl").write_text("{}\n")
+        for name, body in {
+            "python3": "exit 7\n",
+            "cp": "exit 9\n",
+            "xcrun": "printf '%s\\n' " + shlex.quote(str(container.parent)) + "\n",
+        }.items():
+            executable = binaries / name
+            executable.write_text("#!/bin/sh\n" + body)
+            executable.chmod(0o755)
+        source = (ROOT / "run.sh").read_text().split("run() {\n", 1)[1].split("\n}\nLIBS=", 1)[0]
+        driver = work / "shell-failure.sh"
+        driver.write_text("set -euo pipefail\nOUT=" + shlex.quote(str(work)) +
+                          "\nUDID=owned-fixture\nLIBS=fixture\nSIMCTL_CHILD_DYLD_INSERT_LIBRARIES=''\n"
+                          "limit() { shift; \"$@\"; }\nrun() {\n" + source + "\n}\nrun genuine\n")
+        result = subprocess.run(["/bin/bash", str(driver)], capture_output=True, timeout=10,
+                                env={**os.environ, "PATH": f"{binaries}:/usr/bin:/bin"})
+        check(result.returncode == 7, "diagnostic copy replaced scenario exit status")
+        checks.append("shell-preserves-scenario-failure")
     print(json.dumps({"success": True, "checks": checks}, indent=2))
 
 

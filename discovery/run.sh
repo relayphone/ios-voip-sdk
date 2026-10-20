@@ -96,7 +96,9 @@ run() {
     local container
     container=$(limit 10 xcrun simctl get_app_container "$UDID" dev.callkitsim.probe data 2> "$OUT/$name.container-lookup.log") || container=""
     if [[ -n "$container" && -f "$container/Documents/trace.jsonl" ]]; then
-      cp "$container/Documents/trace.jsonl" "$OUT/$name.container.jsonl"
+      if ! cp "$container/Documents/trace.jsonl" "$OUT/$name.container.jsonl"; then
+        echo "Container trace recovery failed" >> "$OUT/$name.container-lookup.log"
+      fi
     fi
     return "$status"
   fi
