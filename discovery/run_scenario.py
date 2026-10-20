@@ -16,6 +16,7 @@ def run(launch, terminate, output, receipt, timeout):
     started = time.monotonic()
     result = {"completed": False, "success": False}
     process = None
+    stopped = False
     messages = queue.Queue()
     try:
         with output.open("xb") as log:
@@ -38,6 +39,8 @@ def run(launch, terminate, output, receipt, timeout):
                 try:
                     line = messages.get(timeout=min(remaining, 0.2))
                 except queue.Empty:
+                    if process.poll() is not None:
+                        raise RuntimeError("launcher exited before terminal done event")
                     continue
                 if line is None:
                     raise RuntimeError("launcher exited before terminal done event")
@@ -52,10 +55,11 @@ def run(launch, terminate, output, receipt, timeout):
 
             # SwiftUI intentionally stays alive after the scenario. A stop is
             # accepted only after done and a successful termination of our app.
-            stopped = subprocess.run(terminate, capture_output=True, timeout=20)
-            result["terminateExitCode"] = stopped.returncode
-            if stopped.returncode:
+            stop = subprocess.run(terminate, capture_output=True, timeout=20)
+            result["terminateExitCode"] = stop.returncode
+            if stop.returncode:
                 raise RuntimeError("failed to terminate completed run-owned app")
+            stopped = True
             result["launchExitCode"] = process.wait(timeout=15)
             if result["launchExitCode"] not in (0, -signal.SIGTERM, 128 + signal.SIGTERM):
                 raise RuntimeError(f"unexpected launcher exit: {result['launchExitCode']}")
@@ -68,11 +72,14 @@ def run(launch, terminate, output, receipt, timeout):
     except (OSError, RuntimeError, subprocess.TimeoutExpired, queue.Empty) as error:
         result["error"] = str(error)
     finally:
-        if process is not None and process.poll() is None:
-            try:
-                subprocess.run(terminate, capture_output=True, timeout=10)
-            except (OSError, subprocess.TimeoutExpired):
-                pass
+        if process is not None:
+            # The launcher can exit while the app it launched remains alive.
+            if not stopped:
+                try:
+                    stop = subprocess.run(terminate, capture_output=True, timeout=10)
+                    result["cleanupExitCode"] = stop.returncode
+                except (OSError, subprocess.TimeoutExpired) as error:
+                    result["cleanupError"] = str(error)
             try:
                 process.wait(timeout=1)
             except subprocess.TimeoutExpired:

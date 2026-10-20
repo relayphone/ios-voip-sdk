@@ -48,6 +48,8 @@ static NSString *const CKIncomingDomain = @"com.apple.CallKit.error.incomingcall
 @end
 
 static CKSimEngine *engine;
+static bool installed;
+bool CKSimRuntimeIsActive(void) { return installed; }
 
 @implementation CKSimEngine
 - (instancetype)init {
@@ -428,4 +430,5 @@ __attribute__((constructor)) static void CKSimInstall(void) {
   CKSwap(CXCallObserver.class, @selector(calls), (IMP)ck_calls);
   CKSwap(CXCallObserver.class, @selector(setDelegate:queue:), (IMP)ck_observerSetDelegate);
   CKLog(@"installed latency=%@", CKDeviceLatency() ? @"device" : @"fast");
+  installed = true;
 }

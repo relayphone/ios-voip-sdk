@@ -13,6 +13,7 @@
 @end
 
 #if CKSIM_HAS_VOIP_METADATA
+API_AVAILABLE(ios(26.4))
 @interface CKSimMetadata : PKVoIPPushMetadata
 @end
 @implementation CKSimMetadata
@@ -22,14 +23,15 @@
 
 static NSHashTable<PKPushRegistry *> *registries;
 static IMP origSetDelegate;
-static void ck_setDelegate(PKPushRegistry *self, SEL _cmd, id delegate) {
-  [registries addObject:self];
-  ((void (*)(id, SEL, id))origSetDelegate)(self, _cmd, delegate);
-}
+static IMP origSetDesiredPushTypes;
+static NSDictionary *pendingPayload; // Accessed only on main, like registries.
 
-void CKSimDeliverVoIPPush(NSDictionary *payload) {
+static NSUInteger deliver(NSDictionary *payload) {
+  NSCAssert(NSThread.isMainThread, @"push fixture state belongs to main");
+  NSUInteger delivered = 0;
   for (PKPushRegistry *registry in registries) {
     id delegate = registry.delegate;
+    if (![registry.desiredPushTypes containsObject:PKPushTypeVoIP] || !delegate) continue;
     CKSimPayload *p = [CKSimPayload new];
     p.payload = payload;
     void (^completion)(void) = ^{ fprintf(stderr, "CKSIM push completion called\n"); };
@@ -40,6 +42,7 @@ void CKSimDeliverVoIPPush(NSDictionary *payload) {
       if ([delegate respondsToSelector:withMetadata]) {
       ((void (*)(id, SEL, id, id, id, id))objc_msgSend)(delegate, withMetadata, registry, p, [CKSimMetadata new], completion);
       fprintf(stderr, "CKSIM push delivered via metadata API\n");
+        delivered++;
         continue;
       }
     }
@@ -47,17 +50,54 @@ void CKSimDeliverVoIPPush(NSDictionary *payload) {
     if ([delegate respondsToSelector:legacy]) {
       [delegate pushRegistry:registry didReceiveIncomingPushWithPayload:p forType:PKPushTypeVoIP withCompletionHandler:completion];
       fprintf(stderr, "CKSIM push delivered via legacy API\n");
+      delivered++;
     }
   }
+  fprintf(stderr, "CKSIM push delivery eligible=%lu delivered=%lu\n", (unsigned long)registries.count, (unsigned long)delivered);
+  return delivered;
+}
+
+void CKSimDeliverVoIPPush(NSDictionary *payload) {
+  dispatch_async(dispatch_get_main_queue(), ^{ deliver(payload); });
+}
+
+static void attemptPending(void) {
+  if (pendingPayload && deliver(pendingPayload)) pendingPayload = nil;
+}
+
+static void registerReady(PKPushRegistry *registry) {
+  __weak PKPushRegistry *weakRegistry = registry;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    PKPushRegistry *live = weakRegistry;
+    if (!live) return;
+    [registries addObject:live];
+    fprintf(stderr, "CKSIM push registry ready-check\n");
+    attemptPending();
+  });
+}
+
+static void ck_setDelegate(PKPushRegistry *self, SEL _cmd, id delegate) {
+  ((void (*)(id, SEL, id))origSetDelegate)(self, _cmd, delegate);
+  registerReady(self);
+}
+
+static void ck_setDesiredPushTypes(PKPushRegistry *self, SEL _cmd, NSSet *types) {
+  ((void (*)(id, SEL, id))origSetDesiredPushTypes)(self, _cmd, types);
+  registerReady(self);
 }
 
 __attribute__((constructor)) static void CKSimPushInstall(void) {
   NSString *after = NSProcessInfo.processInfo.environment[@"CKSIM_PUSH_AFTER"];
-  if (!after) return;
+  if (!after.length) return;
   registries = [NSHashTable weakObjectsHashTable];
   Method m = class_getInstanceMethod(PKPushRegistry.class, @selector(setDelegate:));
   origSetDelegate = method_setImplementation(m, (IMP)ck_setDelegate);
+  Method desired = class_getInstanceMethod(PKPushRegistry.class, @selector(setDesiredPushTypes:));
+  origSetDesiredPushTypes = method_setImplementation(desired, (IMP)ck_setDesiredPushTypes);
+  fprintf(stderr, "CKSIM push hooks installed\n");
   dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(after.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-    CKSimDeliverVoIPPush(@{@"aps": @{}, @"from": @"+15555550142", @"callId": @"synthetic-1"});
+    fprintf(stderr, "CKSIM push fixture ready\n");
+    pendingPayload = @{@"aps": @{}, @"from": @"+15555550142", @"callId": @"synthetic-1"};
+    attemptPending();
   });
 }

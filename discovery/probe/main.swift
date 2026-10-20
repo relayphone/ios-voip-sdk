@@ -1,5 +1,6 @@
 import AVFoundation
 import CallKit
+import Darwin
 import ObjectiveC
 import PushKit
 import SwiftUI
@@ -112,6 +113,7 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
     }
   }
   func runPush() async {
+    await sleep(Double(ProcessInfo.processInfo.environment["PROBE_PUSH_REGISTRATION_DELAY"] ?? "0") ?? 0)
     let r = PKPushRegistry(queue: .main)
     r.delegate = self
     r.desiredPushTypes = [.voIP]
@@ -121,6 +123,7 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
     snapshot("after-push-wait")
     for call in observer.calls where !call.hasEnded { _ = await request([CXEndCallAction(call: call.uuid)], label: "cleanup") }
     await sleep(1)
+    snapshot("final")
     Trace.shared.log("done")
   }
   let provider: CXProvider
@@ -172,7 +175,7 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
     if let call = action as? CXCallAction { f["call"] = String(call.callUUID.uuidString.prefix(8)) }
     Trace.shared.log("provider.perform", f)
     switch policy[kind] ?? .fulfill {
-    case .fulfill: action.fulfill(); Trace.shared.log("action.fulfilled", ["kind": kind, "complete": action.isComplete])
+    case .fulfill: action.fulfill(); Trace.shared.log("action.fulfilled", ["kind": kind, "id": f["id"]!, "complete": action.isComplete])
     case .fail: action.fail(); Trace.shared.log("action.failed", ["kind": kind])
     case .never: Trace.shared.log("action.held", ["kind": kind])
     case .delay(let s):
@@ -520,8 +523,10 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
   }
   func run() async {
     let env = ProcessInfo.processInfo.environment
+    let status = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CKSimRuntimeIsActive")
+    let injected = status.map { unsafeBitCast($0, to: (@convention(c) () -> Bool).self)() } ?? false
     Trace.shared.log("launch", ["pid": Int(getpid()), "appState": UIApplication.shared.applicationState.rawValue,
-                                "injected": env["DYLD_INSERT_LIBRARIES"] != nil, "mode": env["PROBE_MODE"] ?? "default"])
+                                "injected": injected, "traceVersion": 2, "mode": env["PROBE_MODE"] ?? "default"])
     if env["PROBE_MODE"] == "ui" { await runUI(); return }
     let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     if env["PROBE_MODE"] == "push" || FileManager.default.fileExists(atPath: documents.appendingPathComponent("push-mode").path) { await runPush(); return }

@@ -67,15 +67,23 @@ xcrun simctl spawn "$UDID" log stream --style compact --predicate 'process == "c
 LOGGER=$!
 run() {
   local name=$1
+  local inherited
   shift
   echo "Starting $name"
-  env "$@" python3 run_scenario.py --output "$OUT/$name.log" --receipt "$OUT/$name.receipt.json" \
+  inherited=${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES-$(xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>/dev/null || true)}
+  local libraries=$inherited
+  if [[ "$name" != genuine ]]; then libraries="${inherited:+$inherited:}$LIBS"; fi
+  env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$libraries" \
+    SIMCTL_CHILD_CKSIM_ENABLED=0 SIMCTL_CHILD_CKSIM_SHADOW=0 SIMCTL_CHILD_CKSIM_PUSH_AFTER= \
+    SIMCTL_CHILD_PROBE_MODE=default SIMCTL_CHILD_PROBE_PUSH_REPORT=report "$@" \
+    python3 run_scenario.py --output "$OUT/$name.log" --receipt "$OUT/$name.receipt.json" \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.probe \
     --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.probe
   echo "Completed $name"
 }
 LIBS="$BUILD/CKSimRuntime.dylib:$BUILD/CKSimPush.dylib"
 run genuine SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=12
-run runtime SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$LIBS" SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=70
-run push SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$LIBS" SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_SHADOW=1 SIMCTL_CHILD_CKSIM_PUSH_AFTER=2 SIMCTL_CHILD_PROBE_MODE=push SIMCTL_CHILD_PROBE_PUSH_WAIT=12
+run runtime SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=70
+# The fixture deliberately arrives before registration to cover slow cold starts.
+run push SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_SHADOW=1 SIMCTL_CHILD_CKSIM_PUSH_AFTER=0 SIMCTL_CHILD_PROBE_MODE=push SIMCTL_CHILD_PROBE_PUSH_REGISTRATION_DELAY=3 SIMCTL_CHILD_PROBE_PUSH_WAIT=12
 python3 summarize.py "$OUT" --require-receipts | tee "$OUT/summary.json"
