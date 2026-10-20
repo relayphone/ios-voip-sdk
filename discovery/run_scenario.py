@@ -22,6 +22,7 @@ def run(launch, terminate, output, receipt, timeout):
         with output.open("xb") as log:
             process = subprocess.Popen(launch, stdout=subprocess.PIPE,
                                        stderr=subprocess.STDOUT, start_new_session=True)
+            result["launcherPID"] = process.pid
 
             def read():
                 try:
@@ -52,6 +53,8 @@ def run(launch, terminate, output, receipt, timeout):
                     except (ValueError, UnicodeDecodeError):
                         continue  # The conformance parser rejects malformed evidence.
                     result["completed"] = isinstance(row, dict) and row.get("event") == "done"
+                    if isinstance(row, dict) and row.get("event") == "app.entry":
+                        result["appEntryObserved"] = True
 
             # SwiftUI intentionally stays alive after the scenario. A stop is
             # accepted only after done and a successful termination of our app.

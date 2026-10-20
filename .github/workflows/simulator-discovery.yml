@@ -17,22 +17,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-26, macos-15]
-    runs-on: ${{ matrix.runner }}
+        compiler: ["26.6", "26.3"]
+    runs-on: macos-26
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Adversarial harness checks
         run: python3 discovery/check_harness.py
-      - name: Select the newest installed Xcode
+      - name: Select simulator host and compiler independently
         run: |
-          XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
-          sudo xcode-select -s "$XCODE"
+          sudo xcode-select -s /Applications/Xcode_26.6.app
           xcodebuild -version
       - name: Genuine CallKit versus injected runtime
+        env:
+          COMPILER_DEVELOPER_DIR: /Applications/Xcode_${{ matrix.compiler }}.app/Contents/Developer
         run: OUT="$RUNNER_TEMP/out" discovery/run.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: callkit-discovery-${{ matrix.runner }}
+          name: callkit-discovery-macos-26-xcode-${{ matrix.compiler }}
           path: ${{ runner.temp }}/out

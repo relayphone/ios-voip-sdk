@@ -9,3 +9,10 @@ The launcher watches the probe's `done` event, then terminates only that run's a
 `summarize.py <directory>` replays saved `.jsonl` or captured `.log` traces. Live runs additionally require process receipts and trace version 2 with `--require-receipts`. `simulator-discovery-v2` describes the measured baseline; historical version 1 captures remain immutable replay inputs. It is not a cross-version Apple guarantee. Microphone frames can have zero peak on hosted runners: processing frames proves neither audible playback nor independent two-way media. The synthetic lane proves delivery/reporting, not APNs wake-up or watchdog behavior.
 
 The SDK header controls compilation of the newer PushKit callback and metadata subclass; older SDKs use the legacy callback. Both require hosted execution evidence before a toolchain is called supported. No provider/APNs credentials are needed for this harness.
+
+`COMPILER_DEVELOPER_DIR` selects a compiler/SDK separately from the active Xcode
+that hosts CoreSimulator. CI tests Xcode 26.6 and 26.3 compiler paths on macOS 26.
+The earlier macOS 15.7.9 / iOS 26.2 attempt compiled successfully but produced no
+app trace before its launch deadline and remains unqualified. It is not a CallKit
+behavior measurement. App-entry markers, launcher PIDs and bounded container-trace
+recovery now help distinguish startup failure from console attachment failure.

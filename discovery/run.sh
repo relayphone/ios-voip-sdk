@@ -12,6 +12,13 @@ BUILD=$(mktemp -d "${TMPDIR:-/tmp}/callkit-build.XXXXXX")
 UDID=""
 LOGGER=""
 limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
+compiler() {
+  if [[ -n "${COMPILER_DEVELOPER_DIR:-}" ]]; then
+    env DEVELOPER_DIR="$COMPILER_DEVELOPER_DIR" xcrun -sdk iphonesimulator "$@"
+  else
+    xcrun -sdk iphonesimulator "$@"
+  fi
+}
 cleanup() {
   local status=$?
   trap - EXIT
@@ -31,6 +38,10 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 echo "Evidence: $OUT"
 { sw_vers; xcodebuild -version; uname -m; git rev-parse HEAD; } > "$OUT/environment.txt" 2>&1
+if [[ -n "${COMPILER_DEVELOPER_DIR:-}" ]]; then
+  echo "compilerDeveloperDir=$COMPILER_DEVELOPER_DIR" >> "$OUT/environment.txt"
+  env DEVELOPER_DIR="$COMPILER_DEVELOPER_DIR" xcodebuild -version >> "$OUT/environment.txt"
+fi
 xcrun simctl list runtimes > "$OUT/runtimes.txt"
 RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x.get("platform")=="iOS" and x["isAvailable"]]; print(sorted(r,key=lambda x:[int(p) for p in x["version"].split(".")])[-1]["identifier"])')
 DEVTYPE=$(xcrun simctl list devicetypes -j | python3 -c 'import json,sys; d=[x["identifier"] for x in json.load(sys.stdin)["devicetypes"] if "iPhone" in x["name"] and "Pro" in x["name"] and "Max" not in x["name"]]; print(d[-1])')
@@ -41,7 +52,7 @@ limit 30 xcrun simctl boot "$UDID"
 limit 180 xcrun simctl bootstatus "$UDID" -b > /dev/null
 
 SDK_TARGET="$(uname -m)-apple-ios18.0-simulator"
-SDK=$(xcrun -sdk iphonesimulator --show-sdk-path)
+SDK=$(compiler --show-sdk-path)
 SWIFT_DEFS=(-D CKSIM_LEGACY_PUSH_ONLY)
 CLANG_DEFS=(-DCKSIM_HAS_VOIP_METADATA=0)
 PUSH_API=legacy
@@ -53,11 +64,11 @@ fi
 echo "sdk=$SDK pushAPI=$PUSH_API" >> "$OUT/environment.txt"
 mkdir "$BUILD/Probe.app"
 cp probe/Info.plist "$BUILD/Probe.app/"
-xcrun -sdk iphonesimulator swiftc -target "$SDK_TARGET" "${SWIFT_DEFS[@]}" -swift-version 5 -parse-as-library -O probe/main.swift -o "$BUILD/Probe.app/Probe" \
+compiler swiftc -target "$SDK_TARGET" "${SWIFT_DEFS[@]}" -swift-version 5 -parse-as-library -O probe/main.swift -o "$BUILD/Probe.app/Probe" \
   -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker probe/probe.entitlements > "$OUT/build.log" 2>&1
 codesign -s - --force "$BUILD/Probe.app"
 for lib in CKSimRuntime CKSimPush; do
-  xcrun -sdk iphonesimulator clang -target "$SDK_TARGET" "${CLANG_DEFS[@]}" -fobjc-arc -dynamiclib -framework Foundation -framework CallKit -framework AVFoundation -framework PushKit \
+  compiler clang -target "$SDK_TARGET" "${CLANG_DEFS[@]}" -fobjc-arc -dynamiclib -framework Foundation -framework CallKit -framework AVFoundation -framework PushKit \
     -o "$BUILD/$lib.dylib" "spike/$lib.m" >> "$OUT/build.log" 2>&1
   codesign -s - --force "$BUILD/$lib.dylib"
 done
@@ -73,13 +84,22 @@ run() {
   inherited=${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES-$(xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>/dev/null || true)}
   local libraries=$inherited
   if [[ "$name" != genuine ]]; then libraries="${inherited:+$inherited:}$LIBS"; fi
-  env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$libraries" \
+  if env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$libraries" \
     SIMCTL_CHILD_CKSIM_ENABLED=0 SIMCTL_CHILD_CKSIM_SHADOW=0 SIMCTL_CHILD_CKSIM_PUSH_AFTER= SIMCTL_CHILD_CKSIM_PUSH_TRIGGER_NOTIFICATION= \
     SIMCTL_CHILD_PROBE_MODE=default SIMCTL_CHILD_PROBE_PUSH_REPORT=report "$@" \
     python3 run_scenario.py --output "$OUT/$name.log" --receipt "$OUT/$name.receipt.json" \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.probe \
-    --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.probe
-  echo "Completed $name"
+    --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.probe; then
+    echo "Completed $name"
+  else
+    local status=$?
+    local container
+    container=$(limit 10 xcrun simctl get_app_container "$UDID" dev.callkitsim.probe data 2> "$OUT/$name.container-lookup.log") || container=""
+    if [[ -n "$container" && -f "$container/Documents/trace.jsonl" ]]; then
+      cp "$container/Documents/trace.jsonl" "$OUT/$name.container.jsonl"
+    fi
+    return "$status"
+  fi
 }
 LIBS="$BUILD/CKSimRuntime.dylib:$BUILD/CKSimPush.dylib"
 run genuine SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=12

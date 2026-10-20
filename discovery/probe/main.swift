@@ -667,6 +667,7 @@ final class HookTarget: NSObject {
 
 @main
 struct ProbeApp: App {
+  init() { Trace.shared.log("app.entry") }
   @State private var started = false
   static let probe = Probe()
   var body: some Scene {
