@@ -1,0 +1,77 @@
+4010 launched
+12664 found 'Accept' kind=9 in springboard
+12664 dump 1-incoming-banner springboard state=4
+13060 dump 1-incoming-banner incallservice state=4
+13188 dump 1-incoming-banner probe state=4
+14161 tapped Accept via springboard element
+17164 dump 1-after-accept springboard state=4
+17506 dump 1-after-accept incallservice state=4
+17717 dump 1-after-accept probe state=4
+22745 found 'Hold & Accept' id=Hold & Accept type=9 in incallservice frame=(265.6666666666667, 687.6666666666666, 77.0, 77.0)
+22745 dump 2-waiting springboard state=4
+23126 dump 2-waiting incallservice state=4
+23404 dump 2-waiting probe state=4
+24821 tapped Hold & Accept at (304.1666666666667, 726.1666666666666)
+27823 dump 2-after-hold-accept springboard state=4
+28210 dump 2-after-hold-accept incallservice state=4
+28410 dump 2-after-hold-accept probe state=4
+28703 found 'End & Accept' id=End & Accept type=9 in incallservice frame=(47.66666666666666, 687.6666666666666, 77.0, 77.0)
+28703 dump 3-waiting springboard state=4
+29094 dump 3-waiting incallservice state=4
+29308 dump 3-waiting probe state=4
+29956 tapped End & Accept at (86.16666666666666, 726.1666666666666)
+32958 dump 3-after-end-accept springboard state=4
+33309 dump 3-after-end-accept incallservice state=4
+33456 dump 3-after-end-accept probe state=4
+33732 found 'Hold & Accept' id=Hold & Accept type=9 in incallservice frame=(265.6666666666667, 687.6666666666666, 77.0, 77.0)
+33843 found 'Decline' id=Decline type=9 in incallservice frame=(156.66666666666666, 687.6666666666666, 77.0, 77.0)
+33843 dump 4-waiting-decline springboard state=4
+34251 dump 4-waiting-decline incallservice state=4
+34456 dump 4-waiting-decline probe state=4
+35115 tapped Decline at (195.16666666666666, 726.1666666666666)
+44370 locked
+104984 not found ["Accept", "Answer call", "slide to answer", "Slide to answer"]
+104984 dump 5-locked-missing springboard state=4
+105425 dump 5-locked-missing incallservice state=4
+105650 dump 5-locked-missing probe state=4
+108824 dump 5-locked-incall springboard state=4
+109267 dump 5-locked-incall incallservice state=4
+109500 dump 5-locked-incall probe state=4
+109817 found 'Mute' id= type=9 in incallservice frame=(273.3333333333333, 568.3333333333334, 77.0, 77.0)
+110349 tapped Mute at (311.8333333333333, 606.8333333333334)
+112354 dump 5-after-mute springboard state=4
+112797 dump 5-after-mute incallservice state=4
+113029 dump 5-after-mute probe state=4
+113339 found 'Keypad' id= type=9 in incallservice frame=(273.3333333333333, 692.0, 77.0, 77.0)
+113873 tapped Keypad at (311.8333333333333, 730.5)
+115874 dump 5-after-keypad springboard state=4
+116305 dump 5-after-keypad incallservice state=4
+116489 dump 5-after-keypad probe state=4
+122723 not found ["5"]
+122977 found 'Keypad' id= type=9 in incallservice frame=(273.3333333333333, 692.0, 77.0, 77.0)
+123518 tapped Keypad at (311.8333333333333, 730.5)
+125523 dump 5-after-hide springboard state=4
+125901 dump 5-after-hide incallservice state=4
+126109 dump 5-after-hide probe state=3
+132673 not found ["Speaker", "Audio"]
+138730 not found ["More"]
+148357 not found ["End", "End call"]
+148357 dump missing-5-before-end springboard state=4
+149295 dump missing-5-before-end incallservice state=4
+149480 dump missing-5-before-end probe state=3
+154683 unlock attempted
+155684 dump 5-after-unlock springboard state=4
+156575 dump 5-after-unlock incallservice state=4
+156775 dump 5-after-unlock probe state=3
+217091 not found ["Accept"]
+217092 dump missing-6-background-banner springboard state=4
+217514 dump missing-6-background-banner incallservice state=4
+217742 dump missing-6-background-banner probe state=4
+220913 dump 6-after-background-accept springboard state=4
+221332 dump 6-after-background-accept incallservice state=4
+221821 dump 6-after-background-accept probe state=4
+262164 not found ["Accept"]
+372170 dump 7-after-ring-timeout springboard state=4
+372518 dump 7-after-ring-timeout incallservice state=3
+372577 dump 7-after-ring-timeout probe state=4
+372762 done

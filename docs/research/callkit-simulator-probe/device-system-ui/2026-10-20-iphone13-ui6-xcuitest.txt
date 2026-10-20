@@ -1,0 +1,83 @@
+3901 launched
+11954 found 'Answer call' id=Accept type=9 in incallservice frame=(318.0, 32.0, 40.0, 40.0)
+11954 dump 1-incoming-banner springboard state=4
+12307 dump 1-incoming-banner incallservice state=4
+12431 dump 1-incoming-banner probe state=4
+14795 tapped Answer call at (338.0, 52.0)
+17801 dump 1-after-accept springboard state=4
+18162 dump 1-after-accept incallservice state=4
+18361 dump 1-after-accept probe state=3
+78604 not found ["Hold & Accept"]
+78604 dump missing-2-waiting springboard state=4
+78958 dump missing-2-waiting incallservice state=3
+79019 dump missing-2-waiting probe state=4
+82209 dump 2-after-hold-accept springboard state=4
+82559 dump 2-after-hold-accept incallservice state=3
+82614 dump 2-after-hold-accept probe state=4
+143126 not found ["End & Accept"]
+143126 dump missing-3-waiting springboard state=4
+143590 dump missing-3-waiting incallservice state=4
+143753 dump missing-3-waiting probe state=4
+146943 dump 3-after-end-accept springboard state=4
+147412 dump 3-after-end-accept incallservice state=4
+147564 dump 3-after-end-accept probe state=4
+207989 not found ["Hold & Accept", "End & Accept"]
+217240 locked
+217339 found 'Accept' kind=9 in springboard
+217339 dump 5-locked-incoming springboard state=4
+217742 dump 5-locked-incoming incallservice state=4
+217892 dump 5-locked-incoming probe state=4
+218573 tapped Accept via springboard element
+221582 dump 5-locked-incall springboard state=4
+221942 dump 5-locked-incall incallservice state=4
+222170 dump 5-locked-incall probe state=4
+222462 found 'Mute' id= type=9 in incallservice frame=(273.3333333333333, 568.3333333333334, 77.0, 77.0)
+222961 tapped Mute at (311.8333333333333, 606.8333333333334)
+224966 dump 5-after-mute springboard state=4
+225312 dump 5-after-mute incallservice state=4
+225535 dump 5-after-mute probe state=4
+225976 found 'Keypad' id= type=9 in incallservice frame=(273.3333333333333, 692.0, 77.0, 77.0)
+228142 tapped Keypad at (311.8333333333333, 730.5)
+230147 dump 5-after-keypad springboard state=4
+230533 dump 5-after-keypad incallservice state=4
+230757 dump 5-after-keypad probe state=4
+237223 not found ["5"]
+237468 found 'Keypad' id= type=9 in incallservice frame=(273.3333333333333, 692.0, 77.0, 77.0)
+238149 tapped Keypad at (311.8333333333333, 730.5)
+240154 dump 5-after-hide springboard state=4
+240576 dump 5-after-hide incallservice state=4
+240808 dump 5-after-hide probe state=4
+241141 found 'Speaker' id= type=9 in incallservice frame=(39.66666666666666, 568.3333333333334, 77.0, 77.0)
+241653 tapped Speaker at (78.16666666666666, 606.8333333333334)
+243657 dump 5-after-speaker springboard state=4
+244082 dump 5-after-speaker incallservice state=4
+244303 dump 5-after-speaker probe state=4
+244611 found 'More' id= type=9 in incallservice frame=(39.66666666666666, 692.0, 77.0, 77.0)
+245146 tapped More at (78.16666666666666, 730.5)
+247147 dump 5-after-more springboard state=4
+247567 dump 5-after-more incallservice state=4
+247803 dump 5-after-more probe state=4
+249693 found 'End' id= type=9 in incallservice frame=(156.66666666666666, 692.0, 77.0, 77.0)
+249693 dump 5-before-end springboard state=4
+250463 dump 5-before-end incallservice state=4
+250661 dump 5-before-end probe state=3
+251731 tapped End at (195.16666666666666, 730.5)
+256716 unlock attempted
+257722 dump 5-after-unlock springboard state=4
+258649 dump 5-after-unlock incallservice state=4
+258869 dump 5-after-unlock probe state=3
+319420 not found ["Accept"]
+319420 dump missing-6-background-banner springboard state=4
+320380 dump missing-6-background-banner incallservice state=3
+320446 dump missing-6-background-banner probe state=3
+323702 dump 6-after-background-accept springboard state=4
+324639 dump 6-after-background-accept incallservice state=3
+324699 dump 6-after-background-accept probe state=3
+336442 found 'Accept' kind=9 in springboard
+336442 dump 7-ringing springboard state=4
+337365 dump 7-ringing incallservice state=4
+337512 dump 7-ringing probe state=3
+447746 dump 7-after-ring-timeout springboard state=4
+448815 dump 7-after-ring-timeout incallservice state=4
+449007 dump 7-after-ring-timeout probe state=3
+449238 done

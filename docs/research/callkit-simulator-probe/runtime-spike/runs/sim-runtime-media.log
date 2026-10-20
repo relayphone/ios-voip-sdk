@@ -1,0 +1,45 @@
+CKSIM installed latency=fast
+CKSIM provider delegate set shadow=0
+LCK 0 start CXProvider instances via LCK? watch CKSIM lines
+CKSIM report incoming 2EB9AA99-2E6D-4082-B201-E6CAA5653106 -> ok
+CKSIM installed latency=fast
+CKSIM request (
+CKSIM provider delegate set shadow=0
+MEDIA {"event":"start","injected":true,"t_ms":0}
+MEDIA {"event":"ice","peer":"callee","state":1,"t_ms":735}
+MEDIA {"event":"ice","peer":"caller","state":1,"t_ms":2965}
+MEDIA {"event":"negotiated","t_ms":2977}
+CKSIM request (
+MEDIA {"event":"start.request","result":"ok","t_ms":2977}
+MEDIA {"event":"ice","peer":"callee","state":2,"t_ms":3003}
+MEDIA {"event":"ice","peer":"caller","state":2,"t_ms":3003}
+MEDIA {"event":"ice","peer":"caller","state":3,"t_ms":3003}
+MEDIA {"event":"ice","peer":"caller","state":2,"t_ms":3003}
+MEDIA {"event":"start.fulfilled","t_ms":3062}
+CKSIM audio activate ok=1 error=(null)
+CKSIM request (
+CKSIM audio activate ok=1 error=(null)
+MEDIA {"event":"didActivate","t_ms":3510}
+MEDIA {"event":"stats","in.concealed":0,"in.energy":0.00016792505510941768,"in.packets":19,"in.samples":17760,"label":"live-1","out.packets":18,"src.energy":0.00031472165629616516,"src.level":0.070650349436933504,"t_ms":4002}
+MEDIA {"event":"stats","in.concealed":549,"in.energy":0.0036409666675613832,"in.packets":71,"in.samples":67200,"label":"live-2","out.packets":71,"src.energy":0.0042018643293332616,"src.level":0.041169469283120215,"t_ms":5047}
+MEDIA {"event":"stats","in.concealed":549,"in.energy":0.0070546305973233627,"in.packets":122,"in.samples":116640,"label":"live-3","out.packets":122,"src.energy":0.007333964799887671,"src.level":0.055177465132602924,"t_ms":6064}
+MEDIA {"event":"stats","in.concealed":549,"in.energy":0.0089850196179567538,"in.packets":174,"in.samples":166560,"label":"live-4","out.packets":174,"src.energy":0.0096604087062967837,"src.level":0.025543992431409649,"t_ms":7116}
+MEDIA {"event":"stats","in.concealed":549,"in.energy":0.009245488143587029,"in.packets":226,"in.samples":216000,"label":"live-5","out.packets":226,"src.energy":0.0099579984018814717,"src.level":0.013336588641010774,"t_ms":8138}
+MEDIA {"event":"stats","in.concealed":549,"in.energy":0.01200800382954164,"in.packets":279,"in.samples":264480,"label":"live-6","out.packets":279,"src.energy":0.013539012809474494,"src.level":0.10049745170445876,"t_ms":9148}
+CKSIM request (
+MEDIA {"event":"mute","muted":true,"t_ms":9155}
+MEDIA {"event":"stats","in.concealed":549,"in.energy":0.01510796892525962,"in.packets":330,"in.samples":312960,"label":"muted-1","out.packets":330,"src.energy":0.021783758000080113,"src.level":0.094576860866115303,"t_ms":10165}
+MEDIA {"event":"stats","in.concealed":549,"in.energy":0.015107969893894251,"in.packets":381,"in.samples":362880,"label":"muted-2","out.packets":381,"src.energy":0.025928549726965348,"src.level":0.10724204229865414,"t_ms":11190}
+MEDIA {"event":"stats","in.concealed":549,"in.energy":0.015107970843901293,"in.packets":432,"in.samples":411840,"label":"muted-3","out.packets":432,"src.energy":0.031323611282618256,"src.level":0.037965025788140511,"t_ms":12214}
+CKSIM request (
+MEDIA {"event":"mute","muted":false,"t_ms":12220}
+MEDIA {"event":"stats","in.concealed":549,"in.energy":0.016690609584654979,"in.packets":485,"in.samples":461760,"label":"unmuted-1","out.packets":484,"src.energy":0.033777907625936389,"src.level":0.045777764213995792,"t_ms":13250}
+MEDIA {"event":"stats","in.concealed":549,"in.energy":0.017277902576462868,"in.packets":538,"in.samples":510240,"label":"unmuted-2","out.packets":538,"src.energy":0.034462291054655182,"src.level":0.011963255714590899,"t_ms":14267}
+MEDIA {"event":"stats","in.concealed":549,"in.energy":0.017306762001149209,"in.packets":590,"in.samples":559200,"label":"unmuted-3","out.packets":589,"src.energy":0.034633166878103562,"src.level":0.064516129032258063,"t_ms":15290}
+CKSIM request (
+MEDIA {"event":"end.fulfilled","t_ms":15296}
+MEDIA {"event":"didDeactivate","t_ms":15564}
+MEDIA {"event":"ice","peer":"caller","state":6,"t_ms":16847}
+MEDIA {"event":"ice","peer":"callee","state":5,"t_ms":16851}
+MEDIA {"event":"ice","peer":"callee","state":6,"t_ms":16853}
+MEDIA {"event":"done","t_ms":16865}
