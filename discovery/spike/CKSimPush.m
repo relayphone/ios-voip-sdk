@@ -35,18 +35,23 @@ static NSUInteger deliver(NSDictionary *payload) {
     if (![registry.desiredPushTypes containsObject:PKPushTypeVoIP] || !delegate) continue;
     CKSimPayload *p = [CKSimPayload new];
     p.payload = payload;
+    __block NSString *deliveryAPI = @"unknown";
     void (^completion)(void) = ^{
       fprintf(stderr, "CKSIM push completion called\n");
       // Optional fixture receipt for cross-process XCTest assertions. Carries
       // no payload or token and does not participate in application behavior.
       const char *receipt = getenv("CKSIM_PUSH_COMPLETION_NOTIFICATION");
-      if (receipt && receipt[0]) notify_post(receipt);
+      if (receipt && receipt[0]) {
+        notify_post(receipt);
+        notify_post([[NSString stringWithFormat:@"%s.%@", receipt, deliveryAPI] UTF8String]);
+      }
     };
     SEL withMetadata = NSSelectorFromString(@"pushRegistry:didReceiveIncomingVoIPPushWithPayload:metadata:withCompletionHandler:");
     SEL legacy = @selector(pushRegistry:didReceiveIncomingPushWithPayload:forType:withCompletionHandler:);
     #if CKSIM_HAS_VOIP_METADATA
     if (@available(iOS 26.4, *)) {
       if ([delegate respondsToSelector:withMetadata]) {
+      deliveryAPI = @"metadata";
       ((void (*)(id, SEL, id, id, id, id))objc_msgSend)(delegate, withMetadata, registry, p, [CKSimMetadata new], completion);
       fprintf(stderr, "CKSIM push delivered via metadata API\n");
         delivered++;
@@ -55,6 +60,7 @@ static NSUInteger deliver(NSDictionary *payload) {
     }
     #endif
     if ([delegate respondsToSelector:legacy]) {
+      deliveryAPI = @"legacy";
       [delegate pushRegistry:registry didReceiveIncomingPushWithPayload:p forType:PKPushTypeVoIP withCompletionHandler:completion];
       fprintf(stderr, "CKSIM push delivered via legacy API\n");
       delivered++;
