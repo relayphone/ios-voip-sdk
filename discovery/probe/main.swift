@@ -87,11 +87,20 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
     try? hex.write(to: dir.appendingPathComponent("voip-token.txt"), atomically: true, encoding: .utf8)
   }
   func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) { Trace.shared.log("push.tokenInvalidated") }
+  #if CKSIM_HAS_VOIP_METADATA
   @available(iOS 26.4, *)
   func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingVoIPPushWith payload: PKPushPayload,
                     metadata: PKVoIPPushMetadata, withCompletionHandler completion: @escaping () -> Void) {
     Trace.shared.log("push.received", ["api": "metadata", "mustReport": metadata.mustReport, "appState": UIApplication.shared.applicationState.rawValue, "pid": Int(getpid()), "keys": payload.dictionaryPayload.keys.map { "\($0)" }.sorted(),
                                        "payloadClass": NSStringFromClass(type(of: payload))])
+    reportPush(payload, completion: completion)
+  }
+  #endif
+  func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
+    Trace.shared.log("push.received", ["api": "legacy"])
+    reportPush(payload, completion: completion)
+  }
+  private func reportPush(_ payload: PKPushPayload, completion: @escaping () -> Void) {
     if ProcessInfo.processInfo.environment["PROBE_PUSH_REPORT"] == "none" || FileManager.default.fileExists(atPath: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("no-report").path) {
       Trace.shared.log("push.notReported"); completion(); return
     }
@@ -101,9 +110,6 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
     provider.reportNewIncomingCall(with: id, update: update) { err in
       Trace.shared.log("push.reported", ["result": describe(err)]); completion()
     }
-  }
-  func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
-    Trace.shared.log("push.received", ["api": "legacy"]); completion()
   }
   func runPush() async {
     let r = PKPushRegistry(queue: .main)

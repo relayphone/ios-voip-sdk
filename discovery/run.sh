@@ -1,39 +1,81 @@
 #!/bin/bash
-# Discovery run: genuine CallKit versus the injected runtime spike in one simulator.
-set -uo pipefail
+# Assertion-based discovery. This still executes the prototype, not the Swift port.
+set -euo pipefail
 cd "$(dirname "$0")"
-OUT="${OUT:-$PWD/out}"
-mkdir -p "$OUT" build/Probe.app
+if [[ -n "${OUT:-}" ]]; then
+  mkdir "$OUT" # Refuse stale output, including an existing empty directory.
+else
+  OUT=$(mktemp -d "${TMPDIR:-/tmp}/callkit-discovery.XXXXXX")
+fi
+OUT=$(cd "$OUT" && pwd)
+BUILD=$(mktemp -d "${TMPDIR:-/tmp}/callkit-build.XXXXXX")
+UDID=""
+LOGGER=""
 limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
-
-{ sw_vers; xcodebuild -version; uname -m; } > "$OUT/environment.txt" 2>&1
+cleanup() {
+  local status=$?
+  trap - EXIT
+  if [[ -n "$LOGGER" ]]; then kill "$LOGGER" 2>/dev/null || true; wait "$LOGGER" 2>/dev/null || true; fi
+  if [[ -n "$UDID" ]]; then
+    limit 20 xcrun simctl shutdown "$UDID" >> "$OUT/cleanup.log" 2>&1 || true
+    if ! limit 20 xcrun simctl delete "$UDID" >> "$OUT/cleanup.log" 2>&1; then
+      echo "Failed to delete run-owned simulator $UDID" >&2
+      [[ "$status" -ne 0 ]] || status=1
+    fi
+  fi
+  rm -rf "$BUILD"
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+echo "Evidence: $OUT"
+{ sw_vers; xcodebuild -version; uname -m; git rev-parse HEAD; } > "$OUT/environment.txt" 2>&1
 xcrun simctl list runtimes > "$OUT/runtimes.txt"
-RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="iOS" and x["isAvailable"]]; print(sorted(r,key=lambda x:[int(p) for p in x["version"].split(".")])[-1]["identifier"])')
+RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x.get("platform")=="iOS" and x["isAvailable"]]; print(sorted(r,key=lambda x:[int(p) for p in x["version"].split(".")])[-1]["identifier"])')
 DEVTYPE=$(xcrun simctl list devicetypes -j | python3 -c 'import json,sys; d=[x["identifier"] for x in json.load(sys.stdin)["devicetypes"] if "iPhone" in x["name"] and "Pro" in x["name"] and "Max" not in x["name"]]; print(d[-1])')
 echo "runtime=$RUNTIME devicetype=$DEVTYPE" | tee -a "$OUT/environment.txt"
-UDID=$(xcrun simctl create callkit-probe "$DEVTYPE" "$RUNTIME")
-xcrun simctl boot "$UDID"; xcrun simctl bootstatus "$UDID" -b > /dev/null
+UDID=$(xcrun simctl create "callkit-probe-$$" "$DEVTYPE" "$RUNTIME")
+echo "runOwnedSimulator=$UDID" >> "$OUT/environment.txt"
+limit 30 xcrun simctl boot "$UDID"
+limit 180 xcrun simctl bootstatus "$UDID" -b > /dev/null
 
 SDK_TARGET="$(uname -m)-apple-ios18.0-simulator"
-cp probe/Info.plist build/Probe.app/
-xcrun -sdk iphonesimulator swiftc -target "$SDK_TARGET" -swift-version 5 -parse-as-library -O probe/main.swift -o build/Probe.app/Probe \
-  -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker probe/probe.entitlements 2> "$OUT/build.log" || { cat "$OUT/build.log"; exit 1; }
-codesign -s - --force build/Probe.app
+SDK=$(xcrun -sdk iphonesimulator --show-sdk-path)
+SWIFT_DEFS=(-D CKSIM_LEGACY_PUSH_ONLY)
+CLANG_DEFS=(-DCKSIM_HAS_VOIP_METADATA=0)
+PUSH_API=legacy
+if [[ -f "$SDK/System/Library/Frameworks/PushKit.framework/Headers/PKVoIPPushMetadata.h" ]]; then
+  SWIFT_DEFS=(-D CKSIM_HAS_VOIP_METADATA)
+  CLANG_DEFS=(-DCKSIM_HAS_VOIP_METADATA=1)
+  PUSH_API=metadata
+fi
+echo "sdk=$SDK pushAPI=$PUSH_API" >> "$OUT/environment.txt"
+mkdir "$BUILD/Probe.app"
+cp probe/Info.plist "$BUILD/Probe.app/"
+xcrun -sdk iphonesimulator swiftc -target "$SDK_TARGET" "${SWIFT_DEFS[@]}" -swift-version 5 -parse-as-library -O probe/main.swift -o "$BUILD/Probe.app/Probe" \
+  -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker probe/probe.entitlements > "$OUT/build.log" 2>&1
+codesign -s - --force "$BUILD/Probe.app"
 for lib in CKSimRuntime CKSimPush; do
-  xcrun -sdk iphonesimulator clang -target "$SDK_TARGET" -fobjc-arc -dynamiclib -framework Foundation -framework CallKit -framework AVFoundation -framework PushKit \
-    -o build/$lib.dylib spike/$lib.m && codesign -s - --force build/$lib.dylib
+  xcrun -sdk iphonesimulator clang -target "$SDK_TARGET" "${CLANG_DEFS[@]}" -fobjc-arc -dynamiclib -framework Foundation -framework CallKit -framework AVFoundation -framework PushKit \
+    -o "$BUILD/$lib.dylib" "spike/$lib.m" >> "$OUT/build.log" 2>&1
+  codesign -s - --force "$BUILD/$lib.dylib"
 done
-xcrun simctl install "$UDID" build/Probe.app
-xcrun simctl privacy "$UDID" grant microphone dev.callkitsim.probe || true
-
+limit 60 xcrun simctl install "$UDID" "$BUILD/Probe.app"
+limit 20 xcrun simctl privacy "$UDID" grant microphone dev.callkitsim.probe
 xcrun simctl spawn "$UDID" log stream --style compact --predicate 'process == "callservicesd" AND (composedMessage CONTAINS "wont be a UI" OR composedMessage CONTAINS "Error setting audio active" OR composedMessage CONTAINS "Failed to open URL" OR composedMessage CONTAINS "disconnect reason")' > "$OUT/callservicesd.log" 2>&1 &
 LOGGER=$!
-
-run() { local name=$1; shift; env "$@" perl -e 'alarm shift; exec @ARGV' 200 xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.probe > "$OUT/$name.log" 2>&1; echo "$name exit=$?"; }
-LIBS="$PWD/build/CKSimRuntime.dylib:$PWD/build/CKSimPush.dylib"
+run() {
+  local name=$1
+  shift
+  echo "Starting $name"
+  env "$@" python3 run_scenario.py --output "$OUT/$name.log" --receipt "$OUT/$name.receipt.json" \
+    --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.probe \
+    --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.probe
+  echo "Completed $name"
+}
+LIBS="$BUILD/CKSimRuntime.dylib:$BUILD/CKSimPush.dylib"
 run genuine SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=12
 run runtime SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$LIBS" SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=70
 run push SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$LIBS" SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_SHADOW=1 SIMCTL_CHILD_CKSIM_PUSH_AFTER=2 SIMCTL_CHILD_PROBE_MODE=push SIMCTL_CHILD_PROBE_PUSH_WAIT=12
-kill $LOGGER 2>/dev/null
-python3 summarize.py "$OUT" | tee "$OUT/summary.txt"
-xcrun simctl delete "$UDID" || true
+python3 summarize.py "$OUT" --require-receipts | tee "$OUT/summary.json"

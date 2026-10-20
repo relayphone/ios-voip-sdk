@@ -12,11 +12,13 @@
 - (NSDictionary *)dictionaryPayload { return self.payload; }
 @end
 
+#if CKSIM_HAS_VOIP_METADATA
 @interface CKSimMetadata : PKVoIPPushMetadata
 @end
 @implementation CKSimMetadata
 - (BOOL)mustReport { return YES; }
 @end
+#endif
 
 static NSHashTable<PKPushRegistry *> *registries;
 static IMP origSetDelegate;
@@ -33,10 +35,16 @@ void CKSimDeliverVoIPPush(NSDictionary *payload) {
     void (^completion)(void) = ^{ fprintf(stderr, "CKSIM push completion called\n"); };
     SEL withMetadata = NSSelectorFromString(@"pushRegistry:didReceiveIncomingVoIPPushWithPayload:metadata:withCompletionHandler:");
     SEL legacy = @selector(pushRegistry:didReceiveIncomingPushWithPayload:forType:withCompletionHandler:);
-    if ([delegate respondsToSelector:withMetadata]) {
+    #if CKSIM_HAS_VOIP_METADATA
+    if (@available(iOS 26.4, *)) {
+      if ([delegate respondsToSelector:withMetadata]) {
       ((void (*)(id, SEL, id, id, id, id))objc_msgSend)(delegate, withMetadata, registry, p, [CKSimMetadata new], completion);
       fprintf(stderr, "CKSIM push delivered via metadata API\n");
-    } else if ([delegate respondsToSelector:legacy]) {
+        continue;
+      }
+    }
+    #endif
+    if ([delegate respondsToSelector:legacy]) {
       [delegate pushRegistry:registry didReceiveIncomingPushWithPayload:p forType:PKPushTypeVoIP withCompletionHandler:completion];
       fprintf(stderr, "CKSIM push delivered via legacy API\n");
     }
