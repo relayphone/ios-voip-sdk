@@ -24,8 +24,8 @@ Historical evidence under `docs/research/` was not edited.
   and reaches an empty final snapshot.
 - All process receipts succeed. Cleanup deletes the run-owned simulator; existing
   simulators, device settings, launchd environment and physical devices are untouched.
-- All **28 adversarial CLI checks** pass. Both metadata and forced-legacy compile
-  paths typecheck with the installed SDK. This alone does not qualify Xcode 26.3.
+- All **29 adversarial CLI checks** pass. Both metadata and forced-legacy compile
+  paths typecheck with the installed SDK. Hosted compiler qualification is below.
 
 Replay the immutable native capture:
 
@@ -53,6 +53,21 @@ attempts bounded recovery of the probe's container trace on failure, and selects
 the compiler separately from the newer simulator host. It does not claim that the
 macOS 15 / iOS 26.2 tuple is fixed. Subsequent runs qualify their exact tuples.
 
+[Run 39511363331](https://github.com/ziahamza/callkit-simulator/actions/runs/39511363331)
+passed **both** compiler lanes at source head `77c4f03` (actual PR merge checkout
+`7e7db7f09dd430a86c63bbb7bc07c323d7ef2c53`). Both use macOS 26.6.2, Xcode 26.6's
+simulator host and the iOS 26.5 runtime:
+
+| Compiler | SDK | Push callback | Genuine / runtime / push |
+| --- | --- | --- | --- |
+| Xcode 26.3 | 26.2 | legacy | Pass / pass / pass |
+| Xcode 26.6 | 26.5 | metadata | Pass / pass / pass |
+
+The normalized probe events, receipts, summaries and environment are retained in
+[`hosted-39511363331/`](hosted-39511363331/). Each lane replays through the strict
+gate with `--require-receipts`. This qualifies old-SDK compilation and legacy
+callback execution on the newer host/runtime; it does not qualify iOS 26.2 itself.
+
 ## Standards
 
 Initial review found **[P2] cleanup only ran while the launcher was alive**:
@@ -63,6 +78,11 @@ adversarial case verifies it. **Resolved.**
 The next review found no actionable standards issues; its nonblocking documentation
 note identified a stale v1 profile name. The README now describes v2 and immutable
 historical replay inputs. **Resolved.**
+
+A final diagnostic-recovery review found that failed `cp` could hide the original
+scenario exit status. Recovery is now best-effort; the 29th adversarial check drives
+the extracted shell function with launcher exit 7 and copy exit 9, requiring 7.
+**Resolved.**
 
 The reviewers confirmed owned UUID targeting, preservation of existing injection,
 read-only CI permissions, pinned actions and no introduced credentials.

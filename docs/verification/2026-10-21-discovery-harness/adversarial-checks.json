@@ -28,6 +28,7 @@
     "runner-fail",
     "runner-empty",
     "runner-timeout",
-    "runner-detached"
+    "runner-detached",
+    "shell-preserves-scenario-failure"
   ]
 }
