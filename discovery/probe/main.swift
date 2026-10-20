@@ -114,11 +114,13 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
   }
   func runPush() async {
     await sleep(Double(ProcessInfo.processInfo.environment["PROBE_PUSH_REGISTRATION_DELAY"] ?? "0") ?? 0)
-    let r = PKPushRegistry(queue: .main)
-    r.delegate = self
-    r.desiredPushTypes = [.voIP]
-    registry = r
-    Trace.shared.log("push.registered")
+    await MainActor.run {
+      let r = PKPushRegistry(queue: .main)
+      r.delegate = self
+      r.desiredPushTypes = [.voIP]
+      registry = r
+      Trace.shared.log("push.registered")
+    }
     await sleep(Double(ProcessInfo.processInfo.environment["PROBE_PUSH_WAIT"] ?? "12") ?? 12)
     snapshot("after-push-wait")
     for call in observer.calls where !call.hasEnded { _ = await request([CXEndCallAction(call: call.uuid)], label: "cleanup") }
@@ -171,13 +173,14 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
     var f = extra
     f["kind"] = kind
     f["timeoutIn"] = (action.timeoutDate.timeIntervalSinceNow * 10).rounded() / 10
-    f["id"] = String(action.uuid.uuidString.prefix(8))
+    let actionID = String(action.uuid.uuidString.prefix(8))
+    f["id"] = actionID
     if let call = action as? CXCallAction { f["call"] = String(call.callUUID.uuidString.prefix(8)) }
     Trace.shared.log("provider.perform", f)
     switch policy[kind] ?? .fulfill {
-    case .fulfill: action.fulfill(); Trace.shared.log("action.fulfilled", ["kind": kind, "id": f["id"]!, "complete": action.isComplete])
+    case .fulfill: action.fulfill(); Trace.shared.log("action.fulfilled", ["kind": kind, "id": actionID, "complete": action.isComplete])
     case .fail: action.fail(); Trace.shared.log("action.failed", ["kind": kind])
-    case .never: Trace.shared.log("action.held", ["kind": kind])
+    case .never: Trace.shared.log("action.held", ["kind": kind, "id": actionID])
     case .delay(let s):
       DispatchQueue.main.asyncAfter(deadline: .now() + s) {
         action.fulfill(); Trace.shared.log("action.fulfilledLate", ["kind": kind, "complete": action.isComplete])
@@ -602,7 +605,7 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
     _ = await request([CXAnswerCallAction(call: d)], label: "answer-d-never")
     await sleep(Double(env["PROBE_TIMEOUT_WAIT"] ?? "12") ?? 12)
     snapshot("after-timeout-wait")
-    if let held = answered.last { held.fulfill(); Trace.shared.log("late.fulfill", ["complete": held.isComplete]) }
+    if let held = answered.last { held.fulfill(); Trace.shared.log("late.fulfill", ["id": String(held.uuid.uuidString.prefix(8)), "complete": held.isComplete]) }
     await sleep(1); snapshot("after-late-fulfill")
     policy["CXAnswerCallAction"] = .fulfill
     provider.reportCall(with: d, endedAt: Date(), reason: .failed)

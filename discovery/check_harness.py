@@ -81,6 +81,12 @@ def main():
                lambda r: r["event"] == "observer.callChanged" and r["ended"]), False)
         traces("genuine-no-incoming-report", lambda d: remove_events(d, "genuine",
                lambda r: r["event"] == "report.incomingCompleted"), False)
+        traces("answer-fulfilled-before-expiry", lambda d: mutate_row(d, "action.held",
+               lambda rows, r: r.update(event="action.fulfilled")), False)
+        traces("answer-not-retained", lambda d: remove_events(d, "runtime",
+               lambda r: r["event"] == "action.held"), False)
+        traces("no-late-fulfillment", lambda d: remove_events(d, "runtime",
+               lambda r: r["event"] == "late.fulfill"), False)
 
         # Test the actual runner CLI and its owned stop, not a mocked Popen.
         probe = work / "fake_probe.py"

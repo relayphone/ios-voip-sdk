@@ -168,6 +168,16 @@ def runtime(rows):
                 for r in activations), "answer activation missing/out of order")
     timeout_answer = one(rows, "provider.perform", kind="CXAnswerCallAction", call=d)
     timeout_end = one(rows, "provider.perform", kind="CXEndCallAction", call=d)
+    fields = {"kind": "CXAnswerCallAction"}
+    if one(rows, "launch").get("traceVersion", 1) >= 2:
+        fields["id"] = timeout_answer["id"]
+    retained = one(rows, "action.held", **fields)
+    before(rows, timeout_answer, retained)
+    before(rows, retained, timeout_end)
+    require(not any(r["event"] in ("action.fulfilled", "action.failed", "action.fulfilledLate") and
+                    r.get("kind") == "CXAnswerCallAction"
+                    for r in rows[rows.index(timeout_answer) + 1:rows.index(timeout_end)]),
+            "answer-d-never completed before expiry")
     before(rows, timeout_answer, timeout_end)
     require(50_000 <= timeout_end["t_ms"] - timeout_answer["t_ms"] <= 75_000,
             "answer expiry outside measured profile window")
@@ -178,6 +188,10 @@ def runtime(rows):
     require(snapshot(rows, "after-late-fulfill")["pending"] == 0,
             "late fulfillment did not settle the retained action")
     before(rows, timeout_end, snapshot(rows, "after-timeout-wait"))
+    late_fields = {"id": timeout_answer["id"]} if "id" in fields else {}
+    late = one(rows, "late.fulfill", **late_fields)
+    before(rows, snapshot(rows, "after-timeout-wait"), late)
+    before(rows, late, snapshot(rows, "after-late-fulfill"))
 
 
 def genuine(rows):
