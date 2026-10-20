@@ -79,6 +79,11 @@ Historical research traces were kept unchanged.
   logs its VoIP token. Public evidence contains reviewed screenshots, source and
   tool provenance, and structured summaries only.
 
+“Connected” here is application/native session state under the runtime, with real
+CallKit transaction delivery. No peer/provider signaling or two-party network
+call is exercised. Xcode Cloud and third-party Expo/simulator-provider bootstrap
+environments remain untested.
+
 The library's
 [verification report](https://github.com/ziahamza/expo-callkit-telecom/blob/fix/ios-voip-push-hardening/docs/verification/2026-10-21-push-isolation/README.md)
 contains reproduction and the exact qualification limits. Negative-control and

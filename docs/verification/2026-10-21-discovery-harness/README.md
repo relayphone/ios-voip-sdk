@@ -14,7 +14,7 @@ Historical evidence under `docs/research/` was not edited.
 - Runtime: expected request results **and actual delegate deliveries**, ringing,
   answer, hold/unhold, two-call/group callbacks, outgoing state, cleanup and
   retained-answer expiry/late-fulfillment behavior pass the measured profile.
-- Answer expiry: system end at **59.648 seconds** after answer delivery.
+- Answer expiry: runtime-delivered end action at **59.648 seconds** after answer delivery.
 - Audio: three activation/deactivation cycles; both capture probes process
   **48,000 frames at 48 kHz**, mono. This is capture processing, not independent
   two-way media proof.
