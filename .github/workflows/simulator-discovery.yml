@@ -1,0 +1,32 @@
+name: Simulator CallKit discovery
+on:
+  push:
+    branches: ["discovery/**"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: simulator-discovery-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-26, macos-15]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select the newest installed Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+      - name: Genuine CallKit versus injected runtime
+        run: OUT="$RUNNER_TEMP/out" discovery/run.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: callkit-discovery-${{ matrix.runner }}
+          path: ${{ runner.temp }}/out
