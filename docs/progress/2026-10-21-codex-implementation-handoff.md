@@ -19,8 +19,8 @@ strict provenance, a genuine CallKit baseline, and failure-sensitive evidence.
 | --- | --- | --- |
 | [Simulator #2](https://github.com/ziahamza/callkit-simulator/pull/2) | Executable discovery harness; strict versioned conformance evidence; retained-action and callback checks; process receipts; owned-device cleanup; old/new SDK lanes | Production Swift engine, complete profiles, release artifact and delivery/bootstrap lifecycle |
 | [Library #1](https://github.com/ziahamza/expo-callkit-telecom/pull/1) | Original upstream #29 with attribution; typed Objective-C PushKit metadata adapter; conservative typed optional-push policy; real native/JS regression and accessible example controls | Placeholder lifecycle bounds, generation-safe session publication, APNs/device qualification |
-| [Library #4](https://github.com/ziahamza/expo-callkit-telecom/pull/4) | Pinned macOS workflow, real Release Expo build/XCTest, frozen installs, private raw test logs and public structured summaries | Resolve exact older-compiler failure; replace discovery checkout with versioned runtime release when available |
-| [Library #8](https://github.com/ziahamza/expo-callkit-telecom/pull/8) | Integration update is pending hosted gate resolution | Never merge into the fork's upstream-mirroring main |
+| [Library #4](https://github.com/ziahamza/expo-callkit-telecom/pull/4) | Pinned macOS workflow, real Release Expo build/XCTest, frozen installs, private raw test logs and public structured summaries | Retain explicit Expo/compiler qualification boundary; replace discovery checkout with versioned runtime release when available |
+| [Library #8](https://github.com/ziahamza/expo-callkit-telecom/pull/8) | Candidate integrates #1 + #4 with identical source tree; hosted validation remains explicit | Never merge into the fork's upstream-mirroring main |
 
 Library #4 is stacked on #1 because its native test genuinely depends on #1's
 adapter and regression fixture. The other draft workstreams remain open. No new
@@ -67,9 +67,26 @@ Historical research traces were kept unchanged.
 - Hosted [39511821416](https://github.com/ziahamza/expo-callkit-telecom/actions/runs/39511821416):
   Xcode 26.6 / SDK 26.5 / iOS 26.5 also passes the real Expo/native/JS test.
   Synthetic merge checkout `56cbe6f25ce61a6a36ae6a48f7bef238da80ce37`.
-  The 26.3 lane exits 65 during native build, before XCTest. Its first artifact
-  lacks the compiler error; that failure is unclassified. Stage receipts and
-  bounded pre-launch compiler diagnostics were added for the next run.
+  The 26.3 lane exits 65 during native build, before XCTest. Follow-up
+  [39513498744](https://github.com/ziahamza/expo-callkit-telecom/actions/runs/39513498744)
+  classified it: Xcode 26.3 rejects Swift interop annotations in Expo's
+  `RuntimeScheduler.h`. This is a dependency build failure, not a calling-runtime
+  observation. No third-party header was patched to hide it.
+- The revised [CI gate 39514972142](https://github.com/ziahamza/expo-callkit-telecom/actions/runs/39514972142)
+  separates actual SDK 26.2/26.5 adapter compilation from full Expo metadata and
+  forced-legacy callback tests on Xcode 26.6. The forced path disables metadata
+  in both fixture and library. CI requires the declared API and the matching
+  unique completion receipt. A local mismatched-lane control fails preflight,
+  before any simulator boot. The linked run carries its own current status;
+  this document does not predeclare its result.
+- **Negative control:** the original wrong-`firstSession` teardown was deliberately
+  restored in a disposable checkout. A connected, malformed metadata B completed,
+  then A disappeared: the connected assertion failed at line 70, **exit 65**,
+  one failed XCTest. Reproduction patch, exact environment, structured summary
+  and reviewed failure screenshot are retained in the library verification
+  report. The final run disables verbose Xcode sysdiagnose so its result closes
+  normally; explicit failure screenshots/hierarchy remain. The temporary
+  checkout/build caches and all run-owned simulators were removed.
 - Root TypeScript and plugin typecheck/build pass; the four existing plugin tests
   pass. Lint exits zero with existing warnings in unchanged source. No broad new
   unit suite was added.
@@ -86,9 +103,8 @@ environments remain untested.
 
 The library's
 [verification report](https://github.com/ziahamza/expo-callkit-telecom/blob/fix/ios-voip-push-hardening/docs/verification/2026-10-21-push-isolation/README.md)
-contains reproduction and the exact qualification limits. Negative-control and
-subsequent hosted results are recorded there as they finish; they must be judged
-by their actual assertion/build phase, not just a nonzero exit status.
+contains reproduction and the exact qualification limits. Subsequent hosted results are recorded by their exact runs; judge failures by
+their actual assertion/build phase, not just a nonzero exit status.
 
 ## Decisions implemented
 
@@ -106,7 +122,11 @@ by their actual assertion/build phase, not just a nonzero exit status.
    Cloudflare, custom WebRTC and other adapters should be optional. The future
    Swift core must not force an RTCAudioSession singleton or introduce a second
    competing audio-session owner beside a vendor SDK.
-5. **Do not port the prototype line for line.** It proves the seam and the measured
+5. **Separate compiler compatibility from fallback behavior.** The old SDK still
+   gets a real native-adapter compiler gate. The current Expo dependency stack
+   gets full native/JS tests with Xcode 26.6, including forced legacy delivery.
+   This preserves useful coverage without claiming a full old-Xcode Expo pass.
+6. **Do not port the prototype line for line.** It proves the seam and the measured
    scenarios. Provider selection, transaction identity, queueing, stale callbacks
    and audio ownership still need a production design.
 
