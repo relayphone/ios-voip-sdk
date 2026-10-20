@@ -74,7 +74,7 @@ run() {
   local libraries=$inherited
   if [[ "$name" != genuine ]]; then libraries="${inherited:+$inherited:}$LIBS"; fi
   env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$libraries" \
-    SIMCTL_CHILD_CKSIM_ENABLED=0 SIMCTL_CHILD_CKSIM_SHADOW=0 SIMCTL_CHILD_CKSIM_PUSH_AFTER= \
+    SIMCTL_CHILD_CKSIM_ENABLED=0 SIMCTL_CHILD_CKSIM_SHADOW=0 SIMCTL_CHILD_CKSIM_PUSH_AFTER= SIMCTL_CHILD_CKSIM_PUSH_TRIGGER_NOTIFICATION= \
     SIMCTL_CHILD_PROBE_MODE=default SIMCTL_CHILD_PROBE_PUSH_REPORT=report "$@" \
     python3 run_scenario.py --output "$OUT/$name.log" --receipt "$OUT/$name.receipt.json" \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.probe \
