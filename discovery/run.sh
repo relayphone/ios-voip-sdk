@@ -93,11 +93,15 @@ run() {
     echo "Completed $name"
   else
     local status=$?
+    if ! limit 20 xcrun simctl spawn "$UDID" log show --last 10m --style compact \
+      --predicate 'eventMessage CONTAINS "dev.callkitsim.probe"' > "$OUT/$name.system.log" 2>&1; then
+      echo "System diagnostic collection failed" >> "$OUT/$name.system.log" || true
+    fi
     local container
     container=$(limit 10 xcrun simctl get_app_container "$UDID" dev.callkitsim.probe data 2> "$OUT/$name.container-lookup.log") || container=""
     if [[ -n "$container" && -f "$container/Documents/trace.jsonl" ]]; then
       if ! cp "$container/Documents/trace.jsonl" "$OUT/$name.container.jsonl"; then
-        echo "Container trace recovery failed" >> "$OUT/$name.container-lookup.log"
+        echo "Container trace recovery failed" >> "$OUT/$name.container-lookup.log" || true
       fi
     fi
     return "$status"

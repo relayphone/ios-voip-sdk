@@ -133,6 +133,8 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
   let observer = CXCallObserver()
   var policy: [String: Policy] = [:]
   var answered: [CXAnswerCallAction] = []
+  private let audioActivationLock = NSLock()
+  private var callKitAudioActive = false
 
   override init() {
     let config = CXProviderConfiguration()
@@ -153,7 +155,8 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
     let nc = NotificationCenter.default
     for name in [AVAudioSession.interruptionNotification, AVAudioSession.routeChangeNotification,
                  AVAudioSession.mediaServicesWereResetNotification, AVAudioSession.silenceSecondaryAudioHintNotification] {
-      nc.addObserver(forName: name, object: nil, queue: nil) { note in
+      nc.addObserver(forName: name, object: nil, queue: nil) { [weak self] note in
+        if note.name == AVAudioSession.mediaServicesWereResetNotification { self?.setCallKitAudioActive(false) }
         var f: [String: Any] = ["name": note.name.rawValue]
         if let info = note.userInfo { for (k, v) in info { f["\(k)"] = "\(v)" } }
         Trace.shared.log("audio.notification", f)
@@ -163,7 +166,10 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
 
   // MARK: provider delegate
   func providerDidBegin(_ provider: CXProvider) { Trace.shared.log("provider.didBegin") }
-  func providerDidReset(_ provider: CXProvider) { Trace.shared.log("provider.didReset") }
+  func providerDidReset(_ provider: CXProvider) {
+    setCallKitAudioActive(false)
+    Trace.shared.log("provider.didReset")
+  }
   func provider(_ provider: CXProvider, execute transaction: CXTransaction) -> Bool {
     Trace.shared.log("provider.executeTransaction", ["actions": transaction.actions.map { NSStringFromClass(type(of: $0)) }])
     return false
@@ -214,9 +220,11 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
     Trace.shared.log("provider.timedOut", ["kind": NSStringFromClass(type(of: action)), "id": String(action.uuid.uuidString.prefix(8))])
   }
   func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
+    setCallKitAudioActive(true)
     Trace.shared.log("provider.didActivateAudio", audioState())
   }
   func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
+    setCallKitAudioActive(false)
     Trace.shared.log("provider.didDeactivateAudio", audioState())
   }
 
@@ -257,14 +265,25 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
                                            "pending": provider.pendingTransactions.count])
   }
   func sleep(_ s: Double) async { try? await Task.sleep(nanoseconds: UInt64(s * 1_000_000_000)) }
+  private func setCallKitAudioActive(_ active: Bool) {
+    audioActivationLock.lock(); callKitAudioActive = active; audioActivationLock.unlock()
+  }
 
-  func micProbe(_ label: String) {
+  func micProbe(_ label: String, requireCallKitActivation: Bool = true) {
+    audioActivationLock.lock(); let active = callKitAudioActive; audioActivationLock.unlock()
+    // inputNode lazily opens hardware input. Normal calling probes must wait for
+    // the audio handoff instead of opening it on the broken genuine simulator path.
+    if requireCallKitActivation && !active {
+      Trace.shared.log("mic.skipped", ["label": label, "reason": "callkit-inactive"]); return
+    }
     // A device run must stay unattended: never trigger the microphone prompt.
     if AVAudioApplication.shared.recordPermission != .granted {
       Trace.shared.log("mic.skipped", ["label": label, "permission": AVAudioApplication.shared.recordPermission.rawValue]); return
     }
+    Trace.shared.log("mic.begin", ["label": label, "callKitActive": active])
     let engine = AVAudioEngine()
     let input = engine.inputNode
+    Trace.shared.log("mic.inputNodeReady", ["label": label])
     let format = input.outputFormat(forBus: 0)
     Trace.shared.log("mic.format", ["label": label, "rate": format.sampleRate, "channels": format.channelCount, "audio": audioState()])
     guard format.channelCount > 0, format.sampleRate > 0 else { Trace.shared.log("mic.noInput", ["label": label]); return }
@@ -286,21 +305,24 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
     }
   }
 
-  func manualActivation(_ label: String) {
+  func manualActivation(_ label: String) -> Bool {
     do {
       try AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .voiceChat, options: [])
       try AVAudioSession.sharedInstance().setActive(true)
       Trace.shared.log("audio.manualActivated", ["label": label, "audio": audioState()])
-    } catch { Trace.shared.log("audio.manualActivationFailed", ["label": label, "error": describe(error)]) }
+      return true
+    } catch {
+      Trace.shared.log("audio.manualActivationFailed", ["label": label, "error": describe(error)])
+      return false
+    }
   }
   func runAudio() async {
     let c = UUID()
     _ = await request([CXStartCallAction(call: c, handle: CXHandle(type: .phoneNumber, value: "+15555550102"))], label: "start-audio")
     await sleep(3); snapshot("audio-connected")
-    micProbe("system-only")
+    micProbe("system-only", requireCallKitActivation: false)
     await sleep(1.5)
-    manualActivation("fill-in")
-    micProbe("after-manual")
+    if manualActivation("fill-in") { micProbe("after-manual", requireCallKitActivation: false) }
     await sleep(1.5)
     _ = await request([CXEndCallAction(call: c)], label: "end-audio")
     await sleep(1)

@@ -68,6 +68,30 @@ The normalized probe events, receipts, summaries and environment are retained in
 gate with `--require-receipts`. This qualifies old-SDK compilation and legacy
 callback execution on the newer host/runtime; it does not qualify iOS 26.2 itself.
 
+## Incomplete genuine audio probe
+
+[Run 39515162578](https://github.com/ziahamza/callkit-simulator/actions/runs/39515162578)
+passes the old-compiler lane but fails the newer lane before terminal `done`.
+The [diagnostic receipt and recovered container trace](hosted-39515162578-incomplete/)
+are retained separately and **do not qualify** as conformance evidence. The trace
+stops after the outgoing snapshot, immediately before `micProbe(after-outgoing)`;
+CallKit never activated audio. Launcher EOF and a termination timeout do not
+establish whether the app crashed, was killed, stalled, or lost its console.
+
+The normal probe now tracks CallKit activation under a lock and skips microphone
+engine construction while inactive. Provider/media-services reset clears that
+state. The explicit manual-audio experiment remains opt-in and only captures
+after successful manual activation. Engine/input-node markers, launcher status
+before/after cleanup, last event, app PID and bounded app-scoped system logs make
+a subsequent failure diagnosable. The precise cause of this earlier exit remains
+unproven; the change avoids an inappropriate inactive hardware-input query.
+
+The gate is unchanged: genuine accepted-report/teardown/unknown-answer/no-activation
+behavior and full terminal completion remain required. Runtime activation cycles
+and positive capture frames/rate/channels remain required. **48,000 frames** is
+an observed capture result, not an exact enforced frame-count threshold or media
+proof. No partial trace is retried automatically or accepted after recovery.
+
 ## Standards
 
 Initial review found **[P2] cleanup only ran while the launcher was alive**:

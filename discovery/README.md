@@ -16,3 +16,9 @@ The earlier macOS 15.7.9 / iOS 26.2 attempt compiled successfully but produced n
 app trace before its launch deadline and remains unqualified. It is not a CallKit
 behavior measurement. App-entry markers, launcher PIDs and bounded container-trace
 recovery now help distinguish startup failure from console attachment failure.
+
+Normal microphone probes wait for CallKit's audio activation callback before
+constructing an audio engine. The explicit `PROBE_MODE=audio` experiment can
+inspect inactive input separately; it is not part of the normal CI gate.
+Failure receipts preserve launcher state before cleanup and last probe progress;
+recovered container traces and app-scoped system logs remain diagnostic only.

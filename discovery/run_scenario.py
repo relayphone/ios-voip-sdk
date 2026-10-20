@@ -44,6 +44,7 @@ def run(launch, terminate, output, receipt, timeout):
                         raise RuntimeError("launcher exited before terminal done event")
                     continue
                 if line is None:
+                    result["stdoutEOFSeconds"] = round(time.monotonic() - started, 3)
                     raise RuntimeError("launcher exited before terminal done event")
                 log.write(line)
                 log.flush()
@@ -53,8 +54,13 @@ def run(launch, terminate, output, receipt, timeout):
                     except (ValueError, UnicodeDecodeError):
                         continue  # The conformance parser rejects malformed evidence.
                     result["completed"] = isinstance(row, dict) and row.get("event") == "done"
+                    if isinstance(row, dict):
+                        result["lastProbeEvent"] = row.get("event")
+                        result["lastProbeTimestampMS"] = row.get("t_ms")
                     if isinstance(row, dict) and row.get("event") == "app.entry":
                         result["appEntryObserved"] = True
+                    if isinstance(row, dict) and row.get("event") == "launch" and type(row.get("pid")) is int:
+                        result["appPID"] = row["pid"]
 
             # SwiftUI intentionally stays alive after the scenario. A stop is
             # accepted only after done and a successful termination of our app.
@@ -76,6 +82,8 @@ def run(launch, terminate, output, receipt, timeout):
         result["error"] = str(error)
     finally:
         if process is not None:
+            # Preserve the observed launcher state before cleanup can signal it.
+            result["launchExitCodeBeforeCleanup"] = process.poll()
             # The launcher can exit while the app it launched remains alive.
             if not stopped:
                 try:
@@ -95,6 +103,7 @@ def run(launch, terminate, output, receipt, timeout):
                 except OSError as error:
                     result["cleanupError"] = str(error)
                     result["success"] = False
+            result["launchExitCode"] = process.returncode
         result["elapsedSeconds"] = round(time.monotonic() - started, 3)
         receipt.write_text(json.dumps(result, indent=2) + "\n")
     return 0 if result["success"] else 1
