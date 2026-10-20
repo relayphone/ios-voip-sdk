@@ -33,7 +33,37 @@ Start here. This is the entry point for implementation work across two repositor
 
 ## Draft PRs
 
-The PR map is filled in once the PRs exist; see the section below.
+Each draft PR's description is the full handoff for that workstream: goal, scope, acceptance and evidence.
+
+**Simulator** (stacked):
+
+| PR                                                         | Branch                                                                                                 | Depends on |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ---------- |
+| [#1](https://github.com/ziahamza/callkit-simulator/pull/1) | `docs/discovery-evidence`: this evidence and handoff                                                   | —          |
+| [#2](https://github.com/ziahamza/callkit-simulator/pull/2) | `feat/runtime-engine`: engine, conformance gate, minimal controls, release artifact                    | #1         |
+| [#3](https://github.com/ziahamza/callkit-simulator/pull/3) | `feat/media-conformance`: two-way audio with independent evidence                                      | #2         |
+| [#4](https://github.com/ziahamza/callkit-simulator/pull/4) | `feat/system-ui-control-plane`: emulated UI with genuine identifiers, control plane, framework helpers | #3         |
+
+**Fork** (each off `main`, upstreamable):
+
+| PR                                                            | Branch                                  | Upstream links | Depends on                                            |
+| ------------------------------------------------------------- | --------------------------------------- | -------------- | ----------------------------------------------------- |
+| [#1](https://github.com/ziahamza/expo-callkit-telecom/pull/1) | `fix/ios-voip-push-hardening`           | #29, #47       | simulator #2 for tests                                |
+| [#2](https://github.com/ziahamza/expo-callkit-telecom/pull/2) | `fix/ios-audio-activation`              | #22, #32, #36  | simulator #2 (faults)                                 |
+| [#3](https://github.com/ziahamza/expo-callkit-telecom/pull/3) | `fix/ios-events-before-js`              | #46            | simulator #2 (control surface)                        |
+| [#4](https://github.com/ziahamza/expo-callkit-telecom/pull/4) | `ci/ios-simulator-e2e`                  | —              | simulator #2 release                                  |
+| [#5](https://github.com/ziahamza/expo-callkit-telecom/pull/5) | `feat/ios-multi-call` (RFC)             | #38 (Android)  | device measurements; simulator #4 for shared UI tests |
+| [#6](https://github.com/ziahamza/expo-callkit-telecom/pull/6) | `refactor/ios-swift-core-package` (RFC) | —              | —                                                     |
+| [#7](https://github.com/ziahamza/expo-callkit-telecom/pull/7) | `feat/media-adapters` (RFC)             | #21, #44       | simulator #3                                          |
+| [#8](https://github.com/ziahamza/expo-callkit-telecom/pull/8) | `integration` (never merged)            | —              | everything above                                      |
+
+**Suggested order:**
+
+1. Simulator #1 merged, then #2's release artifact.
+2. In parallel: fork #1 and #3 (small, testable with the synthetic push lane).
+3. Fork #4 (CI), so every later PR has a gate.
+4. Fork #2.
+5. The RFCs (fork #5, #6, #7), raised upstream early as discussions so maintainer feedback arrives while the code is written.
 
 ## Working agreements
 
