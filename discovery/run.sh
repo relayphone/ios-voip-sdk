@@ -14,7 +14,7 @@ UDID=""
 LOGGER=""
 RUN_ID=$(uuidgen)
 ONLY=${CKSIM_ONLY:-}
-case "$ONLY" in ""|generations|providers-single|providers-ab|providers-ba|providers-handles|providers-late|providers-drop|providers-inv|providers-recreate) ;; *) echo "Unsupported diagnostic selection" >&2; exit 1;; esac
+case "$ONLY" in ""|report-threading|generations|providers-single|providers-ab|providers-ba|providers-handles|providers-late|providers-drop|providers-inv|providers-recreate) ;; *) echo "Unsupported diagnostic selection" >&2; exit 1;; esac
 limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
 prepare_stage() {
   local phase=$1 budget=$2 started status
@@ -95,7 +95,7 @@ assert source.count(revival) == 1
 source=source.replace(revival, 'Trace.shared.log("revival.requested")\n      ' + revival)
 Path(sys.argv[1]).write_text(source.replace('    exit(0)', '    return'))
 PYPROVIDERS
-compiler swiftc -target "$SDK_TARGET" "${SWIFT_DEFS[@]}" -D CKSIM_CONFORMANCE -swift-version 5 -parse-as-library -O probe/main.swift probe/generations.swift "$BUILD/providers.swift" -o "$BUILD/Probe.app/Probe" \
+compiler swiftc -target "$SDK_TARGET" "${SWIFT_DEFS[@]}" -D CKSIM_CONFORMANCE -swift-version 5 -parse-as-library -O probe/main.swift probe/generations.swift probe/report_threading.swift "$BUILD/providers.swift" -o "$BUILD/Probe.app/Probe" \
   -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker probe/probe.entitlements > "$OUT/build.log" 2>&1
 codesign -s - --force "$BUILD/Probe.app"
 env DEVELOPER_DIR="${COMPILER_DEVELOPER_DIR:-${DEVELOPER_DIR:-$(xcode-select -p)}}" \
@@ -161,6 +161,12 @@ PY
   fi
 }
 LIBS="$BUILD/runtime/CKSimRuntime.dylib"
+run report-threading SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=report-threading
+if [[ -z "$ONLY" || "$ONLY" == report-threading ]]; then
+  limit 20 python3 report_threading_conformance.py "$OUT" | tee "$OUT/report-threading-conformance.json"
+  limit 20 python3 check_image_identity.py --capture "$OUT" | tee "$OUT/image-identity-checks.json"
+  if [[ "$ONLY" == report-threading ]]; then exit; fi
+fi
 run genuine SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=12 SIMCTL_CHILD_PROBE_WAIT_FOR_TEARDOWN=1
 run runtime SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=70
 # The fixture deliberately arrives before registration to cover slow cold starts.
@@ -191,3 +197,4 @@ run semantics-failures SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=d
 python3 semantics_conformance.py "$OUT" | tee "$OUT/semantics-conformance.json"
 run generations SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=generations
 python3 generations_conformance.py "$OUT" | tee "$OUT/generations-conformance.json"
+python3 check_shipping_controls.py "$OUT" | tee "$OUT/shipping-controls.json"

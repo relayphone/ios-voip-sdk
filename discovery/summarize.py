@@ -101,7 +101,8 @@ def common(rows, name):
     require(all(a["t_ms"] <= b["t_ms"] for a, b in zip(rows, rows[1:])),
             "non-monotonic event time")
     callbacks = ("provider.perform", "provider.executeTransaction", "provider.didActivateAudio",
-                 "provider.didDeactivateAudio", "provider.timedOut", "observer.callChanged")
+                 "provider.didDeactivateAudio", "provider.timedOut", "observer.callChanged",
+                 "report.incomingCompleted")
     require(all(r.get("main") is True for r in rows if r["event"] in callbacks),
             "nil-queue delegate callback delivered off main")
     if name != "genuine":
@@ -338,15 +339,27 @@ def fulfill_action(rows, action):
     return fulfilled
 
 
-def shipping_journal(directory, name, rows, receipt):
+def build_identity(directory, rows):
     manifest = json.loads((directory / 'manifest.json').read_text())
     launch = one(rows, 'launch')
     require(manifest.get('schemaVersion') == 1 and manifest.get('profileID') == 'ios-27.0', 'invalid run manifest')
     for key in ('runID', 'simulatorID'):
         require(manifest.get(key) == launch.get(key), 'manifest identity mismatch')
+    identity = one(rows, 'runtime.identity')
+    require(identity.get('version') == '0.1.0' and launch.get('injected') is True, 'shipping runtime not active')
     for key in ('probeSHA256', 'runtimeSHA256', 'profileSHA256'):
         digest = manifest.get(key)
         require(isinstance(digest, str) and len(digest) == 64 and all(c in '0123456789abcdef' for c in digest), 'missing build digest')
+        require(identity.get(key) == digest, f'loaded {key} differs from manifest')
+    for relative, key in (('CKSimRuntime.dylib', 'runtimeSHA256'), ('profiles/ios-27.0.json', 'profileSHA256')):
+        path = directory / 'runtime-dist' / relative
+        require(hashlib.sha256(path.read_bytes()).hexdigest() == manifest[key], f'packaged {key} differs from manifest')
+    return manifest
+
+
+def shipping_journal(directory, name, rows, receipt):
+    manifest = build_identity(directory, rows)
+    launch = one(rows, 'launch')
     path = directory / f'{name}.engine.jsonl'
     require(receipt.get('engineSHA256') == hashlib.sha256(path.read_bytes()).hexdigest(), 'engine journal hash mismatch')
     engine = [json.loads(line) for line in path.read_text().splitlines()]

@@ -27,7 +27,6 @@ private final class ProviderRegistration: @unchecked Sendable {
   var queue: DispatchQueue?
   var valid = true
   var generation: UInt64 = 0
-  let reportQueue = DispatchQueue(label: "dev.callkitsim.report-completion")
   init(_ provider: CXProvider) { self.provider = provider }
 }
 
@@ -447,7 +446,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       let delay = (ProcessInfo.processInfo.environment["CKSIM_LATENCY"] == "device" ? profile.reportLatencySeconds : 0.02)
         + Double(faults.reportCallbackDelayMS) / 1000
       after(delay) {
-        (owner.queue ?? owner.reportQueue).async {
+        (owner.queue ?? .main).async {
           self.record(event: "report.completed", fields: ["callUUID": uuid.uuidString, "pushID": pushID, "error": error?.code ?? 0])
           reply.invoke(error)
         }

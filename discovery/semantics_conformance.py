@@ -29,7 +29,7 @@ def validate(directory, scenario):
             require(r['transactionID'] != r['requestID'], 'transaction identity reused')
     for r in rows:
         if r['event'] in ('provider.executeTransaction', 'provider.perform', 'provider.timedOut', 'observer.callChanged',
-                          'provider.didActivateAudio', 'provider.didDeactivateAudio'):
+                          'provider.didActivateAudio', 'provider.didDeactivateAudio', 'report.incomingCompleted'):
             require(r.get('main') is True, 'nil queue callback not main')
     if scenario == 'failures':
         require(one(rows, 'observer.snapshot', label='after-answer-fail')['calls'] == [], 'failed answer survived')
@@ -55,10 +55,15 @@ def validate(directory, scenario):
     return dict(success=True, reference=reference_name, assertions='controller outcomes, action identity, timeout and observer state')
 
 
-result = {}
-for case in ('answer-rules', 'failures'):
-    try: result[case] = validate(Path(sys.argv[1]), case)
-    except (EvidenceError, OSError, ValueError, KeyError, TypeError, StopIteration) as error:
-        result[case] = dict(success=False, error=str(error))
-print(json.dumps(result, indent=2))
-raise SystemExit(0 if all(r['success'] for r in result.values()) else 1)
+def main():
+    result = {}
+    for case in ('answer-rules', 'failures'):
+        try: result[case] = validate(Path(sys.argv[1]), case)
+        except (EvidenceError, OSError, ValueError, KeyError, TypeError, StopIteration) as error:
+            result[case] = dict(success=False, error=str(error))
+    print(json.dumps(result, indent=2))
+    return 0 if all(r['success'] for r in result.values()) else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

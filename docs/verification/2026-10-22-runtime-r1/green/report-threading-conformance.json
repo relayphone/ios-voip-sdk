@@ -1,0 +1,5 @@
+{
+  "success": true,
+  "completions": 4,
+  "assertions": "nil queue main; custom delegate queue; success and duplicate error"
+}
