@@ -37,7 +37,7 @@ with open(p,'wb') as f: plistlib.dump(info,f)
 PYPLIST
 SDK=$(compiler --show-sdk-path)
 compiler clang -target "$(uname -m)-apple-ios18.0-simulator" -isysroot "$SDK" -fobjc-arc -fmodules \
-  discovery/probe/abi.m -framework UIKit -framework CallKit -o "$BUILD/Probe.app/Probe" > "$OUT/build.log" 2>&1
+  discovery/probe/abi.m -framework UIKit -framework CallKit -framework PushKit -o "$BUILD/Probe.app/Probe" > "$OUT/build.log" 2>&1
 codesign -s - --force "$BUILD/Probe.app" >> "$OUT/build.log" 2>&1
 env DEVELOPER_DIR="${COMPILER_DEVELOPER_DIR:-${DEVELOPER_DIR:-$(xcode-select -p)}}" \
   CKSIM_BUILD_ARCHS="$(uname -m)" CKSIM_ABI_TESTING=1 bash scripts/build-runtime.sh "$BUILD/runtime" >> "$OUT/build.log" 2>&1
@@ -55,15 +55,22 @@ target,runtime,probe,run,sim,os=sys.argv[1:]
 manifest=dict(runID=run,simulatorID=sim,simulatorRuntimeID=os,sourceCommit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),runtimeSHA256=hashlib.sha256(pathlib.Path(runtime).read_bytes()).hexdigest(),probeSHA256=hashlib.sha256(pathlib.Path(probe).read_bytes()).hexdigest())
 pathlib.Path(target).write_text(json.dumps(manifest,indent=2)+'\n')
 PY
-for scenario in concrete-override shadow-concrete-override missing-selector kvc-exception kvc-ignored-outgoing kvc-ignored-hasConnected kvc-ignored-onHold kvc-ignored-hasEnded; do
+for scenario in refused-queues missing-provider-init missing-controller-init push-delegate-override push-types-override concrete-override shadow-concrete-override missing-selector kvc-exception kvc-ignored-outgoing kvc-ignored-hasConnected kvc-ignored-onHold kvc-ignored-hasEnded; do
   if [[ -n "${CKSIM_ABI_ONLY:-}" && "$scenario" != "$CKSIM_ABI_ONLY" ]]; then continue; fi
   shadow=0
   if [[ "$scenario" == shadow-concrete-override ]]; then shadow=1; fi
+  missing=
+  if [[ "$scenario" == missing-selector || "$scenario" == refused-queues ]]; then missing=pendingTransactions; fi
+  if [[ "$scenario" == missing-provider-init ]]; then missing=initWithConfiguration:; fi
+  if [[ "$scenario" == missing-controller-init ]]; then missing=initWithQueue:; fi
+  pushclass=
+  if [[ "$scenario" == push-delegate-override ]]; then pushclass=ABIPushDelegateRegistry; fi
+  if [[ "$scenario" == push-types-override ]]; then pushclass=ABIPushTypesRegistry; fi
   env SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_SHADOW="$shadow" SIMCTL_CHILD_CKSIM_PROFILE=ios-27.0 \
     SIMCTL_CHILD_CKSIM_RUNTIME_PATH="$BUILD/runtime/CKSimRuntime.dylib" \
     SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_CKSIM_ABI_CASE="$scenario" \
     SIMCTL_CHILD_CKSIM_TEST_ACTION_CLASSES=ABILeafAction,ABISiblingAction \
-    SIMCTL_CHILD_CKSIM_TEST_MISSING_SELECTOR="$([[ "$scenario" != missing-selector ]] || echo pendingTransactions)" \
+    SIMCTL_CHILD_CKSIM_TEST_MISSING_SELECTOR="$missing" SIMCTL_CHILD_CKSIM_TEST_PUSH_REGISTRY_CLASS="$pushclass" \
     python3 discovery/run_scenario.py --timeout 200 --output "$OUT/$scenario.log" --receipt "$OUT/$scenario.receipt.json" \
     --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$scenario" --bundle-id dev.callkitsim.abi \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.abi \

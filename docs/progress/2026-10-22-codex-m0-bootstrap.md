@@ -12,4 +12,12 @@ Call `SimulatorSupport.activateIfNeeded()` on the main actor **before** creating
 
 Five synthetic bootstrap-validator controls passed (positive, failed rollback assertion, injected launch, mixed process and truncated completion). Independent standards, spec and C rollback reviews found no actionable findings. Missing-resource lookup and shutdown guards were tightened during review.
 
-**Open:** the Expo incoming-ring-join journey locally and in CI, actual rollback-probe execution, and final linked device proof. Later R2 initializer/PushKit/refused-queue follow-ups must be merged by intent, retaining the new hook recorder and source-versus-standalone policy. This preparation does not claim M0 acceptance or SDK runtime behavior on a simulator.
+**Open:** the Expo incoming-ring-join journey locally and in CI, actual rollback-probe execution, and final linked device proof. Reviewed R2 initializer, concrete PushKit and refusal-queue follow-ups are now merged, retaining the hook recorder and source-versus-standalone policy. This preparation does not claim M0 acceptance or SDK runtime behavior on a simulator.
+
+## Reviewed runtime guard integration
+
+Merged the runtime stack through `78e6924`. The conflict resolution retains weak per-object callback queues, genuine public/concrete initializer IMPs captured before validation or mutation, the public constructor prerequisite, and refusal of every concrete PushKit override. SDK hook journaling, inherited IMP restoration, retained engine handles and callback cancellation remain intact.
+
+Measured: the source-linked simulator fixture builds and signs, standalone C syntax passes with warnings treated as errors, loader-repair controls (10) and harness controls (52) pass, both workflow actionlint checks pass, and both review axes report no actionable findings. The owned fixture build was deleted. Immutable incoming receipt traces keep their CRLF bytes; diff checks treat CR at line endings as data. [Integration source hashes and compile receipt](../verification/2026-10-22-sdk-source-bootstrap/r2-integration.json) bind this preparation. No simulator was launched for integration.
+
+The bootstrap injection marker now identifies only inserted CKSimRuntime.dylib or CKSimLoader.dylib entries by exact basename, preserving unrelated Argent instrumentation without logging any insertion paths. Actual source-runtime/rollback execution and the Expo journey remain pending acceptance.

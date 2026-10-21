@@ -13,6 +13,9 @@ typedef id (*QueueInitializer)(id __attribute__((ns_consumed)), SEL, dispatch_qu
 static atomic_bool installed;
 static NSString *refusalReason;
 static BOOL activationAttempted;
+// Refusal callbacks still honor caller queues without creating the Swift engine.
+static NSMapTable<CXProvider *, dispatch_queue_t> *providerQueues;
+static NSMapTable<CXCallController *, dispatch_queue_t> *controllerQueues;
 bool CKSimRuntimeIsActive(void) { return installed; }
 #ifndef CKSIM_RUNTIME_VERSION
 #error Build with scripts/build-runtime.sh to supply the runtime version.
@@ -162,10 +165,13 @@ static void refuse(NSString *reason) {
     #endif
   }
 }
-static void refusedCompletion(void (^completion)(NSError *)) {
+static dispatch_queue_t callbackQueue(NSMapTable *queues, id object) {
+  @synchronized(CXProvider.class) { return [queues objectForKey:object] ?: dispatch_get_main_queue(); }
+}
+static void refusedCompletion(dispatch_queue_t queue, void (^completion)(NSError *)) {
   NSError *error = [NSError errorWithDomain:@"CKSimRuntimeErrorDomain" code:1
     userInfo:@{NSLocalizedDescriptionKey:refusalReason ?: @"Runtime activation failed"}];
-  if (completion) dispatch_async(dispatch_get_main_queue(), ^{ completion(error); });
+  if (completion) dispatch_async(queue, ^{ completion(error); });
 }
 static BOOL Shadow(void) { return [NSProcessInfo.processInfo.environment[@"CKSIM_SHADOW"] isEqual:@"1"]; }
 static void initializedProvider(CXProvider *provider) {
@@ -181,13 +187,16 @@ static void initializedProvider(CXProvider *provider) {
 }
 static void initializedController(CXCallController *controller, dispatch_queue_t queue) {
   if (!controller) return;
-  @synchronized(CXProvider.class) { bindConcrete(object_getClass(controller), CXCallController.class); }
+  @synchronized(CXProvider.class) {
+    [controllerQueues setObject:queue ?: dispatch_get_main_queue() forKey:controller];
+    bindConcrete(object_getClass(controller), CXCallController.class);
+  }
   if (installed) [Engine() registerController:controller queue:queue];
 }
 __attribute__((ns_returns_retained)) static id providerInit(CXProvider * __attribute__((ns_consumed)) self, SEL selector, CXProviderConfiguration *configuration) {
   providerInitDepth++;
   id provider;
-  @try { provider = originalProviderInit ? ((ObjectInitializer)originalProviderInit)(self, selector, configuration) : self; }
+  @try { provider = ((ObjectInitializer)originalProviderInit)(self, selector, configuration); }
   @finally { providerInitDepth--; }
   if (providerInitDepth == 0) initializedProvider(provider);
   return provider;
@@ -203,7 +212,7 @@ __attribute__((ns_returns_retained)) static id providerConcreteInit(CXProvider *
 __attribute__((ns_returns_retained)) static id controllerInit(CXCallController * __attribute__((ns_consumed)) self, SEL selector, dispatch_queue_t queue) {
   controllerInitDepth++;
   id controller;
-  @try { controller = originalControllerInit ? ((QueueInitializer)originalControllerInit)(self, selector, queue) : self; }
+  @try { controller = ((QueueInitializer)originalControllerInit)(self, selector, queue); }
   @finally { controllerInitDepth--; }
   if (controllerInitDepth == 0) initializedController(controller, queue);
   return controller;
@@ -217,6 +226,7 @@ __attribute__((ns_returns_retained)) static id controllerConcreteInit(CXCallCont
   return controller;
 }
 static void providerDelegate(CXProvider *self, SEL selector, id delegate, dispatch_queue_t queue) {
+  @synchronized(CXProvider.class) { [providerQueues setObject:queue ?: dispatch_get_main_queue() forKey:self]; }
   if (!installed) return;
   [Engine() setProvider:self delegate:delegate queue:queue];
   if (Shadow()) {
@@ -225,7 +235,7 @@ static void providerDelegate(CXProvider *self, SEL selector, id delegate, dispat
   }
 }
 static void incoming(CXProvider *self, SEL selector, NSUUID *uuid, CXCallUpdate *update, void (^completion)(NSError *)) {
-  if (!installed) { refusedCompletion(completion); return; }
+  if (!installed) { refusedCompletion(callbackQueue(providerQueues, self), completion); return; }
   if (Shadow()) ((void (*)(id, SEL, id, id, id))originalIncoming)(self, selector, uuid, update, ^(NSError *error) {});
   [Engine() incomingProvider:self uuid:uuid update:update completion:completion];
 }
@@ -239,7 +249,7 @@ static NSArray *pendingActions(CXProvider *self, SEL selector, Class cls, NSUUID
 }
 static NSDate *deadline(CXAction *self, SEL selector) { if (!installed) return NSDate.date; return [Engine() deadlineForAction:self] ?: invokeOriginalAction(self, selector, nil); }
 static void invalidate(CXProvider *self, SEL selector) { if (installed) [Engine() invalidateProvider:self]; }
-static void request(CXCallController *self, SEL selector, CXTransaction *transaction, void (^completion)(NSError *)) { if (installed) [Engine() requestTransaction:transaction controller:self completion:completion]; else refusedCompletion(completion); }
+static void request(CXCallController *self, SEL selector, CXTransaction *transaction, void (^completion)(NSError *)) { if (installed) [Engine() requestTransaction:transaction controller:self completion:completion]; else refusedCompletion(callbackQueue(controllerQueues, self), completion); }
 static void requestAction(CXCallController *self, SEL selector, CXAction *action, void (^completion)(NSError *)) { request(self, selector, [[CXTransaction alloc] initWithAction:action], completion); }
 static void requestActions(CXCallController *self, SEL selector, NSArray *actions, void (^completion)(NSError *)) { request(self, selector, [[CXTransaction alloc] initWithActions:actions], completion); }
 static NSArray *calls(CXCallObserver *self, SEL selector) { return installed ? [Engine() liveCalls] : @[]; }
@@ -277,10 +287,12 @@ static void bindHook(Class cls, Hook hook, BOOL captureOriginal) {
   #if CKSIM_SDK_SOURCE
   if (!method) return;
   #endif
+  // Keep the genuine constructor cached before validation faults or mutation.
+  if (hook.initializer && (!hook.original || !*hook.original)) return;
   IMP previous = method ? method_getImplementation(method) : NULL;
   const char *encoding = method ? method_getTypeEncoding(method) : hook.encoding;
   NSString *failure = CKSimReplaceHook(cls, hook.selector, hook.replacement, encoding);
-  if (captureOriginal && hook.original) *hook.original = previous;
+  if (captureOriginal && hook.original && previous) *hook.original = previous;
   if (failure) refuse(failure);
 }
 static void bindConcrete(Class concrete, Class root) {
@@ -384,14 +396,30 @@ static void installHooks(void) {
     Class providerClass = CXProvider.class;
     Class controllerClass = CXCallController.class;
     Class observerClass = CXCallObserver.class;
+    providerQueues = [NSMapTable weakToStrongObjectsMapTable];
+    controllerQueues = [NSMapTable weakToStrongObjectsMapTable];
+    // Capture before validation fault injection or mutation. Never allocate an
+    // object whose public constructor is genuinely absent from this Apple ABI.
+    Method providerInitializer = class_getInstanceMethod(CXProvider.class, @selector(initWithConfiguration:));
+    Method controllerInitializer = class_getInstanceMethod(CXCallController.class, @selector(initWithQueue:));
+    originalProviderInit = providerInitializer ? method_getImplementation(providerInitializer) : NULL;
+    originalControllerInit = controllerInitializer ? method_getImplementation(controllerInitializer) : NULL;
+    if (!providerInitializer) refuse(@"CXProvider missing selector initWithConfiguration:");
+    if (!controllerInitializer) refuse(@"CXCallController missing selector initWithQueue:");
     NSArray<CXAction *> *actions = @[];
     @try {
-      CXProvider *sample = [[CXProvider alloc] initWithConfiguration:[CXProviderConfiguration new]];
-      providerClass = object_getClass(sample) ?: providerClass;
-      [sample invalidate];
-      CXCallController *controller = [[CXCallController alloc] initWithQueue:dispatch_get_main_queue()];
-      controllerClass = object_getClass(controller) ?: controllerClass;
-      observerClass = object_getClass(controller.callObserver) ?: observerClass;
+      if (providerInitializer) {
+        CXProvider *sample = [[CXProvider alloc] initWithConfiguration:[CXProviderConfiguration new]];
+        providerClass = object_getClass(sample) ?: providerClass;
+        if (!sample) refuse(@"CXProvider initializer returned nil");
+        [sample invalidate];
+      }
+      if (controllerInitializer) {
+        CXCallController *controller = [[CXCallController alloc] initWithQueue:dispatch_get_main_queue()];
+        controllerClass = object_getClass(controller) ?: controllerClass;
+        if (!controller) refuse(@"CXCallController initializer returned nil");
+        observerClass = object_getClass(controller.callObserver) ?: observerClass;
+      }
       NSUUID *uuid = NSUUID.UUID;
       actions = @[[CXAction new], [[CXStartCallAction alloc] initWithCallUUID:uuid handle:[[CXHandle alloc] initWithType:CXHandleTypeGeneric value:@"ABI preflight"]],
         [[CXAnswerCallAction alloc] initWithCallUUID:uuid], [[CXEndCallAction alloc] initWithCallUUID:uuid],
@@ -416,8 +444,10 @@ static void installHooks(void) {
           refuse([NSString stringWithFormat:@"Shadow mode cannot forward %@ override %@", NSStringFromClass(providerClass), NSStringFromSelector(selectors[i])]);
       }
     }
-    originalConcreteProviderInit = class_getMethodImplementation(providerClass, @selector(initWithConfiguration:));
-    originalConcreteControllerInit = class_getMethodImplementation(controllerClass, @selector(initWithQueue:));
+    Method concreteProviderInitializer = class_getInstanceMethod(providerClass, @selector(initWithConfiguration:));
+    Method concreteControllerInitializer = class_getInstanceMethod(controllerClass, @selector(initWithQueue:));
+    originalConcreteProviderInit = concreteProviderInitializer ? method_getImplementation(concreteProviderInitializer) : NULL;
+    originalConcreteControllerInit = concreteControllerInitializer ? method_getImplementation(concreteControllerInitializer) : NULL;
     #if CKSIM_SDK_SOURCE
     if (refusalReason) return;
     #endif
@@ -441,11 +471,11 @@ static void installHooks(void) {
       bindHook(hook.root, hook, YES);
     }
     if (providerClass != CXProvider.class) {
-      Hook hook = hooks[0]; hook.replacement = (IMP)providerConcreteInit;
+      Hook hook = hooks[0]; hook.replacement = (IMP)providerConcreteInit; hook.original = &originalConcreteProviderInit;
       bindHook(providerClass, hook, NO);
     }
     if (controllerClass != CXCallController.class) {
-      Hook hook = hooks[1]; hook.replacement = (IMP)controllerConcreteInit;
+      Hook hook = hooks[1]; hook.replacement = (IMP)controllerConcreteInit; hook.original = &originalConcreteControllerInit;
       bindHook(controllerClass, hook, NO);
     }
     bindConcrete(providerClass, CXProvider.class);

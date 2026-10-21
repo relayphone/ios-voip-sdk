@@ -1,0 +1,4 @@
+{
+  "success": false,
+  "error": "refused-queues: failed checks: ['refused-incoming-custom-queue', 'refused-request-action-queue', 'refused-request-transaction-queue', 'refused-request-actions-queue']"
+}
