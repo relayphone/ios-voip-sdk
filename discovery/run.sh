@@ -103,8 +103,9 @@ python3 - "$OUT/manifest.json" "$RUN_ID" "$UDID" "$RUNTIME" "$DEVTYPE" "$BUILD/P
 import hashlib,json,pathlib,subprocess,sys
 p,run,sim,runtime,device,probe,package=sys.argv[1:]
 root=pathlib.Path(package)
+info=json.loads((root/'build-info.json').read_text())
 manifest=dict(schemaVersion=1,runID=run,simulatorID=sim,simulatorRuntimeID=runtime,deviceTypeID=device,profileID='ios-27.0',
- sourceCommit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+ sourceCommit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),runtimeVersion=info['version'],
  probeSHA256=hashlib.sha256(pathlib.Path(probe).read_bytes()).hexdigest(),
  runtimeSHA256=hashlib.sha256((root/'CKSimRuntime.dylib').read_bytes()).hexdigest(),
  profileSHA256=hashlib.sha256((root/'profiles/ios-27.0.json').read_bytes()).hexdigest())

@@ -11,7 +11,10 @@
 extern void *CKSimGetEngine(void);
 static BOOL installed;
 bool CKSimRuntimeIsActive(void) { return installed; }
-const char *CKSimRuntimeVersion(void) { return "0.1.0"; }
+#ifndef CKSIM_RUNTIME_VERSION
+#error Build with scripts/build-runtime.sh to supply the runtime version.
+#endif
+const char *CKSimRuntimeVersion(void) { return CKSIM_RUNTIME_VERSION; }
 static id<CKRuntimeEngineProtocol> Engine(void) { return (__bridge id)CKSimGetEngine(); }
 void CKSimEmit(NSString *event, NSDictionary *fields) { [Engine() recordEvent:event fields:fields]; }
 NSString *CKSimResourceDirectory(void) {
@@ -141,5 +144,5 @@ __attribute__((constructor)) static void install(void) {
   originalEndFulfill=swap(CXEndCallAction.class,@selector(fulfillWithDateEnded:),(IMP)endFulfill);
   installed=YES;
   CKSimInstallPushHooks();
-  CKSimEmit(@"runtime.installed",@{@"version":@"0.1.0"});
+  CKSimEmit(@"runtime.installed",@{@"version":@(CKSimRuntimeVersion())});
 }

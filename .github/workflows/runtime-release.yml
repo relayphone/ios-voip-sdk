@@ -1,0 +1,107 @@
+name: Runtime release
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "VERSION"
+      - "Sources/**"
+      - "Tools/**"
+      - "profiles/**"
+      - "scripts/**"
+      - "discovery/**"
+      - ".github/workflows/runtime-release.yml"
+permissions:
+  contents: read
+concurrency:
+  group: runtime-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release-controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 discovery/check_release_controls.py
+      - run: python3 discovery/check_image_identity.py
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: release-controls
+    runs-on: macos-26
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Require an annotated version tag merged into main
+        run: python3 scripts/check-runtime-release.py "$RELEASE_TAG"
+      - name: Select the compiler and simulator host
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+      - name: Run all discovery acceptance against the CI-built distribution
+        env:
+          COMPILER_DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+        run: |
+          python3 discovery/check_harness.py
+          OUT="$RUNNER_TEMP/out" discovery/run.sh
+      - name: Package the exact qualified distribution
+        run: |
+          python3 scripts/check-runtime-release.py "$RELEASE_TAG" --package "$RUNNER_TEMP/out/runtime-dist" > "$RUNNER_TEMP/out/release-check.json"
+          bash scripts/package-runtime.sh "$RUNNER_TEMP/out/runtime-dist" "$RUNNER_TEMP/release"
+          python3 - <<'PYQUALIFY'
+          import json,os,pathlib
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])
+          out=root/'out'
+          checks={p.name:json.loads(p.read_text()) for p in sorted(out.glob('*conformance*.json'))}
+          for name in ('summary.json','image-identity-checks.json'):
+              checks[name]=json.loads((out/name).read_text())
+          evidence=dict(release=json.loads((out/'release-check.json').read_text()),
+                        manifest=json.loads((out/'manifest.json').read_text()),checks=checks,
+                        workflowRun=f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}")
+          (root/'release/qualification.json').write_text(json.dumps(evidence,indent=2,sort_keys=True)+'\n')
+          PYQUALIFY
+          cd "$RUNNER_TEMP/release"
+          shasum -a 256 -c SHA256SUMS
+      - name: Attest archive, checksums and qualification
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release/*
+          create-storage-record: false
+      - name: Verify the attested archive before publication
+        env:
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE_PATH" "$RUNNER_TEMP/release/attestation.sigstore.json"
+          gh attestation verify "$RUNNER_TEMP/release/callkit-simulator-$RELEASE_TAG-macos.tar.gz" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/runtime-release.yml" \
+            --source-ref "$GITHUB_REF" --source-digest "$GITHUB_SHA" \
+            --deny-self-hosted-runners --bundle "$BUNDLE_PATH"
+      - name: Publish the CI artifacts as a prerelease
+        run: |
+          python3 - <<'PY'
+          import os,pathlib
+          tag=os.environ['RELEASE_TAG']
+          url=f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          text=f"Measured: the CI-built runtime passed the full discovery acceptance before packaging. Source: `{os.environ['GITHUB_SHA']}`. [Run and evidence]({url}).\n\nThe `ios-27.0` profile's device reference and the measured simulator/compiler coverage are recorded in the run manifest. See docs/runtime-releases.md for attestation verification.\n"
+          (pathlib.Path(os.environ['RUNNER_TEMP'])/'release-notes.md').write_text(text)
+          PY
+          gh release create "$RELEASE_TAG" "$RUNNER_TEMP/release/"* --verify-tag --prerelease \
+            --title "CallKit Simulator $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+      - name: Preserve measured release evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runtime-release-${{ github.ref_name }}
+          path: |
+            ${{ runner.temp }}/out
+            ${{ runner.temp }}/release
+          if-no-files-found: error
+          retention-days: 90
