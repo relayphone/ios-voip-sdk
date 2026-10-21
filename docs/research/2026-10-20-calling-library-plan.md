@@ -140,4 +140,4 @@ The first deliverable is **one incoming and one outgoing journey** on plain WebR
 1. **Upstream contact:** posted as [mfairley/expo-callkit-telecom#47](https://github.com/mfairley/expo-callkit-telecom/issues/47).
 2. **Fork:** [`ziahamza/expo-callkit-telecom`](https://github.com/ziahamza/expo-callkit-telecom). Its `main` mirrors upstream; each upstreamable change is a branch off `main`; an `integration` branch brings everything together for our apps.
 3. **Simulator:** stays in this separate repository and is consumed by the fork's CI through pinned release artifacts.
-4. **Implementation:** led by the Codex agent through draft PRs; see [`docs/HANDOFF.md`](../HANDOFF.md).
+4. **Implementation:** led by the Codex agent through draft PRs. *Superseded on October 21, 2026: see [`docs/START-HERE.md`](../START-HERE.md).*
