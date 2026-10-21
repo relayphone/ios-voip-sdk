@@ -252,6 +252,72 @@ def main():
                     raise RuntimeError("runner-detached: app survived launcher cleanup")
             checks.append(f"runner-{mode}")
 
+        # simctl can acknowledge the launched PID after a fast probe says done.
+        # Keep both processes real so an early stop loses the acknowledgement.
+        bound_probe = work / "bound_probe.py"
+        bound_probe.write_text(
+            "import json,os,pathlib,sys,time\n"
+            "pid=pathlib.Path(sys.argv[1]); mode=sys.argv[2]\n"
+            "pid.write_text(str(os.getpid()))\n"
+            "for row in ({'event':'app.entry','t_ms':0},{'event':'launch','t_ms':1,'pid':os.getpid()},{'event':'done','t_ms':2}):\n"
+            " print('PROBE '+json.dumps(row),flush=True)\n"
+            "if mode=='delayed': time.sleep(.5)\n"
+            "if mode not in ('never','cleanup-failure','eof'):\n"
+            " value=os.getpid()+(1 if mode=='mismatch' else 0)\n"
+            " header='dev.callkitsim.fixture: '+str(value)+'\\n'\n"
+            " pathlib.Path(str(pid)+'.ack').touch()\n"
+            " os.write(1,(header*(2 if mode=='duplicate' else 1)).encode())\n"
+            "if mode=='eof': sys.exit(0)\n"
+            "time.sleep(30)\n"
+        )
+        bound_stop = work / "bound_stop.py"
+        bound_stop.write_text(
+            "import os,pathlib,signal,sys\n"
+            "pid=pathlib.Path(sys.argv[1]); mode=sys.argv[2]\n"
+            "pathlib.Path(str(pid)+'.stopped').touch()\n"
+            "ready=pathlib.Path(str(pid)+'.ack').exists()\n"
+            "try: os.kill(int(pid.read_text()),signal.SIGTERM)\n"
+            "except (ProcessLookupError,FileNotFoundError): pass\n"
+            "sys.exit(7 if mode in ('terminate-failure','cleanup-failure') else 9 if mode=='delayed' and not ready else 0)\n"
+        )
+        for mode, expected_error in (("delayed", None), ("never", "deadline before launcher app PID acknowledgement"),
+                                     ("mismatch", "launcher/probe app PID mismatch"),
+                                     ("duplicate", "require one launcher app PID acknowledgement"),
+                                     ("eof", "launcher exited before launcher app PID acknowledgement"),
+                                     ("terminate-failure", "failed to terminate completed run-owned app"),
+                                     ("cleanup-failure", "deadline before launcher app PID acknowledgement")):
+            receipt = work / f"bound-{mode}.receipt.json"
+            pid = work / f"bound-{mode}.pid"
+            command = [sys.executable, str(ROOT / "run_scenario.py"),
+                       "--output", str(work / f"bound-{mode}.log"), "--receipt", str(receipt),
+                       "--timeout", "2", "--bundle-id", "dev.callkitsim.fixture",
+                       "--terminate-command", sys.executable, str(bound_stop), str(pid), mode,
+                       "--launch-command", sys.executable, str(bound_probe), str(pid), mode]
+            result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+            check(receipt.exists(), f"runner-bound-{mode}: no receipt: {result.stderr}")
+            evidence = json.loads(receipt.read_text())
+            expected = expected_error is None
+            check((result.returncode == 0) is expected and evidence["success"] is expected and
+                  evidence["completed"] is True, f"runner-bound-{mode}: {evidence}")
+            if expected:
+                check(evidence.get("launcherAppPID") == evidence["appPID"] and evidence["terminateExitCode"] == 0,
+                      f"runner-bound-{mode}: unbound success: {evidence}")
+            else:
+                check(expected_error in evidence.get("error", ""), f"runner-bound-{mode}: wrong primary error: {evidence}")
+            if mode in ("never", "eof", "cleanup-failure"):
+                check("require one launcher app PID acknowledgement" in evidence.get("identityError", ""),
+                      f"runner-bound-{mode}: missing secondary identity failure: {evidence}")
+            if mode in ("terminate-failure", "cleanup-failure"):
+                check(evidence.get("cleanupExitCode") == 7, f"runner-bound-{mode}: missing cleanup failure: {evidence}")
+            check(Path(str(pid) + ".stopped").exists(), f"runner-bound-{mode}: owned stop skipped")
+            try:
+                os.kill(int(pid.read_text()), 0)
+            except ProcessLookupError:
+                pass
+            else:
+                raise RuntimeError(f"runner-bound-{mode}: owned process survived")
+            checks.append(f"runner-bound-{mode}")
+
         # Execute the actual shell run() failure branch. Diagnostics must not
         # replace a scenario failure with a secondary copy failure.
         binaries = work / "bin"
