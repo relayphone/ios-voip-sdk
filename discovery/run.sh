@@ -12,6 +12,15 @@ BUILD=$(mktemp -d "${TMPDIR:-/tmp}/callkit-build.XXXXXX")
 UDID=""
 LOGGER=""
 limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
+prepare_stage() {
+  local phase=$1 budget=$2 started status
+  shift 2
+  echo "Preparing $phase"
+  started=$(date +%s)
+  if limit "$budget" "$@" > "$OUT/$phase.prepare.log" 2>&1; then status=0; else status=$?; fi
+  printf 'phase=%s budgetSeconds=%s elapsedSeconds=%s exitStatus=%s\n' "$phase" "$budget" "$(( $(date +%s) - started ))" "$status" >> "$OUT/preparation.txt" || true
+  return "$status"
+}
 compiler() {
   if [[ -n "${COMPILER_DEVELOPER_DIR:-}" ]]; then
     env DEVELOPER_DIR="$COMPILER_DEVELOPER_DIR" xcrun -sdk iphonesimulator "$@"
@@ -30,7 +39,7 @@ cleanup() {
       [[ "$status" -ne 0 ]] || status=1
     fi
   fi
-  rm -rf "$BUILD"
+  if ! rm -rf "$BUILD"; then [[ "$status" -ne 0 ]] || status=1; fi
   exit "$status"
 }
 trap cleanup EXIT
@@ -72,8 +81,8 @@ for lib in CKSimRuntime CKSimPush; do
     -o "$BUILD/$lib.dylib" "spike/$lib.m" >> "$OUT/build.log" 2>&1
   codesign -s - --force "$BUILD/$lib.dylib"
 done
-limit 60 xcrun simctl install "$UDID" "$BUILD/Probe.app"
-limit 20 xcrun simctl privacy "$UDID" grant microphone dev.callkitsim.probe
+prepare_stage app-install 180 xcrun simctl install "$UDID" "$BUILD/Probe.app"
+prepare_stage permissions 60 xcrun simctl privacy "$UDID" grant microphone dev.callkitsim.probe
 xcrun simctl spawn "$UDID" log stream --style compact --predicate 'process == "callservicesd" AND (composedMessage CONTAINS "wont be a UI" OR composedMessage CONTAINS "Error setting audio active" OR composedMessage CONTAINS "Failed to open URL" OR composedMessage CONTAINS "disconnect reason")' > "$OUT/callservicesd.log" 2>&1 &
 LOGGER=$!
 run() {

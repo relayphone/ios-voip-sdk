@@ -92,6 +92,21 @@ and positive capture frames/rate/channels remain required. **48,000 frames** is
 an observed capture result, not an exact enforced frame-count threshold or media
 proof. No partial trace is retried automatically or accepted after recovery.
 
+The corrected native source `4e4c544` passes all three scenarios locally with
+Xcode/SDK 27.1 and iOS 27.0. [Normalized evidence](local-4e4c544/) replays through
+the strict gate. Genuine records two `mic.skipped(reason: callkit-inactive)`
+events; runtime still captures **48,000 frames at 48 kHz** twice. All process
+receipts complete and the owned simulator is removed.
+
+The next [hosted run 39517704840](https://github.com/ziahamza/callkit-simulator/actions/runs/39517704840)
+has a different metadata-lane failure: preparation exits 142 after signing,
+before `Starting genuine`, with no app trace or scenario receipt. Its
+[environment and job excerpt](hosted-39517704840-preparation-timeout/) cannot
+qualify CallKit behavior or confirm the earlier exit mechanism. Install and
+permission operations now get separate bounded timings and 180/60-second
+allowances, matching the full Expo integration runner. No automatic retry or
+partial-evidence fallback was introduced.
+
 ## Standards
 
 Initial review found **[P2] cleanup only ran while the launcher was alive**:
