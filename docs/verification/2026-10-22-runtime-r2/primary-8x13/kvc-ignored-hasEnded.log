@@ -1,0 +1,22 @@
+2026-10-22 00:44:56.314 Probe[55661:3870550] [NativeDevtoolsIos] devtools connection established
+2026-10-22 00:44:56.314 Probe[55661:3870550] [NativeDevtoolsIos] connected to /tmp/argent-nd-547E79A2.sock
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"app.entry","main":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":0}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"launch","main":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":0}
+CKSIM runtime refused: CXCall snapshot key hasEnded failed readback (1)
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"abi.check","label":"runtime-loads","main":true,"passed":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":126}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"abi.check","label":"activation-result","main":true,"passed":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":126}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"abi.check","label":"nonnull-initializers","main":true,"passed":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":128}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"abi.check","label":"incoming-result","main":true,"passed":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":140}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"abi.check","label":"diagnostic-identifies-abi","main":true,"passed":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":140}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"abi.check","label":"no-genuine-report","main":true,"passed":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":140}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"abi.check","label":"snapshot-result","main":true,"passed":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":140}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"abi.check","label":"transaction-result","main":true,"passed":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":148}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"abi.check","label":"transaction-direct-result","main":true,"passed":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":154}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"abi.check","label":"transaction-array-result","main":true,"passed":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":155}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"abi.check","label":"no-genuine-report-after-request","main":true,"passed":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":260}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"abi.check","label":"final-state","main":true,"passed":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":260}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"abi.check","label":"no-genuine-operations","main":true,"passed":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":260}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","concreteClass":"CXXPCProvider","event":"abi.result","main":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","success":1,"t_ms":260}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-ignored-hasEnded","event":"done","main":true,"pid":55661,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":260}
+objc[55661]: Class UIAccessibilityLoaderWebShared is implemented in both /Library/Developer/CoreSimulator/Volumes/iOS_24A434/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 27.0.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebKit.axbundle/WebKit (0x109244398) and /Library/Developer/CoreSimulator/Volumes/iOS_24A434/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 27.0.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebCore.axbundle/WebCore (0x109338310). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+dev.callkitsim.abi: 55661

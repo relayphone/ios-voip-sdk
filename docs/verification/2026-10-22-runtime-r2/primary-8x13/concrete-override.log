@@ -1,0 +1,20 @@
+2026-10-22 00:43:32.098 Probe[53932:3860241] [NativeDevtoolsIos] devtools connection established
+2026-10-22 00:43:32.098 Probe[53932:3860241] [NativeDevtoolsIos] connected to /tmp/argent-nd-547E79A2.sock
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"app.entry","main":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":0}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"launch","main":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":0}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"abi.check","label":"runtime-loads","main":true,"passed":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":441}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"abi.check","label":"activation-result","main":true,"passed":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":441}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"abi.check","label":"nonnull-initializers","main":true,"passed":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":446}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"abi.check","label":"incoming-result","main":true,"passed":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":476}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"abi.check","label":"diagnostic-identifies-abi","main":true,"passed":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":476}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"abi.check","label":"no-genuine-report","main":true,"passed":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":516}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"abi.check","label":"snapshot-result","main":true,"passed":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":517}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"abi.check","label":"transaction-result","main":false,"passed":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":517}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"abi.check","label":"transaction-direct-result","main":false,"passed":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":521}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"abi.check","label":"transaction-array-result","main":false,"passed":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":522}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"abi.check","label":"no-genuine-report-after-request","main":true,"passed":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":641}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"abi.check","label":"final-state","main":true,"passed":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":641}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"abi.check","label":"no-genuine-operations","main":true,"passed":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":642}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","concreteClass":"CXXPCProvider","event":"abi.result","main":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","success":1,"t_ms":642}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"concrete-override","event":"done","main":true,"pid":53932,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":642}
+dev.callkitsim.abi: 53932

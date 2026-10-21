@@ -1,0 +1,21 @@
+2026-10-22 00:44:10.391 Probe[54630:3865056] [NativeDevtoolsIos] devtools connection established
+2026-10-22 00:44:10.392 Probe[54630:3865056] [NativeDevtoolsIos] connected to /tmp/argent-nd-547E79A2.sock
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"app.entry","main":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":0}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"launch","main":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":0}
+CKSIM runtime refused: CXCall snapshot key hasConnected: NSUnknownKeyException: ABI probe renamed snapshot key
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"abi.check","label":"runtime-loads","main":true,"passed":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":98}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"abi.check","label":"activation-result","main":true,"passed":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":98}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"abi.check","label":"nonnull-initializers","main":true,"passed":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":100}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"abi.check","label":"incoming-result","main":true,"passed":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":115}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"abi.check","label":"diagnostic-identifies-abi","main":true,"passed":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":115}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"abi.check","label":"no-genuine-report","main":true,"passed":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":115}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"abi.check","label":"snapshot-result","main":true,"passed":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":115}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"abi.check","label":"transaction-result","main":true,"passed":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":123}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"abi.check","label":"transaction-direct-result","main":true,"passed":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":133}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"abi.check","label":"transaction-array-result","main":true,"passed":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":134}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"abi.check","label":"no-genuine-report-after-request","main":true,"passed":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":239}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"abi.check","label":"final-state","main":true,"passed":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":240}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"abi.check","label":"no-genuine-operations","main":true,"passed":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":240}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","concreteClass":"CXXPCProvider","event":"abi.result","main":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","success":1,"t_ms":240}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"kvc-exception","event":"done","main":true,"pid":54630,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":240}
+dev.callkitsim.abi: 54630
