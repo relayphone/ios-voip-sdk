@@ -12,7 +12,7 @@ device, package, output = sys.argv[1:]
 package, output = Path(package).resolve(), Path(output).resolve()
 bundle = 'dev.callkitsim.probe'
 cli = [str(package / 'cksim'), '--simulator', device, '--bundle', bundle]
-environment = {**os.environ, 'SIMCTL_CHILD_PROBE_MODE': 'push', 'SIMCTL_CHILD_PROBE_PUSH_WAIT': '180',
+environment = {**os.environ, 'SIMCTL_CHILD_PROBE_MODE': 'push', 'SIMCTL_CHILD_PROBE_PUSH_WAIT': '240',
                'SIMCTL_CHILD_CKSIM_PUSH_AFTER': '', 'SIMCTL_CHILD_CKSIM_PUSH_TRIGGER_NOTIFICATION': '',
                'SIMCTL_CHILD_PROBE_PUSH_REPORT': 'report', 'SIMCTL_CHILD_CKSIM_LATENCY': 'device'}
 receipts = []
@@ -91,6 +91,7 @@ try:
     c, _ = push('c', False)
     command('end-and-accept', c, '--active-call', b)
     wait(lambda: b not in calls() and calls().get(c, {}).get('connected'), 'End & Accept')
+    wait(lambda: sum(r['event'] == 'audio.activated' for r in journal()) == 3 and command('status')['audioActive'], 'End & Accept audio handoff')
     d, _ = push('d', True)
     command('decline', d)
     wait(lambda: d not in calls() and calls().get(c, {}).get('connected'), 'Decline waiting leaves C connected')
@@ -108,6 +109,27 @@ try:
     accepted_g = next(r for r in rows if r['event'] == 'report.incoming' and r['callUUID'] == g)
     ended_g = next(r for r in rows if r['event'] == 'call.changed' and r['uuid'] == g and r['ended'])
     assert 59_500 <= ended_g['t_ms'] - accepted_g['t_ms'] <= 61_500, 'ring timeout profile budget'
+    command('faults', '--stale-audio')
+    h, _ = push('stale-audio', True)
+    command('answer', h)
+    wait(lambda: calls().get(h, {}).get('connected'), 'connected under stale audio fault')
+    wait(lambda: any(r['event'] == 'fault.audioSuppressed' for r in journal()), 'suppressed audio receipt')
+    assert not command('status')['audioActive']
+    command('faults')
+    command('hold', h, '--held', 'true')
+    command('hold', h, '--held', 'false')
+    wait(lambda: command('status')['audioActive'], 'audio recovers after fault cleared')
+    command('faults', '--invalidate-during-handoff')
+    i, _ = push('invalidation', True)
+    command('hold-and-accept', i, '--active-call', h)
+    wait(lambda: not calls() and not command('status')['audioActive'], 'invalidation cancels handoff and audio')
+    command('faults')
+    j, _ = push('revival', True)
+    command('answer', j)
+    wait(lambda: calls().get(j, {}).get('connected') and command('status')['audioActive'], 'revived provider activates audio')
+    command('end', j)
+    wait(lambda: not calls() and not command('status')['audioActive'], 'revived final cleanup')
+    rows = journal()
     (output / 'cli.engine.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
     run(['xcrun', 'simctl', 'terminate', device, bundle])
     # Launch without per-process injection: the selected-bundle loader must work
@@ -122,7 +144,7 @@ try:
     run(['xcrun', 'simctl', 'terminate', device, bundle])
     command('uninstall'); installed = False
     result = dict(success=True, scenarios=['direct launch', 'synthetic optional/required push', 'answer before report callback',
-        'Hold & Accept', 'End & Accept', 'Decline waiting', 'audio handoff', '60.1s ringing timeout', 'allowlisted loader launch', 'uninstall'], mediaProof=False)
+        'Hold & Accept', 'End & Accept', 'Decline waiting', 'audio handoff', '60.1s ringing timeout', 'stale audio recovery', 'invalidation during handoff and revival', 'allowlisted loader launch', 'uninstall'], mediaProof=False)
 finally:
     subprocess.run(['xcrun', 'simctl', 'terminate', device, bundle], capture_output=True)
     if installed: command('uninstall')

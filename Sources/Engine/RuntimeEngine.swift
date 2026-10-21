@@ -26,6 +26,7 @@ private final class ProviderRegistration: @unchecked Sendable {
   weak var delegate: (any CXProviderDelegate)?
   var queue: DispatchQueue?
   var valid = true
+  var generation: UInt64 = 0
   let reportQueue = DispatchQueue(label: "dev.callkitsim.report-completion")
   init(_ provider: CXProvider) { self.provider = provider }
 }
@@ -75,6 +76,7 @@ private final class ObserverRegistration: @unchecked Sendable {
 private struct Faults: Codable {
   var staleAudio = false
   var reportCallbackDelayMS = 0
+  var invalidateDuringHandoff: Bool?
 }
 // Objective-C clients supply blocks without Swift Sendable annotations. The
 // immutable block is transferred once and invoked only on its designated queue.
@@ -200,14 +202,19 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       if selected != nil { record(event: "diagnostic.multipleProviders", fields: ["severity": "warning"]) }
       let entry = registration(provider)
       selected = entry
-      after(0.05) { if entry.valid { self.callback(entry) { $0.providerDidBegin?(provider) } } }
+      let generation = entry.generation
+      after(0.05) { if entry.valid && entry.generation == generation { self.callback(entry) { $0.providerDidBegin?(provider) } } }
       record(event: "provider.created", fields: ["provider": providerID(provider)])
     }
   }
   private func providerID(_ provider: CXProvider) -> String { String(describing: ObjectIdentifier(provider)) }
   private func callback(_ provider: ProviderRegistration, _ block: @escaping @Sendable (any CXProviderDelegate) -> Void) {
     guard let delegate = provider.delegate else { return }
-    (provider.queue ?? .main).async { block(delegate) }
+    let generation = provider.generation
+    (provider.queue ?? .main).async {
+      guard self.withState({ provider.valid && provider.generation == generation }) else { return }
+      block(delegate)
+    }
   }
   func set(provider: CXProvider, delegate: (any CXProviderDelegate)?, queue: DispatchQueue?) {
     withState {
@@ -269,6 +276,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         after(profile.unknownProviderSeconds) { queue.async { reply.invoke(self.requestError(2)) } }
         return
       }
+      let generation = provider.generation
       let error = validate(actions, origin: .application)
       record(event: "request.accepted", fields: ["transactionID": requestID.uuidString,
         "actionIDs": actions.map { $0.uuid.uuidString }, "error": error?.code ?? 0])
@@ -278,7 +286,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       queue.async {
         reply.invoke(error)
         guard error == nil else { return }
-        self.state.async { self.deliver(actions, provider, origin: .application, requestID: requestID) }
+        self.state.async { self.deliver(actions, provider, origin: .application, requestID: requestID, generation: generation) }
       }
     }
   }
@@ -288,8 +296,8 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       call.outgoing = true; call.ringing = false; calls[call.id] = call; changed(call)
     }
   }
-  private func deliver(_ actions: [CXAction], _ provider: ProviderRegistration, origin: ActionOrigin, requestID: UUID? = nil) {
-    guard provider.valid else { return }
+  private func deliver(_ actions: [CXAction], _ provider: ProviderRegistration, origin: ActionOrigin, requestID: UUID? = nil, generation: UInt64? = nil) {
+    guard provider.valid && (generation == nil || provider.generation == generation) else { return }
     // Creation with the same concrete actions intentionally yields a fresh transaction UUID.
     let delivered = CXTransaction(actions: actions)
     record(event: "transaction.delivered", fields: ["transactionID": delivered.uuid.uuidString,
@@ -435,10 +443,12 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   }
   func invalidate(provider: CXProvider) {
     withState {
-      let value = registration(provider); value.valid = false
+      let value = registration(provider); value.valid = false; value.generation += 1
+      handoffPending = false
       audioRevision += 1
       for call in Array(calls.values) where call.reporter === value { endCall(call.id, provider: value) }
       pendingActions = pendingActions.filter { $0.value.provider !== value }
+      reconcileAudio(provider: value, delay: 0)
       record(event: "provider.invalidated", fields: ["provider": providerID(provider)])
     }
   }
@@ -454,6 +464,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     }
   }
   private func changeAudio(_ desired: Bool, provider: ProviderRegistration, revision: UInt64) {
+    guard audioRevision == revision else { return }
     guard desired != audioActive else {
       if !desired && handoffPending {
         handoffPending = false
@@ -562,6 +573,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         after(0.12) { self.changeAudio(false, provider: provider, revision: revision) }
       }
       deliver(actions, provider, origin: .system)
+      if actions.count == 2 && faults.invalidateDuringHandoff == true { provider.provider.invalidate() }
       return ["actionIDs": actions.map { $0.uuid.uuidString }]
     }
   }

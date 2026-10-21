@@ -132,7 +132,7 @@ def control(args, device):
     if args.operation == "hold":
         command["held"] = args.held == "true"
     if args.operation == "faults":
-        command["faults"] = dict(staleAudio=args.stale_audio, reportCallbackDelayMS=args.report_delay_ms)
+        command["faults"] = dict(staleAudio=args.stale_audio, reportCallbackDelayMS=args.report_delay_ms, invalidateDuringHandoff=args.invalidate_during_handoff)
     mailbox = root / session["runID"]
     temporary = mailbox / f"requests/{identifier}.tmp"
     with temporary.open("x") as output:
@@ -178,6 +178,7 @@ def main():
     faults = commands.add_parser("faults")
     faults.add_argument("--stale-audio", action="store_true")
     faults.add_argument("--report-delay-ms", type=int, default=0)
+    faults.add_argument("--invalidate-during-handoff", action="store_true")
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9.-]+", args.bundle) or not 0 < args.timeout <= 120:
         parser.error("Require a bundle identifier and timeout in (0,120].")

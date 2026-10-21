@@ -14,7 +14,8 @@ This is experimental test infrastructure. It uses private simulator ABI and must
 never be embedded in a device or App Store build. Both native layers reject device
 compilation. There is no system call-screen app in v0.1; use the CLI or your app's
 UI. Synthetic pushes do not establish APNs delivery or iOS reporting enforcement.
-The runtime activates the app's real audio session; it does not provide signaling,
+State and arbitration are per application process; calls in other apps are outside
+this version's scope. The runtime activates the app's real audio session; it does not provide signaling,
 WebRTC transport, network peers or audio samples for a silent CI microphone.
 
 ## Build and run
@@ -74,7 +75,9 @@ the push callback have no inferred push correlation.
 `faults --report-delay-ms 1500` delays incoming-report completion so tests can
 answer or decline before it returns. `faults --stale-audio` suppresses activation
 to exercise recovery from missing audio activation. Calling `faults` without
-flags clears both faults. A command timeout is an unknown outcome: query
+flags clears the faults. `--invalidate-during-handoff` invalidates the selected
+provider during the next system Hold/End & Accept transaction, for lifecycle
+recovery tests. A command timeout is an unknown outcome: query
 `status`/`events` before retrying an externally visible action.
 
 For direct launch customization, the process environment accepts `CKSIM_RUN_ID`,
