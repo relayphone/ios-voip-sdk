@@ -99,7 +99,7 @@ private struct Command: Decodable {
 @objc(CKSimulatorEngine)
 final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendable {
   static let shared = RuntimeEngine()
-  private let state = DispatchQueue(label: "dev.callkitsim.engine")
+  private let state = DispatchQueue(label: "dev.callkitsim.engine", qos: .userInitiated)
   private let stateKey = DispatchSpecificKey<Bool>()
   private let profile: BehaviorProfile
   private var providers: [ObjectIdentifier: ProviderRegistration] = [:]
@@ -121,6 +121,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private let epoch = DispatchTime.now().uptimeNanoseconds
   private var notificationToken: Int32 = 0
   private var commandResults: [UUID: [String: Any]] = [:]
+  private var timers: [UUID: any DispatchSourceTimer] = [:]
 
   private override init() {
     let env = ProcessInfo.processInfo.environment
@@ -164,7 +165,18 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     return state.sync(execute: body)
   }
   private func after(_ seconds: Double, _ body: @escaping @Sendable () -> Void) {
-    state.asyncAfter(deadline: .now() + seconds, execute: body)
+    let id = UUID()
+    let timer = DispatchSource.makeTimerSource(flags: .strict, queue: state)
+    timers[id] = timer
+    timer.schedule(deadline: .now() + seconds, leeway: .milliseconds(1))
+    timer.setEventHandler { [weak self] in
+      guard let self else { return }
+      let fired = self.timers.removeValue(forKey: id)
+      fired?.setEventHandler(handler: nil)
+      fired?.cancel()
+      body()
+    }
+    timer.resume()
   }
   func record(event: String, fields: [String: Any]) {
     withState {

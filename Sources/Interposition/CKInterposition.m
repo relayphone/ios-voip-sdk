@@ -50,10 +50,26 @@ static IMP originalStartFulfill, originalAnswerFulfill, originalEndFulfill, orig
 - (void)provider:(CXProvider *)provider performEndCallAction:(CXEndCallAction *)action { [action fulfill]; }
 @end
 static CKShadowDelegate *shadowInstance;
+static void invalidate(CXProvider *self, SEL selector);
+static IMP swap(Class cls, SEL selector, IMP replacement);
 static BOOL Shadow(void) { return [NSProcessInfo.processInfo.environment[@"CKSIM_SHADOW"] isEqual:@"1"]; }
 static id providerInit(CXProvider *self, SEL selector, CXProviderConfiguration *configuration) {
   id provider = ((id (*)(id, SEL, id))originalProviderInit)(self, selector, configuration);
-  if (provider) [Engine() registerProvider:provider];
+  if (provider) {
+    // CXProvider is a class cluster. The allocated implementation can override
+    // invalidate without calling super, so bind the concrete class as well.
+    Class concrete = object_getClass(provider);
+    @synchronized(CXProvider.class) {
+      if (class_getMethodImplementation(concrete, @selector(invalidate)) != (IMP)invalidate)
+        swap(concrete, @selector(invalidate), (IMP)invalidate);
+    }
+    [Engine() registerProvider:provider];
+    Dl_info info = {0};
+    IMP imp = class_getMethodImplementation(object_getClass(provider), @selector(invalidate));
+    dladdr((void *)imp, &info);
+    CKSimEmit(@"provider.abi", @{@"class":NSStringFromClass(object_getClass(provider)),
+      @"invalidateImage": info.dli_fname ? [@(info.dli_fname) lastPathComponent] : @"unknown"});
+  }
   return provider;
 }
 static id controllerInit(CXCallController *self, SEL selector, dispatch_queue_t queue) {

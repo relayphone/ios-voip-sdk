@@ -12,6 +12,8 @@ BUILD=$(mktemp -d "${TMPDIR:-/tmp}/callkit-build.XXXXXX")
 UDID=""
 LOGGER=""
 RUN_ID=$(uuidgen)
+ONLY=${CKSIM_ONLY:-}
+case "$ONLY" in ""|providers-single|providers-ab|providers-ba|providers-handles|providers-late|providers-drop|providers-inv|providers-recreate) ;; *) echo "Unsupported diagnostic selection" >&2; exit 1;; esac
 limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
 prepare_stage() {
   local phase=$1 budget=$2 started status
@@ -108,6 +110,7 @@ run() {
   local name=$1
   local inherited
   shift
+  if [[ -n "$ONLY" && "$name" != "$ONLY" ]]; then return 0; fi
   echo "Starting $name"
   inherited=${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES-$(xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>/dev/null || true)}
   local libraries=$inherited
@@ -152,10 +155,19 @@ run genuine SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=12 SIMCTL_CHILD_PROBE_WAIT_FOR_TEARD
 run runtime SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=70
 # The fixture deliberately arrives before registration to cover slow cold starts.
 run push SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_SHADOW=1 SIMCTL_CHILD_CKSIM_PUSH_AFTER=0 SIMCTL_CHILD_CKSIM_PUSH_MUST_REPORT=1 SIMCTL_CHILD_PROBE_MODE=push SIMCTL_CHILD_PROBE_PUSH_REGISTRATION_DELAY=3 SIMCTL_CHILD_PROBE_PUSH_WAIT=12
-python3 summarize.py "$OUT" --require-receipts | tee "$OUT/summary.json"
+if [[ -z "$ONLY" ]]; then python3 summarize.py "$OUT" --require-receipts | tee "$OUT/summary.json"; fi
 for case in single ab ba handles late drop inv recreate; do
   run "providers-$case" SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=providers SIMCTL_CHILD_PROBE_PROVIDERS="$case"
 done
+if [[ -n "$ONLY" ]]; then
+  python3 - "$OUT" "${ONLY#providers-}" <<'PYONE'
+import json,sys
+from pathlib import Path
+from conformance import providers
+print(json.dumps(providers(Path(sys.argv[1]),sys.argv[2]),indent=2))
+PYONE
+  exit
+fi
 python3 conformance.py "$OUT" | tee "$OUT/conformance.json"
 python3 check_conformance.py "$OUT" | tee "$OUT/conformance-checks.json"
 python3 cli_conformance.py "$UDID" "$BUILD/runtime" "$OUT" | tee "$OUT/cli-conformance.json"
