@@ -20,6 +20,7 @@ The evidence is in:
   - **The design:** [RFC 0001](https://github.com/ziahamza/expo-callkit-telecom/blob/rfc/v2-conversations-api/rfcs/0001-v2-conversations-api.md), under internal review in fork [PR #10](https://github.com/ziahamza/expo-callkit-telecom/pull/10).
   - **The iOS native core:** the Swift package **`ziahamza/ios-voip-sdk`**, public, with **no license file yet**.
   - **Android:** stays on Core-Telecom, refactored to the same model.
+- **`ios-voip-sdk` goes ahead at full speed, independent of upstream.** It ships a Swift package and an iOS-only Expo module built from the same sources, per RFC 0001. expo-callkit-telecom v2 can adopt the module whenever upstream is ready. There is no v1 compatibility shim, so v2 is a clean break.
 - **Phone** moves from Telnyx to LiveKit, then onto this library.
 - **Default calling app** (`com.apple.developer.calling-app`) now. The EU dialer (`com.apple.developer.dialing-app`) comes later.
 - **The simulator focuses on the LiveCommunicationKit stack.**
@@ -102,19 +103,18 @@ Start with fresh history. Add no license until Hamza decides. Credit upstream's 
 
 **Skip** Phone P3: it is Telnyx-specific, and Telnyx is going away.
 
-**Add:** review and de-risk RFC 0001, which already covers:
+**Add:** build `ziahamza/ios-voip-sdk` (public, no license file yet), with RFC 0001 as the API source of truth. Record deviations as comments on fork PR #10.
 
-- the Swift and JS API sketch;
-- the handler and deadline model;
-- the state projection and metadata registration;
-- single-manager enforcement;
-- the PushKit policy;
-- the LiveKit media adapter;
-- default calling;
-- the Android mapping;
-- the simulator conformance plan;
-- Phone's migration path.
+| Milestone | Scope | Done when |
+| --- | --- | --- |
+| M0 | Repo with `Package.swift` and an iOS-only Expo module sharing the Swift sources; an Expo example app; CI on the CallKit Simulator release (LiveCommunicationKit lane) | Example builds; an empty journey passes in CI |
+| M1 | The only `ConversationManager` plus a debug guard; state projection; the handler with deadlines and pending actions for a cold launch with no handler; commands and reports; the PushKit metadata shim and policy, with the existing `incomingCall`/`callEnded` format and `eventId` deduplication; the TypeScript API and hooks | Push → ring → join → connected → hold → end, plus a no-handler cold launch, pass under the runtime |
+| M2 | Media adapters (`webrtc`, `livekit`), the activation watchdog, audio routes | The stale-audio fault ends cleanly; LiveKit adapter journeys pass |
+| M3 | Default calling app: `tel:` links and the start-call intent → `dialRequest`; the config plugin entitlement | A `tel:` link opens a dial request in the example |
+| Device | iPhone 13 with real APNs: cold launch, locked answer, time from answer to `didActivate`, `mustReport` during an active call | Measured and recorded |
 
-Prototype only what de-risks the RFC (see the Codex brief). Create `ziahamza/ios-voip-sdk` public, without a license. Post nothing upstream until Hamza approves.
+Lower priority (needed for expo-callkit-telecom v2 later): measure Core-Telecom's callback suspension and timeout behavior on the Android emulator.
+
+Post nothing upstream until Hamza approves.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
