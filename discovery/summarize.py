@@ -397,7 +397,7 @@ def shipping_journal(directory, name, rows, receipt):
         require(len(groups) == 1 and groups[0]['uuid'][:8] == a and groups[0]['group'][:8] == b, 'runtime group membership mismatch')
 
 
-def validate(directory, require_receipts=True):
+def validate(directory, require_receipts=True, allow_legacy=False):
     summary = {"profile": "simulator-discovery-v2", "mediaProof": False, "scenarios": {}}
     identities = set()
     for name in SCENARIOS:
@@ -427,7 +427,7 @@ def validate(directory, require_receipts=True):
                 identities.add((launch["runID"], launch["simulatorID"]))
             common(rows, name)
             {"runtime": runtime, "genuine": genuine, "push": push}[name](rows)
-            if require_receipts and name != 'genuine' and shipping(rows):
+            if require_receipts and name != 'genuine' and (not allow_legacy or shipping(rows)):
                 shipping_journal(directory, name, rows, receipt)
             summary["scenarios"][name] = {"success": True, "events": len(rows)}
         except (EvidenceError, OSError, ValueError, KeyError, TypeError) as error:
@@ -443,9 +443,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--require-receipts", action="store_true")
-    parser.add_argument("--allow-legacy", action="store_true", help="explicit historical replay without receipts")
+    parser.add_argument("--allow-legacy", action="store_true", help="explicit pre-shipping replay; add --require-receipts to retain receipt checks")
     args = parser.parse_args()
-    summary = validate(args.directory, not args.allow_legacy or args.require_receipts)
+    summary = validate(args.directory, not args.allow_legacy or args.require_receipts, allow_legacy=args.allow_legacy)
     print(json.dumps(summary, indent=2))
     return 0 if summary["success"] else 1
 

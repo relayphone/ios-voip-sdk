@@ -98,6 +98,38 @@ def main():
         # A positive strict-v2 replay and 13 materialized tampered traces. Four
         # derived cases are named explicitly: the review never supplied F-I.
         strict_source = ROOT / "fixtures/strict-v2"
+        fresh = subprocess.run([sys.executable, str(ROOT / "summarize.py"), str(strict_source)],
+                               capture_output=True, text=True, timeout=10)
+        check(fresh.returncode == 1 and all(not json.loads(fresh.stdout)["scenarios"][name]["success"]
+                                           for name in ("runtime", "push")),
+              "fresh capture without shipping identity accepted")
+        checks.append("fresh-capture-requires-shipping-evidence")
+        for mutation, error in (("missing", "require one runtime.identity"),
+                                ("unknown", "shipping runtime")):
+            target = work / f"fresh-{mutation}-runtime-identity"
+            shutil.copytree(strict_source, target)
+            rows = [json.loads(line) for line in (target / "runtime.jsonl").read_text().splitlines()]
+            launch = next(row for row in rows if row["event"] == "launch")
+            (target / "manifest.json").write_text(json.dumps(dict(schemaVersion=1, profileID="ios-27.0",
+                                                                runID=launch["runID"], simulatorID=launch["simulatorID"])))
+            if mutation == "unknown":
+                for scenario in ("runtime", "push"):
+                    path = target / f"{scenario}.jsonl"
+                    rows = [json.loads(line) for line in path.read_text().splitlines()]
+                    rows.insert(-1, dict(event="runtime.identity", version="unknown", t_ms=rows[-1]["t_ms"]))
+                    path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+                    receipt_path = target / f"{scenario}.receipt.json"
+                    receipt = json.loads(receipt_path.read_text())
+                    receipt["traceSHA256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+                    receipt_path.write_text(json.dumps(receipt))
+            result = subprocess.run([sys.executable, str(ROOT / "summarize.py"), str(target)],
+                                    capture_output=True, text=True, timeout=10)
+            summary = json.loads(result.stdout)
+            check(result.returncode == 1 and all(not summary["scenarios"][name]["success"] and
+                                                error in summary["scenarios"][name]["error"]
+                                                for name in ("runtime", "push")),
+                  f"fresh-{mutation}-runtime-identity: {result.stdout}")
+            checks.append(f"fresh-{mutation}-runtime-identity")
         cases = json.loads((strict_source / "mutations.json").read_text())
         cases.append(dict(name='derived-ghost-completion-kind', mutation='ghost-kind', error='completion for unknown action'))
         for case in [dict(name="strict-v2-positive", mutation="none"), *cases]:
@@ -144,7 +176,7 @@ def main():
             if mutation != "forged-receipt":
                 receipt["traceSHA256"] = hashlib.sha256(path.read_bytes()).hexdigest()
             receipt_path.write_text(json.dumps(receipt))
-            result = subprocess.run([sys.executable, str(ROOT / "summarize.py"), str(target)],
+            result = subprocess.run([sys.executable, str(ROOT / "summarize.py"), str(target), "--allow-legacy", "--require-receipts"],
                                     capture_output=True, text=True, timeout=10)
             expected = mutation == "none"
             check((result.returncode == 0) is expected, f"{case['name']}: {result.stdout}")

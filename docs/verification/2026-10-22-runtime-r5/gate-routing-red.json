@@ -1,0 +1,26 @@
+{
+  "classification": "measured synthetic regression; no simulator or device run",
+  "baseCommit": "c44e4ea2f7140d6a5a42c40305a5cfe659cbf84d",
+  "command": "python3 <base-commit-discovery/summarize.py> discovery/fixtures/strict-v2",
+  "expected": "reject fresh runtime/push captures without shipping identity",
+  "observedExitCode": 0,
+  "observedSummary": {
+    "profile": "simulator-discovery-v2",
+    "mediaProof": false,
+    "scenarios": {
+      "genuine": {
+        "success": true,
+        "events": 81
+      },
+      "runtime": {
+        "success": true,
+        "events": 118
+      },
+      "push": {
+        "success": true,
+        "events": 17
+      }
+    },
+    "success": true
+  }
+}

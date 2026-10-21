@@ -1,0 +1,20 @@
+{
+  "classification": "measured synthetic regression and existing native-capture replay; no new simulator run",
+  "baseCommit": "c44e4ea2f7140d6a5a42c40305a5cfe659cbf84d",
+  "commands": [
+    "python3 discovery/check_harness.py",
+    "python3 discovery/check_image_identity.py --capture discovery/out/r5-native",
+    "python3 -m py_compile discovery/summarize.py discovery/check_harness.py discovery/check_image_identity.py",
+    "bash -n discovery/run.sh",
+    "git diff --check"
+  ],
+  "harnessChecks": 52,
+  "imageChecks": 12,
+  "success": true,
+  "sourceAndEvidenceSHA256": {
+    "discovery/summarize.py": "5a6637e05bc4833dfe33a15ad9bc33f4824b09b610ed34d263aee9983e19f517",
+    "discovery/check_harness.py": "3de7a7d1dba13ffcec1cb7e4df1214070fedbe63141eed9168f3d3d17806a01b",
+    "docs/verification/2026-10-22-runtime-r5/gate-routing-red.json": "29b8925f3866a7a70732dc8f8cf6a87290bdd4d1128959c67ee3e08b87937dbd",
+    "docs/verification/2026-10-22-runtime-r5/gate-routing-green.json": "a966b137a08734b98021609064b1bec9a9edacfcb606971dfde9f34572726e43"
+  }
+}
