@@ -4,6 +4,7 @@ on:
     branches: [main, "discovery/**"]
   pull_request:
     paths:
+      - "VERSION"
       - "discovery/**"
       - "Sources/**"
       - "Tools/**"
@@ -27,7 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Adversarial harness checks
-        run: python3 discovery/check_harness.py
+        run: |
+          python3 discovery/check_harness.py
+          python3 discovery/check_cli_controls.py
+          python3 discovery/check_environment.py
+          python3 discovery/check_release_controls.py
       - name: Select simulator host and compiler independently
         run: |
           sudo xcode-select -s /Applications/Xcode_26.6.app

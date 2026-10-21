@@ -21,7 +21,13 @@ def controls():
         runtime.write_bytes(b'synthetic runtime fixture')
         profile.write_bytes(b'synthetic profile fixture')
         (package / 'build-info.json').write_text(json.dumps(dict(version='0.1.1')))
+        runtime_id = 'com.apple.CoreSimulator.SimRuntime.iOS-26-5'
+        (root / 'runtimes.json').write_text(json.dumps(dict(runtimes=[dict(
+            identifier=runtime_id, platform='iOS', version='26.5', buildversion='23F77', isAvailable=True)])))
+        (root / 'compiler-version.txt').write_text('Xcode 26.3\nBuild version 17C100\n')
         manifest = dict(schemaVersion=1, runtimeVersion='0.1.1', profileID='ios-27.0', runID='fixture', simulatorID='fixture',
+                        simulatorRuntimeID=runtime_id, simulatorOSVersion='26.5', simulatorOSBuildVersion='23F77',
+                        compilerXcodeVersion='26.3', compilerXcodeBuildVersion='17C100',
                         runtimeSHA256=hashlib.sha256(runtime.read_bytes()).hexdigest(),
                         profileSHA256=hashlib.sha256(profile.read_bytes()).hexdigest(),
                         probeSHA256=hashlib.sha256(b'synthetic probe fixture').hexdigest())

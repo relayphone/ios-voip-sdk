@@ -55,10 +55,15 @@ def validate(directory, scenario):
     return dict(success=True, reference=reference_name, assertions='controller outcomes, action identity, timeout and observer state')
 
 
-result = {}
-for case in ('answer-rules', 'failures'):
-    try: result[case] = validate(Path(sys.argv[1]), case)
-    except (EvidenceError, OSError, ValueError, KeyError, TypeError, StopIteration) as error:
-        result[case] = dict(success=False, error=str(error))
-print(json.dumps(result, indent=2))
-raise SystemExit(0 if all(r['success'] for r in result.values()) else 1)
+def main():
+    result = {}
+    for case in ('answer-rules', 'failures'):
+        try: result[case] = validate(Path(sys.argv[1]), case)
+        except (EvidenceError, OSError, ValueError, KeyError, TypeError, StopIteration) as error:
+            result[case] = dict(success=False, error=str(error))
+    print(json.dumps(result, indent=2))
+    return 0 if all(r['success'] for r in result.values()) else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
