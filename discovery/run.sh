@@ -110,7 +110,7 @@ run() {
   local name=$1
   local inherited
   shift
-  if [[ -n "$ONLY" && "$name" != "$ONLY" ]]; then return 0; fi
+  if [[ -n "${ONLY:-}" && "$name" != "${ONLY:-}" ]]; then return 0; fi
   echo "Starting $name"
   inherited=${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES-$(xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>/dev/null || true)}
   local libraries=$inherited
