@@ -114,7 +114,7 @@ class EnvironmentQualificationTests(unittest.TestCase):
 
     def test_summary_marks_historical_evidence_without_current_os_qualification(self):
         fixture = Path(__file__).resolve().parent / 'fixtures/strict-v2'
-        summary = summarize.validate(fixture)
+        summary = summarize.validate(fixture, allow_legacy=True)
         self.assertTrue(summary['success'])
         self.assertEqual(summary['qualification'], 'historical-replay')
         self.assertNotIn('environment', summary)
