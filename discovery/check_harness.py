@@ -98,6 +98,12 @@ def main():
         # A positive strict-v2 replay and 13 materialized tampered traces. Four
         # derived cases are named explicitly: the review never supplied F-I.
         strict_source = ROOT / "fixtures/strict-v2"
+        fresh = subprocess.run([sys.executable, str(ROOT / "summarize.py"), str(strict_source)],
+                               capture_output=True, text=True, timeout=10)
+        check(fresh.returncode == 1 and all(not json.loads(fresh.stdout)["scenarios"][name]["success"]
+                                           for name in ("runtime", "push")),
+              "fresh capture without shipping identity accepted")
+        checks.append("fresh-capture-requires-shipping-evidence")
         cases = json.loads((strict_source / "mutations.json").read_text())
         cases.append(dict(name='derived-ghost-completion-kind', mutation='ghost-kind', error='completion for unknown action'))
         for case in [dict(name="strict-v2-positive", mutation="none"), *cases]:
@@ -144,7 +150,7 @@ def main():
             if mutation != "forged-receipt":
                 receipt["traceSHA256"] = hashlib.sha256(path.read_bytes()).hexdigest()
             receipt_path.write_text(json.dumps(receipt))
-            result = subprocess.run([sys.executable, str(ROOT / "summarize.py"), str(target)],
+            result = subprocess.run([sys.executable, str(ROOT / "summarize.py"), str(target), "--allow-legacy", "--require-receipts"],
                                     capture_output=True, text=True, timeout=10)
             expected = mutation == "none"
             check((result.returncode == 0) is expected, f"{case['name']}: {result.stdout}")

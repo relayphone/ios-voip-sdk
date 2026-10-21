@@ -60,12 +60,13 @@ def require(condition, message):
 def fixture(directory, response):
     package = directory / "package"
     (package / "profiles").mkdir(parents=True)
+    version = (ROOT / "VERSION").read_text().strip()
     files = {}
-    for name in ("CKSimRuntime.dylib", "CKSimLoader.dylib", "cksim-notify", "cksim", "profiles/ios-27.0.json"):
+    for name in ("CKSimRuntime.dylib", "CKSimLoader.dylib", "cksim-notify", "cksim", "profiles/ios-27.0.json", "VERSION"):
         path = package / name
-        path.write_bytes(("synthetic fixture: " + name).encode())
+        path.write_bytes((version + "\n").encode() if name == "VERSION" else ("synthetic fixture: " + name).encode())
         files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-    (package / "build-info.json").write_text(json.dumps(dict(schemaVersion=1, version="0.1.0", files=files)))
+    (package / "build-info.json").write_text(json.dumps(dict(schemaVersion=1, version=version, files=files)))
     root = directory / "container/Documents/.callkit-simulator"
     for name in ("requests", "responses"):
         (root / RUN / name).mkdir(parents=True)

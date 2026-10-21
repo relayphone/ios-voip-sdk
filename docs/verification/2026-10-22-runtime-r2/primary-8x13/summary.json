@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "cases": [
+    "concrete-override",
+    "kvc-exception",
+    "kvc-ignored-hasConnected",
+    "kvc-ignored-hasEnded",
+    "kvc-ignored-onHold",
+    "kvc-ignored-outgoing",
+    "missing-selector",
+    "shadow-concrete-override"
+  ],
+  "runtimeSHA256": "4422b391f450ab68e54ab152ae6ee7b8aba6392563c3215297d04dd49ef716a8",
+  "probeSHA256": "ab7b05ebb876ebde6602e5705328cef13134f062d959ad53ffa9fea78c67b2c7"
+}

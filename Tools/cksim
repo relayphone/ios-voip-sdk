@@ -13,8 +13,16 @@ import tempfile
 import uuid
 
 
+SIMCTL_TIMEOUT = 60
+INSTALL_KEYS = ("DYLD_INSERT_LIBRARIES", "CKSIM_RUNTIME", "CKSIM_BUNDLE_IDS", "CKSIM_ENABLED", "CKSIM_PROFILE")
+
+
 def simctl(*args, env=None):
-    result = subprocess.run(["xcrun", "simctl", *map(str, args)], capture_output=True, text=True, env=env)
+    try:
+        result = subprocess.run(["xcrun", "simctl", *map(str, args)], capture_output=True, text=True,
+                                env=env, timeout=SIMCTL_TIMEOUT)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(f"simctl {args[0]} timed out after {SIMCTL_TIMEOUT}s; inspect state before retrying.") from error
     if result.returncode:
         raise RuntimeError(f"simctl {args[0]} failed: {result.stderr.strip()}")
     return result.stdout.strip()
@@ -31,7 +39,11 @@ def simulator(identifier):
 
 
 def launch_environment(device, key):
-    result = subprocess.run(["xcrun", "simctl", "getenv", device, key], capture_output=True, text=True)
+    try:
+        result = subprocess.run(["xcrun", "simctl", "getenv", device, key], capture_output=True, text=True,
+                                timeout=SIMCTL_TIMEOUT)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(f"Reading simulator environment key {key} timed out after {SIMCTL_TIMEOUT}s.") from error
     diagnostic = result.stderr.strip()
     if result.returncode == 0 and diagnostic == f"'{key}' not found":
         return None
@@ -45,7 +57,9 @@ def launch_environment(device, key):
 def validate_package(runtime):
     info = json.loads((runtime / "build-info.json").read_text())
     required = {"CKSimRuntime.dylib", "CKSimLoader.dylib", "cksim-notify", "cksim", "profiles/ios-27.0.json"}
-    if info.get("schemaVersion") != 1 or info.get("version") != "0.1.0" or not required.issubset(info.get("files", {})):
+    version = (runtime / "VERSION").read_text().strip()
+    if (info.get("schemaVersion") != 1 or not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", version) or
+            info.get("version") != version or "VERSION" not in info.get("files", {}) or not required.issubset(info.get("files", {}))):
         raise RuntimeError("Incomplete or unsupported runtime package.")
     for name, digest in info["files"].items():
         path = runtime / name
@@ -85,8 +99,7 @@ def install(args, device):
         original = saved["original"]
     else:
         bundles = [args.bundle]
-        original = {key: launch_environment(device, key) for key in
-                    ("DYLD_INSERT_LIBRARIES", "CKSIM_RUNTIME", "CKSIM_BUNDLE_IDS", "CKSIM_ENABLED", "CKSIM_PROFILE")}
+        original = {key: launch_environment(device, key) for key in INSTALL_KEYS}
     if statefile.exists():
         for key, value in saved["applied"].items():
             if launch_environment(device, key) not in managed_values(saved, key):
@@ -110,7 +123,7 @@ def uninstall(device):
     saved = json.loads(statefile.read_text())
     for key, value in saved["applied"].items():
         if launch_environment(device, key) not in managed_values(saved, key):
-            raise RuntimeError(f"{key} changed after installation; restore it deliberately before uninstalling.")
+            raise RuntimeError(f"{key} changed after installation; use repair to preserve unrelated loader entries.")
     for key, value in saved["original"].items():
         if value is None:
             simctl("spawn", device, "launchctl", "unsetenv", key)
@@ -118,6 +131,68 @@ def uninstall(device):
             simctl("spawn", device, "launchctl", "setenv", key, value)
     statefile.unlink()
     return dict(uninstalled=True, simulator=device)
+
+
+def repair(device):
+    statefile = Path.home() / f".local/state/callkit-simulator/{device}.json"
+    if not statefile.exists():
+        return dict(repaired=False, simulator=device, reason="No saved installation.")
+    saved = json.loads(statefile.read_text())
+    if not isinstance(saved, dict):
+        raise RuntimeError(f"Invalid ownership state in {statefile}; inspect this file before repair.")
+    for field in ("original", "applied"):
+        values = saved.get(field)
+        if (not isinstance(values, dict) or set(values) != set(INSTALL_KEYS) or
+                any(value is not None and not isinstance(value, str) for value in values.values())):
+            raise RuntimeError(f"Invalid {field} ownership values in {statefile}; inspect this file before repair.")
+    if not isinstance(saved.get("runtime"), str) or not Path(saved["runtime"]).is_absolute():
+        raise RuntimeError(f"Invalid runtime ownership path in {statefile}; inspect this file before repair.")
+    recoverable = saved.get("recoverable", {})
+    if (not isinstance(recoverable, dict) or any(key not in INSTALL_KEYS or not isinstance(values, list) or
+            any(value is not None and not isinstance(value, str) for value in values)
+            for key, values in recoverable.items())):
+        raise RuntimeError(f"Invalid recoverable ownership values in {statefile}; inspect this file before repair.")
+
+    def ambiguous(key):
+        raise RuntimeError(f"{key} changed outside this installation; repair left the environment unchanged. "
+                           f"Inspect simulator key {key} and {statefile}; preserve external edits, restore a saved "
+                           "original/applied value deliberately, then retry repair.")
+
+    current = {key: launch_environment(device, key) for key in INSTALL_KEYS}
+    target = dict(saved["original"])
+    # Preflight every key before the first write. Only the recorded exact loader
+    # entry belongs to us; other injectors may append or remove their own entries.
+    for key in INSTALL_KEYS[1:]:
+        if current[key] not in managed_values(saved, key):
+            ambiguous(key)
+    key = "DYLD_INSERT_LIBRARIES"
+    loader = str(Path(saved["runtime"]) / "CKSimLoader.dylib")
+    original = saved["original"][key]
+    expected = ":".join(filter(None, [original, loader]))
+    if saved["applied"][key] != expected:
+        raise RuntimeError(f"Invalid loader ownership in {statefile}; inspect this file before repair.")
+    entries = current[key].split(":") if current[key] is not None else []
+    original_count = original.split(":").count(loader) if original is not None else 0
+    if entries.count(loader) > original_count + 1:
+        ambiguous(key)
+    if entries.count(loader) > original_count:
+        entries.reverse()
+        entries.remove(loader)
+        entries.reverse()
+        target[key] = ":".join(entries)
+        if current[key] == loader:
+            target[key] = "" if original == "" else None
+    else:
+        target[key] = current[key]
+    for key, value in target.items():
+        if current[key] == value:
+            continue
+        if value is None:
+            simctl("spawn", device, "launchctl", "unsetenv", key)
+        else:
+            simctl("spawn", device, "launchctl", "setenv", key, value)
+    statefile.unlink()
+    return dict(repaired=True, simulator=device)
 
 
 def control(args, device):
@@ -164,11 +239,11 @@ def control(args, device):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--simulator", default="booted")
-    parser.add_argument("--bundle", required=True)
+    parser.add_argument("--bundle")
     parser.add_argument("--runtime-dir", type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument("--timeout", type=float, default=15)
     commands = parser.add_subparsers(dest="operation", required=True)
-    for operation in ("status", "events", "inspect-adapter", "install", "uninstall", "launch"):
+    for operation in ("status", "events", "inspect-adapter", "install", "uninstall", "repair", "launch"):
         commands.add_parser(operation)
     for operation in ("answer", "decline", "end"):
         commands.add_parser(operation).add_argument("call")
@@ -187,15 +262,18 @@ def main():
     faults.add_argument("--report-delay-ms", type=int, default=0)
     faults.add_argument("--invalidate-during-handoff", action="store_true")
     args = parser.parse_args()
-    if not re.fullmatch(r"[A-Za-z0-9.-]+", args.bundle) or not 0 < args.timeout <= 120:
+    if (args.bundle is not None and not re.fullmatch(r"[A-Za-z0-9.-]+", args.bundle) or
+            args.bundle is None and args.operation not in ("uninstall", "repair") or not 0 < args.timeout <= 120):
         parser.error("Require a bundle identifier and timeout in (0,120].")
-    if args.operation != "uninstall":
+    if args.operation not in ("uninstall", "repair"):
         validate_package(args.runtime_dir.resolve())
     device = simulator(args.simulator)
     if args.operation == "install":
         result = install(args, device)
     elif args.operation == "uninstall":
         result = uninstall(device)
+    elif args.operation == "repair":
+        result = repair(device)
     elif args.operation == "launch":
         runtime = args.runtime_dir.resolve() / "CKSimRuntime.dylib"
         if not runtime.is_file():
