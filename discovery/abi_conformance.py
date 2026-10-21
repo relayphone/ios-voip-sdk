@@ -6,7 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
-CASES = ["concrete-override", "shadow-concrete-override", "missing-selector", "kvc-exception",
+CASES = ["refused-queues", "missing-provider-init", "missing-controller-init", "push-delegate-override", "push-types-override", "concrete-override", "shadow-concrete-override", "missing-selector", "kvc-exception",
          "kvc-ignored-outgoing", "kvc-ignored-hasConnected", "kvc-ignored-onHold", "kvc-ignored-hasEnded"]
 CHECKS = {"original-reference-chain", "runtime-loads", "activation-result", "nonnull-initializers",
           "original-fulfill-chain", "original-fail-chain", "original-deadline-chain", "original-dated-fulfill",
@@ -31,6 +31,7 @@ def check(root, selected=None, runtime=None, probe=None):
         assert digest(probe) == manifest["probeSHA256"], "probe bytes mismatch"
     expected = [selected] if selected else CASES
     results = []
+    check_counts = {}
     for receipt_path in sorted(root.glob("*.receipt.json")):
         receipt = json.loads(receipt_path.read_text())
         trace = root / (receipt_path.name.removesuffix(".receipt.json") + ".log")
@@ -41,7 +42,13 @@ def check(root, selected=None, runtime=None, probe=None):
         assert receipt["bundleID"] == "dev.callkitsim.abi", "unexpected probe bundle"
         rows = [json.loads(line.split("PROBE ", 1)[1]) for line in trace.read_text().splitlines() if "PROBE " in line]
         checks = [row for row in rows if row["event"] == "abi.check"]
-        assert len(checks) == len(CHECKS) and {row["label"] for row in checks} == CHECKS, "missing or duplicated checks"
+        required = CHECKS | ({"refused-incoming-custom-queue", "refused-incoming-main-queue", "refused-request-action-queue", "refused-request-transaction-queue", "refused-request-actions-queue"} if receipt["scenario"] == "refused-queues" else set())
+        if receipt["scenario"] in ("missing-provider-init", "missing-controller-init"):
+            required |= {"genuine-initializer-state"}
+        if receipt["scenario"].startswith("push-"):
+            required |= {"push-concrete-original-preserved"}
+        check_counts[receipt["scenario"]] = len(required)
+        assert len(checks) == len(required) and {row["label"] for row in checks} == required, "missing or duplicated checks"
         failures = [row["label"] for row in checks if row["passed"] is not True]
         assert not failures, f"{receipt['scenario']}: failed checks: {failures}"
         result = [row for row in rows if row["event"] == "abi.result"]
@@ -56,7 +63,7 @@ def check(root, selected=None, runtime=None, probe=None):
         assert refused == (receipt["scenario"] != "concrete-override"), "missing or unexpected refusal diagnostic"
         results.append(receipt["scenario"])
     assert sorted(results) == sorted(expected), f"missing or unexpected scenarios: {results}"
-    return dict(success=True, cases=results, checksPerCase=len(CHECKS), manifestSHA256=digest(root / "manifest.json"),
+    return dict(success=True, cases=results, checksPerCase=check_counts, totalChecks=sum(check_counts.values()), manifestSHA256=digest(root / "manifest.json"),
                 runtimeSHA256=manifest["runtimeSHA256"], probeSHA256=manifest["probeSHA256"])
 
 
