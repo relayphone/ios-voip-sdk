@@ -1,0 +1,15 @@
+[
+  {"name":"review-A-mixed-run","mutation":"mixed-run","error":"mixed run"},
+  {"name":"review-B-forged-receipt","mutation":"forged-receipt","error":"invalid runner receipt"},
+  {"name":"review-C-off-main","mutation":"off-main","error":"off main"},
+  {"name":"review-D-audio-order","mutation":"audio-order","error":"audio ownership cycles"},
+  {"name":"review-E-nonmonotonic","mutation":"nonmonotonic","error":"non-monotonic"},
+  {"name":"review-J-pid","mutation":"pid","error":"process mismatch"},
+  {"name":"review-K-unexpected-timeout","mutation":"unexpected-timeout","error":"unexpected action timeout"},
+  {"name":"review-L-no-observer","mutation":"no-observer","error":"observer lifecycle"},
+  {"name":"review-M-reset","mutation":"reset","error":"unexpected provider reset"},
+  {"name":"derived-late-action-id","mutation":"late-id","error":"late.fulfill"},
+  {"name":"derived-missing-version","mutation":"missing-version","error":"traceVersion 2"},
+  {"name":"derived-unknown-version","mutation":"unknown-version","error":"traceVersion 2"},
+  {"name":"derived-group-target","mutation":"group-target","error":"merge target"}
+]

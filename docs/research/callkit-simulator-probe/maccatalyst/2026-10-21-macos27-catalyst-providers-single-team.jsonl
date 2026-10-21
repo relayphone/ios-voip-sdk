@@ -1,0 +1,12 @@
+{"build":"26A434","event":"providers.start","injected":false,"main":false,"os":"27.0","scenario":"single","simulator":"device","t_ms":91}
+{"delegate":true,"event":"tap.created","groups":2,"handles":[1,2],"main":false,"p":"A","t_ms":91,"video":true}
+{"event":"tap.delegateSet","main":false,"p":"A","t_ms":92}
+{"event":"tap.didBegin","main":false,"p":"A","sameProvider":true,"t_ms":92}
+{"action":"F38B665C","call":"7B322F6D","event":"request","kind":"CXStartCallAction","label":"single-start","main":false,"t_ms":1137,"tx":"81BAE63C"}
+{"call":"7B322F6D","event":"route","kind":"CXStartCallAction","label":"single-start","main":false,"receivers":[],"result":"com.apple.CallKit.error.requesttransaction:1","t_ms":1139}
+{"calls":[],"event":"observer.snapshot","label":"single-outgoing","main":false,"t_ms":2640}
+{"action":"C5FD8ABD","call":"7B322F6D","event":"request","kind":"CXEndCallAction","label":"single-end","main":false,"t_ms":2641,"tx":"C3D1EFFA"}
+{"call":"7B322F6D","event":"route","kind":"CXEndCallAction","label":"single-end","main":false,"receivers":[],"result":"com.apple.CallKit.error.requesttransaction:1","t_ms":2642}
+{"attempt":1,"call":"44233978","event":"report.incoming","label":"single-A-incoming","main":false,"p":"A","result":"com.apple.CallKit.error:0","t_ms":4229}
+{"calls":[],"event":"observer.snapshot","label":"final","main":false,"t_ms":5248}
+{"event":"done","main":false,"t_ms":5248}

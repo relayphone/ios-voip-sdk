@@ -1,0 +1,17 @@
+{"event": "app.entry", "main": true, "t_ms": 4}
+{"configAfter": 0, "configBefore": 0, "event": "audio.sessionID", "main": true, "opaque": 0, "t_ms": 2952}
+{"event": "provider.didBegin", "main": true, "t_ms": 2978}
+{"appState": 0, "bundleID": "dev.callkitsim.probe", "event": "launch", "injected": true, "main": false, "mode": "push", "pid": 74548, "runID": "synthetic-regression-binding", "simulatorID": "fixture-simulator", "t_ms": 2989, "traceVersion": 2}
+{"event": "push.registered", "main": true, "t_ms": 6069}
+{"api": "metadata", "appState": 0, "event": "push.received", "keys": ["aps", "callId", "from"], "main": true, "mustReport": true, "payloadClass": "CKSimPayload", "pid": 74548, "t_ms": 6070}
+{"connected": false, "ended": false, "event": "observer.callChanged", "held": false, "main": true, "outgoing": false, "t_ms": 6092, "uuid": "C734EA8F"}
+{"event": "push.reported", "main": true, "result": "ok", "t_ms": 6092}
+{"bytes": 80, "event": "push.token", "main": true, "t_ms": 6271, "type": "PKPushTypeVoIP"}
+{"calls": [{"connected": false, "ended": false, "held": false, "outgoing": false, "uuid": "C734EA8F"}], "event": "observer.snapshot", "label": "after-push-wait", "main": false, "pending": 0, "t_ms": 18751}
+{"event": "request.completed", "label": "cleanup", "main": false, "result": "ok", "t_ms": 18756}
+{"actions": ["CXEndCallAction"], "event": "provider.executeTransaction", "main": true, "t_ms": 18763}
+{"call": "C734EA8F", "event": "provider.perform", "id": "A8ED5A99", "kind": "CXEndCallAction", "main": true, "t_ms": 18763, "timeoutIn": 5}
+{"complete": false, "event": "action.fulfilled", "id": "A8ED5A99", "kind": "CXEndCallAction", "main": true, "t_ms": 18763}
+{"connected": false, "ended": true, "event": "observer.callChanged", "held": false, "main": true, "outgoing": false, "t_ms": 18776, "uuid": "C734EA8F"}
+{"calls": [], "event": "observer.snapshot", "label": "final", "main": false, "pending": 0, "t_ms": 19819}
+{"event": "done", "main": false, "t_ms": 19819}

@@ -1,0 +1,26 @@
+name: CallKitProbeMac
+options:
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+targets:
+  Probe:
+    type: application
+    platform: iOS
+    sources: [../main.swift, ../providers.swift, ../lck.swift]
+    settings:
+      base:
+        PRODUCT_NAME: Probe
+        PRODUCT_BUNDLE_IDENTIFIER: dev.callkitsim.probe
+        INFOPLIST_FILE: ../Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: YES
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
+        CODE_SIGN_ENTITLEMENTS: mac.entitlements
+        OTHER_SWIFT_FLAGS: "-parse-as-library"

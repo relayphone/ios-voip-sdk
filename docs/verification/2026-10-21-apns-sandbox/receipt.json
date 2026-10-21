@@ -1,0 +1,9 @@
+{
+  "time": "2026-10-21T09:01:28.440Z",
+  "environment": "sandbox",
+  "topic": "dev.callkitsim.probe.voip",
+  "status": 200,
+  "apnsID": "e9b04c02-3988-4873-bc5a-fba20a94ede6",
+  "requestedAPNsID": "e9b04c02-3988-4873-bc5a-fba20a94ede6",
+  "deliveryConfirmed": false
+}

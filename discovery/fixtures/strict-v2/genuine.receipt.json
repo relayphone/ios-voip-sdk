@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 2,
+  "runID": "synthetic-regression-binding",
+  "simulatorID": "fixture-simulator",
+  "scenario": "genuine",
+  "appPID": 70051,
+  "launcherPID": 4241,
+  "completed": true,
+  "success": true,
+  "terminateExitCode": 0,
+  "launchExitCode": 0,
+  "lastProbeEvent": "done",
+  "traceSHA256": "31fe037ecf8c76ea89fca86f38198a6f4e7777b9513208de67b0d17627e644a1",
+  "bundleID": "dev.callkitsim.probe",
+  "launcherAppPID": 70051
+}

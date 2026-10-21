@@ -1,0 +1,14 @@
+{"configAfter":0,"configBefore":0,"event":"audio.sessionID","main":true,"opaque":0,"t_ms":0}
+{"event":"provider.didBegin","main":true,"t_ms":27}
+{"appState":0,"event":"launch","injected":true,"main":false,"mode":"push","pid":23868,"t_ms":33}
+{"event":"push.registered","main":false,"t_ms":38}
+{"api":"metadata","appState":0,"event":"push.received","keys":["aps","callId","from"],"main":true,"mustReport":true,"payloadClass":"CKSimPayload","pid":23868,"t_ms":1232}
+{"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":1257,"uuid":"1F2D2716"}
+{"event":"push.reported","main":true,"result":"ok","t_ms":1258}
+{"calls":[{"connected":false,"ended":false,"held":false,"outgoing":false,"uuid":"1F2D2716"}],"event":"observer.snapshot","label":"after-push-wait","main":false,"pending":0,"t_ms":12619}
+{"event":"request.completed","label":"cleanup","main":false,"result":"ok","t_ms":12621}
+{"actions":["CXEndCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":12629}
+{"call":"1F2D2716","event":"provider.perform","id":"BA9DF805","kind":"CXEndCallAction","main":true,"t_ms":12629,"timeoutIn":5}
+{"complete":false,"event":"action.fulfilled","kind":"CXEndCallAction","main":true,"t_ms":12630}
+{"connected":false,"ended":true,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":12643,"uuid":"1F2D2716"}
+{"event":"done","main":false,"t_ms":13638}

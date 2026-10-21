@@ -1,0 +1,16 @@
+2026-10-21 21:52:36.659 Df callservicesd[747:274fb4] [com.apple.calls.callservicesd:Default] [WARN] Not allowing requested CXStartCallAction because user intent could not be validated for call source with identifier: <private>
+2026-10-21 21:52:36.660 Df callservicesd[747:274fb4] [com.apple.calls.callservicesd:Default] [WARN] Not allowing requested transaction: <private>
+2026-10-21 21:52:38.208 Df callservicesd[747:276a8e] [com.apple.calls.callservicesd:Default] [WARN] Not allowing requested action because no call was found for call UUID <private> and call source <private>. All calls: <private>
+2026-10-21 21:52:38.208 Df callservicesd[747:276a8e] [com.apple.calls.callservicesd:Default] [WARN] Not allowing requested transaction: <private>
+2026-10-21 21:52:40.688 Df callservicesd[747:276a8e] [com.apple.donotdisturb:BehaviorResolution] [com.apple.telephonyutilities.callservicesd:737E35B8-E97E-494E-91E3-1D6A04B4D859] Resolved event behavior=<DNDClientEventBehavior: 0x76045ddec0; interruptionSuppre
+2026-10-21 21:52:40.688 Df callservicesd[747:276a8e] [com.apple.calls.callservicesd:Default] Not allowing call because DND is enabled for <private>
+2026-10-21 21:52:40.688 Df callservicesd[747:276a8e] [com.apple.calls.callservicesd:Default] Disallowing call with sourceAddress <private> since _doNotDisturbAllowsCallFromSourceAddress returned NO
+2026-10-21 21:52:40.689 Df callservicesd[747:276a8e] [com.apple.calls.callservicesd:Default] [WARN] Returning error for add incoming call request because call did not pass DND filter. CarMode (0) BT Audio Route (0), CarPlay (0)
+2026-10-21 21:52:41.858 Df callservicesd[747:276a92] [com.apple.donotdisturb:BehaviorResolution] [com.apple.telephonyutilities.callservicesd:29D4DC96-BAC8-4367-AC1D-B57BCA2E68DF] Resolved event behavior=<DNDClientEventBehavior: 0x76045e8cc0; interruptionSuppre
+2026-10-21 21:52:41.858 Df callservicesd[747:276a92] [com.apple.calls.callservicesd:Default] Not allowing call because DND is enabled for <private>
+2026-10-21 21:52:41.858 Df callservicesd[747:276a92] [com.apple.calls.callservicesd:Default] Disallowing call with sourceAddress <private> since _doNotDisturbAllowsCallFromSourceAddress returned NO
+2026-10-21 21:52:41.858 Df callservicesd[747:276a92] [com.apple.calls.callservicesd:Default] [WARN] Returning error for add incoming call request because call did not pass DND filter. CarMode (0) BT Audio Route (0), CarPlay (0)
+2026-10-21 21:52:43.068 Df callservicesd[747:276a8d] [com.apple.donotdisturb:BehaviorResolution] [com.apple.telephonyutilities.callservicesd:D683FC38-2D7A-4C38-9F42-07C0B2B2E644] Resolved event behavior=<DNDClientEventBehavior: 0x76045e8f00; interruptionSuppre
+2026-10-21 21:52:43.068 Df callservicesd[747:276a8d] [com.apple.calls.callservicesd:Default] Not allowing call because DND is enabled for <private>
+2026-10-21 21:52:43.068 Df callservicesd[747:276a8d] [com.apple.calls.callservicesd:Default] Disallowing call with sourceAddress <private> since _doNotDisturbAllowsCallFromSourceAddress returned NO
+2026-10-21 21:52:43.069 Df callservicesd[747:276a8d] [com.apple.calls.callservicesd:Default] [WARN] Returning error for add incoming call request because call did not pass DND filter. CarMode (0) BT Audio Route (0), CarPlay (0)
