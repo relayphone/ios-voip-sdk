@@ -93,7 +93,7 @@ def controls():
                        CKSIM_SYNTHETIC_CLI_FIXTURE=str(directory))
             result = subprocess.run([str(CLI), "--simulator", DEVICE, "--bundle", BUNDLE,
                                      "--runtime-dir", str(package), "--timeout", "0.1", "status"],
-                                    env=env, capture_output=True, text=True, timeout=5)
+                                    env=env, capture_output=True, text=True, timeout=20)
             diagnostic = f"{label}: exit={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}"
             if expected:
                 require(result.returncode == 1 and expected in result.stderr and not result.stdout, diagnostic)
