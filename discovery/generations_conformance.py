@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Require fresh, process-bound app evidence for lifecycle race regressions."""
+"""Check runtime lifecycle policy; this suite has no measured device oracle."""
 import json
 from pathlib import Path
 import sys
 from conformance import bound_capture
-from summarize import require
+from summarize import EvidenceError, require
 
-rows, engine = bound_capture(Path(sys.argv[1]), 'generations')
-expected = {
+EXPECTED = {
     'completion continuation cancelled after revival',
     'completion continuation cannot mutate reused UUID',
     'delegate callback cancelled after revival',
@@ -16,8 +15,26 @@ expected = {
     'failed answer cannot end reused UUID',
     'expired answer cannot end reused UUID',
 }
-checks = [r for r in rows if r['event'] == 'generation.check']
-require(len(checks) == len(expected) and {r['name'] for r in checks} == expected, 'missing lifecycle boundary')
-require(all(r.get('success') is True for r in checks), 'lifecycle regression')
-require(not any(r['event'] == 'transaction.delivered' and r['origin'] == 'postEndUnmute' for r in engine), 'stale unmute produced')
-print(json.dumps(dict(success=True, checks=sorted(expected)), indent=2))
+
+
+def validate(directory):
+    rows, engine = bound_capture(directory, 'generations')
+    checks = [r for r in rows if r['event'] == 'generation.check']
+    require(len(checks) == len(EXPECTED) and {r['name'] for r in checks} == EXPECTED, 'missing lifecycle boundary')
+    require(all(r.get('success') is True for r in checks), 'lifecycle regression')
+    require(not any(r['event'] == 'transaction.delivered' and r['origin'] == 'postEndUnmute' for r in engine), 'stale unmute produced')
+    return dict(success=True, checks=sorted(EXPECTED),
+                reference='runtime policy; no device measurement')
+
+
+def main():
+    try:
+        result = validate(Path(sys.argv[1]))
+    except (EvidenceError, OSError, ValueError, KeyError, TypeError) as error:
+        result = dict(success=False, error=str(error))
+    print(json.dumps(result, indent=2))
+    return 0 if result['success'] else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

@@ -4,6 +4,21 @@
 
 Run `python3 discovery/check_harness.py` for adversarial CLI checks against the saved hosted traces and real subprocess completion/failure/timeout paths. Run `bash discovery/run.sh` on a Mac for native execution. It prints a fresh evidence directory; an explicit `OUT` must not already exist. Temporary build files and the owned simulator are removed on exit, while evidence remains.
 
+After a current runtime capture completes, run `python3 discovery/check_shipping_controls.py <output-directory>`.
+It first requires passing shipping, semantics and generation captures, then
+materializes tampered copies for the shipping mute echoes, post-end unmute,
+engine journal, controller outcomes, action identities, observer states and
+lifecycle checks. It recomputes the receipts' hashes so each rejection exercises
+the intended semantic rule. Its JSON result binds the controls to the input
+manifest and traces. The mutations are derived negative tests, not additional
+simulator or device measurements. Historical strict-v2 fixtures remain unchanged.
+
+Run `python3 discovery/check_cli_controls.py` for synthetic controls against the
+real `Tools/cksim` executable: package corruption and traversal, invalid runtime
+sessions, mismatched response identities and command timeout. A temporary fake
+`xcrun` supplies a mailbox responder; the controls do not use a simulator or
+write loader installation state.
+
 The launcher watches the probe's `done` event, then terminates only that run's app. The SwiftUI probe otherwise remains alive. A missing terminal marker, failed app termination, unexpected launcher status, or incomplete evidence fails the run. Genuine simulator teardown/unknown-call errors are expected control behavior; runtime outcomes, state, answer expiry, and audio ownership are asserted separately.
 
 `summarize.py <directory>` replays saved `.jsonl` or captured `.log` traces. Live runs additionally require process receipts and trace version 2 with `--require-receipts`. Shipping runtime qualification also binds the manifest's exact simulator runtime ID, OS version/build and selected compiler version/build to saved `runtimes.json` and `compiler-version.txt`. The summary reports these separately from the `ios-27.0` behavior profile. Missing or inconsistent environment metadata fails qualification. Historical fixtures remain immutable replay inputs and are labelled `historical-replay`; replay success does not qualify the current runtime or an OS version. Microphone frames can have zero peak on hosted runners: processing frames proves neither audible playback nor independent two-way media. The synthetic lane proves delivery/reporting, not APNs wake-up or watchdog behavior.
@@ -35,3 +50,28 @@ constructing an audio engine. The explicit `PROBE_MODE=audio` experiment can
 inspect inactive input separately; it is not part of the normal CI gate.
 Failure receipts preserve launcher state before cleanup and last probe progress;
 recovered container traces and app-scoped system logs remain diagnostic only.
+
+The provider comparator derives per-action deadline bands from `timeoutIn` in
+all eight committed iOS 27.0 provider-routing traces. It uses the largest device
+sample for each action, permits 2 seconds of delegate scheduling delay below it,
+and allows 0.1 seconds above it for probe rounding. These tolerances are chosen
+qualification policy. Pooling matters: the `single` answer callback was sampled
+with 58.9 seconds remaining, while other device cases recorded 60 seconds.
+Missing, invalid or inconsistent reference samples fail the check.
+
+The CLI's Hold & Accept, End & Accept and Decline compositions come from the
+successful `device-system-ui/2026-10-20-iphone13-ui10-app.jsonl` phases. Each CLI
+receipt must bind to one journal transaction and ordered delegate actions with
+the device's action kinds, active/waiting call roles and hold value. The earlier
+`ui7` attempt timed out and is rejected as an oracle. `call-waiting.jsonl` measures
+app requests and is not the system-UI D5 oracle.
+
+In `inv`, cleanup iterates `observer.calls`: the measured B-call then A-call order
+is incidental collection order. The check requires the device's complete call
+and provider inventory and preserves each run's submitted cleanup request order;
+it does not claim a stable observer iteration order. Generation checks enforce
+runtime lifecycle policy without a device reference, and label their output so.
+
+`python3 discovery/check_oracles.py -v` replays the committed evidence and runs
+negative controls for these expectations without booting a simulator. `run.sh`
+runs these controls before allocating build files or a simulator.

@@ -2,6 +2,7 @@
 # Genuine baseline and shipping Swift runtime, through the same application.
 set -euo pipefail
 cd "$(dirname "$0")"
+python3 check_oracles.py
 if [[ -n "${OUT:-}" ]]; then
   mkdir "$OUT" # Refuse stale output, including an existing empty directory.
 else
@@ -209,3 +210,4 @@ run semantics-failures SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=d
 python3 semantics_conformance.py "$OUT" | tee "$OUT/semantics-conformance.json"
 run generations SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=generations
 python3 generations_conformance.py "$OUT" | tee "$OUT/generations-conformance.json"
+python3 check_shipping_controls.py "$OUT" | tee "$OUT/shipping-controls.json"
