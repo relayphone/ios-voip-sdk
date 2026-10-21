@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "checks": [
+    "annotated-merged",
+    "lightweight-tag",
+    "unmerged-tag",
+    "valid-synthetic-release-package",
+    "version-mismatch",
+    "source-mismatch",
+    "dirty-source-build",
+    "missing-toolchain",
+    "missing-sdk-build",
+    "missing-architecture",
+    "source-date-mismatch",
+    "checksum-mismatch",
+    "tag-version-mismatch-v0.1",
+    "tag-version-mismatch-v9.9.9",
+    "package-VERSION-mismatch",
+    "normalized-archive-ownership-order-mtime-modes",
+    "reproducible-packaging",
+    "archive-checksums"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "kind": "synthetic mutation of measured shipping capture",
+  "sourceRun": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39680771297",
+  "scenario": "runtime",
+  "entrypoint": "shipping_journal",
+  "sourceTraceSHA256": "d808c92198e2f4593638622764e73aca42601e84ccf2078a93548d042710f770",
+  "mutation": {
+    "runtime.identity.runtimeSHA256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "oldGateAccepted": true,
+  "expectedAccepted": false
+}

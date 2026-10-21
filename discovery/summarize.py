@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 
 REQUEST_ERROR = "com.apple.CallKit.error.requesttransaction:"
 INCOMING_ERROR = "com.apple.CallKit.error.incomingcall:"
@@ -18,6 +19,46 @@ class EvidenceError(ValueError):
 def require(condition, message):
     if not condition:
         raise EvidenceError(message)
+
+
+def selected_runtime(document, identifier=None):
+    require(isinstance(document, dict) and isinstance(document.get('runtimes'), list),
+            'missing simulator runtime inventory')
+    candidates = [runtime for runtime in document['runtimes'] if isinstance(runtime, dict) and
+                  runtime.get('platform') == 'iOS' and runtime.get('isAvailable') is True]
+    if identifier is not None:
+        candidates = [runtime for runtime in candidates if runtime.get('identifier') == identifier]
+        require(len(candidates) == 1, 'selected simulator runtime missing, unavailable or ambiguous')
+    require(candidates, 'no available iOS simulator runtime')
+    for runtime in candidates:
+        require(isinstance(runtime.get('identifier'), str) and bool(runtime['identifier']) and
+                isinstance(runtime.get('version'), str) and
+                re.fullmatch(r'\d+(?:\.\d+)+', runtime['version']) and
+                isinstance(runtime.get('buildversion'), str) and bool(runtime['buildversion']),
+                'incomplete simulator runtime version/build metadata')
+    return max(candidates, key=lambda runtime: tuple(int(part) for part in runtime['version'].split('.')))
+
+
+def environment_metadata(directory, runtime_id):
+    runtime = selected_runtime(json.loads((directory / 'runtimes.json').read_text()), runtime_id)
+    compiler = re.fullmatch(r'Xcode (\d+(?:\.\d+)+)\nBuild version (\S+)\n?',
+                            (directory / 'compiler-version.txt').read_text())
+    require(compiler is not None, 'missing or malformed selected compiler version/build metadata')
+    return dict(simulatorRuntimeID=runtime['identifier'], simulatorOSVersion=runtime['version'],
+                simulatorOSBuildVersion=runtime['buildversion'], compilerXcodeVersion=compiler[1],
+                compilerXcodeBuildVersion=compiler[2])
+
+
+def run_environment(directory, manifest):
+    require(isinstance(manifest.get('simulatorRuntimeID'), str) and bool(manifest['simulatorRuntimeID']),
+            'missing simulatorRuntimeID')
+    metadata = environment_metadata(directory, manifest['simulatorRuntimeID'])
+    for key, value in metadata.items():
+        require(manifest.get(key) == value, f'missing or inconsistent {key}')
+    return dict(behaviorProfileID=manifest['profileID'],
+                simulatorOS=dict(runtimeID=metadata['simulatorRuntimeID'],
+                                 version=metadata['simulatorOSVersion'], buildVersion=metadata['simulatorOSBuildVersion']),
+                compiler=dict(xcodeVersion=metadata['compilerXcodeVersion'], buildVersion=metadata['compilerXcodeBuildVersion']))
 
 
 def load(directory, name):
@@ -73,7 +114,13 @@ def snapshot(rows, label):
 
 
 def shipping(rows):
-    return any(r["event"] == "runtime.identity" and r.get("version") == "0.1.0" for r in rows)
+    identities = [r for r in rows if r["event"] == "runtime.identity"]
+    if not identities:
+        return False  # Explicit historical fixtures predate shipping identities.
+    require(len(identities) == 1 and isinstance(identities[0].get("version"), str) and
+            re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", identities[0]["version"]),
+            "invalid shipping runtime version")
+    return True
 
 
 def expected_timeouts(rows):
@@ -339,15 +386,30 @@ def fulfill_action(rows, action):
     return fulfilled
 
 
-def shipping_journal(directory, name, rows, receipt):
+def build_identity(directory, rows):
     manifest = json.loads((directory / 'manifest.json').read_text())
     launch = one(rows, 'launch')
     require(manifest.get('schemaVersion') == 1 and manifest.get('profileID') == 'ios-27.0', 'invalid run manifest')
+    run_environment(directory, manifest)
     for key in ('runID', 'simulatorID'):
         require(manifest.get(key) == launch.get(key), 'manifest identity mismatch')
+    identity = one(rows, 'runtime.identity')
+    info = json.loads((directory / 'runtime-dist/build-info.json').read_text())
+    require(shipping(rows) and launch.get('injected') is True, 'shipping runtime not active')
+    require(identity['version'] == manifest.get('runtimeVersion') == info.get('version'), 'runtime version differs from package or manifest')
     for key in ('probeSHA256', 'runtimeSHA256', 'profileSHA256'):
         digest = manifest.get(key)
         require(isinstance(digest, str) and len(digest) == 64 and all(c in '0123456789abcdef' for c in digest), 'missing build digest')
+        require(identity.get(key) == digest, f'loaded {key} differs from manifest')
+    for relative, key in (('CKSimRuntime.dylib', 'runtimeSHA256'), ('profiles/ios-27.0.json', 'profileSHA256')):
+        path = directory / 'runtime-dist' / relative
+        require(hashlib.sha256(path.read_bytes()).hexdigest() == manifest[key], f'packaged {key} differs from manifest')
+    return manifest
+
+
+def shipping_journal(directory, name, rows, receipt):
+    manifest = build_identity(directory, rows)
+    launch = one(rows, 'launch')
     path = directory / f'{name}.engine.jsonl'
     require(receipt.get('engineSHA256') == hashlib.sha256(path.read_bytes()).hexdigest(), 'engine journal hash mismatch')
     engine = [json.loads(line) for line in path.read_text().splitlines()]
@@ -383,10 +445,12 @@ def shipping_journal(directory, name, rows, receipt):
         b = one(rows, 'step', name='call-waiting')['uuid']
         groups = [r for r in engine if r['event'] == 'call.grouped']
         require(len(groups) == 1 and groups[0]['uuid'][:8] == a and groups[0]['group'][:8] == b, 'runtime group membership mismatch')
+    return manifest
 
 
-def validate(directory, require_receipts=True):
-    summary = {"profile": "simulator-discovery-v2", "mediaProof": False, "scenarios": {}}
+def validate(directory, require_receipts=True, allow_legacy=False):
+    summary = {"profile": "simulator-discovery-v2", "qualification": "historical-replay",
+               "mediaProof": False, "scenarios": {}}
     identities = set()
     for name in SCENARIOS:
         try:
@@ -415,8 +479,10 @@ def validate(directory, require_receipts=True):
                 identities.add((launch["runID"], launch["simulatorID"]))
             common(rows, name)
             {"runtime": runtime, "genuine": genuine, "push": push}[name](rows)
-            if require_receipts and name != 'genuine' and shipping(rows):
-                shipping_journal(directory, name, rows, receipt)
+            if require_receipts and name != 'genuine' and (not allow_legacy or shipping(rows)):
+                manifest = shipping_journal(directory, name, rows, receipt)
+                summary['environment'] = run_environment(directory, manifest)
+                summary['qualification'] = 'shipping-runtime'
             summary["scenarios"][name] = {"success": True, "events": len(rows)}
         except (EvidenceError, OSError, ValueError, KeyError, TypeError) as error:
             summary["scenarios"][name] = {"success": False, "error": str(error)}
@@ -431,9 +497,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--require-receipts", action="store_true")
-    parser.add_argument("--allow-legacy", action="store_true", help="explicit historical replay without receipts")
+    parser.add_argument("--allow-legacy", action="store_true", help="explicit pre-shipping replay; add --require-receipts to retain receipt checks")
     args = parser.parse_args()
-    summary = validate(args.directory, not args.allow_legacy or args.require_receipts)
+    summary = validate(args.directory, not args.allow_legacy or args.require_receipts, allow_legacy=args.allow_legacy)
     print(json.dumps(summary, indent=2))
     return 0 if summary["success"] else 1
 

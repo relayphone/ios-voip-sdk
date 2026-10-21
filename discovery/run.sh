@@ -2,6 +2,7 @@
 # Genuine baseline and shipping Swift runtime, through the same application.
 set -euo pipefail
 cd "$(dirname "$0")"
+python3 check_oracles.py
 if [[ -n "${OUT:-}" ]]; then
   mkdir "$OUT" # Refuse stale output, including an existing empty directory.
 else
@@ -51,14 +52,25 @@ trap 'exit 143' TERM
 echo "Evidence: $OUT"
 { sw_vers; xcodebuild -version; uname -m; git rev-parse HEAD; } > "$OUT/environment.txt" 2>&1
 if [[ -n "${COMPILER_DEVELOPER_DIR:-}" ]]; then
-  echo "compilerDeveloperDir=$COMPILER_DEVELOPER_DIR" >> "$OUT/environment.txt"
-  env DEVELOPER_DIR="$COMPILER_DEVELOPER_DIR" xcodebuild -version >> "$OUT/environment.txt"
+  limit 30 env DEVELOPER_DIR="$COMPILER_DEVELOPER_DIR" xcodebuild -version > "$OUT/compiler-version.txt"
+else
+  limit 30 xcodebuild -version > "$OUT/compiler-version.txt"
 fi
-xcrun simctl list runtimes > "$OUT/runtimes.txt"
-RUNTIME=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x.get("platform")=="iOS" and x["isAvailable"]]; print(sorted(r,key=lambda x:[int(p) for p in x["version"].split(".")])[-1]["identifier"])')
-DEVTYPE=$(xcrun simctl list devicetypes -j | python3 -c 'import json,sys; d=[x["identifier"] for x in json.load(sys.stdin)["devicetypes"] if "iPhone" in x["name"] and "Pro" in x["name"] and "Max" not in x["name"]]; print(d[-1])')
+if [[ -n "${COMPILER_DEVELOPER_DIR:-}" ]]; then
+  echo "compilerDeveloperDir=$COMPILER_DEVELOPER_DIR" >> "$OUT/environment.txt"
+  cat "$OUT/compiler-version.txt" >> "$OUT/environment.txt"
+fi
+limit 30 xcrun simctl list runtimes > "$OUT/runtimes.txt"
+limit 30 xcrun simctl list runtimes -j > "$OUT/runtimes.json"
+RUNTIME=$(python3 - "$OUT/runtimes.json" <<'PYRUNTIME'
+import json,sys
+from summarize import selected_runtime
+print(selected_runtime(json.load(open(sys.argv[1])))['identifier'])
+PYRUNTIME
+)
+DEVTYPE=$(limit 30 xcrun simctl list devicetypes -j | python3 -c 'import json,sys; d=[x["identifier"] for x in json.load(sys.stdin)["devicetypes"] if "iPhone" in x["name"] and "Pro" in x["name"] and "Max" not in x["name"]]; print(d[-1])')
 echo "runtime=$RUNTIME devicetype=$DEVTYPE" | tee -a "$OUT/environment.txt"
-UDID=$(xcrun simctl create "callkit-probe-$$" "$DEVTYPE" "$RUNTIME")
+UDID=$(limit 30 xcrun simctl create "callkit-probe-$$" "$DEVTYPE" "$RUNTIME")
 echo "runOwnedSimulator=$UDID" >> "$OUT/environment.txt"
 limit 30 xcrun simctl boot "$UDID"
 limit 180 xcrun simctl bootstatus "$UDID" -b > /dev/null
@@ -101,13 +113,16 @@ env DEVELOPER_DIR="${COMPILER_DEVELOPER_DIR:-${DEVELOPER_DIR:-$(xcode-select -p)
   bash ../scripts/build-runtime.sh "$BUILD/runtime" >> "$OUT/build.log" 2>&1
 python3 - "$OUT/manifest.json" "$RUN_ID" "$UDID" "$RUNTIME" "$DEVTYPE" "$BUILD/Probe.app/Probe" "$BUILD/runtime" <<'PYMANIFEST'
 import hashlib,json,pathlib,subprocess,sys
+from summarize import environment_metadata
 p,run,sim,runtime,device,probe,package=sys.argv[1:]
 root=pathlib.Path(package)
+info=json.loads((root/'build-info.json').read_text())
 manifest=dict(schemaVersion=1,runID=run,simulatorID=sim,simulatorRuntimeID=runtime,deviceTypeID=device,profileID='ios-27.0',
- sourceCommit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+ sourceCommit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),runtimeVersion=info['version'],
  probeSHA256=hashlib.sha256(pathlib.Path(probe).read_bytes()).hexdigest(),
  runtimeSHA256=hashlib.sha256((root/'CKSimRuntime.dylib').read_bytes()).hexdigest(),
  profileSHA256=hashlib.sha256((root/'profiles/ios-27.0.json').read_bytes()).hexdigest())
+manifest.update(environment_metadata(pathlib.Path(p).parent,runtime))
 pathlib.Path(p).write_text(json.dumps(manifest,indent=2)+'\n')
 PYMANIFEST
 cp -R "$BUILD/runtime" "$OUT/runtime-dist"
@@ -121,7 +136,7 @@ run() {
   shift
   if [[ -n "${ONLY:-}" && "$name" != "${ONLY:-}" ]]; then return 0; fi
   echo "Starting $name"
-  inherited=${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES-$(xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>/dev/null || true)}
+  inherited=${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES-$(limit 20 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>/dev/null || true)}
   local libraries=$inherited
   if [[ "$name" != genuine ]]; then libraries="${inherited:+$inherited:}$LIBS"; fi
   if env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$libraries" \
@@ -133,7 +148,7 @@ run() {
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.probe \
     --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.probe; then
     local container
-    container=$(xcrun simctl get_app_container "$UDID" dev.callkitsim.probe data)
+    container=$(limit 20 xcrun simctl get_app_container "$UDID" dev.callkitsim.probe data)
     local journal="$container/Documents/.callkit-simulator/$RUN_ID/events.jsonl"
     if [[ "$name" != genuine ]]; then
       cp "$journal" "$OUT/$name.engine.jsonl"
@@ -163,6 +178,7 @@ LIBS="$BUILD/runtime/CKSimRuntime.dylib"
 run report-threading SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=report-threading
 if [[ -z "$ONLY" || "$ONLY" == report-threading ]]; then
   limit 20 python3 report_threading_conformance.py "$OUT" | tee "$OUT/report-threading-conformance.json"
+  limit 20 python3 check_image_identity.py --capture "$OUT" | tee "$OUT/image-identity-checks.json"
   if [[ "$ONLY" == report-threading ]]; then exit; fi
 fi
 run genuine SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=12 SIMCTL_CHILD_PROBE_WAIT_FOR_TEARDOWN=1
@@ -195,3 +211,4 @@ run semantics-failures SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=d
 python3 semantics_conformance.py "$OUT" | tee "$OUT/semantics-conformance.json"
 run generations SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=generations
 python3 generations_conformance.py "$OUT" | tee "$OUT/generations-conformance.json"
+python3 check_shipping_controls.py "$OUT" | tee "$OUT/shipping-controls.json"

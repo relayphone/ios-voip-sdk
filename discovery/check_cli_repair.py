@@ -70,13 +70,14 @@ else:
             directory.mkdir()
             package = directory / "runtime"
             package.mkdir()
+            version = (CLI.parent.parent / "VERSION").read_text().strip()
             files = {}
-            for name in ("CKSimRuntime.dylib", "CKSimLoader.dylib", "cksim-notify", "cksim", "profiles/ios-27.0.json"):
+            for name in ("CKSimRuntime.dylib", "CKSimLoader.dylib", "cksim-notify", "cksim", "profiles/ios-27.0.json", "VERSION"):
                 path = package / name
                 path.parent.mkdir(exist_ok=True)
-                path.write_bytes(b"offline fixture\n")
+                path.write_bytes((version + "\n").encode() if name == "VERSION" else b"offline fixture\n")
                 files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
-            (package / "build-info.json").write_text(json.dumps(dict(schemaVersion=1, version="0.1.0", files=files)))
+            (package / "build-info.json").write_text(json.dumps(dict(schemaVersion=1, version=version, files=files)))
             fake_state = directory / "simctl.json"
             fake_state.write_text(json.dumps(dict(environment=original)))
             env = {**os.environ, "PATH": f"{binary}:{os.environ['PATH']}",
