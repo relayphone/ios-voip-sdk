@@ -1,0 +1,20 @@
+{
+  "completed": true,
+  "success": true,
+  "schemaVersion": 2,
+  "runID": "56C0C998-F75B-4620-943C-EDBB810EB056",
+  "simulatorID": "547E79A2-147A-480D-977D-ED228A01444C",
+  "scenario": "kvc-exception",
+  "bundleID": "dev.callkitsim.abi",
+  "launcherPID": 54619,
+  "lastProbeEvent": "done",
+  "lastProbeTimestampMS": 240,
+  "appEntryObserved": true,
+  "appPID": 54630,
+  "terminateExitCode": 0,
+  "launchExitCode": 0,
+  "launchExitCodeBeforeCleanup": 0,
+  "elapsedSeconds": 7.414,
+  "traceSHA256": "41d889383c09b02617237e10991fa01f5b77347991c801336b018e519e064ce9",
+  "launcherAppPID": 54630
+}
