@@ -51,7 +51,7 @@ device trace supplies delivery evidence.
   required operator reviewer and exact branch rules for `main` and
   `feat/runtime-engine`; these settings were queried after creation.
 - The new GitHub workflow checks key retrieval and local ES256 signing only.
-  [Hosted run 39574173320](https://github.com/ziahamza/callkit-simulator/actions/runs/39574173320)
+  [Hosted run 39574173320](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39574173320)
   passed on macOS at `18513dee85cbad0dc75aec6770b61186bf855dfa`.
   Its output explicitly recorded `localES256Verified:true` and
   `apnsAuthenticated:false`; real authentication is established by the separate

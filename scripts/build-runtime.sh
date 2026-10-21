@@ -36,7 +36,7 @@ codesign -s - --force "$PACKAGE/cksim-notify"
 codesign -s - --force "$PACKAGE/CKSimLoader.dylib"
 cp -R profiles "$PACKAGE/profiles"
 cp Tools/cksim "$PACKAGE/cksim"
-cp README.md LICENSE "$PACKAGE/"
+cp docs/simulator-runtime.md "$PACKAGE/README.md"
 chmod +x "$PACKAGE/cksim"
 python3 - "$PACKAGE" "$SDK" "$ARCHS" <<'PYINFO'
 import hashlib,json,pathlib,subprocess,sys

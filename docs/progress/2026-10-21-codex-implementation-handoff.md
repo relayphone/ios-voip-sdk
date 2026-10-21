@@ -17,7 +17,7 @@ strict provenance, a genuine CallKit baseline, and failure-sensitive evidence.
 
 | PR | Implemented in this checkpoint | Remaining scope |
 | --- | --- | --- |
-| [Simulator #2](https://github.com/ziahamza/callkit-simulator/pull/2) | Executable discovery harness; strict versioned conformance evidence; retained-action and callback checks; process receipts; owned-device cleanup; old/new SDK lanes | Production Swift engine, complete profiles, release artifact and delivery/bootstrap lifecycle |
+| [Simulator #2](https://github.com/ziahamza/ios-voip-sdk/pull/2) | Executable discovery harness; strict versioned conformance evidence; retained-action and callback checks; process receipts; owned-device cleanup; old/new SDK lanes | Production Swift engine, complete profiles, release artifact and delivery/bootstrap lifecycle |
 | [Library #1](https://github.com/ziahamza/expo-callkit-telecom/pull/1) | Original upstream #29 with attribution; typed Objective-C PushKit metadata adapter; conservative typed optional-push policy; real native/JS regression and accessible example controls | Placeholder lifecycle bounds, generation-safe session publication, APNs/device qualification |
 | [Library #4](https://github.com/ziahamza/expo-callkit-telecom/pull/4) | Pinned macOS workflow, real Release Expo build/XCTest, frozen installs, private raw test logs and public structured summaries | Retain explicit Expo/compiler qualification boundary; replace discovery checkout with versioned runtime release when available |
 | [Library #8](https://github.com/ziahamza/expo-callkit-telecom/pull/8) | Candidate integrates #1 + #4 with identical source tree; hosted validation remains explicit | Never merge into the fork's upstream-mirroring main |
@@ -38,7 +38,7 @@ No CallX or GetStream mock code was imported.
   including mute, DTMF, hold, group, outgoing, timeout and cleanup.
 - Retained-answer timeout: **59.648 seconds**. Late fulfillment is correlated to
   the same action ID; premature completion is rejected by the evidence gate.
-- Hosted [39511363331](https://github.com/ziahamza/callkit-simulator/actions/runs/39511363331):
+- Hosted [39511363331](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39511363331):
   both Xcode **26.3 / SDK 26.2 / legacy PushKit** and **26.6 / SDK 26.5 / metadata
   PushKit** pass genuine, runtime and push scenarios on macOS 26.6.2 with the
   Xcode 26.6 host and **iOS 26.5 runtime**. Source head `77c4f03`; actual synthetic

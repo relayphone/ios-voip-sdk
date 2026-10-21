@@ -29,7 +29,7 @@ key was revoked, rotated or given another capability.
   required operator reviewer and exact branch rules for `main` and
   `feat/runtime-engine`. Its secret is available only to the approved
   credential-check job. Ordinary simulator/library PR CI receives no APNs key.
-- [Hosted credential check](https://github.com/ziahamza/callkit-simulator/actions/runs/39574173320)
+- [Hosted credential check](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39574173320)
   passed: private-key retrieval and local P-256 ES256 signing. This job sends
   no push, uploads no artifacts and makes no APNs-delivery claim.
 

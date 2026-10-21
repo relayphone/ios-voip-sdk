@@ -1,7 +1,7 @@
 name: Simulator CallKit discovery
 on:
   push:
-    branches: ["discovery/**"]
+    branches: [main, "discovery/**"]
   pull_request:
     paths:
       - "discovery/**"

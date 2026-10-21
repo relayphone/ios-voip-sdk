@@ -36,7 +36,7 @@ python3 discovery/check_harness.py
 
 ## Hosted compatibility evidence
 
-[Run 39509248937](https://github.com/ziahamza/callkit-simulator/actions/runs/39509248937)
+[Run 39509248937](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39509248937)
 exercised source head `102605a` (checkout merge recorded in the uploaded environment).
 
 | Host | Xcode | SDK / runtime | Result |
@@ -53,7 +53,7 @@ attempts bounded recovery of the probe's container trace on failure, and selects
 the compiler separately from the newer simulator host. It does not claim that the
 macOS 15 / iOS 26.2 tuple is fixed. Subsequent runs qualify their exact tuples.
 
-[Run 39511363331](https://github.com/ziahamza/callkit-simulator/actions/runs/39511363331)
+[Run 39511363331](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39511363331)
 passed **both** compiler lanes at source head `77c4f03` (actual PR merge checkout
 `7e7db7f09dd430a86c63bbb7bc07c323d7ef2c53`). Both use macOS 26.6.2, Xcode 26.6's
 simulator host and the iOS 26.5 runtime:
@@ -70,7 +70,7 @@ callback execution on the newer host/runtime; it does not qualify iOS 26.2 itsel
 
 ## Incomplete genuine audio probe
 
-[Run 39515162578](https://github.com/ziahamza/callkit-simulator/actions/runs/39515162578)
+[Run 39515162578](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39515162578)
 passes the old-compiler lane but fails the newer lane before terminal `done`.
 The [diagnostic receipt and recovered container trace](hosted-39515162578-incomplete/)
 are retained separately and **do not qualify** as conformance evidence. The trace
@@ -98,7 +98,7 @@ the strict gate. Genuine records two `mic.skipped(reason: callkit-inactive)`
 events; runtime still captures **48,000 frames at 48 kHz** twice. All process
 receipts complete and the owned simulator is removed.
 
-The next [hosted run 39517704840](https://github.com/ziahamza/callkit-simulator/actions/runs/39517704840)
+The next [hosted run 39517704840](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39517704840)
 has a different metadata-lane failure: preparation exits 142 after signing,
 before `Starting genuine`, with no app trace or scenario receipt. Its
 [environment and job excerpt](hosted-39517704840-preparation-timeout/) cannot

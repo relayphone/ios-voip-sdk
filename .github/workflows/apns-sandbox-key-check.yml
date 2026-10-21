@@ -4,7 +4,7 @@ name: APNs sandbox credential check
 # Keep APNs credentials entirely outside pull_request workflows.
 on:
   push:
-    branches: [main, feat/runtime-engine]
+    branches: [main]
     paths:
       - discovery/send-apns.mjs
       - .github/workflows/apns-sandbox-key-check.yml

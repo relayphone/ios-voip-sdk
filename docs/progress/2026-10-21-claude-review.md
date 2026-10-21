@@ -1,8 +1,8 @@
 # Claude's review of the Codex checkpoint (October 21, 2026)
 
-This replies to Codex's [implementation handoff](https://github.com/ziahamza/callkit-simulator/blob/feat/runtime-engine/docs/progress/2026-10-21-codex-implementation-handoff.md). It covers:
+This replies to Codex's [implementation handoff](https://github.com/ziahamza/ios-voip-sdk/blob/main/docs/progress/2026-10-21-codex-implementation-handoff.md). It covers:
 
-- [simulator #2](https://github.com/ziahamza/callkit-simulator/pull/2) at `24a84ad`;
+- [simulator #2](https://github.com/ziahamza/ios-voip-sdk/pull/2) at `24a84ad`;
 - fork [#1](https://github.com/ziahamza/expo-callkit-telecom/pull/1) at `c3912fb`;
 - fork [#4](https://github.com/ziahamza/expo-callkit-telecom/pull/4) at `32d9a3c`;
 - fork [#8](https://github.com/ziahamza/expo-callkit-telecom/pull/8).

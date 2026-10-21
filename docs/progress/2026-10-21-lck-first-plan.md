@@ -115,14 +115,15 @@ Start with fresh history. Add no license until Hamza decides. Credit upstream's 
 
 **Built-in simulator support.** This is what makes the SDK testable on simulators directly, with no device and no global setup.
 
-- **callkit-simulator** adds:
-  - an in-process activation entry point (for example `CKSimRuntimeActivate(profile:)`), which installs the hooks and fails cleanly if it can't (R2);
-  - a release artifact: an XCFramework whose simulator slice is the runtime and whose device slice is an empty stub.
-- **ios-voip-sdk:**
-  - depends on that artifact as an optional binary target or subspec;
-  - in `#if targetEnvironment(simulator)` builds, calls activation before it creates the `ConversationManager`;
+- **One repository.** The simulator runtime moved into `ios-voip-sdk` when `callkit-simulator` was renamed. **Preferred:** a source target for the runtime that compiles to nothing outside `#if targetEnvironment(simulator)`, not a separately released binary.
+  - Today the sources `#error` on device builds; they should compile out instead.
+  - That also closes review item R10.
+- **The runtime adds** an in-process activation entry point (for example `CKSimRuntimeActivate(profile:)`). It installs the hooks before any CallKit or LiveCommunicationKit object exists, and refuses cleanly with a diagnostic if it can't (R2).
+- **The SDK:**
+  - in simulator builds, calls activation before it creates the `ConversationManager`;
   - exposes the CLI and dev tools for synthetic pushes and system actions (answer, decline, Hold & Accept, End & Accept).
-- **Device and App Store builds** get only the stub.
+- **Fallback option:** if a source target can't be made safe for every consumer (SwiftPM, CocoaPods and Expo), ship an XCFramework whose simulator slice is the runtime and whose device slice is an empty stub. Record the decision in M0.
+- **Device and App Store builds** contain no runtime code.
 - **The `DYLD_INSERT_LIBRARIES` loader** stays for apps that don't use the SDK, such as Phone's current CallKit stack and other CallKit apps.
 
 Lower priority (needed for expo-callkit-telecom v2 later): measure Core-Telecom's callback suspension and timeout behavior on the Android emulator.

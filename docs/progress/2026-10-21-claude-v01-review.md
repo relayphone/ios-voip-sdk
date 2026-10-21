@@ -4,7 +4,7 @@
 
 This review covers:
 
-- runtime [#2](https://github.com/ziahamza/callkit-simulator/pull/2) at `ba2fe66`, the same commit as tag `v0.1`, and the [v0.1 release](https://github.com/ziahamza/callkit-simulator/releases/tag/v0.1);
+- runtime [#2](https://github.com/ziahamza/ios-voip-sdk/pull/2) at `ba2fe66`, the same commit as tag `v0.1`, and the [v0.1 release](https://github.com/ziahamza/ios-voip-sdk/releases/tag/v0.1);
 - fork [#1](https://github.com/ziahamza/expo-callkit-telecom/pull/1) `0adf6db`, [#9](https://github.com/ziahamza/expo-callkit-telecom/pull/9) `8a6795a`, [#4](https://github.com/ziahamza/expo-callkit-telecom/pull/4) `0faca8d` and [#3](https://github.com/ziahamza/expo-callkit-telecom/pull/3) `6de9de2`;
 - Phone [#374](https://github.com/ziahamza/phone-app/pull/374), merged as `249f004b`.
 
