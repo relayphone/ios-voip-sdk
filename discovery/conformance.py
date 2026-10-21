@@ -69,6 +69,10 @@ def providers(directory, case):
     require(len(executions) == len(actual), 'execution inventory differs')
     require(len({r['action'] for r in actual}) == len(actual), 'duplicate action delivery')
     require(len({r['tx'] for r in executions}) == len(executions), 'duplicate delivered transaction')
+    created = [r['p'] for r in rows if r['event'] == 'tap.created']
+    dropped = {r['p'] for r in rows if r['event'] == 'tap.dropped'}
+    expected_invalidations = sum(r['event'] == 'tap.invalidated' for r in rows) + sum(p not in dropped for p in created)
+    require(sum(r['event'] == 'provider.invalidated' for r in engine) == expected_invalidations, 'concrete provider invalidation bypassed')
     requested = {r['action']: r for r in rows if r['event'] == 'request'}
     accepted = {r['transactionID'][:8]: r for r in engine if r['event'] == 'request.accepted'}
     delivered = {r['transactionID'][:8]: r for r in engine if r['event'] == 'transaction.delivered'}

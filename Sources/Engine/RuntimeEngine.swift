@@ -264,6 +264,8 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     withState {
       let queue = controllerQueues.object(forKey: controller) ?? DispatchQueue.global(qos: .userInitiated)
       guard let provider = selected, provider.valid else {
+        record(event: "request.accepted", fields: ["transactionID": requestID.uuidString,
+          "actionIDs": actions.map { $0.uuid.uuidString }, "error": 2])
         after(profile.unknownProviderSeconds) { queue.async { reply.invoke(self.requestError(2)) } }
         return
       }

@@ -377,6 +377,7 @@ def shipping_journal(directory, name, rows, receipt):
     for a, b in zip(executions, delivered):
         require(a.get('transactionID') == b['transactionID'] and a.get('actionIDs') == [i[:8] for i in b['actionIDs']], 'provider transaction identity mismatch')
     if name == 'runtime':
+        one(engine, 'provider.invalidated')
         a = one(rows, 'step', name='incoming')['uuid']
         b = one(rows, 'step', name='call-waiting')['uuid']
         groups = [r for r in engine if r['event'] == 'call.grouped']
