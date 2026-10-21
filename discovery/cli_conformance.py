@@ -50,11 +50,16 @@ def journal():
 
 def push(label, required):
     payload = output / f'cli-{label}-payload.json'
-    payload.write_text(json.dumps(dict(from_='CallKit Simulator', scenario=label)))
+    payload.write_text(json.dumps({'from': '+15555550142', 'scenario': label}))
     before = set(calls())
     receipt = command('push', '--payload-file', payload, '--must-report', str(required).lower())
     current = wait(lambda: set(calls()) - before, 'incoming ' + label)
     if len(current) != 1: raise RuntimeError('Unexpected incoming inventory')
+    received = [r for r in journal() if r['event'] == 'push.received' and r.get('pushID') == receipt['pushID']]
+    assert len(received) == 1, 'missing uniquely correlated push receipt'
+    actual = received[0]
+    assert actual['api'] in ('metadata', 'legacy'), 'unsupported push API'
+    assert actual['mustReport'] is (required if actual['api'] == 'metadata' else True), 'push reporting obligation changed'
     return next(iter(current)), receipt['pushID']
 
 

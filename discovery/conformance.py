@@ -110,6 +110,8 @@ def providers(directory, case):
             performed = next((a for a in actual if a['action'] == row['action']), None)
             require(performed is not None and performed['p'] == row['p'] and performed['kind'] == row['kind'], 'timeout action/provider mismatch')
             require(journal_actions.get(row['action'], {}).get('origin') == 'postEndUnmute', 'unexpected timeout origin')
+            fulfillment = one(rows, 'tap.fulfilled', action=row['action'])
+            require(rows.index(performed) < rows.index(fulfillment) < rows.index(row), 'post-end timeout fulfillment order')
             require(5000 <= row['t_ms'] - performed['t_ms'] <= 5900, 'post-end timeout budget')
     require(one(rows, 'observer.snapshot', label='final')['calls'] == [], 'final calls remain')
     for r in rows:
