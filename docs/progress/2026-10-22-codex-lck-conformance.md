@@ -73,7 +73,8 @@ Integrated B onto `10716e464ca63b58ad50d40dccd6e4af27219f37` (the prepared
 R5/R6/R7/R8/R9/R4 stack) on `codex/runtime-lck-acceptance`. The original B change
 cherry-picked cleanly as `6b21ea4`. R8 OS/compiler metadata, R9 manifest/version
 binding, R6 shipping controls and R4 loading/repair documentation are preserved.
-R2 remains pending and will be merged from the bottom of the stack separately.
+R2's final concrete ABI guards and native evidence were subsequently pulled in
+through the R4 stack by merge `b2195ac` (R4 parent `b14611f`).
 
 Measured integration red: the B synthetic fixture still had its original
 pre-R8/R9 manifest and failed with `missing simulatorRuntimeID`. It now saves a
@@ -111,3 +112,11 @@ Fresh native B qualification and capture-based shipping mutation controls remain
 pending. No native build, simulator launch, push or PR was performed for this
 integration. The remaining acceptance risk is actual LCK/framework behavior under
 the integrated runtime; offline device replays do not establish that behavior.
+
+`CKSIM_ONLY=lck` now selects all four serial LCK journeys in one run-owned
+simulator and exits after their common comparison. Individual LCK diagnostics
+and the default complete harness remain available. Measured offline: 13 LCK
+controls, ten mocked filter controls, nine preflight/dispatch selections, shell
+syntax and whitespace checks pass. Both workflows also pass `actionlint` after
+the final R2 workflow merge. The B native run waits for the R4 simulator cleanup
+release before allocating its simulator.

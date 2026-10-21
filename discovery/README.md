@@ -80,8 +80,9 @@ runs these controls before allocating build files or a simulator.
 under the runtime: `basic`, `cx-after`, `lck-after` and `two-managers`. Its only
 source transformation is the asserted single `exit(0)` to `return`, allowing the
 supervisor to terminate the app and bind the complete trace, engine journal and
-receipt. `CKSIM_ONLY=lck-basic` (or `lck-cx-after`, `lck-lck-after`,
-`lck-two-managers`) selects one diagnostic journey.
+receipt. `CKSIM_ONLY=lck` runs all four journeys in one run-owned simulator and
+exits after LCK conformance. `CKSIM_ONLY=lck-basic` (or `lck-cx-after`,
+`lck-lck-after`, `lck-two-managers`) selects one diagnostic journey.
 
 `lck_conformance.py <capture-directory> [--case <scenario>]` requires the process
 receipt and R5 loaded-image/package identity checks. It compares ordered action

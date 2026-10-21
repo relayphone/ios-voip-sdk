@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 python3 check_oracles.py
-if [[ -z "${CKSIM_ONLY:-}" || "${CKSIM_ONLY:-}" == lck-* ]]; then
+if [[ -z "${CKSIM_ONLY:-}" || "${CKSIM_ONLY:-}" == lck || "${CKSIM_ONLY:-}" == lck-* ]]; then
   python3 check_lck_conformance.py
 fi
 if [[ -n "${OUT:-}" ]]; then
@@ -17,7 +17,7 @@ UDID=""
 LOGGER=""
 RUN_ID=$(uuidgen)
 ONLY=${CKSIM_ONLY:-}
-case "$ONLY" in ""|report-threading|generations|providers-single|providers-ab|providers-ba|providers-handles|providers-late|providers-drop|providers-inv|providers-recreate|lck-basic|lck-cx-after|lck-lck-after|lck-two-managers) ;; *) echo "Unsupported diagnostic selection" >&2; exit 1;; esac
+case "$ONLY" in ""|report-threading|generations|providers-single|providers-ab|providers-ba|providers-handles|providers-late|providers-drop|providers-inv|providers-recreate|lck|lck-basic|lck-cx-after|lck-lck-after|lck-two-managers) ;; *) echo "Unsupported diagnostic selection" >&2; exit 1;; esac
 limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
 prepare_stage() {
   local phase=$1 budget=$2 started status
@@ -144,7 +144,9 @@ run() {
   local name=$1
   local inherited
   shift
-  if [[ -n "${ONLY:-}" && "$name" != "${ONLY:-}" ]]; then return 0; fi
+  if [[ -n "${ONLY:-}" && "$name" != "${ONLY:-}" ]]; then
+    if [[ "$ONLY" != lck || "$name" != lck-* ]]; then return 0; fi
+  fi
   echo "Starting $name"
   inherited=${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES-$(limit 20 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>/dev/null || true)}
   local libraries=$inherited
@@ -194,9 +196,9 @@ fi
 for case in basic cx-after lck-after two-managers; do
   run "lck-$case" SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=lck SIMCTL_CHILD_PROBE_LCK="$case"
 done
-if [[ -z "$ONLY" || "$ONLY" == lck-* ]]; then
+if [[ -z "$ONLY" || "$ONLY" == lck || "$ONLY" == lck-* ]]; then
   lck_args=("$OUT")
-  if [[ -n "$ONLY" ]]; then lck_args+=(--case "${ONLY#lck-}"); fi
+  if [[ -n "$ONLY" && "$ONLY" != lck ]]; then lck_args+=(--case "${ONLY#lck-}"); fi
   limit 20 python3 lck_conformance.py "${lck_args[@]}" | tee "$OUT/lck-conformance.json"
   if [[ -n "$ONLY" ]]; then exit; fi
 fi
