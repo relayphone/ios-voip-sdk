@@ -4,3 +4,6 @@
 {"bytes": 32, "event": "push.token", "main": true, "t_ms": 1117, "type": "PKPushTypeVoIP"}
 {"api": "metadata", "appState": 0, "event": "push.received", "keys": ["aps", "callId", "from"], "main": true, "mustReport": false, "payloadClass": "PKPushPayload", "pid": 2237, "t_ms": 27102}
 {"event": "push.reported", "main": true, "result": "com.apple.CallKit.error.incomingcall:3", "t_ms": 30264}
+{"calls": [], "event": "observer.snapshot", "label": "after-push-wait", "main": false, "pending": 0, "t_ms": 127854}
+{"calls": [], "event": "observer.snapshot", "label": "final", "main": false, "pending": 0, "t_ms": 128899}
+{"event": "done", "main": false, "t_ms": 128900}

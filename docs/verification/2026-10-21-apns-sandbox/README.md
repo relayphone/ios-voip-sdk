@@ -51,7 +51,13 @@ device trace supplies delivery evidence.
   required operator reviewer and exact branch rules for `main` and
   `feat/runtime-engine`; these settings were queried after creation.
 - The new GitHub workflow checks key retrieval and local ES256 signing only.
-  Its hosted result is recorded in the progress handoff after execution.
+  [Hosted run 39574173320](https://github.com/ziahamza/callkit-simulator/actions/runs/39574173320)
+  passed on macOS at `18513dee85cbad0dc75aec6770b61186bf855dfa`.
+  Its output explicitly recorded `localES256Verified:true` and
+  `apnsAuthenticated:false`; real authentication is established by the separate
+  device send above.
+- The device scenario completed at 128.900 s, with empty final calls and zero
+  pending actions. No call was left active by this smoke test.
 
 Still unmeasured here: a real push while a genuine call is active, cold launch
 from a locked phone followed by answer, answer-to-audio latency, and native-to-JS
