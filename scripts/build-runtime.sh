@@ -15,7 +15,7 @@ trap 'rm -rf "$WORK"' EXIT
 for arch in $ARCHS; do
   target="$arch-apple-ios18.0-simulator"
   for source in CKInterposition CKPushDelivery; do
-    xcrun --sdk iphonesimulator clang -target "$target" -isysroot "$SDK" -fobjc-arc -fmodules -DCKSIM_HAS_VOIP_METADATA="$METADATA" \
+    xcrun --sdk iphonesimulator clang -target "$target" -isysroot "$SDK" -fobjc-arc -fmodules -DCKSIM_HAS_VOIP_METADATA="$METADATA" -DCKSIM_ABI_TESTING="${CKSIM_ABI_TESTING:-0}" \
       -c "Sources/Interposition/$source.m" -o "$WORK/$source-$arch.o"
   done
   xcrun --sdk iphonesimulator swiftc -target "$target" -sdk "$SDK" -swift-version 6 -O -emit-library -module-name CKSimRuntime \
@@ -38,7 +38,7 @@ cp -R profiles "$PACKAGE/profiles"
 cp Tools/cksim "$PACKAGE/cksim"
 cp docs/simulator-runtime.md "$PACKAGE/README.md"
 chmod +x "$PACKAGE/cksim"
-python3 - "$PACKAGE" "$SDK" "$ARCHS" <<'PYINFO'
+python3 - "$PACKAGE" "$SDK" "$ARCHS" "${CKSIM_ABI_TESTING:-0}" <<'PYINFO'
 import hashlib,json,pathlib,subprocess,sys
 root=pathlib.Path(sys.argv[1])
 inputs=[p for folder in ('Sources','Tools','profiles','scripts') for p in pathlib.Path(folder).rglob('*') if p.is_file() and '__pycache__' not in p.parts]
@@ -48,7 +48,7 @@ for p in sorted(inputs):
 files={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file()}
 info=dict(schemaVersion=1,version='0.1.0',profile='ios-27.0',sourceCommit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
           sourceDirty=bool(subprocess.check_output(['git','status','--porcelain'],text=True)),sourceInputsSHA256=source_hash.hexdigest(),
-          sdkPath=sys.argv[2],architectures=sys.argv[3].split(),files=files)
+          sdkPath=sys.argv[2],architectures=sys.argv[3].split(),abiTesting=sys.argv[4]=='1',files=files)
 (root/'build-info.json').write_text(json.dumps(info,indent=2,sort_keys=True)+'\n')
 PYINFO
 mv "$PACKAGE" "$OUT"
