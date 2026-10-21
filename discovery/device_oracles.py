@@ -15,7 +15,7 @@ DEADLINE_ROUNDING_SECONDS = 0.1
 def deadline_bands(reference):
     samples = collections.defaultdict(list)
     for row in reference:
-        if row['event'] not in ('tap.perform', 'provider.perform'):
+        if row['event'] not in ('tap.perform', 'provider.perform', 'lck.perform'):
             continue
         kind, seconds = row.get('kind'), row.get('timeoutIn')
         require(isinstance(kind, str) and kind, 'missing device deadline action kind')

@@ -748,6 +748,11 @@ func recordLaunch() {
 struct ProbeApp: App {
   init() {
     Trace.shared.log("app.entry")
+    #if CKSIM_CONFORMANCE
+    // The LCK scenario controls provider creation in this process, even when a
+    // prior diagnostic launch left the push-mode marker in the app container.
+    if ProcessInfo.processInfo.environment["PROBE_MODE"] == "lck" { return }
+    #endif
     let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     if FileManager.default.fileExists(atPath: documents.appendingPathComponent("push-mode").path) {
       ProbeApp.probe.registerPushEarly()
@@ -761,6 +766,11 @@ struct ProbeApp: App {
         guard !started else { return }
         started = true
         #if CKSIM_CONFORMANCE
+        if ProcessInfo.processInfo.environment["PROBE_MODE"] == "lck" {
+          recordLaunch()
+          await LCKProbe().run()
+          return
+        }
         if ProcessInfo.processInfo.environment["PROBE_MODE"] == "report-threading" {
           recordLaunch()
           await ReportThreadingProbe().run()
