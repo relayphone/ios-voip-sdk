@@ -1,0 +1,8 @@
+{
+  "runID": "B54D126F-EC85-4817-BDC6-385E7655839D",
+  "simulatorID": "C62D555C-3E3F-498F-AF33-BB31C5463BAB",
+  "simulatorRuntimeID": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+  "sourceCommit": "4663b482b16833aac29aa8c3d3e5d272bf8387d1",
+  "runtimeSHA256": "ef61dd781ca5c564e6006e069e47c8f40aaa2d5296fbc65e8be92928b597fe2f",
+  "probeSHA256": "8adeb63f70ef68283efd8f7a4720a1bcb5257e7f1ef3da4ac9f5154449389b8c"
+}

@@ -1,0 +1,12 @@
+{
+  "shippingArchitectures": [
+    "x86_64",
+    "arm64"
+  ],
+  "testControlsAbsent": {
+    "CKSIM_TEST_MISSING_SELECTOR": true,
+    "CKSIM_TEST_ACTION_CLASSES": true,
+    "CKSIM_TEST_PUSH_REGISTRY_CLASS": true
+  },
+  "sourceInputsSHA256": "357636b9d84ed7307fea969765ccd5b74eeef0f0ad38d7f97698dd66d27a238f"
+}
