@@ -107,11 +107,23 @@ Start with fresh history. Add no license until Hamza decides. Credit upstream's 
 
 | Milestone | Scope | Done when |
 | --- | --- | --- |
-| M0 | Repo with `Package.swift` and an iOS-only Expo module sharing the Swift sources; an Expo example app; CI on the CallKit Simulator release (LiveCommunicationKit lane) | Example builds; an empty journey passes in CI |
+| M0 | Repo with `Package.swift` and an iOS-only Expo module sharing the Swift sources; an Expo example app; **built-in simulator support** (see below) | The example builds, and an incoming call rings and joins in a plain simulator with no injection, both locally and in CI |
 | M1 | The only `ConversationManager` plus a debug guard; state projection; the handler with deadlines and pending actions for a cold launch with no handler; commands and reports; the PushKit metadata shim and policy, with the existing `incomingCall`/`callEnded` format and `eventId` deduplication; the TypeScript API and hooks | Push → ring → join → connected → hold → end, plus a no-handler cold launch, pass under the runtime |
 | M2 | Media adapters (`webrtc`, `livekit`), the activation watchdog, audio routes | The stale-audio fault ends cleanly; LiveKit adapter journeys pass |
 | M3 | Default calling app: `tel:` links and the start-call intent → `dialRequest`; the config plugin entitlement | A `tel:` link opens a dial request in the example |
 | Device | iPhone 13 with real APNs: cold launch, locked answer, time from answer to `didActivate`, `mustReport` during an active call | Measured and recorded |
+
+**Built-in simulator support.** This is what makes the SDK testable on simulators directly, with no device and no global setup.
+
+- **callkit-simulator** adds:
+  - an in-process activation entry point (for example `CKSimRuntimeActivate(profile:)`), which installs the hooks and fails cleanly if it can't (R2);
+  - a release artifact: an XCFramework whose simulator slice is the runtime and whose device slice is an empty stub.
+- **ios-voip-sdk:**
+  - depends on that artifact as an optional binary target or subspec;
+  - in `#if targetEnvironment(simulator)` builds, calls activation before it creates the `ConversationManager`;
+  - exposes the CLI and dev tools for synthetic pushes and system actions (answer, decline, Hold & Accept, End & Accept).
+- **Device and App Store builds** get only the stub.
+- **The `DYLD_INSERT_LIBRARIES` loader** stays for apps that don't use the SDK, such as Phone's current CallKit stack and other CallKit apps.
 
 Lower priority (needed for expo-callkit-telecom v2 later): measure Core-Telecom's callback suspension and timeout behavior on the Android emulator.
 
