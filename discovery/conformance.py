@@ -70,17 +70,47 @@ def providers(directory, case):
     require(len({r['action'] for r in actual}) == len(actual), 'duplicate action delivery')
     require(len({r['tx'] for r in executions}) == len(executions), 'duplicate delivered transaction')
     requested = {r['action']: r for r in rows if r['event'] == 'request'}
+    accepted = {r['transactionID'][:8]: r for r in engine if r['event'] == 'request.accepted'}
+    delivered = {r['transactionID'][:8]: r for r in engine if r['event'] == 'transaction.delivered'}
+    journal_actions = {identity[:8]: r for r in delivered.values() for identity in r['actionIDs']}
+    for request in requested.values():
+        submitted = accepted.get(request['tx'])
+        require(submitted is not None and [i[:8] for i in submitted['actionIDs']] == [request['action']], 'request/journal identity mismatch')
+        route = next(r for r in rows[rows.index(request):] if r['event'] == 'route' and r['label'] == request['label'])
+        if route['result'] == 'ok' and route['receivers']:
+            require(sum(r['action'] == request['action'] for r in actual) == 1, 'requested action UUID not preserved')
+    for transaction in delivered.values():
+        if transaction['origin'] == 'application':
+            submitted = accepted.get(transaction['requestID'][:8])
+            require(submitted is not None and submitted['error'] == 0 and transaction['actionIDs'] == submitted['actionIDs'], 'unvalidated delivery or changed action UUID')
     for a, execution in zip(actual, executions):
         require(execution['actions'] == [a['action']] and execution['p'] == a['p'], 'execution/action mismatch')
         require(rows.index(execution) < rows.index(a), 'execute must precede perform')
         require(a.get('main') is False and a.get('onQueue') == a['p'], 'configured delegate queue mismatch')
         require(a.get('sameProvider') is (not (case == 'drop' and a['p'] == 'B')), 'provider object identity mismatch')
+        transaction = delivered.get(execution['tx'])
+        require(transaction is not None and [i[:8] for i in transaction['actionIDs']] == execution['actions'], 'execute/journal identity mismatch')
         if a['action'] in requested:
             require(requested[a['action']]['tx'] != execution['tx'], 'request transaction UUID reused')
+        else:
+            origin = journal_actions.get(a['action'], {}).get('origin')
+            require(origin in ('muteEcho', 'postEndUnmute') and a['kind'] == 'CXSetMutedCallAction', 'unclassified system action')
+        deadline = a.get('timeoutIn', -1)
+        low, high = (598, 600.1) if a['kind'] == 'CXStartCallAction' else ((58, 60.1) if a['kind'] == 'CXAnswerCallAction' else (3, 5.1))
+        require(low <= deadline <= high, 'action deadline differs from profile')
     expected_timeouts = collections.Counter(r['kind'] for r in reference if r['event'] == 'tap.timedOut')
     require(collections.Counter(r['kind'] for r in rows if r['event'] == 'tap.timedOut') == expected_timeouts, 'unexpected timeout inventory')
-    for event in ('tap.didActivate', 'tap.didDeactivate'):
-        require([r['p'] for r in rows if r['event'] == event] == [r['p'] for r in reference if r['event'] == event], 'audio ownership differs')
+    audio_events = ('tap.didActivate', 'tap.didDeactivate')
+    require([(r['event'], r['p']) for r in rows if r['event'] in audio_events] ==
+            [(r['event'], r['p']) for r in reference if r['event'] in audio_events], 'audio ownership/order differs')
+    for row in rows:
+        if row['event'] in audio_events:
+            require(row.get('main') is False and row.get('sameProvider') is (case != 'drop'), 'audio provider/queue mismatch')
+        if row['event'] == 'tap.timedOut':
+            performed = next((a for a in actual if a['action'] == row['action']), None)
+            require(performed is not None and performed['p'] == row['p'] and performed['kind'] == row['kind'], 'timeout action/provider mismatch')
+            require(journal_actions.get(row['action'], {}).get('origin') == 'postEndUnmute', 'unexpected timeout origin')
+            require(5000 <= row['t_ms'] - performed['t_ms'] <= 5900, 'post-end timeout budget')
     require(one(rows, 'observer.snapshot', label='final')['calls'] == [], 'final calls remain')
     for r in rows:
         if r['event'] == 'tap.fulfilled': require(r.get('complete') is False, 'action completion property drift')

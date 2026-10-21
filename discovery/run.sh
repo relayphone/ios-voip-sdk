@@ -157,4 +157,5 @@ for case in single ab ba handles late drop inv recreate; do
   run "providers-$case" SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=providers SIMCTL_CHILD_PROBE_PROVIDERS="$case"
 done
 python3 conformance.py "$OUT" | tee "$OUT/conformance.json"
+python3 check_conformance.py "$OUT" | tee "$OUT/conformance-checks.json"
 python3 cli_conformance.py "$UDID" "$BUILD/runtime" "$OUT" | tee "$OUT/cli-conformance.json"
