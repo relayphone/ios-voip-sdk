@@ -29,7 +29,7 @@ def validate(directory, scenario):
             require(r['transactionID'] != r['requestID'], 'transaction identity reused')
     for r in rows:
         if r['event'] in ('provider.executeTransaction', 'provider.perform', 'provider.timedOut', 'observer.callChanged',
-                          'provider.didActivateAudio', 'provider.didDeactivateAudio'):
+                          'provider.didActivateAudio', 'provider.didDeactivateAudio', 'report.incomingCompleted'):
             require(r.get('main') is True, 'nil queue callback not main')
     if scenario == 'failures':
         require(one(rows, 'observer.snapshot', label='after-answer-fail')['calls'] == [], 'failed answer survived')

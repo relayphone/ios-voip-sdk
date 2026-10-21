@@ -748,6 +748,11 @@ struct ProbeApp: App {
         guard !started else { return }
         started = true
         #if CKSIM_CONFORMANCE
+        if ProcessInfo.processInfo.environment["PROBE_MODE"] == "report-threading" {
+          recordLaunch()
+          await ReportThreadingProbe().run()
+          return
+        }
         if ProcessInfo.processInfo.environment["PROBE_MODE"] == "generations" {
           recordLaunch()
           await GenerationProbe().run()

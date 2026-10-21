@@ -101,7 +101,8 @@ def common(rows, name):
     require(all(a["t_ms"] <= b["t_ms"] for a, b in zip(rows, rows[1:])),
             "non-monotonic event time")
     callbacks = ("provider.perform", "provider.executeTransaction", "provider.didActivateAudio",
-                 "provider.didDeactivateAudio", "provider.timedOut", "observer.callChanged")
+                 "provider.didDeactivateAudio", "provider.timedOut", "observer.callChanged",
+                 "report.incomingCompleted")
     require(all(r.get("main") is True for r in rows if r["event"] in callbacks),
             "nil-queue delegate callback delivered off main")
     if name != "genuine":
