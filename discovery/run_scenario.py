@@ -20,6 +20,9 @@ def run(launch, terminate, output, receipt, timeout, identity=None):
     process = None
     stopped = False
     messages = queue.Queue()
+    bundle = result.get("bundleID")
+    launcher_header = re.compile(rb"(?m)^" + re.escape(bundle.encode()) + rb": (\d+)\r?$") if bundle else None
+    launcher_app_pids = []
     try:
         with output.open("xb") as log:
             process = subprocess.Popen(launch, stdout=subprocess.PIPE,
@@ -35,27 +38,31 @@ def run(launch, terminate, output, receipt, timeout, identity=None):
 
             threading.Thread(target=read, daemon=True).start()
             deadline = started + timeout
-            while not result["completed"]:
+            # A fast probe can finish before simctl acknowledges its app PID.
+            while not result["completed"] or (bundle and "launcherAppPID" not in result):
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise RuntimeError("deadline before terminal done event")
+                    awaiting = "launcher app PID acknowledgement" if result["completed"] else "terminal done event"
+                    raise RuntimeError("deadline before " + awaiting)
                 try:
                     line = messages.get(timeout=min(remaining, 0.2))
                 except queue.Empty:
-                    if process.poll() is not None:
-                        raise RuntimeError("launcher exited before terminal done event")
                     continue
                 if line is None:
                     result["stdoutEOFSeconds"] = round(time.monotonic() - started, 3)
-                    raise RuntimeError("launcher exited before terminal done event")
+                    awaiting = "launcher app PID acknowledgement" if result["completed"] else "terminal done event"
+                    raise RuntimeError("launcher exited before " + awaiting)
                 log.write(line)
                 log.flush()
+                if launcher_header:
+                    launcher_app_pids.extend(int(pid) for pid in launcher_header.findall(line))
                 if b"PROBE " in line:
                     try:
                         row = json.loads(line.split(b"PROBE ", 1)[1])
                     except (ValueError, UnicodeDecodeError):
                         continue  # The conformance parser rejects malformed evidence.
-                    result["completed"] = isinstance(row, dict) and row.get("event") == "done"
+                    if isinstance(row, dict) and row.get("event") == "done":
+                        result["completed"] = True
                     if isinstance(row, dict):
                         result["lastProbeEvent"] = row.get("event")
                         result["lastProbeTimestampMS"] = row.get("t_ms")
@@ -63,6 +70,12 @@ def run(launch, terminate, output, receipt, timeout, identity=None):
                         result["appEntryObserved"] = True
                     if isinstance(row, dict) and row.get("event") == "launch" and type(row.get("pid")) is int:
                         result["appPID"] = row["pid"]
+                if len(launcher_app_pids) > 1:
+                    raise RuntimeError(f"require one launcher app PID acknowledgement; got {len(launcher_app_pids)}")
+                if launcher_app_pids and "appPID" in result:
+                    if launcher_app_pids[0] <= 0 or launcher_app_pids[0] != result["appPID"]:
+                        raise RuntimeError("launcher/probe app PID mismatch")
+                    result["launcherAppPID"] = launcher_app_pids[0]
 
             # SwiftUI intentionally stays alive after the scenario. A stop is
             # accepted only after done and a successful termination of our app.
@@ -110,14 +123,23 @@ def run(launch, terminate, output, receipt, timeout, identity=None):
         if output.exists():
             data = output.read_bytes()
             result["traceSHA256"] = hashlib.sha256(data).hexdigest()
-            bundle = result.get("bundleID")
             if bundle:
-                matches = re.findall(rb"(?m)^" + re.escape(bundle.encode()) + rb": (\d+)\r?$", data)
+                matches = launcher_header.findall(data)
+                identity_error = None
                 if len(matches) == 1:
                     result["launcherAppPID"] = int(matches[0])
-                if result.get("launcherAppPID") != result.get("appPID"):
+                    if result["launcherAppPID"] <= 0 or result["launcherAppPID"] != result.get("appPID"):
+                        identity_error = "launcher/probe app PID mismatch"
+                else:
+                    result.pop("launcherAppPID", None)
+                    identity_error = f"require one launcher app PID acknowledgement; got {len(matches)}"
+                if identity_error:
                     result["success"] = False
-                    result["error"] = "launcher/probe app PID mismatch"
+                    if "error" in result:
+                        if result["error"] != identity_error:
+                            result["identityError"] = identity_error
+                    else:
+                        result["error"] = identity_error
         receipt.write_text(json.dumps(result, indent=2) + "\n")
     return 0 if result["success"] else 1
 
