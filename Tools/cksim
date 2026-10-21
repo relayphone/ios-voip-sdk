@@ -1,0 +1,216 @@
+#!/usr/bin/env python3
+"""Control CallKit Simulator in one running simulator app. No third-party dependencies."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+import tempfile
+import uuid
+
+
+def simctl(*args, env=None):
+    result = subprocess.run(["xcrun", "simctl", *map(str, args)], capture_output=True, text=True, env=env)
+    if result.returncode:
+        raise RuntimeError(f"simctl {args[0]} failed: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def simulator(identifier):
+    if identifier != "booted":
+        return str(uuid.UUID(identifier)).upper()
+    data = json.loads(simctl("list", "devices", "booted", "-j"))
+    matches = [d["udid"] for devices in data["devices"].values() for d in devices if d["state"] == "Booted"]
+    if len(matches) != 1:
+        raise RuntimeError("Select --simulator UUID explicitly when zero or multiple simulators are booted.")
+    return matches[0]
+
+
+def launch_environment(device, key):
+    result = subprocess.run(["xcrun", "simctl", "spawn", device, "launchctl", "getenv", key], capture_output=True, text=True)
+    return result.stdout.rstrip("\n") if result.returncode == 0 else None
+
+
+def validate_package(runtime):
+    info = json.loads((runtime / "build-info.json").read_text())
+    required = {"CKSimRuntime.dylib", "CKSimLoader.dylib", "cksim-notify", "cksim", "profiles/ios-27.0.json"}
+    if info.get("schemaVersion") != 1 or info.get("version") != "0.1.0" or not required.issubset(info.get("files", {})):
+        raise RuntimeError("Incomplete or unsupported runtime package.")
+    for name, digest in info["files"].items():
+        path = runtime / name
+        if not path.resolve().is_relative_to(runtime.resolve()) or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise RuntimeError(f"Runtime package checksum mismatch: {name}")
+
+
+def save_state(path, value):
+    descriptor, temporary = tempfile.mkstemp(prefix=".install-", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w") as output:
+            os.fchmod(output.fileno(), 0o600)
+            json.dump(value, output)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def managed_values(saved, key):
+    return saved.get("recoverable", {}).get(key, [saved["applied"][key], saved["original"][key]])
+
+
+def install(args, device):
+    runtime = args.runtime_dir.resolve()
+    validate_package(runtime)
+    root = Path.home() / ".local/state/callkit-simulator"
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    statefile = root / f"{device}.json"
+    if statefile.exists():
+        saved = json.loads(statefile.read_text())
+        if saved["runtime"] != str(runtime):
+            raise RuntimeError("Uninstall the existing runtime before selecting another release.")
+        bundles = sorted(set(saved["bundles"] + [args.bundle]))
+        original = saved["original"]
+    else:
+        bundles = [args.bundle]
+        original = {key: launch_environment(device, key) for key in
+                    ("DYLD_INSERT_LIBRARIES", "CKSIM_RUNTIME", "CKSIM_BUNDLE_IDS", "CKSIM_ENABLED", "CKSIM_PROFILE")}
+    if statefile.exists():
+        for key, value in saved["applied"].items():
+            if launch_environment(device, key) not in managed_values(saved, key):
+                raise RuntimeError(f"{key} changed outside this installation; refusing to overwrite it.")
+    values = {"DYLD_INSERT_LIBRARIES": ":".join(filter(None, [original["DYLD_INSERT_LIBRARIES"], str(runtime / "CKSimLoader.dylib")])),
+              "CKSIM_RUNTIME": str(runtime / "CKSimRuntime.dylib"), "CKSIM_BUNDLE_IDS": ",".join(bundles),
+              "CKSIM_ENABLED": "1", "CKSIM_PROFILE": "ios-27.0"}
+    recoverable = {key: list(dict.fromkeys([original[key], value, *(managed_values(saved, key) if statefile.exists() else [])]))
+                   for key, value in values.items()}
+    saved = dict(runtime=str(runtime), bundles=bundles, original=original, applied=values, recoverable=recoverable)
+    save_state(statefile, saved)
+    for key, value in values.items():
+        simctl("spawn", device, "launchctl", "setenv", key, value)
+    saved.pop("recoverable")
+    save_state(statefile, saved)
+    return dict(installed=True, simulator=device, bundles=bundles, profile="ios-27.0")
+
+
+def uninstall(device):
+    statefile = Path.home() / f".local/state/callkit-simulator/{device}.json"
+    saved = json.loads(statefile.read_text())
+    for key, value in saved["applied"].items():
+        if launch_environment(device, key) not in managed_values(saved, key):
+            raise RuntimeError(f"{key} changed after installation; restore it deliberately before uninstalling.")
+    for key, value in saved["original"].items():
+        if value is None:
+            simctl("spawn", device, "launchctl", "unsetenv", key)
+        else:
+            simctl("spawn", device, "launchctl", "setenv", key, value)
+    statefile.unlink()
+    return dict(uninstalled=True, simulator=device)
+
+
+def control(args, device):
+    container = Path(simctl("get_app_container", device, args.bundle, "data"))
+    root = container / "Documents/.callkit-simulator"
+    session = json.loads((root / "session.json").read_text())
+    if (session.get("schemaVersion") != 1 or session.get("bundleID") != args.bundle or
+            not isinstance(session.get("pid"), int) or session["pid"] <= 0 or
+            not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", session.get("runID", ""))):
+        raise RuntimeError("Invalid runtime session; launch the app with this runtime first.")
+    identifier = str(uuid.uuid4()).upper()
+    command = {key: session[key] for key in ("runID", "pid", "bundleID")}
+    command.update(id=identifier, operation=args.operation)
+    for argument, field in (("call", "callUUID"), ("active_call", "activeCallUUID")):
+        if getattr(args, argument, None):
+            command[field] = str(uuid.UUID(getattr(args, argument))).upper()
+    if args.operation == "push":
+        command.update(payload=json.loads(args.payload_file.read_text()), mustReport=args.must_report == "true")
+    if args.operation == "hold":
+        command["held"] = args.held == "true"
+    if args.operation == "faults":
+        command["faults"] = dict(staleAudio=args.stale_audio, reportCallbackDelayMS=args.report_delay_ms)
+    mailbox = root / session["runID"]
+    temporary = mailbox / f"requests/{identifier}.tmp"
+    with temporary.open("x") as output:
+        os.chmod(temporary, 0o600)
+        json.dump(command, output)
+    temporary.rename(temporary.with_suffix(".json"))
+    notifier = args.runtime_dir.resolve() / "cksim-notify"
+    simctl("spawn", device, notifier, session["notification"])
+    response_path = mailbox / f"responses/{identifier}.json"
+    deadline = time.monotonic() + args.timeout
+    while time.monotonic() < deadline:
+        if response_path.exists():
+            response = json.loads(response_path.read_text())
+            for field in ("id", "runID", "pid", "bundleID"):
+                if response.get(field) != command[field]:
+                    raise RuntimeError("Runtime response identity mismatch.")
+            return response
+        time.sleep(0.05)
+    raise RuntimeError(f"Command {identifier} timed out; outcome is unknown. Query status/events before retrying.")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--simulator", default="booted")
+    parser.add_argument("--bundle", required=True)
+    parser.add_argument("--runtime-dir", type=Path, default=Path(__file__).resolve().parent)
+    parser.add_argument("--timeout", type=float, default=15)
+    commands = parser.add_subparsers(dest="operation", required=True)
+    for operation in ("status", "events", "inspect-adapter", "install", "uninstall", "launch"):
+        commands.add_parser(operation)
+    for operation in ("answer", "decline", "end"):
+        commands.add_parser(operation).add_argument("call")
+    hold = commands.add_parser("hold")
+    hold.add_argument("call")
+    hold.add_argument("--held", choices=("true", "false"), required=True)
+    for operation in ("hold-and-accept", "end-and-accept"):
+        cmd = commands.add_parser(operation)
+        cmd.add_argument("call")
+        cmd.add_argument("--active-call", required=True)
+    push = commands.add_parser("push")
+    push.add_argument("--payload-file", type=Path, required=True)
+    push.add_argument("--must-report", choices=("true", "false"), required=True)
+    faults = commands.add_parser("faults")
+    faults.add_argument("--stale-audio", action="store_true")
+    faults.add_argument("--report-delay-ms", type=int, default=0)
+    args = parser.parse_args()
+    if not re.fullmatch(r"[A-Za-z0-9.-]+", args.bundle) or not 0 < args.timeout <= 120:
+        parser.error("Require a bundle identifier and timeout in (0,120].")
+    if args.operation != "uninstall":
+        validate_package(args.runtime_dir.resolve())
+    device = simulator(args.simulator)
+    if args.operation == "install":
+        result = install(args, device)
+    elif args.operation == "uninstall":
+        result = uninstall(device)
+    elif args.operation == "launch":
+        runtime = args.runtime_dir.resolve() / "CKSimRuntime.dylib"
+        if not runtime.is_file():
+            raise RuntimeError("Missing CKSimRuntime.dylib in --runtime-dir.")
+        selected_runtime = launch_environment(device, "CKSIM_RUNTIME")
+        if selected_runtime and Path(selected_runtime).resolve() != runtime.resolve():
+            raise RuntimeError("Uninstall the other simulator runtime before launching this release.")
+        inherited = os.environ.get("SIMCTL_CHILD_DYLD_INSERT_LIBRARIES", launch_environment(device, "DYLD_INSERT_LIBRARIES"))
+        for library in (inherited or "").split(":"):
+            if Path(library).name in ("CKSimRuntime.dylib", "CKSimLoader.dylib") and Path(library).resolve().parent != runtime.resolve().parent:
+                raise RuntimeError("Another CallKit Simulator release is already injected; uninstall it first.")
+        env = {**os.environ, "SIMCTL_CHILD_DYLD_INSERT_LIBRARIES": ":".join(filter(None, [inherited, str(runtime)])),
+               "SIMCTL_CHILD_CKSIM_ENABLED": "1", "SIMCTL_CHILD_CKSIM_PROFILE": "ios-27.0"}
+        result = dict(launch=simctl("launch", "--terminate-running-process", device, args.bundle, env=env))
+    else:
+        result = control(args, device)
+    print(json.dumps(result, indent=2))
+    return 0 if result.get("success", True) else 1
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (OSError, ValueError, KeyError, RuntimeError) as error:
+        print(str(error), file=sys.stderr)
+        raise SystemExit(1)

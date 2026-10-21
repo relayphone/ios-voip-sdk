@@ -1,0 +1,54 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+OUT=${1:?Provide a fresh output directory}
+[[ ! -e "$OUT" ]] || { echo "Output already exists: $OUT" >&2; exit 1; }
+OUT=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$OUT")
+SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
+METADATA=0
+[[ ! -f "$SDK/System/Library/Frameworks/PushKit.framework/Headers/PKVoIPPushMetadata.h" ]] || METADATA=1
+ARCHS=${CKSIM_BUILD_ARCHS:-"arm64 x86_64"}
+WORK=$(mktemp -d "$(dirname "$OUT")/.cksim-runtime-build.XXXXXX")
+PACKAGE="$WORK/package"
+mkdir "$PACKAGE"
+trap 'rm -rf "$WORK"' EXIT
+for arch in $ARCHS; do
+  target="$arch-apple-ios18.0-simulator"
+  for source in CKInterposition CKPushDelivery; do
+    xcrun --sdk iphonesimulator clang -target "$target" -isysroot "$SDK" -fobjc-arc -fmodules -DCKSIM_HAS_VOIP_METADATA="$METADATA" \
+      -c "Sources/Interposition/$source.m" -o "$WORK/$source-$arch.o"
+  done
+  xcrun --sdk iphonesimulator swiftc -target "$target" -sdk "$SDK" -swift-version 6 -O -emit-library -module-name CKSimRuntime \
+    -import-objc-header Sources/Interposition/CKRuntimeSeam.h Sources/Engine/RuntimeEngine.swift \
+    "$WORK/CKInterposition-$arch.o" "$WORK/CKPushDelivery-$arch.o" \
+    -Xlinker -install_name -Xlinker @rpath/CKSimRuntime.dylib -o "$WORK/CKSimRuntime-$arch.dylib"
+  xcrun --sdk iphonesimulator clang -target "$target" -isysroot "$SDK" Tools/cksim-notify.c -o "$WORK/cksim-notify-$arch"
+  xcrun --sdk iphonesimulator clang -target "$target" -isysroot "$SDK" -fobjc-arc -dynamiclib -framework Foundation \
+    Sources/Interposition/CKLoader.m -o "$WORK/CKSimLoader-$arch.dylib"
+done
+runtime=(); notifier=(); loader=()
+for arch in $ARCHS; do runtime+=("$WORK/CKSimRuntime-$arch.dylib"); notifier+=("$WORK/cksim-notify-$arch"); loader+=("$WORK/CKSimLoader-$arch.dylib"); done
+lipo -create "${runtime[@]}" -output "$PACKAGE/CKSimRuntime.dylib"
+lipo -create "${notifier[@]}" -output "$PACKAGE/cksim-notify"
+lipo -create "${loader[@]}" -output "$PACKAGE/CKSimLoader.dylib"
+codesign -s - --force "$PACKAGE/CKSimRuntime.dylib"
+codesign -s - --force "$PACKAGE/cksim-notify"
+codesign -s - --force "$PACKAGE/CKSimLoader.dylib"
+cp -R profiles "$PACKAGE/profiles"
+cp Tools/cksim "$PACKAGE/cksim"
+cp README.md LICENSE "$PACKAGE/"
+chmod +x "$PACKAGE/cksim"
+python3 - "$PACKAGE" "$SDK" "$ARCHS" <<'PYINFO'
+import hashlib,json,pathlib,subprocess,sys
+root=pathlib.Path(sys.argv[1])
+inputs=[p for folder in ('Sources','Tools','profiles','scripts') for p in pathlib.Path(folder).rglob('*') if p.is_file() and '__pycache__' not in p.parts]
+source_hash=hashlib.sha256()
+for p in sorted(inputs):
+    source_hash.update(str(p).encode()+b'\0'+p.read_bytes()+b'\0')
+files={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file()}
+info=dict(schemaVersion=1,version='0.1.0',profile='ios-27.0',sourceCommit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+          sourceDirty=bool(subprocess.check_output(['git','status','--porcelain'],text=True)),sourceInputsSHA256=source_hash.hexdigest(),
+          sdkPath=sys.argv[2],architectures=sys.argv[3].split(),files=files)
+(root/'build-info.json').write_text(json.dumps(info,indent=2,sort_keys=True)+'\n')
+PYINFO
+mv "$PACKAGE" "$OUT"

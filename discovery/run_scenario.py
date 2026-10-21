@@ -2,8 +2,10 @@
 """Run a probe to its terminal marker, then stop only the run-owned app."""
 
 import argparse
+import hashlib
 import json
 import math
+import re
 from pathlib import Path
 import queue
 import signal
@@ -12,9 +14,9 @@ import threading
 import time
 
 
-def run(launch, terminate, output, receipt, timeout):
+def run(launch, terminate, output, receipt, timeout, identity=None):
     started = time.monotonic()
-    result = {"completed": False, "success": False}
+    result = {"completed": False, "success": False, "schemaVersion": 2, **(identity or {})}
     process = None
     stopped = False
     messages = queue.Queue()
@@ -105,6 +107,17 @@ def run(launch, terminate, output, receipt, timeout):
                     result["success"] = False
             result["launchExitCode"] = process.returncode
         result["elapsedSeconds"] = round(time.monotonic() - started, 3)
+        if output.exists():
+            data = output.read_bytes()
+            result["traceSHA256"] = hashlib.sha256(data).hexdigest()
+            bundle = result.get("bundleID")
+            if bundle:
+                matches = re.findall(rb"(?m)^" + re.escape(bundle.encode()) + rb": (\d+)\r?$", data)
+                if len(matches) == 1:
+                    result["launcherAppPID"] = int(matches[0])
+                if result.get("launcherAppPID") != result.get("appPID"):
+                    result["success"] = False
+                    result["error"] = "launcher/probe app PID mismatch"
         receipt.write_text(json.dumps(result, indent=2) + "\n")
     return 0 if result["success"] else 1
 
@@ -114,12 +127,17 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=200)
+    parser.add_argument("--run-id")
+    parser.add_argument("--simulator-id")
+    parser.add_argument("--scenario")
+    parser.add_argument("--bundle-id")
     parser.add_argument("--terminate-command", nargs="+", required=True)
     parser.add_argument("--launch-command", nargs=argparse.REMAINDER, required=True)
     args = parser.parse_args()
     if not args.launch_command or not math.isfinite(args.timeout) or args.timeout <= 0 or args.receipt.exists():
         parser.error("require a launch command, positive timeout, and fresh receipt path")
-    return run(args.launch_command, args.terminate_command, args.output, args.receipt, args.timeout)
+    return run(args.launch_command, args.terminate_command, args.output, args.receipt, args.timeout,
+               dict(runID=args.run_id, simulatorID=args.simulator_id, scenario=args.scenario, bundleID=args.bundle_id))
 
 
 if __name__ == "__main__":

@@ -5,6 +5,10 @@ on:
   pull_request:
     paths:
       - "discovery/**"
+      - "Sources/**"
+      - "Tools/**"
+      - "profiles/**"
+      - "scripts/**"
       - ".github/workflows/simulator-discovery.yml"
   workflow_dispatch:
 permissions:

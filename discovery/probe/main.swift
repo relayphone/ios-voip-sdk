@@ -10,7 +10,7 @@ import SwiftUI
 
 final class Trace: @unchecked Sendable {
   static let shared = Trace()
-  let t0 = Date()
+  let t0 = DispatchTime.now().uptimeNanoseconds
   private let lock = NSLock()
   private var handle: FileHandle?
   init() {
@@ -22,12 +22,12 @@ final class Trace: @unchecked Sendable {
     _ = try? handle?.seekToEnd()
   }
   func log(_ event: String, _ fields: [String: Any] = [:]) {
+    lock.lock(); defer { lock.unlock() }
     var f = fields
     f["event"] = event
-    f["t_ms"] = Int(Date().timeIntervalSince(t0) * 1000)
+    f["t_ms"] = Int((DispatchTime.now().uptimeNanoseconds - t0) / 1_000_000)
     f["main"] = Thread.isMainThread
     let data = (try? JSONSerialization.data(withJSONObject: f, options: [.sortedKeys])) ?? Data()
-    lock.lock(); defer { lock.unlock() }
     handle?.write(data + Data("\n".utf8))
     FileHandle.standardError.write(Data("PROBE ".utf8) + data + Data("\n".utf8))
   }
@@ -114,16 +114,31 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
   }
   func runPush() async {
     await sleep(Double(ProcessInfo.processInfo.environment["PROBE_PUSH_REGISTRATION_DELAY"] ?? "0") ?? 0)
-    await MainActor.run {
-      let r = PKPushRegistry(queue: .main)
-      r.delegate = self
-      r.desiredPushTypes = [.voIP]
-      registry = r
-      Trace.shared.log("push.registered")
-    }
+    await MainActor.run { registerPushEarly() }
     await sleep(Double(ProcessInfo.processInfo.environment["PROBE_PUSH_WAIT"] ?? "12") ?? 12)
     snapshot("after-push-wait")
     for call in observer.calls where !call.hasEnded { _ = await request([CXEndCallAction(call: call.uuid)], label: "cleanup") }
+    await sleep(1)
+    snapshot("final")
+    Trace.shared.log("done")
+  }
+  func registerPushEarly() {
+    guard registry == nil else { return }
+    let r = PKPushRegistry(queue: .main)
+    r.delegate = self
+    r.desiredPushTypes = [.voIP]
+    registry = r
+    Trace.shared.log("push.registered")
+  }
+  func runAPNsActive() async {
+    await MainActor.run { registerPushEarly() }
+    let id = UUID()
+    _ = await request([CXStartCallAction(call: id, handle: CXHandle(type: .generic, value: "APNs reference call"))], label: "apns-start")
+    await sleep(2)
+    snapshot("apns-active-ready")
+    Trace.shared.log("apns.activeReady")
+    await sleep(65)
+    _ = await request([CXEndCallAction(call: id)], label: "apns-end")
     await sleep(1)
     snapshot("final")
     Trace.shared.log("done")
@@ -171,7 +186,8 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
     Trace.shared.log("provider.didReset")
   }
   func provider(_ provider: CXProvider, execute transaction: CXTransaction) -> Bool {
-    Trace.shared.log("provider.executeTransaction", ["actions": transaction.actions.map { NSStringFromClass(type(of: $0)) }])
+    Trace.shared.log("provider.executeTransaction", ["actions": transaction.actions.map { NSStringFromClass(type(of: $0)) },
+      "transactionID": transaction.uuid.uuidString, "actionIDs": transaction.actions.map { String($0.uuid.uuidString.prefix(8)) }])
     return false
   }
   private func handle(_ action: CXAction, _ extra: [String: Any] = [:]) {
@@ -214,7 +230,9 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
   func provider(_ provider: CXProvider, perform action: CXEndCallAction) { handle(action); endedCalls.insert(action.callUUID) }
   func provider(_ provider: CXProvider, perform action: CXSetHeldCallAction) { handle(action, ["onHold": action.isOnHold]) }
   func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) { handle(action, ["muted": action.isMuted]) }
-  func provider(_ provider: CXProvider, perform action: CXSetGroupCallAction) { handle(action) }
+  func provider(_ provider: CXProvider, perform action: CXSetGroupCallAction) {
+    handle(action, ["groupWith": action.callUUIDToGroupWith.map { String($0.uuidString.prefix(8)) } ?? "none"])
+  }
   func provider(_ provider: CXProvider, perform action: CXPlayDTMFCallAction) { handle(action, ["digits": action.digits]) }
   func provider(_ provider: CXProvider, timedOutPerforming action: CXAction) {
     Trace.shared.log("provider.timedOut", ["kind": NSStringFromClass(type(of: action)), "id": String(action.uuid.uuidString.prefix(8))])
@@ -235,8 +253,15 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
 
   // MARK: helpers
   func request(_ actions: [CXAction], label: String) async -> String {
-    await withCheckedContinuation { c in
-      controller.request(CXTransaction(actions: actions)) { err in
+    let transaction = CXTransaction(actions: actions)
+    var fields: [String: Any] = ["label": label, "transactionID": transaction.uuid.uuidString,
+                               "actionIDs": actions.map { String($0.uuid.uuidString.prefix(8)) }]
+    if let group = actions.first as? CXSetGroupCallAction {
+      fields["groupWith"] = group.callUUIDToGroupWith.map { String($0.uuidString.prefix(8)) } ?? "none"
+    }
+    Trace.shared.log("request.begin", fields)
+    return await withCheckedContinuation { c in
+      controller.request(transaction) { err in
         Trace.shared.log("request.completed", ["label": label, "result": describe(err)])
         c.resume(returning: describe(err))
       }
@@ -548,11 +573,9 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
   }
   func run() async {
     let env = ProcessInfo.processInfo.environment
-    let status = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CKSimRuntimeIsActive")
-    let injected = status.map { unsafeBitCast($0, to: (@convention(c) () -> Bool).self)() } ?? false
-    Trace.shared.log("launch", ["pid": Int(getpid()), "appState": UIApplication.shared.applicationState.rawValue,
-                                "injected": injected, "traceVersion": 2, "mode": env["PROBE_MODE"] ?? "default"])
+    recordLaunch()
     if env["PROBE_MODE"] == "ui" { await runUI(); return }
+    if env["PROBE_MODE"] == "apns-active" { await runAPNsActive(); return }
     let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     if env["PROBE_MODE"] == "push" || FileManager.default.fileExists(atPath: documents.appendingPathComponent("push-mode").path) { await runPush(); return }
     if env["PROBE_MODE"] == "semantics" { await runSemantics(); return }
@@ -577,7 +600,15 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
     Trace.shared.log("step", ["name": "incoming", "uuid": String(a.uuidString.prefix(8))])
     _ = await reportIncoming(a, label: "incoming-a")
     _ = await reportIncoming(a, label: "incoming-a-duplicate")
-    await sleep(2); snapshot("ringing")
+    await sleep(2)
+    if env["PROBE_WAIT_FOR_TEARDOWN"] == "1" {
+      // A cold simulator may stall UI-host lookup. Observe its teardown rather
+      // than racing it with a fixed two-second answer request.
+      _ = await waitUntil("genuine incoming torn down", timeout: 30) {
+        self.observer.calls.allSatisfy { $0.uuid != a || $0.hasEnded }
+      }
+    }
+    snapshot("ringing")
     _ = await request([CXAnswerCallAction(call: a)], label: "answer-a")
     await sleep(2.5); snapshot("answered")
     micProbe("after-answer")
@@ -687,9 +718,28 @@ final class HookTarget: NSObject {
   }
 }
 
+func recordLaunch() {
+  let env = ProcessInfo.processInfo.environment
+  let status = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CKSimRuntimeIsActive")
+  let injected = status.map { unsafeBitCast($0, to: (@convention(c) () -> Bool).self)() } ?? false
+  let versionSymbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CKSimRuntimeVersion")
+  let runtimeVersion = versionSymbol.map { String(cString: unsafeBitCast($0, to: (@convention(c) () -> UnsafePointer<CChar>).self)()) } ?? "discovery-spike"
+  Trace.shared.log("launch", ["pid": Int(getpid()), "appState": UIApplication.shared.applicationState.rawValue,
+                "injected": injected, "traceVersion": 2, "mode": env["PROBE_MODE"] ?? "default",
+                "runID": env["CKSIM_RUN_ID"] ?? "manual", "simulatorID": env["SIMULATOR_UDID"] ?? "device",
+                "bundleID": Bundle.main.bundleIdentifier ?? "unknown"])
+  Trace.shared.log("runtime.identity", ["version": runtimeVersion])
+}
+
 @main
 struct ProbeApp: App {
-  init() { Trace.shared.log("app.entry") }
+  init() {
+    Trace.shared.log("app.entry")
+    let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    if FileManager.default.fileExists(atPath: documents.appendingPathComponent("push-mode").path) {
+      ProbeApp.probe.registerPushEarly()
+    }
+  }
   @State private var started = false
   static let probe = Probe()
   var body: some Scene {
@@ -697,6 +747,13 @@ struct ProbeApp: App {
       Text("CallKit probe").task {
         guard !started else { return }
         started = true
+        #if CKSIM_CONFORMANCE
+        if ProcessInfo.processInfo.environment["PROBE_MODE"] == "providers" {
+          recordLaunch()
+          await ProvidersProbe().run()
+          return
+        }
+        #endif
         await ProbeApp.probe.run()
       }
     }

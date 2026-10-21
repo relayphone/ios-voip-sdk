@@ -1,5 +1,5 @@
 #!/bin/bash
-# Assertion-based discovery. This still executes the prototype, not the Swift port.
+# Genuine baseline and shipping Swift runtime, through the same application.
 set -euo pipefail
 cd "$(dirname "$0")"
 if [[ -n "${OUT:-}" ]]; then
@@ -11,6 +11,7 @@ OUT=$(cd "$OUT" && pwd)
 BUILD=$(mktemp -d "${TMPDIR:-/tmp}/callkit-build.XXXXXX")
 UDID=""
 LOGGER=""
+RUN_ID=$(uuidgen)
 limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
 prepare_stage() {
   local phase=$1 budget=$2 started status
@@ -73,14 +74,32 @@ fi
 echo "sdk=$SDK pushAPI=$PUSH_API" >> "$OUT/environment.txt"
 mkdir "$BUILD/Probe.app"
 cp probe/Info.plist "$BUILD/Probe.app/"
-compiler swiftc -target "$SDK_TARGET" "${SWIFT_DEFS[@]}" -swift-version 5 -parse-as-library -O probe/main.swift -o "$BUILD/Probe.app/Probe" \
+# Reuse the exact measured provider inputs. Only exit() is replaced so the
+# supervisor owns process termination and can drain a complete receipt.
+python3 - "$BUILD/providers.swift" <<'PYPROVIDERS'
+from pathlib import Path
+import sys
+source=Path('../docs/research/callkit-simulator-probe/providers.swift').read_text()
+assert source.count('    exit(0)') == 1
+Path(sys.argv[1]).write_text(source.replace('    exit(0)', '    return'))
+PYPROVIDERS
+compiler swiftc -target "$SDK_TARGET" "${SWIFT_DEFS[@]}" -D CKSIM_CONFORMANCE -swift-version 5 -parse-as-library -O probe/main.swift "$BUILD/providers.swift" -o "$BUILD/Probe.app/Probe" \
   -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker probe/probe.entitlements > "$OUT/build.log" 2>&1
 codesign -s - --force "$BUILD/Probe.app"
-for lib in CKSimRuntime CKSimPush; do
-  compiler clang -target "$SDK_TARGET" "${CLANG_DEFS[@]}" -fobjc-arc -dynamiclib -framework Foundation -framework CallKit -framework AVFoundation -framework PushKit \
-    -o "$BUILD/$lib.dylib" "spike/$lib.m" >> "$OUT/build.log" 2>&1
-  codesign -s - --force "$BUILD/$lib.dylib"
-done
+env DEVELOPER_DIR="${COMPILER_DEVELOPER_DIR:-${DEVELOPER_DIR:-$(xcode-select -p)}}" \
+  bash ../scripts/build-runtime.sh "$BUILD/runtime" >> "$OUT/build.log" 2>&1
+python3 - "$OUT/manifest.json" "$RUN_ID" "$UDID" "$RUNTIME" "$DEVTYPE" "$BUILD/Probe.app/Probe" "$BUILD/runtime" <<'PYMANIFEST'
+import hashlib,json,pathlib,subprocess,sys
+p,run,sim,runtime,device,probe,package=sys.argv[1:]
+root=pathlib.Path(package)
+manifest=dict(schemaVersion=1,runID=run,simulatorID=sim,simulatorRuntimeID=runtime,deviceTypeID=device,profileID='ios-27.0',
+ sourceCommit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+ probeSHA256=hashlib.sha256(pathlib.Path(probe).read_bytes()).hexdigest(),
+ runtimeSHA256=hashlib.sha256((root/'CKSimRuntime.dylib').read_bytes()).hexdigest(),
+ profileSHA256=hashlib.sha256((root/'profiles/ios-27.0.json').read_bytes()).hexdigest())
+pathlib.Path(p).write_text(json.dumps(manifest,indent=2)+'\n')
+PYMANIFEST
+cp -R "$BUILD/runtime" "$OUT/runtime-dist"
 prepare_stage app-install 180 xcrun simctl install "$UDID" "$BUILD/Probe.app"
 prepare_stage permissions 60 xcrun simctl privacy "$UDID" grant microphone dev.callkitsim.probe
 xcrun simctl spawn "$UDID" log stream --style compact --predicate 'process == "callservicesd" AND (composedMessage CONTAINS "wont be a UI" OR composedMessage CONTAINS "Error setting audio active" OR composedMessage CONTAINS "Failed to open URL" OR composedMessage CONTAINS "disconnect reason")' > "$OUT/callservicesd.log" 2>&1 &
@@ -95,10 +114,22 @@ run() {
   if [[ "$name" != genuine ]]; then libraries="${inherited:+$inherited:}$LIBS"; fi
   if env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$libraries" \
     SIMCTL_CHILD_CKSIM_ENABLED=0 SIMCTL_CHILD_CKSIM_SHADOW=0 SIMCTL_CHILD_CKSIM_PUSH_AFTER= SIMCTL_CHILD_CKSIM_PUSH_TRIGGER_NOTIFICATION= \
-    SIMCTL_CHILD_PROBE_MODE=default SIMCTL_CHILD_PROBE_PUSH_REPORT=report "$@" \
+    SIMCTL_CHILD_PROBE_MODE=default SIMCTL_CHILD_PROBE_PUSH_REPORT=report SIMCTL_CHILD_PROBE_WAIT_FOR_TEARDOWN=0 "$@" \
+    SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" \
     python3 run_scenario.py --output "$OUT/$name.log" --receipt "$OUT/$name.receipt.json" \
+    --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.callkitsim.probe \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.probe \
     --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.probe; then
+    local container
+    container=$(xcrun simctl get_app_container "$UDID" dev.callkitsim.probe data)
+    local journal="$container/Documents/.callkit-simulator/$RUN_ID/events.jsonl"
+    if [[ "$name" != genuine ]]; then
+      cp "$journal" "$OUT/$name.engine.jsonl"
+      python3 - "$OUT/$name.receipt.json" "$OUT/$name.engine.jsonl" <<'PY'
+import hashlib,json,sys,pathlib
+p=pathlib.Path(sys.argv[1]);r=json.loads(p.read_text());r['engineSHA256']=hashlib.sha256(pathlib.Path(sys.argv[2]).read_bytes()).hexdigest();p.write_text(json.dumps(r,indent=2)+'\n')
+PY
+    fi
     echo "Completed $name"
   else
     local status=$?
@@ -116,9 +147,14 @@ run() {
     return "$status"
   fi
 }
-LIBS="$BUILD/CKSimRuntime.dylib:$BUILD/CKSimPush.dylib"
-run genuine SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=12
+LIBS="$BUILD/runtime/CKSimRuntime.dylib"
+run genuine SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=12 SIMCTL_CHILD_PROBE_WAIT_FOR_TEARDOWN=1
 run runtime SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=70
 # The fixture deliberately arrives before registration to cover slow cold starts.
-run push SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_SHADOW=1 SIMCTL_CHILD_CKSIM_PUSH_AFTER=0 SIMCTL_CHILD_PROBE_MODE=push SIMCTL_CHILD_PROBE_PUSH_REGISTRATION_DELAY=3 SIMCTL_CHILD_PROBE_PUSH_WAIT=12
+run push SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_SHADOW=1 SIMCTL_CHILD_CKSIM_PUSH_AFTER=0 SIMCTL_CHILD_CKSIM_PUSH_MUST_REPORT=1 SIMCTL_CHILD_PROBE_MODE=push SIMCTL_CHILD_PROBE_PUSH_REGISTRATION_DELAY=3 SIMCTL_CHILD_PROBE_PUSH_WAIT=12
 python3 summarize.py "$OUT" --require-receipts | tee "$OUT/summary.json"
+for case in single ab ba handles late drop inv recreate; do
+  run "providers-$case" SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=providers SIMCTL_CHILD_PROBE_PROVIDERS="$case"
+done
+python3 conformance.py "$OUT" | tee "$OUT/conformance.json"
+python3 cli_conformance.py "$UDID" "$BUILD/runtime" "$OUT" | tee "$OUT/cli-conformance.json"

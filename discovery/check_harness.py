@@ -2,6 +2,7 @@
 """Adversarial CLI checks using genuine saved traces and real child processes."""
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -35,6 +36,8 @@ def main():
             command = [sys.executable, str(ROOT / "summarize.py"), str(target)]
             if strict:
                 command.append("--require-receipts")
+            else:
+                command.append("--allow-legacy")
             result = subprocess.run(command, capture_output=True, text=True, timeout=10)
             check((result.returncode == 0) is expected, f"{label}: {result.stdout} {result.stderr}")
             check(json.loads(result.stdout)["success"] is expected, f"{label}: no structured result")
@@ -89,6 +92,72 @@ def main():
         traces("no-late-fulfillment", lambda d: remove_events(d, "runtime",
                lambda r: r["event"] == "late.fulfill"), False)
 
+        # A positive strict-v2 replay and 13 materialized tampered traces. Four
+        # derived cases are named explicitly: the review never supplied F-I.
+        strict_source = ROOT / "fixtures/strict-v2"
+        cases = json.loads((strict_source / "mutations.json").read_text())
+        cases.append(dict(name='derived-ghost-completion-kind', mutation='ghost-kind', error='completion for unknown action'))
+        for case in [dict(name="strict-v2-positive", mutation="none"), *cases]:
+            target = work / case["name"]
+            shutil.copytree(strict_source, target)
+            path = target / "runtime.jsonl"
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+            receipt_path = target / "runtime.receipt.json"
+            receipt = json.loads(receipt_path.read_text())
+            mutation = case["mutation"]
+            if mutation == "mixed-run":
+                next(r for r in rows if r["event"] == "launch")["runID"] = "another-run"
+                receipt["runID"] = "another-run"
+            elif mutation == "forged-receipt":
+                receipt = dict(success=True, completed=True)
+            elif mutation == "off-main":
+                next(r for r in rows if r["event"] == "provider.perform")["main"] = False
+            elif mutation == "audio-order":
+                next(r for r in rows if r["event"] == "provider.didDeactivateAudio")["event"] = "provider.didActivateAudio"
+            elif mutation == "nonmonotonic":
+                next(r for r in rows if r["event"] == "provider.perform")["t_ms"] = 0
+            elif mutation == "pid":
+                receipt["appPID"] += 1
+            elif mutation == "unexpected-timeout":
+                r = next(r for r in rows if r["event"] == "action.fulfilled" and r.get("kind") == "CXSetMutedCallAction")
+                rows.insert(rows.index(r) + 1, dict(r, event="provider.timedOut"))
+            elif mutation == "no-observer":
+                rows = [r for r in rows if r["event"] != "observer.callChanged"]
+            elif mutation == "reset":
+                r = next(r for r in rows if r["event"] == "provider.perform")
+                rows.insert(rows.index(r), dict(event="provider.didReset", main=True, t_ms=r["t_ms"]))
+            elif mutation == "late-id":
+                next(r for r in rows if r["event"] == "late.fulfill")["id"] = "wrong-id"
+            elif mutation == "missing-version":
+                next(r for r in rows if r["event"] == "launch").pop("traceVersion")
+            elif mutation == "unknown-version":
+                next(r for r in rows if r["event"] == "launch")["traceVersion"] = 99
+            elif mutation == "ghost-kind":
+                row = next(r for r in rows if r['event'] == 'action.fulfilled')
+                rows.insert(rows.index(row) + 1, dict(row, kind='CXUnknownCallAction'))
+            elif mutation == "group-target":
+                next(r for r in rows if r["event"] == "provider.perform" and r.get("kind") == "CXSetGroupCallAction")["groupWith"] = "wrong-call"
+            path.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows))
+            if mutation != "forged-receipt":
+                receipt["traceSHA256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+            receipt_path.write_text(json.dumps(receipt))
+            result = subprocess.run([sys.executable, str(ROOT / "summarize.py"), str(target)],
+                                    capture_output=True, text=True, timeout=10)
+            expected = mutation == "none"
+            check((result.returncode == 0) is expected, f"{case['name']}: {result.stdout}")
+            if not expected:
+                check(case["error"] in result.stdout, f"{case['name']}: wrong rejection: {result.stdout}")
+            checks.append(case["name"])
+
+        for scenario, event in (("push", "provider.didReset"), ("push", "provider.timedOut")):
+            def unexpected(d, scenario=scenario, event=event):
+                path = d / f"{scenario}.jsonl"
+                rows = [json.loads(line) for line in path.read_text().splitlines()]
+                rows.insert(-1, dict(event=event, t_ms=rows[-2]['t_ms'], main=True, id='unknown', kind='CXEndCallAction'))
+                path.write_text(''.join(json.dumps(r)+'\n' for r in rows))
+            traces(f"{scenario}-unexpected-{event}", unexpected, False)
+        traces("no-execute-callbacks", lambda d: remove_events(d, "runtime",
+               lambda r: r['event'] == 'provider.executeTransaction'), False)
         # Test the actual runner CLI and its owned stop, not a mocked Popen.
         probe = work / "fake_probe.py"
         probe.write_text(
@@ -155,7 +224,7 @@ def main():
         source = (ROOT / "run.sh").read_text().split("run() {\n", 1)[1].split("\n}\nLIBS=", 1)[0]
         driver = work / "shell-failure.sh"
         driver.write_text("set -euo pipefail\nOUT=" + shlex.quote(str(work)) +
-                          "\nUDID=owned-fixture\nLIBS=fixture\nSIMCTL_CHILD_DYLD_INSERT_LIBRARIES=''\n"
+                          "\nUDID=owned-fixture\nRUN_ID=fixture\nLIBS=fixture\nSIMCTL_CHILD_DYLD_INSERT_LIBRARIES=''\n"
                           "limit() { shift; \"$@\"; }\nrun() {\n" + source + "\n}\nrun genuine\n")
         result = subprocess.run(["/bin/bash", str(driver)], capture_output=True, timeout=10,
                                 env={**os.environ, "PATH": f"{binaries}:/usr/bin:/bin"})
