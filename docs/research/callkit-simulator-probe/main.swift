@@ -682,6 +682,9 @@ struct ProbeApp: App {
         started = true
         // Kept apart from Probe, whose initializer registers its own CXProvider.
         if ProcessInfo.processInfo.environment["PROBE_MODE"] == "providers" { await ProvidersProbe().run(); return }
+        #if !targetEnvironment(macCatalyst)
+        if ProcessInfo.processInfo.environment["PROBE_MODE"] == "lck" { await LCKProbe().run(); return }
+        #endif
         await ProbeApp.probe.run()
       }
     }

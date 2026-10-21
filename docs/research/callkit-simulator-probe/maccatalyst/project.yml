@@ -12,7 +12,7 @@ targets:
   Probe:
     type: application
     platform: iOS
-    sources: [../main.swift, ../providers.swift]
+    sources: [../main.swift, ../providers.swift, ../lck.swift]
     settings:
       base:
         PRODUCT_NAME: Probe
