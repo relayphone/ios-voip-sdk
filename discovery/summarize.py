@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 
 REQUEST_ERROR = "com.apple.CallKit.error.requesttransaction:"
 INCOMING_ERROR = "com.apple.CallKit.error.incomingcall:"
@@ -18,6 +19,46 @@ class EvidenceError(ValueError):
 def require(condition, message):
     if not condition:
         raise EvidenceError(message)
+
+
+def selected_runtime(document, identifier=None):
+    require(isinstance(document, dict) and isinstance(document.get('runtimes'), list),
+            'missing simulator runtime inventory')
+    candidates = [runtime for runtime in document['runtimes'] if isinstance(runtime, dict) and
+                  runtime.get('platform') == 'iOS' and runtime.get('isAvailable') is True]
+    if identifier is not None:
+        candidates = [runtime for runtime in candidates if runtime.get('identifier') == identifier]
+        require(len(candidates) == 1, 'selected simulator runtime missing, unavailable or ambiguous')
+    require(candidates, 'no available iOS simulator runtime')
+    for runtime in candidates:
+        require(isinstance(runtime.get('identifier'), str) and bool(runtime['identifier']) and
+                isinstance(runtime.get('version'), str) and
+                re.fullmatch(r'\d+(?:\.\d+)+', runtime['version']) and
+                isinstance(runtime.get('buildversion'), str) and bool(runtime['buildversion']),
+                'incomplete simulator runtime version/build metadata')
+    return max(candidates, key=lambda runtime: tuple(int(part) for part in runtime['version'].split('.')))
+
+
+def environment_metadata(directory, runtime_id):
+    runtime = selected_runtime(json.loads((directory / 'runtimes.json').read_text()), runtime_id)
+    compiler = re.fullmatch(r'Xcode (\d+(?:\.\d+)+)\nBuild version (\S+)\n?',
+                            (directory / 'compiler-version.txt').read_text())
+    require(compiler is not None, 'missing or malformed selected compiler version/build metadata')
+    return dict(simulatorRuntimeID=runtime['identifier'], simulatorOSVersion=runtime['version'],
+                simulatorOSBuildVersion=runtime['buildversion'], compilerXcodeVersion=compiler[1],
+                compilerXcodeBuildVersion=compiler[2])
+
+
+def run_environment(directory, manifest):
+    require(isinstance(manifest.get('simulatorRuntimeID'), str) and bool(manifest['simulatorRuntimeID']),
+            'missing simulatorRuntimeID')
+    metadata = environment_metadata(directory, manifest['simulatorRuntimeID'])
+    for key, value in metadata.items():
+        require(manifest.get(key) == value, f'missing or inconsistent {key}')
+    return dict(behaviorProfileID=manifest['profileID'],
+                simulatorOS=dict(runtimeID=metadata['simulatorRuntimeID'],
+                                 version=metadata['simulatorOSVersion'], buildVersion=metadata['simulatorOSBuildVersion']),
+                compiler=dict(xcodeVersion=metadata['compilerXcodeVersion'], buildVersion=metadata['compilerXcodeBuildVersion']))
 
 
 def load(directory, name):
@@ -343,6 +384,7 @@ def build_identity(directory, rows):
     manifest = json.loads((directory / 'manifest.json').read_text())
     launch = one(rows, 'launch')
     require(manifest.get('schemaVersion') == 1 and manifest.get('profileID') == 'ios-27.0', 'invalid run manifest')
+    run_environment(directory, manifest)
     for key in ('runID', 'simulatorID'):
         require(manifest.get(key) == launch.get(key), 'manifest identity mismatch')
     identity = one(rows, 'runtime.identity')
@@ -395,10 +437,12 @@ def shipping_journal(directory, name, rows, receipt):
         b = one(rows, 'step', name='call-waiting')['uuid']
         groups = [r for r in engine if r['event'] == 'call.grouped']
         require(len(groups) == 1 and groups[0]['uuid'][:8] == a and groups[0]['group'][:8] == b, 'runtime group membership mismatch')
+    return manifest
 
 
 def validate(directory, require_receipts=True):
-    summary = {"profile": "simulator-discovery-v2", "mediaProof": False, "scenarios": {}}
+    summary = {"profile": "simulator-discovery-v2", "qualification": "historical-replay",
+               "mediaProof": False, "scenarios": {}}
     identities = set()
     for name in SCENARIOS:
         try:
@@ -428,7 +472,9 @@ def validate(directory, require_receipts=True):
             common(rows, name)
             {"runtime": runtime, "genuine": genuine, "push": push}[name](rows)
             if require_receipts and name != 'genuine' and shipping(rows):
-                shipping_journal(directory, name, rows, receipt)
+                manifest = shipping_journal(directory, name, rows, receipt)
+                summary['environment'] = run_environment(directory, manifest)
+                summary['qualification'] = 'shipping-runtime'
             summary["scenarios"][name] = {"success": True, "events": len(rows)}
         except (EvidenceError, OSError, ValueError, KeyError, TypeError) as error:
             summary["scenarios"][name] = {"success": False, "error": str(error)}

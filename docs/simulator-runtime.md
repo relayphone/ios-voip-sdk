@@ -91,10 +91,23 @@ teardown. That experimental mode does not prove real-push obligations are met.
 
 ```sh
 python3 discovery/check_harness.py
+python3 discovery/check_environment.py
 bash discovery/run.sh
 ```
 
-The existing macOS CI jobs compile with two Xcode versions. The runner owns and
+The existing macOS CI jobs compile with Xcode 26.6 and 26.3 on macOS 26.
+**Measured:** [hosted run 39680771297](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39680771297)
+used the iOS **26.5 (23F77)** simulator against the `ios-27.0` behavior profile.
+That profile names the iPhone measurements being reproduced; it is separate
+from the simulator OS and selected compiler. This CI run does not qualify
+iOS 27.0 or LiveCommunicationKit. [R8 evidence](verification/2026-10-22-runtime-r8/)
+preserves the environment capture and records the new qualification checks.
+
+Fresh shipping runs record the selected runtime ID, exact OS version/build and
+selected Xcode version/build in `manifest.json`, bind them to saved runtime
+inventory/compiler output, and report all three identities in the summary.
+Missing or inconsistent metadata fails qualification. Historical trace replays
+are labelled separately. The runner owns and
 removes its simulator, compares genuine behavior with the Swift runtime, replays
 the eight measured provider scenarios, and exercises the shipped CLI. Trace,
 process, run and build identities are checked together. The prototype and raw
