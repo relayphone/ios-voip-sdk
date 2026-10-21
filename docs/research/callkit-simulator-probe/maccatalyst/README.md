@@ -40,6 +40,15 @@ The app ran from a temporary build folder, which LaunchServices does not registe
 
 **Note on user intent.** `callservicesd` rejects outgoing starts whose user intent it can't validate, with `invalidAction` (6) ("user intent could not be validated"). In `single`, a start 1.3 s after launching with `open` was accepted. In `ab` and `late`, starts at 2.2 s or later were rejected. An unattended reference run therefore needs a UI-driven start, such as an XCUITest click.
 
+**`callservicesd` crashed twice** (21:58:33 and 21:58:59, macOS 27.0.1). The probe app was being re-signed and re-registered in `~/Applications` between runs:
+
+- The crash was SIGABRT from an exception thrown in `-[__NSDictionaryM setObject:forKeyedSubscript:]` inside `callservicesd`.
+- This is consistent with a nil bundle identifier used as a key after the LaunchServices lookup failed (-10814).
+- launchd restarted the daemon each time.
+- A third-party app whose LaunchServices record is missing can therefore crash the system call daemon. Report it to Apple through Feedback Assistant.
+- Before running, an automated Mac lane must register the app once and must not re-register it while the app is running.
+- An ad-hoc signed run during that churn was inconclusive (NSCocoaError 4097). Whether ad-hoc signing works (no provisioning profile, the CI-friendly option) is still to be settled on a clean runner.
+
 **Incoming calls are not yet measured.** A Focus on this Mac still resolves to `silence`.
 
 **Conclusion.** Genuine CallKit works in a registered Mac Catalyst app, so the Mac can serve as an automated *partial* reference for provider and action semantics. It differs from the iPhone in user-intent gating, mute echoes and audio activation, so the iPhone remains the ground truth.
