@@ -680,6 +680,8 @@ struct ProbeApp: App {
       Text("CallKit probe").task {
         guard !started else { return }
         started = true
+        // Kept apart from Probe, whose initializer registers its own CXProvider.
+        if ProcessInfo.processInfo.environment["PROBE_MODE"] == "providers" { await ProvidersProbe().run(); return }
         await ProbeApp.probe.run()
       }
     }
