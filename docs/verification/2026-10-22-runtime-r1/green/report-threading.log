@@ -1,0 +1,12 @@
+2026-10-22 00:13:48.696 Probe[97122:3587587] [NativeDevtoolsIos] devtools connection established
+2026-10-22 00:13:48.696 Probe[97122:3587587] [NativeDevtoolsIos] connected to /tmp/argent-nd-9BC8E7A0.sock
+PROBE {"event":"app.entry","main":true,"t_ms":0}
+PROBE {"appState":1,"bundleID":"dev.callkitsim.probe","event":"launch","injected":true,"main":true,"mode":"report-threading","pid":97122,"runID":"3FFB9214-8490-4732-ADAC-A1FC9B94E90B","simulatorID":"9BC8E7A0-21AB-4F3F-8E14-7C0495D84F27","t_ms":2989,"traceVersion":2}
+PROBE {"event":"runtime.identity","main":true,"t_ms":2990,"version":"0.1.0"}
+PROBE {"callUUID":"55971FF9-5AE2-4E19-9405-C7B6CC1D4C22","event":"report.incomingCompleted","label":"nil-success","main":true,"onQueue":"other","result":"ok","t_ms":4212}
+objc[97122]: Class UIAccessibilityLoaderWebShared is implemented in both /Library/Developer/CoreSimulator/Volumes/iOS_24A434/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 27.0.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebKit.axbundle/WebKit (0x1057dc398) and /Library/Developer/CoreSimulator/Volumes/iOS_24A434/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 27.0.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebCore.axbundle/WebCore (0x1060dc310). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+PROBE {"callUUID":"55971FF9-5AE2-4E19-9405-C7B6CC1D4C22","event":"report.incomingCompleted","label":"nil-duplicate","main":true,"onQueue":"other","result":"com.apple.CallKit.error.incomingcall:2","t_ms":5378}
+PROBE {"callUUID":"CFD2650D-9AC2-40D2-A593-126A9E35CDE5","event":"report.incomingCompleted","label":"custom-success","main":false,"onQueue":"custom","result":"ok","t_ms":6481}
+PROBE {"callUUID":"CFD2650D-9AC2-40D2-A593-126A9E35CDE5","event":"report.incomingCompleted","label":"custom-duplicate","main":false,"onQueue":"custom","result":"com.apple.CallKit.error.incomingcall:2","t_ms":7583}
+PROBE {"event":"done","main":false,"t_ms":7605}
+dev.callkitsim.probe: 97122

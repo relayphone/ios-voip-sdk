@@ -63,6 +63,9 @@ def main():
         traces("malformed-json", lambda d: (d / "runtime.jsonl").write_text("{bad\n"), False)
         traces("wrong-outcome", lambda d: mutate_row(d, "request.completed",
                lambda rows, r: r.update(result="wrong"), label="answer-a"), False)
+        for label in ("incoming-a", "incoming-a-duplicate"):
+            traces(f"off-main-report-{label}", lambda d, label=label: mutate_row(d, "report.incomingCompleted",
+                   lambda rows, r: r.update(main=False), label=label), False)
         traces("duplicate-completion", lambda d: mutate_row(d, "request.completed",
                lambda rows, r: rows.insert(-1, dict(r)), label="answer-a"), False)
         traces("wrong-final-state", lambda d: mutate_row(d, "observer.snapshot",

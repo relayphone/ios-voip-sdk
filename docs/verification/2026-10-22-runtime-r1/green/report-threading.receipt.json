@@ -1,0 +1,21 @@
+{
+  "completed": true,
+  "success": true,
+  "schemaVersion": 2,
+  "runID": "3FFB9214-8490-4732-ADAC-A1FC9B94E90B",
+  "simulatorID": "9BC8E7A0-21AB-4F3F-8E14-7C0495D84F27",
+  "scenario": "report-threading",
+  "bundleID": "dev.callkitsim.probe",
+  "launcherPID": 97112,
+  "lastProbeEvent": "done",
+  "lastProbeTimestampMS": 7605,
+  "appEntryObserved": true,
+  "appPID": 97122,
+  "terminateExitCode": 0,
+  "launchExitCode": 0,
+  "launchExitCodeBeforeCleanup": 0,
+  "elapsedSeconds": 8.659,
+  "traceSHA256": "98d350996b387c1a77a7a0dd41f4677e5d02abd50a6c962ed4314c03eff790c6",
+  "launcherAppPID": 97122,
+  "engineSHA256": "f841a0b27e1b7f34fd13ecc841af967aad21940bf849fc377e3934f7a685de67"
+}
