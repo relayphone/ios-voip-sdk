@@ -1,0 +1,19 @@
+{
+  "id": "ios-27.0",
+  "schemaVersion": 1,
+  "reference": "iPhone 13 / iOS 27.0 (24A5355q)",
+  "answerExpirySeconds": 59.58,
+  "ringTimeoutSeconds": 60.1,
+  "unknownProviderSeconds": 10.6,
+  "actionTimeoutSeconds": 5.2,
+  "startDeadlineSeconds": 600,
+  "answerDeadlineSeconds": 60,
+  "ordinaryDeadlineSeconds": 5,
+  "reportLatencySeconds": 1.1,
+  "muteEchoSeconds": 0.015,
+  "providerRouting": "newest-created",
+  "waitingAnswer": "system-only",
+  "transactionIdentity": "fresh-transaction-preserved-actions",
+  "scope": "Measured iOS 27.0 behavior; not a guarantee for other iOS releases.",
+  "postEndUnmuteSeconds": 0.08
+}

@@ -1,0 +1,19 @@
+{
+  "profile": "simulator-discovery-v2",
+  "mediaProof": false,
+  "scenarios": {
+    "genuine": {
+      "success": true,
+      "events": 90
+    },
+    "runtime": {
+      "success": true,
+      "events": 126
+    },
+    "push": {
+      "success": true,
+      "events": 17
+    }
+  },
+  "success": true
+}

@@ -1,0 +1,16 @@
+{"event": "app.entry", "main": true, "t_ms": 4}
+{"configAfter": 0, "configBefore": 0, "event": "audio.sessionID", "main": true, "opaque": 0, "t_ms": 680}
+{"event": "provider.didBegin", "main": true, "t_ms": 684}
+{"appState": 0, "event": "launch", "injected": true, "main": false, "mode": "push", "pid": 13864, "t_ms": 688, "traceVersion": 2}
+{"event": "push.registered", "main": true, "t_ms": 3820}
+{"api": "legacy", "event": "push.received", "main": true, "t_ms": 3820}
+{"connected": false, "ended": false, "event": "observer.callChanged", "held": false, "main": true, "outgoing": false, "t_ms": 3844, "uuid": "9CECCDCF"}
+{"event": "push.reported", "main": true, "result": "ok", "t_ms": 3853}
+{"calls": [{"connected": false, "ended": false, "held": false, "outgoing": false, "uuid": "9CECCDCF"}], "event": "observer.snapshot", "label": "after-push-wait", "main": false, "pending": 0, "t_ms": 16042}
+{"event": "request.completed", "label": "cleanup", "main": false, "result": "ok", "t_ms": 16043}
+{"actions": ["CXEndCallAction"], "event": "provider.executeTransaction", "main": true, "t_ms": 16049}
+{"call": "9CECCDCF", "event": "provider.perform", "id": "BE114A09", "kind": "CXEndCallAction", "main": true, "t_ms": 16050, "timeoutIn": 5}
+{"complete": false, "event": "action.fulfilled", "id": "BE114A09", "kind": "CXEndCallAction", "main": true, "t_ms": 16050}
+{"connected": false, "ended": true, "event": "observer.callChanged", "held": false, "main": true, "outgoing": false, "t_ms": 16062, "uuid": "9CECCDCF"}
+{"calls": [], "event": "observer.snapshot", "label": "final", "main": false, "pending": 0, "t_ms": 17087}
+{"event": "done", "main": false, "t_ms": 17087}

@@ -1,0 +1,118 @@
+{"event": "app.entry", "main": true, "t_ms": 0}
+{"configAfter": 0, "configBefore": 0, "event": "audio.sessionID", "main": true, "opaque": 0, "t_ms": 3067}
+{"event": "provider.didBegin", "main": true, "t_ms": 3081}
+{"appState": 0, "bundleID": "dev.callkitsim.probe", "event": "launch", "injected": true, "main": false, "mode": "default", "pid": 71546, "runID": "synthetic-regression-binding", "simulatorID": "fixture-simulator", "t_ms": 3089, "traceVersion": 2}
+{"audio": {"category": "AVAudioSessionCategorySoloAmbient", "inputs": [], "mode": "AVAudioSessionModeDefault", "otherAudio": false, "outputs": ["Speaker"], "sampleRate": 48000}, "build": "26A434", "event": "start", "main": false, "model": "iPhone", "os": "27.0", "simulator": "callkit-probe-66136", "t_ms": 3119}
+{"complete": false, "event": "loose.created", "main": false, "t_ms": 3128, "timeoutIn": 59.99999392032623}
+{"complete": false, "event": "loose.fulfilled", "main": false, "t_ms": 3128}
+{"calls": [], "event": "observer.snapshot", "label": "initial", "main": false, "pending": 0, "t_ms": 3129}
+{"event": "step", "main": false, "name": "incoming", "t_ms": 3129, "uuid": "E1501FAD"}
+{"connected": false, "ended": false, "event": "observer.callChanged", "held": false, "main": true, "outgoing": false, "t_ms": 4239, "uuid": "E1501FAD"}
+{"event": "report.incomingCompleted", "label": "incoming-a", "main": true, "result": "ok", "t_ms": 4239}
+{"event": "report.incomingCompleted", "label": "incoming-a-duplicate", "main": true, "result": "com.apple.CallKit.error.incomingcall:2", "t_ms": 5411}
+{"calls": [{"connected": false, "ended": false, "held": false, "outgoing": false, "uuid": "E1501FAD"}], "event": "observer.snapshot", "label": "ringing", "main": false, "pending": 0, "t_ms": 7424}
+{"event": "request.completed", "label": "answer-a", "main": false, "result": "ok", "t_ms": 7425}
+{"actions": ["CXAnswerCallAction"], "event": "provider.executeTransaction", "main": true, "t_ms": 7431}
+{"event": "audio.configured", "label": "answer", "main": true, "t_ms": 7626}
+{"call": "E1501FAD", "event": "provider.perform", "id": "0A566108", "kind": "CXAnswerCallAction", "main": true, "t_ms": 7626, "timeoutIn": 60}
+{"complete": false, "event": "action.fulfilled", "id": "0A566108", "kind": "CXAnswerCallAction", "main": true, "t_ms": 7626}
+{"connected": true, "ended": false, "event": "observer.callChanged", "held": false, "main": true, "outgoing": false, "t_ms": 7637, "uuid": "E1501FAD"}
+{"category": "AVAudioSessionCategoryPlayAndRecord", "event": "provider.didActivateAudio", "inputs": ["MicrophoneBuiltIn"], "main": true, "mode": "AVAudioSessionModeVoiceChat", "otherAudio": false, "outputs": ["Speaker"], "sampleRate": 48000, "t_ms": 7954}
+{"calls": [{"connected": true, "ended": false, "held": false, "outgoing": false, "uuid": "E1501FAD"}], "event": "observer.snapshot", "label": "answered", "main": false, "pending": 0, "t_ms": 10007}
+{"callKitActive": true, "event": "mic.begin", "label": "after-answer", "main": false, "t_ms": 10015}
+{"event": "mic.inputNodeReady", "label": "after-answer", "main": false, "t_ms": 10280}
+{"audio": {"category": "AVAudioSessionCategoryPlayAndRecord", "inputs": ["MicrophoneBuiltIn"], "mode": "AVAudioSessionModeVoiceChat", "otherAudio": false, "outputs": ["Speaker"], "sampleRate": 48000}, "channels": 1, "event": "mic.format", "label": "after-answer", "main": false, "rate": 48000, "t_ms": 10281}
+{"channels": 1, "event": "mic.result", "frames": 48000, "label": "after-answer", "main": true, "peak": 0.004727255553007126, "rate": 48000, "t_ms": 11382}
+{"event": "request.completed", "label": "mute-a", "main": false, "result": "ok", "t_ms": 11908}
+{"event": "request.completed", "label": "dtmf-a", "main": false, "result": "ok", "t_ms": 11908}
+{"event": "request.completed", "label": "hold-a", "main": false, "result": "ok", "t_ms": 11908}
+{"actions": ["CXSetMutedCallAction"], "event": "provider.executeTransaction", "main": true, "t_ms": 11913}
+{"call": "E1501FAD", "event": "provider.perform", "id": "BF9C1019", "kind": "CXSetMutedCallAction", "main": true, "muted": true, "t_ms": 11914, "timeoutIn": 5}
+{"complete": false, "event": "action.fulfilled", "id": "BF9C1019", "kind": "CXSetMutedCallAction", "main": true, "t_ms": 11914}
+{"actions": ["CXPlayDTMFCallAction"], "event": "provider.executeTransaction", "main": true, "t_ms": 11914}
+{"call": "E1501FAD", "digits": "12#", "event": "provider.perform", "id": "001A96E3", "kind": "CXPlayDTMFCallAction", "main": true, "t_ms": 11914, "timeoutIn": 5}
+{"complete": false, "event": "action.fulfilled", "id": "001A96E3", "kind": "CXPlayDTMFCallAction", "main": true, "t_ms": 11914}
+{"actions": ["CXSetHeldCallAction"], "event": "provider.executeTransaction", "main": true, "t_ms": 11914}
+{"call": "E1501FAD", "event": "provider.perform", "id": "EE01F1B0", "kind": "CXSetHeldCallAction", "main": true, "onHold": true, "t_ms": 11914, "timeoutIn": 5}
+{"complete": false, "event": "action.fulfilled", "id": "EE01F1B0", "kind": "CXSetHeldCallAction", "main": true, "t_ms": 11914}
+{"connected": true, "ended": false, "event": "observer.callChanged", "held": true, "main": true, "outgoing": false, "t_ms": 11936, "uuid": "E1501FAD"}
+{"category": "AVAudioSessionCategoryPlayAndRecord", "event": "provider.didDeactivateAudio", "inputs": ["MicrophoneBuiltIn"], "main": true, "mode": "AVAudioSessionModeVoiceChat", "otherAudio": false, "outputs": ["Speaker"], "sampleRate": 48000, "t_ms": 12173}
+{"calls": [{"connected": true, "ended": false, "held": true, "outgoing": false, "uuid": "E1501FAD"}], "event": "observer.snapshot", "label": "held", "main": false, "pending": 0, "t_ms": 12936}
+{"event": "request.completed", "label": "unhold-a", "main": false, "result": "ok", "t_ms": 12937}
+{"event": "step", "main": false, "name": "call-waiting", "t_ms": 12937, "uuid": "2E0DF8F0"}
+{"actions": ["CXSetHeldCallAction"], "event": "provider.executeTransaction", "main": true, "t_ms": 12942}
+{"call": "E1501FAD", "event": "provider.perform", "id": "28A120F9", "kind": "CXSetHeldCallAction", "main": true, "onHold": false, "t_ms": 12943, "timeoutIn": 5}
+{"complete": false, "event": "action.fulfilled", "id": "28A120F9", "kind": "CXSetHeldCallAction", "main": true, "t_ms": 12943}
+{"connected": true, "ended": false, "event": "observer.callChanged", "held": false, "main": true, "outgoing": false, "t_ms": 12965, "uuid": "E1501FAD"}
+{"category": "AVAudioSessionCategoryPlayAndRecord", "event": "provider.didActivateAudio", "inputs": ["MicrophoneBuiltIn"], "main": true, "mode": "AVAudioSessionModeVoiceChat", "otherAudio": false, "outputs": ["Speaker"], "sampleRate": 48000, "t_ms": 13341}
+{"connected": false, "ended": false, "event": "observer.callChanged", "held": false, "main": true, "outgoing": false, "t_ms": 14109, "uuid": "2E0DF8F0"}
+{"event": "report.incomingCompleted", "label": "incoming-b", "main": true, "result": "ok", "t_ms": 14109}
+{"event": "request.completed", "label": "hold-a-answer-b", "main": false, "result": "com.apple.CallKit.error.requesttransaction:6", "t_ms": 15153}
+{"calls": [{"connected": false, "ended": false, "held": false, "outgoing": false, "uuid": "2E0DF8F0"}, {"connected": true, "ended": false, "held": false, "outgoing": false, "uuid": "E1501FAD"}], "event": "observer.snapshot", "label": "two-calls", "main": false, "pending": 0, "t_ms": 16707}
+{"event": "request.begin", "groupWith": "2E0DF8F0", "label": "merge-a-b", "main": false, "t_ms": 16707}
+{"event": "request.completed", "label": "merge-a-b", "main": false, "result": "ok", "t_ms": 16707}
+{"actions": ["CXSetGroupCallAction"], "event": "provider.executeTransaction", "main": true, "t_ms": 16713}
+{"call": "E1501FAD", "event": "provider.perform", "groupWith": "2E0DF8F0", "id": "99CFAFFB", "kind": "CXSetGroupCallAction", "main": true, "t_ms": 16713, "timeoutIn": 5}
+{"complete": false, "event": "action.fulfilled", "id": "99CFAFFB", "kind": "CXSetGroupCallAction", "main": true, "t_ms": 16713}
+{"calls": [{"connected": false, "ended": false, "held": false, "outgoing": false, "uuid": "2E0DF8F0"}, {"connected": true, "ended": false, "held": false, "outgoing": false, "uuid": "E1501FAD"}], "event": "observer.snapshot", "label": "merged", "main": false, "pending": 0, "t_ms": 17734}
+{"event": "request.completed", "label": "end-b", "main": false, "result": "ok", "t_ms": 17734}
+{"event": "report.ended", "label": "remote-end-a", "main": false, "t_ms": 17735}
+{"actions": ["CXEndCallAction"], "event": "provider.executeTransaction", "main": true, "t_ms": 17740}
+{"call": "2E0DF8F0", "event": "provider.perform", "id": "74D927FB", "kind": "CXEndCallAction", "main": true, "t_ms": 17741, "timeoutIn": 5}
+{"complete": false, "event": "action.fulfilled", "id": "74D927FB", "kind": "CXEndCallAction", "main": true, "t_ms": 17741}
+{"connected": true, "ended": true, "event": "observer.callChanged", "held": false, "main": true, "outgoing": false, "t_ms": 17751, "uuid": "E1501FAD"}
+{"connected": false, "ended": true, "event": "observer.callChanged", "held": false, "main": true, "outgoing": false, "t_ms": 17752, "uuid": "2E0DF8F0"}
+{"category": "AVAudioSessionCategoryPlayAndRecord", "event": "provider.didDeactivateAudio", "inputs": ["MicrophoneBuiltIn"], "main": true, "mode": "AVAudioSessionModeVoiceChat", "otherAudio": false, "outputs": ["Speaker"], "sampleRate": 48000, "t_ms": 18005}
+{"calls": [], "event": "observer.snapshot", "label": "after-end", "main": false, "pending": 0, "t_ms": 19738}
+{"event": "step", "main": false, "name": "outgoing", "t_ms": 19738, "uuid": "6E605E4C"}
+{"connected": false, "ended": false, "event": "observer.callChanged", "held": false, "main": true, "outgoing": true, "t_ms": 19738, "uuid": "6E605E4C"}
+{"event": "request.completed", "label": "start-c", "main": false, "result": "ok", "t_ms": 19738}
+{"actions": ["CXStartCallAction"], "event": "provider.executeTransaction", "main": true, "t_ms": 19745}
+{"event": "audio.configured", "label": "start", "main": true, "t_ms": 19745}
+{"call": "6E605E4C", "event": "provider.perform", "handle": "+15555550102", "id": "530FA4E1", "kind": "CXStartCallAction", "main": true, "t_ms": 19745, "timeoutIn": 600, "video": false}
+{"complete": false, "event": "action.fulfilled", "id": "530FA4E1", "kind": "CXStartCallAction", "main": true, "t_ms": 19745}
+{"category": "AVAudioSessionCategoryPlayAndRecord", "event": "provider.didActivateAudio", "inputs": ["MicrophoneBuiltIn"], "main": true, "mode": "AVAudioSessionModeVoiceChat", "otherAudio": false, "outputs": ["Speaker"], "sampleRate": 48000, "t_ms": 20060}
+{"event": "report.outgoingConnected", "main": true, "t_ms": 20270}
+{"connected": true, "ended": false, "event": "observer.callChanged", "held": false, "main": true, "outgoing": true, "t_ms": 20270, "uuid": "6E605E4C"}
+{"calls": [{"connected": true, "ended": false, "held": false, "outgoing": true, "uuid": "6E605E4C"}], "event": "observer.snapshot", "label": "outgoing", "main": false, "pending": 0, "t_ms": 22307}
+{"callKitActive": true, "event": "mic.begin", "label": "after-outgoing", "main": false, "t_ms": 22307}
+{"event": "mic.inputNodeReady", "label": "after-outgoing", "main": false, "t_ms": 22311}
+{"audio": {"category": "AVAudioSessionCategoryPlayAndRecord", "inputs": ["MicrophoneBuiltIn"], "mode": "AVAudioSessionModeVoiceChat", "otherAudio": false, "outputs": ["Speaker"], "sampleRate": 48000}, "channels": 1, "event": "mic.format", "label": "after-outgoing", "main": false, "rate": 48000, "t_ms": 22311}
+{"channels": 1, "event": "mic.result", "frames": 48000, "label": "after-outgoing", "main": true, "peak": 0.004875131882727146, "rate": 48000, "t_ms": 23391}
+{"event": "request.completed", "label": "end-c", "main": false, "result": "ok", "t_ms": 23901}
+{"actions": ["CXEndCallAction"], "event": "provider.executeTransaction", "main": true, "t_ms": 23907}
+{"call": "6E605E4C", "event": "provider.perform", "id": "B3DFA4A0", "kind": "CXEndCallAction", "main": true, "t_ms": 23907, "timeoutIn": 5}
+{"complete": false, "event": "action.fulfilled", "id": "B3DFA4A0", "kind": "CXEndCallAction", "main": true, "t_ms": 23907}
+{"connected": true, "ended": true, "event": "observer.callChanged", "held": false, "main": true, "outgoing": true, "t_ms": 23918, "uuid": "6E605E4C"}
+{"category": "AVAudioSessionCategoryPlayAndRecord", "event": "provider.didDeactivateAudio", "inputs": ["MicrophoneBuiltIn"], "main": true, "mode": "AVAudioSessionModeVoiceChat", "otherAudio": false, "outputs": ["Speaker"], "sampleRate": 48000, "t_ms": 24064}
+{"event": "step", "main": false, "name": "errors", "t_ms": 25408}
+{"event": "request.completed", "label": "answer-unknown", "main": false, "result": "com.apple.CallKit.error.requesttransaction:4", "t_ms": 25408}
+{"event": "request.completed", "label": "end-unknown", "main": false, "result": "com.apple.CallKit.error.requesttransaction:4", "t_ms": 25408}
+{"event": "request.completed", "label": "empty-transaction", "main": false, "result": "com.apple.CallKit.error.requesttransaction:1", "t_ms": 25411}
+{"event": "step", "main": false, "name": "answer-timeout", "t_ms": 25411, "uuid": "A3C06D7A"}
+{"connected": false, "ended": false, "event": "observer.callChanged", "held": false, "main": true, "outgoing": false, "t_ms": 26582, "uuid": "A3C06D7A"}
+{"event": "report.incomingCompleted", "label": "incoming-d", "main": true, "result": "ok", "t_ms": 26583}
+{"event": "request.completed", "label": "answer-d-never", "main": false, "result": "ok", "t_ms": 27109}
+{"actions": ["CXAnswerCallAction"], "event": "provider.executeTransaction", "main": true, "t_ms": 27115}
+{"event": "audio.configured", "label": "answer", "main": true, "t_ms": 27124}
+{"call": "A3C06D7A", "event": "provider.perform", "id": "EB3DC4A2", "kind": "CXAnswerCallAction", "main": true, "t_ms": 27124, "timeoutIn": 60}
+{"event": "action.held", "id": "EB3DC4A2", "kind": "CXAnswerCallAction", "main": true, "t_ms": 27124}
+{"actions": ["CXEndCallAction"], "event": "provider.executeTransaction", "main": true, "t_ms": 86810}
+{"call": "A3C06D7A", "event": "provider.perform", "id": "208647AD", "kind": "CXEndCallAction", "main": true, "t_ms": 86810, "timeoutIn": 5}
+{"complete": false, "event": "action.fulfilled", "id": "208647AD", "kind": "CXEndCallAction", "main": true, "t_ms": 86810}
+{"connected": false, "ended": true, "event": "observer.callChanged", "held": false, "main": true, "outgoing": false, "t_ms": 86822, "uuid": "A3C06D7A"}
+{"calls": [], "event": "observer.snapshot", "label": "after-timeout-wait", "main": false, "pending": 1, "t_ms": 97109}
+{"complete": false, "event": "late.fulfill", "id": "EB3DC4A2", "main": false, "t_ms": 97110}
+{"calls": [], "event": "observer.snapshot", "label": "after-late-fulfill", "main": false, "pending": 0, "t_ms": 98124}
+{"event": "step", "main": false, "name": "unanswered", "t_ms": 99187, "uuid": "A9186D22"}
+{"connected": false, "ended": false, "event": "observer.callChanged", "held": false, "main": true, "outgoing": false, "t_ms": 100307, "uuid": "A9186D22"}
+{"event": "report.incomingCompleted", "label": "incoming-e", "main": true, "result": "ok", "t_ms": 100308}
+{"calls": [{"connected": false, "ended": false, "held": false, "outgoing": false, "uuid": "A9186D22"}], "event": "observer.snapshot", "label": "unanswered-wait", "main": false, "pending": 0, "t_ms": 108408}
+{"event": "request.completed", "label": "decline-e", "main": false, "result": "ok", "t_ms": 108408}
+{"actions": ["CXEndCallAction"], "event": "provider.executeTransaction", "main": true, "t_ms": 108415}
+{"call": "A9186D22", "event": "provider.perform", "id": "4D1C8D3A", "kind": "CXEndCallAction", "main": true, "t_ms": 108415, "timeoutIn": 5}
+{"complete": false, "event": "action.fulfilled", "id": "4D1C8D3A", "kind": "CXEndCallAction", "main": true, "t_ms": 108415}
+{"connected": false, "ended": true, "event": "observer.callChanged", "held": false, "main": true, "outgoing": false, "t_ms": 108427, "uuid": "A9186D22"}
+{"calls": [], "event": "observer.snapshot", "label": "final", "main": false, "pending": 0, "t_ms": 109916}
+{"event": "provider.invalidated", "main": false, "t_ms": 109916}
+{"event": "done", "main": false, "t_ms": 110980}

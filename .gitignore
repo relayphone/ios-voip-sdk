@@ -30,6 +30,15 @@ playground.xcworkspace
 # .swiftpm
 
 .build/
+__pycache__/
+discovery/build/
+discovery/out/
+discovery/device/*.xcodeproj/
+
+# Local APNs credentials and push tokens
+.env/
+.env.*
+*.p8
 
 # CocoaPods
 #
