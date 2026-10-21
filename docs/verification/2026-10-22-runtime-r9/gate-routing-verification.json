@@ -1,0 +1,33 @@
+{
+  "classification": "measured offline controls; no native build or simulator run",
+  "parents": [
+    "298a1cbd612331ba845ea7c1f133d15c4aac91ec",
+    "05b4f48cdc9f35f1b664a3fdbb157e7689995b8c"
+  ],
+  "commands": [
+    "python3 discovery/check_harness.py",
+    "python3 discovery/check_image_identity.py",
+    "python3 discovery/check_environment.py",
+    "python3 discovery/check_release_controls.py",
+    "python3 discovery/check_cli_controls.py",
+    "python3 discovery/check_oracles.py",
+    "python3 -m py_compile discovery/*.py scripts/check-runtime-release.py",
+    "bash -n discovery/run.sh discovery/run_abi.sh scripts/build-runtime.sh",
+    "actionlint .github/workflows/simulator-discovery.yml .github/workflows/runtime-release.yml",
+    "git diff --check"
+  ],
+  "checks": {
+    "harness": 52,
+    "image": 14,
+    "release": 18,
+    "cli": 13,
+    "environment": 9,
+    "deviceOracles": 9
+  },
+  "success": true,
+  "sourceAndEvidenceSHA256": {
+    "discovery/check_harness.py": "93e30b1bb7b96b00c31f993cc5398b6d7fc3a0461dca5d92f455b5e7d6a1a8ea",
+    "discovery/summarize.py": "c4065a85d08f942e627bf82b3c2dc608515d04d0aa243b6f6f51999364cfe409",
+    "docs/verification/2026-10-22-runtime-r9/gate-routing-harness.json": "a966b137a08734b98021609064b1bec9a9edacfcb606971dfde9f34572726e43"
+  }
+}
