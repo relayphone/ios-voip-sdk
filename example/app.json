@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "VoIP SDK Example",
+    "slug": "ios-voip-sdk-example",
+    "version": "0.0.0",
+    "platforms": ["ios"],
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "dev.iosvoipsdk.example",
+      "supportsTablet": true
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "17.4"
+          }
+        }
+      ]
+    ]
+  }
+}

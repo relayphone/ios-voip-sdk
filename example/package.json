@@ -1,0 +1,28 @@
+{
+  "name": "ios-voip-sdk-example",
+  "version": "0.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "index.ts",
+  "scripts": {
+    "ios": "expo run:ios",
+    "prebuild": "expo prebuild --platform ios",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
+  },
+  "dependencies": {
+    "expo": "55.0.32",
+    "expo-build-properties": "55.0.18",
+    "ios-voip-sdk": "file:..",
+    "react": "19.2.0",
+    "react-native": "0.83.10",
+    "react-native-safe-area-context": "5.6.2"
+  },
+  "expo": {
+    "autolinking": {
+      "nativeModulesDir": ".."
+    }
+  },
+  "devDependencies": {
+    "babel-preset-expo": "55.0.25"
+  }
+}
