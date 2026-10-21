@@ -25,6 +25,31 @@ The evidence is in:
 - **The simulator focuses on the LiveCommunicationKit stack.**
 - **Upstream:** propose #9 upstream.
 
+## What the evidence says about LiveCommunicationKit
+
+### What improves
+
+1. **One object instead of three.** `ConversationManager` replaces `CXProvider`, `CXCallController` and the app's own call store.
+   - The system maintains conversation state, which is `Observable`.
+   - `conversationChanged` reaches every manager.
+   - A reported conversation was already present before `reportNewIncomingConversation` returned.
+   - The compensating machinery we built for CallKit (#9's reservation store, #3's event journal) shrinks to registering app metadata before reporting.
+2. **A Swift-native API:** async/await, `Sendable`/`Codable` value types, typed actions, deadlines the app can set, and every delegate callback on the main thread.
+3. **Apple's new features are LiveCommunicationKit-only:** default dialer, telephony, conversation history and translation.
+4. **Measured parity on the device** for:
+   - start, join, mute (with the system echo), tones, pause/resume (with deactivate/activate), end, remote end;
+   - one-provider-per-process routing.
+
+### What does not change
+
+- **The same `callservicesd`.** LiveCommunicationKit uses an in-process `CXProvider`, so Apple's confirmed stale audio session bug, Focus filtering, user-intent checks and D13 routing all apply.
+  - A later `CXProvider` from any SDK takes every action away from the manager.
+  - With two managers, the newer one receives every action.
+  - The SDK must own the only manager, and must document vendor SDKs that create their own provider as incompatible.
+- **The action deadline is 30 s, including for system actions.** CallKit gives answer 60 s and start 600 s. Fulfill a join when signaling accepts it, not when media connects.
+- **No call direction or system-wide view.** `CXCallObserver` provides both and coexists, because it isn't a provider.
+- **In the simulator, genuine LiveCommunicationKit is torn down** about 100 ms after the report, just like CallKit. Under the runtime it works, including join and `didActivate` (`runtime-spike/runs/sim-runtime-lck.log`). The runtime keeps interposing at the `CXProvider` level, so LiveCommunicationKit's own client-side logic runs for real.
+
 ## Why the top-level API changes, so we start fresh
 
 Upstream's JS API (`src/Calls.ts`, `src/Calls.types.ts`) is CallKit- and WebRTC-shaped:
