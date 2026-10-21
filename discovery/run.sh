@@ -159,3 +159,6 @@ done
 python3 conformance.py "$OUT" | tee "$OUT/conformance.json"
 python3 check_conformance.py "$OUT" | tee "$OUT/conformance-checks.json"
 python3 cli_conformance.py "$UDID" "$BUILD/runtime" "$OUT" | tee "$OUT/cli-conformance.json"
+run semantics-answer-rules SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=semantics SIMCTL_CHILD_PROBE_SECTIONS=waiting2,starts,remote
+run semantics-failures SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=semantics SIMCTL_CHILD_PROBE_SECTIONS=failures
+python3 semantics_conformance.py "$OUT" | tee "$OUT/semantics-conformance.json"

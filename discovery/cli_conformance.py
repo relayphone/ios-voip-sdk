@@ -102,6 +102,12 @@ try:
         ['CXSetHeldCallAction', 'CXAnswerCallAction'], ['CXEndCallAction', 'CXAnswerCallAction']]
     audio = [r['event'] for r in rows if r['event'] in ('audio.activated', 'audio.deactivated')]
     assert audio == ['audio.activated', 'audio.deactivated'] * 3, audio
+    g, _ = push('ring-timeout', True)
+    wait(lambda: g not in calls(), 'unanswered ringing timeout', timeout=66)
+    rows = journal()
+    accepted_g = next(r for r in rows if r['event'] == 'report.incoming' and r['callUUID'] == g)
+    ended_g = next(r for r in rows if r['event'] == 'call.changed' and r['uuid'] == g and r['ended'])
+    assert 59_500 <= ended_g['t_ms'] - accepted_g['t_ms'] <= 61_500, 'ring timeout profile budget'
     (output / 'cli.engine.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
     run(['xcrun', 'simctl', 'terminate', device, bundle])
     # Launch without per-process injection: the selected-bundle loader must work
@@ -116,7 +122,7 @@ try:
     run(['xcrun', 'simctl', 'terminate', device, bundle])
     command('uninstall'); installed = False
     result = dict(success=True, scenarios=['direct launch', 'synthetic optional/required push', 'answer before report callback',
-        'Hold & Accept', 'End & Accept', 'Decline waiting', 'audio handoff', 'allowlisted loader launch', 'uninstall'], mediaProof=False)
+        'Hold & Accept', 'End & Accept', 'Decline waiting', 'audio handoff', '60.1s ringing timeout', 'allowlisted loader launch', 'uninstall'], mediaProof=False)
 finally:
     subprocess.run(['xcrun', 'simctl', 'terminate', device, bundle], capture_output=True)
     if installed: command('uninstall')
