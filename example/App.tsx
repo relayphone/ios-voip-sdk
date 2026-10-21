@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { journey } from './journey';
 
 type Status =
   | { phase: 'loading' }
@@ -31,12 +32,23 @@ function StatusRow({ label, value }: { label: string; value: string }) {
 
 export default function App() {
   const [status, setStatus] = useState<Status>({ phase: 'loading' });
+  const [call, setCall] = useState<'idle' | 'busy' | 'ringing' | 'joined'>(
+    'idle',
+  );
+  const [callMessage, setCallMessage] = useState('Ready for an example call.');
 
   const checkBootstrap = useCallback(async () => {
     setStatus({ phase: 'loading' });
     try {
       const info = await bootstrap();
       setStatus({ phase: 'ready', info });
+      if (journey().acceptanceEnabled) {
+        setCall('busy');
+        setCallMessage('Running incoming call acceptance…');
+        await journey().acceptance();
+        setCall('idle');
+        setCallMessage('Incoming ringing, joining and ending passed.');
+      }
     } catch (error) {
       setStatus({
         phase: 'error',
@@ -44,6 +56,27 @@ export default function App() {
       });
     }
   }, []);
+
+  const callCommand = async (command: 'ring' | 'join' | 'end') => {
+    const previous = call;
+    setCall('busy');
+    try {
+      await journey()[command]();
+      setCall(
+        command === 'ring' ? 'ringing' : command === 'join' ? 'joined' : 'idle',
+      );
+      setCallMessage(
+        command === 'ring'
+          ? 'Incoming call ringing.'
+          : command === 'join'
+            ? 'Call joined.'
+            : 'Call ended.',
+      );
+    } catch (error) {
+      setCall(previous);
+      setCallMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   useEffect(() => {
     void checkBootstrap();
@@ -113,9 +146,28 @@ export default function App() {
             Calling journey
           </Text>
           <Text style={styles.secondary}>
-            Incoming ringing and joining will be added after native runtime
-            integration. Bootstrap status alone does not verify a working call.
+            Report an example incoming call, join it, then end it. The example
+            supplies a small native handler; media and signaling arrive in later
+            milestones.
           </Text>
+          <Text style={styles.body} accessibilityLiveRegion="polite">
+            {callMessage}
+          </Text>
+          <Button
+            title="Ring incoming call"
+            disabled={status.phase !== 'ready' || call !== 'idle'}
+            onPress={() => void callCommand('ring')}
+          />
+          <Button
+            title="Join call"
+            disabled={call !== 'ringing'}
+            onPress={() => void callCommand('join')}
+          />
+          <Button
+            title="End call"
+            disabled={call !== 'ringing' && call !== 'joined'}
+            onPress={() => void callCommand('end')}
+          />
         </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>

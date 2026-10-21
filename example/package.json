@@ -19,7 +19,10 @@
   },
   "expo": {
     "autolinking": {
-      "nativeModulesDir": ".."
+      "nativeModulesDir": "./modules",
+      "searchPaths": [
+        ".."
+      ]
     }
   },
   "devDependencies": {
