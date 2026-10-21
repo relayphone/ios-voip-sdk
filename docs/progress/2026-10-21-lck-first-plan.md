@@ -16,10 +16,10 @@ The evidence is in:
   - The minimum is iOS/iPadOS 17.4.
   - Mac Catalyst waits until Apple fixes the SDK defect (Feedback draft 2). There is no temporary CallKit adapter.
   - Apple Watch is deferred.
-- **Start fresh.**
-  - LiveCommunicationKit changes the *top-level* API substantially (see below), so we build a new library instead of migrating upstream's.
-  - Good parts carry over with MIT attribution: the Android Core-Telecom implementation, the PushKit metadata adapter, and the lessons from #9.
-- **Native core:** the Swift package **`ziahamza/ios-voip-sdk`**. The React Native/Expo library is built on top of it.
+- **Propose v2 upstream first.** The preferred outcome is an evolved, LiveCommunicationKit-based API that @mfairley adopts as expo-callkit-telecom v2. If he declines, the same design ships as our own `react-native-voip`. Either way:
+  - **The design:** [RFC 0001](https://github.com/ziahamza/expo-callkit-telecom/blob/rfc/v2-conversations-api/rfcs/0001-v2-conversations-api.md), under internal review in fork [PR #10](https://github.com/ziahamza/expo-callkit-telecom/pull/10).
+  - **The iOS native core:** the Swift package **`ziahamza/ios-voip-sdk`**, public, with **no license file yet**.
+  - **Android:** stays on Core-Telecom, refactored to the same model.
 - **Phone** moves from Telnyx to LiveKit, then onto this library.
 - **Default calling app** (`com.apple.developer.calling-app`) now. The EU dialer (`com.apple.developer.dialing-app`) comes later.
 - **The simulator focuses on the LiveCommunicationKit stack.**
@@ -50,7 +50,7 @@ The evidence is in:
 - **No call direction or system-wide view.** `CXCallObserver` provides both and coexists, because it isn't a provider.
 - **In the simulator, genuine LiveCommunicationKit is torn down** about 100 ms after the report, just like CallKit. Under the runtime it works, including join and `didActivate` (`runtime-spike/runs/sim-runtime-lck.log`). The runtime keeps interposing at the `CXProvider` level, so LiveCommunicationKit's own client-side logic runs for real.
 
-## Why the top-level API changes, so we start fresh
+## Why the top-level API changes, so v2 is a major version
 
 Upstream's JS API (`src/Calls.ts`, `src/Calls.types.ts`) is CallKit- and WebRTC-shaped:
 
@@ -71,7 +71,7 @@ A LiveCommunicationKit-first API replaces each of these:
 | None | Dial requests from the default calling app (`tel:` links, `INStartCallIntent`), and later the dialer, history and translation |
 
 ## The native core: `ios-voip-sdk` (Swift 6 package)
-Start with fresh history. Credit upstream's MIT code where it is reused.
+Start with fresh history. Add no license until Hamza decides. Credit upstream's MIT code where it is reused.
 
 | Part | Contents |
 | --- | --- |
@@ -82,7 +82,7 @@ Start with fresh history. Credit upstream's MIT code where it is reused.
 | Diagnostics | A debug-only guard that warns when another `CXProvider` or `ConversationManager` is created in the process, because that silently disables ours (D13). |
 | `MediaAdapters/LiveKit` | First-class, since Phone is moving to LiveKit. No Telnyx adapter. |
 | `CXCallObserver` | Used read-only, for call direction and the system-wide view. It is not a provider. |
-| React Native/Expo library (separate) | A new package using the API above. iOS binds `ios-voip-sdk`. Android ports upstream's Core-Telecom code onto the same conversation model (`CallControlScope`: answer/disconnect/setActive/setInactive map to join/end/resume/pause). The config plugin covers `voip`, push, `calling-app`, and `dialing-app` (opt-in). |
+| React Native/Expo library | expo-callkit-telecom v2 per RFC 0001, or `react-native-voip` if upstream declines. iOS binds `ios-voip-sdk`. Android ports upstream's Core-Telecom code onto the same conversation model (`CallControlScope`: answer/disconnect/setActive/setInactive map to join/end/resume/pause). The config plugin covers `voip`, push, `calling-app`, and `dialing-app` (opt-in). |
 
 **Simulator:** keep interposing at the `CXProvider` level. LiveCommunicationKit's client-side logic (30 s deadlines, its state machine, broadcasts to every manager) then runs for real in the simulator. Add the four LiveCommunicationKit device traces as conformance cases, and run the probe's `PROBE_MODE=lck` under the runtime in CI.
 
@@ -102,7 +102,7 @@ Start with fresh history. Credit upstream's MIT code where it is reused.
 
 **Skip** Phone P3: it is Telnyx-specific, and Telnyx is going away.
 
-**Add:** an RFC for `ios-voip-sdk` and the React Native library covering:
+**Add:** review and de-risk RFC 0001, which already covers:
 
 - the Swift and JS API sketch;
 - the handler and deadline model;
@@ -115,6 +115,6 @@ Start with fresh history. Credit upstream's MIT code where it is reused.
 - the simulator conformance plan;
 - Phone's migration path.
 
-No code until Claude and Hamza review the RFC. Create the repos only after Hamza confirms names and visibility.
+Prototype only what de-risks the RFC (see the Codex brief). Create `ziahamza/ios-voip-sdk` public, without a license. Post nothing upstream until Hamza approves.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
