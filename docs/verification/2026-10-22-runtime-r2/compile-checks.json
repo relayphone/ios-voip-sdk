@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "architectures": [
+    "arm64",
+    "x86_64"
+  ],
+  "abiTesting": false,
+  "abiFaultControlsAbsent": true,
+  "retainedInitializerReturns": [
+    "providerInit",
+    "providerConcreteInit",
+    "controllerInit",
+    "controllerConcreteInit",
+    "registryInit"
+  ],
+  "runtimeSHA256": "b34abf2a6287e53add413b43788f12de6d10a643006df1b46d4554b3d78f23df",
+  "sourceInputsSHA256": "0f4b98f6bd94084f8c54d9fc03f953d292722e83cd8a2131d90bab55f5df4152"
+}
