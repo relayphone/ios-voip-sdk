@@ -77,7 +77,7 @@ try:
     wait(lambda: any(r['event'] == 'push.completed' for r in journal()), 'first push completion')
     command('answer', a)
     wait(lambda: calls().get(a, {}).get('connected') and command('status')['audioActive'], 'A connected with audio')
-    command('faults', '--report-delay-ms', '1500')
+    command('faults', '--report-delay-ms', '8000')
     b, b_push = push('b', True)
     command('hold-and-accept', b, '--active-call', a)
     wait(lambda: calls().get(a, {}).get('held') and calls().get(b, {}).get('connected'), 'Hold & Accept')
@@ -121,7 +121,7 @@ try:
     wait(lambda: command('status')['audioActive'], 'audio recovers after fault cleared')
     command('faults', '--invalidate-during-handoff')
     i, _ = push('invalidation', True)
-    command('hold-and-accept', i, '--active-call', h)
+    invalidated = command('hold-and-accept', i, '--active-call', h)
     wait(lambda: not calls() and not command('status')['audioActive'], 'invalidation cancels handoff and audio')
     command('faults')
     j, _ = push('revival', True)
@@ -129,6 +129,9 @@ try:
     wait(lambda: calls().get(j, {}).get('connected') and command('status')['audioActive'], 'revived provider activates audio')
     command('end', j)
     wait(lambda: not calls() and not command('status')['audioActive'], 'revived final cleanup')
+    probe = [json.loads(line) for line in (container / 'Documents/trace.jsonl').read_text().splitlines()]
+    cancelled = {identity[:8] for identity in invalidated['actionIDs']}
+    assert not any(r['event'] == 'provider.perform' and r.get('id') in cancelled for r in probe), 'invalidated composition reached delegate'
     rows = journal()
     (output / 'cli.engine.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
     run(['xcrun', 'simctl', 'terminate', device, bundle])
@@ -143,6 +146,13 @@ try:
     assert command('status')['calls'] == []
     run(['xcrun', 'simctl', 'terminate', device, bundle])
     command('uninstall'); installed = False
+    # A direct launch must still work after launchd values have been restored.
+    restored_run = str(uuid.uuid4()).upper()
+    environment['SIMCTL_CHILD_CKSIM_RUN_ID'] = restored_run
+    command('launch')
+    wait(lambda: json.loads(session_path.read_text()).get('runID') == restored_run, 'direct launch after uninstall')
+    assert command('status')['calls'] == []
+    run(['xcrun', 'simctl', 'terminate', device, bundle])
     result = dict(success=True, scenarios=['direct launch', 'synthetic optional/required push', 'answer before report callback',
         'Hold & Accept', 'End & Accept', 'Decline waiting', 'audio handoff', '60.1s ringing timeout', 'stale audio recovery', 'invalidation during handoff and revival', 'allowlisted loader launch', 'uninstall'], mediaProof=False)
 finally:

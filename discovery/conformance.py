@@ -125,9 +125,17 @@ def providers(directory, case):
         for request in requests:
             route = next(r for r in rows[rows.index(request):] if r['event'] == 'route' and r['label'] == request['label'])
             if route['result'].endswith(':2'):
-                require(10_000 <= route['t_ms'] - request['t_ms'] <= 12_000, 'unknown provider timing differs')
+                callback = one(rows, 'request.callback', label=request['label'])
+                require(callback['result'] == route['result'], 'completion result differs')
+                require(10_000 <= callback['t_ms'] - request['t_ms'] <= 12_000, 'unknown provider timing differs')
         revived = [r for r in rows if r['event'] == 'tap.didBegin' and r['p'] == 'B']
-        require(len(revived) == 2, 'report did not revive invalidated newest provider')
+        invalidation = one(rows, 'tap.invalidated', p='B')
+        revival = one(rows, 'revival.requested')
+        report = one(rows, 'report.incoming', label='inv-B-after-invalidate')
+        require(sum(r['t_ms'] < invalidation['t_ms'] for r in revived) <= 1 and
+                not any(invalidation['t_ms'] <= r['t_ms'] < revival['t_ms'] for r in revived) and
+                sum(revival['t_ms'] <= r['t_ms'] <= report['t_ms'] for r in revived) == 1,
+                'report did not revive invalidated newest provider')
     if case == 'late':
         require(not any(r['event'] == 'tap.didBegin' and r['p'] == 'B' for r in rows), 'late delegate replayed begin')
     return dict(success=True, actions=len(actual), referenceAssertions='routing, queues, identities, audio, deadlines', lifecycle='teardown callbacks uncharacterized')

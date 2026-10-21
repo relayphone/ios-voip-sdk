@@ -57,10 +57,14 @@ private final class PendingAction: @unchecked Sendable {
   let provider: ProviderRegistration
   let transaction: CXTransaction
   let origin: ActionOrigin
+  let generation: UInt64
+  let call: CallState?
+  let groupTarget: CallState?
   var expired = false
   var settled = false
-  init(_ action: CXAction, _ provider: ProviderRegistration, _ transaction: CXTransaction, _ origin: ActionOrigin) {
+  init(_ action: CXAction, _ provider: ProviderRegistration, _ transaction: CXTransaction, _ origin: ActionOrigin, call: CallState?, groupTarget: CallState?) {
     self.action = action; self.provider = provider; self.transaction = transaction; self.origin = origin
+    self.generation = provider.generation; self.call = call; self.groupTarget = groupTarget
   }
 }
 
@@ -127,7 +131,9 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
 
   private override init() {
     let env = ProcessInfo.processInfo.environment
-    let profileID = env["CKSIM_PROFILE"] ?? "ios-27.0"
+    // launchctl can represent a restored, absent value as an empty string.
+    // Empty optional configuration has the same meaning as an unset value.
+    let profileID = env["CKSIM_PROFILE"].flatMap { $0.isEmpty ? nil : $0 } ?? "ios-27.0"
     precondition(profileID == "ios-27.0", "Unsupported CallKit Simulator profile")
     let url = URL(fileURLWithPath: CKSimResourceDirectory()).appendingPathComponent("profiles/\(profileID).json")
     do { profile = try JSONDecoder().decode(BehaviorProfile.self, from: Data(contentsOf: url)) }
@@ -281,12 +287,23 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       record(event: "request.accepted", fields: ["transactionID": requestID.uuidString,
         "actionIDs": actions.map { $0.uuid.uuidString }, "error": error?.code ?? 0])
       if error == nil { reserveStarts(actions, provider) }
+      var requestedCalls: [UUID: CallState] = [:]
+      for case let action as CXCallAction in actions {
+        requestedCalls[action.callUUID] = calls[action.callUUID]
+        if let group = action as? CXSetGroupCallAction, let target = group.callUUIDToGroupWith {
+          requestedCalls[target] = calls[target]
+        }
+      }
+      let bindings = requestedCalls
       // The continuation is scheduled only AFTER the client's completion returns.
       // No wall-clock timer, no app callback while executing the state queue.
       queue.async {
         reply.invoke(error)
         guard error == nil else { return }
-        self.state.async { self.deliver(actions, provider, origin: .application, requestID: requestID, generation: generation) }
+        self.state.async {
+          guard bindings.allSatisfy({ self.calls[$0.key] === $0.value }) else { return }
+          self.deliver(actions, provider, origin: .application, requestID: requestID, generation: generation)
+        }
       }
     }
   }
@@ -309,7 +326,9 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         (action is CXStartCallAction ? profile.startDeadlineSeconds : profile.ordinaryDeadlineSeconds)
       deadlines.setObject(Date(timeIntervalSinceNow: deadline) as NSDate, forKey: action)
       if let answer = action as? CXAnswerCallAction { calls[answer.callUUID]?.ringing = false }
-      let pending = PendingAction(action, provider, delivered, origin)
+      let pending = PendingAction(action, provider, delivered, origin,
+        call: (action as? CXCallAction).flatMap { calls[$0.callUUID] },
+        groupTarget: (action as? CXSetGroupCallAction)?.callUUIDToGroupWith.flatMap { calls[$0] })
       pendingActions[action.uuid] = pending
       let seconds = action is CXAnswerCallAction ? profile.answerExpirySeconds :
         (action is CXStartCallAction ? profile.startDeadlineSeconds : profile.actionTimeoutSeconds)
@@ -323,13 +342,17 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private func expire(_ item: PendingAction) {
     if let answer = item.action as? CXAnswerCallAction {
       item.expired = true
-      if calls[answer.callUUID] != nil { deliver([CXEndCallAction(call: answer.callUUID)], item.provider, origin: .system) }
+      if let call = item.call, calls[answer.callUUID] === call {
+        deliver([CXEndCallAction(call: answer.callUUID)], item.provider, origin: .system, generation: item.generation)
+      }
       return
     }
     pendingActions.removeValue(forKey: item.action.uuid)
     record(event: "action.timeout", fields: ["actionID": item.action.uuid.uuidString, "origin": item.origin.rawValue])
     callback(item.provider) { $0.provider?(item.provider.provider, timedOutPerforming: item.action) }
-    if let end = item.action as? CXEndCallAction { endCall(end.callUUID, provider: item.provider) }
+    if let call = item.call, calls[call.id] === call, item.action is CXEndCallAction {
+      endCall(call.id, provider: item.provider)
+    }
   }
   func complete(action: CXAction, fulfilled: Bool) -> Bool {
     withState {
@@ -340,7 +363,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         "fulfilled": fulfilled, "origin": item.origin.rawValue])
       if item.origin == .postEndUnmute { return true } // Device fulfills, then still times out.
       if item.expired { pendingActions.removeValue(forKey: action.uuid); return true }
-      guard let callAction = action as? CXCallAction, let call = calls[callAction.callUUID] else {
+      guard let call = item.call, calls[call.id] === call else {
         // A system end can arrive after an answer failure already removed the
         // call. Fulfillment is ignored, and the action's own timer still fires.
         return true
@@ -348,8 +371,16 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       pendingActions.removeValue(forKey: action.uuid)
       if !fulfilled {
         if action is CXAnswerCallAction {
-          after(0.29) { self.endCall(call.id, provider: item.provider) }
-          after(0.3) { self.deliver([CXEndCallAction(call: call.id)], item.provider, origin: .system) }
+          after(0.29) {
+            guard item.provider.valid, item.provider.generation == item.generation, self.calls[call.id] === call else { return }
+            self.endCall(call.id, provider: item.provider)
+          }
+          after(0.3) {
+            // The measured failed-answer end can arrive after removal, but it
+            // must never act on a different call reusing the same UUID.
+            guard self.calls[call.id] == nil || self.calls[call.id] === call else { return }
+            self.deliver([CXEndCallAction(call: call.id)], item.provider, origin: .system, generation: item.generation)
+          }
         } else if action is CXStartCallAction { endCall(call.id, provider: item.provider) }
         return true
       }
@@ -367,11 +398,14 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         if item.origin == .application {
           after(profile.muteEchoSeconds) {
             guard self.calls[call.id] === call else { return }
-            self.deliver([CXSetMutedCallAction(call: call.id, muted: mute.isMuted)], item.provider, origin: .muteEcho)
+            self.deliver([CXSetMutedCallAction(call: call.id, muted: mute.isMuted)], item.provider, origin: .muteEcho, generation: item.generation)
           }
         }
       case let group as CXSetGroupCallAction:
-        if let other = group.callUUIDToGroupWith, let target = calls[other] { call.group = target.group }
+        if let other = group.callUUIDToGroupWith {
+          guard let target = item.groupTarget, calls[other] === target else { return true }
+          call.group = target.group
+        }
         else { call.group = call.id }
         record(event: "call.grouped", fields: callJSON(call))
       default: break
@@ -383,8 +417,12 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     guard let call = calls.removeValue(forKey: uuid) else { return }
     call.ended = true; call.ringing = false; changed(call)
     reconcileAudio(provider: provider, delay: calls.isEmpty ? 0.1 : 1.15)
-    if call.muted {
-      after(profile.postEndUnmuteSeconds) { self.deliver([CXSetMutedCallAction(call: uuid, muted: false)], provider, origin: .postEndUnmute) }
+    if call.muted && provider.valid {
+      let generation = provider.generation
+      after(profile.postEndUnmuteSeconds) {
+        guard self.calls[uuid] == nil else { return }
+        self.deliver([CXSetMutedCallAction(call: uuid, muted: false)], provider, origin: .postEndUnmute, generation: generation)
+      }
     }
   }
   func incoming(provider: CXProvider, uuid: UUID, update: CXCallUpdate, completion: @escaping (Error?) -> Void) {
@@ -392,7 +430,10 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     let pushID = CKSimCurrentPushID()
     withState {
       let owner = registration(provider)
-      if !owner.valid { owner.valid = true; callback(owner) { $0.providerDidBegin?(provider) } }
+      if !owner.valid {
+        owner.generation += 1; owner.valid = true
+        callback(owner) { $0.providerDidBegin?(provider) }
+      }
       record(event: "report.incoming", fields: ["callUUID": uuid.uuidString, "pushID": pushID])
       let error: NSError? = calls[uuid] == nil ? nil : NSError(domain: "com.apple.CallKit.error.incomingcall", code: 2)
       if error == nil {

@@ -13,7 +13,7 @@ UDID=""
 LOGGER=""
 RUN_ID=$(uuidgen)
 ONLY=${CKSIM_ONLY:-}
-case "$ONLY" in ""|providers-single|providers-ab|providers-ba|providers-handles|providers-late|providers-drop|providers-inv|providers-recreate) ;; *) echo "Unsupported diagnostic selection" >&2; exit 1;; esac
+case "$ONLY" in ""|generations|providers-single|providers-ab|providers-ba|providers-handles|providers-late|providers-drop|providers-inv|providers-recreate) ;; *) echo "Unsupported diagnostic selection" >&2; exit 1;; esac
 limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
 prepare_stage() {
   local phase=$1 budget=$2 started status
@@ -83,9 +83,18 @@ from pathlib import Path
 import sys
 source=Path('../docs/research/callkit-simulator-probe/providers.swift').read_text()
 assert source.count('    exit(0)') == 1
+completion='controller.request(tx) { err in c.resume(returning: describe(err)) }'
+assert source.count(completion) == 1
+source=source.replace(completion, '''controller.request(tx) { err in
+        Trace.shared.log("request.callback", ["label": label, "result": describe(err)])
+        c.resume(returning: describe(err))
+      }''')
+revival='_ = await ring(b, "inv-B-after-invalidate", number: "+15555550164")'
+assert source.count(revival) == 1
+source=source.replace(revival, 'Trace.shared.log("revival.requested")\n      ' + revival)
 Path(sys.argv[1]).write_text(source.replace('    exit(0)', '    return'))
 PYPROVIDERS
-compiler swiftc -target "$SDK_TARGET" "${SWIFT_DEFS[@]}" -D CKSIM_CONFORMANCE -swift-version 5 -parse-as-library -O probe/main.swift "$BUILD/providers.swift" -o "$BUILD/Probe.app/Probe" \
+compiler swiftc -target "$SDK_TARGET" "${SWIFT_DEFS[@]}" -D CKSIM_CONFORMANCE -swift-version 5 -parse-as-library -O probe/main.swift probe/generations.swift "$BUILD/providers.swift" -o "$BUILD/Probe.app/Probe" \
   -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker probe/probe.entitlements > "$OUT/build.log" 2>&1
 codesign -s - --force "$BUILD/Probe.app"
 env DEVELOPER_DIR="${COMPILER_DEVELOPER_DIR:-${DEVELOPER_DIR:-$(xcode-select -p)}}" \
@@ -160,6 +169,11 @@ for case in single ab ba handles late drop inv recreate; do
   run "providers-$case" SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=providers SIMCTL_CHILD_PROBE_PROVIDERS="$case"
 done
 if [[ -n "$ONLY" ]]; then
+  if [[ "$ONLY" == generations ]]; then
+    run generations SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=generations
+    python3 generations_conformance.py "$OUT"
+    exit
+  fi
   python3 - "$OUT" "${ONLY#providers-}" <<'PYONE'
 import json,sys
 from pathlib import Path
@@ -174,3 +188,5 @@ python3 cli_conformance.py "$UDID" "$BUILD/runtime" "$OUT" | tee "$OUT/cli-confo
 run semantics-answer-rules SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=semantics SIMCTL_CHILD_PROBE_SECTIONS=waiting2,starts,remote
 run semantics-failures SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=semantics SIMCTL_CHILD_PROBE_SECTIONS=failures
 python3 semantics_conformance.py "$OUT" | tee "$OUT/semantics-conformance.json"
+run generations SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=generations
+python3 generations_conformance.py "$OUT" | tee "$OUT/generations-conformance.json"
