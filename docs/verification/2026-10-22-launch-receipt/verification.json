@@ -1,0 +1,17 @@
+{
+  "classification": "measured synthetic subprocess controls; no native build or simulator run",
+  "baseCommit": "4663b482b16833aac29aa8c3d3e5d272bf8387d1",
+  "success": true,
+  "harnessChecks": 56,
+  "commands": [
+    "python3 discovery/check_harness.py",
+    "python3 -m py_compile discovery/run_scenario.py discovery/check_harness.py",
+    "git diff --check"
+  ],
+  "sourceAndEvidenceSHA256": {
+    "discovery/run_scenario.py": "45ef5d1fd7f50f4c5cbfb05a15c2b3c1c29fd481f46365d53527cd0a16c6cf36",
+    "discovery/check_harness.py": "546be32846e6ef0977d85ff3bdc1ec4e85f7d1aa3f1fff6cb63e89c5e271cfa4",
+    "docs/verification/2026-10-22-launch-receipt/red.json": "287c2528dd1bc7be9ced2abf9961567327c5080fce93ef7525834c027f40637e",
+    "docs/verification/2026-10-22-launch-receipt/green.json": "86b21eeddacb755b423f2b96e6d8110c1a349229531a2e5ae9dadfb54c03d92d"
+  }
+}
