@@ -48,6 +48,15 @@ def journal():
     return [json.loads(line) for line in command('events')['events'].splitlines()]
 
 
+def managed_environment():
+    result = {}
+    for key in ('DYLD_INSERT_LIBRARIES', 'CKSIM_RUNTIME', 'CKSIM_BUNDLE_IDS', 'CKSIM_ENABLED', 'CKSIM_PROFILE'):
+        observed = subprocess.run(['xcrun', 'simctl', 'getenv', device, key], capture_output=True, text=True, timeout=15)
+        assert observed.returncode == 0, 'cannot inspect managed environment'
+        result[key] = (observed.stdout, observed.stderr)
+    return result
+
+
 def push(label, required):
     payload = output / f'cli-{label}-payload.json'
     payload.write_text(json.dumps({'from': '+15555550142', 'scenario': label}))
@@ -137,6 +146,7 @@ try:
     run(['xcrun', 'simctl', 'terminate', device, bundle])
     # Launch without per-process injection: the selected-bundle loader must work
     # and uninstall must restore exactly the previous launchd environment.
+    original_environment = managed_environment()
     command('install'); installed = True
     loader_run = str(uuid.uuid4()).upper()
     loader_env = {**environment, 'SIMCTL_CHILD_CKSIM_RUN_ID': loader_run}
@@ -146,6 +156,7 @@ try:
     assert command('status')['calls'] == []
     run(['xcrun', 'simctl', 'terminate', device, bundle])
     command('uninstall'); installed = False
+    assert managed_environment() == original_environment, 'uninstall changed the original simulator environment'
     # A direct launch must still work after launchd values have been restored.
     restored_run = str(uuid.uuid4()).upper()
     environment['SIMCTL_CHILD_CKSIM_RUN_ID'] = restored_run
