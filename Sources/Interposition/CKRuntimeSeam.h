@@ -1,3 +1,8 @@
+#pragma once
+#import <TargetConditionals.h>
+
+#if TARGET_OS_SIMULATOR && TARGET_OS_IOS
+#import <stdbool.h>
 #import <Foundation/Foundation.h>
 #import <CallKit/CallKit.h>
 #import <AVFoundation/AVFoundation.h>
@@ -24,11 +29,26 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)recordEvent:(NSString *)event fields:(NSDictionary<NSString *, id> *)fields NS_SWIFT_NAME(record(event:fields:));
 @end
 
+bool CKSimPrepareEngine(void);
+void CKSimReleaseEngine(void);
+// Returns a retained engine handle; the Objective-C bridge consumes ownership.
+void * _Nullable CKSimGetEngine(void);
+bool CKSimActivateRuntime(void);
+bool CKSimRuntimeIsActive(void);
+const char *CKSimRuntimeVersion(void);
+
+// Capture before replacing any superclass implementation. SDK activation uses
+// the same journal for CallKit and PushKit so a refusal restores both together.
+void CKSimCaptureHook(Class cls, SEL selector);
+NSString * _Nullable CKSimReplaceHook(Class cls, SEL selector, IMP replacement, const char *encoding);
+
 CXCall *CKSimMakeCall(NSUUID *uuid, BOOL outgoing, BOOL connected, BOOL held, BOOL ended);
 void CKSimPerform(id<CXProviderDelegate> delegate, CXProvider *provider, CXTransaction *transaction);
 void CKSimInjectPush(NSDictionary *payload, BOOL mustReport, NSString *identifier);
 NSString * _Nullable CKSimInstallPushHooks(void);
+void CKSimReleasePushHooks(void);
 NSString *CKSimCurrentPushID(void);
 NSString *CKSimResourceDirectory(void);
 void CKSimEmit(NSString *event, NSDictionary *fields);
 NS_ASSUME_NONNULL_END
+#endif
