@@ -1,0 +1,17 @@
+{
+  "success": true,
+  "fixtureKind": "synthetic-interruption",
+  "elapsedSeconds": 0.014,
+  "receiptWritten": true,
+  "ownedBuildRemoved": true,
+  "processGroupTerminated": true,
+  "steps": [
+    {
+      "phase": "source-commit",
+      "timeoutSeconds": 60,
+      "elapsedSeconds": 0.057,
+      "exitCode": 0
+    }
+  ],
+  "testSHA256": "f2da3ba70ee6c825570799551e6e75be1e1242555390088ef1c454911146e116"
+}
