@@ -1,0 +1,28 @@
+2026-10-22 01:21:51.647 Probe[43465:4266205] [NativeDevtoolsIos] devtools connection established
+2026-10-22 01:21:51.648 Probe[43465:4266205] [NativeDevtoolsIos] connected to /tmp/argent-nd-180DE56E.sock
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"app.entry","main":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":0}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"launch","main":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":0}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","datedState":[false,false,false],"deadlineOrder":["leaf.deadline","middle.deadline"],"event":"abi.originalReference","failComplete":false,"failOrder":["leaf.fail","middle.fail"],"fulfillComplete":false,"fulfillOrder":["leaf.fulfill","middle.fulfill"],"hasDeadline":true,"main":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":78}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"original-reference-chain","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":78}
+CKSIM runtime refused: ABIPushDelegateRegistry overrides setDelegate:
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"runtime-loads","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":109}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"activation-result","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":109}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"nonnull-initializers","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":125}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"push-concrete-original-preserved","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":125}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"original-fulfill-chain","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":125}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"original-fail-chain","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":125}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"original-deadline-chain","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":125}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"original-dated-fulfill","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":133}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"incoming-result","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":149}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"diagnostic-identifies-abi","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":149}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"no-genuine-report","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":149}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"snapshot-result","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":159}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"transaction-result","main":false,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":159}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"transaction-direct-result","main":false,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":159}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"transaction-array-result","main":false,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":159}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"no-genuine-report-after-request","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":264}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"final-state","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":265}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"abi.check","label":"no-genuine-operations","main":true,"passed":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":265}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","concreteClass":"CXXPCProvider","event":"abi.result","main":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","success":true,"t_ms":265}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"push-delegate-override","event":"done","main":true,"pid":43465,"runID":"4C25A98A-DFF9-4BD3-8C25-5696745C9429","t_ms":265}
+dev.callkitsim.abi: 43465
