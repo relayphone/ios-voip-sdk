@@ -168,8 +168,11 @@ Three things need fixing before more is built on top:
 
 See `../research/callkit-simulator-probe/maccatalyst/README.md`:
 
-- CallKit and LiveCommunicationKit are unavailable to native macOS apps.
-- An unprovisioned Mac Catalyst probe gets `unentitled` and unknown errors from genuine CallKit.
-- A provisioned run is still pending.
+- CallKit and LiveCommunicationKit are unavailable to native macOS apps; Mac Catalyst apps can use them.
+- Genuine CallKit works in a Mac Catalyst app once LaunchServices has registered the app (copied to `~/Applications`, then `lsregister`).
+- Outgoing starts need validated user intent.
+- Compared with the iPhone:
+  - **Same:** after the newest provider is invalidated, requests fail with `unknownCallProvider` with no fallback, and a report revives it. Ending a muted call produces a system unmute that times out.
+  - **Different:** no system mute echo, and no audio activation callbacks.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
