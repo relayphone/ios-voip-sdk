@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Require fresh, process-bound app evidence for lifecycle race regressions."""
+"""Check runtime lifecycle policy; this suite has no measured device oracle."""
 import json
 from pathlib import Path
 import sys
@@ -20,4 +20,5 @@ checks = [r for r in rows if r['event'] == 'generation.check']
 require(len(checks) == len(expected) and {r['name'] for r in checks} == expected, 'missing lifecycle boundary')
 require(all(r.get('success') is True for r in checks), 'lifecycle regression')
 require(not any(r['event'] == 'transaction.delivered' and r['origin'] == 'postEndUnmute' for r in engine), 'stale unmute produced')
-print(json.dumps(dict(success=True, checks=sorted(expected)), indent=2))
+print(json.dumps(dict(success=True, checks=sorted(expected),
+                     reference='runtime policy; no device measurement'), indent=2))

@@ -2,6 +2,7 @@
 # Genuine baseline and shipping Swift runtime, through the same application.
 set -euo pipefail
 cd "$(dirname "$0")"
+python3 check_oracles.py
 if [[ -n "${OUT:-}" ]]; then
   mkdir "$OUT" # Refuse stale output, including an existing empty directory.
 else

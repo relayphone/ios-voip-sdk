@@ -7,6 +7,12 @@ import subprocess
 import sys
 import time
 import uuid
+from device_oracles import check_d5_composition, d5_compositions
+from summarize import load
+
+ROOT = Path(__file__).resolve().parent.parent
+D5_REFERENCE = '2026-10-20-iphone13-ui10-app'
+d5_expected = d5_compositions(load(ROOT / 'docs/research/callkit-simulator-probe/device-system-ui', D5_REFERENCE))
 
 device, package, output = sys.argv[1:]
 package, output = Path(package).resolve(), Path(output).resolve()
@@ -88,7 +94,7 @@ try:
     wait(lambda: calls().get(a, {}).get('connected') and command('status')['audioActive'], 'A connected with audio')
     command('faults', '--report-delay-ms', '8000')
     b, b_push = push('b', True)
-    command('hold-and-accept', b, '--active-call', a)
+    hold_accept = command('hold-and-accept', b, '--active-call', a)
     wait(lambda: calls().get(a, {}).get('held') and calls().get(b, {}).get('connected'), 'Hold & Accept')
     wait(lambda: any(r['event'] == 'report.completed' and r.get('pushID') == b_push for r in journal()), 'delayed report completion')
     rows = journal()
@@ -98,18 +104,21 @@ try:
     command('end', a)
     wait(lambda: a not in calls(), 'held A ended')
     c, _ = push('c', False)
-    command('end-and-accept', c, '--active-call', b)
+    end_accept = command('end-and-accept', c, '--active-call', b)
     wait(lambda: b not in calls() and calls().get(c, {}).get('connected'), 'End & Accept')
     wait(lambda: sum(r['event'] == 'audio.activated' for r in journal()) == 3 and command('status')['audioActive'], 'End & Accept audio handoff')
     d, _ = push('d', True)
-    command('decline', d)
+    decline = command('decline', d)
     wait(lambda: d not in calls() and calls().get(c, {}).get('connected'), 'Decline waiting leaves C connected')
     command('end', c)
     wait(lambda: not calls() and not command('status')['audioActive'], 'empty inactive final state')
     rows = journal()
-    compositions = [r for r in rows if r['event'] == 'transaction.delivered' and len(r['actionIDs']) == 2]
-    assert [r['kinds'] for r in compositions] == [
-        ['CXSetHeldCallAction', 'CXAnswerCallAction'], ['CXEndCallAction', 'CXAnswerCallAction']]
+    probe = [json.loads(line) for line in (container / 'Documents/trace.jsonl').read_text().splitlines()]
+    for operation, receipt, active, waiting in (
+            ('hold-and-accept', hold_accept, a, b),
+            ('end-and-accept', end_accept, b, c), ('decline', decline, c, d)):
+        call_roles = {active[:8]: 'active', waiting[:8]: 'waiting'}
+        check_d5_composition(operation, d5_expected[operation], receipt['actionIDs'], call_roles, rows, probe)
     audio = [r['event'] for r in rows if r['event'] in ('audio.activated', 'audio.deactivated')]
     assert audio == ['audio.activated', 'audio.deactivated'] * 3, audio
     g, _ = push('ring-timeout', True)
@@ -142,6 +151,7 @@ try:
     cancelled = {identity[:8] for identity in invalidated['actionIDs']}
     assert not any(r['event'] == 'provider.perform' and r.get('id') in cancelled for r in probe), 'invalidated composition reached delegate'
     rows = journal()
+    (output / 'cli.probe.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in probe))
     (output / 'cli.engine.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
     run(['xcrun', 'simctl', 'terminate', device, bundle])
     # Launch without per-process injection: the selected-bundle loader must work
@@ -165,7 +175,8 @@ try:
     assert command('status')['calls'] == []
     run(['xcrun', 'simctl', 'terminate', device, bundle])
     result = dict(success=True, scenarios=['direct launch', 'synthetic optional/required push', 'answer before report callback',
-        'Hold & Accept', 'End & Accept', 'Decline waiting', 'audio handoff', '60.1s ringing timeout', 'stale audio recovery', 'invalidation during handoff and revival', 'allowlisted loader launch', 'uninstall'], mediaProof=False)
+        'Hold & Accept', 'End & Accept', 'Decline waiting', 'audio handoff', '60.1s ringing timeout', 'stale audio recovery', 'invalidation during handoff and revival', 'allowlisted loader launch', 'uninstall'], mediaProof=False,
+        d5DeviceReference=D5_REFERENCE, d5Compositions=d5_expected)
 finally:
     subprocess.run(['xcrun', 'simctl', 'terminate', device, bundle], capture_output=True)
     if installed: command('uninstall')
