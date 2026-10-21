@@ -1,0 +1,101 @@
+{"configAfter":0,"configBefore":0,"event":"audio.sessionID","main":true,"opaque":475311,"t_ms":0}
+{"event":"provider.didBegin","main":true,"t_ms":11}
+{"appState":0,"event":"launch","injected":false,"main":false,"mode":"ui","pid":1533,"t_ms":12}
+{"event":"phase","main":false,"name":"1-banner-accept","t_ms":3064}
+{"event":"report.incomingCompleted","label":"A#1","main":true,"result":"com.apple.CallKit.error.incomingcall:3","t_ms":6331}
+{"event":"report.incomingCompleted","label":"A#2","main":true,"result":"ok","t_ms":8281}
+{"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":8288,"uuid":"D73090BB"}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x12663a000, \ninputs = (\n); \noutputs = (\n    \"<AVAudioSessionPortDescription: 0x126638580, type = Speaker; name = Speaker; UID = Speaker; selectedDataSource = (null)>\"\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":8815}
+{"actions":["CXAnswerCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":10744}
+{"event":"audio.configured","label":"answer","main":true,"t_ms":10748}
+{"call":"D73090BB","event":"provider.perform","id":"1227CAFC","kind":"CXAnswerCallAction","main":true,"t_ms":10748,"timeoutIn":60}
+{"complete":false,"event":"action.fulfilled","kind":"CXAnswerCallAction","main":true,"t_ms":10749}
+{"after":2483,"event":"wait.met","label":"A answered","main":false,"t_ms":10764}
+{"connected":true,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":10822,"uuid":"D73090BB"}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x126639fd0, \ninputs = (\n); \noutputs = (\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":10984}
+{"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didActivateAudio","inputs":["MicrophoneBuiltIn"],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Receiver"],"sampleRate":48000,"t_ms":11072}
+{"event":"phase","main":false,"name":"2-hold-and-accept","t_ms":16064}
+{"event":"report.incomingCompleted","label":"B#1","main":true,"result":"com.apple.CallKit.error.incomingcall:3","t_ms":17122}
+{"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":19227,"uuid":"451D1E2A"}
+{"event":"report.incomingCompleted","label":"B#2","main":true,"result":"ok","t_ms":19228}
+{"event":"app.background","main":true,"t_ms":20020}
+{"actions":["CXSetHeldCallAction","CXAnswerCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":20604}
+{"call":"D73090BB","event":"provider.perform","id":"DD8AEE42","kind":"CXSetHeldCallAction","main":true,"onHold":true,"t_ms":20604,"timeoutIn":5}
+{"complete":false,"event":"action.fulfilled","kind":"CXSetHeldCallAction","main":true,"t_ms":20604}
+{"event":"audio.configured","label":"answer","main":true,"t_ms":20623}
+{"call":"451D1E2A","event":"provider.perform","id":"ADDE2BA1","kind":"CXAnswerCallAction","main":true,"t_ms":20623,"timeoutIn":60}
+{"complete":false,"event":"action.fulfilled","kind":"CXAnswerCallAction","main":true,"t_ms":20626}
+{"after":1459,"event":"wait.met","label":"B answered","main":false,"t_ms":20687}
+{"connected":true,"ended":false,"event":"observer.callChanged","held":true,"main":true,"outgoing":false,"t_ms":20710,"uuid":"D73090BB"}
+{"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didDeactivateAudio","inputs":["MicrophoneBuiltIn"],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Receiver"],"sampleRate":48000,"t_ms":20727}
+{"connected":true,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":20730,"uuid":"451D1E2A"}
+{"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didActivateAudio","inputs":["MicrophoneBuiltIn"],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Receiver"],"sampleRate":48000,"t_ms":20878}
+{"event":"app.foreground","main":true,"t_ms":20939}
+{"calls":[{"connected":true,"ended":false,"held":false,"outgoing":false,"uuid":"451D1E2A"},{"connected":true,"ended":false,"held":true,"outgoing":false,"uuid":"D73090BB"}],"event":"observer.snapshot","label":"after-hold-and-accept","main":false,"pending":0,"t_ms":24700}
+{"event":"request.completed","label":"end-B","main":false,"result":"ok","t_ms":24702}
+{"actions":["CXEndCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":24703}
+{"call":"451D1E2A","event":"provider.perform","id":"0868899B","kind":"CXEndCallAction","main":true,"t_ms":24703,"timeoutIn":5}
+{"complete":false,"event":"action.fulfilled","kind":"CXEndCallAction","main":true,"t_ms":24703}
+{"connected":true,"ended":true,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":24721,"uuid":"451D1E2A"}
+{"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didDeactivateAudio","inputs":["MicrophoneBuiltIn"],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Receiver"],"sampleRate":48000,"t_ms":24825}
+{"event":"request.completed","label":"unhold-A","main":false,"result":"ok","t_ms":26249}
+{"actions":["CXSetHeldCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":26250}
+{"call":"D73090BB","event":"provider.perform","id":"152386A7","kind":"CXSetHeldCallAction","main":true,"onHold":false,"t_ms":26250,"timeoutIn":5}
+{"complete":false,"event":"action.fulfilled","kind":"CXSetHeldCallAction","main":true,"t_ms":26250}
+{"connected":true,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":26265,"uuid":"D73090BB"}
+{"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didActivateAudio","inputs":["MicrophoneBuiltIn"],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Receiver"],"sampleRate":48000,"t_ms":26353}
+{"calls":[{"connected":true,"ended":false,"held":false,"outgoing":false,"uuid":"D73090BB"}],"event":"observer.snapshot","label":"after-unhold-A","main":false,"pending":0,"t_ms":29364}
+{"event":"phase","main":false,"name":"3-end-and-accept","t_ms":29364}
+{"event":"report.incomingCompleted","label":"C#1","main":true,"result":"com.apple.CallKit.error.incomingcall:3","t_ms":30400}
+{"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":32433,"uuid":"7BC16A29"}
+{"event":"report.incomingCompleted","label":"C#2","main":true,"result":"ok","t_ms":32434}
+{"event":"app.background","main":true,"t_ms":33257}
+{"actions":["CXEndCallAction","CXAnswerCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":33819}
+{"call":"D73090BB","event":"provider.perform","id":"1EED0666","kind":"CXEndCallAction","main":true,"t_ms":33819,"timeoutIn":5}
+{"complete":false,"event":"action.fulfilled","kind":"CXEndCallAction","main":true,"t_ms":33819}
+{"event":"audio.configured","label":"answer","main":true,"t_ms":33833}
+{"call":"7BC16A29","event":"provider.perform","id":"8417CAC6","kind":"CXAnswerCallAction","main":true,"t_ms":33834,"timeoutIn":60}
+{"complete":false,"event":"action.fulfilled","kind":"CXAnswerCallAction","main":true,"t_ms":33834}
+{"after":1456,"event":"wait.met","label":"C answered","main":false,"t_ms":33891}
+{"AVAudioSessionInterruptionReasonKey":"0","AVAudioSessionInterruptionTypeKey":"1","event":"audio.notification","main":true,"name":"AVAudioSessionInterruptionNotification","t_ms":33903}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x12663a060, \ninputs = (\n    \"<AVAudioSessionPortDescription: 0x126639ba0, type = MicrophoneBuiltIn; name = iPhone Microphone; UID = Built-In Microphone; selectedDataSource = Bottom>\"\n); \noutputs = (\n    \"<AVAudioSessionPortDescription: 0x126639bc0, type = Receiver; name = Receiver; UID = Built-In Receiver; selectedDataSource = (null)>\"\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":33983}
+{"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didDeactivateAudio","inputs":[],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":[],"sampleRate":44100,"t_ms":34029}
+{"connected":true,"ended":true,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":34043,"uuid":"D73090BB"}
+{"connected":true,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":34045,"uuid":"7BC16A29"}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x126638900, \ninputs = (\n); \noutputs = (\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":34154}
+{"event":"app.foreground","main":true,"t_ms":34180}
+{"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didActivateAudio","inputs":["MicrophoneBuiltIn"],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Receiver"],"sampleRate":48000,"t_ms":34262}
+{"calls":[{"connected":true,"ended":false,"held":false,"outgoing":false,"uuid":"7BC16A29"}],"event":"observer.snapshot","label":"after-end-and-accept","main":false,"pending":0,"t_ms":38069}
+{"event":"phase","main":false,"name":"4-decline-waiting","t_ms":38070}
+{"event":"report.incomingCompleted","label":"D#1","main":true,"result":"com.apple.CallKit.error.incomingcall:3","t_ms":38472}
+{"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":40630,"uuid":"31B4BCB7"}
+{"event":"report.incomingCompleted","label":"D#2","main":true,"result":"ok","t_ms":40632}
+{"event":"app.background","main":true,"t_ms":41396}
+{"actions":["CXEndCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":42009}
+{"call":"31B4BCB7","event":"provider.perform","id":"043BCABC","kind":"CXEndCallAction","main":true,"t_ms":42009,"timeoutIn":5}
+{"complete":false,"event":"action.fulfilled","kind":"CXEndCallAction","main":true,"t_ms":42009}
+{"connected":false,"ended":true,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":42030,"uuid":"31B4BCB7"}
+{"after":1459,"event":"wait.met","label":"D ended","main":false,"t_ms":42092}
+{"event":"app.foreground","main":true,"t_ms":42332}
+{"calls":[{"connected":true,"ended":false,"held":false,"outgoing":false,"uuid":"7BC16A29"}],"event":"observer.snapshot","label":"after-decline","main":false,"pending":0,"t_ms":44129}
+{"event":"request.completed","label":"cleanup","main":false,"result":"ok","t_ms":44131}
+{"actions":["CXEndCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":44132}
+{"call":"7BC16A29","event":"provider.perform","id":"1AAB8264","kind":"CXEndCallAction","main":true,"t_ms":44133,"timeoutIn":5}
+{"event":"phase","main":false,"name":"5-locked","t_ms":44133}
+{"complete":false,"event":"action.fulfilled","kind":"CXEndCallAction","main":true,"t_ms":44133}
+{"connected":true,"ended":true,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":44157,"uuid":"7BC16A29"}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x1266389a0, \ninputs = (\n    \"<AVAudioSessionPortDescription: 0x126639b80, type = MicrophoneBuiltIn; name = iPhone Microphone; UID = Built-In Microphone; selectedDataSource = Bottom>\"\n); \noutputs = (\n    \"<AVAudioSessionPortDescription: 0x126638580, type = Receiver; name = Receiver; UID = Built-In Receiver; selectedDataSource = (null)>\"\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":44284}
+{"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didDeactivateAudio","inputs":[],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Speaker"],"sampleRate":48000,"t_ms":44309}
+{"event":"report.incomingCompleted","label":"E#1","main":true,"result":"com.apple.CallKit.error.incomingcall:3","t_ms":59901}
+{"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":61977,"uuid":"52AD4A6B"}
+{"event":"report.incomingCompleted","label":"E#2","main":true,"result":"ok","t_ms":61979}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x12663a420, \ninputs = (\n); \noutputs = (\n    \"<AVAudioSessionPortDescription: 0x1266389d0, type = Speaker; name = Speaker; UID = Speaker; selectedDataSource = (null)>\"\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":62291}
+{"actions":["CXAnswerCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":64154}
+{"event":"audio.configured","label":"answer","main":true,"t_ms":64156}
+{"call":"52AD4A6B","event":"provider.perform","id":"80A7126D","kind":"CXAnswerCallAction","main":true,"t_ms":64156,"timeoutIn":60}
+{"complete":false,"event":"action.fulfilled","kind":"CXAnswerCallAction","main":true,"t_ms":64156}
+{"connected":true,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":64219,"uuid":"52AD4A6B"}
+{"after":2276,"event":"wait.met","label":"E answered","main":false,"t_ms":64255}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x12663a3d0, \ninputs = (\n); \noutputs = (\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":64345}
+{"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didActivateAudio","inputs":["MicrophoneBuiltIn"],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Receiver"],"sampleRate":48000,"t_ms":64394}
+{"event":"app.background","main":true,"t_ms":92213}

@@ -1,0 +1,137 @@
+CKSIM installed latency=device
+PROBE {"configAfter":0,"configBefore":0,"event":"audio.sessionID","main":true,"opaque":0,"t_ms":0}
+CKSIM provider delegate set shadow=0
+PROBE {"event":"provider.didBegin","main":true,"t_ms":25}
+PROBE {"audio":{"category":"AVAudioSessionCategorySoloAmbient","inputs":[],"mode":"AVAudioSessionModeDefault","otherAudio":false,"outputs":["Speaker"],"sampleRate":48000},"build":"26A434","event":"start","main":false,"model":"iPhone","os":"27.0","simulator":"CallKit Spike 20261020","t_ms":134}
+PROBE {"complete":false,"event":"loose.created","main":false,"t_ms":148,"timeoutIn":59.999994993209839}
+PROBE {"complete":false,"event":"loose.fulfilled","main":false,"t_ms":149}
+PROBE {"calls":[],"event":"observer.snapshot","label":"initial","main":false,"pending":0,"t_ms":149}
+PROBE {"event":"step","main":false,"name":"incoming","t_ms":149,"uuid":"D06935F1"}
+CKSIM report incoming D06935F1-FA27-406E-A196-D53716D91973 -> ok
+PROBE {"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":1291,"uuid":"D06935F1"}
+PROBE {"event":"report.incomingCompleted","label":"incoming-a","main":true,"result":"ok","t_ms":1291}
+CKSIM report incoming D06935F1-FA27-406E-A196-D53716D91973 -> Error Domain=com.apple.CallKit.error.incomingcall Code=2 "(null)"
+PROBE {"event":"report.incomingCompleted","label":"incoming-a-duplicate","main":true,"result":"com.apple.CallKit.error.incomingcall:2","t_ms":2464}
+PROBE {"calls":[{"connected":false,"ended":false,"held":false,"outgoing":false,"uuid":"D06935F1"}],"event":"observer.snapshot","label":"ringing","main":false,"pending":0,"t_ms":4475}
+CKSIM request (
+PROBE {"event":"request.completed","label":"answer-a","main":false,"result":"ok","t_ms":4477}
+PROBE {"actions":["CXAnswerCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":4482}
+PROBE {"event":"audio.configured","label":"answer","main":true,"t_ms":4573}
+PROBE {"call":"D06935F1","event":"provider.perform","id":"8E74A7A0","kind":"CXAnswerCallAction","main":true,"t_ms":4573,"timeoutIn":60}
+PROBE {"complete":false,"event":"action.fulfilled","kind":"CXAnswerCallAction","main":true,"t_ms":4573}
+PROBE {"connected":true,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":4584,"uuid":"D06935F1"}
+CKSIM audio activate ok=1 error=(null)
+PROBE {"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didActivateAudio","inputs":["MicrophoneBuiltIn"],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Speaker"],"sampleRate":48000,"t_ms":4924}
+PROBE {"calls":[{"connected":true,"ended":false,"held":false,"outgoing":false,"uuid":"D06935F1"}],"event":"observer.snapshot","label":"answered","main":false,"pending":0,"t_ms":7062}
+PROBE {"audio":{"category":"AVAudioSessionCategoryPlayAndRecord","inputs":["MicrophoneBuiltIn"],"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Speaker"],"sampleRate":48000},"channels":1,"event":"mic.format","label":"after-answer","main":false,"rate":48000,"t_ms":7316}
+PROBE {"channels":1,"event":"mic.result","frames":48000,"label":"after-answer","main":true,"peak":0.015490414574742317,"rate":48000,"t_ms":8362}
+CKSIM request (
+PROBE {"event":"request.completed","label":"mute-a","main":false,"result":"ok","t_ms":8857}
+CKSIM request (
+PROBE {"event":"request.completed","label":"dtmf-a","main":false,"result":"ok","t_ms":8857}
+CKSIM request (
+PROBE {"event":"request.completed","label":"hold-a","main":false,"result":"ok","t_ms":8858}
+PROBE {"actions":["CXSetMutedCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":8863}
+PROBE {"call":"D06935F1","event":"provider.perform","id":"98BE56BE","kind":"CXSetMutedCallAction","main":true,"muted":true,"t_ms":8863,"timeoutIn":5}
+PROBE {"complete":false,"event":"action.fulfilled","kind":"CXSetMutedCallAction","main":true,"t_ms":8863}
+PROBE {"actions":["CXPlayDTMFCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":8863}
+PROBE {"call":"D06935F1","digits":"12#","event":"provider.perform","id":"BB420516","kind":"CXPlayDTMFCallAction","main":true,"t_ms":8863,"timeoutIn":5}
+PROBE {"complete":false,"event":"action.fulfilled","kind":"CXPlayDTMFCallAction","main":true,"t_ms":8863}
+PROBE {"actions":["CXSetHeldCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":8864}
+PROBE {"call":"D06935F1","event":"provider.perform","id":"64844E83","kind":"CXSetHeldCallAction","main":true,"onHold":true,"t_ms":8864,"timeoutIn":5}
+PROBE {"complete":false,"event":"action.fulfilled","kind":"CXSetHeldCallAction","main":true,"t_ms":8864}
+PROBE {"connected":true,"ended":false,"event":"observer.callChanged","held":true,"main":true,"outgoing":false,"t_ms":8886,"uuid":"D06935F1"}
+PROBE {"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didDeactivateAudio","inputs":["MicrophoneBuiltIn"],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Speaker"],"sampleRate":48000,"t_ms":9034}
+PROBE {"calls":[{"connected":true,"ended":false,"held":true,"outgoing":false,"uuid":"D06935F1"}],"event":"observer.snapshot","label":"held","main":false,"pending":0,"t_ms":9862}
+CKSIM request (
+PROBE {"event":"request.completed","label":"unhold-a","main":false,"result":"ok","t_ms":9862}
+PROBE {"event":"step","main":false,"name":"call-waiting","t_ms":9862,"uuid":"6C8191E5"}
+PROBE {"actions":["CXSetHeldCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":9868}
+PROBE {"call":"D06935F1","event":"provider.perform","id":"8A0AA390","kind":"CXSetHeldCallAction","main":true,"onHold":false,"t_ms":9868,"timeoutIn":5}
+PROBE {"complete":false,"event":"action.fulfilled","kind":"CXSetHeldCallAction","main":true,"t_ms":9868}
+PROBE {"connected":true,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":9889,"uuid":"D06935F1"}
+CKSIM audio activate ok=1 error=(null)
+PROBE {"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didActivateAudio","inputs":["MicrophoneBuiltIn"],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Speaker"],"sampleRate":48000,"t_ms":10162}
+CKSIM report incoming 6C8191E5-D2CE-4CA2-A67A-2B122438C2EC -> ok
+PROBE {"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":11036,"uuid":"6C8191E5"}
+PROBE {"event":"report.incomingCompleted","label":"incoming-b","main":true,"result":"ok","t_ms":11036}
+CKSIM request (
+PROBE {"event":"request.completed","label":"hold-a-answer-b","main":false,"result":"com.apple.CallKit.error.requesttransaction:6","t_ms":12062}
+PROBE {"calls":[{"connected":false,"ended":false,"held":false,"outgoing":false,"uuid":"6C8191E5"},{"connected":true,"ended":false,"held":false,"outgoing":false,"uuid":"D06935F1"}],"event":"observer.snapshot","label":"two-calls","main":false,"pending":0,"t_ms":13586}
+CKSIM request (
+PROBE {"event":"request.completed","label":"merge-a-b","main":false,"result":"ok","t_ms":13586}
+PROBE {"actions":["CXSetGroupCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":13593}
+PROBE {"call":"D06935F1","event":"provider.perform","id":"8BACDF09","kind":"CXSetGroupCallAction","main":true,"t_ms":13593,"timeoutIn":5}
+PROBE {"complete":false,"event":"action.fulfilled","kind":"CXSetGroupCallAction","main":true,"t_ms":13593}
+PROBE {"calls":[{"connected":false,"ended":false,"held":false,"outgoing":false,"uuid":"6C8191E5"},{"connected":true,"ended":false,"held":false,"outgoing":false,"uuid":"D06935F1"}],"event":"observer.snapshot","label":"merged","main":false,"pending":0,"t_ms":14650}
+CKSIM request (
+PROBE {"event":"request.completed","label":"end-b","main":false,"result":"ok","t_ms":14651}
+PROBE {"event":"report.ended","label":"remote-end-a","main":false,"t_ms":14651}
+PROBE {"actions":["CXEndCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":14657}
+PROBE {"call":"6C8191E5","event":"provider.perform","id":"67847400","kind":"CXEndCallAction","main":true,"t_ms":14657,"timeoutIn":5}
+PROBE {"complete":false,"event":"action.fulfilled","kind":"CXEndCallAction","main":true,"t_ms":14657}
+PROBE {"connected":true,"ended":true,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":14666,"uuid":"D06935F1"}
+PROBE {"connected":false,"ended":true,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":14668,"uuid":"6C8191E5"}
+PROBE {"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didDeactivateAudio","inputs":["MicrophoneBuiltIn"],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Speaker"],"sampleRate":48000,"t_ms":14824}
+PROBE {"calls":[],"event":"observer.snapshot","label":"after-end","main":false,"pending":0,"t_ms":16662}
+PROBE {"event":"step","main":false,"name":"outgoing","t_ms":16662,"uuid":"7415AD9E"}
+CKSIM request (
+PROBE {"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":true,"t_ms":16663,"uuid":"7415AD9E"}
+PROBE {"event":"request.completed","label":"start-c","main":false,"result":"ok","t_ms":16663}
+PROBE {"actions":["CXStartCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":16669}
+PROBE {"event":"audio.configured","label":"start","main":true,"t_ms":16669}
+PROBE {"call":"7415AD9E","event":"provider.perform","handle":"+15555550102","id":"34C239AB","kind":"CXStartCallAction","main":true,"t_ms":16669,"timeoutIn":600,"video":false}
+PROBE {"complete":false,"event":"action.fulfilled","kind":"CXStartCallAction","main":true,"t_ms":16670}
+CKSIM audio activate ok=1 error=(null)
+PROBE {"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didActivateAudio","inputs":["MicrophoneBuiltIn"],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Speaker"],"sampleRate":48000,"t_ms":17001}
+PROBE {"event":"report.outgoingConnected","main":true,"t_ms":17192}
+PROBE {"connected":true,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":true,"t_ms":17192,"uuid":"7415AD9E"}
+PROBE {"calls":[{"connected":true,"ended":false,"held":false,"outgoing":true,"uuid":"7415AD9E"}],"event":"observer.snapshot","label":"outgoing","main":false,"pending":0,"t_ms":19222}
+PROBE {"audio":{"category":"AVAudioSessionCategoryPlayAndRecord","inputs":["MicrophoneBuiltIn"],"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Speaker"],"sampleRate":48000},"channels":1,"event":"mic.format","label":"after-outgoing","main":false,"rate":48000,"t_ms":19227}
+PROBE {"channels":1,"event":"mic.result","frames":48000,"label":"after-outgoing","main":true,"peak":0.020498517900705338,"rate":48000,"t_ms":20263}
+CKSIM request (
+PROBE {"event":"request.completed","label":"end-c","main":false,"result":"ok","t_ms":20762}
+PROBE {"actions":["CXEndCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":20768}
+PROBE {"call":"7415AD9E","event":"provider.perform","id":"ED41C2A8","kind":"CXEndCallAction","main":true,"t_ms":20768,"timeoutIn":5}
+PROBE {"complete":false,"event":"action.fulfilled","kind":"CXEndCallAction","main":true,"t_ms":20768}
+PROBE {"connected":true,"ended":true,"event":"observer.callChanged","held":false,"main":true,"outgoing":true,"t_ms":20780,"uuid":"7415AD9E"}
+PROBE {"category":"AVAudioSessionCategoryPlayAndRecord","event":"provider.didDeactivateAudio","inputs":["MicrophoneBuiltIn"],"main":true,"mode":"AVAudioSessionModeVoiceChat","otherAudio":false,"outputs":["Speaker"],"sampleRate":48000,"t_ms":21066}
+PROBE {"event":"step","main":false,"name":"errors","t_ms":22320}
+CKSIM request (
+PROBE {"event":"request.completed","label":"answer-unknown","main":false,"result":"com.apple.CallKit.error.requesttransaction:4","t_ms":22321}
+CKSIM request (
+PROBE {"event":"request.completed","label":"end-unknown","main":false,"result":"com.apple.CallKit.error.requesttransaction:4","t_ms":22321}
+CKSIM request (
+PROBE {"event":"request.completed","label":"empty-transaction","main":false,"result":"com.apple.CallKit.error.requesttransaction:1","t_ms":22345}
+PROBE {"event":"step","main":false,"name":"answer-timeout","t_ms":22345,"uuid":"3FBEB161"}
+CKSIM report incoming 3FBEB161-E247-43B2-8EF4-2D9B3F89CD18 -> ok
+PROBE {"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":23462,"uuid":"3FBEB161"}
+PROBE {"event":"report.incomingCompleted","label":"incoming-d","main":true,"result":"ok","t_ms":23462}
+CKSIM request (
+PROBE {"event":"request.completed","label":"answer-d-never","main":false,"result":"ok","t_ms":23964}
+PROBE {"actions":["CXAnswerCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":23970}
+PROBE {"event":"audio.configured","label":"answer","main":true,"t_ms":23971}
+PROBE {"call":"3FBEB161","event":"provider.perform","id":"26B94A3D","kind":"CXAnswerCallAction","main":true,"t_ms":23971,"timeoutIn":60}
+PROBE {"event":"action.held","kind":"CXAnswerCallAction","main":true,"t_ms":23971}
+CKSIM system delivered (
+PROBE {"actions":["CXEndCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":83665}
+PROBE {"call":"3FBEB161","event":"provider.perform","id":"EC9E2F47","kind":"CXEndCallAction","main":true,"t_ms":83666,"timeoutIn":5}
+PROBE {"complete":false,"event":"action.fulfilled","kind":"CXEndCallAction","main":true,"t_ms":83666}
+PROBE {"connected":false,"ended":true,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":83677,"uuid":"3FBEB161"}
+PROBE {"calls":[],"event":"observer.snapshot","label":"after-timeout-wait","main":false,"pending":1,"t_ms":94063}
+PROBE {"complete":false,"event":"late.fulfill","main":false,"t_ms":94063}
+PROBE {"calls":[],"event":"observer.snapshot","label":"after-late-fulfill","main":false,"pending":0,"t_ms":95075}
+PROBE {"event":"step","main":false,"name":"unanswered","t_ms":96078,"uuid":"EEA02D1E"}
+CKSIM report incoming EEA02D1E-719C-4341-9340-8B27E26E1CE5 -> ok
+PROBE {"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":97254,"uuid":"EEA02D1E"}
+PROBE {"event":"report.incomingCompleted","label":"incoming-e","main":true,"result":"ok","t_ms":97255}
+PROBE {"calls":[{"connected":false,"ended":false,"held":false,"outgoing":false,"uuid":"EEA02D1E"}],"event":"observer.snapshot","label":"unanswered-wait","main":false,"pending":0,"t_ms":105262}
+CKSIM request (
+PROBE {"event":"request.completed","label":"decline-e","main":false,"result":"ok","t_ms":105263}
+PROBE {"actions":["CXEndCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":105269}
+PROBE {"call":"EEA02D1E","event":"provider.perform","id":"25BB3A03","kind":"CXEndCallAction","main":true,"t_ms":105270,"timeoutIn":5}
+PROBE {"complete":false,"event":"action.fulfilled","kind":"CXEndCallAction","main":true,"t_ms":105270}
+PROBE {"connected":false,"ended":true,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":105280,"uuid":"EEA02D1E"}
+PROBE {"calls":[],"event":"observer.snapshot","label":"final","main":false,"pending":0,"t_ms":106855}
+PROBE {"event":"provider.invalidated","main":false,"t_ms":106855}
+PROBE {"event":"done","main":false,"t_ms":107858}

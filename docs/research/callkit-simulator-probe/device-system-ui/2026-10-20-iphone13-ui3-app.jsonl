@@ -1,0 +1,55 @@
+{"configAfter":0,"configBefore":0,"event":"audio.sessionID","main":true,"opaque":475244,"t_ms":1}
+{"event":"provider.didBegin","main":true,"t_ms":11}
+{"event":"phase","main":false,"name":"1-banner-accept","t_ms":3094}
+{"event":"report.incomingCompleted","label":"A","main":true,"result":"ok","t_ms":4186}
+{"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":4190,"uuid":"CCDE170F"}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x105e7a110, \ninputs = (\n); \noutputs = (\n    \"<AVAudioSessionPortDescription: 0x105e7a0d0, type = Speaker; name = Speaker; UID = Speaker; selectedDataSource = (null)>\"\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":4621}
+{"event":"app.background","main":true,"t_ms":7754}
+{"actions":["CXEndCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":64299}
+{"call":"CCDE170F","event":"provider.perform","id":"86F7A283","kind":"CXEndCallAction","main":true,"t_ms":64299,"timeoutIn":5}
+{"complete":false,"event":"action.fulfilled","kind":"CXEndCallAction","main":true,"t_ms":64299}
+{"connected":false,"ended":true,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":64360,"uuid":"CCDE170F"}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x105e78fe0, \ninputs = (\n); \noutputs = (\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":64571}
+{"event":"app.foreground","main":true,"t_ms":65481}
+{"event":"wait.timeout","label":"A answered","main":false,"t_ms":94216}
+{"event":"phase","main":false,"name":"2-hold-and-accept","t_ms":99265}
+{"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":100351,"uuid":"F017377D"}
+{"event":"report.incomingCompleted","label":"B","main":true,"result":"ok","t_ms":100352}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x105e78740, \ninputs = (\n); \noutputs = (\n    \"<AVAudioSessionPortDescription: 0x105e79d60, type = Speaker; name = Speaker; UID = Speaker; selectedDataSource = (null)>\"\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":100698}
+{"actions":["CXEndCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":160435}
+{"call":"F017377D","event":"provider.perform","id":"10F8B1D8","kind":"CXEndCallAction","main":true,"t_ms":160437,"timeoutIn":5}
+{"complete":false,"event":"action.fulfilled","kind":"CXEndCallAction","main":true,"t_ms":160437}
+{"connected":false,"ended":true,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":160473,"uuid":"F017377D"}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x105e79d30, \ninputs = (\n); \noutputs = (\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":160727}
+{"event":"wait.timeout","label":"B answered","main":false,"t_ms":190363}
+{"calls":[],"event":"observer.snapshot","label":"after-hold-and-accept","main":false,"pending":0,"t_ms":194590}
+{"event":"request.completed","label":"end-B","main":false,"result":"com.apple.CallKit.error.requesttransaction:4","t_ms":194596}
+{"event":"request.completed","label":"unhold-A","main":false,"result":"com.apple.CallKit.error.requesttransaction:4","t_ms":196139}
+{"calls":[],"event":"observer.snapshot","label":"after-unhold-A","main":false,"pending":0,"t_ms":199279}
+{"event":"phase","main":false,"name":"3-end-and-accept","t_ms":199279}
+{"event":"report.incomingCompleted","label":"C","main":true,"result":"ok","t_ms":200343}
+{"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":200343,"uuid":"227CD938"}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x105e79d00, \ninputs = (\n); \noutputs = (\n    \"<AVAudioSessionPortDescription: 0x105e79d20, type = Speaker; name = Speaker; UID = Speaker; selectedDataSource = (null)>\"\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":200655}
+{"event":"app.background","main":true,"t_ms":211973}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x105e7ad20, \ninputs = (\n); \noutputs = (\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":253926}
+{"actions":["CXEndCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":260430}
+{"call":"227CD938","event":"provider.perform","id":"49FF0A10","kind":"CXEndCallAction","main":true,"t_ms":260431,"timeoutIn":5}
+{"complete":false,"event":"action.fulfilled","kind":"CXEndCallAction","main":true,"t_ms":260431}
+{"connected":false,"ended":true,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":260469,"uuid":"227CD938"}
+{"event":"wait.timeout","label":"C answered","main":false,"t_ms":290351}
+{"calls":[],"event":"observer.snapshot","label":"after-end-and-accept","main":false,"pending":0,"t_ms":294597}
+{"event":"phase","main":false,"name":"4-decline-waiting","t_ms":294598}
+{"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":295687,"uuid":"7B95E9AD"}
+{"event":"report.incomingCompleted","label":"D","main":true,"result":"ok","t_ms":295688}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x105e79dc0, \ninputs = (\n); \noutputs = (\n    \"<AVAudioSessionPortDescription: 0x105e7ac80, type = Speaker; name = Speaker; UID = Speaker; selectedDataSource = (null)>\"\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":296069}
+{"actions":["CXEndCallAction"],"event":"provider.executeTransaction","main":true,"t_ms":355767}
+{"call":"7B95E9AD","event":"provider.perform","id":"17A13B90","kind":"CXEndCallAction","main":true,"t_ms":355769,"timeoutIn":5}
+{"complete":false,"event":"action.fulfilled","kind":"CXEndCallAction","main":true,"t_ms":355769}
+{"connected":false,"ended":true,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":355793,"uuid":"7B95E9AD"}
+{"after":60138,"event":"wait.met","label":"D ended","main":false,"t_ms":355827}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x105e79ce0, \ninputs = (\n); \noutputs = (\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":356035}
+{"calls":[],"event":"observer.snapshot","label":"after-decline","main":false,"pending":0,"t_ms":357851}
+{"event":"phase","main":false,"name":"5-locked","t_ms":357854}
+{"connected":false,"ended":false,"event":"observer.callChanged","held":false,"main":true,"outgoing":false,"t_ms":371663,"uuid":"7759CAE1"}
+{"event":"report.incomingCompleted","label":"E","main":true,"result":"ok","t_ms":371663}
+{"AVAudioSessionRouteChangePreviousRouteKey":"<AVAudioSessionRouteDescription: 0x105e7a0c0, \ninputs = (\n); \noutputs = (\n    \"<AVAudioSessionPortDescription: 0x105e7ad20, type = Speaker; name = Speaker; UID = Speaker; selectedDataSource = (null)>\"\n)>","AVAudioSessionRouteChangeReasonKey":"3","event":"audio.notification","main":true,"name":"AVAudioSessionRouteChangeNotification","t_ms":371962}

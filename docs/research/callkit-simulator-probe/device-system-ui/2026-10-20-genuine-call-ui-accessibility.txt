@@ -1,0 +1,48 @@
+# Genuine CallKit UI accessibility (iPhone 13, iOS 27.0 24A5355q, October 20, 2026)
+
+Extracted from XCUITest debugDescription dumps. Element type, frame, identifier and label only.
+
+## Incoming banner (app frontmost or Home Screen), hosted by InCallService inside SpringBoard
+
+    Other, {{0.0, 0.0}, {390.0, 844.0}}, identifier: 'AppSwitcherContentView'
+    Button, {{32.7, 10.7}, {66.7, 23.0}}, label: 'Incoming call, 8:53 PM'
+    Other, {{8.0, 40.0}, {374.0, 104.0}}, identifier: 'InCallRootView'
+    Other, {{8.0, 42.0}, {374.0, 100.0}}, identifier: 'PHSingleCallParticipantLabelView'
+    StaticText, {{41.0, 69.0}, {119.7, 18.0}}, identifier: 'PHSingleCallParticipantLabelView_StatusLabel', label: 'CK Probe Audio…'
+    StaticText, {{24.0, 89.0}, {236.0, 26.3}}, identifier: 'PHMarqueeView', label: '‪Alice Probe‬'
+    Button, {{270.0, 72.0}, {40.0, 40.0}}, identifier: 'Decline', label: 'Decline'
+    Button, {{326.0, 72.0}, {40.0, 40.0}}, identifier: 'Accept', label: 'Answer call'
+
+## Full-screen in-call controls (InCallService); frames here were mid-transition at one-third scale
+
+    Other, {{0.0, 0.0}, {130.0, 281.3}}, identifier: 'InCallRootView'
+    Other, {{5.3, 32.6}, {119.3, 23.0}}, identifier: 'PHSingleCallParticipantLabelView'
+    Button, {{39.8, 32.6}, {57.6, 8.8}}, identifier: 'PHSingleCallParticipantLabelView_StatusLabel', label: 'CK Probe Audio…'
+    StaticText, {{35.0, 42.0}, {60.0, 13.6}}, identifier: 'PHMarqueeView', label: '‪Alice Probe‬'
+    Button, {{13.2, 189.4}, {25.7, 25.7}}, label: 'Speaker'
+    StaticText, {{16.7, 217.1}, {18.7, 6.0}}, label: 'Speaker'
+    Button, {{52.2, 189.4}, {25.7, 25.7}}, label: 'Video'
+    StaticText, {{58.4, 217.1}, {13.3, 6.0}}, label: 'Video'
+    Button, {{91.1, 189.4}, {25.7, 25.7}}, label: 'Mute'
+    StaticText, {{98.1, 217.1}, {11.7, 6.0}}, label: 'Mute'
+    Button, {{13.2, 230.7}, {25.7, 25.7}}, label: 'More'
+    StaticText, {{20.1, 258.3}, {12.0, 6.0}}, label: 'More'
+    Button, {{52.2, 230.7}, {25.7, 25.7}}, label: 'End'
+    StaticText, {{60.6, 258.3}, {9.0, 6.0}}, label: 'End'
+    Button, {{91.1, 230.7}, {25.7, 25.7}}, label: 'Keypad'
+    StaticText, {{95.3, 258.3}, {17.3, 6.0}}, label: 'Keypad'
+
+## Call-waiting choices (InCallService)
+
+    Other, {{0.0, 0.0}, {130.0, 281.3}}, identifier: 'InCallRootView'
+    Other, {{5.3, 32.6}, {119.3, 23.0}}, identifier: 'PHSingleCallParticipantLabelView'
+    Button, {{39.8, 32.6}, {57.6, 8.8}}, identifier: 'PHSingleCallParticipantLabelView_StatusLabel', label: 'CK Probe Audio…'
+    StaticText, {{37.8, 42.0}, {54.4, 13.6}}, identifier: 'PHMarqueeView', label: '‪Bob Probe‬'
+    Button, {{15.9, 229.2}, {25.7, 25.7}}, identifier: 'End & Accept', label: 'End & Accept'
+    StaticText, {{13.2, 256.9}, {31.0, 6.0}}, label: 'End & Accept'
+    Button, {{52.2, 229.2}, {25.7, 25.7}}, identifier: 'Decline', label: 'Decline'
+    StaticText, {{56.6, 256.9}, {17.3, 6.0}}, label: 'Decline'
+    Button, {{88.6, 229.2}, {25.7, 25.7}}, identifier: 'Hold & Accept', label: 'Hold & Accept'
+    StaticText, {{84.9, 256.9}, {33.0, 6.0}}, label: 'Hold & Accept'
+    Button, {{94.0, 193.6}, {14.7, 13.2}}, identifier: 'Remind Me', label: 'Remind Me'
+    StaticText, {{88.7, 208.9}, {25.7, 6.0}}, label: 'Remind Me'

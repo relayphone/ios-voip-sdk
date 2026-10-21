@@ -1,0 +1,66 @@
+getpwuid_r did not find a match for uid 501
+Filtering the log data using "process == "callservicesd" AND (composedMessage CONTAINS "wont be a UI" OR composedMessage CONTAINS "Error setting audio active" OR composedMessage CONTAINS "Failed to open URL" OR composedMessage CONTAINS "disconnect reason")"
+Timestamp               Ty Process[PID:TID]
+2026-10-20 19:19:53.017 E  callservicesd[1488:5d0f] [com.apple.launchservices:default] Failed to open URL facetime://?launchForIncomingCall=1: <NSError:0x10453db90(LSApplicationWorkspaceErrorDomain:115) - {
+    "_LSFile" = "LSDOpenService.mm";
+    "_LSFunction" = "-[_LSDOpenClient openURL:fileHandle:options:completionHandler:]";
+    "_LSLine" = 282;
+}>
+2026-10-20 19:19:53.068 Df callservicesd[1488:4661] [com.apple.calls.callservicesd:Default] Disconnecting call because there wont be a UI to host the call: <CSDProviderCall 0x103384f00 p=CKSIMPROBE.dev.callkitsim.probe initr=(null) crs=(null) rs=(null) prs=(null) ctrans=(null) svc=Unknown hdl=<TUHandle 0x1070269c0 type=PhoneNumber, value=u:DL8BlHkkH2bJxg05, normalizedValue=u:DL8BlHkkH2bJxg05, isoCountryCode=us, siriDisplayName=(null)> hdls={(
+    <TUHandle 0x1070264c0 type=PhoneNumber, value=u:DL8BlHkkH2bJxg05, normalizedValue=u:DL8BlHkkH2bJxg05, isoCountryCode=us, siriDisplayName=(null)>
+)} cibl=0 isoCC=(null) stat=Ringing tStat=0 dR=0 fR=0 supportsR=0 uPI=833D41A3-ADEA-4239-97DF-7AC8D56FBDE8 grp=(null) lSIUUID=(null) lSIAccountUUID=(null) upgradedFromCallUUID=(null) hosted=1 endpt=1 callerNFN=Probe Caller srcID=(null) aC=(null) aM=(null) iUB=0 vm=0 connStat=00 nMICS=0 sR=0 iSA=0 iSV=0 iSS=0 wHM=0 hSI=0 vST=0 iapST=0 oapST=0 tokens=<TUMediaTokens 0x106e5d890 uST=0 dST=0 cAST=0 sTPID=(null)> vCA=<TUVideoCallAttributes 0x106e10d20 remoteCameraOrientation=0 localVideoContextSlotIdentifier=0 remoteVideoContextSlotIdentifier=0> ssA=(null) ssI=0 model=<TUCal
+2026-10-20 19:19:53.069 Df callservicesd[1488:4631] [com.apple.calls.callservicesd:Default] Set failure reason CXCallFailureReasonGenericError, disconnect reason: 55
+2026-10-20 19:19:53.069 Df callservicesd[1488:4631] [com.apple.calls.callservicesd:Default] disconnect reason: 55, failureReason: 0
+2026-10-20 19:20:02.520 E  callservicesd[1488:4631] [com.apple.launchservices:default] Failed to open URL facetime://?launchForIncomingCall=1: <NSError:0x10453f270(LSApplicationWorkspaceErrorDomain:115) - {
+    "_LSFile" = "LSDOpenService.mm";
+    "_LSFunction" = "-[_LSDOpenClient openURL:fileHandle:options:completionHandler:]";
+    "_LSLine" = 282;
+}>
+2026-10-20 19:20:02.525 Df callservicesd[1488:45d1] [com.apple.calls.callservicesd:Default] Disconnecting call because there wont be a UI to host the call: <CSDProviderCall 0x103386300 p=CKSIMPROBE.dev.callkitsim.probe initr=(null) crs=(null) rs=(null) prs=(null) ctrans=(null) svc=Unknown hdl=<TUHandle 0x107024600 type=PhoneNumber, value=u:rh2H2SBhOROt1+bA, normalizedValue=u:rh2H2SBhOROt1+bA, isoCountryCode=us, siriDisplayName=(null)> hdls={(
+    <TUHandle 0x1070247c0 type=PhoneNumber, value=u:rh2H2SBhOROt1+bA, normalizedValue=u:rh2H2SBhOROt1+bA, isoCountryCode=us, siriDisplayName=(null)>
+)} cibl=0 isoCC=(null) stat=Ringing tStat=0 dR=0 fR=0 supportsR=0 uPI=3C605350-34C6-498B-A8F4-2F922343D9D3 grp=(null) lSIUUID=(null) lSIAccountUUID=(null) upgradedFromCallUUID=(null) hosted=1 endpt=1 callerNFN=Probe Caller srcID=(null) aC=(null) aM=(null) iUB=0 vm=0 connStat=00 nMICS=0 sR=0 iSA=0 iSV=0 iSS=0 wHM=0 hSI=0 vST=0 iapST=0 oapST=0 tokens=<TUMediaTokens 0x106cac6c0 uST=0 dST=0 cAST=0 sTPID=(null)> vCA=<TUVideoCallAttributes 0x106e16320 remoteCameraOrientation=0 localVideoContextSlotIdentifier=0 remoteVideoContextSlotIdentifier=0> ssA=(null) ssI=0 model=<TUCal
+2026-10-20 19:20:02.544 Df callservicesd[1488:45d1] [com.apple.calls.callservicesd:Default] Set failure reason CXCallFailureReasonGenericError, disconnect reason: 55
+2026-10-20 19:20:02.544 Df callservicesd[1488:45d1] [com.apple.calls.callservicesd:Default] disconnect reason: 55, failureReason: 0
+2026-10-20 19:20:09.452 E  callservicesd[1488:606b] [com.apple.launchservices:default] Failed to open URL facetime://?showInCallUI=1: <NSError:0x106e5f5a0(LSApplicationWorkspaceErrorDomain:115) - {
+    "_LSFile" = "LSDOpenService.mm";
+    "_LSFunction" = "-[_LSDOpenClient openURL:fileHandle:options:completionHandler:]";
+    "_LSLine" = 282;
+}>
+2026-10-20 19:20:09.454 Df callservicesd[1488:606b] [com.apple.calls.callservicesd:Default] Disconnecting call because there wont be a UI to host the call: <CSDProviderCall 0x103384500 p=CKSIMPROBE.dev.callkitsim.probe initr=(null) crs=(null) rs=(null) prs=(null) ctrans=(null) svc=Unknown hdl=<TUHandle 0x106e016c0 type=PhoneNumber, value=u:rIJ6Zhz4GDWUWJfp, normalizedValue=u:rIJ6Zhz4GDWUWJfp, isoCountryCode=us, siriDisplayName=(null)> hdls={(
+    <TUHandle 0x106e016c0 type=PhoneNumber, value=u:rIJ6Zhz4GDWUWJfp, normalizedValue=u:rIJ6Zhz4GDWUWJfp, isoCountryCode=us, siriDisplayName=(null)>
+)} cibl=0 isoCC=(null) stat=Sending tStat=0 dR=0 fR=0 supportsR=0 uPI=3F39C0B6-C3D3-4FF3-B77C-1EE622923445 grp=(null) lSIUUID=(null) lSIAccountUUID=(null) upgradedFromCallUUID=(null) hosted=1 endpt=1 callerNFN=(null) srcID=(null) aC=(null) aM=(null) iUB=0 vm=0 connStat=10 nMICS=0 sR=0 iSA=0 iSV=0 iSS=0 wHM=0 hSI=1 vST=0 iapST=0 oapST=0 tokens=<TUMediaTokens 0x10314e340 uST=0 dST=0 cAST=0 sTPID=(null)> vCA=<TUVideoCallAttributes 0x106e15220 remoteCameraOrientation=0 localVideoContextSlotIdentifier=0 remoteVideoContextSlotIdentifier=0> ssA=(null) ssI=0 model=<TUCallModel
+2026-10-20 19:20:09.457 Df callservicesd[1488:606b] [com.apple.calls.callservicesd:Default] Set failure reason CXCallFailureReasonGenericError, disconnect reason: 55
+2026-10-20 19:20:09.457 Df callservicesd[1488:606b] [com.apple.calls.callservicesd:Default] disconnect reason: 55, failureReason: 0
+2026-10-20 19:20:09.902 E  callservicesd[1488:5d0b] [com.apple.calls.callservicesd:Audio] Error setting audio active to true for provider AVAudioSessionInterruptionProvider(audioSession=<AVAudioSession: 0x10445f3f0> local=true ): <NSError:0x106cb2340(NSOSStatusErrorDomain:-50) - {
+}>
+2026-10-20 19:20:20.003 E  callservicesd[1488:674d] [com.apple.launchservices:default] Failed to open URL facetime://?launchForIncomingCall=1: <NSError:0x106e5f000(LSApplicationWorkspaceErrorDomain:115) - {
+    "_LSFile" = "LSDOpenService.mm";
+    "_LSFunction" = "-[_LSDOpenClient openURL:fileHandle:options:completionHandler:]";
+    "_LSLine" = 282;
+}>
+2026-10-20 19:20:20.019 Df callservicesd[1488:674c] [com.apple.calls.callservicesd:Default] Disconnecting call because there wont be a UI to host the call: <CSDProviderCall 0x103385e00 p=CKSIMPROBE.dev.callkitsim.probe initr=(null) crs=(null) rs=(null) prs=(null) ctrans=(null) svc=Unknown hdl=<TUHandle 0x106e02140 type=PhoneNumber, value=u:DL8BlHkkH2bJxg05, normalizedValue=u:DL8BlHkkH2bJxg05, isoCountryCode=us, siriDisplayName=(null)> hdls={(
+    <TUHandle 0x106e02180 type=PhoneNumber, value=u:DL8BlHkkH2bJxg05, normalizedValue=u:DL8BlHkkH2bJxg05, isoCountryCode=us, siriDisplayName=(null)>
+)} cibl=0 isoCC=(null) stat=Ringing tStat=0 dR=0 fR=0 supportsR=0 uPI=F70330F6-6610-429D-B914-3F2C1DCA5481 grp=(null) lSIUUID=(null) lSIAccountUUID=(null) upgradedFromCallUUID=(null) hosted=1 endpt=1 callerNFN=Probe Caller srcID=(null) aC=(null) aM=(null) iUB=0 vm=0 connStat=00 nMICS=0 sR=0 iSA=0 iSV=0 iSS=0 wHM=0 hSI=0 vST=0 iapST=0 oapST=0 tokens=<TUMediaTokens 0x103150180 uST=0 dST=0 cAST=0 sTPID=(null)> vCA=<TUVideoCallAttributes 0x106e150a0 remoteCameraOrientation=0 localVideoContextSlotIdentifier=0 remoteVideoContextSlotIdentifier=0> ssA=(null) ssI=0 model=<TUCal
+2026-10-20 19:20:20.022 Df callservicesd[1488:674c] [com.apple.calls.callservicesd:Default] Set failure reason CXCallFailureReasonGenericError, disconnect reason: 55
+2026-10-20 19:20:20.022 Df callservicesd[1488:674c] [com.apple.calls.callservicesd:Default] disconnect reason: 55, failureReason: 0
+2026-10-20 19:20:35.976 E  callservicesd[1488:6deb] [com.apple.launchservices:default] Failed to open URL facetime://?launchForIncomingCall=1: <NSError:0x106e5c510(LSApplicationWorkspaceErrorDomain:115) - {
+    "_LSFile" = "LSDOpenService.mm";
+    "_LSFunction" = "-[_LSDOpenClient openURL:fileHandle:options:completionHandler:]";
+    "_LSLine" = 282;
+}>
+2026-10-20 19:20:36.104 Df callservicesd[1488:6de9] [com.apple.calls.callservicesd:Default] Disconnecting call because there wont be a UI to host the call: <CSDProviderCall 0x103386d00 p=CKSIMPROBE.dev.callkitsim.probe initr=(null) crs=(null) rs=(null) prs=(null) ctrans=(null) svc=Unknown hdl=<TUHandle 0x106e02180 type=PhoneNumber, value=u:DL8BlHkkH2bJxg05, normalizedValue=u:DL8BlHkkH2bJxg05, isoCountryCode=us, siriDisplayName=(null)> hdls={(
+    <TUHandle 0x106e02600 type=PhoneNumber, value=u:DL8BlHkkH2bJxg05, normalizedValue=u:DL8BlHkkH2bJxg05, isoCountryCode=us, siriDisplayName=(null)>
+)} cibl=0 isoCC=(null) stat=Ringing tStat=0 dR=0 fR=0 supportsR=0 uPI=BD7907C0-85EA-4F50-A800-EFA36DFECD72 grp=(null) lSIUUID=(null) lSIAccountUUID=(null) upgradedFromCallUUID=(null) hosted=1 endpt=1 callerNFN=Probe Caller srcID=(null) aC=(null) aM=(null) iUB=0 vm=0 connStat=00 nMICS=0 sR=0 iSA=0 iSV=0 iSS=0 wHM=0 hSI=0 vST=0 iapST=0 oapST=0 tokens=<TUMediaTokens 0x106cb1020 uST=0 dST=0 cAST=0 sTPID=(null)> vCA=<TUVideoCallAttributes 0x106e18020 remoteCameraOrientation=0 localVideoContextSlotIdentifier=0 remoteVideoContextSlotIdentifier=0> ssA=(null) ssI=0 model=<TUCal
+2026-10-20 19:20:36.108 Df callservicesd[1488:6750] [com.apple.calls.callservicesd:Default] Set failure reason CXCallFailureReasonGenericError, disconnect reason: 55
+2026-10-20 19:20:36.108 Df callservicesd[1488:6750] [com.apple.calls.callservicesd:Default] disconnect reason: 55, failureReason: 0
+2026-10-20 19:26:29.523 E  callservicesd[1488:10ba7] [com.apple.launchservices:default] Failed to open URL facetime://?launchForIncomingCall=1: <NSError:0x106dbfd20(LSApplicationWorkspaceErrorDomain:115) - {
+    "_LSFile" = "LSDOpenService.mm";
+    "_LSFunction" = "-[_LSDOpenClient openURL:fileHandle:options:completionHandler:]";
+    "_LSLine" = 282;
+}>
+2026-10-20 19:26:29.530 Df callservicesd[1488:1120a] [com.apple.calls.callservicesd:Default] Disconnecting call because there wont be a UI to host the call: <CSDProviderCall 0x103388f00 p=CKSIMPROBE.dev.callkitsim.probe initr=(null) crs=(null) rs=(null) prs=(null) ctrans=(null) svc=Unknown hdl=<TUHandle 0x106e03580 type=PhoneNumber, value=u:IKn55ZYm3G4BKUnG, normalizedValue=u:IKn55ZYm3G4BKUnG, isoCountryCode=us, siriDisplayName=(null)> hdls={(
+    <TUHandle 0x106e02c80 type=PhoneNumber, value=u:IKn55ZYm3G4BKUnG, normalizedValue=u:IKn55ZYm3G4BKUnG, isoCountryCode=us, siriDisplayName=(null)>
+)} cibl=0 isoCC=(null) stat=Ringing tStat=0 dR=0 fR=0 supportsR=0 uPI=1F2D2716-AFD0-4CE4-9D72-88A7F312ED0B grp=(null) lSIUUID=(null) lSIAccountUUID=(null) upgradedFromCallUUID=(null) hosted=1 endpt=1 callerNFN=(null) srcID=(null) aC=(null) aM=(null) iUB=0 vm=0 connStat=00 nMICS=0 sR=0 iSA=0 iSV=0 iSS=0 wHM=0 hSI=0 vST=0 iapST=0 oapST=0 tokens=<TUMediaTokens 0x106e5c930 uST=0 dST=0 cAST=0 sTPID=(null)> vCA=<TUVideoCallAttributes 0x106e18200 remoteCameraOrientation=0 localVideoContextSlotIdentifier=0 remoteVideoContextSlotIdentifier=0> ssA=(null) ssI=0 model=<TUCallModel
+2026-10-20 19:26:29.534 Df callservicesd[1488:1120a] [com.apple.calls.callservicesd:Default] Set failure reason CXCallFailureReasonGenericError, disconnect reason: 55
+2026-10-20 19:26:29.535 Df callservicesd[1488:1120a] [com.apple.calls.callservicesd:Default] disconnect reason: 55, failureReason: 0
+Child process terminated with signal 15: Terminated
