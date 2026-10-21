@@ -107,7 +107,12 @@ static void setDelegate(PKPushRegistry *self,SEL selector,id delegate) { ((void 
 static void setTypes(PKPushRegistry *self,SEL selector,NSSet *types) { ((void (*)(id,SEL,id))originalTypes)(self,selector,types);ready(self); }
 NSString *CKSimInstallPushHooks(void) {
   Class concrete;
-  @try { concrete=object_getClass([[PKPushRegistry alloc] initWithQueue:dispatch_get_main_queue()]); }
+  Class sampleClass=PKPushRegistry.class;
+  #if CKSIM_ABI_TESTING
+  Class testClass=NSClassFromString(NSProcessInfo.processInfo.environment[@"CKSIM_TEST_PUSH_REGISTRY_CLASS"]);
+  if (testClass && [testClass isSubclassOfClass:PKPushRegistry.class]) sampleClass=testClass;
+  #endif
+  @try { concrete=object_getClass([[sampleClass alloc] initWithQueue:dispatch_get_main_queue()]); }
   @catch(NSException *exception) { return [NSString stringWithFormat:@"PKPushRegistry preflight: %@: %@",exception.name,exception.reason]; }
   if (!concrete) return @"PKPushRegistry initializer returned nil";
   SEL selectors[]={@selector(initWithQueue:),@selector(setDelegate:),@selector(setDesiredPushTypes:)};
@@ -117,7 +122,7 @@ NSString *CKSimInstallPushHooks(void) {
     Method method=class_getInstanceMethod(PKPushRegistry.class,selectors[i]);
     if (!method || !class_getInstanceMethod(concrete,selectors[i]))
       return [NSString stringWithFormat:@"%@ missing selector %@",NSStringFromClass(concrete),NSStringFromSelector(selectors[i])];
-    if (i==0 && class_getMethodImplementation(concrete,selectors[i])!=method_getImplementation(method))
+    if (class_getMethodImplementation(concrete,selectors[i])!=method_getImplementation(method))
       return [NSString stringWithFormat:@"%@ overrides %@",NSStringFromClass(concrete),NSStringFromSelector(selectors[i])];
   }
   // Save concrete inherited IMPs before changing PKPushRegistry itself.

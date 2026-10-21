@@ -10,16 +10,20 @@
 
 **Pending CI:** the existing full discovery push lane must pass before merge, because it uses genuine shadow forwarding. No device or LCK acceptance is implied by the local ABI run.
 
-Run final acceptance from the repository root:
+**Measured latest candidate:** `review-red-queues/` reproduces four wrong-queue callbacks after refusal. `review-green-13-cases/` passes all 243 checks: the original eight cases plus refused custom/nil callback queues, both initializer validation-lookup faults, and both differing concrete PushKit setters. The initializer controls prove genuine constructor calls and initialized-object state after the autorelease pool drains; the PushKit controls prove each concrete setter remains intact after refusal. `review-shipping-checks.json` and `review-shipping-build-info.json` bind the same source-input digest, both shipping architectures and the absence of all three test controls. Both review axes are clean. A cleanup receipt confirms the owned simulator was deleted.
+
+**Measured boundary experiment:** `constructor-boundary-experiment/` forces `CXProvider` allocation to return nil. Objective-C observed nil; Swift's nonoptional constructor returned and its description bridged to an empty string. This does not create a valid object or simulate structural API removal, and no allocation workaround ships. Supported Apple ABIs must expose the advertised public provider/controller constructors. A genuinely absent constructor refuses before sample allocation and receives no initializer wrapper without a genuine original; this does not qualify a hypothetical root-absent/concrete-present hierarchy.
+
+Run current acceptance from the repository root:
 
 ```sh
 OUT=/tmp/callkit-r2-fresh bash discovery/run_abi.sh
 ```
 
-Replay the final saved acceptance:
+Replay the latest saved acceptance:
 
 ```sh
-python3 discovery/abi_conformance.py docs/verification/2026-10-22-runtime-r2/green-final-8x18
+python3 discovery/abi_conformance.py docs/verification/2026-10-22-runtime-r2/review-green-13-cases
 ```
 
-The runner owns and deletes its throwaway simulator. `discovery/abi_conformance.py` checks saved final receipts, identities, exact check labels and diagnostic expectations; live runs additionally compare the built binary bytes with the manifest. The earlier probe revisions in this directory intentionally predate its final 18-check contract. No device behavior, R3 teardown callback behavior, or LCK conformance is claimed here.
+The runner owns and deletes its throwaway simulator. `discovery/abi_conformance.py` checks saved final receipts, identities, exact check labels and diagnostic expectations; live runs additionally compare the built binary bytes with the manifest. Earlier captures retain their historical checker contracts; the current checker requires all thirteen cases and their exact per-case labels. No device behavior, R3 teardown callback behavior, or LCK conformance is claimed here.

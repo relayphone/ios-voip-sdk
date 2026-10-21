@@ -1,0 +1,23 @@
+{
+  "bootstrapParent": "7c5cf3c7391d0e88c7cac7e49ea4d9079abdf137",
+  "harnessControls": 52,
+  "kind": "local-integration-compile-only",
+  "repairControls": 10,
+  "reviews": {
+    "spec": "no actionable findings",
+    "standards": "no actionable findings"
+  },
+  "runtimeParent": "78e6924d1a0b85aae403f840342d6e7524cc4f26",
+  "schemaVersion": 1,
+  "simulatorExecution": false,
+  "sourceFilesSHA256": {
+    "Sources/Engine/RuntimeEngine.swift": "67ee84f6c3b6cb93084e91b1be6765985a8a8b56ddcb43c67c949452d460ddb7",
+    "Sources/Interposition/CKInterposition.m": "a093a1cfdd35a08443997ae8bd73145023ab9b3d17714341b42e7e75802d9fdc",
+    "Sources/Interposition/CKPushDelivery.m": "64f38820b49289bfad82a1c1a96cf46289057e32a96873ee04aeacd1e8975719",
+    "discovery/probe/sdk_bootstrap.swift": "7b443df5cf103852f1cd8560eff982f8f7ded1ddd4d05cef01b59936d77a3ec9"
+  },
+  "sourceLinkedAppSHA256": "79b87ee60a73454f31d4d6ea04b9bd57ab30853ddcbfc19ebe9ec4e910a8f687",
+  "sourceLinkedSimulatorCompile": true,
+  "standaloneSimulatorCSyntax": true,
+  "workflowActionlint": true
+}

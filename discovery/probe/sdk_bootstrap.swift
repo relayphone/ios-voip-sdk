@@ -32,7 +32,11 @@ final class SDKBootstrapProbe: NSObject, UIApplicationDelegate {
 
   fileprivate func run() {
     let mode = ProcessInfo.processInfo.environment["CKSIM_BOOTSTRAP_CASE"] ?? "healthy"
-    trace("launch", ["mode": mode, "injected": !(ProcessInfo.processInfo.environment["DYLD_INSERT_LIBRARIES"] ?? "").isEmpty])
+    let inserted = (ProcessInfo.processInfo.environment["DYLD_INSERT_LIBRARIES"] ?? "").split(separator: ":")
+    let runtimeInjected = inserted.contains { entry in
+      ["CKSimRuntime.dylib", "CKSimLoader.dylib"].contains(URL(fileURLWithPath: String(entry)).lastPathComponent)
+    }
+    trace("launch", ["mode": mode, "injected": runtimeInjected])
     check(!CKSimRuntimeIsActive(), "explicit-activation-required")
     let provider = CXProvider(configuration: CXProviderConfiguration())
     let controller = CXCallController(queue: .main)
