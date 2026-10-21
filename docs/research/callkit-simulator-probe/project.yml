@@ -11,7 +11,7 @@ targets:
   Probe:
     type: application
     platform: iOS
-    sources: [main.swift]
+    sources: [main.swift, providers.swift]
     settings:
       base:
         PRODUCT_NAME: Probe
