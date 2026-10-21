@@ -42,8 +42,17 @@ jobs:
         env:
           COMPILER_DEVELOPER_DIR: /Applications/Xcode_${{ matrix.compiler }}.app/Contents/Developer
         run: OUT="$RUNNER_TEMP/out" discovery/run.sh
+      - name: Concrete CallKit ABI and safe refusal
+        env:
+          COMPILER_DEVELOPER_DIR: /Applications/Xcode_${{ matrix.compiler }}.app/Contents/Developer
+        run: OUT="$RUNNER_TEMP/abi" bash discovery/run_abi.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: callkit-discovery-macos-26-xcode-${{ matrix.compiler }}
           path: ${{ runner.temp }}/out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: callkit-abi-macos-26-xcode-${{ matrix.compiler }}
+          path: ${{ runner.temp }}/abi

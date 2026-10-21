@@ -17,7 +17,7 @@ trap 'rm -rf "$WORK"' EXIT
 for arch in $ARCHS; do
   target="$arch-apple-ios18.0-simulator"
   for source in CKInterposition CKPushDelivery; do
-    xcrun --sdk iphonesimulator clang -target "$target" -isysroot "$SDK" -fobjc-arc -fmodules -DCKSIM_RUNTIME_VERSION=\""$VERSION"\" -DCKSIM_HAS_VOIP_METADATA="$METADATA" \
+    xcrun --sdk iphonesimulator clang -target "$target" -isysroot "$SDK" -fobjc-arc -fmodules -DCKSIM_RUNTIME_VERSION=\""$VERSION"\" -DCKSIM_HAS_VOIP_METADATA="$METADATA" -DCKSIM_ABI_TESTING="${CKSIM_ABI_TESTING:-0}" \
       -c "Sources/Interposition/$source.m" -o "$WORK/$source-$arch.o"
   done
   xcrun --sdk iphonesimulator swiftc -target "$target" -sdk "$SDK" -swift-version 6 -O -emit-library -module-name CKSimRuntime \
@@ -41,7 +41,7 @@ cp Tools/cksim "$PACKAGE/cksim"
 cp VERSION "$PACKAGE/VERSION"
 cp docs/simulator-runtime.md "$PACKAGE/README.md"
 chmod +x "$PACKAGE/cksim"
-python3 - "$PACKAGE" "$SDK" "$ARCHS" "$VERSION" <<'PYINFO'
+python3 - "$PACKAGE" "$SDK" "$ARCHS" "$VERSION" "${CKSIM_ABI_TESTING:-0}" <<'PYINFO'
 import hashlib,json,pathlib,subprocess,sys
 root=pathlib.Path(sys.argv[1])
 inputs=[pathlib.Path('VERSION'), pathlib.Path('docs/simulator-runtime.md')] + [p for folder in ('Sources','Tools','profiles','scripts') for p in pathlib.Path(folder).rglob('*') if p.is_file() and '__pycache__' not in p.parts]
@@ -58,7 +58,7 @@ info=dict(schemaVersion=1,version=sys.argv[4],profile='ios-27.0',sourceCommit=su
                          clang=output('xcrun', 'clang', '--version')),
           sdk=dict(version=output('xcrun', '--sdk', 'iphonesimulator', '--show-sdk-version'),
                    build=output('xcrun', '--sdk', 'iphonesimulator', '--show-sdk-build-version')),
-          sdkPath=sys.argv[2],architectures=sys.argv[3].split(),files=files)
+          sdkPath=sys.argv[2],architectures=sys.argv[3].split(),abiTesting=sys.argv[5]=='1',files=files)
 (root/'build-info.json').write_text(json.dumps(info,indent=2,sort_keys=True)+'\n')
 PYINFO
 mv "$PACKAGE" "$OUT"
