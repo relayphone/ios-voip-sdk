@@ -36,7 +36,8 @@ lipo -create "${loader[@]}" -output "$PACKAGE/CKSimLoader.dylib"
 codesign -s - --force "$PACKAGE/CKSimRuntime.dylib"
 codesign -s - --force "$PACKAGE/cksim-notify"
 codesign -s - --force "$PACKAGE/CKSimLoader.dylib"
-cp -R profiles "$PACKAGE/profiles"
+mkdir "$PACKAGE/profiles"
+cp Sources/Engine/Resources/*.json "$PACKAGE/profiles/"
 cp Tools/cksim "$PACKAGE/cksim"
 cp VERSION "$PACKAGE/VERSION"
 cp docs/simulator-runtime.md "$PACKAGE/README.md"
@@ -44,7 +45,7 @@ chmod +x "$PACKAGE/cksim"
 python3 - "$PACKAGE" "$SDK" "$ARCHS" "$VERSION" "${CKSIM_ABI_TESTING:-0}" <<'PYINFO'
 import hashlib,json,pathlib,subprocess,sys
 root=pathlib.Path(sys.argv[1])
-inputs=[pathlib.Path('VERSION'), pathlib.Path('docs/simulator-runtime.md')] + [p for folder in ('Sources','Tools','profiles','scripts') for p in pathlib.Path(folder).rglob('*') if p.is_file() and '__pycache__' not in p.parts]
+inputs=[pathlib.Path('VERSION'), pathlib.Path('docs/simulator-runtime.md')] + [p for folder in ('Sources','Tools','scripts') for p in pathlib.Path(folder).rglob('*') if p.is_file() and '__pycache__' not in p.parts]
 source_hash=hashlib.sha256()
 for p in sorted(inputs):
     source_hash.update(str(p).encode()+b'\0'+p.read_bytes()+b'\0')

@@ -1,27 +1,78 @@
 #import "CKRuntimeSeam.h"
-#import <TargetConditionals.h>
+
+#if TARGET_OS_SIMULATOR && TARGET_OS_IOS
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <dlfcn.h>
 #import <stdatomic.h>
 
-#if !TARGET_OS_SIMULATOR
-#error CallKit Simulator must never be built for a physical device.
-#endif
-
-extern void *CKSimGetEngine(void);
 // Objective-C init consumes its receiver and returns +1. Both the C hook and
 // calls through saved IMPs must preserve those ARC conventions.
 typedef id (*ObjectInitializer)(id __attribute__((ns_consumed)), SEL, id) __attribute__((ns_returns_retained));
 typedef id (*QueueInitializer)(id __attribute__((ns_consumed)), SEL, dispatch_queue_t) __attribute__((ns_returns_retained));
 static atomic_bool installed;
 static NSString *refusalReason;
+static BOOL activationAttempted;
 bool CKSimRuntimeIsActive(void) { return installed; }
 #ifndef CKSIM_RUNTIME_VERSION
 #error Build with scripts/build-runtime.sh to supply the runtime version.
 #endif
 const char *CKSimRuntimeVersion(void) { return CKSIM_RUNTIME_VERSION; }
-static id<CKRuntimeEngineProtocol> Engine(void) { return (__bridge id)CKSimGetEngine(); }
+static id<CKRuntimeEngineProtocol> Engine(void) { return (__bridge_transfer id)CKSimGetEngine(); }
+
+typedef struct {
+  __unsafe_unretained Class cls;
+  SEL selector;
+  IMP implementation;
+} HookRestore;
+static NSMutableArray<NSValue *> *hookRestores;
+static NSValue *savedHook(Class cls, SEL selector) {
+  for (NSValue *value in hookRestores) {
+    HookRestore entry; [value getValue:&entry size:sizeof(entry)];
+    if (entry.cls == cls && entry.selector == selector) return value;
+  }
+  return nil;
+}
+void CKSimCaptureHook(Class cls, SEL selector) {
+  if (!cls || savedHook(cls, selector)) return;
+  IMP original = class_getMethodImplementation(cls, selector);
+  // A newly encountered concrete class can inherit an already swapped method.
+  // Recover the defining class's saved IMP rather than journaling our hook.
+  for (Class owner = cls; owner; owner = class_getSuperclass(owner)) {
+    unsigned int count;
+    Method *methods = class_copyMethodList(owner, &count);
+    BOOL defines = NO;
+    for (unsigned int i = 0; i < count; i++) if (method_getName(methods[i]) == selector) { defines = YES; break; }
+    free(methods);
+    if (!defines) continue;
+    NSValue *saved = savedHook(owner, selector);
+    if (saved) { HookRestore entry; [saved getValue:&entry size:sizeof(entry)]; original = entry.implementation; }
+    break;
+  }
+  if (!hookRestores) hookRestores = [NSMutableArray new];
+  HookRestore entry = {cls, selector, original};
+  [hookRestores addObject:[NSValue valueWithBytes:&entry objCType:@encode(HookRestore)]];
+}
+NSString *CKSimReplaceHook(Class cls, SEL selector, IMP replacement, const char *encoding) {
+  CKSimCaptureHook(cls, selector);
+  if (!class_addMethod(cls, selector, replacement, encoding)) {
+    Method local = class_getInstanceMethod(cls, selector);
+    if (local) method_setImplementation(local, replacement);
+  }
+  return class_getMethodImplementation(cls, selector) == replacement ? nil :
+    [NSString stringWithFormat:@"%@ failed to bind %@", NSStringFromClass(cls), NSStringFromSelector(selector)];
+}
+#if CKSIM_SDK_SOURCE
+static void restoreHooks(void) {
+  CKSimReleasePushHooks();
+  for (NSValue *value in hookRestores.reverseObjectEnumerator) {
+    HookRestore entry; [value getValue:&entry size:sizeof(entry)];
+    Method method = class_getInstanceMethod(entry.cls, entry.selector);
+    if (method && entry.implementation) method_setImplementation(method, entry.implementation);
+  }
+  [hookRestores removeAllObjects];
+}
+#endif
 void CKSimEmit(NSString *event, NSDictionary *fields) { [Engine() recordEvent:event fields:fields]; }
 NSString *CKSimResourceDirectory(void) {
   Dl_info info;
@@ -98,11 +149,17 @@ static void invalidate(CXProvider *self, SEL selector);
 static void bindConcrete(Class concrete, Class root);
 static void refuse(NSString *reason) {
   @synchronized(CXProvider.class) {
+    BOOL wasInstalled = installed;
     if (!refusalReason) {
       refusalReason = reason.copy;
       fprintf(stderr, "CKSIM runtime refused: %s\n", reason.UTF8String);
     }
     installed = false;
+    #if CKSIM_SDK_SOURCE
+    if (wasInstalled) { restoreHooks(); CKSimReleaseEngine(); }
+    #else
+    (void)wasInstalled;
+    #endif
   }
 }
 static void refusedCompletion(void (^completion)(NSError *)) {
@@ -207,6 +264,9 @@ static Hook hooks[22];
 static NSUInteger hookCount;
 
 static void bindHook(Class cls, Hook hook, BOOL captureOriginal) {
+  #if CKSIM_SDK_SOURCE
+  if (refusalReason) return;
+  #endif
   Method method = class_getInstanceMethod(cls, hook.selector);
   #if CKSIM_ABI_TESTING
   // Fault the lookup seam, so the production missing-method guard and fallback
@@ -214,15 +274,14 @@ static void bindHook(Class cls, Hook hook, BOOL captureOriginal) {
   if ([NSProcessInfo.processInfo.environment[@"CKSIM_TEST_MISSING_SELECTOR"] isEqual:NSStringFromSelector(hook.selector)]) method = NULL;
   #endif
   if (!method) refuse([NSString stringWithFormat:@"%@ missing selector %@", NSStringFromClass(cls), NSStringFromSelector(hook.selector)]);
+  #if CKSIM_SDK_SOURCE
+  if (!method) return;
+  #endif
   IMP previous = method ? method_getImplementation(method) : NULL;
   const char *encoding = method ? method_getTypeEncoding(method) : hook.encoding;
-  if (!class_addMethod(cls, hook.selector, hook.replacement, encoding)) {
-    Method local = class_getInstanceMethod(cls, hook.selector);
-    if (local) method_setImplementation(local, hook.replacement);
-  }
+  NSString *failure = CKSimReplaceHook(cls, hook.selector, hook.replacement, encoding);
   if (captureOriginal && hook.original) *hook.original = previous;
-  if (class_getMethodImplementation(cls, hook.selector) != hook.replacement)
-    refuse([NSString stringWithFormat:@"%@ failed to bind %@", NSStringFromClass(cls), NSStringFromSelector(hook.selector)]);
+  if (failure) refuse(failure);
 }
 static void bindConcrete(Class concrete, Class root) {
   for (NSUInteger i = 0; i < hookCount; i++) {
@@ -293,8 +352,7 @@ static void verifySnapshot(void) {
     refuse([NSString stringWithFormat:@"CXCall snapshot key %@: %@: %@", key, exception.name, exception.reason]);
   }
 }
-__attribute__((constructor)) static void install(void) {
-  if (![NSProcessInfo.processInfo.environment[@"CKSIM_ENABLED"] isEqual:@"1"]) return;
+static void installHooks(void) {
   @autoreleasepool {
     Hook configured[] = {
       {CXProvider.class,@selector(initWithConfiguration:),(IMP)providerInit,&originalProviderInit,"@@:@",YES},
@@ -360,6 +418,24 @@ __attribute__((constructor)) static void install(void) {
     }
     originalConcreteProviderInit = class_getMethodImplementation(providerClass, @selector(initWithConfiguration:));
     originalConcreteControllerInit = class_getMethodImplementation(controllerClass, @selector(initWithQueue:));
+    #if CKSIM_SDK_SOURCE
+    if (refusalReason) return;
+    #endif
+    // Snapshot every known concrete target before changing any root class.
+    // Otherwise an inherited method would be recorded as our replacement.
+    for (NSUInteger i = 0; i < hookCount; i++) {
+      Hook hook = hooks[i];
+      CKSimCaptureHook(hook.root, hook.selector);
+      if (hook.root == CXProvider.class) CKSimCaptureHook(providerClass, hook.selector);
+      if (hook.root == CXCallController.class) CKSimCaptureHook(controllerClass, hook.selector);
+      if (hook.root == CXCallObserver.class) {
+        CKSimCaptureHook(observerClass, hook.selector);
+        CKSimCaptureHook(object_getClass([CXCallObserver new]), hook.selector);
+      }
+      for (CXAction *action in actions)
+        for (Class cls = object_getClass(action); cls && [cls isSubclassOfClass:hook.root]; cls = class_getSuperclass(cls))
+          CKSimCaptureHook(cls, hook.selector);
+    }
     for (NSUInteger i = 0; i < hookCount; i++) {
       Hook hook = hooks[i];
       bindHook(hook.root, hook, YES);
@@ -378,9 +454,50 @@ __attribute__((constructor)) static void install(void) {
     bindConcrete(object_getClass([CXCallObserver new]), CXCallObserver.class);
     bindActions(actions);
     if (refusalReason) return;
-    installed = true;
     NSString *pushFailure = CKSimInstallPushHooks();
     if (pushFailure) { refuse(pushFailure); return; }
+    #if CKSIM_ABI_TESTING
+    if ([NSProcessInfo.processInfo.environment[@"CKSIM_TEST_FAILURE"] isEqual:@"push-after-install"]) {
+      refuse(@"ABI test failure after PushKit hook installation"); return;
+    }
+    #endif
+    installed = true;
     CKSimEmit(@"runtime.installed",@{@"version":@(CKSimRuntimeVersion())});
   }
 }
+
+bool CKSimActivateRuntime(void) {
+  @autoreleasepool {
+    @synchronized(CXProvider.class) {
+      if (installed) return true;
+      if (activationAttempted) return false;
+      activationAttempted = YES;
+      @try {
+        if (!CKSimPrepareEngine()) {
+          refuse(@"Engine preparation failed; see preceding runtime diagnostic");
+          #if CKSIM_SDK_SOURCE
+          return false;
+          #endif
+        }
+        installHooks();
+      } @catch (NSException *exception) {
+        refuse([NSString stringWithFormat:@"Runtime activation: %@: %@", exception.name, exception.reason]);
+      } @finally {
+        if (!installed) {
+          #if CKSIM_SDK_SOURCE
+          restoreHooks();
+          #endif
+          CKSimReleaseEngine();
+        }
+      }
+      return installed;
+    }
+  }
+}
+
+#if !CKSIM_SDK_SOURCE
+__attribute__((constructor)) static void install(void) {
+  if ([NSProcessInfo.processInfo.environment[@"CKSIM_ENABLED"] isEqual:@"1"]) CKSimActivateRuntime();
+}
+#endif
+#endif
