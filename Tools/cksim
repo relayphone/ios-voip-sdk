@@ -31,8 +31,15 @@ def simulator(identifier):
 
 
 def launch_environment(device, key):
-    result = subprocess.run(["xcrun", "simctl", "spawn", device, "launchctl", "getenv", key], capture_output=True, text=True)
-    return result.stdout.rstrip("\n") if result.returncode == 0 else None
+    result = subprocess.run(["xcrun", "simctl", "getenv", device, key], capture_output=True, text=True)
+    diagnostic = result.stderr.strip()
+    if result.returncode == 0 and diagnostic == f"'{key}' not found":
+        return None
+    if result.returncode or diagnostic:
+        raise RuntimeError(f"Cannot read simulator environment key {key}: {diagnostic}")
+    # simctl appends one newline; preserve intentional empty values and any
+    # newlines already present in the value itself.
+    return result.stdout.removesuffix("\n")
 
 
 def validate_package(runtime):
