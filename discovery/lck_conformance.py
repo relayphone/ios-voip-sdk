@@ -6,7 +6,7 @@ import collections
 import json
 from conformance import bound_capture
 from device_oracles import check_deadline, deadline_bands
-from summarize import build_identity, EvidenceError, load, one, require
+from summarize import build_identity, EvidenceError, load, one, require, run_environment
 
 ROOT = Path(__file__).resolve().parent.parent
 CASES = ('basic', 'cx-after', 'lck-after', 'two-managers')
@@ -153,9 +153,21 @@ def compare(rows, reference, deadlines):
 
 def validate(directory, case):
     require(case in CASES, 'unknown LCK scenario')
-    rows, engine = bound_capture(directory, 'lck-' + case)
-    build_identity(directory, rows)
-    require(one(rows, 'launch')['mode'] == 'lck', 'capture is not LCK mode')
+    name = 'lck-' + case
+    rows, engine = bound_capture(directory, name)
+    launch = one(rows, 'launch')
+    receipt = json.loads((directory / (name + '.receipt.json')).read_text())
+    # Equality alone cannot bind an identity when both sides omit the field.
+    # Match the fresh-capture requirements used by the main shipping gate.
+    require(launch.get('traceVersion') == 2, 'live LCK run requires traceVersion 2')
+    require(type(launch.get('pid')) is int and launch['pid'] > 0, 'missing LCK process identity')
+    require(launch.get('bundleID') == 'dev.callkitsim.probe', 'LCK bundle identity differs')
+    for field in ('runID', 'simulatorID'):
+        require(isinstance(launch.get(field), str) and bool(launch[field]), f'missing LCK {field}')
+    require(receipt.get('scenario') == name and receipt.get('launchExitCode') in (0, -15, 143),
+            'invalid LCK launcher receipt')
+    manifest = build_identity(directory, rows)
+    require(launch['mode'] == 'lck', 'capture is not LCK mode')
     one(engine, 'runtime.installed')
     require(any(row['event'] == 'transaction.delivered' for row in engine), 'missing LCK provider-layer execution')
     require(all(left['t_ms'] <= right['t_ms'] for left, right in zip(engine, engine[1:])), 'LCK journal time mismatch')
@@ -164,6 +176,7 @@ def validate(directory, case):
     deadlines = deadline_bands([row for source in sources.values() for row in source if row['event'] == 'lck.perform'])
     result = compare(rows, sources[case], deadlines)
     result.update(reference='2026-10-21-iphone13-ios27-lck-' + case,
+                  environment=run_environment(directory, manifest), runtimeVersion=manifest['runtimeVersion'],
                   deadlineBands=deadlines, actualOS=one(rows, 'lck.start')['os'], referenceOS=one(sources[case], 'lck.start')['os'],
                   journalBinding='process/build bound; LCK-to-CX action UUID mapping unmeasured',
                   cxTapLimit='measured CX callbacks expose only receiver/kind; tone/pause handlers absent')

@@ -29,14 +29,25 @@ def write_capture(directory, case, source):
     runtime, profile = package / 'CKSimRuntime.dylib', package / 'profiles/ios-27.0.json'
     runtime.write_bytes(b'synthetic LCK control runtime')
     profile.write_bytes(b'synthetic LCK control profile')
-    manifest = dict(schemaVersion=1, profileID='ios-27.0', runID=identity['runID'], simulatorID=identity['simulatorID'],
+    version = (ROOT / 'VERSION').read_text().strip()
+    (package / 'build-info.json').write_text(json.dumps(dict(version=version)))
+    runtime_id = 'com.apple.CoreSimulator.SimRuntime.iOS-26-5'
+    (directory / 'runtimes.json').write_text(json.dumps(dict(runtimes=[dict(
+        identifier=runtime_id, platform='iOS', version='26.5', buildversion='23F77', isAvailable=True)])))
+    (directory / 'compiler-version.txt').write_text('Xcode 26.3\nBuild version 17C100\n')
+    manifest = dict(schemaVersion=1, runtimeVersion=version, profileID='ios-27.0', runID=identity['runID'], simulatorID=identity['simulatorID'],
+                    simulatorRuntimeID=runtime_id, simulatorOSVersion='26.5', simulatorOSBuildVersion='23F77',
+                    compilerXcodeVersion='26.3', compilerXcodeBuildVersion='17C100',
                     probeSHA256=hashlib.sha256(b'synthetic LCK control probe').hexdigest(),
                     runtimeSHA256=hashlib.sha256(runtime.read_bytes()).hexdigest(),
                     profileSHA256=hashlib.sha256(profile.read_bytes()).hexdigest())
     (directory / 'manifest.json').write_text(json.dumps(manifest))
     rows = [dict(event='launch', t_ms=0, main=True, mode='lck', injected=True, traceVersion=2, **identity),
-            dict(event='runtime.identity', t_ms=0, main=True, version='0.1.0',
+            dict(event='runtime.identity', t_ms=0, main=True, version=version,
                  **{key: manifest[key] for key in ('probeSHA256', 'runtimeSHA256', 'profileSHA256')}), *copy.deepcopy(source)]
+    # Synthetic execution metadata deliberately differs from the measured
+    # iOS 27.0 behavior reference; this is not a native iOS 26.5 LCK run.
+    next(row for row in rows if row['event'] == 'lck.start').update(os='26.5', build='23F77', simulator='synthetic')
     name = 'lck-' + case
     path = directory / (name + '.log')
     path.write_text(''.join('PROBE ' + json.dumps(row) + '\n' for row in rows))
@@ -45,7 +56,7 @@ def write_capture(directory, case, source):
     for index, row in enumerate(engine, 1): row.update(sequence=index, t_ms=index, profile='ios-27.0', **identity)
     journal = directory / (name + '.engine.jsonl')
     journal.write_text(''.join(json.dumps(row) + '\n' for row in engine))
-    receipt = dict(schemaVersion=2, success=True, completed=True, terminateExitCode=0, lastProbeEvent='done',
+    receipt = dict(schemaVersion=2, scenario=name, success=True, completed=True, launchExitCode=0, terminateExitCode=0, lastProbeEvent='done',
                    appPID=1234, launcherAppPID=1234, traceSHA256=hashlib.sha256(path.read_bytes()).hexdigest(),
                    engineSHA256=hashlib.sha256(journal.read_bytes()).hexdigest(), **identity)
     (directory / (name + '.receipt.json')).write_text(json.dumps(receipt))
@@ -107,7 +118,12 @@ class LCKChecks(unittest.TestCase):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
                 directory = Path(temporary)
                 write_capture(directory, case, source)
-                self.assertTrue(validate(directory, case)['success'])
+                result = validate(directory, case)
+                self.assertTrue(result['success'])
+                self.assertEqual(result['environment']['simulatorOS']['version'], '26.5')
+                self.assertEqual(result['environment']['behaviorProfileID'], 'ios-27.0')
+                self.assertEqual(result['referenceOS'], '27.0')
+                self.assertEqual(result['runtimeVersion'], (ROOT / 'VERSION').read_text().strip())
                 path = directory / ('lck-' + case + '.log')
                 rows = [json.loads(line.split('PROBE ', 1)[1]) for line in path.read_text().splitlines()]
                 next(row for row in rows if row['event'] == 'runtime.identity')['runtimeSHA256'] = '0' * 64
@@ -189,6 +205,35 @@ class LCKChecks(unittest.TestCase):
                 if mutation == 'incomplete-receipt': receipt['completed'] = False
                 if mutation != 'missing-receipt': receipt_path.write_text(json.dumps(receipt))
                 with self.assertRaises((EvidenceError, OSError)): validate(directory, 'basic')
+
+    def test_consistently_deleted_identity_and_protocol_fields_fail(self):
+        for field in ('pid', 'runID', 'simulatorID', 'bundleID', 'traceVersion', 'scenario', 'launch-status'):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                write_capture(directory, 'basic', self.sources['basic'])
+                trace_path, engine_path = directory / 'lck-basic.log', directory / 'lck-basic.engine.jsonl'
+                receipt_path, manifest_path = directory / 'lck-basic.receipt.json', directory / 'manifest.json'
+                rows = [json.loads(line.split('PROBE ', 1)[1]) for line in trace_path.read_text().splitlines()]
+                engine = [json.loads(line) for line in engine_path.read_text().splitlines()]
+                receipt, manifest = json.loads(receipt_path.read_text()), json.loads(manifest_path.read_text())
+                if field in ('pid', 'runID', 'simulatorID', 'bundleID'):
+                    next(row for row in rows if row['event'] == 'launch').pop(field)
+                    for row in engine: row.pop(field, None)
+                    receipt.pop(field, None)
+                    manifest.pop(field, None)
+                    if field == 'pid':
+                        receipt.pop('appPID')
+                        receipt.pop('launcherAppPID')
+                if field == 'traceVersion': next(row for row in rows if row['event'] == 'launch').pop(field)
+                if field == 'scenario': receipt.pop(field)
+                if field == 'launch-status': receipt['launchExitCode'] = 99
+                trace_path.write_text(''.join('PROBE ' + json.dumps(row) + '\n' for row in rows))
+                engine_path.write_text(''.join(json.dumps(row) + '\n' for row in engine))
+                receipt.update(traceSHA256=hashlib.sha256(trace_path.read_bytes()).hexdigest(),
+                               engineSHA256=hashlib.sha256(engine_path.read_bytes()).hexdigest())
+                receipt_path.write_text(json.dumps(receipt))
+                manifest_path.write_text(json.dumps(manifest))
+                with self.assertRaises(EvidenceError): validate(directory, 'basic')
 
     def test_missing_or_ambiguous_device_reference_fails(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -66,3 +66,48 @@ No runtime engine behavior, workflow, upstream repository or license is changed.
 The prepared branch includes R7 as a dependency; integrate only this acceptance
 commit after R7. Resolve the expected harness overlaps with R2/R6/R8/R9/R4 in the
 final stack, then obtain a fresh native red/green result before claiming B passed.
+
+## Prepared A stack integration
+
+Integrated B onto `10716e464ca63b58ad50d40dccd6e4af27219f37` (the prepared
+R5/R6/R7/R8/R9/R4 stack) on `codex/runtime-lck-acceptance`. The original B change
+cherry-picked cleanly as `6b21ea4`. R8 OS/compiler metadata, R9 manifest/version
+binding, R6 shipping controls and R4 loading/repair documentation are preserved.
+R2 remains pending and will be merged from the bottom of the stack separately.
+
+Measured integration red: the B synthetic fixture still had its original
+pre-R8/R9 manifest and failed with `missing simulatorRuntimeID`. It now saves a
+synthetic runtime inventory and compiler version, includes the current root
+`VERSION` in the manifest and package `build-info.json`, and labels the copied
+probe rows as synthetic iOS 26.5 execution against the iOS 27.0 device reference.
+The positive fixture proves those OS identities remain distinct. B JSON results
+now carry the validated environment and runtime version as well as the device
+reference. No common validation contract was relaxed.
+
+Independent integration review also found that shared equality comparisons could
+accept consistently absent identities (`None == None`). Seven controls removed
+PID/run/simulator/bundle identities consistently or removed the trace/scenario
+contract or changed launcher status while rebinding hashes; all were observed
+accepted before adding LCK-local strict fresh-capture assertions. The B gate now
+requires a positive PID, nonempty IDs, the probe bundle, trace version 2, the
+matching receipt scenario and a supported launcher exit status. The shared A
+validators remain unchanged.
+
+Measured offline on the integrated source:
+
+| Check | Result |
+| --- | --- |
+| LCK controls | 13 tests pass |
+| Image identity | 14 controls pass |
+| OS/compiler environment | 9 tests pass |
+| Release controls | 18 controls pass |
+| Device oracles | 9 tests pass |
+| CLI repair | 10 controls pass |
+| CLI identity/package/session controls | 13 controls pass |
+| Existing harness | 50 controls pass |
+| Both workflow `actionlint` checks, shell syntax, Python compilation and whitespace | Pass |
+
+Fresh native B qualification and capture-based shipping mutation controls remain
+pending. No native build, simulator launch, push or PR was performed for this
+integration. The remaining acceptance risk is actual LCK/framework behavior under
+the integrated runtime; offline device replays do not establish that behavior.
