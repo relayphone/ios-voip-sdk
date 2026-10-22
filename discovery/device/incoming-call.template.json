@@ -1,0 +1,12 @@
+{
+  "aps": {},
+  "incomingCall": {
+    "eventId": "replace-with-fresh-event-uuid",
+    "serverCallId": "replace-with-fresh-call-uuid",
+    "caller": {
+      "id": "sdk-device-qa",
+      "displayName": "SDK device QA"
+    },
+    "hasVideo": false
+  }
+}

@@ -3,6 +3,22 @@ import Foundation
 @main
 struct PushTests {
   @MainActor static func main() throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+    let template = try Data(contentsOf: root.appendingPathComponent("discovery/device/incoming-call.template.json"))
+    guard let payload = try JSONSerialization.jsonObject(with: template) as? [String: Any],
+          payload["aps"] is [String: Any],
+          case .incoming(let templateInvitation) = PushWire.parse(payload) else {
+      preconditionFailure("Device QA template must be an actual SDK incomingCall envelope")
+    }
+    precondition(templateInvitation.eventId == "replace-with-fresh-event-uuid"
+      && templateInvitation.serverCallId == "replace-with-fresh-call-uuid"
+      && templateInvitation.caller.id == "sdk-device-qa" && !templateInvitation.hasVideo)
+    let fallbackID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    for required in [false, true] {
+      precondition(IncomingPushPolicy.plan(.incoming(templateInvitation), mustReport: required, fallbackIdentity: fallbackID)
+        == .incoming(templateInvitation), "The canonical fixture must take the invitation path for either mustReport value")
+    }
     let raw: [String: Any] = ["incomingCall": [
       "eventId": "event-1", "serverCallId": "server-1",
       "caller": ["id": "caller", "displayName": "Fixture"], "hasVideo": true,
@@ -92,6 +108,6 @@ struct PushTests {
       preconditionFailure("An activation request must lock the launch preference")
     } catch SimulatorSupport.ConfigurationError.activationAlreadyRequested {}
     try SimulatorSupport.configure(enabled: false)
-    print("Push tests passed: envelope/JSON/date parsing, required-report policy, FCM end, token hydration/invalidation/reentrancy and simulator preference")
+    print("Push tests passed: device QA template, envelope/JSON/date parsing, required-report policy, FCM end, token hydration/invalidation/reentrancy and simulator preference")
   }
 }

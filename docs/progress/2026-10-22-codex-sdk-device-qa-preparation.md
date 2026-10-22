@@ -79,3 +79,36 @@ Actual iOS protected-file access, development signing, locked cold launch,
 PushKit reporting enforcement and audio activation timing remain pending.
 The fixture configures an audio category and fulfills actions; it does not
 establish media transport or prove audio engine health. R3 remains unchanged.
+
+## Offline operator preparation and retained signed build
+
+The [operator recipe](../../discovery/device/SDK-RUNBOOK.md) now provides bounded
+environment-only device commands, a [nested SDK invitation template](../../discovery/device/incoming-call.template.json),
+and an [empty private result worksheet](../../discovery/device/result-worksheet.template.md).
+The worksheet distinguishes human tap evidence from native action ingress,
+requires actual metadata for D2, and limits D3 to observed same-process survival
+after a required cold report. The proposed 30-second observation window is not
+an Apple deadline. Commands remain an unexecuted device recipe.
+
+Root separately completed a generic-device signed build from commit
+`638cd7b747a03c42217d7510856cd02560abdb1e`. Its
+[sanitized retained-build projection](../verification/2026-10-22-sdk-device-qa-build-projection.json)
+records the original native source/input and executable identities, development
+APNs entitlement qualification, and root's later read-only strict signature
+verification with exit zero. Private build and signature receipts remain private;
+their hashes bind the projection. No app/team/device identities or raw entitlements
+are published. Development APNs entitlements do not prove authentication or delivery.
+
+**Measured offline:** the actual SDK `PushWire` and reporting policy accept the
+template for either `mustReport` value; `bash Tests/VoIPSDK/run_push.sh` exits zero
+with Swift 6 warnings as errors. Shell syntax, relative guide links, and the
+offline payload recipe's fresh `0600` file and no-overwrite refusal pass. The
+existing mocked builder controls also pass; none invokes native build tools.
+All 24 native build-input files, the retained executable and signed-entitlement
+bytes still match the original private receipt. These documentation, template
+and host-test changes lie outside the builder's native input inventory and do
+not relabel or rebuild that executable.
+
+Device installation/launch, locked-file behavior, D1/D2/D3, media flow and R3
+remain unmeasured by this follow-up. No credential fetch, push, device query or
+native build occurred while authoring it.

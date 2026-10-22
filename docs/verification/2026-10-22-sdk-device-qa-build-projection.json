@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "kind": "sanitized-retained-build-receipt-projection",
+  "recordedBuild": {
+    "sourceCommit": "638cd7b747a03c42217d7510856cd02560abdb1e",
+    "sourceInputsSHA256": "804fd8bcfe70dc325992dff60a4c7d9f66edcf1ff01868ac79d677c9df8b9037",
+    "binarySHA256": "d7923ea5a7d2d09a4b0322b51f47ec0942aa6174154c24aff5e80b8912e55d55",
+    "signedEntitlementsSHA256": "388fde19c8bacf30e90c34a8ae5f67309e177f76efc2a69b900a4227afae4b4c",
+    "configuration": "Debug",
+    "platform": "iphoneos",
+    "destination": "generic/platform=iOS",
+    "developmentAPNs": true,
+    "installed": false,
+    "launched": false
+  },
+  "retainedReceiptSHA256": "dceb54537ce6409d141281647df0b72c607c51629d6976b88e45c9f29d96e410",
+  "offlineRecheck": {
+    "sourceInputCount": 24,
+    "allNativeSourceInputBytesMatch": true,
+    "retainedExecutableBytesMatch": true,
+    "retainedSignedEntitlementBytesMatch": true
+  },
+  "signatureQualification": {
+    "status": "measured",
+    "operation": "codesign --verify --deep --strict <retained app>",
+    "exitCode": 0,
+    "checkedAt": "2026-10-22T06:09:00.238721+00:00",
+    "executableSHA256": "d7923ea5a7d2d09a4b0322b51f47ec0942aa6174154c24aff5e80b8912e55d55",
+    "retainedVerificationReceiptSHA256": "28939bd1d523a453c745e08b887456a30391feb6e92328dd033bed4739f9b1b0",
+    "retainedVerificationLogSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "performedBy": "root reviewer; offline retained product verification only",
+    "rebuiltOrSigned": false
+  },
+  "limits": [
+    "Development APNs qualification covers signed-app/profile entitlement checks, not authentication, delivery or runtime reporting.",
+    "No installation, launch, locked-file behavior, D1/D2/D3, media or R3 result is claimed.",
+    "The executable remains bound to the recorded source commit and native-input digest; subsequent offline documentation and host-control changes do not relabel the build."
+  ]
+}

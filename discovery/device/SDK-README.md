@@ -6,6 +6,11 @@ one device app. It exercises `VoIPApplication`, `PushService` and the SDK's only
 another provider, conversation manager or push registry. The simulator engine and
 interposition sources are absent from this device target.
 
+The [operator recipe](SDK-RUNBOOK.md) supplies bounded, environment-only command
+examples, a [canonical incoming invitation](incoming-call.template.json) checked
+by the real SDK parser, and an [empty private result worksheet](result-worksheet.template.md).
+These are offline preparation; no device behavior is accepted by their presence.
+
 The fixture and its diagnostics are enabled only by the `SDK_DEVICE_QA` Swift
 condition and C definition. Ordinary package and Expo builds leave those hooks
 off. This tooling is preparation; a successful build does not prove APNs delivery,
@@ -102,8 +107,8 @@ The existing [sandbox sender](../send-apns.mjs) sends once, reserves a private
 receipt, and records an unknown outcome on transport failure. Reconcile that
 outcome before retrying. HTTP 200 proves APNs acceptance; the current launch's
 SDK ingress, report/completion and state traces must independently prove delivery
-and behavior. Use the SDK's `incomingCall` envelope with `aps`, `eventId`,
-`serverCallId` and `caller`; the historical raw probe's `from` payload does not
+and behavior. Use top-level `aps` and a nested `incomingCall` object containing
+`eventId`, `serverCallId` and `caller`; the historical raw probe's `from` payload does not
 exercise SDK decoding. Fresh measurement attempts need fresh event identifiers;
 deduplication tests deliberately reuse one.
 
