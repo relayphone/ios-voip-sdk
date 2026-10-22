@@ -1,5 +1,6 @@
 import AVFoundation
 import CallKit
+import CryptoKit
 import Darwin
 import ObjectiveC
 import PushKit
@@ -718,6 +719,11 @@ final class HookTarget: NSObject {
   }
 }
 
+func fileSHA256(_ url: URL?) -> String {
+  guard let url, let data = try? Data(contentsOf: url) else { return "" }
+  return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+}
+
 func recordLaunch() {
   let env = ProcessInfo.processInfo.environment
   let status = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CKSimRuntimeIsActive")
@@ -728,7 +734,14 @@ func recordLaunch() {
                 "injected": injected, "traceVersion": 2, "mode": env["PROBE_MODE"] ?? "default",
                 "runID": env["CKSIM_RUN_ID"] ?? "manual", "simulatorID": env["SIMULATOR_UDID"] ?? "device",
                 "bundleID": Bundle.main.bundleIdentifier ?? "unknown"])
-  Trace.shared.log("runtime.identity", ["version": runtimeVersion])
+  // Resolve the engine's defining image, rather than an environment-requested
+  // library path: another loaded copy may have supplied the active runtime.
+  let image = NSClassFromString("CKSimulatorEngine").flatMap { class_getImageName($0) }
+    .map { URL(fileURLWithPath: String(cString: $0)) }
+  let profile = image?.deletingLastPathComponent().appendingPathComponent("profiles/ios-27.0.json")
+  Trace.shared.log("runtime.identity", ["version": runtimeVersion,
+    "runtimeSHA256": fileSHA256(image), "probeSHA256": fileSHA256(Bundle.main.executableURL),
+    "profileSHA256": fileSHA256(profile)])
 }
 
 @main

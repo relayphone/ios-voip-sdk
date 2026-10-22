@@ -163,6 +163,7 @@ LIBS="$BUILD/runtime/CKSimRuntime.dylib"
 run report-threading SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=report-threading
 if [[ -z "$ONLY" || "$ONLY" == report-threading ]]; then
   limit 20 python3 report_threading_conformance.py "$OUT" | tee "$OUT/report-threading-conformance.json"
+  limit 20 python3 check_image_identity.py --capture "$OUT" | tee "$OUT/image-identity-checks.json"
   if [[ "$ONLY" == report-threading ]]; then exit; fi
 fi
 run genuine SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=12 SIMCTL_CHILD_PROBE_WAIT_FOR_TEARDOWN=1
