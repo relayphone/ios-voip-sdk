@@ -1,0 +1,305 @@
+{
+  "classification": "measured host controls and Apple SDK typechecks only; native LCK execution, simulator journeys and device behavior pending",
+  "sourceCommit": "847b2cef186602fc978f8c9194e2f64310a62afd",
+  "sourceDirty": true,
+  "sourceSHA256": {
+    ".github/workflows/sdk-m0.yml": "1c35e6654d0fe7d2210bc070e0d3dfd035a5e8b90b90a3352912b3771dd92e57",
+    "Expo/apple/IosVoipSDKModule.swift": "91a9eb135b571958bdcf870a605a5e6e3cc57e7d0e714907f6793f58161be1de",
+    "Sources/Engine/Resources/ios-27.0.json": "a5c2931c42886773ab3070b521e46dfb9dcbacf6761e8759139ed9d5c59d5d4d",
+    "Sources/Engine/RuntimeEngine.swift": "5e6d7cea29c84f89c46b705b20e7e55796269ed3afb6304b61c059c8ecdccc49",
+    "Sources/Interposition/CKInterposition.m": "8aa3433a646790a24576edc1f65fd84c4b062733ec30136629f699c19a7ab999",
+    "Sources/Interposition/CKLoader.m": "7f32927a00a6e863c2c26a1166e2846e36c7264cb122d17dba5469e5b06bb26f",
+    "Sources/Interposition/CKPushDelivery.m": "38e13a510427835c3ba884324654cd885424b2d9d913bd50706a65d01d69ad5e",
+    "Sources/Interposition/CKRuntimeSeam.h": "47e32a8965a0dd1dfaef592eaec456841c2cbc80ea87059a8adba2c4ae1421cd",
+    "Sources/Interposition/include/CKRuntimeBridge.h": "565e067907f10700a4f7083b8b0dd4b25ae263b832f479ae3689c61435ba8bf3",
+    "Sources/VoIPPlatform/VSCompletionOnce.h": "3a6dd1d6e1c727339a3ea965b4ea2fc199304801472657103584aa817754ec5b",
+    "Sources/VoIPPlatform/VSCompletionOnce.m": "653eb974fe96d17c6c1579b59376d3986cced8a9d7f8c00458296add7821508d",
+    "Sources/VoIPPlatform/VSProcessSDKOwnership.m": "ea509d0194e3746d104093b2256bd0ee4fd3f9c7ec73c96bbeb42e16ac2d8e90",
+    "Sources/VoIPPlatform/VSProviderCreationMonitor.m": "42d19821e78257e8952cc87a610253d786fa15a028baac2a218f637d5db43eba",
+    "Sources/VoIPPlatform/VSProviderMonitorInternal.h": "e360be44ea0657e62153f39ca4be0ed78b4369d086d299242a1fd3cb88c6ffc5",
+    "Sources/VoIPPlatform/VSProviderMonitorInternal.m": "0c9a9dcfe37777460272a9fdaa34e9d96e571b8bdc31cde6a44343d2d08b3658",
+    "Sources/VoIPPlatform/VSPushDelivery.m": "10fd4879c48205523efd7a3f9052518dada6c86024267e7957d13b76e62fc1c9",
+    "Sources/VoIPPlatform/VSPushRegistryOwner.m": "02d45bb525b3cebde887846de514a03fdffbb113a419821eae3bf41dece7bfc6",
+    "Sources/VoIPPlatform/include/VSProcessSDKOwnership.h": "3a206de32bf2787e6a3ae81938a91914e885625041c3caca308c39a374816ec2",
+    "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h": "31cb18b30406602c323ebb3e58ffafcaff0106a2f3ab4e378fb252a2a0c00ccd",
+    "Sources/VoIPPlatform/include/VSPushDelivery.h": "3769eecacf2f8e64d1e3a9c9bc749db26d65be7186c4f176dd7cb1a277ec83ff",
+    "Sources/VoIPPlatform/include/VSPushRegistryOwner.h": "b6db5cf75a4bcda293e06f27a0af05b0607b290e87f30848a8cdc8c989db5f2e",
+    "Sources/VoIPPlatform/include/VoIPPlatform.h": "eec80d9f49e9db87b2d42e7bdf5593bb270b053a5c3d233fc17eafe5ea771cfa",
+    "Sources/VoIPSDK/ConversationClient.swift": "f480c5d86741ba0e1e34b499c87d9148c7d5874452c7ab8c59c221e3194b2e5c",
+    "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
+    "Sources/VoIPSDK/ConversationModels.swift": "f482b84dc091851a740c5c645242fef4aec9e99e518296df81a277d62cf84e9b",
+    "Sources/VoIPSDK/ConversationRecord.swift": "90f94cf5baf4085478ed0e2437d520e9066367b9bb23615ff88d5fade3288d64",
+    "Sources/VoIPSDK/IncomingIntake.swift": "2bfd4ced0cf779fb49c4645239ae5e566d0e5fdbe420ab3fce9fbb9f954d3fa8",
+    "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+    "Sources/VoIPSDK/IncomingReportTransport.swift": "518a522f3dccc9f96f221f700a77c9c732b20b00dfb01dd094579c5b43a08cbf",
+    "Sources/VoIPSDK/ProcessSDKOwnership.swift": "4fe8a3493c3b6756beab43a9f67a28933f4f80c8860e8bb4619ffd2248e95a8b",
+    "Sources/VoIPSDK/PushService.swift": "f7a731d8c91ee2a4572dd37d2d96a36c258187fc4a38ba74143c7c9b07690e4c",
+    "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+    "Sources/VoIPSDK/SimulatorSupport.swift": "45b5b31b3943603d7a20ebbed2b2a76feddbb7b6fb83fc1c532def2cbc059563",
+    "Sources/VoIPSDK/VoIPApplication.swift": "ad924a4478d1a35f35267d826a5ad6c28837a8918e4fb848325f139ea0d09552",
+    "Tests/VoIPSDK/CoreTests.swift": "66a5cbc01b3294244e4e0025a5841e573640cf1d9985028727d7823191e233f5",
+    "Tests/VoIPSDK/IncomingCachePlatform.swift": "e20fd9a4461c5950cd089a1baef3adf23d76b5de58b864d721cb6d801c447977",
+    "Tests/VoIPSDK/IncomingCacheTests.swift": "89809f587d85b55c6a094b86324533989eb282f4c5711aa448716ae239d464ea",
+    "Tests/VoIPSDK/IncomingDeliveryHost.h": "982a04bf40c52d15413632ad81b3c9d23c09dbd82eb28452852b78fec94d4a22",
+    "Tests/VoIPSDK/IncomingDeliveryHost.m.in": "a820190571f0f42abb4fed1b4b009fc085360a3f6fb0b551ffd2b26f3355608f",
+    "Tests/VoIPSDK/IncomingIntakeTests.swift": "3e3a433ae29cbd18de58d6a78eac0944bf35a56c7f62f4b7c970fe1b0a271e70",
+    "Tests/VoIPSDK/ProjectionTests.swift": "8e3275adc5aba6a7d5a2f8abd7713610347b9511d4420c3d448eac371cbb4548",
+    "Tests/VoIPSDK/PushTests.swift": "8d4bb3d1e65fedec7b6eff2ca6df50c058738b20493da22ee41faec0911a8301",
+    "Tests/VoIPSDK/ReportContractTests.swift": "d3112575947f97ddfbd77aa9f0007b30a566c95ad2933a4586cd5a1b11bd827b",
+    "Tests/VoIPSDK/run.sh": "38a9019b72f97a1d4a2751b9e19ee5d65d1b04f085374816dac5d3488401f407",
+    "Tests/VoIPSDK/run_incoming_cache.py": "17ee238620419b006f5f168a3994e6b46e901c83213a71759c4c1e13bb9c8238",
+    "Tests/VoIPSDK/run_incoming_delivery.py": "259b2cf4c021924adf4590fe4a15b06a6e6ee6285f557e4e05b4b637abb75dc5",
+    "Tests/VoIPSDK/run_incoming_intake.sh": "0fb403c73f7736a43ecd25e415330398c47eed883f432e73a6eb62b3cb226b05",
+    "Tests/VoIPSDK/run_projection.sh": "b0656f1fea04e24fb761be7cbebe37f0e3b24f03dce3725d73951863da271019",
+    "Tests/VoIPSDK/run_push.sh": "a82a0e37bb5726f022fe1189aea9116b333f76086fcbc514b3009a56cce8ee28",
+    "Tests/VoIPSDK/run_push_context.py": "f440bd468b9e5f46e3309ac8eb19823dbe5cf52ba6dddcd303cf3491b92f97c6",
+    "Tests/VoIPSDK/run_report_contracts.sh": "f1b7180308acc4f54bb4e17620109dfbdcd34786a3c1a50c1e657111ecb83352",
+    "discovery/check_sdk_m1_contracts.py": "d1eb5d83277112d55f2f2ca928e1cf942dfa6d78b36edb2805daa3fb9ec05599",
+    "discovery/probe/sdk_m1_contracts.swift": "bc94eb05f843185b7a928623a4fd09458bec26c4e35ce355e2ba8914f34cb729",
+    "discovery/sdk_m1_contracts_conformance.py": "8d9bc3775d18fb923b99f14a6833a647740f114828f6073e5e19de7cfdcb4193"
+  },
+  "commands": [
+    {
+      "name": "report-contracts",
+      "argv": [
+        "bash",
+        "Tests/VoIPSDK/run_report_contracts.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 5.0342,
+      "stdoutSHA256": "2d51ba76c670322a50953dad9526a671fceec7cb27b00f1d71d61fc3bf539df0",
+      "stderrSHA256": "1b6d31da6b2b0d551a7cc73fe220f86c4615cd23860cf84e343ce6de2479a4cc"
+    },
+    {
+      "name": "incoming-cache",
+      "argv": [
+        "python3",
+        "Tests/VoIPSDK/run_incoming_cache.py",
+        "--out",
+        "discovery/out/a8-local-end-host/cache-final"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 4.7231,
+      "stdoutSHA256": "00029c2fe37d06d92a4699dd0c31aea8361faf8d5065225e87438b478e0b18f6",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "incoming-delivery",
+      "argv": [
+        "python3",
+        "Tests/VoIPSDK/run_incoming_delivery.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 7.9671,
+      "stdoutSHA256": "d675ac6c1c097dd8092c6471fadf882a860f70b25ae4951a0ef79d0a36808d19",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "incoming-intake",
+      "argv": [
+        "bash",
+        "Tests/VoIPSDK/run_incoming_intake.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.254,
+      "stdoutSHA256": "fa4a4b7d987c9b605324dac12f9dff39caedc131af09769ffa53226bef12b21b",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "core",
+      "argv": [
+        "bash",
+        "Tests/VoIPSDK/run.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 4.2542,
+      "stdoutSHA256": "8f2f46f9cbbdee0027b970b636ffce0a87558e537924d16bd4604a6ca2e852d8",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "push",
+      "argv": [
+        "bash",
+        "Tests/VoIPSDK/run_push.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 3.4198,
+      "stdoutSHA256": "14373b0b637343bec1149a022f1c809ed97ff3142da6a4c10eeeacfba49652a0",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "projection",
+      "argv": [
+        "bash",
+        "Tests/VoIPSDK/run_projection.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.6953,
+      "stdoutSHA256": "1d7bd9daeed53a866094887bdbef3b8dec7b0fcdda9dae03bb435f8e5d71e2f7",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "native-contract-gate",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.6142,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "fe5987485cb0de84390f69391347ab040f1aeaf73f6f52c095e4a3085d75ceb1"
+    },
+    {
+      "name": "expo-bridge",
+      "argv": [
+        "python3",
+        "discovery/check_expo_bridge.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.8772,
+      "stdoutSHA256": "97660a17aac001a85fb24f05831da810cd36c25806d84888886d7b039de85f59",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "shell",
+      "argv": [
+        "bash",
+        "-n",
+        "Tests/VoIPSDK/run_report_contracts.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.0105,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "diff",
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.019,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "device-typecheck",
+      "argv": [
+        "xcrun",
+        "--sdk",
+        "iphoneos",
+        "swiftc",
+        "-typecheck",
+        "-swift-version",
+        "6",
+        "-parse-as-library",
+        "-target",
+        "arm64-apple-ios17.4",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS27.1.sdk",
+        "-import-objc-header",
+        "<checkout>/discovery/out/a8-local-end-host/SDKHeaders.h",
+        "Sources/VoIPSDK/ConversationClient.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationRecord.swift",
+        "Sources/VoIPSDK/IncomingIntake.swift",
+        "Sources/VoIPSDK/IncomingInvitationGate.swift",
+        "Sources/VoIPSDK/IncomingReportTransport.swift",
+        "Sources/VoIPSDK/ProcessSDKOwnership.swift",
+        "Sources/VoIPSDK/PushService.swift",
+        "Sources/VoIPSDK/PushWire.swift",
+        "Sources/VoIPSDK/SimulatorSupport.swift",
+        "Sources/VoIPSDK/VoIPApplication.swift"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.8136,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "simulator-debug-typecheck-complete",
+      "argv": [
+        "xcrun",
+        "--sdk",
+        "iphonesimulator",
+        "swiftc",
+        "-typecheck",
+        "-swift-version",
+        "6",
+        "-parse-as-library",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk",
+        "-import-objc-header",
+        "<checkout>/discovery/out/a8-local-end-host/SDKHeaders.h",
+        "Sources/VoIPSDK/ConversationClient.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationRecord.swift",
+        "Sources/VoIPSDK/IncomingIntake.swift",
+        "Sources/VoIPSDK/IncomingInvitationGate.swift",
+        "Sources/VoIPSDK/IncomingReportTransport.swift",
+        "Sources/VoIPSDK/ProcessSDKOwnership.swift",
+        "Sources/VoIPSDK/PushService.swift",
+        "Sources/VoIPSDK/PushWire.swift",
+        "Sources/VoIPSDK/SimulatorSupport.swift",
+        "Sources/VoIPSDK/VoIPApplication.swift",
+        "-D",
+        "DEBUG",
+        "discovery/probe/sdk_m1_contracts.swift",
+        "Sources/Engine/RuntimeEngine.swift"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 3.9297,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "success": true,
+  "sourceUnchangedDuringChecks": true,
+  "supersededChecks": [
+    {
+      "name": "simulator-debug-typecheck",
+      "argv": [
+        "xcrun",
+        "--sdk",
+        "iphonesimulator",
+        "swiftc",
+        "-typecheck",
+        "-swift-version",
+        "6",
+        "-parse-as-library",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.1.sdk",
+        "-import-objc-header",
+        "<checkout>/discovery/out/a8-local-end-host/SDKHeaders.h",
+        "Sources/VoIPSDK/ConversationClient.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationRecord.swift",
+        "Sources/VoIPSDK/IncomingIntake.swift",
+        "Sources/VoIPSDK/IncomingInvitationGate.swift",
+        "Sources/VoIPSDK/IncomingReportTransport.swift",
+        "Sources/VoIPSDK/ProcessSDKOwnership.swift",
+        "Sources/VoIPSDK/PushService.swift",
+        "Sources/VoIPSDK/PushWire.swift",
+        "Sources/VoIPSDK/SimulatorSupport.swift",
+        "Sources/VoIPSDK/VoIPApplication.swift",
+        "-D",
+        "DEBUG",
+        "discovery/probe/sdk_m1_contracts.swift"
+      ],
+      "exitCode": 1,
+      "elapsedSeconds": 1.4832,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "de42c57b2b4ae8299cff0b01a149afea0743ac87e3f0e7cea236f5d47f0f8490",
+      "classification": "incomplete typecheck command omitted Engine sources that define RuntimeBootstrap; not a production-source failure"
+    }
+  ]
+}

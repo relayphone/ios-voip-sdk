@@ -1,0 +1,3 @@
+2026-10-22 14:35:15.506 ReportContractTests[27185:993115] VoIPSDK: retained local termination request failed.
+ReportContractTests/ReportContractTests.swift:132: Precondition failed: Required duplicate report cannot retry the same failed local terminal request
+Tests/VoIPSDK/run_report_contracts.sh: line 32: 27185 Trace/BPT trap: 5       perl -e 'alarm shift; exec @ARGV' 20 "$TEST_OUTPUT/ReportContractTests"

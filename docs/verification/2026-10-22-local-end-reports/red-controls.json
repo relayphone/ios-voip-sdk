@@ -1,0 +1,32 @@
+{
+  "success": true,
+  "meaning": "both deliberately failing controls were observed before their fixes; this does not relabel those runs green",
+  "controls": [
+    {
+      "name": "duplicate",
+      "exitCode": 133,
+      "classification": "measured whole-client host regression with modeled framework timing, not LCK execution",
+      "failure": "required same-object duplicate retried a rejected retained local End",
+      "sourceSHA256": {
+        "Sources/VoIPSDK/ConversationClient.swift": "e852c6c97efb9d1932ce81b08c1aebb8708f7eb7342155e7aaf3ee2903b66e79",
+        "Sources/VoIPSDK/IncomingIntake.swift": "2bfd4ced0cf779fb49c4645239ae5e566d0e5fdbe420ab3fce9fbb9f954d3fa8",
+        "Tests/VoIPSDK/ReportContractTests.swift": "26c2c44ecf2f094d9d8b2ee0983110ac4f43b31977d6c79226592a9b80f6e20e",
+        "Tests/VoIPSDK/IncomingCachePlatform.swift": "8c049b609a3608dc8edf905f901e07eb8d70204a1fd644f0143d154b87b302f9",
+        "Tests/VoIPSDK/run_report_contracts.sh": "f1b7180308acc4f54bb4e17620109dfbdcd34786a3c1a50c1e657111ecb83352"
+      },
+      "stderrSHA256": "8d55bd270b63a7629b02720924cd49f6fbea9500950aab4d044c8cd724068598"
+    },
+    {
+      "name": "accepted",
+      "exitCode": 133,
+      "classification": "measured whole-client host regression with modeled framework timing, not LCK execution",
+      "failure": "accepted End changed local revision while actual modeled object remained non-left; required duplicate resubmitted End",
+      "sourceSHA256": {
+        "Sources/VoIPSDK/ConversationClient.swift": "5ec55747c9676ce8dd36807852e1d700e79548c7edc5048e60a4377296257330",
+        "Tests/VoIPSDK/ReportContractTests.swift": "d3112575947f97ddfbd77aa9f0007b30a566c95ad2933a4586cd5a1b11bd827b",
+        "Tests/VoIPSDK/IncomingCachePlatform.swift": "e20fd9a4461c5950cd089a1baef3adf23d76b5de58b864d721cb6d801c447977"
+      },
+      "stderrSHA256": "ab4138e7e0522b939e0b914e001a4cbed1085eb7b9530ed36c29d92d59988bfd"
+    }
+  ]
+}

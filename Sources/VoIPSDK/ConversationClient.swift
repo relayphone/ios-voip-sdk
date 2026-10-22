@@ -184,6 +184,11 @@ public final class ConversationClient: NSObject {
     }; refresh(); throw error }
   }
   private var outgoingMetadata: [UUID: [String: JSONValue]] = [:]
+  private struct IncomingLocalEndClaim {
+    let generation: UUID
+    weak var object: Conversation?
+  }
+  private var incomingLocalEndClaims: [UUID: IncomingLocalEndClaim] = [:]
   public func metadata(for id: UUID) -> [String: JSONValue]? {
     if let incoming = incomingIntake.projection(id) { return incoming.payload.metadata }
     return records[id]?.payload?.metadata ?? outgoingMetadata[id]
@@ -262,7 +267,13 @@ public final class ConversationClient: NSObject {
     return accepted
   }
 
-  public func reportConversation(_ id: UUID, report: ConversationReport) throws {
+  /// Local termination submits the ordinary End action. The await confirms request
+  /// acceptance; the handler and terminal snapshot may arrive afterward.
+  public func reportConversation(_ id: UUID, report: ConversationReport) async throws {
+    if case .ended(.local) = report {
+      try await endConversation(id)
+      return
+    }
     guard let conversation = manager.conversations.first(where: { $0.uuid == id }), records[id] != nil else {
       throw ConversationClientError.unknownConversation
     }
@@ -282,12 +293,13 @@ public final class ConversationClient: NSObject {
       if let video { records[id]?.video = video }
       if let record = records[id] { manager.reportConversationEvent(.conversationUpdated(update(for: record)), for: conversation) }
     case .ended(let reason):
+      guard let nativeReason = endedReason(reason) else { throw ConversationClientError.unsupported }
       records[id]?.ended = .init(at: now, reason: reason)
       if let incoming = incomingIntake.projection(id) {
         incomingIntake.terminate(id, generation: incoming.generation, reason: reason,
           now: now, requiresReport: false)
       }
-      manager.reportConversationEvent(.conversationEnded(now, endedReason(reason)), for: conversation)
+      manager.reportConversationEvent(.conversationEnded(now, nativeReason), for: conversation)
     }
     refresh()
   }
@@ -340,9 +352,10 @@ public final class ConversationClient: NSObject {
     if record.video { capabilities.insert(.video) }
     return .init(members: Set(record.members.map(handle)), capabilities: capabilities)
   }
-  private func endedReason(_ reason: ConversationEndedReason) -> Conversation.EndedReason {
+  private func endedReason(_ reason: ConversationEndedReason) -> Conversation.EndedReason? {
     switch reason {
-    case .local, .remoteEnded: .remoteEnded
+    case .local: nil
+    case .remoteEnded: .remoteEnded
     case .failed: .failed
     case .unanswered: .unanswered
     case .answeredElsewhere: .joinedElsewhere
@@ -387,7 +400,22 @@ public final class ConversationClient: NSObject {
       if let incoming {
         if conversation.state != .left,
            let terminal = incomingIntake.takePendingTermination(conversation.uuid, generation: incoming.generation) {
-          manager.reportConversationEvent(.conversationEnded(terminal.ended.at, endedReason(terminal.ended.reason)), for: conversation)
+          if let reason = endedReason(terminal.ended.reason) {
+            manager.reportConversationEvent(.conversationEnded(terminal.ended.at, reason), for: conversation)
+          } else {
+            let claimed = incomingLocalEndClaims[conversation.uuid]
+            guard claimed?.generation != incoming.generation || claimed?.object !== conversation else { continue }
+            incomingLocalEndClaims[conversation.uuid] = IncomingLocalEndClaim(generation: incoming.generation,
+              object: conversation)
+            Task { @MainActor [weak self] in
+              guard let self, let latest = self.incomingIntake.projection(conversation.uuid),
+                    latest.generation == incoming.generation, latest.terminal?.revision == terminal.revision,
+                    self.manager.conversations.first(where: { $0.uuid == conversation.uuid }) === conversation,
+                    conversation.state != .left else { return }
+              do { try await self.perform(.end(conversation.uuid)) }
+              catch { NSLog("VoIPSDK: retained local termination request failed.") }
+            }
+          }
         }
       }
     }
@@ -433,6 +461,7 @@ public final class ConversationClient: NSObject {
     refreshSuspensionDepth -= 1
     guard terminalProjection.object(for: id) == nil else { return }
     records.removeValue(forKey: id); outgoingMetadata.removeValue(forKey: id)
+    incomingLocalEndClaims.removeValue(forKey: id)
     incomingIntake.removeConversation(id)
   }
   private func publishTerminal(_ conversation: Conversation) {
