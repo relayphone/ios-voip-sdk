@@ -12,6 +12,14 @@
     },
     "plugins": [
       [
+        "ios-voip-sdk",
+        {
+          "unhandledAction": "fail",
+          "simulatorSupport": true,
+          "includesCallsInRecents": false
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "ios": {

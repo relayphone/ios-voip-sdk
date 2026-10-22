@@ -51,7 +51,7 @@ private final class CallState: @unchecked Sendable {
 }
 
 private enum ActionOrigin: String { case application, system, muteEcho, postEndUnmute }
-private final class PendingAction: @unchecked Sendable {
+private final class RuntimePendingAction: @unchecked Sendable {
   let action: CXAction
   let provider: ProviderRegistration
   let transaction: CXTransaction
@@ -131,7 +131,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private var selected: ProviderRegistration?
   private let controllerQueues = NSMapTable<CXCallController, DispatchQueue>.weakToStrongObjects()
   private var calls: [UUID: CallState] = [:]
-  private var pendingActions: [UUID: PendingAction] = [:]
+  private var pendingActions: [UUID: RuntimePendingAction] = [:]
   private let deadlines = NSMapTable<CXAction, NSDate>.weakToStrongObjects()
   private var observers: [ObjectIdentifier: ObserverRegistration] = [:]
   private var audioActive = false
@@ -418,7 +418,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         (action is CXStartCallAction ? profile.startDeadlineSeconds : profile.ordinaryDeadlineSeconds)
       deadlines.setObject(Date(timeIntervalSinceNow: deadline) as NSDate, forKey: action)
       if let answer = action as? CXAnswerCallAction { calls[answer.callUUID]?.ringing = false }
-      let pending = PendingAction(action, provider, delivered, origin,
+      let pending = RuntimePendingAction(action, provider, delivered, origin,
         call: (action as? CXCallAction).flatMap { calls[$0.callUUID] },
         groupTarget: (action as? CXSetGroupCallAction)?.callUUIDToGroupWith.flatMap { calls[$0] })
       pendingActions[action.uuid] = pending
@@ -431,7 +431,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     }
     callback(provider) { CKSimPerform($0, provider.provider, delivered) }
   }
-  private func expire(_ item: PendingAction) {
+  private func expire(_ item: RuntimePendingAction) {
     if let answer = item.action as? CXAnswerCallAction {
       item.expired = true
       if let call = item.call, calls[answer.callUUID] === call {

@@ -79,7 +79,7 @@ final class ConversationBridge {
     guard !destroyed, self.generation == generation else { throw CancellationError() }
     try context.signal.throwIfCancelled()
     let snapshot = try BridgeJSON.dictionary(conversation)
-    try await withCheckedThrowingContinuation { continuation in
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
       // Install cancellation before publishing the action. A settled/cancelled signal
       // can call its observer synchronously, so do not insert a stale continuation.
       var cancellation: ConversationCancellationSignal.Reason?
