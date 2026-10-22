@@ -59,6 +59,12 @@ The API is specified in [RFC 0001](https://github.com/ziahamza/expo-callkit-tele
 
 ## 4. Work plan (in order)
 
+> **Steering, October 22:** read [`progress/2026-10-22-claude-steering.md`](progress/2026-10-22-claude-steering.md) first. Its §A must be applied to M2/M3 (#17, #19) before they merge.
+> - §A covers: the PushKit report starting inside the callback, the deadline margin, the echo filter, audio work off main and at call time, system-originated acceptance, and keeping simulator code out of device builds.
+> - §B decides the bridge (Expo Modules 2.0) and the threading contract.
+> - §C reserves extension points for the product direction.
+
+
 ### A. Fix the runtime from the v0.1 review
 
 [`docs/progress/2026-10-21-claude-v01-review.md`](progress/2026-10-21-claude-v01-review.md) has the details.
