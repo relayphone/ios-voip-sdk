@@ -177,6 +177,7 @@ async function run(): Promise<void> {
         sample.activatedCount === 0,
       initial,
     );
+    await journey().awaitMediaControl();
     await journey().simulatePush(
       JSON.stringify({ incomingCall: payload() }),
       true,

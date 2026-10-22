@@ -240,6 +240,37 @@ private final class ExampleJourney {
     return try await coldTask.value
   }
 
+  #if targetEnvironment(simulator)
+  /// A sandbox-local runner receipt gates the first push. This only observes
+  /// control completion; it never changes runtime faults or audio authorization.
+  func awaitMediaControl() async throws {
+    let runID = JourneyTrace.runID
+    let mode = JourneyTrace.m2Case
+    let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
+    guard ["livekit", "stale-audio"].contains(mode), !runID.isEmpty, runID.count <= 128,
+          runID.unicodeScalars.allSatisfy({ allowed.contains($0) }) else { throw JourneyError.wrongMode }
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("sdk-m2-control-" + runID + ".json")
+    let deadline = ContinuousClock.now.advanced(by: .seconds(15))
+    while ContinuousClock.now < deadline {
+      if FileManager.default.fileExists(atPath: url.path) {
+        let bytes = try Data(contentsOf: url)
+        guard let value = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              Set(value.keys) == ["runID", "case", "pid", "staleAudio"],
+              value["runID"] as? String == runID, value["case"] as? String == mode,
+              let pid = value["pid"] as? NSNumber, CFGetTypeID(pid) != CFBooleanGetTypeID(),
+              pid.doubleValue == Double(getpid()),
+              let stale = value["staleAudio"] as? NSNumber, CFGetTypeID(stale) == CFBooleanGetTypeID(),
+              stale.boolValue == (mode == "stale-audio") else { throw JourneyError.invalidMediaControl }
+        try FileManager.default.removeItem(at: url)
+        JourneyTrace.record("m2.controlReady", ["staleAudio": stale.boolValue])
+        return
+      }
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    throw JourneyError.mediaControlDeadline
+  }
+  #endif
+
   #if targetEnvironment(simulator) && canImport(livekit_react_native_webrtc)
   /// Public getters on the existing RN module's worker. No factory/session
   /// activation, availability writes, or private runtime lookup is performed.
@@ -254,7 +285,7 @@ private final class ExampleJourney {
         guard let device = module.audioDeviceModule else { reply.resume(throwing: JourneyError.mediaUnavailable); return }
         let availability = device.engineAvailability
         reply.resume(returning: MediaEngineSample(deviceID: String(describing: ObjectIdentifier(device)),
-          inputAvailable: availability.isInputAvailable, outputAvailable: availability.isOutputAvailable,
+          inputAvailable: availability.isInputAvailable.boolValue, outputAvailable: availability.isOutputAvailable.boolValue,
           isEngineRunning: device.isEngineRunning))
       }
     }
@@ -318,7 +349,7 @@ private final class ExampleJourney {
 
 private enum JourneyError: Error {
   case alreadyCalling, noIncomingConversation, noPendingAction, notRinging, stateDeadline
-  case wrongMode, simulatorOnly, invalidPayload, invalidTrace, mediaUnavailable
+  case wrongMode, simulatorOnly, invalidPayload, invalidTrace, mediaUnavailable, invalidMediaControl, mediaControlDeadline
 }
 
 /// Excluded from the distributed SDK. Synthetic push injection is simulator-only.
@@ -346,6 +377,12 @@ public final class VoIPExampleJourneyModule: Module {
       }
     }
     #if targetEnvironment(simulator)
+    AsyncFunction("awaitMediaControl") { (promise: Promise) in
+      Task { @MainActor in
+        do { try await ExampleJourney.shared.awaitMediaControl(); promise.resolve() }
+        catch { promise.reject("journey", String(reflecting: type(of: error))) }
+      }
+    }
     AsyncFunction("mediaSnapshot") { (label: String, promise: Promise) in
       let context = self.appContext
       Task { @MainActor in

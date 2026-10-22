@@ -26,6 +26,9 @@ SOURCE_PATHS = ('Sources', 'Expo', 'ExpoMedia', 'Integrations', 'example', 'Pack
                 'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
                 'discovery/check_expo_bridge.py', 'discovery/check_expo_plugin.cjs',
                 'discovery/check_expo_media.py', 'discovery/check_expo_media_config.py',
+                'discovery/sdk_m2_conformance.py', 'discovery/check_sdk_m2.py',
+                'discovery/run_sdk_m2.py', 'discovery/build_sdk_m2.sh',
+                '.github/workflows/sdk-m2.yml', 'Tools/cksim-notify.c',
                 'discovery/check_platform_shims.py', 'discovery/device_oracles.py',
                 'discovery/check_lck_provider_policy.py',
                 'docs/research/callkit-simulator-probe/livecommunicationkit')
