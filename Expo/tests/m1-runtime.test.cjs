@@ -32,6 +32,19 @@ execFileSync(
 const { ConversationRuntime } = require(
   path.join(output, 'internal/client.js'),
 );
+const { isConversationCommandError } = require(path.join(output, 'types.js'));
+
+test('native command rejection guard retains only declared codes', () => {
+  for (const code of ['invalid_arguments', 'unknown_conversation', 'unsupported', 'conversation', 'duplicate_sdk_linkage']) {
+    const error = Object.assign(new Error('native rejection'), { code });
+    assert.equal(isConversationCommandError(error), true);
+  }
+  for (const value of [null, undefined, 'conversation', new Error('plain'),
+    { code: 'conversation', message: 'plain object' },
+    Object.assign(new Error('foreign'), { code: 'foreign' })]) {
+    assert.equal(isConversationCommandError(value), false);
+  }
+});
 
 function deferred() {
   let resolve;

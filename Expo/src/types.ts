@@ -1,6 +1,32 @@
 export type JSONValue =
   null | boolean | number | string | JSONValue[] | { [key: string]: JSONValue };
 
+/** Rejection codes emitted by native conversation commands. */
+export type ConversationErrorCode =
+  | 'invalid_arguments'
+  | 'unknown_conversation'
+  | 'unsupported'
+  | 'conversation'
+  | 'duplicate_sdk_linkage';
+
+export interface ConversationCommandError extends Error {
+  readonly code: ConversationErrorCode;
+}
+
+/** Narrow a caught native rejection without assuming every thrown value is ours. */
+export function isConversationCommandError(
+  value: unknown,
+): value is ConversationCommandError {
+  if (!(value instanceof Error) || !('code' in value)) return false;
+  return (
+    value.code === 'invalid_arguments' ||
+    value.code === 'unknown_conversation' ||
+    value.code === 'unsupported' ||
+    value.code === 'duplicate_sdk_linkage' ||
+    value.code === 'conversation'
+  );
+}
+
 export interface Participant {
   id: string;
   displayName?: string;

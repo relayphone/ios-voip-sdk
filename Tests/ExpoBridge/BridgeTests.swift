@@ -33,13 +33,14 @@ private final class Events {
 private final class Invocation {
   enum Outcome { case accepted, cancelled, rejected, encodingFailed, unexpected }
   private(set) var outcome: Outcome?
+  private(set) var rejection: HandlerRejection?
   private(set) var completions = 0
   init(_ action: @escaping ConversationHandler.Action, snapshot: ConversationSnapshot,
        context: ConversationActionContext) {
     Task { @MainActor in
       do { try await action(snapshot, context); outcome = .accepted }
       catch is CancellationError { outcome = .cancelled }
-      catch BridgeError.handlerRejected { outcome = .rejected }
+      catch let error as HandlerRejection { rejection = error; outcome = .rejected }
       catch is EncodingError { outcome = .encodingFailed }
       catch { outcome = .unexpected }
       completions += 1
@@ -146,9 +147,12 @@ struct BridgeTests {
                  "Handler context must retain origin and precise deadline.")
       try expect(body["held"] as? Bool == true && body["muted"] as? Bool == false && body["digits"] as? String == "12#",
                  "Optional action inputs must survive the relay.")
-      bridge.settle(actionContext.actionID, generation: 0, success: kind != .end)
+      let rejection = HandlerRejection(["name": "CallDeclined", "message": "The callee declined this invitation."])
+      bridge.settle(actionContext.actionID, generation: 0, success: kind != .end, rejection: rejection)
       try await eventually("Settled handler continuation must complete.") { invocation.outcome != nil }
       try expect(invocation.outcome == (kind == .end ? .rejected : .accepted), "JS rejection must fail the native action.")
+      try expect(invocation.rejection == (kind == .end ? rejection : nil),
+                 "Only a rejected continuation must retain the exact JavaScript name and message.")
       bridge.settle(actionContext.actionID, generation: 0, success: true)
       actionContext.signal.cancel(.deadline)
       try expect(invocation.completions == 1, "Late settlement or cancellation must never resume twice.")

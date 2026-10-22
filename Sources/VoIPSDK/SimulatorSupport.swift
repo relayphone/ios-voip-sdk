@@ -51,7 +51,7 @@ public enum SimulatorSupport {
   }
 
   #if os(iOS) && targetEnvironment(simulator)
-  static var currentPushIdentifier: String? { RuntimeBootstrap.currentPushIdentifier }
+  nonisolated static var currentPushIdentifier: String? { RuntimeBootstrap.currentPushIdentifier }
 
   static func associateIncomingReport(_ id: UUID) {
     guard let pushID = SimulatorPushContext.pushIdentifier else { return }

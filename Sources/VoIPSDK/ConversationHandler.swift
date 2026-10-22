@@ -119,6 +119,13 @@ final class ConversationActionCoordinator {
     entries.values.contains { $0.conversationID == id && $0.action.kind == kind }
   }
 
+  func hasPendingAppMute(for id: UUID, value: Bool) -> Bool {
+    entries.values.contains {
+      $0.conversationID == id && $0.action.kind == .mute && $0.action.origin == .app &&
+      $0.action.muted == value && $0.action.deadline > now() && $0.isPending()
+    }
+  }
+
   func pending(for id: UUID) -> PendingAction? {
     entries.values.filter { $0.conversationID == id }.map(\.action).sorted {
       if $0.deadline != $1.deadline { return $0.deadline < $1.deadline }

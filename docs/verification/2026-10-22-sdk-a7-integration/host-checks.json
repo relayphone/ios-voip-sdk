@@ -1,0 +1,654 @@
+{
+  "schemaVersion": 1,
+  "qualification": "measured host/compiler integration preparation; no native call acceptance",
+  "createdAtUTC": "2026-10-22T10:42:51.535107+00:00",
+  "baseCommit": "01f7bf76b4fc57df5d494cbee3c2ce32e198f991",
+  "incomingCommit": "f65d171d0eaeab5720a98c62cbc20d8dceb8c762",
+  "sourceInputs": {
+    ".github/workflows/sdk-m0.yml": "e45548a86e5caadb78a91bb24a94d492efb6afd78a1043cde68cbffc8ebfd38e",
+    ".github/workflows/sdk-m2.yml": "46a6dc5ce03349405594d480ed696e691f2b06a3e7be3c25d28fa01f92734bd2",
+    "Expo/M1-API.md": "22cb255d286366100ae07c95f58fd3e60fa2df0d789f5b7d5f8545b52af7c37d",
+    "Expo/M1-plugin.md": "59fafcbddb3e9ece4475e95a849ad42fbf18b78ce97bafb934aef3e1d47793f4",
+    "Expo/M2-AUDIO.md": "ffa8580d5c843d6e08d1be898b2006b6c7d5ec6ff799594ff82812bbde6c6283",
+    "Expo/README.md": "e24bd46edf3e6f59f4f26ee85ffa3cbb968b770480b6c1ff22eb7ed7f94619fb",
+    "Expo/apple/ConversationBridge.swift": "d3dab0e7c4225f62171cf0507f458f7a9c774c906441a7b6d3209ed713c60d5e",
+    "Expo/apple/IosVoipSDK.h": "3f58b6c3fc2395bed11c25a5fe86859781efae7d50297ed4761999f1d57b9eb9",
+    "Expo/apple/IosVoipSDKModule.swift": "aef47f3c94b74861eec2053a26517a1b9dca684c33fb55df10a8c12070cb4a1d",
+    "Expo/apple/VoIPAppDelegateSubscriber.swift": "d01bac39fa13cebeca767c16fad91695f2d30211c29510a4234625f0e4f8f9d8",
+    "Expo/plugin/withVoIPSDK.cjs": "43986a3f6d2b603eb9c5868b4f48f8522e6e227fa6be0c17b87d7bdcd7ec1c98",
+    "Expo/src/hooks.ts": "ec8a5bad06fd13edccf7b5d3fef0895109ba5fff482e46ea69217ecc0986306b",
+    "Expo/src/index.ts": "dacc091ea2a8f8a05ff7fad65a8800def82252ccd9fd5f1d4d1781a16fbeaddb",
+    "Expo/src/internal/bootstrap.ts": "2bbdbfa840d6fb475f2cb385acea26ace671a812a02ee8902ebff6f4c79b4bc4",
+    "Expo/src/internal/client.ts": "aa4668be96793ca7078ab930d7d8b9017ae31cba45cef9a6468ba0543fc1b9b7",
+    "Expo/src/internal/handler.ts": "0822968e954d0f9d7a9a4875b7da08b5d897519df2bb391b6ab6b4ad83d85bab",
+    "Expo/src/internal/native.ts": "21b7c0711f9b0193d4e0584e5897ae99476575e1040952cfef6e7a8ac453c5e8",
+    "Expo/src/internal/protocol.ts": "ba9ce9355e3c045a1c1c29eac69128ce2390b337b4e301078638ff2bb2d4da6e",
+    "Expo/src/internal/store.ts": "6624ea42d8ee6fa5b70ac7cd97128a131857c17d196d317315d31cdef79fec53",
+    "Expo/src/types.ts": "2417613bcf116b888114937838158f235e1018f9da8bc14f38ab6949fa202d5b",
+    "Expo/tests/m1-runtime.test.cjs": "b25817da41b3a0cd667613ecba16d96317be7abf2dbd373da9975a48d9d7808d",
+    "ExpoMedia/LiveKit/LiveKitMediaBinding.m": "96ee0569479fd5166f99b2fbf81996e31a184333344d70d4dcacf4b049b42fe4",
+    "ExpoMedia/LiveKit/MediaSelection.swift": "8ea2cdb8c3e6745bbf3ae69cbb409168f352ad74cad06b0f1f0b619cf738daaa",
+    "ExpoMedia/None/MediaSelection.swift": "ec7c1cd405adffdb25fa7415b07b658463297079a69c2d7f700dcfbe28622b4a",
+    "ExpoMedia/Shared/ExpoMediaSupport.swift": "bcbdad2edef73f335942c4680d9f5386ea2976880fecce5d89821938ad5e39d3",
+    "ExpoMedia/Shared/QueuedMediaAdapter.swift": "b5a89087e8b31b556effacf215bd2c6b87012c6d2faac9e92e9328ada51efe0e",
+    "ExpoMedia/Shared/VSMediaBinding.h": "fd8c9e2130a7a59ec4919453e2b77a445707dad8d94c66ed2a9a31e61ef13fe0",
+    "ExpoMedia/WebRTC/MediaSelection.swift": "9b39adfdae5b8f94c66307aebbcda085e0e3189df788ba4c719be18f97a5615f",
+    "ExpoMedia/WebRTC/WebRTCAudioContract.h": "73b3bb1bbfa13b1de2deb6b7f976c5f1865b4838b377cded2cff6d7f7cfa688e",
+    "ExpoMedia/WebRTC/WebRTCMediaBinding.m": "e1afe8a79d4dfc00974541437054d3210dcd4714478cd6b06a46294828c584e2",
+    "Integrations/LiveKit/LiveKitMediaAdapter.swift": "072b3fce77b513cba42869d83ff4c11985113231e23488a5c7fd36b8b03b0c7b",
+    "Integrations/LiveKit/README.md": "e7141f89af0438ea1c3df9897e0dc1a438e426eb789da36902032c356123756f",
+    "IosVoipSDK.podspec": "506b301d684880f3ca2fd2c3a9a61b459d43ed8d349ddaacd546fb45f91327a9",
+    "Package.swift": "0636ccdae9f3e966ec419625b704023c9d805f544feceefc2e2e9d4a2dee94a2",
+    "Sources/Engine/Resources/ios-27.0.json": "f34933eb5ad2eaa7db2b19efba87e94345bbb8b77c4312f697010cde108a88d8",
+    "Sources/Engine/RuntimeEngine.swift": "43bf497d927f7934a7c1c58a67d3b69d4544d0f9d361a4d5b2c7abd51e649503",
+    "Sources/Interposition/CKInterposition.m": "0f3594abb4130d984a1509ebe75d8e46328f144e3d1b79beed6c061cad4889a1",
+    "Sources/Interposition/CKLoader.m": "7f32927a00a6e863c2c26a1166e2846e36c7264cb122d17dba5469e5b06bb26f",
+    "Sources/Interposition/CKPushDelivery.m": "38e13a510427835c3ba884324654cd885424b2d9d913bd50706a65d01d69ad5e",
+    "Sources/Interposition/CKRuntimeSeam.h": "47e32a8965a0dd1dfaef592eaec456841c2cbc80ea87059a8adba2c4ae1421cd",
+    "Sources/Interposition/include/CKRuntimeBridge.h": "dd8dc66208f9551aa873254f818d8e7df44b77fe11a53438aa0fb9cc5776c658",
+    "Sources/VoIPPlatform/VSAudioSessionLifecycleObserver.m": "b7e65ad7c4d207dbd2a71793e7158bacdebe556e9605c413c68d043b11a2de89",
+    "Sources/VoIPPlatform/VSAudioSessionQueue.m": "585379d32703da325bb9016bbf37a088e472c1d6c47b861552e09e912e1f7411",
+    "Sources/VoIPPlatform/VSCompletionOnce.h": "3a6dd1d6e1c727339a3ea965b4ea2fc199304801472657103584aa817754ec5b",
+    "Sources/VoIPPlatform/VSCompletionOnce.m": "653eb974fe96d17c6c1579b59376d3986cced8a9d7f8c00458296add7821508d",
+    "Sources/VoIPPlatform/VSProcessSDKOwnership.m": "ea509d0194e3746d104093b2256bd0ee4fd3f9c7ec73c96bbeb42e16ac2d8e90",
+    "Sources/VoIPPlatform/VSProviderCreationMonitor.m": "3b62b6debc627760f9f6fa7c60cbd913993f6ca4f77d3c8cac54cec85da35361",
+    "Sources/VoIPPlatform/VSProviderMonitorInternal.h": "00cba399f782e5382b06b360fb9941724a0c3aefce337a1226d00cfb537724c2",
+    "Sources/VoIPPlatform/VSProviderMonitorInternal.m": "bf45e3c7a3868b76709fad8e1cc5eb4b9d7f7bffb6c7582fd5750f25035be3e0",
+    "Sources/VoIPPlatform/VSPushDelivery.m": "10fd4879c48205523efd7a3f9052518dada6c86024267e7957d13b76e62fc1c9",
+    "Sources/VoIPPlatform/VSPushRegistryOwner.m": "02d45bb525b3cebde887846de514a03fdffbb113a419821eae3bf41dece7bfc6",
+    "Sources/VoIPPlatform/include/VSAudioSessionLifecycleObserver.h": "f0d41e58192701b1e9de119801874e5bd0e9bb3ba6bdcde0c9c9f105197ca347",
+    "Sources/VoIPPlatform/include/VSAudioSessionQueue.h": "80074ec15fc99ca8fe029489106f439793939ae8c6b438edd214d5d69e380366",
+    "Sources/VoIPPlatform/include/VSProcessSDKOwnership.h": "3a206de32bf2787e6a3ae81938a91914e885625041c3caca308c39a374816ec2",
+    "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h": "cfa3de64cc0824e9a692ac2071dbbefdcd855b9847e14d1eecf18de4e6519234",
+    "Sources/VoIPPlatform/include/VSPushDelivery.h": "3769eecacf2f8e64d1e3a9c9bc749db26d65be7186c4f176dd7cb1a277ec83ff",
+    "Sources/VoIPPlatform/include/VSPushRegistryOwner.h": "b6db5cf75a4bcda293e06f27a0af05b0607b290e87f30848a8cdc8c989db5f2e",
+    "Sources/VoIPPlatform/include/VoIPPlatform.h": "aa1f1d0b6d6dea02867c0fe65882ace623bef9888d81bf038d13f16b817ff30a",
+    "Sources/VoIPSDK/AudioActivation.swift": "e93e9bcd2772655f62f01d397d2d70ee60eb618c99c4bd2bd1cc74b3a7968e48",
+    "Sources/VoIPSDK/AudioRoutes.swift": "2e171719efad2a810cc10acd142fbb06c451fc6d80e637e875450a75fed4e313",
+    "Sources/VoIPSDK/AudioSessionConfiguration.swift": "96072d7d376ffe205c435a6b6e87af0b9b17ace95e2ff5df6459bed56c9dc8f6",
+    "Sources/VoIPSDK/AudioSessionQueue.swift": "cca9fde6227f51d20ee2c6aa29db6a9183a66587194c54367f82a6647f353391",
+    "Sources/VoIPSDK/ConversationClient.swift": "999c0de828dd9dbfad800cfd296a6f3d12b61ca74df3e907c7a86e39077ccea2",
+    "Sources/VoIPSDK/ConversationHandler.swift": "29a9c62bc3a75d4a36ad8ae6d2bd798b6002e7aefbd98259b58395090c046ea1",
+    "Sources/VoIPSDK/ConversationModels.swift": "c93eba6e6573da78de06f88002ca309de719f3813b72b3359d2ec576a12e40d7",
+    "Sources/VoIPSDK/ConversationRecord.swift": "93208e379e1732e2bd48e74c8e256a2f06e83c5729e3d168e5bdf48191009029",
+    "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+    "Sources/VoIPSDK/MediaAdapter.swift": "59f80f074dda3659600f585a0c8cbcb10432f171e1316eb61206015a8615b559",
+    "Sources/VoIPSDK/ProcessSDKOwnership.swift": "4fe8a3493c3b6756beab43a9f67a28933f4f80c8860e8bb4619ffd2248e95a8b",
+    "Sources/VoIPSDK/PushService.swift": "82a0b47c0a184efbf3d69101fc820aba158da50e020e49304b4be3fd67cd7f09",
+    "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+    "Sources/VoIPSDK/SimulatorSupport.swift": "e9416d0133288ddbce90a7cc7275565c1844394a617afa7122674c2ede57e37a",
+    "Sources/VoIPSDK/SystemAudioSession.swift": "56780d0ba44f0353296500f24cd33533a806c6e91e68334ae9c8504270e56bab",
+    "Sources/VoIPSDK/VoIPApplication.swift": "ca6660cef674a4c8a43c4f4a6c8bd467ffbb3e055cbd32b81b7845f374e5433a",
+    "Tests/AudioCore/AudioSessionFacade.swift": "fa952c2166e31d004c3b3eaf4df64c771b1bab4bcee338924a97d329f0a0a0b2",
+    "Tests/AudioCore/AudioTests.swift": "ba058408fca3d51ca4b66a4d577c3570607f414ace7426361b9c7f2cb15cfb8b",
+    "Tests/AudioCore/LiveKitAdapterTests.swift": "5fea7847a1e9e397ee3149a358ad148e9ac9a1c65492d592855ee2a319f49706",
+    "Tests/AudioCore/LiveKitFacade.swift": "1c2e7d45d9b42c1eefd5d37190182047b1602669a4a5389995670137d98b5127",
+    "Tests/AudioCore/run.sh": "e84206f9e3710708230ffe179b3a65e53fff01abec843cba968a8a9c97a9f051",
+    "Tests/AudioCore/run_livekit.sh": "3f04684d7fa9248826834bd853d9ba58069f95627338ec45855438f429a32a49",
+    "Tests/AudioLifecycle/Controls.m": "0c63f7d83797445289fc0d58921d5b8d16d19cb2d34e63b745bda03808944a53",
+    "Tests/AudioLifecycle/Facades/AVFAudio/AVFAudio.h": "9c5baef4844d8b9baa20879d4cb73115fa356ad599bec4e66181b2595163b5c9",
+    "Tests/AudioLifecycle/README.md": "79e16dfad074d6c46aa8a206fc5cb9be042d76618c05d076bdb7d3f8884a011c",
+    "Tests/AudioLifecycle/check_audio_lifecycle.py": "7140cad23720f236bb2fbcd1d26bc9f9ba43975ad8f1217f671150f0242973ac",
+    "Tests/AudioSessionQueue/QueueTests.swift": "6b467dda19f30e504f40e1fb3a2d57d873af4bb832dc0e821a08296970344d34",
+    "Tests/AudioSessionQueue/check_audio_compilation.py": "f66d09b1df5e1f44f7f51b2868c49f7f2e45f5ae0dd9faebb6f8027d0a670054",
+    "Tests/AudioSessionQueue/run.sh": "a036108c39d0ede4355872d99a7f3fe2c618e1cac2b5a6d7ae4058da73ee003a",
+    "Tests/ExpoBridge/BridgeTests.swift": "ee90ac005bfd5fef793b7b2d0187c55ab86d618ba9e8bb63f1934c1dec8f1fff",
+    "Tests/ExpoBridge/OwnerDoubles.swift": "5b011c8f99a9ac1a025d8c34cd561f383c72cf324bc2f1d5efc2166bee710920",
+    "Tests/ExpoBridge/README.md": "6228082c14cdb0c9d73f5becff6913b72b215e81ca2e38dbecade273273cb93a",
+    "Tests/ExpoBridge/host-receipt.json": "7fdf92ef920dc213dc2c4194e847f8b9ab97e7e01ec06a88799986911115c79f",
+    "Tests/ExpoMedia/Facades/AVFoundation/AVFoundation.h": "add484d5db07da187411bdf375712504bf6113e97f408a56634d830fe982108e",
+    "Tests/ExpoMedia/Facades/React/RCTBridgeModule.h": "457d6321b8f979428bdeaaf5dd332e2ec1a59294ae2388368d574393b2995fdb",
+    "Tests/ExpoMedia/Facades/React/RCTInitializing.h": "8f175b50a625e37dbea3440c1c4c357fb92027ef26904752b82b78cf0a0302ca",
+    "Tests/ExpoMedia/Facades/React/RCTInvalidating.h": "7385f502f3e67578cc83aabb64baaa9ae36579f2c74d09bd27c3f34c0a3b3b07",
+    "Tests/ExpoMedia/Facades/livekit_react_native_webrtc/LiveKitTestContract.h": "f4904fe86a35060698cc80297ea22f8838950d995a545af96f4320c0ba3ab70a",
+    "Tests/ExpoMedia/Facades/livekit_react_native_webrtc/module.modulemap": "f524bf65ce1262acba6ed35cc9f641222ceae423acff6db6a7d5d7e150980d57",
+    "Tests/ExpoMedia/HostSupport.h": "6bcfb246c01d2401285207b9385d80854217ef84382fd1e3b74252704a0dd65f",
+    "Tests/ExpoMedia/HostSupport.m": "7ef44ce2de85227806abfaf0695f19bfa3e8633079cdb638d3d71ecb003c5c2f",
+    "Tests/ExpoMedia/LiveKitControls.m": "f0a240c77b39133a05ccbe4adfb48fe1310d97bd130755a75974627f375378bc",
+    "Tests/ExpoMedia/README.md": "775ca0777c23cf7ffd31a74643bc2b708f5609ee32d3d8dd272cc32734dd9d7f",
+    "Tests/ExpoMedia/WebRTCAbsentControls.m": "b44ac1a9f110f12ad806f256003f7ee4c387b2235486a0947ef2ecd63a62eaf0",
+    "Tests/ExpoMedia/WebRTCControls.m": "192dfbf2fc745b29e8767c74f51fa5ff46bbd1b07692b7946038914e566e9cc2",
+    "Tests/ProbeTraceWriter/Tests.swift": "91c0ca1b2ca9497063bdd5fc5c55f36812f4931681421ca7cadc0107ecdece70",
+    "Tests/ProbeTraceWriter/run.sh": "7e829708bafb0e00bdc2c8a0e6113c3828fc00897496978eed83a0204dd3bda7",
+    "Tests/VoIPSDK/ClientContractTests.swift": "2aab966fb101033905bd3c45e54ae35b4ddc62f9e72524f6e36cc435b0ba6761",
+    "Tests/VoIPSDK/CoreTests.swift": "c7580921251a5e04f6563d44e8835cf50f09bf1552bc1151a37aaab3be99fb86",
+    "Tests/VoIPSDK/DeadlineTests.swift": "57dd084c653f2777a1c7ccba236b68559ab4091a09154bac5bbd5718086dbc28",
+    "Tests/VoIPSDK/MuteEchoPlatform.swift": "7e3634eaf936b8ff5d8cca9cb760a524708c9b3f31b63f0914895234ec10bb9b",
+    "Tests/VoIPSDK/MuteEchoTests.swift": "49aa6e4e6b10aa0471d4c2dfa1aed0d103fc7e997cf1739d5b71bae54e65565e",
+    "Tests/VoIPSDK/PreparationTests.swift": "844c75c3598cb58a168a8d28a8dca85187b55de4079c76c171c4324042266206",
+    "Tests/VoIPSDK/ProjectionTests.swift": "aa6ffa167b44f7a5530862d6fc3f4dc58624f19faa2ad432b382bc810b188de7",
+    "Tests/VoIPSDK/PushTests.swift": "8d4bb3d1e65fedec7b6eff2ca6df50c058738b20493da22ee41faec0911a8301",
+    "Tests/VoIPSDK/run.sh": "4d7f8736fb7093b4187a47e17e3b266b372b40587daf3f6ed7d6f37ef004fd84",
+    "Tests/VoIPSDK/run_deadlines.sh": "5ab45fc64b153b6e6433b077f0fe7482d1ed1d6d60797ab328d49a25a8459ed5",
+    "Tests/VoIPSDK/run_mute_echo.sh": "c783e853d601254f3ec979092eec948c817911f16bd2a4e2a30583bb2039d9b1",
+    "Tests/VoIPSDK/run_projection.sh": "b0656f1fea04e24fb761be7cbebe37f0e3b24f03dce3725d73951863da271019",
+    "Tests/VoIPSDK/run_push.sh": "a82a0e37bb5726f022fe1189aea9116b333f76086fcbc514b3009a56cce8ee28",
+    "Tests/VoIPSDK/run_push_context.py": "f440bd468b9e5f46e3309ac8eb19823dbe5cf52ba6dddcd303cf3491b92f97c6",
+    "Tools/cksim-notify.c": "e4768bd4bab217ad8810e08d7873e7843a0e206816c96bf45d694a61b9b0ebc5",
+    "VERSION": "80447316529fc62014fbaa047fb67c51ac30e32830cda370405349d8d66d196c",
+    "app.plugin.js": "efa664ddfa03bc02fa4775b55466a7f9e8cd628b5f36d3490e4ff8f9bbaabbe3",
+    "discovery/build_push_report_entry.sh": "c150c0fc0df18b25a3d7838fe6b12589b409fefed230422ac63f0e5c62f95999",
+    "discovery/build_sdk_bootstrap.sh": "eb5928bca33823a78c07a064c588f875e6edf00f1e1537877236a2d3dccf9f5b",
+    "discovery/build_sdk_device_probe.sh": "f5c14b8ce0bcd2c4203d5a5a160db35194425316de821b9eb1ff10babfffbc0a",
+    "discovery/build_sdk_device_release.py": "a31c890809cf48f7431fe688950eed2a6eae05d46e39addc9037ce4b1b8dbdf8",
+    "discovery/build_sdk_m1_contracts.sh": "bdeb83c4cb9b1ae3ca4187263c197191e9ce0f5596f67ffe54a7bd1181a00534",
+    "discovery/build_sdk_m2.sh": "8f1f8c60ae79d8737120da26f530aeaf03b63c15fd31d8f9a4d38bcb079a0438",
+    "discovery/check_device_release.py": "a0635afb76e0660671c015ed6f1545882e0acf56ce18d647349443f357d879e5",
+    "discovery/check_expo_bridge.py": "ac3fec0a6a2254a1b5da27e6b528cab4c8eb33156230ca9edc2096f69ba4d379",
+    "discovery/check_expo_media.py": "b1d822409d9d85cb9029424012863c5dd4f05142c5f0c72028b4316b374424bc",
+    "discovery/check_expo_media_config.py": "0404b42f108b3bd14423432fa17e214f68f26e96a5e97a1da89d9b10a3061361",
+    "discovery/check_expo_plugin.cjs": "5bd3ae1627a4b1d8045d84576f43342926483270c3dc24c75a889b327a8cbf75",
+    "discovery/check_lck_provider_policy.py": "395f16c1a7a3e862e6340ff8b1bf81c0a804151deb2363eba61519997bc0ae87",
+    "discovery/check_platform_shims.py": "32607341e6ad0f7083b597f871432e1bcee0e14abf53fc85a9e494e4c7d8f1d0",
+    "discovery/check_push_delivery.py": "acf16b895dc08125e959540315f58218641a386320e53bf079fc0c9e4b9d36d1",
+    "discovery/check_push_report_entry.py": "0ba4f574b00df522c8541ce9fcf811a34cff82c6374a2abc04e759051ad345ca",
+    "discovery/check_sdk_m0.py": "44f0c2a54fc6fe807b2819c14e9e4a2ffd8e48051d9da1e4670f9406cae90e30",
+    "discovery/check_sdk_m1.py": "b46ae9684fe7c51f141f8ba11788520d37c5bede43663e51172f3d4869b0a294",
+    "discovery/check_sdk_m1_contracts.py": "43abce48ebe152ad890eda3ac8b40ca32c51e6d65d21792e0725b7c708154b65",
+    "discovery/check_sdk_m2.py": "896cce14429318e3ce8a42206d126f0fcd980bb0c2bb013f9f4a6d13e44d21a3",
+    "discovery/check_sdk_ownership.py": "83665cd81e6925ac968009aa2ae2242c57ac4570114ed9ab99c795776bf3d1d1",
+    "discovery/device_oracles.py": "a8ab789c0ac0da96fc73c8e124ae8ff694413e57f845c3bd453a8aff01e4db5d",
+    "discovery/device_release_exclusion.py": "c2d86cc8c205412b527a0844feba3bee32415feed695b58ba937bbd82c711466",
+    "discovery/probe/push_report_entry.swift": "18d49f6ddfe5e3c9e87486ea6da6d294222a3c82246971805c1ca6e716f80fac",
+    "discovery/probe/sdk_bootstrap.swift": "7b443df5cf103852f1cd8560eff982f8f7ded1ddd4d05cef01b59936d77a3ec9",
+    "discovery/probe/sdk_m1_contracts.swift": "ef65a809f110fbf4b3bdc4c9af9ffce146b724eb29cf4de37d6d7f5e59c1f92a",
+    "discovery/run_scenario.py": "cb0508a61f049443d8e7aa809c1fffa6a7a76d40a155c5bedfa66ca89bef4926",
+    "discovery/run_sdk_m0.sh": "72871a6f164fe17a7d48a1ee1f321eff699dde4305b1a5549f507e34275aa833",
+    "discovery/run_sdk_m2.py": "64063428ae319b409e454cf014aa47c7f8f2ff4a828ef65ec3ad69bfd2b254be",
+    "discovery/sdk_bootstrap_conformance.py": "8c0cf540a21dd763abf6b640ec6148809938abd4f20fc83b9311abb7e7e21025",
+    "discovery/sdk_m0_conformance.py": "b54c8619da07ef26b3777256c924f552a73d0bd13be715e6c4bc9bdf918fffac",
+    "discovery/sdk_m1_conformance.py": "5e83b26aee4d0d744e632c7db0800d4fad75674d11ed8b19591c35f4bcb03222",
+    "discovery/sdk_m1_contracts_conformance.py": "82260c0ca95f75ef0473c8d020c1548b3da4631463e78afb05e04e01675af257",
+    "discovery/sdk_m2_conformance.py": "0c604f368f5e3c7fe8c6c995d7f0b6a060447ae4b4c01af2b9038f0ca5688411",
+    "discovery/summarize.py": "4b6af629a82da5093bcd88b2774a23e237b91441064037bac0b41ad71d19ac92",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-basic.jsonl": "9fd5e48b62a826af7e62388de87119ab431fe2019a7d40445cdd9b528dde4bf7",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-cx-after.jsonl": "96d6e968c2cba8e098ec18872882f7a480476dd90611d5ae4cb5dc2dde78692b",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-lck-after.jsonl": "7b29c543492904cd1121c047d3fce125c4b0a16f1adc76240c80d6c091a15c89",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-two-managers.jsonl": "23ab443e1fd8623140e95cc7d34157d5fd8aa7d13b6321f90e1812825f65a042",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/README.md": "0f4fddb221c8fa1ca49e52724ba5eb8393714272db915384ececfc81667c417b",
+    "example/App.tsx": "a2906735bfd62996763012b2ab69a02b3be27ae77b034c5468dfde5ea25534ac",
+    "example/README.md": "2bd082d1e6107dabb2821062451d91eb177d1a6ae190831836011e82079147e6",
+    "example/acceptance.ts": "85372404553bca51fa1b794144688e3b11134bfced9290f603409a935cdb0506",
+    "example/app.config.js": "c6b1a19fe847233892e2a14274ff832dc3aad291f2bbbdcbea84f30b522a9bae",
+    "example/app.json": "f41d587d29b4411d572dcad4fac97c5102f11c2ce7bec147c0d9c8a5b6fc1fff",
+    "example/babel.config.js": "4b96981e76f4da97464e553a3af2c16fbb8e2da6d8a1983246087ed5a0e6afa8",
+    "example/index.ts": "9feb78c747e7c526cb3ab8f57210053654d966ba71aa24328088c3ebcc5ff76f",
+    "example/journey.ts": "1f67c9132eb4a1b6762a0026852db8fd33c2be624bc0666a63dd1abcd2da4551",
+    "example/media.ts": "04d0d26c80462fa5dcad11ef0ea5befd51c619f8972f2bddf2b6271f4337a3d3",
+    "example/metro.config.js": "79acebb79a7b7536bf54fa2196599c866e69031bd8945322f78fa31e02cab8ec",
+    "example/modules/journey/VoIPExampleJourney.podspec": "da04f6046afc1033dc3f31397423c818fe0c12a8d54f520cc5d2f477759fcdcd",
+    "example/modules/journey/apple/ProbeTraceWriter.swift": "6834855e885e985522028877caf5030340ea02fee6487ed82b4bf38068faae17",
+    "example/modules/journey/apple/VoIPExampleJourneyModule.swift": "779a78b21ca5a1e1808b90032bb3396354d1931d7c5bae05df70db33e5525825",
+    "example/modules/journey/expo-module.config.json": "e3d1c02c5928824981e9d85d1716950ef58db0ab9a91979ef4454930b5524220",
+    "example/modules/journey/package.json": "a79eda60f9e816aad92e9e1e6db7855ccf15edc50f8a2d5834b9dc3579d52ff7",
+    "example/package.json": "80bbfd4d57f6130be39699d6cb19cac3cb7d9263b918dd090278cb5168b8f365",
+    "example/react-native.config.js": "933b65748e2e3a626271e0c5204f8627c645067c765abe49a70c485b0cfd3913",
+    "example/tsconfig.json": "c2eef1ad2ff0e87ac2a54724aa0b3adf2b6c09822df90d8bacb67aa5acc677b6",
+    "expo-module.config.json": "f704466406f14d63312663136bb1c2cfe86f26996e7447fe2a1e4121bc8cd55c",
+    "package-lock.json": "b97b8ada7e078f5350e982024e3897a399d033243c53cc877408bc8a8a191097",
+    "package.json": "47213625ef7222bb22d97f237bf64adab7142e674ef00f3a610b6f29d69570b1",
+    "tsconfig.json": "bd4b85df5c37c240a9e017d386dae3aad3763cbde5614f3e48fe0723b3074acc"
+  },
+  "sourceInputsDigestSHA256": "505006831d0abc6957e107945325ae4b54c195867e2402b981c147e248a60f4e",
+  "review": {
+    "spec": "clear after typed duplicate-linkage code fix",
+    "standards": "clear after same narrow fix",
+    "freezeSHA256": "07948b7ec3cf64097d22c6592781a15637f1ff563021b79e2a1e7d0c22968682",
+    "freezePathMapDigestSHA256": "c7b6355f0852db045bb43aa15fb5ffb5094bb93dcfb43190adbf4cae9e780af1"
+  },
+  "checks": [
+    {
+      "name": "core",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 10.950107542000001,
+      "stdoutSHA256": "01142fc9211822f2f71c148f5fd06bb6dfbcb0aeee09e8e54427e791ec3a0764",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "m0-gate",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m0.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.1757192920000001,
+      "stdoutSHA256": "d66b3d99f66757cadfd8e1cdb633286dfc3036b4fb090e43c555f5eba06c1f3e",
+      "stderrSHA256": "0cd01d3233e42f4b042ffbeca1b8b2fb818573435783100bccabaab556592bdd"
+    },
+    {
+      "name": "m1-gate",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.933549874999999,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "a6c08c1a3919ead7785f94f8117dce749484cd880d1a8905ef962a825807c3c1"
+    },
+    {
+      "name": "m1-contract-gate",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.5870671250000008,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "0aa530444163c3e3169e31d6e0ce538cc8e423c0400250bc91f987bc74f8a5b0"
+    },
+    {
+      "name": "m2-gate",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m2.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.729065167,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "cc86f72a7c83bbcda2824b4743b410fd2d5da654cc5f5f8c8395bdd8bd19e14d"
+    },
+    {
+      "name": "expo-bridge",
+      "command": [
+        "python3",
+        "discovery/check_expo_bridge.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 3.3188991250000015,
+      "stdoutSHA256": "8370fdfc3ce81463873a8eb4dc956fdcecde85e9175f3238d4e8ec7482e13168",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "push-context",
+      "command": [
+        "python3",
+        "Tests/VoIPSDK/run_push_context.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.7785642089999989,
+      "stdoutSHA256": "ccefd5e4d08390e1d17d6ac60d1f45b2503c9c4c1e105037a716d45fe1f0a46e",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "audio-core",
+      "command": [
+        "bash",
+        "Tests/AudioCore/run.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.153075416,
+      "stdoutSHA256": "f26794158b91c2b2ba373a78e3c36162118258ecd1f957e3007664a08434f0d3",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "swift-livekit",
+      "command": [
+        "bash",
+        "Tests/AudioCore/run_livekit.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 3.5050321669999995,
+      "stdoutSHA256": "48be5769faf6cb2229c1f5c1ce9aed4136c9cf6fa7196be1c3b3b290116a959f",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "audio-lifecycle",
+      "command": [
+        "python3",
+        "Tests/AudioLifecycle/check_audio_lifecycle.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 3.8779408340000003,
+      "stdoutSHA256": "159579889a1d7a89266b337166ee4e588612f5ac8de495b5188e80f454ba7a81",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "audio-queue",
+      "command": [
+        "bash",
+        "Tests/AudioSessionQueue/run.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.7258461669999967,
+      "stdoutSHA256": "01ea06d04fa5ad65d414580b1c605efa591fadf2deba67d3b914994b4fa4c05f",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "expo-media",
+      "command": [
+        "python3",
+        "discovery/check_expo_media.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 3.0790022919999984,
+      "stdoutSHA256": "32c76f800875f70b31e24323950f3336a54a02fa10e211a0eb716f2e4ab8cd7d",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "compiler",
+      "exitCode": 0,
+      "outputSHA256": "546442e9e7dba03041ed11468b52ae328274432048a865a04ed6aa5e4dd2912b",
+      "classification": "actual Debug iOS device/simulator/watchOS compiler and Expo wrapper checks",
+      "checks": [
+        {
+          "label": "iphoneos-VSAudioSessionQueue",
+          "exitCode": 0
+        },
+        {
+          "label": "iphoneos-VSAudioSessionLifecycleObserver",
+          "exitCode": 0
+        },
+        {
+          "label": "iphoneos-core",
+          "exitCode": 0
+        },
+        {
+          "label": "iphoneos-expo-queued-wrapper",
+          "exitCode": 0
+        },
+        {
+          "label": "iphonesimulator-VSAudioSessionQueue",
+          "exitCode": 0
+        },
+        {
+          "label": "iphonesimulator-VSAudioSessionLifecycleObserver",
+          "exitCode": 0
+        },
+        {
+          "label": "iphonesimulator-core",
+          "exitCode": 0
+        },
+        {
+          "label": "watchsimulator-VSAudioSessionQueue",
+          "exitCode": 0
+        },
+        {
+          "label": "watchsimulator-VSAudioSessionLifecycleObserver",
+          "exitCode": 0
+        },
+        {
+          "label": "watchsimulator-core",
+          "exitCode": 0
+        }
+      ]
+    },
+    {
+      "name": "release-and-contract-compiler",
+      "exitCode": 0,
+      "outputSHA256": "7b0c4a43f947ede08948005e1de4217d25b2a290d9fd81632d01a70d83bdb869",
+      "classification": "actual default Release device, explicit diagnostic Release device and native contract fixture compile only",
+      "checks": [
+        {
+          "label": "default-device",
+          "exitCode": 0
+        },
+        {
+          "label": "diagnostics-device",
+          "exitCode": 0
+        },
+        {
+          "label": "native-contract-compile",
+          "exitCode": 0
+        }
+      ]
+    },
+    {
+      "name": "ownership",
+      "exitCode": 0,
+      "outputSHA256": "e97461cdabea45930b8a5dad9b9e524e315e24026568f547b6ad26a1e83b26f6",
+      "classification": "two real optimized host modules/dylibs; actual Application, selection, finishLaunch and emit; LCK/PushKit factories, media adapter and provider monitor are explicit facades",
+      "groups": [
+        "package-first-duplicate-refused-before-second-manager",
+        "pod-first-duplicate-refused-before-second-manager",
+        "same-objc-helper-present-in-both-images",
+        "concurrent-claims-preserve-owner",
+        "static-linker-duplicate-is-already-loud",
+        "actual-forApplication-idempotent-adapter-config-and-policy-selection",
+        "omitted-repeat-adapter-preserves-initial-selection",
+        "conflicting-adapter-policy-client-and-application-configuration-refuse-before-second-manager",
+        "actual-finishLaunch-reentrant-start-sees-published-application-and-client",
+        "actual-finishLaunch-authorizes-false-exactly-once",
+        "actual-emit-produces-typed-process-ownership-event-without-conversation-id",
+        "coverage-diagnostic-does-not-emit-ownership-loss",
+        "actual-swiftpm-trait-guards-paired-c-and-swift-flags",
+        "actual-podspec-default-off-opt-in-on-and-invalid-configuration"
+      ]
+    },
+    {
+      "name": "platform",
+      "exitCode": 0,
+      "outputSHA256": "4b91c602bb811a2906a2211a90f67baae8ca4a7254aa6203f9d6819d24aae5aa",
+      "groups": [
+        "host:completion-race",
+        "host:plain",
+        "host:cluster",
+        "host:inherited-cluster",
+        "host:init-substitution",
+        "host:extra-owned",
+        "host:background",
+        "host:nil",
+        "host:unsupported",
+        "host:unrelated-allocation",
+        "host:cooperative",
+        "host:cooperative-background",
+        "host:cooperative-rejected",
+        "release-opt-in-host:completion-race",
+        "release-opt-in-host:plain",
+        "release-opt-in-host:cluster",
+        "release-opt-in-host:inherited-cluster",
+        "release-opt-in-host:init-substitution",
+        "release-opt-in-host:extra-owned",
+        "release-opt-in-host:background",
+        "release-opt-in-host:nil",
+        "release-opt-in-host:unsupported",
+        "release-opt-in-host:unrelated-allocation",
+        "release-opt-in-host:cooperative",
+        "release-opt-in-host:cooperative-background",
+        "release-opt-in-host:cooperative-rejected",
+        "compile:iphonesimulator:DEBUG=0:diagnostics=0",
+        "compile:iphonesimulator:DEBUG=1:diagnostics=0",
+        "compile:iphonesimulator:DEBUG=0:diagnostics=1",
+        "swift-import:iphonesimulator",
+        "release-opt-in-swift-import:iphonesimulator",
+        "compile:iphoneos:DEBUG=0:diagnostics=0",
+        "compile:iphoneos:DEBUG=1:diagnostics=0",
+        "compile:iphoneos:DEBUG=0:diagnostics=1",
+        "swift-import:iphoneos",
+        "release-opt-in-swift-import:iphoneos",
+        "compile:watchos:DEBUG=0:diagnostics=0",
+        "compile:watchos:DEBUG=1:diagnostics=0",
+        "compile:watchos:DEBUG=0:diagnostics=1",
+        "swift-import:watchos",
+        "release-opt-in-swift-import:watchos",
+        "release-symbols:VSProviderMonitorInternal.m",
+        "release-symbols:VSProviderCreationMonitor.m",
+        "observer-excluded:release-simulator",
+        "observer-excluded:debug-device",
+        "release-opt-in-observer-present:simulator"
+      ]
+    },
+    {
+      "name": "plugin",
+      "exitCode": 0,
+      "outputSHA256": "8c5819d0335df73d04932f0a4797d40bcb894bab4054e050c038ac97ef2e2514",
+      "groups": [
+        "apple-mods-only",
+        "defaults-and-existing-plist-preserved",
+        "provider-monitor-explicit-build-and-runtime-opt-in-with-debug-default",
+        "repeated-plugin-and-plist-idempotent",
+        "explicit-native-options-and-permissions",
+        "apns-development-default-preservation-and-explicit-selection",
+        "media-selection-native-plist-and-pod-properties-idempotent",
+        "media-background-audio-required-mode-and-existing-mode-preservation",
+        "invalid-and-unimplemented-options-rejected",
+        "malformed-existing-plist-rejected",
+        "resource-bytes-resolved-xcode-paths-and-real-resource-phase",
+        "resource-project-idempotence",
+        "owned-resource-update-without-duplicate-project-entries",
+        "unrelated-xcode-filename-collision-rejected",
+        "missing-resources-and-invalid-png-rejected",
+        "source-path-and-symlink-boundaries",
+        "destination-symlink-does-not-overwrite-unrelated-file",
+        "dangling-destination-symlink-does-not-create-external-file",
+        "atomic-resource-update-preserves-hardlink-referent",
+        "reserved-directory-symlink-does-not-overwrite-project-file",
+        "platform-directory-symlink-rejected-before-canonicalization",
+        "existing-reference-without-resource-phase-rejected",
+        "unsupported-project-group-layout-rejected",
+        "unsupported-root-group-base-layout-rejected",
+        "helper-child-name-collision-rejected"
+      ],
+      "provenance": "reused earlier A7/A4 host result; exact declared source hashes still match"
+    },
+    {
+      "name": "media-config",
+      "exitCode": 0,
+      "outputSHA256": "9266bb35b585486796d0dbec9d99d9b6b967e092f4b6376e74cada79e31f4e09",
+      "groups": [
+        "default-one-source-and-dependency-selection",
+        "webrtc-one-source-and-dependency-selection",
+        "livekit-one-source-and-dependency-selection",
+        "none-one-source-and-dependency-selection",
+        "invalid-pod-selection-fails"
+      ],
+      "provenance": "reused earlier A7/A4 host result; exact declared source hashes still match"
+    },
+    {
+      "name": "device-controls",
+      "exitCode": 0,
+      "outputSHA256": "50d2ad9e812962b6e8b0b6bad7ed1d2fcbdf682067a1cc5ec10b91d5b52976f6"
+    },
+    {
+      "name": "client-contract-controls",
+      "exitCode": 0,
+      "outputSHA256": "2f4796f5990185ea9768e2aca2b8ba700fe73a654b5d60c973c8f546dd1cc448",
+      "groups": [
+        {
+          "success": true,
+          "groups": 7,
+          "minimumPendingHandlerDelayMS": 40.812084,
+          "actualClientAndHandler": true,
+          "nativeDeviceTimingMeasured": false
+        },
+        {
+          "success": true,
+          "groups": 10,
+          "actualClientAndHandler": true,
+          "nativeFrameworkMeasured": false
+        }
+      ]
+    },
+    {
+      "name": "format-controls",
+      "exitCode": 0,
+      "outputSHA256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20"
+    },
+    {
+      "name": "workflow-controls",
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "typescript-build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.271714167,
+      "stdoutSHA256": "80b983d0d6ddf0414b031b45a740d401b2506d5d6997b5aeb1500085c065a2fa",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "typescript-typecheck",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.7933923330000001,
+      "stdoutSHA256": "01d5bb4c9623a561fbd8d3a9f2b49a7793b1c7711b89c6b5792062c65e6247b7",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "typescript-runtime",
+      "command": [
+        "node",
+        "--test",
+        "Expo/tests/m1-runtime.test.cjs"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.5933086249999997,
+      "stdoutSHA256": "86e7a579264f48eebcc0321e8135656f4606c0f24576a071f512ec95f1371009",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "typescript-format",
+      "command": [
+        "npm",
+        "exec",
+        "--",
+        "prettier",
+        "--check",
+        "Expo/src/types.ts"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.463052083,
+      "stdoutSHA256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "preparationFailures": [
+    {
+      "file": "ownership-signature-red.log",
+      "exitCode": 1,
+      "outputSHA256": "98de65772ed11aa902a39c69710df79757d0ab20269c7029cea585ed80a995fd",
+      "reason": "old host facade did not yet accept explicit adapter/policy"
+    },
+    {
+      "file": "plugin.json",
+      "exitCode": 1,
+      "outputSHA256": "c66eab265fdc7f09dc9922b2e99eb78f0ebde6c5835d3ae71c40fbf78d57a95b",
+      "reason": "old plugin expectation omitted the media property"
+    },
+    {
+      "file": "plugin-final.json",
+      "exitCode": 1,
+      "outputSHA256": "14503bf83fdeb79360fd04694a0e92ee4f881a283caf1f26d9bc3c822285024d",
+      "reason": "old media property expectation omitted diagnostics selection"
+    },
+    {
+      "file": "plugin-merged.json",
+      "exitCode": 1,
+      "outputSHA256": "acc2f7b56223d0dbb797c4f32d9a97ebbdd86bce9f0289272500070a5ddbd221",
+      "reason": "one remaining default property expectation omitted diagnostics selection"
+    },
+    {
+      "file": "device-controls.log",
+      "exitCode": 1,
+      "outputSHA256": "8e1dce4e8931dcd58d40a4a3dd7edce3f4eddca9950c99f201344e1dd86a94ab",
+      "reason": "A2 profile data required canonical embedded literal refresh"
+    },
+    {
+      "file": "duplicate-code-red.log",
+      "exitCode": 1,
+      "outputSHA256": "5740ece37373ebac21761199577b50627cd935b92963ec833f9a158ffd91b698",
+      "reason": "new positive duplicate-linkage error control reproduced the missing typed-code guard"
+    }
+  ],
+  "dependencyPreparation": "Existing exact-lock node_modules were temporarily linked for TypeScript checks; the owned symlink was removed and dependencies were not installed or changed.",
+  "limits": [
+    "No linked native application, simulator, physical device, APNs, PushKit registration or CI execution in this preparation.",
+    "LCK/PushKit/adapter/provider interception are explicit host facades in ownership proof; actual Application, factory, finishLaunch, emit and Objective-C process claim execute.",
+    "Whole-client contract controls use actual Client/Handler/media ordering with explicit platform/audio/session facades; they do not measure genuine LCK error wrapping, media flow or device timing.",
+    "Prior M2 native captures remain historical; current integrated native and pod-built Release iphoneos inspection are pending.",
+    "A0.1 report-entry blocked-main redesign is separate and remains pending; this receipt does not qualify the inherited push path."
+  ]
+}

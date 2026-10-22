@@ -45,13 +45,30 @@ struct TerminalConversationProjection<Object: AnyObject> {
   }
 }
 
-/// Each actual report waits for the preceding attempt with this UUID. The Task
-/// itself owns generation-checked cleanup, before any caller continuation resumes.
+/// A new UUID reports in the caller's Task. Only an actual predecessor with the
+/// same UUID suspends an attempt; continuations preserve each delivery's context.
 @MainActor
 final class SerializedIncomingReports {
   struct Context {
     let previouslyReported: Bool
     let isLatest: @MainActor () -> Bool
+  }
+  @MainActor
+  final class Pending {
+    private var settled: Result<UUID, Error>?
+    private var waiters: [CheckedContinuation<UUID, Error>] = []
+    var value: UUID {
+      get async throws {
+        if let settled { return try settled.get() }
+        return try await withCheckedThrowingContinuation { waiters.append($0) }
+      }
+    }
+    fileprivate func resolve(_ result: Result<UUID, Error>) {
+      guard settled == nil else { return }
+      settled = result
+      let pending = waiters; waiters.removeAll()
+      for waiter in pending { waiter.resume(with: result) }
+    }
   }
   private final class History {
     var reported: Bool
@@ -59,30 +76,32 @@ final class SerializedIncomingReports {
   }
   private struct Entry {
     let generation: UUID
-    let task: Task<UUID, Error>
+    let pending: Pending
     let history: History
   }
   private var entries: [UUID: Entry] = [:]
-  func pending(for id: UUID) -> Task<UUID, Error>? { entries[id]?.task }
-  func enqueue(id: UUID, previouslyReported: Bool,
-               operation: @escaping @MainActor (Context) async throws -> UUID) -> Task<UUID, Error> {
-    let predecessor = entries[id]?.task
-    let history = entries[id]?.history ?? History(previouslyReported)
-    let generation = UUID()
-    let task = Task { @MainActor [weak self] in
-      if let predecessor { _ = await predecessor.result }
-      let context = Context(previouslyReported: history.reported, isLatest: { [weak self] in
-        self?.entries[id]?.generation == generation
-      })
-      defer {
-        if self?.entries[id]?.generation == generation { self?.entries.removeValue(forKey: id) }
-      }
-      let result = try await operation(context)
+  func pending(for id: UUID) -> Pending? { entries[id]?.pending }
+  func perform(id: UUID, previouslyReported: Bool,
+               operation: @MainActor (Context) async throws -> UUID) async throws -> UUID {
+    let predecessor = entries[id]
+    let history = predecessor?.history ?? History(previouslyReported)
+    let generation = UUID(), pending = Pending()
+    entries[id] = Entry(generation: generation, pending: pending, history: history)
+    if let predecessor { _ = try? await predecessor.pending.value }
+    let context = Context(previouslyReported: history.reported, isLatest: { [weak self] in
+      self?.entries[id]?.generation == generation
+    })
+    let result: Result<UUID, Error>
+    do {
+      let id = try await operation(context)
       history.reported = true
-      return result
-    }
-    entries[id] = Entry(generation: generation, task: task, history: history)
-    return task
+      result = .success(id)
+    } catch { result = .failure(error) }
+    // Cleanup precedes resuming any caller or queued attempt. A successor keeps
+    // ownership, so an older failure cannot erase its metadata or association.
+    if entries[id]?.generation == generation { entries.removeValue(forKey: id) }
+    pending.resolve(result)
+    return try result.get()
   }
 }
 
@@ -366,7 +385,7 @@ public final class ConversationClient: NSObject {
       if let pending = incomingReports.pending(for: id) { return try await pending.value }
       return id
     }
-    // Register metadata before a report Task or predecessor can suspend. Every
+    // Register metadata before the platform call or a predecessor can suspend. Every
     // PushKit delivery retains its own actual report attempt, using the same UUID.
     let existing = records[id]
     let previouslyReported = !registration.isNew && (existing == nil || existing?.seenInManager == true)
@@ -374,7 +393,7 @@ public final class ConversationClient: NSObject {
     if record.payload == nil { record.payload = payload }
     records[id] = record
     recordRemovalGenerations.removeValue(forKey: id)
-    let report = incomingReports.enqueue(id: id, previouslyReported: previouslyReported) { context in
+    return try await incomingReports.perform(id: id, previouslyReported: previouslyReported) { context in
       let knownLiveConversation = self.manager.conversations.contains { $0.uuid == id }
       do {
         let update = self.update(for: self.records[id] ?? record)
@@ -397,11 +416,13 @@ public final class ConversationClient: NSObject {
       self.refresh()
       return id
     }
-    return try await report.value
   }
 
   @discardableResult
   public func receiveCallEnded(_ payload: CallEndedPayload) -> Bool {
+    // This entry is a remote transport notification. A local operation must use
+    // endConversation/report(.ended(.local)) so it awaits the system command.
+    guard payload.reason != .local else { return false }
     let now = Date(); endEventIDs = endEventIDs.filter { now.timeIntervalSince($0.value) <= 120 }
     guard endEventIDs[payload.eventId] == nil else { return false }
     endEventIDs[payload.eventId] = now
@@ -414,7 +435,11 @@ public final class ConversationClient: NSObject {
     return true
   }
 
-  public func reportConversation(_ id: UUID, report: ConversationReport) throws {
+  public func reportConversation(_ id: UUID, report: ConversationReport) async throws {
+    if case .ended(.local) = report {
+      try await endConversation(id)
+      return
+    }
     guard let conversation = manager.conversations.first(where: { $0.uuid == id }), records[id] != nil else {
       throw ConversationClientError.unknownConversation
     }
@@ -434,8 +459,9 @@ public final class ConversationClient: NSObject {
       if let video { records[id]?.video = video }
       if let record = records[id] { manager.reportConversationEvent(.conversationUpdated(update(for: record)), for: conversation) }
     case .ended(let reason):
+      guard let nativeReason = endedReason(reason) else { throw ConversationClientError.unsupported }
       records[id]?.ended = .init(at: now, reason: reason)
-      manager.reportConversationEvent(.conversationEnded(now, endedReason(reason)), for: conversation)
+      manager.reportConversationEvent(.conversationEnded(now, nativeReason), for: conversation)
     }
     refresh()
   }
@@ -491,9 +517,10 @@ public final class ConversationClient: NSObject {
     if record.video { capabilities.insert(.video) }
     return .init(members: Set(record.members.map(handle)), capabilities: capabilities)
   }
-  private func endedReason(_ reason: ConversationEndedReason) -> Conversation.EndedReason {
+  private func endedReason(_ reason: ConversationEndedReason) -> Conversation.EndedReason? {
     switch reason {
-    case .local, .remoteEnded: .remoteEnded
+    case .local: nil
+    case .remoteEnded: .remoteEnded
     case .failed: .failed
     case .unanswered: .unanswered
     case .answeredElsewhere: .joinedElsewhere
@@ -508,7 +535,7 @@ public final class ConversationClient: NSObject {
     switch conversation.state {
     case .idle: status = record.connecting ? .connecting : direction == .incoming ? .ringing : .dialing
     case .joining: status = .connecting
-    case .joined: status = .connected
+    case .joined: status = record.connectedAt == nil ? .connecting : .connected
     case .paused: status = .held
     case .leaving: status = .ending
     case .left: status = .ended
@@ -537,9 +564,10 @@ public final class ConversationClient: NSObject {
         invitations.markActive(conversation.uuid, serverCallId: payload.serverCallId, now: Date())
       }
       if records[conversation.uuid]?.endReportPending == true,
-         let ended = records[conversation.uuid]?.ended, conversation.state != .left {
+         let ended = records[conversation.uuid]?.ended, let nativeReason = endedReason(ended.reason),
+         conversation.state != .left {
         records[conversation.uuid]?.endReportPending = false
-        manager.reportConversationEvent(.conversationEnded(ended.at, endedReason(ended.reason)), for: conversation)
+        manager.reportConversationEvent(.conversationEnded(ended.at, nativeReason), for: conversation)
       }
     }
     for (id, record) in records where record.seenInManager && !ids.contains(id) {
@@ -668,7 +696,11 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
          let snapshot = snapshot(id), (snapshot.status == .held) == pause.isPaused { action.fulfill(); return }
     case let mute as MuteConversationAction:
       kind = .mute; muted = mute.isMuted
-      if snapshot(id) == nil || snapshot(id)?.status == .ended || (!coordinator.hasPendingAction(for: id, kind: .mute) && records[id]?.muted == mute.isMuted) { action.fulfill(); return }
+      let matchesPendingAppMute = origin == .system && coordinator.hasPendingAppMute(for: id, value: mute.isMuted)
+      if snapshot(id) == nil || snapshot(id)?.status == .ended || matchesPendingAppMute ||
+          (!coordinator.hasPendingAction(for: id, kind: .mute) && records[id]?.muted == mute.isMuted) {
+        action.fulfill(); return
+      }
     case let tone as PlayToneAction: kind = .tones; digits = tone.digits
     case is MergeConversationAction, is UnmergeConversationAction:
       // RFC has no merge handler; LCK owns topology. No transport/media work is fabricated.

@@ -3,8 +3,11 @@
 **Proposed API:** start native Swift integrations with `VoIPApplication.start(...)`
 (or its Info.plist convenience `startFromBundle`). Read `.client` from the returned
 application. The SDK has no public `ConversationClient.shared`, `configure`, or
-separate media-registration step. A repeated start requires the same configuration,
-selected adapter identity and audio policy. A conflicting start throws.
+separate media-registration step. Pass the adapter atomically with
+`VoIPApplication.start(mediaAdapter:audioPolicy:)`. A repeated start requires the
+same configuration and audio policy; an explicit adapter must be the same object.
+Omitting the adapter on a repeat preserves the selected instance. A conflicting
+start throws before constructing another manager or notifying another adapter.
 
 The SDK claims process ownership before constructing its LCK manager. A linked
 Swift package and Expo pod cannot each create a manager: the second SDK throws
@@ -35,7 +38,7 @@ Boolean into `VoIPSDK` in Info.plist and a matching Podfile.properties selection
 Regenerate the iOS project and pods after changing it. Omit the option to retain
 Debug defaults and keep the Release implementation excluded.
 
-**Proposed A4 integration:** when enabled and available, an actual newly observed foreign provider emits the
+When enabled and available, an actual newly observed foreign provider emits the
 process-scoped `providerOwnershipLost` SDK event; there is no `conversationId`.
 The monitor looks up an already-loaded system provider class. It never loads
 CallKit or constructs a provider. An unavailable class, unsupported creation path
@@ -43,9 +46,9 @@ or failed installation logs a coverage diagnostic without inventing an ownership
 loss event. This diagnostic cannot prevent D13 routing or guarantee detection on
 all Apple framework versions.
 
-The foundation provides the native conflict callback. The typed SDK event and
-adapter identity/policy selection are pending integration with A4; they are not
-claimed by the foundation's host evidence.
+The typed event and atomic media selection have host/compiler integration
+evidence. Native journeys and a fresh pod-built device Release inspection remain
+pending; the foundation receipt records its earlier, narrower source.
 
 **Measured host/compiler evidence** and the limits of native qualification are
 recorded in the [A7 handoff](progress/2026-10-22-codex-a7-ownership.md).

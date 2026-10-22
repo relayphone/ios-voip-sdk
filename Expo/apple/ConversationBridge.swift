@@ -60,13 +60,13 @@ final class ConversationBridge {
 
   func accepts(generation: Int) -> Bool { !destroyed && generation >= 0 && generation > self.generation }
 
-  func settle(_ id: UUID, generation: Int, success: Bool) {
+  func settle(_ id: UUID, generation: Int, success: Bool, rejection: HandlerRejection = .init(nil)) {
     guard !destroyed, self.generation == generation,
           let delivery = deliveries[id], delivery.generation == generation else { return }
     deliveries.removeValue(forKey: id)
     delivery.signal.removeObserver(delivery.observer)
     if success { delivery.continuation.resume() }
-    else { delivery.continuation.resume(throwing: BridgeError.handlerRejected) }
+    else { delivery.continuation.resume(throwing: rejection) }
   }
 
   func destroy(detachHandler: Bool) {
@@ -129,7 +129,19 @@ final class ConversationBridge {
   }
 }
 
-enum BridgeError: Error { case invalidArguments, handlerRejected, unavailable }
+enum BridgeError: Error { case invalidArguments, unavailable }
+
+/// Preserve the JavaScript handler's failure at the native continuation boundary.
+/// Its contents are not logged; application errors can include private data.
+struct HandlerRejection: Error, Equatable, Sendable {
+  let name: String
+  let message: String
+
+  init(_ reason: [String: String]?) {
+    name = reason?["name"] ?? "Error"
+    message = reason?["message"] ?? "The conversation handler rejected the action."
+  }
+}
 
 enum BridgeJSON {
   static func date(_ value: Date) -> String {
@@ -183,9 +195,10 @@ enum ConversationBridges {
     bridge.attach(attached, generation: generation)
     if !attached { handlerOwner = nil }
   }
-  static func settle(_ owner: UUID, id: UUID, generation: Int, success: Bool) {
+  static func settle(_ owner: UUID, id: UUID, generation: Int, success: Bool,
+                     rejection: HandlerRejection = .init(nil)) {
     guard handlerOwner == owner else { return }
-    bridges[owner]?.settle(id, generation: generation, success: success)
+    bridges[owner]?.settle(id, generation: generation, success: success, rejection: rejection)
   }
   static func remove(_ id: UUID) {
     bridges.removeValue(forKey: id)?.destroy(detachHandler: handlerOwner == id)

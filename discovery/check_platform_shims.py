@@ -260,8 +260,8 @@ import VoIPPlatform
 @MainActor final class Receiver: NSObject, PushReceiver {
   func pushTokenDidUpdate(_ token: Data) {}
   func pushTokenDidInvalidate() {}
-  func receiveVoIPPush(_ payload: [AnyHashable: Any], mustReport: Bool,
-                       completion: @escaping () -> Void) { completion() }
+  nonisolated func receiveVoIPPush(_ payload: [AnyHashable: Any], mustReport: Bool,
+                                   delivery: PushDelivery) { delivery.finish() }
 }
 @MainActor func checkImports() throws {
   let receiver = Receiver()

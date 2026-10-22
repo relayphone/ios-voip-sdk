@@ -32,10 +32,13 @@ public final class IosVoipSDKModule: Module {
       // Synchronous JS calls are enqueued in order on the native owner's queue.
       DispatchQueue.main.async { ConversationBridges.attach(id, attached: attached, generation: generation) }
     }
-    Function("settleAction") { (actionID: String, generation: Int, success: Bool, _: [String: String]?) in
+    Function("settleAction") { (actionID: String, generation: Int, success: Bool, reason: [String: String]?) in
       guard let action = UUID(uuidString: actionID) else { return }
       let id = self.bridgeID
-      DispatchQueue.main.async { ConversationBridges.settle(id, id: action, generation: generation, success: success) }
+      let rejection = HandlerRejection(reason)
+      DispatchQueue.main.async {
+        ConversationBridges.settle(id, id: action, generation: generation, success: success, rejection: rejection)
+      }
     }
 
     AsyncFunction("getConversations") { (promise: Promise) in
@@ -102,7 +105,7 @@ public final class IosVoipSDKModule: Module {
       guard let data = try? BridgeJSON.data(report) else { Self.rejectArguments(promise); return }
       Self.respond(promise) {
         let report = try BridgeJSON.decode(ReportOptions.self, from: data)
-        try ExpoMediaSupport.startFromBundle().client.reportConversation(Self.uuid(id), report: report.report())
+        try await ExpoMediaSupport.startFromBundle().client.reportConversation(Self.uuid(id), report: report.report())
         return nil
       }
     }
