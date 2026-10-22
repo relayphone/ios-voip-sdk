@@ -161,3 +161,33 @@ held entries above only for that recorded M2 scope. The 239 A9 source inputs
 remain byte-identical to `f6ad352c`; no host suite, compiler or native run was
 repeated. Current A9 app-build and native acceptance remain pending, as do the
 actual audio27 RED and physical measurements.
+
+
+**Measured current audio-acceptance source forward:** normal merge
+`da102818418595038585b83ea7dec3946c55af34` incorporates approved A5
+`50f2de17134fc02e3c547e7335b5b9b7e4b5a5a6`, including M2's separate
+native audio-authority and physical notification-transport gates. The 86 source
+paths are the exact duplicate-free union of both parents. A9's shipping and
+example trees, URL callback, typed intent, public hook, both environment guards,
+original OS gate and historical OS RED keep their prior bytes. Compared with
+A5's 104 existing protected shipping inputs, 90 remain identical and 14 retain
+intentional M3 changes; five M3 files are additional. This is not a claim that
+A9 and A5 have identical shipping trees.
+
+Thirteen focused source-only commands pass, including the 29 selected pure
+M3 groups, 63 synthetic system controls, four M1 contract cases, six push-case
+gates, 28 M2 groups, 22 audio-authority/legacy groups, and both physical-packet
+control suites. The selected M3 suite excludes all three Swift compiler tests
+and forbids unmocked external commands. The container-capture controls use only
+stub simulator tooling. The [source-only receipt](../verification/2026-10-22-sdk-m3-direct/forward-current-audio-source-only.json)
+binds all 265 source inputs, exact command/log hashes and protected comparisons.
+No compiler, app build, simulator, audio, device, dependency, signing, CI or
+push operation was performed for this forward.
+
+The imported physical no-I/O packet records a completed four-operation ordinary
+audio API and typed-notification transport measurement. It does not qualify
+LCK or system-interruption delivery, resumption recommendations or hardware
+media. The earlier silent-engine device run remains RED with unknown cause.
+Current-source M2, A5's seven system journeys and A9's direct native acceptance
+remain pending, as does physical default-calling dispatch. The existing strict
+OS dispatch gate and its historical error-115 results remain unchanged.

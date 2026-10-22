@@ -1,0 +1,324 @@
+{
+  "schemaVersion": 1,
+  "qualification": "measured normal A9 source forward and pure Python/stub controls only",
+  "createdAtUTC": "2026-10-22T20:59:06.429010+00:00",
+  "baseCommit": "caf4a9c2e6b7eb977920e46e9ad88e0fae1254c2",
+  "incomingCommit": "50f2de17134fc02e3c547e7335b5b9b7e4b5a5a6",
+  "measuredMergeCommit": "da102818418595038585b83ea7dec3946c55af34",
+  "measuredMergeTree": "86151b0e62f7b9cda5a4f4224adc62eb383b6ce3",
+  "sourceIdentity": {
+    "sourceCommit": "da102818418595038585b83ea7dec3946c55af34",
+    "sourceInputsSHA256": "86c5274bcd8cd7b0f3b02cc9e3c915c2896a0a8f089269e54e76d987385c3a71"
+  },
+  "sourceInputCount": 265,
+  "sourceMapSHA256": "aa02be5064ae2d7959d941a409425d70a7164b71a4a46ee3044897c5c08250bd",
+  "sourcePathCount": 86,
+  "sourcePathPolicy": "exact duplicate-free union of both parents",
+  "protectedA9AndNativeInputs": {
+    "example/App.tsx": "0f5668a81e050ac035535f202637e5325e426591d10651d343a077528fc479ab",
+    "example/journey.ts": "d58e5ddb142ef04a3c8d11337a2eafc1c9a505f2f68463d5804f630b4fe990b3",
+    "example/acceptance.ts": "a46a57d23b00d761910366a1822c6b5c248ef75cceadd04644f4e8ce9486350c",
+    "example/system-acceptance.ts": "2d4ade13eab3e18e5d2601f775a1e287c2e521f1f67bc9f18abea2b7b7bd0539",
+    "example/modules/journey/apple/VoIPExampleJourneyModule.swift": "93c465c547afc78f69e247f5e2fc982708bfbd0c722310de95f2997ade780545",
+    "example/modules/journey/apple/M3DirectControl.swift": "887012f8498095f03cf11b0ea6f184d008955875e30c2139f26ae56593f998a5",
+    "discovery/run_sdk_m3.py": "859971a8bf8ad64a0a9820df929528f9c9bfee60e7d481e72b61faf67e860317",
+    "discovery/check_sdk_m3.py": "24116cf040cdfde726eb731f9533a700072df45ffde50266192518d2c4dc0122",
+    "discovery/run_sdk_m3_direct.py": "8edc009ed253ee4c4676702c49e2f730182b9bcfd896111c2368d56e256281a9",
+    "discovery/check_sdk_m3_direct.py": "6176ae1b7b1730fccd2245286b7409d0aa7aa05b04589648b56a544d161f18ca",
+    "discovery/sdk_m3_direct_conformance.py": "0a3da2a983dd4000ab853bff9afdf66b3259147723f902d11305e7179a9a89d0",
+    "discovery/sdk_m3_conformance.py": "d2df37b0373d65e4ce2a0873b55b1b2ea9ffd77b44127e73878949a34910eff8",
+    "discovery/build_sdk_m3.sh": "0e13986aef943e641a844b54baac5d2acfbad5e26671330d5ee1076039c38cd9",
+    ".github/workflows/sdk-m3.yml": "9608a7984c69538c569eb7519f58855437075a5b6eace984ceac447c2b543758",
+    "discovery/run_sdk_system.py": "522bd19ad945aa1956ab3b43595781a005bf06cb40ca799cb469d1d6c59d6ad9",
+    "discovery/check_sdk_system.py": "2ccef1589d146f4e9edde22e493581d35d9e57a7d9214df6367426bf3faf8539",
+    "discovery/sdk_system_conformance.py": "12d39d229f00ddf5be097a52c4604ca29eda295132b000ce7d562505180dfb3e",
+    "discovery/build_push_report_entry.sh": "0956f71bbb1a0f95a8c016de3a60a7636211dbd0751c7748894699e1f74f42c6",
+    "discovery/run_push_report_entry.py": "6a6546943fbc25c5061d7a245cf786f652283388c35180ee126c5c7131623310",
+    "discovery/check_push_report_entry.py": "d1f5ebe0a52da81519aa94c3497fd4c54c9973547e31430c8ab4aacaf6ba5948",
+    "discovery/check_push_report_capture.py": "a78393f0f0187cf170b04cc7326d57701645f09f3f68e992918f45315d6a1b43",
+    "discovery/probe/push_entry_main_stall.h": "39e81fafe6189afab9e32c4159e477f595986771dacb94052f2a8d04b2bfa3bf",
+    "discovery/probe/push_entry_main_stall.m": "c94c926982b976ba2ed4e072ee59f65c97d1ce22efb37b90d0c2c8ee7b7a8a9e",
+    "discovery/push_main_stall_conformance.py": "9b633064ee6c9a4454d17bbb6554a21b871280898f642cfb68b4e964ed2b51ed",
+    "discovery/check_push_main_stall.py": "a75594ac8f09de59ddb93bd448fd517e7a65cf3d3237fde31012fad155920195"
+  },
+  "shippingAndExampleDiffFromA9Base": [],
+  "parentProtectedShippingInputCount": 104,
+  "parentProtectedShippingUnchangedCount": 90,
+  "intentionalExistingM3ShippingChanges": [
+    {
+      "path": "Expo/M1-plugin.md",
+      "parentSHA256": "59fafcbddb3e9ece4475e95a849ad42fbf18b78ce97bafb934aef3e1d47793f4",
+      "currentSHA256": "43fd4e0f80179f0e56fc7a0deae16502351c86f2a06f50273abd788a2ca3e94a"
+    },
+    {
+      "path": "Expo/apple/ConversationBridge.swift",
+      "parentSHA256": "d3dab0e7c4225f62171cf0507f458f7a9c774c906441a7b6d3209ed713c60d5e",
+      "currentSHA256": "c11c04bacce5fd142ec1d1699fea74281135e2ba906d430951a5ebf31c7443aa"
+    },
+    {
+      "path": "Expo/apple/IosVoipSDKModule.swift",
+      "parentSHA256": "aef47f3c94b74861eec2053a26517a1b9dca684c33fb55df10a8c12070cb4a1d",
+      "currentSHA256": "7a89b6ea73fac91cf32e3a539a9a9e4840657d852641987f601cdf1f189ecb36"
+    },
+    {
+      "path": "Expo/apple/VoIPAppDelegateSubscriber.swift",
+      "parentSHA256": "d01bac39fa13cebeca767c16fad91695f2d30211c29510a4234625f0e4f8f9d8",
+      "currentSHA256": "1cc847ab6d2b0e3740353b613299a519531e6c39f1d4e74142a40dc48560942b"
+    },
+    {
+      "path": "Expo/plugin/withVoIPSDK.cjs",
+      "parentSHA256": "43986a3f6d2b603eb9c5868b4f48f8522e6e227fa6be0c17b87d7bdcd7ec1c98",
+      "currentSHA256": "4453e19114ead95782c9eb1b96134f00a9b755f4f177700c32e8000706562ff9"
+    },
+    {
+      "path": "Expo/src/internal/client.ts",
+      "parentSHA256": "aa4668be96793ca7078ab930d7d8b9017ae31cba45cef9a6468ba0543fc1b9b7",
+      "currentSHA256": "c00345ef8e13ec30d108a1b95c599f31acb7c42f1ac9d0f37e11536e71c7bcd0"
+    },
+    {
+      "path": "Expo/src/internal/protocol.ts",
+      "parentSHA256": "ba9ce9355e3c045a1c1c29eac69128ce2390b337b4e301078638ff2bb2d4da6e",
+      "currentSHA256": "8d03e524172f74991394fc4a3c4f2bb50cbc281cd2497e8e9a4524e58e5771fc"
+    },
+    {
+      "path": "Expo/src/types.ts",
+      "parentSHA256": "2417613bcf116b888114937838158f235e1018f9da8bc14f38ab6949fa202d5b",
+      "currentSHA256": "b54bef6c14821e4b5840ab713cb4978d9416561efc97bc661c32d85a3e07775d"
+    },
+    {
+      "path": "Expo/tests/m1-runtime.test.cjs",
+      "parentSHA256": "b25817da41b3a0cd667613ecba16d96317be7abf2dbd373da9975a48d9d7808d",
+      "currentSHA256": "65113052410bdead5f4e26d6d0f5728252bd049b8bb57395db28c4d2a079a544"
+    },
+    {
+      "path": "example/App.tsx",
+      "parentSHA256": "bdf6571520df38457c9580c0332fba48e033ccc282777983b54631b8e98b3393",
+      "currentSHA256": "0f5668a81e050ac035535f202637e5325e426591d10651d343a077528fc479ab"
+    },
+    {
+      "path": "example/README.md",
+      "parentSHA256": "2bd082d1e6107dabb2821062451d91eb177d1a6ae190831836011e82079147e6",
+      "currentSHA256": "8ba30c893c7fb62f9e76bc7fbf463b448d5b2f54da354162f0598f44ded399b2"
+    },
+    {
+      "path": "example/app.json",
+      "parentSHA256": "f41d587d29b4411d572dcad4fac97c5102f11c2ce7bec147c0d9c8a5b6fc1fff",
+      "currentSHA256": "ca5bfa450483fb486a1f9fb75669edf1d4c9753944eabc4c2145805078041dd8"
+    },
+    {
+      "path": "example/journey.ts",
+      "parentSHA256": "3d0fed41a4934223b1781803ee7efc82207335df172608a1ac0b2c54683481de",
+      "currentSHA256": "d58e5ddb142ef04a3c8d11337a2eafc1c9a505f2f68463d5804f630b4fe990b3"
+    },
+    {
+      "path": "example/modules/journey/apple/VoIPExampleJourneyModule.swift",
+      "parentSHA256": "1fb4281b089d89330452e0148f5925b20cc925c9d167f1e11a296142bbcaf6ea",
+      "currentSHA256": "93c465c547afc78f69e247f5e2fc982708bfbd0c722310de95f2997ade780545"
+    }
+  ],
+  "allShippingAndExampleDiffFromA5": [
+    "M\tExpo/M1-plugin.md",
+    "A\tExpo/M3-dial-requests.md",
+    "M\tExpo/apple/ConversationBridge.swift",
+    "M\tExpo/apple/IosVoipSDKModule.swift",
+    "M\tExpo/apple/VoIPAppDelegateSubscriber.swift",
+    "M\tExpo/plugin/withVoIPSDK.cjs",
+    "M\tExpo/src/internal/client.ts",
+    "M\tExpo/src/internal/protocol.ts",
+    "M\tExpo/src/types.ts",
+    "M\tExpo/tests/m1-runtime.test.cjs",
+    "A\tSources/VoIPSDK/DialRequest+Intents.swift",
+    "A\tSources/VoIPSDK/DialRequest.swift",
+    "A\tSources/VoIPSDK/VoIPSystemEntryPoints.swift",
+    "M\texample/App.tsx",
+    "M\texample/README.md",
+    "M\texample/app.json",
+    "M\texample/journey.ts",
+    "A\texample/modules/journey/apple/M3DirectControl.swift",
+    "M\texample/modules/journey/apple/VoIPExampleJourneyModule.swift"
+  ],
+  "selectedM3ControlCount": 29,
+  "selectedM3ExcludedCompilerControls": [
+    "test_settings_list_uses_measured_unique_fallback",
+    "test_actual_direct_statements_against_public_simulator_interfaces",
+    "test_actual_native_control_identity_parser"
+  ],
+  "syntheticSystemControlCount": 63,
+  "syntheticMainStallPositiveCount": 4,
+  "syntheticMainStallNegativeCount": 62,
+  "checks": [
+    {
+      "command": [
+        "python3",
+        "discovery/out/a9-forward-current-source-only/selected_m3_controls.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.017,
+      "stdout": "01.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "01.stderr",
+      "stderrSHA256": "4140bf3ac11b41eb2653569ac0808748198f9ed2380c09314c406e81ad2e63bd"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1_container_capture.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.177,
+      "stdout": "02.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "02.stderr",
+      "stderrSHA256": "3259c04e48f45659a42453d43b1ca00c2037c6b6fa1854475ab9810d215ce4e3"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.247,
+      "stdout": "03.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "03.stderr",
+      "stderrSHA256": "4fe7c97d6e6bfbcb255f14ccbce36497dbbfdd16f259626c741fb4fad69f1ec2"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m0.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.431,
+      "stdout": "04.stdout",
+      "stdoutSHA256": "667bb6dd667e2f7a5cc618be0987b9c3a092e9fec90bbaff0ff399b39bda2973",
+      "stderr": "04.stderr",
+      "stderrSHA256": "5f77740f88344b1f68b32eb25df86c4d6fbffbcc2099a78f6b1f0a6e50d1662d"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.935,
+      "stdout": "05.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "05.stderr",
+      "stderrSHA256": "b122813ddf136ef066d0dbf2ae4434492cc007188e4bf4a0fd05c394cb4acd75"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_system.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.252,
+      "stdout": "06.stdout",
+      "stdoutSHA256": "3a9a9ac70f7b48bfeb2c90fe779643a844bf8f69ddf732f6bd5d2bdc2ce206d1",
+      "stderr": "06.stderr",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_push_report_capture.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.288,
+      "stdout": "07.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "07.stderr",
+      "stderrSHA256": "f62ed079878f527a76f20efe7607461a215638caf6f5a72998bb0acdf1a9c4f7"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_push_main_stall.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.056,
+      "stdout": "08.stdout",
+      "stdoutSHA256": "915431db2b9a9f584e0cddfb2182166d3a207c2af01643cf3dadd05edf141528",
+      "stderr": "08.stderr",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m2.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.347,
+      "stdout": "09.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "09.stderr",
+      "stderrSHA256": "21a5b31d10f39c4b494ec08c8b2f987c42298bc3baacb9adbb7deb7548060d05"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m2_audio_lifecycle.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.067,
+      "stdout": "10.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "10.stderr",
+      "stderrSHA256": "5b3fdebe69999b1d9586abaa1cfc60098cfcf7f3795548b10711ad14e30d78b6"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_audio_device_transport.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.141,
+      "stdout": "11.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "11.stderr",
+      "stderrSHA256": "ee63c8f8bdfcfd18efc72c1bed7f018f7e82671cd8993e26714692ac2f75c4ec"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_audio_device_noio_transport.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.355,
+      "stdout": "12.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "12.stderr",
+      "stderrSHA256": "f184ecc132481b5ea5925c9bc973e458d9c286ee0a6eb23fc123963b74d41d0d"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.063,
+      "stdout": "13.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "13.stderr",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "scope": {
+    "currentA9ExampleBuild": "pending",
+    "currentA9DirectNativeAcceptance": "pending",
+    "actualOSDefaultCallingDispatch": "pending device measurement; strict simulator gate and historical RED unchanged",
+    "currentM2NativeAcceptance": "pending",
+    "currentA5SevenSystemJourneys": "pending",
+    "physicalNoIOPacket": "existing measured four-operation ordinary API/typed notification transport only; no recommendation or LCK/system-interruption qualification",
+    "originalSilentEngineDeviceResult": "RED preserved; asynchronous rendering stopped, cause unknown",
+    "compilerNativeSimulatorDeviceAudioDependenciesCIOrPushPerformed": false
+  },
+  "privateControlHarnessInputsSHA256": {
+    "selected_m3_controls.py": "42882f227b15087f2dfd1b8e0a0d8ab370f9e1c957dc38e24f90ad0718d71dce",
+    "run_controls.py": "bd360a144d49a37ec5eadd1dd6e3b52e3e8e7c8186cbfe6b5aa527b691eb67e1",
+    "checks.json": "32a5e6495619f64395edf6eadf83bb0a61a93a325e92dcc966809a9264ae36cf",
+    "source-map.json": "aa02be5064ae2d7959d941a409425d70a7164b71a4a46ee3044897c5c08250bd"
+  }
+}
