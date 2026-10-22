@@ -425,6 +425,57 @@ def build_identity(directory, rows):
     return manifest
 
 
+def push_report_boundaries(engine, *, require_settlement_before_return=False):
+    """Normal shipping rule; broken-delegate controls must invoke it expecting refusal."""
+    require(not any(row.get('event') == 'diagnostic.pushReportingViolation' for row in engine),
+            'runtime detected a PushKit reporting violation')
+    received = [row for row in engine if row.get('event') == 'push.received']
+    identifiers = [row.get('pushID') for row in received]
+    require(all(isinstance(value, str) and bool(value) for value in identifiers) and
+            len(set(identifiers)) == len(identifiers), 'invalid or repeated PushKit delivery identity')
+    require(all(row.get('pushID') in ('', *identifiers) for row in engine
+                if row.get('event') in ('report.incoming', 'report.completed')),
+            'incoming report or settlement has an unbound PushKit identity')
+    for event in ('push.callbackReturned', 'push.completed'):
+        boundaries = [row for row in engine if row.get('event') == event]
+        require(len(boundaries) == len(received) and {row.get('pushID') for row in boundaries} == set(identifiers),
+                'missing, repeated or unbound ' + event)
+    for receipt in received:
+        identifier = receipt['pushID']
+        required = receipt.get('mustReport')
+        require(type(required) is bool and receipt.get('api') in ('metadata', 'legacy') and
+                (receipt['api'] != 'legacy' or required), 'invalid native PushKit policy')
+        returned = one(engine, 'push.callbackReturned', pushID=identifier)
+        completed = one(engine, 'push.completed', pushID=identifier)
+        reports = [row for row in engine if row.get('event') == 'report.incoming' and row.get('pushID') == identifier]
+        require(all(engine.index(receipt) < engine.index(report) for report in reports), 'report precedes its PushKit delivery')
+        for boundary in (returned, completed):
+            entered = any(engine.index(report) < engine.index(boundary) for report in reports)
+            require(boundary.get('api') == receipt['api'] and boundary.get('mustReport') is required and
+                    boundary.get('reportEntered') is entered and engine.index(receipt) < engine.index(boundary),
+                    'PushKit boundary is missing actual entry/policy proof')
+            require(not required or entered, 'required report was not entered before ' + boundary['event'])
+        settled = [row for row in engine if row.get('event') == 'report.completed' and row.get('pushID') == identifier]
+        call_ids = [row.get('callUUID') for row in reports + settled]
+        require(all(isinstance(value, str) and re.fullmatch(
+                    r'[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}', value) for value in call_ids),
+                'PushKit report has invalid call identity')
+        require(sorted(row['callUUID'] for row in reports) == sorted(row['callUUID'] for row in settled),
+                'PushKit report and settlement call inventory differs')
+        for call_id in set(call_ids):
+            entries = [row for row in reports if row['callUUID'] == call_id]
+            completions = [row for row in settled if row['callUUID'] == call_id]
+            require(all(engine.index(entry) < engine.index(settlement) for entry, settlement in zip(entries, completions)),
+                    'PushKit report settlement precedes its actual entry')
+        if reports:
+            require(all(engine.index(row) < engine.index(completed) for row in settled),
+                    'PushKit completion preceded actual report settlement')
+            if require_settlement_before_return:
+                require(all(engine.index(row) < engine.index(returned) for row in settled),
+                        'SDK callback returned before actual report settlement')
+    return len(received)
+
+
 def shipping_journal(directory, name, rows, receipt):
     manifest = build_identity(directory, rows)
     launch = one(rows, 'launch')
@@ -436,6 +487,8 @@ def shipping_journal(directory, name, rows, receipt):
     for row in engine:
         require(all(row.get(key) == launch.get(key) for key in ('runID', 'pid', 'bundleID')), 'engine process mismatch')
         require(row.get('profile') == manifest['profileID'], 'engine profile mismatch')
+    pushes = push_report_boundaries(engine)
+    if name == 'push': require(pushes == 1, 'shipping push journal has no unique delivery')
     accepted = {r['transactionID']: r for r in engine if r['event'] == 'request.accepted'}
     delivered = [r for r in engine if r['event'] == 'transaction.delivered']
     require(len({r['transactionID'] for r in delivered}) == len(delivered), 'duplicate delivered transaction identity')
