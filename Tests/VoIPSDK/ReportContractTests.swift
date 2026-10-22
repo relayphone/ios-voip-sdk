@@ -9,6 +9,7 @@ import Foundation
   var hold: Set<UUID> = []
   var reject: Set<UUID> = []
   var endedReasons: [UUID: ConversationEndedReason] = [:]
+  var waitStage = "existing report contracts"
 
   func run() async throws {
     let client = try ConversationClient.forApplication(configuration: .init())
@@ -36,7 +37,7 @@ import Foundation
     func wait(_ condition: @escaping @MainActor () -> Bool) async throws {
       let limit = ContinuousClock.now + .seconds(2)
       while !condition() {
-        precondition(ContinuousClock.now < limit, "Report contract observation timed out")
+        precondition(ContinuousClock.now < limit, "Report contract observation timed out: " + self.waitStage)
         try await Task.sleep(for: .milliseconds(1))
       }
     }
@@ -158,6 +159,7 @@ import Foundation
     // A queued cleanup must not target an object that replaced its captured one.
     let stale = try await client.reportIncomingConversation(payload("stale"))
     let generation = client.incomingIntake.projection(stale)!.generation
+    let original = manager.conversations.first { $0.uuid == stale }!
     client.incomingIntake.terminate(stale, generation: generation, reason: .local)
     let staleAttempts = manager.performAttempts
     client.incomingIntakeDidChange()
@@ -165,6 +167,51 @@ import Foundation
     manager.conversations.removeAll { $0.uuid == stale }; manager.conversations.append(replacement)
     for _ in 0..<3 { await Task.yield() }
     precondition(manager.performAttempts == staleAttempts && replacement.state == .idle)
+
+    // No pending bit remains after the skipped task. The observed replacement
+    // still owns the same canonical local termination and needs its first End.
+    manager.deferEndedState = true
+    client.incomingIntakeDidChange()
+    waitStage = "replacement B first End"
+    try await wait { manager.performAttempts == staleAttempts + 1 && manager.appActions.last?.state == .complete }
+    precondition(endCalls.filter { $0 == stale }.count == 1 && replacement.state == .idle)
+    manager.conversations.removeAll { $0.uuid == stale }; manager.conversations.append(original)
+    client.incomingIntakeDidChange()
+    waitStage = "skipped A first End"
+    try await wait { manager.performAttempts == staleAttempts + 2 && manager.appActions.last?.state == .complete }
+    precondition(endCalls.filter { $0 == stale }.count == 2,
+      "An object skipped before submission remains eligible for its first request")
+    for object in [replacement, original, replacement] {
+      manager.conversations.removeAll { $0.uuid == stale }; manager.conversations.append(object)
+      client.incomingIntakeDidChange()
+      for _ in 0..<3 { await Task.yield() }
+      precondition(manager.performAttempts == staleAttempts + 2,
+        "Weak claim history must suppress repeated requests through A/B/A object observations")
+    }
+    remove(stale)
+    // Release MainActor for the scheduled record cleanup; canonical intake and
+    // the deliberately retained framework objects outlive that actor cache.
+    try await Task.sleep(for: .milliseconds(10))
+    precondition(snapshot(stale) == nil && client.incomingIntake.projection(stale)?.generation == generation)
+    manager.conversations.append(replacement)
+    client.incomingIntakeDidChange()
+    for _ in 0..<3 { await Task.yield() }
+    precondition(manager.performAttempts == staleAttempts + 2 && snapshot(stale)?.ended?.reason == .local,
+      "Actor record removal cannot discard a still-live generation/object submission claim")
+    // A reset retires the old generation. The same modeled framework object can
+    // have its first request in a new local generation; old claims cannot block it.
+    manager.conversations.removeAll { $0.uuid != stale }
+    client.incomingIntake.reset()
+    let nextGeneration = client.incomingIntake.projection(stale)!.generation
+    precondition(nextGeneration != generation)
+    client.incomingIntake.terminate(stale, generation: nextGeneration, reason: .local)
+    client.incomingIntakeDidChange()
+    waitStage = "new generation same object first End"
+    try await wait {
+      let actions = manager.appActions.filter { $0.conversationUUID == stale }
+      return actions.count == 3 && actions.last?.state == .complete
+    }
+    manager.deferEndedState = false
 
     let revised = try await client.reportIncomingConversation(payload("revised"))
     let revisedGeneration = client.incomingIntake.projection(revised)!.generation
@@ -174,6 +221,10 @@ import Foundation
     client.incomingIntake.terminate(revised, generation: revisedGeneration, reason: .failed, requiresReport: false)
     for _ in 0..<3 { await Task.yield() }
     precondition(manager.performAttempts == revisedAttempts, "A newer terminal revision must invalidate queued local cleanup")
+    client.incomingIntake.terminate(revised, generation: revisedGeneration, reason: .local)
+    client.incomingIntakeDidChange()
+    waitStage = "new revision after unsubmitted stale task"
+    try await wait { manager.performAttempts == revisedAttempts + 1 && manager.appActions.last?.state == .complete }
 
     let reset = try await client.reportIncomingConversation(payload("reset"))
     client.incomingIntake.terminate(reset, generation: client.incomingIntake.projection(reset)!.generation, reason: .local)
@@ -182,7 +233,7 @@ import Foundation
     client.incomingIntake.reset()
     for _ in 0..<3 { await Task.yield() }
     precondition(manager.performAttempts == resetAttempts, "Reset invalidation must stop queued old-generation cleanup")
-    print("{\"success\":true,\"groups\":14,\"actualClientAndCoordinatorAndIntake\":true,\"nativeFrameworkMeasured\":false}")
+    print("{\"success\":true,\"groups\":20,\"actualClientAndCoordinatorAndIntake\":true,\"nativeFrameworkMeasured\":false}")
   }
 }
 
