@@ -82,6 +82,10 @@ public final class PushService: NSObject, PushReceiver {
 
   public func receiveVoIPPush(_ payload: [AnyHashable: Any], mustReport: Bool,
                              completion: @escaping () -> Void) {
+    #if os(iOS) && targetEnvironment(simulator)
+    // The runtime's thread context ends when this synchronous callback returns.
+    let pushIdentifier = SimulatorSupport.currentPushIdentifier
+    #endif
     let plan = IncomingPushPolicy.plan(PushWire.parse(payload), mustReport: mustReport)
     // Never capture the untyped dictionary in a Task. All decision inputs are values.
     switch plan {
@@ -90,19 +94,29 @@ public final class PushService: NSObject, PushReceiver {
     case .incoming, .fallback:
       Task { @MainActor in
         defer { completion() }
-        switch plan {
-        case .incoming(let incoming):
-          do { _ = try await self.client.reportIncomingConversation(incoming, source: .pushKit) }
-          catch { NSLog("VoIPSDK: incoming push reporting failed.") }
-        case .fallback(let incoming, let ended):
-          if let ended { self.client.receiveCallEnded(ended) }
-          do {
-            let id = try await self.client.reportIncomingConversation(incoming, source: .pushKit)
-            try self.client.reportConversation(id, report: .ended(.failed))
-          } catch { NSLog("VoIPSDK: required fallback push reporting failed.") }
-        default: break
+        #if os(iOS) && targetEnvironment(simulator)
+        await SimulatorPushContext.$pushIdentifier.withValue(pushIdentifier) {
+          await self.report(plan)
         }
+        #else
+        await self.report(plan)
+        #endif
       }
+    }
+  }
+
+  private func report(_ plan: IncomingPushPlan) async {
+    switch plan {
+    case .incoming(let incoming):
+      do { _ = try await client.reportIncomingConversation(incoming, source: .pushKit) }
+      catch { NSLog("VoIPSDK: incoming push reporting failed.") }
+    case .fallback(let incoming, let ended):
+      if let ended { client.receiveCallEnded(ended) }
+      do {
+        let id = try await client.reportIncomingConversation(incoming, source: .pushKit)
+        try client.reportConversation(id, report: .ended(.failed))
+      } catch { NSLog("VoIPSDK: required fallback push reporting failed.") }
+    default: break
     }
   }
 }

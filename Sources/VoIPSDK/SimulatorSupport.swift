@@ -1,6 +1,15 @@
 #if os(iOS) && targetEnvironment(simulator) && SWIFT_PACKAGE
 import CKSimRuntime
 #endif
+#if os(iOS) && targetEnvironment(simulator)
+import Foundation
+
+// Kept outside the MainActor type: task-local storage follows async child work,
+// rather than the thread on which the PushKit callback happened to execute.
+enum SimulatorPushContext {
+  @TaskLocal static var pushIdentifier: String?
+}
+#endif
 
 /// Activates the SDK's simulator service before creating a ConversationManager.
 @MainActor
@@ -29,4 +38,13 @@ public enum SimulatorSupport {
     return false
     #endif
   }
+
+  #if os(iOS) && targetEnvironment(simulator)
+  static var currentPushIdentifier: String? { RuntimeBootstrap.currentPushIdentifier }
+
+  static func associateIncomingReport(_ id: UUID) {
+    guard let pushID = SimulatorPushContext.pushIdentifier else { return }
+    RuntimeBootstrap.associateIncomingReport(id, pushID: pushID)
+  }
+  #endif
 }
