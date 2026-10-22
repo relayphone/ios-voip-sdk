@@ -10,6 +10,7 @@ cd "$(dirname "$0")/.."
 : "${SDK_M0_BUILD_LOGS:?provide the nonempty native build logs directory}"
 if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
   : "${SDK_M1_CONTRACT_BUILD:?provide the source-bound Debug M1 contract build}"
+  : "${SDK_PUSH_ENTRY_BUILD:?provide the source-bound Debug A0/A1 push-entry build}"
 fi
 if [[ -n "${OUT:-}" ]]; then mkdir "$OUT"; else OUT=$(mktemp -d "${TMPDIR:-/tmp}/sdk-m0.XXXXXX"); fi
 OUT=$(cd "$OUT" && pwd)
@@ -210,6 +211,12 @@ row['journalSHA256']=hashlib.sha256(journal.read_bytes()).hexdigest()
 receipt.write_text(json.dumps(row,indent=2)+'\n')
 PY
   done
+  # Reuse this fresh owned simulator and its preserved launch environment. The
+  # focused fixture runs three conforming deliveries and two required refusals;
+  # these in-app injections do not stand in for a push-initiated cold launch.
+  SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
+    python3 discovery/run_push_report_entry.py --build "$SDK_PUSH_ENTRY_BUILD" \
+      --out "$OUT/push-entry" --simulator "$UDID"
 fi
 cleanup_simulator
 redact_external_paths
