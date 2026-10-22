@@ -1,0 +1,11 @@
+2026-10-22 03:15:24.148 SDKBootstrap[97468:5096914] [NativeDevtoolsIos] devtools connection established
+2026-10-22 03:15:24.148 SDKBootstrap[97468:5096914] [NativeDevtoolsIos] connected to /tmp/argent-nd-C063070B.sock
+PROBE {"bundleID":"dev.callkitsim.sdkbootstrap","event":"launch","injected":false,"main":true,"mode":"push-after-install","pid":97468,"runID":"A2DC58EC-BE24-428F-8BD8-ADF3040692C6","simulatorID":"C063070B-E622-4E7C-B40A-90D3CDBF75B1","t_ms":42325697}
+PROBE {"bundleID":"dev.callkitsim.sdkbootstrap","event":"bootstrap.check","label":"explicit-activation-required","main":true,"passed":true,"pid":97468,"runID":"A2DC58EC-BE24-428F-8BD8-ADF3040692C6","simulatorID":"C063070B-E622-4E7C-B40A-90D3CDBF75B1","t_ms":42325697}
+CKSIM runtime refused: ABI test failure after PushKit hook installation
+PROBE {"bundleID":"dev.callkitsim.sdkbootstrap","event":"bootstrap.check","label":"activation-refuses","main":true,"passed":true,"pid":97468,"runID":"A2DC58EC-BE24-428F-8BD8-ADF3040692C6","simulatorID":"C063070B-E622-4E7C-B40A-90D3CDBF75B1","t_ms":42325721}
+PROBE {"bundleID":"dev.callkitsim.sdkbootstrap","event":"bootstrap.check","label":"refused-runtime-inactive","main":true,"passed":true,"pid":97468,"runID":"A2DC58EC-BE24-428F-8BD8-ADF3040692C6","simulatorID":"C063070B-E622-4E7C-B40A-90D3CDBF75B1","t_ms":42325721}
+PROBE {"bundleID":"dev.callkitsim.sdkbootstrap","event":"bootstrap.check","label":"all-root-concrete-action-push-imps-restored","main":true,"passed":true,"pid":97468,"runID":"A2DC58EC-BE24-428F-8BD8-ADF3040692C6","simulatorID":"C063070B-E622-4E7C-B40A-90D3CDBF75B1","t_ms":42325721}
+PROBE {"bundleID":"dev.callkitsim.sdkbootstrap","event":"bootstrap.check","label":"refusal-idempotent","main":true,"passed":true,"pid":97468,"runID":"A2DC58EC-BE24-428F-8BD8-ADF3040692C6","simulatorID":"C063070B-E622-4E7C-B40A-90D3CDBF75B1","t_ms":42325721}
+PROBE {"bundleID":"dev.callkitsim.sdkbootstrap","checks":5,"event":"done","main":true,"pid":97468,"runID":"A2DC58EC-BE24-428F-8BD8-ADF3040692C6","simulatorID":"C063070B-E622-4E7C-B40A-90D3CDBF75B1","snapshots":65,"success":true,"t_ms":42325721}
+dev.callkitsim.sdkbootstrap: 97468
