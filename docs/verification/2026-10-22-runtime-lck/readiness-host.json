@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "success": true,
+  "classification": "measured host controls and compiler-only preparation; fresh hosted native acceptance pending",
+  "baseCommit": "f853f450873e1761a1a97639031bb300b052556b",
+  "recordedAt": "2026-10-22T03:52:20.678669+00:00",
+  "sourceSHA256": {
+    "discovery/run.sh": "77286bec17a77eda5932c7114a8869b08aa71214dbdfbd653ab6fb46fe57548c",
+    "discovery/probe/lck_readiness.swift": "b10ddf8101eed054ef04aeafe59f83c0c46ec884a8b5ed240a2201fba9216c1d",
+    "discovery/check_lck_probe_readiness.py": "6e9b8021bed1dcf952b2f0ac823b617a62a800a6616934f80fac09a23a3da589",
+    "discovery/check_lck_conformance.py": "82f1605d23b4a8db0577d54e0b07bd0e67092322c6249a2c0c8b6a47fab81da5",
+    "discovery/lck_conformance.py": "2dec5abee05b0d9313ac08bccba8543a26c54b963e0a9e3ae39404cf3991bde0",
+    "discovery/check_lck_provider_policy.py": "48e977ce1d57552e144cf6027cc857d9d52bf2656012449b742368f03ee9e071",
+    "discovery/device_oracles.py": "a8ab789c0ac0da96fc73c8e124ae8ff694413e57f845c3bd453a8aff01e4db5d",
+    "discovery/check_oracles.py": "af3a52e159b85a6bd9d82e637862b6f4a06d64e826178297af7166d10f355948",
+    "discovery/check_harness.py": "ab160795b34f25b1f8cfab64f6d84f4b11088053a71d53735c6abe4c99286842",
+    "discovery/summarize.py": "ffc84d6b15aff1563f30f238fe83f51fbcbc6cd0afa61bbebf8e1e349649b64c",
+    "docs/research/callkit-simulator-probe/lck.swift": "2b0e430ff81453258da9782b94e5f770a5e41700ee5a5db98580c8e049b006d3"
+  },
+  "checks": [
+    {
+      "name": "readiness",
+      "command": "python3 discovery/check_lck_probe_readiness.py -v",
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "3b3be71e71d5fa465fe554267fe598d405466d7ffb602bf34d878864c6fbad1c",
+      "tests": 3
+    },
+    {
+      "name": "lck-conformance",
+      "command": "python3 discovery/check_lck_conformance.py -v",
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "5ed877526077d58314691f53b14be56f32d6ab7ca01fc50b535259f37ce78e87",
+      "tests": 15
+    },
+    {
+      "name": "device-oracles",
+      "command": "python3 discovery/check_oracles.py -v",
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "ea236241503c3d88243a6be689387acbe3aeeb9ec416a005c697c633fb2580ce",
+      "tests": 9
+    },
+    {
+      "name": "provider-policy",
+      "command": "python3 discovery/check_lck_provider_policy.py",
+      "exitCode": 0,
+      "stdoutSHA256": "a3e4829189473a073f4253576e3ab5dee641b934e13362554d963c5a296f66e6",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "checks": 5,
+      "success": true
+    },
+    {
+      "name": "harness",
+      "command": "python3 discovery/check_harness.py",
+      "exitCode": 0,
+      "stdoutSHA256": "c719a6b13e723aad65e0837137fce01cca39f5258b98bbf411a3d24f805d06ea",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "checks": 96,
+      "success": true
+    },
+    {
+      "name": "shell-syntax",
+      "command": "bash -n discovery/run.sh",
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "iOSSDKTypecheck": {
+    "baseline": {
+      "exitCode": 0,
+      "classification": "actual generated probe compiler-only typecheck; no build, launch or simulator",
+      "sdk": "iPhoneSimulator27.1.sdk",
+      "target": "arm64-apple-ios18.0-simulator",
+      "swiftLanguageVersion": "5",
+      "inputSHA256": {
+        "discovery/probe/main.swift": "8dadde4deab5a7ea5856821f227f3c99d334ebd5fe17515243e00f188bab2c43",
+        "discovery/probe/generations.swift": "7ba20ccd0a3c845bb26a1bc7f603c6e8f4760aaab6bdd96e4d5192d84a1bb72f",
+        "discovery/probe/report_threading.swift": "4baaa81154bf99203dcd5a279f85ed1afb7c393440f4e03f60d193bd08a45d3a",
+        "generated/providers.swift": "453f2d1302774921df581a292f7e94599c7882669a1ef5b3ebb0df8fd80776c4",
+        "generated/baseline-lck.swift": "c85a41ffbdda45cad94808016f3db2a8b9da8bafbaef7fa7cb3b5cc99c64c5ec"
+      },
+      "warningMessages": {
+        "main actor-isolated class property 'shared' can not be referenced from a nonisolated context": 2,
+        "expression is 'async' but is not marked with 'await'; this is an error in the Swift 6 language mode": 3
+      },
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "bf8300a808b66bfb805ff98c31d8d96d846f2de6b3453b7ad8e655ac50faa3b6"
+    },
+    "prepared": {
+      "exitCode": 0,
+      "classification": "actual generated probe compiler-only typecheck; no build, launch or simulator",
+      "sdk": "iPhoneSimulator27.1.sdk",
+      "target": "arm64-apple-ios18.0-simulator",
+      "swiftLanguageVersion": "5",
+      "inputSHA256": {
+        "discovery/probe/main.swift": "8dadde4deab5a7ea5856821f227f3c99d334ebd5fe17515243e00f188bab2c43",
+        "discovery/probe/generations.swift": "7ba20ccd0a3c845bb26a1bc7f603c6e8f4760aaab6bdd96e4d5192d84a1bb72f",
+        "discovery/probe/report_threading.swift": "4baaa81154bf99203dcd5a279f85ed1afb7c393440f4e03f60d193bd08a45d3a",
+        "discovery/probe/lck_readiness.swift": "b10ddf8101eed054ef04aeafe59f83c0c46ec884a8b5ed240a2201fba9216c1d",
+        "generated/providers.swift": "453f2d1302774921df581a292f7e94599c7882669a1ef5b3ebb0df8fd80776c4",
+        "generated/lck.swift": "f6a0b8c375d84f00b5a2de82d4626df8379d231f68b87651ef6701a3eec8264a"
+      },
+      "warningMessages": {
+        "main actor-isolated class property 'shared' can not be referenced from a nonisolated context": 2,
+        "expression is 'async' but is not marked with 'await'; this is an error in the Swift 6 language mode": 3
+      },
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "627554520b17eb0af9f14896885fd98eecb93e01f6f63816d0f16e6a0038d384"
+    }
+  },
+  "observedPreparationReds": [
+    {
+      "control": "generated checkpoint missing",
+      "result": "one generated-source assertion failed against the original adapter",
+      "stderrSHA256": "4da4cc1faaa2c1d74ce51ba24d111183607d924a7d5c907c1f96bab98928528c"
+    },
+    {
+      "control": "expired readiness was admitted",
+      "result": "host waiter control failed before before/after monotonic guards",
+      "stderrSHA256": "e6faa4fca0458723250178ccd32656e3fddbb9d407cd7ed193a30d8f246b4197"
+    },
+    {
+      "control": "generated callback actor isolation",
+      "result": "Swift-5 actual SDK typecheck rejected actor-isolated field mutation from nonisolated delegate witness before locked ledger correction",
+      "inputReceiptSHA256": "4a0ac32e8f145f612d11ada9aa5ac86491cc7586e3390f27ee3350a2bcbd69ed",
+      "stderrSHA256": "8cc3d776fb35cca250594844b60e58f4acd062b684c092f6930a67924eb797b0"
+    }
+  ],
+  "nativeRuntimeChanged": false,
+  "oracleRelaxed": false,
+  "nativeAcceptance": "pending"
+}

@@ -148,12 +148,14 @@ app,bootstrap=map(pathlib.Path,sys.argv[2:])
 pathlib.Path(sys.argv[1]).write_text(json.dumps(dict(example=digest(executable(app)),
     bootstrap=digest(executable(bootstrap)),javascript=digest(app/'main.jsbundle')),indent=2)+'\n')
 PY
+# Plain console preserved the synthetic rows that merged PTY corrupted; actual
+# SDK acceptance remains required (docs/verification/2026-10-22-sdk-m1/native-console-transport).
 env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_SDK_M0_ACCEPTANCE=1 \
   SIMCTL_CHILD_SDK_M0_RUN_ID="$RUN_ID" \
   python3 discovery/run_scenario.py --console-launcher-stop --timeout 120 --output "$OUT/sdk-m0.log" --receipt "$OUT/sdk-m0.receipt.json" \
   --run-id "$RUN_ID" --simulator-id "$UDID" --scenario sdk-m0 --bundle-id dev.iosvoipsdk.example \
   --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.example \
-  --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.iosvoipsdk.example
+  --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.iosvoipsdk.example
 for case in healthy profile push-after-install; do
   env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" \
     SIMCTL_CHILD_CKSIM_BOOTSTRAP_CASE="$case" \
@@ -175,7 +177,7 @@ if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
       --output "$OUT/m1/$name.log" --receipt "$OUT/m1/$name.receipt.json" \
       --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.iosvoipsdk.example \
       --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.example \
-      --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.iosvoipsdk.example
+      --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.iosvoipsdk.example
     container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.example data)
     cp "$container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m1/$name.runtime.jsonl"
     python3 - "$OUT/m1/$name.receipt.json" "$OUT/m1/$name.runtime.jsonl" <<'PY'

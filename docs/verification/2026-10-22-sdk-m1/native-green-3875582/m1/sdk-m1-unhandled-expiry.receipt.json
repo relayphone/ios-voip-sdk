@@ -1,0 +1,23 @@
+{
+  "completed": true,
+  "success": true,
+  "schemaVersion": 2,
+  "runID": "CFB00FC7-7F38-484D-B7A8-131E6E694BBD",
+  "simulatorID": "95DABA3A-BC2B-4856-9DB5-CE22A24804EA",
+  "scenario": "sdk-m1-unhandled-expiry",
+  "bundleID": "dev.iosvoipsdk.example",
+  "launcherPID": 83597,
+  "lastProbeEvent": "done",
+  "lastProbeTimestampMS": 32089,
+  "appEntryObserved": true,
+  "appPID": 83607,
+  "terminationMethod": "console-launcher-signal",
+  "terminationSignal": 15,
+  "terminationSignalDelivered": true,
+  "launchExitCode": 0,
+  "launcherAppPID": 83607,
+  "launchExitCodeBeforeCleanup": 0,
+  "elapsedSeconds": 35.441,
+  "traceSHA256": "a15a9af8d42c947a5d5d28b357231823a5d5c39f8237cd0836a197bc642f8b45",
+  "journalSHA256": "e817a4c127a32e56d3e92489106fef34d0f7febac99562ab4481d27fcb88a68e"
+}

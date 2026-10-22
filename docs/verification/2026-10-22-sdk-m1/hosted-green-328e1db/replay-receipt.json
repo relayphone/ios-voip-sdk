@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured hosted native green with exact-source artifact gate replay",
+  "workflowRun": {
+    "conclusion": "success",
+    "head_sha": "328e1dbf4a97da41edde512f1bb2aa2399cbcfe8",
+    "html_url": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39723020434",
+    "id": 39723020434,
+    "run_attempt": 1,
+    "status": "completed"
+  },
+  "artifactMetadata": {
+    "artifacts": [
+      {
+        "expired": false,
+        "id": 12403150434,
+        "name": "sdk-m0-macos-26-xcode-26.6",
+        "size_in_bytes": 4040971
+      }
+    ]
+  },
+  "capturedSource": {
+    "sourceCommit": "2a2be15644615eff1ee679bcf586f9aac1410f9c",
+    "sourceInputsSHA256": "5b6b073f6297a8799269b4facb1d3c9757f9860744dc4437af919b6243a76aa0"
+  },
+  "manifestSHA256": "29ac01a3417da2c43613e5dfb00d15f316b6b86ea774b35fa4fbca5dff322020",
+  "files": {
+    "replay-m0.json": "ce52d88954ff001b6438856b91fb85354f8cb38383c58bf32bb34af539841a52",
+    "replay-m1.json": "eed99068ed0c073a5c87f95cc619cc03a989f4b25c116e36be7e25f099fdb439",
+    "replay-contracts.json": "97d3b504b6eb75c0a669a758b4234238b4c308bc36c0c2470a32453db0405e8a"
+  },
+  "artifactArchive": {
+    "id": 12403150434,
+    "name": "sdk-m0-macos-26-xcode-26.6",
+    "bytes": 4040971,
+    "sha256": "cc4422af9b06edac9164b92b090ce600fce76196b32b1aafbe24d2f74587f0e8",
+    "githubDigest": "sha256:cc4422af9b06edac9164b92b090ce600fce76196b32b1aafbe24d2f74587f0e8",
+    "githubDigestMatches": true
+  },
+  "capturedCommit": {
+    "message": "Merge 328e1dbf4a97da41edde512f1bb2aa2399cbcfe8 into 9852433a52bc2970b98b7691e1b8becb9f52d6d8",
+    "parents": [
+      "9852433a52bc2970b98b7691e1b8becb9f52d6d8",
+      "328e1dbf4a97da41edde512f1bb2aa2399cbcfe8"
+    ],
+    "sha": "2a2be15644615eff1ee679bcf586f9aac1410f9c",
+    "tree": "21e5907156c9533cbf3f920c060ace4420df1c9a"
+  },
+  "sourceInputProofSHA256": "572dc0c029bb40a9442694c3ec32dbd6b138cbf0304a829ba8eb6ab3c06ac09b"
+}
