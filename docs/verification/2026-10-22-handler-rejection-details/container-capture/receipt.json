@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured host preparation for the same rejection-details acceptance after a necessary journal-capture fix; fresh native CI pending",
+  "source": {
+    "sourceCommit": "61998c71f58f0b9b54c7884c694f072b4bcb6632",
+    "sourceInputsSHA256": "4d03eb05d9ea49c53e84c5ebcb889e848ea3c30dd461c6ddc1007452ac03118d"
+  },
+  "mainParentCommit": "6f58777f3fd16a9dc1378660e49b9011e7653fd6",
+  "sourceUnchangedDuringChecks": true,
+  "sourceSHA256": {
+    ".github/workflows/sdk-m0.yml": "44af240d031272fec286b529dc03daa683721929136c2cc38dce1a652c32f599",
+    "discovery/check_push_main_stall.py": "a75594ac8f09de59ddb93bd448fd517e7a65cf3d3237fde31012fad155920195",
+    "discovery/check_push_report_capture.py": "a78393f0f0187cf170b04cc7326d57701645f09f3f68e992918f45315d6a1b43",
+    "discovery/check_push_report_entry.py": "d1f5ebe0a52da81519aa94c3497fd4c54c9973547e31430c8ab4aacaf6ba5948",
+    "discovery/check_sdk_m0.py": "44f0c2a54fc6fe807b2819c14e9e4a2ffd8e48051d9da1e4670f9406cae90e30",
+    "discovery/check_sdk_m1.py": "8a66bc94e9b70b82e2871bcebbb0b54f552aaf637e76651a4b2f9763667869a7",
+    "discovery/check_sdk_m1_container_capture.py": "ebba554b52f05e5f5ef5f206906fe7640c18c5713360826f3b9055e44efb44dc",
+    "discovery/check_sdk_m1_contracts.py": "d1eb5d83277112d55f2f2ca928e1cf942dfa6d78b36edb2805daa3fb9ec05599",
+    "discovery/push_main_stall_conformance.py": "9b633064ee6c9a4454d17bbb6554a21b871280898f642cfb68b4e964ed2b51ed",
+    "discovery/run_push_report_entry.py": "6a6546943fbc25c5061d7a245cf786f652283388c35180ee126c5c7131623310",
+    "discovery/run_sdk_m0.sh": "282c95d04002d40f37628ef38f9360c92d6ab5f97d8cc35570476497360f3833",
+    "discovery/sdk_m0_conformance.py": "7f1adca2bac6220d4d95bb97d59a064a5e33ba77d2df4c8f70aeb476b2103a98",
+    "discovery/sdk_m1_conformance.py": "a7391c202d7cfc343609e7a11acabc8ebcb04380796a7194187e932d68e5bd2d",
+    "discovery/sdk_m1_contracts_conformance.py": "8d9bc3775d18fb923b99f14a6833a647740f114828f6073e5e19de7cfdcb4193"
+  },
+  "all29PriorRejectionHostInputsUnchanged": true,
+  "priorRejectionHostReceiptSHA256": "e84965e6de140319008eca46a761b93a9063dbaaf148c96c844d898c740fcfc5",
+  "preservedCorrectedOriginCIRedReceiptSHA256": "12464210eb9eac162e504c2021d3f8449826f52113e166710d9ac528109588c7",
+  "checks": [
+    {
+      "name": "container-capture",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m1_container_capture.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:19:15.263129+00:00",
+      "exitCode": 0,
+      "log": "docs/verification/2026-10-22-handler-rejection-details/container-capture/container-capture.log",
+      "logSHA256": "b95cd8ecee6943d352c6d78efc69e550ccb448fb15b187d2540ae93a9ffdae0d"
+    },
+    {
+      "name": "m0-controls",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m0.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:19:15.263713+00:00",
+      "exitCode": 0,
+      "log": "docs/verification/2026-10-22-handler-rejection-details/container-capture/m0-controls.log",
+      "logSHA256": "ce3f4ab800d0fb3bd27587071c14a8541e62347d086815357f211a975152f946"
+    },
+    {
+      "name": "m1-controls",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:19:15.273050+00:00",
+      "exitCode": 0,
+      "log": "docs/verification/2026-10-22-handler-rejection-details/container-capture/m1-controls.log",
+      "logSHA256": "e6ab1ca4fbdb89c57cfb0620f7895a707d30def4894752796cabff78de7ce75a"
+    },
+    {
+      "name": "native-contract-controls",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:19:15.279033+00:00",
+      "exitCode": 0,
+      "log": "docs/verification/2026-10-22-handler-rejection-details/container-capture/native-contract-controls.log",
+      "logSHA256": "306ee0034ee6d083d1f24028c5273f3e213a75c626aad9913d1e91f5ac43bdd8"
+    },
+    {
+      "name": "main-stall-controls",
+      "argv": [
+        "python3",
+        "discovery/check_push_main_stall.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:19:17.961092+00:00",
+      "exitCode": 0,
+      "log": "docs/verification/2026-10-22-handler-rejection-details/container-capture/main-stall-controls.log",
+      "logSHA256": "915431db2b9a9f584e0cddfb2182166d3a207c2af01643cf3dadd05edf141528"
+    },
+    {
+      "name": "push-entry-controls",
+      "argv": [
+        "python3",
+        "discovery/check_push_report_entry.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:19:18.767634+00:00",
+      "exitCode": 0,
+      "log": "docs/verification/2026-10-22-handler-rejection-details/container-capture/push-entry-controls.log",
+      "logSHA256": "02abfe885f54079a15d9e5fed340c5d1500937830a63d51aa81bde640406b57c"
+    },
+    {
+      "name": "push-capture-controls",
+      "argv": [
+        "python3",
+        "discovery/check_push_report_capture.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:19:20.691377+00:00",
+      "exitCode": 0,
+      "log": "docs/verification/2026-10-22-handler-rejection-details/container-capture/push-capture-controls.log",
+      "logSHA256": "89cc446ea45d262da8d0dce7f2c2a6bff98855be17cb1c518a2613ab65a18550"
+    },
+    {
+      "name": "shell-syntax",
+      "argv": [
+        "bash",
+        "-n",
+        "discovery/run_sdk_m0.sh"
+      ],
+      "startedAtUTC": "2026-10-22T14:19:21.081834+00:00",
+      "exitCode": 0,
+      "stdoutEmpty": true,
+      "stderrEmpty": true
+    },
+    {
+      "name": "python-syntax",
+      "argv": [
+        "python3",
+        "-m",
+        "py_compile",
+        "discovery/check_sdk_m1_container_capture.py",
+        "discovery/sdk_m0_conformance.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:19:21.208517+00:00",
+      "exitCode": 0,
+      "stdoutEmpty": true,
+      "stderrEmpty": true
+    },
+    {
+      "name": "workflow-syntax",
+      "argv": [
+        "actionlint",
+        ".github/workflows/sdk-m0.yml"
+      ],
+      "startedAtUTC": "2026-10-22T14:19:22.675086+00:00",
+      "exitCode": 0,
+      "stdoutEmpty": true,
+      "stderrEmpty": true
+    },
+    {
+      "name": "diff-whitespace",
+      "argv": [
+        "git",
+        "diff",
+        "--check",
+        "6f58777f3fd16a9dc1378660e49b9011e7653fd6"
+      ],
+      "startedAtUTC": "2026-10-22T14:19:24.436165+00:00",
+      "exitCode": 0,
+      "stdoutEmpty": true,
+      "stderrEmpty": true
+    }
+  ],
+  "limits": [
+    "The synthetic actual-loop control proves one data-container query and three distinct journal copies/hash receipts. It is not simulator or native acceptance.",
+    "The original post-expiry timeout location is inferred from the retained control-flow/file boundary, not a direct command receipt.",
+    "No original CI trace, manifest, source identity, journal or outcome was rewritten; both prior runs remain red.",
+    "The nine Swift relay groups, eleven JavaScript tests and library/example typechecks remain bound through unchanged 29 source inputs; they were not repeated for this runner-only change."
+  ]
+}

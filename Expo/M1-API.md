@@ -34,7 +34,12 @@ termination states still take precedence over that transport progress.
 `setConversationHandler(null)` removes the handler. Replacing or removing it
 aborts the old handler's signals with `handlerReplaced` and ignores its late
 promise results. Native retains unexpired actions, may redeliver them to the new
-generation, and owns the platform deadline and unhandled-action policy. JS never
+generation, and owns the deadline and unhandled-action policy. `deadline` in both
+the pending snapshot and handler context is the effective application deadline:
+initially 1.5 seconds before the native `timeoutDate`. The margin is an application
+safety policy, not a measured platform interval. Native applies the policy there,
+cancels running work, and refuses an accept if execution resumes after platform
+expiry. Handler attachment does not subtract the margin again. JS never
 uses a timer to extend or fulfill an expired action. Optional hold, mute and tones
 callbacks accept when omitted. Handler callbacks may return `void` or a promise,
 matching the RFC's synchronous mute example. Native filters system echoes.

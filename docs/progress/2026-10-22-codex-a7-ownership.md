@@ -1,5 +1,7 @@
 # A7 process owner core preparation — October 22, 2026
 
+**Current status:** the final ordered parent retains the eighteen-command preparation and adds one passing affected seven-group mute check. Root final source review is clear. Combined native acceptance remains pending; earlier run and failure identities stay separate.
+
 **Proposed acceptance target:** every SDK creation path claims one process owner
 before constructing its only LCK manager. Native Swift and Expo use the same
 public `VoIPApplication.start` entry; the shared getter and separate client
@@ -88,3 +90,82 @@ preserves that local red and the original hosted state separately. All three
 mandatory whole-client cache modes and the mandatory incoming-delivery host
 control pass; both independent review axes cleared the repair. This is host
 evidence with modeled LCK timing, not a native or device acceptance result.
+
+## First parent forward merge
+
+Reviewed PR #29 `4e7bba33` is merged normally, retaining main `6f58777`,
+the six-case native PushKit fixture, measured host metadata and the narrow
+example-container lookup cache. Production SDK, Expo and packaging bytes remain
+identical to the prior qualified `031da3f` head. The source-inventory conflict
+uses the exact unique union of both parents; ownership controls remain alongside
+the new native main-stall and actual-loop container controls.
+
+**Measured:** the [forward receipt](../verification/2026-10-22-sdk-process-owner-core/rejection-parent-forward.json)
+binds 136 SDK inputs to digest `15d443b079a5324f54e5e294d334c41a291490723cea6d914609e066f52ef1e7`.
+All fourteen affected host commands passed once, including eleven ownership
+groups, all three incoming-cache modes, the mandatory incoming-delivery control,
+the six-case push gates, eleven native-origin controls, four actual-loop
+container controls and eleven TypeScript runtime controls. Both independent
+integration review axes cleared the frozen merge.
+
+The historical [SDK run](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39780116081)
+and [runtime run](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39780115888)
+remain green and artifact-audited at `031da3f`; the receipt preserves those
+identities separately from the new host result and both parent red runs. No
+native execution, product build, audio work or workflow retry was used for this
+forward merge. Fresh hosted acceptance is required for its changed fixture and
+capture inputs.
+
+## Ordered core parent
+
+Reviewed PR #29 `047fc28f` is merged normally over the previous `de188217`
+head, retaining the ordered A2/A3 ancestry. The LCK profile keeps its thirty-second
+platform deadline/expiry, the SDK preserves its 1.5-second safety margin, and the
+live pending app-mute echo filter remains. The four native contract cases, six
+push cases, container cache and public five-code error guard are preserved.
+
+The native contract conflict keeps `VoIPApplication.start` for both unhandled
+policies. One actual host compile reproduced the mute runner's omitted
+`ProcessSDKOwnership` source. The narrow repair uses the actual factory and
+one-shot setup, plus the real Swift/Objective-C process claim and header; all
+seven mute assertions and their timing remain unchanged.
+
+**Measured:** the [ordered-union receipt](../verification/2026-10-22-sdk-process-owner-core/ordered-core-parent.json)
+binds 140 SDK inputs to digest `e6425b26f93bee6cb8b0775f19783d11db0a63c5e53528a4c8337614302e3479`.
+All eighteen focused commands passed once after the repair. This includes core
+and seven deadline groups, seven mute groups, ownership/cache/delivery checks,
+strict native-oracle controls and TypeScript checks. The single bounded actual
+shared Engine/SDK/Debug-contract typecheck passed with empty diagnostics in
+12.59 seconds, using real Apple SDK declarations and bridge headers. It built
+no target object or app, linked nothing, and ran no simulator, device or audio code.
+
+The previous `de188217` run metadata is retained with its observed queued or
+in-progress states. The audited green `031da3f` source and parent red runs remain
+historical. Root final review precedes publication; combined native acceptance
+remains pending at the final ordered stack tip.
+
+## Reviewed mute fixture follow-up
+
+The ordered-union checkpoint is retained as local normal merge `8524de3`.
+Reviewed parent #29 `9f328b50` is then merged normally, preserving the public
+factory acquisition and real Swift/Objective-C claim runner. Only
+`MuteEchoTests.swift` changes among the 140 SDK inputs; the other 139 files,
+including production code, actual Debug compiler inputs and all native inventories,
+remain byte-identical.
+
+The original A3 `7276218` hosted run remains a host assertion failure. Controlled
+host diagnostics reproduced an invalid pending-echo expectation after the
+120 ms application deadline; the original CI subcase, delay and sole cause remain
+unproven. The reviewed fixture keeps that short deadline and every cancellation,
+single-settlement, late-result and genuine-action assertion. Its two long-budget
+groups retain the forty-millisecond echo delay with explicit live-context and
+inline-fulfillment checks. No product or time budget changes.
+
+**Measured:** one affected seven-group mute control passed after the final
+source freeze. The [follow-up receipt](../verification/2026-10-22-sdk-process-owner-core/mute-fixture-followup.json)
+binds the current SDK digest `802e0f340958ec9529f213fb9c2bf9b8b671852d8f10e563eb9ffcc4732ae906`
+and the exact one-file delta. The prior eighteen-command preparation and actual
+Debug compiler proof retain their original source labels; no broad suite or
+compiler/native execution was repeated. Root final source review is clear;
+bound receipt and independent SPEC completion precede publication. Combined
+native acceptance remains pending at the final ordered stack tip.

@@ -1,0 +1,268 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured original CI failure; narrow exact-gate predicate replay and source/product bindings, not a passing qualification",
+  "runID": 39761541639,
+  "attempt": 1,
+  "artifactID": 12419971111,
+  "artifactZIP_SHA256": "e9d0e6fd4b6044ae275c7af995ac062f4f156550692cdaa80f416698838d3a51",
+  "prHead": "1fd33b4969a5a19dee14b18da354612f9b9534ef",
+  "testMerge": "e2c0812f811bc39e48ce4d17fe7bc09f6ea8fd43",
+  "trees": {
+    "1fd33b4969a5a19dee14b18da354612f9b9534ef": "16e23cb04efca0d9ba094c15ded13d93d698626b",
+    "e2c0812f811bc39e48ce4d17fe7bc09f6ea8fd43": "b6bb0a4f4995a347c574cb1d4391ea8767354d2b"
+  },
+  "treeEqual": false,
+  "treeDifferences": [
+    "docs/progress/2026-10-22-codex-device-release-exclusion.md",
+    "docs/verification/2026-10-22-sdk-device-release/README.md",
+    "docs/verification/2026-10-22-sdk-device-release/hosted-green-2605d4d/pod-device-receipt.json",
+    "docs/verification/2026-10-22-sdk-device-release/hosted-green-2605d4d/receipt.json"
+  ],
+  "boundSDKSourceEqual": true,
+  "sourceInputsSHA256": "39868ff9bbba6713d7edf77d70f160b8c6001c19cce635d28475c5ed01701fc2",
+  "boundSDKSourceFiles": 110,
+  "manifestSHA256": "0b2fdfd6c46ea3de9c08adfc4d79ec605544c2a806e979d97e559cdc7ad613e9",
+  "gateSHA256": "e42c643d5d45394e2e95440ad48e01f6a6598ff5f04b589306bc16092388c605",
+  "unchangedOriginalGateError": "unhandled-expiry: journey failed",
+  "traceSHA256": "467d5e18395836a3d16de78307cfa7ca9f839e557fd28ddfbe450fc2a1f4b23f",
+  "journalSHA256": "2a0936a411c92a7c76be5913692c2940c085af97b798927b8b722c93e7aa6c9a",
+  "scenario": "sdk-m1-unhandled-expiry",
+  "simulatorID": "565E8988-FB47-4616-B80D-6B16096BA300",
+  "appPID": 27902,
+  "appRunID": "CF80FDF2-957D-477A-B0A8-D486A648DC75",
+  "clockLimit": "Runtime t_ms and probe t_ms have different epochs; absolute platform deadline comparison requires trace wallTime and runtime deadlineMS.",
+  "sdkResult": {
+    "bundleID": "dev.iosvoipsdk.example",
+    "event": "sdk.result",
+    "main": true,
+    "pid": 27902,
+    "runID": "CF80FDF2-957D-477A-B0A8-D486A648DC75",
+    "sequence": 25,
+    "simulatorID": "565E8988-FB47-4616-B80D-6B16096BA300",
+    "success": false,
+    "t_ms": 36778,
+    "wallTimeMS": 1792665506267
+  },
+  "pending": {
+    "actionID": "280D21EE-FB5A-4BAC-9206-D02B28E35E43",
+    "bundleID": "dev.iosvoipsdk.example",
+    "clockBeforeMS": 1792665469763,
+    "conversationID": "EE10AF7F-FA87-41A9-92E6-6CA441C01187",
+    "deadline": "2026-10-22T10:38:18.238Z",
+    "event": "m1.coldPending",
+    "handlerAttached": false,
+    "main": true,
+    "pid": 27902,
+    "remainingMS": 28474.511981010437,
+    "runID": "CF80FDF2-957D-477A-B0A8-D486A648DC75",
+    "sequence": 12,
+    "simulatorID": "565E8988-FB47-4616-B80D-6B16096BA300",
+    "t_ms": 274,
+    "wallTimeMS": 1792665469763
+  },
+  "snapshots": [
+    {
+      "bundleID": "dev.iosvoipsdk.example",
+      "conversations": [],
+      "event": "sdk.snapshot",
+      "main": true,
+      "pid": 27902,
+      "revision": 0,
+      "runID": "CF80FDF2-957D-477A-B0A8-D486A648DC75",
+      "sequence": 5,
+      "simulatorID": "565E8988-FB47-4616-B80D-6B16096BA300",
+      "t_ms": 126,
+      "wallTimeMS": 1792665469615
+    },
+    {
+      "bundleID": "dev.iosvoipsdk.example",
+      "conversations": [
+        {
+          "direction": "incoming",
+          "hasConnectedAt": false,
+          "id": "EE10AF7F-FA87-41A9-92E6-6CA441C01187",
+          "isMuted": false,
+          "isVideo": false,
+          "status": "ringing"
+        }
+      ],
+      "event": "sdk.snapshot",
+      "main": true,
+      "pid": 27902,
+      "revision": 1,
+      "runID": "CF80FDF2-957D-477A-B0A8-D486A648DC75",
+      "sequence": 7,
+      "simulatorID": "565E8988-FB47-4616-B80D-6B16096BA300",
+      "t_ms": 212,
+      "wallTimeMS": 1792665469701
+    },
+    {
+      "bundleID": "dev.iosvoipsdk.example",
+      "conversations": [
+        {
+          "direction": "incoming",
+          "hasConnectedAt": false,
+          "id": "EE10AF7F-FA87-41A9-92E6-6CA441C01187",
+          "isMuted": false,
+          "isVideo": false,
+          "pending": {
+            "deadline": "2026-10-22T10:38:18.238Z",
+            "id": "280D21EE-FB5A-4BAC-9206-D02B28E35E43",
+            "kind": "join",
+            "origin": "app"
+          },
+          "status": "ringing"
+        }
+      ],
+      "event": "sdk.snapshot",
+      "main": true,
+      "pid": 27902,
+      "revision": 2,
+      "runID": "CF80FDF2-957D-477A-B0A8-D486A648DC75",
+      "sequence": 11,
+      "simulatorID": "565E8988-FB47-4616-B80D-6B16096BA300",
+      "t_ms": 251,
+      "wallTimeMS": 1792665469740
+    },
+    {
+      "bundleID": "dev.iosvoipsdk.example",
+      "conversations": [
+        {
+          "direction": "incoming",
+          "hasConnectedAt": false,
+          "id": "EE10AF7F-FA87-41A9-92E6-6CA441C01187",
+          "isMuted": false,
+          "isVideo": false,
+          "status": "ringing"
+        }
+      ],
+      "event": "sdk.snapshot",
+      "main": true,
+      "pid": 27902,
+      "revision": 3,
+      "runID": "CF80FDF2-957D-477A-B0A8-D486A648DC75",
+      "sequence": 21,
+      "simulatorID": "565E8988-FB47-4616-B80D-6B16096BA300",
+      "t_ms": 30252,
+      "wallTimeMS": 1792665499741
+    },
+    {
+      "bundleID": "dev.iosvoipsdk.example",
+      "conversations": [
+        {
+          "direction": "incoming",
+          "hasConnectedAt": false,
+          "id": "EE10AF7F-FA87-41A9-92E6-6CA441C01187",
+          "isMuted": false,
+          "isVideo": false,
+          "pending": {
+            "deadline": "2026-10-22T10:38:48.241Z",
+            "id": "371EC765-2283-41AF-BD8A-0669D0B9C91A",
+            "kind": "end",
+            "origin": "system"
+          },
+          "status": "ringing"
+        }
+      ],
+      "event": "sdk.snapshot",
+      "main": true,
+      "pid": 27902,
+      "revision": 4,
+      "runID": "CF80FDF2-957D-477A-B0A8-D486A648DC75",
+      "sequence": 22,
+      "simulatorID": "565E8988-FB47-4616-B80D-6B16096BA300",
+      "t_ms": 30276,
+      "wallTimeMS": 1792665499765
+    }
+  ],
+  "runtimeActionEvents": [
+    {
+      "actionIDs": [
+        "280D21EE-FB5A-4BAC-9206-D02B28E35E43"
+      ],
+      "bundleID": "dev.iosvoipsdk.example",
+      "event": "transaction.delivered",
+      "kinds": [
+        "CXAnswerCallAction"
+      ],
+      "origin": "application",
+      "pid": 27902,
+      "profile": "ios-27.0",
+      "provider": "ObjectIdentifier(0x00000001056647c0)",
+      "requestID": "F5DC8182-776A-4E90-905D-1B11DC01C106",
+      "runID": "CF80FDF2-957D-477A-B0A8-D486A648DC75",
+      "sequence": 11,
+      "t_ms": 270,
+      "transactionID": "D93D5C1C-28C4-40DC-9E45-A3B1708F2A3F"
+    },
+    {
+      "actionID": "280D21EE-FB5A-4BAC-9206-D02B28E35E43",
+      "apiKind": "livecommunicationkit",
+      "bundleID": "dev.iosvoipsdk.example",
+      "deadlineMS": 1792665499737,
+      "deadlineSeconds": 30,
+      "event": "action.deadline",
+      "expirySeconds": 30,
+      "pid": 27902,
+      "profile": "ios-27.0",
+      "provider": "ObjectIdentifier(0x00000001056647c0)",
+      "runID": "CF80FDF2-957D-477A-B0A8-D486A648DC75",
+      "sequence": 12,
+      "t_ms": 270
+    },
+    {
+      "actionIDs": [
+        "371EC765-2283-41AF-BD8A-0669D0B9C91A"
+      ],
+      "bundleID": "dev.iosvoipsdk.example",
+      "event": "transaction.delivered",
+      "kinds": [
+        "CXEndCallAction"
+      ],
+      "origin": "system",
+      "pid": 27902,
+      "profile": "ios-27.0",
+      "provider": "ObjectIdentifier(0x00000001056647c0)",
+      "requestID": "system",
+      "runID": "CF80FDF2-957D-477A-B0A8-D486A648DC75",
+      "sequence": 14,
+      "t_ms": 30272,
+      "transactionID": "D65BEEFB-727A-4FB8-9885-F5C510017F1E"
+    },
+    {
+      "actionID": "371EC765-2283-41AF-BD8A-0669D0B9C91A",
+      "apiKind": "livecommunicationkit",
+      "bundleID": "dev.iosvoipsdk.example",
+      "deadlineMS": 1792665529740,
+      "deadlineSeconds": 30,
+      "event": "action.deadline",
+      "expirySeconds": 30,
+      "pid": 27902,
+      "profile": "ios-27.0",
+      "provider": "ObjectIdentifier(0x00000001056647c0)",
+      "runID": "CF80FDF2-957D-477A-B0A8-D486A648DC75",
+      "sequence": 15,
+      "t_ms": 30273
+    },
+    {
+      "actionID": "280D21EE-FB5A-4BAC-9206-D02B28E35E43",
+      "bundleID": "dev.iosvoipsdk.example",
+      "event": "action.settled",
+      "fulfilled": false,
+      "origin": "application",
+      "pid": 27902,
+      "profile": "ios-27.0",
+      "runID": "CF80FDF2-957D-477A-B0A8-D486A648DC75",
+      "sequence": 16,
+      "t_ms": 30273
+    }
+  ],
+  "limits": [
+    "Receipt success means bounded launch/export completion, not semantic journey acceptance.",
+    "No original receipts, traces, journal rows or gate code were changed.",
+    "The trace does not mark SDK expiration firing or LCK fail invocation/state, so it does not prove where the approximately 1.5-second delay occurred.",
+    "No retry, native run, simulator creation, source fix or runtime oracle change was performed."
+  ],
+  "runURL": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39761541639",
+  "finding": "The SDK did not publish cleared pending state until about the native platform deadline, then published another pending system End and remained ringing. The old M1 journey reported failure. The trace does not locate the delay within timer firing, LCK settlement or refresh."
+}
