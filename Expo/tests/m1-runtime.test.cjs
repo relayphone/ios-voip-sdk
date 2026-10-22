@@ -48,6 +48,10 @@ function native() {
   return {
     attachments: [],
     settlements: [],
+    dialAttachments: [],
+    setDialRequestListenerAttached(attached, generation) {
+      this.dialAttachments.push({ attached, generation });
+    },
     addListener(name, callback) {
       const callbacks = listeners.get(name) ?? new Set();
       callbacks.add(callback);
@@ -372,4 +376,38 @@ test('non-state signals are routed by name and unsubscribe removes the listener'
   unsubscribe();
   bridge.emit('conversationEvent', { type: 'providerReset', payload: {} });
   assert.deepEqual(events, [{}]);
+});
+
+test('dial request readiness follows actual public listeners, including synchronous cold drain', () => {
+  const bridge = native();
+  const request = { handle: '+15555550142', video: true };
+  bridge.setDialRequestListenerAttached = function (attached, generation) {
+    this.dialAttachments.push({ attached, generation });
+    if (attached)
+      this.emit('conversationEvent', { type: 'dialRequest', payload: request });
+  };
+  const runtime = new ConversationRuntime(bridge);
+  runtime.subscribeEvent('audioActivated', () => {});
+  assert.deepEqual(bridge.dialAttachments, []);
+  const seen = [];
+  const first = runtime.subscribeEvent('dialRequest', (event) =>
+    seen.push(event),
+  );
+  assert.deepEqual(seen, [request]);
+  assert.deepEqual(bridge.dialAttachments, [{ attached: true, generation: 1 }]);
+  const second = runtime.subscribeEvent('dialRequest', () => {});
+  first();
+  first();
+  assert.equal(bridge.dialAttachments.length, 1);
+  second();
+  assert.deepEqual(bridge.dialAttachments[1], {
+    attached: false,
+    generation: 2,
+  });
+  const third = runtime.subscribeEvent('dialRequest', () => {});
+  assert.deepEqual(bridge.dialAttachments[2], {
+    attached: true,
+    generation: 3,
+  });
+  third();
 });

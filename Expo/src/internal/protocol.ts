@@ -63,6 +63,7 @@ export interface NativeBridge {
   getConversations(): Promise<ConversationEnvelope>;
   getPushToken(): Promise<PushTokenEnvelope>;
   setHandlerAttached(attached: boolean, generation: number): void;
+  setDialRequestListenerAttached(attached: boolean, generation: number): void;
   settleAction(
     actionID: string,
     generation: number,

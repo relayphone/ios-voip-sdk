@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "success": true,
+  "classification": "measured host controls and current-source interface typecheck; no native M3 acceptance",
+  "recordedAt": "2026-10-22T03:25:21.027368+00:00",
+  "baseCommit": "e466d7f174be6a26b9d6fec4b3743bf0060710d6",
+  "sourceSHA256": {
+    "Expo/apple/ConversationBridge.swift": "a29094faf7f5ab1cca7787a1167002db9ee06decba54be50b6bc91e2bb820f37",
+    "Expo/apple/IosVoipSDK.h": "46a98edbb2f41d87fa048e3b74aa92ffdf96a89d3b06c32a2848829a9127e9f4",
+    "Expo/apple/IosVoipSDKModule.swift": "fa74742b98790152b2c6bc1f72e690664b6ae235a46ea605cfe741c25db614c2",
+    "Expo/apple/VoIPAppDelegateSubscriber.swift": "1355f5e9dabdb454cf79f9d0aa7d7a93185bbb257e1b9a287d7c17609b48c0d0",
+    "Expo/plugin/withVoIPSDK.cjs": "a18f8b015336dc95d8cebc445254381f97d5ffdb8d3410631fa0d19c5f57442a",
+    "Expo/src/internal/client.ts": "e0c21bfd14787021baa54d0f279f3b42a8bb84767991285cbd5fcf379e8af8dc",
+    "Expo/src/internal/protocol.ts": "1061ebd5540a1d4eb9fe49145da4a3356a3122e5d7133382c3506cb7474437a5",
+    "Expo/src/types.ts": "e6d90e1482598deea4ec77f5db00d2be2631b14047c81b9e1f92493e33c40573",
+    "Expo/tests/m1-runtime.test.cjs": "e09b08bdc1350016491bb7f8118b6b601623795d27d9dc33aa33e64e61527036",
+    "Sources/Engine/RuntimeEngine.swift": "484e83b145d57d4784f772dac61a7dbb519a5cf856f93736dcf5f07e7f922cc8",
+    "Sources/Interposition/CKRuntimeSeam.h": "2ab31f1447a96b9dc655cce845c55d176f9cfe0330e317781d40cf067ef9d0d4",
+    "Sources/VoIPPlatform/include/VoIPPlatform.h": "09884ca1f838088e33358a96013466a142c5c8773549e599beb43710b1043dd8",
+    "Sources/VoIPSDK/AudioActivation.swift": "94829e2d59193ec60a043c4a63f5467659c9500c73fb4fb1624f8abeada6d6c0",
+    "Sources/VoIPSDK/AudioRoutes.swift": "2f4486a43bc756e5c650c7dd5b11034cb5b8523d164501b78760b20f9ad9ac98",
+    "Sources/VoIPSDK/ConversationClient.swift": "7c53c4e80f3013d2c499e8fb94cb329107160dc00b0f5383c3401e3a2b00e5e7",
+    "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
+    "Sources/VoIPSDK/ConversationModels.swift": "811d22864c7b056859595cba05f1383f2b46cea5685af35f1a1d9821ceed118b",
+    "Sources/VoIPSDK/ConversationRecord.swift": "93208e379e1732e2bd48e74c8e256a2f06e83c5729e3d168e5bdf48191009029",
+    "Sources/VoIPSDK/DialRequest+Intents.swift": "15c67cf5273a51e7eb449b26854cf4e355be53fb081702d94d729e3943c60a97",
+    "Sources/VoIPSDK/DialRequest.swift": "10a702d0774062368e935032eeffe55d06a0ef594debb5269fecf8dcd801027e",
+    "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+    "Sources/VoIPSDK/MediaAdapter.swift": "f67a37b204152df0a2d024c464617f6a16d26fdd1fadd17bf847a8ed8e55059a",
+    "Sources/VoIPSDK/PushService.swift": "811c431a49d80565f498d78e6339faebdc5aa0299ec29abca2e9f39bc32f1adb",
+    "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+    "Sources/VoIPSDK/SimulatorSupport.swift": "b7eba42470b73a5d46b84fdb45ae81341600daf3a684848ef255d4ee4a538298",
+    "Sources/VoIPSDK/SystemAudioSession.swift": "95b4f94d0cf2350c9569a811afdd07141d9a895cceb7e951972b946e8dfa24b5",
+    "Sources/VoIPSDK/VoIPApplication.swift": "a222dbeeb4675938862fd9cfddda591af614509cb55c011da3f7bd233ca077de",
+    "Sources/VoIPSDK/VoIPSystemEntryPoints.swift": "0e1ce5e9b59de2a341dbcf3b7876b7ba0a8b2aa64cb5c8709bb04adec2442797",
+    "Tests/DialRequests/DialRequestTests.swift": "76e43e78736305deb82cdfb1247c0da1a6e5d29da0fa7847010a68c72f9132f1",
+    "Tests/DialRequests/run.sh": "360f903201c2845a54f55780c9050bf318dedaf77fc07a85541437b5f5dfd64d",
+    "Tests/ExpoBridge/BridgeTests.swift": "5be1bd35b06f843a288f618ccf1037d13852a73688331d3d33cca6b0b3f27a3c",
+    "app.plugin.js": "efa664ddfa03bc02fa4775b55466a7f9e8cd628b5f36d3490e4ff8f9bbaabbe3",
+    "discovery/check_expo_bridge.py": "198b9ea29207f9b0230591bc578696f84bad75b99d55120becbab0c587b84b1e",
+    "discovery/check_expo_plugin.cjs": "9bed64e33a09b08db274c15960b62df0c81a277f5eaef42c63610cfdf5800f01",
+    "example/App.tsx": "6b90ac3d2df49e4c1cd4a7b0b0aa543ac06c1132cc086328854a8c83cdaa1304",
+    "example/app.json": "2fd04b8c8e971d2bbe0b8dbaf177f9389d06a355add90fdacf1039711955bed1",
+    "example/tsconfig.json": "c2eef1ad2ff0e87ac2a54724aa0b3adf2b6c09822df90d8bacb67aa5acc677b6",
+    "package-lock.json": "a58fc38dceca2f003ce7269a5a116aec630061afbe45d09902e989329dd7f1d0",
+    "package.json": "b27efab561b531d37cf2b47c19bc073f9e2ec2cb5f4a2fb3da2f79f9dabc9655",
+    "tsconfig.json": "bd4b85df5c37c240a9e017d386dae3aad3763cbde5614f3e48fe0723b3074acc"
+  },
+  "dependencies": {
+    "expoVersion": "58.0.17",
+    "expoModulesCoreVersion": "58.0.24",
+    "productionClangResponseSHA256": "f25cdc9639be795bd28b8bf3e409cc1e146a4a297aba84d0175e8c6e25b5bf6e",
+    "ExpoModulesCore/ExpoModulesCore.framework/Modules/ExpoModulesCore.swiftmodule/arm64-apple-ios-simulator.swiftinterfaceSHA256": "7596be2b77054270d72c5f69a950e80bfdcd3605f66ce043a8a6afe164b4e238",
+    "ExpoModulesJSI/ExpoModulesJSI.framework/Modules/ExpoModulesJSI.swiftmodule/arm64-apple-ios-simulator.swiftinterfaceSHA256": "4a804c03fb0c0c1a9f87119ead7301046f81fab2417642658d27b7afa6359af1"
+  },
+  "checks": [
+    {
+      "name": "dial-request-router-and-public-intents",
+      "command": "bash Tests/DialRequests/run.sh",
+      "exitCode": 0,
+      "stdoutSHA256": "e546cebd21c3e4e57013f27bf37d9be41687cad10e766e44ecd5e9f1c98e2372",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "result": {
+        "success": true,
+        "checks": [
+          "tel-payload-and-rejection",
+          "public-intent-video",
+          "ambiguous-intent-rejection",
+          "public-record-redial",
+          "cold-buffer-fifo",
+          "reload-buffer",
+          "stale-owner-detach",
+          "reentrant-detach-retains-pending"
+        ]
+      }
+    },
+    {
+      "name": "expo-relay",
+      "command": "python3 discovery/check_expo_bridge.py",
+      "exitCode": 0,
+      "stdoutSHA256": "d0b5a19e7701f30a12e3f939cd1987a4ad455183dbc41a7e553deac57002bce9",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "result": {
+        "checks": [
+          "production-model-json-and-millisecond-dates",
+          "all-handler-kinds-success-rejection-and-duplicate-settlement",
+          "native-cancellation-and-pre-cancelled-signal",
+          "handler-removal-replacement-and-old-generation-settlement",
+          "cancellation-during-action-publication",
+          "overlapping-lifetimes-reload-and-stale-owner",
+          "destroyed-bridge-observers-continuations-and-release",
+          "invalid-model-encoding-rejects-handler-delivery",
+          "production-state-event-and-null-token-encoding",
+          "cold-dial-request-readiness-reload-and-stale-owner"
+        ],
+        "success": true,
+        "hostOnly": true,
+        "sourceSHA256": {
+          "Sources/VoIPSDK/ConversationModels.swift": "811d22864c7b056859595cba05f1383f2b46cea5685af35f1a1d9821ceed118b",
+          "Sources/VoIPSDK/DialRequest.swift": "10a702d0774062368e935032eeffe55d06a0ef594debb5269fecf8dcd801027e",
+          "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
+          "Sources/VoIPSDK/PushService.swift": "811c431a49d80565f498d78e6339faebdc5aa0299ec29abca2e9f39bc32f1adb",
+          "Expo/apple/ConversationBridge.swift": "a29094faf7f5ab1cca7787a1167002db9ee06decba54be50b6bc91e2bb820f37",
+          "Tests/ExpoBridge/OwnerDoubles.swift": "a82aaa5cd5dcbe09594aecdf6c261ce5c956f7555666ec637a720029afefc09b",
+          "Tests/ExpoBridge/BridgeTests.swift": "5be1bd35b06f843a288f618ccf1037d13852a73688331d3d33cca6b0b3f27a3c",
+          "discovery/check_expo_bridge.py": "198b9ea29207f9b0230591bc578696f84bad75b99d55120becbab0c587b84b1e"
+        }
+      }
+    },
+    {
+      "name": "typescript-runtime",
+      "command": "node --test Expo/tests/m1-runtime.test.cjs",
+      "exitCode": 0,
+      "stdoutSHA256": "29b0f4a1efebc1511096b0c32f30d854108f26092ef8c2078c77d046d07cb2dd",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "result": {
+        "tests": 11,
+        "passed": 11,
+        "failed": 0
+      }
+    },
+    {
+      "name": "expo-plugin",
+      "command": "node discovery/check_expo_plugin.cjs",
+      "exitCode": 0,
+      "stdoutSHA256": "0aa39191ebc386f31aafc7e00afe6e419149df7462523256724df163dfde9bbf",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "result": {
+        "success": true,
+        "classification": "measured host Expo mod controls; no native build or registration",
+        "count": 23,
+        "checks": [
+          "apple-mods-only",
+          "defaults-and-existing-plist-preserved",
+          "repeated-plugin-and-plist-idempotent",
+          "explicit-native-options-and-permissions",
+          "apns-development-default-preservation-and-explicit-selection",
+          "invalid-and-unimplemented-options-rejected",
+          "default-calling-app-optin-and-owned-entitlement-cleanup",
+          "malformed-existing-plist-rejected",
+          "resource-bytes-resolved-xcode-paths-and-real-resource-phase",
+          "resource-project-idempotence",
+          "owned-resource-update-without-duplicate-project-entries",
+          "unrelated-xcode-filename-collision-rejected",
+          "missing-resources-and-invalid-png-rejected",
+          "source-path-and-symlink-boundaries",
+          "destination-symlink-does-not-overwrite-unrelated-file",
+          "dangling-destination-symlink-does-not-create-external-file",
+          "atomic-resource-update-preserves-hardlink-referent",
+          "reserved-directory-symlink-does-not-overwrite-project-file",
+          "platform-directory-symlink-rejected-before-canonicalization",
+          "existing-reference-without-resource-phase-rejected",
+          "unsupported-project-group-layout-rejected",
+          "unsupported-root-group-base-layout-rejected",
+          "helper-child-name-collision-rejected"
+        ],
+        "expoVersion": "58.0.17",
+        "sourceFiles": {
+          "app.plugin.js": "efa664ddfa03bc02fa4775b55466a7f9e8cd628b5f36d3490e4ff8f9bbaabbe3",
+          "Expo/plugin/withVoIPSDK.cjs": "a18f8b015336dc95d8cebc445254381f97d5ffdb8d3410631fa0d19c5f57442a",
+          "discovery/check_expo_plugin.cjs": "9bed64e33a09b08db274c15960b62df0c81a277f5eaef42c63610cfdf5800f01"
+        }
+      }
+    },
+    {
+      "name": "package-typescript",
+      "command": "node node_modules/typescript/bin/tsc --noEmit --project tsconfig.json",
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "example-public-source-typescript",
+      "command": "tsc --noEmit --project <temporary example config extending example/tsconfig.json; ios-voip-sdk resolves to this checkout Expo/src/index.ts>",
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "current-core-runtime-expo-interface-typecheck",
+      "command": "swiftc -swift-version 6 -typecheck -module-name IosVoipSDK -target arm64-apple-ios17.4-simulator -sdk iPhoneSimulator27.1.sdk -module-cache-path <owned temporary cache> -import-objc-header Expo/apple/IosVoipSDK.h <production Clang flags with cache redirected> <actual Expo58/JSI framework and React modulemap imports> Sources/VoIPSDK/*.swift Sources/Engine/RuntimeEngine.swift Expo/apple/*.swift",
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "ca7d08c11ba326d38b6fd79136ace0f90001b2c52cb16a2c521dc4a701a7d7c1"
+    }
+  ],
+  "nativeAcceptance": {
+    "telOpensExample": "pending",
+    "defaultCallingSelection": "pending",
+    "systemSiriOrRecentsDelivery": "pending",
+    "deviceSigning": "pending"
+  },
+  "reviews": {
+    "spec": "no actionable findings against e466d7f working changes",
+    "standards": "no actionable findings against e466d7f working changes"
+  }
+}

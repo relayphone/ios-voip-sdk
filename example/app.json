@@ -16,6 +16,7 @@
         {
           "unhandledAction": "fail",
           "simulatorSupport": true,
+          "defaultCallingApp": true,
           "includesCallsInRecents": false
         }
       ],

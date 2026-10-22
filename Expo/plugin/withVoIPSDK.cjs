@@ -14,6 +14,7 @@ const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const DEFAULTS = {
   unhandledAction: 'fail',
   simulatorSupport: true,
+  defaultCallingApp: false,
   includesCallsInRecents: true,
   supportsVideo: true,
   maximumConversationGroups: 2,
@@ -43,10 +44,7 @@ function validate(options) {
   if (options === undefined) options = {};
   if (!isDictionary(options)) fail('plugin options must be an object.');
   for (const key of Object.keys(options)) {
-    if (!KEYS.has(key))
-      fail(
-        `unsupported option "${key}". Media adapters arrive in M2; default calling arrives in M3.`,
-      );
+    if (!KEYS.has(key)) fail(`unsupported option "${key}".`);
   }
   const settings = {
     ...DEFAULTS,
@@ -58,6 +56,7 @@ function validate(options) {
     fail('unhandledAction must be fail or accept.');
   for (const key of [
     'simulatorSupport',
+    'defaultCallingApp',
     'includesCallsInRecents',
     'supportsVideo',
   ])
@@ -310,6 +309,15 @@ function withVoIPSDK(config, options) {
       fail('UIBackgroundModes must be an array of strings.');
     if (plist.VoIPSDK !== undefined && !isDictionary(plist.VoIPSDK))
       fail('Info.plist VoIPSDK must be a dictionary.');
+    const activities = plist.NSUserActivityTypes ?? [];
+    if (
+      !Array.isArray(activities) ||
+      activities.some((type) => typeof type !== 'string')
+    )
+      fail('NSUserActivityTypes must be an array of strings.');
+    plist.NSUserActivityTypes = activities.includes('INStartCallIntent')
+      ? [...activities]
+      : [...activities, 'INStartCallIntent'];
     plist.UIBackgroundModes = modes.includes('voip')
       ? [...modes]
       : [...modes, 'voip'];
@@ -339,6 +347,9 @@ function withVoIPSDK(config, options) {
     return mod;
   });
   config = withEntitlementsPlist(config, (mod) => {
+    if (settings.defaultCallingApp)
+      mod.modResults['com.apple.developer.calling-app'] = true;
+    else delete mod.modResults['com.apple.developer.calling-app'];
     if (settings.apsEnvironment !== undefined)
       mod.modResults['aps-environment'] = settings.apsEnvironment;
     else if (mod.modResults['aps-environment'] === undefined)

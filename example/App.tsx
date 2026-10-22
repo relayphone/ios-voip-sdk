@@ -8,6 +8,7 @@ import {
   useConversationEvent,
   useConversations,
   usePushToken,
+  type ConversationEventMap,
 } from 'ios-voip-sdk';
 import { bootstrap, type BootstrapInfo } from 'ios-voip-sdk/internal/bootstrap';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -54,6 +55,9 @@ function CallingJourney() {
   const pushToken = usePushToken();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Ready for an example call.');
+  const [dialRequest, setDialRequest] = useState<
+    ConversationEventMap['dialRequest'] | null
+  >(null);
   const automated = journey().acceptanceEnabled || journey().m1Case !== '';
   const conversation = conversations[0];
 
@@ -80,6 +84,7 @@ function CallingJourney() {
   useConversationEvent('pushTokenUpdated', () =>
     observeEvent('pushTokenUpdated'),
   );
+  useConversationEvent('dialRequest', setDialRequest);
 
   const command = async (operation: () => Promise<unknown>) => {
     setBusy(true);
@@ -125,6 +130,14 @@ function CallingJourney() {
       <StatusRow
         label="Push token"
         value={pushToken === null ? 'Not registered' : 'Registered'}
+      />
+      <StatusRow
+        label="Dial request"
+        value={
+          dialRequest
+            ? `${dialRequest.handle} (${dialRequest.video ? 'video' : 'audio'})`
+            : 'No dial request'
+        }
       />
       <Text style={styles.body} accessibilityLiveRegion="polite">
         {message}

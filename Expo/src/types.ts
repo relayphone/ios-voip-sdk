@@ -106,7 +106,7 @@ export interface PushToken {
   value: string;
 }
 
-/** M2 supplies watchdog signals; M3 supplies dial requests. */
+/** Lifecycle signals and user-requested system destinations. */
 export interface ConversationEventMap {
   audioActivated: { conversationId?: string };
   audioDeactivated: { conversationId?: string };

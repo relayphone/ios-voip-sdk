@@ -16,6 +16,8 @@ export class ConversationRuntime {
   );
   readonly pushToken = new RevisionStore<PushToken | null>(null);
   private readonly handlers: HandlerDispatcher;
+  private dialRequestListeners = 0;
+  private dialRequestGeneration = 0;
   private readonly eventListeners = new Set<
     (name: keyof ConversationEventMap, payload: unknown) => void
   >();
@@ -73,7 +75,21 @@ export class ConversationRuntime {
       if (eventName === name) listener(payload as ConversationEventMap[Name]);
     };
     this.eventListeners.add(dispatch);
-    return () => this.eventListeners.delete(dispatch);
+    if (name === 'dialRequest' && ++this.dialRequestListeners === 1) {
+      this.bridge.setDialRequestListenerAttached(
+        true,
+        ++this.dialRequestGeneration,
+      );
+    }
+    return () => {
+      if (!this.eventListeners.delete(dispatch)) return;
+      if (name === 'dialRequest' && --this.dialRequestListeners === 0) {
+        this.bridge.setDialRequestListenerAttached(
+          false,
+          ++this.dialRequestGeneration,
+        );
+      }
+    };
   }
 
   private async readConversations(): Promise<void> {

@@ -8,6 +8,12 @@ The screen also shows native module loading and runtime activation, with loading
 error and retry states. The example handler accepts requests locally; production
 apps provide signaling and media. No media adapter is demonstrated in M1.
 
+The example enables the default calling app entitlement and observes the public
+`dialRequest` event, displaying its destination and audio/video capability.
+Requests do not place calls automatically. See [system dial requests](../Expo/M3-dial-requests.md)
+for eligibility, cold launch buffering and custom scene forwarding. Native M3
+acceptance remains pending.
+
 Install and build the package from repository root:
 
 ```sh
