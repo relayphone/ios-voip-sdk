@@ -194,6 +194,17 @@ class LCKChecks(unittest.TestCase):
                 rows[index], rows[index + 1] = right, left
         self.assertTrue(compare(rows, reference, self.bands)['success'])
 
+    def test_two_manager_missing_joined_state_still_fails(self):
+        reference = self.sources['two-managers']
+        for manager in ('L1', 'L2'):
+            with self.subTest(manager=manager):
+                rows = copy.deepcopy(reference)
+                joined = next(row for row in rows if row['event'] == 'lck.conversationChanged' and
+                              row['p'] == manager and row['state'] == 'joined')
+                rows.remove(joined)
+                with self.assertRaisesRegex(EvidenceError, 'managerStates differs'):
+                    compare(rows, reference, self.bands)
+
     def test_r3_teardown_is_explicitly_outside_journey_scope(self):
         reference = self.sources['basic']
         rows = copy.deepcopy(reference)
