@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "acceptance": "Two held focused M2 host/compiler checks completed",
+  "classification": "Host facade suite and actual SDK declaration typecheck only; no app build, native, audio, simulator or device acceptance",
+  "sourceCommit": "65eea31a5e3d318d67481a6be2a3d89a53cacbd8",
+  "sourceTree": "836a0b6fc5a8af7f5707c75057fa454e87e53c5d",
+  "sourceInputCount": 247,
+  "sourceInputMapSHA256": "06a131361d6e1d10cd4f2ef874d3751320d767c2c4f45593a01f696fbcfdb724",
+  "sourceUnchanged": true,
+  "tripleHostSuite": {
+    "command": [
+      "bash",
+      "Tests/VoIPSDK/run_mute_echo.sh"
+    ],
+    "outcome": "passed",
+    "exitCode": 0,
+    "elapsedSeconds": 58.255,
+    "executables": [
+      "MuteEchoTests",
+      "ClientContractTests",
+      "WatchdogIntakeTests"
+    ],
+    "groups": [
+      7,
+      10,
+      1
+    ],
+    "stdoutSHA256": "a6dd5fdcd205240ffc5c4508cae1a2d785a3132c16b141db227e1fca6a79fe1d",
+    "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "ownedProcessGroupsAbsentAtTerminal": true,
+    "rerun": false
+  },
+  "firstDebugTypecheckCapture": {
+    "outcome": "incomplete-capture",
+    "actualCompilerExitCode": null,
+    "compilerQualificationInferred": false,
+    "reason": "The capture wrapper numeric ps inventory exceeded its two-second guard before actual result collection",
+    "wrapperExitCode": 1,
+    "receiptSHA256": "01db98cb67d7d3b1fb2c14d5e418cb978923ce5fcaca289e4b6717259999418b"
+  },
+  "debugTypecheckCaptureRetry": {
+    "reason": "One explicitly authorized capture-only retry after wrapper failure; identical command, header and source",
+    "command": "xcrun --sdk iphonesimulator swiftc -typecheck (Debug, Swift 6, warnings as errors; Engine + Core + native contract probe)",
+    "argvSHA256": "f652b287ef4ea0fb6a54e89c29991e1c34d2072811132f2420409e84bc3102bd",
+    "headerSHA256": "4edbf3a4ba9abc494a130bfca79ca34e727452194e7478e03f9206c05e6b6624",
+    "capSeconds": 30,
+    "outcome": "passed",
+    "exitCode": 0,
+    "elapsedSeconds": 10.222,
+    "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "knownOwnedProcessGroupAbsent": true,
+    "independentExactHeaderAndSourceFingerprintsAbsent": true,
+    "receiptSHA256": "a1f537805e0e5e8fee4176b2a36c606e6e2c4cfdd8cd1bcd7afed66b22fdca84",
+    "terminalReceiptSHA256": "4e0321f3b3632d538251f0f3bbde96300d86b40db56e6ff5f02449fb0f75a39a"
+  },
+  "hostCompilerQualification": "Both formerly held checks passed on the recorded source; phase-1 results remain historical and source-bound",
+  "remainingAcceptance": [
+    "Actual audio27 RED remains unresolved",
+    "Current integrated native M2 acceptance",
+    "Current integrated pod-built Release iphoneos inspection"
+  ],
+  "published": false
+}
