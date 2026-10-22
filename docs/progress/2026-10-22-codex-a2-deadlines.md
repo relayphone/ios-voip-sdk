@@ -135,7 +135,7 @@ missing diagnostics, actual snapshot publication, explicit cleanup, and delayed
 forwarding without an invented forwarding timeout; they are not native
 measurements. Four real SDK compiler configurations confirm the diagnostic sink
 exists only in Debug simulator output. The corrected complete Debug fixture
-typechecks against the installed Apple SDK. No native process was launched.
+typechecks against the installed Apple SDK. No iOS application was launched.
 
 The original runtime CI `39761541757`, attempt 1, was green in both **Xcode 26.3
 and Xcode 26.6** compiler lanes, each using the **iOS 26.5 simulator** with the
@@ -164,6 +164,31 @@ records tree-equal tested merge `13ed8dc`, matching source/build receipts and
 zero app journey traces. App installation and the final manifest were absent,
 so this run qualifies no native journey. It is distinct from the original
 `1fd33b4` actual expiry failure. No retry was requested.
+
+## Combined PushKit and runner preparation
+
+The [integrated preparation receipt](../verification/2026-10-22-a2-deadlines/integrated-preparation.json)
+binds the local normal merges of A1, the reviewed host-metadata ordering change,
+and the native-origin correction. All four native contract cases survive:
+`guard`, `unhandled-accept`, `unhandled-fail`, and `duplicate-wrapper`. Native
+transaction origin is `application`; SDK handler origin remains `app`.
+
+**Measured host/compiler preparation:** the full 20-command SDK offline/typecheck
+preparation passed before the host-metadata merge. Protected SDK/probe/gate
+bytes remained unchanged, and four affected runner/origin checks passed after
+the later merges. The host control verifies five metadata commands run once before
+simulator creation with their existing 30-second budgets, and that the final
+environment preserves those fields while adding four simulator fields. The
+container lookup remains cached across the four contract cases. These mocked
+host controls establish ordering and field preservation, not the cause of the
+previous timeout. Both review axes cleared the conflict resolutions.
+
+**Measured prior-source runtime CI:** corrected `dfc81fc` runtime run
+`39772309722`, attempt 1, passed both Xcode 26.3 and 26.6 compiler lanes on the
+iOS 26.5 simulator with the ios-27.0 profile. Ten offline gate replays per lane
+matched their CI JSON results; the Xcode 26.6 loader-repair receipt also passed
+its 16 checks. Live CLI operations were not re-executed locally. These greens
+qualify `dfc81fc`, not the newly integrated source, whose native CI is pending.
 
 ## RFC deviation text for the authorized fork comment
 
