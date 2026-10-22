@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sys
 
-from summarize import EvidenceError, load, one, require
+from summarize import EvidenceError, load, one, require, successful_stop
 
 
 def validate(directory):
@@ -16,7 +16,7 @@ def validate(directory):
         receipt = json.loads((directory / f'{name}.receipt.json').read_text())
         launch, done = one(rows, 'launch'), one(rows, 'done')
         require(receipt.get('schemaVersion') == 2 and receipt.get('success') is True and
-                receipt.get('completed') is True and receipt.get('terminateExitCode') == 0, 'incomplete bootstrap receipt')
+                receipt.get('completed') is True and successful_stop(receipt), 'incomplete bootstrap receipt')
         path = next(p for p in (directory / f'{name}.log', directory / f'{name}.jsonl') if p.exists())
         require(receipt.get('traceSHA256') == hashlib.sha256(path.read_bytes()).hexdigest(), 'bootstrap trace hash mismatch')
         for key in ('runID', 'simulatorID', 'bundleID'):

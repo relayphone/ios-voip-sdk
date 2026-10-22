@@ -114,7 +114,7 @@ def change_bound_json(root, name, key, edit):
 
 
 class Controls(unittest.TestCase):
-    def check(self, edit=None, names=SYMBOLS):
+    def check(self, edit=None, names=SYMBOLS, *, succeeds=False):
         with tempfile.TemporaryDirectory(prefix='cksim-sdk-m0-controls-') as temporary:
             root = Path(temporary)
             fixture(root)
@@ -122,15 +122,35 @@ class Controls(unittest.TestCase):
                  patch.object(gate, 'symbol_names', return_value=names), \
                  patch.object(gate.subprocess, 'run', side_effect=AssertionError('native command forbidden')), \
                  patch.object(gate.subprocess, 'check_output', side_effect=AssertionError('subprocess forbidden')):
-                if edit is None:
+                if edit is not None:
+                    edit(root)
+                if edit is None or succeeds:
                     self.assertTrue(gate.validate(root)['success'])
                 else:
-                    edit(root)
                     with self.assertRaises((gate.EvidenceError, OSError, ValueError, KeyError, TypeError, StopIteration)):
                         gate.validate(root)
 
     def test_positive(self):
         self.check()
+
+    def test_signal_receipts_integration(self):
+        def signal_receipts(root):
+            def signal(receipt):
+                receipt.pop('terminateExitCode')
+                receipt.update(terminationMethod='console-launcher-signal', launcherPID=456,
+                    terminationSignal=15, terminationSignalDelivered=True, launchExitCode=-15)
+            for name in ('sdk-m0', *(f'bootstrap-{case}' for case in gate.CASES)):
+                change_json(root, name + '.receipt.json', signal)
+
+        self.check(signal_receipts, succeeds=True)
+        with tempfile.TemporaryDirectory(prefix='cksim-sdk-m0-signal-') as temporary:
+            root = Path(temporary)
+            fixture(root)
+            signal_receipts(root)
+            change_json(root, 'bootstrap-profile.receipt.json',
+                        lambda receipt: receipt.pop('terminationSignalDelivered'))
+            with self.assertRaises(gate.EvidenceError):
+                gate.bootstrap_conformance(root)
 
     def test_required_markers(self):
         for event in ('app.entry', 'launch', 'sdk.activation', 'sdk.managerCreated', 'sdk.incomingReported',
