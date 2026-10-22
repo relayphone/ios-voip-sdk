@@ -49,7 +49,7 @@ def write_provider_capture(directory, rows):
     trace.write_text(''.join('PROBE ' + json.dumps(row) + '\n' for row in rows))
     journal = directory / f'{name}.engine.jsonl'
     journal.write_text(''.join(json.dumps(row) + '\n' for row in engine))
-    receipt = dict(schemaVersion=2, success=True, completed=True, terminateExitCode=0,
+    receipt = dict(schemaVersion=2, success=True, completed=True, terminateExitCode=0, launchExitCode=0,
                    lastProbeEvent='done', appPID=123, launcherAppPID=123,
                    traceSHA256=hashlib.sha256(trace.read_bytes()).hexdigest(),
                    engineSHA256=hashlib.sha256(journal.read_bytes()).hexdigest(), **identity)
