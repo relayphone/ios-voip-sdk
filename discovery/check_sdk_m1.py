@@ -151,6 +151,8 @@ def fixture_case(root, case, pid):
     for index, kind in enumerate(kinds):
         runtime('transaction.delivered', provider='synthetic-provider', actionIDs=['action-' + str(index)], kinds=[kind])
         if case != 'journey' and index == 0:
+            runtime('action.deadline', actionID='action-' + str(index), provider='synthetic-provider',
+                    apiKind='livecommunicationkit', deadlineMS=WALL + 30_000, deadlineSeconds=30, expirySeconds=30)
             pending = next(row for row in rows if row['event'] == 'm1.coldPending')
             runtime('m1.coldPendingClock', at=pending['t_ms'], conversationID=CONVERSATION, actionID=PENDING)
         runtime('action.settled', at=28_500 if case == 'unhandled-expiry' else 5020 if case == 'cold-launch' else None,
@@ -186,6 +188,17 @@ def mutate_journal(root, case, edit):
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     edit(rows)
     write_journal(root, name, rows)
+
+
+def restore_public_platform_deadline(rows):
+    public = iso(WALL + 30_000)
+    for row in rows:
+        if row['event'] == 'm1.coldPending':
+            row.update(deadline=public, remainingMS=WALL + 30_000 - row['wallTimeMS'])
+        if row['event'] == 'sdk.snapshot':
+            for call in row['conversations']:
+                if call.get('pending', {}).get('id') == PENDING: call['pending']['deadline'] = public
+        if row['event'] == 'm1.handler' and row.get('kind') == 'join': row['deadline'] = public
 
 
 class Controls(unittest.TestCase):
@@ -364,6 +377,30 @@ class Controls(unittest.TestCase):
                 for index, row in enumerate(rows): row['t_ms'] = index
             mutate_rows(root / 'm1', 'cold-launch', edit)
         self.check(late_pending)
+
+    def test_cold_effective_deadline_requires_native_margin(self):
+        for case in ('cold-launch', 'unhandled-expiry'):
+            with self.subTest(case=case):
+                self.check(lambda root, case=case: mutate_rows(root / 'm1', case, restore_public_platform_deadline))
+
+    def test_cold_native_deadline_binding(self):
+        for case in ('cold-launch', 'unhandled-expiry'):
+            def missing(rows): rows.remove(next(row for row in rows if row['event'] == 'action.deadline'))
+            def duplicate(rows):
+                index = next(i for i, row in enumerate(rows) if row['event'] == 'action.deadline')
+                rows.insert(index + 1, dict(rows[index]))
+            def late(rows):
+                deadline = next(row for row in rows if row['event'] == 'action.deadline'); rows.remove(deadline)
+                index = next(i for i, row in enumerate(rows) if row['event'] == 'm1.coldPendingClock')
+                deadline['t_ms'] = rows[index]['t_ms']; rows.insert(index + 1, deadline)
+            for name, edit in (('missing', missing), ('duplicate', duplicate), ('after-pending-clock', late)):
+                with self.subTest(case=case, mutation=name):
+                    self.check(lambda root, case=case, edit=edit: mutate_journal(root / 'm1', case, edit))
+            for field, value in (('actionID', PENDING), ('provider', 'different-provider'), ('apiKind', 'callkit'),
+                                 ('deadlineMS', WALL + 28_500), ('deadlineSeconds', 60), ('expirySeconds', 60)):
+                with self.subTest(case=case, field=field):
+                    self.check(lambda root, case=case, field=field, value=value: mutate_journal(root / 'm1', case,
+                        lambda rows: next(row for row in rows if row['event'] == 'action.deadline').update({field: value})))
 
     def test_native_expiry_deadline_clock_binding(self):
         def timing(rows, at):

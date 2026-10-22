@@ -93,6 +93,16 @@ pathlib.Path(sys.argv[2]).write_text(json.dumps({k:selected[k] for k in
     ('identifier','version','buildversion')},indent=2)+'\n')
 PY
 RUNTIME=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["identifier"])' "$OUT/runtime.json")
+# Capture immutable host metadata once, before creating the owned simulator.
+# The final environment below adds the actual simulator identity to these fields.
+python3 - "$OUT/environment.json" <<'PY'
+import json,pathlib,subprocess,sys
+def output(command): return subprocess.check_output(command,text=True,timeout=30).strip()
+environment=dict(
+    xcodeVersion=output(['xcodebuild','-version']),sdkVersion=output(['xcrun','--sdk','iphonesimulator','--show-sdk-version']),
+    hostArchitecture=output(['uname','-m']),nodeVersion=output(['node','--version']),npmVersion=output(['npm','--version']))
+pathlib.Path(sys.argv[1]).write_text(json.dumps(environment,indent=2)+'\n')
+PY
 DEVTYPE=${SDK_M0_DEVICE_TYPE:-com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro}
 UDID=$(limit 30 xcrun simctl create "sdk-m0-$RUN_ID" "$DEVTYPE" "$RUNTIME")
 OWNED_SIMULATOR=$UDID
@@ -117,13 +127,11 @@ assert not any(pathlib.Path(p).name in ('CKSimRuntime.dylib','CKSimLoader.dylib'
     'Plain M0 acceptance refuses external SDK runtime injection'
 PY
 python3 - "$OUT" "$UDID" <<'PY'
-import json,pathlib,subprocess,sys
+import json,pathlib,sys
 root=pathlib.Path(sys.argv[1]); runtime=json.loads((root/'runtime.json').read_text())
-def output(command): return subprocess.check_output(command,text=True,timeout=30).strip()
-environment=dict(simulatorID=sys.argv[2],simulatorRuntimeID=runtime['identifier'],
-    simulatorOS=runtime['version'],simulatorBuild=runtime['buildversion'],
-    xcodeVersion=output(['xcodebuild','-version']),sdkVersion=output(['xcrun','--sdk','iphonesimulator','--show-sdk-version']),
-    hostArchitecture=output(['uname','-m']),nodeVersion=output(['node','--version']),npmVersion=output(['npm','--version']))
+environment=json.loads((root/'environment.json').read_text())
+environment.update(simulatorID=sys.argv[2],simulatorRuntimeID=runtime['identifier'],
+    simulatorOS=runtime['version'],simulatorBuild=runtime['buildversion'])
 (root/'environment.json').write_text(json.dumps(environment,indent=2)+'\n')
 PY
 if [[ -n "${SDK_M0_BUILD_LOGS:-}" ]]; then
@@ -195,7 +203,7 @@ PY
   # The app is installed once and only relaunched below. Reuse its first
   # observed data container instead of making another IPC query after each case.
   contract_container=""
-  for case in guard unhandled-accept duplicate-wrapper; do
+  for case in guard unhandled-accept unhandled-fail duplicate-wrapper; do
     name="sdk-m1-contract-$case"
     env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
       SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M1_CONTRACT_CASE="$case" \

@@ -58,6 +58,138 @@ RuntimeEngine also typechecks with the iOS 17.4 simulator SDK target and Swift 6
 No simulator or device was created or run for this preparation. The stricter
 native contract and current integrated CI must qualify the resulting source.
 
+## Stacked A0 integration preparation
+
+The branch now includes the reviewed A0 device Release exclusion change at
+`2605d4d`, as its stacked parent. The simulator-only embedded profile is
+regenerated from A2's canonical profile, so both source distributions include
+the separate LCK timing. The existing profile-drift control caught the stale
+embedded copy before regeneration. The new LCK duration also joins the existing
+finite, positive duration validation; zero, negative and three nonfinite values
+are refused by the exact production guard. The test deliberately uses a
+nonfinite decoding strategy only to reach that guard: the shipping decoder
+already refuses those strings earlier. The omitted-field regression failed
+before the one-line guard correction.
+
+**Measured host/compiler preparation:** the
+[stack integration receipt](../verification/2026-10-22-a2-deadlines/stack-followup.json)
+binds 119 source/control inputs and 13 passing checks, including the real-clock
+coordinator suite, exact production profile controls, existing SDK/LCK gates,
+the device exclusion host controls and an actual iOS 17.4 simulator-SDK runtime
+typecheck. Inputs remained unchanged across the checks. No simulator or device
+was created or run. This is preparation for native CI acceptance of the stacked
+head; the parent's native qualification does not qualify A2's changed source.
+
+## Original CI failure and zero-tolerance follow-up
+
+**Measured red:** SDK CI `39761541639`, attempt 1, built the original A2
+`1fd33b4` source and failed `unhandled-expiry: journey failed`. Its
+[classification](../verification/2026-10-22-a2-deadlines/original-ci-failure.json)
+binds the artifact, exact gate, SDK inputs, process and trace. M0 and the
+pod-built Release device exclusion passed before that failure. The effective
+pending deadline was 28.5 seconds; the first cleared-pending snapshot appeared
+about the native 30-second boundary, followed by a pending system End. The
+conversation remained ringing when the old fixture failed. The original trace
+does not timestamp policy firing or LCK settlement entry/return, so it cannot
+locate that delay. Existing device LCK probes always fulfill; they do not measure
+failed joins. The original red and its receipts remain unchanged.
+
+**Proposed correction:** the critical scheduler now requests
+`Task.sleep(..., tolerance: .zero)`. Swift's
+[clock documentation](https://docs.swift.org/main/documentation/swift/continuousclock/clock-implementations/)
+allows wake-up coalescing when tolerance is unspecified. Leaving that tolerance
+unspecified is incompatible with reserving a 1.5-second margin; this source
+correction does not establish coalescing as the original failure's cause or
+guarantee timely execution on a blocked actor.
+
+The Debug simulator native contract adds `unhandled-fail` beside
+`unhandled-accept`. It observes policy firing, settlement entry/return and the
+coordinator's pending publication, then separately binds actual SDK snapshots
+and the runtime's failed action settlement. The internal diagnostic sink and
+all its call sites compile only under `DEBUG && targetEnvironment(simulator)`.
+It passes scalar observations; the fixture owns synchronous trace I/O, whose
+overhead is included in the measured Debug timeline. A publication marker alone
+only means the coordinator's `didChange` callback returned.
+
+RFC 0001's no-handler policy fails the action; it does not promise to end its
+conversation. The new fail fixture therefore records whether the conversation
+remains, and explicitly labels any fixture cleanup report. It does not infer
+automatic teardown. The original Expo M1 empty-state oracle remains unchanged.
+The changed head requires fresh native qualification; no retry of the original
+source qualifies this correction.
+
+**Measured host/compiler preparation:** the
+[zero-tolerance receipt](../verification/2026-10-22-a2-deadlines/zero-tolerance-followup.json)
+binds 120 unchanged source/control inputs across four focused final checks.
+The [pre-review preparation](../verification/2026-10-22-a2-deadlines/zero-tolerance-pre-review.json)
+retains its 18 passing checks. Review caught a fixture cleanup race: pending
+removal alone did not prove asynchronous native failure had been forwarded.
+The corrected fixture waits through the recorded SDK platform expiry, then
+re-samples conversation presence before cleanup. Actual native failure must
+still precede both SDK and runtime expiry, so cleanup cannot make it pass.
+Only the fixture and two gate/control files changed; affected checks were rerun
+and 15 unaffected preparation checks are retained.
+
+The native contract's 17 synthetic test methods cover policy/identity/timing,
+missing diagnostics, actual snapshot publication, explicit cleanup, and delayed
+forwarding without an invented forwarding timeout; they are not native
+measurements. Four real SDK compiler configurations confirm the diagnostic sink
+exists only in Debug simulator output. The corrected complete Debug fixture
+typechecks against the installed Apple SDK. No iOS application was launched.
+
+The original runtime CI `39761541757`, attempt 1, was green in both **Xcode 26.3
+and Xcode 26.6** compiler lanes, each using the **iOS 26.5 simulator** with the
+**ios-27.0 behavior profile**. It is separate from the SDK red and qualifies its
+original source only. Main, including the probe answer-checkpoint correction,
+was merged forward locally without rewriting the original A2 history.
+
+## Generic M1 projection controls
+
+**Measured synthetic gap and correction:** the
+[generic-margin receipt](../verification/2026-10-22-a2-deadlines/generic-margin-followup.json)
+preserves the old gate accepting both coherent 30-second and 28.5-second public
+deadlines. The generic fixture now publishes 28.5 seconds and separately binds
+the native 30-second deadline to the unique answer transaction/provider. Both
+coordinated restorations to a public 30-second deadline are rejected. Eleven
+host control methods pass; these are checker controls, not native execution.
+The device sampling bands, dedicated native deadline contracts, and existing
+generic failure/liveness/empty-expiry predicates are unchanged. The generic
+cross-layer margin allowance does not establish LCK/CX UUID equality.
+
+**Measured pre-app CI red:** corrected head `dfc81fc` reached its runner
+environment query in SDK CI `39772309614`, attempt 1, then
+`xcodebuild -version` exceeded the existing 30-second budget. The
+[bound classification](../verification/2026-10-22-a2-deadlines/ci-dfc81fc-pre-app-failure.json)
+records tree-equal tested merge `13ed8dc`, matching source/build receipts and
+zero app journey traces. App installation and the final manifest were absent,
+so this run qualifies no native journey. It is distinct from the original
+`1fd33b4` actual expiry failure. No retry was requested.
+
+## Combined PushKit and runner preparation
+
+The [integrated preparation receipt](../verification/2026-10-22-a2-deadlines/integrated-preparation.json)
+binds the local normal merges of A1, the reviewed host-metadata ordering change,
+and the native-origin correction. All four native contract cases survive:
+`guard`, `unhandled-accept`, `unhandled-fail`, and `duplicate-wrapper`. Native
+transaction origin is `application`; SDK handler origin remains `app`.
+
+**Measured host/compiler preparation:** the full 20-command SDK offline/typecheck
+preparation passed before the host-metadata merge. Protected SDK/probe/gate
+bytes remained unchanged, and four affected runner/origin checks passed after
+the later merges. The host control verifies five metadata commands run once before
+simulator creation with their existing 30-second budgets, and that the final
+environment preserves those fields while adding four simulator fields. The
+container lookup remains cached across the four contract cases. These mocked
+host controls establish ordering and field preservation, not the cause of the
+previous timeout. Both review axes cleared the conflict resolutions.
+
+**Measured prior-source runtime CI:** corrected `dfc81fc` runtime run
+`39772309722`, attempt 1, passed both Xcode 26.3 and 26.6 compiler lanes on the
+iOS 26.5 simulator with the ios-27.0 profile. Ten offline gate replays per lane
+matched their CI JSON results; the Xcode 26.6 loader-repair receipt also passed
+its 16 checks. Live CLI operations were not re-executed locally. These greens
+qualify `dfc81fc`, not the newly integrated source, whose native CI is pending.
+
 ## RFC deviation text for the authorized fork comment
 
 RFC 0001 describes `ActionContext.deadline` as when the platform gives up. This
