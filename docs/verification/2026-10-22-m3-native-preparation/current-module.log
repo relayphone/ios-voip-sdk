@@ -1,0 +1,50 @@
+<module-includes>:1:9: note: in file included from <module-includes>:1:
+1 | #import "Headers/ExpoModulesCore_umbrella.h"
+  |         `- note: in file included from <module-includes>:1:
+2 | #import "Headers/ExpoModulesCore-Swift.h"
+3 |
+
+<retained-native-build>/Build/Products/Release-iphonesimulator/XCFrameworkIntermediates/ExpoModulesCore/ExpoModulesCore.framework/Headers/ExpoModulesCore_umbrella.h:33:9: note: in file included from <retained-native-build>/Build/Products/Release-iphonesimulator/XCFrameworkIntermediates/ExpoModulesCore/ExpoModulesCore.framework/Headers/ExpoModulesCore_umbrella.h:33:
+31 | #import "EXFaceDetectorManagerInterface.h"
+32 | #import "EXFaceDetectorManagerProviderInterface.h"
+33 | #import "EXFilePermissionModuleInterface.h"
+   |         `- note: in file included from <retained-native-build>/Build/Products/Release-iphonesimulator/XCFrameworkIntermediates/ExpoModulesCore/ExpoModulesCore.framework/Headers/ExpoModulesCore_umbrella.h:33:
+34 | #import "EXFileSystemInterface.h"
+35 | #import "EXGyroscopeInterface.h"
+
+<retained-native-build>/Build/Products/Release-iphonesimulator/XCFrameworkIntermediates/ExpoModulesCore/ExpoModulesCore.framework/Headers/EXFilePermissionModuleInterface.h:3:9: note: in file included from <retained-native-build>/Build/Products/Release-iphonesimulator/XCFrameworkIntermediates/ExpoModulesCore/ExpoModulesCore.framework/Headers/EXFilePermissionModuleInterface.h:3:
+ 1 | // Copyright 2018-present 650 Industries. All rights reserved.
+ 2 |
+ 3 | #import <ExpoModulesCore/EXFileSystemInterface.h>
+   |         `- note: in file included from <retained-native-build>/Build/Products/Release-iphonesimulator/XCFrameworkIntermediates/ExpoModulesCore/ExpoModulesCore.framework/Headers/EXFilePermissionModuleInterface.h:3:
+ 4 |
+ 5 | @protocol EXFilePermissionModuleInterface
+<repo>/Sources/VoIPSDK/ConversationClient.swift:355:28: warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+353 |     appActions = appActions.filter { $0.value > Date() }
+354 |     appActions[id] = action.timeoutDate
+355 |     do { try await manager.perform([action]) }
+    |                            |- warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+    |                            `- note: sending main actor-isolated 'self.manager' to @concurrent instance method 'perform' risks causing data races between @concurrent and main actor-isolated uses
+356 |     catch { appActions.removeValue(forKey: id); throw error }
+357 |   }
+
+<repo>/Sources/VoIPSDK/ConversationClient.swift:263:30: warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+261 |       if record.payload == nil { record.payload = payload }
+262 |       records[id] = record
+263 |       do { try await manager.reportNewIncomingConversation(uuid: id, update: update(for: record)) }
+    |                              |- warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+    |                              `- note: sending main actor-isolated 'self.manager' to @concurrent instance method 'reportNewIncomingConversation(uuid:update:)' risks causing data races between @concurrent and main actor-isolated uses
+264 |       catch {
+265 |         if !knownLiveConversation && records[id]?.seenInManager != true {
+
+<repo>/Sources/VoIPSDK/ConversationClient.swift:279:30: warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+277 |     let update = update(for: record)
+278 |     let report = Task { @MainActor in
+279 |       try await self.manager.reportNewIncomingConversation(uuid: id, update: update)
+    |                              |- warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+    |                              `- note: sending main actor-isolated 'self.manager' to @concurrent instance method 'reportNewIncomingConversation(uuid:update:)' risks causing data races between @concurrent and main actor-isolated uses
+280 |       return id
+281 |     }
+
+[#RegionIsolation]: <https://docs.swift.org/compiler/documentation/diagnostics/region-isolation>
+[#SendingRisksDataRace]: <https://docs.swift.org/compiler/documentation/diagnostics/sending-risks-data-race>

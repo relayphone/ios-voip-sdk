@@ -1,0 +1,9 @@
+<repo>/example/modules/journey/apple/VoIPExampleJourneyModule.swift:299:5: warning: 'Constants' is deprecated: Use `Constant` or `Property` instead [#DeprecatedDeclaration]
+297 |   public func definition() -> ModuleDefinition {
+298 |     Name("VoIPExampleJourney")
+299 |     Constants(["acceptanceEnabled": JourneyConfiguration.m0, "m1Case": JourneyConfiguration.m1Case,
+    |     `- warning: 'Constants' is deprecated: Use `Constant` or `Property` instead [#DeprecatedDeclaration]
+300 |       "m3Enabled": JourneyConfiguration.m3,
+301 |       "runID": JourneyConfiguration.runID])
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>

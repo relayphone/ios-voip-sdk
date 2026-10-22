@@ -1,11 +1,14 @@
 import AVFoundation
+import CryptoKit
 import ExpoModulesCore
+import Intents
 import IosVoipSDK
 
 private enum JourneyConfiguration {
   static let environment = ProcessInfo.processInfo.environment
-  static let runID = environment["SDK_M1_RUN_ID"] ?? environment["SDK_M0_RUN_ID"] ?? UUID().uuidString
+  static let runID = environment["SDK_M3_RUN_ID"] ?? environment["SDK_M1_RUN_ID"] ?? environment["SDK_M0_RUN_ID"] ?? UUID().uuidString
   static let m0 = environment["SDK_M0_ACCEPTANCE"] == "1"
+  static let m3 = environment["SDK_M3_ACCEPTANCE"] == "1"
   static let m1Case = environment["SDK_M1_CASE"] ?? ""
 }
 
@@ -49,10 +52,34 @@ public final class VoIPExampleAppDelegateSubscriber: ExpoAppDelegateSubscriber {
   public func appDelegateWillBeginInitialization() {
     JourneyTrace.record("app.entry")
     JourneyTrace.record("launch", ["traceVersion": 2,
-      "mode": JourneyTrace.m0 ? "sdk-m0" : "sdk-m1", "case": JourneyTrace.m1Case])
+      "mode": JourneyConfiguration.m3 ? "sdk-m3" : (JourneyTrace.m0 ? "sdk-m0" : "sdk-m1"),
+      "case": JourneyTrace.m1Case])
     if ["cold-launch", "unhandled-expiry"].contains(JourneyTrace.m1Case) {
       ExampleJourney.shared.startColdLaunch()
     }
+  }
+
+  // Observe genuine OS ingress alongside the SDK's subscriber. This fixture
+  // never calls the SDK entry-point helpers, router or system intent adapter.
+  public func application(_ application: UIApplication, open url: URL,
+                          options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+    if JourneyConfiguration.m3 {
+      JourneyTrace.record("m3.nativeIngress", ["kind": "url", "urlSHA256": Self.digest(url.absoluteString)])
+    }
+    return false
+  }
+
+  public func application(_ application: UIApplication, continue userActivity: NSUserActivity,
+                          restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
+    if JourneyConfiguration.m3 {
+      JourneyTrace.record("m3.nativeIngress", ["kind": "activity",
+        "isStartCallIntent": userActivity.interaction?.intent is INStartCallIntent])
+    }
+    return false
+  }
+
+  private static func digest(_ value: String) -> String {
+    SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
   }
 }
 
@@ -208,6 +235,23 @@ private final class ExampleJourney {
     return try await coldTask.value
   }
 
+  func dialListenerReady() throws {
+    guard JourneyConfiguration.m3 else { throw JourneyError.wrongMode }
+    let client = try bindClient()
+    JourneyTrace.record("m3.listenerReady", ["conversationCount": client.snapshots.count])
+  }
+
+  func observedDialRequest(handle: String, video: Bool) throws {
+    guard JourneyConfiguration.m3, !completed else { throw JourneyError.wrongMode }
+    let client = try bindClient()
+    // Only a digest enters evidence; a system request can contain a private
+    // number when the example is used outside the fixed acceptance dispatch.
+    let digest = SHA256.hash(data: Data(handle.utf8)).map { String(format: "%02x", $0) }.joined()
+    JourneyTrace.record("m3.dialRequest", ["handleSHA256": digest, "video": video,
+      "conversationCount": client.snapshots.count])
+    finish(success: true)
+  }
+
   /// Whitelisted test fields prevent accidental payload/token logging.
   func trace(_ event: String, fieldsJSON: String) throws {
     guard !completed else { return }
@@ -253,7 +297,20 @@ public final class VoIPExampleJourneyModule: Module {
   public func definition() -> ModuleDefinition {
     Name("VoIPExampleJourney")
     Constants(["acceptanceEnabled": JourneyConfiguration.m0, "m1Case": JourneyConfiguration.m1Case,
+      "m3Enabled": JourneyConfiguration.m3,
       "runID": JourneyConfiguration.runID])
+    AsyncFunction("dialListenerReady") { (promise: Promise) in
+      Task { @MainActor in
+        do { try ExampleJourney.shared.dialListenerReady(); promise.resolve() }
+        catch { promise.reject("journey", "M3 listener preparation failed.") }
+      }
+    }
+    AsyncFunction("observedDialRequest") { (handle: String, video: Bool, promise: Promise) in
+      Task { @MainActor in
+        do { try ExampleJourney.shared.observedDialRequest(handle: handle, video: video); promise.resolve() }
+        catch { promise.reject("journey", "M3 observation failed.") }
+      }
+    }
     AsyncFunction("acceptance") { (promise: Promise) in
       Task { @MainActor in
         do { try await ExampleJourney.shared.acceptance(); promise.resolve() }

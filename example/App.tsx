@@ -58,7 +58,10 @@ function CallingJourney() {
   const [dialRequest, setDialRequest] = useState<
     ConversationEventMap['dialRequest'] | null
   >(null);
-  const automated = journey().acceptanceEnabled || journey().m1Case !== '';
+  const automated =
+    journey().acceptanceEnabled ||
+    journey().m1Case !== '' ||
+    journey().m3Enabled;
   const conversation = conversations[0];
 
   useEffect(() => {
@@ -84,7 +87,17 @@ function CallingJourney() {
   useConversationEvent('pushTokenUpdated', () =>
     observeEvent('pushTokenUpdated'),
   );
-  useConversationEvent('dialRequest', setDialRequest);
+  useConversationEvent('dialRequest', (request) => {
+    setDialRequest(request);
+    if (journey().m3Enabled) {
+      void journey().observedDialRequest(request.handle, request.video);
+    }
+  });
+  useEffect(() => {
+    // This effect follows the hook's subscription effect. Readiness never
+    // substitutes for observing the public event itself.
+    if (journey().m3Enabled) void journey().dialListenerReady();
+  }, []);
 
   const command = async (operation: () => Promise<unknown>) => {
     setBusy(true);

@@ -2,9 +2,12 @@ import { requireNativeModule, type NativeModule } from 'expo';
 
 type JourneyModule = NativeModule & {
   acceptanceEnabled: boolean;
+  m3Enabled: boolean;
   m1Case: '' | 'journey' | 'cold-launch' | 'unhandled-expiry';
   runID: string;
   acceptance(): Promise<void>;
+  dialListenerReady(): Promise<void>;
+  observedDialRequest(handle: string, video: boolean): Promise<void>;
   simulatePush(
     payloadJSON: string,
     mustReport: boolean,
