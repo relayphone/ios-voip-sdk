@@ -1,5 +1,16 @@
+import {
+  endConversation,
+  joinConversation,
+  reportConversation,
+  reportIncomingConversation,
+  setConversationHandler,
+  setHeld,
+  useConversationEvent,
+  useConversations,
+  usePushToken,
+} from 'ios-voip-sdk';
 import { bootstrap, type BootstrapInfo } from 'ios-voip-sdk/internal/bootstrap';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Button,
@@ -10,6 +21,14 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+
+import {
+  exampleHandler,
+  observeConversations,
+  observeToken,
+  runAcceptance,
+  trace,
+} from './acceptance';
 import { journey } from './journey';
 
 type Status =
@@ -30,54 +49,180 @@ function StatusRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function CallingJourney() {
+  const conversations = useConversations();
+  const pushToken = usePushToken();
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('Ready for an example call.');
+  const automated = journey().acceptanceEnabled || journey().m1Case !== '';
+  const conversation = conversations[0];
+
+  useEffect(() => {
+    if (!automated) {
+      setConversationHandler(exampleHandler());
+      return () => setConversationHandler(null);
+    }
+  }, [automated]);
+  useEffect(() => {
+    if (journey().m1Case !== '') observeConversations(conversations);
+  }, [conversations]);
+  useEffect(() => {
+    if (journey().m1Case !== '') observeToken(pushToken);
+  }, [pushToken]);
+  const observeEvent = (name: string) => {
+    if (journey().m1Case !== '') void trace('m1.event', { name });
+  };
+  useConversationEvent('audioActivated', () => observeEvent('audioActivated'));
+  useConversationEvent('audioDeactivated', () =>
+    observeEvent('audioDeactivated'),
+  );
+  useConversationEvent('providerReset', () => observeEvent('providerReset'));
+  useConversationEvent('pushTokenUpdated', () =>
+    observeEvent('pushTokenUpdated'),
+  );
+
+  const command = async (operation: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await operation();
+      setMessage('Request accepted. State follows the system.');
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : 'The request failed.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const ring = () => {
+    const unique = Date.now().toString();
+    return reportIncomingConversation({
+      eventId: 'sdk-example-event-' + unique,
+      serverCallId: 'sdk-example-server-' + unique,
+      caller: {
+        id: 'sdk-example-caller',
+        displayName: 'SDK example',
+        phoneNumber: '+15555550142',
+      },
+      hasVideo: false,
+    });
+  };
+
+  return (
+    <>
+      <Text accessibilityRole="header" style={styles.sectionTitle}>
+        Calling journey
+      </Text>
+      <Text style={styles.secondary}>
+        Commands, the handler and this state view use the SDK’s public API. This
+        example accepts signaling requests locally; a real app supplies its own
+        transport and media.
+      </Text>
+      <StatusRow
+        label="Conversation"
+        value={conversation?.status ?? 'No active call'}
+      />
+      <StatusRow
+        label="Push token"
+        value={pushToken === null ? 'Not registered' : 'Registered'}
+      />
+      <Text style={styles.body} accessibilityLiveRegion="polite">
+        {message}
+      </Text>
+      <Button
+        title="Ring incoming call"
+        disabled={automated || busy || conversations.length !== 0}
+        onPress={() => void command(ring)}
+      />
+      <Button
+        title="Join call"
+        disabled={automated || busy || conversation?.status !== 'ringing'}
+        onPress={() =>
+          conversation && void command(() => joinConversation(conversation.id))
+        }
+      />
+      <Button
+        title="Report connected"
+        disabled={automated || busy || conversation?.status !== 'connected'}
+        onPress={() =>
+          conversation &&
+          void command(() =>
+            reportConversation(conversation.id, { type: 'connected' }),
+          )
+        }
+      />
+      <Button
+        title={conversation?.status === 'held' ? 'Resume call' : 'Hold call'}
+        disabled={
+          automated ||
+          busy ||
+          !conversation ||
+          !['connected', 'held'].includes(conversation.status)
+        }
+        onPress={() =>
+          conversation &&
+          void command(() =>
+            setHeld(conversation.id, conversation.status !== 'held'),
+          )
+        }
+      />
+      <Button
+        title="End call"
+        disabled={automated || busy || !conversation}
+        onPress={() =>
+          conversation && void command(() => endConversation(conversation.id))
+        }
+      />
+    </>
+  );
+}
+
 export default function App() {
   const [status, setStatus] = useState<Status>({ phase: 'loading' });
-  const [call, setCall] = useState<'idle' | 'busy' | 'ringing' | 'joined'>(
-    'idle',
-  );
-  const [callMessage, setCallMessage] = useState('Ready for an example call.');
+  const [acceptanceMessage, setAcceptanceMessage] = useState('');
+  const acceptanceStarted = useRef(false);
 
   const checkBootstrap = useCallback(async () => {
     setStatus({ phase: 'loading' });
     try {
       const info = await bootstrap();
-      setStatus({ phase: 'ready', info });
-      if (journey().acceptanceEnabled) {
-        setCall('busy');
-        setCallMessage('Running incoming call acceptance…');
-        await journey().acceptance();
-        setCall('idle');
-        setCallMessage('Incoming ringing, joining and ending passed.');
+      if (
+        !acceptanceStarted.current &&
+        (journey().acceptanceEnabled || journey().m1Case !== '')
+      ) {
+        acceptanceStarted.current = true;
+        setAcceptanceMessage('Running simulator acceptance…');
+        if (journey().acceptanceEnabled) {
+          setStatus({ phase: 'ready', info });
+          await journey().acceptance();
+        } else {
+          if (['cold-launch', 'unhandled-expiry'].includes(journey().m1Case)) {
+            // No public SDK runtime/state hook has been created yet. Cold state
+            // must exist before the panel subscribes or requests its snapshot.
+            await journey().waitForColdStart();
+          }
+          await trace('m1.jsReady');
+          await trace('m1.subscriptionsStarting');
+          setStatus({ phase: 'ready', info });
+          await runAcceptance();
+        }
+        setAcceptanceMessage('Simulator acceptance passed.');
+      } else {
+        setStatus({ phase: 'ready', info });
       }
     } catch (error) {
+      try {
+        if (journey().m1Case !== '') await journey().finish(false);
+      } catch {
+        // Preserve the screen's native-module loading error if no fixture exists.
+      }
       setStatus({
         phase: 'error',
-        message: error instanceof Error ? error.message : String(error),
+        message:
+          error instanceof Error ? error.message : 'The native request failed.',
       });
     }
   }, []);
-
-  const callCommand = async (command: 'ring' | 'join' | 'end') => {
-    const previous = call;
-    setCall('busy');
-    try {
-      await journey()[command]();
-      setCall(
-        command === 'ring' ? 'ringing' : command === 'join' ? 'joined' : 'idle',
-      );
-      setCallMessage(
-        command === 'ring'
-          ? 'Incoming call ringing.'
-          : command === 'join'
-            ? 'Call joined.'
-            : 'Call ended.',
-      );
-    } catch (error) {
-      setCall(previous);
-      setCallMessage(error instanceof Error ? error.message : String(error));
-    }
-  };
-
   useEffect(() => {
     void checkBootstrap();
   }, [checkBootstrap]);
@@ -90,10 +235,9 @@ export default function App() {
             VoIP SDK Example
           </Text>
           <Text style={styles.body}>
-            Check that the Expo app can activate the SDK’s native simulator
+            Calls use the SDK’s sole conversation client and built-in simulator
             support.
           </Text>
-
           <View style={styles.status} accessibilityLiveRegion="polite">
             {status.phase === 'loading' && (
               <View style={styles.loading}>
@@ -121,7 +265,7 @@ export default function App() {
             {status.phase === 'error' && (
               <>
                 <Text accessibilityRole="header" style={styles.sectionTitle}>
-                  Native module unavailable
+                  Native request failed
                 </Text>
                 <Text selectable style={styles.body}>
                   {status.message}
@@ -133,7 +277,6 @@ export default function App() {
               </>
             )}
           </View>
-
           <View style={styles.button}>
             <Button
               title="Check again"
@@ -141,33 +284,10 @@ export default function App() {
               disabled={status.phase === 'loading'}
             />
           </View>
-
-          <Text accessibilityRole="header" style={styles.sectionTitle}>
-            Calling journey
-          </Text>
-          <Text style={styles.secondary}>
-            Report an example incoming call, join it, then end it. The example
-            supplies a small native handler; media and signaling arrive in later
-            milestones.
-          </Text>
-          <Text style={styles.body} accessibilityLiveRegion="polite">
-            {callMessage}
-          </Text>
-          <Button
-            title="Ring incoming call"
-            disabled={status.phase !== 'ready' || call !== 'idle'}
-            onPress={() => void callCommand('ring')}
-          />
-          <Button
-            title="Join call"
-            disabled={call !== 'ringing'}
-            onPress={() => void callCommand('join')}
-          />
-          <Button
-            title="End call"
-            disabled={call !== 'ringing' && call !== 'joined'}
-            onPress={() => void callCommand('end')}
-          />
+          {acceptanceMessage !== '' && (
+            <Text style={styles.body}>{acceptanceMessage}</Text>
+          )}
+          {status.phase === 'ready' && <CallingJourney />}
         </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>
