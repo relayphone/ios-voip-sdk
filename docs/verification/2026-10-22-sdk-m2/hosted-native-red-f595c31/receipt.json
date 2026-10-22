@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured current-head hosted M2 acceptance failure; original strict trace remains red",
+  "run": {
+    "id": 39723730801,
+    "url": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39723730801",
+    "submittedHead": "f595c31f9d0294a5a8c5ee7c55e99872317ea312",
+    "capturedSource": {
+      "sourceCommit": "567fdabeaabcbd1ed69fa84bf990a7c01489c843",
+      "sourceInputsSHA256": "d1b2e36ff3e3cc58aeadf81d1f126a5c6a40a364e9bf297c91ca182476d87ec3"
+    },
+    "failedStep": "Measure LiveKit, stale audio and media reentrancy on one owned simulator"
+  },
+  "environment": {
+    "simulatorID": "86616534-D0B8-44FF-8729-55552BB1774B",
+    "simulatorRuntimeID": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+    "simulatorOS": "26.5",
+    "xcodeVersion": "Xcode 26.6\nBuild version 17F113",
+    "sdkVersion": "26.5",
+    "hostArchitecture": "arm64"
+  },
+  "artifact": {
+    "id": 12402478881,
+    "sha256": "9e87360291f712be44a18c3e331181cd18db8ca07e24801bbb28e7506ab26e4b",
+    "manifestSHA256": "125245a0971bf32bd0f5530139e043c93eaa5dfd360b9a90c3ec0600dfb51621",
+    "jobLogSHA256": "87afc1c06e7cd3ef12c1483ff569f5e9dfbcae4482b8cd43f1d79150eec67494"
+  },
+  "independentCapturedCommitReplay": {
+    "result": {
+      "success": false,
+      "error": "sdk-m2-livekit:170: malformed probe JSON"
+    },
+    "sha256": "a27e059784a71ff6b681b57af07f5c5755d876b6075708a83c151efbc7008489"
+  },
+  "framingObservation": {
+    "trace": "sdk-m2-livekit.log",
+    "traceSHA256": "df2e520d78e7067bc14efd6f97b533edae70f09202cafa915ef2720fa9441d61",
+    "malformedLine": 170,
+    "suffixLine": 171,
+    "event": "sdk.snapshot",
+    "sequence": 37,
+    "nativeDiagnostic": "(audio_device_buffer.cc:329): Invalid audio transport",
+    "line170SHA256": "ac597aa041b0e3d9c94f8b68629a274aeccc9e86973bb32eeec98f0caac5181f",
+    "line171SHA256": "208fdc66d06ac5d3c929f00d7ca5131507428372f3ca42cc9c5e7df27e8b32a7",
+    "originalTraceUnmodified": true,
+    "diagnosticOnlyReconstruction": {
+      "jsonParses": true,
+      "encodedBytesIncludingLF": 542,
+      "acceptedByGate": false
+    },
+    "lineHashNormalization": "UTF-8 line bytes without line terminator"
+  },
+  "supervisedProcessOutcomes": {
+    "livekit": {
+      "completed": true,
+      "reportedSuccess": true,
+      "receiptSHA256": "9e53e7525a38e22ae82a3a0d9a34251046e9d22378bb60235ed0e3971dae0c35",
+      "traceSHA256": "df2e520d78e7067bc14efd6f97b533edae70f09202cafa915ef2720fa9441d61",
+      "journalSHA256": "fb7eeba687f21c1bf6d7b318e524a49c7e4b2453b873cac95f4755df625d4f5d",
+      "scope": "process completion is not native acceptance; strict final gate fails"
+    },
+    "stale-audio": {
+      "completed": true,
+      "reportedSuccess": true,
+      "receiptSHA256": "f29079af4ab90d323f17e6d55886f08d7cc0525a4cea8995ca9b1e0f4bcced74",
+      "traceSHA256": "c2d9842f5392e883143792b3a984bbd0f4d96db7c4dfdb18af4056077427041c",
+      "journalSHA256": "f67123018b9abb8fd9a5e67a6cb1b18aa5ef613ae1f67c7892e23e6bd81a1c92",
+      "scope": "process completion is not native acceptance; strict final gate fails"
+    },
+    "media-reentrancy": {
+      "completed": true,
+      "reportedSuccess": true,
+      "receiptSHA256": "2ca13cfff362f18fc2aa458f0d8464ba9b669fe0c6bd1007c17e65325b1f0092",
+      "traceSHA256": "b6ba95ccdd77d134683a42facd165ac7f773921133fb1993c12bfc3f64271f26",
+      "journalSHA256": "2165b6610dd2180f8702cb031468587e93ec863dc5ad9d41f2f5c6ac4bc71517",
+      "scope": "process completion is not native acceptance; strict final gate fails"
+    }
+  },
+  "cleanup": {
+    "simulatorID": "86616534-D0B8-44FF-8729-55552BB1774B",
+    "deleted": true,
+    "absentFromInventory": true,
+    "shutdownExitCode": 0,
+    "deleteExitCode": 0
+  },
+  "cleanupSHA256": "2bf6b8d378656ac646dc1920c65b672de2626cb1cd0e65bd46d48d9121688ac9",
+  "writerFixDependency": {
+    "commit": "5063b96327edeb76bb433b24ce8e98129bd7e56a",
+    "file": "example/modules/journey/apple/ProbeTraceWriter.swift",
+    "status": "integrated through reviewed M1 parent; fresh fixed-writer native CI required, not qualified by this red run",
+    "parent": "abdae51f28cc608cd9f4b6d34e01c4c34650b031"
+  },
+  "sizeAudit": {
+    "sha256": "a470fc8c6d2ac71f7abcecd5c3f04f678413362919a02ac2a11b636e3ef02ff1",
+    "maximumEncodedBytesIncludingLF": 640,
+    "proposedCapBytes": 4096,
+    "allMeasuredCurrentFramesFit": true,
+    "universalPipeAtomicityClaim": false,
+    "darwinPipeBufBytes": 512,
+    "normalization": "PROBE prefix + captured JSON UTF-8 + LF (terminal CRLF normalized)"
+  }
+}

@@ -50,6 +50,7 @@ def main():
     inputs = [*sorted(ROOT.glob('Sources/VoIPPlatform/*.*')), *sorted(ROOT.glob('Sources/VoIPPlatform/include/*.h')),
               ROOT / 'Sources/VoIPSDK/VoIPApplication.swift', ROOT / 'Sources/VoIPSDK/ConversationClient.swift',
               ROOT / 'Sources/VoIPSDK/ConversationModels.swift', ROOT / 'Sources/VoIPSDK/ProcessSDKOwnership.swift',
+              ROOT / 'Sources/VoIPSDK/AudioActivation.swift',
               ROOT / 'Package.swift', ROOT / 'IosVoipSDK.podspec', ROOT / 'package.json', ROOT / 'VERSION', Path(__file__)]
     before = {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in inputs}
     with tempfile.TemporaryDirectory(prefix='voip-process-ownership-') as temporary:
@@ -62,21 +63,59 @@ def main():
         client = (ROOT / 'Sources/VoIPSDK/ConversationClient.swift').read_text()
         assert not re.search(r'public\s+(?:static\s+)?(?:var shared|func configure\()', client), 'only Application may publish/create the client'
         configuration = client[client.index('  public struct Configuration:'):client.index('  private static var instance')]
+        selection = client[client.index('  private static var instance:'):client.index('  private typealias Record')]
+        finish = client[client.index('  func finishLaunch() {'):client.index('  private func configureAudio()')]
+        emit_start = client.index('  private func emit(_ event: ConversationEvent,')
+        emit_end = client.index('\n}\n\n// Device traces', emit_start)
+        emit = client[emit_start:emit_end]
+        activation = (ROOT / 'Sources/VoIPSDK/AudioActivation.swift').read_text()
+        policy = activation[activation.index('public struct AudioActivationPolicy:'):activation.index('enum AudioActivationEvent:')]
         (out / 'Facades.swift').write_text('''import Foundation
+@MainActor public protocol MediaAdapter: AnyObject {
+  func setSystemAudioAuthorization(_ active: Bool)
+}
+@MainActor public final class NoMediaAdapter: MediaAdapter {
+  public init() {}
+  public func setSystemAudioAuthorization(_ active: Bool) {}
+}
+@MainActor final class RecordingMediaAdapter: MediaAdapter {
+  var authorizations: [Bool] = []
+  var onAuthorization: (@MainActor (Bool) -> Void)?
+  func setSystemAudioAuthorization(_ active: Bool) {
+    authorizations.append(active); onAuthorization?(active)
+  }
+}
+// Explicit platform facade: install reports unavailable coverage; only the
+// separately invoked conflict handler represents a provider ownership conflict.
+@MainActor enum ProviderCreationMonitor {
+  static var conflict: (@MainActor () -> Void)?
+  static var installs = 0
+  static var coverageDiagnostics = 0
+  static func setOwnershipConflictHandler(_ handler: @escaping @MainActor () -> Void) { conflict = handler }
+  static func install(_ log: (String) -> Void) {
+    installs += 1; coverageDiagnostics += 1; log("host facade: coverage unavailable")
+  }
+}
 @MainActor public final class ConversationClient {
-''' + configuration + '''
+''' + configuration + selection + '''
   static var creations = 0
-  static var onFinish: (@MainActor () -> Void)?
-  private static var instance: ConversationClient?
-  private var launched = false
-  static func forApplication(configuration: Configuration) throws -> ConversationClient {
-    if let instance { return instance }
-    let client = ConversationClient(); creations += 1; instance = client; return client
+  static var emittedContextsForHost: [ConversationEventContext] = []
+  private let configuration: Configuration
+  private let mediaAdapter: any MediaAdapter
+  private let audioPolicy: AudioActivationPolicy
+  private var launchFinished = false
+  private var eventObservers: [UUID: @MainActor (ConversationEventContext) -> Void] = [:]
+  private init(configuration: Configuration, mediaAdapter: any MediaAdapter, audioPolicy: AudioActivationPolicy) {
+    self.configuration = configuration; self.mediaAdapter = mediaAdapter; self.audioPolicy = audioPolicy
+    Self.creations += 1 // Explicit facade for the LCK manager construction.
+    eventObservers[UUID()] = { Self.emittedContextsForHost.append($0) }
   }
-  func finishLaunch() {
-    guard !launched else { return }; launched = true
-    Self.onFinish?()
+  private func trackManager() {} // Explicit facade for LCK observation.
+  var selectedAdapterForHost: any MediaAdapter { mediaAdapter }
+  func observeForHost(_ observer: @escaping @MainActor (ConversationEventContext) -> Void) {
+    eventObservers[UUID()] = observer
   }
+''' + finish + emit + '''
 }
 @MainActor final class SimulatorSupport {
   static func configure(enabled: Bool) throws {}
@@ -93,17 +132,65 @@ def main():
 }
 @MainActor public func managerCreations() -> Int { ConversationClient.creations }
 @MainActor public func reentrantStartProbe() -> Bool {
-  var reentered = false
-  ConversationClient.onFinish = {
-    guard let published = VoIPApplication.current else { return }
-    do {
-      let repeated = try VoIPApplication.start()
-      reentered = repeated === published && repeated.client === published.client
-    } catch {}
-  }
   do {
-    let application = try VoIPApplication.start()
-    return reentered && application === VoIPApplication.current && ConversationClient.creations == 1
+    let adapter = RecordingMediaAdapter()
+    let policy = try AudioActivationPolicy(activationTimeout: 12, recoveryTimeout: 6)
+    let configuration = VoIPApplication.Configuration(client: .init(providerOwnershipMonitoring: true))
+    var reentered = false
+    adapter.onAuthorization = { active in
+      guard !active, let published = VoIPApplication.current else { return }
+      do {
+        let repeated = try VoIPApplication.start(configuration: configuration, mediaAdapter: adapter, audioPolicy: policy)
+        let publishedClient = try ConversationClient.forApplication(configuration: configuration.client,
+          mediaAdapter: adapter, audioPolicy: policy)
+        reentered = repeated === published && repeated.client === publishedClient &&
+          repeated.client === published.client && ConversationClient.creations == 1
+      } catch {}
+    }
+    let application = try VoIPApplication.start(configuration: configuration, mediaAdapter: adapter, audioPolicy: policy)
+    guard reentered, application === VoIPApplication.current,
+          application.client.selectedAdapterForHost === adapter,
+          adapter.authorizations == [false], ProviderCreationMonitor.installs == 1,
+          ProviderCreationMonitor.coverageDiagnostics == 1,
+          ConversationClient.emittedContextsForHost.isEmpty else { return false }
+    guard try VoIPApplication.start(configuration: configuration, mediaAdapter: adapter, audioPolicy: policy) === application,
+          try VoIPApplication.start(configuration: configuration, audioPolicy: policy) === application,
+          application.client.selectedAdapterForHost === adapter, adapter.authorizations == [false] else { return false }
+    @MainActor func refuses(_ start: () throws -> VoIPApplication) -> Bool {
+      do { _ = try start(); return false }
+      catch { return (error as? ConversationClientError) == .alreadyConfigured }
+    }
+    let conflictingAdapter = RecordingMediaAdapter()
+    guard refuses({ try VoIPApplication.start(configuration: configuration, mediaAdapter: conflictingAdapter, audioPolicy: policy) }),
+          refuses({ try VoIPApplication.start(configuration: configuration, mediaAdapter: adapter, audioPolicy: .standard) }) else { return false }
+    var changedClient = configuration; changedClient.client.supportsVideo.toggle()
+    var changedApplication = configuration; changedApplication.simulatorSupport.toggle()
+    // Reach the client selection guard directly as well: Application rejects
+    // its changed configuration before it delegates this particular mismatch.
+    do {
+      _ = try ConversationClient.forApplication(configuration: changedClient.client,
+        mediaAdapter: adapter, audioPolicy: policy)
+      return false
+    } catch {
+      guard (error as? ConversationClientError) == .alreadyConfigured else { return false }
+    }
+    guard refuses({ try VoIPApplication.start(configuration: changedClient, mediaAdapter: adapter, audioPolicy: policy) }),
+          refuses({ try VoIPApplication.start(configuration: changedApplication, mediaAdapter: adapter, audioPolicy: policy) }),
+          ConversationClient.creations == 1, conflictingAdapter.authorizations.isEmpty,
+          adapter.authorizations == [false], ProviderCreationMonitor.installs == 1 else { return false }
+    var contexts: [ConversationEventContext] = []
+    application.client.observeForHost { contexts.append($0) }
+    // A coverage diagnostic must not pass through the actual emit function.
+    ProviderCreationMonitor.install { _ in }
+    guard contexts.isEmpty, ConversationClient.emittedContextsForHost.isEmpty,
+          ProviderCreationMonitor.coverageDiagnostics == 2 else { return false }
+    // The installed closure and emit function are production source. Provider
+    // interception itself remains an explicit host facade in this executable.
+    guard let conflict = ProviderCreationMonitor.conflict else { return false }
+    conflict()
+    return contexts == [.init(type: .providerOwnershipLost)] &&
+      ConversationClient.emittedContextsForHost == contexts && contexts[0].conversationID == nil &&
+      ConversationClient.creations == 1 && adapter.authorizations == [false]
   } catch { return false }
 }
 public func claimOnly() -> Bool {
@@ -122,15 +209,18 @@ public func claimOnly() -> Bool {
         models = (ROOT / 'Sources/VoIPSDK/ConversationModels.swift').read_text()
         selected_models = '\n'.join(re.findall(r'public enum (?:UnhandledActionPolicy|ConversationClientError)[^{]+\{.*?\}', models, re.S))
         assert selected_models.count('public enum ') == 2
+        events = models[models.index('public enum ConversationEvent:'):models.index('public struct ConversationEventContext:')]
+        context = models[models.index('public struct ConversationEventContext:'):]
+        assert context.rstrip().endswith('}'), 'event context must remain the final model declaration'
         claim = ROOT / 'Sources/VoIPSDK/ProcessSDKOwnership.swift'
         combined = out / 'SDK.swift'
-        combined.write_text('import Foundation\n' + selected_models + '\n' +
+        combined.write_text('import Foundation\n' + selected_models + '\n' + events + context + policy + '\n' +
                             '\n'.join((out / name).read_text() for name in ('Facades.swift', 'VoIPApplication.swift', 'Probe.swift')) +
                             ('\n' + claim.read_text() if claim.exists() else ''))
         for module in ('SwiftPackageSDK', 'ExpoPodSDK'):
             print('Compiling ' + module, flush=True)
             run(['swiftc', '-O', '-swift-version', '6', '-warnings-as-errors', '-parse-as-library',
-                 '-emit-library', '-emit-module', '-module-name', module, '-import-objc-header', str(header),
+                 '-D', 'DEBUG', '-emit-library', '-emit-module', '-module-name', module, '-import-objc-header', str(header),
                  str(combined), *objects, '-emit-module-path', str(out / (module + '.swiftmodule')),
                  '-o', str(out / ('lib' + module + '.dylib'))])
             symbols = run(['nm', '-gU', str(out / ('lib' + module + '.dylib'))]).stdout
@@ -177,10 +267,17 @@ import ExpoPodSDK
                                 capture_output=True, timeout=30)
         assert static.returncode != 0 and b'duplicate symbol' in static.stderr, 'static duplicate failure must be an actual linker collision'
     assert before == {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in inputs}, 'sources changed during host qualification'
-    print(json.dumps(dict(success=True, sourceSHA256=before, classification='two real optimized host modules/dylibs; LCK and PushKit factories are facades',
+    print(json.dumps(dict(success=True, sourceSHA256=before, classification='two real optimized host modules/dylibs; actual Application, selection, finishLaunch and emit; LCK/PushKit factories, media adapter and provider monitor are explicit facades',
                           checks=['package-first-duplicate-refused-before-second-manager', 'pod-first-duplicate-refused-before-second-manager',
                                   'same-objc-helper-present-in-both-images', 'concurrent-claims-preserve-owner', 'static-linker-duplicate-is-already-loud',
-                                  'reentrant-start-sees-published-application-and-client', 'actual-swiftpm-trait-guards-paired-c-and-swift-flags',
+                                  'actual-forApplication-idempotent-adapter-config-and-policy-selection',
+                                  'omitted-repeat-adapter-preserves-initial-selection',
+                                  'conflicting-adapter-policy-client-and-application-configuration-refuse-before-second-manager',
+                                  'actual-finishLaunch-reentrant-start-sees-published-application-and-client',
+                                  'actual-finishLaunch-authorizes-false-exactly-once',
+                                  'actual-emit-produces-typed-process-ownership-event-without-conversation-id',
+                                  'coverage-diagnostic-does-not-emit-ownership-loss',
+                                  'actual-swiftpm-trait-guards-paired-c-and-swift-flags',
                                   'actual-podspec-default-off-opt-in-on-and-invalid-configuration'])))
 
 

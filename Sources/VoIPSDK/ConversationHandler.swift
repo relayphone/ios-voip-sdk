@@ -26,6 +26,7 @@ public final class ConversationCancellationSignal {
 @MainActor
 public struct ConversationActionContext {
   public let actionID: UUID
+  /// Application policy deadline, initially 1.5 seconds before the platform timeout.
   public let deadline: Date
   public let origin: ConversationActionOrigin
   public let signal: ConversationCancellationSignal
@@ -67,18 +68,24 @@ public struct ConversationHandler {
 @MainActor
 final class ConversationActionCoordinator {
   typealias Schedule = @MainActor (Date, @escaping @MainActor () -> Void) -> @MainActor () -> Void
+  private static let deadlineMargin: TimeInterval = 1.5
   private final class Entry {
     let conversationID: UUID
     let action: PendingAction
+    let platformDeadline: Date
     let isPending: @MainActor () -> Bool
     let settle: @MainActor (Bool) -> Void
     var cancelTimer: (@MainActor () -> Void)?
     var task: Task<Void, Never>?
     var signal: ConversationCancellationSignal?
     var delivery: UUID?
-    init(conversationID: UUID, action: PendingAction, isPending: @escaping @MainActor () -> Bool,
+    var preparation: Task<Void, Never>?
+    var preparationID: UUID?
+    var prepared = false
+    init(conversationID: UUID, action: PendingAction, platformDeadline: Date, isPending: @escaping @MainActor () -> Bool,
          settle: @escaping @MainActor (Bool) -> Void) {
       self.conversationID = conversationID; self.action = action
+      self.platformDeadline = platformDeadline
       self.isPending = isPending; self.settle = settle
     }
   }
@@ -91,6 +98,9 @@ final class ConversationActionCoordinator {
   var snapshot: (@MainActor (UUID) -> ConversationSnapshot?)?
   var didChange: (@MainActor () -> Void)?
   var willSettle: (@MainActor (UUID, PendingAction, Bool) -> Void)?
+  /// Mandatory call-time work begins only for an actual start/join action.
+  /// Its task remains cancellable until the platform action settles.
+  var prepareAction: (@MainActor (UUID, PendingAction) async throws -> Void)?
 
   init(policy: UnhandledActionPolicy, now: @escaping @MainActor () -> Date = { Date() }, schedule: Schedule? = nil) {
     self.policy = policy; self.now = now
@@ -119,12 +129,35 @@ final class ConversationActionCoordinator {
   func enqueue(conversationID: UUID, action: PendingAction,
                isPending: @escaping @MainActor () -> Bool, settle: @escaping @MainActor (Bool) -> Void) {
     guard entries[action.id] == nil else { return }
-    let entry = Entry(conversationID: conversationID, action: action, isPending: isPending, settle: settle)
+    let platformDeadline = action.deadline
+    var action = action
+    action.deadline = platformDeadline.addingTimeInterval(-Self.deadlineMargin)
+    let entry = Entry(conversationID: conversationID, action: action, platformDeadline: platformDeadline,
+      isPending: isPending, settle: settle)
+    let preparation = [.join, .start].contains(action.kind) ? prepareAction : nil
+    entry.prepared = preparation == nil
     entries[action.id] = entry
     if action.deadline <= now() { expire(action.id); return }
     entry.cancelTimer = schedule(action.deadline) { [weak self] in self?.expire(action.id) }
     didChange?()
-    deliver(entry)
+    if let prepareAction = preparation {
+      let preparationID = UUID(); entry.preparationID = preparationID
+      let id = action.id
+      entry.preparation = Task { @MainActor [weak self] in
+        guard !Task.isCancelled, self?.canPrepare(id, preparationID: preparationID) == true else { return }
+        let succeeded: Bool
+        do { try await prepareAction(conversationID, action); succeeded = true }
+        catch { succeeded = false }
+        guard let self, let entry = self.entries[id], entry.preparationID == preparationID,
+              !Task.isCancelled else { return }
+        entry.preparation = nil
+        guard entry.isPending() else { self.cancel(id, reason: .cancelled); return }
+        if entry.action.deadline <= self.now() { self.expire(id); return }
+        guard succeeded else { self.finish(entry, accepted: false); return }
+        entry.prepared = true
+        self.deliver(entry)
+      }
+    } else { entry.prepared = true; deliver(entry) }
   }
 
   func setHandler(_ handler: ConversationHandler?) {
@@ -147,7 +180,7 @@ final class ConversationActionCoordinator {
 
   func cancel(_ id: UUID, reason: ConversationCancellationSignal.Reason, settle: Bool = false) {
     guard let entry = entries.removeValue(forKey: id) else { return }
-    entry.cancelTimer?(); entry.signal?.cancel(reason); entry.task?.cancel()
+    entry.cancelTimer?(); entry.preparation?.cancel(); entry.signal?.cancel(reason); entry.task?.cancel()
     if settle && entry.isPending() { entry.settle(false) }
     didChange?()
   }
@@ -163,7 +196,7 @@ final class ConversationActionCoordinator {
   }
 
   private func deliver(_ entry: Entry) {
-    guard let handler, entries[entry.action.id] === entry, entry.delivery == nil else { return }
+    guard let handler, entries[entry.action.id] === entry, entry.delivery == nil, entry.prepared else { return }
     guard entry.isPending() else { cancel(entry.action.id, reason: .cancelled); return }
     guard let conversation = snapshot?(entry.conversationID) else {
       finish(entry, accepted: false); return
@@ -196,20 +229,29 @@ final class ConversationActionCoordinator {
     return true
   }
 
+  private func canPrepare(_ id: UUID, preparationID: UUID) -> Bool {
+    guard let entry = entries[id], entry.preparationID == preparationID else { return false }
+    guard entry.isPending() else { cancel(id, reason: .cancelled); return false }
+    guard entry.action.deadline > now() else { expire(id); return false }
+    return true
+  }
+
   private func expire(_ id: UUID) {
     guard let entry = entries[id] else { return }
     let wasDelivered = entry.delivery != nil
-    finish(entry, accepted: !wasDelivered && policy == .accept, cancellation: .deadline)
+    finish(entry, accepted: !wasDelivered && policy == .accept && entry.prepared, cancellation: .deadline)
   }
 
   private func finish(_ entry: Entry, accepted: Bool,
                       cancellation: ConversationCancellationSignal.Reason? = nil) {
     guard entries.removeValue(forKey: entry.action.id) != nil else { return }
     entry.cancelTimer?()
+    entry.preparation?.cancel()
     if let cancellation { entry.signal?.cancel(cancellation) }
     entry.task?.cancel()
     // A platform timeout/state change wins; fulfillment cannot resurrect a settled action.
     if entry.isPending() {
+      let accepted = accepted && now() < entry.platformDeadline
       // Install accepted mute/end metadata before fulfillment can synchronously
       // emit conversationChanged or a system echo.
       willSettle?(entry.conversationID, entry.action, accepted)

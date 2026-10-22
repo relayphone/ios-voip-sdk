@@ -94,6 +94,7 @@ public enum ConversationActionOrigin: String, Codable, Sendable { case system, a
 public struct PendingAction: Codable, Sendable, Equatable {
   public var id: UUID
   public var kind: ConversationActionKind
+  /// Observed pending actions expose the application's deadline, before platform timeout.
   public var deadline: Date
   public var origin: ConversationActionOrigin
   public var held: Bool?
@@ -137,5 +138,14 @@ public struct ConversationStateUpdate: Codable, Sendable, Equatable {
 }
 
 public enum ConversationEvent: String, Codable, Sendable {
-  case audioActivated, audioDeactivated, providerReset
+  case audioActivated, audioDeactivated, audioActivationMissing, audioActivationFailed, providerReset, providerOwnershipLost
+}
+
+public struct ConversationEventContext: Codable, Sendable, Equatable {
+  public let type: ConversationEvent
+  /// Absent for process-wide system callbacks and ownership/reset events.
+  public let conversationID: UUID?
+  public init(type: ConversationEvent, conversationID: UUID? = nil) {
+    self.type = type; self.conversationID = conversationID
+  }
 }

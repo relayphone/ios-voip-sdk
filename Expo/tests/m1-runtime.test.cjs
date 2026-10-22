@@ -373,3 +373,48 @@ test('non-state signals are routed by name and unsubscribe removes the listener'
   bridge.emit('conversationEvent', { type: 'providerReset', payload: {} });
   assert.deepEqual(events, [{}]);
 });
+
+test('audio route event wins over stale hydration and preserves stable immutable state', async () => {
+  const bridge = native();
+  const initial = deferred();
+  bridge.getAudioRoutes = () => initial.promise;
+  const runtime = new ConversationRuntime(bridge);
+  let changes = 0;
+  runtime.audioRoutes.subscribe(() => changes++);
+  runtime.startAudioRoutes();
+  const speaker = { id: 'speaker', name: 'Speaker', type: 'Speaker' };
+  bridge.emit('audioRoutesChanged', {
+    revision: 2,
+    routes: [speaker],
+    current: speaker,
+  });
+  const current = runtime.audioRoutes.getSnapshot();
+  initial.resolve({ revision: 1, routes: [], current: null });
+  await flush();
+  assert.equal(runtime.audioRoutes.getSnapshot(), current);
+  assert.deepEqual(current, { routes: [speaker], current: speaker });
+  assert.ok(Object.isFrozen(current.routes));
+  assert.ok(Object.isFrozen(current.current));
+  assert.equal(changes, 1);
+  bridge.emit('audioRoutesChanged', { revision: 2, routes: [], current: null });
+  assert.equal(runtime.audioRoutes.getSnapshot(), current);
+});
+
+test('audio route loss stays null after a delayed initial read', async () => {
+  const bridge = native();
+  const initial = deferred();
+  bridge.getAudioRoutes = () => initial.promise;
+  const runtime = new ConversationRuntime(bridge);
+  runtime.startAudioRoutes();
+  bridge.emit('audioRoutesChanged', { revision: 3, routes: [], current: null });
+  initial.resolve({
+    revision: 0,
+    routes: [{ id: 'old', name: 'Old', type: 'Headphones' }],
+    current: { id: 'old', name: 'Old', type: 'Headphones' },
+  });
+  await flush();
+  assert.deepEqual(runtime.audioRoutes.getSnapshot(), {
+    routes: [],
+    current: null,
+  });
+});

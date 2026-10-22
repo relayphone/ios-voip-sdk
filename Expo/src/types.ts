@@ -42,6 +42,7 @@ export type ConversationActionKind =
 export interface PendingAction {
   id: string;
   kind: ConversationActionKind;
+  /** Effective application deadline, initially 1.5 seconds before platform timeout. */
   deadline: string;
   origin: ActionOrigin;
   held?: boolean;
@@ -69,6 +70,7 @@ export interface Conversation {
 }
 
 export interface ActionContext {
+  /** Effective application deadline, initially 1.5 seconds before platform timeout. */
   deadline: string;
   signal: AbortSignal;
   origin: ActionOrigin;
@@ -106,13 +108,26 @@ export interface PushToken {
   value: string;
 }
 
-/** M2 supplies watchdog signals; M3 supplies dial requests. */
+export interface AudioRoute {
+  readonly id: string;
+  readonly name: string;
+  /** AVAudioSession's existing port type value on iOS. */
+  readonly type: string;
+}
+
+export interface AudioRoutes {
+  readonly routes: readonly AudioRoute[];
+  readonly current: AudioRoute | null;
+}
+
+/** Activation callbacks are process-wide; watchdog signals identify each affected conversation. */
 export interface ConversationEventMap {
   audioActivated: { conversationId?: string };
   audioDeactivated: { conversationId?: string };
-  audioActivationMissing: { conversationId: string };
-  audioActivationFailed: { conversationId: string };
+  audioActivationMissing: { conversationId?: string };
+  audioActivationFailed: { conversationId?: string };
   pushTokenUpdated: PushToken | null;
   dialRequest: { handle: string; video: boolean };
   providerReset: Record<string, never>;
+  providerOwnershipLost: Record<string, never>;
 }

@@ -17,7 +17,8 @@ OWN_FILES = ('discovery/probe/sdk_m1_contracts.swift', 'discovery/build_sdk_m1_c
              'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
              'discovery/probe/Info.plist', 'discovery/run_scenario.py', 'discovery/sdk_m0_conformance.py',
              'discovery/sdk_bootstrap_conformance.py', 'discovery/summarize.py', 'discovery/device_oracles.py', 'VERSION')
-REFERENCE = 'docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-basic.jsonl'
+REFERENCES = tuple('docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-' + case + '.jsonl'
+                   for case in ('basic', 'cx-after', 'lck-after', 'two-managers'))
 WARNING = 'Another CXProvider was created. D13 routes actions to the newest provider; keep one ConversationManager in this process.'
 BUILD_FILES = ('SDKM1Contracts.app/SDKM1Contracts', 'SDKM1Contracts.app/Info.plist',
                'SDKM1Contracts.app/IosVoipSDKRuntime.bundle/ios-27.0.json',
@@ -28,7 +29,7 @@ BUILD_FILES = ('SDKM1Contracts.app/SDKM1Contracts', 'SDKM1Contracts.app/Info.pli
 def source_identity(root=ROOT):
     names = set(subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard',
                                         '-z', '--', 'Sources'], cwd=root).decode().split('\0'))
-    names.discard(''); names.update((*OWN_FILES, REFERENCE))
+    names.discard(''); names.update((*OWN_FILES, *REFERENCES))
     value = hashlib.sha256()
     for name in sorted(names):
         value.update(name.encode() + b'\0' + (root / name).read_bytes() + b'\0')
@@ -83,8 +84,16 @@ def accept_contract(rows, engine, source_root):
             pending.get('handlerAttached') is False and isinstance(pending.get('actionID'), str) and
             pending['actionID'] and type(deadline) is int, 'invalid native pending join')
     require(abs(deadline - pending['wallTimeMS'] - pending['remainingMS']) <= 2, 'pending deadline sample differs')
-    reference = load(source_root / Path(REFERENCE).parent, Path(REFERENCE).stem)
-    check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000), deadline_bands(reference))
+    reference = [row for name in REFERENCES for row in load(source_root / Path(name).parent, Path(name).stem)]
+    # Device samples measure the platform deadline. The public deadline is the
+    # application policy boundary, 1.5 seconds earlier, including for JS.
+    check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000 + 1.5), deadline_bands(reference))
+    advertised = one(engine, 'action.deadline')
+    platform_deadline = advertised.get('deadlineMS')
+    require(advertised.get('apiKind') == 'livecommunicationkit' and type(platform_deadline) is int and
+            advertised.get('deadlineSeconds') == advertised.get('expirySeconds') == 30 and
+            1000 <= platform_deadline - deadline <= 3500,
+            'effective deadline lacks the LCK safety margin or uses provider timing')
     snapshots = [r for r in rows if r['event'] == 'contract.snapshot']
     require(snapshots and all(type(r.get('revision')) is int for r in snapshots) and
             all(a['revision'] < b['revision'] for a, b in zip(snapshots, snapshots[1:])), 'invalid snapshot revision')
@@ -101,7 +110,8 @@ def accept_contract(rows, engine, source_root):
                 require(action == dict(id=pending['actionID'], kind='join', origin='app', deadlineMS=deadline), 'pending identity/deadline changed')
                 native_pending.append(row)
             if value.get('status') == 'connected':
-                require(row['wallTimeMS'] >= deadline - 1 and value.get('pending') is None, 'accepted before deadline or still pending')
+                require(deadline - 1 <= row['wallTimeMS'] < platform_deadline and value.get('pending') is None,
+                        'accepted before effective deadline, after platform timeout, or still pending')
                 connected.append(row)
     require(native_pending and native_pending[0]['wallTimeMS'] < deadline and connected and
             deadline - 1 <= connected[0]['wallTimeMS'] <= deadline + 3000, 'no deadline-bound connected state')
@@ -116,6 +126,7 @@ def accept_contract(rows, engine, source_root):
     settled = [r for r in engine if r['event'] == 'action.settled']
     require(len(delivered) == len(settled) == 1 and delivered[0].get('kinds') == ['CXAnswerCallAction'] and
             delivered[0].get('actionIDs') == [settled[0].get('actionID')] and settled[0].get('fulfilled') is True and
+            advertised.get('actionID') == settled[0].get('actionID') and
             not any(r['event'] == 'action.timeout' for r in engine), 'native answer settlement differs')
     native_connected = [r for r in engine if r['event'] == 'call.changed' and r.get('uuid') == call and
                         r.get('connected') is True and r.get('ended') is False]
@@ -128,7 +139,7 @@ def accept_contract(rows, engine, source_root):
     for event in (settled[0], native_connected[0]):
         relative = event['t_ms'] - marker['t_ms']
         require(pending['clockBeforeMS'] + relative >= deadline - 25 and
-                pending['wallTimeMS'] + relative <= deadline + 3025, 'native settlement/connection outside deadline budget')
+                pending['wallTimeMS'] + relative < platform_deadline, 'native settlement/connection must precede platform timeout')
     native_end = one(engine, 'report.ended')
     call_states = [r for r in engine if r['event'] == 'call.changed' and r.get('uuid') == call]
     require(native_end.get('callUUID') == call and call_states[-1].get('ended') is True and
@@ -136,7 +147,9 @@ def accept_contract(rows, engine, source_root):
             engine.index(native_connected[0]) < engine.index(native_end) < engine.index(call_states[-1]),
             'native delivery/settlement/connection/cleanup order differs')
     require(len([r for r in engine if r['event'] == 'provider.created']) == 1, 'accept created another provider')
-    return dict(success=True, pendingDeadlineMS=deadline, connectedAfterDeadlineMS=connected[0]['wallTimeMS'] - deadline)
+    return dict(success=True, effectiveDeadlineMS=deadline, runtimeDeadlineMS=platform_deadline,
+                connectedAfterEffectiveDeadlineMS=connected[0]['wallTimeMS'] - deadline,
+                connectedBeforeRuntimeDeadlineMS=platform_deadline - connected[0]['wallTimeMS'])
 
 
 def validate_build(build, source_root=ROOT):

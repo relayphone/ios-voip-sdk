@@ -3,7 +3,9 @@
 Run `python3 discovery/check_expo_bridge.py` from the repository. It compiles the
 actual `Expo/apple/ConversationBridge.swift`, production conversation models,
 handler contexts and cancellation signals, and the production token store/models
-with Swift 6 and warnings as errors. The temporary executable is removed afterwards.
+with Swift 6 and warnings as errors. It also compiles the production audio route
+snapshot model and checks route replay, null route loss and observer cleanup.
+The temporary executable is removed afterwards.
 The JSON result binds the compiled production/test sources and checker by SHA-256;
 source changes during compilation or execution fail the check.
 
