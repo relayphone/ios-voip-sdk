@@ -74,6 +74,7 @@ jobs:
           python3 discovery/check_sdk_m1.py | tee "$SDK_M0_BUILD_LOGS/m1-offline-controls.json"
           python3 discovery/check_expo_bridge.py | tee "$SDK_M0_BUILD_LOGS/expo-relay-controls.json"
           python3 discovery/check_platform_shims.py | tee "$SDK_M0_BUILD_LOGS/platform-controls.json"
+          python3 discovery/check_lck_provider_policy.py | tee "$SDK_M0_BUILD_LOGS/lck-policy-controls.json"
           bash Tests/VoIPSDK/run.sh | tee "$SDK_M0_BUILD_LOGS/core-controls.log"
           bash Tests/VoIPSDK/run_push.sh | tee "$SDK_M0_BUILD_LOGS/push-controls.log"
           bash -n discovery/build_sdk_bootstrap.sh discovery/build_sdk_device_probe.sh discovery/run_sdk_m0.sh
