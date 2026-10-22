@@ -19,14 +19,21 @@ Its hashes bind the copied manifest, build information and preparation metadata.
 The ignored capture retains the package and full build log; binaries are not
 duplicated in this evidence directory.
 
-Cleanup remains open for the owned simulator
+Cleanup initially remained open for the owned simulator
 `00C40DF9-E9B6-42B0-AC0C-16072CBF17CE`. Initial shutdown/delete calls timed out,
 as did a 60-second delete retry. After the separate root build was stopped, a
 bounded query/delete/query retry still timed out at 30/60/30 seconds. The
 simulator directory remained present. The temporary probe/runtime build
 directory was removed. No global CoreSimulator service was restarted and no
 other simulator was changed. `cleanup-confirmation.json` records this unresolved
-status; it does not claim successful cleanup.
+status at that time; it does not claim successful cleanup.
+
+A later bounded retry from source `9c52550` completed successfully after host
+build load stopped. `cleanup-confirmed-9c52550.json` records an owned-device query,
+shutdown and delete returning zero, followed by a successful query with no match.
+The owned simulator directory and temporary build directory were both absent.
+Only the run-owned simulator was operated on; native LCK acceptance remains
+pending.
 
 The branch subsequently integrated the acknowledged-launch supervisor fix.
 That fix was not exercised by this attempt, which stopped before launch.

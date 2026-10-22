@@ -2,8 +2,8 @@
 
 Status: native LCK acceptance is pending. Offline checks pass. A later local
 native preparation compiled the probe and runtime, but app installation timed
-out before any LCK launch. The owned simulator still requires cleanup after
-bounded CoreSimulator API retries failed; see the local attempt record below.
+out before any LCK launch. The owned simulator was deleted successfully after an initially failed cleanup;
+see the local attempt record below.
 
 ## What is prepared
 
@@ -145,3 +145,15 @@ The branch also merged the later acknowledged-launch supervisor through R4
 The next acceptance evidence must come from a successful hosted or local
 four-case run with strict receipt/image/environment binding. No B success is
 claimed from compilation or offline replay.
+
+## Cleanup confirmation
+
+Measured at source `9c52550`: a bounded owned-device query returned in 0.170
+seconds; shutdown and delete returned zero in 3.204 and 0.162 seconds. A final
+query returned zero in 0.134 seconds with no owned-device match. The simulator
+and temporary build directories were absent. The supplemental
+[cleanup receipt](../verification/2026-10-22-runtime-lck/cleanup-confirmed-9c52550.json)
+preserves this outcome without replacing the earlier failed-preparation record.
+No additional simulator run occurred. The 13 LCK controls, nine device-oracle
+controls and shell syntax check pass again on this integrated head. Native
+four-case acceptance remains pending.
