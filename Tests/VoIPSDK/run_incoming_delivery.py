@@ -21,6 +21,7 @@ SWIFT_INPUTS = ('IncomingIntake.swift', 'IncomingInvitationGate.swift',
                 'ConversationModels.swift', 'PushWire.swift')
 SOURCE_INPUTS = [
     'Sources/VoIPSDK/PushService.swift',
+    'Sources/VoIPSDK/ConversationClient.swift',
     'Sources/VoIPSDK/IncomingReportTransport.swift',
     *('Sources/VoIPSDK/' + name for name in SWIFT_INPUTS),
     'Sources/VoIPPlatform/VSPushRegistryOwner.m',
@@ -134,6 +135,7 @@ final class ConversationManager: @unchecked Sendable {
   }
 }
 
+// EXACT_REPORT_ERRORS
 // EXACT_TRANSPORT_BODY
 
 @MainActor private final class FixtureClient {
@@ -217,6 +219,8 @@ def prepare(out, sources):
     receiver = braced(push, '  public nonisolated func receiveVoIPPush(')
     schedule = braced(push, '  private nonisolated func scheduleProjection(')
     transport = sources['Sources/VoIPSDK/IncomingReportTransport.swift'].decode()
+    report_errors = braced(sources['Sources/VoIPSDK/ConversationClient.swift'].decode(),
+                          'enum IncomingReportErrors')
     lines = transport.splitlines(keepends=True)
     require(lines[0].strip() == '#if canImport(LiveCommunicationKit) && (os(iOS) || os(watchOS))' and
             lines[-1].strip() == '#endif', 'unexpected transport platform wrapper')
@@ -231,10 +235,12 @@ def prepare(out, sources):
     (out / 'IncomingDeliveryHost.m').write_text(native_template.replace('// EXACT_DELIVER_PAYLOAD', native))
     (out / 'IncomingDeliveryHost.h').write_bytes(sources['Tests/VoIPSDK/IncomingDeliveryHost.h'])
     swift = SWIFT_TEMPLATE.replace('// EXACT_TRANSPORT_BODY', unwrapped)
+    swift = swift.replace('// EXACT_REPORT_ERRORS', report_errors)
     swift = swift.replace('// EXACT_RECEIVER', receiver).replace('// EXACT_SCHEDULE_PROJECTION', schedule)
     (out / 'IncomingDelivery.swift').write_text(swift)
     return dict(receiverSHA256=sha(receiver.encode()), scheduleProjectionSHA256=sha(schedule.encode()),
-                transportBodySHA256=sha(unwrapped.encode()), nativeDeliveryMethodSHA256=sha(native.encode()),
+                transportBodySHA256=sha(unwrapped.encode()), reportErrorsSHA256=sha(report_errors.encode()),
+                nativeDeliveryMethodSHA256=sha(native.encode()),
                 transportRemovedLines=['outer platform #if', 'closing #endif', *imports],
                 generatedSwiftSHA256=sha(swift.encode()),
                 generatedNativeSHA256=sha((out / 'IncomingDeliveryHost.m').read_bytes()))

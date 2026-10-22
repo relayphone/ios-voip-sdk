@@ -30,6 +30,8 @@ SOURCE_PATHS = ('Sources', 'Expo', 'example', 'Package.swift', 'IosVoipSDK.podsp
                 'discovery/run_push_report_entry.py', 'discovery/check_push_report_capture.py',
                 'discovery/probe/push_report_entry.swift', 'discovery/probe/Info.plist', 'discovery/device_oracles.py',
                 'discovery/check_lck_provider_policy.py',
+                'discovery/build_sdk_device_release.py', 'discovery/device_release_exclusion.py',
+                'discovery/check_device_release.py',
                 'docs/research/callkit-simulator-probe/livecommunicationkit')
 TARGETS = ('CKSimRuntimeC', 'CKSimRuntime', 'VoIPPlatform', 'VoIPSDK')
 BINARIES = dict(example='binaries/example', bootstrap='binaries/bootstrap',

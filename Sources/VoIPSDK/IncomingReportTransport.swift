@@ -32,18 +32,8 @@ final class IncomingReportTransport: @unchecked Sendable {
       try await manager.reportNewIncomingConversation(uuid: reservation.id, update: update)
       return .reported
     } catch {
-      return Self.isAlreadyReported(error) ? .alreadyReported(error) : .failed(error)
+      return IncomingReportErrors.isAlreadyReported(error) ? .alreadyReported(error) : .failed(error)
     }
-  }
-
-  private static func isAlreadyReported(_ error: any Error) -> Bool {
-    var candidate = error as NSError
-    for _ in 0..<4 {
-      if candidate.domain == "com.apple.CallKit.error.incomingcall" && candidate.code == 2 { return true }
-      guard let underlying = candidate.userInfo[NSUnderlyingErrorKey] as? NSError else { return false }
-      candidate = underlying
-    }
-    return false
   }
 }
 #endif

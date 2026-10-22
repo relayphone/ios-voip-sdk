@@ -2,24 +2,28 @@
 #import "VSProviderMonitorInternal.h"
 #import <TargetConditionals.h>
 
-#if DEBUG && (TARGET_OS_IOS || TARGET_OS_WATCH)
-#import <CallKit/CXProvider.h>
-#endif
-
 #if DEBUG && TARGET_OS_IOS && TARGET_OS_SIMULATOR
 static BOOL (^simulatorProviderCreationSource)(void (^)(id));
 #endif
 
+#if DEBUG || (TARGET_OS_IOS && TARGET_OS_SIMULATOR)
 @implementation VSProviderCreationMonitor
 + (void)installWithDiagnosticHandler:(void (^)(NSString *))diagnosticHandler {
 #if DEBUG && (TARGET_OS_IOS || TARGET_OS_WATCH)
+  // Do not load CallKit or add a linker dependency for diagnostics. Monitoring
+  // is available only when the system has already made the provider class visible.
+  Class providerClass = NSClassFromString(@"CXProvider");
+  if (!providerClass) {
+    diagnosticHandler(@"The system provider class is unavailable; creation monitoring is disabled.");
+    return;
+  }
   #if TARGET_OS_IOS && TARGET_OS_SIMULATOR
   if (simulatorProviderCreationSource) {
-    VSProviderMonitorInstallWithSource(CXProvider.class, diagnosticHandler, simulatorProviderCreationSource);
+    VSProviderMonitorInstallWithSource(providerClass, diagnosticHandler, simulatorProviderCreationSource);
     return;
   }
   #endif
-  VSProviderMonitorInstall(CXProvider.class, diagnosticHandler);
+  VSProviderMonitorInstall(providerClass, diagnosticHandler);
 #endif
 }
 + (void)beginOwnedManagerCreation {
@@ -42,3 +46,4 @@ static BOOL (^simulatorProviderCreationSource)(void (^)(id));
 }
 #endif
 @end
+#endif
