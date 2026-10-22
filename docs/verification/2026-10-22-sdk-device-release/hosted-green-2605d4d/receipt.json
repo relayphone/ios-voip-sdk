@@ -1,0 +1,393 @@
+{
+  "classification": "measured hosted device Release inspection and exact-source artifact gate replay",
+  "pr": 23,
+  "headCommit": "2605d4d48dc922a4f549ede7bb18cf8349b5a32d",
+  "checkoutCommit": "e489c09f75a7578785e111aa41b1569a74a8cc3a",
+  "checkoutTreeSHA": "2818fc8c8d1ba796347142ceb0390964cf8fec4a",
+  "headAndCheckoutTreesEqual": true,
+  "originalRed": {
+    "runID": 39752379561,
+    "headCommit": "31e3d8de2f11a953557edb3fd3cf33ea44914cf0",
+    "classification": "simulator compile missing CKSimEmit; retained untouched",
+    "followupReceiptSHA256": "466e522f05ed7e4b0b89cc235012ea3e16f885f14cca56a68d3b2f8c05fc2512"
+  },
+  "sdk": {
+    "runID": 39755810097,
+    "attempt": 1,
+    "conclusion": "success",
+    "artifactID": 12416931009,
+    "zipSHA256": "4c5ddb6ad309a08c89bf6fcc731006360e00151f93ea54833cafa8b1fcd740fc",
+    "source": {
+      "sourceCommit": "e489c09f75a7578785e111aa41b1569a74a8cc3a",
+      "sourceInputsSHA256": "654530990a4762e79ddae7b49f69ccdedf3fd9e158f3188f5af01216199e2144"
+    },
+    "manifestSHA256": "c747796d2230d5326141f22fee201de34434a9938d9311e3a6a6286e2a68ae6e",
+    "environment": {
+      "simulatorID": "B6123384-94AD-4D15-B61C-D846668E30E3",
+      "simulatorRuntimeID": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+      "simulatorOS": "26.5",
+      "simulatorBuild": "23F77",
+      "xcodeVersion": "Xcode 26.6\nBuild version 17F113",
+      "sdkVersion": "26.5",
+      "hostArchitecture": "arm64",
+      "nodeVersion": "v24.22.1",
+      "npmVersion": "11.19.1"
+    },
+    "cleanup": {
+      "simulatorID": "B6123384-94AD-4D15-B61C-D846668E30E3",
+      "shutdownExitCode": 0,
+      "deleteExitCode": 0,
+      "deleted": true
+    },
+    "replayedGates": [
+      {
+        "gate": "sdk_m0_conformance.py",
+        "exitCode": 0,
+        "outputSHA256": "6bea871e853fbd32d89f3ac8f5604bf70de1fee58e34e5d2aaf9f4748b7382d3",
+        "matchesHostedOutput": true,
+        "result": {
+          "success": true,
+          "scenario": "sdk-m0",
+          "conversationID": "67CB214E-0E49-4D01-A447-2A65A09EF831",
+          "simulatorOS": "26.5",
+          "profile": "ios-27.0",
+          "bootstrap": {
+            "healthy": {
+              "success": true,
+              "checks": 4,
+              "effectiveMethods": 65
+            },
+            "profile": {
+              "success": true,
+              "checks": 5,
+              "effectiveMethods": 65
+            },
+            "push-after-install": {
+              "success": true,
+              "checks": 5,
+              "effectiveMethods": 65
+            }
+          },
+          "deviceRuntimeImplementationAbsent": true,
+          "swiftPMDeviceObjects": 16,
+          "manifestSHA256": "c747796d2230d5326141f22fee201de34434a9938d9311e3a6a6286e2a68ae6e"
+        }
+      },
+      {
+        "gate": "sdk_m1_conformance.py",
+        "exitCode": 0,
+        "outputSHA256": "39c91ee422647c719372c3c1d879ab3363de71e52c826df2f217db56782a4d7a",
+        "matchesHostedOutput": true,
+        "result": {
+          "success": true,
+          "scenario": "sdk-m1",
+          "cases": [
+            {
+              "success": true,
+              "case": "journey",
+              "conversationID": "5AE24F86-4938-4B77-B8AA-B275FE6AB001",
+              "pushID": "CBBD2989-85B7-4EA5-B5CE-8A2FA10475C0",
+              "assertions": 11,
+              "handlerActions": 4,
+              "providerActions": 4
+            },
+            {
+              "success": true,
+              "case": "cold-launch",
+              "conversationID": "9C940E07-A748-425A-9DF9-8120EDB346E2",
+              "pushID": "55ED9C50-0052-4563-99AE-47F94D87A0DD",
+              "assertions": 5,
+              "handlerActions": 2,
+              "providerActions": 2
+            },
+            {
+              "success": true,
+              "case": "unhandled-expiry",
+              "conversationID": "7E401C76-1A91-4472-8460-268EE38BA76B",
+              "pushID": "4D52C703-5B84-40CB-8E55-D694606DB1EB",
+              "assertions": 5,
+              "handlerActions": 0,
+              "providerActions": 2
+            }
+          ],
+          "m0": {
+            "success": true,
+            "scenario": "sdk-m0",
+            "conversationID": "67CB214E-0E49-4D01-A447-2A65A09EF831",
+            "simulatorOS": "26.5",
+            "profile": "ios-27.0",
+            "bootstrap": {
+              "healthy": {
+                "success": true,
+                "checks": 4,
+                "effectiveMethods": 65
+              },
+              "profile": {
+                "success": true,
+                "checks": 5,
+                "effectiveMethods": 65
+              },
+              "push-after-install": {
+                "success": true,
+                "checks": 5,
+                "effectiveMethods": 65
+              }
+            },
+            "deviceRuntimeImplementationAbsent": true,
+            "swiftPMDeviceObjects": 16,
+            "manifestSHA256": "c747796d2230d5326141f22fee201de34434a9938d9311e3a6a6286e2a68ae6e"
+          },
+          "manifestSHA256": "c747796d2230d5326141f22fee201de34434a9938d9311e3a6a6286e2a68ae6e",
+          "deadlineBands": {
+            "StartConversationAction": [
+              28.0,
+              30.1
+            ],
+            "EndConversationAction": [
+              28.0,
+              30.1
+            ],
+            "JoinConversationAction": [
+              28.0,
+              30.1
+            ],
+            "MuteConversationAction": [
+              28.0,
+              30.1
+            ],
+            "PlayToneAction": [
+              28.0,
+              30.1
+            ],
+            "PauseConversationAction": [
+              28.0,
+              30.1
+            ]
+          },
+          "deadlineReferenceSHA256": {
+            "2026-10-21-iphone13-ios27-lck-basic.jsonl": "9fd5e48b62a826af7e62388de87119ab431fe2019a7d40445cdd9b528dde4bf7",
+            "2026-10-21-iphone13-ios27-lck-cx-after.jsonl": "96d6e968c2cba8e098ec18872882f7a480476dd90611d5ae4cb5dc2dde78692b",
+            "2026-10-21-iphone13-ios27-lck-lck-after.jsonl": "7b29c543492904cd1121c047d3fce125c4b0a16f1adc76240c80d6c091a15c89",
+            "2026-10-21-iphone13-ios27-lck-two-managers.jsonl": "23ab443e1fd8623140e95cc7d34157d5fd8aa7d13b6321f90e1812825f65a042"
+          }
+        }
+      },
+      {
+        "gate": "sdk_m1_contracts_conformance.py",
+        "exitCode": 0,
+        "outputSHA256": "e52c9014dd6c6fd0ee1a4afe0f83005dca866439315983c272d142b65364b90f",
+        "matchesHostedOutput": true,
+        "result": {
+          "success": true,
+          "classification": "measured native contracts",
+          "cases": {
+            "guard": {
+              "success": true,
+              "warnings": 2,
+              "providers": 3
+            },
+            "unhandled-accept": {
+              "success": true,
+              "pendingDeadlineMS": 1792662363973,
+              "connectedAfterDeadlineMS": 34
+            }
+          },
+          "simulatorOS": "26.5",
+          "source": {
+            "sourceCommit": "e489c09f75a7578785e111aa41b1569a74a8cc3a",
+            "sourceInputsSHA256": "a2ec1c0e52e67d2119b48e9a26dd4f8e068dcb956a82da79af9f76fd8f12cb44",
+            "sourceDirty": false
+          },
+          "buildInfoSHA256": "4ed48ab22903703b36e6a5f898c9c772d71f748f3aebca36b698eed070de80d5"
+        }
+      }
+    ],
+    "podDevice": {
+      "receiptSHA256": "0bdaabe00a4381fe9e95931430de25457616da8ad75e105e2a21878aa70ea396",
+      "command": [
+        "xcodebuild",
+        "-workspace",
+        "/Users/runner/work/ios-voip-sdk/ios-voip-sdk/example/ios/VoIPSDKExample.xcworkspace",
+        "-scheme",
+        "VoIPSDKExample",
+        "-configuration",
+        "Release",
+        "-destination",
+        "generic/platform=iOS",
+        "-derivedDataPath",
+        "/Users/runner/work/_temp/sdk-m0-build/pod-device/DerivedData",
+        "ARCHS=arm64",
+        "ONLY_ACTIVE_ARCH=YES",
+        "CODE_SIGNING_ALLOWED=NO",
+        "COMPILER_INDEX_STORE_ENABLE=NO",
+        "build"
+      ],
+      "commandSHA256": "0100fef8c8a5a6f299ade44f035ca4c2776fb3e545d34eee3382377c9eab8289",
+      "buildLogSHA256": "ee36bd9ba08a0bcf9d6620f8b87247de0cb312f6ffe98ddf7cdf362067ece031",
+      "buildExitCode": 0,
+      "sourceBeforeAndAfterEqual": true,
+      "configuration": "Release",
+      "signingAllowed": false,
+      "appBinariesInspected": 9,
+      "publicHeadersInspected": 6,
+      "directCallKitLoadCommands": 0
+    }
+  },
+  "runtime": {
+    "runID": 39755809981,
+    "attempt": 1,
+    "conclusion": "success",
+    "compilers": [
+      "26.3",
+      "26.6"
+    ],
+    "artifacts": [
+      {
+        "name": "callkit-abi-macos-26-xcode-26.3",
+        "artifactID": 12417715593,
+        "zipSHA256": "b87ac635e70bbab0412433a30833e96680f3b9b0847d487f831d9ee00443d064"
+      },
+      {
+        "name": "callkit-discovery-macos-26-xcode-26.6",
+        "artifactID": 12416704484,
+        "zipSHA256": "4d6b32757c82b0d37f4002676f3f4c0b73eae2dcd5b5a1292fa5f24cfc4ac758"
+      },
+      {
+        "name": "callkit-repair-macos-26-xcode-26.6",
+        "artifactID": 12416609556,
+        "zipSHA256": "94b7a075163302eb6fca9e24218419f455ba97f02a886d3e9725886e44d4ba0f"
+      },
+      {
+        "name": "callkit-abi-macos-26-xcode-26.6",
+        "artifactID": 12416549795,
+        "zipSHA256": "1ed9744740fe441b5e23d747900745b6fbc721e8a408f11e1bb9a9f0e91140f5"
+      },
+      {
+        "name": "callkit-discovery-macos-26-xcode-26.3",
+        "artifactID": 12416278929,
+        "zipSHA256": "caf01f6749907edd879029a04ea7fcff0481669141ccf82e572096a8aaf00b48"
+      }
+    ],
+    "artifactGateReplays": [
+      {
+        "label": "26.3-summarize",
+        "exitCode": 0,
+        "outputSHA256": "bd7c2665bab793da5ce6c1a71b0cefcb2aef863781f7476ea955d8130d509a3a",
+        "stderrBytes": 0
+      },
+      {
+        "label": "26.3-conformance",
+        "exitCode": 0,
+        "outputSHA256": "da5c5a5db27658c4fd1a47e051f8c41d81f741fc132c94dd17beb43711b9add9",
+        "stderrBytes": 0
+      },
+      {
+        "label": "26.3-report_threading_conformance",
+        "exitCode": 0,
+        "outputSHA256": "09cd3b2e5652cda2290221c661975d7e90058e6c3fe402e69e9cd0d75804dfef",
+        "stderrBytes": 0
+      },
+      {
+        "label": "26.3-lck_conformance",
+        "exitCode": 0,
+        "outputSHA256": "42904a0dd0eae7e3582ed879e43f094e09e7bd168794928295b423d2c26a1621",
+        "stderrBytes": 0
+      },
+      {
+        "label": "26.3-semantics_conformance",
+        "exitCode": 0,
+        "outputSHA256": "6597f4e5374e06d8caad89741d2c6f691eb638fab7599b7c343b49e6e80b0447",
+        "stderrBytes": 0
+      },
+      {
+        "label": "26.3-generations_conformance",
+        "exitCode": 0,
+        "outputSHA256": "da4f710c3da273633fa9ce9f9bed6a2bfa66356abd8f4b8affc4ce15e1dba8c9",
+        "stderrBytes": 0
+      },
+      {
+        "label": "26.3-abi",
+        "exitCode": 0,
+        "outputSHA256": "388ac64df718f85f7f3fb2687e801b20c1b3c4f0efd9401515546938f841a533",
+        "stderrBytes": 0
+      },
+      {
+        "label": "26.6-summarize",
+        "exitCode": 0,
+        "outputSHA256": "d82ba439fb0ad50c9a322707b58cf3330e6b048684dbdc447311cf24c798a3e1",
+        "stderrBytes": 0
+      },
+      {
+        "label": "26.6-conformance",
+        "exitCode": 0,
+        "outputSHA256": "da5c5a5db27658c4fd1a47e051f8c41d81f741fc132c94dd17beb43711b9add9",
+        "stderrBytes": 0
+      },
+      {
+        "label": "26.6-report_threading_conformance",
+        "exitCode": 0,
+        "outputSHA256": "09cd3b2e5652cda2290221c661975d7e90058e6c3fe402e69e9cd0d75804dfef",
+        "stderrBytes": 0
+      },
+      {
+        "label": "26.6-lck_conformance",
+        "exitCode": 0,
+        "outputSHA256": "5a67054aa95de6047ad27b776e4e6528133cd8b750d377f0f507c95846a5bea2",
+        "stderrBytes": 0
+      },
+      {
+        "label": "26.6-semantics_conformance",
+        "exitCode": 0,
+        "outputSHA256": "6597f4e5374e06d8caad89741d2c6f691eb638fab7599b7c343b49e6e80b0447",
+        "stderrBytes": 0
+      },
+      {
+        "label": "26.6-generations_conformance",
+        "exitCode": 0,
+        "outputSHA256": "da4f710c3da273633fa9ce9f9bed6a2bfa66356abd8f4b8affc4ce15e1dba8c9",
+        "stderrBytes": 0
+      },
+      {
+        "label": "26.6-abi",
+        "exitCode": 0,
+        "outputSHA256": "3ad98ea1fe4ac8a858be6adde015b89328a113d08d63e2d3dd0c61808277737d",
+        "stderrBytes": 0
+      }
+    ],
+    "repair": {
+      "receiptSHA256": "5bb9d6fdce0273bc3033466e6972730e04d14ef4264d99e0b6e320c03146d8ea",
+      "success": true,
+      "checks": [
+        "clean-source-package-bound",
+        "before-injector-read-back",
+        "no-prior-ownership-for-owned-simulator",
+        "install-success",
+        "install-preserves-inherited-plus-unrelated-before",
+        "owned-install-state-saved",
+        "package-deleted-before-repair",
+        "source-cli-repairs-deleted-package",
+        "repair-removes-only-owned-loader",
+        "repair-preserves-original-owned-keys",
+        "repair-deletes-ownership-state",
+        "repeated-repair-no-op",
+        "repeated-repair-preserves-environment",
+        "original-global-environment-restored",
+        "owned-simulator-deleted",
+        "owned-build-directory-deleted"
+      ],
+      "verifiedRetainedCommandStreams": 44,
+      "omittedSensitiveCommandStreams": 76
+    }
+  },
+  "release": {
+    "runID": 39755809984,
+    "conclusion": "success",
+    "releaseJob": "skipped"
+  },
+  "limits": [
+    "Device app and SDK archive were inspected on the hosted runner; that full pod app/archive is not retained in the artifact, so local replay validates their bound inspector receipt and build log, not those pod binary bytes.",
+    "The three SDK gates replay against an isolated clean checkout of the exact synthetic CI commit; the checkout tree equals the PR head tree.",
+    "Runtime artifact gates were replayed without creating a simulator. ABI artifact replay binds retained manifests/traces and does not re-inspect absent runtime/probe binary bytes. Repair sensitive environment reads intentionally retain hashes only and cannot be independently rehashed.",
+    "These results do not qualify China distribution approval, Apple framework transitive dependencies, A1 PushKit changes, A4 audio changes or A7 opt-in monitoring."
+  ]
+}

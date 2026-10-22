@@ -15,16 +15,15 @@ Pod::Spec.new do |s|
   s.swift_version = '6.0'
   s.static_framework = true
   s.dependency 'ExpoModulesCore'
-  s.frameworks = 'LiveCommunicationKit', 'CallKit', 'AVFoundation', 'PushKit'
+  s.frameworks = 'LiveCommunicationKit', 'AVFoundation', 'PushKit'
   s.source_files = 'Sources/**/*.{swift,h,m}', 'Expo/apple/**/*.{swift,h}'
   # The external DYLD loader is not part of the embedded SDK.
   s.exclude_files = 'Sources/Interposition/CKLoader.m'
-  s.public_header_files = 'Sources/Interposition/**/CKRuntimeSeam.h', 'Sources/VoIPPlatform/include/*.h', 'Expo/apple/IosVoipSDK.h'
-  s.resource_bundles = {
-    'IosVoipSDKRuntime' => ['Sources/Engine/Resources/**/*.json', 'profiles/*.json']
-  }
+  s.public_header_files = 'Sources/Interposition/include/CKRuntimeBridge.h', 'Sources/VoIPPlatform/include/*.h', 'Expo/apple/IosVoipSDK.h'
+  s.private_header_files = 'Sources/Interposition/CKRuntimeSeam.h'
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
+    'SWIFT_ACTIVE_COMPILATION_CONDITIONS' => '$(inherited) CKSIM_SDK_SOURCE',
     'GCC_PREPROCESSOR_DEFINITIONS' => "$(inherited) CKSIM_SDK_SOURCE=1 CKSIM_RUNTIME_VERSION=\\\"#{runtime_version}\\\""
   }
 end

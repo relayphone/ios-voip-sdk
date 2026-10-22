@@ -239,8 +239,9 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
     Trace.shared.log("provider.timedOut", ["kind": NSStringFromClass(type(of: action)), "id": String(action.uuid.uuidString.prefix(8))])
   }
   func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-    setCallKitAudioActive(true)
     Trace.shared.log("provider.didActivateAudio", audioState())
+    // Publish readiness only after the activation trace is committed.
+    setCallKitAudioActive(true)
   }
   func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
     setCallKitAudioActive(false)
@@ -294,9 +295,13 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
   private func setCallKitAudioActive(_ active: Bool) {
     audioActivationLock.lock(); callKitAudioActive = active; audioActivationLock.unlock()
   }
+  private func isCallKitAudioActive() -> Bool {
+    audioActivationLock.lock(); defer { audioActivationLock.unlock() }
+    return callKitAudioActive
+  }
 
   func micProbe(_ label: String, requireCallKitActivation: Bool = true) {
-    audioActivationLock.lock(); let active = callKitAudioActive; audioActivationLock.unlock()
+    let active = isCallKitAudioActive()
     // inputNode lazily opens hardware input. Normal calling probes must wait for
     // the audio handoff instead of opening it on the broken genuine simulator path.
     if requireCallKitActivation && !active {
@@ -610,8 +615,16 @@ final class Probe: NSObject, CXProviderDelegate, CXCallObserverDelegate, PKPushR
       }
     }
     snapshot("ringing")
-    _ = await request([CXAnswerCallAction(call: a)], label: "answer-a")
-    await sleep(2.5); snapshot("answered")
+    let answerResult = await request([CXAnswerCallAction(call: a)], label: "answer-a")
+    if answerResult == "ok" {
+      // Request acceptance precedes provider fulfillment. Wait for the actual
+      // observer state instead of sampling while the callback is still running.
+      _ = await waitUntil("incoming answer connected", timeout: 10) {
+        self.observer.calls.contains { $0.uuid == a && $0.hasConnected && !$0.hasEnded } &&
+          self.provider.pendingTransactions.isEmpty && self.isCallKitAudioActive()
+      }
+    }
+    snapshot("answered")
     micProbe("after-answer")
     await sleep(1.5)
     _ = await request([CXSetMutedCallAction(call: a, muted: true)], label: "mute-a")
