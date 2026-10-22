@@ -95,7 +95,6 @@ async function main() {
     assert.deepEqual(Object.keys(defaults.mods.ios).sort(), [
       'entitlements',
       'infoPlist',
-      'podfileProperties',
     ]);
     checks.push('apple-mods-only');
     const plist = await apply(defaults, 'infoPlist', {
@@ -118,44 +117,6 @@ async function main() {
     assert.deepEqual(plist.Custom, { nested: true });
     assert.deepEqual(plist.NSUserActivityTypes, ['OtherIntent']);
     checks.push('defaults-and-existing-plist-preserved');
-    assert.equal(plist.VoIPSDK.providerOwnershipMonitoring, undefined);
-    assert.deepEqual(
-      await apply(defaults, 'podfileProperties', { custom: 'preserved' }),
-      {
-        custom: 'preserved',
-        'ios-voip-sdk.providerOwnershipMonitoring': 'false',
-      },
-    );
-    for (const enabled of [false, true]) {
-      const monitored = configured({ providerOwnershipMonitoring: enabled });
-      assert.equal(
-        (await apply(monitored, 'infoPlist', {})).VoIPSDK
-          .providerOwnershipMonitoring,
-        enabled,
-      );
-      assert.equal(
-        (await apply(monitored, 'podfileProperties', {}))[
-          'ios-voip-sdk.providerOwnershipMonitoring'
-        ],
-        String(enabled),
-      );
-    }
-    assert.throws(
-      () => configured({ providerOwnershipMonitoring: 'true' }),
-      /boolean/,
-    );
-    assert.equal(
-      (
-        await apply(defaults, 'infoPlist', {
-          VoIPSDK: { providerOwnershipMonitoring: true },
-        })
-      ).VoIPSDK.providerOwnershipMonitoring,
-      undefined,
-    );
-    checks.push(
-      'provider-monitor-explicit-build-and-runtime-opt-in-with-debug-default',
-    );
-
     assert.deepEqual(
       await apply(configured(), 'infoPlist', structuredClone(plist)),
       plist,

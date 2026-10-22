@@ -1,6 +1,6 @@
 #if os(iOS) && targetEnvironment(simulator) && SWIFT_PACKAGE
 import CKSimRuntime
-#if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
+#if DEBUG
 import VoIPPlatform
 #endif
 #endif
@@ -37,7 +37,7 @@ public enum SimulatorSupport {
     guard enabled else { return false }
     #if os(iOS) && targetEnvironment(simulator)
     let active = RuntimeBootstrap.activate()
-    #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
+    #if DEBUG
     if active {
       ProviderCreationMonitor.prepareSimulatorProviderCreationSource { observer in
         RuntimeBootstrap.installProviderCreationObserver(observer)

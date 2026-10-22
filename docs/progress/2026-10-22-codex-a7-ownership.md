@@ -1,52 +1,51 @@
-# A7 SDK process ownership preparation — October 22, 2026
+# A7 process owner core preparation — October 22, 2026
 
-**Proposed behavior:** [the process-ownership guide](../sdk-process-ownership.md)
-describes the single launch owner, media selection and optional diagnostics.
-This work applies steering A7 while preserving A0's default Release exclusions.
-Native call journeys and a pod-built device Release inspection of this integrated
-source remain pending; host/compiler checks do not qualify either.
+**Proposed acceptance target:** every SDK creation path claims one process owner
+before constructing its only LCK manager. Native Swift and Expo use the same
+public `VoIPApplication.start` entry; the shared getter and separate client
+configuration entry are removed.
 
-## Implementation
+This small branch retains the original foundation commit `68911b0` and merges
+main `ef5a1f6` normally. A forward scope reduction removes the foundation's
+optional foreign-provider diagnostics, SwiftPM trait/tools change and plugin
+opt-in. Those remain on the separate M2 integration stack; this branch carries
+no M2/audio ancestry. Existing main packaging and Debug diagnostics are kept.
+The original foundation evidence remains recoverable from commit `68911b0`;
+current-source evidence belongs to the focused core receipt.
 
-The SDK uses a canonical Objective-C selector as an associated-object key on
-`NSProcessInfo.processInfo`, under a brief synchronization block. Each linked
-Swift SDK image supplies its module name and its own immutable UUID token. The
-same-named Objective-C helper can be coalesced without coalescing those Swift
-identities. The first SDK keeps its claim for the process lifetime; a second
-linkage fails before its manager is constructed. Static duplicate symbols can
-already fail loudly at link time.
+The process claim uses a canonical selector as an associated-object key on
+`NSProcessInfo.processInfo` under a brief synchronization block, with no callback
+under that block. Each Swift SDK image supplies its immutable module identity
+and UUID token. Objective-C class/symbol coalescing cannot merge those identities.
+The losing SDK fails before its manager is constructed. Static duplicate symbols
+can already fail loudly at link time.
 
-`VoIPApplication.start` is the sole public manager-creation entry. The completed
-client and application are published before adapter callbacks. The internal
-factory claims ownership too, rather than exposing an automatic shared getter.
+`VoIPApplication.current` and its complete client are published before one-shot
+launch setup. Repeated configuration is checked, and an identical reentrant
+start sees that same owner. Expo's duplicate-linkage rejection is represented in
+the public TypeScript error union, guard and runtime control.
 
-Provider diagnostics remain compiled out of default device Release. The explicit
-SwiftPM trait requires tools 6.1; this is an intentional minimum-tools change from
-6.0, with Swift language mode 6 retained. Conditional C settings on the Swift
-consumer propagate the header flag to its Clang importer; a Swift `-D` or a flag
-on the dependency's C target alone does not do that. Expo writes paired runtime
-and CocoaPods compilation selections. Generic diagnostics and actual foreign
-creation have distinct callbacks, so failed coverage cannot produce an SDK loss
-event. No code loads CallKit for diagnostics.
+## Evidence and pending work
 
-## Measured foundation evidence and outstanding acceptance
+**Measured:** the [focused receipt](../verification/2026-10-22-sdk-process-owner-core/host-checks.json)
+binds 54 inputs and nine verification entries. The real two-SDK host harness
+passes eleven groups, including both SDK load orders, concurrent claims, real
+static duplicate-symbol failure, invalid-first configuration, conflicting
+configuration and reentrant published ownership with exactly-once setup. LCK
+and PushKit construction/observation remain explicit facades.
 
-The [source-bound host receipt](../verification/2026-10-22-sdk-a7-foundation/host-checks.json)
-records eight verification commands: eight duplicate-linkage/packaging groups,
-46 platform groups, 23 actual Expo plugin groups, the M0/M1 gate host controls,
-four device-exclusion controls, core host controls, and actual shared Swift
-source typechecks for `iphoneos` in default Release and explicitly enabled
-diagnostics Release. Both independent SPEC and STANDARDS reviews cleared the
-foundation against base `1f44286079b9e56bd2d7d1fcfd712b271dcd7750`.
+The genuine SwiftPM Release `iphoneos` library build passed; ten product hashes
+were recorded before removing only its owned DerivedData. Four existing manager
+region-isolation warning lines remain in the compiler log. The new process
+helper also compiles for watchOS 10.4. TypeScript typecheck, eleven runtime
+controls, formatting, five device-exclusion controls and the M1/contract host
+gates pass. Independent SPEC and STANDARDS reviews cleared the frozen scope.
 
-This is preparation, not complete A7 acceptance. Adapter identity/policy
-selection and the typed process-scoped ownership event still need the A4 media
-ancestry. The native journeys and fresh pod-built Release app inspection remain
-pending after that integration. No simulator or device has been used for A7.
-The initial plugin command could not find dependencies in this worktree; its
-successful follow-up used an existing locked example dependency directory.
-Neither run installed or changed dependencies.
+No simulator, physical device, APNs, hosted CI, push, pull request or publication
+has been used. This does not measure duplicate linkage in a shipping app or
+native calling behavior. The final A0.1 correction must be merged forward and
+qualified before publication.
 
-Historical M1 notes describing
-`ConversationClient.shared` and pre-creation adapter registration are superseded
-by this single-entry API; those historical evidence documents remain intact.
+When main is merged into the M2 stack later, preserve M2's optional diagnostic
+fields/flags by intent: this branch's forward scope reduction removes those
+foundation additions solely from the core acceptance target.

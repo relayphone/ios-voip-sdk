@@ -1,4 +1,4 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.0
 import Foundation
 import PackageDescription
 
@@ -10,8 +10,6 @@ let package = Package(
   name: "VoIPSDK",
   platforms: [.iOS("17.4")],
   products: [.library(name: "VoIPSDK", targets: ["VoIPSDK"])],
-  traits: [.trait(name: "ProviderOwnershipDiagnostics",
-                  description: "Compile optional dynamic provider ownership diagnostics in Release builds.")],
   targets: [
     .target(
       name: "CKSimRuntimeC",
@@ -20,7 +18,6 @@ let package = Package(
       publicHeadersPath: "include",
       cSettings: [
         .define("CKSIM_SDK_SOURCE", to: "1"),
-        .define("VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", to: "1", .when(traits: ["ProviderOwnershipDiagnostics"])),
         .define("CKSIM_RUNTIME_VERSION", to: "\"\(runtimeVersion)\"")
       ]
     ),
@@ -28,16 +25,11 @@ let package = Package(
       name: "CKSimRuntime",
       dependencies: ["CKSimRuntimeC"],
       path: "Sources/Engine",
-      exclude: ["Resources"],
-      swiftSettings: [.define("VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", .when(traits: ["ProviderOwnershipDiagnostics"]))]
+      exclude: ["Resources"]
     ),
     .target(name: "VoIPPlatform", path: "Sources/VoIPPlatform", publicHeadersPath: "include",
-            cSettings: [.define("DEBUG", to: "1", .when(configuration: .debug)),
-                        .define("VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", to: "1", .when(traits: ["ProviderOwnershipDiagnostics"]))]),
-    .target(name: "VoIPSDK", dependencies: ["CKSimRuntime", "VoIPPlatform"], path: "Sources/VoIPSDK",
-            cSettings: [.define("DEBUG", to: "1", .when(configuration: .debug)),
-                        .define("VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", to: "1", .when(traits: ["ProviderOwnershipDiagnostics"]))],
-            swiftSettings: [.define("VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", .when(traits: ["ProviderOwnershipDiagnostics"]))])
+            cSettings: [.define("DEBUG", to: "1", .when(configuration: .debug))]),
+    .target(name: "VoIPSDK", dependencies: ["CKSimRuntime", "VoIPPlatform"], path: "Sources/VoIPSDK")
   ],
   swiftLanguageModes: [.v6]
 )

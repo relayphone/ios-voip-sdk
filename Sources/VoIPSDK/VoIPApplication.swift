@@ -64,8 +64,7 @@ public final class VoIPApplication {
         maximumConversationGroups: integer("maximumConversationGroups", default: 2),
         maximumConversationsPerGroup: integer("maximumConversationsPerConversationGroup", default: 2),
         includesConversationInRecents: bool("includesCallsInRecents", default: true),
-        supportsVideo: bool("supportsVideo", default: true), unhandledAction: policy,
-        providerOwnershipMonitoring: bool("providerOwnershipMonitoring", default: ConversationClient.Configuration.defaultProviderOwnershipMonitoring)),
+        supportsVideo: bool("supportsVideo", default: true), unhandledAction: policy),
         simulatorSupport: bool("simulatorSupport", default: true))
     }
   }
