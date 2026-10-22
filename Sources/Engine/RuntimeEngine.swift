@@ -1,10 +1,10 @@
+#if os(iOS) && targetEnvironment(simulator)
 import Foundation
+#if SWIFT_PACKAGE
+import CKSimRuntimeC
+#endif
 @preconcurrency import CallKit
 @preconcurrency import AVFoundation
-
-#if !targetEnvironment(simulator)
-#error("CallKit Simulator is a simulator-only runtime")
-#endif
 
 private enum ProviderAPIKind: String { case callkit, livecommunicationkit }
 private struct FulfilledPostEndUnmutePolicy: Decodable {
@@ -116,7 +116,27 @@ private struct Command: Decodable {
 /// One private serial queue owns all state. App code always executes elsewhere.
 @objc(CKSimulatorEngine)
 final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendable {
-  static let shared = RuntimeEngine()
+  private static let storage = RuntimeStorage()
+
+  static func prepare() throws {
+    storage.lock.lock()
+    defer { storage.lock.unlock() }
+    if storage.engine == nil { storage.engine = try RuntimeEngine(prepared: ()) }
+  }
+
+  static func existing() -> RuntimeEngine? {
+    storage.lock.lock()
+    defer { storage.lock.unlock() }
+    return storage.engine
+  }
+
+  static func releasePrepared() {
+    storage.lock.lock()
+    let engine = storage.engine
+    storage.engine = nil
+    storage.lock.unlock()
+    engine?.shutdown()
+  }
   private let state = DispatchQueue(label: "dev.callkitsim.engine", qos: .userInitiated)
   private let stateKey = DispatchSpecificKey<Bool>()
   private let profile: BehaviorProfile
@@ -138,46 +158,110 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private var sequence: UInt64 = 0
   private let epoch = DispatchTime.now().uptimeNanoseconds
   private var notificationToken: Int32 = 0
+  private var notificationRegistered = false
+  private var stopped = false
   private var commandResults: [UUID: [String: Any]] = [:]
   private var timers: [UUID: any DispatchSourceTimer] = [:]
 
-  private override init() {
+  private init(prepared: Void) throws {
     let env = ProcessInfo.processInfo.environment
-    // launchctl can represent a restored, absent value as an empty string.
-    // Empty optional configuration has the same meaning as an unset value.
     let profileID = env["CKSIM_PROFILE"].flatMap { $0.isEmpty ? nil : $0 } ?? "ios-27.0"
-    precondition(profileID == "ios-27.0", "Unsupported CallKit Simulator profile")
-    let url = URL(fileURLWithPath: CKSimResourceDirectory()).appendingPathComponent("profiles/\(profileID).json")
-    do { profile = try JSONDecoder().decode(BehaviorProfile.self, from: Data(contentsOf: url)) }
-    catch { preconditionFailure("Missing or invalid CallKit Simulator profile") }
-    precondition(profile.schemaVersion == 1 && profile.id == profileID)
-    let requestedRun = env["CKSIM_RUN_ID"] ?? UUID().uuidString
-    precondition(requestedRun.range(of: "^[A-Za-z0-9_-]{1,64}$", options: .regularExpression) != nil)
+    guard profileID == "ios-27.0" else { throw BootstrapError.invalid("unsupported behavior profile") }
+    let url = try Self.profileURL(profileID)
+    profile = try JSONDecoder().decode(BehaviorProfile.self, from: Data(contentsOf: url))
+    let durations = [profile.answerExpirySeconds, profile.ringTimeoutSeconds, profile.unknownProviderSeconds,
+      profile.actionTimeoutSeconds, profile.startDeadlineSeconds, profile.answerDeadlineSeconds,
+      profile.ordinaryDeadlineSeconds, profile.reportLatencySeconds, profile.muteEchoSeconds, profile.postEndUnmuteSeconds]
+    guard profile.schemaVersion == 1 && profile.id == profileID && durations.allSatisfy({ $0.isFinite && $0 > 0 }) else {
+      throw BootstrapError.invalid("invalid behavior profile")
+    }
+    let requestedRun = env["CKSIM_RUN_ID"].flatMap { $0.isEmpty ? nil : $0 } ?? UUID().uuidString
+    guard requestedRun.range(of: "^[A-Za-z0-9_-]{1,64}$", options: .regularExpression) != nil else {
+      throw BootstrapError.invalid("invalid simulator run identifier")
+    }
     runID = requestedRun
     bundleID = Bundle.main.bundleIdentifier ?? ProcessInfo.processInfo.processName
-    let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+      throw BootstrapError.invalid("application Documents directory is unavailable")
+    }
     controlRoot = documents.appendingPathComponent(".callkit-simulator").appendingPathComponent(runID)
     super.init()
     state.setSpecific(key: stateKey, value: true)
-    withState {
-      do {
-        for folder in [controlRoot, controlRoot.appendingPathComponent("requests"), controlRoot.appendingPathComponent("responses")] {
-          try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        }
-        let path = controlRoot.appendingPathComponent("events.jsonl")
-        FileManager.default.createFile(atPath: path.path, contents: nil, attributes: [.posixPermissions: 0o600])
-        journal = try FileHandle(forWritingTo: path)
-        let session: [String: Any] = ["schemaVersion": 1, "runID": runID, "pid": Int(getpid()),
-          "bundleID": bundleID, "profile": profile.id, "notification": "dev.callkitsim.control.\(getpid())"]
-        let data = try JSONSerialization.data(withJSONObject: session, options: [.sortedKeys])
-        try data.write(to: documents.appendingPathComponent(".callkit-simulator/session.json"), options: .atomic)
-      } catch { preconditionFailure("Cannot create CallKit Simulator control mailbox") }
+    do {
+      for folder in [controlRoot, controlRoot.appendingPathComponent("requests"), controlRoot.appendingPathComponent("responses")] {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+      }
+      let path = controlRoot.appendingPathComponent("events.jsonl")
+      guard FileManager.default.createFile(atPath: path.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
+        throw BootstrapError.invalid("cannot create simulator event journal")
+      }
+      journal = try FileHandle(forWritingTo: path)
+      let status = notify_register_dispatch("dev.callkitsim.control.\(getpid())", &notificationToken, state) { [weak self] _ in
+        self?.processCommands()
+      }
+      guard status == NOTIFY_STATUS_OK else { throw BootstrapError.invalid("cannot register simulator mailbox notification") }
+      notificationRegistered = true
+      let session: [String: Any] = ["schemaVersion": 1, "runID": runID, "pid": Int(getpid()),
+        "bundleID": bundleID, "profile": profile.id, "notification": "dev.callkitsim.control.\(getpid())"]
+      let data = try JSONSerialization.data(withJSONObject: session, options: [.sortedKeys])
+      try data.write(to: documents.appendingPathComponent(".callkit-simulator/session.json"), options: .atomic)
+    } catch {
+      shutdown()
+      throw error
     }
-    let status = notify_register_dispatch("dev.callkitsim.control.\(getpid())", &notificationToken, state) { [weak self] _ in
-      self?.processCommands()
-    }
-    precondition(status == NOTIFY_STATUS_OK, "Cannot register CallKit Simulator control mailbox")
     state.async { self.processCommands() }
+  }
+
+  private static func profileURL(_ profileID: String) throws -> URL {
+    #if SWIFT_PACKAGE
+    let resourceName = "VoIPSDK_CKSimRuntime"
+    #else
+    let resourceName = "IosVoipSDKRuntime"
+    #endif
+    // SwiftPM's generated Bundle.module accessor traps when its bundle is
+    // absent. Resolve the same app/framework locations without that trap.
+    var containers = [Bundle.main.resourceURL, Bundle(for: RuntimeEngine.self).resourceURL, Bundle.main.bundleURL]
+    #if SWIFT_PACKAGE && DEBUG
+    if let override = ProcessInfo.processInfo.environment["PACKAGE_RESOURCE_BUNDLE_PATH"] ??
+        ProcessInfo.processInfo.environment["PACKAGE_RESOURCE_BUNDLE_URL"] {
+      containers.insert(URL(fileURLWithPath: override), at: 0)
+    }
+    #endif
+    for container in containers {
+      if let resource = container?.appendingPathComponent(resourceName + ".bundle"),
+         let resources = Bundle(url: resource), let url = resources.url(forResource: profileID, withExtension: "json") {
+        return url
+      }
+    }
+    #if SWIFT_PACKAGE
+    throw BootstrapError.invalid("missing bundled behavior profile")
+    #else
+    // The standalone dylib keeps the historical runtime-dist layout.
+    return URL(fileURLWithPath: CKSimResourceDirectory()).appendingPathComponent("profiles/\(profileID).json")
+    #endif
+  }
+
+  private func shutdown() {
+    withState {
+      guard !stopped else { return }
+      stopped = true
+      audioRevision += 1
+      for timer in timers.values { timer.setEventHandler(handler: nil); timer.cancel() }
+      timers.removeAll()
+      for provider in providers.values { provider.valid = false; provider.generation += 1 }
+      observers.removeAll()
+      pendingActions.removeAll()
+      calls.removeAll()
+      if notificationRegistered { notify_cancel(notificationToken); notificationRegistered = false }
+      try? journal?.close()
+      journal = nil
+      let session = controlRoot.deletingLastPathComponent().appendingPathComponent("session.json")
+      if let data = try? Data(contentsOf: session),
+         let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+         object["runID"] as? String == runID, object["pid"] as? Int == Int(getpid()) {
+        try? FileManager.default.removeItem(at: session)
+      }
+    }
   }
 
   private func withState<T>(_ body: () -> T) -> T {
@@ -185,12 +269,13 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     return state.sync(execute: body)
   }
   private func after(_ seconds: Double, _ body: @escaping @Sendable () -> Void) {
+    guard !stopped else { return }
     let id = UUID()
     let timer = DispatchSource.makeTimerSource(flags: .strict, queue: state)
     timers[id] = timer
     timer.schedule(deadline: .now() + seconds, leeway: .milliseconds(1))
     timer.setEventHandler { [weak self] in
-      guard let self else { return }
+      guard let self, !self.stopped else { return }
       let fired = self.timers.removeValue(forKey: id)
       fired?.setEventHandler(handler: nil)
       fired?.cancel()
@@ -200,6 +285,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   }
   func record(event: String, fields: [String: Any]) {
     withState {
+      guard !stopped else { return }
       sequence += 1
       var row = fields
       row.merge(["event": event, "sequence": sequence, "runID": runID, "pid": Int(getpid()),
@@ -230,7 +316,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     guard let delegate = provider.delegate else { return }
     let generation = provider.generation
     (provider.queue ?? .main).async {
-      guard self.withState({ provider.valid && provider.generation == generation }) else { return }
+      guard self.withState({ !self.stopped && provider.valid && provider.generation == generation }) else { return }
       block(delegate)
     }
   }
@@ -256,7 +342,10 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     observers = observers.filter { $0.value.observer != nil }
     for entry in observers.values {
       guard let observer = entry.observer, let delegate = entry.delegate else { continue }
-      entry.queue.async { delegate.callObserver(observer, callChanged: snapshot) }
+      entry.queue.async {
+        guard self.withState({ !self.stopped }) else { return }
+        delegate.callObserver(observer, callChanged: snapshot)
+      }
     }
   }
   private func callJSON(_ call: CallState) -> [String: Any] {
@@ -294,7 +383,10 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       guard let provider = selected, provider.valid else {
         record(event: "request.accepted", fields: ["transactionID": requestID.uuidString,
           "actionIDs": actions.map { $0.uuid.uuidString }, "error": 2])
-        after(profile.unknownProviderSeconds) { queue.async { reply.invoke(self.requestError(2)) } }
+        after(profile.unknownProviderSeconds) { queue.async {
+          guard self.withState({ !self.stopped }) else { return }
+          reply.invoke(self.requestError(2))
+        } }
         return
       }
       let generation = provider.generation
@@ -313,10 +405,11 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       // The continuation is scheduled only AFTER the client's completion returns.
       // No wall-clock timer, no app callback while executing the state queue.
       queue.async {
+        guard self.withState({ !self.stopped }) else { return }
         reply.invoke(error)
         guard error == nil else { return }
         self.state.async {
-          guard bindings.allSatisfy({ self.calls[$0.key] === $0.value }) else { return }
+          guard !self.stopped, bindings.allSatisfy({ self.calls[$0.key] === $0.value }) else { return }
           self.deliver(actions, provider, origin: .application, requestID: requestID, generation: generation)
         }
       }
@@ -470,6 +563,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         + Double(faults.reportCallbackDelayMS) / 1000
       after(delay) {
         (owner.queue ?? .main).async {
+          guard self.withState({ !self.stopped }) else { return }
           self.record(event: "report.completed", fields: ["callUUID": uuid.uuidString, "pushID": pushID, "error": error?.code ?? 0])
           reply.invoke(error)
         }
@@ -537,7 +631,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     }
     if desired && faults.staleAudio { record(event: "fault.audioSuppressed", fields: [:]); return }
     DispatchQueue.main.async {
-      guard self.withState({ self.audioRevision == revision }) else { return }
+      guard self.withState({ !self.stopped && self.audioRevision == revision }) else { return }
       do {
         try AVAudioSession.sharedInstance().setActive(desired, options: desired ? [] : [.notifyOthersOnDeactivation])
       } catch {
@@ -566,6 +660,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     }
   }
   private func processCommands() {
+    guard !stopped && CKSimRuntimeIsActive() else { return }
     let folder = controlRoot.appendingPathComponent("requests")
     guard let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else { return }
     for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) where file.pathExtension == "json" {
@@ -644,6 +739,29 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
 private enum ControlError: Error { case invalid(String) }
 
 @_cdecl("CKSimGetEngine")
-func getRuntimeEngine() -> UnsafeMutableRawPointer {
-  Unmanaged.passUnretained(RuntimeEngine.shared).toOpaque()
+func getRuntimeEngine() -> UnsafeMutableRawPointer? {
+  RuntimeEngine.existing().map { Unmanaged.passRetained($0).toOpaque() }
 }
+
+@_cdecl("CKSimPrepareEngine")
+func prepareRuntimeEngine() -> Bool {
+  do { try RuntimeEngine.prepare(); return true }
+  catch { NSLog("[ios-voip-sdk] simulator activation refused: %@", String(describing: error)); return false }
+}
+
+@_cdecl("CKSimReleaseEngine")
+func releaseRuntimeEngine() { RuntimeEngine.releasePrepared() }
+
+/// Shared bootstrap for the Swift package and the Expo pod's unified module.
+@MainActor
+public enum RuntimeBootstrap {
+  @discardableResult
+  public static func activate() -> Bool { CKSimActivateRuntime() }
+}
+
+private final class RuntimeStorage: @unchecked Sendable {
+  let lock = NSLock()
+  var engine: RuntimeEngine?
+}
+private enum BootstrapError: Error { case invalid(String) }
+#endif

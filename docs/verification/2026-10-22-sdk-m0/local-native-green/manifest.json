@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "scenario": "sdk-m0",
+  "configuration": "Release",
+  "runID": "A2DC58EC-BE24-428F-8BD8-ADF3040692C6",
+  "simulatorID": "C063070B-E622-4E7C-B40A-90D3CDBF75B1",
+  "ownsSimulator": true,
+  "runtimeInjectionRequested": false,
+  "sourceCommit": "0d46635a4c2168549092411218ad7745a9e885a1",
+  "sourceInputsSHA256": "cedbe60177ac06748bc4d4d1687c3965f5ea150cedce1e246691c064b5034210",
+  "deviceSymbolsSHA256": "be63e91da68e1cd9b4782692540ffd20a426c1f1200112f5c3642e307297e20e",
+  "files": {
+    "binaries/example": "ca09c2c66bb7a88ce779e563edbb9291d3c85ce8458dcd96d4b5a18796820bb7",
+    "binaries/bootstrap": "79b87ee60a73454f31d4d6ea04b9bd57ab30853ddcbfc19ebe9ec4e910a8f687",
+    "binaries/main.jsbundle": "31c9744b8751be6099e02b78c29a4e422cf2f6b2652cba4cf71bb170d7ad2bdc",
+    "binaries/device": "f24d4b810852fac518eaef9a695dbd9ddac1e173f0eb4ff79de249ba6fb34ff6"
+  },
+  "swiftPMDeviceObjects": [
+    {
+      "target": "CKSimRuntimeC",
+      "path": "device-objects/CKSimRuntimeC-0.o",
+      "sha256": "051c3c6900d766a10ae5ca34eb2db52173041ddf3f2b4fa8ed09c0250b3b7a9a",
+      "symbolsSHA256": "19eacd60f1c821c15f7e378a2dc5e38c9a07eabd54f6b66b24ed6feded099167"
+    },
+    {
+      "target": "CKSimRuntimeC",
+      "path": "device-objects/CKSimRuntimeC-1.o",
+      "sha256": "74d9bd203b3b7eb63dfbe82476954aa9e478ac9d3ad4c913e23b97bc74825439",
+      "symbolsSHA256": "19eacd60f1c821c15f7e378a2dc5e38c9a07eabd54f6b66b24ed6feded099167"
+    },
+    {
+      "target": "CKSimRuntime",
+      "path": "device-objects/CKSimRuntime-0.o",
+      "sha256": "bed8a27ed751df4292e10a15e65fbe63a9ea59490a9313a201eac7e55e30a658",
+      "symbolsSHA256": "15863bf4f5a783990d9f8b8cc2006d92800dee30286c295fd65239516e7dd731"
+    },
+    {
+      "target": "CKSimRuntime",
+      "path": "device-objects/CKSimRuntime-1.o",
+      "sha256": "db540e6112a383c6b5e46404a3b2f6b9db09514786f6df54db16a3f33645d48e",
+      "symbolsSHA256": "29aaed149667f05437340f2f18f47912853876a6113af2c0b1e9a6de384bd2dc"
+    },
+    {
+      "target": "VoIPSDK",
+      "path": "device-objects/VoIPSDK-0.o",
+      "sha256": "a7aca0aec1af0dd0dfd23a24951490168f77fe004e948219c2bc0cd1f80e98aa",
+      "symbolsSHA256": "933d114017e7f817448c8e9d555e422d0297795a84b29a64a49922cbec3f7a42"
+    }
+  ],
+  "environmentSHA256": "e001f1381f69983f8eff38a36ed9e826d6254ab105598e6cfd1c3250925eb89d",
+  "sourceBeginSHA256": "2bc7e55cc00aa7e18f6a59c303a0813c74528141e68a33b07f2411f8312125d0",
+  "cleanupSHA256": "127ebfd8bddb66d46e7764b32382167281c50220edf32a90d994d9c68f1b8516",
+  "installedSHA256": "6bf4731c5018e6a9e709ade2eb2da5ca9778c826b01cdf87c73863121812b2a0",
+  "runtimeSHA256": "fd6123148eb979be3dff52edc92e3db7054dd85d7ba408b094c7647af6463120",
+  "deviceBuildSHA256": "4604e238cb5b70424be382825d13249ebe3603c66084f2bbd5e4aa6fd037fd86",
+  "buildReceiptSHA256": "b1f85e881ef4b7ef151105543d974578ffbb4bf68e86c0c01208b0b31cd43943",
+  "installedBinarySHA256": {
+    "example": "ca09c2c66bb7a88ce779e563edbb9291d3c85ce8458dcd96d4b5a18796820bb7",
+    "bootstrap": "79b87ee60a73454f31d4d6ea04b9bd57ab30853ddcbfc19ebe9ec4e910a8f687",
+    "javascript": "31c9744b8751be6099e02b78c29a4e422cf2f6b2652cba4cf71bb170d7ad2bdc"
+  },
+  "inheritedExternalDYLD": {
+    "present": true,
+    "sha256": "1b2abd33c25a23a9f2e1b583b31f87c2dcd0d2487710217002542c0594d81120"
+  },
+  "buildLogs": {
+    "bootstrap-build.log": "0b37ecd9379ba7cab713e6a64579f02b2c7afa02ea5326dfca8996349a05b556",
+    "device-probe-build.log": "04673a5925c95b7022d3dfbc7329a8d744c3a61ec1ed309aae3678cb98909a16",
+    "environment.txt": "607f6c582cf610e2289db81ed099b4e99e2c97614a0cfdb0ee2f7ef3908960e3",
+    "expo-release.log": "6ee8f636cec434bb0ddf2b7459cdc2c8032c80cc7f9f16bb849d1a78733c0247",
+    "swiftpm-device.log": "2300a4ddd925581fb4d6b473c48438ee5e82ab3473e3c808ef4e4c2c2baef0b2",
+    "swiftpm-simulator.log": "72a51e9a2ed3159a41f04e91d19ac1085642a1a14d75ffc24c08e4f1fe153b53",
+    "typescript-build.log": "d8c7fd8342cb29f5454b27d686e954235c1368a0649b5f51d1cc9852073af79a",
+    "typescript-typecheck.log": "a7c92ecd50b12b9ea07c7d046a1e9b0267476b56b856537f3cd96682b4b2df1f"
+  }
+}

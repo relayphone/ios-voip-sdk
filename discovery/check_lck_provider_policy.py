@@ -67,7 +67,7 @@ print("passed")
 ''')
         binary = out / 'policy'
         run(['xcrun', 'swiftc', str(swift), '-o', str(binary)])
-        assert run([str(binary), str(ROOT / 'profiles/ios-27.0.json')]).strip() == 'passed'
+        assert run([str(binary), str(ROOT / 'Sources/Engine/Resources/ios-27.0.json')]).strip() == 'passed'
         checks += ['exact-production-profile-decoding-and-callkit-timeout-policy', 'lck-terminal-settlement-policy']
     print(json.dumps(dict(success=True, classification='host controls; synthetic framework fixture is not genuine LCK',
                          checks=checks, classifierSHA256=hashlib.sha256(helper.encode()).hexdigest(),

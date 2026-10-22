@@ -1,6 +1,17 @@
 #import "CKRuntimeSeam.h"
+
+#if TARGET_OS_SIMULATOR && TARGET_OS_IOS
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <stdatomic.h>
+
+#ifndef CKSIM_HAS_VOIP_METADATA
+#if __has_include(<PushKit/PKVoIPPushMetadata.h>)
+#define CKSIM_HAS_VOIP_METADATA 1
+#else
+#define CKSIM_HAS_VOIP_METADATA 0
+#endif
+#endif
 
 @interface CKRuntimePayload : PKPushPayload
 @property(nonatomic, copy) NSDictionary *contents;
@@ -24,11 +35,14 @@ API_AVAILABLE(ios(26.4))
 static NSHashTable<PKPushRegistry *> *registries;
 static NSMapTable<PKPushRegistry *, dispatch_queue_t> *registryQueues;
 static NSMutableArray<NSDictionary *> *waiting;
+static atomic_bool pushHooksActive;
+static int fixtureNotificationToken = NOTIFY_TOKEN_INVALID;
 static IMP originalInit, originalDelegate, originalTypes;
 typedef id (*QueueInitializer)(id __attribute__((ns_consumed)), SEL, dispatch_queue_t) __attribute__((ns_returns_retained));
 static NSString *const contextKey=@"dev.callkitsim.push-context";
 NSString *CKSimCurrentPushID(void) { return NSThread.currentThread.threadDictionary[contextKey] ?: @""; }
 static void deliver(PKPushRegistry *registry, NSDictionary *item) {
+  if (!pushHooksActive) return;
   id delegate=registry.delegate;
   if (!delegate) return;
   NSString *identifier=item[@"id"];
@@ -62,6 +76,7 @@ static void deliver(PKPushRegistry *registry, NSDictionary *item) {
 }
 static void attempt(void) {
   NSCAssert(NSThread.isMainThread,@"Registry bookkeeping belongs to main");
+  if (!pushHooksActive) return;
   for (NSDictionary *item in waiting.copy) {
     BOOL scheduled=NO;
     for (PKPushRegistry *registry in registries) {
@@ -74,17 +89,18 @@ static void attempt(void) {
 }
 void CKSimInjectPush(NSDictionary *payload, BOOL mustReport, NSString *identifier) {
   dispatch_async(dispatch_get_main_queue(),^{
+    if (!pushHooksActive) return;
     [waiting addObject:@{@"payload":payload,@"mustReport":@(mustReport),@"id":identifier}]; attempt();
   });
 }
 static void ready(PKPushRegistry *registry) {
   __weak PKPushRegistry *weak=registry;
-  dispatch_async(dispatch_get_main_queue(),^{if (weak) [registries addObject:weak];attempt();});
+  dispatch_async(dispatch_get_main_queue(),^{if (pushHooksActive && weak) [registries addObject:weak];attempt();});
 }
 __attribute__((ns_returns_retained)) static id registryInit(PKPushRegistry * __attribute__((ns_consumed)) self,SEL selector,dispatch_queue_t queue) {
   id registry=((QueueInitializer)originalInit)(self,selector,queue);
   __weak PKPushRegistry *weak=registry;
-  dispatch_async(dispatch_get_main_queue(),^{if(weak){[registryQueues setObject:queue ?: dispatch_get_main_queue() forKey:weak];[registries addObject:weak];attempt();}});
+  dispatch_async(dispatch_get_main_queue(),^{if(pushHooksActive && weak){[registryQueues setObject:queue ?: dispatch_get_main_queue() forKey:weak];[registries addObject:weak];attempt();}});
   return registry;
 }
 static void setDelegate(PKPushRegistry *self,SEL selector,id delegate) { ((void (*)(id,SEL,id))originalDelegate)(self,selector,delegate);ready(self); }
@@ -109,26 +125,42 @@ NSString *CKSimInstallPushHooks(void) {
     if (class_getMethodImplementation(concrete,selectors[i])!=method_getImplementation(method))
       return [NSString stringWithFormat:@"%@ overrides %@",NSStringFromClass(concrete),NSStringFromSelector(selectors[i])];
   }
+  // Save concrete inherited IMPs before changing PKPushRegistry itself.
+  for (NSUInteger i=0;i<3;i++) {
+    CKSimCaptureHook(PKPushRegistry.class,selectors[i]);
+    CKSimCaptureHook(concrete,selectors[i]);
+    *originals[i]=class_getMethodImplementation(PKPushRegistry.class,selectors[i]);
+  }
   registries=[NSHashTable weakObjectsHashTable];registryQueues=[NSMapTable weakToStrongObjectsMapTable];waiting=[NSMutableArray new];
   for (NSUInteger i=0;i<3;i++) {
     Method method=class_getInstanceMethod(PKPushRegistry.class,selectors[i]);
-    *originals[i]=method_getImplementation(method);
     const char *encoding=method_getTypeEncoding(method);
-    if (!class_addMethod(PKPushRegistry.class,selectors[i],replacements[i],encoding))
-      method_setImplementation(class_getInstanceMethod(PKPushRegistry.class,selectors[i]),replacements[i]);
-    if (i>0 && concrete!=PKPushRegistry.class && !class_addMethod(concrete,selectors[i],replacements[i],encoding))
-      method_setImplementation(class_getInstanceMethod(concrete,selectors[i]),replacements[i]);
+    NSString *failure=CKSimReplaceHook(PKPushRegistry.class,selectors[i],replacements[i],encoding);
+    if (failure) return failure;
+    if (i>0 && concrete!=PKPushRegistry.class) {
+      failure=CKSimReplaceHook(concrete,selectors[i],replacements[i],encoding);
+      if (failure) return failure;
+    }
     if (class_getMethodImplementation(concrete,selectors[i])!=replacements[i])
       return [NSString stringWithFormat:@"%@ failed to bind %@",NSStringFromClass(concrete),NSStringFromSelector(selectors[i])];
   }
+  pushHooksActive=true;
   NSDictionary *env=NSProcessInfo.processInfo.environment;
   void (^fixture)(void)=^{
     CKSimInjectPush(@{@"aps":@{},@"from":@"+15555550142",@"callId":@"synthetic-1"},[env[@"CKSIM_PUSH_MUST_REPORT"] isEqual:@"1"],NSUUID.UUID.UUIDString);
   };
   if ([env[@"CKSIM_PUSH_TRIGGER_NOTIFICATION"] length]) {
-    int token;notify_register_dispatch([env[@"CKSIM_PUSH_TRIGGER_NOTIFICATION"] UTF8String],&token,dispatch_get_main_queue(),^(int t){fixture();});
+    notify_register_dispatch([env[@"CKSIM_PUSH_TRIGGER_NOTIFICATION"] UTF8String],&fixtureNotificationToken,dispatch_get_main_queue(),^(int t){fixture();});
   } else if ([env[@"CKSIM_PUSH_AFTER"] length]) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)([env[@"CKSIM_PUSH_AFTER"] doubleValue]*NSEC_PER_SEC)),dispatch_get_main_queue(),fixture);
   }
   return nil;
 }
+void CKSimReleasePushHooks(void) {
+  pushHooksActive=false;
+  if (fixtureNotificationToken != NOTIFY_TOKEN_INVALID) {
+    notify_cancel(fixtureNotificationToken);
+    fixtureNotificationToken=NOTIFY_TOKEN_INVALID;
+  }
+}
+#endif
