@@ -1,0 +1,367 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured merged-source host/compiler preparation; fresh native CI pending",
+  "codeSource": {
+    "sourceCommit": "7f0a1243d7e2c8b00e3c1827af0fa0da8d6a1929",
+    "sourceInputsSHA256": "c342003ba6f5bc8a95aeacecce3322fb0f10da4cc26b650ccda3a12ef956e72e"
+  },
+  "parents": {
+    "genericMargin": "34d9480c0475336c6e500002477fb103ca89d661",
+    "pushkit": "8077f0d126d2a30c66e21d3e09d65d6a7dd801a0",
+    "hostMetadata": "6121c0a6406615623ba5809911c969b6dd64a1d0",
+    "nativeOrigin": "c19ef898ec585418f5b98e86dc2e2483062e06a3",
+    "hostMetadataStack": "a406b38414e856f52dac22f64a87baefdf4419b1"
+  },
+  "normalMerges": [
+    "b7955ea",
+    "8379e70",
+    "47afdf6",
+    "7f0a1243d7e2c8b00e3c1827af0fa0da8d6a1929"
+  ],
+  "sourceFiles": {
+    "Sources/VoIPSDK/ConversationHandler.swift": "1e096cc9f02c2eb900a58e350b505fcfdeb43c7ebe5a1c9b566d7a647184eda8",
+    "Sources/Engine/RuntimeEngine.swift": "c715b76b869af5659cbf4543210892c2b473e1b3be31e9768045430acb95c1c3",
+    "Sources/Engine/Resources/ios-27.0.json": "f34933eb5ad2eaa7db2b19efba87e94345bbb8b77c4312f697010cde108a88d8",
+    "discovery/probe/sdk_m1_contracts.swift": "c6ef0bb8612eb535d2afeb342da2b8d82ccb807ee8aa28981ebe0aadc57c2e3d",
+    "discovery/sdk_m1_contracts_conformance.py": "f6833bfc909511c573366a44d2a29db9a9d27c594e55074c38b8a572d83c09ee",
+    "discovery/check_sdk_m1_contracts.py": "a757a2cc1c6a3146473ee14f9b1b8a1008feeb0d7a89f2fdca9037c0a95224e8",
+    "discovery/sdk_m1_conformance.py": "b75d3f071a49ba4f84de2fd78ce30ff52eef9b9d0d0f6ce24aafdbf95721626c",
+    "discovery/check_sdk_m1.py": "f804da9e7bfc57b6c1ead6b2e2b8d588749902fc4d0c00100cd7f148fe78706e",
+    "discovery/run_sdk_m0.sh": "81139eba9a4a75de67d0879a152d774e7b211d8270089b40371af9fd78b9de1f"
+  },
+  "fullSDKOfflineAndTypecheckPreparation": [
+    {
+      "name": "m0-controls",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m0.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "98d4775d989c19e4e33ff0accf8d00c42c959834616094aede3e0e0665ce5bb8"
+    },
+    {
+      "name": "m1-controls",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "8baa98a7174e978199163322e22fc12e85c00fe80300b41dfcf0950c1dab3003"
+    },
+    {
+      "name": "native-contract-controls",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "84cde65fc93fab7463a6f6676042472f26a80cd1b600c16803596211f11a646b"
+    },
+    {
+      "name": "push-context",
+      "command": [
+        "python3",
+        "Tests/VoIPSDK/run_push_context.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "51f5a6b3daa26aa046f209ac18c564c054a03471d44875584206c485ff1c91ba"
+    },
+    {
+      "name": "expo-relay",
+      "command": [
+        "python3",
+        "discovery/check_expo_bridge.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "76722899b2cd5221181a51258607f9a3d343d4a022d571202abe71f62fdc7686"
+    },
+    {
+      "name": "platform-shims",
+      "command": [
+        "python3",
+        "discovery/check_platform_shims.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "880a77b1ed9451108320b4b161ff89669bade240061fd39f7206b3e5332c0120"
+    },
+    {
+      "name": "runtime-push-delivery",
+      "command": [
+        "python3",
+        "discovery/check_push_delivery.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "da2d18ad3a9cdb08c36f0183fd4bca88b4f9682f781bc4a9fe2594307acd5dbd"
+    },
+    {
+      "name": "push-entry",
+      "command": [
+        "python3",
+        "discovery/check_push_report_entry.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "ad578744034e53a425068e062ae41f9f10667fab24c74f08b1a2f9fadeaad2d3"
+    },
+    {
+      "name": "incoming-delivery",
+      "command": [
+        "python3",
+        "Tests/VoIPSDK/run_incoming_delivery.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "028c01573bdb7388feec2eb544217476445ec5bda2954dbfb53936dd06462835"
+    },
+    {
+      "name": "incoming-cache",
+      "command": [
+        "python3",
+        "Tests/VoIPSDK/run_incoming_cache.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "1895f24fb1069904a1888b027510d43dfbc49663334e56c6096f48f7f07d6a63"
+    },
+    {
+      "name": "incoming-intake",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_incoming_intake.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "fa4a4b7d987c9b605324dac12f9dff39caedc131af09769ffa53226bef12b21b"
+    },
+    {
+      "name": "push-capture",
+      "command": [
+        "python3",
+        "discovery/check_push_report_capture.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "4632815690a6aa3e285c43e96e2e924a7b2d4f371fec6b0c0d7a7f176b9661ee"
+    },
+    {
+      "name": "device-exclusion",
+      "command": [
+        "python3",
+        "discovery/check_device_release.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "42a9644699c30915e64a8075358c6c1fa472d133851f215a2c3333de13fe8135"
+    },
+    {
+      "name": "lck-provider",
+      "command": [
+        "python3",
+        "discovery/check_lck_provider_policy.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "a3e4829189473a073f4253576e3ab5dee641b934e13362554d963c5a296f66e6"
+    },
+    {
+      "name": "core-and-real-clock",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "37e5b3c81714975c6258144064f301756c63cb884d503c1ce2f4740e2a719567"
+    },
+    {
+      "name": "push-wire",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_push.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "14373b0b637343bec1149a022f1c809ed97ff3142da6a4c10eeeacfba49652a0"
+    },
+    {
+      "name": "projection",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_projection.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "1d7bd9daeed53a866094887bdbef3b8dec7b0fcdda9dae03bb435f8e5d71e2f7"
+    },
+    {
+      "name": "trace-writer",
+      "command": [
+        "bash",
+        "Tests/ProbeTraceWriter/run.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "2cddcfd26d975d4e11b39ab60bedddc6a0edeea5302a1868e309f9e32adca785"
+    },
+    {
+      "name": "shell-syntax",
+      "command": [
+        "bash",
+        "-n",
+        "discovery/build_sdk_bootstrap.sh",
+        "discovery/build_sdk_device_probe.sh",
+        "discovery/build_sdk_m1_contracts.sh",
+        "discovery/build_push_report_entry.sh",
+        "discovery/run_sdk_m0.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "actual-debug-native-contract-typecheck",
+      "command": [
+        "xcrun",
+        "--sdk",
+        "iphonesimulator",
+        "swiftc",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-sdk",
+        "$APPLE_SDK",
+        "-swift-version",
+        "6",
+        "-D",
+        "DEBUG",
+        "-parse-as-library",
+        "-typecheck",
+        "-import-objc-header",
+        "$PRIVATE_OUTPUT/ContractHeaders.h",
+        "Sources/Engine/RuntimeEngine.swift",
+        "Sources/VoIPSDK/ConversationClient.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationRecord.swift",
+        "Sources/VoIPSDK/IncomingIntake.swift",
+        "Sources/VoIPSDK/IncomingInvitationGate.swift",
+        "Sources/VoIPSDK/IncomingReportTransport.swift",
+        "Sources/VoIPSDK/PushService.swift",
+        "Sources/VoIPSDK/PushWire.swift",
+        "Sources/VoIPSDK/SimulatorSupport.swift",
+        "Sources/VoIPSDK/VoIPApplication.swift",
+        "discovery/probe/sdk_m1_contracts.swift"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "focusedHostAndOriginChecks": {
+    "classification": "synthetic preboot-host metadata control and merged native-origin host checks; no native execution",
+    "sourceFiles": {
+      "discovery/run_sdk_m0.sh": "81139eba9a4a75de67d0879a152d774e7b211d8270089b40371af9fd78b9de1f",
+      "discovery/check_sdk_m1_contracts.py": "a757a2cc1c6a3146473ee14f9b1b8a1008feeb0d7a89f2fdca9037c0a95224e8",
+      "discovery/sdk_m1_contracts_conformance.py": "f6833bfc909511c573366a44d2a29db9a9d27c594e55074c38b8a572d83c09ee"
+    },
+    "hostCommandsExactlyOnce": true,
+    "hostTimeoutSeconds": 30,
+    "hostBeforeSimulatorCreate": true,
+    "finalEnvironmentPreservesFiveHostFields": true,
+    "finalEnvironmentBindsFourSimulatorFields": true,
+    "hostTimeoutRefused": true,
+    "fourContractCases": true,
+    "contractContainerLookupCount": 1,
+    "checks": [
+      {
+        "name": "contract-controls",
+        "command": [
+          "python3",
+          "discovery/check_sdk_m1_contracts.py"
+        ],
+        "exitCode": 0,
+        "outputSHA256": "6fabb8c30a87731ac477da41840acc30760e1aca7acf9052ca7c2bb4eb181c2e"
+      },
+      {
+        "name": "syntax",
+        "command": [
+          "python3",
+          "-m",
+          "py_compile",
+          "discovery/check_sdk_m1_contracts.py",
+          "discovery/sdk_m1_contracts_conformance.py"
+        ],
+        "exitCode": 0,
+        "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "runner-syntax",
+        "command": [
+          "bash",
+          "-n",
+          "discovery/run_sdk_m0.sh"
+        ],
+        "exitCode": 0,
+        "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "whitespace",
+        "command": [
+          "git",
+          "diff",
+          "--check"
+        ],
+        "exitCode": 0,
+        "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  },
+  "protectedSDKProbeAndGateBytesUnchangedAfterFullBatch": true,
+  "contractCases": [
+    "guard",
+    "unhandled-accept",
+    "unhandled-fail",
+    "duplicate-wrapper"
+  ],
+  "nativeOrigin": "application",
+  "sdkHandlerOrigin": "app",
+  "priorDFCRuntimeQualification": [
+    {
+      "compilerLane": "Xcode 26.3",
+      "simulatorOS": "26.5",
+      "behaviorProfile": "ios-27.0",
+      "prHead": "dfc81fcd0917b4bf650801f25e2173ba09711e8e",
+      "testMerge": "13ed8dc17202ef5b7ec51903d912284e4b0fbe75",
+      "runID": 39772309722,
+      "attempt": 1,
+      "sourceInputsSHA256": "c2b425de9729b94954719fd6a13b016cb58fb4bc4db8ed6c25341ff9ab9a7863",
+      "receiptSHA256": "30ccd5d2678759fe0101be11536be7cc078ebd80272606546f2aa147ef6367b3",
+      "artifactIDs": [
+        12424212295,
+        12424690527
+      ],
+      "readOnlyReplays": 10,
+      "allReplayExitCodesZero": true,
+      "allReplayJSONEqualsCI": true
+    },
+    {
+      "compilerLane": "Xcode 26.6",
+      "simulatorOS": "26.5",
+      "behaviorProfile": "ios-27.0",
+      "prHead": "dfc81fcd0917b4bf650801f25e2173ba09711e8e",
+      "testMerge": "13ed8dc17202ef5b7ec51903d912284e4b0fbe75",
+      "runID": 39772309722,
+      "attempt": 1,
+      "sourceInputsSHA256": "c2b425de9729b94954719fd6a13b016cb58fb4bc4db8ed6c25341ff9ab9a7863",
+      "receiptSHA256": "1129aced3031f439f45a019d7538deb50242e653e80a8332ff1be2a2f03927a0",
+      "artifactIDs": [
+        12424418459,
+        12424144626,
+        12424183960
+      ],
+      "readOnlyReplays": 10,
+      "allReplayExitCodesZero": true,
+      "allReplayJSONEqualsCI": true
+    }
+  ],
+  "limits": [
+    "All four cases are combined by source and synthetic controls; native journeys for this integrated source remain pending.",
+    "The full20-command preparation preceded the host-metadata merge; protected SDK/probe/generic/gate bytes are unchanged, and affected runner/origin checks were rerun after the later merges.",
+    "Host metadata execution controls use mocked commands; they measure field merge, ordering, timeout refusal and one-call behavior, not a claim that simulator load caused the old timeout.",
+    "Original1fd actual timer failure and dfc pre-app timeout remain distinct preserved evidence.",
+    "Prior dfc runtime greens qualify that source only; no local iOS app/simulator/device/live CLI operation occurred.",
+    "No force push, rebase, history rewrite or workflow retry was performed."
+  ],
+  "stackParentTreeIdenticalToPriorCodePreparation": true,
+  "typecheckEnvironment": {
+    "sdkBundle": "iPhoneSimulator27.1.sdk",
+    "deploymentTarget": "arm64-apple-ios17.4-simulator",
+    "execution": "compiler only; no iOS app launch"
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured runtime CI pre-identity infrastructure timeout; no ABI scenario or runtime acceptance",
+  "runID": 39780820292,
+  "attempt": 1,
+  "compilerLane": "Xcode 26.6",
+  "compilerSDK": {
+    "build": "23F81a",
+    "version": "26.5"
+  },
+  "hostEnvironment": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83\nXcode 26.6\nBuild version 17F113\n6378c22aa9c2cc3bf215342fd14dbf471c226b94\n",
+  "prHead": "257c0cd9776b56843793ec963f0db2fd5fcf5d2b",
+  "testMerge": "6378c22aa9c2cc3bf215342fd14dbf471c226b94",
+  "treeEqual": true,
+  "sourceInputsSHA256": "351bc97cb869eff4fff58f3bfe2dc04c9a5920fe2093633b6f5e2a09cb9ffc91",
+  "sourceDirty": false,
+  "abiTesting": true,
+  "artifactID": 12430886033,
+  "artifactZIP_SHA256": "d730d4791ff91a8c462f7ff48ed7335f1a26bd07a0124f4d69114443d5fdda61",
+  "fileHashes": {
+    "build-info.json": "e7334d31e76317a58e164038fed9bbf77fb733674e8d55f9275c32236c0da422",
+    "environment.txt": "d3c2c59b7e9a9056c2d97724e974f7ea60c909f94864ceef2e4b7171378d62cf",
+    "build.log": "d2da979b15c332bbb9555baec9c666a440abdb6b7035120eafb1017687c8dcfb"
+  },
+  "archiveModificationTimes": {
+    "build-info.json": [
+      2026,
+      10,
+      22,
+      13,
+      43,
+      22
+    ],
+    "build.log": [
+      2026,
+      10,
+      22,
+      13,
+      43,
+      20
+    ],
+    "environment.txt": [
+      2026,
+      10,
+      22,
+      13,
+      42,
+      44
+    ]
+  },
+  "failedStepLogSHA256": "0c70021a2647a11ea670cb2dda841105da1410fcab16a0d7745eb64f609a3e95",
+  "exitCode": 142,
+  "failure": "SIGALRM at generic limit wrapper in run_abi.sh before runOwnedSimulator identity",
+  "sourceOrder": [
+    "ABI probe compile/sign",
+    "ABI runtime build/sign",
+    "copy build-info.json",
+    "60s simctl list runtimes",
+    "select runtime from temporary inventory",
+    "30s simctl create",
+    "write owned simulator identity",
+    "60s boot",
+    "180s bootstatus",
+    "install/manifest/scenarios"
+  ],
+  "absentEvidence": [
+    "owned simulator identity",
+    "manifest.json",
+    "boot.log",
+    "cleanup.log",
+    "scenario logs",
+    "scenario receipts",
+    "runtime comparison capture"
+  ],
+  "actualSimulatorOS": null,
+  "limits": [
+    "Exact timed-out list-vs-create command is not recorded; relative ZIPmtime favors inventory60s but does not prove it.",
+    "No owned-simulator ID was retained; this is not independent proof that no simulator was created.",
+    "Temporary build directory and runtime inventory were removed by trap; compiler/build metadata alone qualifies no ABI scenario.",
+    "No retry, cancellation, source mutation or local native/simulator/device operation was performed.",
+    "Fresh Xcode26.3 runtime success and pending SDK run are separate results."
+  ]
+}

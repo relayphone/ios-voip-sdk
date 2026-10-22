@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "qualification": "host syntax preparation only; native CI pending",
+  "baseCommit": "8077f0d126d2a30c66e21d3e09d65d6a7dd801a0",
+  "sourceFiles": {
+    "discovery/run_sdk_m0.sh": "e48c23fc18cf52ddcc8491175e497aa5c66ef234239e1bebcf28173bf409b37b"
+  },
+  "checks": [
+    {
+      "command": ["bash", "-n", "discovery/run_sdk_m0.sh"],
+      "exitCode": 0,
+      "stdoutBytes": 0,
+      "stderrBytes": 0,
+      "quietSuccessExpected": true
+    },
+    {
+      "command": ["git", "diff", "--check"],
+      "exitCode": 0,
+      "stdoutBytes": 0,
+      "stderrBytes": 0,
+      "quietSuccessExpected": true
+    }
+  ],
+  "originalIncompleteRun": {
+    "runID": 39772309614,
+    "attempt": 1,
+    "headSHA": "dfc81fcd0917b4bf650801f25e2173ba09711e8e",
+    "testMergeSHA": "13ed8dc17202ef5b7ec51903d912284e4b0fbe75",
+    "testMergeTreeEqualsHead": true,
+    "artifactID": 12423722501,
+    "artifactZipSHA256": "2368a9cc95300d4b5c3811750f7d4562ef5180f86e5271600feb3986d8b63996",
+    "failure": "xcodebuild -version timed out after 30 seconds; before installation or any app journey",
+    "qualifiedSDKBehavior": false,
+    "cleanupShutdownExitCode": 0,
+    "cleanupDeleteExitCode": 0,
+    "independentAbsenceProof": false
+  },
+  "localSimulatorOrDeviceRun": false
+}
