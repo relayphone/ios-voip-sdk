@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 from device_oracles import deadline_bands
-from lck_conformance import CASES, ROOT, compare, validate
+from lck_conformance import CASES, ROOT, PROVIDER_APIS, compare, provider_apis, validate
 from summarize import EvidenceError, load
 
 
@@ -53,6 +53,9 @@ def write_capture(directory, case, source):
     path.write_text(''.join('PROBE ' + json.dumps(row) + '\n' for row in rows))
     engine = [dict(event='runtime.installed'), dict(event='transaction.delivered', transactionID='synthetic-delivery',
               actionIDs=['synthetic-action'], kinds=['CXStartCallAction'], origin='system', requestID='system')]
+    for index, api in enumerate(PROVIDER_APIS[case]):
+        engine += [dict(event='provider.created', provider=f'synthetic-provider-{index}'),
+                   dict(event='provider.apiKind', provider=f'synthetic-provider-{index}', apiKind=api, delegatePresent=True)]
     for index, row in enumerate(engine, 1): row.update(sequence=index, t_ms=index, profile='ios-27.0', **identity)
     journal = directory / (name + '.engine.jsonl')
     journal.write_text(''.join(json.dumps(row) + '\n' for row in engine))
@@ -67,6 +70,20 @@ class LCKChecks(unittest.TestCase):
         self.sources = references()
         self.bands = deadline_bands([row for rows in self.sources.values()
                                     for row in rows if row['event'] == 'lck.perform'])
+
+    def test_provider_api_classification_is_bound_and_not_class_name_inferred(self):
+        rows = [dict(event='provider.created', provider='p'),
+                dict(event='provider.apiKind', provider='p', apiKind='livecommunicationkit', delegatePresent=True)]
+        self.assertEqual(provider_apis(rows, 'basic'), ['livecommunicationkit'])
+        for mutation in ('missing', 'callkit', 'unbound', 'unknown', 'no-delegate', 'changed'):
+            changed = copy.deepcopy(rows)
+            if mutation == 'missing': changed.pop()
+            if mutation == 'callkit': changed[-1]['apiKind'] = 'callkit'
+            if mutation == 'unbound': changed[-1]['provider'] = 'other'
+            if mutation == 'unknown': changed[-1]['apiKind'] = 'name-looks-like-LCK'
+            if mutation == 'no-delegate': changed[-1]['delegatePresent'] = False
+            if mutation == 'changed': changed.append(dict(event='provider.apiKind', provider='p', apiKind='callkit', delegatePresent=True))
+            with self.subTest(mutation=mutation), self.assertRaises(EvidenceError): provider_apis(changed, 'basic')
 
     def test_device_replays_and_changed_action_receiver(self):
         for case, reference in self.sources.items():

@@ -1,0 +1,244 @@
+{
+  "basic": {
+    "success": true,
+    "actions": 10,
+    "snapshots": 7,
+    "scope": "journey parity through remote-after-remote-end",
+    "lifecycle": "R3 teardown callbacks deferred; no full raw-trace parity claim",
+    "incomingOrdering": {
+      "in-incoming": "idle before report return",
+      "remote-incoming": "device logging order ambiguous; state projection checked"
+    },
+    "afterJourneyEvents": {
+      "done": 1
+    },
+    "reference": "2026-10-21-iphone13-ios27-lck-basic",
+    "environment": {
+      "behaviorProfileID": "ios-27.0",
+      "simulatorOS": {
+        "runtimeID": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+        "version": "27.0",
+        "buildVersion": "24A434"
+      },
+      "compiler": {
+        "xcodeVersion": "27.1",
+        "buildVersion": "27A9275"
+      }
+    },
+    "runtimeVersion": "0.1.1",
+    "deadlineBands": {
+      "StartConversationAction": [
+        28.0,
+        30.1
+      ],
+      "EndConversationAction": [
+        28.0,
+        30.1
+      ],
+      "JoinConversationAction": [
+        28.0,
+        30.1
+      ],
+      "MuteConversationAction": [
+        28.0,
+        30.1
+      ],
+      "PlayToneAction": [
+        28.0,
+        30.1
+      ],
+      "PauseConversationAction": [
+        28.0,
+        30.1
+      ]
+    },
+    "actualOS": "27.0",
+    "referenceOS": "27.0",
+    "journalBinding": "process/build bound; LCK-to-CX action UUID mapping unmeasured",
+    "cxTapLimit": "measured CX callbacks expose only receiver/kind; tone/pause handlers absent",
+    "providerAPIs": [
+      "livecommunicationkit"
+    ]
+  },
+  "cx-after": {
+    "success": true,
+    "actions": 7,
+    "snapshots": 6,
+    "scope": "journey parity through cxafter-in-ended",
+    "lifecycle": "R3 teardown callbacks deferred; no full raw-trace parity claim",
+    "incomingOrdering": {
+      "cxafter-in-incoming": "idle before report return"
+    },
+    "afterJourneyEvents": {
+      "done": 1
+    },
+    "reference": "2026-10-21-iphone13-ios27-lck-cx-after",
+    "environment": {
+      "behaviorProfileID": "ios-27.0",
+      "simulatorOS": {
+        "runtimeID": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+        "version": "27.0",
+        "buildVersion": "24A434"
+      },
+      "compiler": {
+        "xcodeVersion": "27.1",
+        "buildVersion": "27A9275"
+      }
+    },
+    "runtimeVersion": "0.1.1",
+    "deadlineBands": {
+      "StartConversationAction": [
+        28.0,
+        30.1
+      ],
+      "EndConversationAction": [
+        28.0,
+        30.1
+      ],
+      "JoinConversationAction": [
+        28.0,
+        30.1
+      ],
+      "MuteConversationAction": [
+        28.0,
+        30.1
+      ],
+      "PlayToneAction": [
+        28.0,
+        30.1
+      ],
+      "PauseConversationAction": [
+        28.0,
+        30.1
+      ]
+    },
+    "actualOS": "27.0",
+    "referenceOS": "27.0",
+    "journalBinding": "process/build bound; LCK-to-CX action UUID mapping unmeasured",
+    "cxTapLimit": "measured CX callbacks expose only receiver/kind; tone/pause handlers absent",
+    "providerAPIs": [
+      "livecommunicationkit",
+      "callkit"
+    ]
+  },
+  "lck-after": {
+    "success": true,
+    "actions": 10,
+    "snapshots": 6,
+    "scope": "journey parity through lckafter-in-ended",
+    "lifecycle": "R3 teardown callbacks deferred; no full raw-trace parity claim",
+    "incomingOrdering": {
+      "lckafter-in-incoming": "idle before report return"
+    },
+    "afterJourneyEvents": {
+      "done": 1
+    },
+    "reference": "2026-10-21-iphone13-ios27-lck-lck-after",
+    "environment": {
+      "behaviorProfileID": "ios-27.0",
+      "simulatorOS": {
+        "runtimeID": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+        "version": "27.0",
+        "buildVersion": "24A434"
+      },
+      "compiler": {
+        "xcodeVersion": "27.1",
+        "buildVersion": "27A9275"
+      }
+    },
+    "runtimeVersion": "0.1.1",
+    "deadlineBands": {
+      "StartConversationAction": [
+        28.0,
+        30.1
+      ],
+      "EndConversationAction": [
+        28.0,
+        30.1
+      ],
+      "JoinConversationAction": [
+        28.0,
+        30.1
+      ],
+      "MuteConversationAction": [
+        28.0,
+        30.1
+      ],
+      "PlayToneAction": [
+        28.0,
+        30.1
+      ],
+      "PauseConversationAction": [
+        28.0,
+        30.1
+      ]
+    },
+    "actualOS": "27.0",
+    "referenceOS": "27.0",
+    "journalBinding": "process/build bound; LCK-to-CX action UUID mapping unmeasured",
+    "cxTapLimit": "measured CX callbacks expose only receiver/kind; tone/pause handlers absent",
+    "providerAPIs": [
+      "callkit",
+      "livecommunicationkit"
+    ]
+  },
+  "two-managers": {
+    "success": true,
+    "actions": 4,
+    "snapshots": 4,
+    "scope": "journey parity through two-m2-out-ended",
+    "lifecycle": "R3 teardown callbacks deferred; no full raw-trace parity claim",
+    "incomingOrdering": {},
+    "afterJourneyEvents": {
+      "done": 1
+    },
+    "reference": "2026-10-21-iphone13-ios27-lck-two-managers",
+    "environment": {
+      "behaviorProfileID": "ios-27.0",
+      "simulatorOS": {
+        "runtimeID": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+        "version": "27.0",
+        "buildVersion": "24A434"
+      },
+      "compiler": {
+        "xcodeVersion": "27.1",
+        "buildVersion": "27A9275"
+      }
+    },
+    "runtimeVersion": "0.1.1",
+    "deadlineBands": {
+      "StartConversationAction": [
+        28.0,
+        30.1
+      ],
+      "EndConversationAction": [
+        28.0,
+        30.1
+      ],
+      "JoinConversationAction": [
+        28.0,
+        30.1
+      ],
+      "MuteConversationAction": [
+        28.0,
+        30.1
+      ],
+      "PlayToneAction": [
+        28.0,
+        30.1
+      ],
+      "PauseConversationAction": [
+        28.0,
+        30.1
+      ]
+    },
+    "actualOS": "27.0",
+    "referenceOS": "27.0",
+    "journalBinding": "process/build bound; LCK-to-CX action UUID mapping unmeasured",
+    "cxTapLimit": "measured CX callbacks expose only receiver/kind; tone/pause handlers absent",
+    "providerAPIs": [
+      "livecommunicationkit",
+      "livecommunicationkit"
+    ]
+  }
+}

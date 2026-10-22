@@ -1,5 +1,12 @@
 # LCK local native preparation
 
+**Latest measured result:** all four local native LCK cases pass at clean source
+`f106e73`, including genuine framework-image provider classification. See
+[the red/green correction handoff](../../progress/2026-10-22-codex-lck-post-end-unmute.md)
+and [the green receipt binding](native-green-f106e73/receipt-binding.json).
+Hosted CI remains pending. The older preparation failure below is retained as
+historical evidence; it is not the current local acceptance result.
+
 **Measured: preparation failed before the probe was launched. Native LCK
 acceptance is pending.** No incoming, outgoing, action, state or audio journey
 was measured by this attempt.

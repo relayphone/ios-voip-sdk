@@ -5,6 +5,7 @@ cd "$(dirname "$0")"
 python3 check_oracles.py
 if [[ -z "${CKSIM_ONLY:-}" || "${CKSIM_ONLY:-}" == lck || "${CKSIM_ONLY:-}" == lck-* ]]; then
   python3 check_lck_conformance.py
+  python3 check_lck_provider_policy.py
 fi
 if [[ -n "${OUT:-}" ]]; then
   mkdir "$OUT" # Refuse stale output, including an existing empty directory.

@@ -6,6 +6,15 @@ import CKSimRuntimeC
 @preconcurrency import CallKit
 @preconcurrency import AVFoundation
 
+private enum ProviderAPIKind: String { case callkit, livecommunicationkit }
+private struct FulfilledPostEndUnmutePolicy: Decodable {
+  enum Settlement: String, Decodable { case timeout, complete }
+  let callkit: Settlement
+  let livecommunicationkit: Settlement
+  func settlement(for api: ProviderAPIKind) -> Settlement {
+    switch api { case .callkit: callkit; case .livecommunicationkit: livecommunicationkit }
+  }
+}
 private struct BehaviorProfile: Decodable {
   let id: String
   let schemaVersion: Int
@@ -19,6 +28,7 @@ private struct BehaviorProfile: Decodable {
   let reportLatencySeconds: Double
   let muteEchoSeconds: Double
   let postEndUnmuteSeconds: Double
+  let fulfilledPostEndUnmutePolicy: FulfilledPostEndUnmutePolicy
 }
 
 private final class ProviderRegistration: @unchecked Sendable {
@@ -27,6 +37,7 @@ private final class ProviderRegistration: @unchecked Sendable {
   var queue: DispatchQueue?
   var valid = true
   var generation: UInt64 = 0
+  var apiKind: ProviderAPIKind = .callkit
   init(_ provider: CXProvider) { self.provider = provider }
 }
 
@@ -56,6 +67,7 @@ private final class PendingAction: @unchecked Sendable {
   let provider: ProviderRegistration
   let transaction: CXTransaction
   let origin: ActionOrigin
+  let apiKind: ProviderAPIKind
   let generation: UInt64
   let call: CallState?
   let groupTarget: CallState?
@@ -63,6 +75,7 @@ private final class PendingAction: @unchecked Sendable {
   var settled = false
   init(_ action: CXAction, _ provider: ProviderRegistration, _ transaction: CXTransaction, _ origin: ActionOrigin, call: CallState?, groupTarget: CallState?) {
     self.action = action; self.provider = provider; self.transaction = transaction; self.origin = origin
+    self.apiKind = provider.apiKind
     self.generation = provider.generation; self.call = call; self.groupTarget = groupTarget
   }
 }
@@ -311,6 +324,9 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     withState {
       let value = registration(provider)
       value.delegate = delegate; value.queue = queue
+      value.apiKind = CKSimDelegateUsesLiveCommunicationKit(delegate) ? .livecommunicationkit : .callkit
+      record(event: "provider.apiKind", fields: ["provider": providerID(provider),
+        "apiKind": value.apiKind.rawValue, "delegatePresent": delegate != nil])
     }
   }
   func register(controller: CXCallController, queue: DispatchQueue?) {
@@ -453,7 +469,14 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       item.settled = true
       record(event: "action.settled", fields: ["actionID": action.uuid.uuidString,
         "fulfilled": fulfilled, "origin": item.origin.rawValue])
-      if item.origin == .postEndUnmute { return true } // Device fulfills, then still times out.
+      if item.origin == .postEndUnmute {
+        // CallKit's fulfilled echo still times out on the reference device.
+        // LCK reports successful completion; do not manufacture the CX timeout.
+        if fulfilled && profile.fulfilledPostEndUnmutePolicy.settlement(for: item.apiKind) == .complete {
+          pendingActions.removeValue(forKey: action.uuid)
+        }
+        return true
+      }
       if item.expired { pendingActions.removeValue(forKey: action.uuid); return true }
       guard let call = item.call, calls[call.id] === call else {
         // A system end can arrive after an answer failure already removed the

@@ -15,5 +15,13 @@
   "waitingAnswer": "system-only",
   "transactionIdentity": "fresh-transaction-preserved-actions",
   "scope": "Measured iOS 27.0 behavior; not a guarantee for other iOS releases.",
-  "postEndUnmuteSeconds": 0.08
+  "postEndUnmuteSeconds": 0.08,
+  "fulfilledPostEndUnmutePolicy": {
+    "callkit": "timeout",
+    "livecommunicationkit": "complete"
+  },
+  "fulfilledPostEndUnmuteEvidence": {
+    "callkit": "Measured fulfilled post-end unmute still times out in 5.0–5.9 s.",
+    "livecommunicationkit": "Measured no timeout through 5.542 s after fulfilled post-end unmute; terminal settlement follows public fulfill/complete semantics, not a measured infinite observation."
+  }
 }
