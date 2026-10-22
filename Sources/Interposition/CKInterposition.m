@@ -30,6 +30,13 @@ NSString *CKSimResourceDirectory(void) {
   Dl_info info;
   return dladdr((void *)&CKSimResourceDirectory, &info) ? [@(info.dli_fname) stringByDeletingLastPathComponent] : @"";
 }
+// Provider API classification uses the owning public framework image, never a
+// private delegate class name. The host control compiles this exact helper.
+BOOL CKSimDelegateUsesLiveCommunicationKit(id delegate) {
+  if (!delegate) return NO;
+  const char *image = class_getImageName(object_getClass(delegate));
+  return image && [@(image) hasSuffix:@"/LiveCommunicationKit.framework/LiveCommunicationKit"];
+}
 CXCall *CKSimMakeCall(NSUUID *uuid, BOOL outgoing, BOOL connected, BOOL held, BOOL ended) {
   CXCall *call = ((ObjectInitializer)objc_msgSend)([CXCall alloc], NSSelectorFromString(@"initWithUUID:"), uuid);
   [call setValue:@(outgoing) forKey:@"outgoing"];

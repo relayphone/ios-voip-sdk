@@ -1,0 +1,23 @@
+{
+  "completed": true,
+  "success": true,
+  "schemaVersion": 2,
+  "runID": "1756E70A-90D2-47AF-BD5F-76DEF0B689A0",
+  "simulatorID": "716A0138-A56C-4466-8328-3504ED0F6562",
+  "scenario": "lck-basic",
+  "bundleID": "dev.callkitsim.probe",
+  "launcherPID": 32826,
+  "lastProbeEvent": "done",
+  "lastProbeTimestampMS": 20244,
+  "appEntryObserved": true,
+  "appPID": 32837,
+  "terminationMethod": "console-launcher-signal",
+  "terminationSignal": 15,
+  "terminationSignalDelivered": true,
+  "launchExitCode": 0,
+  "launcherAppPID": 32837,
+  "launchExitCodeBeforeCleanup": 0,
+  "elapsedSeconds": 21.789,
+  "traceSHA256": "0c5a11646bc7b34e26aa5b8e353de68db83145266999ddbc96bd420991ed0502",
+  "engineSHA256": "40bca14edfd46db8ae5d79e576d2f194d16bdb1589bff0caa619b8e86e435fc8"
+}
