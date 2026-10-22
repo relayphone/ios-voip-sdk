@@ -14,8 +14,16 @@ The pod sets `CKSIM_SDK_SOURCE=1` and derives `CKSIM_RUNTIME_VERSION` from the
 repository's canonical `VERSION` file.
 
 The module configuration lists `apple` only, and the podspec restricts the platform
-to iOS 17.4 or later. The example uses Expo SDK 55, React 19.2 and React Native 0.83.
+to iOS 17.4 or later. The example uses Expo SDK 58, React 19.3 and React Native 0.88.
 One npm workspace installation supplies both the module and example.
+
+Expo 58 provides the UIKit scene lifecycle required when building for iOS 27.
+Prebuild generates the scene delegate and manifest; Expo keeps the React Native
+factory in its app delegate and forwards scene events to app delegate subscribers.
+The SDK does not take ownership of the example's launch or window lifecycle.
+Expo's documented minimums are iOS 16.4 and Xcode 26.4, so the SDK's iOS 17.4
+deployment target and the Xcode 26.6/27.1 build environments remain supported.
+Actual native acceptance on each environment is recorded separately.
 
 ## Native integration seam
 
@@ -68,8 +76,10 @@ resolve it directly even when npm nests Expo's transitive copy.
 
 ## Primary references
 
-- [Expo SDK 55 compatibility map](https://github.com/expo/expo/blob/sdk-55/packages/expo/bundledNativeModules.json)
+- [Expo SDK 58 compatibility map](https://github.com/expo/expo/blob/sdk-58/packages/expo/bundledNativeModules.json)
+- [Expo SDK 58 platform and toolchain minimums](https://docs.expo.dev/versions/v58.0.0/)
+- [Expo scene lifecycle migration](https://github.com/expo/fyi/blob/main/ios-scene-lifecycle.md)
 - [Expo module configuration](https://docs.expo.dev/modules/module-config/)
-- [Expo root-relative podspec resolution](https://github.com/expo/expo/blob/sdk-55/packages/expo-modules-autolinking/src/platforms/apple/apple.ts)
+- [Expo root-relative podspec resolution](https://github.com/expo/expo/blob/sdk-58/packages/expo-modules-autolinking/src/platforms/apple/apple.ts)
 - [CocoaPods file patterns](https://guides.cocoapods.org/syntax/podspec.html#file_patterns)
-- [Expo iOS deployment target configuration](https://docs.expo.dev/versions/v55.0.0/sdk/build-properties/)
+- [Expo iOS deployment target configuration](https://docs.expo.dev/versions/v58.0.0/sdk/build-properties/)

@@ -4,6 +4,40 @@ This is a preparation handoff for M0, not a completed milestone. Native runtime
 integration, Swift compilation and the plain-simulator incoming ring/join journey
 remain pending. No simulator or device was used for these checks.
 
+## Expo 58 dependency update
+
+**Proposed:** use Expo's maintained scene lifecycle implementation for the example
+instead of adding a custom scene bridge to the original Expo 55 scaffold. The
+[official migration guide](https://github.com/expo/fyi/blob/main/ios-scene-lifecycle.md)
+states that apps built with the iOS 27 SDK must adopt scenes and that Expo 58
+generates the required scene delegate and manifest while preserving app delegate
+subscribers and the React Native factory. The [versioned support table](https://docs.expo.dev/versions/v58.0.0/)
+lists iOS 16.4+ and Xcode 26.4+, preserving this SDK's iOS 17.4 minimum and supporting
+the Xcode 26.6/27.1 build environments. Exact native artifact compatibility and the
+complete ring/join acceptance remain native verification work.
+
+The updated workspace pins Expo 58.0.17, React 19.3.0, React Native 0.88.0,
+`expo-build-properties` 58.0.11, `babel-preset-expo` 58.0.19,
+`react-native-safe-area-context` 5.10.1 and `@types/react` 19.3.0. The Expo npm
+package's compatibility map supplies the React, React Native and safe-area versions;
+the lockfile records the resolved transitive packages. Peer ranges cover the Expo
+58 / React Native 0.88 / React 19.3 line being qualified. The existing Expo Modules
+API remains in use; this does not opt into Modules 2.0 beta or Expo's SwiftPM preview.
+
+Regenerate the ignored native iOS project from the new template before rebuilding.
+The earlier measurements below describe the original Expo 55 preparation and are
+historical evidence, not qualification of the updated native dependencies.
+
+**Measured for the Expo 58 update:** the ignore-scripts workspace installation
+completes with one shared Expo 58.0.17 / React 19.3.0 / React Native 0.88.0
+installation and ExpoModulesCore 58.0.24. Package build, package/example typechecks,
+and the scoped formatting check pass. Expo configuration resolves iOS only and
+deployment target 17.4. Apple autolinking resolves the package dependencies from
+repository root; from the example workspace it additionally resolves
+`IosVoipSDKModule`, the root `IosVoipSDK` pod, `VoIPExampleJourneyModule`, and
+`VoIPExampleAppDelegateSubscriber`. No native prebuild, Pods install, Swift build,
+simulator, or device was run for this dependency update.
+
 ## Prepared
 
 - An iOS-only Expo module configuration (`platforms: ["apple"]`), root podspec and
