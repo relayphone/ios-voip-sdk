@@ -12,6 +12,7 @@ from sdk_m0_conformance import ROOT, source_identity
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output', type=Path, help='fresh output directory')
+    parser.add_argument('--derived-data', type=Path, help='optional existing task-owned build cache')
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -21,7 +22,7 @@ def main():
     require(len(workspaces) == 1, 'generate one example workspace and install pods first')
     command = ['xcodebuild', '-workspace', str(workspaces[0]), '-scheme', workspaces[0].stem,
                '-configuration', 'Release', '-destination', 'generic/platform=iOS',
-               '-derivedDataPath', str(output / 'DerivedData'), 'ARCHS=arm64',
+               '-derivedDataPath', str((args.derived_data or output / 'DerivedData').resolve()), 'ARCHS=arm64',
                'ONLY_ACTIVE_ARCH=YES', 'CODE_SIGNING_ALLOWED=NO',
                'COMPILER_INDEX_STORE_ENABLE=NO', 'build']
     (output / 'command.json').write_text(json.dumps(command, indent=2) + '\n')
@@ -31,7 +32,7 @@ def main():
     require(result.returncode == 0, 'Release iphoneos build failed; inspect build.log')
     after = source_identity()
     require(before == after, 'source changed during the Release iphoneos build')
-    products = output / 'DerivedData/Build/Products/Release-iphoneos'
+    products = (args.derived_data or output / 'DerivedData') / 'Build/Products/Release-iphoneos'
     apps = sorted(products.glob('*.app'))
     require(len(apps) == 1, 'expected exactly one Release iphoneos app')
     pod_binaries = sorted(set(products.rglob('libIosVoipSDK.a')) |

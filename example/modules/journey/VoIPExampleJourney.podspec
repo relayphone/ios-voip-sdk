@@ -11,7 +11,6 @@ Pod::Spec.new do |s|
   s.static_framework = true
   s.dependency 'ExpoModulesCore'
   s.dependency 'IosVoipSDK'
-  s.source_files = 'apple/*.{swift,h}'
-  s.public_header_files = 'apple/VoIPExampleRuntimeControl.h'
+  s.source_files = 'apple/*.swift'
   s.frameworks = 'LiveCommunicationKit', 'AVFoundation'
 end

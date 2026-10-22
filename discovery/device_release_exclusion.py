@@ -26,25 +26,40 @@ def inspect_binary(path):
     result = subprocess.run(['xcrun', 'otool', '-L', str(path)],
                             capture_output=True, text=True, timeout=30)
     require(result.returncode == 0, 'otool could not inspect native binary')
-    dependencies = [line.strip().split(' (', 1)[0] for line in result.stdout.splitlines()[1:] if line.strip()]
+    dependencies = [line.strip().split(' (', 1)[0] for line in result.stdout.splitlines() if line.startswith('\t')]
     require(not any('/CallKit.framework/' in item for item in dependencies), 'direct CallKit load command')
     data = path.read_bytes()
-    # Error-domain strings intentionally remain: they do not link a framework.
-    for marker in (b'CKSimInjectPush', b'CKSimEmit', b'RuntimeEngine', b'RuntimeBootstrap',
-                   b'fulfilledPostEndUnmutePolicy', b'CXCallObserver', b'CXProvider',
-                   b'VSProviderMonitorInstall', b'VSProviderCreationMonitor'):
-        require(marker not in data, 'device binary contains simulator/debug implementation: ' + marker.decode())
-    return dict(sha256=digest(path), bytes=len(data), directDependencies=dependencies)
+    symbols = subprocess.run(['xcrun', 'nm', '-j', str(path)], capture_output=True, text=True, timeout=30)
+    require(symbols.returncode == 0, 'nm could not inspect native binary')
+    names = '\n'.join(line.strip() for line in symbols.stdout.splitlines()
+                      if line.strip() and not line.rstrip().endswith(':'))
+    # Empty archive members retain source filenames. Inspect actual symbols,
+    # rather than treating that metadata as compiled runtime implementation.
+    for marker in ('CKSimInjectPush', 'CKSimEmit', 'CKSimPrepareEngine', 'CKSimActivateRuntime',
+                   'CKSimMakeCall', 'RuntimeEngine', 'RuntimeBootstrap', 'CXCallObserver', 'CXProvider',
+                   'VSProviderMonitorInstall', 'VSProviderCreationMonitor'):
+        require(marker not in names, 'device binary contains simulator/debug implementation: ' + marker)
+    require(b'fulfilledPostEndUnmutePolicy' not in data, 'device binary contains embedded simulator profile')
+    return dict(sha256=digest(path), bytes=len(data), directDependencies=dependencies,
+                symbolsSHA256=hashlib.sha256(symbols.stdout.encode()).hexdigest())
 
 
 def inspect_public_headers(directory):
     headers = sorted(directory.rglob('*.h'))
     require(headers, 'missing SDK public headers')
+    sdk = subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()
+    inspected = {}
     for path in headers:
         require(path.name != 'CKRuntimeSeam.h', 'private simulator seam is public')
-        text = path.read_text()
-        require('CKSimInjectPush' not in text and 'CKSimEmit' not in text, 'public simulator test hook')
-    return {str(path.relative_to(directory)): digest(path) for path in headers}
+        result = subprocess.run(['xcrun', 'clang', '-E', '-P', '-x', 'objective-c', '-fblocks',
+                                 '-target', 'arm64-apple-ios17.4', '-isysroot', sdk, '-DDEBUG=0',
+                                 '-I', str(directory), str(path)], capture_output=True, text=True, timeout=30)
+        require(result.returncode == 0, 'cannot preprocess Release iphoneos public header: ' + path.name)
+        require('CKSim' not in result.stdout, 'public simulator test hook')
+        require('VSProviderCreationMonitor' not in result.stdout, 'public Release creation monitor')
+        inspected[str(path.relative_to(directory))] = dict(sourceSHA256=digest(path),
+            devicePreprocessedSHA256=hashlib.sha256(result.stdout.encode()).hexdigest())
+    return inspected
 
 
 def inspect_app(app, pod_binary, public_headers):

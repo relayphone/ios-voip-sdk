@@ -45,7 +45,8 @@ class Controls(unittest.TestCase):
     def test_public_hooks_negative(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'Bridge.h'
-            path.write_text('void harmless(void);\n')
+            path.write_text('#import <TargetConditionals.h>\n#if TARGET_OS_SIMULATOR\n'
+                            'void CKSimInjectPush(void);\nvoid CKSimEmit(void);\n#endif\n')
             inspect_public_headers(Path(directory))
             for marker in ('CKSimInjectPush', 'CKSimEmit'):
                 path.write_text('void ' + marker + '(void);\n')
@@ -65,11 +66,32 @@ class Controls(unittest.TestCase):
             inspect_binary(out / 'clean')
             with self.assertRaisesRegex(ExclusionError, 'direct CallKit load command'):
                 inspect_binary(out / 'callkit')
-            # Preserve a real Mach-O's load commands while introducing a leaked
-            # implementation marker, exercising the binary gate independently.
-            (out / 'leaked').write_bytes((out / 'clean').read_bytes() + b'CKSimInjectPush')
+            leaked = out / 'leaked.c'
+            leaked.write_text('void CKSimInjectPush(void) {}\nint main(void) { CKSimInjectPush(); return 0; }\n')
+            subprocess.run(['xcrun', 'clang', '-target', 'arm64-apple-ios17.4', '-isysroot', sdk,
+                            str(leaked), '-o', str(out / 'leaked')], capture_output=True,
+                           text=True, timeout=30, check=True)
             with self.assertRaisesRegex(ExclusionError, 'simulator/debug implementation'):
                 inspect_binary(out / 'leaked')
+            # Release pods can retain an empty guarded translation unit by its
+            # source filename. That archive metadata is not implementation.
+            empty = out / 'VSProviderCreationMonitor.m'
+            empty.write_text('// Guarded implementation compiled out.\n')
+            subprocess.run(['xcrun', 'clang', '-target', 'arm64-apple-ios17.4', '-isysroot', sdk,
+                            '-c', str(empty), '-o', str(out / 'VSProviderCreationMonitor.o')],
+                           capture_output=True, text=True, timeout=30, check=True)
+            subprocess.run(['xcrun', 'ar', '-rcs', str(out / 'libGuarded.a'),
+                            str(out / 'VSProviderCreationMonitor.o')], capture_output=True,
+                           text=True, timeout=30, check=True)
+            inspect_binary(out / 'libGuarded.a')
+            subprocess.run(['xcrun', 'clang', '-target', 'arm64-apple-ios17.4', '-isysroot', sdk,
+                            '-c', str(leaked), '-o', str(out / 'VSProviderCreationMonitor.o')],
+                           capture_output=True, text=True, timeout=30, check=True)
+            subprocess.run(['xcrun', 'ar', '-rcs', str(out / 'libGuarded.a'),
+                            str(out / 'VSProviderCreationMonitor.o')], capture_output=True,
+                           text=True, timeout=30, check=True)
+            with self.assertRaisesRegex(ExclusionError, 'simulator/debug implementation'):
+                inspect_binary(out / 'libGuarded.a')
 
 
 if __name__ == '__main__':

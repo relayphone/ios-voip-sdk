@@ -36,6 +36,8 @@ void * _Nullable CKSimGetEngine(void);
 bool CKSimActivateRuntime(void);
 bool CKSimRuntimeIsActive(void);
 const char *CKSimRuntimeVersion(void);
+// Runtime mailbox and example controls exist only in simulator builds.
+void CKSimInjectPush(NSDictionary *payload, BOOL mustReport, NSString *identifier);
 // SDK Debug simulator builds only. No implementation is linked in Release.
 bool CKSimInstallProviderCreationObserver(void (^observer)(id provider));
 
