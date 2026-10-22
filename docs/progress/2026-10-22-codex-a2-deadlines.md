@@ -143,6 +143,28 @@ and Xcode 26.6** compiler lanes, each using the **iOS 26.5 simulator** with the
 original source only. Main, including the probe answer-checkpoint correction,
 was merged forward locally without rewriting the original A2 history.
 
+## Generic M1 projection controls
+
+**Measured synthetic gap and correction:** the
+[generic-margin receipt](../verification/2026-10-22-a2-deadlines/generic-margin-followup.json)
+preserves the old gate accepting both coherent 30-second and 28.5-second public
+deadlines. The generic fixture now publishes 28.5 seconds and separately binds
+the native 30-second deadline to the unique answer transaction/provider. Both
+coordinated restorations to a public 30-second deadline are rejected. Eleven
+host control methods pass; these are checker controls, not native execution.
+The device sampling bands, dedicated native deadline contracts, and existing
+generic failure/liveness/empty-expiry predicates are unchanged. The generic
+cross-layer margin allowance does not establish LCK/CX UUID equality.
+
+**Measured pre-app CI red:** corrected head `dfc81fc` reached its runner
+environment query in SDK CI `39772309614`, attempt 1, then
+`xcodebuild -version` exceeded the existing 30-second budget. The
+[bound classification](../verification/2026-10-22-a2-deadlines/ci-dfc81fc-pre-app-failure.json)
+records tree-equal tested merge `13ed8dc`, matching source/build receipts and
+zero app journey traces. App installation and the final manifest were absent,
+so this run qualifies no native journey. It is distinct from the original
+`1fd33b4` actual expiry failure. No retry was requested.
+
 ## RFC deviation text for the authorized fork comment
 
 RFC 0001 describes `ActionContext.deadline` as when the platform gives up. This
