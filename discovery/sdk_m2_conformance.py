@@ -15,7 +15,9 @@ import plistlib
 import uuid
 from types import SimpleNamespace
 
-from sdk_m2_audio_lifecycle import validate_lifecycle
+from sdk_m2_audio_lifecycle import validate_authority, validate_lifecycle
+from sdk_audio_device_transport import validate as validate_device_transport
+from sdk_audio_device_noio_transport import validate as validate_device_noio_transport
 from sdk_m2_environment import COMMANDS as ENVIRONMENT_COMMANDS, inspect as inspect_environment
 
 import sdk_m0_conformance as m0
@@ -432,6 +434,8 @@ def validate_preflight(root, manifest, runtime, environment, source_root):
 def validate(root, source_root=ROOT):
     manifest = read(root, 'manifest.json')
     identity = source_identity(source_root)
+    physical_transport = validate_device_transport(source_root)
+    physical_noio_transport = validate_device_noio_transport(source_root)
     require(type(manifest.get('schemaVersion')) is int and manifest['schemaVersion'] == 1 and manifest.get('scenario') == 'sdk-m2' and
             manifest.get('configuration') == 'Release' and manifest.get('mediaAdapter') == 'livekit' and
             manifest.get('ownsSimulator') is True and manifest.get('runtimeInjectionRequested') is False and
@@ -495,7 +499,8 @@ def validate(root, source_root=ROOT):
                     launch.get('executableSHA256') == manifest['files']['binaries/contracts'] and
                     one(rows, 'contract.activation').get('active') is True and
                     one(rows, 'contract.result').get('success') is True, 'lifecycle: unbound/failed native contract')
-            results[case] = validate_lifecycle(rows, engine, manifest['audioPath'])
+            results[case] = (validate_authority(rows, engine) if manifest['audioPath'] == 'modern' else
+                             validate_lifecycle(rows, engine, 'legacy'))
         elif case == 'media-reentrancy':
             results[case] = reentrancy_case(rows, engine, manifest, environment['simulatorOS'])
         else:
@@ -503,6 +508,8 @@ def validate(root, source_root=ROOT):
             results[case] = media_case(rows, engine, case, environment['simulatorOS'])
     return dict(success=True, scenario='sdk-m2', source=identity, executionOS=environment['simulatorOS'],
                 simulatorRuntime=runtime, environmentPreflight=preflight, cases=results, hostAudioControls=len(HOST_CHECKS),
+                physicalAudioTransport=physical_transport,
+                physicalAudioNoIOTransport=physical_noio_transport,
                 recoveryEvidence='Exact activation/recovery policy and one recovery are host-proved. Native liveness is bounded from pre-fulfillment recording demand through scoped absence events and clean end; the actual watchdog start, exact activation interval and AV configuration call count are not measured.')
 
 
