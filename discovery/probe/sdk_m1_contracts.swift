@@ -52,6 +52,16 @@ private final class SDKM1ContractsProbe {
       ContractTrace.log("contract.warning", ["message": message, "phase": phase, "count": warnings])
     }
     do {
+      if mode == "duplicate-wrapper" {
+        let configuration = VoIPApplication.Configuration(client: .init(includesConversationInRecents: false))
+        let application = try VoIPApplication.start(configuration: configuration)
+        let repeated = try VoIPApplication.start(configuration: configuration)
+        ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(application.client)),
+          "sharedIdentity": String(describing: ObjectIdentifier(repeated.client)), "warnings": warnings,
+          "entryPoint": "VoIPApplication.start"])
+        try await duplicateContract(application.client)
+        return
+      }
       if mode == "unhandled-accept" {
         ContractTrace.log("contract.configuration", ["policy": "accept", "handlerAttached": false])
       }
@@ -85,6 +95,71 @@ private final class SDKM1ContractsProbe {
       "identity": String(describing: ObjectIdentifier(extraManager!))])
     // Extra owners exist only in this diagnostic fixture; no SDK command uses them.
     finish(warnings == 2)
+  }
+
+  /// Exercise the SDK's public result through genuine LCK and its runtime-backed
+  /// CX report completion. This observes compatibility, not NSError wrapper depth
+  /// or physical-device behavior. The source tag is not an actual PushKit delivery.
+  private func duplicateContract(_ client: ConversationClient) async throws {
+    let payload = IncomingCallPayload(eventId: UUID().uuidString, serverCallId: UUID().uuidString,
+      caller: .init(id: "native-duplicate-wrapper-fixture"))
+    let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+    let payloadHash = SHA256.hash(data: try encoder.encode(payload)).map { String(format: "%02x", $0) }.joined()
+    let observer = client.observeState { update in
+      ContractTrace.log("contract.duplicateSnapshot", ["revision": update.revision,
+        "conversations": update.conversations.map { call -> [String: Any] in
+          var value: [String: Any] = ["id": call.id.uuidString, "status": call.status.rawValue,
+            "hasConnectedAt": call.connectedAt != nil]
+          if let pending = call.pending {
+            value["pending"] = ["id": pending.id.uuidString, "kind": pending.kind.rawValue,
+              "origin": pending.origin.rawValue]
+          }
+          return value
+        }])
+    }
+    defer { client.removeStateObserver(observer); client.setConversationHandler(nil) }
+    func report(_ ordinal: Int, _ source: IncomingReportSource, _ tag: String) async throws -> UUID {
+      let fields: [String: Any] = ["ordinal": ordinal, "source": tag, "payloadSHA256": payloadHash]
+      ContractTrace.log("contract.duplicateReportRequested", fields)
+      CKSimEmit("contract.duplicateReportBoundary", fields.merging(["stage": "requested"]) { _, new in new })
+      let id = try await client.reportIncomingConversation(payload, source: source)
+      CKSimEmit("contract.duplicateReportBoundary", fields.merging(["stage": "returned", "callUUID": id.uuidString]) { _, new in new })
+      ContractTrace.log("contract.duplicateReportResult", fields.merging([
+        "conversationID": id.uuidString, "accepted": true,
+        "conversations": client.snapshots.map { call -> [String: Any] in
+          ["id": call.id.uuidString, "status": call.status.rawValue,
+           "hasConnectedAt": call.connectedAt != nil, "hasPending": call.pending != nil]
+        }
+      ]) { _, new in new })
+      return id
+    }
+    let first = try await report(1, .foreground, "foreground")
+    let second = try await report(2, .pushKit, "pushKit")
+    let oneLiveConversation = client.snapshots.count == 1 && client.snapshots.first?.id == first &&
+      client.snapshots.first?.status == .ringing
+    var endHandled = false
+    client.setConversationHandler(.init(join: { _, _ in
+      ContractTrace.log("contract.duplicateUnexpectedAction", ["kind": "join"])
+      throw NSError(domain: "SDKM1DuplicateFixture", code: 1)
+    }, start: { _, _ in
+      ContractTrace.log("contract.duplicateUnexpectedAction", ["kind": "start"])
+      throw NSError(domain: "SDKM1DuplicateFixture", code: 1)
+    }, end: { call, context in
+      ContractTrace.log("contract.duplicateEndHandler", ["conversationID": call.id.uuidString,
+        "actionID": context.actionID.uuidString, "origin": context.origin.rawValue])
+      endHandled = true
+    }))
+    ContractTrace.log("contract.duplicateEndRequested", ["conversationID": first.uuidString])
+    CKSimEmit("contract.duplicateEndBoundary", ["stage": "requested", "callUUID": first.uuidString])
+    try await client.endConversation(first)
+    // LCK command completion acknowledges the request and may precede perform.
+    // Observe actual handler/terminal cleanup separately before completing proof.
+    CKSimEmit("contract.duplicateEndBoundary", ["stage": "command-returned", "callUUID": first.uuidString])
+    ContractTrace.log("contract.duplicateEndCommandResult", ["conversationID": first.uuidString, "accepted": true])
+    let empty = await wait(seconds: 5) { endHandled && client.snapshots.isEmpty }
+    CKSimEmit("contract.duplicateEndBoundary", ["stage": "observed-complete", "callUUID": first.uuidString, "empty": empty])
+    ContractTrace.log("contract.duplicateObservation", ["conversationID": first.uuidString, "empty": empty])
+    finish(first == second && oneLiveConversation && empty && warnings == 0)
   }
 
   private func acceptContract(_ client: ConversationClient) async throws {

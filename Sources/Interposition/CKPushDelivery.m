@@ -48,9 +48,9 @@ static void deliver(PKPushRegistry *registry, NSDictionary *item) {
   NSString *identifier=item[@"id"];
   NSMutableDictionary *thread=NSThread.currentThread.threadDictionary;
   id previous=thread[contextKey]; thread[contextKey]=identifier;
+  __block NSString *api=@"legacy";
   @try {
     CKRuntimePayload *payload=[CKRuntimePayload new]; payload.contents=item[@"payload"];
-    __block NSString *api=@"legacy";
     void (^completion)(void)=^{
       CKSimEmit(@"push.completed",@{@"pushID":identifier,@"api":api});
       NSString *receipt=NSProcessInfo.processInfo.environment[@"CKSIM_PUSH_COMPLETION_NOTIFICATION"];
@@ -68,11 +68,15 @@ static void deliver(PKPushRegistry *registry, NSDictionary *item) {
       }
     }
     #endif
+    CKSimEmit(@"push.received",@{@"pushID":identifier,@"api":api,@"mustReport":@YES});
     if ([delegate respondsToSelector:@selector(pushRegistry:didReceiveIncomingPushWithPayload:forType:withCompletionHandler:)]) {
-      CKSimEmit(@"push.received",@{@"pushID":identifier,@"api":api,@"mustReport":@YES});
       [delegate pushRegistry:registry didReceiveIncomingPushWithPayload:payload forType:PKPushTypeVoIP withCompletionHandler:completion];
     }
-  } @finally { if (previous) thread[contextKey]=previous; else [thread removeObjectForKey:contextKey]; }
+  } @finally {
+    // RuntimeEngine checks its real incoming-report hook before recording this.
+    CKSimEmit(@"push.callbackReturned",@{@"pushID":identifier,@"api":api});
+    if (previous) thread[contextKey]=previous; else [thread removeObjectForKey:contextKey];
+  }
 }
 static void attempt(void) {
   NSCAssert(NSThread.isMainThread,@"Registry bookkeeping belongs to main");

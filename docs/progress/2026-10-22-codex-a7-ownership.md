@@ -49,3 +49,14 @@ qualified before publication.
 When main is merged into the M2 stack later, preserve M2's optional diagnostic
 fields/flags by intent: this branch's forward scope reduction removes those
 foundation additions solely from the core acceptance target.
+
+## A1 forward merge
+
+Reviewed A1 `8077f0d` was merged normally after the core freeze. The actual core
+factory, process claim and one-shot setup remain unchanged. Both conflict
+resolutions preserve the union of CI gates and source inputs. The
+[follow-up receipt](../verification/2026-10-22-sdk-process-owner-core/a1-forward.json)
+records passing ownership controls, report/capture/M1 host gates, workflow lint
+and an actual merged-SDK source typecheck. Both integration review axes cleared.
+No further SwiftPM product build, app, simulator, audio or device work was used;
+A1 qualification and current hosted CI remain in their respective receipts.

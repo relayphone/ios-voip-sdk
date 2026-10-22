@@ -69,6 +69,7 @@ jobs:
             printf 'SDK_M0_SPM_DEVICE_DIR=%s/spm-device\n' "$SDK_M0_BUILD_ROOT"
             printf 'SDK_M0_BUILD_RECEIPT=%s/build-receipt.json\n' "$SDK_M0_BUILD_ROOT"
             printf 'SDK_M1_CONTRACT_BUILD=%s/m1-contracts\n' "$SDK_M0_BUILD_ROOT"
+            printf 'SDK_PUSH_ENTRY_BUILD=%s/push-entry\n' "$SDK_M0_BUILD_ROOT"
           } >> "$GITHUB_ENV"
           mkdir -p "$SDK_M0_BUILD_ROOT" "$SDK_M0_BUILD_LOGS"
           python3 discovery/check_sdk_m0.py | tee "$SDK_M0_BUILD_LOGS/offline-controls.json"
@@ -78,13 +79,19 @@ jobs:
           python3 discovery/check_expo_bridge.py | tee "$SDK_M0_BUILD_LOGS/expo-relay-controls.json"
           python3 discovery/check_platform_shims.py | tee "$SDK_M0_BUILD_LOGS/platform-controls.json"
           python3 discovery/check_sdk_ownership.py | tee "$SDK_M0_BUILD_LOGS/ownership-controls.json"
+          python3 discovery/check_push_delivery.py | tee "$SDK_M0_BUILD_LOGS/push-delivery-controls.json"
+          python3 discovery/check_push_report_entry.py | tee "$SDK_M0_BUILD_LOGS/push-entry-controls.json"
+          python3 Tests/VoIPSDK/run_incoming_delivery.py | tee "$SDK_M0_BUILD_LOGS/push-main-stall-controls.json"
+          python3 Tests/VoIPSDK/run_incoming_cache.py | tee "$SDK_M0_BUILD_LOGS/incoming-cache-controls.json"
+          bash Tests/VoIPSDK/run_incoming_intake.sh | tee "$SDK_M0_BUILD_LOGS/incoming-intake-controls.log"
+          python3 discovery/check_push_report_capture.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/push-entry-capture-controls.log"
           python3 discovery/check_device_release.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/device-release-controls.log"
           python3 discovery/check_lck_provider_policy.py | tee "$SDK_M0_BUILD_LOGS/lck-policy-controls.json"
           bash Tests/VoIPSDK/run.sh | tee "$SDK_M0_BUILD_LOGS/core-controls.log"
           bash Tests/VoIPSDK/run_push.sh | tee "$SDK_M0_BUILD_LOGS/push-controls.log"
           bash Tests/VoIPSDK/run_projection.sh | tee "$SDK_M0_BUILD_LOGS/projection-controls.log"
           bash Tests/ProbeTraceWriter/run.sh | tee "$SDK_M0_BUILD_LOGS/probe-writer-controls.json"
-          bash -n discovery/build_sdk_bootstrap.sh discovery/build_sdk_device_probe.sh discovery/build_sdk_m1_contracts.sh discovery/run_sdk_m0.sh
+          bash -n discovery/build_sdk_bootstrap.sh discovery/build_sdk_device_probe.sh discovery/build_sdk_m1_contracts.sh discovery/build_push_report_entry.sh discovery/run_sdk_m0.sh
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "24.22.1"
@@ -168,6 +175,10 @@ jobs:
           } 2>&1 | tee "$SDK_M0_BUILD_LOGS/bootstrap-build.log"
           bash discovery/build_sdk_device_probe.sh "$SDK_M0_BUILD_ROOT/device" 2>&1 | tee "$SDK_M0_BUILD_LOGS/device-probe-build.log"
           bash discovery/build_sdk_m1_contracts.sh "$SDK_M1_CONTRACT_BUILD" 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-contracts-build.log"
+          {
+            bash discovery/build_push_report_entry.sh "$SDK_PUSH_ENTRY_BUILD"
+            printf 'Source PushKit report-entry build completed.\n'
+          } 2>&1 | tee "$SDK_M0_BUILD_LOGS/push-entry-build.log"
       - name: Record the source and exact built artifacts
         run: |
           python3 discovery/sdk_m0_conformance.py --record-build "$SDK_M0_BUILD_RECEIPT" \

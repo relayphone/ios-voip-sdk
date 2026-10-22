@@ -1,0 +1,239 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured local preflight failures; native five-case acceptance remains pending",
+  "captures": [
+    {
+      "capture": "a1-push-entry-20261022",
+      "sourceCommit": "4dbe7968b94b1446dd27ef64f16a14c99a159f54",
+      "sourceInputsSHA256": "e438a6b74e2bcb56108c32ac4fcc58b976f17969e21a4ae425701d4b9cf282f7",
+      "simulatorID": "AF2D6E84-2982-4810-B538-47359C17EACC",
+      "nativeAppLaunched": false,
+      "nativeCaseCount": 0,
+      "error": {
+        "type": "RuntimeError",
+        "reason": "inherited-before failed: timeout"
+      },
+      "bootLastObserved": {
+        "status": "4294967295",
+        "isTerminal": true,
+        "elapsed": "01:33."
+      },
+      "cleanup": {
+        "shutdown": 0,
+        "delete": 0,
+        "absentFromInventory": true,
+        "simulatorID": "AF2D6E84-2982-4810-B538-47359C17EACC"
+      },
+      "independentAbsent": true,
+      "boundCommands": [
+        {
+          "operation": "boot",
+          "startedWallTimeNS": 1792658847375299000,
+          "finishedWallTimeNS": 1792658858295962000,
+          "exitCode": 0,
+          "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "operation": "bootstatus",
+          "startedWallTimeNS": 1792658858318813000,
+          "finishedWallTimeNS": 1792658951267766000,
+          "exitCode": 0,
+          "stdoutSHA256": "61db5633ac0ced7bb1d3833ccd482457926c5dffea9e973a3f909863d84bf5dd",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "operation": "spawn launchctl getenv",
+          "startedWallTimeNS": 1792658951268539000,
+          "finishedWallTimeNS": 1792658981710131000,
+          "exitCode": "timeout",
+          "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "operation": "shutdown",
+          "startedWallTimeNS": 1792658981723417000,
+          "finishedWallTimeNS": 1792658995539427000,
+          "exitCode": 0,
+          "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "operation": "delete",
+          "startedWallTimeNS": 1792658995553628000,
+          "finishedWallTimeNS": 1792659004307693000,
+          "exitCode": 0,
+          "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "privateReceiptSHA256": {
+        "summary.json": "59b2f8cfa0ad2dc15a0f6a298e22b2f4914e9a625abfe3899ac967ee41b24885",
+        "commands.jsonl": "f4731132d0715705709c4751d3027eeb943792b242f8302364105b9678385e63",
+        "bootstatus.stdout": "61db5633ac0ced7bb1d3833ccd482457926c5dffea9e973a3f909863d84bf5dd",
+        "cleanup.json": "bb51de0c0cb6ab50ef927aba24aea5d4f31c0a24c2f319bfd2988d84fc6abdb7",
+        "independent-cleanup-check.json": "d9ec1d973aedb196d8839a12e6650a3702e043c8d029d559b0293414c97e7b0d",
+        "build/build-receipt.json": "2bd5916613ddbb9eb16df59ee2f0fb11a63d40c2b47f8c6d8327356906fc34bd"
+      },
+      "classification": "launchctl getenv timed out after terminal boot; no install/launch/DYLD write"
+    },
+    {
+      "capture": "a1-push-entry-getenv-20261022",
+      "sourceCommit": "ed8f922a9c23cbf473e6e37b23128e3e68b3cbef",
+      "sourceInputsSHA256": "fde71450f4630a2345e373c5d6402fa4b0325a25c24c664f797651f5ec742577",
+      "simulatorID": "70F4BEAD-500D-4163-91B7-C4C7B7209E91",
+      "nativeAppLaunched": false,
+      "nativeCaseCount": 0,
+      "error": {
+        "type": "RuntimeError",
+        "reason": "getenv-proof-initial-public was not a clean successful environment query: 0"
+      },
+      "bootLastObserved": {
+        "status": "4294967295",
+        "isTerminal": true,
+        "elapsed": "01:19."
+      },
+      "cleanup": {
+        "shutdown": 0,
+        "delete": 0,
+        "absentFromInventory": true,
+        "simulatorID": "70F4BEAD-500D-4163-91B7-C4C7B7209E91"
+      },
+      "independentAbsent": true,
+      "boundCommands": [
+        {
+          "operation": "boot",
+          "startedWallTimeNS": 1792660512120084000,
+          "finishedWallTimeNS": 1792660513766153000,
+          "exitCode": 0,
+          "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "operation": "bootstatus",
+          "startedWallTimeNS": 1792660513766485000,
+          "finishedWallTimeNS": 1792660592401096000,
+          "exitCode": 0,
+          "stdoutSHA256": "5588387ae6d855104bb9645b068368006643cb64cc8180bc49c79b451fc59974",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "operation": "getenv",
+          "startedWallTimeNS": 1792660592401457000,
+          "finishedWallTimeNS": 1792660596380215000,
+          "exitCode": 0,
+          "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSHA256": "54d5fb8e52b1259646dca22b2e094a6c45871d926feecf2900cb308e22e2155c"
+        },
+        {
+          "operation": "shutdown",
+          "startedWallTimeNS": 1792660596389355000,
+          "finishedWallTimeNS": 1792660608643235000,
+          "exitCode": 0,
+          "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "operation": "delete",
+          "startedWallTimeNS": 1792660608643402000,
+          "finishedWallTimeNS": 1792660609527624000,
+          "exitCode": 0,
+          "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "privateReceiptSHA256": {
+        "summary.json": "d43f1e970c4632ac1bd876592cffeaf108108501e702b05fbb763d1d3c171845",
+        "commands.jsonl": "ff6b006d67b84f9295a81172d993017e72e6c17908d93ea9510c7b0318eec364",
+        "bootstatus.stdout": "5588387ae6d855104bb9645b068368006643cb64cc8180bc49c79b451fc59974",
+        "cleanup.json": "76d3a108e2d680e14145ef50cecb58ac09e4fa8deeaf79e49187cf21e515c10b",
+        "independent-cleanup-check.json": "909c782a3679741a80211730a977a546cece181788f76cb8d1748302bf7f3e92",
+        "build/build-receipt.json": "b9c05895f783a5fe98572c6723ecc0137c5c45be389a3849a6b625dca77ce18b"
+      },
+      "classification": "strict parser refused public getenv known-missing response (exit0, empty stdout, exact key-specific not-found stderr); no setters/DYLD query/install/launch"
+    },
+    {
+      "capture": "a1-push-entry-getenv-followup-20261022",
+      "sourceCommit": "ed8f922a9c23cbf473e6e37b23128e3e68b3cbef",
+      "sourceInputsSHA256": "fde71450f4630a2345e373c5d6402fa4b0325a25c24c664f797651f5ec742577",
+      "simulatorID": "0E0D22CC-0FC8-4617-9448-A17B2C284C4F",
+      "nativeAppLaunched": false,
+      "nativeCaseCount": 0,
+      "error": {
+        "type": "RuntimeError",
+        "reason": "bootstatus failed: timeout"
+      },
+      "bootLastObserved": {
+        "status": "2",
+        "isTerminal": false,
+        "elapsed": "02:56."
+      },
+      "cleanup": {
+        "shutdown": "timeout",
+        "delete": 0,
+        "absentFromInventory": true,
+        "simulatorID": "0E0D22CC-0FC8-4617-9448-A17B2C284C4F"
+      },
+      "independentAbsent": true,
+      "boundCommands": [
+        {
+          "operation": "boot",
+          "startedWallTimeNS": 1792661437013334000,
+          "finishedWallTimeNS": 1792661440206100000,
+          "exitCode": 0,
+          "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "operation": "bootstatus",
+          "startedWallTimeNS": 1792661440238755000,
+          "finishedWallTimeNS": 1792661722535004000,
+          "exitCode": "timeout",
+          "stdoutSHA256": "8f6aa6cf9e64302dee7ca6f542865f8990a346d5c2663ad2c7304952de83c5bc",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "operation": "shutdown",
+          "startedWallTimeNS": 1792661723221266000,
+          "finishedWallTimeNS": 1792661788390583000,
+          "exitCode": "timeout",
+          "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "operation": "delete",
+          "startedWallTimeNS": 1792661788435586000,
+          "finishedWallTimeNS": 1792661795481676000,
+          "exitCode": 0,
+          "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "privateReceiptSHA256": {
+        "summary.json": "fe166e6f67cf03a2606e86451cf0ab570d9e23b1b0c8451aef25b15c92717b2d",
+        "commands.jsonl": "f47d8f516857fa4071f4e224def17f6f6f741876d7f2b0d99742f5acb3decaff",
+        "bootstatus.stdout": "8f6aa6cf9e64302dee7ca6f542865f8990a346d5c2663ad2c7304952de83c5bc",
+        "cleanup.json": "75a3cd9261139876bb31883f09c255bdd4aacd55c1d91169775eec2fb5999f55",
+        "independent-cleanup-check.json": "067611bafaea4fe0d05d05cfc61a485a517857007a07f06eef212fa45f26b732",
+        "build/build-receipt.json": "b9c05895f783a5fe98572c6723ecc0137c5c45be389a3849a6b625dca77ce18b"
+      },
+      "classification": "boot/data migration timeout before any environment proof or install; shutdown timed out; delete succeeded and independent inventory absence verified"
+    }
+  ],
+  "productQualification": false,
+  "physicalDeviceQualification": false,
+  "apnsUsed": false,
+  "globalDYLDModified": false,
+  "unusedFinalAttempt": {
+    "simulatorID": "21974CC4-7C06-43E3-8F35-EEDCAF325739",
+    "createdButNeverBooted": true,
+    "deleteExitCode": 0,
+    "independentInventoryExitCode": 0,
+    "absentFromIndependentInventory": true,
+    "inventorySHA256": "02d0f40b6e69703ca6106b7f89667e3a3a010a65fa7a16a7288047a6bc02bb5f",
+    "startedWallTimeNS": 1792663588841309000,
+    "finishedWallTimeNS": 1792663589068924000,
+    "noNativeAttempt": "Final bounded attempt was not used because pre-boot load rose again; root directed minimal CI runner instead.",
+    "privateReceiptSHA256": "13f02703c1e3e3aaf7397335316f8f3b185c31d848ecf7d656f57ff5235f7880"
+  }
+}
