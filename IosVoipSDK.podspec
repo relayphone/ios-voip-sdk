@@ -28,6 +28,8 @@ Pod::Spec.new do |s|
   s.platform = :ios, '17.4'
   s.swift_version = '6.0'
   s.static_framework = true
+  # Qualify umbrella imports against unrelated development-pod project headers.
+  s.header_dir = 'IosVoipSDK'
   s.dependency 'ExpoModulesCore'
   s.frameworks = 'LiveCommunicationKit', 'AVFoundation', 'PushKit'
   media_sources = ['ExpoMedia/Shared/ExpoMediaSupport.swift', "ExpoMedia/#{media_directory}/**/*.{swift,h,m}"]
