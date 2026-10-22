@@ -119,6 +119,11 @@ private final class SDKDeviceQAController: ObservableObject {
         }))
       record("launch.ready")
       status = traceFailed ? "Trace unavailable" : "SDK ready — " + (storage?.configuration.scenario.rawValue ?? "unknown")
+      if storage?.configuration.scenario == .activeCall,
+         environment["SDK_DEVICE_QA_AUTO_REFERENCE"] == "1" {
+        record("fixture.automaticReferenceRequested")
+        startReferenceCall()
+      }
     } catch { status = "SDK device QA could not start" }
   }
 
@@ -132,7 +137,11 @@ private final class SDKDeviceQAController: ObservableObject {
         try client.reportConversation(conversation.id, report: .connected)
         record("fixture.connectedReport", conversationID: conversation.id)
       } catch { record("fixture.connectedReportFailed", conversationID: conversation.id) }
+    }
+    // Proposed fixture budget from first live observation, not an OS deadline.
+    for conversation in latest where conversation.status != .ended && cleanup[conversation.id] == nil {
       let id = conversation.id
+      record("fixture.cleanupScheduled", conversationID: id)
       cleanup[id] = Task { @MainActor [weak self] in
         do { try await Task.sleep(for: .seconds(60)) } catch { return }
         guard let self, self.latest.contains(where: { $0.id == id && $0.status != .ended }) else { return }

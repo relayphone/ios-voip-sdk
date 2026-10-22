@@ -36,6 +36,7 @@ leaves the latency unanswered.
 
 ## D2 — mustReport during an active conversation
 
+- Manual button or explicit `SDK_DEVICE_QA_AUTO_REFERENCE=1` / actual trigger evidence:
 - Reference conversation UUID / joined and connected evidence before push:
 - State around delivery / reference ended or 60-second cleanup reached:
 - Actual `push.ingress` API / metadata `mustReport` / native timestamp:
@@ -55,6 +56,7 @@ the active metadata-value question. Record observed values without predicting th
 - Observation window chosen before send (proposed 30 seconds; no Apple-deadline claim):
 - Same PID and launch identity observed at window start/end / actual elapsed time:
 - Process exit/restart or unavailable observation evidence:
+- First-live cleanupScheduled / cleanupDeadline / end result / observation interference:
 - Conclusion / limits / missing evidence:
 
 Completion marks invocation, not a system reporting-check acknowledgement.
@@ -63,6 +65,7 @@ optional push, APNs 200 alone, successful report alone or a new process does not
 
 ## Closure
 
+- Per-call first-live cleanup budget (60 seconds, best effort) / cancelled or delayed attempts:
 - End-all / terminal conversation evidence / copied traces and command files hashed:
 - Credentials removed / temporary key copies removed (no key material here):
 - Public sanitized receipt proposal (review before publication):

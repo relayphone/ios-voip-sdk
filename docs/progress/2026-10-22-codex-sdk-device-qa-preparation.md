@@ -112,3 +112,26 @@ not relabel or rebuild that executable.
 Device installation/launch, locked-file behavior, D1/D2/D3, media flow and R3
 remain unmeasured by this follow-up. No credential fetch, push, device query or
 native build occurred while authoring it.
+
+## Proposed unattended fixture controls
+
+The `active-call` launch now accepts the explicit, nonpersisted
+`SDK_DEVICE_QA_AUTO_REFERENCE=1` opt-in. After `launch.ready` it records the
+operator trigger and invokes the same public SDK command as the reference-call
+button. First-live snapshots now arm the existing 60-second best-effort end
+request for each conversation, including unanswered incoming calls; repeated
+snapshots do not reset it and terminal/absent conversations cancel it. This
+fixture budget is separate from native action deadlines and may be delayed by
+suspension. Trigger and timer scheduling behavior remain proposed until observed
+in a source-bound device run.
+
+This changes a native fixture input. The retained `638cd7b` enrollment app and
+its evidence keep their original identity and exclude these controls. A later
+build receives a new source/input/executable receipt; these documentation changes
+do not relabel the original executable.
+
+**Measured host checks:** the changed fixture parses with `SDK_DEVICE_QA`;
+the operator shell snippets and local links validate. The existing storage
+controls pass all nine checks, and diagnostics pass four groups plus normal-build
+symbol stripping. These regressions do not execute the controller's auto-start
+or 60-second timer, which remain device-run acceptance observations.

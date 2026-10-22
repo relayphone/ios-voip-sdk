@@ -90,6 +90,12 @@ The supported measurement scenarios are `locked-answer`, `active-call` and
 the fixture's persisted readiness state before any cold push. A cold APNs launch
 does not inherit the environment from a previous development-tool launch.
 The fixture starts the SDK during application launch, before scene readiness.
+For `active-call` only, the explicit launch environment opt-in
+`SDK_DEVICE_QA_AUTO_REFERENCE=1` requests the existing reference-call command
+after `launch.ready`; actual connected state must still be observed. The flag
+is not persisted. Every first-observed live conversation, including unanswered
+incoming calls, gets a best-effort end request after a 60-second sleep. This
+fixture budget is not an OS deadline and can be delayed by suspension.
 
 Private app-container storage is under `Documents/SDKDeviceQA/`:
 

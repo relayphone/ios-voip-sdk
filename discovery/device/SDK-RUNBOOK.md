@@ -41,6 +41,7 @@ printf '%s\n' "$?" >"$SDK_DEVICE_RUN_DIR/install.exit"
 
 DEVICECTL_CHILD_SDK_DEVICE_QA_RUN_ID="$SDK_DEVICE_QA_RUN_ID" \
 DEVICECTL_CHILD_SDK_DEVICE_QA_SCENARIO="$SDK_DEVICE_QA_SCENARIO" \
+DEVICECTL_CHILD_SDK_DEVICE_QA_AUTO_REFERENCE="${SDK_DEVICE_QA_AUTO_REFERENCE:-0}" \
 perl -e 'alarm shift; exec @ARGV' 60 xcrun devicectl device process launch \
   --device "$SDK_DEVICE_ID" "$SDK_DEVICE_BUNDLE_ID" --timeout 45 \
   --json-output "$SDK_DEVICE_RUN_DIR/launch.json" >"$SDK_DEVICE_RUN_DIR/launch.log" 2>&1
@@ -69,6 +70,22 @@ fresh output names and the new scenario. An already running app does not rerun
 its launch configuration. Keep its readiness launch separate from its later
 cold APNs launch; the cold launch reads persisted configuration, not the prior
 process environment.
+
+For D2 only, explicitly set `SDK_DEVICE_QA_AUTO_REFERENCE=1` before the
+`active-call` launch to request the existing reference-call command after
+`launch.ready`. Other scenarios ignore this opt-in. Confirm
+`fixture.automaticReferenceRequested`, then actual start/action/state evidence;
+the trigger itself does not prove a connected conversation. This flag is not
+persisted for later APNs launches. The UI button remains available for manual use.
+
+Each conversation gets one best-effort cleanup task at its first live snapshot,
+including an unanswered incoming call. `fixture.cleanupScheduled` marks arming;
+after a 60-second sleep it requests the normal SDK end command only if the call
+is still live, recording `fixture.cleanupDeadline` and any `fixture.endFailed`.
+Later snapshots do not reset this budget; ended/absent calls cancel it. Scheduling
+and app suspension may delay the attempt. This is a proposed fixture budget,
+not an OS deadline or a guarantee of terminal state. Record interference with
+any observation window rather than treating cleanup as native timeout behavior.
 
 ```sh
 : "${SDK_DEVICE_PID:?known owned app PID from its launch receipt}"
@@ -137,11 +154,12 @@ hashes, run ID, launch ID, PID, delivery/action/conversation IDs and actual OS.
   tap; record tap evidence and its uncertainty separately. The fixture performs
   synchronous MainActor JSON/`fsync` work, so this is instrumented fixture latency,
   not a production SDK latency baseline. No activation means no latency result.
-- **D2:** in `active-call`, use the fixture's reference-call button and establish
+- **D2:** in `active-call`, use the explicit auto-reference opt-in or button and establish
   a joined/connected conversation before a fresh invitation. Read `api=metadata`
   and its actual `mustReport` on `push.ingress`. A legacy callback has no measured
   metadata value. App state alone does not prove an active conversation. The
-  fixture ends reference calls after 60 seconds; delivery after end is inconclusive.
+  fixture requests cleanup after its first-live 60-second budget; delivery after
+  the reference call ends is inconclusive.
 - **D3:** prove cold launch, actual required ingress (`mustReport=true`), matching
   `report.begin`, successful `report.result`, `push.completion`, and survival of
   the same process through a recorded observation window (proposed: 30 seconds).
