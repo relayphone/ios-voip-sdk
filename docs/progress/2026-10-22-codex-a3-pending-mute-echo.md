@@ -33,8 +33,12 @@ with delayed fulfillment on the dedicated phone, as required by
 echo timing measurement occurred here. A0 release blockers and other steering
 items remain separately tracked; this acceptance is A3 host behavior only.
 
-**A2 integration note:** this base uses the platform deadline directly. Its
-timeout control supplies 0.12 seconds at the test LCK boundary. When A2 adds a
-1.5-second settlement margin, adjust that boundary timeout to 1.62 seconds to
-retain the same effective host budget. Do not disable the production margin
-for the test.
+**Measured A2 integration:** the [follow-up receipt](../verification/2026-10-22-a3-pending-mute-echo/a2-stack-followup.json)
+binds the merge of A2 parent `1fd33b4969a5a19dee14b18da354612f9b9534ef`
+and the current source inputs. All seven actual-client mute groups pass, with
+the app handler held for at least 42.369 ms. Core, push, terminal projection,
+report serialization and deadline controls also pass. The timeout fixture now
+supplies 1.62 seconds at the LCK boundary, retaining its 0.12-second effective
+host budget after A2's production 1.5-second settlement margin. The original
+red/green receipt and streams remain unchanged. This follow-up ran on the host;
+native LCK delayed-fulfill echo timing remains unmeasured.
