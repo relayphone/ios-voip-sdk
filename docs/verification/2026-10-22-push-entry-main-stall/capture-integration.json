@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "classification": "host affected runner/gate controls after capture integration; no app/native execution",
+  "baseCommit": "d344d31328907e5352e57e0536124d42e6d2a516",
+  "mergeCommit": "a8e1b84a12d62612dbb5f459120031337849c6a8",
+  "prior25ChecksReceiptSHA256": "f857877ae52b68497c3584d8e666672c8d1bc6ece0aa57b6e32fa24bd92700d8",
+  "priorWorkingInputsSHA256": "db8056389279fe5062cc80e0d848d2fcfaae72bb540f69a6b170c244075d46b2",
+  "changedSourceFilesSincePriorChecks": [
+    "discovery/run_sdk_m0.sh"
+  ],
+  "workingInputsSHA256": "8979584ddaa93d124930fe536cef3e4b19c69e8c07076f464eb5cd0ca719b05c",
+  "sourceUnchanged": true,
+  "checks": [
+    {
+      "check": "m0",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m0.py"
+      ],
+      "startedWallTimeNS": 1792670346452336000,
+      "finishedWallTimeNS": 1792670347389194000,
+      "exitCode": 0,
+      "stdoutSHA256": "d66b3d99f66757cadfd8e1cdb633286dfc3036b4fb090e43c555f5eba06c1f3e",
+      "stderrSHA256": "8d6584cba4b2de68a61416dbb28ea4770aaec0d4a3e14278e883019f3f9eeafe"
+    },
+    {
+      "check": "m1",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "startedWallTimeNS": 1792670347389210000,
+      "finishedWallTimeNS": 1792670348367889000,
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "f11366153d9b512517f9ad7fafbb8acb0b0cddf1f551e7ed52971b5b54f25a13"
+    },
+    {
+      "check": "contracts",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "startedWallTimeNS": 1792670348367910000,
+      "finishedWallTimeNS": 1792670348961233000,
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "6633be537566a8a075b40eaac170be41eb49ec61e3a530d14e20a36943be71cf"
+    },
+    {
+      "check": "capture",
+      "argv": [
+        "python3",
+        "discovery/check_push_report_capture.py"
+      ],
+      "startedWallTimeNS": 1792670348961247000,
+      "finishedWallTimeNS": 1792670349120186000,
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "8aab28da655a3f21320b0a03d2b54e0849d74845284cd66aeabfb61ac5c33c84"
+    },
+    {
+      "check": "workflow",
+      "argv": [
+        "actionlint",
+        ".github/workflows/sdk-m0.yml"
+      ],
+      "startedWallTimeNS": 1792670349120200000,
+      "finishedWallTimeNS": 1792670349231640000,
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "check": "syntax",
+      "argv": [
+        "bash",
+        "-n",
+        "discovery/run_sdk_m0.sh"
+      ],
+      "startedWallTimeNS": 1792670349231653000,
+      "finishedWallTimeNS": 1792670349243495000,
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "check": "diff",
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "startedWallTimeNS": 1792670349243508000,
+      "finishedWallTimeNS": 1792670349258015000,
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "success": true,
+  "sourceSHA256": {
+    "discovery/run_sdk_m0.sh": "3449a283ed6252a014ce4a3c054d9c00581eb7e37d70d7f21a3257d0320ac142"
+  },
+  "sourceMapDerivation": "Start with host-checks.json sourceSHA256 and replace exactly the one listed source hash; all other 119 inputs are unchanged.",
+  "sourceCount": 120,
+  "priorPublic25ChecksReceiptSHA256": "2b5a92cccb432c15d3a2474db924f61ceb9ed3efd2de70460f103e886f9d0d33",
+  "retainedPrivateReceiptSHA256": "c853fee754675dbaa9afb60937b1f8b09668f297725da9d83865b79b475461fd"
+}

@@ -10,6 +10,7 @@ cd "$(dirname "$0")/.."
 : "${SDK_M0_BUILD_LOGS:?provide the nonempty native build logs directory}"
 if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
   : "${SDK_M1_CONTRACT_BUILD:?provide the source-bound Debug M1 contract build}"
+  : "${SDK_PUSH_ENTRY_BUILD:?provide the source-bound Debug A0/A1 push-entry build}"
 fi
 if [[ -n "${OUT:-}" ]]; then mkdir "$OUT"; else OUT=$(mktemp -d "${TMPDIR:-/tmp}/sdk-m0.XXXXXX"); fi
 OUT=$(cd "$OUT" && pwd)
@@ -191,7 +192,10 @@ PY
   mkdir "$OUT/m1/contracts"
   cp -R "$SDK_M1_CONTRACT_BUILD" "$OUT/m1/contracts-build"
   limit 180 xcrun simctl install "$UDID" "$OUT/m1/contracts-build/SDKM1Contracts.app" > "$OUT/m1/contracts-install.log" 2>&1
-  for case in guard unhandled-accept unhandled-fail; do
+  # The app is installed once and only relaunched below. Reuse its first
+  # observed data container instead of making another IPC query after each case.
+  contract_container=""
+  for case in guard unhandled-accept unhandled-fail duplicate-wrapper; do
     name="sdk-m1-contract-$case"
     env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
       SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M1_CONTRACT_CASE="$case" \
@@ -200,8 +204,11 @@ PY
       --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.iosvoipsdk.m1contracts \
       --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.m1contracts \
       --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.iosvoipsdk.m1contracts
-    container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.m1contracts data)
-    cp "$container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m1/contracts/$name.runtime.jsonl"
+    if [[ -z "$contract_container" ]]; then
+      contract_container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.m1contracts data)
+      [[ -n "$contract_container" && -d "$contract_container" ]] || { echo "Missing owned contract data container" >&2; exit 1; }
+    fi
+    cp "$contract_container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m1/contracts/$name.runtime.jsonl"
     python3 - "$OUT/m1/contracts/$name.receipt.json" "$OUT/m1/contracts/$name.runtime.jsonl" <<'PY'
 import hashlib,json,pathlib,sys
 receipt,journal=map(pathlib.Path,sys.argv[1:])
@@ -210,6 +217,12 @@ row['journalSHA256']=hashlib.sha256(journal.read_bytes()).hexdigest()
 receipt.write_text(json.dumps(row,indent=2)+'\n')
 PY
   done
+  # Reuse this fresh owned simulator and its preserved launch environment. The
+  # focused fixture runs three conforming deliveries and two required refusals;
+  # these in-app injections do not stand in for a push-initiated cold launch.
+  SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
+    python3 discovery/run_push_report_entry.py --build "$SDK_PUSH_ENTRY_BUILD" \
+      --out "$OUT/push-entry" --simulator "$UDID"
 fi
 cleanup_simulator
 redact_external_paths

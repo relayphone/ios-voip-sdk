@@ -8,7 +8,7 @@ import sys
 import time
 import uuid
 from device_oracles import check_d5_composition, d5_compositions
-from summarize import load
+from summarize import load, push_report_boundaries
 
 ROOT = Path(__file__).resolve().parent.parent
 D5_REFERENCE = '2026-10-20-iphone13-ui10-app'
@@ -152,7 +152,11 @@ try:
     probe = [json.loads(line) for line in (container / 'Documents/trace.jsonl').read_text().splitlines()]
     cancelled = {identity[:8] for identity in invalidated['actionIDs']}
     assert not any(r['event'] == 'provider.perform' and r.get('id') in cancelled for r in probe), 'invalidated composition reached delegate'
+    wait(lambda: len([r for r in journal() if r['event']=='push.completed']) ==
+                 len([r for r in journal() if r['event']=='push.callbackReturned']) ==
+                 len([r for r in journal() if r['event']=='push.received']), 'all push callback/completion boundaries')
     rows = journal()
+    push_report_boundaries(rows)
     (output / 'cli.probe.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in probe))
     (output / 'cli.engine.jsonl').write_text(''.join(json.dumps(r) + '\n' for r in rows))
     run(['xcrun', 'simctl', 'terminate', device, bundle])

@@ -156,6 +156,50 @@ private struct IncomingPushAssociations {
   }
 }
 
+// A report counts only when the interposed genuine provider report is entered.
+// This is simulator policy, not a synthetic SDK "about to await" signal.
+private struct PushReportingObligations {
+  struct Observation {
+    let required: Bool
+    let reportEntered: Bool
+    let violation: String?
+  }
+  private struct Delivery {
+    let required: Bool
+    var reportEntered = false
+    var returned = false
+    var completed = false
+  }
+  private var deliveries: [String: Delivery] = [:]
+  mutating func receive(_ id: String, required: Bool) -> Bool {
+    guard !id.isEmpty, deliveries[id] == nil else { return false }
+    deliveries[id] = Delivery(required: required)
+    return true
+  }
+  mutating func entered(_ id: String) {
+    guard !id.isEmpty else { return }
+    deliveries[id]?.reportEntered = true
+  }
+  mutating func returned(_ id: String) -> Observation {
+    observe(id, completion: false)
+  }
+  mutating func completed(_ id: String) -> Observation {
+    observe(id, completion: true)
+  }
+  private mutating func observe(_ id: String, completion: Bool) -> Observation {
+    guard var delivery = deliveries[id] else {
+      return Observation(required: false, reportEntered: false, violation: "unknown-delivery")
+    }
+    let repeated = completion ? delivery.completed : delivery.returned
+    if completion { delivery.completed = true } else { delivery.returned = true }
+    let violation = repeated ? "repeated-" + (completion ? "completion" : "callback-return") :
+      delivery.required && !delivery.reportEntered ? "required-report-missing-at-" + (completion ? "completion" : "callback-return") : nil
+    if delivery.completed && delivery.returned { deliveries.removeValue(forKey: id) }
+    else { deliveries[id] = delivery }
+    return Observation(required: delivery.required, reportEntered: delivery.reportEntered, violation: violation)
+  }
+}
+
 /// One private serial queue owns all state. App code always executes elsewhere.
 @objc(CKSimulatorEngine)
 final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendable {
@@ -188,6 +232,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private let controllerQueues = NSMapTable<CXCallController, DispatchQueue>.weakToStrongObjects()
   private var calls: [UUID: CallState] = [:]
   private var incomingPushAssociations = IncomingPushAssociations()
+  private var pushReportingObligations = PushReportingObligations()
   private var pendingActions: [UUID: RuntimePendingAction] = [:]
   private let deadlines = NSMapTable<CXAction, NSDate>.weakToStrongObjects()
   private var observers: [ObjectIdentifier: ObserverRegistration] = [:]
@@ -395,16 +440,34 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   func record(event: String, fields: [String: Any]) {
     withState {
       guard !stopped else { return }
-      if event == "push.completed", let pushID = fields["pushID"] as? String {
-        incomingPushAssociations.complete(pushID: pushID)
+      var row = fields
+      var pushViolation: String?
+      if let pushID = fields["pushID"] as? String, !pushID.isEmpty {
+        switch event {
+        case "push.received":
+          if !pushReportingObligations.receive(pushID, required: fields["mustReport"] as? Bool ?? true) {
+            pushViolation = "repeated-delivery"
+          }
+        case "report.incoming": pushReportingObligations.entered(pushID)
+        case "push.completed", "push.callbackReturned":
+          let observation = event == "push.completed" ? pushReportingObligations.completed(pushID) : pushReportingObligations.returned(pushID)
+          row["mustReport"] = observation.required
+          row["reportEntered"] = observation.reportEntered
+          pushViolation = observation.violation
+          if event == "push.completed" { incomingPushAssociations.complete(pushID: pushID) }
+        default: break
+        }
       }
       sequence += 1
-      var row = fields
       row.merge(["event": event, "sequence": sequence, "runID": runID, "pid": Int(getpid()),
                  "bundleID": bundleID, "profile": profile.id,
                  "t_ms": (DispatchTime.now().uptimeNanoseconds - epoch) / 1_000_000]) { _, new in new }
       if let data = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) {
         journal?.write(data + Data([10]))
+      }
+      if let pushViolation {
+        record(event: "diagnostic.pushReportingViolation", fields: ["severity": "error", "reason": pushViolation,
+          "pushID": fields["pushID"] as? String ?? ""])
       }
     }
   }
@@ -901,18 +964,18 @@ public enum RuntimeBootstrap {
   }
   #endif
 
-  public static var currentPushIdentifier: String? {
+  public nonisolated static var currentPushIdentifier: String? {
     guard CKSimRuntimeIsActive() else { return nil }
     let identifier = CKSimCurrentPushID()
     return identifier.isEmpty ? nil : identifier
   }
 
-  public static func associateIncomingReport(_ id: UUID, pushID: String) {
+  public nonisolated static func associateIncomingReport(_ id: UUID, pushID: String) {
     guard CKSimRuntimeIsActive() else { return }
     RuntimeEngine.existing()?.associateIncomingReport(id, pushID: pushID)
   }
 
-  public static func finishIncomingReport(_ id: UUID, pushID: String) {
+  public nonisolated static func finishIncomingReport(_ id: UUID, pushID: String) {
     guard CKSimRuntimeIsActive() else { return }
     RuntimeEngine.existing()?.finishIncomingReport(id, pushID: pushID)
   }
