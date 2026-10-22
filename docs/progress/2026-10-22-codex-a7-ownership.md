@@ -1,5 +1,7 @@
 # A7 process owner core preparation — October 22, 2026
 
+**Current status:** PR #31 is published. The prior `031da3f` source passed audited SDK and runtime CI. The reviewed parent forward merge below has fresh host evidence; its hosted native acceptance remains pending. Earlier preparation sections retain their original scope.
+
 **Proposed acceptance target:** every SDK creation path claims one process owner
 before constructing its only LCK manager. Native Swift and Expo use the same
 public `VoIPApplication.start` entry; the shared getter and separate client
@@ -88,3 +90,28 @@ preserves that local red and the original hosted state separately. All three
 mandatory whole-client cache modes and the mandatory incoming-delivery host
 control pass; both independent review axes cleared the repair. This is host
 evidence with modeled LCK timing, not a native or device acceptance result.
+
+## Current parent forward merge
+
+Reviewed PR #29 `4e7bba33` is merged normally, retaining main `6f58777`,
+the six-case native PushKit fixture, measured host metadata and the narrow
+example-container lookup cache. Production SDK, Expo and packaging bytes remain
+identical to the prior qualified `031da3f` head. The source-inventory conflict
+uses the exact unique union of both parents; ownership controls remain alongside
+the new native main-stall and actual-loop container controls.
+
+**Measured:** the [forward receipt](../verification/2026-10-22-sdk-process-owner-core/rejection-parent-forward.json)
+binds 136 SDK inputs to digest `15d443b079a5324f54e5e294d334c41a291490723cea6d914609e066f52ef1e7`.
+All fourteen affected host commands passed once, including eleven ownership
+groups, all three incoming-cache modes, the mandatory incoming-delivery control,
+the six-case push gates, eleven native-origin controls, four actual-loop
+container controls and eleven TypeScript runtime controls. Both independent
+integration review axes cleared the frozen merge.
+
+The historical [SDK run](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39780116081)
+and [runtime run](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39780115888)
+remain green and artifact-audited at `031da3f`; the receipt preserves those
+identities separately from the new host result and both parent red runs. No
+native execution, product build, audio work or workflow retry was used for this
+forward merge. Fresh hosted acceptance is required for its changed fixture and
+capture inputs.
