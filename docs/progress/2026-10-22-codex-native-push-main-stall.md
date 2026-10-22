@@ -24,15 +24,18 @@ Acceptance requires the actual report hook after stall start and before both the
 native method's return and stall end. Strict serialized journal order establishes
 these causal boundaries even when fast events share a millisecond timestamp. The
 observed stall must last at least 2.9 seconds. One actual successful report
-settlement must precede the one native completion after main resumes, and the
-public SDK snapshot must contain the same incoming UUID and canonical payload.
+settlement must precede the one native completion, and the public SDK snapshot
+must contain the same incoming UUID and canonical payload. Settlement and native
+completion may occur while main is stalled or after it resumes.
 Missing, substituted, reordered and duplicate evidence fails.
 
-The runtime deliberately dispatches its incoming-report completion to main. The
-native two-second settlement wait is therefore expected to expire during this
-three-second fixture stall even if report entry succeeds. That refusal diagnostic
-does not become a fabricated settlement acknowledgement. The separate actual
-hook boundary is the entry oracle; the four-second completion watchdog must not
+The runtime dispatches incoming-report completion to the provider's configured
+queue, falling back to main. Public LCK delegate callbacks arriving on main do
+not establish its internal provider completion queue. The native two-second
+settlement wait may expire during this three-second fixture stall if completion
+waits for main, even when report entry succeeds. Early settlement and completion
+are equally valid. The separate actual hook boundary is the entry oracle; a wait
+refusal does not fabricate settlement, and the four-second watchdog must not
 replace the successful settlement required by this case.
 
 Physical locked/unlocked APNs cold launches and lock-screen answer-to-activation
@@ -57,3 +60,14 @@ workflow and syntax checks at digest
 `ae3c7e79ab7778d19cb24ebf23c86ea81f256caf0309d79af3a6f62942c4e9fc`.
 The unchanged compiler and intake suites were not repeated. Both review axes
 cleared the integration. Native CI and corrected-device acceptance remain pending.
+
+A subsequent [synthetic oracle correction](../verification/2026-10-22-native-push-main-stall/oracle-correction.json)
+removes the unmeasured private-queue assumption. The old gate rejects a valid
+early-settlement fixture; the revised gate accepts it while requiring the same
+strict entry/return/stall chain and the separate report/settlement/completion
+chain. Four synthetic positives and 62 refusals pass, along with the full-capture
+and diff checks, at input
+`6108b9a7f56c543a480ca602dbacef3e3541c502c1605142bbd867abf6fbb78c`.
+Only the gate and its synthetic controls change; the other 41 integration inputs,
+including all shipping and probe/compiler inputs, remain identical. This records
+a test-oracle correction, not a measured framework queue or native result.

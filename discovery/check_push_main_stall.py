@@ -64,6 +64,15 @@ def main():
     tied = copy.deepcopy(runtime)
     tied[4]['t_ms'] = tied[3]['t_ms']
     positives.append(qualify_main_stall_journal(tied, probes, RUN_ID, 123))
+    # Settlement and native completion may both precede the native return.
+    # This is a synthetic permissible interleaving, not a measured LCK queue.
+    by_event = {row['event']: row for row in runtime}
+    early_order = ('provider.created', 'fixture.mainStallBegan', 'fixture.nativeCallbackBegin',
+                   'report.incoming', 'report.completed', 'fixture.nativeCompletion',
+                   'fixture.nativeCallbackReturned', 'fixture.mainStallEnded')
+    early = [dict(by_event[event], sequence=index + 1, t_ms=timestamp)
+             for index, (event, timestamp) in enumerate(zip(early_order, (0, 100, 101, 101, 102, 103, 104, 3100)))]
+    positives.append(qualify_main_stall_journal(early, probes, RUN_ID, 123))
 
     def event(rows, name): return next(row for row in rows if row['event'] == name)
     def remove(rows, name): rows.remove(event(rows, name))
@@ -96,7 +105,7 @@ def main():
         ('missing-native-completion', lambda r,p: remove(r,'fixture.nativeCompletion')),
         ('duplicate-native-completion', lambda r,p: duplicate(r,'fixture.nativeCompletion')),
         ('completion-before-settlement', lambda r,p: move(r,'fixture.nativeCompletion','report.completed')),
-        ('settlement-before-stall-end', lambda r,p: move(r,'report.completed','fixture.mainStallEnded')),
+        ('settlement-before-actual-report', lambda r,p: move(r,'report.completed','report.incoming')),
         ('wrong-completion-ordinal', lambda r,p: event(r,'fixture.nativeCompletion').update(ordinal=2)),
         ('boolean-completion-ordinal', lambda r,p: event(r,'fixture.nativeCompletion').update(ordinal=True)),
         ('wrong-owner', lambda r,p: event(r,'fixture.nativeCallbackBegin').update(owner='0x4321')),

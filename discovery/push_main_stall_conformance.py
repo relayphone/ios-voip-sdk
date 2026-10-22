@@ -86,9 +86,13 @@ def qualify_main_stall_journal(rows, probe_rows, run_id, pid):
             'direct report unexpectedly has a push association')
     require(type(settlement.get('error')) is int and settlement['error'] == 0,
             'actual fresh-call report did not settle successfully')
-    causal = (began, callback, report, returned, ended, settlement, completed)
-    require(all(a['sequence'] < b['sequence'] for a, b in zip(causal, causal[1:])),
-            'actual entry, direct return, stall end or completion order differs')
+    entry_order = (began, callback, report, returned, ended)
+    require(all(a['sequence'] < b['sequence'] for a, b in zip(entry_order, entry_order[1:])),
+            'actual report entry, direct return or main-stall order differs')
+    # Settlement has no assumed queue relationship to native return or stall end.
+    settlement_order = (report, settlement, completed)
+    require(all(a['sequence'] < b['sequence'] for a, b in zip(settlement_order, settlement_order[1:])),
+            'actual report settlement or native completion order differs')
     span_ms = ended['t_ms'] - began['t_ms']
     require(span_ms >= 2900, 'runtime clock does not prove the main stall')
 

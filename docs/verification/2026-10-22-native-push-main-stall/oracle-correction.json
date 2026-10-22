@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "classification": "synthetic oracle ordering correction only; no LCK behavior, app build or native/device result",
+  "baseCommit": "b85c33f7b299af5ebc4bd89e893c803f2a85ba91",
+  "priorMergedReceiptSHA256": "e85aa7570ebf2c3126427bbcf543f15b46562efdf56e14652fc7f304aaba2a82",
+  "changedInputs": [
+    "discovery/check_push_main_stall.py",
+    "discovery/push_main_stall_conformance.py"
+  ],
+  "workingInputsSHA256": "6108b9a7f56c543a480ca602dbacef3e3541c502c1605142bbd867abf6fbb78c",
+  "unchangedOther41Inputs": true,
+  "sourceUnchanged": true,
+  "redProofSHA256": "80988709c5e23fb51a432bb983883a4716bb7587b17b90f1231a8b21d97bcb7d",
+  "greenProofSHA256": "577ae6b2882f173d5a0a2679f50f71a227b361304bf218a0d518dd85e1cd5128",
+  "checks": [
+    {
+      "check": "gate-final",
+      "argv": [
+        "python3",
+        "discovery/check_push_main_stall.py"
+      ],
+      "startedWallTimeNS": 1792672828946831000,
+      "finishedWallTimeNS": 1792672829004797000,
+      "exitCode": 0,
+      "stdoutSHA256": "915431db2b9a9f584e0cddfb2182166d3a207c2af01643cf3dadd05edf141528",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "check": "capture-final",
+      "argv": [
+        "python3",
+        "discovery/check_push_report_capture.py"
+      ],
+      "startedWallTimeNS": 1792672829004824000,
+      "finishedWallTimeNS": 1792672830289111000,
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "21abc86bd455fc95633313365b4a30a5ea7d25c5e2d60f6437bcef7d0ae73bff"
+    },
+    {
+      "check": "diff-final",
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "startedWallTimeNS": 1792672830289141000,
+      "finishedWallTimeNS": 1792672830308988000,
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "success": true,
+  "sourceSHA256": {
+    "discovery/check_push_main_stall.py": "a75594ac8f09de59ddb93bd448fd517e7a65cf3d3237fde31012fad155920195",
+    "discovery/push_main_stall_conformance.py": "9b633064ee6c9a4454d17bbb6554a21b871280898f642cfb68b4e964ed2b51ed"
+  },
+  "sourceMapDerivation": "Use merged-host-checks.json sourceSHA256, replacing exactly these two gate/control hashes; the other 41 inputs are unchanged.",
+  "sourceCount": 43,
+  "retainedPrivateReceiptSHA256": "46803aa4997c31394af51f64333dcd26cdac9a05ca1651cded2048b9f809851d",
+  "redProof": {
+    "success": true,
+    "classification": "synthetic RED-first oracle control; no native or LCK behavior claim",
+    "oldGateSHA256": "973caf4c1f5c0b04f75e7f67f4a30bfafdae0c5fbf54debf34f0d64b8c28368e",
+    "fixtureSHA256": "c74467b9aaf917f744460da315972e8c019c065d38ca4664e6f72297f3fa1ee6",
+    "oldGateAccepted": false,
+    "oldGateRefusal": "actual entry, direct return, stall end or completion order differs",
+    "validUnderApprovedTwoChainPolicy": true
+  },
+  "greenProof": {
+    "success": true,
+    "classification": "synthetic GREEN oracle controls only; no native or LCK behavior claim",
+    "earlyFixtureAccepted": true,
+    "earlyFixtureSHA256": "c74467b9aaf917f744460da315972e8c019c065d38ca4664e6f72297f3fa1ee6",
+    "positives": 4,
+    "negativeControls": 62,
+    "newSourceSHA256": {
+      "check_push_main_stall.py": "a75594ac8f09de59ddb93bd448fd517e7a65cf3d3237fde31012fad155920195",
+      "push_main_stall_conformance.py": "9b633064ee6c9a4454d17bbb6554a21b871280898f642cfb68b4e964ed2b51ed"
+    },
+    "controlsSHA256": "915431db2b9a9f584e0cddfb2182166d3a207c2af01643cf3dadd05edf141528"
+  }
+}
