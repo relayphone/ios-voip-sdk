@@ -71,10 +71,9 @@ int main(int argc, const char **argv) {
         require(weakReceiver != nil, "receiver must survive completion");
       } retaining:receiver completionTimeout:0.3];
       receiver = nil;
-      uint64_t before = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-      require(![delivery waitForSettlement:0.2], "main wait must refuse without blocking");
-      require(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - before < 50000000,
-              "main wait refusal must be immediate");
+      // Exceed the host process guard: entering the semaphore wait must fail
+      // the control, without imposing a scheduler-dependent refusal latency.
+      require(![delivery waitForSettlement:120], "main wait must refuse without blocking");
       [delivery finish];
       dispatch_after(deadline(0.08), callback, ^{ verifyReleased(); });
     } else {
