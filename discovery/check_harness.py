@@ -105,7 +105,7 @@ def main():
               "fresh capture without shipping identity accepted")
         checks.append("fresh-capture-requires-shipping-evidence")
         for mutation, error in (("missing", "require one runtime.identity"),
-                                ("unknown", "shipping runtime")):
+                                ("unknown", "invalid shipping runtime version")):
             target = work / f"fresh-{mutation}-runtime-identity"
             shutil.copytree(strict_source, target)
             rows = [json.loads(line) for line in (target / "runtime.jsonl").read_text().splitlines()]
@@ -116,10 +116,13 @@ def main():
             (target / "runtimes.json").write_text(json.dumps(dict(runtimes=[dict(
                 identifier=runtime_id, platform="iOS", version="26.5", buildversion="23F77", isAvailable=True)])))
             (target / "compiler-version.txt").write_text("Xcode 26.6\nBuild version 17F113\n")
+            version = (ROOT.parent / "VERSION").read_text().strip()
+            (target / "runtime-dist").mkdir()
+            (target / "runtime-dist/build-info.json").write_text(json.dumps(dict(version=version)))
             (target / "manifest.json").write_text(json.dumps(dict(schemaVersion=1, profileID="ios-27.0",
                 runID=launch["runID"], simulatorID=launch["simulatorID"], simulatorRuntimeID=runtime_id,
                 simulatorOSVersion="26.5", simulatorOSBuildVersion="23F77", compilerXcodeVersion="26.6",
-                compilerXcodeBuildVersion="17F113")))
+                compilerXcodeBuildVersion="17F113", runtimeVersion=version)))
             if mutation == "unknown":
                 for scenario in ("runtime", "push"):
                     path = target / f"{scenario}.jsonl"

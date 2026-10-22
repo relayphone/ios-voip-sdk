@@ -20,6 +20,8 @@ State and arbitration are per application process; calls in other apps are outsi
 this version's scope. The runtime activates the app's real audio session; it does not provide signaling,
 WebRTC transport, network peers or audio samples for a silent CI microphone.
 
+Standalone release provenance and verification are described in [runtime releases](https://github.com/ziahamza/ios-voip-sdk/blob/main/docs/runtime-releases.md).
+
 ## Build and run
 
 Requirements: macOS, Xcode with an iOS simulator runtime, and Python 3.9 or newer.

@@ -18,11 +18,12 @@ class EnvironmentQualificationTests(unittest.TestCase):
         (package / 'profiles').mkdir(parents=True)
         (package / 'CKSimRuntime.dylib').write_bytes(b'synthetic runtime')
         (package / 'profiles/ios-27.0.json').write_bytes(b'synthetic behavior profile')
+        (package / 'build-info.json').write_text(json.dumps(dict(version='0.1.1')))
         self.runtime = dict(identifier='com.apple.CoreSimulator.SimRuntime.iOS-26-5',
                             platform='iOS', version='26.5', buildversion='23F77', isAvailable=True)
         (self.root / 'runtimes.json').write_text(json.dumps(dict(runtimes=[self.runtime])))
         (self.root / 'compiler-version.txt').write_text('Xcode 26.3\nBuild version 17C100\n')
-        self.manifest = dict(schemaVersion=1, profileID='ios-27.0', runID='synthetic', simulatorID='synthetic',
+        self.manifest = dict(schemaVersion=1, runtimeVersion='0.1.1', profileID='ios-27.0', runID='synthetic', simulatorID='synthetic',
                              simulatorRuntimeID=self.runtime['identifier'], simulatorOSVersion='26.5',
                              simulatorOSBuildVersion='23F77', compilerXcodeVersion='26.3',
                              compilerXcodeBuildVersion='17C100',
@@ -30,7 +31,7 @@ class EnvironmentQualificationTests(unittest.TestCase):
                              profileSHA256=hashlib.sha256(b'synthetic behavior profile').hexdigest(),
                              probeSHA256=hashlib.sha256(b'synthetic probe').hexdigest())
         self.rows = [dict(event='launch', runID='synthetic', simulatorID='synthetic', injected=True),
-                     dict(event='runtime.identity', version='0.1.0',
+                     dict(event='runtime.identity', version='0.1.1',
                           **{key: self.manifest[key] for key in ('runtimeSHA256', 'profileSHA256', 'probeSHA256')})]
 
     def qualify(self):
