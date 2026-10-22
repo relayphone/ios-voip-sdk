@@ -106,11 +106,19 @@ static NSArray<NSNumber *> *datedFulfillmentState(void) {
 @interface ABIProbeScene : UIResponder <UIWindowSceneDelegate>
 @property(nonatomic) UIWindow *window;
 @end
+static dispatch_block_t runWhenSceneActive;
 @implementation ABIProbeScene
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
   self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
   self.window.rootViewController = [UIViewController new];
   [self.window makeKeyAndVisible];
+}
+- (void)sceneDidBecomeActive:(UIScene *)scene {
+  if (!runWhenSceneActive) return;
+  dispatch_block_t run = runWhenSceneActive;
+  runWhenSceneActive = nil;
+  trace(@"abi.sceneActive", @{});
+  dispatch_async(dispatch_get_main_queue(), run);
 }
 @end
 
@@ -126,7 +134,9 @@ static NSArray<NSNumber *> *datedFulfillmentState(void) {
   scenario = NSProcessInfo.processInfo.environment[@"CKSIM_ABI_CASE"];
   trace(@"app.entry", @{});
   trace(@"launch", @{});
-  dispatch_async(dispatch_get_main_queue(), ^{ [self run]; });
+  // Complete UIKit launch before this deliberately short scenario can finish.
+  // The supervisor still obtains the launcher's PID after owned termination.
+  runWhenSceneActive = ^{ [self run]; };
   return YES;
 }
 - (void)checkRefusedQueues:(dispatch_block_t)done {
