@@ -254,8 +254,8 @@ class Controls(unittest.TestCase):
             with self.subTest(event=event, field=field):
                 self.check('duplicate-wrapper', lambda rows, engine:
                     next(r for r in rows if r['event'] == event).update({field: value}))
-        for event, field, value in (('transaction.delivered', 'kinds', ['CXAnswerCallAction']),
-                                   ('transaction.delivered', 'origin', 'app'),
+        for event, field, value in (('transaction.delivered', 'origin', 'app'),
+                                   ('transaction.delivered', 'kinds', ['CXAnswerCallAction']),
                                    ('transaction.delivered', 'actionIDs', ['wrong-action']),
                                    ('action.settled', 'fulfilled', False),
                                    ('provider.apiKind', 'apiKind', 'callkit')):
