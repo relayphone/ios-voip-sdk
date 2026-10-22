@@ -2,7 +2,10 @@
 """Synthetic host preflight controls; no native environment or simulator claim."""
 import copy
 import json
+import os
+from pathlib import Path
 import subprocess
+import tempfile
 from types import SimpleNamespace
 import unittest
 
@@ -89,6 +92,60 @@ class EnvironmentControls(unittest.TestCase):
         result = self.inspect(execute=timed_out)
         self.assertFalse(result['success'])
         self.assertEqual(result['commands']['runtimes']['error'], 'TimeoutExpired')
+
+
+class WorkflowShellControls(unittest.TestCase):
+    """Run the actual YAML step under macOS Bash 3.2; stub only its Python command."""
+
+    @classmethod
+    def setUpClass(cls):
+        workflow = Path(__file__).resolve().parent.parent / '.github/workflows/sdk-m2.yml'
+        # Psych is Ruby's bundled YAML parser; no Python dependency is installed.
+        script = '''require 'json'; require 'yaml'
+job = YAML.load_file(ARGV[0]).fetch('jobs').fetch('selected-livekit')
+steps = job.fetch('steps').select { |step| step['name'] == 'Record and verify the assigned host and requested runtime' }
+abort 'missing or duplicate preflight step' unless steps.length == 1
+puts JSON.generate({'matrix' => job.fetch('strategy').fetch('matrix').fetch('include'), 'run' => steps.first.fetch('run')})
+'''
+        loaded = subprocess.run(['ruby', '-e', script, str(workflow)], capture_output=True, text=True, timeout=10, check=True)
+        cls.workflow = json.loads(loaded.stdout)
+        version = subprocess.run(['/bin/bash', '--version'], capture_output=True, text=True, timeout=10, check=True).stdout
+        if not version.startswith('GNU bash, version 3.2.'):
+            raise RuntimeError('workflow compatibility controls require macOS /bin/bash 3.2')
+
+    def check_lane(self, path):
+        lanes = [lane for lane in self.workflow['matrix'] if lane['audio-path'] == path]
+        self.assertEqual(len(lanes), 1)
+        lane, script = lanes[0], self.workflow['run']
+        for key, value in lane.items():
+            script = script.replace('${{ matrix.' + key + ' }}', value)
+        self.assertNotIn('${{', script)
+        self.assertIn('set -euo pipefail', script)
+        with tempfile.TemporaryDirectory(prefix='ios-voip-m2-bash-') as directory:
+            capture = Path(directory) / 'arguments'
+            runner_temp = Path(directory) / 'runner temp with spaces'
+            stub = 'python3() { printf "%s\\0" "$@" > "$ARGUMENT_CAPTURE"; }\n'
+            result = subprocess.run(['/bin/bash', '--noprofile', '--norc', '-e', '-o', 'pipefail'],
+                input=stub + script, capture_output=True, text=True, timeout=10,
+                env=dict(PATH=os.defpath, RUNNER_TEMP=str(runner_temp), ARGUMENT_CAPTURE=str(capture),
+                         M2_XCODE_BUILD=lane['xcode-build']))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            arguments = capture.read_bytes().split(b'\0')
+            self.assertEqual(arguments.pop(), b'')
+            self.assertEqual(arguments.pop(0), b'discovery/sdk_m2_environment.py')
+            self.assertEqual(len(arguments) % 2, 0)
+            flags = [value.decode() for value in arguments[::2]]
+            self.assertEqual(len(flags), len(set(flags)))
+            expected = {'--runtime': lane['runtime'], '--audio-path': path, '--xcode-version': lane['xcode'],
+                        '--output': str(runner_temp / 'sdk-m2-environment-preflight.json')}
+            if lane['xcode-build']: expected['--xcode-build'] = lane['xcode-build']
+            self.assertEqual(dict(zip(flags, [value.decode() for value in arguments[1::2]])), expected)
+
+    def test_legacy_step_accepts_empty_optional_xcode_build(self):
+        self.check_lane('legacy')
+
+    def test_modern_step_preserves_pinned_optional_xcode_build(self):
+        self.check_lane('modern')
 
 
 if __name__ == '__main__':

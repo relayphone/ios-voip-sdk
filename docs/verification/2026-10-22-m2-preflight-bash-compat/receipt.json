@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "classification": "Measured actual CI failures and local Bash 3.2 workflow controls; current native M2 remains unqualified",
+  "sourceParent": "efbe4da6fc966dc18705278a3ca6f410feb2a502",
+  "reviewedSourceTree": "2aca230bd672127833354ffd76f294ed7d77192b",
+  "changedSourceFiles": {
+    ".github/workflows/sdk-m2.yml": "294fde4cd768de2691d7c95b53684a5c9629f9f11b7b6ee18468ad47ff4870fe",
+    "discovery/check_sdk_m2_environment.py": "b640f74f6dd6b634e1f4acc5802c960cf76c3a59ef2f3c4ef4ee4de88054a897"
+  },
+  "changedSourceFilesSHA256": "358d3854d35c0a5bea14ce512de8c091ea8539c6f169e739f1bb18d562b3106d",
+  "sourceUnchangedDuringControls": true,
+  "actualFailure": {
+    "runId": 39852241175,
+    "runURL": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39852241175",
+    "headSHA": "efbe4da6fc966dc18705278a3ca6f410feb2a502",
+    "actualCheckout": "bf1a1b09e6775241f7addd04217a0278a944c554",
+    "actualCheckoutTree": "3cd8894e267ea815d338db6a26d4351ab9a2566b",
+    "fullTreeEqualsHead": true,
+    "sourceInputsSHA256": "723aa3ae0a82bc64ff994b1160a80d19939fd19eccf05db02f24f3df6dc8f882",
+    "aggregateFailureProofSHA256": "4e06350208084099bf4137c5e66e92e9fa3fdc3eea359659697217e29f8cfddc",
+    "legacy": {
+      "jobId": 120081189831,
+      "jobURL": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39852241175/job/120081189831",
+      "cause": "Bash 3.2 nounset: args[@] unbound variable before Python preflight",
+      "rawJobLogSHA256": "d2f0272c866cf8ff4b16e3b7e1e88ed86478563cb9e4e25d02fd0627309240c4",
+      "preflightEntered": false,
+      "nativeCasesRan": false,
+      "artifactUploaded": false
+    },
+    "modern": {
+      "jobId": 120081190178,
+      "preflightPassed": true,
+      "actualXcode": "27.1",
+      "actualXcodeBuild": "27A9275",
+      "actualRuntime": "iOS 27.0",
+      "actualRuntimeBuild": "24A434",
+      "audioHeaderAndHostControlsPassed": true,
+      "artifactId": 12459252900,
+      "archiveSHA256": "36934226ce93a03ebb89e381b2758ebdd8417c55f16391168ba82b2aee787fe2",
+      "failure": "Release compile redefinitions from shipping and forensic audio lifecycle headers; independent header-packaging correction still required",
+      "nativeCasesRan": false
+    }
+  },
+  "localControls": {
+    "command": [
+      "python3",
+      "-B",
+      "discovery/check_sdk_m2_environment.py"
+    ],
+    "exitCode": 0,
+    "groups": 8,
+    "existingSyntheticEnvironmentGroups": 6,
+    "actualWorkflowBashGroups": 2,
+    "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderrSHA256": "1543da213ae6182e2da47ed3abb2fe19795dc5c5622d4b5ba6911ffda2940906",
+    "bashVersion": "GNU bash, version 3.2.57(1)-release (arm64-apple-darwin26)",
+    "yamlParser": "Ruby bundled Psych",
+    "rubyVersion": "ruby 4.0.7 (2026-09-15 revision 229531a6cf) +PRISM [arm64-darwin27]",
+    "psychVersion": "5.3.1",
+    "dependencyInstalled": false,
+    "pythonCommandStubbed": true,
+    "exactArgumentsAndSpacedOutputPathVerified": true,
+    "verificationBatchElapsedSeconds": 1.670595,
+    "individualCommandCapSeconds": 30
+  },
+  "protectedShipping": {
+    "base": "efbe4da6fc966dc18705278a3ca6f410feb2a502",
+    "selectors": [
+      "Sources",
+      "ExpoMedia",
+      "Integrations",
+      "Package.swift",
+      "IosVoipSDK.podspec",
+      "Expo/plugin"
+    ],
+    "count": 56,
+    "sha256": "4c45875d56ce344a0b59359b01a08558297efef69f2f3a86344a83339564d87d",
+    "unchanged": true
+  },
+  "reviews": {
+    "spec": "CLEAR",
+    "standards": "CLEAR",
+    "scope": "two changed source files; receipt and handoff receive separate readback"
+  },
+  "scope": {
+    "localCompiler": false,
+    "appLaunched": false,
+    "simulatorUsed": false,
+    "deviceUsed": false,
+    "audioPlayedOrCaptured": false,
+    "remoteRerun": false,
+    "remoteDispatch": false,
+    "remoteCancel": false
+  },
+  "pending": [
+    "Separate reviewed forensic-header packaging correction",
+    "Publish both concrete fixes together for one fresh actual PR #17 qualification",
+    "Current-source modern and legacy native M2 journeys and pod-built Release device exclusion"
+  ]
+}

@@ -92,12 +92,11 @@ jobs:
           M2_XCODE_BUILD: ${{ matrix.xcode-build }}
         run: |
           set -euo pipefail
-          args=()
+          args=(--runtime '${{ matrix.runtime }}' --audio-path '${{ matrix.audio-path }}'
+                --xcode-version '${{ matrix.xcode }}'
+                --output "$RUNNER_TEMP/sdk-m2-environment-preflight.json")
           if [[ -n "$M2_XCODE_BUILD" ]]; then args+=(--xcode-build "$M2_XCODE_BUILD"); fi
-          python3 discovery/sdk_m2_environment.py \
-            --runtime '${{ matrix.runtime }}' --audio-path '${{ matrix.audio-path }}' \
-            --xcode-version '${{ matrix.xcode }}' "${args[@]}" \
-            --output "$RUNNER_TEMP/sdk-m2-environment-preflight.json"
+          python3 discovery/sdk_m2_environment.py "${args[@]}"
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "24.22.1"
