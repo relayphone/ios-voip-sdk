@@ -94,8 +94,13 @@ if [[ -n "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" ]]; then
   INHERITED_DYLD=$SIMCTL_CHILD_DYLD_INSERT_LIBRARIES
 else
   query_status=0
-  INHERITED_DYLD=$(limit 15 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>/dev/null) || query_status=$?
-  [[ "$query_status" -le 1 ]] || { echo 'Cannot read inherited launch environment' >&2; exit 1; }
+  printf 'Read inherited DYLD_INSERT_LIBRARIES with a 60-second infrastructure budget.\n' > "$OUT/launch-environment-query.log"
+  INHERITED_DYLD=$(limit 60 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>> "$OUT/launch-environment-query.log") || query_status=$?
+  printf 'Query exit code: %s\n' "$query_status" >> "$OUT/launch-environment-query.log"
+  [[ "$query_status" -le 1 ]] || {
+    printf 'Cannot read inherited launch environment (exit %s); see %s/launch-environment-query.log\n' "$query_status" "$OUT" >&2
+    exit 1
+  }
 fi
 SDK_M0_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - <<'PY'
 import os,pathlib
