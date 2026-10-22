@@ -30,6 +30,7 @@ jobs:
         run: |
           python3 discovery/check_harness.py
           python3 discovery/check_cli_controls.py
+          python3 discovery/check_environment.py
       - name: Select simulator host and compiler independently
         run: |
           sudo xcode-select -s /Applications/Xcode_26.6.app

@@ -110,8 +110,16 @@ def main():
             shutil.copytree(strict_source, target)
             rows = [json.loads(line) for line in (target / "runtime.jsonl").read_text().splitlines()]
             launch = next(row for row in rows if row["event"] == "launch")
+            # Synthetic OS/compiler evidence lets identity mutations reach their
+            # intended gate rather than an unrelated environment rejection.
+            runtime_id = "com.apple.CoreSimulator.SimRuntime.iOS-26-5"
+            (target / "runtimes.json").write_text(json.dumps(dict(runtimes=[dict(
+                identifier=runtime_id, platform="iOS", version="26.5", buildversion="23F77", isAvailable=True)])))
+            (target / "compiler-version.txt").write_text("Xcode 26.6\nBuild version 17F113\n")
             (target / "manifest.json").write_text(json.dumps(dict(schemaVersion=1, profileID="ios-27.0",
-                                                                runID=launch["runID"], simulatorID=launch["simulatorID"])))
+                runID=launch["runID"], simulatorID=launch["simulatorID"], simulatorRuntimeID=runtime_id,
+                simulatorOSVersion="26.5", simulatorOSBuildVersion="23F77", compilerXcodeVersion="26.6",
+                compilerXcodeBuildVersion="17F113")))
             if mutation == "unknown":
                 for scenario in ("runtime", "push"):
                     path = target / f"{scenario}.jsonl"
