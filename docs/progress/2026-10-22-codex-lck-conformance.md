@@ -1,8 +1,9 @@
 # B: prepared LCK runtime acceptance
 
-Status: proposed integration, with measured offline checks. No native LCK build
-or simulator run was performed for this change; the local simulator slot remains
-reserved for R2. Native acceptance is pending after the runtime-fix stack lands.
+Status: native LCK acceptance is pending. Offline checks pass. A later local
+native preparation compiled the probe and runtime, but app installation timed
+out before any LCK launch. The owned simulator still requires cleanup after
+bounded CoreSimulator API retries failed; see the local attempt record below.
 
 ## What is prepared
 
@@ -120,3 +121,27 @@ controls, ten mocked filter controls, nine preflight/dispatch selections, shell
 syntax and whitespace checks pass. Both workflows also pass `actionlint` after
 the final R2 workflow merge. The B native run waits for the R4 simulator cleanup
 release before allocating its simulator.
+
+## Local native preparation attempt
+
+After the final R2/R4 guards were integrated, clean source `d924b34` ran
+`CKSIM_ONLY=lck` in one owned iOS 27.0 simulator. **Measured:** the probe compiled,
+and the runtime package built for arm64/x86_64 as version 0.1.1 with
+`sourceDirty=false`. App installation then exceeded its 180-second budget
+(184 seconds elapsed, exit 142). No LCK scenario was launched, so this supplies
+no native LCK behavior or acceptance result.
+
+The temporary build directory was deleted. Simulator shutdown/delete cleanup
+timed out, and a subsequent bounded query/delete/query attempt still timed out
+after the root build load was reduced. Owned simulator
+`00C40DF9-E9B6-42B0-AC0C-16072CBF17CE` remains unconfirmed for cleanup, with its
+directory still present. No global simulator service or other simulator was
+changed. Further local native attempts stopped at this infrastructure boundary.
+
+The compact [preparation evidence](../verification/2026-10-22-runtime-lck/README.md)
+binds the source, manifest, build metadata, failed phase and unresolved cleanup.
+The branch also merged the later acknowledged-launch supervisor through R4
+(`f5038e3`); that fix was not exercised because this attempt stopped before launch.
+The next acceptance evidence must come from a successful hosted or local
+four-case run with strict receipt/image/environment binding. No B success is
+claimed from compilation or offline replay.
