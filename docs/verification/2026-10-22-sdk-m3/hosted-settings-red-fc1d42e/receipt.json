@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured source-bound hosted Settings selector mismatch; OS tel delivery not reached",
+  "runID": 39731348570,
+  "runAttempt": 2,
+  "jobID": 119678458188,
+  "submittedHead": "fc1d42e3e72ef280e6d9cdf86f44fbe46dd0ff0c",
+  "capturedSource": "941819d4201fe4b847461d73125802e04be3f0f7",
+  "sourceInputsSHA256": "f96b622e3ac8a727f76e1b46045b9dcec155cf1c178425d472c836f549b39ebb",
+  "artifactID": 12407920526,
+  "artifactArchiveSHA256": "0700b9709abed5ec774ba99581e4cc80d179690b2e2bfddd2f4a00b1509a2c88",
+  "githubArtifactDigest": "sha256:0700b9709abed5ec774ba99581e4cc80d179690b2e2bfddd2f4a00b1509a2c88",
+  "originalSummary": {
+    "success": false,
+    "failure": {
+      "type": "EvidenceError",
+      "reason": "missing or mixed-device Settings attachment: before-selection-screen"
+    },
+    "nativeM3Acceptance": "pending"
+  },
+  "strictGateExitCode": 1,
+  "strictGateFailure": "missing dispatch.json (OS tel command not reached)",
+  "xctestFailure": "DefaultCallingTests.swift:30: Observed Settings list missing",
+  "xctestExitCode": 65,
+  "runIdentity": {
+    "runID": "43E34E03-F2CE-4981-971B-B424B8900966",
+    "simulatorID": "4EA852EC-840B-452C-845C-515A39F99C06",
+    "appPID": 20498
+  },
+  "sourceAndInstalledBuildBound": true,
+  "settingsProductsBound": 48,
+  "observations": {
+    "bootCompleted": true,
+    "appInstalled": true,
+    "publicListenerReady": true,
+    "settingsLaunched": true,
+    "observedCollectionViewCount": 1,
+    "observedCollectionViewHasIdentifier": false,
+    "requiredIOS27Identifier": "com.apple.settings.sidebar.collectionView",
+    "selectionReached": false,
+    "osTelDispatchReached": false,
+    "nativeIngressCount": 0,
+    "publicDialRequestCount": 0
+  },
+  "cleanup": {
+    "simulatorID": "4EA852EC-840B-452C-845C-515A39F99C06",
+    "deleted": true,
+    "globalEnvironmentUnchanged": true,
+    "absentFromInventory": true,
+    "deleteExitCode": 0
+  },
+  "supervisorCompleted": false,
+  "nativeQualification": false,
+  "environment": {
+    "simulatorID": "4EA852EC-840B-452C-845C-515A39F99C06",
+    "simulatorRuntimeID": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+    "simulatorOS": "26.5",
+    "simulatorBuild": "23F77",
+    "xcodeVersion": "Xcode 26.6\nBuild version 17F113"
+  },
+  "privateFiles": {
+    "manifest.json": "91eb366c0da9716f1ebeb967224bc2578b20eca899b813fe8bb99fcd76b70d35",
+    "input-build-receipt.json": "05bd07cf78d76ec61a5207b97c2d9f7df36328257eaecd84439a7da591f087a1",
+    "commands.json": "2f59897c65c2887d621b9f130ab275806aaf41e619133eae0c6327b23bbe12a1",
+    "sdk-m3-tel.log": "0256a1490b625fa66353905c765f7f3c6d11ec603c30b09d7b6fe993fef3040a",
+    "sdk-m3-tel.receipt.json": "ad97a70f9de309c812999c8ac77ee7f1c378b117a62c1c1edd29ca15375ed0e5",
+    "settings/test.log": "7fd949cc5a25cefc1612eef14b04c134550a71900ff7972b8a4677c330a996e0",
+    "settings/attachments/manifest.json": "7690486b3607a08d62b582330c049ff6ef743f6f6188c7ba8a399358cf5b2535"
+  },
+  "privateClassificationFiles": {
+    "artifact-metadata.json": "35b5c953b1051746ca621dd6e087ad0fb6a5fb063ca0c3e20d455114adcab0e5",
+    "run-info-final.json": "9a665e2d937787f58d6e4cb69a4aa400d1bba56e0549723c2875cb0ca1680551",
+    "source-input-proof.json": "54df92624b346c18681f5869a8470d852ec8664414abb53bce64c00628167da1",
+    "replay.json": "fa17fb65c9c8e9e78c6ab3a329b14ccc3226249e3f9b48cb662e17eef5807e05"
+  },
+  "settingsEvidence": {
+    "list-missing-screen": {
+      "filename": "958F8891-A4BF-4779-A8B2-BC00D4B6C94C.png",
+      "deviceID": "4EA852EC-840B-452C-845C-515A39F99C06",
+      "sha256": "b6a9d3612419e94502f839693a60ecc936130bc889ea0db8be4a8758c8c46f7f"
+    },
+    "list-missing-accessibility": {
+      "filename": "216F15BD-9F43-455A-9E13-6FCA446BE932.txt",
+      "deviceID": "4EA852EC-840B-452C-845C-515A39F99C06",
+      "sha256": "2316dd138ae4c6adfc5ad79c82907b855157cd17cdf25d121896e9d05fa20070"
+    }
+  },
+  "limits": [
+    "Only the observed root list was reached; calling-app eligibility, selection and OS tel routing remain unmeasured on this hosted OS.",
+    "The strict gate remains false; no trace or receipt was healed.",
+    "Original attempt 1 boot-timeout artifact is retained separately; no further retry was launched."
+  ],
+  "publicFiles": {
+    "summary.json": "acf8089636c2b97c837f7292cebef87e2ace7d996dc5108ae074df2fc421d58c",
+    "cleanup.json": "9864b007c8cd7b84ad8f09fc8bfda19a4af7f9d8378e21f4444eb4c59178f39e",
+    "settings-list.png": "b6a9d3612419e94502f839693a60ecc936130bc889ea0db8be4a8758c8c46f7f",
+    "source-input-proof.json": "54df92624b346c18681f5869a8470d852ec8664414abb53bce64c00628167da1",
+    "settings-list.txt": "2316dd138ae4c6adfc5ad79c82907b855157cd17cdf25d121896e9d05fa20070"
+  }
+}

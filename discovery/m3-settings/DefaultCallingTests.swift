@@ -1,7 +1,7 @@
 import Darwin
 import XCTest
 
-/// Public Settings controls observed on iOS 27.0. Other OS versions must pass
+/// Public Settings controls observed on iOS 26.5 and 27.0. Other OS versions must pass
 /// their own measured run; a missing control fails with the actual UI attached.
 final class DefaultCallingTests: XCTestCase {
   @MainActor private func capture(_ app: XCUIApplication, _ stage: String) {
@@ -9,6 +9,15 @@ final class DefaultCallingTests: XCTestCase {
     screen.name = stage + "-screen"; screen.lifetime = .keepAlways; add(screen)
     let tree = XCTAttachment(string: app.debugDescription)
     tree.name = stage + "-accessibility"; tree.lifetime = .keepAlways; add(tree)
+  }
+
+  @MainActor private func observedSettingsList(_ settings: XCUIApplication) -> XCUIElement? {
+    let named = settings.collectionViews["com.apple.settings.sidebar.collectionView"]
+    if named.waitForExistence(timeout: 10) { return named }
+    // iOS 26.5's captured Settings tree has one unnamed collection view.
+    let candidates = settings.collectionViews
+    guard candidates.count == 1 else { return nil }
+    return candidates.element(boundBy: 0)
   }
 
   @MainActor func testSelectCallingApp() throws {
@@ -25,8 +34,7 @@ final class DefaultCallingTests: XCTestCase {
       capture(settings, "not-foreground"); XCTFail("Settings did not launch"); return
     }
     capture(settings, "root")
-    let list = settings.collectionViews["com.apple.settings.sidebar.collectionView"]
-    guard list.waitForExistence(timeout: 10) else {
+    guard let list = observedSettingsList(settings) else {
       capture(settings, "list-missing"); XCTFail("Observed Settings list missing"); return
     }
     let apps = settings.buttons["com.apple.settings.apps"]

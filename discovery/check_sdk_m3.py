@@ -84,6 +84,54 @@ def sample():
 
 
 class Controls(unittest.TestCase):
+    def test_settings_list_uses_measured_unique_fallback(self):
+        source = (Path(__file__).parent / 'm3-settings/DefaultCallingTests.swift').read_text()
+        start = source.index('  @MainActor private func observedSettingsList(')
+        end = source.index('\n  @MainActor func testSelectCallingApp()', start)
+        # Compile the actual query policy with only the public XCUI boundary
+        # replaced. This is a host control, not a Settings/native measurement.
+        program = '''
+import Foundation
+@MainActor final class XCUIElement {
+    let exists: Bool
+    init(_ exists: Bool = true) { self.exists = exists }
+    func waitForExistence(timeout: Double) -> Bool { precondition(timeout == 10); return exists }
+}
+@MainActor final class XCUIElementQuery {
+    let named: XCUIElement
+    let elements: [XCUIElement]
+    init(_ named: XCUIElement, _ elements: [XCUIElement]) { self.named = named; self.elements = elements }
+    subscript(_ name: String) -> XCUIElement {
+        precondition(name == "com.apple.settings.sidebar.collectionView"); return named
+    }
+    var count: Int { elements.count }
+    func element(boundBy index: Int) -> XCUIElement { elements[index] }
+}
+@MainActor final class XCUIApplication {
+    let collectionViews: XCUIElementQuery
+    init(_ named: XCUIElement, _ elements: [XCUIElement]) { collectionViews = XCUIElementQuery(named, elements) }
+}
+@MainActor final class QueryPolicy {
+''' + source[start:end] + '''
+    func check() {
+        let named = XCUIElement(), first = XCUIElement(), second = XCUIElement(), absent = XCUIElement(false)
+        precondition(observedSettingsList(XCUIApplication(named, [first, second])) === named)
+        precondition(observedSettingsList(XCUIApplication(absent, [first])) === first)
+        precondition(observedSettingsList(XCUIApplication(absent, [])) == nil)
+        precondition(observedSettingsList(XCUIApplication(absent, [first, second])) == nil)
+    }
+}
+@main struct Control { @MainActor static func main() { QueryPolicy().check() } }
+'''
+        with tempfile.TemporaryDirectory(prefix='sdk-m3-settings-query-') as directory:
+            root = Path(directory); code = root / 'Control.swift'; code.write_text(program)
+            result = subprocess.run(['xcrun', 'swiftc', '-swift-version', '6', '-warnings-as-errors',
+                '-parse-as-library', '-module-cache-path', str(root / 'cache'), str(code), '-o', str(root / 'control')],
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            result = subprocess.run([str(root / 'control')], capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def run_capture(self, *, dyld_status=0, dyld=b'', dyld_timeout=False, dyld_stderr=b'',
                     dispatch_status=0, omit_receipt=False, terminate_during_boot=False, preboot=False,
                     settings_selected=True, settings_pid=123, settings_device=None, create_timeout=False, create_invalid=False):

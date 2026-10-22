@@ -90,6 +90,38 @@ artifact. Any deliberate cancellation or supersession supplies no acceptance;
 the PR description records the later result. The new exact head must qualify
 through the unchanged real-OS delivery gate.
 
+## Hosted Settings correction
+
+**Measured at submitted head `fc1d42e`, captured test-merge source `941819d`:**
+hosted public-tel run `39731348570` attempt 1 timed out during simulator boot,
+before app installation. Its original archive remains separate. The authorized
+unchanged-head attempt 2 booted iOS 26.5, installed the build-bound example and
+observed the actual public listener at PID `20498`. Settings launched, but its
+root accessibility tree contains one unnamed collection view. The helper's
+iOS 27 identifier lookup failed before scrolling or selecting a calling app.
+XCTest exited 65; no OS `tel:` command ran. The later attachment-validator error
+does not establish an eligibility or routing failure. The strict replay stays
+red because dispatch evidence is missing.
+
+The [attempt 2 receipt and actual Settings screen/tree](../verification/2026-10-22-sdk-m3/hosted-settings-red-fc1d42e/receipt.json)
+bind the original artifact digest, clean captured source, installed bytes,
+48 UI products, 17 same-device attachments, three build logs and the matching
+launch/listener PID. Shutdown and delete returned zero; inventory confirms
+absence and the sampled launch environment is unchanged. The supervisor did
+not complete a successful journey. This hosted run does not compare OS routing
+with the local iOS 27 result.
+
+**Proposed correction:** retain the named collection view when present;
+otherwise require exactly one observed collection view in Settings. Zero or
+multiple candidates still fail with UI evidence. A host control compiles the
+actual Swift query policy with the XCUI boundary replaced and checks named
+precedence, one unnamed list, no list and ambiguous lists. All selection,
+identity, screenshot/accessibility, real OS dispatch and public-event gates
+remain unchanged. Fresh exact-source native qualification is required.
+The [corrected host checks](../verification/2026-10-22-sdk-m3/hosted-settings-red-fc1d42e/corrected-host-controls.json)
+record nineteen passing groups and successful typechecking of the actual
+Settings test against the installed simulator XCTest interfaces.
+
 ## Build and measure
 
 Commit the integrated sources first. Select the default media variant, install

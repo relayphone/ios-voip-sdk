@@ -1,0 +1,8 @@
+{
+  "success": false,
+  "failure": {
+    "type": "EvidenceError",
+    "reason": "missing or mixed-device Settings attachment: before-selection-screen"
+  },
+  "nativeM3Acceptance": "pending"
+}

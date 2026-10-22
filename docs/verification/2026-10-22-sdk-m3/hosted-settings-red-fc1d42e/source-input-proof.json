@@ -1,0 +1,29 @@
+{
+  "source": {
+    "sourceCommit": "941819d4201fe4b847461d73125802e04be3f0f7",
+    "sourceInputsSHA256": "f96b622e3ac8a727f76e1b46045b9dcec155cf1c178425d472c836f549b39ebb"
+  },
+  "capturedParents": [
+    "031dc16c5b798d5c849ae745a8798605954ee40f",
+    "fc1d42e3e72ef280e6d9cdf86f44fbe46dd0ff0c"
+  ],
+  "sourceClean": true,
+  "buildAndInstalledBytesBound": true,
+  "settingsProductsBound": 48,
+  "settingsAttachmentsBound": 17,
+  "buildLogsBound": 3,
+  "allManifestFileHashesMatch": true,
+  "appPID": 20498,
+  "runID": "43E34E03-F2CE-4981-971B-B424B8900966",
+  "simulatorID": "4EA852EC-840B-452C-845C-515A39F99C06",
+  "events": [
+    "app.entry",
+    "launch",
+    "sdk.activation",
+    "sdk.managerCreated",
+    "sdk.snapshot",
+    "m3.listenerReady"
+  ],
+  "supervisorCompleted": false,
+  "dispatchReached": false
+}
