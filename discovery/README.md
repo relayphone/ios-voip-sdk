@@ -75,3 +75,37 @@ runtime lifecycle policy without a device reference, and label their output so.
 `python3 discovery/check_oracles.py -v` replays the committed evidence and runs
 negative controls for these expectations without booting a simulator. `run.sh`
 runs these controls before allocating build files or a simulator.
+
+`run.sh` also builds the measured `lck.swift` source and runs its four scenarios
+under the runtime: `basic`, `cx-after`, `lck-after` and `two-managers`. Its only
+source transformation is the asserted single `exit(0)` to `return`, allowing the
+supervisor to terminate the app and bind the complete trace, engine journal and
+receipt. `CKSIM_ONLY=lck` runs all four journeys in one run-owned simulator and
+exits after LCK conformance. `CKSIM_ONLY=lck-basic` (or `lck-cx-after`,
+`lck-lck-after`, `lck-two-managers`) selects one diagnostic journey.
+
+`lck_conformance.py <capture-directory> [--case <scenario>]` requires the process
+receipt and R5 loaded-image/package identity checks. It compares ordered action
+receivers and values, app action identities, per-manager state sequences,
+observer states, labeled snapshots, main callbacks, measured action deadlines,
+audio ownership and mute-echo inventory against the four iPhone traces. UUIDs
+are bound to request/report journey roles; cross-manager callback interleaving
+is not treated as a platform guarantee. `check_lck_conformance.py -v` runs offline
+device replays and tamper controls before simulator allocation.
+
+LCK acceptance ends at each scenario's final journey snapshot. R3 startup and
+teardown lifecycle callback inventory remains deferred; post-snapshot
+`didBegin`/`didReset` callbacks are reported separately. Other late events fail.
+This does not claim full raw-trace parity. The measured CX tap exposes only its
+receiver and action kind, and has no tone/pause handlers, so its omissions do not
+prove absence of those underlying actions. LCK-to-CX action UUID mapping is also
+unmeasured; the journal is bound to the process and build, while LCK request UUIDs
+are checked against LCK delegate deliveries directly.
+
+The normal incoming journey's idle callback must precede its successful report
+log, as on the device. The `basic` remote incoming report and callback share a
+millisecond with reversed logging order; that report's ordering remains
+unqualified while its state projection is checked. Source-derived LCK bands
+currently center on the measured 30-second samples, with R7's explicit scheduling
+and rounding tolerances. A native runtime acceptance run remains required before
+calling this prepared LCK integration qualified.

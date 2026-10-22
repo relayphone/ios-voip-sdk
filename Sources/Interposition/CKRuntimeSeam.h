@@ -30,5 +30,6 @@ void CKSimInjectPush(NSDictionary *payload, BOOL mustReport, NSString *identifie
 NSString * _Nullable CKSimInstallPushHooks(void);
 NSString *CKSimCurrentPushID(void);
 NSString *CKSimResourceDirectory(void);
+BOOL CKSimDelegateUsesLiveCommunicationKit(id _Nullable delegate);
 void CKSimEmit(NSString *event, NSDictionary *fields);
 NS_ASSUME_NONNULL_END
