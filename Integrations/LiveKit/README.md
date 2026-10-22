@@ -39,5 +39,10 @@ promise to preempt a backend operation.
 `audioSession.isAutomaticConfigurationEnabled`, throwing
 `setEngineAvailability(.none/.default)`. [Official availability contract](https://github.com/livekit/client-sdk-swift/blob/2.18.0/Sources/LiveKit/Audio/Manager/AudioManager.swift#L475-L517),
 [official external-session setup](https://github.com/livekit/client-sdk-swift/blob/2.18.0/Docs/audio.md#L3-L37).
-This preparation has compiler/host evidence for the core; compiling this optional
-file against the actual LiveKit binary and measuring its journeys remain follow-up qualification work.
+**Measured compilation:** the unchanged adapter compiled in a genuine SwiftPM
+consumer with LiveKit 2.18.0, Release `iphoneos`/arm64, iOS 17.4 deployment target.
+The first build found an unused notification capture in the SDK's route observer;
+the narrow isolation correction and successful follow-up are retained in
+[`docs/verification/2026-10-22-sdk-swift-livekit`](../../docs/verification/2026-10-22-sdk-swift-livekit/README.md).
+This checks the real package interfaces/products. Swift LiveKit engine journeys,
+activation, media flow and CI coverage remain unmeasured.

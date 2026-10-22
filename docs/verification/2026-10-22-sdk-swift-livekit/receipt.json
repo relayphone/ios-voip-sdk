@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "classification": "Measured local Release iphoneos compilation against genuine pinned LiveKit package products; no app link, launch, simulator, device, audio engine journey, media transport or CI acceptance.",
+  "sdk": {
+    "baseCommit": "47834d58ad2a086c29d23066c4217d7eb6563fd7",
+    "baseSourceFiles": {
+      "Package.swift": "0636ccdae9f3e966ec419625b704023c9d805f544feceefc2e2e9d4a2dee94a2",
+      "Sources/Engine/Resources/ios-27.0.json": "f34933eb5ad2eaa7db2b19efba87e94345bbb8b77c4312f697010cde108a88d8",
+      "Sources/Engine/RuntimeEngine.swift": "43bf497d927f7934a7c1c58a67d3b69d4544d0f9d361a4d5b2c7abd51e649503",
+      "Sources/Interposition/CKInterposition.m": "0f3594abb4130d984a1509ebe75d8e46328f144e3d1b79beed6c061cad4889a1",
+      "Sources/Interposition/CKLoader.m": "7f32927a00a6e863c2c26a1166e2846e36c7264cb122d17dba5469e5b06bb26f",
+      "Sources/Interposition/CKPushDelivery.m": "38e13a510427835c3ba884324654cd885424b2d9d913bd50706a65d01d69ad5e",
+      "Sources/Interposition/CKRuntimeSeam.h": "47e32a8965a0dd1dfaef592eaec456841c2cbc80ea87059a8adba2c4ae1421cd",
+      "Sources/Interposition/include/CKRuntimeBridge.h": "dd8dc66208f9551aa873254f818d8e7df44b77fe11a53438aa0fb9cc5776c658",
+      "Sources/VoIPPlatform/VSAudioSessionLifecycleObserver.m": "b7e65ad7c4d207dbd2a71793e7158bacdebe556e9605c413c68d043b11a2de89",
+      "Sources/VoIPPlatform/VSAudioSessionQueue.m": "585379d32703da325bb9016bbf37a088e472c1d6c47b861552e09e912e1f7411",
+      "Sources/VoIPPlatform/VSCompletionOnce.h": "3a6dd1d6e1c727339a3ea965b4ea2fc199304801472657103584aa817754ec5b",
+      "Sources/VoIPPlatform/VSCompletionOnce.m": "653eb974fe96d17c6c1579b59376d3986cced8a9d7f8c00458296add7821508d",
+      "Sources/VoIPPlatform/VSProcessSDKOwnership.m": "ea509d0194e3746d104093b2256bd0ee4fd3f9c7ec73c96bbeb42e16ac2d8e90",
+      "Sources/VoIPPlatform/VSProviderCreationMonitor.m": "3b62b6debc627760f9f6fa7c60cbd913993f6ca4f77d3c8cac54cec85da35361",
+      "Sources/VoIPPlatform/VSProviderMonitorInternal.h": "00cba399f782e5382b06b360fb9941724a0c3aefce337a1226d00cfb537724c2",
+      "Sources/VoIPPlatform/VSProviderMonitorInternal.m": "bf45e3c7a3868b76709fad8e1cc5eb4b9d7f7bffb6c7582fd5750f25035be3e0",
+      "Sources/VoIPPlatform/VSPushDelivery.m": "10fd4879c48205523efd7a3f9052518dada6c86024267e7957d13b76e62fc1c9",
+      "Sources/VoIPPlatform/VSPushRegistryOwner.m": "02d45bb525b3cebde887846de514a03fdffbb113a419821eae3bf41dece7bfc6",
+      "Sources/VoIPPlatform/include/VSAudioSessionLifecycleObserver.h": "f0d41e58192701b1e9de119801874e5bd0e9bb3ba6bdcde0c9c9f105197ca347",
+      "Sources/VoIPPlatform/include/VSAudioSessionQueue.h": "80074ec15fc99ca8fe029489106f439793939ae8c6b438edd214d5d69e380366",
+      "Sources/VoIPPlatform/include/VSProcessSDKOwnership.h": "3a206de32bf2787e6a3ae81938a91914e885625041c3caca308c39a374816ec2",
+      "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h": "cfa3de64cc0824e9a692ac2071dbbefdcd855b9847e14d1eecf18de4e6519234",
+      "Sources/VoIPPlatform/include/VSPushDelivery.h": "3769eecacf2f8e64d1e3a9c9bc749db26d65be7186c4f176dd7cb1a277ec83ff",
+      "Sources/VoIPPlatform/include/VSPushRegistryOwner.h": "b6db5cf75a4bcda293e06f27a0af05b0607b290e87f30848a8cdc8c989db5f2e",
+      "Sources/VoIPPlatform/include/VoIPPlatform.h": "aa1f1d0b6d6dea02867c0fe65882ace623bef9888d81bf038d13f16b817ff30a",
+      "Sources/VoIPSDK/AudioActivation.swift": "e93e9bcd2772655f62f01d397d2d70ee60eb618c99c4bd2bd1cc74b3a7968e48",
+      "Sources/VoIPSDK/AudioRoutes.swift": "2e171719efad2a810cc10acd142fbb06c451fc6d80e637e875450a75fed4e313",
+      "Sources/VoIPSDK/AudioSessionConfiguration.swift": "96072d7d376ffe205c435a6b6e87af0b9b17ace95e2ff5df6459bed56c9dc8f6",
+      "Sources/VoIPSDK/AudioSessionQueue.swift": "cca9fde6227f51d20ee2c6aa29db6a9183a66587194c54367f82a6647f353391",
+      "Sources/VoIPSDK/ConversationClient.swift": "999c0de828dd9dbfad800cfd296a6f3d12b61ca74df3e907c7a86e39077ccea2",
+      "Sources/VoIPSDK/ConversationHandler.swift": "29a9c62bc3a75d4a36ad8ae6d2bd798b6002e7aefbd98259b58395090c046ea1",
+      "Sources/VoIPSDK/ConversationModels.swift": "c93eba6e6573da78de06f88002ca309de719f3813b72b3359d2ec576a12e40d7",
+      "Sources/VoIPSDK/ConversationRecord.swift": "93208e379e1732e2bd48e74c8e256a2f06e83c5729e3d168e5bdf48191009029",
+      "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+      "Sources/VoIPSDK/MediaAdapter.swift": "59f80f074dda3659600f585a0c8cbcb10432f171e1316eb61206015a8615b559",
+      "Sources/VoIPSDK/ProcessSDKOwnership.swift": "4fe8a3493c3b6756beab43a9f67a28933f4f80c8860e8bb4619ffd2248e95a8b",
+      "Sources/VoIPSDK/PushService.swift": "82a0b47c0a184efbf3d69101fc820aba158da50e020e49304b4be3fd67cd7f09",
+      "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+      "Sources/VoIPSDK/SimulatorSupport.swift": "e9416d0133288ddbce90a7cc7275565c1844394a617afa7122674c2ede57e37a",
+      "Sources/VoIPSDK/SystemAudioSession.swift": "56780d0ba44f0353296500f24cd33533a806c6e91e68334ae9c8504270e56bab",
+      "Sources/VoIPSDK/VoIPApplication.swift": "ca6660cef674a4c8a43c4f4a6c8bd467ffbb3e055cbd32b81b7845f374e5433a",
+      "VERSION": "80447316529fc62014fbaa047fb67c51ac30e32830cda370405349d8d66d196c"
+    },
+    "correctionCommit": "19f37c98816ebf5d2937af1b881ae4f07d457f02",
+    "correction": {
+      "baseSDKCommit": "47834d58ad2a086c29d23066c4217d7eb6563fd7",
+      "path": "Sources/VoIPSDK/SystemAudioSession.swift",
+      "before": "56780d0ba44f0353296500f24cd33533a806c6e91e68334ae9c8504270e56bab",
+      "after": "41df31e3c2e781ebab5a7508527600fbffea759caeb6f25814e369ab128d068a"
+    },
+    "finalSourceFiles": {
+      "Package.swift": "0636ccdae9f3e966ec419625b704023c9d805f544feceefc2e2e9d4a2dee94a2",
+      "Sources/Engine/Resources/ios-27.0.json": "f34933eb5ad2eaa7db2b19efba87e94345bbb8b77c4312f697010cde108a88d8",
+      "Sources/Engine/RuntimeEngine.swift": "43bf497d927f7934a7c1c58a67d3b69d4544d0f9d361a4d5b2c7abd51e649503",
+      "Sources/Interposition/CKInterposition.m": "0f3594abb4130d984a1509ebe75d8e46328f144e3d1b79beed6c061cad4889a1",
+      "Sources/Interposition/CKLoader.m": "7f32927a00a6e863c2c26a1166e2846e36c7264cb122d17dba5469e5b06bb26f",
+      "Sources/Interposition/CKPushDelivery.m": "38e13a510427835c3ba884324654cd885424b2d9d913bd50706a65d01d69ad5e",
+      "Sources/Interposition/CKRuntimeSeam.h": "47e32a8965a0dd1dfaef592eaec456841c2cbc80ea87059a8adba2c4ae1421cd",
+      "Sources/Interposition/include/CKRuntimeBridge.h": "dd8dc66208f9551aa873254f818d8e7df44b77fe11a53438aa0fb9cc5776c658",
+      "Sources/VoIPPlatform/VSAudioSessionLifecycleObserver.m": "b7e65ad7c4d207dbd2a71793e7158bacdebe556e9605c413c68d043b11a2de89",
+      "Sources/VoIPPlatform/VSAudioSessionQueue.m": "585379d32703da325bb9016bbf37a088e472c1d6c47b861552e09e912e1f7411",
+      "Sources/VoIPPlatform/VSCompletionOnce.h": "3a6dd1d6e1c727339a3ea965b4ea2fc199304801472657103584aa817754ec5b",
+      "Sources/VoIPPlatform/VSCompletionOnce.m": "653eb974fe96d17c6c1579b59376d3986cced8a9d7f8c00458296add7821508d",
+      "Sources/VoIPPlatform/VSProcessSDKOwnership.m": "ea509d0194e3746d104093b2256bd0ee4fd3f9c7ec73c96bbeb42e16ac2d8e90",
+      "Sources/VoIPPlatform/VSProviderCreationMonitor.m": "3b62b6debc627760f9f6fa7c60cbd913993f6ca4f77d3c8cac54cec85da35361",
+      "Sources/VoIPPlatform/VSProviderMonitorInternal.h": "00cba399f782e5382b06b360fb9941724a0c3aefce337a1226d00cfb537724c2",
+      "Sources/VoIPPlatform/VSProviderMonitorInternal.m": "bf45e3c7a3868b76709fad8e1cc5eb4b9d7f7bffb6c7582fd5750f25035be3e0",
+      "Sources/VoIPPlatform/VSPushDelivery.m": "10fd4879c48205523efd7a3f9052518dada6c86024267e7957d13b76e62fc1c9",
+      "Sources/VoIPPlatform/VSPushRegistryOwner.m": "02d45bb525b3cebde887846de514a03fdffbb113a419821eae3bf41dece7bfc6",
+      "Sources/VoIPPlatform/include/VSAudioSessionLifecycleObserver.h": "f0d41e58192701b1e9de119801874e5bd0e9bb3ba6bdcde0c9c9f105197ca347",
+      "Sources/VoIPPlatform/include/VSAudioSessionQueue.h": "80074ec15fc99ca8fe029489106f439793939ae8c6b438edd214d5d69e380366",
+      "Sources/VoIPPlatform/include/VSProcessSDKOwnership.h": "3a206de32bf2787e6a3ae81938a91914e885625041c3caca308c39a374816ec2",
+      "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h": "cfa3de64cc0824e9a692ac2071dbbefdcd855b9847e14d1eecf18de4e6519234",
+      "Sources/VoIPPlatform/include/VSPushDelivery.h": "3769eecacf2f8e64d1e3a9c9bc749db26d65be7186c4f176dd7cb1a277ec83ff",
+      "Sources/VoIPPlatform/include/VSPushRegistryOwner.h": "b6db5cf75a4bcda293e06f27a0af05b0607b290e87f30848a8cdc8c989db5f2e",
+      "Sources/VoIPPlatform/include/VoIPPlatform.h": "aa1f1d0b6d6dea02867c0fe65882ace623bef9888d81bf038d13f16b817ff30a",
+      "Sources/VoIPSDK/AudioActivation.swift": "e93e9bcd2772655f62f01d397d2d70ee60eb618c99c4bd2bd1cc74b3a7968e48",
+      "Sources/VoIPSDK/AudioRoutes.swift": "2e171719efad2a810cc10acd142fbb06c451fc6d80e637e875450a75fed4e313",
+      "Sources/VoIPSDK/AudioSessionConfiguration.swift": "96072d7d376ffe205c435a6b6e87af0b9b17ace95e2ff5df6459bed56c9dc8f6",
+      "Sources/VoIPSDK/AudioSessionQueue.swift": "cca9fde6227f51d20ee2c6aa29db6a9183a66587194c54367f82a6647f353391",
+      "Sources/VoIPSDK/ConversationClient.swift": "999c0de828dd9dbfad800cfd296a6f3d12b61ca74df3e907c7a86e39077ccea2",
+      "Sources/VoIPSDK/ConversationHandler.swift": "29a9c62bc3a75d4a36ad8ae6d2bd798b6002e7aefbd98259b58395090c046ea1",
+      "Sources/VoIPSDK/ConversationModels.swift": "c93eba6e6573da78de06f88002ca309de719f3813b72b3359d2ec576a12e40d7",
+      "Sources/VoIPSDK/ConversationRecord.swift": "93208e379e1732e2bd48e74c8e256a2f06e83c5729e3d168e5bdf48191009029",
+      "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+      "Sources/VoIPSDK/MediaAdapter.swift": "59f80f074dda3659600f585a0c8cbcb10432f171e1316eb61206015a8615b559",
+      "Sources/VoIPSDK/ProcessSDKOwnership.swift": "4fe8a3493c3b6756beab43a9f67a28933f4f80c8860e8bb4619ffd2248e95a8b",
+      "Sources/VoIPSDK/PushService.swift": "82a0b47c0a184efbf3d69101fc820aba158da50e020e49304b4be3fd67cd7f09",
+      "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+      "Sources/VoIPSDK/SimulatorSupport.swift": "e9416d0133288ddbce90a7cc7275565c1844394a617afa7122674c2ede57e37a",
+      "Sources/VoIPSDK/SystemAudioSession.swift": "41df31e3c2e781ebab5a7508527600fbffea759caeb6f25814e369ab128d068a",
+      "Sources/VoIPSDK/VoIPApplication.swift": "ca6660cef674a4c8a43c4f4a6c8bd467ffbb3e055cbd32b81b7845f374e5433a",
+      "VERSION": "80447316529fc62014fbaa047fb67c51ac30e32830cda370405349d8d66d196c"
+    },
+    "equivalentIntegratedCommit": "1f1bc98e9f4803c86ed6bea460683099d644973e"
+  },
+  "adapter": {
+    "path": "Integrations/LiveKit/LiveKitMediaAdapter.swift",
+    "sha256": "072b3fce77b513cba42869d83ff4c11985113231e23488a5c7fd36b8b03b0c7b",
+    "copiedBytesMatch": true
+  },
+  "consumer": {
+    "packageManifest": "// swift-tools-version: 6.1\nimport PackageDescription\nlet package = Package(\n  name: \"LiveKitConsumer\", platforms: [.iOS(\"17.4\")],\n  products: [.library(name: \"LiveKitConsumer\", targets: [\"LiveKitConsumer\"])],\n  dependencies: [.package(path: \"SDKSnapshot\"),\n    .package(url: \"https://github.com/livekit/client-sdk-swift.git\", exact: \"2.18.0\")],\n  targets: [.target(name: \"LiveKitConsumer\", dependencies: [\n    .product(name: \"VoIPSDK\", package: \"SDKSnapshot\"),\n    .product(name: \"LiveKit\", package: \"client-sdk-swift\")])],\n  swiftLanguageModes: [.v6])\n",
+    "source": "import VoIPSDK\nimport LiveKit\n@MainActor public enum Consumer {\n  public static func start() throws -> VoIPApplication {\n    try VoIPApplication.start(mediaAdapter: LiveKitMediaAdapter())\n  }\n}\n",
+    "packageResolvedSHA256": "0b93eae00bf96e194a42cd9697ce2b8953db10a348d163860c2dbf8b6b304e56"
+  },
+  "dependencies": [
+    {
+      "identity": "client-sdk-swift",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/livekit/client-sdk-swift.git",
+      "state": {
+        "revision": "93a7251057bdb6a80a7b1f6d11464d578ebdc09b",
+        "version": "2.18.0"
+      }
+    },
+    {
+      "identity": "livekit-uniffi-xcframework",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/livekit/livekit-uniffi-xcframework.git",
+      "state": {
+        "revision": "7a9bf91b1601d5c408ae0cac7dc2047b5a4f615e",
+        "version": "0.1.9"
+      }
+    },
+    {
+      "identity": "webrtc-xcframework",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/livekit/webrtc-xcframework.git",
+      "state": {
+        "revision": "a41df9e9bcc7ab1d62131fda75c123ea391e5188",
+        "version": "150.7871.3"
+      }
+    }
+  ],
+  "toolchain": {
+    "xcode": "Xcode 27.1\nBuild version 27A9275",
+    "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)",
+    "sdkVersion": "27.1",
+    "target": "arm64-apple-ios17.4",
+    "configuration": "Release"
+  },
+  "commands": [
+    {
+      "name": "resolve",
+      "command": [
+        "xcodebuild",
+        "-resolvePackageDependencies",
+        "-scheme",
+        "LiveKitConsumer",
+        "-clonedSourcePackagesDirPath",
+        "<qualification-root>/SourcePackages"
+      ],
+      "exitCode": 0,
+      "seconds": 20.421141459,
+      "logSHA256": "619823558b94095bfceb138f129f9f0bcb8bc5ef67b6f8400ef4f62c67e1f27f"
+    },
+    {
+      "name": "build-iphoneos",
+      "command": [
+        "xcodebuild",
+        "-scheme",
+        "LiveKitConsumer",
+        "-destination",
+        "generic/platform=iOS",
+        "-configuration",
+        "Release",
+        "-derivedDataPath",
+        "<qualification-root>/DerivedData",
+        "-clonedSourcePackagesDirPath",
+        "<qualification-root>/SourcePackages",
+        "-disableAutomaticPackageResolution",
+        "CODE_SIGNING_ALLOWED=NO",
+        "build"
+      ],
+      "exitCode": 65,
+      "seconds": 13.981732458,
+      "logSHA256": "d99651c120e0b609fa4dcc729d7821ac5f0f2852c173c4203b580fb8d11c0893"
+    },
+    {
+      "name": "build-iphoneos-followup",
+      "command": [
+        "xcodebuild",
+        "-scheme",
+        "LiveKitConsumer",
+        "-destination",
+        "generic/platform=iOS",
+        "-configuration",
+        "Release",
+        "-derivedDataPath",
+        "<qualification-root>/DerivedData",
+        "-clonedSourcePackagesDirPath",
+        "<qualification-root>/SourcePackages",
+        "-disableAutomaticPackageResolution",
+        "CODE_SIGNING_ALLOWED=NO",
+        "build"
+      ],
+      "exitCode": 0,
+      "seconds": 58.396384959,
+      "logSHA256": "62bf192bf20c95b9e8cce4bd219be21e3f07f3701f9606d5ce3ba08ace277c10"
+    }
+  ],
+  "products": {
+    "DerivedData/Build/Products/Release-iphoneos/VoIPSDK.o": {
+      "bytes": 1519992,
+      "sha256": "b823cdca238a684940eadf65993ed4b7bb5427308faffc72af8ac0a9f68cc089"
+    },
+    "DerivedData/Build/Products/Release-iphoneos/LiveKit.o": {
+      "bytes": 12959816,
+      "sha256": "148c3941bc00ac93244180dfd4641769ac4beea085874df085f522cb174f19a6"
+    },
+    "DerivedData/Build/Products/Release-iphoneos/LiveKit.swiftmodule/arm64-apple-ios.swiftmodule": {
+      "bytes": 3466820,
+      "sha256": "6255422070c53e65f2f6d28ba6683c2fb06b57cdb6242607c270c38fa4eadf5b"
+    },
+    "DerivedData/Build/Products/Release-iphoneos/LiveKitConsumer.swiftmodule/arm64-apple-ios.swiftmodule": {
+      "bytes": 86224,
+      "sha256": "68df86fc0e2850111128154c1bd0339de89ba83e4d814961db07c86123d8e102"
+    },
+    "DerivedData/Build/Products/Release-iphoneos/LiveKitWebRTC.framework/LiveKitWebRTC": {
+      "bytes": 12347240,
+      "sha256": "5975ceb2433c82a3fad04cd854f1254257988800955f3b2ab9db302eca0ec237"
+    },
+    "DerivedData/Build/Products/Release-iphoneos/RustLiveKitUniFFI.framework/RustLiveKitUniFFI": {
+      "bytes": 1118384,
+      "sha256": "f44acf62acd7cea72a6e13a33be7bd8ee7634b58e86fca4ca550894cf6286ef8"
+    },
+    "DerivedData/Build/Intermediates.noindex/LiveKitConsumer.build/Release-iphoneos/LiveKitConsumer-t.build/Objects-normal/arm64/LiveKitMediaAdapter.o": {
+      "bytes": 65240,
+      "sha256": "d2254ed1c3f9221639a2e8b485c94beefca60d6ae185aefd140c7cae4f56f75c"
+    },
+    "DerivedData/Build/Intermediates.noindex/LiveKitConsumer.build/Release-iphoneos/LiveKitConsumer-t.build/Objects-normal/arm64/Consumer.o": {
+      "bytes": 26568,
+      "sha256": "988f16877d3e0f29e0185404a977aa12e0dc1ec058379d33396b9449a248cf88"
+    }
+  },
+  "compilerEvidence": {
+    "adapterCompileLineObserved": true,
+    "adapterDefinedSymbolsObserved": true,
+    "genuineLiveKitUndefinedReferenceObserved": true,
+    "sharedSDKAudioQueueReferenceObserved": true,
+    "symbolReceipts": {
+      "undefinedSHA256": "4a8f091f5c9a4247cc3e1fcbadfe9e92784ea1213fc7ca86638e4cfeca24c92b",
+      "definedSHA256": "35a70bb6c0c177883aa07dd102158b62a251d71d9e48210177eb4085051eac2a"
+    }
+  },
+  "remainingWarnings": [
+    "Sources/VoIPSDK/ConversationClient.swift:491:28: warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]",
+    "Sources/VoIPSDK/ConversationClient.swift:404:32: warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]"
+  ],
+  "sourceStable": true,
+  "temporarySimulatorCreated": false,
+  "appLaunched": false,
+  "deviceUsed": false
+}
