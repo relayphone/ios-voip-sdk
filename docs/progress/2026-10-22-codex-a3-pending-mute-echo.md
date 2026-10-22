@@ -72,3 +72,32 @@ results bind old head `b44c35a` and test merge `36aabf8`; they do not qualify th
 integrated source. Original runs were not retried or relabeled. Fresh native CI
 and Claude's physical delayed-fulfill echo measurement remain pending. This
 preparation performed no local app, simulator or device run.
+
+
+**Measured main-forward preparation:** the [new receipt](../verification/2026-10-22-a3-pending-mute-echo/main-forward-preparation.json)
+binds normal merge code `d7872c4b8568384e726011d9c1da1fd58cd60aba`,
+reviewed A2 parent `12318c352b656b9d1b7c1535d773caaf0eed0986` and SDK
+source inputs `8010dac8497f9248632a1e3e5230ef1028859c8be7f52729b5d1c4f2a6d8d3f2`.
+The merge required no conflict resolution. All thirteen affected host checks
+pass, including the seven whole-client mute groups (minimum held-handler delay
+40.278 ms), core/deadline controls, three incoming-cache modes, the host incoming
+delivery regression, synthetic native-evidence gates, workflow validation and
+shell syntax. SPEC and isolated STANDARDS reviews are clear.
+
+The A3 production and host assertion bytes remain unchanged. The shared
+`IncomingCachePlatform.swift` facade is reused; there is no separate mute
+platform. Twenty-one deadline, engine/profile, intake, shared facade and native
+acceptance files match the incoming parent exactly. Both independent acceptance
+inventories remain intact: four M1 contracts, including `unhandled-fail`, and
+six focused PushEntry cases, including the direct native callback-body
+`sdk-main-stall` fixture. The latter is separate from actual PushKit delivery,
+APNs or a stopped-app cold launch. All four main-stall helper/gate files remain
+bound in both SDK and focused-probe source closures.
+
+The older `0a0047c9` SDK/runtime runs (`39784753328` / `39784753301`) and
+release controls (`39784753348`) remain attached to their original source.
+Their preserved snapshots and the earlier `b44c35a` red capture are historical
+evidence, without a current-source native acceptance claim. This forward
+preparation performed no local genuine SDK/app build or typecheck, simulator,
+audio-session or device action. Fresh final-head native CI and Claude's
+physical delayed-fulfill echo measurement remain pending.
