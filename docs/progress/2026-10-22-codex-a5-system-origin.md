@@ -76,3 +76,9 @@ unqualified here. All seven
 system cases, the selected-provider no-pending-action reset boundary, the staged
 launch guard and the six native push-entry build inputs remain present. Native
 A5 acceptance remains pending and the recorded audio27 red remains unresolved.
+
+**M2 host-scope update, documentation only:** the [phase-2
+receipt](../verification/2026-10-22-m2-corrections/ordered-core-phase2.json)
+records both held M2 checks completed on `65eea31a`, preserving the first Debug
+capture as incomplete. This supersedes only the held M2 entry above; A5 native
+acceptance remains pending and the audio27 red remains unresolved.

@@ -151,3 +151,13 @@ checks remain held. This source checkpoint provides no replacement result.
 A5/A9 native acceptance remains proposed; the iOS 27 audio RED and physical
 measurements remain unresolved. Earlier native and compiler receipts retain
 their original source scope.
+
+**Documentation-only host-scope update:** the normal forward of A5
+`e7ddf08613fb3e8858be124b479afcf033fb8b9e` imports the [M2 phase-2
+receipt](../verification/2026-10-22-m2-corrections/ordered-core-phase2.json).
+It records both previously held host/compiler checks completed on `65eea31a`,
+including the preserved incomplete first Debug capture. This supersedes the
+held entries above only for that recorded M2 scope. The 239 A9 source inputs
+remain byte-identical to `f6ad352c`; no host suite, compiler or native run was
+repeated. Current A9 app-build and native acceptance remain pending, as do the
+actual audio27 RED and physical measurements.
