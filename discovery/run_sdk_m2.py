@@ -161,15 +161,17 @@ def configure_faults(out, data, name, case, run_id, udid, process, notifier):
     phase('ready-published', pid=pid)
 
 
-def scenario(out, build, run_id, udid, inherited, case, budget):
+def scenario(out, build, run_id, udid, inherited, case, budget, audio_path=None):
     name = 'sdk-m2-' + case
-    bundle = CONTRACTS if case == 'media-reentrancy' else EXAMPLE
+    bundle = EXAMPLE if case in ('livekit', 'stale-audio') else CONTRACTS
     env = os.environ.copy()
     env.update(SIMCTL_CHILD_DYLD_INSERT_LIBRARIES=inherited, SIMCTL_CHILD_CKSIM_RUN_ID=run_id)
     if bundle == EXAMPLE:
         env.update(SIMCTL_CHILD_SDK_M2_CASE=case, SIMCTL_CHILD_SDK_M2_RUN_ID=run_id)
     else:
         env['SIMCTL_CHILD_SDK_M1_CONTRACT_CASE'] = case
+        if audio_path is not None:
+            env['SIMCTL_CHILD_SDK_M2_AUDIO_PATH'] = audio_path
     data = Path(sim(['get_app_container', udid, bundle, 'data'], timeout=20).stdout.decode().strip())
     if bundle == EXAMPLE:
         retire_session(out, data, name, run_id, udid)
@@ -285,7 +287,7 @@ def create_simulator(out, name, runtime):
         raise
 
 
-def run(build, out, runtime_id=None):
+def run(build, out, runtime_id=None, audio_path=None):
     identity = source_identity(ROOT)
     validate_build(build, identity)  # Refuse stale/malformed products before any simctl call.
     if any(k.startswith('SIMCTL_CHILD_CKSIM_') and v for k, v in os.environ.items()):
@@ -299,10 +301,21 @@ def run(build, out, runtime_id=None):
     write(out / 'host-audio-controls.json', dict(source=identity, result=json.loads(host.stdout)))
     runtimes = json.loads(sim(['list', 'runtimes', '-j'], timeout=60).stdout)['runtimes']
     available = [r for r in runtimes if r.get('platform') == 'iOS' and r.get('isAvailable') and
-                 (runtime_id is None or r['identifier'] == runtime_id)]
+                 (runtime_id is None or runtime_id in (r['identifier'], r.get('name')))]
     if not available:
         raise RuntimeError('requested iOS runtime unavailable')
     runtime = max(available, key=lambda r: tuple(map(int, r['version'].split('.'))))
+    major = int(runtime['version'].split('.')[0])
+    expected_path = 'modern' if major >= 27 else 'legacy'
+    if audio_path is None: audio_path = expected_path
+    if audio_path != expected_path:
+        raise RuntimeError('requested audio path does not match selected iOS runtime')
+    shutil.copyfile(build / 'environment-preflight.json', out / 'environment-preflight.json')
+    preflight = json.loads((out / 'environment-preflight.json').read_text())
+    selected = preflight.get('selectedRuntime', {})
+    if (preflight.get('success') is not True or preflight.get('requested', {}).get('audioPath') != audio_path or
+            any(selected.get(k) != runtime[k] for k in ('identifier', 'version', 'buildversion'))):
+        raise RuntimeError('M2 preflight differs from selected runtime/audio path')
     write(out / 'runtime.json', {k: runtime[k] for k in ('identifier', 'version', 'buildversion')})
     run_id = str(uuid.uuid4()).upper(); udid = None; inherited = ''
     try:
@@ -333,8 +346,8 @@ def run(build, out, runtime_id=None):
                 installed['livekitWebRTCInfoSHA256'] = digest(framework / 'Info.plist')
         write(out / 'installed.json', installed)
         sim(['privacy', udid, 'grant', 'microphone', EXAMPLE], timeout=30, log=out / 'microphone-permission.log')
-        for case, budget in (('livekit', 120), ('stale-audio', 90), ('media-reentrancy', 30)):
-            scenario(out, build, run_id, udid, inherited, case, budget)
+        for case, budget in (('livekit', 120), ('stale-audio', 90), ('media-reentrancy', 30), ('audio-lifecycle', 90)):
+            scenario(out, build, run_id, udid, inherited, case, budget, audio_path)
     finally:
         if udid:
             cleanup(out, udid)
@@ -343,7 +356,7 @@ def run(build, out, runtime_id=None):
     if identity != after:
         raise RuntimeError('source changed during M2 capture')
     manifest = dict(schemaVersion=1, product='sdk-m2', scenario='sdk-m2', configuration='Release',
-                    mediaAdapter='livekit', ownsSimulator=True, runtimeInjectionRequested=False,
+                    mediaAdapter='livekit', ownsSimulator=True, runtimeInjectionRequested=False, audioPath=audio_path,
                     runID=run_id, simulatorID=udid, **identity,
                     files={name: digest(out / name) for name in PRODUCT_FILES},
                     controlFiles={p.name: digest(p) for p in out.iterdir() if p.name.endswith(
@@ -353,7 +366,8 @@ def run(build, out, runtime_id=None):
     for field, filename in dict(sourceBeginSHA256='source-before.json', sourceEndSHA256='source-after.json',
            cleanupSHA256='cleanup.json', environmentSHA256='environment.json', runtimeSHA256='runtime.json',
            installedSHA256='installed.json', buildReceiptSHA256='build-info.json',
-           hostAudioControlsSHA256='host-audio-controls.json').items():
+           hostAudioControlsSHA256='host-audio-controls.json',
+           environmentPreflightSHA256='environment-preflight.json').items():
         manifest[field] = digest(out / filename)
     write(out / 'manifest.json', manifest)
     result = validate(out, source_root=ROOT); write(out / 'summary.json', result)
@@ -366,9 +380,10 @@ if __name__ == '__main__':
     parser.add_argument('--build-root', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--runtime')
+    parser.add_argument('--audio-path', choices=('legacy', 'modern'))
     options = parser.parse_args()
     try:
-        run(options.build_root.resolve(), options.output.resolve(), options.runtime)
+        run(options.build_root.resolve(), options.output.resolve(), options.runtime, options.audio_path)
     except (OSError, ValueError, RuntimeError, KeyError, subprocess.SubprocessError) as error:
         print(json.dumps(dict(success=False, error=str(error)), indent=2), file=sys.stderr)
         raise SystemExit(1)

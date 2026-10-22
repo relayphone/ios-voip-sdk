@@ -47,7 +47,24 @@ concurrency:
 
 jobs:
   selected-livekit:
-    runs-on: macos-26
+    name: Selected LiveKit (${{ matrix.audio-path }}, ${{ matrix.runtime }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            xcode: "26.6"
+            xcode-build: ""
+            runtime: "iOS 26.5"
+            audio-path: legacy
+            artifact: sdk-m2-macos-26-xcode-26.6
+          - runner: xcode-27
+            xcode: "27.1"
+            xcode-build: "27A9275"
+            runtime: "iOS 27.0"
+            audio-path: modern
+            artifact: sdk-m2-xcode-27-xcode-27.1
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     defaults:
       run:
@@ -66,8 +83,19 @@ jobs:
             printf 'SDK_M2_BUILD_ROOT=%s\n' "$RUNNER_TEMP/sdk-m2-build"
             printf 'SDK_M2_CAPTURE=%s\n' "$RUNNER_TEMP/sdk-m2"
           } >> "$GITHUB_ENV"
-      - name: Select Xcode 26.6 (CI qualification host)
-        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+      - name: Select Xcode ${{ matrix.xcode }} (CI qualification host)
+        run: sudo xcode-select -s "/Applications/Xcode_${{ matrix.xcode }}.app"
+      - name: Record and verify the assigned host and requested runtime
+        env:
+          M2_XCODE_BUILD: ${{ matrix.xcode-build }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [[ -n "$M2_XCODE_BUILD" ]]; then args+=(--xcode-build "$M2_XCODE_BUILD"); fi
+          python3 discovery/sdk_m2_environment.py \
+            --runtime '${{ matrix.runtime }}' --audio-path '${{ matrix.audio-path }}' \
+            --xcode-version '${{ matrix.xcode }}' "${args[@]}" \
+            --output "$RUNNER_TEMP/sdk-m2-environment-preflight.json"
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "24.22.1"
@@ -76,6 +104,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 discovery/check_sdk_m2.py
+          python3 discovery/check_sdk_m2_environment.py
+          python3 discovery/check_sdk_m2_audio_lifecycle.py
           python3 discovery/check_expo_media.py
           python3 discovery/check_expo_media_config.py
           bash Tests/AudioCore/run_livekit.sh
@@ -95,16 +125,22 @@ jobs:
           cd example/ios
           pod install
       - name: Build source-bound Release example and Debug media contract
-        run: bash discovery/build_sdk_m2.sh "$SDK_M2_BUILD_ROOT"
-      - name: Measure LiveKit, stale audio and media reentrancy on one owned simulator
-        run: python3 discovery/run_sdk_m2.py --build-root "$SDK_M2_BUILD_ROOT" --output "$SDK_M2_CAPTURE"
+        run: |
+          set -euo pipefail
+          bash discovery/build_sdk_m2.sh "$SDK_M2_BUILD_ROOT"
+          cp "$RUNNER_TEMP/sdk-m2-environment-preflight.json" "$SDK_M2_BUILD_ROOT/environment-preflight.json"
+      - name: Measure LiveKit, watchdog, media reentrancy and audio lifecycle on one owned simulator
+        run: >-
+          python3 discovery/run_sdk_m2.py --build-root "$SDK_M2_BUILD_ROOT" --output "$SDK_M2_CAPTURE"
+          --runtime '${{ matrix.runtime }}' --audio-path '${{ matrix.audio-path }}'
       - name: Preserve M2 receipts, products and native build diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: sdk-m2-macos-26-xcode-26.6
+          name: ${{ matrix.artifact }}
           path: |
             ${{ runner.temp }}/sdk-m2
+            ${{ runner.temp }}/sdk-m2-environment-preflight.json
             ${{ runner.temp }}/sdk-m2-build/*.json
             ${{ runner.temp }}/sdk-m2-build/*.log
             ${{ runner.temp }}/sdk-m2-build/binaries
