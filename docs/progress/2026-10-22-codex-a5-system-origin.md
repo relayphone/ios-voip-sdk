@@ -82,3 +82,28 @@ receipt](../verification/2026-10-22-m2-corrections/ordered-core-phase2.json)
 records both held M2 checks completed on `65eea31a`, preserving the first Debug
 capture as incomplete. This supersedes only the held M2 entry above; A5 native
 acceptance remains pending and the audio27 red remains unresolved.
+
+## Audio transport and authority source forward
+
+**Measured source preparation only:** normal merge `15d801b5` forwards reviewed
+M2 source `efbe4da6` into A5 `e7ddf086`. The source inventory includes both A5's
+system/CLI/D5 evidence and M2's original silent-engine and completed no-I/O device
+packets. The SDK, runtime, CLI, media, example and packaging inputs remain
+byte-identical across an expanded explicit 104-file protection map. The changed
+modern native fixture and its gates come from M2; they are acceptance inputs.
+
+**Measured pure controls:** one affected round passes 189 logical controls:
+container capture 4, M0 9, M1 17, native contracts 23, M2 28, lifecycle authority
+22, original physical packet 10, completed no-I/O packet 14 and system cases 62.
+The [source-bound receipt](../verification/2026-10-22-a5-audio-transport-forward/source-only.json)
+records the 247-input source map, command results and expanded protection map.
+Seven system cases, four M1 contracts, six PushKit cases and all four M2 cases
+remain separate, with both legacy and modern audio paths required.
+
+**Pending:** all seven A5 simulator journeys require fresh qualification on this
+forward. No compiler, simulator, device, audio, dependency installation, CI run or
+publication was performed for this source-only preparation. The completed
+physical no-I/O packet proves its ordinary API/notification transport scope; the
+original silent-engine run remains red with its cause unknown. Neither packet
+qualifies LCK interruptions or the new native authority journey. Selected-provider
+reset still requires no pending action; R3 remains deferred.
