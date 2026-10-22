@@ -191,3 +191,33 @@ media. The earlier silent-engine device run remains RED with unknown cause.
 Current-source M2, A5's seven system journeys and A9's direct native acceptance
 remain pending, as does physical default-calling dispatch. The existing strict
 OS dispatch gate and its historical error-115 results remain unchanged.
+
+
+**Measured packaging/control source forward:** normal merge
+`6517aa7a9f3f1659c790f32dbbd1aebea6f9004b` incorporates approved A5
+`5a62f5486cc70965faffadec07741bd19ef0c1e2`, carrying the M2 pod namespace,
+Bash preflight and PushKit host-control corrections. The same 86 source paths
+still select 265 files. Exactly four source hashes change: the podspec, M2
+workflow, environment checker and PushKit delivery checker. All incoming files
+match the approved parent. A9's entry points, public listener, payloads,
+environment guards, direct/system gates and strict OS gate retain their E9
+bytes. The only shipping/example delta from E9 is the podspec's canonical
+`IosVoipSDK` header namespace.
+
+The two affected workflow-step controls pass under actual macOS Bash 3.2;
+Ruby parses the actual YAML and only the Python preflight command is stubbed.
+Static inspection preserves the PushKit control's requested forbidden
+120-second main wait, its unchanged external process guard and once/release
+assertions; that compiler-based control was not rerun. The carried CocoaPods
+receipt qualifies in-memory generator/header-store behavior, with consumer
+compilation still proposed. The prior 13-command E9 control round remains
+bound to E9 and was not repeated. The [focused source-only receipt](../verification/2026-10-22-sdk-m3-direct/forward-pod-namespace-source-only.json)
+binds the new source map, exact shell-control logs and carried parent receipts.
+
+The original E9 M3 run `39854046658` was queued with no assigned runner or
+steps at the preserved pre-forward snapshot; it supplies no native acceptance.
+Current-source M2, A5 and A9 native measurements and physical default-calling
+dispatch remain pending. Both historical OS RED results, the silent-engine
+RED and the separately scoped physical no-I/O packet remain unchanged.
+No compiler, app build, simulator, audio, device, dependency installation or
+manual CI rerun was performed for this source forward.
