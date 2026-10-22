@@ -31,6 +31,7 @@ SOURCE_PATHS = ('Sources', 'Expo', 'ExpoMedia', 'Integrations', 'example', 'Pack
                 'discovery/run_sdk_m2.py', 'discovery/build_sdk_m2.sh',
                 'discovery/sdk_m2_environment.py', 'discovery/check_sdk_m2_environment.py',
                 'discovery/sdk_m2_audio_lifecycle.py', 'discovery/check_sdk_m2_audio_lifecycle.py',
+                'discovery/sdk_audio_device_transport.py', 'discovery/check_sdk_audio_device_transport.py',
                 '.github/workflows/sdk-m2.yml', 'Tools/cksim-notify.c',
                 'discovery/check_platform_shims.py', 'discovery/check_sdk_ownership.py',
                 'discovery/check_push_delivery.py', 'discovery/check_push_report_entry.py',
@@ -42,7 +43,8 @@ SOURCE_PATHS = ('Sources', 'Expo', 'ExpoMedia', 'Integrations', 'example', 'Pack
                 'discovery/check_lck_provider_policy.py',
                 'discovery/build_sdk_device_release.py', 'discovery/device_release_exclusion.py',
                 'discovery/check_device_release.py',
-                'docs/research/callkit-simulator-probe/livecommunicationkit')
+                'docs/research/callkit-simulator-probe/livecommunicationkit',
+                'docs/research/callkit-simulator-probe/audio-session-lifecycle')
 TARGETS = ('CKSimRuntimeC', 'CKSimRuntime', 'VoIPPlatform', 'VoIPSDK')
 BINARIES = dict(example='binaries/example', bootstrap='binaries/bootstrap',
                 device='binaries/device', javascript='binaries/main.jsbundle')

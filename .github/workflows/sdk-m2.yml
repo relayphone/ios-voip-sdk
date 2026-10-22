@@ -18,6 +18,7 @@ on:
       - "expo-module.config.json"
       - "IosVoipSDK.podspec"
       - "discovery/**"
+      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/**"
       - ".github/workflows/sdk-m2.yml"
   pull_request:
     paths:
@@ -35,6 +36,7 @@ on:
       - "expo-module.config.json"
       - "IosVoipSDK.podspec"
       - "discovery/**"
+      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/**"
       - ".github/workflows/sdk-m2.yml"
   workflow_dispatch:
 
@@ -106,6 +108,8 @@ jobs:
           python3 discovery/check_sdk_m2.py
           python3 discovery/check_sdk_m2_environment.py
           python3 discovery/check_sdk_m2_audio_lifecycle.py
+          python3 discovery/check_sdk_audio_device_transport.py
+          python3 Tests/AudioLifecycle/check_audio_lifecycle.py
           python3 discovery/check_expo_media.py
           python3 discovery/check_expo_media_config.py
           bash Tests/AudioCore/run_livekit.sh

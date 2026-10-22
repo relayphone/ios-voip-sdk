@@ -118,6 +118,8 @@ All of this is under `docs/research/callkit-simulator-probe/` unless noted. The 
 | **Real APNs:** `mustReport` is false in the foreground *and* for a running background app; it does not follow `applicationState`. Not reporting when `mustReport` is true kills the app in-process. A cold launch works with early registration. | `apns-real/`, `../verification/2026-10-21-apns-sandbox/` |
 | **Mac Catalyst:** CallKit and LCK are unavailable to native macOS apps. Catalyst CallKit works only for a LaunchServices-registered app, needs user intent for outgoing calls, has no mute echo and no audio callbacks. With Xcode 27.1, Catalyst LCK delegate conformances can't link. Re-registering a running app crashed `callservicesd`. | `maccatalyst/` (it also has Feedback Assistant drafts) |
 | **Runtime v0.1:** what it covers and how it was qualified | `../simulator-runtime.md`, `../verification/2026-10-21-discovery-harness/` |
+| **Measured iOS 27 ordinary audio diagnostic, full fixture RED:** raw, C-decoded and Swift-consumed modern notifications agree (2 active, 3 inactive); the silent engine stopped after async activation, before the fourth operation. No A0.3/M2 or LCK-interruption acceptance. | [`audio-session-lifecycle/2026-10-22-iphone13-ios27/`](research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/README.md) |
+| **Proposed audio acceptance split:** full modern LCK authority journey plus a separate bounded physical scalar-transport validator; strict diagnostics retain their REDs. Fresh native/current-pod acceptance remains pending. | [`progress/2026-10-22-codex-audio-acceptance-split.md`](progress/2026-10-22-codex-audio-acceptance-split.md) |
 
 ## 6. Related work outside this repository
 

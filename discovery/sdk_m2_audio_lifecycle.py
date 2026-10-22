@@ -194,3 +194,117 @@ def validate_lifecycle(rows, engine, path):
     return dict(success=True, path=path, evidence=evidence, conversationID=call, observedCount=len(observations),
                 consumedCount=len(consumed), lckActivations=2, lckDeactivations=2,
                 systemInterruptionMeasured=False)
+
+
+def validate_authority(rows, engine):
+    """Modern LCK authority journey; passive notifications are not a producer oracle.
+
+    The enclosing M2 gate binds the actual process, built source and journal.
+    The strict notification-sequence diagnostic above remains a separate proof.
+    """
+    call = validate_engine(engine)
+    evidence = 'native-lck-audio-authority-v1'
+    marker = single(rows, 'lifecycle.path')
+    require(marker.get('path') == 'modern' and marker.get('evidence') == evidence,
+            'audio authority: evidence scope differs')
+    phases = ('initial', 'answer', 'hold', 'resume', 'end')
+    names = {'path', 'adapterAuthorization', 'lckDelegate', 'handler', 'observed', 'consumed',
+             'joinSettled', 'backendConnectedRequested', 'backendConnected', 'noConversations', 'completed'}
+    captured = [row for row in rows if row.get('event', '').startswith('lifecycle.')]
+    require(captured and captured[0] is marker and
+            all(row['event'].removeprefix('lifecycle.') in names for row in captured),
+            'audio authority: diagnostic or unknown lifecycle events in authority capture')
+    scoped = captured[1:]
+    require(all(row.get('phase') in phases for row in scoped) and
+            [phases.index(row['phase']) for row in scoped] == sorted(phases.index(row['phase']) for row in scoped),
+            'audio authority: missing or reordered phases')
+
+    observations, consumed = events(rows, 'lifecycle.observed'), events(rows, 'lifecycle.consumed')
+    sequence = [row['event'] for row in captured if row['event'] in ('lifecycle.observed', 'lifecycle.consumed')]
+    require(len(observations) == len(consumed) and
+            sequence == ['lifecycle.observed', 'lifecycle.consumed'] * len(observations),
+            'audio authority: passive observer/consumer pairs missing or reordered')
+    authorizations = events(rows, 'lifecycle.adapterAuthorization')
+    require(all(type(row.get('authorized')) is bool for row in authorizations),
+            'audio authority: authorization must be boolean')
+    notification_authorizations = set()
+    for raw, decoded in zip(observations, consumed):
+        require(raw.get('kind') in MODERN_NOTIFICATIONS and raw.get('observerMain') is True and
+                all(type(raw.get(key)) is bool and type(decoded.get(key)) is bool for key in BOOLEANS) and
+                all(type(raw.get(key)) is int and type(decoded.get(key)) is int for key in ('source', 'interruptionReason')) and
+                all(type(raw.get(key)) is type(decoded.get(key)) and raw[key] == decoded[key] for key in SCALARS) and
+                all(type(decoded.get(key)) is bool for key in ('authorizedBefore', 'authorizedAfter')) and
+                raw.get('notificationName') == MODERN_NOTIFICATIONS[raw['kind']],
+                'audio authority: invalid passive main/scalar mapping')
+        require(isinstance(raw.get('contextClass'), str) and raw['interruptionReason'] >= 0 and
+                (raw['hasSource'] or raw['source'] == 0) and
+                (raw['hasInterruptionReason'] or raw['interruptionReason'] == 0),
+                'audio authority: invalid passive context scalars')
+        between = [row for row in rows[position(rows, raw) + 1:position(rows, decoded)]
+                   if row.get('event') == 'lifecycle.adapterAuthorization']
+        before = [row for row in authorizations if position(rows, row) < position(rows, raw)]
+        after = [row for row in authorizations if position(rows, row) < position(rows, decoded)]
+        require(before and after and decoded['authorizedBefore'] is before[-1]['authorized'] and
+                decoded['authorizedAfter'] is after[-1]['authorized'],
+                'audio authority: passive authorization sample differs from captured adapter state')
+        if raw['kind'] == 'inactive':
+            # Any observed source is carried through. Source 1 is device evidence
+            # for app deactivation, not a universal per-call source requirement.
+            require((not raw['hasSource'] or bool(raw['contextClass'])) and
+                    (not raw['hasInterruptionReason'] or raw['hasSource']) and
+                    raw['shouldResume'] is False and decoded['authorizedAfter'] is False and
+                    len(between) == 1 and strict(between[0], 'authorized', False) and
+                    between[0].get('phase') == raw['phase'],
+                    'audio authority: passive inactive did not synchronously revoke')
+            notification_authorizations.add(id(between[0]))
+        else:
+            require(not raw['hasSource'] and not raw['hasInterruptionReason'] and
+                    (bool(raw['contextClass']) if raw['kind'] == 'recommended' else raw['contextClass'] == '') and
+                    (raw['kind'] == 'recommended' or raw['shouldResume'] is False) and
+                    decoded['authorizedAfter'] is decoded['authorizedBefore'] and not between,
+                    'audio authority: passive active/recommendation changed authorization')
+
+    handlers = events(rows, 'lifecycle.handler')
+    require([(row.get('kind'), row.get('phase')) for row in handlers] ==
+            [('join', 'answer'), ('hold', 'hold'), ('hold', 'resume'), ('end', 'end')],
+            'audio authority: full handler journey missing or reordered')
+    delegates = events(rows, 'lifecycle.lckDelegate')
+    expected = [(True, 1, 'answer'), (False, 1, 'hold'), (True, 2, 'resume'), (False, 2, 'end')]
+    require(len(delegates) == 4 and all(strict(row, 'active', active) and strict(row, 'count', count) and
+            row.get('phase') == phase for row, (active, count, phase) in zip(delegates, expected)),
+            'audio authority: genuine LCK delegate inventory differs')
+    lck_authorizations = [row for row in authorizations if id(row) not in notification_authorizations]
+    require([(row['authorized'], row.get('phase')) for row in lck_authorizations] ==
+            [(False, 'initial'), (True, 'answer'), (False, 'hold'), (True, 'resume'), (False, 'end')],
+            'audio authority: LCK authorization journey differs')
+    require(position(rows, lck_authorizations[0]) < position(rows, handlers[0]) and
+            all(position(rows, handler) < position(rows, authorization) < position(rows, delegate) and
+                (index == 3 or position(rows, delegate) < position(rows, handlers[index + 1]))
+                for index, (handler, authorization, delegate) in
+                enumerate(zip(handlers, lck_authorizations[1:], delegates))),
+            'audio authority: handler/authorization/delegate order differs')
+
+    joined = single(rows, 'lifecycle.joinSettled')
+    requested = single(rows, 'lifecycle.backendConnectedRequested')
+    connected = single(rows, 'lifecycle.backendConnected')
+    require(all(row.get('conversationID') == call and row.get('phase') == 'answer'
+                for row in (joined, requested, connected)) and
+            strict(joined, 'pendingCleared', True) and strict(joined, 'connected', False) and
+            strict(connected, 'accepted', True) and type(connected.get('connectedAtMS')) is int and
+            connected['connectedAtMS'] > 0 and
+            position(rows, delegates[0]) < position(rows, joined) < position(rows, requested) <
+            position(rows, connected) < position(rows, handlers[1]),
+            'audio authority: backend connection lacks settled signaling or same-call ordering')
+    empty = single(rows, 'lifecycle.noConversations')
+    completed = single(rows, 'lifecycle.completed')
+    require(strict(empty, 'count', 0) and empty.get('phase') == 'end' and
+            strict(completed, 'authorized', False) and strict(completed, 'activations', 2) and
+            strict(completed, 'deactivations', 2) and strict(completed, 'observedCount', len(observations)) and
+            strict(completed, 'consumedCount', len(consumed)) and completed.get('phase') == 'end' and
+            position(rows, delegates[-1]) < position(rows, empty) < position(rows, completed) and
+            captured[-1] is completed,
+            'audio authority: final empty/unauthorized state or capture counts differ')
+    return dict(success=True, path='modern', evidence=evidence, conversationID=call,
+                observedCount=len(observations), consumedCount=len(consumed),
+                notificationTransportExercised=bool(observations),
+                lckActivations=2, lckDeactivations=2, systemInterruptionMeasured=False)
