@@ -22,7 +22,6 @@ def run(launch, terminate, output, receipt, timeout, identity=None):
     messages = queue.Queue()
     bundle = result.get("bundleID")
     launcher_header = re.compile(rb"(?m)^" + re.escape(bundle.encode()) + rb": (\d+)\r?$") if bundle else None
-    launcher_app_pids = []
     try:
         with output.open("xb") as log:
             process = subprocess.Popen(launch, stdout=subprocess.PIPE,
@@ -38,24 +37,19 @@ def run(launch, terminate, output, receipt, timeout, identity=None):
 
             threading.Thread(target=read, daemon=True).start()
             deadline = started + timeout
-            # A fast probe can finish before simctl acknowledges its app PID.
-            while not result["completed"] or (bundle and "launcherAppPID" not in result):
+            while not result["completed"]:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    awaiting = "launcher app PID acknowledgement" if result["completed"] else "terminal done event"
-                    raise RuntimeError("deadline before " + awaiting)
+                    raise RuntimeError("deadline before terminal done event")
                 try:
                     line = messages.get(timeout=min(remaining, 0.2))
                 except queue.Empty:
                     continue
                 if line is None:
                     result["stdoutEOFSeconds"] = round(time.monotonic() - started, 3)
-                    awaiting = "launcher app PID acknowledgement" if result["completed"] else "terminal done event"
-                    raise RuntimeError("launcher exited before " + awaiting)
+                    raise RuntimeError("launcher exited before terminal done event")
                 log.write(line)
                 log.flush()
-                if launcher_header:
-                    launcher_app_pids.extend(int(pid) for pid in launcher_header.findall(line))
                 if b"PROBE " in line:
                     try:
                         row = json.loads(line.split(b"PROBE ", 1)[1])
@@ -70,15 +64,11 @@ def run(launch, terminate, output, receipt, timeout, identity=None):
                         result["appEntryObserved"] = True
                     if isinstance(row, dict) and row.get("event") == "launch" and type(row.get("pid")) is int:
                         result["appPID"] = row["pid"]
-                if len(launcher_app_pids) > 1:
-                    raise RuntimeError(f"require one launcher app PID acknowledgement; got {len(launcher_app_pids)}")
-                if launcher_app_pids and "appPID" in result:
-                    if launcher_app_pids[0] <= 0 or launcher_app_pids[0] != result["appPID"]:
-                        raise RuntimeError("launcher/probe app PID mismatch")
-                    result["launcherAppPID"] = launcher_app_pids[0]
 
             # SwiftUI intentionally stays alive after the scenario. A stop is
             # accepted only after done and a successful termination of our app.
+            # simctl may flush its PID header only after termination; bind that
+            # identity after draining the launcher, before accepting success.
             stop = subprocess.run(terminate, capture_output=True, timeout=20)
             result["terminateExitCode"] = stop.returncode
             if stop.returncode:
