@@ -36,4 +36,4 @@ promise to preempt a backend operation.
 `setEngineAvailability(.none/.default)`. [Official availability contract](https://github.com/livekit/client-sdk-swift/blob/2.18.0/Sources/LiveKit/Audio/Manager/AudioManager.swift#L475-L517),
 [official external-session setup](https://github.com/livekit/client-sdk-swift/blob/2.18.0/Docs/audio.md#L3-L37).
 This preparation has compiler/host evidence for the core; compiling this optional
-file against the actual LiveKit binary and measuring its journeys remain M2 acceptance work.
+file against the actual LiveKit binary and measuring its journeys remain follow-up qualification work.

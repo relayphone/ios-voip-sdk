@@ -388,13 +388,14 @@ class Controls(unittest.TestCase):
         self.reject('counter')
 
     def test_control_ack_pid_nonce_and_pre_push_order(self):
-        for suffix, edit in [('.control.response.json', lambda v: v.update(pid=999)),
+        for suffix, edit in [('.session.json', lambda v: v.update(pid=999, notification='dev.callkitsim.control.999')),
+                             ('.control.response.json', lambda v: v.update(pid=999)),
                              ('.control-binding.json', lambda v: v.update(nonce=PUSH)),
                              ('.control.request.json', lambda v: v['faults'].update(staleAudio=False)),
                              ('.control-ready.json', lambda v: v.update(case='livekit'))]:
             with self.subTest(suffix=suffix):
                 fixture(self.root); change_json(self.root, 'sdk-m2-stale-audio' + suffix, edit)
-                self.reject('fault command|nonce|readiness')
+                self.reject('session|fault command|nonce|readiness')
         fixture(self.root)
         change_rows(self.root, 'livekit', lambda rows: gate.one(rows, 'm2.controlReady').update(staleAudio=True))
         self.reject('control not ready')
@@ -494,7 +495,6 @@ class Controls(unittest.TestCase):
         control = data / 'Documents/.callkit-simulator/run'
         (control / 'requests').mkdir(parents=True); (control / 'responses').mkdir(); (data / 'tmp').mkdir()
         name = 'sdk-m2-stale-audio'
-        (out / (name + '.log')).write_text('PROBE ' + json.dumps(dict(event='launch', pid=42, runID='run')) + '\n')
         runner.write(data / 'Documents/.callkit-simulator/session.json', dict(schemaVersion=1, runID='run', pid=42,
             bundleID=runner.EXAMPLE, profile='ios-27.0', notification='dev.callkitsim.control.42'))
         def notify(args, **kwargs):
@@ -509,6 +509,11 @@ class Controls(unittest.TestCase):
             runner.configure_faults(out, data, name, 'stale-audio', 'run', 'owned', SimpleNamespace(poll=lambda: None), self.root / 'notifier')
         self.assertEqual(json.loads((data / 'tmp/sdk-m2-control-run.json').read_text()),
                          dict(runID='run', case='stale-audio', pid=42, staleAudio=True))
+        self.assertFalse((out / (name + '.log')).exists(), 'control must not require live console records')
+        progress = json.loads((out / (name + '.handshake.json')).read_text())
+        self.assertEqual([step['phase'] for step in progress['steps']], [
+            'waiting-runtime-session', 'runtime-session-ready', 'notifying-runtime',
+            'fault-acknowledged', 'ready-published'])
         process = SimpleNamespace(poll=Mock(return_value=None), wait=Mock(side_effect=[
             subprocess.TimeoutExpired('supervisor', 70), 0]), terminate=Mock(), kill=Mock())
         def stop_sim(args, **kwargs):
@@ -520,12 +525,19 @@ class Controls(unittest.TestCase):
 
     def test_runner_plain_example_console_preserves_contract_pty(self):
         data = self.root / 'launch-mode-data'; data.mkdir()
+        session_path = data / 'Documents/.callkit-simulator/session.json'
+        session_path.parent.mkdir(parents=True)
         for case in ('livekit', 'stale-audio', 'media-reentrancy'):
             with self.subTest(case=case):
                 out = self.root / ('launch-mode-' + case); out.mkdir()
+                runner.write(session_path, dict(schemaVersion=1, runID='run', pid=42, bundleID=runner.EXAMPLE,
+                    profile='ios-27.0', notification='dev.callkitsim.control.42'))
                 process = SimpleNamespace(wait=Mock(return_value=0), poll=Mock(return_value=0))
+                def create_supervisor(*args, **kwargs):
+                    self.assertEqual(session_path.exists(), case == 'media-reentrancy')
+                    return process
                 with patch.object(runner, 'sim', return_value=subprocess.CompletedProcess([], 0, str(data).encode(), b'')), \
-                     patch.object(runner.subprocess, 'Popen', return_value=process) as launch, \
+                     patch.object(runner.subprocess, 'Popen', side_effect=create_supervisor) as launch, \
                      patch.object(runner, 'configure_faults') as faults:
                     runner.scenario(out, self.root, 'run', 'owned', '', case, 30)
                 command = launch.call_args.args[0]
@@ -536,6 +548,54 @@ class Controls(unittest.TestCase):
                     '--terminate-running-process', 'owned',
                     runner.CONTRACTS if case == 'media-reentrancy' else runner.EXAMPLE])
                 self.assertEqual(faults.call_count, 0 if case == 'media-reentrancy' else 1)
+
+    def test_runner_retires_only_validated_owned_session(self):
+        data = self.root / 'retirement-data'; session_path = data / 'Documents/.callkit-simulator/session.json'
+        session_path.parent.mkdir(parents=True)
+        session = dict(schemaVersion=1, runID='run', pid=42, bundleID=runner.EXAMPLE,
+                       profile='ios-27.0', notification='dev.callkitsim.control.42')
+        for label, edits in [('run', {'runID': 'another-run'}), ('bundle', {'bundleID': 'other.app'}),
+                ('profile', {'profile': 'unknown'}), ('pid', {'pid': True}),
+                ('schema', {'schemaVersion': True}), ('notification', {'notification': 'other'}),
+                ('extra', {'unexpected': 1})]:
+            with self.subTest(label=label):
+                out = self.root / ('refused-' + label); out.mkdir()
+                raw = json.dumps(dict(session, **edits)).encode(); session_path.write_bytes(raw)
+                with patch.object(runner, 'sim', return_value=subprocess.CompletedProcess([], 0, str(data).encode(), b'')), \
+                     patch.object(runner.subprocess, 'Popen') as launch:
+                    with self.assertRaisesRegex(RuntimeError, 'runtime session'):
+                        runner.scenario(out, self.root, 'run', 'owned', '', 'livekit', 120)
+                launch.assert_not_called(); self.assertEqual(session_path.read_bytes(), raw)
+                self.assertFalse((out / 'sdk-m2-livekit.retired-session.json').exists())
+        out = self.root / 'retirement-owned'; out.mkdir()
+        raw = json.dumps(session).encode(); session_path.write_bytes(raw)
+        runner.retire_session(out, data, 'case', 'run', 'owned')
+        self.assertFalse(session_path.exists())
+        self.assertEqual((out / 'case.retired-session.json').read_bytes(), raw)
+        retired = json.loads((out / 'case.retirement.json').read_text())
+        self.assertEqual((retired['retired'], retired['pid'], retired['simulatorID']), (True, 42, 'owned'))
+
+    def test_runner_fresh_session_schema_and_phase_timeout(self):
+        data = self.root / 'fresh-data'; path = data / 'Documents/.callkit-simulator/session.json'
+        path.parent.mkdir(parents=True)
+        session = dict(schemaVersion=1, runID='run', pid=42, bundleID=runner.EXAMPLE,
+                       profile='ios-27.0', notification='dev.callkitsim.control.42')
+        for label, edits in [('run', {'runID': 'stale'}), ('pid', {'pid': 0}),
+                ('bundle', {'bundleID': 'another.app'}), ('profile', {'profile': 'unknown'}),
+                ('schema', {'schemaVersion': 1.0}), ('notification', {'notification': 'other'})]:
+            with self.subTest(label=label):
+                out = self.root / ('fresh-refused-' + label); out.mkdir()
+                path.write_text(json.dumps(dict(session, **edits)))
+                with patch.object(runner, 'sim') as notify:
+                    with self.assertRaisesRegex(RuntimeError, 'runtime session'):
+                        runner.configure_faults(out, data, 'case', 'livekit', 'run', 'owned',
+                            SimpleNamespace(poll=lambda: None), self.root / 'notifier')
+                notify.assert_not_called()
+                self.assertEqual(json.loads((out / 'case.handshake.json').read_text())['steps'][-1]['phase'],
+                                 'runtime-session-failed')
+        with patch.object(runner.time, 'monotonic', side_effect=[0, 0, 31]), patch.object(runner.time, 'sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'runtime session: deadline before readiness'):
+                runner.wait_for(lambda: None, 30, phase='runtime session')
 
     def test_runner_inherited_environment_is_preserved_or_refused(self):
         with patch.dict(os.environ, {}, clear=True):

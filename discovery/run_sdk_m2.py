@@ -44,53 +44,88 @@ def sim(args, **kwargs):
     return command(['xcrun', 'simctl', *args], **kwargs)
 
 
-def wait_for(read, seconds, process=None):
+def wait_for(read, seconds, process=None, phase='fault handshake'):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         value = read()
         if value is not None:
             return value
         if process is not None and process.poll() is not None:
-            raise RuntimeError('supervisor exited before fault handshake')
+            raise RuntimeError(phase + ': supervisor exited before readiness')
         time.sleep(0.05)
-    raise RuntimeError('deadline before fault handshake')
+    raise RuntimeError(phase + ': deadline before readiness')
 
 
-def launch_row(path):
-    if not path.exists():
-        return None
-    for line in path.read_bytes().splitlines():
-        if b'PROBE ' in line:
-            try:
-                row = json.loads(line.split(b'PROBE ', 1)[1])
-            except (ValueError, UnicodeDecodeError):
-                continue
-            if isinstance(row, dict) and row.get('event') == 'launch':
-                return row
-    return None
+def validated_session(raw, run_id):
+    try:
+        value = json.loads(raw)
+    except (ValueError, UnicodeDecodeError) as error:
+        raise RuntimeError('runtime session: malformed JSON') from error
+    if not isinstance(value, dict):
+        raise RuntimeError('runtime session: invalid object')
+    pid = value.get('pid')
+    expected = dict(schemaVersion=1, runID=run_id, pid=pid, bundleID=EXAMPLE,
+                    profile='ios-27.0', notification=f'dev.callkitsim.control.{pid}')
+    if (type(pid) is not int or pid <= 0 or value.keys() != expected.keys() or
+            any(type(value[k]) is not type(v) or value[k] != v for k, v in expected.items())):
+        raise RuntimeError('runtime session: unexpected schema or ownership')
+    return value
+
+
+def retire_session(out, data, name, run_id, udid):
+    """Retire only our preceding session before launching the next owned app."""
+    path = data / 'Documents/.callkit-simulator/session.json'
+    record = dict(runID=run_id, simulatorID=udid, bundleID=EXAMPLE,
+                  wallTimeMS=int(time.time() * 1000), retired=False)
+    if path.is_symlink():
+        raise RuntimeError('session retirement: symbolic link refused')
+    if path.exists() and not path.is_file():
+        raise RuntimeError('session retirement: non-file refused')
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        raw = None
+    if raw is not None:
+        session = validated_session(raw, run_id)
+        with (out / (name + '.retired-session.json')).open('xb') as retained:
+            retained.write(raw)
+        if path.read_bytes() != raw:
+            raise RuntimeError('session retirement: session changed before removal')
+        path.unlink()
+        record.update(retired=True, pid=session['pid'], sessionSHA256=hashlib.sha256(raw).hexdigest())
+    write(out / (name + '.retirement.json'), record)
 
 
 def configure_faults(out, data, name, case, run_id, udid, process, notifier):
-    launch = wait_for(lambda: launch_row(out / (name + '.log')), 30, process)
-    pid = launch.get('pid')
-    if type(pid) is not int or pid <= 0 or launch.get('runID') != run_id:
-        raise RuntimeError('unbound app launch before fault control')
     session_path = data / 'Documents/.callkit-simulator/session.json'
+    started = time.monotonic()
+    progress = dict(runID=run_id, simulatorID=udid, case=case, diagnosticOnly=True, steps=[])
+
+    def phase(label, **fields):
+        progress['steps'].append(dict(phase=label, wallTimeMS=int(time.time() * 1000),
+                                     elapsedSeconds=round(time.monotonic() - started, 3), **fields))
+        write(out / (name + '.handshake.json'), progress)
 
     def current_session():
+        if session_path.is_symlink():
+            raise RuntimeError('runtime session: symbolic link refused')
+        if session_path.exists() and not session_path.is_file():
+            raise RuntimeError('runtime session: non-file refused')
         try:
-            value = json.loads(session_path.read_text())
-        except (OSError, ValueError):
+            raw = session_path.read_bytes()
+        except FileNotFoundError:
             return None
-        if value.get('pid') == pid and value.get('runID') == run_id:
-            return value
-        return None
+        return raw, validated_session(raw, run_id)
 
-    session = wait_for(current_session, 30, process)
-    if (session.get('schemaVersion') != 1 or session.get('bundleID') != EXAMPLE or
-            session.get('profile') != 'ios-27.0' or session.get('notification') != f'dev.callkitsim.control.{pid}'):
-        raise RuntimeError('unbound runtime fault session')
-    shutil.copyfile(session_path, out / (name + '.session.json'))
+    phase('waiting-runtime-session')
+    try:
+        raw, session = wait_for(current_session, 30, process, phase='runtime session')
+    except (OSError, ValueError, RuntimeError) as error:
+        phase('runtime-session-failed', error=str(error))
+        raise
+    pid = session['pid']
+    (out / (name + '.session.json')).write_bytes(raw)
+    phase('runtime-session-ready', pid=pid)
     nonce = str(uuid.uuid4()).upper()
     request = dict(id=nonce, runID=run_id, pid=pid, bundleID=EXAMPLE, operation='faults',
                    faults=dict(staleAudio=case == 'stale-audio', reportCallbackDelayMS=0, invalidateDuringHandoff=False))
@@ -100,13 +135,19 @@ def configure_faults(out, data, name, case, run_id, udid, process, notifier):
     temporary = control / 'requests' / (nonce + '.tmp')
     shutil.copyfile(request_path, temporary)
     temporary.rename(temporary.with_suffix('.json'))
+    phase('notifying-runtime', pid=pid)
     sim(['spawn', udid, notifier, session['notification']], timeout=5, log=out / 'control-notify.log')
     response_path = control / 'responses' / (nonce + '.json')
-    wait_for(lambda: response_path if response_path.is_file() else None, 2, process)
+    try:
+        wait_for(lambda: response_path if response_path.is_file() else None, 2, process, phase='fault acknowledgement')
+    except RuntimeError as error:
+        phase('fault-acknowledgement-failed', error=str(error))
+        raise
     response = json.loads(response_path.read_text())
     if not (all(response.get(k) == request[k] for k in ('id', 'runID', 'pid', 'bundleID')) and
             response.get('success') is True and response.get('result') == {'configured': True}):
         raise RuntimeError('runtime refused fault configuration')
+    phase('fault-acknowledged', pid=pid)
     retained_response = out / (name + '.control.response.json')
     shutil.copyfile(response_path, retained_response)
     ready = dict(runID=run_id, case=case, pid=pid, staleAudio=case == 'stale-audio')
@@ -117,6 +158,7 @@ def configure_faults(out, data, name, case, run_id, udid, process, notifier):
     temporary = data / 'tmp' / ('sdk-m2-control-' + run_id + '.tmp')
     shutil.copyfile(ready_path, temporary)
     temporary.rename(temporary.with_suffix('.json'))
+    phase('ready-published', pid=pid)
 
 
 def scenario(out, build, run_id, udid, inherited, case, budget):
@@ -129,6 +171,8 @@ def scenario(out, build, run_id, udid, inherited, case, budget):
     else:
         env['SIMCTL_CHILD_SDK_M1_CONTRACT_CASE'] = case
     data = Path(sim(['get_app_container', udid, bundle, 'data'], timeout=20).stdout.decode().strip())
+    if bundle == EXAMPLE:
+        retire_session(out, data, name, run_id, udid)
     console_mode = '--console' if bundle == EXAMPLE else '--console-pty'
     args = [sys.executable, ROOT / 'discovery/run_scenario.py', '--console-launcher-stop', '--timeout', str(budget),
             '--output', out / (name + '.log'), '--receipt', out / (name + '.receipt.json'),
