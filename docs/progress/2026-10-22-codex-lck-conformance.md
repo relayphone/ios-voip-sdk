@@ -1,9 +1,13 @@
 # B: prepared LCK runtime acceptance
 
-Current status: **local four-case native acceptance passes at clean source
-`f106e73` after the narrow LCK fulfilled-unmute correction**. Hosted CI remains
-pending. See the [current handoff](2026-10-22-codex-lck-post-end-unmute.md) and
-its bound red/green evidence. The preparation history below predates that run.
+Current status: **local four-case native acceptance passed at clean source
+`f106e73` after the narrow LCK fulfilled-unmute correction**. Subsequent hosted
+run `39714051678` exposed a probe scheduling race in the 26.3 compiler job;
+the 26.6 job passed. The [readiness handoff](2026-10-22-codex-lck-readiness.md)
+records that red and the prepared simulator-only causal checkpoint. CI for that
+fix remains pending. The [fulfilled-unmute handoff](2026-10-22-codex-lck-post-end-unmute.md)
+retains the earlier bound local red/green evidence. The preparation history
+below predates both.
 
 Historical preparation status: native LCK acceptance was pending. Offline checks passed. A later local
 native preparation compiled the probe and runtime, but app installation timed
@@ -12,10 +16,14 @@ see the local attempt record below.
 
 ## What is prepared
 
-- The default harness compiles the exact measured
-  `docs/research/callkit-simulator-probe/lck.swift` input. Its only transformation
-  replaces one asserted `exit(0)` with `return`, retaining supervisor-owned
-  termination, capture receipts and the engine journal. LCK launches create no
+- The default harness adapts the measured
+  `docs/research/callkit-simulator-probe/lck.swift` input without editing that
+  historical file. In addition to replacing one asserted `exit(0)` with
+  `return`, the simulator copy now records callback readiness and waits for
+  connection before ending an LCK-owned outgoing journey; the
+  [readiness handoff](2026-10-22-codex-lck-readiness.md) states the extra proposed
+  infrastructure liveness budget. Supervisor-owned termination, capture receipts
+  and the engine journal remain. LCK launches create no
   unrelated `Probe`/`CXProvider`, including when a stale push-mode marker exists.
 - Four runtime captures use `PROBE_MODE=lck` with `PROBE_LCK=basic`, `cx-after`,
   `lck-after`, and `two-managers`. `CKSIM_ONLY=lck-<scenario>` selects one bounded
