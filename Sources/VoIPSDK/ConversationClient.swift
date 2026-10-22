@@ -165,6 +165,9 @@ public final class ConversationClient: NSObject {
         let now = Date()
         self.records[id]?.ended = .init(at: now, reason: .local)
         if let incoming = self.incomingIntake.projection(id) {
+          if let conversation = self.manager.conversations.first(where: { $0.uuid == id }) {
+            self.incomingLocalEndClaims[id] = IncomingLocalEndClaim(generation: incoming.generation, object: conversation)
+          }
           self.incomingIntake.terminate(id, generation: incoming.generation, reason: .local,
             now: now, requiresReport: false)
         }
