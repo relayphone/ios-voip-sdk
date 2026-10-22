@@ -28,6 +28,8 @@ SOURCE_PATHS = ('Sources', 'Expo', 'ExpoMedia', 'Integrations', 'example', 'Pack
                 'discovery/check_expo_media.py', 'discovery/check_expo_media_config.py',
                 'discovery/sdk_m2_conformance.py', 'discovery/check_sdk_m2.py',
                 'discovery/run_sdk_m2.py', 'discovery/build_sdk_m2.sh',
+                'discovery/sdk_m2_environment.py', 'discovery/check_sdk_m2_environment.py',
+                'discovery/sdk_m2_audio_lifecycle.py', 'discovery/check_sdk_m2_audio_lifecycle.py',
                 '.github/workflows/sdk-m2.yml', 'Tools/cksim-notify.c',
                 'discovery/check_platform_shims.py', 'discovery/device_oracles.py',
                 'discovery/check_lck_provider_policy.py',
@@ -70,6 +72,7 @@ def validate_symbols(names):
         require(not name.startswith('_CKSim') and name not in hooks and not any(token in name for token in
                 ('CKSimRuntimeIsActive', 'CKSimRuntimeVersion', 'CKSimActivate', 'CKSimGetEngine',
                  'CKSimPrepareEngine', 'CKSimReleaseEngine', 'CKSimMakeCall', 'CKSimPerform',
+                 'AudioLifecycleDiagnostics', 'VSAudioSessionSetLifecycleDiagnosticHandler',
                  'CKSimInjectPush', 'CKSimInstallPushHooks', 'CKSimReleasePushHooks', 'CKSimCaptureHook',
                  'CKSimReplaceHook', 'CKSimCurrentPushID', 'CKSimResourceDirectory', 'CKSimEmit',
                  'CKSimulatorEngine', 'CKRuntimePayload', 'CKRuntimeMetadata', 'RuntimeEngine',

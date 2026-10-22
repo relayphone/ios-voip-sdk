@@ -4,6 +4,21 @@
 #import <AVFAudio/AVFAudio.h>
 #endif
 
+#if DEBUG && TARGET_OS_SIMULATOR
+static VSAudioSessionLifecycleDiagnosticHandler lifecycleDiagnostic;
+void VSAudioSessionSetLifecycleDiagnosticHandler(VSAudioSessionLifecycleDiagnosticHandler handler) {
+  // Refuse an off-main test installation; missing capture stays a failed gate.
+  if (!NSThread.isMainThread) return;
+  lifecycleDiagnostic = [handler copy];
+}
+#define VS_AUDIO_OBSERVED(note, context, value) do { \
+  if (lifecycleDiagnostic) lifecycleDiagnostic((note).name, \
+    (context) ? NSStringFromClass([(id)(context) class]) : @"", NSThread.isMainThread, (value)); \
+} while (0)
+#else
+#define VS_AUDIO_OBSERVED(note, context, value) do {} while (0)
+#endif
+
 @implementation VSAudioSessionLifecycleObserver {
   NSMutableArray<id> *_tokens;
 }
@@ -16,6 +31,7 @@
   if (@available(iOS 27.0, watchOS 27.0, *)) {
     [self observe:AVAudioSessionDidBecomeActiveNotification receive:^(NSNotification *note) {
       VSAudioSessionLifecycleValue value = { .kind = VSAudioSessionLifecycleKindActive };
+      VS_AUDIO_OBSERVED(note, nil, value);
       handler(value);
     }];
     [self observe:AVAudioSessionDidBecomeInactiveNotification receive:^(NSNotification *note) {
@@ -29,6 +45,7 @@
           value.interruptionReason = context.interruptionContext.reason;
         }
       }
+      VS_AUDIO_OBSERVED(note, context, value);
       handler(value);
     }];
     [self observe:AVAudioSessionResumptionRecommendationNotification receive:^(NSNotification *note) {
@@ -38,6 +55,7 @@
         .kind = VSAudioSessionLifecycleKindResumptionRecommended,
         .shouldResume = context.recommendation == AVAudioSessionResumptionRecommendationShouldResume
       };
+      VS_AUDIO_OBSERVED(note, context, value);
       handler(value);
     }];
   } else
@@ -60,11 +78,13 @@
         value.shouldResume = [options isKindOfClass:NSNumber.class] &&
           (options.unsignedIntegerValue & AVAudioSessionInterruptionOptionShouldResume) != 0;
       } else return;
+      VS_AUDIO_OBSERVED(note, nil, value);
       handler(value);
     }];
   }
   [self observe:AVAudioSessionMediaServicesWereResetNotification receive:^(NSNotification *note) {
     VSAudioSessionLifecycleValue value = { .kind = VSAudioSessionLifecycleKindMediaServicesReset };
+    VS_AUDIO_OBSERVED(note, nil, value);
     handler(value);
   }];
   #endif
