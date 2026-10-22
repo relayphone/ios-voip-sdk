@@ -130,3 +130,12 @@ public enum UnhandledActionPolicy: String, Codable, Sendable { case fail, accept
 public enum ConversationClientError: Error, Sendable, Equatable {
   case alreadyConfigured, invalidConfiguration, invalidPayload, unknownConversation, unsupported, invalidDigits
 }
+
+public struct ConversationStateUpdate: Codable, Sendable, Equatable {
+  public let revision: UInt64
+  public let conversations: [ConversationSnapshot]
+}
+
+public enum ConversationEvent: String, Codable, Sendable {
+  case audioActivated, audioDeactivated, providerReset
+}

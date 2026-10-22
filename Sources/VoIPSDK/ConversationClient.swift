@@ -5,23 +5,17 @@ import AVFAudio
 // Apple's LCK manager/actions and delegate lack concurrency annotations in Xcode 27.1.
 // Keep this compatibility import here: all framework access and mutation stays on MainActor.
 @preconcurrency import LiveCommunicationKit
+#if SWIFT_PACKAGE
+import VoIPPlatform
+#endif
 #if os(iOS)
 @preconcurrency import CallKit
 #endif
 
-public struct ConversationStateUpdate: Codable, Sendable, Equatable {
-  public let revision: UInt64
-  public let conversations: [ConversationSnapshot]
-}
-
-public enum ConversationEvent: String, Codable, Sendable {
-  case audioActivated, audioDeactivated, providerReset
-}
-
 /// The process's sole LCK owner. Calling code never receives the manager or a provider.
 @MainActor
 public final class ConversationClient: NSObject {
-  public struct Configuration: Sendable {
+  public struct Configuration: Sendable, Equatable {
     public var ringtoneName: String?
     public var iconTemplateImageData: Data?
     public var maximumConversationGroups: Int
@@ -43,9 +37,6 @@ public final class ConversationClient: NSObject {
 
   private static var configuration = Configuration()
   private static var instance: ConversationClient?
-  /// Launch-owned DEBUG monitor insertion points; neither callback creates a provider.
-  public static var beforeManagerCreation: (@MainActor () -> Void)?
-  public static var afterManagerCreation: (@MainActor () -> Void)?
   public static func configure(_ configuration: Configuration) throws {
     guard instance == nil else { throw ConversationClientError.alreadyConfigured }
     guard configuration.maximumConversationGroups > 0, configuration.maximumConversationsPerGroup > 0 else {
@@ -58,6 +49,15 @@ public final class ConversationClient: NSObject {
     let client = ConversationClient(configuration: configuration)
     instance = client
     return client
+  }
+
+  static func forApplication(configuration: Configuration) throws -> ConversationClient {
+    if let instance {
+      guard self.configuration == configuration else { throw ConversationClientError.alreadyConfigured }
+      return instance
+    }
+    try configure(configuration)
+    return shared
   }
 
   private typealias Record = ConversationRecord
@@ -82,7 +82,10 @@ public final class ConversationClient: NSObject {
     self.configuration = configuration
     coordinator = ConversationActionCoordinator(policy: configuration.unhandledAction)
     SimulatorSupport.activateIfNeeded()
-    Self.beforeManagerCreation?()
+    #if DEBUG
+    ProviderCreationMonitor.install { message in NSLog("VoIPSDK provider ownership: %@", message) }
+    ProviderCreationMonitor.beginOwnedManagerCreation()
+    #endif
     manager = ConversationManager(configuration: .init(ringtoneName: configuration.ringtoneName,
       iconTemplateImageData: configuration.iconTemplateImageData,
       maximumConversationGroups: configuration.maximumConversationGroups,
@@ -91,7 +94,9 @@ public final class ConversationClient: NSObject {
       supportsVideo: configuration.supportsVideo,
       supportedHandleTypes: [.generic, .phoneNumber, .emailAddress]))
     super.init()
-    Self.afterManagerCreation?()
+    #if DEBUG
+    ProviderCreationMonitor.endOwnedManagerCreation()
+    #endif
     manager.delegate = self
     #if os(iOS)
     callObserver.setDelegate(self, queue: .main)
@@ -223,15 +228,18 @@ public final class ConversationClient: NSObject {
     }
   }
 
-  public func receiveCallEnded(_ payload: CallEndedPayload) {
+  @discardableResult
+  public func receiveCallEnded(_ payload: CallEndedPayload) -> Bool {
     let now = Date(); endEventIDs = endEventIDs.filter { now.timeIntervalSince($0.value) <= 120 }
-    guard endEventIDs[payload.eventId] == nil else { return }
+    guard endEventIDs[payload.eventId] == nil else { return false }
     endEventIDs[payload.eventId] = now
-    guard let id = invitations.conversation(serverCallId: payload.serverCallId) else { return }
+    guard let id = invitations.conversation(serverCallId: payload.serverCallId),
+          records[id] != nil || incomingReports[id] != nil else { return false }
     // A termination racing an incoming report is retained until the manager publishes the conversation.
     records[id]?.ended = .init(at: now, reason: payload.reason)
     records[id]?.endReportPending = true
     refresh()
+    return true
   }
 
   public func reportConversation(_ id: UUID, report: ConversationReport) throws {
