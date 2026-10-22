@@ -5,8 +5,9 @@ the reviewed handler-rejection bridge change `c1e7dcb`, A3 pending-mute filter a
 A2 deadline margin. It addresses the state/report part of steering §A.8. The
 [host receipt](../verification/2026-10-22-a8-action-contracts/receipt.json) binds
 the source, controls and regression output. This is not full A8 acceptance yet:
-the audio-event envelope and actual-client wrapped-duplicate controls remain to
-be integrated from their respective owners.
+the audio-event envelope remains with A4, and genuine duplicate-error wrapping
+still needs device measurement. The host wrapped-error controls are integrated
+below.
 
 Join/start fulfillment acknowledges signaling. A native incoming `.joined`
 conversation projects `connecting` until an explicit transport `connected`
@@ -55,3 +56,15 @@ async report signature. Both branches' workflow checks remain, and the embedded
 simulator JSON exactly matches A2's canonical profile. A0's retained native
 device-exclusion evidence keeps its original source identity. The combined
 source still needs native acceptance; audio-event context remains with A4.
+
+**Measured host follow-up:** A1's strict shipping gates at `ed8f922` and A0's
+simulator public-header correction at `2605d4d` are integrated. Five affected
+host checks pass, bound to merge `6cbb14a` by the
+[follow-up receipt](../verification/2026-10-22-a8-action-contracts/a0-a1-followup.json).
+They include the actual Expo public-header simulator consumer, five device
+exclusion/compiler-fixture groups, fourteen M1 gate controls, seven M0 gate
+controls, strict report-entry policy controls and CLI controls. No simulator was
+booted and no app was built or launched for this follow-up. Prior native A0
+evidence keeps its original source identity. A7's sole entry point and A4's
+event context will be integrated only after their owners publish stable local
+commits.
