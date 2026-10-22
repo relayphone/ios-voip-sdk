@@ -136,12 +136,13 @@ private struct IncomingPushAssociations {
     pending.removeValue(forKey: id)
     return .associated(identifier)
   }
+  mutating func finish(_ id: UUID, pushID: String) {
+    guard var entry = pending[id], entry.identifiers.remove(pushID) != nil else { return }
+    pending[id] = entry.identifiers.isEmpty ? nil : entry
+  }
   mutating func complete(pushID: String) {
     guard !pushID.isEmpty else { return }
-    for (id, var entry) in pending {
-      entry.identifiers.remove(pushID)
-      pending[id] = entry.identifiers.isEmpty ? nil : entry
-    }
+    for id in Array(pending.keys) { finish(id, pushID: pushID) }
   }
 }
 
@@ -620,6 +621,12 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       }
     }
   }
+  func finishIncomingReport(_ id: UUID, pushID: String) {
+    withState {
+      guard !stopped else { return }
+      incomingPushAssociations.finish(id, pushID: pushID)
+    }
+  }
   func updated(provider: CXProvider, uuid: UUID, update: CXCallUpdate) {
     withState { calls[uuid]?.update = update.copy() as? CXCallUpdate }
   }
@@ -817,6 +824,11 @@ public enum RuntimeBootstrap {
   public static func associateIncomingReport(_ id: UUID, pushID: String) {
     guard CKSimRuntimeIsActive() else { return }
     RuntimeEngine.existing()?.associateIncomingReport(id, pushID: pushID)
+  }
+
+  public static func finishIncomingReport(_ id: UUID, pushID: String) {
+    guard CKSimRuntimeIsActive() else { return }
+    RuntimeEngine.existing()?.finishIncomingReport(id, pushID: pushID)
   }
 }
 

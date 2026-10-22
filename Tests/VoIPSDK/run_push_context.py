@@ -78,7 +78,23 @@ private actor Bridge {
     pending.complete(pushID: "first")
     pending.complete(pushID: "second")
     precondition(pending.consume(conflicted) == .absent)
-    print("passed: task suspension, child inheritance, unrelated/detached work, 32 concurrent UUIDs, once-consumption, matching cleanup, UUID reuse, ambiguous-overlap refusal")
+    let early = UUID(), samePushOtherUUID = UUID()
+    precondition(pending.associate(early, pushID: "early-rejected"))
+    precondition(pending.associate(samePushOtherUUID, pushID: "early-rejected"))
+    pending.finish(early, pushID: "unrelated")
+    // A report rejected before the runtime hook finishes before PushKit completion.
+    pending.finish(early, pushID: "early-rejected")
+    precondition(pending.associate(early, pushID: "next-queued-report"), "next serialized report cannot inherit a rejected attempt")
+    pending.finish(early, pushID: "early-rejected")
+    precondition(pending.consume(early) == .associated("next-queued-report"), "an old finish cannot clear a successor")
+    precondition(pending.consume(samePushOtherUUID) == .associated("early-rejected"), "report finish is scoped to UUID and push identifier")
+    precondition(pending.associate(conflicted, pushID: "third"))
+    precondition(!pending.associate(conflicted, pushID: "fourth"))
+    pending.finish(conflicted, pushID: "third")
+    precondition(pending.consume(conflicted) == .ambiguous, "partial report finish must retain ambiguity")
+    pending.finish(conflicted, pushID: "fourth")
+    precondition(pending.consume(conflicted) == .absent)
+    print("passed: task suspension, child inheritance, unrelated/detached work, 32 concurrent UUIDs, once-consumption, matching cleanup, UUID reuse, ambiguous-overlap refusal, early-report settlement, stale-finish isolation")
   }
 }
 '''

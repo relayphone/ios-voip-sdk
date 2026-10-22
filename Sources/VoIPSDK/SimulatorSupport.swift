@@ -46,5 +46,10 @@ public enum SimulatorSupport {
     guard let pushID = SimulatorPushContext.pushIdentifier else { return }
     RuntimeBootstrap.associateIncomingReport(id, pushID: pushID)
   }
+
+  static func finishIncomingReport(_ id: UUID) {
+    guard let pushID = SimulatorPushContext.pushIdentifier else { return }
+    RuntimeBootstrap.finishIncomingReport(id, pushID: pushID)
+  }
   #endif
 }

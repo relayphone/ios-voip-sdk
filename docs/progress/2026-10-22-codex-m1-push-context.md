@@ -49,3 +49,23 @@ strict M1 gate and require every actual push report to carry its matching push
 identifier. Preserve the pre-fix red capture and compare bound evidence. No native
 run, simulator operation, device operation, or APNs activity was performed for
 this scoped change.
+
+## Report-scope lifetime followup
+
+Proposed invariant hardening: public LCK may reject an incoming report before
+calling the runtime's underlying CX hook. No new native failure was measured for
+this case. A queued report could otherwise finish before the parent PushKit task
+runs its completion, leaving unused context present when the next attempt starts.
+
+`SimulatorSupport.finishIncomingReport(id)` now removes only the current task's
+matching UUID and push identifier. The client places it in a `defer` immediately
+after association, around its actual LCK report call. Push completion remains
+additional cleanup. Unrelated UUIDs, a successor's identifier, and sticky
+ambiguous state remain protected.
+
+[report-scope-host.json](../verification/2026-10-22-m1-push-context/report-scope-host.json)
+binds the extended exact-production controls, including early rejection before
+hook consumption, stale finish after a successor association, and the same push
+identifier associated with another UUID. Independent specification and standards
+reviews found no actionable issues. No new native run or device operation was
+performed; the integrated native gate remains required.
