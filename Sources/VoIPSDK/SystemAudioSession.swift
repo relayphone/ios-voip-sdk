@@ -32,7 +32,7 @@ final class SystemAudioSession {
 
   init() {
     #if os(iOS)
-    observe(AVAudioSession.routeChangeNotification) { _, owner in owner.refreshRoutes() }
+    observe(AVAudioSession.routeChangeNotification) { owner in owner.refreshRoutes() }
     #endif
     lifecycleObserver = VSAudioSessionLifecycleObserver { [weak self] value in
       let event: SystemAudioLifecycleEvent
@@ -61,12 +61,12 @@ final class SystemAudioSession {
   }
 
   private func observe(_ name: Notification.Name,
-                       receive: @escaping @MainActor (Notification, SystemAudioSession) -> Void) {
-    observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
-      // The observer is explicitly delivered on main; decode context values only.
+                       receive: @escaping @MainActor (SystemAudioSession) -> Void) {
+    observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+      // Main-queue delivery needs only a refresh signal; the notification never crosses isolation.
       MainActor.assumeIsolated {
         guard let self else { return }
-        receive(notification, self)
+        receive(self)
       }
     })
   }
