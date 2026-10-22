@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Two Debug native contracts; synthetic controls do not qualify native behavior."""
+"""Debug native contracts; synthetic controls do not qualify native behavior."""
 import argparse
 import hashlib
 import json
@@ -12,7 +12,7 @@ from summarize import EvidenceError, load, one, require
 
 ROOT = Path(__file__).resolve().parent.parent
 BUNDLE = 'dev.iosvoipsdk.m1contracts'
-CASES = ('guard', 'unhandled-accept')
+CASES = ('guard', 'unhandled-accept', 'unhandled-fail')
 OWN_FILES = ('discovery/probe/sdk_m1_contracts.swift', 'discovery/build_sdk_m1_contracts.sh',
              'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
              'discovery/probe/Info.plist', 'discovery/run_scenario.py', 'discovery/sdk_m0_conformance.py',
@@ -152,6 +152,159 @@ def accept_contract(rows, engine, source_root):
                 connectedBeforeRuntimeDeadlineMS=platform_deadline - connected[0]['wallTimeMS'])
 
 
+def fail_contract(rows, engine, source_root):
+    configuration = one(rows, 'contract.configuration'); owner = one(rows, 'contract.owner')
+    require(configuration.get('policy') == 'fail' and configuration.get('handlerAttached') is False and
+            rows.index(configuration) < rows.index(owner), 'fail policy configured too late')
+    require(not any(r['event'] == 'contract.warning' for r in rows) and owner.get('warnings') == 0 and
+            owner.get('identity') and owner['identity'] == owner.get('sharedIdentity'), 'unexpected fail owner/warning')
+    incoming = one(rows, 'contract.incoming'); call = incoming.get('conversationID')
+    pending = one(rows, 'contract.pending'); deadline = pending.get('deadlineMS'); action_id = pending.get('actionID')
+    require(isinstance(call, str) and call and pending.get('conversationID') == call and
+            pending.get('kind') == 'join' and pending.get('origin') == 'app' and
+            pending.get('handlerAttached') is False and isinstance(action_id, str) and action_id and
+            type(deadline) is int and type(pending.get('remainingMS')) is int and
+            abs(deadline - pending['wallTimeMS'] - pending['remainingMS']) <= 2 and
+            rows.index(owner) < rows.index(incoming) < rows.index(pending), 'invalid fail pending join')
+    reference = [row for name in REFERENCES for row in load(source_root / Path(name).parent, Path(name).stem)]
+    check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000 + 1.5), deadline_bands(reference))
+    marker = one(engine, 'contract.pendingClock')
+    require(marker.get('actionID') == action_id and type(pending.get('clockBeforeMS')) is int and
+            0 <= pending['wallTimeMS'] - pending['clockBeforeMS'] <= 25, 'unbound or imprecise fail clock sample')
+    def native_wall(event):
+        relative = event['t_ms'] - marker['t_ms']
+        return pending['clockBeforeMS'] + relative, pending['wallTimeMS'] + relative
+
+    delivered = [r for r in engine if r['event'] == 'transaction.delivered']
+    answer = one(delivered, 'transaction.delivered', kinds=['CXAnswerCallAction'])
+    require(answer.get('origin') == 'application' and isinstance(answer.get('provider'), str) and
+            answer['provider'] and isinstance(answer.get('actionIDs'), list) and len(answer['actionIDs']) == 1 and
+            isinstance(answer['actionIDs'][0], str) and answer['actionIDs'][0], 'invalid native fail answer')
+    native_id = answer['actionIDs'][0]
+    settled = one(engine, 'action.settled', actionID=native_id)
+    advertised = one(engine, 'action.deadline', actionID=native_id); platform_deadline = advertised.get('deadlineMS')
+    require(settled.get('fulfilled') is False and settled.get('origin') == 'application' and
+            advertised.get('apiKind') == 'livecommunicationkit' and type(platform_deadline) is int and
+            advertised.get('provider') == answer['provider'] and
+            advertised.get('deadlineSeconds') == advertised.get('expirySeconds') == 30 and
+            1000 <= platform_deadline - deadline <= 3500 and
+            engine.index(answer) < engine.index(advertised) < engine.index(marker) < engine.index(settled) and
+            native_wall(settled)[0] >= deadline - 25 and native_wall(settled)[1] < platform_deadline,
+            'native failed answer must settle at the effective boundary before platform expiry')
+    # LCK and CX UUIDs need not match. Additional native actions may only be the
+    # later system end; this journal does not independently expose its call UUID.
+    action_ids = set(); later_ends = []
+    for transaction in delivered:
+        ids = transaction.get('actionIDs')
+        require(isinstance(ids, list) and len(ids) == 1 and isinstance(ids[0], str) and ids[0] and
+                ids[0] not in action_ids and transaction.get('provider') == answer['provider'], 'unknown/reused fail native action')
+        action_ids.add(ids[0])
+        if transaction is answer: continue
+        require(transaction.get('kinds') == ['CXEndCallAction'] and transaction.get('origin') == 'system' and
+                transaction.get('requestID') == 'system' and engine.index(transaction) > engine.index(settled),
+                'unrelated action in fail contract')
+        later_ends.append(transaction)
+    for event in ('action.deadline', 'action.settled', 'action.timeout'):
+        values = [r for r in engine if r['event'] == event]
+        require(len({r.get('actionID') for r in values}) == len(values) and
+                all(r.get('actionID') in action_ids for r in values), 'unbound/duplicate native fail event')
+        if event == 'action.deadline':
+            require({r['actionID'] for r in values} == action_ids and
+                    all(r.get('provider') == answer['provider'] and r.get('apiKind') == 'livecommunicationkit'
+                        for r in values), 'missing/mixed native fail deadlines')
+        for value in values:
+            transaction = next(r for r in delivered if r['actionIDs'] == [value['actionID']])
+            require(engine.index(transaction) < engine.index(value) and
+                    (event == 'action.deadline' or
+                     (engine.index(one(engine, 'action.deadline', actionID=value['actionID'])) < engine.index(value) and
+                      value.get('origin') == transaction['origin'])) and
+                    (event != 'action.timeout' or value['actionID'] != native_id), 'invalid fail action event order/origin/timeout')
+
+    diagnostics = [r for r in rows if r['event'] == 'contract.actionDiagnostic' and r.get('actionID') == action_id]
+    phases = ('policy-fire', 'platform-settle-enter', 'platform-settle-return', 'pending-state-published')
+    require([r.get('phase') for r in diagnostics] == list(phases), 'missing/reordered fail diagnostics')
+    sdk_platform = diagnostics[0].get('platformDeadlineMS')
+    require(type(sdk_platform) is int and abs(sdk_platform - deadline - 1500) <= 1,
+            'fail diagnostic safety margin differs')
+    for index, diagnostic in enumerate(diagnostics):
+        sample = diagnostic.get('sdkWallTimeMS')
+        require(type(sample) is int and diagnostic.get('effectiveDeadlineMS') == deadline and
+                diagnostic.get('platformDeadlineMS') == sdk_platform and
+                deadline <= sample < min(sdk_platform, platform_deadline) and
+                0 <= diagnostic['wallTimeMS'] - sample <= 25 and
+                diagnostic.get('entryPending') is (index == 0) and type(diagnostic.get('platformPending')) is bool and
+                (index > 1 or diagnostic['platformPending'] is True), 'invalid/late fail diagnostic')
+    policy, enter, _, published = diagnostics
+    require(rows.index(pending) < rows.index(policy) and
+            all(a['sdkWallTimeMS'] <= b['sdkWallTimeMS'] for a, b in zip(diagnostics, diagnostics[1:])) and
+            native_wall(settled)[0] >= enter['sdkWallTimeMS'] - 25 and
+            native_wall(settled)[1] < sdk_platform, 'fail settlement/diagnostic clock binding or SDK expiry differs')
+    snapshots = [r for r in rows if r['event'] == 'contract.snapshot']
+    require(snapshots and all(type(r.get('revision')) is int for r in snapshots) and
+            all(a['revision'] < b['revision'] for a, b in zip(snapshots, snapshots[1:])), 'invalid fail snapshot revision')
+    target_pending = []; cleared = []
+    for snapshot in snapshots:
+        calls = snapshot.get('conversations')
+        require(isinstance(calls, list) and len(calls) <= 1, 'duplicate fail conversation projection')
+        for value in calls:
+            require(isinstance(value, dict) and value.get('id') == call and value.get('hasConnectedAt') is False and
+                    value.get('status') in ('ringing', 'connecting', 'ending', 'ended'), 'unbound/connected fail conversation')
+            action = value.get('pending')
+            if action is not None:
+                require(isinstance(action, dict), 'invalid fail pending projection')
+                if action.get('id') == action_id:
+                    require(action == dict(id=action_id, kind='join', origin='app', deadlineMS=deadline), 'fail pending identity/deadline changed')
+                    target_pending.append(snapshot)
+                else:
+                    require(isinstance(action.get('id'), str) and action['id'] and action.get('kind') == 'end' and
+                            action.get('origin') == 'system' and type(action.get('deadlineMS')) is int and
+                            later_ends and any(native_wall(end)[0] <= snapshot['wallTimeMS'] + 25 for end in later_ends) and
+                            rows.index(snapshot) > rows.index(enter), 'unknown fail pending action')
+        if rows.index(snapshot) > rows.index(enter) and not any((v.get('pending') or {}).get('id') == action_id for v in calls):
+            cleared.append(snapshot)
+    require(target_pending and target_pending[0]['wallTimeMS'] < deadline and
+            rows.index(target_pending[-1]) < rows.index(policy) and cleared and
+            rows.index(cleared[0]) < rows.index(published), 'fail pending clearing lacks observer publication')
+    observation = one(rows, 'contract.failureObservation')
+    preceding = [r for r in snapshots if rows.index(r) < rows.index(observation)]
+    require(preceding, 'fail observation precedes snapshots')
+    observed = preceding[-1]['conversations']
+    require(observation.get('conversationID') == call and observation.get('pendingCleared') is True and
+            observation.get('conversationPresent') is bool(observed) and
+            observation.get('status') == (observed[0]['status'] if observed else 'absent') and
+            observation['wallTimeMS'] >= sdk_platform and
+            rows.index(published) < rows.index(observation) and
+            not any(r['event'] in ('contract.observation', 'contract.endReportRequested', 'contract.reportEnded') for r in rows) and
+            one(rows, 'contract.joinResult').get('accepted') is True, 'fabricated fail observation/connection')
+    reports = [r for r in engine if r['event'] == 'report.ended']
+    result = one(rows, 'contract.result')
+    if observed:
+        requested = one(rows, 'contract.fixtureCleanupRequested'); reported = one(rows, 'contract.fixtureCleanupReported')
+        native_report = one(engine, 'report.ended')
+        require(all(r.get('conversationID') == call and r.get('reason') == 'failed' for r in (requested, reported)) and
+                rows.index(observation) < rows.index(requested) < rows.index(reported) < rows.index(result) and
+                not any(r['event'] == 'contract.fixtureCleanupSkipped' for r in rows) and
+                rows.index(snapshots[-1]) > rows.index(requested) and
+                native_report.get('callUUID') == call and native_report.get('reason') == 1 and
+                engine.index(native_report) > engine.index(settled) and
+                native_wall(native_report)[0] >= requested['wallTimeMS'] - 25 and
+                native_wall(native_report)[1] <= reported['wallTimeMS'] + 25, 'fabricated/unbound fixture cleanup')
+    else:
+        skipped = one(rows, 'contract.fixtureCleanupSkipped')
+        require(skipped.get('conversationID') == call and rows.index(observation) < rows.index(skipped) < rows.index(result) and
+                not reports and not any(r['event'] in ('contract.fixtureCleanupRequested', 'contract.fixtureCleanupReported') for r in rows),
+                'absent fail conversation must skip fixture cleanup')
+    require(snapshots[-1]['conversations'] == [] and rows.index(snapshots[-1]) < rows.index(result) and
+            all(r.get('uuid') == call and r.get('connected') is False for r in engine if r['event'] == 'call.changed') and
+            one(engine, 'provider.created').get('provider') == answer['provider'], 'fail cleanup/state/provider differs')
+    return dict(success=True, effectiveDeadlineMS=deadline, sdkPlatformDeadlineMS=sdk_platform, runtimeDeadlineMS=platform_deadline,
+                observedStatus=observation['status'], fixtureCleanup='reported' if observed else 'skipped',
+                policyAfterEffectiveDeadlineMS=policy['sdkWallTimeMS'] - deadline,
+                observationAfterSDKPlatformDeadlineMS=observation['wallTimeMS'] - sdk_platform,
+                nativeFailureBeforeSDKPlatformDeadlineMS=sdk_platform - native_wall(settled)[1],
+                nativeFailureBeforeRuntimeDeadlineMS=platform_deadline - native_wall(settled)[1])
+
+
 def validate_build(build, source_root=ROOT):
     info = json.loads((build / 'build-info.json').read_text())
     identity = source_identity(source_root)
@@ -204,7 +357,9 @@ def validate(build, capture, source_root=ROOT, parent_manifest=None):
                 all(r.get('runID') == manifest['runID'] and r.get('pid') == receipt['appPID'] and
                     r.get('bundleID') == BUNDLE and r.get('profile') == 'ios-27.0' for r in engine), 'mixed runtime journal')
         require(one(engine, 'runtime.installed').get('version') == (source_root / 'VERSION').read_text().strip(), 'runtime version differs')
-        results[case] = guard_contract(rows, engine) if case == 'guard' else accept_contract(rows, engine, source_root)
+        if case == 'guard': results[case] = guard_contract(rows, engine)
+        elif case == 'unhandled-accept': results[case] = accept_contract(rows, engine, source_root)
+        else: results[case] = fail_contract(rows, engine, source_root)
         require(one(rows, 'contract.result').get('success') is True and not any(r['event'] == 'contract.error' for r in rows), 'native contract reported failure')
     return dict(success=True, classification='measured native contracts', cases=results,
                 simulatorOS=execution_os, source=identity, buildInfoSHA256=digest(build / 'build-info.json'))

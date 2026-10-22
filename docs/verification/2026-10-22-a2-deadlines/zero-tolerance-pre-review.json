@@ -1,0 +1,447 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured changed-source host/compiler preparation; fresh native CI qualification pending",
+  "createdAt": "2026-10-22T11:29:45.469585+00:00",
+  "preparationBaseCommit": "ff54135bc455092437ebfcdec3a147774fa4a8bc",
+  "mainMergedForward": "ef5a1f6f14c5a151b8bc9d41cc0451fc64c9d305",
+  "originalPRHead": "1fd33b4969a5a19dee14b18da354612f9b9534ef",
+  "previousEvidence": {
+    "docs/verification/2026-10-22-a2-deadlines/receipt.json": "b13fd900def8dfd16fbbbe4c28c91fcced99dca0b5fc7889c46b1f030f443b7e",
+    "docs/verification/2026-10-22-a2-deadlines/stack-followup.json": "613eb4de4608b1ac4c70ae62b297b688bea67be5b7cb534d69e6cbb7b1d7a696",
+    "docs/verification/2026-10-22-a2-deadlines/original-ci-failure.json": "602e382391f87277d7fce03f06ac9074687a5c02b9bba15d71f7320d9210d02a"
+  },
+  "inputs": {
+    ".github/workflows/sdk-m0.yml": "82d2220eafc469ccda1f71c284203fb012d834aa32eadaee22d89483cf61b814",
+    "Expo/apple/ConversationBridge.swift": "5a2215e9cd8fb373f552a95bb83142eccc027e20c7d9fd52224773f660ac3fd9",
+    "Expo/apple/IosVoipSDK.h": "3f58b6c3fc2395bed11c25a5fe86859781efae7d50297ed4761999f1d57b9eb9",
+    "Expo/apple/IosVoipSDKModule.swift": "9735f185287b3283c4a588fdce279e73b5e1bc2381b6cf32e55a8be0506fdb5c",
+    "Expo/apple/VoIPAppDelegateSubscriber.swift": "bd4add2eb026c626532f86b29e1d82ee4856c3c930613e3a1085e63ba6efcb42",
+    "Expo/src/hooks.ts": "c7678edd88409e4d38465a9623c04b1b985eb0a82f30e57eaf6012e22bc23318",
+    "Expo/src/index.ts": "47f6a96c3217458e88ae952075b755ed22ed858a34a9d2894e075b1298247c00",
+    "Expo/src/internal/bootstrap.ts": "2bbdbfa840d6fb475f2cb385acea26ace671a812a02ee8902ebff6f4c79b4bc4",
+    "Expo/src/internal/client.ts": "7217923f83410f35c426f3bcf24177bb56bc08f02e93005e0fd44d7470e3986a",
+    "Expo/src/internal/handler.ts": "0822968e954d0f9d7a9a4875b7da08b5d897519df2bb391b6ab6b4ad83d85bab",
+    "Expo/src/internal/native.ts": "45d4a9c16633646863bb0438b78921ffbdb734cd4c279c1a4503bc7d049ccd1a",
+    "Expo/src/internal/protocol.ts": "07289c7fb1a90f9727552b44c7f6d89d0a249e7b3c2c5a2805b6e2ac3c672517",
+    "Expo/src/internal/store.ts": "6624ea42d8ee6fa5b70ac7cd97128a131857c17d196d317315d31cdef79fec53",
+    "Expo/src/types.ts": "5d13fd22b9a4a87c4c28bf8ffd2644d69a5edf1b99b6947ce89e08bc33c13c6c",
+    "IosVoipSDK.podspec": "8fadc2b3b87ae252cde2426e8c4730d1310967457ada81ac976cf91be0a3e6bb",
+    "Package.swift": "d3206f8aaac253ba3a571caba878a4c7fe638d6381093985612c0803b88ae0a4",
+    "Sources/Engine/Resources/ios-27.0.json": "f34933eb5ad2eaa7db2b19efba87e94345bbb8b77c4312f697010cde108a88d8",
+    "Sources/Engine/RuntimeEngine.swift": "cd68271cdb3dca9121992e214e767a8e138d1efcdc2162ea2d6a947425c7592b",
+    "Sources/Interposition/CKInterposition.m": "8aa3433a646790a24576edc1f65fd84c4b062733ec30136629f699c19a7ab999",
+    "Sources/Interposition/CKLoader.m": "7f32927a00a6e863c2c26a1166e2846e36c7264cb122d17dba5469e5b06bb26f",
+    "Sources/Interposition/CKPushDelivery.m": "64f38820b49289bfad82a1c1a96cf46289057e32a96873ee04aeacd1e8975719",
+    "Sources/Interposition/CKRuntimeSeam.h": "47e32a8965a0dd1dfaef592eaec456841c2cbc80ea87059a8adba2c4ae1421cd",
+    "Sources/Interposition/include/CKRuntimeBridge.h": "565e067907f10700a4f7083b8b0dd4b25ae263b832f479ae3689c61435ba8bf3",
+    "Sources/VoIPPlatform/VSCompletionOnce.h": "3a6dd1d6e1c727339a3ea965b4ea2fc199304801472657103584aa817754ec5b",
+    "Sources/VoIPPlatform/VSCompletionOnce.m": "653eb974fe96d17c6c1579b59376d3986cced8a9d7f8c00458296add7821508d",
+    "Sources/VoIPPlatform/VSProviderCreationMonitor.m": "42d19821e78257e8952cc87a610253d786fa15a028baac2a218f637d5db43eba",
+    "Sources/VoIPPlatform/VSProviderMonitorInternal.h": "e360be44ea0657e62153f39ca4be0ed78b4369d086d299242a1fd3cb88c6ffc5",
+    "Sources/VoIPPlatform/VSProviderMonitorInternal.m": "0c9a9dcfe37777460272a9fdaa34e9d96e571b8bdc31cde6a44343d2d08b3658",
+    "Sources/VoIPPlatform/VSPushRegistryOwner.m": "20495224101e3e05ecccd8dc70d4e29f8e44ae59e56fe367699842da12c81ea6",
+    "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h": "31cb18b30406602c323ebb3e58ffafcaff0106a2f3ab4e378fb252a2a0c00ccd",
+    "Sources/VoIPPlatform/include/VSPushRegistryOwner.h": "6c193787c8dd70d4e0633615ea0728559bf10a53fcd41c6e6362827e3083d57b",
+    "Sources/VoIPPlatform/include/VoIPPlatform.h": "09884ca1f838088e33358a96013466a142c5c8773549e599beb43710b1043dd8",
+    "Sources/VoIPSDK/ConversationClient.swift": "10f22635d4ac51043cb8d4acde3c42e0f6674db927789f97c394fa1e189f8538",
+    "Sources/VoIPSDK/ConversationHandler.swift": "1e096cc9f02c2eb900a58e350b505fcfdeb43c7ebe5a1c9b566d7a647184eda8",
+    "Sources/VoIPSDK/ConversationModels.swift": "a9f49822a15b4ba0db15572af322e5c1da4f7d34f037089b1f55aa76ec1aa0ee",
+    "Sources/VoIPSDK/ConversationRecord.swift": "93208e379e1732e2bd48e74c8e256a2f06e83c5729e3d168e5bdf48191009029",
+    "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+    "Sources/VoIPSDK/PushService.swift": "de33029911b568dd888ac7ed8bea10a47167096f8b52b9b4cea4be81d1289aef",
+    "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+    "Sources/VoIPSDK/SimulatorSupport.swift": "adf83443fee4f0233325bbe84fd98816d82f8450fdc1893c4623e54986768149",
+    "Sources/VoIPSDK/VoIPApplication.swift": "a222dbeeb4675938862fd9cfddda591af614509cb55c011da3f7bd233ca077de",
+    "Tests/VoIPSDK/CoreTests.swift": "c7580921251a5e04f6563d44e8835cf50f09bf1552bc1151a37aaab3be99fb86",
+    "Tests/VoIPSDK/DeadlineTests.swift": "57dd084c653f2777a1c7ccba236b68559ab4091a09154bac5bbd5718086dbc28",
+    "Tests/VoIPSDK/ProjectionTests.swift": "e9b493706b26a76094c55ca6a736d3969f86ccee16a3eefe7ee1c51fe882b705",
+    "Tests/VoIPSDK/PushTests.swift": "8d4bb3d1e65fedec7b6eff2ca6df50c058738b20493da22ee41faec0911a8301",
+    "Tests/VoIPSDK/run.sh": "c60e866f6c6ebe507abd58fd8970230e5ed2f7b19465df833eec9a93f5ab85f1",
+    "Tests/VoIPSDK/run_deadlines.sh": "5ab45fc64b153b6e6433b077f0fe7482d1ed1d6d60797ab328d49a25a8459ed5",
+    "Tests/VoIPSDK/run_projection.sh": "b0656f1fea04e24fb761be7cbebe37f0e3b24f03dce3725d73951863da271019",
+    "Tests/VoIPSDK/run_push.sh": "a82a0e37bb5726f022fe1189aea9116b333f76086fcbc514b3009a56cce8ee28",
+    "Tests/VoIPSDK/run_push_context.py": "f440bd468b9e5f46e3309ac8eb19823dbe5cf52ba6dddcd303cf3491b92f97c6",
+    "discovery/README.md": "53caa2329d2ad66f58d90c75aa880ddba04a202a3c87f3d88466ab3f2e627608",
+    "discovery/abi_conformance.py": "286c2c669d90c283c2235e42ec9050a1dada3f10be4692efe593cfd64f400ce1",
+    "discovery/build_sdk_bootstrap.sh": "eb5928bca33823a78c07a064c588f875e6edf00f1e1537877236a2d3dccf9f5b",
+    "discovery/build_sdk_device_probe.sh": "f5c14b8ce0bcd2c4203d5a5a160db35194425316de821b9eb1ff10babfffbc0a",
+    "discovery/build_sdk_device_release.py": "a31c890809cf48f7431fe688950eed2a6eae05d46e39addc9037ce4b1b8dbdf8",
+    "discovery/build_sdk_m1_contracts.sh": "bdeb83c4cb9b1ae3ca4187263c197191e9ce0f5596f67ffe54a7bd1181a00534",
+    "discovery/check_cli_controls.py": "dfc35443aa81fd39b9fc2412aefac31176f2b106abf6f889e7cffe24a21e4137",
+    "discovery/check_cli_repair.py": "be0833a6fe924843cebfaa01fdde20c0f08068dbc0844b9182ff0f75682b29a1",
+    "discovery/check_conformance.py": "c8ef1780417e83d27f116ad288e290c475a0e1b5c585913e9c4ab3cf9d832709",
+    "discovery/check_console_stop.py": "b42a3d8a901977813a82e015f5e24de987b6cc69115f9f74ed419034daf5ae39",
+    "discovery/check_device_release.py": "a0635afb76e0660671c015ed6f1545882e0acf56ce18d647349443f357d879e5",
+    "discovery/check_environment.py": "1895aa7f6ffeb46bb276a481c4350c05a02ae579c6baefe1d2035139e7a6ff75",
+    "discovery/check_expo_bridge.py": "a668ba87be9db4910c2f37321b338b6850e939abed495b34533b46eddeb7abd5",
+    "discovery/check_expo_plugin.cjs": "12e13ba17c7b24f1a58a1e95b413f58800d576c23c3d59d2e93219aebd104bb0",
+    "discovery/check_harness.py": "336f6375746186ebf819138a53ff560433f67b4e142cb102a135bf1718b232f0",
+    "discovery/check_image_identity.py": "d0802b43adb1d1fe899840bc448dae77b07dc44e53ac0063f9040e0225e41199",
+    "discovery/check_lck_conformance.py": "82f1605d23b4a8db0577d54e0b07bd0e67092322c6249a2c0c8b6a47fab81da5",
+    "discovery/check_lck_deadlines.py": "b980c8aef3dfbeb9e951ba28aca9fcde42472af7d91e30623ffbf7d814da6295",
+    "discovery/check_lck_probe_readiness.py": "6e9b8021bed1dcf952b2f0ac823b617a62a800a6616934f80fac09a23a3da589",
+    "discovery/check_lck_provider_policy.py": "395f16c1a7a3e862e6340ff8b1bf81c0a804151deb2363eba61519997bc0ae87",
+    "discovery/check_oracles.py": "af3a52e159b85a6bd9d82e637862b6f4a06d64e826178297af7166d10f355948",
+    "discovery/check_platform_shims.py": "e13b2305187aae583d9fed7f8a7ebb6f00e4e0d4e37787766353bdf508d5c8d6",
+    "discovery/check_release_controls.py": "14801dc82587619bb92bb1050373b1412a3825ade33cfeb02fbbd48f1491ba07",
+    "discovery/check_repair_diagnostics.py": "0850ad2759969218fcbb162abbb81dfaab138ee3c21d263cd1f6054c619ceb81",
+    "discovery/check_sdk_m0.py": "44f0c2a54fc6fe807b2819c14e9e4a2ffd8e48051d9da1e4670f9406cae90e30",
+    "discovery/check_sdk_m1.py": "ed2aaad81cf7b74df45399997596fc059f6e7e483865b028207d8a2f98a2abbd",
+    "discovery/check_sdk_m1_contracts.py": "7a78a6bd7c2a1d4e80bef92fcbecb957633f4e02d9fa3d56fc6d39d5155166f6",
+    "discovery/check_shipping_controls.py": "b0902acbc9be5abf548f40c57caeb113db471f22d7ff408f4f6195a6e44f7560",
+    "discovery/cli_conformance.py": "1fd2ad1397bebd25d854cb025839874c843603a1f485a5d778325d4532c991a4",
+    "discovery/conformance.py": "b6b9df0d756b7cd015828c9a366c00f951c79cd1e93f8771680f71713aa5b5d3",
+    "discovery/device/Probe.entitlements": "d858f2a702fc0e6d4dff3f8de9ac0f648d08918659acf52d69b58ac6b4ca86b4",
+    "discovery/device/README.md": "60fcbb655fc06cfe19dfa66384d83cf6ea85527607aa134def0e2ee23a0cff05",
+    "discovery/device/project.yml": "dba2a4730cc38cae23280173287ae54aba015ba2e8a37db05a68310b8311a1b0",
+    "discovery/device_oracles.py": "a8ab789c0ac0da96fc73c8e124ae8ff694413e57f845c3bd453a8aff01e4db5d",
+    "discovery/device_release_exclusion.py": "c2d86cc8c205412b527a0844feba3bee32415feed695b58ba937bbd82c711466",
+    "discovery/fixtures/strict-v2/fixture.json": "4686de914d67d83ba345b2a4138dcaebf75ac17c56bd66899ee66d5b48ea0edf",
+    "discovery/fixtures/strict-v2/genuine.jsonl": "31fe037ecf8c76ea89fca86f38198a6f4e7777b9513208de67b0d17627e644a1",
+    "discovery/fixtures/strict-v2/genuine.receipt.json": "d411f2041867491dbaef7c189534ca43f730afe5d6132c52ab2ee9cf40ada28b",
+    "discovery/fixtures/strict-v2/mutations.json": "2c4c264b46f059d7d89792f960e250f2f026b9b1fd4987071f15c01e45b1a04a",
+    "discovery/fixtures/strict-v2/push.jsonl": "b6e11fcbb232678913f892a7c36282dd31ff7146ade1cdd7e770641bb6808c2c",
+    "discovery/fixtures/strict-v2/push.receipt.json": "656c7d4725284f9911e463e578d9173050db8ca9127a341c38e09095d7213b3e",
+    "discovery/fixtures/strict-v2/runtime.jsonl": "364b02f12829a95d13fef8f1dab5b2a2bd2008734649274954406b52a0aa6f2b",
+    "discovery/fixtures/strict-v2/runtime.receipt.json": "41544f8f30e135366e1e944c9ce642c802504a3714681642540a4dd81e2601dd",
+    "discovery/generations_conformance.py": "8586b7c1b08822341187a9f30da639b9825179b1f84b96278be2885fb20ad232",
+    "discovery/lck_conformance.py": "2dec5abee05b0d9313ac08bccba8543a26c54b963e0a9e3ae39404cf3991bde0",
+    "discovery/probe/Info.plist": "95077d28190af31b13544c03d84a619344b234b17faef16a882840723e5fa78e",
+    "discovery/probe/abi.m": "25a2e1eabce670b4c88d42c90d9b5f7713d22cbdc42b17fca0780585fdd1bcaf",
+    "discovery/probe/generations.swift": "7ba20ccd0a3c845bb26a1bc7f603c6e8f4760aaab6bdd96e4d5192d84a1bb72f",
+    "discovery/probe/lck_readiness.swift": "b10ddf8101eed054ef04aeafe59f83c0c46ec884a8b5ed240a2201fba9216c1d",
+    "discovery/probe/main.swift": "994c55b8e0e02f8c06decb0c4e51739d9e39f19a88388832c8d1ef2332a55913",
+    "discovery/probe/probe.entitlements": "f5dfadd87b081bb2f628ac78298797f922131cace19da02d73b15721feeb2c36",
+    "discovery/probe/report_threading.swift": "4baaa81154bf99203dcd5a279f85ed1afb7c393440f4e03f60d193bd08a45d3a",
+    "discovery/probe/sdk_bootstrap.swift": "7b443df5cf103852f1cd8560eff982f8f7ded1ddd4d05cef01b59936d77a3ec9",
+    "discovery/probe/sdk_m1_contracts.swift": "79b28bab228bf7034d0a9cf5d7436a8b1ed99e993aa9e9db06f754b15d02737a",
+    "discovery/report_threading_conformance.py": "b78387f2abffc49bb3e1956dacccf0be4046c9b6540873412a467347f4ef2c01",
+    "discovery/run.sh": "b0094d6bfbdff6d3e854241bc61212bd9e26836ce259f646796a91758b9938f8",
+    "discovery/run_abi.sh": "9e5570b0e84a9401208e06390478da32653497a8e4208f67a81c94aaac3ce4d7",
+    "discovery/run_repair.py": "995ab646f191bf0d2c96de740a4ce3c96869148918a634af612b08204cd9aac3",
+    "discovery/run_scenario.py": "cb0508a61f049443d8e7aa809c1fffa6a7a76d40a155c5bedfa66ca89bef4926",
+    "discovery/run_sdk_m0.sh": "73108b7fa5e356683b341ffeacf62ca9b04834ac21a997c76edb9c2329812e95",
+    "discovery/sdk_bootstrap_conformance.py": "8c0cf540a21dd763abf6b640ec6148809938abd4f20fc83b9311abb7e7e21025",
+    "discovery/sdk_m0_conformance.py": "243af7ebd4e71d2ad7305622e216b799f06999bb535ec42bbf6beb7ed04f85c4",
+    "discovery/sdk_m1_conformance.py": "e42c643d5d45394e2e95440ad48e01f6a6598ff5f04b589306bc16092388c605",
+    "discovery/sdk_m1_contracts_conformance.py": "a0d2dabd913cc9b171813b1690365ebfba837031e42636867d4410379dadc6b2",
+    "discovery/semantics_conformance.py": "3d6d194b010130b8a5fd21fd26e240280549db6a1204d2f6a292afc5c7aaab31",
+    "discovery/send-apns.mjs": "fbdb8acecd9d16d658cec49a2d286cc372e148cb71c4762da9dc8213843c8428",
+    "discovery/spike/CKSimBootstrap.c": "60f880c3f5dd5ae1691cf3582e623ea73ebca325826166ce89245901f2ab8ee9",
+    "discovery/spike/CKSimPush.m": "ea4dac06bb5e928cc8cf74fa9a4d9839f5baae7c48e138285b65d721b7461f11",
+    "discovery/spike/CKSimRuntime.m": "74bd3d8edebee5cbb67d7cb95eb7b1c7bfbd2665146070ca737f36ae6f7f433e",
+    "discovery/summarize.py": "019271bf8c0ecfd3b21a01c67268d4b1ecf8d54d4f1f01cd7f7069869db855e3"
+  },
+  "inputsSHA256": "8db717a273ae897100d3fbd906266da83abf14f6c01cf0b19f461e556d4a2a79",
+  "inputsUnchangedAcrossChecks": true,
+  "checks": [
+    {
+      "name": "core-and-real-clock",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "37e5b3c81714975c6258144064f301756c63cb884d503c1ce2f4740e2a719567"
+    },
+    {
+      "name": "profile-guard-and-device-evidence",
+      "command": [
+        "python3",
+        "discovery/check_lck_deadlines.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "036eaef56295915d968dffd6063f58e17ac94c24c54b4eab9d49d719b49cfcc6"
+    },
+    {
+      "name": "native-contract-gate-controls",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "d134272f345b5d7daa1ac22e8578de4be5c5f92cb93cc53f09f6000d00fd9e75"
+    },
+    {
+      "name": "existing-sdk-m1-controls",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "a9c4cbd8550a4d4ade290cd3a89febca53ece58a8f5dc41821cabb50bfe4485d"
+    },
+    {
+      "name": "device-oracle-controls",
+      "command": [
+        "python3",
+        "discovery/check_oracles.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "9a6edf8ef37706071598674e7255ea7542fa59703e7d9d8e750067baebe400c4"
+    },
+    {
+      "name": "lck-conformance-controls",
+      "command": [
+        "python3",
+        "discovery/check_lck_conformance.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "60c63243d57a719882a0fb08d9bd3bfa465aeece2b263f91f62bcc2a7d13717e"
+    },
+    {
+      "name": "lck-provider-controls",
+      "command": [
+        "python3",
+        "discovery/check_lck_provider_policy.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "a3e4829189473a073f4253576e3ab5dee641b934e13362554d963c5a296f66e6"
+    },
+    {
+      "name": "lck-readiness-controls",
+      "command": [
+        "python3",
+        "discovery/check_lck_probe_readiness.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "3dbbf6e9aed907270a48850e975a4ec96dc53b94e85107043c8166c5246e604d"
+    },
+    {
+      "name": "expo-relay-controls",
+      "command": [
+        "python3",
+        "discovery/check_expo_bridge.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "7bf0b645e392d7efc55753a017d4dd990e7083d9b760f1a97d0ec83d0a929ce5"
+    },
+    {
+      "name": "device-release-host-controls",
+      "command": [
+        "python3",
+        "discovery/check_device_release.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "de29c2fedf3ac6a9e8f80a2e165194ea211f405e5af29235a48d05d6da6bb789"
+    },
+    {
+      "name": "inherited-probe-harness-controls",
+      "command": [
+        "python3",
+        "discovery/check_harness.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "f857b811209fb90e07a6e093880266fcf2e5c89be6847f61cd2826a6a78f4c8e"
+    },
+    {
+      "name": "shell-syntax",
+      "command": [
+        "bash",
+        "-n",
+        "discovery/run_sdk_m0.sh",
+        "Tests/VoIPSDK/run.sh",
+        "Tests/VoIPSDK/run_deadlines.sh",
+        "discovery/build_sdk_m1_contracts.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "actual-debug-native-contract-typecheck",
+      "command": [
+        "xcrun",
+        "--sdk",
+        "iphonesimulator",
+        "swiftc",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-sdk",
+        "$APPLE_SDK",
+        "-swift-version",
+        "6",
+        "-D",
+        "DEBUG",
+        "-parse-as-library",
+        "-typecheck",
+        "-import-objc-header",
+        "$PRIVATE_OUTPUT/ContractHeaders.h",
+        "Sources/Engine/RuntimeEngine.swift",
+        "Sources/VoIPSDK/ConversationClient.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationRecord.swift",
+        "Sources/VoIPSDK/IncomingInvitationGate.swift",
+        "Sources/VoIPSDK/PushService.swift",
+        "Sources/VoIPSDK/PushWire.swift",
+        "Sources/VoIPSDK/SimulatorSupport.swift",
+        "Sources/VoIPSDK/VoIPApplication.swift",
+        "discovery/probe/sdk_m1_contracts.swift"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "debug-iphonesimulator-diagnostic-guard",
+      "command": [
+        "xcrun",
+        "--sdk",
+        "iphonesimulator",
+        "swiftc",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-sdk",
+        "$APPLE_SDK",
+        "-swift-version",
+        "6",
+        "-parse-as-library",
+        "-whole-module-optimization",
+        "-emit-sil",
+        "-D",
+        "DEBUG",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "-o",
+        "$PRIVATE_OUTPUT/debug-iphonesimulator-diagnostic-guard.sil"
+      ],
+      "exitCode": 0,
+      "diagnosticSinkExpected": true,
+      "diagnosticSinkPresent": true,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "compilerSIL_SHA256": "b7eb63908132ee8834ac631641e15f0d437ed13a2712ec303574e6795296f87e"
+    },
+    {
+      "name": "release-iphonesimulator-diagnostic-guard",
+      "command": [
+        "xcrun",
+        "--sdk",
+        "iphonesimulator",
+        "swiftc",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-sdk",
+        "$APPLE_SDK",
+        "-swift-version",
+        "6",
+        "-parse-as-library",
+        "-whole-module-optimization",
+        "-emit-sil",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "-o",
+        "$PRIVATE_OUTPUT/release-iphonesimulator-diagnostic-guard.sil"
+      ],
+      "exitCode": 0,
+      "diagnosticSinkExpected": false,
+      "diagnosticSinkPresent": false,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "compilerSIL_SHA256": "ed5dde35983e2a774e42cc21babcb98bc8571ee1958987b0c7d60b2c58f0223f"
+    },
+    {
+      "name": "debug-iphoneos-diagnostic-guard",
+      "command": [
+        "xcrun",
+        "--sdk",
+        "iphoneos",
+        "swiftc",
+        "-target",
+        "arm64-apple-ios17.4",
+        "-sdk",
+        "$APPLE_SDK",
+        "-swift-version",
+        "6",
+        "-parse-as-library",
+        "-whole-module-optimization",
+        "-emit-sil",
+        "-D",
+        "DEBUG",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "-o",
+        "$PRIVATE_OUTPUT/debug-iphoneos-diagnostic-guard.sil"
+      ],
+      "exitCode": 0,
+      "diagnosticSinkExpected": false,
+      "diagnosticSinkPresent": false,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "compilerSIL_SHA256": "1d4873585e9bde60b352af01b3ffddca14b47e6d03d2660e186493125a55a337"
+    },
+    {
+      "name": "release-iphoneos-diagnostic-guard",
+      "command": [
+        "xcrun",
+        "--sdk",
+        "iphoneos",
+        "swiftc",
+        "-target",
+        "arm64-apple-ios17.4",
+        "-sdk",
+        "$APPLE_SDK",
+        "-swift-version",
+        "6",
+        "-parse-as-library",
+        "-whole-module-optimization",
+        "-emit-sil",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "-o",
+        "$PRIVATE_OUTPUT/release-iphoneos-diagnostic-guard.sil"
+      ],
+      "exitCode": 0,
+      "diagnosticSinkExpected": false,
+      "diagnosticSinkPresent": false,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "compilerSIL_SHA256": "33084014581d3fdee2662333433f2503a9e29a89602ccfe2457e7f5e68dc8977"
+    }
+  ],
+  "nativeContractSyntheticControlMethods": 16,
+  "compilerEnvironment": {
+    "xcodeVersion": "Xcode 27.1\nBuild version 27A9275",
+    "simulatorSDKVersion": "27.1",
+    "deploymentTarget": "iOS 17.4; simulator and iphoneos compilation only"
+  },
+  "originalCI": {
+    "prHead": "1fd33b4969a5a19dee14b18da354612f9b9534ef",
+    "sdk": {
+      "runID": 39761541639,
+      "attempt": 1,
+      "outcome": "red: unhandled-expiry: journey failed",
+      "simulatorOS": "26.5",
+      "behaviorProfile": "ios-27.0"
+    },
+    "runtime": {
+      "runID": 39761541757,
+      "attempt": 1,
+      "outcome": "green",
+      "compilerLanes": [
+        "Xcode 26.3",
+        "Xcode 26.6"
+      ],
+      "simulatorOS": "26.5",
+      "behaviorProfile": "ios-27.0"
+    }
+  },
+  "limits": [
+    "No simulator or physical device was created or run for this preparation; no CI retry was requested.",
+    "Zero tolerance removes unspecified sleep coalescing allowance but does not establish the original delay cause or preempt a blocked actor.",
+    "The diagnostic sink, types, helper and call sites compile only under DEBUG && targetEnvironment(simulator); the four emitted-SIL checks verify the iOS build configurations.",
+    "The SDK passes scalar observations. The fixture owns synchronous trace I/O and its overhead is part of the measured Debug timeline.",
+    "pending-state-published means didChange returned; the fail gate separately requires actual snapshot evidence.",
+    "The fail contract observes failed action policy and distinguishes explicit fixture cleanup; it does not assert automatic conversation teardown.",
+    "Twenty-five millisecond clock/output bounds are qualification budgets, not measured Apple forwarding or scheduling jitter.",
+    "LCK and CX action UUID equality is not required. The current native journal cannot independently expose a later system-end call UUID.",
+    "A positive synthetic control permits delayed LCK-to-CX forwarding; this is not a native measurement of fail forwarding.",
+    "The original SDK red and original runtime green qualify their original inputs only. The changed head, including main probe changes, requires fresh CI qualification.",
+    "Existing accept and guard contract functions and the original Expo M1 empty-state oracle are unchanged."
+  ]
+}
