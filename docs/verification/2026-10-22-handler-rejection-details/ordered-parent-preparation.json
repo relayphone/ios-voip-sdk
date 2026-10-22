@@ -1,0 +1,327 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured host and actual SDK typecheck preparation for the ordered A2-A3-A8 source union; fresh native acceptance pending",
+  "source": {
+    "sourceCommit": "34ddcad5cafd3ce0e4fb892f093198e5b38a75e2",
+    "sourceInputsSHA256": "567e1c0c6447de330b6f7364c59d7f25cbf25c101ae45b73d9ac6c4cae8955ef"
+  },
+  "parentBranch": "codex/pending-mute-echo",
+  "parentCommit": "7276218f9917afacf0fc2f8c3d313406b139aad1",
+  "sameSourceUnchangedDuringChecks": true,
+  "sourceEquality": {
+    "a2a3": {
+      "reference": "7276218f9917afacf0fc2f8c3d313406b139aad1",
+      "sourceSHA256": {
+        "Sources/Engine/RuntimeEngine.swift": "c715b76b869af5659cbf4543210892c2b473e1b3be31e9768045430acb95c1c3",
+        "Sources/Engine/Resources/ios-27.0.json": "f34933eb5ad2eaa7db2b19efba87e94345bbb8b77c4312f697010cde108a88d8",
+        "Sources/VoIPSDK/ConversationHandler.swift": "7300ea6a9b84a66e55e8c7c048e608f200835d846ed005d212caa7aa23234d29",
+        "Sources/VoIPSDK/ConversationClient.swift": "b012028cb0b197aaf5a56a2f1fe1cce035c541bdfb23155f4cb99026e900652f",
+        "Sources/VoIPSDK/ConversationModels.swift": "a9f49822a15b4ba0db15572af322e5c1da4f7d34f037089b1f55aa76ec1aa0ee"
+      },
+      "allEqual": true
+    },
+    "rejectionCache": {
+      "reference": "4e7bba33dc0f3173d7dc6e6f17b45056952db4e5",
+      "sourceSHA256": {
+        "Expo/apple/ConversationBridge.swift": "516f95b045765f88423e95cfa427ebb5baf16e99c325166dab93101627921fe6",
+        "Expo/apple/IosVoipSDKModule.swift": "299ecb09fc9a10d62c2f6e34f3354d6a2ce1ce5dedc744875b12f9927f08e35e",
+        "Expo/tests/m1-runtime.test.cjs": "bfa01292a713355214611acdcfec3646fb50e7ecc21493e46c0e42264fdbc7db",
+        "Tests/ExpoBridge/BridgeTests.swift": "2a36d57faabdc2193f31350aae591c18e01bb3913a01e90cf3cc54515bb390bb",
+        "discovery/check_sdk_m1_container_capture.py": "ebba554b52f05e5f5ef5f206906fe7640c18c5713360826f3b9055e44efb44dc"
+      },
+      "allEqual": true
+    }
+  },
+  "inventories": {
+    "nativeContracts": [
+      "guard",
+      "unhandled-accept",
+      "unhandled-fail",
+      "duplicate-wrapper"
+    ],
+    "nativePushEntry": [
+      "sdk-required",
+      "sdk-duplicate",
+      "missing",
+      "deferred",
+      "optional",
+      "sdk-main-stall"
+    ],
+    "containerControlSHA256": "ebba554b52f05e5f5ef5f206906fe7640c18c5713360826f3b9055e44efb44dc",
+    "workflowSHA256": "ed79e9bcaafddd7ebe540d9601a08c80cd6c34f952eb065e38a7bc9c79c4ebe4",
+    "sourceInventorySHA256": "7f1adca2bac6220d4d95bb97d59a064a5e33ba77d2df4c8f70aeb476b2103a98",
+    "runnerSHA256": "c463ccd112f37dbd750ef6b271b9b35aae008f4f44af91bc99ca61ea91c0c399"
+  },
+  "deadlinePolicy": {
+    "profileLCKSeconds": 30,
+    "marginSeconds": 1.5,
+    "effectiveDeadlineForThirtySecondAction": 28.5,
+    "classification": "profile value is trace-derived; margin is explicit application policy, not a new device measurement"
+  },
+  "hostChecks": [
+    {
+      "name": "deadline-host",
+      "argv": [
+        "bash",
+        "Tests/VoIPSDK/run_deadlines.sh"
+      ],
+      "startedAtUTC": "2026-10-22T14:39:05.863335+00:00",
+      "exitCode": 0,
+      "output": "Deadline controls passed: seven real-clock boundary, policy, context, late-handler, cancellation and blocked-actor groups\n",
+      "outputSHA256": "fb4e763429dfaaea7e49babb7f2930a89bab72f468f7476bb33924f3a1c9e809"
+    },
+    {
+      "name": "mute-echo-host",
+      "argv": [
+        "bash",
+        "Tests/VoIPSDK/run_mute_echo.sh"
+      ],
+      "startedAtUTC": "2026-10-22T14:39:05.863770+00:00",
+      "exitCode": 0,
+      "output": "{\"success\":true,\"groups\":7,\"minimumPendingHandlerDelayMS\":40.849875,\"actualClientAndHandler\":true,\"nativeDeviceTimingMeasured\":false}\n",
+      "outputSHA256": "87de26578d0f7f36b9f76f07aa2d7273cfbab03124ba436966c6dfccd9ef03e6"
+    },
+    {
+      "name": "deadline-profile",
+      "argv": [
+        "python3",
+        "discovery/check_lck_deadlines.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:39:05.864027+00:00",
+      "exitCode": 0,
+      "output": "passed\n{\"success\": true, \"classification\": \"device-evidence and exact production profile host controls; no native expiry measurement\", \"measuredLCKSamples\": 24, \"routingOnlyCapture\": \"cx-after\", \"invalidLCKDurationControls\": 5, \"profileSHA256\": \"f34933eb5ad2eaa7db2b19efba87e94345bbb8b77c4312f697010cde108a88d8\"}\n",
+      "outputSHA256": "036eaef56295915d968dffd6063f58e17ac94c24c54b4eab9d49d719b49cfcc6"
+    },
+    {
+      "name": "m0-controls",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m0.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:39:05.866243+00:00",
+      "exitCode": 0,
+      "output": "{\"success\": true, \"testGroups\": 7}\n.......\n----------------------------------------------------------------------\nRan 7 tests in 1.591s\n\nOK\n",
+      "outputSHA256": "bb0266d99217e0154d2d1e41511f24be08235845c41369646b451aef1e699764"
+    },
+    {
+      "name": "m1-controls",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:39:07.599492+00:00",
+      "exitCode": 0,
+      "output": "test_assertions_hooks_and_privacy (__main__.Controls) ... ok\ntest_base_build_bytes_and_receipts_remain_required (__main__.Controls) ... ok\ntest_callback_entry_cannot_be_forged_by_a_late_report (__main__.Controls) ... ok\ntest_case_and_journal_inventory (__main__.Controls) ... ok\ntest_cold_effective_deadline_requires_native_margin (__main__.Controls) ... ok\ntest_cold_native_deadline_binding (__main__.Controls) ... ok\ntest_cold_pending_and_deadline_policy (__main__.Controls) ... ok\ntest_expected_expiry_rejection_and_cold_hydration (__main__.Controls) ... ok\ntest_journal_identity_and_push_correlation (__main__.Controls) ... ok\ntest_native_expiry_deadline_clock_binding (__main__.Controls) ... ok\ntest_positive_all_cases (__main__.Controls) ... ok\ntest_provider_ownership_and_settlements (__main__.Controls) ... ok\ntest_required_callback_boundaries_are_hash_bound (__main__.Controls) ... ok\ntest_shared_shipping_report_settlement_call_identity (__main__.Controls) ... ok\ntest_shipping_entry_rule_preserves_callkit_async_completion (__main__.Controls) ... ok\n\n----------------------------------------------------------------------\nRan 15 tests in 2.641s\n\nOK\n",
+      "outputSHA256": "b0588a5a0afa6b35959727d715aa5f3821697be6c363812e256db4167f946e16"
+    },
+    {
+      "name": "native-contract-controls",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:39:07.771325+00:00",
+      "exitCode": 0,
+      "output": ".....................\n----------------------------------------------------------------------\nRan 21 tests in 2.644s\n\nOK\n",
+      "outputSHA256": "2f2cc071e95a39acbf911ea7161abf422478a15be055aefbc1aeb4c362af22d6"
+    },
+    {
+      "name": "container-control",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m1_container_capture.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:39:10.419926+00:00",
+      "exitCode": 0,
+      "output": "....\n----------------------------------------------------------------------\nRan 4 tests in 4.494s\n\nOK\n",
+      "outputSHA256": "9e385b0ea3fbb306cded5b12655c03f347ec4e77fbec2338fabe8fb28570dc37"
+    },
+    {
+      "name": "expo-relay",
+      "argv": [
+        "python3",
+        "discovery/check_expo_bridge.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:39:10.598075+00:00",
+      "exitCode": 0,
+      "output": "{\n  \"checks\": [\n    \"production-model-json-and-millisecond-dates\",\n    \"all-handler-kinds-success-rejection-and-duplicate-settlement\",\n    \"native-cancellation-and-pre-cancelled-signal\",\n    \"handler-removal-replacement-and-old-generation-settlement\",\n    \"cancellation-during-action-publication\",\n    \"overlapping-lifetimes-reload-and-stale-owner\",\n    \"destroyed-bridge-observers-continuations-and-release\",\n    \"invalid-model-encoding-rejects-handler-delivery\",\n    \"production-state-event-and-null-token-encoding\"\n  ],\n  \"success\": true,\n  \"hostOnly\": true,\n  \"sourceSHA256\": {\n    \"Sources/VoIPSDK/ConversationModels.swift\": \"a9f49822a15b4ba0db15572af322e5c1da4f7d34f037089b1f55aa76ec1aa0ee\",\n    \"Sources/VoIPSDK/ConversationHandler.swift\": \"7300ea6a9b84a66e55e8c7c048e608f200835d846ed005d212caa7aa23234d29\",\n    \"Sources/VoIPSDK/PushService.swift\": \"f7a731d8c91ee2a4572dd37d2d96a36c258187fc4a38ba74143c7c9b07690e4c\",\n    \"Expo/apple/ConversationBridge.swift\": \"516f95b045765f88423e95cfa427ebb5baf16e99c325166dab93101627921fe6\",\n    \"Tests/ExpoBridge/OwnerDoubles.swift\": \"a82aaa5cd5dcbe09594aecdf6c261ce5c956f7555666ec637a720029afefc09b\",\n    \"Tests/ExpoBridge/BridgeTests.swift\": \"2a36d57faabdc2193f31350aae591c18e01bb3913a01e90cf3cc54515bb390bb\",\n    \"discovery/check_expo_bridge.py\": \"a668ba87be9db4910c2f37321b338b6850e939abed495b34533b46eddeb7abd5\"\n  }\n}\n",
+      "outputSHA256": "28870cd58d2688a474ce4ddc5012fdeb8bb90c1ca3e40716a7a8f2dbb2de6507"
+    },
+    {
+      "name": "typescript-runtime",
+      "argv": [
+        "node",
+        "--test",
+        "Expo/tests/m1-runtime.test.cjs"
+      ],
+      "startedAtUTC": "2026-10-22T14:39:13.175077+00:00",
+      "exitCode": 0,
+      "output": "\u2714 native command rejection guard retains only declared codes (1.019375ms)\n\u2714 subscribes before hydration; stale reads and equal revisions preserve the latest stable snapshot (0.409959ms)\n\u2714 snapshots are independent deeply frozen copies, including opaque metadata (0.455458ms)\n\u2714 nullable token invalidation beats stale hydration and emits one public event (3.013916ms)\n\u2714 hydration failure is observable; a newer native event recovers the snapshot (1.325375ms)\n\u2714 handler resolution/rejection settles once; missing optional actions default to accept (2.601833ms)\n\u2714 native cancellation aborts the signal and prevents late fulfilment (1.258959ms)\n\u2714 replacement/removal abort prior work, ignores old generations and permits native redelivery (1.200958ms)\n\u2714 cancellation before the scheduled callback never invokes app code (0.378ms)\n\u2714 abort listeners can supersede replacement/removal without a stale native attachment (3.084083ms)\n\u2714 non-state signals are routed by name and unsubscribe removes the listener (0.2945ms)\n\u2139 tests 11\n\u2139 suites 0\n\u2139 pass 11\n\u2139 fail 0\n\u2139 cancelled 0\n\u2139 skipped 0\n\u2139 todo 0\n\u2139 duration_ms 1185.360458\n",
+      "outputSHA256": "2cfcf2bd1a276b4d86229f7d8a9e4a0de1be769e3e8ad44a9a5c279e33a8eaa0"
+    },
+    {
+      "name": "typescript-typecheck",
+      "argv": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "startedAtUTC": "2026-10-22T14:39:13.563614+00:00",
+      "exitCode": 0,
+      "output": "\n> ios-voip-sdk@0.0.0 typecheck\n> tsc --noEmit --project tsconfig.json && npm run typecheck --workspace ios-voip-sdk-example\n\n\n> ios-voip-sdk-example@0.0.0 typecheck\n> tsc --noEmit --project tsconfig.json\n\n",
+      "outputSHA256": "01d5bb4c9623a561fbd8d3a9f2b49a7793b1c7711b89c6b5792062c65e6247b7"
+    },
+    {
+      "name": "push-capture-controls",
+      "argv": [
+        "python3",
+        "discovery/check_push_report_capture.py"
+      ],
+      "startedAtUTC": "2026-10-22T14:39:13.976064+00:00",
+      "exitCode": 0,
+      "output": "..\n----------------------------------------------------------------------\nRan 2 tests in 0.382s\n\nOK\n",
+      "outputSHA256": "4766d12d53fdad0553ff17ac3e731612332715b76a5491d0a3f313e5b86eed0d"
+    },
+    {
+      "name": "shell-syntax",
+      "argv": [
+        "bash",
+        "-n",
+        "discovery/run_sdk_m0.sh"
+      ],
+      "startedAtUTC": "2026-10-22T14:39:14.420847+00:00",
+      "exitCode": 0,
+      "output": "",
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "workflow-syntax",
+      "argv": [
+        "actionlint",
+        ".github/workflows/sdk-m0.yml"
+      ],
+      "startedAtUTC": "2026-10-22T14:39:14.436420+00:00",
+      "exitCode": 0,
+      "output": "",
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "diff-whitespace",
+      "argv": [
+        "git",
+        "diff",
+        "--check",
+        "7276218f9917afacf0fc2f8c3d313406b139aad1"
+      ],
+      "startedAtUTC": "2026-10-22T14:39:14.628024+00:00",
+      "exitCode": 0,
+      "output": "",
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "actualSDKTypecheck": {
+    "classification": "measured actual SDK and Debug native-contract source typecheck only; no app link/build/run",
+    "source": {
+      "sourceCommit": "34ddcad5cafd3ce0e4fb892f093198e5b38a75e2",
+      "sourceInputsSHA256": "567e1c0c6447de330b6f7364c59d7f25cbf25c101ae45b73d9ac6c4cae8955ef"
+    },
+    "startedAtUTC": "2026-10-22T14:40:33.955350+00:00",
+    "argv": [
+      "xcrun",
+      "--sdk",
+      "iphonesimulator",
+      "swiftc",
+      "-target",
+      "arm64-apple-ios17.4-simulator",
+      "-sdk",
+      "$APPLE_SDK",
+      "-swift-version",
+      "6",
+      "-D",
+      "DEBUG",
+      "-parse-as-library",
+      "-typecheck",
+      "-module-cache-path",
+      "$PRIVATE_OUTPUT/modules",
+      "-import-objc-header",
+      "$PRIVATE_OUTPUT/ContractHeaders.h",
+      "Sources/Engine/RuntimeEngine.swift",
+      "Sources/VoIPSDK/ConversationClient.swift",
+      "Sources/VoIPSDK/ConversationHandler.swift",
+      "Sources/VoIPSDK/ConversationModels.swift",
+      "Sources/VoIPSDK/ConversationRecord.swift",
+      "Sources/VoIPSDK/IncomingIntake.swift",
+      "Sources/VoIPSDK/IncomingInvitationGate.swift",
+      "Sources/VoIPSDK/IncomingReportTransport.swift",
+      "Sources/VoIPSDK/PushService.swift",
+      "Sources/VoIPSDK/PushWire.swift",
+      "Sources/VoIPSDK/SimulatorSupport.swift",
+      "Sources/VoIPSDK/VoIPApplication.swift",
+      "discovery/probe/sdk_m1_contracts.swift"
+    ],
+    "exitCode": 0,
+    "sourceSHA256": {
+      "Sources/Engine/RuntimeEngine.swift": "c715b76b869af5659cbf4543210892c2b473e1b3be31e9768045430acb95c1c3",
+      "Sources/VoIPSDK/ConversationClient.swift": "b012028cb0b197aaf5a56a2f1fe1cce035c541bdfb23155f4cb99026e900652f",
+      "Sources/VoIPSDK/ConversationHandler.swift": "7300ea6a9b84a66e55e8c7c048e608f200835d846ed005d212caa7aa23234d29",
+      "Sources/VoIPSDK/ConversationModels.swift": "a9f49822a15b4ba0db15572af322e5c1da4f7d34f037089b1f55aa76ec1aa0ee",
+      "Sources/VoIPSDK/ConversationRecord.swift": "90f94cf5baf4085478ed0e2437d520e9066367b9bb23615ff88d5fade3288d64",
+      "Sources/VoIPSDK/IncomingIntake.swift": "5f6979dbc38bb4badeb2026ca8033341a5ce744ebba4e279aab1a4892d5f64c5",
+      "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+      "Sources/VoIPSDK/IncomingReportTransport.swift": "518a522f3dccc9f96f221f700a77c9c732b20b00dfb01dd094579c5b43a08cbf",
+      "Sources/VoIPSDK/PushService.swift": "f7a731d8c91ee2a4572dd37d2d96a36c258187fc4a38ba74143c7c9b07690e4c",
+      "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+      "Sources/VoIPSDK/SimulatorSupport.swift": "45b5b31b3943603d7a20ebbed2b2a76feddbb7b6fb83fc1c532def2cbc059563",
+      "Sources/VoIPSDK/VoIPApplication.swift": "a222dbeeb4675938862fd9cfddda591af614509cb55c011da3f7bd233ca077de",
+      "discovery/probe/sdk_m1_contracts.swift": "c6ef0bb8612eb535d2afeb342da2b8d82ccb807ee8aa28981ebe0aadc57c2e3d"
+    },
+    "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diagnosticStreamsEmpty": true,
+    "xcodeVersion": "Xcode 27.1\nBuild version 27A9275",
+    "sdkVersion": "27.1",
+    "privateModuleCacheRemoved": true,
+    "compilerInvocations": 1
+  },
+  "priorHeadBeforeAutomaticConcurrencyChange": {
+    "capturedAtUTC": "2026-10-22T14:43:08.617188+00:00",
+    "head": "4e7bba33dc0f3173d7dc6e6f17b45056952db4e5",
+    "runs": [
+      {
+        "id": 39795011663,
+        "head_sha": "4e7bba33dc0f3173d7dc6e6f17b45056952db4e5",
+        "status": "queued",
+        "conclusion": null,
+        "run_attempt": 1,
+        "html_url": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39795011663"
+      },
+      {
+        "id": 39795011312,
+        "head_sha": "4e7bba33dc0f3173d7dc6e6f17b45056952db4e5",
+        "status": "queued",
+        "conclusion": null,
+        "run_attempt": 1,
+        "html_url": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39795011312"
+      },
+      {
+        "id": 39795011554,
+        "head_sha": "4e7bba33dc0f3173d7dc6e6f17b45056952db4e5",
+        "status": "completed",
+        "conclusion": "success",
+        "run_attempt": 1,
+        "html_url": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39795011554"
+      }
+    ]
+  },
+  "reviews": {
+    "independentSPEC": "clear at 34ddcad5",
+    "independentStandards": "clear at 34ddcad5",
+    "rootFrozenUnion": "clear at 34ddcad5"
+  },
+  "limits": [
+    "No app was linked, installed or run locally. One actual SDK/Debug-contract compiler invocation typechecked the arm64 iOS17.4 simulator target with SDK27.1.",
+    "Host mute tests use platform facades; delayed-fulfilment device echo measurements remain separate.",
+    "Both earlier CI failures retain their original source identities and red outcomes; older queued-head status is historical only.",
+    "Fresh final-stack native CI is required. This preparation is not native acceptance for the combined source."
+  ]
+}

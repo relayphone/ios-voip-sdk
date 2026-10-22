@@ -127,3 +127,27 @@ independent capture review and physical default-calling dispatch. A0's iOS 27
 native audio-interruption acceptance remains unresolved, and physical PushKit
 cold-launch measurements remain required before beta. This source-only forward
 does not close those gates.
+
+**Measured ordered-source forward preparation:** this branch normally merges
+A5 `670e2ea7fe5b362592f7d176d3a4d976edd0caa0`, including provisional M2
+source checkpoint `65eea31a5e3d318d67481a6be2a3d89a53cacbd8`. The sole conflict
+is the source inventory: its 81 entries retain the new M1 container-capture
+checker and all nine M3 paths. The direct URL, typed intent, public JavaScript
+listener, both environment guards and original OS gate keep their prior bytes.
+All shipping source and example trees are unchanged from `18560017`. The
+incoming conditional backend report, four M1 contract cases, six push cases
+and seven system journeys remain intact.
+
+Nine pure Python/stub commands pass at the 239-input digest in the
+[source-only receipt](../verification/2026-10-22-sdk-m3-direct/forward-670e2ea-source-only.json).
+The selected M3 suite runs 18 original OS and 11 direct groups with real
+subprocess calls forbidden. It excludes all three controls that invoke Swift.
+The four new container-capture groups execute the real shell fragment with
+stub simulator tooling. No compiler, app build, simulator, audio, device,
+signing or package installation was performed.
+
+**Unqualified:** M2's host-mute fixture and SDK Debug compiler
+checks remain held. This source checkpoint provides no replacement result.
+A5/A9 native acceptance remains proposed; the iOS 27 audio RED and physical
+measurements remain unresolved. Earlier native and compiler receipts retain
+their original source scope.

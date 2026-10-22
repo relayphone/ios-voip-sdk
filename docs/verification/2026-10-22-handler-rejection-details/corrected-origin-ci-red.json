@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured partial hosted capture; overall CI red with a post-case capture failure",
+  "runID": 39780748008,
+  "attempt": 1,
+  "conclusion": "failure",
+  "headCommit": "685ecb4e43b442c7175b3190813bd188b16e2a4b",
+  "testMergeCommit": "1011c87eaae22cd3d2c1ff53931b3e13c2780abd",
+  "headTreeSHA": "76bbe4b01b2166aa1f2b6097010d63e1cc8a5476",
+  "testMergeTreeSHA": "76bbe4b01b2166aa1f2b6097010d63e1cc8a5476",
+  "sourceInputsSHA256": "38ccf5b51f693f31eb06235ce9302d416f7735aa42a7896ba697867e8afd4b79",
+  "artifactID": 12430434855,
+  "artifactZipSHA256": "bb09cc56153fe77f7544ebad88e3b53c3eaf4f7ecee13ebab56b6c96344a5990",
+  "githubArtifactDigest": "sha256:bb09cc56153fe77f7544ebad88e3b53c3eaf4f7ecee13ebab56b6c96344a5990",
+  "measurementStepExitCode": 142,
+  "boundCaseSupervisors": [
+    {
+      "scenario": "sdk-m0",
+      "receiptSHA256": "df38aa552223b0de75ce149d5fa4d53616afa4d15af8b97100e587f82ec63ca6",
+      "traceSHA256": "7859c2639953990c8cc6537f60f6affd9107f3b523910eb8a28c8f90418184dd",
+      "appPID": 32819,
+      "success": true,
+      "completed": true,
+      "launchExitCode": 0,
+      "journalPresent": false
+    },
+    {
+      "scenario": "bootstrap-healthy",
+      "receiptSHA256": "f5c8f9cc073b219ca98cebd55ca77195297ca3b2eccf87d24cd88f8cb7279774",
+      "traceSHA256": "86bdada2b97bb740bb3f51a542a5b9c257a70dc79be56b9b9d9df8d5e47a512e",
+      "appPID": 33126,
+      "success": true,
+      "completed": true,
+      "launchExitCode": 0,
+      "journalPresent": false
+    },
+    {
+      "scenario": "bootstrap-profile",
+      "receiptSHA256": "5f95e91d80a63bc1ceedfae551aed67ab95c8d231ed4302591b3f821d0b31604",
+      "traceSHA256": "9207dde6c55210ff71723639a2be480c09761814c73a3178d7ebe41314587dac",
+      "appPID": 33294,
+      "success": true,
+      "completed": true,
+      "launchExitCode": 0,
+      "journalPresent": false
+    },
+    {
+      "scenario": "bootstrap-push-after-install",
+      "receiptSHA256": "c1e25748a5a6ba83f9a8b3c310cc09aa6404fda3997ab847cf40c555528982d0",
+      "traceSHA256": "ce79742a1dbe08b15ee0e6ee52cc5505641b7f9021eb77395451ebabd1ff7c8f",
+      "appPID": 33425,
+      "success": true,
+      "completed": true,
+      "launchExitCode": 0,
+      "journalPresent": false
+    },
+    {
+      "scenario": "m1/sdk-m1-journey",
+      "receiptSHA256": "74db604a9efd6cb9145c7660618f75374790ffcf22debe9e1f63b9cc21f7ef79",
+      "traceSHA256": "49215a8f27b5409b384ae37acb20a53113d88a2e6c2bf33584ac3985c5273f69",
+      "appPID": 33508,
+      "success": true,
+      "completed": true,
+      "launchExitCode": 0,
+      "journalPresent": true
+    },
+    {
+      "scenario": "m1/sdk-m1-cold-launch",
+      "receiptSHA256": "0b7b17a04863364b5cfb465f32d8c0063724c753bd8f5f7e1663bd21b131b799",
+      "traceSHA256": "c6fce774710f9c7631adf6c178ec6dd21367a31b01b0e624f77b9547f22ac7da",
+      "appPID": 33535,
+      "success": true,
+      "completed": true,
+      "launchExitCode": 0,
+      "journalPresent": true
+    },
+    {
+      "scenario": "m1/sdk-m1-unhandled-expiry",
+      "receiptSHA256": "75ffa2046f4744e15b5cb3e5eeec5347f582674129eca355588fa32a468e3dac",
+      "traceSHA256": "2395ff2302541e87a6d045053e4b48496740e3ddd4e4d2e37cfe19df9bb39d7e",
+      "appPID": 33555,
+      "success": true,
+      "completed": true,
+      "launchExitCode": 0,
+      "journalPresent": false
+    }
+  ],
+  "cleanup": {
+    "simulatorID": "BD12E7F3-9D53-4314-A471-AC8FCEF0E166",
+    "shutdownExitCode": 0,
+    "deleteExitCode": 0,
+    "deleted": true
+  },
+  "failureLocation": {
+    "measured": [
+      "Boot reaches terminal Finished after 155 seconds.",
+      "All seven retained scenario supervisors completed successfully and bind to their console logs.",
+      "First two M1 journals are present; the expiry journal, native contracts, push-entry capture and final manifest are absent.",
+      "The job ends with142, consistent with SIGALRM."
+    ],
+    "inferred": "The next command after the successful expiry supervisor is the 30-second simctl get_app_container query. Its timeout is inferred from this exact control-flow/file boundary; no direct command receipt was retained."
+  },
+  "strictGate": {
+    "success": false,
+    "classification": "refused incomplete capture",
+    "error": "manifest.json absent (FileNotFoundError; local absolute path omitted)",
+    "sourceSHA256": "57291a8962c24002ed05d797f97dd16ff112f390a4bfd168df8ce512b5f8622c"
+  },
+  "limits": [
+    "No complete source/product-bound gate can pass without the final manifest; raw scenario success is partial evidence only.",
+    "No retry, native simulator/device operation, source change or artifact rewrite was performed during classification."
+  ],
+  "artifactURL": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39780748008/artifacts/12430434855"
+}

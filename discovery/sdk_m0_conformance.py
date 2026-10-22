@@ -22,6 +22,7 @@ SOURCE_PATHS = ('Sources', 'Expo', 'ExpoMedia', 'Integrations', 'example', 'Pack
                 'discovery/run_scenario.py', 'discovery/sdk_bootstrap_conformance.py',
                 'discovery/summarize.py', '.github/workflows/sdk-m0.yml', 'app.plugin.js', 'Tests',
                 'discovery/sdk_m1_conformance.py', 'discovery/check_sdk_m1.py',
+                'discovery/check_sdk_m1_container_capture.py',
                 'discovery/run_sdk_m3.py', 'discovery/sdk_m3_conformance.py', 'discovery/check_sdk_m3.py',
                 'discovery/run_sdk_m3_direct.py', 'discovery/sdk_m3_direct_conformance.py', 'discovery/check_sdk_m3_direct.py',
                 'discovery/build_sdk_m3.sh', 'discovery/m3-settings', '.github/workflows/sdk-m3.yml',

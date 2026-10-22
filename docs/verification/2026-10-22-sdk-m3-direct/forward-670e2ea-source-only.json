@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 1,
+  "qualification": "measured source-only pure Python and stub control preparation; no compiler, native build, simulator, audio or device execution",
+  "createdAtUTC": "2026-10-22T16:50:50.099586+00:00",
+  "baseCommit": "185600170f41d314c7e17dd1525916914afdaf4a",
+  "incomingCommit": "670e2ea7fe5b362592f7d176d3a4d976edd0caa0",
+  "incomingM2SourceCheckpoint": "65eea31a5e3d318d67481a6be2a3d89a53cacbd8",
+  "incomingCoreCheckpoint": "f40bfca6dcfe3841d815316a72304695d5956cf5",
+  "workingSourceInputsSHA256": "633127810941077d376637c5ecfb2a53c06c7a42a0d84df24e78f752842de7b6",
+  "sourceInputCount": 239,
+  "protectedShippingDirectoryCount": 78,
+  "protectedShippingDirectoryScope": [
+    "Sources",
+    "Expo",
+    "ExpoMedia",
+    "Integrations"
+  ],
+  "protectedA9AndNativeInputs": {
+    "example/App.tsx": "0f5668a81e050ac035535f202637e5325e426591d10651d343a077528fc479ab",
+    "example/journey.ts": "d58e5ddb142ef04a3c8d11337a2eafc1c9a505f2f68463d5804f630b4fe990b3",
+    "example/acceptance.ts": "a46a57d23b00d761910366a1822c6b5c248ef75cceadd04644f4e8ce9486350c",
+    "example/system-acceptance.ts": "2d4ade13eab3e18e5d2601f775a1e287c2e521f1f67bc9f18abea2b7b7bd0539",
+    "example/modules/journey/apple/VoIPExampleJourneyModule.swift": "93c465c547afc78f69e247f5e2fc982708bfbd0c722310de95f2997ade780545",
+    "example/modules/journey/apple/M3DirectControl.swift": "887012f8498095f03cf11b0ea6f184d008955875e30c2139f26ae56593f998a5",
+    "discovery/run_sdk_m3.py": "859971a8bf8ad64a0a9820df929528f9c9bfee60e7d481e72b61faf67e860317",
+    "discovery/check_sdk_m3.py": "24116cf040cdfde726eb731f9533a700072df45ffde50266192518d2c4dc0122",
+    "discovery/run_sdk_m3_direct.py": "8edc009ed253ee4c4676702c49e2f730182b9bcfd896111c2368d56e256281a9",
+    "discovery/check_sdk_m3_direct.py": "6176ae1b7b1730fccd2245286b7409d0aa7aa05b04589648b56a544d161f18ca",
+    "discovery/sdk_m3_direct_conformance.py": "0a3da2a983dd4000ab853bff9afdf66b3259147723f902d11305e7179a9a89d0",
+    "discovery/sdk_m3_conformance.py": "d2df37b0373d65e4ce2a0873b55b1b2ea9ffd77b44127e73878949a34910eff8",
+    "discovery/build_sdk_m3.sh": "0e13986aef943e641a844b54baac5d2acfbad5e26671330d5ee1076039c38cd9",
+    ".github/workflows/sdk-m3.yml": "9608a7984c69538c569eb7519f58855437075a5b6eace984ceac447c2b543758",
+    "discovery/run_sdk_system.py": "522bd19ad945aa1956ab3b43595781a005bf06cb40ca799cb469d1d6c59d6ad9",
+    "discovery/check_sdk_system.py": "2ccef1589d146f4e9edde22e493581d35d9e57a7d9214df6367426bf3faf8539",
+    "discovery/sdk_system_conformance.py": "12d39d229f00ddf5be097a52c4604ca29eda295132b000ce7d562505180dfb3e",
+    "discovery/build_push_report_entry.sh": "0956f71bbb1a0f95a8c016de3a60a7636211dbd0751c7748894699e1f74f42c6",
+    "discovery/run_push_report_entry.py": "6a6546943fbc25c5061d7a245cf786f652283388c35180ee126c5c7131623310",
+    "discovery/check_push_report_entry.py": "d1f5ebe0a52da81519aa94c3497fd4c54c9973547e31430c8ab4aacaf6ba5948",
+    "discovery/check_push_report_capture.py": "a78393f0f0187cf170b04cc7326d57701645f09f3f68e992918f45315d6a1b43",
+    "discovery/probe/push_entry_main_stall.h": "39e81fafe6189afab9e32c4159e477f595986771dacb94052f2a8d04b2bfa3bf",
+    "discovery/probe/push_entry_main_stall.m": "c94c926982b976ba2ed4e072ee59f65c97d1ce22efb37b90d0c2c8ee7b7a8a9e",
+    "discovery/push_main_stall_conformance.py": "9b633064ee6c9a4454d17bbb6554a21b871280898f642cfb68b4e964ed2b51ed",
+    "discovery/check_push_main_stall.py": "a75594ac8f09de59ddb93bd448fd517e7a65cf3d3237fde31012fad155920195"
+  },
+  "incomingCanonicalInputs": {
+    ".github/workflows/sdk-m0.yml": "61cf39a383b24aea5e35131eb1bbea956465ca17431b94857641be365c6b563e",
+    "discovery/run_sdk_m0.sh": "f9cbe59f2528136db954f5757b825422388a33add7413a4e3c76b44275a78657",
+    "discovery/probe/sdk_m1_contracts.swift": "7910fba1b185bf25107b3a238626c7eca0bb9332692dc304123a589dd383e30b",
+    "discovery/sdk_m1_contracts_conformance.py": "f02a021b8b6e85becf70fcc5b709355505fbe22c9e002b79135e08dd76472073",
+    "discovery/check_sdk_m1_container_capture.py": "ebba554b52f05e5f5ef5f206906fe7640c18c5713360826f3b9055e44efb44dc",
+    "Tests/VoIPSDK/MuteEchoTests.swift": "a6eba14f65cc321267daf34abee25fe1ad34c94900f1370d1a818b2007c4b6fd"
+  },
+  "sourcePathUnion": {
+    "currentCount": 81,
+    "baseCount": 80,
+    "incomingCount": 72,
+    "removedFromEitherParent": []
+  },
+  "privateEvidence": {
+    "directory": "discovery/out/a9-forward-670e2ea-source-only",
+    "receiptSHA256": "d4bc203b798e8e56e234627f56f873763b6c5cd2a67f0687fd89a9cc5c79f4c6",
+    "sourceFreezeSHA256": "72b23397e7e97710eaebbfb48a9525b98db1a17f3174565b2dded25cb7cbec81",
+    "selectorSHA256": "7e5c4f3c68c4ccd84b50757ebf0e950583942d11cc4239d7aa087226b9bee278",
+    "retainedCommandStreams": 18
+  },
+  "checks": [
+    {
+      "command": [
+        "python3",
+        "discovery/out/a9-forward-670e2ea-source-only/selected_m3_controls.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.821,
+      "stdout": "01.stdout",
+      "stdoutSHA256": "07d69fb1ebdf344dfed77c2e40317d280029753bdf1611e2a4971e2a09c453a9",
+      "stderr": "01.stderr",
+      "stderrSHA256": "94dde2c253eb008c0a57c8b183397daf58ba4394393382fbda2e7ac01b4483b1"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1_container_capture.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 4.44,
+      "stdout": "02.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "02.stderr",
+      "stderrSHA256": "090dd40743464f4a6592b432d96f8419527eb352415788c64f344fa7fea4d709"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 6.259,
+      "stdout": "03.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "03.stderr",
+      "stderrSHA256": "f33fba9fc5eafde8afb58378a8af118b80ba6198eed411f0b4390cecfedba092"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m0.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 3.934,
+      "stdout": "04.stdout",
+      "stdoutSHA256": "667bb6dd667e2f7a5cc618be0987b9c3a092e9fec90bbaff0ff399b39bda2973",
+      "stderr": "04.stderr",
+      "stderrSHA256": "893be9eed1ad0366c7194a0e1a5e391ed3a145e7d1065f4ad55e1eb5caa93b0e"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 6.743,
+      "stdout": "05.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "05.stderr",
+      "stderrSHA256": "46127d48bb9d30166acd489b66b32b633eb3d2b2e4d58be5f9318e0a287a0218"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_system.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.327,
+      "stdout": "06.stdout",
+      "stdoutSHA256": "3a9a9ac70f7b48bfeb2c90fe779643a844bf8f69ddf732f6bd5d2bdc2ce206d1",
+      "stderr": "06.stderr",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_push_report_capture.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.019,
+      "stdout": "07.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "07.stderr",
+      "stderrSHA256": "11393379ad74401eefd251886e3a5ef109d770e7d9c9a0a7e068891a447b7a1e"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_push_main_stall.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.232,
+      "stdout": "08.stdout",
+      "stdoutSHA256": "915431db2b9a9f584e0cddfb2182166d3a207c2af01643cf3dadd05edf141528",
+      "stderr": "08.stderr",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.235,
+      "stdout": "09.stdout",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr": "09.stderr",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "selectedM3Controls": {
+    "originalOSGroups": 18,
+    "directGroups": 11,
+    "realSubprocessCallsForbidden": true,
+    "excludedCompiledControls": [
+      "test_settings_list_uses_measured_unique_fallback",
+      "test_actual_direct_statements_against_public_simulator_interfaces",
+      "test_actual_native_control_identity_parser"
+    ]
+  },
+  "reviews": {
+    "spec": "clear; independent read-only delta/source preservation review",
+    "standards": "clear; independent read-only delta/source preservation review"
+  },
+  "limits": [
+    "All 78 tracked inputs under Sources/Expo/ExpoMedia/Integrations and all example/package shipping trees retain the A9 base bytes; the author-provided 100-file parent scope is not inferred from this directory count.",
+    "Original OS gate remains byte-exact d2df37b0373d65e4ce2a0873b55b1b2ea9ffd77b44127e73878949a34910eff8; historical error-115 RED is preserved and separate from direct delivery.",
+    "No Swift settings-query/parser/interface control was run in this source-only forward. Prior compiler receipts remain historical to their exact inputs.",
+    "The M2 triple host-mute fixture and SDK Debug compiler checks remain held and unqualified. This source checkpoint does not resolve them.",
+    "A5/A9 native acceptance remains proposed; A0 iOS 27 audio RED remains unresolved. Physical PushKit cold-launch/default-calling measurements remain separate gates."
+  ]
+}
