@@ -518,7 +518,11 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
          let snapshot = snapshot(id), (snapshot.status == .held) == pause.isPaused { action.fulfill(); return }
     case let mute as MuteConversationAction:
       kind = .mute; muted = mute.isMuted
-      if snapshot(id) == nil || snapshot(id)?.status == .ended || (!coordinator.hasPendingAction(for: id, kind: .mute) && records[id]?.muted == mute.isMuted) { action.fulfill(); return }
+      let matchesPendingAppMute = origin == .system && coordinator.hasPendingAppMute(for: id, value: mute.isMuted)
+      if snapshot(id) == nil || snapshot(id)?.status == .ended || matchesPendingAppMute ||
+          (!coordinator.hasPendingAction(for: id, kind: .mute) && records[id]?.muted == mute.isMuted) {
+        action.fulfill(); return
+      }
     case let tone as PlayToneAction: kind = .tones; digits = tone.digits
     case is MergeConversationAction, is UnmergeConversationAction:
       // RFC has no merge handler; LCK owns topology. No transport/media work is fabricated.

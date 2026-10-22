@@ -1,0 +1,194 @@
+{
+  "classification": "synthetic-only old-accept/new-reject generic M1 margin control; no native behavior qualified",
+  "sourceCommit": "dfc81fcd0917b4bf650801f25e2173ba09711e8e",
+  "oldGateSHA256": "e42c643d5d45394e2e95440ad48e01f6a6598ff5f04b589306bc16092388c605",
+  "sourceHashesBefore": {
+    "discovery/check_sdk_m1.py": "8860f547a5ac7e1cfe1001f8f87923f46cb55208a622075d6af8af81c998c5d7",
+    "discovery/sdk_m1_conformance.py": "9671d1e9be973e29aa1f2df4493b28b455883388aa01cc958b99c024adb77ec6",
+    "discovery/check_sdk_m0.py": "44f0c2a54fc6fe807b2819c14e9e4a2ffd8e48051d9da1e4670f9406cae90e30",
+    "discovery/sdk_m0_conformance.py": "243af7ebd4e71d2ad7305622e216b799f06999bb535ec42bbf6beb7ed04f85c4",
+    "discovery/device_oracles.py": "a8ab789c0ac0da96fc73c8e124ae8ff694413e57f845c3bd453a8aff01e4db5d",
+    "discovery/summarize.py": "019271bf8c0ecfd3b21a01c67268d4b1ecf8d54d4f1f01cd7f7069869db855e3",
+    "discovery/sdk_m1_contracts_conformance.py": "e1039f056b216e10ea7d9133226a0479e53710e28bb1b9a94c2d3fca0382efd5",
+    "discovery/check_sdk_m1_contracts.py": "ee3cd89c4ceb8280552770a144566d395736f827a2958da5d193efe2e8c18a43",
+    "Sources/VoIPSDK/ConversationHandler.swift": "1e096cc9f02c2eb900a58e350b505fcfdeb43c7ebe5a1c9b566d7a647184eda8",
+    "example/modules/journey/apple/VoIPExampleJourneyModule.swift": "71e6bccee6387884bc90115d6a76ac8f1177c2c6cc2dcaa53b48bc2ee6506fec",
+    "example/acceptance.ts": "c98cace2b413297750e0fb13dbf096241c0fee8f5609c3e66b74161356610aa4",
+    "VERSION": "80447316529fc62014fbaa047fb67c51ac30e32830cda370405349d8d66d196c",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-basic.jsonl": "9fd5e48b62a826af7e62388de87119ab431fe2019a7d40445cdd9b528dde4bf7",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-cx-after.jsonl": "96d6e968c2cba8e098ec18872882f7a480476dd90611d5ae4cb5dc2dde78692b",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-lck-after.jsonl": "7b29c543492904cd1121c047d3fce125c4b0a16f1adc76240c80d6c091a15c89",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-two-managers.jsonl": "23ab443e1fd8623140e95cc7d34157d5fd8aa7d13b6321f90e1812825f65a042"
+  },
+  "sourceHashesAfter": {
+    "discovery/check_sdk_m1.py": "8860f547a5ac7e1cfe1001f8f87923f46cb55208a622075d6af8af81c998c5d7",
+    "discovery/sdk_m1_conformance.py": "9671d1e9be973e29aa1f2df4493b28b455883388aa01cc958b99c024adb77ec6",
+    "discovery/check_sdk_m0.py": "44f0c2a54fc6fe807b2819c14e9e4a2ffd8e48051d9da1e4670f9406cae90e30",
+    "discovery/sdk_m0_conformance.py": "243af7ebd4e71d2ad7305622e216b799f06999bb535ec42bbf6beb7ed04f85c4",
+    "discovery/device_oracles.py": "a8ab789c0ac0da96fc73c8e124ae8ff694413e57f845c3bd453a8aff01e4db5d",
+    "discovery/summarize.py": "019271bf8c0ecfd3b21a01c67268d4b1ecf8d54d4f1f01cd7f7069869db855e3",
+    "discovery/sdk_m1_contracts_conformance.py": "e1039f056b216e10ea7d9133226a0479e53710e28bb1b9a94c2d3fca0382efd5",
+    "discovery/check_sdk_m1_contracts.py": "ee3cd89c4ceb8280552770a144566d395736f827a2958da5d193efe2e8c18a43",
+    "Sources/VoIPSDK/ConversationHandler.swift": "1e096cc9f02c2eb900a58e350b505fcfdeb43c7ebe5a1c9b566d7a647184eda8",
+    "example/modules/journey/apple/VoIPExampleJourneyModule.swift": "71e6bccee6387884bc90115d6a76ac8f1177c2c6cc2dcaa53b48bc2ee6506fec",
+    "example/acceptance.ts": "c98cace2b413297750e0fb13dbf096241c0fee8f5609c3e66b74161356610aa4",
+    "VERSION": "80447316529fc62014fbaa047fb67c51ac30e32830cda370405349d8d66d196c",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-basic.jsonl": "9fd5e48b62a826af7e62388de87119ab431fe2019a7d40445cdd9b528dde4bf7",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-cx-after.jsonl": "96d6e968c2cba8e098ec18872882f7a480476dd90611d5ae4cb5dc2dde78692b",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-lck-after.jsonl": "7b29c543492904cd1121c047d3fce125c4b0a16f1adc76240c80d6c091a15c89",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-two-managers.jsonl": "23ab443e1fd8623140e95cc7d34157d5fd8aa7d13b6321f90e1812825f65a042"
+  },
+  "sourcesUnchangedDuringDifferential": true,
+  "patchedBoundaries": [
+    "M0 source_identity",
+    "M0 symbol_names",
+    "subprocess.run forbidden",
+    "subprocess.check_output forbidden"
+  ],
+  "unchangedDedicatedContracts": true,
+  "unchangedDeviceDeadlineBands": true,
+  "limitation": "All binaries, processes and receipts are synthetic. The generic gate establishes the shared 1000..3500 ms cross-layer margin allowance, not exact platform/LCK UUID mapping, native behavior or a change to the original empty-expiry/liveness oracle.",
+  "fullDifferentialReceiptSHA256": "ee7e514acb17c71e6ce48e93b67094de51e017688256b81616cf2fc70802d2c7",
+  "reproductionScriptSHA256": "d15eb279d3df42e0797c3c2b0824cf308e039f9f5a92f76bf7ced89c5262b796",
+  "redStage": {
+    "classification": "synthetic-only new controls against unchanged old gate",
+    "command": [
+      "python3",
+      "discovery/check_sdk_m1.py"
+    ],
+    "exitCode": 1,
+    "sourceHashesBefore": {
+      "discovery/check_sdk_m1.py": "8860f547a5ac7e1cfe1001f8f87923f46cb55208a622075d6af8af81c998c5d7",
+      "discovery/sdk_m1_conformance.py": "e42c643d5d45394e2e95440ad48e01f6a6598ff5f04b589306bc16092388c605"
+    },
+    "sourceHashesAfter": {
+      "discovery/check_sdk_m1.py": "8860f547a5ac7e1cfe1001f8f87923f46cb55208a622075d6af8af81c998c5d7",
+      "discovery/sdk_m1_conformance.py": "e42c643d5d45394e2e95440ad48e01f6a6598ff5f04b589306bc16092388c605"
+    },
+    "sourcesUnchanged": true,
+    "outputSHA256": "e815ce517dd6cb450946be34cb0cf46ea0234175160c3c64535c514217477bc8"
+  },
+  "checks": [
+    {
+      "name": "generic-controls",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "48adeb0b97a7172b22847ff847884bfc5d173265a1f49ab7c83bc959b8946a1e"
+    },
+    {
+      "name": "syntax",
+      "command": [
+        "python3",
+        "-m",
+        "py_compile",
+        "discovery/check_sdk_m1.py",
+        "discovery/sdk_m1_conformance.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "whitespace",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "genericControlTestMethods": 11,
+  "results": [
+    {
+      "variant": "coherent-public-28500",
+      "outcomes": {
+        "oldGate": true,
+        "newGate": true
+      },
+      "cases": [
+        {
+          "case": "cold-launch",
+          "publicDeadlineMS": 28500.0,
+          "remainingMS": 28490,
+          "sdkPendingActionID": "9BB7DFDA-423D-4FA8-9202-055C5750FD55",
+          "nativeAnswerActionID": "action-0",
+          "nativeProvider": "synthetic-provider",
+          "nativePlatformDeadlineMS": 30000
+        },
+        {
+          "case": "unhandled-expiry",
+          "publicDeadlineMS": 28500.0,
+          "remainingMS": 28490,
+          "sdkPendingActionID": "9BB7DFDA-423D-4FA8-9202-055C5750FD55",
+          "nativeAnswerActionID": "action-0",
+          "nativeProvider": "synthetic-provider",
+          "nativePlatformDeadlineMS": 30000
+        }
+      ],
+      "fixtureFilesSHA256": "55fb52bae2260e79a5bca77720921fd4d3bf86b154aa4ac2be764a91546cbfbb",
+      "fixtureManifestSHA256": "c7b2c2fe4c9c453dc0d2ec2038c538139b4cffe31fb566d06bfd3c44f9f97d98"
+    },
+    {
+      "variant": "restored-public-30000-cold-launch",
+      "outcomes": {
+        "oldGate": true,
+        "newGate": false
+      },
+      "cases": [
+        {
+          "case": "cold-launch",
+          "publicDeadlineMS": 30000.0,
+          "remainingMS": 29990,
+          "sdkPendingActionID": "9BB7DFDA-423D-4FA8-9202-055C5750FD55",
+          "nativeAnswerActionID": "action-0",
+          "nativeProvider": "synthetic-provider",
+          "nativePlatformDeadlineMS": 30000
+        },
+        {
+          "case": "unhandled-expiry",
+          "publicDeadlineMS": 28500.0,
+          "remainingMS": 28490,
+          "sdkPendingActionID": "9BB7DFDA-423D-4FA8-9202-055C5750FD55",
+          "nativeAnswerActionID": "action-0",
+          "nativeProvider": "synthetic-provider",
+          "nativePlatformDeadlineMS": 30000
+        }
+      ],
+      "fixtureFilesSHA256": "1c0b1013c07f05a3963dba5c806495f62548a34f2549d0b06305aed917a4d5ee",
+      "fixtureManifestSHA256": "c7b2c2fe4c9c453dc0d2ec2038c538139b4cffe31fb566d06bfd3c44f9f97d98"
+    },
+    {
+      "variant": "restored-public-30000-unhandled-expiry",
+      "outcomes": {
+        "oldGate": true,
+        "newGate": false
+      },
+      "cases": [
+        {
+          "case": "cold-launch",
+          "publicDeadlineMS": 28500.0,
+          "remainingMS": 28490,
+          "sdkPendingActionID": "9BB7DFDA-423D-4FA8-9202-055C5750FD55",
+          "nativeAnswerActionID": "action-0",
+          "nativeProvider": "synthetic-provider",
+          "nativePlatformDeadlineMS": 30000
+        },
+        {
+          "case": "unhandled-expiry",
+          "publicDeadlineMS": 30000.0,
+          "remainingMS": 29990,
+          "sdkPendingActionID": "9BB7DFDA-423D-4FA8-9202-055C5750FD55",
+          "nativeAnswerActionID": "action-0",
+          "nativeProvider": "synthetic-provider",
+          "nativePlatformDeadlineMS": 30000
+        }
+      ],
+      "fixtureFilesSHA256": "0950ec542c8862f9ca198ff58ee0543d457bb31dc8912b916d6966924b444979",
+      "fixtureManifestSHA256": "c7b2c2fe4c9c453dc0d2ec2038c538139b4cffe31fb566d06bfd3c44f9f97d98"
+    }
+  ]
+}

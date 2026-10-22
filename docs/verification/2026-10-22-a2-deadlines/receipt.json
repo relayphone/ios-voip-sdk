@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured host behavior and compiler checks; native simulator/device acceptance pending",
+  "baseCommit": "3e4b11ad9f316fff549ea73529b278682d85838f",
+  "createdAt": "2026-10-22T08:28:49.713416+00:00",
+  "inputs": {
+    "Sources/VoIPSDK/ConversationHandler.swift": "e5f20e943d74a43c77847619b2f03953530790d713424e1a0c1bc6a6ee4a74d9",
+    "Sources/VoIPSDK/ConversationModels.swift": "a9f49822a15b4ba0db15572af322e5c1da4f7d34f037089b1f55aa76ec1aa0ee",
+    "Sources/Engine/RuntimeEngine.swift": "58aa66ec3ddfea3da068451e874465e9ed45006d36e205167286c69955cc50dc",
+    "Sources/Engine/Resources/ios-27.0.json": "f34933eb5ad2eaa7db2b19efba87e94345bbb8b77c4312f697010cde108a88d8",
+    "Tests/VoIPSDK/CoreTests.swift": "c7580921251a5e04f6563d44e8835cf50f09bf1552bc1151a37aaab3be99fb86",
+    "Tests/VoIPSDK/DeadlineTests.swift": "57dd084c653f2777a1c7ccba236b68559ab4091a09154bac5bbd5718086dbc28",
+    "Tests/VoIPSDK/run.sh": "c60e866f6c6ebe507abd58fd8970230e5ed2f7b19465df833eec9a93f5ab85f1",
+    "Tests/VoIPSDK/run_deadlines.sh": "5ab45fc64b153b6e6433b077f0fe7482d1ed1d6d60797ab328d49a25a8459ed5",
+    "discovery/check_lck_deadlines.py": "e5baa251c9b2da4c818d0f9362f984d1d143ccccbcb03970df9df1f7747fb921",
+    "discovery/run.sh": "b0094d6bfbdff6d3e854241bc61212bd9e26836ce259f646796a91758b9938f8",
+    "discovery/sdk_m1_contracts_conformance.py": "6f755f9a78ee8fc9d360baffd98bff59f2a026432dcf1cf8ecc79e31f3faa246",
+    "discovery/check_sdk_m1_contracts.py": "8eb0e92de9ab391d1b4d557ac335e0408ab3b9807d8db057c3b268e7b21036dc",
+    "Expo/apple/ConversationBridge.swift": "5a2215e9cd8fb373f552a95bb83142eccc027e20c7d9fd52224773f660ac3fd9",
+    "Expo/src/types.ts": "5d13fd22b9a4a87c4c28bf8ffd2644d69a5edf1b99b6947ce89e08bc33c13c6c"
+  },
+  "checks": [
+    {
+      "name": "core-and-real-clock",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "37e5b3c81714975c6258144064f301756c63cb884d503c1ce2f4740e2a719567"
+    },
+    {
+      "name": "profile-and-device-evidence",
+      "command": [
+        "python3",
+        "discovery/check_lck_deadlines.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "feba0a72471b7a6702c2a087f145a9ac974ce5e17386987f7fec1ec0c17c3304"
+    },
+    {
+      "name": "native-contract-gate-controls",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "1b6965cf9ab96c8797991069407a4068c7d398e346854d1ecc8788c794b0f2f6"
+    },
+    {
+      "name": "existing-sdk-m1-controls",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "3b6b4293c11f7066e288d8b15ff3f1a739a67b51e86284f347860a7ed9805d5f"
+    },
+    {
+      "name": "device-oracle-controls",
+      "command": [
+        "python3",
+        "discovery/check_oracles.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "798aea94323ff8d2e41686a483eb0da28a5a00d3f19b2293d40b8566d1dc528d"
+    },
+    {
+      "name": "lck-conformance-controls",
+      "command": [
+        "python3",
+        "discovery/check_lck_conformance.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "21139647cbf8737cd2f6887f4c6154a3f7bf25427f06df5ed852311fe9d6beb7"
+    },
+    {
+      "name": "lck-provider-controls",
+      "command": [
+        "python3",
+        "discovery/check_lck_provider_policy.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "a3e4829189473a073f4253576e3ab5dee641b934e13362554d963c5a296f66e6"
+    },
+    {
+      "name": "lck-readiness-controls",
+      "command": [
+        "python3",
+        "discovery/check_lck_probe_readiness.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "7049e53c7756403a2e2765c5898baf1b1374a813d81ee2b3b59fb293325a90da"
+    },
+    {
+      "name": "expo-relay-controls",
+      "command": [
+        "python3",
+        "discovery/check_expo_bridge.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "c71bee1176e02514f3ce0bd08f777a1431d05db7f7fa8d1f16b6cf1cb7804ded"
+    },
+    {
+      "name": "shell-syntax",
+      "command": [
+        "bash",
+        "-n",
+        "Tests/VoIPSDK/run.sh",
+        "Tests/VoIPSDK/run_deadlines.sh",
+        "discovery/run.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "actual-ios-runtime-typecheck",
+      "command": [
+        "xcrun",
+        "--sdk",
+        "iphonesimulator",
+        "swiftc",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-sdk",
+        "$IPHONESIMULATOR_SDK",
+        "-swift-version",
+        "6",
+        "-typecheck",
+        "-module-cache-path",
+        "$PRIVATE_OUTPUT/compiler-cache",
+        "-import-objc-header",
+        "Sources/Interposition/CKRuntimeSeam.h",
+        "Sources/Engine/RuntimeEngine.swift"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "initialRegressions": {
+    "initial-red.log": {
+      "exitCode": 133,
+      "outputSHA256": "31421a4c6185a11605a85f67949fd99bd56dd7a5638c788943e7f98d566a19b1"
+    },
+    "profile-red.log": {
+      "exitCode": 1,
+      "outputSHA256": "f5a5342b0aae5cc905ab44333d3f40b10e47165469c52eedfba8db76c0a5d709"
+    },
+    "native-gate-red.log": {
+      "exitCode": 1,
+      "outputSHA256": "012d633fd10fac89ccfdf5c6f96bb406682294a495bfaf1a94637d3a270e2d5a"
+    }
+  },
+  "privateChecksReceiptSHA256": "568b9523452458339e2a2b67151d5ce4b68d564b10c88638c2b8adfd94ea29dc",
+  "limits": [
+    "Host real-clock tests are separate from native simulator/device qualification.",
+    "Profile controls compile the production selector with Foundation; genuine LCK expiry callbacks remain unmeasured.",
+    "Runtime typecheck uses the installed real Apple SDK; it does not launch or link an app.",
+    "Raw check outputs remain ignored and hash-bound; this receipt is not native acceptance."
+  ]
+}
