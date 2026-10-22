@@ -1,9 +1,11 @@
 # M2 Expo audio integration
 
-**Proposed native acceptance:** the integrated example must pass the stale-audio
-fault and journeys with the selected existing LiveKit engine. The host checks
-below establish bridge behavior and packaging; they do not establish audio flow,
-microphone permission, native linkage, or simulator/device acceptance.
+**Measured local native acceptance:** the selected existing React Native LiveKit
+engine passed active, hold, resume and end, and the stale-audio fault ended cleanly.
+[Source-bound M2 receipts](../docs/verification/2026-10-22-sdk-m2/native-green-82c1b8f/README.md)
+bind actual availability/running observations to the built and installed product.
+Current-head hosted CI and physical-device media remain pending. The host checks
+below separately establish bridge behavior and packaging.
 
 Configure one adapter in the iOS-only plugin:
 

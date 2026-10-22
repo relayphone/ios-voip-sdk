@@ -1,0 +1,39 @@
+{
+  "capture": "discovery/out/m2-native/final-capture",
+  "build": "discovery/out/m2-native/final-build",
+  "classification": "lean public receipts, not a standalone replay capture",
+  "files": {
+    "build-info.json": "bb10e8cf93f3b9eeaaf0adeb42bb34c8dfaf6145b285ae0e02a4bea66722c4a0",
+    "cleanup.json": "4b3e19060710affc268b155631c162402b154342de779d6fdb6aa5afdf4b5460",
+    "environment.json": "063c126f429e37090efba1c97f1fd80d2c00fbe285ca6b47a01b4be30d6c1aea",
+    "host-audio-controls.json": "ac749a4e5e210d5d9e56a743080fe32dfb11444a32816c7c84e54836738afb5f",
+    "independent-cleanup.json": "2f231418a6667783ffd2033059173673994edecdf1d741be18d6bcd2d84959c6",
+    "installed.json": "9a80566639faf2ee9bdf6adab787cd322a72b040415ef1660e1767fac359f3da",
+    "manifest.json": "daa9f6c726345544032fedc07e0efacfe86741fee0db6d76030993c37e9776fa",
+    "native-observations.json": "cbc25d8b82634e1d3f450c7d5c1227e85b4a553d39b1d3753d6981f08feb39fc",
+    "none-build-preparation.json": "dc57e9aaecd5d0777b5ac68850aace730facd2aee754fb60fb399e2480c10094",
+    "runtime.json": "fd6123148eb979be3dff52edc92e3db7054dd85d7ba408b094c7647af6463120",
+    "sdk-m2-livekit.control-binding.json": "4824246b9942de056841d9eeaaad3747872e22f24cd7488318b042291b670bdd",
+    "sdk-m2-livekit.receipt.json": "604cbc6de728cccb9bd4bdd05eec046cd306247a354331eacffc9bec707c0345",
+    "sdk-m2-media-reentrancy.receipt.json": "519b804c3d71dce53063a566b95513f787f333aa9ace3f22038e563d89fc86fc",
+    "sdk-m2-stale-audio.control-binding.json": "0c0ca8ad234b3c4cc1445b69c62295b267b9e034bd549e750cc3309ae8151968",
+    "sdk-m2-stale-audio.receipt.json": "d1d50542571d9acf0b0f24ebb942cc7d2619bc20a917e870982188df7c1be9f6",
+    "source-after.json": "8497ed02b5ad3810b85282d22cccf65edee6bcf6e595fe394fb1b2f9df89bcf8",
+    "source-before.json": "8497ed02b5ad3810b85282d22cccf65edee6bcf6e595fe394fb1b2f9df89bcf8",
+    "summary.json": "84375e8a896110114f3a304fd578ecc2affb8192e08e90930279d10210c83fc0",
+    "versions.json": "5be85789aef66507b391ba3f725716df4e5555040342de53904bd9c137ebf45a"
+  },
+  "privateBuildLogs": {
+    "example-build.log": "9c3c3bb135f8f091a1f5d71b7db8ef02923ea5c34274762315d2912db0f27887",
+    "contracts-build.log": "6e462bf00fc086a235267c61144c55a1db8362003feff36feb614b84dcc4bbbc",
+    "notifier-build.log": "fe429d5a5e67a48684f60c11f815b5e88713aaec8654c77325d318b5e0375754"
+  },
+  "preparationLogSHA256": {
+    "spm-device.log": "9b18bc520c03b7d93d0355fe370a77c006046cfcd72bdbf4ac4e8a3cbee1e8ba",
+    "expo-none-release.log": "8965b54ab0e5ac31c3b86ad1362ee35ce0a560417913820fbb63beddf840f1e3",
+    "expo-livekit-release.log": "99f364e5d1e739deaef373262e638f58d0d1dff5444f46af365a55c4f081b799",
+    "expo-livekit-release-fixed.log": "6c7bc35d15fb18d974e2f838fc44bf32c141c41ab4acaa3b25e4b42c6fc318a2",
+    "expo-livekit-release-json.log": "2a176f60ea74093548c7a57c32f10ba59c675b146847c4e516d0748d3e30fcc1"
+  },
+  "preparationLogScope": "Compiler preparation only; the final build/capture has its own exact source identity. Earlier none preparation has a separate source receipt."
+}
