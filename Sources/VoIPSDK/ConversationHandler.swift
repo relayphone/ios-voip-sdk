@@ -26,6 +26,7 @@ public final class ConversationCancellationSignal {
 @MainActor
 public struct ConversationActionContext {
   public let actionID: UUID
+  /// Application policy deadline, initially 1.5 seconds before the platform timeout.
   public let deadline: Date
   public let origin: ConversationActionOrigin
   public let signal: ConversationCancellationSignal
@@ -67,18 +68,33 @@ public struct ConversationHandler {
 @MainActor
 final class ConversationActionCoordinator {
   typealias Schedule = @MainActor (Date, @escaping @MainActor () -> Void) -> @MainActor () -> Void
+  private static let deadlineMargin: TimeInterval = 1.5
+  #if DEBUG && targetEnvironment(simulator)
+  struct Diagnostic {
+    let phase: String
+    let actionID: String
+    let wallTimeMS: Int
+    let effectiveDeadlineMS: Int
+    let platformDeadlineMS: Int
+    let entryPending: Bool
+    let platformPending: Bool
+  }
+  static var diagnosticSink: (@MainActor (Diagnostic) -> Void)?
+  #endif
   private final class Entry {
     let conversationID: UUID
     let action: PendingAction
+    let platformDeadline: Date
     let isPending: @MainActor () -> Bool
     let settle: @MainActor (Bool) -> Void
     var cancelTimer: (@MainActor () -> Void)?
     var task: Task<Void, Never>?
     var signal: ConversationCancellationSignal?
     var delivery: UUID?
-    init(conversationID: UUID, action: PendingAction, isPending: @escaping @MainActor () -> Bool,
+    init(conversationID: UUID, action: PendingAction, platformDeadline: Date, isPending: @escaping @MainActor () -> Bool,
          settle: @escaping @MainActor (Bool) -> Void) {
       self.conversationID = conversationID; self.action = action
+      self.platformDeadline = platformDeadline
       self.isPending = isPending; self.settle = settle
     }
   }
@@ -96,7 +112,7 @@ final class ConversationActionCoordinator {
     self.policy = policy; self.now = now
     self.schedule = schedule ?? { deadline, fire in
       let task = Task { @MainActor in
-        do { try await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow))) }
+        do { try await Task.sleep(for: .seconds(max(0, deadline.timeIntervalSinceNow)), tolerance: .zero) }
         catch { return }
         guard !Task.isCancelled else { return }
         fire()
@@ -109,6 +125,13 @@ final class ConversationActionCoordinator {
     entries.values.contains { $0.conversationID == id && $0.action.kind == kind }
   }
 
+  func hasPendingAppMute(for id: UUID, value: Bool) -> Bool {
+    entries.values.contains {
+      $0.conversationID == id && $0.action.kind == .mute && $0.action.origin == .app &&
+      $0.action.muted == value && $0.action.deadline > now() && $0.isPending()
+    }
+  }
+
   func pending(for id: UUID) -> PendingAction? {
     entries.values.filter { $0.conversationID == id }.map(\.action).sorted {
       if $0.deadline != $1.deadline { return $0.deadline < $1.deadline }
@@ -119,7 +142,11 @@ final class ConversationActionCoordinator {
   func enqueue(conversationID: UUID, action: PendingAction,
                isPending: @escaping @MainActor () -> Bool, settle: @escaping @MainActor (Bool) -> Void) {
     guard entries[action.id] == nil else { return }
-    let entry = Entry(conversationID: conversationID, action: action, isPending: isPending, settle: settle)
+    let platformDeadline = action.deadline
+    var action = action
+    action.deadline = platformDeadline.addingTimeInterval(-Self.deadlineMargin)
+    let entry = Entry(conversationID: conversationID, action: action, platformDeadline: platformDeadline,
+      isPending: isPending, settle: settle)
     entries[action.id] = entry
     if action.deadline <= now() { expire(action.id); return }
     entry.cancelTimer = schedule(action.deadline) { [weak self] in self?.expire(action.id) }
@@ -198,6 +225,9 @@ final class ConversationActionCoordinator {
 
   private func expire(_ id: UUID) {
     guard let entry = entries[id] else { return }
+    #if DEBUG && targetEnvironment(simulator)
+    diagnose("policy-fire", entry)
+    #endif
     let wasDelivered = entry.delivery != nil
     finish(entry, accepted: !wasDelivered && policy == .accept, cancellation: .deadline)
   }
@@ -210,11 +240,32 @@ final class ConversationActionCoordinator {
     entry.task?.cancel()
     // A platform timeout/state change wins; fulfillment cannot resurrect a settled action.
     if entry.isPending() {
+      let accepted = accepted && now() < entry.platformDeadline
       // Install accepted mute/end metadata before fulfillment can synchronously
       // emit conversationChanged or a system echo.
       willSettle?(entry.conversationID, entry.action, accepted)
+      #if DEBUG && targetEnvironment(simulator)
+      diagnose("platform-settle-enter", entry)
+      #endif
       entry.settle(accepted)
+      #if DEBUG && targetEnvironment(simulator)
+      diagnose("platform-settle-return", entry)
+      #endif
     }
     didChange?()
+    #if DEBUG && targetEnvironment(simulator)
+    diagnose("pending-state-published", entry)
+    #endif
   }
+
+  #if DEBUG && targetEnvironment(simulator)
+  private func diagnose(_ phase: String, _ entry: Entry) {
+    guard let sink = Self.diagnosticSink else { return }
+    sink(.init(phase: phase, actionID: entry.action.id.uuidString,
+      wallTimeMS: Int(Date().timeIntervalSince1970 * 1000),
+      effectiveDeadlineMS: Int(entry.action.deadline.timeIntervalSince1970 * 1000),
+      platformDeadlineMS: Int(entry.platformDeadline.timeIntervalSince1970 * 1000),
+      entryPending: entries[entry.action.id] != nil, platformPending: entry.isPending()))
+  }
+  #endif
 }

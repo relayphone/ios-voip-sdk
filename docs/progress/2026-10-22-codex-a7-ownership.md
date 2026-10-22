@@ -1,6 +1,6 @@
 # A7 process owner core preparation — October 22, 2026
 
-**Current status:** PR #31 is published. The prior `031da3f` source passed audited SDK and runtime CI. The reviewed parent forward merge below has fresh host evidence; its hosted native acceptance remains pending. Earlier preparation sections retain their original scope.
+**Current status:** the ordered core union below has eighteen passing host/compiler checks and independent SPEC review. Root final source/receipt review and combined native acceptance are pending. Earlier green CI and parent failures retain their original source identities.
 
 **Proposed acceptance target:** every SDK creation path claims one process owner
 before constructing its only LCK manager. Native Swift and Expo use the same
@@ -91,7 +91,7 @@ mandatory whole-client cache modes and the mandatory incoming-delivery host
 control pass; both independent review axes cleared the repair. This is host
 evidence with modeled LCK timing, not a native or device acceptance result.
 
-## Current parent forward merge
+## First parent forward merge
 
 Reviewed PR #29 `4e7bba33` is merged normally, retaining main `6f58777`,
 the six-case native PushKit fixture, measured host metadata and the narrow
@@ -115,3 +115,31 @@ identities separately from the new host result and both parent red runs. No
 native execution, product build, audio work or workflow retry was used for this
 forward merge. Fresh hosted acceptance is required for its changed fixture and
 capture inputs.
+
+## Ordered core parent
+
+Reviewed PR #29 `047fc28f` is merged normally over the previous `de188217`
+head, retaining the ordered A2/A3 ancestry. The LCK profile keeps its thirty-second
+platform deadline/expiry, the SDK preserves its 1.5-second safety margin, and the
+live pending app-mute echo filter remains. The four native contract cases, six
+push cases, container cache and public five-code error guard are preserved.
+
+The native contract conflict keeps `VoIPApplication.start` for both unhandled
+policies. One actual host compile reproduced the mute runner's omitted
+`ProcessSDKOwnership` source. The narrow repair uses the actual factory and
+one-shot setup, plus the real Swift/Objective-C process claim and header; all
+seven mute assertions and their timing remain unchanged.
+
+**Measured:** the [ordered-union receipt](../verification/2026-10-22-sdk-process-owner-core/ordered-core-parent.json)
+binds 140 SDK inputs to digest `e6425b26f93bee6cb8b0775f19783d11db0a63c5e53528a4c8337614302e3479`.
+All eighteen focused commands passed once after the repair. This includes core
+and seven deadline groups, seven mute groups, ownership/cache/delivery checks,
+strict native-oracle controls and TypeScript checks. The single bounded actual
+shared Engine/SDK/Debug-contract typecheck passed with empty diagnostics in
+12.59 seconds, using real Apple SDK declarations and bridge headers. It built
+no target object or app, linked nothing, and ran no simulator, device or audio code.
+
+The previous `de188217` run metadata is retained with its observed queued or
+in-progress states. The audited green `031da3f` source and parent red runs remain
+historical. Root final review precedes publication; combined native acceptance
+remains pending at the final ordered stack tip.

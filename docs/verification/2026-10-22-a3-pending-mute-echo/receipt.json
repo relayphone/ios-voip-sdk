@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "qualification": "measured host behavior of actual client and handler with LCK boundary doubles; physical delayed-fulfill echo measurement pending",
+  "baseCommit": "3e4b11ad9f316fff549ea73529b278682d85838f",
+  "command": "bash Tests/VoIPSDK/run_mute_echo.sh",
+  "red": {
+    "exitCode": 251,
+    "assertion": "Matching system echo must fulfill without invoking a second handler while app mute is pending",
+    "inputs": {
+      "Sources/VoIPSDK/ConversationClient.swift": "b988e0123ff2435a568a9481e75dc8c5af16033611b1a2a16b72777e5b00007c",
+      "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
+      "Sources/VoIPSDK/ConversationModels.swift": "ff4be06d66d1efacd5060c08c9ca7507eb7b35d09107573e43f44bba4a4c1a2b",
+      "Sources/VoIPSDK/ConversationRecord.swift": "93208e379e1732e2bd48e74c8e256a2f06e83c5729e3d168e5bdf48191009029",
+      "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+      "Sources/VoIPSDK/SimulatorSupport.swift": "adf83443fee4f0233325bbe84fd98816d82f8450fdc1893c4623e54986768149",
+      "Tests/VoIPSDK/MuteEchoPlatform.swift": "a613cd3c4ee975e327f31c3a847ad4c5940edc25191835b8ba727a1c532df053",
+      "Tests/VoIPSDK/MuteEchoTests.swift": "0fd4c3f111ad0faf90baa56dfcd430f2c4e1282e32a51b07d15da3e60cb91727",
+      "Tests/VoIPSDK/run_mute_echo.sh": "521833e6568de6e7f0459e60f0280efaadc200c8f273e8e0858be7872c25c50d"
+    },
+    "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderrSHA256": "7e94870eb13531b28b9a13043f206d7fa37bfbbd32dd8012f1ce20c117108c87"
+  },
+  "green": {
+    "exitCode": 0,
+    "observed": {
+      "success": true,
+      "groups": 7,
+      "minimumPendingHandlerDelayMS": 43.353,
+      "actualClientAndHandler": true,
+      "nativeDeviceTimingMeasured": false
+    },
+    "inputs": {
+      "Sources/VoIPSDK/ConversationClient.swift": "765495f66cd409a0156eeeade6fc586ccce87c70e1a93977c4c004dc9d9ecce5",
+      "Sources/VoIPSDK/ConversationHandler.swift": "9348b33299ea403a1b5b903ca18ad05d959f2a13232d38ccf973b09656eedb36",
+      "Sources/VoIPSDK/ConversationModels.swift": "ff4be06d66d1efacd5060c08c9ca7507eb7b35d09107573e43f44bba4a4c1a2b",
+      "Sources/VoIPSDK/ConversationRecord.swift": "93208e379e1732e2bd48e74c8e256a2f06e83c5729e3d168e5bdf48191009029",
+      "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+      "Sources/VoIPSDK/SimulatorSupport.swift": "adf83443fee4f0233325bbe84fd98816d82f8450fdc1893c4623e54986768149",
+      "Tests/VoIPSDK/MuteEchoPlatform.swift": "a613cd3c4ee975e327f31c3a847ad4c5940edc25191835b8ba727a1c532df053",
+      "Tests/VoIPSDK/MuteEchoTests.swift": "0fd4c3f111ad0faf90baa56dfcd430f2c4e1282e32a51b07d15da3e60cb91727",
+      "Tests/VoIPSDK/run_mute_echo.sh": "521833e6568de6e7f0459e60f0280efaadc200c8f273e8e0858be7872c25c50d"
+    },
+    "stdoutSHA256": "4e9fd6e3d62c29c9bddb6e970c7fed3ec88a23af38b42a4c9b2056e2ee187b3e",
+    "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "hostBoundary": "The entire production ConversationClient compiles with its single native guard opened and its LCK/AVFAudio imports omitted. Only platform types are doubled; coordinator, handler delivery, origin tracking, committed state and cleanup are production code.",
+  "controls": [
+    "pending matching system mute filtered after 40 ms while opposite system value is delivered",
+    "application rejection clears pending intent",
+    "coordinator deadline clears intent and ignores late handler completion",
+    "platform timeout clears intent",
+    "manager reset clears intent",
+    "platform-settled stale entry is not pending intent",
+    "conversation UUID isolates pending intent"
+  ],
+  "nativeOrSimulatorRun": false,
+  "deviceEchoTimingMeasured": false,
+  "emptyOutputStreamsOmitted": [
+    "red.stdout",
+    "green.stderr"
+  ],
+  "toolchain": {
+    "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+    "xcode": "Xcode 27.1\nBuild version 27A9275"
+  }
+}
