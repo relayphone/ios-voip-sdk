@@ -1,0 +1,53 @@
+Attributes: Application, 0x11393abc0, pid: 16629, label: 'Settings'
+Element subtree:
+ →Application, 0x11393abc0, pid: 16629, label: 'Settings'
+    Window (Main), 0x11393ad00, {{0.0, 0.0}, {402.0, 874.0}}
+      Other, 0x11393ae40, {{0.0, 0.0}, {402.0, 874.0}}
+        Other, 0x11393af80, {{0.0, 0.0}, {402.0, 874.0}}
+          Other, 0x11393b0c0, {{0.0, 0.0}, {402.0, 874.0}}
+            Other, 0x11393b200, {{0.0, 0.0}, {402.0, 874.0}}
+              Other, 0x11393b340, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x11393b480, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x11393b5c0, {{0.0, 0.0}, {402.0, 874.0}}
+                    Other, 0x11393b700, {{0.0, 0.0}, {402.0, 874.0}}
+                      NavigationBar, 0x11393b840, {{0.0, 62.0}, {402.0, 54.0}}, identifier: 'Default Calling App'
+                        Button, 0x11393b980, {{16.0, 62.0}, {44.0, 44.0}}, identifier: 'BackButton', label: 'Default Apps'
+                        StaticText, 0x11393bac0, {{124.7, 73.7}, {152.7, 20.7}}, label: 'Default Calling App'
+                      Other, 0x11393bc00, {{0.0, 0.0}, {402.0, 874.0}}
+                        Other, 0x11393bd40, {{0.0, 0.0}, {402.0, 874.0}}
+                          Other, 0x11393be80, {{0.0, 0.0}, {402.0, 874.0}}
+                            Other, 0x11393a6c0, {{0.0, 0.0}, {402.0, 874.0}}
+                              CollectionView, 0x11393a800, {{0.0, 0.0}, {402.0, 874.0}}
+                                Other, 0x11393a940, {{-16.0, -1632.0}, {434.0, 3628.7}}
+                                Other, 0x1139c6580, {{0.0, 0.0}, {402.0, 874.0}}
+                                Other, 0x1139c66c0, {{0.0, 0.0}, {402.0, 874.0}}
+                                Cell, 0x1139c5540, {{16.0, 151.0}, {370.0, 52.0}}
+                                  Other, 0x1139c5680, {{16.0, 151.0}, {370.0, 52.0}}
+                                    Other, 0x1139c57c0, {{16.0, 151.0}, {370.0, 52.0}}
+                                  Other, 0x1139c5900, {{16.0, 151.0}, {370.0, 52.0}}
+                                    Other, 0x1139c5a40, {{16.0, 151.0}, {370.0, 52.0}}
+                                      Other, 0x1139c5b80, {{16.0, 151.0}, {370.0, 52.0}}
+                                        Button, 0x1139c5cc0, {{16.0, 151.0}, {370.0, 52.0}}, label: 'VoIP SDK Example', Selected
+                                          Image, 0x1139c5e00, {{29.7, 162.7}, {29.0, 29.0}}
+                                          StaticText, 0x1139c5f40, {{29.7, 162.7}, {183.0, 29.0}}, label: 'VoIP SDK Example'
+                                Cell, 0x1139c6080, {{16.0, 203.0}, {370.0, 45.7}}
+                                  Other, 0x1139c6440, {{16.0, 203.0}, {370.0, 45.7}}
+                                  Other, 0x1139c6300, {{16.0, 203.0}, {370.0, 45.7}}
+                                    Other, 0x1139c61c0, {{16.0, 203.0}, {370.0, 45.7}}
+                                      Other, 0x1139c5400, {{16.0, 203.0}, {370.0, 45.7}}
+                                        StaticText, 0x1139c5180, {{16.0, 203.0}, {370.0, 45.7}}, label: 'VoIP SDK Example will be used to make calls. If you have multiple calling apps, you can change the default.'
+                                Other, 0x1139c52c0, {{369.0, 116.0}, {30.0, 696.0}}, label: 'Vertical scroll bar, 1 page', value: 0%
+                                  Other, 0x1139c4f00, {{396.0, 808.0}, {3.0, 7.0}}
+                                Other, 0x1139c5040, {{369.0, 116.0}, {30.0, 696.0}}, label: 'Vertical scroll bar, 1 page', value: 0%
+                                  Other, 0x1139c4280, {{396.0, 808.0}, {3.0, 7.0}}
+                      Other, 0x1139c4640, {{0.0, 0.0}, {402.0, 874.0}}
+                        Other, 0x1139c4780, {{0.0, 0.0}, {402.0, 874.0}}
+                Other, 0x1139c48c0, {{0.0, 0.0}, {402.0, 874.0}}
+                  Other, 0x1139c4a00, {{0.0, 0.0}, {402.0, 874.0}}
+Path to element:
+ →Application, 0x11393abc0, pid: 16629, label: 'Settings'
+Query chain:
+ →Find: Application 'com.apple.Preferences'
+  Output: {
+    Application, 0x1139c4dc0, pid: 16629, label: 'Settings'
+  }

@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "qualification": "working-source host preparation only; no app/simulator/device run",
+  "baseCommit": "b0121ba898e215b417968e33667f8b023f038f66",
+  "sourceInputCount": 167,
+  "workingSourceInputsSHA256": "d7d0f4d9460ef69a643560c9bf99b0529ff92ed7d736164697f4ec8f0fc5b30b",
+  "sourceFiles": {
+    ".github/workflows/sdk-m3.yml": "9608a7984c69538c569eb7519f58855437075a5b6eace984ceac447c2b543758",
+    "discovery/check_sdk_m3.py": "041732f1f836bdb31707640faafbaa44464145d684d0038a34dc552871e20217",
+    "discovery/check_sdk_m3_direct.py": "5179df00586bcd49765f1aefe37a83fb3b011b8e3d5c30feb52ff458da496b86",
+    "discovery/run_sdk_m3.py": "1984dc6e0e29098039145a26319d26ee55fc058af0792cd1a1395efd715cc570",
+    "discovery/run_sdk_m3_direct.py": "8edc009ed253ee4c4676702c49e2f730182b9bcfd896111c2368d56e256281a9",
+    "discovery/sdk_m0_conformance.py": "3fdae85c11431ebb56afb2edef2bd2f7b1ddfb1d5f0456aa086429cb0e3143d4",
+    "discovery/sdk_m3_direct_conformance.py": "e4813a290d0f48ffce6e0d0b79c722bc9b50afe3b47a52088750e9afc8cfd32b",
+    "example/App.tsx": "327beb7c8f5a5f67b61faa948fa59ff493ad17991d383e2390d4260e1897d97e",
+    "example/journey.ts": "4ed13d57336bfd8027e381e66f86abb414c0282c8f3a288c777e7e81f7d31b43",
+    "example/modules/journey/apple/M3DirectControl.swift": "887012f8498095f03cf11b0ea6f184d008955875e30c2139f26ae56593f998a5",
+    "example/modules/journey/apple/VoIPExampleJourneyModule.swift": "6369f81387cc724e4be668118bacd89317e825b12b490bdc4359c72db9ebc26b"
+  },
+  "originalOSGateSHA256": "d2df37b0373d65e4ce2a0873b55b1b2ea9ffd77b44127e73878949a34910eff8",
+  "checks": [
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m3_direct.py"
+      ],
+      "exitCode": 0,
+      "scope": "13 direct groups; includes exact public simulator interface statement typecheck",
+      "logSHA256": "b343452a363364d266c43a1acd5cfd063a898ba7c1e3688977fcf0bec8280c15"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m3.py"
+      ],
+      "exitCode": 0,
+      "scope": "19 unchanged original OS groups",
+      "logSHA256": "c559526dec7d3d899fd92131c873ed27e45cd07ed0c86d41d178d4de03d67ea8"
+    },
+    {
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "exitCode": 0,
+      "scope": "SDK and example TypeScript",
+      "logSHA256": "01d5bb4c9623a561fbd8d3a9f2b49a7793b1c7711b89c6b5792062c65e6247b7"
+    },
+    {
+      "command": [
+        "actionlint",
+        ".github/workflows/sdk-m3.yml"
+      ],
+      "exitCode": 0,
+      "scope": "quiet success expected",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bash",
+        "Tests/DialRequests/run.sh"
+      ],
+      "exitCode": 0,
+      "scope": "8 public model/router/intent controls",
+      "logSHA256": "e546cebd21c3e4e57013f27bf37d9be41687cad10e766e44ecd5e9f1c98e2372"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_expo_bridge.py"
+      ],
+      "exitCode": 0,
+      "scope": "10 real bridge groups",
+      "logSHA256": "2d6ffeb886ec2c0e3b0bdfd4ba326d6d8c0ebe01e2d92b348816a7730a6c51b4"
+    }
+  ],
+  "limits": [
+    "This is not a committed-source native acceptance receipt.",
+    "Public API statement typechecking substitutes only fixture tracing/wait bookkeeping; it is not the whole Expo module build.",
+    "Original OS-dispatch failures and direct-delivery acceptance use separate gates.",
+    "A0 first and A1-A9 integration remain merge prerequisites."
+  ],
+  "environment": {
+    "xcode": "Xcode 27.1\nBuild version 27A9275",
+    "simulatorSDK": "27.1",
+    "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0"
+  }
+}

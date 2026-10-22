@@ -134,9 +134,10 @@ import Foundation
 
     def run_capture(self, *, dyld_status=0, dyld=b'', dyld_timeout=False, dyld_stderr=b'',
                     dispatch_status=0, omit_receipt=False, terminate_during_boot=False, preboot=False,
-                    settings_selected=True, settings_pid=123, settings_device=None, create_timeout=False, create_invalid=False):
+                    settings_selected=True, settings_pid=123, settings_device=None, create_timeout=False, create_invalid=False,
+                    direct_rows=None):
         with tempfile.TemporaryDirectory(prefix='sdk-m3-runner-controls-') as directory:
-            root = Path(directory); app = root / 'Original.app'; app.mkdir(); data = root / 'data'; data.mkdir()
+            root = Path(directory); app = root / 'Original.app'; app.mkdir(); data = root / 'data'; data.mkdir(); (data / 'tmp').mkdir()
             out = root / 'capture'; ui = root / 'ui'; ui_files = products(ui)
             info = dict(CFBundleExecutable='Example', CFBundleIdentifier=gate.BUNDLE,
                         UIBackgroundModes=['voip'], NSUserActivityTypes=['INStartCallIntent'])
@@ -196,15 +197,29 @@ import Foundation
                     if launch_command != ['xcrun', 'simctl', 'launch', '--console', '--terminate-running-process', simulator, gate.BUNDLE]:
                         raise AssertionError('M3 example must use the plain public console transport')
                     self.status = None; launches.append(kwargs['env'])
-                    run = kwargs['env']['SIMCTL_CHILD_SDK_M3_RUN_ID']; rows, _ = sample()
+                    run = kwargs['env']['SIMCTL_CHILD_SDK_M3_RUN_ID']
+                    rows = copy.deepcopy(direct_rows) if direct_rows is not None else sample()[0]
                     for row in rows: row.update(runID=run, simulatorID=simulator)
-                    m0_controls.write_trace(out, gate.NAME, rows)
-                    m0_controls.change_json(out, gate.NAME + '.receipt.json', lambda r: r.update(runID=run, simulatorID=simulator))
-                    if omit_receipt: (out / (gate.NAME + '.receipt.json')).unlink()
+                    self.rows, self.run = rows, run
+                    name = 'sdk-m3-direct' if direct_rows is not None else gate.NAME
+                    m0_controls.write_trace(out, name, rows)
+                    m0_controls.change_json(out, name + '.receipt.json', lambda r: r.update(runID=run, simulatorID=simulator))
+                    if omit_receipt: (out / (name + '.receipt.json')).unlink()
                     session = data / 'Documents/.callkit-simulator'; session.mkdir(parents=True)
                     m0_controls.write_json(session / 'session.json', dict(runID=run, pid=123, bundleID=gate.BUNDLE))
                 def poll(self): return self.status
-                def wait(self, timeout): self.status = 0; return 0
+                def wait(self, timeout):
+                    if direct_rows is not None and (out / 'direct-control.json').exists() and not omit_receipt:
+                        control = out / 'direct-control.json'
+                        value = json.loads(control.read_text())
+                        if value != dict(schemaVersion=1, runID=self.run, simulatorID=simulator, appPID=123, delivery='direct-url-and-intent'):
+                            raise AssertionError('direct control identity differs')
+                        if (data / 'tmp' / ('sdk-m3-direct-' + self.run + '.json')).read_bytes() != control.read_bytes():
+                            raise AssertionError('direct control was not delivered to this app sandbox')
+                        next(r for r in self.rows if r['event'] == 'm3.directControl')['controlSHA256'] = gate.m0.digest(control)
+                        m0_controls.write_trace(out, 'sdk-m3-direct', self.rows)
+                        m0_controls.change_json(out, 'sdk-m3-direct.receipt.json', lambda r: r.update(runID=self.run, simulatorID=simulator))
+                    self.status = 0; return 0
                 def terminate(self): self.status = -15
                 def kill(self): self.status = -9
 
@@ -218,14 +233,14 @@ import Foundation
             with patch.object(runner.m0, 'source_identity', return_value=m0_controls.IDENTITY), \
                  patch.object(runner.subprocess, 'run', side_effect=external), \
                  patch.object(runner.subprocess, 'Popen', Supervisor), \
-                 patch.object(runner.time, 'time_ns', return_value=1_790_000_000_025_000_000), \
+                 patch.object(runner.time, 'time_ns', return_value=1_790_000_000_055_000_000 if direct_rows is not None else 1_790_000_000_025_000_000), \
                  patch.object(sys, 'argv', ['run_sdk_m3.py', '--app', str(app), '--build-receipt', str(receipt), '--settings-products', str(ui), '--out', str(out)] +
                               (['--preboot-wait-seconds', '1'] if preboot else [])), \
                  patch.object(runner.time, 'sleep', side_effect=observe_preboot if preboot else lambda _: None), \
                  patch.dict(os.environ, {'SIMCTL_CHILD_DYLD_INSERT_LIBRARIES': '/private/fixture-injector.dylib',
                                         'SIMCTL_CHILD_SDK_M3_RUN_ID': 'stale-boot-run', 'SIMCTL_CHILD_SDK_M1_CASE': 'stale-case'}), \
                  contextlib.redirect_stdout(captured):
-                status = runner.main()
+                status = runner.main(direct=direct_rows is not None)
             self.assertEqual(handlers, {sig: signal.getsignal(sig) for sig in handlers})
             self.assertNotIn('/private/fixture-injector.dylib', captured.getvalue())
             self.assertEqual((app / 'Example').read_bytes(), original)
@@ -241,6 +256,9 @@ import Foundation
             if launches:
                 self.assertEqual(launches[0]['SIMCTL_CHILD_DYLD_INSERT_LIBRARIES'], '/private/fixture-injector.dylib')
                 self.assertNotEqual(launches[0]['SIMCTL_CHILD_SDK_M3_RUN_ID'], 'stale-boot-run')
+                if direct_rows is not None:
+                    self.assertEqual(launches[0]['SIMCTL_CHILD_SDK_M3_DELIVERY'], 'direct-url-and-intent')
+                    self.assertFalse(any(call[:3] == ['xcrun', 'simctl', 'openurl'] or call[:2] == ['xcodebuild', 'test-without-building'] for call in calls))
             if not settings_selected or settings_pid != 123 or settings_device:
                 self.assertFalse(any(call[:3] == ['xcrun', 'simctl', 'openurl'] for call in calls))
             return status, json.loads((out / 'summary.json').read_text())

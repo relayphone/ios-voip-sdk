@@ -1,4 +1,4 @@
-name: SDK M3 public default calling acceptance
+name: SDK M3 direct simulator delivery
 
 on:
   pull_request:
@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  public-tel:
+  direct-delivery:
     runs-on: macos-26
     timeout-minutes: 45
     defaults:
@@ -46,6 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 discovery/check_sdk_m3.py 2>&1 | tee "$SDK_M3_LOGS/m3-controls.log"
+          python3 discovery/check_sdk_m3_direct.py 2>&1 | tee "$SDK_M3_LOGS/m3-direct-controls.log"
           bash Tests/DialRequests/run.sh 2>&1 | tee "$SDK_M3_LOGS/dial-controls.log"
           python3 discovery/check_expo_bridge.py 2>&1 | tee "$SDK_M3_LOGS/bridge-controls.log"
           bash -n discovery/build_sdk_m3.sh
@@ -62,12 +63,12 @@ jobs:
           pod install 2>&1 | tee "$SDK_M3_LOGS/pod-install.log"
       - name: Build the source-bound example and public Settings test
         run: bash discovery/build_sdk_m3.sh "$SDK_M3_BUILD"
-      - name: Measure actual Settings selection and OS tel delivery
+      - name: Measure direct URL and typed intent public events
         run: |
-          python3 discovery/run_sdk_m3.py --app "$SDK_M3_BUILD/Example.app" \
+          python3 discovery/run_sdk_m3_direct.py --app "$SDK_M3_BUILD/Example.app" \
             --build-receipt "$SDK_M3_BUILD/build-receipt.json" \
             --settings-products "$SDK_M3_BUILD/settings-products" --out "$SDK_M3_OUT"
-          python3 discovery/sdk_m3_conformance.py "$SDK_M3_OUT"
+          python3 discovery/sdk_m3_direct_conformance.py "$SDK_M3_OUT"
       - name: Preserve evidence, including red measurements
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

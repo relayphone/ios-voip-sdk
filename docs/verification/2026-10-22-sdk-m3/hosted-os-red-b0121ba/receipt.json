@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured hosted actual Settings selection followed by OS tel dispatch115; original strict OS acceptance remains red",
+  "runID": 39739841564,
+  "runAttempt": 2,
+  "submittedHead": "b0121ba898e215b417968e33667f8b023f038f66",
+  "capturedSource": "bb02d05a5e8a76c2c2962289de84ea472976bbe5",
+  "sourceInputsSHA256": "094ff90855e5ca6e9b50b95b86525170f914ce362b8032155ee9bc41565ebbb2",
+  "artifactID": 12411581323,
+  "artifactArchiveSHA256": "85a794ba6a57858412aff32c9b42f0b8654a2a25ffeefa2b0ef6545329f07f7c",
+  "githubArtifactDigest": "sha256:85a794ba6a57858412aff32c9b42f0b8654a2a25ffeefa2b0ef6545329f07f7c",
+  "sourceAndInstalledBytesBound": true,
+  "settingsProductsBound": 48,
+  "buildLogsBound": 3,
+  "settingsValidation": "unchanged validate_settings passed independently; full original gate stays false",
+  "selection": {
+    "appPID": 15505,
+    "beforeSelected": true,
+    "method": "public-xctest-ui",
+    "runID": "F8A458DF-1C46-4FD7-BC5A-EA5A6BEDDBF2",
+    "schemaVersion": 1,
+    "selected": true,
+    "simulatorID": "AA827608-FE80-4482-8002-FC37436AD249",
+    "tapped": true,
+    "wallTimeMS": 1792656596719
+  },
+  "nativeIngressCount": 0,
+  "publicDialRequestCount": 0,
+  "strictGateExitCode": 1,
+  "strictGateResult": {
+    "success": false,
+    "error": "M3 control failed: os-tel-dispatch"
+  },
+  "cleanup": {
+    "simulatorID": "AA827608-FE80-4482-8002-FC37436AD249",
+    "deleted": true,
+    "globalEnvironmentUnchanged": true,
+    "absentFromInventory": true,
+    "deleteExitCode": 0
+  },
+  "supervisorCompleted": false,
+  "nativeOSDeliveryQualification": false,
+  "environment": {
+    "simulatorID": "AA827608-FE80-4482-8002-FC37436AD249",
+    "simulatorRuntimeID": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+    "simulatorOS": "26.5",
+    "simulatorBuild": "23F77",
+    "xcodeVersion": "Xcode 26.6\nBuild version 17F113"
+  },
+  "privateFiles": {
+    "manifest.json": "afe27a62cd130241d6a24db10a3a9e824b264ae300304e48391f8a547bb20583",
+    "input-build-receipt.json": "09372d4ee2c09576315cb8d5ad6cac9689592a2342689ad6b69683864f362d10",
+    "commands.json": "49c6f058b9ec989f9b10bb1fecb3a62530aee65a67b7d44c5fe53e1b8f0d5c1e",
+    "sdk-m3-tel.log": "40cd8ff298bc0c0b9dff6edc6c113d428e2ebf372262b6a3a5534befc45f8511",
+    "sdk-m3-tel.receipt.json": "68089ffdfa44db4e028c7ede9cb76e0654ff38a87396b888ebe3defaf1a07144",
+    "settings/test.log": "62b3af84f5856d64cdfa14401afe9955c51fec810dce971d004e03925b947980",
+    "settings/attachments/manifest.json": "398a40c84487e690574c2829c95f449977e7cf487c2c3fb8670b530cb8811477"
+  },
+  "privateBuildLogs": {
+    "example-build.log": "552b85bf7c2dc2d78e96cd3a762df3997c60d49382741435edf908543fd28efa",
+    "settings-generate.log": "4a560b9775074d84f0fda36f66a34c9d9390610bdfa75ebe242b222f932f8e06",
+    "settings-build.log": "55653cc9ec01ea73245e1d5d35f4d4d8ad6264af803f854ba1ba46b6377f572d"
+  },
+  "privateClassificationFiles": {
+    "artifact-metadata.json": "d6650d1f182549ec8a6bdff8fd0280d75ad69c58a46ac2a5ad984b91e930ad9e",
+    "run-info-final.json": "dd445eff32cf6087e59d8b76cf9b76f621bde217689c047dc7e75b165f990868",
+    "source-input-proof.json": "fe44b64d51b38b61cdec3b54cff17a3564d8ab9514debb34b9d575f5339d4f44",
+    "replay.json": "90a1e003f395e234b394c77f09b21bfbb941714ec7ad7d8869e0a40c2928e0a7"
+  },
+  "notes": [
+    "Actual public Settings tap and selected state are measured; no claim that simulators universally cannot select a calling app.",
+    "No stable cause for LS error115 or universal simulator delivery limitation is established.",
+    "No native OS ingress/public dialRequest arrived; incomplete supervisor remains red after owner stops the app.",
+    "This is an original OS-dispatch comparison, not the newly authorized A9 direct-delivery acceptance."
+  ],
+  "publicFiles": {
+    "summary.json": "5552d26b185d74178a1ffb9612746add2eed83e69554fdaea632749177ef3a0e",
+    "settings-selection.json": "b3a1aaa570747b068b66f2555f115d21582b9de1631e9c172c9cbba228a8be4d",
+    "sdk-m3-tel.receipt.json": "68089ffdfa44db4e028c7ede9cb76e0654ff38a87396b888ebe3defaf1a07144",
+    "before-selection-screen.png": "1e4bc720fed5f12b71f9dc1e71f276b64ce0e180bb98826df9d74407e8ab0ff4",
+    "dispatch.json": "734dd38883c7536a77c61f4554c7c20c6f5d47d0bcdf140812c448cf039b3d7e",
+    "standalone-gate.json": "90a1e003f395e234b394c77f09b21bfbb941714ec7ad7d8869e0a40c2928e0a7",
+    "before-selection-accessibility.txt": "fa0a908a79a791ceb3258d53ecf82e180bbccda9633469e661e18e33c3909912",
+    "after-selection-screen.png": "1e4bc720fed5f12b71f9dc1e71f276b64ce0e180bb98826df9d74407e8ab0ff4",
+    "cleanup.json": "c3fd063a201cb99e31b92edc1f0799e6db7cb8e950a0a90f198e3cf098edd90d",
+    "after-selection-accessibility.txt": "5bd8ab1071eb2b0c144091498b18cbfdfdedb390f8a06138079a425293f0ff70",
+    "source-input-proof.json": "fe44b64d51b38b61cdec3b54cff17a3564d8ab9514debb34b9d575f5339d4f44",
+    "probe-observations.jsonl": "9323ac510b6e389c3e4bf7da654c1432c394daf2a8645fb5c1ed5597cbcf4b74",
+    "environment.json": "8e5826402b6bd3dac0c06183f7cb48e9b587564f248927f2cb8abaad2fa3a509"
+  },
+  "publicExcerptUse": "Reading evidence only; never substituted as a gate trace."
+}

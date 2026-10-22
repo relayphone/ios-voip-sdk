@@ -34,7 +34,13 @@ def probe_rows(path):
     return rows
 
 
-def main():
+def main(*, direct=False):
+    # The A9 entry point shares only owned lifecycle/build plumbing. Its
+    # separately named evidence and gate cannot qualify OS/default dispatch.
+    if direct:
+        import sdk_m3_direct_conformance as acceptance_gate
+    else:
+        acceptance_gate = gate
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--app', type=Path, required=True)
     parser.add_argument('--build-receipt', type=Path, required=True)
@@ -61,8 +67,9 @@ def main():
     steps = []
     control_env = {key: value for key, value in os.environ.items()
                    if not key.startswith(('SIMCTL_CHILD_CKSIM_', 'SIMCTL_CHILD_SDK_M0_', 'SIMCTL_CHILD_SDK_M1_', 'SIMCTL_CHILD_SDK_M2_', 'SIMCTL_CHILD_SDK_M3_'))}
-    manifest = dict(schemaVersion=1, scenario='sdk-m3', runID=run_id, ownsSimulator=True,
-                    runtimeInjectionRequested=False, directIngressInjectionRequested=False)
+    manifest = dict(schemaVersion=1, scenario='sdk-m3-direct' if direct else 'sdk-m3', runID=run_id, ownsSimulator=True,
+                    runtimeInjectionRequested=False, directIngressInjectionRequested=direct)
+    if direct: manifest['delivery'] = 'direct-url-and-intent'
     failure = None
     def interrupted(signum, _frame):
         raise InterruptedError('M3 interrupted by signal ' + str(signum))
@@ -103,7 +110,7 @@ def main():
         identity = m0.source_identity()
         app = args.app.resolve()
         build = json.loads(args.build_receipt.read_text())
-        gate.check_input_build(app, build, identity, args.settings_products)
+        acceptance_gate.check_input_build(app, build, identity, args.settings_products)
         manifest.update(identity)
         shutil.copyfile(args.build_receipt, out / 'input-build-receipt.json')
         manifest['inputBuildReceiptSHA256'] = m0.digest(out / 'input-build-receipt.json')
@@ -117,11 +124,11 @@ def main():
                 ('com.apple.developer.calling-app', 'com.apple.developer.dialing-app')):
             raise RuntimeError('Restricted simulator claims must come from normal Xcode packaging, not host signing')
         (out / 'host-entitlements.plist').write_bytes(host.stdout)
-        (out / 'simulated-entitlements.plist').write_bytes(gate.simulated_entitlements(m0.executable(copied)))
+        (out / 'simulated-entitlements.plist').write_bytes(acceptance_gate.simulated_entitlements(m0.executable(copied)))
         shutil.copyfile(m0.executable(copied), out / 'binaries/example')
         shutil.copyfile(copied / 'main.jsbundle', out / 'binaries/main.jsbundle')
         shutil.copyfile(copied / 'Info.plist', out / 'Info.plist')
-        manifest['files'] = {name: m0.digest(out / name) for name in gate.FILES}
+        manifest['files'] = {name: m0.digest(out / name) for name in acceptance_gate.FILES}
         (out / 'build-logs').mkdir()
         if not build.get('buildLogs'): raise RuntimeError('Missing M3 build logs')
         for name, digest in build['buildLogs'].items():
@@ -130,7 +137,7 @@ def main():
             if path.stat().st_size == 0 or m0.digest(path) != digest: raise RuntimeError('Unbound or empty M3 build log')
             shutil.copyfile(path, out / 'build-logs' / name)
         # Preserve original app bytes; there is deliberately no post-build signing.
-        gate.check_input_build(app, build, identity, args.settings_products)
+        acceptance_gate.check_input_build(app, build, identity, args.settings_products)
         (out / 'settings').mkdir()
         shutil.copytree(args.settings_products, out / 'settings/products')
         runtimes = json.loads(command('runtimes', ['xcrun', 'simctl', 'list', 'runtimes', '-j']).stdout)['runtimes']
@@ -167,63 +174,75 @@ def main():
         write(out / 'environment.json', environment)
         manifest['environmentSHA256'] = m0.digest(out / 'environment.json')
         sim('install', 'install', simulator, str(copied), timeout=180)
-        installed = Path(sim('installed-app', 'get_app_container', simulator, gate.BUNDLE, 'app').stdout.decode().strip())
+        installed = Path(sim('installed-app', 'get_app_container', simulator, acceptance_gate.BUNDLE, 'app').stdout.decode().strip())
         manifest['installed'] = dict(executableSHA256=m0.digest(m0.executable(installed)),
                                      javascriptSHA256=m0.digest(installed / 'main.jsbundle'),
                                      infoPlistSHA256=m0.digest(installed / 'Info.plist'))
         launch_env = dict(control_env)
         launch_env.update(SIMCTL_CHILD_DYLD_INSERT_LIBRARIES=inherited, SIMCTL_CHILD_CKSIM_RUN_ID=run_id,
                           SIMCTL_CHILD_SDK_M3_RUN_ID=run_id, SIMCTL_CHILD_SDK_M3_ACCEPTANCE='1')
+        if direct: launch_env['SIMCTL_CHILD_SDK_M3_DELIVERY'] = 'direct-url-and-intent'
         control = (out / 'supervisor-control.log').open('wb')
         supervisor = subprocess.Popen([sys.executable, 'discovery/run_scenario.py', '--console-launcher-stop',
-            '--timeout', '480', '--output', str(out / (gate.NAME + '.log')),
-            '--receipt', str(out / (gate.NAME + '.receipt.json')), '--run-id', run_id, '--simulator-id', simulator,
-            '--scenario', gate.NAME, '--bundle-id', gate.BUNDLE,
-            '--terminate-command', 'xcrun', 'simctl', 'terminate', simulator, gate.BUNDLE,
-            '--launch-command', 'xcrun', 'simctl', 'launch', '--console', '--terminate-running-process', simulator, gate.BUNDLE],
+            '--timeout', '480', '--output', str(out / (acceptance_gate.NAME + '.log')),
+            '--receipt', str(out / (acceptance_gate.NAME + '.receipt.json')), '--run-id', run_id, '--simulator-id', simulator,
+            '--scenario', acceptance_gate.NAME, '--bundle-id', acceptance_gate.BUNDLE,
+            '--terminate-command', 'xcrun', 'simctl', 'terminate', simulator, acceptance_gate.BUNDLE,
+            '--launch-command', 'xcrun', 'simctl', 'launch', '--console', '--terminate-running-process', simulator, acceptance_gate.BUNDLE],
             env=launch_env, stdout=control, stderr=subprocess.STDOUT)
-        trace = out / (gate.NAME + '.log')
+        trace = out / (acceptance_gate.NAME + '.log')
         ready = wait_for(lambda: next((r for r in probe_rows(trace) if r.get('event') == 'm3.listenerReady'), None),
                          60, 'the actual public listener')
         launch = next(r for r in probe_rows(trace) if r.get('event') == 'launch')
         if launch.get('runID') != run_id or launch.get('simulatorID') != simulator or ready.get('runID') != run_id or ready.get('simulatorID') != simulator or ready.get('pid') != launch.get('pid'):
             raise RuntimeError('M3 listener readiness has mixed launch identity')
         pid = launch['pid']
-        data = Path(sim('app-data', 'get_app_container', simulator, gate.BUNDLE, 'data').stdout.decode().strip())
+        data = Path(sim('app-data', 'get_app_container', simulator, acceptance_gate.BUNDLE, 'data').stdout.decode().strip())
         session = json.loads((data / 'Documents/.callkit-simulator/session.json').read_text())
-        if any(session.get(k) != v for k, v in [('runID', run_id), ('pid', pid), ('bundleID', gate.BUNDLE)]):
+        if any(session.get(k) != v for k, v in [('runID', run_id), ('pid', pid), ('bundleID', acceptance_gate.BUNDLE)]):
             raise RuntimeError('Runtime session does not match the launched example')
-        original = next(path for path in (out / 'settings/products').glob('*.xctestrun'))
-        configured = gate.settings_configuration(plistlib.loads(original.read_bytes()), run_id, simulator, pid, inherited)
-        run_file = out / 'settings/products/M3Run.xctestrun'
-        run_file.write_bytes(plistlib.dumps(configured))
-        manifest['settingsRunSHA256'] = m0.digest(run_file)
-        manifest['inheritedDYLDSHA256'] = hashlib.sha256(inherited.encode()).hexdigest()
-        selection = command('select-calling-app', ['xcodebuild', 'test-without-building', '-xctestrun', str(run_file),
-            '-destination', 'platform=iOS Simulator,id=' + simulator, '-destination-timeout', '30',
-            '-parallel-testing-enabled', 'NO', '-maximum-concurrent-test-simulator-destinations', '1',
-            '-resultBundlePath', str(out / 'settings/result.xcresult'), '-only-testing:SettingsProbe/DefaultCallingTests/testSelectCallingApp',
-            '-test-timeouts-enabled', 'YES', '-default-test-execution-time-allowance', '150',
-            '-maximum-test-execution-time-allowance', '180'], timeout=240, check=False)
-        (out / 'settings/test.log').write_bytes(selection.stdout + b'\n' + selection.stderr)
-        command('export-settings-attachments', ['xcrun', 'xcresulttool', 'export', 'attachments', '--path',
-            str(out / 'settings/result.xcresult'), '--output-path', str(out / 'settings/attachments')], timeout=60)
-        attachments = gate.settings_attachments(out / 'settings/attachments', simulator)
-        paths = [out / 'settings/test.log', out / 'settings/attachments/manifest.json', *attachments.values()]
-        manifest['settingsFiles'] = {path.relative_to(out).as_posix(): m0.digest(path) for path in paths}
-        if selection.returncode: raise RuntimeError('Public Settings selection did not pass')
-        gate.validate_settings(out, manifest, build, ready, dict(startedWallTimeMS=time.time_ns() // 1_000_000))
-        argv = ['xcrun', 'simctl', 'openurl', simulator, gate.URL]
-        dispatch = dict(schemaVersion=1, runID=run_id, simulatorID=simulator, appPID=pid,
-                        argv=argv, startedWallTimeMS=time.time_ns() // 1_000_000)
-        result = command('os-tel-dispatch', argv, timeout=60, check=False)
-        dispatch.update(exitCode=result.returncode, finishedWallTimeMS=time.time_ns() // 1_000_000)
-        write(out / 'dispatch.json', dispatch)
-        manifest['dispatchSHA256'] = m0.digest(out / 'dispatch.json')
-        if result.returncode: raise RuntimeError('OS tel dispatch failed; M3 delivery remains unqualified on this OS/build')
+        if direct:
+            control_value = dict(schemaVersion=1, runID=run_id, simulatorID=simulator, appPID=pid,
+                                 delivery='direct-url-and-intent')
+            write(out / 'direct-control.json', control_value)
+            manifest['directControlSHA256'] = m0.digest(out / 'direct-control.json')
+            manifest['directControlCreatedWallTimeMS'] = time.time_ns() // 1_000_000
+            destination = data / 'tmp' / ('sdk-m3-direct-' + run_id + '.json')
+            temporary = destination.with_suffix('.tmp')
+            shutil.copyfile(out / 'direct-control.json', temporary)
+            os.replace(temporary, destination)
+        else:
+            original = next(path for path in (out / 'settings/products').glob('*.xctestrun'))
+            configured = acceptance_gate.settings_configuration(plistlib.loads(original.read_bytes()), run_id, simulator, pid, inherited)
+            run_file = out / 'settings/products/M3Run.xctestrun'
+            run_file.write_bytes(plistlib.dumps(configured))
+            manifest['settingsRunSHA256'] = m0.digest(run_file)
+            manifest['inheritedDYLDSHA256'] = hashlib.sha256(inherited.encode()).hexdigest()
+            selection = command('select-calling-app', ['xcodebuild', 'test-without-building', '-xctestrun', str(run_file),
+                '-destination', 'platform=iOS Simulator,id=' + simulator, '-destination-timeout', '30',
+                '-parallel-testing-enabled', 'NO', '-maximum-concurrent-test-simulator-destinations', '1',
+                '-resultBundlePath', str(out / 'settings/result.xcresult'), '-only-testing:SettingsProbe/DefaultCallingTests/testSelectCallingApp',
+                '-test-timeouts-enabled', 'YES', '-default-test-execution-time-allowance', '150',
+                '-maximum-test-execution-time-allowance', '180'], timeout=240, check=False)
+            (out / 'settings/test.log').write_bytes(selection.stdout + b'\n' + selection.stderr)
+            command('export-settings-attachments', ['xcrun', 'xcresulttool', 'export', 'attachments', '--path',
+                str(out / 'settings/result.xcresult'), '--output-path', str(out / 'settings/attachments')], timeout=60)
+            attachments = acceptance_gate.settings_attachments(out / 'settings/attachments', simulator)
+            paths = [out / 'settings/test.log', out / 'settings/attachments/manifest.json', *attachments.values()]
+            manifest['settingsFiles'] = {path.relative_to(out).as_posix(): m0.digest(path) for path in paths}
+            if selection.returncode: raise RuntimeError('Public Settings selection did not pass')
+            acceptance_gate.validate_settings(out, manifest, build, ready, dict(startedWallTimeMS=time.time_ns() // 1_000_000))
+            argv = ['xcrun', 'simctl', 'openurl', simulator, acceptance_gate.URL]
+            dispatch = dict(schemaVersion=1, runID=run_id, simulatorID=simulator, appPID=pid,
+                            argv=argv, startedWallTimeMS=time.time_ns() // 1_000_000)
+            result = command('os-tel-dispatch', argv, timeout=60, check=False)
+            dispatch.update(exitCode=result.returncode, finishedWallTimeMS=time.time_ns() // 1_000_000)
+            write(out / 'dispatch.json', dispatch)
+            manifest['dispatchSHA256'] = m0.digest(out / 'dispatch.json')
+            if result.returncode: raise RuntimeError('OS tel dispatch failed; M3 delivery remains unqualified on this OS/build')
         if supervisor.wait(timeout=90): raise RuntimeError('No successful supervised public dialRequest; inspect eligibility and native ingress')
         if m0.source_identity() != identity: raise RuntimeError('M3 source changed during acceptance')
-        gate.check_input_build(app, build, identity, args.settings_products)
+        acceptance_gate.check_input_build(app, build, identity, args.settings_products)
     except (Exception, KeyboardInterrupt) as error:
         failure = dict(type=type(error).__name__, reason=str(error))
     finally:
@@ -232,7 +251,7 @@ def main():
         for sig in saved_handlers: signal.signal(sig, signal.SIG_IGN)
         cleanup = dict(simulatorID=simulator, deleted=False)
         if supervisor is not None and supervisor.poll() is None and simulator:
-            try: sim('stop-owned-example', 'terminate', simulator, gate.BUNDLE, timeout=20, check=False)
+            try: sim('stop-owned-example', 'terminate', simulator, acceptance_gate.BUNDLE, timeout=20, check=False)
             except Exception: pass
             try: supervisor.wait(timeout=10)
             except subprocess.TimeoutExpired:
@@ -294,7 +313,7 @@ def main():
         write(out / 'manifest.json', manifest)
         for sig, handler in saved_handlers.items(): signal.signal(sig, handler)
     if failure is None:
-        try: result = gate.validate(out)
+        try: result = acceptance_gate.validate(out)
         except Exception as error: result = dict(success=False, error=str(error))
     else:
         result = dict(success=False, failure=failure, nativeM3Acceptance='pending')

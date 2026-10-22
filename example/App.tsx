@@ -107,7 +107,11 @@ function CallingJourney() {
   useEffect(() => {
     // This effect follows the hook's subscription effect. Readiness never
     // substitutes for observing the public event itself.
-    if (journey().m3Enabled) void journey().dialListenerReady();
+    if (journey().m3Enabled) {
+      void journey().dialListenerReady().then(() => {
+        if (journey().m3DirectEnabled) return journey().deliverDirectDialRequests();
+      });
+    }
   }, []);
 
   const command = async (operation: () => Promise<unknown>) => {

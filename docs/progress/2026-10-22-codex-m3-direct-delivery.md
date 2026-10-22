@@ -1,0 +1,71 @@
+# M3 A9: direct simulator delivery
+
+**Proposed acceptance, native run pending:** the October 22 steering permits
+explicit direct URL and resolved start-call-intent delivery on a simulator.
+This branch adds that separate target. It does not qualify default calling
+dispatch, Siri, Recents, or an OS-created `NSUserActivity`.
+
+The example subscribes through the actual public `useConversationEvent` hook,
+then publishes readiness. After the runner binds its runtime session and PID,
+it writes a fixed-schema control into that app's sandbox. The example verifies
+run, simulator, PID and mode before delivering two fixed inputs:
+
+1. `tel:+15555550142` through the actual application's public delegate URL
+   callback, which Expo forwards to its subscribers. An independent example
+   subscriber observes the callback; the SDK subscriber forwards it normally.
+2. A publicly constructed, resolved `INStartCallIntent` for a different handle
+   and video capability through `VoIPSystemEntryPoints.handle(intent:)`.
+   `NSUserActivity.interaction` is readonly, so the fixture does not fabricate
+   an activity or claim OS activity delivery.
+
+The first real JS event must complete before the second input is delivered.
+The distinct gate requires exactly two matching public events, both accepted
+entry points, main-queue/process/run identity, empty conversation snapshots and
+zero conversations at readiness/control/event publication. Evidence includes
+only input digests. The fixture never calls the private router, creates a
+provider or manager, or invokes a conversation command.
+
+**Measured host controls:** 13 direct groups pass, including the actual
+Foundation control parser, production URL/intent statements typechecked with
+the real entry-point sources against the installed public simulator SDK,
+subprocess-boundary runner controls, interruption cleanup and rehashed scalar,
+identity, payload, privacy and evidence tampering. The original 19 OS controls,
+TypeScript typechecking and workflow lint also pass. This statement-level
+typecheck is not a whole Expo example build or a native journey. The
+[host receipt](../verification/2026-10-22-sdk-m3-direct/host-checks.json) binds
+the working source and command-log hashes; committed-source native acceptance
+still requires its own receipt.
+
+Independent SPEC review (r5_spec) and STANDARDS review (root) cleared the
+source, evidence bindings and claim scope. Both reviews were read-only and
+make no additional native qualification claim.
+
+`run_sdk_m3_direct.py` shares the existing runner's build, install, process,
+environment-preservation and owned-cleanup plumbing. It writes an explicit
+`sdk-m3-direct` manifest with `directIngressInjectionRequested: true` and uses
+`sdk_m3_direct_conformance.py`. It runs no Settings test or OS URL dispatch.
+The shared builder still retains its original source-bound UI products; those
+products are not evidence of Settings execution in a direct capture. CI now
+measures the direct target. The original `run_sdk_m3.py` default and
+`sdk_m3_conformance.py` remain the strict OS comparison, with no expected-red
+exception. Neither gate can accept the other's labeled evidence.
+
+**Measured original OS red, preserved:** frozen `b0121ba`, hosted iOS 26.5 /
+Xcode 26.6, run 39739841564 attempt 2 selected the example in real public
+Settings before dispatch. PID 15505, installed bytes, readiness, AX and PNG
+bind. Exact OS `simctl openurl` returned 115; no native ingress/public event
+arrived, and the unchanged OS gate remained red. The owner stopped the
+incomplete supervisor; deletion, inventory absence and sampled environment
+preservation pass. [Reading evidence](../verification/2026-10-22-sdk-m3/hosted-os-red-b0121ba/receipt.json)
+retains original rows/images and their hashes. Complete products, source
+receipts and raw console remain private and hash-bound. This does not establish
+a universal simulator limitation or a stable cause for error 115. The earlier
+[local iOS 27 red](../verification/2026-10-22-sdk-m3/native-red-d216355/receipt.json)
+also remains unchanged.
+
+**Pending:** a committed-source example build and actual direct simulator
+capture; independent review of that capture; physical default-calling dispatch.
+A0 first and A1–A9 integration remain merge prerequisites. No device, APNs or
+simulator action was performed while preparing this branch. The public RFC
+API is unchanged, so no RFC deviation comment is introduced by the acceptance
+mode change.

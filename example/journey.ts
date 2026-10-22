@@ -20,11 +20,13 @@ export interface MediaSnapshot {
 type JourneyModule = NativeModule & {
   acceptanceEnabled: boolean;
   m3Enabled: boolean;
+  m3DirectEnabled: boolean;
   m1Case: '' | 'journey' | 'cold-launch' | 'unhandled-expiry';
   m2Case: '' | 'livekit' | 'stale-audio';
   runID: string;
   acceptance(): Promise<void>;
   dialListenerReady(): Promise<void>;
+  deliverDirectDialRequests(): Promise<void>;
   observedDialRequest(handle: string, video: boolean): Promise<void>;
   /** Simulator-only, example-only public getters on the existing selected ADM. */
   mediaSnapshot(label: string): Promise<string>;

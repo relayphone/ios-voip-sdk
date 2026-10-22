@@ -21,6 +21,7 @@ private enum JourneyConfiguration {
   static let runID = environment["SDK_M3_RUN_ID"] ?? environment["SDK_M2_RUN_ID"] ?? environment["SDK_M1_RUN_ID"] ?? environment["SDK_M0_RUN_ID"] ?? UUID().uuidString
   static let m0 = environment["SDK_M0_ACCEPTANCE"] == "1"
   static let m3 = environment["SDK_M3_ACCEPTANCE"] == "1"
+  static let m3Direct = m3 && environment["SDK_M3_DELIVERY"] == "direct-url-and-intent"
   static let m1Case = environment["SDK_M1_CASE"] ?? ""
   static let m2Case = environment["SDK_M2_CASE"] ?? ""
 }
@@ -64,15 +65,16 @@ public final class VoIPExampleAppDelegateSubscriber: ExpoAppDelegateSubscriber {
   public func appDelegateWillBeginInitialization() {
     JourneyTrace.record("app.entry")
     JourneyTrace.record("launch", ["traceVersion": 2,
-      "mode": JourneyConfiguration.m3 ? "sdk-m3" : (!JourneyTrace.m2Case.isEmpty ? "sdk-m2" : JourneyTrace.m0 ? "sdk-m0" : "sdk-m1"),
+      "mode": JourneyConfiguration.m3Direct ? "sdk-m3-direct" : JourneyConfiguration.m3 ? "sdk-m3" : (!JourneyTrace.m2Case.isEmpty ? "sdk-m2" : JourneyTrace.m0 ? "sdk-m0" : "sdk-m1"),
       "case": JourneyTrace.m2Case.isEmpty ? JourneyTrace.m1Case : JourneyTrace.m2Case])
     if ["cold-launch", "unhandled-expiry"].contains(JourneyTrace.m1Case) {
       ExampleJourney.shared.startColdLaunch()
     }
   }
 
-  // Observe genuine OS ingress alongside the SDK's subscriber. This fixture
-  // never calls the SDK entry-point helpers, router or system intent adapter.
+  // Observe ingress alongside the SDK's subscriber. The separate direct A9
+  // fixture explicitly invokes the actual application-delegate URL callback;
+  // the original OS-dispatch fixture never injects an entry point.
   public func application(_ application: UIApplication, open url: URL,
                           options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
     if JourneyConfiguration.m3 {
@@ -106,6 +108,8 @@ private final class ExampleJourney {
   private var coldTask: Task<[String: String], Error>?
   private var coldJoinTask: Task<Void, Never>?
   private var completed = false
+  private var directDeliveryStarted = false
+  private var directDialObservations = 0
 
   private init() {}
 
@@ -278,10 +282,69 @@ private final class ExampleJourney {
     let digest = SHA256.hash(data: Data(handle.utf8)).map { String(format: "%02x", $0) }.joined()
     JourneyTrace.record("m3.dialRequest", ["handleSHA256": digest, "video": video,
       "conversationCount": client.snapshots.count])
-    finish(success: true)
+    if JourneyConfiguration.m3Direct {
+      let expected = directDialObservations == 0 ? ("+15555550142", false) : ("+15555550143", true)
+      guard directDeliveryStarted, directDialObservations < 2,
+            handle == expected.0, video == expected.1, client.snapshots.isEmpty else {
+        finish(success: false, errorType: "UnexpectedDirectDialRequest")
+        throw JourneyError.invalidPayload
+      }
+      directDialObservations += 1
+    } else {
+      finish(success: true)
+    }
   }
 
   #if targetEnvironment(simulator)
+  /// Explicit A9 simulator delivery. This is not OS default-calling dispatch,
+  /// a fabricated NSUserActivity, or a direct call to the private event router.
+  func deliverDirectDialRequests() async throws {
+    guard JourneyConfiguration.m3Direct, !directDeliveryStarted, !completed else { throw JourneyError.wrongMode }
+    directDeliveryStarted = true
+    let client = try bindClient()
+    guard UUID(uuidString: JourneyTrace.runID) != nil else { throw JourneyError.invalidPayload }
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("sdk-m3-direct-" + JourneyTrace.runID + ".json")
+    let controlDeadline = ContinuousClock.now.advanced(by: .seconds(60))
+    while !FileManager.default.fileExists(atPath: url.path) {
+      guard ContinuousClock.now < controlDeadline else { throw JourneyError.stateDeadline }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    let bytes = try Data(contentsOf: url)
+    guard M3DirectControl.matches(bytes, runID: JourneyTrace.runID,
+          simulatorID: JourneyConfiguration.environment["SIMULATOR_UDID"] ?? "", pid: getpid()),
+          client.snapshots.isEmpty else {
+      throw JourneyError.invalidPayload
+    }
+    try FileManager.default.removeItem(at: url)
+    let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    JourneyTrace.record("m3.directControl", ["controlSHA256": digest, "conversationCount": client.snapshots.count])
+
+    let tel = URL(string: "tel:+15555550142")!
+    JourneyTrace.record("m3.directDelivery", ["kind": "url", "method": "UIApplicationDelegate.application(open:options:)",
+      "inputSHA256": Self.digest(tel.absoluteString)])
+    let handledURL = UIApplication.shared.delegate?.application?(UIApplication.shared, open: tel, options: [:]) == true
+    JourneyTrace.record("m3.directDeliveryReturned", ["kind": "url", "handled": handledURL])
+    guard handledURL else { throw JourneyError.invalidPayload }
+    try await waitUntil { self.directDialObservations == 1 }
+
+    let person = INPerson(personHandle: INPersonHandle(value: "+15555550143", type: .phoneNumber),
+      nameComponents: nil, displayName: nil, image: nil, contactIdentifier: nil, customIdentifier: nil)
+    let intent = INStartCallIntent(callRecordFilter: nil, callRecordToCallBack: nil,
+      audioRoute: .unknown, destinationType: .normal, contacts: [person], callCapability: .videoCall)
+    JourneyTrace.record("m3.directDelivery", ["kind": "intent", "method": "VoIPSystemEntryPoints.handle(intent:)",
+      "inputSHA256": Self.digest("+15555550143")])
+    JourneyTrace.record("m3.directIntentEntered", ["isStartCallIntent": true])
+    let handledIntent = VoIPSystemEntryPoints.handle(intent: intent)
+    JourneyTrace.record("m3.directDeliveryReturned", ["kind": "intent", "handled": handledIntent])
+    guard handledIntent else { throw JourneyError.invalidPayload }
+    try await waitUntil { self.directDialObservations == 2 }
+    finish(success: true)
+  }
+
+  private static func digest(_ value: String) -> String {
+    SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+  }
+
   /// A sandbox-local runner receipt gates the first push. This only observes
   /// control completion; it never changes runtime faults or audio authorization.
   func awaitMediaControl() async throws {
@@ -401,6 +464,7 @@ public final class VoIPExampleJourneyModule: Module {
     Name("VoIPExampleJourney")
     Constants(["acceptanceEnabled": JourneyConfiguration.m0, "m1Case": JourneyConfiguration.m1Case, "m2Case": JourneyConfiguration.m2Case,
       "m3Enabled": JourneyConfiguration.m3,
+      "m3DirectEnabled": JourneyConfiguration.m3Direct,
       "runID": JourneyConfiguration.runID])
     AsyncFunction("dialListenerReady") { (promise: Promise) in
       Task { @MainActor in
@@ -412,6 +476,19 @@ public final class VoIPExampleJourneyModule: Module {
       Task { @MainActor in
         do { try ExampleJourney.shared.observedDialRequest(handle: handle, video: video); promise.resolve() }
         catch { promise.reject("journey", "M3 observation failed.") }
+      }
+    }
+    AsyncFunction("deliverDirectDialRequests") { (promise: Promise) in
+      Task { @MainActor in
+        #if targetEnvironment(simulator)
+        do { try await ExampleJourney.shared.deliverDirectDialRequests(); promise.resolve() }
+        catch {
+          ExampleJourney.shared.finish(success: false, errorType: String(reflecting: type(of: error)))
+          promise.reject("journey", "Direct simulator dial delivery failed.")
+        }
+        #else
+        promise.reject("journey", "Direct dial delivery is simulator-only.")
+        #endif
       }
     }
     AsyncFunction("acceptance") { (promise: Promise) in

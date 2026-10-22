@@ -1,0 +1,70 @@
+{
+  "source": {
+    "sourceCommit": "bb02d05a5e8a76c2c2962289de84ea472976bbe5",
+    "sourceInputsSHA256": "094ff90855e5ca6e9b50b95b86525170f914ce362b8032155ee9bc41565ebbb2"
+  },
+  "sourceClean": true,
+  "buildAndInstalledBytesBound": true,
+  "settingsProductsBound": 48,
+  "buildLogsBound": 3,
+  "allManifestFileHashesMatch": true,
+  "settingsValidation": "unchanged validate_settings passed independently; full original gate stays false",
+  "selection": {
+    "appPID": 15505,
+    "beforeSelected": true,
+    "method": "public-xctest-ui",
+    "runID": "F8A458DF-1C46-4FD7-BC5A-EA5A6BEDDBF2",
+    "schemaVersion": 1,
+    "selected": true,
+    "simulatorID": "AA827608-FE80-4482-8002-FC37436AD249",
+    "tapped": true,
+    "wallTimeMS": 1792656596719
+  },
+  "appPID": 15505,
+  "events": [
+    "app.entry",
+    "launch",
+    "sdk.activation",
+    "sdk.managerCreated",
+    "sdk.snapshot",
+    "m3.listenerReady"
+  ],
+  "nativeIngressCount": 0,
+  "publicDialRequestCount": 0,
+  "supervisorCompleted": false,
+  "originalStrictGateExitCode": 1,
+  "dispatch": {
+    "schemaVersion": 1,
+    "runID": "F8A458DF-1C46-4FD7-BC5A-EA5A6BEDDBF2",
+    "simulatorID": "AA827608-FE80-4482-8002-FC37436AD249",
+    "appPID": 15505,
+    "argv": [
+      "xcrun",
+      "simctl",
+      "openurl",
+      "AA827608-FE80-4482-8002-FC37436AD249",
+      "tel:+15555550142"
+    ],
+    "startedWallTimeMS": 1792656603936,
+    "exitCode": 115,
+    "finishedWallTimeMS": 1792656606504
+  },
+  "attachments": {
+    "before-selection-screen": {
+      "path": "settings/attachments/0EED049C-00D3-414C-8F05-223873B46E7E.png",
+      "sha256": "1e4bc720fed5f12b71f9dc1e71f276b64ce0e180bb98826df9d74407e8ab0ff4"
+    },
+    "after-selection-screen": {
+      "path": "settings/attachments/CBF2BF43-19EA-4907-89C1-B602595BA04B.png",
+      "sha256": "1e4bc720fed5f12b71f9dc1e71f276b64ce0e180bb98826df9d74407e8ab0ff4"
+    },
+    "before-selection-accessibility": {
+      "path": "settings/attachments/568A0D9C-2781-4BC3-83C1-1C0D8F10D071.txt",
+      "sha256": "fa0a908a79a791ceb3258d53ecf82e180bbccda9633469e661e18e33c3909912"
+    },
+    "after-selection-accessibility": {
+      "path": "settings/attachments/1A14C0CD-94C4-48FC-98E6-E1F64BF0DBCB.txt",
+      "sha256": "5bd8ab1071eb2b0c144091498b18cbfdfdedb390f8a06138079a425293f0ff70"
+    }
+  }
+}
