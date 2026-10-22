@@ -186,7 +186,7 @@ run() {
     python3 run_scenario.py --console-launcher-stop --output "$OUT/$name.log" --receipt "$OUT/$name.receipt.json" \
     --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.callkitsim.probe \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.probe \
-    --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.probe; then
+    --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.callkitsim.probe; then
     local container
     container=$(limit 20 xcrun simctl get_app_container "$UDID" dev.callkitsim.probe data)
     local journal="$container/Documents/.callkit-simulator/$RUN_ID/events.jsonl"

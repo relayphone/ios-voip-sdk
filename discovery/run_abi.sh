@@ -75,7 +75,7 @@ for scenario in refused-queues missing-provider-init missing-controller-init pus
     python3 discovery/run_scenario.py --console-launcher-stop --timeout 200 --output "$OUT/$scenario.log" --receipt "$OUT/$scenario.receipt.json" \
     --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$scenario" --bundle-id dev.callkitsim.abi \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.abi \
-    --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.abi
+    --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.callkitsim.abi
 done
 CHECK_ARGS=("$OUT" --runtime "$BUILD/runtime/CKSimRuntime.dylib" --probe "$BUILD/Probe.app/Probe")
 if [[ -n "${CKSIM_ABI_ONLY:-}" ]]; then CHECK_ARGS+=(--case "$CKSIM_ABI_ONLY"); fi

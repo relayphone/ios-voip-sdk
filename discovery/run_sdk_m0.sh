@@ -157,8 +157,8 @@ app,bootstrap=map(pathlib.Path,sys.argv[2:])
 pathlib.Path(sys.argv[1]).write_text(json.dumps(dict(example=digest(executable(app)),
     bootstrap=digest(executable(bootstrap)),javascript=digest(app/'main.jsbundle')),indent=2)+'\n')
 PY
-# Plain console preserved the synthetic rows that merged PTY corrupted; actual
-# SDK acceptance remains required (docs/verification/2026-10-22-sdk-m1/native-console-transport).
+# Plain --console preserves the app streams. The raw host PTY only flushes
+# the launcher's stdio; --console-pty interleaved its PID header into PROBE JSON.
 env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_SDK_M0_ACCEPTANCE=1 \
   SIMCTL_CHILD_SDK_M0_RUN_ID="$RUN_ID" \
   python3 discovery/run_scenario.py --console-launcher-stop --timeout 120 --output "$OUT/sdk-m0.log" --receipt "$OUT/sdk-m0.receipt.json" \
@@ -171,7 +171,7 @@ for case in healthy profile push-after-install; do
     python3 discovery/run_scenario.py --console-launcher-stop --timeout 90 --output "$OUT/bootstrap-$case.log" --receipt "$OUT/bootstrap-$case.receipt.json" \
     --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "bootstrap-$case" --bundle-id dev.callkitsim.sdkbootstrap \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.sdkbootstrap \
-    --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.sdkbootstrap
+    --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.callkitsim.sdkbootstrap
 done
 if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
   mkdir "$OUT/m1"
@@ -216,7 +216,7 @@ PY
       --output "$OUT/m1/contracts/$name.log" --receipt "$OUT/m1/contracts/$name.receipt.json" \
       --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.iosvoipsdk.m1contracts \
       --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.m1contracts \
-      --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.iosvoipsdk.m1contracts
+      --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.iosvoipsdk.m1contracts
     if [[ -z "$contract_container" ]]; then
       contract_container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.m1contracts data)
       [[ -n "$contract_container" && -d "$contract_container" ]] || { echo "Missing owned contract data container" >&2; exit 1; }
