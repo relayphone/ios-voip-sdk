@@ -16,10 +16,10 @@ Pod::Spec.new do |s|
   s.static_framework = true
   s.dependency 'ExpoModulesCore'
   s.frameworks = 'LiveCommunicationKit', 'CallKit', 'AVFoundation', 'PushKit'
-  s.source_files = 'Sources/**/*.{swift,h,m}', 'Expo/apple/**/*.swift'
+  s.source_files = 'Sources/**/*.{swift,h,m}', 'Expo/apple/**/*.{swift,h}'
   # The external DYLD loader is not part of the embedded SDK.
   s.exclude_files = 'Sources/Interposition/CKLoader.m'
-  s.public_header_files = 'Sources/Interposition/**/CKRuntimeSeam.h', 'Sources/VoIPPlatform/include/*.h'
+  s.public_header_files = 'Sources/Interposition/**/CKRuntimeSeam.h', 'Sources/VoIPPlatform/include/*.h', 'Expo/apple/IosVoipSDK.h'
   s.resource_bundles = {
     'IosVoipSDKRuntime' => ['Sources/Engine/Resources/**/*.json', 'profiles/*.json']
   }
