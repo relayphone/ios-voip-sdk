@@ -60,3 +60,16 @@ records passing ownership controls, report/capture/M1 host gates, workflow lint
 and an actual merged-SDK source typecheck. Both integration review axes cleared.
 No further SwiftPM product build, app, simulator, audio or device work was used;
 A1 qualification and current hosted CI remain in their respective receipts.
+
+## Rejection-details parent
+
+Public rejection-details head `0b6a557` was merged normally so the prospective
+core PR can stack on `codex/handler-rejection-details`. The resolution keeps one
+error union, one guard and one control, adding `duplicate_sdk_linkage` to the
+parent's four actual native command codes. Native rejection-detail forwarding
+and the duplicate-linkage rejection both remain.
+
+The [parent-integration receipt](../verification/2026-10-22-sdk-process-owner-core/rejection-parent.json)
+records passing TypeScript checks, the actual Swift relay and core ownership
+controls. Both bounded integration review axes cleared. No heavy compilation or
+native execution was repeated. Publication and hosted acceptance remain pending.

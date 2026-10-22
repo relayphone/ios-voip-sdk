@@ -32,7 +32,6 @@ execFileSync(
 const { ConversationRuntime } = require(
   path.join(output, 'internal/client.js'),
 );
-
 const { isConversationCommandError } = require(path.join(output, 'types.js'));
 
 test('native command rejection guard retains only declared codes', () => {
@@ -46,7 +45,6 @@ test('native command rejection guard retains only declared codes', () => {
     assert.equal(isConversationCommandError(value), false);
   }
 });
-
 
 function deferred() {
   let resolve;
