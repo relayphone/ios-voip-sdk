@@ -518,6 +518,25 @@ class Controls(unittest.TestCase):
             with self.assertRaises(subprocess.TimeoutExpired): runner.scenario(out, self.root, 'run', 'owned', '', 'media-reentrancy', 30)
         self.assertEqual(process.wait.call_count, 2)
 
+    def test_runner_plain_example_console_preserves_contract_pty(self):
+        data = self.root / 'launch-mode-data'; data.mkdir()
+        for case in ('livekit', 'stale-audio', 'media-reentrancy'):
+            with self.subTest(case=case):
+                out = self.root / ('launch-mode-' + case); out.mkdir()
+                process = SimpleNamespace(wait=Mock(return_value=0), poll=Mock(return_value=0))
+                with patch.object(runner, 'sim', return_value=subprocess.CompletedProcess([], 0, str(data).encode(), b'')), \
+                     patch.object(runner.subprocess, 'Popen', return_value=process) as launch, \
+                     patch.object(runner, 'configure_faults') as faults:
+                    runner.scenario(out, self.root, 'run', 'owned', '', case, 30)
+                command = launch.call_args.args[0]
+                self.assertIn('--console-launcher-stop', command)
+                app_command = command[command.index('--launch-command') + 1:]
+                self.assertEqual(app_command, ['xcrun', 'simctl', 'launch',
+                    '--console-pty' if case == 'media-reentrancy' else '--console',
+                    '--terminate-running-process', 'owned',
+                    runner.CONTRACTS if case == 'media-reentrancy' else runner.EXAMPLE])
+                self.assertEqual(faults.call_count, 0 if case == 'media-reentrancy' else 1)
+
     def test_runner_inherited_environment_is_preserved_or_refused(self):
         with patch.dict(os.environ, {}, clear=True):
             for stdout, expected in ((b'', ''), (b'\n', ''), (b' /a path.dylib \n', ' /a path.dylib '),
