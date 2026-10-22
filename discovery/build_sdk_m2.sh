@@ -32,7 +32,7 @@ python3 - "$OUT" <<'PY'
 import json,pathlib,plistlib,shutil,sys
 sys.path.insert(0,'discovery')
 from sdk_m0_conformance import executable
-from sdk_m2_conformance import PRODUCT_FILES,digest,source_identity,validate_build
+from sdk_m2_conformance import PRODUCT_FILES,digest,embedded_profile_proof,source_identity,validate_build
 root=pathlib.Path(sys.argv[1]); app=root/'apps/example.app'
 copies={
  'binaries/example':executable(app),'binaries/main.jsbundle':app/'main.jsbundle',
@@ -54,7 +54,8 @@ assert before==after,'sources changed during M2 build'
 (root/'source-after.json').write_text(json.dumps(after,indent=2)+'\n')
 info=dict(schemaVersion=1,product='sdk-m2',configuration='Release',contractsConfiguration='Debug',
           mediaAdapter='livekit',sourceStart=before,sourceEnd=after,**after,
-          files={name:digest(root/name) for name in PRODUCT_FILES})
+          files={name:digest(root/name) for name in PRODUCT_FILES},
+          exampleEmbeddedProfile=embedded_profile_proof(root/'binaries/example',root/'products/ios-27.0.json'))
 (root/'build-info.json').write_text(json.dumps(info,indent=2)+'\n')
 validate_build(root,after)
 PY

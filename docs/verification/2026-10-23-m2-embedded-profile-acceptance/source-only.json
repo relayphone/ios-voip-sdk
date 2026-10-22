@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "classification": "Measured source-only controls and replay of retained native product bytes; no new native qualification",
+  "baseCommit": "158afe4cb658b135afd4014965e40bbf51f98f35",
+  "editedInputs": {
+    "discovery/build_sdk_m2.sh": "a1f900f2dad340027b1170637d8956902ebc63f8607fa81005d952deea708088",
+    "discovery/check_sdk_m2.py": "9636cce224244337cc1d1231d42b92a1c33ff9372908237899851eae34eb95b3",
+    "discovery/run_sdk_m2.py": "78c2dfe378698f53f7765ed9911586485b67c7648ffbfeaf465bfa1a8884fc9f",
+    "discovery/sdk_m2_conformance.py": "6d4a04c046c601f2e6af96fa4059bf4ce039c6d2898e45c00aa2ecf65fc7b24f"
+  },
+  "preparedSourceInputs": {
+    "count": 234,
+    "sha256": "79248ca066c6306258a82a7bd7b1596d2458abdbb2e525cc6f9fdbea7816e896",
+    "hashFormat": "SHA-256 over sorted tracked paths: path + NUL + raw file bytes + NUL"
+  },
+  "protectedShipping": {
+    "count": 74,
+    "sha256": "b45825bcf924d0addb476da3562e01742ef736fe3e169c517a7dbd896f19b78c",
+    "unchangedFromBase": true
+  },
+  "protectedPhysicalEvidence": {
+    "count": 22,
+    "sha256": "84b5c3c95de3f5d600f67ce398d65a183cd6f575c86f65bbd39601adc49f665c",
+    "unchangedFromBase": true
+  },
+  "actualPriorNativeProducts": {
+    "id": 12461661067,
+    "apiZipSHA256": "189f68718f6b5879c247806f63cd860f25add674df083da43c06f75668951b62",
+    "buildReceiptSHA256": "7a0ed772ddbfbc5bda5742c9f7241e7b37b159e8ef1ac9f045b48588f853e1b2",
+    "source": {
+      "sourceCommit": "1b9806000ccbbd2a83a4cdd246400ccf67fa5be9",
+      "sourceInputsSHA256": "096182db59ed1de160320a5367fd7df702e8530d49990d49fe43745df6877a3d"
+    },
+    "productInventoryMatches": true,
+    "productCount": 13
+  },
+  "priorRunURL": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39858008068",
+  "retainedBinaryReplay": {
+    "exampleEmbeddedProfile": {
+      "schemaVersion": 1,
+      "mode": "embedded-swift-literal",
+      "engineSourceSHA256": "cd227a549097bd5d004a6c76ebe5b5c5f7381bdacbec1893c2faf28185819cc8",
+      "canonicalFileSHA256": "f34933eb5ad2eaa7db2b19efba87e94345bbb8b77c4312f697010cde108a88d8",
+      "embeddedPayloadSHA256": "31a0a8c5fae4fabbe8f947fcf73c82e883dfbe6c0c6a131bc44df73c404e1370",
+      "binarySHA256": "28c1d80c41108951b5cdf5d5349e7487d054789c4aeb75c26abb65d361433de9",
+      "occurrences": 1
+    },
+    "contractsResourceFixture": {
+      "binarySHA256": "779b618b90680b3e09d33971f58957c4c6a95b95c900017a52d92de66d6c2851",
+      "embeddedPayloadOccurrences": 0,
+      "embeddedProofRefusal": "embedded profile payload missing from example executable",
+      "declaredProfileSHA256": "f34933eb5ad2eaa7db2b19efba87e94345bbb8b77c4312f697010cde108a88d8",
+      "appBundleArchived": false,
+      "installedResourceInventoryMeasured": false
+    },
+    "canonicalBytes": 2372,
+    "embeddedPayloadBytes": 2371,
+    "sourcesUnchangedFromBase": [
+      "Sources/Engine/RuntimeEngine.swift",
+      "Sources/Engine/Resources/ios-27.0.json"
+    ],
+    "originalEvidenceModified": false,
+    "scope": "Read-only payload and product-hash replay; no app bundles archived and no installed-byte measurement."
+  },
+  "controls": {
+    "groups": 32,
+    "syntheticAndMockedOnly": true,
+    "commands": [
+      {
+        "argv": [
+          "/Applications/Xcode.app/Contents/Developer/usr/bin/python3",
+          "discovery/check_sdk_m2.py"
+        ],
+        "exitCode": 0,
+        "elapsedSeconds": 2.182938,
+        "outputSHA256": "e47a9d240aa24ba378f3492cfaa08ba409360a2559e8d0a7ac6d2eb12829fdce"
+      },
+      {
+        "argv": [
+          "/Applications/Xcode.app/Contents/Developer/usr/bin/python3",
+          "-m",
+          "py_compile",
+          "discovery/sdk_m2_conformance.py",
+          "discovery/run_sdk_m2.py",
+          "discovery/check_sdk_m2.py"
+        ],
+        "exitCode": 0,
+        "elapsedSeconds": 0.03915,
+        "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "argv": [
+          "/bin/bash",
+          "-n",
+          "discovery/build_sdk_m2.sh"
+        ],
+        "exitCode": 0,
+        "elapsedSeconds": 0.003458,
+        "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "argv": [
+          "git",
+          "diff",
+          "--check"
+        ],
+        "exitCode": 0,
+        "elapsedSeconds": 0.01321,
+        "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  },
+  "localReplayReceiptSHA256": "649cd349c43f8a13b718d726d61eea325e9e804ca11dd9b2d5534415cba6cf9e",
+  "execution": {
+    "nativeCompiler": false,
+    "simulator": false,
+    "device": false,
+    "audio": false,
+    "remoteCI": false
+  },
+  "pending": [
+    "Independent diff review",
+    "Publication to actual PR #17",
+    "Fresh actual modern/legacy M2 native journeys and installed-byte qualification"
+  ]
+}

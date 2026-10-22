@@ -13,7 +13,7 @@ import time
 import uuid
 
 from sdk_m0_conformance import executable
-from sdk_m2_conformance import PRODUCT_FILES, digest, source_identity, validate, validate_build
+from sdk_m2_conformance import PRODUCT_FILES, digest, embedded_profile_proof, source_identity, validate, validate_build
 
 ROOT = Path(__file__).resolve().parent.parent
 EXAMPLE = 'dev.iosvoipsdk.example'
@@ -335,11 +335,15 @@ def run(build, out, runtime_id=None, audio_path=None):
             sim(['install', udid, app], timeout=180, log=out / (prefix + '-install.log'))
             actual = Path(sim(['get_app_container', udid, bundle, 'app'], timeout=20).stdout.decode().strip())
             installed[prefix + 'SHA256'] = digest(executable(actual))
-            profiles = list(actual.rglob('IosVoipSDKRuntime.bundle/ios-27.0.json'))
-            if len(profiles) != 1:
-                raise RuntimeError('installed runtime profile inventory differs')
-            installed[prefix + 'ProfileSHA256'] = digest(profiles[0])
+            if bundle == CONTRACTS:
+                # Standalone Debug contracts exercise the resource-fixture path.
+                profiles = list(actual.rglob('IosVoipSDKRuntime.bundle/ios-27.0.json'))
+                if len(profiles) != 1:
+                    raise RuntimeError('installed Debug contracts resource-fixture profile inventory differs')
+                installed['contractsProfileSHA256'] = digest(profiles[0])
             if bundle == EXAMPLE:
+                installed['exampleEmbeddedProfile'] = embedded_profile_proof(
+                    executable(actual), out / 'products/ios-27.0.json', ROOT)
                 installed['javascriptSHA256'] = digest(actual / 'main.jsbundle')
                 framework = actual / 'Frameworks/LiveKitWebRTC.framework'
                 installed['livekitWebRTCSHA256'] = digest(framework / 'LiveKitWebRTC')

@@ -74,6 +74,33 @@ def exact(value, expected):
     return value == expected
 
 
+def embedded_profile_payload(canonical, source_root=ROOT):
+    """Read the SDK simulator's raw Swift string, without its delimiter newlines."""
+    engine = source_root / 'Sources/Engine/RuntimeEngine.swift'
+    source = engine.read_bytes().decode('utf-8')
+    start = '  #if SWIFT_PACKAGE || CKSIM_SDK_SOURCE\n  private static let embeddedProfileJSON = #"""\n'
+    end = '\n"""#\n  #endif'
+    require(source.count(start) == 1 and source.count(end) == 1,
+            'embedded profile guarded Swift literal differs')
+    literal = source.split(start)[1].split(end)[0]
+    require(r'\#' not in literal, 'embedded profile contains a Swift raw-string escape')
+    payload = literal.encode('utf-8')
+    require(digest(canonical) == digest(source_root / 'Sources/Engine/Resources/ios-27.0.json') and
+            exact(json.loads(literal), json.loads(canonical.read_bytes())),
+            'embedded profile canonical/source JSON differs')
+    return engine, payload
+
+
+def embedded_profile_proof(binary, canonical, source_root=ROOT):
+    """Bind the selected source payload to a built or installed executable."""
+    engine, payload = embedded_profile_payload(canonical, source_root)
+    occurrences = binary.read_bytes().count(payload)
+    require(occurrences > 0, 'embedded profile payload missing from example executable')
+    return dict(schemaVersion=1, mode='embedded-swift-literal', engineSourceSHA256=digest(engine),
+                canonicalFileSHA256=digest(canonical), embeddedPayloadSHA256=hashlib.sha256(payload).hexdigest(),
+                binarySHA256=digest(binary), occurrences=occurrences)
+
+
 def valid_uuid(value):
     try:
         return isinstance(value, str) and str(uuid.UUID(value)).upper() == value.upper()
@@ -87,7 +114,7 @@ def products(root):
     return {name: digest(root / name) for name in PRODUCT_FILES}
 
 
-def validate_build(root, identity, require_apps=True):
+def validate_build(root, identity, require_apps=True, source_root=ROOT):
     """Refuse stale build products before the runner creates any simulator."""
     info = read(root, 'build-info.json')
     files = products(root)
@@ -96,6 +123,9 @@ def validate_build(root, identity, require_apps=True):
             info.get('mediaAdapter') == 'livekit' and info.get('sourceStart') == info.get('sourceEnd') == identity and
             all(info.get(k) == v for k, v in identity.items()) and info.get('files') == files,
             'M2 build source/configuration/products differ')
+    require(exact(info.get('exampleEmbeddedProfile'), embedded_profile_proof(
+                root / 'binaries/example', root / 'products/ios-27.0.json', source_root)),
+            'example embedded profile proof differs')
     require(read(root, 'source-before.json') == read(root, 'source-after.json') == identity,
             'M2 build source start/end differ')
     require(read(root, 'products/versions.json') == VERSIONS, 'selected NPM versions differ')
@@ -137,9 +167,11 @@ def validate_build(root, identity, require_apps=True):
             app = root / ('apps/' + name + '.app')
             require(plistlib.loads((app / 'Info.plist').read_bytes()).get('CFBundleIdentifier') == bundle and
                     digest(m0.executable(app)) == files['binaries/' + name], 'install app executable differs: ' + name)
-            profiles = list(app.rglob('IosVoipSDKRuntime.bundle/ios-27.0.json'))
-            require(len(profiles) == 1 and digest(profiles[0]) == files['products/ios-27.0.json'],
-                    'install app runtime profile differs: ' + name)
+            if name == 'contracts':
+                # The standalone Debug contract build deliberately uses a resource fixture.
+                profiles = list(app.rglob('IosVoipSDKRuntime.bundle/ios-27.0.json'))
+                require(len(profiles) == 1 and digest(profiles[0]) == files['products/ios-27.0.json'],
+                        'install Debug contracts resource-fixture profile differs')
         app = root / 'apps/example.app'
         require(digest(app / 'main.jsbundle') == files['binaries/main.jsbundle'] and
                 digest(app / 'Info.plist') == files['products/Info.plist'], 'install example JS/Info differs')
@@ -446,7 +478,7 @@ def validate(root, source_root=ROOT):
                     buildReceiptSHA256='build-info.json', hostAudioControlsSHA256='host-audio-controls.json',
                     environmentPreflightSHA256='environment-preflight.json')
     for field, name in bindings.items(): require(digest(root / name) == manifest.get(field), 'unbound ' + name)
-    build = validate_build(root, identity, require_apps=False)
+    build = validate_build(root, identity, require_apps=False, source_root=source_root)
     require(manifest.get('files') == build['files'], 'manifest product inventory differs')
     require(build['files']['products/ios-27.0.json'] == digest(source_root / 'Sources/Engine/Resources/ios-27.0.json'),
             'bundled behavior profile differs from source')
@@ -468,11 +500,12 @@ def validate(root, source_root=ROOT):
             (manifest['externalDYLDInsertLibrariesPresent'] or inherited == hashlib.sha256(b'').hexdigest()),
             'invalid inherited environment digest')
     files = build['files']
-    require(read(root, 'installed.json') == dict(exampleSHA256=files['binaries/example'],
+    require(exact(read(root, 'installed.json'), dict(exampleSHA256=files['binaries/example'],
             javascriptSHA256=files['binaries/main.jsbundle'], contractsSHA256=files['binaries/contracts'],
             livekitWebRTCSHA256=files['binaries/livekit-webrtc'],
             livekitWebRTCInfoSHA256=files['products/LiveKitWebRTC.Info.plist'],
-            exampleProfileSHA256=files['products/ios-27.0.json'], contractsProfileSHA256=files['products/ios-27.0.json']),
+            exampleEmbeddedProfile=build['exampleEmbeddedProfile'],
+            contractsProfileSHA256=files['products/ios-27.0.json'])),
             'installed bytes differ from built products')
     host = read(root, 'host-audio-controls.json')
     require(host.get('source') == identity and host.get('result', {}).get('success') is True and

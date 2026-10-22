@@ -190,6 +190,8 @@ def fixture(root):
         path.parent.mkdir(exist_ok=True)
         path.write_text('synthetic ' + name)
     shutil.copyfile(gate.ROOT / 'Sources/Engine/Resources/ios-27.0.json', root / 'products/ios-27.0.json')
+    _, payload = gate.embedded_profile_payload(root / 'products/ios-27.0.json')
+    (root / 'binaries/example').write_bytes(b'synthetic executable\0' + payload + b'\0end')
     write_json(root / 'products/versions.json', gate.VERSIONS)
     write_json(root / 'products/Podfile.properties.json', {'ios-voip-sdk.mediaAdapter': 'livekit'})
     (root / 'products/Podfile.lock').write_text('PODS:\n  - livekit-react-native (3.1.0)\n  - livekit-react-native-webrtc (150.1.0)\n  - LiveKitWebRTC (150.7871.03)\n')
@@ -212,7 +214,8 @@ def fixture(root):
     for name in ('source-before.json', 'source-after.json'): write_json(root / name, IDENTITY)
     write_json(root / 'build-info.json', dict(schemaVersion=1, product='sdk-m2', configuration='Release',
         contractsConfiguration='Debug', mediaAdapter='livekit', sourceStart=IDENTITY, sourceEnd=IDENTITY,
-        **IDENTITY, files=files))
+        **IDENTITY, files=files, exampleEmbeddedProfile=gate.embedded_profile_proof(
+            root / 'binaries/example', root / 'products/ios-27.0.json')))
     write_json(root / 'environment.json', dict(simulatorID='sim-1', simulatorRuntimeID='ios-27', simulatorOS='27.0',
         xcodeVersion='Xcode 27.1\nBuild version 27A9275', sdkVersion='27.1', hostArchitecture='arm64'))
     write_json(root / 'runtime.json', dict(identifier='ios-27', version='27.0', buildversion='27A'))
@@ -231,7 +234,8 @@ def fixture(root):
     write_json(root / 'installed.json', dict(exampleSHA256=files['binaries/example'],
         javascriptSHA256=files['binaries/main.jsbundle'], contractsSHA256=files['binaries/contracts'],
         livekitWebRTCSHA256=files['binaries/livekit-webrtc'], livekitWebRTCInfoSHA256=files['products/LiveKitWebRTC.Info.plist'],
-        exampleProfileSHA256=files['products/ios-27.0.json'], contractsProfileSHA256=files['products/ios-27.0.json']))
+        exampleEmbeddedProfile=gate.embedded_profile_proof(root / 'binaries/example', root / 'products/ios-27.0.json'),
+        contractsProfileSHA256=files['products/ios-27.0.json']))
     write_json(root / 'host-audio-controls.json', dict(source=IDENTITY, result=dict(success=True, checks=list(gate.HOST_CHECKS))))
     for pid, case in enumerate(gate.CASES, 123): fixture_case(root, case, pid)
     manifest = dict(schemaVersion=1, scenario='sdk-m2', configuration='Release', mediaAdapter='livekit',
@@ -307,6 +311,71 @@ class Controls(unittest.TestCase):
         self.assertTrue(result['success'])
         self.assertEqual(result['hostAudioControls'], 21)
         self.assertEqual(set(result['cases']), set(gate.CASES))
+
+    def test_embedded_profile_uses_exact_raw_bytes_and_records_occurrences(self):
+        canonical = self.root / 'products/ios-27.0.json'
+        engine, payload = gate.embedded_profile_payload(canonical)
+        self.assertTrue(gate.exact(json.loads(payload), json.loads(canonical.read_bytes())))
+        self.assertNotEqual(payload, canonical.read_bytes())  # Swift excludes the delimiter newline.
+        binary = self.root / 'binaries/example'
+        binary.write_bytes(payload + b'\0' + payload)
+        proof = gate.embedded_profile_proof(binary, canonical)
+        self.assertEqual(proof, dict(schemaVersion=1, mode='embedded-swift-literal',
+            engineSourceSHA256=gate.digest(engine), canonicalFileSHA256=gate.digest(canonical),
+            embeddedPayloadSHA256=gate.hashlib.sha256(payload).hexdigest(),
+            binarySHA256=gate.digest(binary), occurrences=2))
+
+    def test_rebound_missing_or_changed_embedded_binary_payload_is_rejected(self):
+        for mode in ('missing', 'changed'):
+            with self.subTest(mode=mode):
+                fixture(self.root)
+                binary = self.root / 'binaries/example'
+                _, payload = gate.embedded_profile_payload(self.root / 'products/ios-27.0.json')
+                replacement = b'no profile' if mode == 'missing' else payload.replace(b'"schemaVersion": 1', b'"schemaVersion": 2')
+                binary.write_bytes(b'synthetic executable\0' + replacement + b'\0end')
+                build = json.loads((self.root / 'build-info.json').read_text())
+                build['files'] = gate.products(self.root)
+                build['exampleEmbeddedProfile'].update(binarySHA256=gate.digest(binary),
+                    embeddedPayloadSHA256=gate.hashlib.sha256(replacement).hexdigest(), occurrences=1)
+                write_json(self.root / 'build-info.json', build)
+                installed = json.loads((self.root / 'installed.json').read_text())
+                installed.update(exampleSHA256=gate.digest(binary), exampleEmbeddedProfile=build['exampleEmbeddedProfile'])
+                write_json(self.root / 'installed.json', installed)
+                rebind(self.root)
+                self.reject('embedded profile payload missing')
+
+    def test_rebound_embedded_proof_requires_exact_schema_and_integer_types(self):
+        for name in ('build-info.json', 'installed.json'):
+            for field, value in (('schemaVersion', True), ('occurrences', True), ('occurrences', 1.0),
+                                 ('occurrences', 0), ('embeddedPayloadSHA256', 'f' * 64),
+                                 ('engineSourceSHA256', 'f' * 64), ('extra', 'invented')):
+                with self.subTest(name=name, field=field):
+                    fixture(self.root)
+                    change_json(self.root, name, lambda v: v['exampleEmbeddedProfile'].update({field: value}))
+                    self.reject('embedded profile proof|installed bytes')
+
+    def test_embedded_profile_binds_canonical_source_and_typed_json(self):
+        source_root = self.root / 'source'
+        engine = source_root / 'Sources/Engine/RuntimeEngine.swift'
+        canonical = source_root / 'Sources/Engine/Resources/ios-27.0.json'
+        canonical.parent.mkdir(parents=True)
+        original_engine = (gate.ROOT / 'Sources/Engine/RuntimeEngine.swift').read_bytes()
+        original_profile = (gate.ROOT / 'Sources/Engine/Resources/ios-27.0.json').read_bytes()
+        binary = self.root / 'binaries/example'
+        for mode in ('canonical-product', 'canonical-source', 'typed-json', 'guard', 'raw-escape'):
+            with self.subTest(mode=mode):
+                engine.write_bytes(original_engine); canonical.write_bytes(original_profile)
+                product = self.root / 'products/ios-27.0.json'; product.write_bytes(original_profile)
+                if mode == 'canonical-product': product.write_bytes(original_profile + b'\n')
+                elif mode == 'canonical-source': canonical.write_bytes(original_profile + b'\n')
+                elif mode == 'typed-json':
+                    changed = json.loads(original_profile); changed['schemaVersion'] = True
+                    write_json(canonical, changed); write_json(product, changed)
+                elif mode == 'guard': engine.write_bytes(original_engine.replace(
+                    b'#if SWIFT_PACKAGE || CKSIM_SDK_SOURCE', b'#if DEBUG'))
+                else: engine.write_bytes(original_engine.replace(b'"id": "ios-27.0"', b'"id": "ios-27.0\\#n"'))
+                with self.assertRaisesRegex(gate.EvidenceError, 'embedded profile'):
+                    gate.embedded_profile_proof(binary, product, source_root)
 
     def test_removed_shared_owner_is_rejected(self):
         change_rows(self.root, 'livekit', lambda rows: gate.one(rows, 'sdk.managerCreated').update(
@@ -626,13 +695,20 @@ class Controls(unittest.TestCase):
             if name == 'example': shutil.copyfile(self.root / 'products/Info.plist', app / 'Info.plist')
             else: (app / 'Info.plist').write_bytes(plistlib.dumps(dict(CFBundleIdentifier=bundle, CFBundleExecutable='Example')))
             shutil.copyfile(self.root / ('binaries/' + name), app / 'Example')
-            resources = app / 'IosVoipSDKRuntime.bundle'; resources.mkdir()
-            shutil.copyfile(self.root / 'products/ios-27.0.json', resources / 'ios-27.0.json')
+            if name == 'contracts':
+                resources = app / 'IosVoipSDKRuntime.bundle'; resources.mkdir()
+                shutil.copyfile(self.root / 'products/ios-27.0.json', resources / 'ios-27.0.json')
         shutil.copyfile(self.root / 'binaries/main.jsbundle', self.root / 'apps/example.app/main.jsbundle')
         framework = self.root / 'apps/example.app/Frameworks/LiveKitWebRTC.framework'; framework.mkdir(parents=True)
         shutil.copyfile(self.root / 'binaries/livekit-webrtc', framework / 'LiveKitWebRTC')
         shutil.copyfile(self.root / 'products/LiveKitWebRTC.Info.plist', framework / 'Info.plist')
         gate.validate_build(self.root, IDENTITY)
+        self.assertFalse((self.root / 'apps/example.app/IosVoipSDKRuntime.bundle').exists())
+        profile = self.root / 'apps/contracts.app/IosVoipSDKRuntime.bundle/ios-27.0.json'
+        profile.unlink()
+        with self.assertRaisesRegex(gate.EvidenceError, 'Debug contracts resource-fixture'):
+            gate.validate_build(self.root, IDENTITY)
+        shutil.copyfile(self.root / 'products/ios-27.0.json', profile)
         (self.root / 'apps/example.app/main.jsbundle').write_bytes(b'stale javascript')
         with self.assertRaisesRegex(gate.EvidenceError, 'JS/Info'): gate.validate_build(self.root, IDENTITY)
 
