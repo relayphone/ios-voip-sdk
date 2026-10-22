@@ -4,8 +4,8 @@ A VoIP calling SDK for iOS built on **LiveCommunicationKit**, Apple's successor 
 
 | Product | Status |
 | --- | --- |
-| **Swift package**: owns the app's only `ConversationManager`, projects system call state, runs a promise/async handler with platform deadlines, handles PushKit (including the iOS 26.4 `mustReport` metadata), media adapters and default-calling-app entry points | M0 bootstrap implemented; native acceptance pending. M1–M3 planned. |
-| **iOS-only Expo module**: the same Swift sources behind a React Native/Expo API (`useConversations()`, a handler, commands, reports, audio routes, push token) with a config plugin | M0 bootstrap implemented; native acceptance pending. M1–M3 planned. |
+| **Swift package**: owns the app's only `ConversationManager`, projects system call state, runs a promise/async handler with platform deadlines, handles PushKit (including the iOS 26.4 `mustReport` metadata), media adapters and default-calling-app entry points | M0 local native acceptance measured; CI pending. M1 implementation in progress; M2–M3 planned. |
+| **iOS-only Expo module**: the same Swift sources behind a React Native/Expo API (`useConversations()`, a handler, commands, reports, audio routes, push token) with a config plugin | M0 local native acceptance measured; CI pending. M1 implementation in progress; M2–M3 planned. |
 | **Simulator runtime**: genuine CallKit and LiveCommunicationKit tear calls down in the iOS simulator; this runtime supplies the missing call service | **v0.1 shipped** ([release](https://github.com/ziahamza/ios-voip-sdk/releases/tag/v0.1), [docs](docs/simulator-runtime.md)). The M0 source package activates it in-process; qualification is pending. |
 
 The API design is [RFC 0001](https://github.com/ziahamza/expo-callkit-telecom/pull/10). It is written as a possible v2 of [expo-callkit-telecom](https://github.com/mfairley/expo-callkit-telecom), whose iOS side would then depend on this package's Expo module. This SDK doesn't wait on that: it is built here first.
@@ -24,7 +24,9 @@ The Swift package exports `SimulatorSupport.activateIfNeeded()`. The Expo module
 
 From a clean checkout, run `npm ci`, `npm run build`, then `npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install`. Install the generated iOS project's pods and build its Release scheme to bundle JavaScript. The example's ring/join/end controls are milestone instrumentation; RFC commands, handlers, push and hooks arrive in M1.
 
-The [M0 acceptance preparation](docs/progress/2026-10-22-codex-m0-acceptance-preparation.md) describes the source-bound local and CI run. **Proposed:** the plain-simulator Expo ring/join acceptance and fail-safe bootstrap cases remain pending until their native receipts pass.
+**Measured locally:** the Expo 58 Release example rings, joins and ends on iOS 27.0 without injection; all three bootstrap cases and device-code exclusion checks pass. [The M0 handoff](docs/progress/2026-10-22-codex-m0.md) identifies the source-bound capture and its limits. CI acceptance remains pending.
+
+The module's peer ranges retain Expo 55–58 compatibility. The example and development tools pin Expo 58 for its native scene lifecycle. Expo 58 is locally qualified; Expo 55 has historical build evidence, while runtime compatibility with Expo 55–57 remains unqualified.
 
 ## License
 
