@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Require fresh, process-bound app evidence for lifecycle race regressions."""
+"""Check runtime lifecycle policy; this suite has no measured device oracle."""
 import json
 from pathlib import Path
 import sys
@@ -23,7 +23,8 @@ def validate(directory):
     require(len(checks) == len(EXPECTED) and {r['name'] for r in checks} == EXPECTED, 'missing lifecycle boundary')
     require(all(r.get('success') is True for r in checks), 'lifecycle regression')
     require(not any(r['event'] == 'transaction.delivered' and r['origin'] == 'postEndUnmute' for r in engine), 'stale unmute produced')
-    return dict(success=True, checks=sorted(EXPECTED))
+    return dict(success=True, checks=sorted(EXPECTED),
+                reference='runtime policy; no device measurement')
 
 
 def main():

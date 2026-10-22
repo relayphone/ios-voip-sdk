@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sys
 from summarize import EvidenceError, load, one, require, successful_stop
+from device_oracles import check_deadline, deadline_bands
 
 ROOT = Path(__file__).resolve().parent.parent
 CASES = ('single', 'ab', 'ba', 'handles', 'late', 'drop', 'inv', 'recreate')
@@ -45,7 +46,12 @@ def roles(rows):
 
 def providers(directory, case):
     rows, engine = bound_capture(directory, 'providers-' + case)
-    reference = load(ROOT / 'docs/research/callkit-simulator-probe/provider-routing', '2026-10-21-iphone13-ios27-providers-' + case)
+    reference_directory = ROOT / 'docs/research/callkit-simulator-probe/provider-routing'
+    references = {name: load(reference_directory, '2026-10-21-iphone13-ios27-providers-' + name) for name in CASES}
+    reference = references[case]
+    # Pool the measured cases: a callback sampled late (58.9 s in single) must
+    # not turn its remaining time into the nominal deadline for every run.
+    deadlines = deadline_bands([row for source in references.values() for row in source])
     actual_roles, expected_roles = roles(rows), roles(reference)
     def routed(source, mapping):
         return collections.Counter((r['label'], r['kind'], mapping.get(r['call'], r['call']), r['result'], tuple(r['receivers']))
@@ -54,17 +60,19 @@ def providers(directory, case):
     actual = [r for r in rows if r['event'] == 'tap.perform']
     expected = [r for r in reference if r['event'] == 'tap.perform']
     require(len(actual) == len(expected), f'{case}: action count differs: {len(actual)} != {len(expected)}')
-    def signature(r, mapping):
-        return (r['p'], r['kind'], mapping.get(r['call'], r['call']))
-    # inv cleanup contains two otherwise identical end requests; compare that
-    # unordered cleanup by semantic call role. All other boundaries are ordered.
-    if case == 'inv':
-        require(collections.Counter(signature(r, actual_roles) for r in actual) ==
-                collections.Counter(signature(r, expected_roles) for r in expected), 'invalidated provider cleanup differs')
-    else:
-        for a, b in zip(actual, expected):
-            require(signature(a, actual_roles) == signature(b, expected_roles), f'{case}: action order/routing differs')
-            if 'muted' in b: require(a.get('muted') == b['muted'], 'mute value differs')
+    # cleanup() iterates observer.calls, whose ordering is not a device contract.
+    # Keep the inv sequence ordered by each capture's submitted cleanup requests;
+    # routed() above separately compares the complete semantic call inventory.
+    def cleanup_positions(source):
+        return {r['action']: i for i, r in enumerate(
+            r for r in source if r['event'] == 'request' and r['label'] == 'cleanup')}
+    actual_cleanup, expected_cleanup = cleanup_positions(rows), cleanup_positions(reference)
+    def signature(r, mapping, cleanup):
+        call = ('cleanup', cleanup[r['action']]) if case == 'inv' and r['action'] in cleanup else mapping.get(r['call'], r['call'])
+        return (r['p'], r['kind'], call)
+    for a, b in zip(actual, expected):
+        require(signature(a, actual_roles, actual_cleanup) == signature(b, expected_roles, expected_cleanup), f'{case}: action order/routing differs')
+        if 'muted' in b: require(a.get('muted') == b['muted'], 'mute value differs')
     executions = [r for r in rows if r['event'] == 'tap.execute']
     require(len(executions) == len(actual), 'execution inventory differs')
     require(len({r['action'] for r in actual}) == len(actual), 'duplicate action delivery')
@@ -95,13 +103,13 @@ def providers(directory, case):
         transaction = delivered.get(execution['tx'])
         require(transaction is not None and [i[:8] for i in transaction['actionIDs']] == execution['actions'], 'execute/journal identity mismatch')
         if a['action'] in requested:
+            require(a['call'] == requested[a['action']]['call'] and a['kind'] == requested[a['action']]['kind'],
+                    'delivered request target/kind differs')
             require(requested[a['action']]['tx'] != execution['tx'], 'request transaction UUID reused')
         else:
             origin = journal_actions.get(a['action'], {}).get('origin')
             require(origin in ('muteEcho', 'postEndUnmute') and a['kind'] == 'CXSetMutedCallAction', 'unclassified system action')
-        deadline = a.get('timeoutIn', -1)
-        low, high = (598, 600.1) if a['kind'] == 'CXStartCallAction' else ((58, 60.1) if a['kind'] == 'CXAnswerCallAction' else (3, 5.1))
-        require(low <= deadline <= high, 'action deadline differs from profile')
+        check_deadline(a, deadlines)
     expected_timeouts = collections.Counter(r['kind'] for r in reference if r['event'] == 'tap.timedOut')
     require(collections.Counter(r['kind'] for r in rows if r['event'] == 'tap.timedOut') == expected_timeouts, 'unexpected timeout inventory')
     audio_events = ('tap.didActivate', 'tap.didDeactivate')
