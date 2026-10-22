@@ -17,6 +17,7 @@ HOST = r'''
 #import "VSProviderMonitorInternal.h"
 
 static NSUInteger warnings, roots, concretes, destroyed;
+static void (^fixtureCreationObserver)(id);
 static BOOL inheritedShape;
 static BOOL foreignShape;
 static void require(BOOL condition, const char *reason) {
@@ -28,7 +29,10 @@ static void require(BOOL condition, const char *reason) {
 @end
 @implementation VSFixtureProvider
 - (instancetype)initWithConfiguration:(id)configuration {
-  if ((self = [super init])) { roots++; self.configuration = configuration; }
+  if ((self = [super init])) {
+    roots++; self.configuration = configuration;
+    if (fixtureCreationObserver) fixtureCreationObserver(self);
+  }
   return self;
 }
 - (void)dealloc { destroyed++; }
@@ -84,6 +88,8 @@ static void require(BOOL condition, const char *reason) {
 }
 @end
 
+// RUNTIME_PROVIDER_SOURCE
+
 static void diagnostic(NSString *message) {
   require([NSThread isMainThread], "diagnostic must run on main");
   require(message.length > 0, "diagnostic must explain the condition");
@@ -125,6 +131,56 @@ int main(int argc, const char **argv) {
       [[NSRunLoop mainRunLoop] run];
     }
     IMP globalAllocator = class_getMethodImplementation(object_getClass(NSObject.class), @selector(allocWithZone:));
+    if ([mode hasPrefix:@"cooperative"]) {
+      IMP initializer = class_getMethodImplementation(VSFixtureProvider.class, @selector(initWithConfiguration:));
+      IMP allocator = class_getMethodImplementation(object_getClass(VSFixtureProvider.class), @selector(allocWithZone:));
+      BOOL reject = [mode isEqual:@"cooperative-rejected"];
+      fixtureCreationObserver = ^(id provider) { observeSDKDebugProviderCreation(provider); };
+      BOOL result = VSProviderMonitorInstallWithSource(VSFixtureProvider.class, ^(NSString *m){ diagnostic(m); },
+          ^BOOL(void (^observer)(id)) {
+            if (reject) return NO;
+            require(!CKSimInstallProviderCreationObserver(observer), "inactive runtime must reject observer registration");
+            installed = YES;
+            return CKSimInstallProviderCreationObserver(observer);
+          });
+      require(result != reject, "cooperative source registration must report its result");
+      require(initializer == class_getMethodImplementation(VSFixtureProvider.class, @selector(initWithConfiguration:)) &&
+              allocator == class_getMethodImplementation(object_getClass(VSFixtureProvider.class), @selector(allocWithZone:)) &&
+              globalAllocator == class_getMethodImplementation(object_getClass(NSObject.class), @selector(allocWithZone:)),
+              "cooperative monitoring must never replace initializer or allocator IMPs");
+      if (reject) {
+        require(warnings == 1 && !sdkDebugProviderCreationObserver, "rejected source must diagnose without installing hooks");
+        puts("passed"); return 0;
+      }
+      require(VSProviderMonitorInstall(VSFixtureProvider.class, ^(NSString *m){ diagnostic(m); }),
+              "ordinary repeated install must preserve the cooperative source");
+      VSProviderMonitorBeginOwnedCreation();
+      VSFixtureProvider *owned = [[VSFixtureProvider alloc] initWithConfiguration:[NSObject new]];
+      observeSDKDebugProviderCreation(owned);
+      VSProviderMonitorEndOwnedCreation();
+      require(warnings == 0, "owned creation and repeated object observation must not warn");
+      if ([mode isEqual:@"cooperative-background"]) {
+        VSProviderMonitorBeginOwnedCreation();
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+          created(VSFixtureProvider.class);
+          dispatch_async(dispatch_get_main_queue(), ^{
+            require(warnings == 1, "background cooperative creation must not consume owned bracket");
+            VSProviderMonitorEndOwnedCreation();
+            require(warnings == 2, "empty owned bracket must still diagnose");
+            puts("passed"); exit(0);
+          });
+        });
+        [[NSRunLoop mainRunLoop] run];
+      }
+      VSProviderMonitorBeginOwnedCreation();
+      created(VSFixtureProvider.class);
+      created(VSFixtureProvider.class);
+      VSProviderMonitorEndOwnedCreation();
+      require(warnings == 1, "second cooperative provider in owned bracket must warn once");
+      created(VSFixtureProvider.class);
+      require(warnings == 2, "later cooperative provider must warn once");
+      puts("passed"); return 0;
+    }
     if ([mode isEqual:@"unsupported"]) {
       require(!VSProviderMonitorInstall(NSObject.class, ^(NSString *m){ diagnostic(m); }), "missing initializer must refuse");
       require(warnings == 1, "unsupported ABI must diagnose");
@@ -222,13 +278,21 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="ios-voip-platform-") as directory:
         out = Path(directory)
         host = out / "host.m"
-        host.write_text(HOST)
+        runtime = (ROOT / 'Sources/Interposition/CKInterposition.m').read_text()
+        start = runtime.index('#if CKSIM_SDK_SOURCE && DEBUG\n')
+        end = runtime.index('#endif', start)
+        # Execute the actual runtime registration/notification helpers against
+        # the host fixture; no Apple call service or simulator is involved.
+        helper = runtime[start + len('#if CKSIM_SDK_SOURCE && DEBUG\n'):end]
+        host.write_text(HOST.replace('// RUNTIME_PROVIDER_SOURCE',
+            '#define CXProvider VSFixtureProvider\nstatic BOOL installed;\n' + helper + '\n#undef CXProvider'))
         binary = out / "platform-controls"
         run(["xcrun", "clang", "-fobjc-arc", "-fblocks", "-DDEBUG=1", "-Wall", "-Wextra",
              "-Werror", "-Wno-unused-parameter", "-I", str(PLATFORM), str(host),
              str(PLATFORM / "VSCompletionOnce.m"), str(PLATFORM / "VSProviderMonitorInternal.m"),
              "-framework", "Foundation", "-o", str(binary)])
-        for case in ["completion-race", "plain", "cluster", "inherited-cluster", "init-substitution", "extra-owned", "background", "nil", "unsupported", "unrelated-allocation"]:
+        for case in ["completion-race", "plain", "cluster", "inherited-cluster", "init-substitution", "extra-owned", "background", "nil", "unsupported", "unrelated-allocation",
+                     "cooperative", "cooperative-background", "cooperative-rejected"]:
             result = run([str(binary), case])
             if result.stdout.strip() != "passed":
                 raise RuntimeError(f"Host control did not acknowledge success: {case}")
@@ -264,6 +328,22 @@ def main() -> None:
             if any(marker in symbols for marker in ["CXProvider", "observedInitialize", "observedAllocate", "VSProviderMonitorInstall", "method_setImplementation"]):
                 raise RuntimeError(f"Release object contains debug implementation: {filename}")
             checks.append(f"release-symbols:{filename}")
+        # The cooperative seam has no observer storage, notifier or registration
+        # implementation in Release simulator or Debug device runtime objects.
+        simulator_sdk = run(["xcrun", "--sdk", "iphonesimulator", "--show-sdk-path"]).stdout.strip()
+        version = (ROOT / 'VERSION').read_text().strip()
+        for name, sdk, target, debug in [
+                ('release-simulator', simulator_sdk, 'arm64-apple-ios17.4-simulator', 0),
+                ('debug-device', device_sdk, 'arm64-apple-ios17.4', 1)]:
+            obj = out / (name + '.o')
+            run(['xcrun', 'clang', '-c', '-fobjc-arc', '-fblocks', '-fmodules', f'-DDEBUG={debug}',
+                 '-DCKSIM_SDK_SOURCE=1', f'-DCKSIM_RUNTIME_VERSION="{version}"', '-isysroot', sdk,
+                 '-target', target, str(ROOT / 'Sources/Interposition/CKInterposition.m'), '-o', str(obj)])
+            symbols = run(['xcrun', 'nm', str(obj)]).stdout
+            if any(marker in symbols for marker in ['CKSimInstallProviderCreationObserver',
+                    'sdkDebugProviderCreationObserver', 'observeSDKDebugProviderCreation']):
+                raise RuntimeError('Debug simulator observer leaked into ' + name)
+            checks.append('observer-excluded:' + name)
     print(json.dumps({"success": True, "checks": checks, "count": len(checks)}, indent=2))
 
 

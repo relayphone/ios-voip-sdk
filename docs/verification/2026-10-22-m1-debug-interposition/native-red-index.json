@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "20c44f07a78ddf0748779dd5f289165f5e778f9e",
+  "classification": "measured pre-fix native Debug interposition failure; full capture retained privately by root",
+  "files": {
+    "manifest.json": "6078be9afdfe190e207fefa72087e2dd39e87f16568b9eecf27e38b99a1a4a94",
+    "build-receipt.json": "8be7f2aafd617af5d69d7ac599eea4b792aea18c81041bcda87c2dd490d6296b",
+    "summary.json": "c8282a553b51d4c5a43930e7c2ae08a55541392cb02652efd1eda1683cbfb4b6",
+    "m1/summary.json": "384fc4c4431146071c80320ba5b755eff5471196a7adf8e30f0c0bac5dfde0b9",
+    "m1/contracts-build/build-info.json": "3e2de0c0c4429b4012ab65256fbe22876f29bebc1db5949d994fb933189a99c7",
+    "m1/contracts/summary.json": "7639e7eabcdf9cb3251a2658f3ee5e72a7ac10216ad11468c713d86e0926f758"
+  },
+  "releaseM0Success": true,
+  "releaseM1Success": true,
+  "debugContractSummary": {
+    "success": false,
+    "error": "foreign provider warning inventory/identity differs"
+  },
+  "debugCases": {
+    "guard": {
+      "files": {
+        "sdk-m1-contract-guard.log": "ef1993664ee6ee58084df93a6924378c046560cba9c2b1cba85fd6da675c7fa1",
+        "sdk-m1-contract-guard.receipt.json": "a10b2a01f4123f4126af305ca076eb5c1b12ffb13ddb80989dc9f52f28872aa0",
+        "sdk-m1-contract-guard.runtime.jsonl": "160d1b9d111d6c2a7f7ee0629547b2d02298f492ff283e5f828b39d3ac8c0da3"
+      },
+      "journalEvents": [
+        "runtime.installed"
+      ],
+      "runtimeRefusalObserved": true,
+      "ownerWarningCounts": [
+        0
+      ],
+      "errorTypes": []
+    },
+    "unhandled-accept": {
+      "files": {
+        "sdk-m1-contract-unhandled-accept.log": "c702b6eeaee89365107c1eadd025f3945f685dc431e381bb69f733d568b3e2de",
+        "sdk-m1-contract-unhandled-accept.receipt.json": "b849466dc35e53c9d4222c1c2c9b23a02399e6e3c13e6d8d871ea87c8b062b86",
+        "sdk-m1-contract-unhandled-accept.runtime.jsonl": "08338c8c116b4450e51380558bb2bff79083839ae665be7d7f51e560d7c0d7cb"
+      },
+      "journalEvents": [
+        "runtime.installed"
+      ],
+      "runtimeRefusalObserved": true,
+      "ownerWarningCounts": [
+        0
+      ],
+      "errorTypes": [
+        "NSError"
+      ]
+    }
+  }
+}

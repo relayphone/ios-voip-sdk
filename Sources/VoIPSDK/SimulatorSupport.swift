@@ -1,5 +1,8 @@
 #if os(iOS) && targetEnvironment(simulator) && SWIFT_PACKAGE
 import CKSimRuntime
+#if DEBUG
+import VoIPPlatform
+#endif
 #endif
 #if os(iOS) && targetEnvironment(simulator)
 import Foundation
@@ -33,7 +36,15 @@ public enum SimulatorSupport {
     activationRequested = true
     guard enabled else { return false }
     #if os(iOS) && targetEnvironment(simulator)
-    return RuntimeBootstrap.activate()
+    let active = RuntimeBootstrap.activate()
+    #if DEBUG
+    if active {
+      ProviderCreationMonitor.prepareSimulatorProviderCreationSource { observer in
+        RuntimeBootstrap.installProviderCreationObserver(observer)
+      }
+    }
+    #endif
+    return active
     #else
     return false
     #endif

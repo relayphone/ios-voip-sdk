@@ -1,0 +1,20 @@
+Sources/VoIPSDK/ConversationClient.swift:356:28: warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+354 |     appActions = appActions.filter { $0.value > Date() }
+355 |     appActions[id] = action.timeoutDate
+356 |     do { try await manager.perform([action]) }
+    |                            |- warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+    |                            `- note: sending main actor-isolated 'self.manager' to @concurrent instance method 'perform' risks causing data races between @concurrent and main actor-isolated uses
+357 |     catch { appActions.removeValue(forKey: id); throw error }
+358 |   }
+
+Sources/VoIPSDK/ConversationClient.swift:276:32: warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+274 |         defer { SimulatorSupport.finishIncomingReport(id) }
+275 |         #endif
+276 |         try await self.manager.reportNewIncomingConversation(uuid: id, update: update)
+    |                                |- warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+    |                                `- note: sending main actor-isolated 'self.manager' to @concurrent instance method 'reportNewIncomingConversation(uuid:update:)' risks causing data races between @concurrent and main actor-isolated uses
+277 |       } catch {
+278 |         if knownLiveConversation && self.isAlreadyReported(error) { self.refresh(); return id }
+
+[#RegionIsolation]: <https://docs.swift.org/compiler/documentation/diagnostics/region-isolation>
+[#SendingRisksDataRace]: <https://docs.swift.org/compiler/documentation/diagnostics/sending-risks-data-race>
