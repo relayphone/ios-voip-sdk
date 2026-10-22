@@ -57,6 +57,26 @@ def main():
             path.write_text("".join(json.dumps(row) + "\n" for row in rows if not predicate(row)))
 
         traces("saved-measured-profile")
+        # Synthetic timestamp quantization controls: serialized trace order is
+        # causal even when answer, activation and snapshot share one millisecond.
+        # These copies never replace the original measured trace.
+        def quantized_answer(directory, activation_after_snapshot=False):
+            path = directory / "runtime.jsonl"
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+            answer = next(row for row in rows if row["event"] == "provider.perform" and
+                          row.get("kind") == "CXAnswerCallAction")
+            activation = next(row for row in rows if row["event"] == "provider.didActivateAudio")
+            answered = next(row for row in rows if row["event"] == "observer.snapshot" and
+                            row.get("label") == "answered")
+            for row in rows[rows.index(answer):rows.index(answered) + 1]:
+                row["t_ms"] = answer["t_ms"]
+            if activation_after_snapshot:
+                rows.remove(activation)
+                rows.insert(rows.index(answered) + 1, activation)
+            path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+        traces("quantized-answer-activation-order", quantized_answer)
+        traces("quantized-activation-after-answered", lambda d: quantized_answer(d, True), False)
         traces("missing-trace", lambda d: (d / "runtime.jsonl").unlink(), False)
         traces("empty-trace", lambda d: (d / "runtime.jsonl").write_text(""), False)
         traces("truncated", lambda d: mutate_row(d, "done", lambda rows, r: rows.remove(r)), False)

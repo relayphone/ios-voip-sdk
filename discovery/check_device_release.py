@@ -53,6 +53,22 @@ class Controls(unittest.TestCase):
                 with self.assertRaisesRegex(ExclusionError, 'public simulator test hook'):
                     inspect_public_headers(Path(directory))
 
+    def test_simulator_public_header_consumer(self):
+        # Consume the actual Expo public header, never the private implementation
+        # seam. The example needs both controls in simulator builds.
+        with tempfile.TemporaryDirectory(prefix='sdk-public-simulator-') as directory:
+            source = Path(directory) / 'consumer.m'
+            source.write_text('void controls(void) { CKSimInjectPush(@{}, YES, @"probe"); '
+                              'CKSimEmit(@"clock", @{}); }\n')
+            sdk = subprocess.check_output(['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path'], text=True).strip()
+            result = subprocess.run(['xcrun', 'clang', '-fsyntax-only', '-fobjc-arc',
+                '-Werror=implicit-function-declaration', '-target', 'arm64-apple-ios17.4-simulator',
+                '-isysroot', sdk, '-I', str(ROOT / 'Sources/Interposition/include'),
+                '-I', str(ROOT / 'Sources/VoIPPlatform/include'),
+                '-include', str(ROOT / 'Expo/apple/IosVoipSDK.h'), str(source)],
+                capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_actual_macho_negative_controls(self):
         with tempfile.TemporaryDirectory(prefix='sdk-release-exclusion-') as directory:
             out = Path(directory)

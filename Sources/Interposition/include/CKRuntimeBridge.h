@@ -38,6 +38,7 @@ bool CKSimRuntimeIsActive(void);
 const char *CKSimRuntimeVersion(void);
 // Runtime mailbox and example controls exist only in simulator builds.
 void CKSimInjectPush(NSDictionary *payload, BOOL mustReport, NSString *identifier);
+void CKSimEmit(NSString *event, NSDictionary *fields);
 // SDK Debug or explicit provider-diagnostics opt-in simulator builds only.
 bool CKSimInstallProviderCreationObserver(void (^observer)(id provider));
 

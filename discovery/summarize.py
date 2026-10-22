@@ -315,7 +315,7 @@ def runtime(rows):
                 for r in activations), "unhold did not reactivate audio")
     answer = one(rows, "provider.perform", kind="CXAnswerCallAction", call=a)
     before(rows, result(rows, "request.completed", "answer-a", "ok"), answer)
-    require(any(answer["t_ms"] < r["t_ms"] < snapshot(rows, "answered")["t_ms"]
+    require(any(rows.index(answer) < rows.index(r) < rows.index(snapshot(rows, "answered"))
                 for r in activations), "answer activation missing/out of order")
     timeout_answer = one(rows, "provider.perform", kind="CXAnswerCallAction", call=d)
     timeout_end = one(rows, "provider.perform", kind="CXEndCallAction", call=d)
