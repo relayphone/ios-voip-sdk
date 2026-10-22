@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "measurement": "host preparation only; corrected native checkpoint not yet qualified",
+  "baseCommit": "3e4b11ad9f316fff549ea73529b278682d85838f",
+  "sourceFiles": {
+    "discovery/probe/main.swift": "994c55b8e0e02f8c06decb0c4e51739d9e39f19a88388832c8d1ef2332a55913",
+    "discovery/summarize.py": "019271bf8c0ecfd3b21a01c67268d4b1ecf8d54d4f1f01cd7f7069869db855e3",
+    "discovery/check_harness.py": "336f6375746186ebf819138a53ff560433f67b4e142cb102a135bf1718b232f0"
+  },
+  "checks": [
+    {
+      "command": [
+        "python3",
+        "discovery/check_harness.py"
+      ],
+      "exitCode": 0,
+      "controls": 98,
+      "publicOutput": "host-controls.json"
+    },
+    {
+      "command": [
+        "xcrun",
+        "--sdk",
+        "iphonesimulator",
+        "swiftc",
+        "-target",
+        "arm64-apple-ios18.0-simulator",
+        "-D",
+        "CKSIM_HAS_VOIP_METADATA",
+        "-D",
+        "CKSIM_CONFORMANCE",
+        "-swift-version",
+        "5",
+        "-parse-as-library",
+        "-typecheck",
+        "$REPO/discovery/probe/main.swift",
+        "$REPO/discovery/probe/generations.swift",
+        "$REPO/discovery/probe/report_threading.swift",
+        "$REPO/discovery/probe/lck_readiness.swift",
+        "$CAPTURE/providers.swift",
+        "$CAPTURE/lck.swift"
+      ],
+      "exitCode": 0,
+      "scope": "actual Xcode simulator SDK whole probe typecheck only; no simulator created, booted or app launched",
+      "compilerLog": "compiler.log",
+      "rawCompilerLogSHA256": "861fe30e139bac7356dceb44264be736a02a1659975e7797ac702a9d060fb58f",
+      "inputs": {
+        "discovery/probe/main.swift": "994c55b8e0e02f8c06decb0c4e51739d9e39f19a88388832c8d1ef2332a55913",
+        "discovery/probe/generations.swift": "7ba20ccd0a3c845bb26a1bc7f603c6e8f4760aaab6bdd96e4d5192d84a1bb72f",
+        "discovery/probe/report_threading.swift": "4baaa81154bf99203dcd5a279f85ed1afb7c393440f4e03f60d193bd08a45d3a",
+        "discovery/probe/lck_readiness.swift": "b10ddf8101eed054ef04aeafe59f83c0c46ec884a8b5ed240a2201fba9216c1d",
+        "$CAPTURE/providers.swift": "453f2d1302774921df581a292f7e94599c7882669a1ef5b3ebb0df8fd80776c4",
+        "$CAPTURE/lck.swift": "f6a0b8c375d84f00b5a2de82d4626df8379d231f68b87651ef6701a3eec8264a"
+      },
+      "compilerLogNormalization": "Replace local repository/capture prefixes with $REPO/$CAPTURE and strip trailing horizontal whitespace from each line."
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/summarize.py",
+        "$ORIGINAL_CAPTURE"
+      ],
+      "exitCode": 1,
+      "scope": "unchanged old native capture remains red",
+      "runtimeResult": {
+        "success": false,
+        "error": "answered: incorrect incoming state"
+      }
+    }
+  ],
+  "toolchain": {
+    "xcode": "Xcode 27.1\nBuild version 27A9275",
+    "sdk": "iPhoneSimulator27.1.sdk",
+    "languageMode": "Swift 5 (existing probe mode)"
+  },
+  "files": {
+    "compiler.log": "e3c5c51d6cc6c16bb0a7782fe33a109c185d952cd4fefd90bd30a21cfef19b8c",
+    "host-controls.json": "f857b811209fb90e07a6e093880266fcf2e5c89be6847f61cd2826a6a78f4c8e",
+    "original-red-classification.json": "00f290a0aa9cedc8241e9bccb9b283c31a505a05570d5dd340902546e831e72f",
+    "quantization-red-green.json": "5dd63ef7af84802f3146c1311a044277fea425e5f8a3cb48ad3840647e930b37"
+  },
+  "limits": [
+    "The two quantization cases are synthetic host controls on temporary copies; they do not alter measured traces.",
+    "The whole-probe compiler check uses the actual SDK and retains warnings; it does not build or run an app.",
+    "Ten seconds is a proposed probe observation budget, not a measured CallKit deadline.",
+    "Original run39739841429 attempt2 is red; no rewritten snapshot or later fulfillment changes that result.",
+    "The blocking suboperation inside the old answer callback was not timed separately."
+  ]
+}
