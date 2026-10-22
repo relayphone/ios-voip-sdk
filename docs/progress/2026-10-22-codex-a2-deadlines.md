@@ -190,6 +190,47 @@ matched their CI JSON results; the Xcode 26.6 loader-repair receipt also passed
 its 16 checks. Live CLI operations were not re-executed locally. These greens
 qualify `dfc81fc`, not the newly integrated source, whose native CI is pending.
 
+## Qualified A2 source and current-main forward
+
+**Measured SDK acceptance at `257c0cd`:** SDK run
+[`39780820174`](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39780820174),
+attempt 1, passed all four production gates. Exact-source independent replay
+matched each CI JSON result. The [qualification receipt](../verification/2026-10-22-a2-deadlines/ci-257c0cd-qualification.json)
+binds tested merge `6378c22` (tree-equal to `257c0cd`), SDK input hash
+`c342003b…` and artifact `12432080027`. This is Xcode 26.6 compiler evidence on
+the iOS 26.5 simulator with the ios-27.0 profile, not a physical-device run.
+
+The first native accept connected snapshot precedes runtime expiry by 1,487 ms.
+Failed-join policy fires 1 ms after the effective deadline; actual native failure
+precedes both SDK and runtime expiry by 1,496 ms. Observation 1 ms after SDK
+expiry finds absence and skips explicit fixture cleanup. This sample does not
+establish general failed-join teardown behavior or physical-device behavior.
+
+**Measured partial runtime qualification:** run
+[`39780820292`](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39780820292),
+attempt 1, passes its Xcode 26.3 / iOS 26.5 simulator lane, with ten independent
+gate replays matching CI. Its Xcode 26.6 lane is a preserved
+[pre-identity infrastructure red](../verification/2026-10-22-a2-deadlines/ci-257c0cd-runtime-pre-identity.json):
+build/signing completed, then a bounded `simctl list runtimes`/`create` call
+timed out before an owned simulator ID was recorded. The exact command and
+actual simulator OS are unavailable. That lane qualifies no ABI scenario;
+overall CI is not all green. No retry was requested.
+
+Main `6f58777` was subsequently merged forward normally as `cc8914c9`. The
+[forward preparation](../verification/2026-10-22-a2-deadlines/main-forward-preparation.json)
+binds its 15 incoming fixture/gate/CI/documentation paths and eleven passing
+host/compiler checks. A2 production and acceptance-gate bytes remain identical
+to `257c0cd`, and no production source changes. The four native action contracts, cached
+capture and strict deadline checks are preserved alongside main's sixth direct
+native callback-body/main-stall fixture. It is not a PushKit delivery, APNs or
+cold-launch measurement. Objective-C syntax and the combined actual
+SDK/PushEntry Swift 6 typecheck pass. Both source review axes cleared the merge.
+
+**Proposed current-source acceptance:** fresh native CI must qualify the merged
+harness, including the direct native callback-body/main-stall fixture. Prior
+greens remain bound to their original source. No local iOS app, simulator or
+device was run; PR #25 still has one A2 acceptance target.
+
 ## RFC deviation text for the authorized fork comment
 
 RFC 0001 describes `ActionContext.deadline` as when the platform gives up. This
@@ -198,6 +239,6 @@ before native `ConversationAction.timeoutDate`, in both the context and pending
 snapshot. The reason is to apply `unhandledAction` and cancel pending handler work
 before LCK's own timeout can win the race. The native deadline is retained for a
 final late-accept guard. Handler replacement/attachment does not extend either
-deadline. The public shape is unchanged, but this semantic difference must be
-recorded on fork PR #10; root will post the concrete reviewed comment. No upstream
-action was taken by this implementation task.
+deadline. The public shape is unchanged. This semantic difference is recorded
+on [authorized fork PR #10](https://github.com/ziahamza/expo-callkit-telecom/pull/10#issuecomment-6338279855).
+No action was taken on the upstream repository.

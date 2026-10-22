@@ -29,6 +29,8 @@ SOURCE_PATHS = ('Sources', 'Expo', 'example', 'Package.swift', 'IosVoipSDK.podsp
                 'discovery/check_push_report_entry.py', 'discovery/build_push_report_entry.sh',
                 'discovery/run_push_report_entry.py', 'discovery/check_push_report_capture.py',
                 'discovery/probe/push_report_entry.swift', 'discovery/probe/Info.plist', 'discovery/device_oracles.py',
+                'discovery/probe/push_entry_main_stall.h', 'discovery/probe/push_entry_main_stall.m',
+                'discovery/push_main_stall_conformance.py', 'discovery/check_push_main_stall.py',
                 'discovery/check_lck_provider_policy.py',
                 'discovery/build_sdk_device_release.py', 'discovery/device_release_exclusion.py',
                 'discovery/check_device_release.py',

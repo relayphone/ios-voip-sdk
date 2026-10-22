@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured fresh SDK deadline acceptance; runtime matrix partially qualified",
+  "pr": 25,
+  "prHead": "257c0cd9776b56843793ec963f0db2fd5fcf5d2b",
+  "testedMerge": "6378c22aa9c2cc3bf215342fd14dbf471c226b94",
+  "testedTree": "6baac421d99a6f3221011cbfaca8385baaa7b0da",
+  "treeEqualToPRHead": true,
+  "sdkInputsSHA256": "c342003ba6f5bc8a95aeacecce3322fb0f10da4cc26b650ccda3a12ef956e72e",
+  "sdk": {
+    "runID": 39780820174,
+    "attempt": 1,
+    "conclusion": "success",
+    "artifactID": 12432080027,
+    "artifactZIP_SHA256": "125d1c8469df4288010a08d1bf62ac28a1d58dda94b26b827ecd964fedbd4a65",
+    "compilerLane": "Xcode 26.6",
+    "simulatorOS": "26.5",
+    "behaviorProfile": "ios-27.0",
+    "checks": [
+      {
+        "name": "m0",
+        "exitCode": 0,
+        "sameAsCIResult": true,
+        "gateSHA256": "57291a8962c24002ed05d797f97dd16ff112f390a4bfd168df8ce512b5f8622c",
+        "outputSHA256": "a9ec094042b19f84eb94ae0a0e73a98388968e03cb0a9a128485a9ea09f85119"
+      },
+      {
+        "name": "m1",
+        "exitCode": 0,
+        "sameAsCIResult": true,
+        "gateSHA256": "b75d3f071a49ba4f84de2fd78ce30ff52eef9b9d0d0f6ce24aafdbf95721626c",
+        "outputSHA256": "2ef38d3736a8bbfb5ecb136430d00085ff3243320b95098d17a562fb3e7dda64"
+      },
+      {
+        "name": "contracts",
+        "exitCode": 0,
+        "sameAsCIResult": true,
+        "gateSHA256": "f6833bfc909511c573366a44d2a29db9a9d27c594e55074c38b8a572d83c09ee",
+        "outputSHA256": "c9a5ae2695f1d2896fa50f5c39ce2d4a90968edce9e78bb1a30e7a4361d5c552"
+      },
+      {
+        "name": "push-entry",
+        "exitCode": 0,
+        "sameAsCIResult": true,
+        "gateSHA256": "a7c448fbcb8b83b19d3e1aafac4fee34d30b5262f574ef5a36127b5c35f9045a",
+        "outputSHA256": "47f71e97725004a1e16c85d40e9489a1f49fc0f8eeae025611ed225272497d46"
+      }
+    ],
+    "nativeDeadlineCases": {
+      "unhandled-accept": {
+        "success": true,
+        "effectiveDeadlineMS": 1792677323525,
+        "runtimeDeadlineMS": 1792677325025,
+        "connectedAfterEffectiveDeadlineMS": 13,
+        "connectedBeforeRuntimeDeadlineMS": 1487
+      },
+      "unhandled-fail": {
+        "success": true,
+        "effectiveDeadlineMS": 1792677358391,
+        "sdkPlatformDeadlineMS": 1792677359891,
+        "runtimeDeadlineMS": 1792677359891,
+        "observedStatus": "absent",
+        "fixtureCleanup": "skipped",
+        "policyAfterEffectiveDeadlineMS": 1,
+        "observationAfterSDKPlatformDeadlineMS": 1,
+        "nativeFailureBeforeSDKPlatformDeadlineMS": 1496,
+        "nativeFailureBeforeRuntimeDeadlineMS": 1496
+      }
+    },
+    "independentReplayReceiptSHA256": "5b3653a3857713749d3f37851f13dd1e2dccc64347d4b1544555d01cb5dbc3c6",
+    "manifestSHA256": "375cbdd2f2f705b8ac2672928e2ba27ee4966529760afdee7040bd62537eeece",
+    "runURL": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39780820174"
+  },
+  "runtime": {
+    "runID": 39780820292,
+    "attempt": 1,
+    "conclusion": "failure",
+    "sourceInputsSHA256": "351bc97cb869eff4fff58f3bfe2dc04c9a5920fe2093633b6f5e2a09cb9ffc91",
+    "qualifiedLane": {
+      "compilerLane": "Xcode 26.3",
+      "simulatorOS": "26.5",
+      "behaviorProfile": "ios-27.0",
+      "checks": [
+        {
+          "name": "shipping-summary",
+          "exitCode": 0,
+          "sameAsCIResult": true,
+          "gateSHA256": "6c3c8a7d6fbb3b7ba7a8a232ba70252fdeac75b0e68db2abd5ffc6af0dbb6bb6",
+          "outputSHA256": "3bd6902cb2b7027a180875c7f5c4d95dba45f6bfe4d9a17f23cb2060bac931a4"
+        },
+        {
+          "name": "report-threading",
+          "exitCode": 0,
+          "sameAsCIResult": true,
+          "gateSHA256": "b78387f2abffc49bb3e1956dacccf0be4046c9b6540873412a467347f4ef2c01",
+          "outputSHA256": "09cd3b2e5652cda2290221c661975d7e90058e6c3fe402e69e9cd0d75804dfef"
+        },
+        {
+          "name": "image-identity",
+          "exitCode": 0,
+          "sameAsCIResult": true,
+          "gateSHA256": "d0802b43adb1d1fe899840bc448dae77b07dc44e53ac0063f9040e0225e41199",
+          "outputSHA256": "edbbd89072294d21fda8736537d70ccece37c619369ceb9a804c7de37459d7ab"
+        },
+        {
+          "name": "lck-four-cases",
+          "exitCode": 0,
+          "sameAsCIResult": true,
+          "gateSHA256": "2dec5abee05b0d9313ac08bccba8543a26c54b963e0a9e3ae39404cf3991bde0",
+          "outputSHA256": "42904a0dd0eae7e3582ed879e43f094e09e7bd168794928295b423d2c26a1621"
+        },
+        {
+          "name": "provider-conformance",
+          "exitCode": 0,
+          "sameAsCIResult": true,
+          "gateSHA256": "b6b9df0d756b7cd015828c9a366c00f951c79cd1e93f8771680f71713aa5b5d3",
+          "outputSHA256": "da5c5a5db27658c4fd1a47e051f8c41d81f741fc132c94dd17beb43711b9add9"
+        },
+        {
+          "name": "provider-negative-controls",
+          "exitCode": 0,
+          "sameAsCIResult": true,
+          "gateSHA256": "c8ef1780417e83d27f116ad288e290c475a0e1b5c585913e9c4ab3cf9d832709",
+          "outputSHA256": "00797cfbf24cc0d5c325d4ce5f9032d4889f087dc2e01e02428c6bf4c65cb7a4"
+        },
+        {
+          "name": "semantics",
+          "exitCode": 0,
+          "sameAsCIResult": true,
+          "gateSHA256": "3d6d194b010130b8a5fd21fd26e240280549db6a1204d2f6a292afc5c7aaab31",
+          "outputSHA256": "6597f4e5374e06d8caad89741d2c6f691eb638fab7599b7c343b49e6e80b0447"
+        },
+        {
+          "name": "generations",
+          "exitCode": 0,
+          "sameAsCIResult": true,
+          "gateSHA256": "8586b7c1b08822341187a9f30da639b9825179b1f84b96278be2885fb20ad232",
+          "outputSHA256": "da4f710c3da273633fa9ce9f9bed6a2bfa66356abd8f4b8affc4ce15e1dba8c9"
+        },
+        {
+          "name": "shipping-negative-controls",
+          "exitCode": 0,
+          "sameAsCIResult": true,
+          "gateSHA256": "b0902acbc9be5abf548f40c57caeb113db471f22d7ff408f4f6195a6e44f7560",
+          "outputSHA256": "74628fd89d697fb7ddc124bb049217a79c99997f21547da7bb3fa23317f1fb51"
+        },
+        {
+          "name": "abi-receipts",
+          "exitCode": 0,
+          "sameAsCIResult": true,
+          "gateSHA256": "286c2c669d90c283c2235e42ec9050a1dada3f10be4692efe593cfd64f400ce1",
+          "outputSHA256": "1d4c9207d83996f9978641abc9e9f0a99cc19f6ce6af2e68f67a3348a058c121"
+        }
+      ],
+      "allExitZeroAndSameAsCI": true,
+      "independentReplayReceiptSHA256": "78cd0b35e7eeef9f71d4b659bc2538b451a8daf01d9d196b078932e72103251d"
+    },
+    "unqualifiedLane": {
+      "compilerLane": "Xcode 26.6",
+      "classification": "measured runtime CI pre-identity infrastructure timeout; no ABI scenario or runtime acceptance",
+      "artifactID": 12430886033,
+      "artifactZIP_SHA256": "d730d4791ff91a8c462f7ff48ed7335f1a26bd07a0124f4d69114443d5fdda61",
+      "failureReceipt": {
+        "path": "ci-257c0cd-runtime-pre-identity.json",
+        "sha256": "1dc9550374ded575f658b462927fe2a3ca8c03fabf3dfe02aceeacbd487b8119"
+      },
+      "actualSimulatorOS": null
+    },
+    "runURL": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39780820292"
+  },
+  "limits": [
+    "No local iOS app, simulator, physical device or live CLI was run; replay executes recorded-evidence gates only.",
+    "No physical-device deadline policy, failed-join teardown, cold-launch APNs or unfulfilled LCK timeout claim.",
+    "The native failed-join sample observed absent after its recorded platform boundary; it does not establish general automatic teardown behavior.",
+    "No timer-delay cause is inferred from the original SDK red; original actual-journey and pre-app failures are preserved separately.",
+    "The runtime Xcode 26.6 lane did not record a simulator identity and qualifies no ABI scenario; the exact timed-out list-versus-create command was not retained.",
+    "Overall CI is not all green; no retry, cancellation or merge was performed."
+  ]
+}
