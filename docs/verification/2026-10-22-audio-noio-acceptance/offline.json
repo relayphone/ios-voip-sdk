@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "acceptance": "Require completed physical no-I/O notification transport alongside unchanged failed silent-engine diagnostic",
+  "classification": "Measured offline validation and controls only; current integrated native M2 acceptance remains pending",
+  "sourceParent": "da857a207dbcee517c770e0b316c90afccb80df2",
+  "evidenceParent": "07bcf61ba2e3dd2c3255a5175d8f60aee0c37f8f",
+  "normalMergeCommit": "60c19a354c2014fb0cbfd7da048c0cc068ab3a60",
+  "verificationInputs": {
+    "count": 273,
+    "sha256": "6ed312801862d5a776d6baa698aae002384ddb2fc4fc703e31a7f90bc62221cd",
+    "hashFormat": "SHA-256 of compact sorted JSON mapping repository-relative path to file SHA-256",
+    "selectors": [
+      "Sources",
+      "Tests",
+      "Expo",
+      "ExpoMedia",
+      "Integrations",
+      "example",
+      "discovery",
+      ".github/workflows",
+      "Package.swift",
+      "IosVoipSDK.podspec",
+      "package.json",
+      "package-lock.json",
+      "docs/research/callkit-simulator-probe/audio-session-lifecycle"
+    ]
+  },
+  "changedAcceptanceFiles": {
+    ".github/workflows/sdk-m2.yml": "d51740ccb726bb20ff043f640e46b54f5b406d88598492365bc991bc31faab78",
+    "discovery/check_sdk_audio_device_noio_transport.py": "24b7f59fd7b5f88403fa881ac4125229ab9169b8427521ee586b5bf70d0536f3",
+    "discovery/check_sdk_m2.py": "c90ad9d8c9188f8e456978e30311687741f765f35effa02955f36bb9a344ccfe",
+    "discovery/sdk_audio_device_noio_transport.py": "0533052dd1680339d45787a5e4d26bfb6d1c611fcdd8a5729bb0481f84a5528d",
+    "discovery/sdk_m0_conformance.py": "1d31af2d815f8cf849de616c250d1892a4118d6cbcd83fbd02cc2b8c17dcf1e3",
+    "discovery/sdk_m2_conformance.py": "72558a02eb17ab4a2e059061f62f8dfea79b75cbd4b589e897e0267b0bfe3e38"
+  },
+  "changedAcceptanceFilesSHA256": "1b2e68dd0a78225d7207ff48bc7aa25283a4d9555c348886c7286c19b8eda611",
+  "sourceUnchangedDuringFinalChecks": true,
+  "protectedShipping": {
+    "base": "da857a207dbcee517c770e0b316c90afccb80df2",
+    "count": 56,
+    "sha256": "4c45875d56ce344a0b59359b01a08558297efef69f2f3a86344a83339564d87d",
+    "unchanged": true
+  },
+  "preservedFiles": {
+    "discovery/sdk_audio_device_transport.py": "89ae1c731b81b0d31187f11f43c2cd7ae7f8b88eeb05c231eddbfadd0780f973",
+    "discovery/check_sdk_audio_device_transport.py": "c87cd0eb0b7096cd1e1cac728c8a2e715dbe5c7614b970e89e5eb8421074a221",
+    "discovery/sdk_m2_audio_lifecycle.py": "1fc2580c8c121ac79a31a2b7f9b3ffa1645403cff3c14ef00d0d1a055ed5413a",
+    "discovery/check_sdk_m2_audio_lifecycle.py": "8df823b9044fab3eba9fc1f2c1bfc60c799724ca09652c6f5080b53fc916cd4f",
+    "discovery/probe/sdk_m1_contracts.swift": "303780248265de095b3adab0524ab2b274597509c82fcc1b62306f5b3e3d0f0a"
+  },
+  "checks": [
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_audio_device_noio_transport.py"
+      ],
+      "exitCode": 0,
+      "groups": 14,
+      "elapsedSeconds": 0.140589,
+      "capSeconds": 30,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "f2dfea9eb8d553b11472dcf672c13331cc9564bdd3119fa87c7043efa87881bc"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m2.py"
+      ],
+      "exitCode": 0,
+      "groups": 28,
+      "elapsedSeconds": 1.784885,
+      "capSeconds": 30,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "d82cd377607efcb0e5261a885c6e8b008bc1a045b3742bf3f39ece1920d56403"
+    }
+  ],
+  "physicalNoIOTransport": {
+    "scope": "completed physical ordinary-session no-I/O raw/C/Swift scalar transport only",
+    "packetManifestSHA256": "164074e6adc853069c75ed1692c7820b95423772aee37bb209d9dae6a96de8eb",
+    "traceSHA256": "42496556dad907394d923691adafaafe4afa96c880a7640f54d0490ee2ff3d73",
+    "runID": "8615D6C1-7C9C-450E-B56F-684DD5D07F35",
+    "executableSHA256": "d7c1f3d9c5c1a450539c2677edcf1aa443a3fa3f92928b8d69c74c4afb7eca2b",
+    "fullNoIOComplete": true,
+    "ordinaryPhysicalProducerDecoderConsumerQualified": true,
+    "notificationTransportExercised": true,
+    "fourOperationsCompleted": true,
+    "inventories": {
+      "raw.notification": {
+        "active": 2,
+        "inactive": 4,
+        "recommended": 0
+      },
+      "decoder.lifecycle": {
+        "active": 2,
+        "inactive": 4,
+        "recommended": 0
+      },
+      "consumer.lifecycle": {
+        "active": 2,
+        "inactive": 4,
+        "recommended": 0
+      }
+    },
+    "ioSnapshots": 9,
+    "silentRenderingExercised": false,
+    "hardwareLCKInterruptionExercised": false,
+    "resumptionRecommendationExercised": false,
+    "ciAttested": false
+  },
+  "originalPhysicalDiagnostic": {
+    "packetManifestSHA256": "0c6b26bf65d3f5ac5e4ab2028046b9643e85163afab364bcce2ee92fed8263ce",
+    "fullFixturePassed": false,
+    "engineStopCause": "UNKNOWN",
+    "parserAndControlsByteIdentical": true
+  },
+  "scope": {
+    "compilerExecuted": false,
+    "appLaunched": false,
+    "simulatorUsed": false,
+    "deviceUsed": false,
+    "audioPlayedOrCaptured": false,
+    "ciDispatched": false,
+    "shippingAudioChanged": false
+  },
+  "pending": [
+    "Final review and publication as actual stacked PR #17 source",
+    "Fresh current-source modern LCK authority capture and legacy native wiring capture",
+    "Current integrated LiveKit, stale-audio and reentrancy native journeys",
+    "Current pod-built Release iphoneos acceptance",
+    "System/LCK interruptions, resumption recommendation and main-thread stall measurement"
+  ],
+  "sourceAudit": {
+    "originalRedParserAndControlsWholeFileByteIdentical": true,
+    "strictModernLegacyAndLCKAuthorityGatesByteIdentical": true,
+    "nativeFixtureAndRunnerByteIdentical": true,
+    "sharedSourceInventoryIncludesBothNewPythonFilesAndBothPhysicalPackets": true,
+    "workflowRequiresCompletedNoIOControls": true,
+    "independentSpecAndStandardsReview": "CLEAR on staged source tree ac1e88e0b0ac0b279f638c8cb4e2ec3b9db08c23"
+  },
+  "publicationPlan": "Root will fast-forward actual PR #17 branch to corrected source and retarget its base to core PR #34, then qualify actual PR CI; core parents still block merge."
+}

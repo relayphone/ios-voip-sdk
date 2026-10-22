@@ -109,6 +109,7 @@ jobs:
           python3 discovery/check_sdk_m2_environment.py
           python3 discovery/check_sdk_m2_audio_lifecycle.py
           python3 discovery/check_sdk_audio_device_transport.py
+          python3 discovery/check_sdk_audio_device_noio_transport.py
           python3 Tests/AudioLifecycle/check_audio_lifecycle.py
           python3 discovery/check_expo_media.py
           python3 discovery/check_expo_media_config.py

@@ -337,6 +337,8 @@ class Controls(unittest.TestCase):
         self.assertIs(result['cases']['audio-lifecycle']['notificationTransportExercised'], False)
         self.assertTrue(result['physicalAudioTransport']['transportSlicePassed'])
         self.assertIs(result['physicalAudioTransport']['fullFixturePassed'], False)
+        self.assertTrue(result['physicalAudioNoIOTransport']['fullNoIOComplete'])
+        self.assertTrue(result['physicalAudioNoIOTransport']['ordinaryPhysicalProducerDecoderConsumerQualified'])
         change_rows(self.root, 'audio-lifecycle', lambda rows: rows.__setitem__(slice(None),
             [row for row in rows if row['event'] != 'lifecycle.noConversations']))
         self.reject('noConversations')
@@ -344,6 +346,10 @@ class Controls(unittest.TestCase):
         change_rows(self.root, 'audio-lifecycle', lambda rows: gate.one(rows, 'lifecycle.path').update(
             evidence='native-session-lifecycle'))
         self.reject('evidence scope differs')
+
+    def test_completed_physical_noio_evidence_is_required(self):
+        with patch.object(gate, 'validate_device_noio_transport', side_effect=gate.EvidenceError('no-I/O evidence refused')):
+            self.reject('no-I/O evidence refused')
 
     def test_missing_empty_or_unbound_products(self):
         for mode in ('missing', 'empty', 'changed'):

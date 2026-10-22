@@ -32,6 +32,7 @@ SOURCE_PATHS = ('Sources', 'Expo', 'ExpoMedia', 'Integrations', 'example', 'Pack
                 'discovery/sdk_m2_environment.py', 'discovery/check_sdk_m2_environment.py',
                 'discovery/sdk_m2_audio_lifecycle.py', 'discovery/check_sdk_m2_audio_lifecycle.py',
                 'discovery/sdk_audio_device_transport.py', 'discovery/check_sdk_audio_device_transport.py',
+                'discovery/sdk_audio_device_noio_transport.py', 'discovery/check_sdk_audio_device_noio_transport.py',
                 '.github/workflows/sdk-m2.yml', 'Tools/cksim-notify.c',
                 'discovery/check_platform_shims.py', 'discovery/check_sdk_ownership.py',
                 'discovery/check_push_delivery.py', 'discovery/check_push_report_entry.py',
