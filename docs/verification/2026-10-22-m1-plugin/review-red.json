@@ -1,0 +1,32 @@
+{
+  "classification": "measured host regressions against initial staged implementation; no native build or registration",
+  "baselineStagedTree": "dd0aa90789c605d6251c7165ca1db29f6b01d736",
+  "baselineSourceSHA256": "b0d3b7a07a7abb3fb6cd4be97e2d07c44783a7b266b537a70d1710ffd7b631d6",
+  "fixtureSHA256": "7c9f5571bbcd210729192e48a19d89b95d588d7f0891b6806c3b6bd22fd2b969",
+  "cases": [
+    {
+      "case": "resolved-resource-path",
+      "expectedFailure": true,
+      "exitCode": 1,
+      "diagnostic": "Xcode source reference must resolve to copied bytes"
+    },
+    {
+      "case": "dangling-destination",
+      "expectedFailure": true,
+      "exitCode": 1,
+      "diagnostic": "Missing expected rejection."
+    },
+    {
+      "case": "symlink-directory",
+      "expectedFailure": true,
+      "exitCode": 1,
+      "diagnostic": "Missing expected rejection."
+    },
+    {
+      "case": "hardlink-referent",
+      "expectedFailure": true,
+      "exitCode": 1,
+      "diagnostic": "Expected values to be strictly equal:\n+ actual - expected\n\n+ 'owned bytes'\n- 'unrelated bytes'"
+    }
+  ]
+}
