@@ -166,7 +166,7 @@ public final class ConversationClient: NSObject {
         self.records[id]?.ended = .init(at: now, reason: .local)
         if let incoming = self.incomingIntake.projection(id) {
           if let conversation = self.manager.conversations.first(where: { $0.uuid == id }) {
-            self.incomingLocalEndClaims[id] = IncomingLocalEndClaim(generation: incoming.generation, object: conversation)
+            _ = self.claimIncomingLocalEnd(id, generation: incoming.generation, object: conversation)
           }
           self.incomingIntake.terminate(id, generation: incoming.generation, reason: .local,
             now: now, requiresReport: false)
@@ -301,7 +301,24 @@ public final class ConversationClient: NSObject {
     let generation: UUID
     weak var object: Conversation?
   }
-  private var incomingLocalEndClaims: [UUID: IncomingLocalEndClaim] = [:]
+  private var incomingLocalEndClaims: [UUID: [IncomingLocalEndClaim]] = [:]
+  private func hasIncomingLocalEndClaim(_ id: UUID, generation: UUID, object: Conversation) -> Bool {
+    incomingLocalEndClaims[id, default: []].contains { $0.generation == generation && $0.object === object }
+  }
+  @discardableResult
+  private func claimIncomingLocalEnd(_ id: UUID, generation: UUID, object: Conversation) -> Bool {
+    guard !hasIncomingLocalEndClaim(id, generation: generation, object: object) else { return false }
+    incomingLocalEndClaims[id, default: []].append(IncomingLocalEndClaim(generation: generation, object: object))
+    return true
+  }
+  private func pruneIncomingLocalEndClaims() {
+    for (id, claims) in incomingLocalEndClaims {
+      let generation = incomingIntake.projection(id)?.generation
+      let live = claims.filter { $0.generation == generation && $0.object != nil }
+      if live.isEmpty { incomingLocalEndClaims.removeValue(forKey: id) }
+      else { incomingLocalEndClaims[id] = live }
+    }
+  }
   public func metadata(for id: UUID) -> [String: JSONValue]? {
     if let incoming = incomingIntake.projection(id) { return incoming.payload.metadata }
     return records[id]?.payload?.metadata ?? outgoingMetadata[id]
@@ -498,6 +515,7 @@ public final class ConversationClient: NSObject {
   }
   private func refresh() {
     guard refreshSuspensionDepth == 0 else { return }
+    pruneIncomingLocalEndClaims()
     let current = manager.conversations
     let projectedObjects = terminalProjection.project(current: Dictionary(uniqueKeysWithValues: current.map { ($0.uuid, $0) }))
     let ids = Set(projectedObjects.keys)
@@ -512,25 +530,27 @@ public final class ConversationClient: NSObject {
         records[conversation.uuid] = placeholder
       }
       records[conversation.uuid]?.seenInManager = true
-      if let incoming {
-        if conversation.state != .left,
-           let terminal = incomingIntake.takePendingTermination(conversation.uuid, generation: incoming.generation) {
-          if let reason = endedReason(terminal.ended.reason) {
-            manager.reportConversationEvent(.conversationEnded(terminal.ended.at, reason), for: conversation)
-          } else {
-            let claimed = incomingLocalEndClaims[conversation.uuid]
-            guard claimed?.generation != incoming.generation || claimed?.object !== conversation else { continue }
-            incomingLocalEndClaims[conversation.uuid] = IncomingLocalEndClaim(generation: incoming.generation,
-              object: conversation)
-            Task { @MainActor [weak self] in
-              guard let self, let latest = self.incomingIntake.projection(conversation.uuid),
-                    latest.generation == incoming.generation, latest.terminal?.revision == terminal.revision,
-                    self.manager.conversations.first(where: { $0.uuid == conversation.uuid }) === conversation,
-                    conversation.state != .left else { return }
-              do { try await self.perform(.end(conversation.uuid)) }
-              catch { NSLog("VoIPSDK: retained local termination request failed.") }
-            }
+      if let incoming, conversation.state != .left {
+        let pending = incomingIntake.takePendingTermination(conversation.uuid, generation: incoming.generation)
+        if let terminal = pending ?? incoming.terminal, terminal.ended.reason == .local {
+          // Canonical local termination applies to each observed platform object,
+          // including replacements published after an earlier task was skipped.
+          guard !hasIncomingLocalEndClaim(conversation.uuid, generation: incoming.generation,
+            object: conversation) else { continue }
+          Task { @MainActor [weak self] in
+            guard let self, let latest = self.incomingIntake.projection(conversation.uuid),
+                  latest.generation == incoming.generation, latest.terminal?.revision == terminal.revision,
+                  self.manager.conversations.first(where: { $0.uuid == conversation.uuid }) === conversation,
+                  conversation.state != .left else { return }
+            // Scheduling alone consumes no object. Mark immediately before the
+            // actual request, then retain the claim on either acceptance or error.
+            guard self.claimIncomingLocalEnd(conversation.uuid, generation: incoming.generation,
+              object: conversation) else { return }
+            do { try await self.perform(.end(conversation.uuid)) }
+            catch { NSLog("VoIPSDK: retained local termination request failed.") }
           }
+        } else if let pending, let reason = endedReason(pending.ended.reason) {
+          manager.reportConversationEvent(.conversationEnded(pending.ended.at, reason), for: conversation)
         }
       }
     }
@@ -579,7 +599,6 @@ public final class ConversationClient: NSObject {
     refreshSuspensionDepth -= 1
     guard terminalProjection.object(for: id) == nil else { return }
     records.removeValue(forKey: id); outgoingMetadata.removeValue(forKey: id)
-    incomingLocalEndClaims.removeValue(forKey: id)
     incomingIntake.removeConversation(id)
   }
   private func publishTerminal(_ conversation: Conversation) {
