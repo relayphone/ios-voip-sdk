@@ -73,3 +73,18 @@ The [parent-integration receipt](../verification/2026-10-22-sdk-process-owner-co
 records passing TypeScript checks, the actual Swift relay and core ownership
 controls. Both bounded integration review axes cleared. No heavy compilation or
 native execution was repeated. Publication and hosted acceptance remain pending.
+
+## Mandatory cache-control compatibility
+
+The first published head `ee61cbd` retained an A1 cache fixture's old shared
+getter. A local host run reproduced the missing-member compile failure while
+its original hosted SDK run was still queued. The two-file repair acquires
+through the actual internal factory and one-shot setup, and compiles/links the
+real Swift and Foundation Objective-C process claim. The platform facade and
+all existing cache assertions/modes are unchanged.
+
+The [repair receipt](../verification/2026-10-22-sdk-process-owner-core/cache-compatibility.json)
+preserves that local red and the original hosted state separately. All three
+mandatory whole-client cache modes and the mandatory incoming-delivery host
+control pass; both independent review axes cleared the repair. This is host
+evidence with modeled LCK timing, not a native or device acceptance result.
