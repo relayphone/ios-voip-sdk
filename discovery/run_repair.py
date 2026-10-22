@@ -105,6 +105,8 @@ def main():
         return result
 
     def sim(label, *argv, **kwargs):
+        if len(argv) >= 3 and argv[0] == 'spawn' and argv[2] == 'launchctl':
+            kwargs['env'] = {**os.environ, 'SIMCTL_CHILD_DYLD_INSERT_LIBRARIES': ''}
         return command(label, ["xcrun", "simctl", *argv], **kwargs)
 
     def expect(name, condition):
@@ -117,13 +119,10 @@ def main():
     def snapshot(label):
         values = {}
         for key in KEYS:
-            result = sim(label+"-"+key.lower(), "getenv", simulator, key, sensitive=True)
-            if result.stderr.strip() == "'%s' not found" % key:
-                values[key] = None
-            elif result.stderr:
+            result = sim(label+"-"+key.lower(), 'spawn', simulator, 'launchctl', 'getenv', key, sensitive=True)
+            if result.stderr:
                 raise RuntimeError("Environment read diagnostic for " + key)
-            else:
-                values[key] = result.stdout.removesuffix("\n")
+            values[key] = None if not result.stdout else result.stdout.removesuffix("\n")
         receipt.setdefault('environmentSHA256', {})[label] = hashes(values)
         return values
 

@@ -2,12 +2,32 @@
 """Offline controls for repair evidence; inherited injector paths stay private."""
 import hashlib
 import json
+import ast
+from pathlib import Path
+from types import SimpleNamespace
 import unittest
 
 import run_repair
 
 
 class RepairDiagnosticsChecks(unittest.TestCase):
+    def test_cli_journey_rejects_success_status_environment_read_diagnostics(self):
+        # The journey has launch side effects at module scope. Compile its real
+        # public reader alone and replace only the external process boundary.
+        path = Path(__file__).with_name('cli_conformance.py')
+        tree = ast.parse(path.read_text())
+        reader = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'managed_environment')
+        for status, stderr in [(0, ''), (0, 'launchctl read diagnostic\n'), (7, '')]:
+            with self.subTest(status=status, stderr=stderr):
+                process = SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=status, stdout='', stderr=stderr))
+                namespace = dict(subprocess=process, os=SimpleNamespace(environ={}), device='owned-fixture')
+                exec(compile(ast.Module(body=[reader], type_ignores=[]), str(path), 'exec'), namespace)
+                if status or stderr:
+                    with self.assertRaisesRegex(AssertionError, 'cannot inspect managed environment'):
+                        namespace['managed_environment']()
+                else:
+                    self.assertEqual(set(namespace['managed_environment']()), set(run_repair.KEYS))
+
     def test_missing_loader_is_identifiable_without_inherited_paths(self):
         inherited = '/private/customer-sensitive/Argent.dylib'
         before, loader = '/fixture/before.dylib', '/fixture/CKSimLoader.dylib'
