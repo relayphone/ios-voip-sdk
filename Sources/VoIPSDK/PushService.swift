@@ -54,11 +54,18 @@ import VoIPPlatform
 @MainActor
 public final class PushService: NSObject, PushReceiver {
   private let client: ConversationClient
+  private nonisolated let intake: IncomingIntake
+  private nonisolated let transport: IncomingReportTransport
   private let tokens = PushTokenStore()
   private var owner: PushRegistryOwner?
   public var tokenState: PushTokenState { tokens.state }
   public var isStarted: Bool { owner?.isStarted ?? false }
-  init(client: ConversationClient) { self.client = client; super.init() }
+  init(client: ConversationClient) {
+    self.client = client
+    intake = client.incomingIntake
+    transport = client.incomingTransport
+    super.init()
+  }
 
   public func start() throws {
     let owner = try PushRegistryOwner.shared(receiver: self)
@@ -80,43 +87,62 @@ public final class PushService: NSObject, PushReceiver {
     return client.receiveCallEnded(ended)
   }
 
-  /// Decode on PushKit's serial queue. The owner waits there, never on main,
-  /// until this delivery's actual report settles or its bounded wait expires.
+  /// Reserve canonical metadata on PushKit's serial queue, before creating a
+  /// Task. Reporting and native completion never depend on the SDK actor.
   public nonisolated func receiveVoIPPush(_ payload: [AnyHashable: Any], mustReport: Bool,
                                          delivery: PushDelivery) {
     #if os(iOS) && targetEnvironment(simulator)
     let pushIdentifier = SimulatorSupport.currentPushIdentifier
     #endif
     let plan = IncomingPushPolicy.plan(PushWire.parse(payload), mustReport: mustReport)
-    if case .skip = plan { delivery.finish(); return }
-    // Only Sendable decision values cross executors. A new UUID registers its
-    // metadata and calls LCK in this one Task; it has no serializer Task hop.
+    let reservation: IncomingIntake.Reservation
+    do {
+      switch plan {
+      case .incoming(let incoming):
+        reservation = try intake.reserve(incoming, source: .pushKit)
+      case .fallback(let incoming, let ended):
+        if let ended, intake.terminate(ended) { scheduleProjection() }
+        reservation = try intake.reserve(incoming, source: .pushKit)
+        intake.terminate(reservation.id, generation: reservation.generation, reason: .failed)
+      case .callEnded(let ended):
+        intake.terminate(ended)
+        delivery.finish()
+        scheduleProjection()
+        return
+      case .skip: delivery.finish(); return
+      }
+    } catch {
+      NSLog("VoIPSDK: incoming push metadata reservation failed.")
+      delivery.finish()
+      return
+    }
+    guard case .report(let attempt) = reservation.disposition else {
+      NSLog("VoIPSDK: required incoming report attempt was not reserved.")
+      delivery.finish()
+      return
+    }
+    let intake = intake, transport = transport
     Task.detached(priority: .userInitiated) {
-      defer { delivery.finish() }
       #if os(iOS) && targetEnvironment(simulator)
-      await SimulatorPushContext.$pushIdentifier.withValue(pushIdentifier) {
-        await self.report(plan)
+      let outcome = await SimulatorPushContext.$pushIdentifier.withValue(pushIdentifier) {
+        await transport.report(reservation)
       }
       #else
-      await self.report(plan)
+      let outcome = await transport.report(reservation)
       #endif
+      intake.complete(attempt, outcome: outcome)
+      // The actual report has settled and shared metadata is committed. A
+      // duplicate's public result may still await another real report; native
+      // PushKit completion never waits for that normalization or for projection.
+      delivery.finish()
+      if case .failed = outcome { NSLog("VoIPSDK: incoming push reporting failed.") }
+      self.scheduleProjection()
     }
   }
 
-  private func report(_ plan: IncomingPushPlan) async {
-    switch plan {
-    case .incoming(let incoming):
-      do { _ = try await client.reportIncomingConversation(incoming, source: .pushKit) }
-      catch { NSLog("VoIPSDK: incoming push reporting failed.") }
-    case .fallback(let incoming, let ended):
-      if let ended { client.receiveCallEnded(ended) }
-      do {
-        let id = try await client.reportIncomingConversation(incoming, source: .pushKit)
-        try await client.reportConversation(id, report: .ended(.failed))
-      } catch { NSLog("VoIPSDK: required fallback push reporting failed.") }
-    case .callEnded(let ended): client.receiveCallEnded(ended)
-    case .skip: break
-    }
+  private nonisolated func scheduleProjection() {
+    Task { @MainActor [weak self] in self?.client.incomingIntakeDidChange() }
   }
+
 }
 #endif

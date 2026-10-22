@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Two Debug native contracts; synthetic controls do not qualify native behavior."""
+"""Debug native contracts; synthetic controls do not qualify native behavior."""
 import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import subprocess
+import uuid
 
 from device_oracles import check_deadline, deadline_bands
 from sdk_m0_conformance import bound_rows, digest
@@ -12,7 +14,7 @@ from summarize import EvidenceError, load, one, require
 
 ROOT = Path(__file__).resolve().parent.parent
 BUNDLE = 'dev.iosvoipsdk.m1contracts'
-CASES = ('guard', 'unhandled-accept')
+CASES = ('guard', 'unhandled-accept', 'duplicate-wrapper')
 OWN_FILES = ('discovery/probe/sdk_m1_contracts.swift', 'discovery/build_sdk_m1_contracts.sh',
              'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
              'discovery/probe/Info.plist', 'discovery/run_scenario.py', 'discovery/sdk_m0_conformance.py',
@@ -69,6 +71,118 @@ def guard_contract(rows, engine):
         identities.append(end['identity'])
     require(len(set(identities)) == 3 and identities[1] == created[1]['provider'], 'foreign provider identity differs')
     return dict(success=True, warnings=2, providers=3)
+
+
+def duplicate_contract(rows, engine):
+    """Public duplicate result through genuine LCK, not NSError-depth inspection.
+
+    `.pushKit` is a public API source argument here, not a real push delivery.
+    The runtime supplies CX service behavior; the LCK framework is unchanged.
+    """
+    owner = one(rows, 'contract.owner')
+    require(type(owner.get('warnings')) is int and owner['warnings'] == 0 and
+            isinstance(owner.get('identity'), str) and owner['identity'] and
+            owner['identity'] == owner.get('sharedIdentity') and owner.get('entryPoint') == 'VoIPApplication.start',
+            'duplicate public application owner differs')
+    require(not any(r['event'] in ('contract.warning', 'contract.duplicateUnexpectedAction') for r in rows),
+            'duplicate contract received an unexpected owner/action')
+    requests = [r for r in rows if r['event'] == 'contract.duplicateReportRequested']
+    results = [r for r in rows if r['event'] == 'contract.duplicateReportResult']
+    require(len(requests) == len(results) == 2, 'duplicate requires two public report attempts/results')
+    call = results[0].get('conversationID')
+    require(isinstance(call, str) and str(uuid.UUID(call)).upper() == call, 'invalid duplicate conversation UUID')
+    payload_hash = requests[0].get('payloadSHA256')
+    require(isinstance(payload_hash, str) and re.fullmatch('[0-9a-f]{64}', payload_hash), 'invalid duplicate payload digest')
+    previous = rows.index(owner)
+    markers = [r for r in engine if r['event'] == 'contract.duplicateReportBoundary']
+    incoming = [r for r in engine if r['event'] == 'report.incoming']
+    completed = [r for r in engine if r['event'] == 'report.completed']
+    require(len(markers) == 4 and len(incoming) == len(completed) == 2,
+            'duplicate must enter and complete two native reports')
+    for index, tag in enumerate(('foreground', 'pushKit')):
+        ordinal = index + 1
+        request, result = requests[index], results[index]
+        for row in (request, result):
+            require(type(row.get('ordinal')) is int and row['ordinal'] == ordinal and
+                    row.get('source') == tag and row.get('payloadSHA256') == payload_hash,
+                    'duplicate public payload/source/order differs')
+        require(result.get('accepted') is True and result.get('conversationID') == call and
+                result.get('conversations') == [dict(id=call, status='ringing', hasConnectedAt=False, hasPending=False)] and
+                result['conversations'][0].get('hasConnectedAt') is False and
+                result['conversations'][0].get('hasPending') is False,
+                'duplicate result must preserve one unconnected ringing conversation')
+        require(previous < rows.index(request) < rows.index(result), 'duplicate public awaits overlap or reorder')
+        previous = rows.index(result)
+        before, after = markers[index * 2:index * 2 + 2]
+        for marker, stage in ((before, 'requested'), (after, 'returned')):
+            require(type(marker.get('ordinal')) is int and marker['ordinal'] == ordinal and
+                    marker.get('stage') == stage and marker.get('source') == tag and
+                    marker.get('payloadSHA256') == payload_hash, 'unbound duplicate native marker')
+        require(after.get('callUUID') == call and incoming[index].get('callUUID') == call and
+                completed[index].get('callUUID') == call and type(completed[index].get('error')) is int and
+                completed[index]['error'] == (0, 2)[index], 'native duplicate completion identity/error differs')
+        require(engine.index(before) < engine.index(incoming[index]) < engine.index(completed[index]) < engine.index(after),
+                'native report escaped its awaited public call')
+    require(engine.index(markers[1]) < engine.index(markers[2]), 'native duplicate calls overlap')
+    end_request = one(rows, 'contract.duplicateEndRequested')
+    handler = one(rows, 'contract.duplicateEndHandler')
+    end_result = one(rows, 'contract.duplicateEndCommandResult')
+    observation = one(rows, 'contract.duplicateObservation')
+    require(all(r.get('conversationID') == call for r in (end_request, handler, end_result, observation)) and
+            handler.get('origin') == 'app' and isinstance(handler.get('actionID'), str) and
+            str(uuid.UUID(handler['actionID'])).upper() == handler['actionID'] and
+            end_result.get('accepted') is True and observation.get('empty') is True and
+            previous < rows.index(end_request) < rows.index(handler) < rows.index(observation) and
+            rows.index(end_request) < rows.index(end_result) < rows.index(observation),
+            'duplicate cleanup lacks public end request/handler/command result')
+    snapshots = [r for r in rows if r['event'] == 'contract.duplicateSnapshot']
+    require(snapshots and all(type(r.get('revision')) is int for r in snapshots) and
+            all(a['revision'] < b['revision'] for a, b in zip(snapshots, snapshots[1:])), 'invalid duplicate snapshot revisions')
+    pending = []
+    for snapshot in snapshots:
+        calls = snapshot.get('conversations')
+        require(isinstance(calls, list) and len(calls) <= 1, 'duplicate projected another conversation')
+        for value in calls:
+            require(value.get('id') == call and value.get('status') in ('ringing', 'ending', 'ended') and
+                    value.get('hasConnectedAt') is False, 'duplicate projection identity/state differs')
+            if 'pending' in value:
+                require(value['pending'] == dict(id=handler['actionID'], kind='end', origin='app') and
+                        rows.index(end_request) < rows.index(snapshot) < rows.index(handler),
+                        'duplicate pending action is not the observed public end')
+                pending.append(snapshot)
+    require(pending and snapshots[-1]['conversations'] == [] and
+            rows.index(end_request) < rows.index(snapshots[-1]) < rows.index(observation),
+            'duplicate cleanup lacks pending/empty SDK projections')
+    created = [r for r in engine if r['event'] == 'provider.created']
+    classifications = [r for r in engine if r['event'] == 'provider.apiKind' and r.get('delegatePresent') is True]
+    require(len(created) == 1 and isinstance(created[0].get('provider'), str) and created[0]['provider'] and classifications and
+            all(r.get('provider') == created[0].get('provider') and r.get('apiKind') == 'livecommunicationkit'
+                for r in classifications), 'duplicate did not use one genuine LCK provider')
+    boundaries = [r for r in engine if r['event'] == 'contract.duplicateEndBoundary']
+    delivered = [r for r in engine if r['event'] == 'transaction.delivered']
+    settled = [r for r in engine if r['event'] == 'action.settled']
+    require(len(boundaries) == 3 and [r.get('stage') for r in boundaries] ==
+            ['requested', 'command-returned', 'observed-complete'] and
+            all(r.get('callUUID') == call for r in boundaries) and boundaries[-1].get('empty') is True,
+            'unbound duplicate native end request/completion observation')
+    require(len(delivered) == len(settled) == 1 and delivered[0].get('kinds') == ['CXEndCallAction'] and
+            delivered[0].get('origin') == 'application' and delivered[0].get('provider') == created[0].get('provider') and
+            isinstance(settled[0].get('actionID'), str) and settled[0]['actionID'] and
+            delivered[0].get('actionIDs') == [settled[0]['actionID']] and settled[0].get('fulfilled') is True,
+            'duplicate native cleanup was not one fulfilled app End action')
+    states = [r for r in engine if r['event'] == 'call.changed']
+    require(len(states) == 2 and all(r.get('uuid') == call and r.get('outgoing') is False and r.get('connected') is False for r in states) and
+            states[0].get('ended') is False and states[-1].get('ended') is True and
+            engine.index(incoming[0]) < engine.index(states[0]) < engine.index(completed[0]) and
+            engine.index(markers[-1]) < engine.index(boundaries[0]) < engine.index(delivered[0]) <
+            engine.index(settled[0]) < engine.index(states[-1]) < engine.index(boundaries[-1]),
+            'duplicate native call did not end before its explicit completion observation')
+    require(not any(r['event'] in ('action.timeout', 'provider.reset', 'report.ended') for r in engine),
+            'duplicate cleanup timed out/reset or used a report-ended shortcut')
+    return dict(success=True, nativeReportCompletionErrors=[0, 2], publicResultsSameUUID=True,
+                liveConversations=1, cleanup='public app End action',
+                classification='genuine LCK public-result compatibility on the simulator runtime',
+                limits='Public source tag only; no PushKit delegate, NSError nesting-depth or physical-device claim.')
 
 
 def accept_contract(rows, engine, source_root):
@@ -221,7 +335,9 @@ def validate(build, capture, source_root=ROOT, parent_manifest=None):
                 all(r.get('runID') == manifest['runID'] and r.get('pid') == receipt['appPID'] and
                     r.get('bundleID') == BUNDLE and r.get('profile') == 'ios-27.0' for r in engine), 'mixed runtime journal')
         require(one(engine, 'runtime.installed').get('version') == (source_root / 'VERSION').read_text().strip(), 'runtime version differs')
-        results[case] = guard_contract(rows, engine) if case == 'guard' else accept_contract(rows, engine, source_root)
+        if case == 'guard': results[case] = guard_contract(rows, engine)
+        elif case == 'duplicate-wrapper': results[case] = duplicate_contract(rows, engine)
+        else: results[case] = accept_contract(rows, engine, source_root)
         require(one(rows, 'contract.result').get('success') is True and not any(r['event'] == 'contract.error' for r in rows), 'native contract reported failure')
     return dict(success=True, classification='measured native contracts', cases=results,
                 simulatorOS=execution_os, source=identity, buildInfoSHA256=digest(build / 'build-info.json'))

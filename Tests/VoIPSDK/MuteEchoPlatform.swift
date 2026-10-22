@@ -43,8 +43,8 @@ enum SystemAudioLifecycleEvent: Sendable {
 }
 
 // Test-only LCK boundary. The production client and handler remain unchanged.
-public struct Handle: Hashable {
-  public enum Kind { case generic, phoneNumber, emailAddress }
+public struct Handle: Hashable, Sendable {
+  public enum Kind: Sendable { case generic, phoneNumber, emailAddress }
   public let type: Kind
   public let value: String
   public let displayName: String?
@@ -62,7 +62,7 @@ public struct Handle: Hashable {
     public static let playingTones = Self(rawValue: 4), video = Self(rawValue: 8)
     public static let unmerging = Self(rawValue: 16)
   }
-  public struct Update { public let members: Set<Handle>; public let capabilities: Capabilities }
+  public struct Update: Sendable { public let members: Set<Handle>; public let capabilities: Capabilities }
   public enum EndedReason: Equatable { case remoteEnded, failed, unanswered, joinedElsewhere, declinedElsewhere }
   public enum Event {
     case conversationStartedConnecting(Date), conversationConnected(Date)
@@ -132,6 +132,26 @@ public protocol ConversationManagerDelegate: AnyObject {
   func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession)
   func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession)
 }
+// Only this modeled incoming edge can run outside MainActor. Record entry and
+// settle its errors under a lock; mock conversation publication then returns to
+// the actor protecting the rest of this facade. These controls do not measure
+// genuine LCK scheduling or the separate blocked-main PushKit acceptance.
+private final class HostIncomingReports: @unchecked Sendable {
+  struct State {
+    var errors: [any Error] = []
+    var reported: [UUID] = []
+    var paused = false
+    var work: CheckedContinuation<Void, Never>?
+  }
+  private let lock = NSLock()
+  private var state = State()
+  func withState<Value>(_ operation: (inout State) -> Value) -> Value {
+    lock.lock()
+    defer { lock.unlock() }
+    return operation(&state)
+  }
+}
+
 @Observable @MainActor public final class ConversationManager {
   public struct Configuration {
     public init(ringtoneName: String?, iconTemplateImageData: Data?, maximumConversationGroups: Int,
@@ -144,10 +164,20 @@ public protocol ConversationManagerDelegate: AnyObject {
   var nextTimeout: TimeInterval?
   var appActions: [ConversationAction] = []
   var reports: [(UUID, Conversation.Event)] = []
-  var incomingErrors: [any Error] = []
-  var reportedIncoming: [UUID] = []
-  var pauseIncoming = false
-  var incomingWork: CheckedContinuation<Void, Never>?
+  @ObservationIgnored nonisolated private let incoming = HostIncomingReports()
+  var incomingErrors: [any Error] {
+    get { incoming.withState { $0.errors } }
+    set { incoming.withState { $0.errors = newValue } }
+  }
+  var reportedIncoming: [UUID] { incoming.withState { $0.reported } }
+  var pauseIncoming: Bool {
+    get { incoming.withState { $0.paused } }
+    set { incoming.withState { $0.paused = newValue } }
+  }
+  var incomingWork: CheckedContinuation<Void, Never>? {
+    get { incoming.withState { $0.work } }
+    set { incoming.withState { $0.work = newValue } }
+  }
   public init(configuration: Configuration) { Self.latest = self }
   public func perform(_ actions: [ConversationAction]) async throws {
     precondition(actions.count == 1)
@@ -170,12 +200,19 @@ public protocol ConversationManagerDelegate: AnyObject {
     action.running()
     delegate?.conversationManager(self, perform: action)
   }
-  public func reportNewIncomingConversation(uuid: UUID, update: Conversation.Update) async throws {
-    reportedIncoming.append(uuid)
-    if pauseIncoming {
-      await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in incomingWork = continuation }
+  public nonisolated func reportNewIncomingConversation(uuid: UUID, update: Conversation.Update) async throws {
+    let paused = incoming.withState { state in
+      state.reported.append(uuid)
+      return state.paused
     }
-    if !incomingErrors.isEmpty { throw incomingErrors.removeFirst() }
+    if paused {
+      await withCheckedContinuation { continuation in incoming.withState { $0.work = continuation } }
+    }
+    let error = incoming.withState { $0.errors.isEmpty ? nil : $0.errors.removeFirst() }
+    if let error { throw error }
+    await publishIncoming(uuid)
+  }
+  private func publishIncoming(_ uuid: UUID) {
     conversations.append(Conversation(uuid, state: .idle))
   }
   public func reportConversationEvent(_ event: Conversation.Event, for conversation: Conversation) {
