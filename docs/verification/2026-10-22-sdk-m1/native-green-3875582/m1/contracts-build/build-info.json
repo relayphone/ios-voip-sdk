@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "product": "sdk-m1-contracts",
+  "configuration": "Debug",
+  "target": "arm64-apple-ios17.4-simulator",
+  "sourceCommit": "387558275bdd1ff43185a567be646999f69afa69",
+  "sourceInputsSHA256": "27d53d76352cf613e0b602d2239e3f1381aa029bb5d88ded2f1c2bac134c7dfb",
+  "sourceDirty": false,
+  "files": {
+    "SDKM1Contracts.app/SDKM1Contracts": "c436e720931cf65dc31d7b381d39e4c0ffceac92d5edda4dab58334e772199a0",
+    "SDKM1Contracts.app/Info.plist": "e902cc53b592592eefa7ef4c82a0e380392da2b740135781f3202ccda51a5361",
+    "SDKM1Contracts.app/IosVoipSDKRuntime.bundle/ios-27.0.json": "a5c2931c42886773ab3070b521e46dfb9dcbacf6761e8759139ed9d5c59d5d4d",
+    "SDKM1Contracts.app/IosVoipSDKRuntime.bundle/Info.plist": "b4d52370c8de89c8cc41fefb2ca22fc3d9dce9124d608dbe35f4574704e704a0",
+    "build.log": "5e65abc4d57593506e41ac45652f84265665d54e16258ce4bf085784d3f0f24a",
+    "source-before.json": "3067e08ca7872b52a2b19c8c462663b337e389bc48104de428a542e7fbdd539d",
+    "source-after.json": "3067e08ca7872b52a2b19c8c462663b337e389bc48104de428a542e7fbdd539d"
+  },
+  "xcodeVersion": "Xcode 27.1\nBuild version 27A9275",
+  "sdkVersion": "27.1"
+}

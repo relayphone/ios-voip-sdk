@@ -1,0 +1,357 @@
+{
+  "schemaVersion": 1,
+  "measuredAtUTC": "2026-10-22T03:09:58.267688+00:00",
+  "baseCommit": "20c44f07a78ddf0748779dd5f289165f5e778f9e",
+  "scope": "host controls, module/Objective-C source compilation, symbol exclusion; no native app/simulator/device run",
+  "sourceFiles": {
+    "Sources/Engine/RuntimeEngine.swift": "28e29088a617dc834bfbe3e09652e4ebcd07943f84ba3bb2cf0c97e99f98a720",
+    "Sources/Interposition/CKInterposition.m": "8aa3433a646790a24576edc1f65fd84c4b062733ec30136629f699c19a7ab999",
+    "Sources/Interposition/CKRuntimeSeam.h": "a04c01b57c6993216717c93bbda3b771e5d932602c04369a3e12726d4f953cc0",
+    "Sources/VoIPPlatform/VSProviderCreationMonitor.m": "59a4614bb8325ed6d5573546bae3bebd959e11914fdac4763b57bb5c1d5984bc",
+    "Sources/VoIPPlatform/VSProviderMonitorInternal.h": "e360be44ea0657e62153f39ca4be0ed78b4369d086d299242a1fd3cb88c6ffc5",
+    "Sources/VoIPPlatform/VSProviderMonitorInternal.m": "0c9a9dcfe37777460272a9fdaa34e9d96e571b8bdc31cde6a44343d2d08b3658",
+    "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h": "9bb26a4584e0c0dafb4d7cfc6969e194c1f5ad3066e81300abd8ed8a76f954ee",
+    "Sources/VoIPSDK/SimulatorSupport.swift": "adf83443fee4f0233325bbe84fd98816d82f8450fdc1893c4623e54986768149",
+    "discovery/check_platform_shims.py": "350fbf617036efee8bce80b71d677e6ba7266f74fe31d6cdf9b09c67a5ca99de"
+  },
+  "results": {
+    "debug-combined-simulator": {
+      "argv": [
+        "xcrun",
+        "swiftc",
+        "-swift-version",
+        "6",
+        "-parse-as-library",
+        "-emit-module",
+        "-module-cache-path",
+        "<compile-dir>/modules",
+        "-D",
+        "DEBUG",
+        "-module-name",
+        "VoIPSDK",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-sdk",
+        "<iphonesimulator-sdk>",
+        "-import-objc-header",
+        "<compile-dir>/Combined.h",
+        "Sources/Engine/RuntimeEngine.swift",
+        "Sources/VoIPSDK/ConversationClient.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationRecord.swift",
+        "Sources/VoIPSDK/IncomingInvitationGate.swift",
+        "Sources/VoIPSDK/PushService.swift",
+        "Sources/VoIPSDK/PushWire.swift",
+        "Sources/VoIPSDK/SimulatorSupport.swift",
+        "Sources/VoIPSDK/VoIPApplication.swift",
+        "-o",
+        "<compile-dir>/Simulator.swiftmodule"
+      ],
+      "exitCode": 0,
+      "log": "debug-combined-simulator.log",
+      "logSHA256": "5ec7b78be477616b2f50a28ce2ae872d7745b04fb395d1435500733c67c54c1b"
+    },
+    "debug-device": {
+      "argv": [
+        "xcrun",
+        "swiftc",
+        "-swift-version",
+        "6",
+        "-parse-as-library",
+        "-emit-module",
+        "-module-cache-path",
+        "<compile-dir>/modules",
+        "-D",
+        "DEBUG",
+        "-D",
+        "SWIFT_PACKAGE",
+        "-module-name",
+        "VoIPSDK",
+        "-target",
+        "arm64-apple-ios17.4",
+        "-sdk",
+        "<iphoneos-sdk>",
+        "-I",
+        "<compile-dir>",
+        "Sources/VoIPSDK/ConversationClient.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationRecord.swift",
+        "Sources/VoIPSDK/IncomingInvitationGate.swift",
+        "Sources/VoIPSDK/PushService.swift",
+        "Sources/VoIPSDK/PushWire.swift",
+        "Sources/VoIPSDK/SimulatorSupport.swift",
+        "Sources/VoIPSDK/VoIPApplication.swift",
+        "-o",
+        "<compile-dir>/Device.swiftmodule"
+      ],
+      "exitCode": 0,
+      "log": "debug-device.log",
+      "logSHA256": "5ec7b78be477616b2f50a28ce2ae872d7745b04fb395d1435500733c67c54c1b"
+    },
+    "release-bootstrap-module": {
+      "argv": [
+        "xcrun",
+        "swiftc",
+        "-swift-version",
+        "6",
+        "-parse-as-library",
+        "-emit-module",
+        "-module-cache-path",
+        "<compile-dir>/modules",
+        "-module-name",
+        "SDKBootstrap",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-sdk",
+        "<iphonesimulator-sdk>",
+        "-import-objc-header",
+        "Sources/Interposition/CKRuntimeSeam.h",
+        "Sources/Engine/RuntimeEngine.swift",
+        "Sources/VoIPSDK/SimulatorSupport.swift",
+        "discovery/probe/sdk_bootstrap.swift",
+        "-o",
+        "<compile-dir>/Bootstrap.swiftmodule"
+      ],
+      "exitCode": 0,
+      "log": "release-bootstrap-module.log",
+      "logSHA256": "9d6c3f855e02b7395dda4b60e930eb1c3033e2a5eaaae16053c0799a23328e93"
+    },
+    "debug-combined-objc": {
+      "argv": [
+        "xcrun",
+        "clang",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-isysroot",
+        "<iphonesimulator-sdk>",
+        "-fobjc-arc",
+        "-fblocks",
+        "-fmodules",
+        "-DDEBUG=1",
+        "-DCKSIM_SDK_SOURCE=1",
+        "-DCKSIM_RUNTIME_VERSION=\"0.1.0\"",
+        "-fsyntax-only",
+        "Sources/Interposition/CKInterposition.m",
+        "Sources/Interposition/CKPushDelivery.m",
+        "Sources/VoIPPlatform/VSCompletionOnce.m",
+        "Sources/VoIPPlatform/VSProviderCreationMonitor.m",
+        "Sources/VoIPPlatform/VSProviderMonitorInternal.m",
+        "Sources/VoIPPlatform/VSPushRegistryOwner.m"
+      ],
+      "exitCode": 0,
+      "log": "debug-combined-objc.log",
+      "logSHA256": "9d6c3f855e02b7395dda4b60e930eb1c3033e2a5eaaae16053c0799a23328e93"
+    },
+    "release-simulator-interposition-object": {
+      "argv": [
+        "xcrun",
+        "clang",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-isysroot",
+        "<iphonesimulator-sdk>",
+        "-fobjc-arc",
+        "-fblocks",
+        "-fmodules",
+        "-DDEBUG=0",
+        "-DCKSIM_SDK_SOURCE=1",
+        "-DCKSIM_RUNTIME_VERSION=\"0.1.0\"",
+        "-c",
+        "Sources/Interposition/CKInterposition.m",
+        "-o",
+        "<compile-dir>/release-simulator.o"
+      ],
+      "exitCode": 0,
+      "log": "release-simulator-interposition-object.log",
+      "logSHA256": "9d6c3f855e02b7395dda4b60e930eb1c3033e2a5eaaae16053c0799a23328e93"
+    },
+    "release-simulator-observer-symbols": {
+      "exitCode": 0,
+      "absent": [
+        "CKSimInstallProviderCreationObserver",
+        "sdkDebugProviderCreationObserver",
+        "observeSDKDebugProviderCreation"
+      ]
+    },
+    "debug-device-interposition-object": {
+      "argv": [
+        "xcrun",
+        "clang",
+        "-target",
+        "arm64-apple-ios17.4",
+        "-isysroot",
+        "<iphoneos-sdk>",
+        "-fobjc-arc",
+        "-fblocks",
+        "-fmodules",
+        "-DDEBUG=1",
+        "-DCKSIM_SDK_SOURCE=1",
+        "-DCKSIM_RUNTIME_VERSION=\"0.1.0\"",
+        "-c",
+        "Sources/Interposition/CKInterposition.m",
+        "-o",
+        "<compile-dir>/debug-device.o"
+      ],
+      "exitCode": 0,
+      "log": "debug-device-interposition-object.log",
+      "logSHA256": "9d6c3f855e02b7395dda4b60e930eb1c3033e2a5eaaae16053c0799a23328e93"
+    },
+    "debug-device-observer-symbols": {
+      "exitCode": 0,
+      "absent": [
+        "CKSimInstallProviderCreationObserver",
+        "sdkDebugProviderCreationObserver",
+        "observeSDKDebugProviderCreation"
+      ]
+    },
+    "debug-swiftpm-runtime": {
+      "argv": [
+        "xcrun",
+        "swiftc",
+        "-swift-version",
+        "6",
+        "-D",
+        "DEBUG",
+        "-D",
+        "SWIFT_PACKAGE",
+        "-parse-as-library",
+        "-emit-module",
+        "-module-cache-path",
+        "<compile-dir>/modules",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-sdk",
+        "<iphonesimulator-sdk>",
+        "-I",
+        "<compile-dir>",
+        "-module-name",
+        "CKSimRuntime",
+        "Sources/Engine/RuntimeEngine.swift",
+        "-o",
+        "<compile-dir>/CKSimRuntime.swiftmodule"
+      ],
+      "exitCode": 0,
+      "log": "debug-swiftpm-runtime.log",
+      "logSHA256": "9d6c3f855e02b7395dda4b60e930eb1c3033e2a5eaaae16053c0799a23328e93"
+    },
+    "debug-swiftpm-sdk": {
+      "argv": [
+        "xcrun",
+        "swiftc",
+        "-swift-version",
+        "6",
+        "-D",
+        "DEBUG",
+        "-D",
+        "SWIFT_PACKAGE",
+        "-parse-as-library",
+        "-emit-module",
+        "-module-cache-path",
+        "<compile-dir>/modules",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-sdk",
+        "<iphonesimulator-sdk>",
+        "-I",
+        "<compile-dir>",
+        "-module-name",
+        "VoIPSDK",
+        "Sources/VoIPSDK/ConversationClient.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationRecord.swift",
+        "Sources/VoIPSDK/IncomingInvitationGate.swift",
+        "Sources/VoIPSDK/PushService.swift",
+        "Sources/VoIPSDK/PushWire.swift",
+        "Sources/VoIPSDK/SimulatorSupport.swift",
+        "Sources/VoIPSDK/VoIPApplication.swift",
+        "-o",
+        "<compile-dir>/VoIPSDK.swiftmodule"
+      ],
+      "exitCode": 0,
+      "log": "debug-swiftpm-sdk.log",
+      "logSHA256": "5ec7b78be477616b2f50a28ce2ae872d7745b04fb395d1435500733c67c54c1b"
+    },
+    "platform-controls": {
+      "argv": [
+        "python3",
+        "discovery/check_platform_shims.py"
+      ],
+      "exitCode": 0,
+      "log": "platform-controls.log",
+      "logSHA256": "880a77b1ed9451108320b4b161ff89669bade240061fd39f7206b3e5332c0120"
+    },
+    "m0-controls": {
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m0.py"
+      ],
+      "exitCode": 0,
+      "log": "m0-controls.log",
+      "logSHA256": "e84a12f53ed6a293429b5bf4d4da06adae386c36c8a66f544b937c0ce1795739"
+    },
+    "m1-controls": {
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "log": "m1-controls.log",
+      "logSHA256": "61de67803e284d457b4daea1844e501bb8773143151dceb20cbe4cb9a2b6fea4"
+    },
+    "contract-controls": {
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "log": "contract-controls.log",
+      "logSHA256": "117fc4bdb296bd556625a81f37d10c4467b0be0b0c0d32ada08ebf919a64c424"
+    },
+    "core-controls": {
+      "argv": [
+        "bash",
+        "Tests/VoIPSDK/run.sh"
+      ],
+      "exitCode": 0,
+      "log": "core-controls.log",
+      "logSHA256": "8f2f46f9cbbdee0027b970b636ffce0a87558e537924d16bd4604a6ca2e852d8"
+    },
+    "push-controls": {
+      "argv": [
+        "bash",
+        "Tests/VoIPSDK/run_push.sh"
+      ],
+      "exitCode": 0,
+      "log": "push-controls.log",
+      "logSHA256": "14373b0b637343bec1149a022f1c809ed97ff3142da6a4c10eeeacfba49652a0"
+    },
+    "projection-controls": {
+      "argv": [
+        "bash",
+        "Tests/VoIPSDK/run_projection.sh"
+      ],
+      "exitCode": 0,
+      "log": "projection-controls.log",
+      "logSHA256": "3de153b0c0d70f110b6720b8cfd2cbada4f4e5dcbb403c869a7dfd5382b59130"
+    },
+    "push-context-controls": {
+      "argv": [
+        "python3",
+        "Tests/VoIPSDK/run_push_context.py"
+      ],
+      "exitCode": 0,
+      "log": "push-context-controls.log",
+      "logSHA256": "3d3df55d48f7bdc560c5bcab0bb34a36b82d43b782a7d34fd310165fa7274485"
+    }
+  },
+  "nativeRedIndexSHA256": "a23a904e1160660718d085b4f4d2a3b1157f4fae7100f3b3c476362943c66095",
+  "logNormalization": "Absolute repository, scratch and SDK paths replaced; trailing whitespace stripped; empty compiler output represented by an explicit exit-code note. No compiler diagnostic was removed.",
+  "reviews": {
+    "spec": "independent r1_acceptance; no actionable findings",
+    "standards": "independent m1_platform; no actionable findings"
+  },
+  "postFixNativeAcceptance": "pending root rerun"
+}

@@ -1,0 +1,14 @@
+test_assertions_hooks_and_privacy (__main__.Controls) ... ok
+test_base_build_bytes_and_receipts_remain_required (__main__.Controls) ... ok
+test_case_and_journal_inventory (__main__.Controls) ... ok
+test_cold_pending_and_deadline_policy (__main__.Controls) ... ok
+test_expected_expiry_rejection_and_cold_hydration (__main__.Controls) ... ok
+test_journal_identity_and_push_correlation (__main__.Controls) ... ok
+test_native_expiry_deadline_clock_binding (__main__.Controls) ... ok
+test_positive_all_cases (__main__.Controls) ... ok
+test_provider_ownership_and_settlements (__main__.Controls) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.515s
+
+OK

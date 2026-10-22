@@ -8,6 +8,9 @@ cd "$(dirname "$0")/.."
 : "${SDK_M0_SPM_DEVICE_DIR:?provide SwiftPM device DerivedData}"
 : "${SDK_M0_BUILD_RECEIPT:?provide the source-bound native build receipt}"
 : "${SDK_M0_BUILD_LOGS:?provide the nonempty native build logs directory}"
+if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
+  : "${SDK_M1_CONTRACT_BUILD:?provide the source-bound Debug M1 contract build}"
+fi
 if [[ -n "${OUT:-}" ]]; then mkdir "$OUT"; else OUT=$(mktemp -d "${TMPDIR:-/tmp}/sdk-m0.XXXXXX"); fi
 OUT=$(cd "$OUT" && pwd)
 UDID=""
@@ -33,7 +36,7 @@ redact_external_paths() {
 import hashlib,json,os,pathlib,sys
 root=pathlib.Path(sys.argv[1])
 paths=[p.encode() for p in os.environ['SDK_M0_EXTERNAL_DYLD'].split(':') if p]
-for log in root.glob('*.log'):
+for log in root.rglob('*.log'):
     original=log.read_bytes()
     data=original
     for path in paths: data=data.replace(path,b'<inherited-external-library>')
@@ -70,6 +73,10 @@ assert logs.is_dir() and any(path.is_file() and path.stat().st_size for path in 
 assert not any(key.startswith('SIMCTL_CHILD_CKSIM_') and value for key,value in os.environ.items()), \
     'Plain acceptance requires no inherited CKSIM child overrides'
 check_build_receipt(pathlib.Path(sys.argv[6]),*(pathlib.Path(p) for p in sys.argv[2:6]))
+if os.environ.get('SDK_M1_ACCEPTANCE') == '1':
+    from sdk_m1_contracts_conformance import validate_build
+    build=pathlib.Path(os.environ['SDK_M1_CONTRACT_BUILD'])
+    validate_build(build)
 pathlib.Path(sys.argv[1]).write_text(json.dumps(source_identity(),indent=2)+'\n')
 PY
 # Keep raw runtime inventories, which contain local SDK paths, out of evidence.
@@ -141,12 +148,14 @@ app,bootstrap=map(pathlib.Path,sys.argv[2:])
 pathlib.Path(sys.argv[1]).write_text(json.dumps(dict(example=digest(executable(app)),
     bootstrap=digest(executable(bootstrap)),javascript=digest(app/'main.jsbundle')),indent=2)+'\n')
 PY
+# Plain console preserved the synthetic rows that merged PTY corrupted; actual
+# SDK acceptance remains required (docs/verification/2026-10-22-sdk-m1/native-console-transport).
 env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_SDK_M0_ACCEPTANCE=1 \
   SIMCTL_CHILD_SDK_M0_RUN_ID="$RUN_ID" \
   python3 discovery/run_scenario.py --console-launcher-stop --timeout 120 --output "$OUT/sdk-m0.log" --receipt "$OUT/sdk-m0.receipt.json" \
   --run-id "$RUN_ID" --simulator-id "$UDID" --scenario sdk-m0 --bundle-id dev.iosvoipsdk.example \
   --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.example \
-  --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.iosvoipsdk.example
+  --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.iosvoipsdk.example
 for case in healthy profile push-after-install; do
   env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" \
     SIMCTL_CHILD_CKSIM_BOOTSTRAP_CASE="$case" \
@@ -155,6 +164,53 @@ for case in healthy profile push-after-install; do
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.sdkbootstrap \
     --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.sdkbootstrap
 done
+if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
+  mkdir "$OUT/m1"
+  for case in journey cold-launch unhandled-expiry; do
+    name="sdk-m1-$case"
+    budget=90
+    [[ "$case" != journey ]] || budget=120
+    env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
+      SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M0_RUN_ID="$RUN_ID" \
+      SIMCTL_CHILD_SDK_M1_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M1_CASE="$case" \
+      python3 discovery/run_scenario.py --console-launcher-stop --timeout "$budget" \
+      --output "$OUT/m1/$name.log" --receipt "$OUT/m1/$name.receipt.json" \
+      --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.iosvoipsdk.example \
+      --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.example \
+      --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.iosvoipsdk.example
+    container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.example data)
+    cp "$container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m1/$name.runtime.jsonl"
+    python3 - "$OUT/m1/$name.receipt.json" "$OUT/m1/$name.runtime.jsonl" <<'PY'
+import hashlib,json,pathlib,sys
+receipt,journal=map(pathlib.Path,sys.argv[1:])
+row=json.loads(receipt.read_text())
+row['journalSHA256']=hashlib.sha256(journal.read_bytes()).hexdigest()
+receipt.write_text(json.dumps(row,indent=2)+'\n')
+PY
+  done
+  mkdir "$OUT/m1/contracts"
+  cp -R "$SDK_M1_CONTRACT_BUILD" "$OUT/m1/contracts-build"
+  limit 180 xcrun simctl install "$UDID" "$OUT/m1/contracts-build/SDKM1Contracts.app" > "$OUT/m1/contracts-install.log" 2>&1
+  for case in guard unhandled-accept; do
+    name="sdk-m1-contract-$case"
+    env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
+      SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M1_CONTRACT_CASE="$case" \
+      python3 discovery/run_scenario.py --console-launcher-stop --timeout 90 \
+      --output "$OUT/m1/contracts/$name.log" --receipt "$OUT/m1/contracts/$name.receipt.json" \
+      --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.iosvoipsdk.m1contracts \
+      --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.m1contracts \
+      --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.iosvoipsdk.m1contracts
+    container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.m1contracts data)
+    cp "$container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m1/contracts/$name.runtime.jsonl"
+    python3 - "$OUT/m1/contracts/$name.receipt.json" "$OUT/m1/contracts/$name.runtime.jsonl" <<'PY'
+import hashlib,json,pathlib,sys
+receipt,journal=map(pathlib.Path,sys.argv[1:])
+row=json.loads(receipt.read_text())
+row['journalSHA256']=hashlib.sha256(journal.read_bytes()).hexdigest()
+receipt.write_text(json.dumps(row,indent=2)+'\n')
+PY
+  done
+fi
 cleanup_simulator
 redact_external_paths
 SDK_M0_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - "$OUT" "$SDK_M0_APP" "$SDK_M0_BOOTSTRAP_APP" \
@@ -165,3 +221,7 @@ from sdk_m0_conformance import record_manifest
 record_manifest(*(pathlib.Path(p) for p in sys.argv[1:7]),*sys.argv[7:],os.environ['SDK_M0_EXTERNAL_DYLD'])
 PY
 python3 discovery/sdk_m0_conformance.py "$OUT" | tee "$OUT/summary.json"
+if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
+  python3 discovery/sdk_m1_conformance.py "$OUT" | tee "$OUT/m1/summary.json"
+  python3 discovery/sdk_m1_contracts_conformance.py "$OUT/m1/contracts-build" "$OUT/m1/contracts" --parent-manifest "$OUT/manifest.json" | tee "$OUT/m1/contracts/summary.json"
+fi

@@ -1,174 +1,287 @@
 import AVFoundation
 import ExpoModulesCore
 import IosVoipSDK
-// LCK lacks concurrency annotations; keep this compatibility boundary in the example.
-@preconcurrency import LiveCommunicationKit
 
-/// Example-only instrumentation. It carries no push credentials or payloads.
+private enum JourneyConfiguration {
+  static let environment = ProcessInfo.processInfo.environment
+  static let runID = environment["SDK_M1_RUN_ID"] ?? environment["SDK_M0_RUN_ID"] ?? UUID().uuidString
+  static let m0 = environment["SDK_M0_ACCEPTANCE"] == "1"
+  static let m1Case = environment["SDK_M1_CASE"] ?? ""
+}
+
+/// Example-only instrumentation. Never records push tokens or arbitrary payloads.
 @MainActor
 private enum JourneyTrace {
   static let epoch = DispatchTime.now().uptimeNanoseconds
-  static let runID = ProcessInfo.processInfo.environment["SDK_M0_RUN_ID"] ?? UUID().uuidString
+  static let environment = JourneyConfiguration.environment
+  static let runID = JourneyConfiguration.runID
+  static let m0 = JourneyConfiguration.m0
+  static let m1Case = JourneyConfiguration.m1Case
   static var sequence = 0
 
-  static func record(_ event: String, _ fields: [String: Any] = [:]) {
+  static func record(_ event: String, _ fields: [String: Any] = [:], observedAt: Date = Date()) {
     let start = epoch
     sequence += 1
     var row = fields
     row.merge([
       "event": event, "sequence": sequence, "runID": runID,
       "pid": Int(getpid()), "bundleID": Bundle.main.bundleIdentifier ?? "unknown",
+      "simulatorID": environment["SIMULATOR_UDID"] ?? "device",
       "t_ms": (DispatchTime.now().uptimeNanoseconds - start) / 1_000_000,
+      "wallTimeMS": Int64(observedAt.timeIntervalSince1970 * 1000),
       "main": Thread.isMainThread
     ]) { _, value in value }
-    guard let bytes = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]),
-          let text = String(data: bytes, encoding: .utf8) else { return }
-    print("PROBE " + text)
-    fflush(nil)
+    guard let bytes = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) else { return }
+    ProbeTraceWriter.emit(bytes)
   }
+
+  private static let formatter: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter
+  }()
+  static func iso(_ date: Date) -> String { formatter.string(from: date) }
 }
 
 public final class VoIPExampleAppDelegateSubscriber: ExpoAppDelegateSubscriber {
   public func appDelegateWillBeginInitialization() {
     JourneyTrace.record("app.entry")
-    JourneyTrace.record("launch", [
-      "traceVersion": 2,
-      "simulatorID": ProcessInfo.processInfo.environment["SIMULATOR_UDID"] ?? "device",
-      "mode": "sdk-m0"
-    ])
+    JourneyTrace.record("launch", ["traceVersion": 2,
+      "mode": JourneyTrace.m0 ? "sdk-m0" : "sdk-m1", "case": JourneyTrace.m1Case])
+    if ["cold-launch", "unhandled-expiry"].contains(JourneyTrace.m1Case) {
+      ExampleJourney.shared.startColdLaunch()
+    }
   }
 }
 
 @MainActor
-private final class ExampleJourney: NSObject, @preconcurrency ConversationManagerDelegate {
+private final class ExampleJourney {
   static let shared = ExampleJourney()
-  private let manager: ConversationManager
-  private var incomingID: UUID?
+  private var client: ConversationClient?
+  private var stateObserver: UUID?
+  private var previousStates: [UUID: ConversationStatus] = [:]
+  private var coldTask: Task<[String: String], Error>?
+  private var coldJoinTask: Task<Void, Never>?
+  private var completed = false
 
-  private override init() {
+  private init() {}
+
+  private func bindClient() throws -> ConversationClient {
+    if let client { return client }
+    let application = try VoIPApplication.startFromBundle()
     let active = SimulatorSupport.activateIfNeeded()
     JourneyTrace.record("sdk.activation", ["active": active])
-    manager = ConversationManager(configuration: .init(
-      ringtoneName: nil, iconTemplateImageData: nil,
-      maximumConversationGroups: 1, maximumConversationsPerConversationGroup: 1,
-      includesConversationInRecents: false, supportsVideo: false,
-      supportedHandleTypes: [.phoneNumber]))
-    super.init()
-    manager.delegate = self
-    JourneyTrace.record("sdk.managerCreated")
+    let client = application.client
+    self.client = client
+    // Legacy M0 marker: bind the SDK-owned manager through its public client.
+    // No manager/provider is constructed by this example.
+    JourneyTrace.record("sdk.managerCreated", ["owner": "ConversationClient.shared"])
+    stateObserver = client.observeState { [weak self] update in self?.recordState(update) }
+    return client
   }
 
-  func ring() async throws -> String {
-    guard manager.conversations.isEmpty else { throw JourneyError.alreadyCalling }
-    let id = UUID()
-    try await manager.reportNewIncomingConversation(uuid: id, update: .init(
-      members: [Handle(type: .phoneNumber, value: "+15555550142", displayName: "SDK example")],
-      capabilities: [.pausing]))
-    incomingID = id
-    JourneyTrace.record("sdk.incomingReported", ["conversationID": id.uuidString])
-    return id.uuidString
-  }
-
-  func join() async throws {
-    guard let id = incomingID else { throw JourneyError.noIncomingConversation }
-    try await manager.perform([JoinConversationAction(conversationUUID: id)])
-    try await waitForState(.joined, id: id)
-    JourneyTrace.record("sdk.joined", ["conversationID": id.uuidString])
-  }
-
-  func end() async throws {
-    guard let id = incomingID else { return }
-    try await manager.perform([EndConversationAction(conversationUUID: id)])
-    let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-    while !manager.conversations.isEmpty {
-      guard ContinuousClock.now < deadline else { throw JourneyError.stateDeadline }
-      try await Task.sleep(for: .milliseconds(25))
+  private func recordState(_ update: ConversationStateUpdate) {
+    guard !completed else { return }
+    let snapshots = update.conversations.map { conversation -> [String: Any] in
+      var row: [String: Any] = ["id": conversation.id.uuidString,
+        "status": conversation.status.rawValue, "direction": conversation.direction.rawValue,
+        "isMuted": conversation.isMuted, "isVideo": conversation.isVideo,
+        "hasConnectedAt": conversation.connectedAt != nil]
+      if let pending = conversation.pending {
+        row["pending"] = ["id": pending.id.uuidString, "kind": pending.kind.rawValue,
+          "deadline": JourneyTrace.iso(pending.deadline), "origin": pending.origin.rawValue]
+      }
+      return row
     }
-    incomingID = nil
-    JourneyTrace.record("sdk.ended", ["conversationID": id.uuidString])
+    JourneyTrace.record("sdk.snapshot", ["revision": update.revision, "conversations": snapshots])
+    for conversation in update.conversations where previousStates[conversation.id] != conversation.status {
+      let legacy: String
+      switch conversation.status {
+      case .ringing, .dialing: legacy = "idle"
+      case .connecting: legacy = "joining"
+      case .connected: legacy = "joined"
+      case .held: legacy = "paused"
+      case .ending: legacy = "leaving"
+      case .ended: legacy = "left"
+      }
+      JourneyTrace.record("sdk.state", ["conversationID": conversation.id.uuidString,
+        "state": legacy, "status": conversation.status.rawValue, "source": "clientProjection"])
+      previousStates[conversation.id] = conversation.status
+    }
+    let live = Set(update.conversations.map(\.id))
+    previousStates = previousStates.filter { live.contains($0.key) }
+  }
+
+  private func fixturePayload() -> IncomingCallPayload {
+    IncomingCallPayload(eventId: "sdk-example-event-" + JourneyTrace.runID,
+      serverCallId: "sdk-example-server-" + JourneyTrace.runID,
+      caller: .init(id: "sdk-example-caller", displayName: "SDK example", phoneNumber: "+15555550142"),
+      hasVideo: false)
   }
 
   func acceptance() async throws {
+    guard JourneyTrace.m0 else { throw JourneyError.wrongMode }
     do {
-      let id = try await ring()
-      // Proposed acceptance interval: comfortably beyond the measured genuine
-      // simulator teardown (~100 ms), without changing a platform deadline.
+      let client = try bindClient()
+      guard client.snapshots.isEmpty else { throw JourneyError.alreadyCalling }
+      client.setConversationHandler(.init(join: { conversation, _ in
+        JourneyTrace.record("sdk.action", ["kind": "JoinConversationAction", "conversationID": conversation.id.uuidString])
+        try AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .voiceChat)
+      }, start: { _, _ in throw JourneyError.wrongMode }, end: { conversation, _ in
+        JourneyTrace.record("sdk.action", ["kind": "EndConversationAction", "conversationID": conversation.id.uuidString])
+      }))
+      let id = try await client.reportIncomingConversation(fixturePayload())
+      JourneyTrace.record("sdk.incomingReported", ["conversationID": id.uuidString])
+      // Acceptance interval only; the SDK still uses the platform action deadline.
       try await Task.sleep(for: .seconds(1))
-      guard let conversation = manager.conversations.first(where: { $0.uuid.uuidString == id }),
-            conversation.state == .idle else { throw JourneyError.notRinging }
-      JourneyTrace.record("sdk.ringing", ["conversationID": id])
-      try await join()
-      try await end()
-      JourneyTrace.record("sdk.result", ["success": true])
-      JourneyTrace.record("done")
+      guard client.snapshots.first(where: { $0.id == id })?.status == .ringing else { throw JourneyError.notRinging }
+      JourneyTrace.record("sdk.ringing", ["conversationID": id.uuidString])
+      try await client.joinConversation(id)
+      try await waitUntil { client.snapshots.first(where: { $0.id == id })?.status == .connected }
+      JourneyTrace.record("sdk.joined", ["conversationID": id.uuidString])
+      try await client.endConversation(id)
+      try await waitUntil { client.snapshots.isEmpty }
+      JourneyTrace.record("sdk.ended", ["conversationID": id.uuidString])
+      finish(success: true)
     } catch {
-      JourneyTrace.record("sdk.result", ["success": false, "error": String(describing: error)])
-      JourneyTrace.record("done")
+      finish(success: false, errorType: String(reflecting: type(of: error)))
       throw error
     }
   }
 
-  private func waitForState(_ state: Conversation.State, id: UUID) async throws {
-    let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-    while manager.conversations.first(where: { $0.uuid == id })?.state != state {
+  func simulatePush(_ payloadJSON: String, mustReport: Bool, label: String) throws -> String {
+    guard ["primary", "cold"].contains(label) else { throw JourneyError.invalidTrace }
+    _ = try bindClient()
+    #if targetEnvironment(simulator)
+    guard let data = payloadJSON.data(using: .utf8),
+          let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      throw JourneyError.invalidPayload
+    }
+    let pushID = UUID().uuidString
+    JourneyTrace.record("m1.pushInjected", ["pushID": pushID, "mustReport": mustReport, "label": label])
+    CKSimInjectPush(payload, mustReport, pushID)
+    return pushID
+    #else
+    throw JourneyError.simulatorOnly
+    #endif
+  }
+
+  func startColdLaunch() {
+    guard coldTask == nil else { return }
+    coldTask = Task { @MainActor in
+      let client = try bindClient()
+      let bytes = try JSONEncoder().encode(["incomingCall": fixturePayload()])
+      guard let json = String(data: bytes, encoding: .utf8) else { throw JourneyError.invalidPayload }
+      _ = try simulatePush(json, mustReport: true, label: "cold")
+      try await waitUntil { client.snapshots.contains { $0.status == .ringing } }
+      guard let conversation = client.snapshots.first else { throw JourneyError.noIncomingConversation }
+      let id = conversation.id
+      JourneyTrace.record("m1.coldJoinRequested", ["conversationID": id.uuidString])
+      coldJoinTask = Task { @MainActor in
+        do {
+          try await client.joinConversation(id)
+          if !completed {
+            JourneyTrace.record("m1.coldJoinRequestResult", ["conversationID": id.uuidString, "accepted": true])
+          }
+        } catch {
+          if !completed {
+            JourneyTrace.record("m1.coldJoinRequestResult", ["conversationID": id.uuidString, "accepted": false,
+              "errorType": String(reflecting: type(of: error))])
+          }
+        }
+      }
+      try await waitUntil { client.snapshots.first(where: { $0.id == id })?.pending?.kind == .join }
+      guard let pending = client.snapshots.first(where: { $0.id == id })?.pending else { throw JourneyError.noPendingAction }
+      let clockBefore = Date()
+      #if targetEnvironment(simulator)
+      CKSimEmit("m1.coldPendingClock", ["conversationID": id.uuidString, "actionID": pending.id.uuidString])
+      #endif
+      let observedAt = Date()
+      JourneyTrace.record("m1.coldPending", ["conversationID": id.uuidString, "actionID": pending.id.uuidString,
+        "deadline": JourneyTrace.iso(pending.deadline), "remainingMS": pending.deadline.timeIntervalSince(observedAt) * 1000,
+        "handlerAttached": false, "clockBeforeMS": Int64(clockBefore.timeIntervalSince1970 * 1000)], observedAt: observedAt)
+      return ["conversationID": id.uuidString, "actionID": pending.id.uuidString,
+        "deadline": JourneyTrace.iso(pending.deadline)]
+    }
+  }
+
+  func waitForColdStart() async throws -> [String: String] {
+    guard let coldTask else { throw JourneyError.wrongMode }
+    return try await coldTask.value
+  }
+
+  /// Whitelisted test fields prevent accidental payload/token logging.
+  func trace(_ event: String, fieldsJSON: String) throws {
+    guard !completed else { return }
+    let events: Set<String> = ["m1.jsReady", "m1.subscriptionsStarting", "m1.handlerAttached", "m1.handler", "m1.cancelled",
+      "m1.assertion", "m1.hookConversations", "m1.hookToken", "m1.event", "m1.expiryObserved"]
+    let fields: Set<String> = ["label", "passed", "conversationID", "kind", "origin", "deadline",
+      "held", "muted", "attached", "available", "tokenType", "name", "count", "status",
+      "pending", "hasConnectedAt", "reason"]
+    guard events.contains(event), let bytes = fieldsJSON.data(using: .utf8),
+          let value = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+          Set(value.keys).isSubset(of: fields),
+          value.values.allSatisfy({ $0 is String || $0 is NSNumber || $0 is NSNull }) else {
+      throw JourneyError.invalidTrace
+    }
+    JourneyTrace.record(event, value)
+  }
+
+  func finish(success: Bool, errorType: String? = nil) {
+    guard !completed else { return }
+    completed = true
+    var fields: [String: Any] = ["success": success]
+    if let errorType { fields["errorType"] = errorType }
+    JourneyTrace.record("sdk.result", fields)
+    JourneyTrace.record("done")
+  }
+
+  private func waitUntil(_ predicate: @MainActor () -> Bool) async throws {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(8))
+    while !predicate() {
       guard ContinuousClock.now < deadline else { throw JourneyError.stateDeadline }
       try await Task.sleep(for: .milliseconds(25))
     }
   }
-
-  func conversationManager(_ manager: ConversationManager, perform action: ConversationAction) {
-    JourneyTrace.record("sdk.action", ["kind": String(describing: type(of: action)),
-      "conversationID": action.conversationUUID.uuidString])
-    if action is JoinConversationAction {
-      try? AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .voiceChat)
-    }
-    action.fulfill()
-  }
-  func conversationManager(_ manager: ConversationManager, conversationChanged conversation: Conversation) {
-    JourneyTrace.record("sdk.state", ["conversationID": conversation.uuid.uuidString,
-      "state": String(describing: conversation.state)])
-  }
-  func conversationManagerDidBegin(_ manager: ConversationManager) {}
-  func conversationManagerDidReset(_ manager: ConversationManager) {}
-  func conversationManager(_ manager: ConversationManager, timedOutPerforming action: ConversationAction) {
-    JourneyTrace.record("sdk.timeout", ["kind": String(describing: type(of: action))])
-  }
-  func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) {}
-  func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession) {}
 }
 
 private enum JourneyError: Error {
-  case alreadyCalling, noIncomingConversation, notRinging, stateDeadline
+  case alreadyCalling, noIncomingConversation, noPendingAction, notRinging, stateDeadline
+  case wrongMode, simulatorOnly, invalidPayload, invalidTrace
 }
 
-/// This module belongs to the example app, not the distributed SDK.
+/// Excluded from the distributed SDK. Synthetic push injection is simulator-only.
 public final class VoIPExampleJourneyModule: Module {
   public func definition() -> ModuleDefinition {
     Name("VoIPExampleJourney")
-    Constants(["acceptanceEnabled": ProcessInfo.processInfo.environment["SDK_M0_ACCEPTANCE"] == "1"])
-    AsyncFunction("ring") { (promise: Promise) in
-      Task { @MainActor in
-        do { promise.resolve(try await ExampleJourney.shared.ring()) }
-        catch { promise.reject("journey", String(describing: error)) }
-      }
-    }
-    AsyncFunction("join") { (promise: Promise) in
-      Task { @MainActor in
-        do { try await ExampleJourney.shared.join(); promise.resolve() }
-        catch { promise.reject("journey", String(describing: error)) }
-      }
-    }
-    AsyncFunction("end") { (promise: Promise) in
-      Task { @MainActor in
-        do { try await ExampleJourney.shared.end(); promise.resolve() }
-        catch { promise.reject("journey", String(describing: error)) }
-      }
-    }
+    Constants(["acceptanceEnabled": JourneyConfiguration.m0, "m1Case": JourneyConfiguration.m1Case,
+      "runID": JourneyConfiguration.runID])
     AsyncFunction("acceptance") { (promise: Promise) in
       Task { @MainActor in
         do { try await ExampleJourney.shared.acceptance(); promise.resolve() }
-        catch { promise.reject("journey", String(describing: error)) }
+        catch { promise.reject("journey", String(reflecting: type(of: error))) }
       }
+    }
+    AsyncFunction("simulatePush") { (payloadJSON: String, mustReport: Bool, label: String, promise: Promise) in
+      Task { @MainActor in
+        do { promise.resolve(try ExampleJourney.shared.simulatePush(payloadJSON, mustReport: mustReport, label: label)) }
+        catch { promise.reject("journey", String(reflecting: type(of: error))) }
+      }
+    }
+    AsyncFunction("waitForColdStart") { (promise: Promise) in
+      Task { @MainActor in
+        do { promise.resolve(try await ExampleJourney.shared.waitForColdStart()) }
+        catch { promise.reject("journey", String(reflecting: type(of: error))) }
+      }
+    }
+    AsyncFunction("trace") { (event: String, fieldsJSON: String, promise: Promise) in
+      Task { @MainActor in
+        do { try ExampleJourney.shared.trace(event, fieldsJSON: fieldsJSON); promise.resolve() }
+        catch { promise.reject("journey", String(reflecting: type(of: error))) }
+      }
+    }
+    AsyncFunction("finish") { (success: Bool, promise: Promise) in
+      Task { @MainActor in ExampleJourney.shared.finish(success: success); promise.resolve() }
     }
   }
 }

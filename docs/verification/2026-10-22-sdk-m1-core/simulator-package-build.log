@@ -1,0 +1,63 @@
+2026-10-22 03:17:54.124 xcodebuild[3567:5114733] [MT] IDERunDestination: Supported platforms for the buildables in the current scheme is empty.
+error: the following command failed with exit code 0 but produced no further output
+SwiftCompile normal arm64 <repo>/Sources/VoIPSDK/ConversationClient.swift (in target 'VoIPSDK' from project 'VoIPSDK')
+<repo>/Sources/VoIPSDK/ConversationClient.swift:285:28: warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+283 |     appActions = appActions.filter { $0.value > Date() }
+284 |     appActions[id] = action.timeoutDate
+285 |     do { try await manager.perform([action]) }
+    |                            |- warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+    |                            `- note: sending main actor-isolated 'self.manager' to @concurrent instance method 'perform' risks causing data races between @concurrent and main actor-isolated uses
+286 |     catch { appActions.removeValue(forKey: id); throw error }
+287 |   }
+
+<repo>/Sources/VoIPSDK/ConversationClient.swift:196:30: warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+194 |       if record.payload == nil { record.payload = payload }
+195 |       records[id] = record
+196 |       do { try await manager.reportNewIncomingConversation(uuid: id, update: update(for: record)) }
+    |                              |- warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+    |                              `- note: sending main actor-isolated 'self.manager' to @concurrent instance method 'reportNewIncomingConversation(uuid:update:)' risks causing data races between @concurrent and main actor-isolated uses
+197 |       catch {
+198 |         if !knownLiveConversation && records[id]?.seenInManager != true {
+
+<repo>/Sources/VoIPSDK/ConversationClient.swift:212:30: warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+210 |     let update = update(for: record)
+211 |     let report = Task { @MainActor in
+212 |       try await self.manager.reportNewIncomingConversation(uuid: id, update: update)
+    |                              |- warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+    |                              `- note: sending main actor-isolated 'self.manager' to @concurrent instance method 'reportNewIncomingConversation(uuid:update:)' risks causing data races between @concurrent and main actor-isolated uses
+213 |       return id
+214 |     }
+
+[#RegionIsolation]: <https://docs.swift.org/compiler/documentation/diagnostics/region-isolation>
+[#SendingRisksDataRace]: <https://docs.swift.org/compiler/documentation/diagnostics/sending-risks-data-race>
+error: the following command failed with exit code 0 but produced no further output
+SwiftCompile normal x86_64 <repo>/Sources/VoIPSDK/ConversationClient.swift (in target 'VoIPSDK' from project 'VoIPSDK')
+<repo>/Sources/VoIPSDK/ConversationClient.swift:285:28: warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+283 |     appActions = appActions.filter { $0.value > Date() }
+284 |     appActions[id] = action.timeoutDate
+285 |     do { try await manager.perform([action]) }
+    |                            |- warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+    |                            `- note: sending main actor-isolated 'self.manager' to @concurrent instance method 'perform' risks causing data races between @concurrent and main actor-isolated uses
+286 |     catch { appActions.removeValue(forKey: id); throw error }
+287 |   }
+
+<repo>/Sources/VoIPSDK/ConversationClient.swift:196:30: warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+194 |       if record.payload == nil { record.payload = payload }
+195 |       records[id] = record
+196 |       do { try await manager.reportNewIncomingConversation(uuid: id, update: update(for: record)) }
+    |                              |- warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+    |                              `- note: sending main actor-isolated 'self.manager' to @concurrent instance method 'reportNewIncomingConversation(uuid:update:)' risks causing data races between @concurrent and main actor-isolated uses
+197 |       catch {
+198 |         if !knownLiveConversation && records[id]?.seenInManager != true {
+
+<repo>/Sources/VoIPSDK/ConversationClient.swift:212:30: warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+210 |     let update = update(for: record)
+211 |     let report = Task { @MainActor in
+212 |       try await self.manager.reportNewIncomingConversation(uuid: id, update: update)
+    |                              |- warning: sending 'self.manager' risks causing data races [#RegionIsolation::SendingRisksDataRace]
+    |                              `- note: sending main actor-isolated 'self.manager' to @concurrent instance method 'reportNewIncomingConversation(uuid:update:)' risks causing data races between @concurrent and main actor-isolated uses
+213 |       return id
+214 |     }
+
+[#RegionIsolation]: <https://docs.swift.org/compiler/documentation/diagnostics/region-isolation>
+[#SendingRisksDataRace]: <https://docs.swift.org/compiler/documentation/diagnostics/sending-risks-data-race>

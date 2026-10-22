@@ -15,11 +15,14 @@
       "types": "./build/internal/bootstrap.d.ts",
       "default": "./build/internal/bootstrap.js"
     },
+    "./app.plugin.js": "./app.plugin.js",
     "./package.json": "./package.json"
   },
   "files": [
     "build",
     "Expo/apple",
+    "Expo/plugin",
+    "app.plugin.js",
     "Sources",
     "profiles",
     "VERSION",

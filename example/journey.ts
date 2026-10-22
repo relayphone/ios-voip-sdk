@@ -2,10 +2,21 @@ import { requireNativeModule, type NativeModule } from 'expo';
 
 type JourneyModule = NativeModule & {
   acceptanceEnabled: boolean;
-  ring(): Promise<string>;
-  join(): Promise<void>;
-  end(): Promise<void>;
+  m1Case: '' | 'journey' | 'cold-launch' | 'unhandled-expiry';
+  runID: string;
   acceptance(): Promise<void>;
+  simulatePush(
+    payloadJSON: string,
+    mustReport: boolean,
+    label: 'primary' | 'cold',
+  ): Promise<string>;
+  waitForColdStart(): Promise<{
+    conversationID: string;
+    actionID: string;
+    deadline: string;
+  }>;
+  trace(event: string, fieldsJSON: string): Promise<void>;
+  finish(success: boolean): Promise<void>;
 };
 
 // The native fixture lives only in this example, outside the SDK package.

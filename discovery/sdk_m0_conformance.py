@@ -20,8 +20,15 @@ SOURCE_PATHS = ('Sources', 'Expo', 'example', 'Package.swift', 'IosVoipSDK.podsp
                 'discovery/probe/sdk_bootstrap.swift', 'discovery/run_sdk_m0.sh',
                 'discovery/sdk_m0_conformance.py', 'discovery/check_sdk_m0.py',
                 'discovery/run_scenario.py', 'discovery/sdk_bootstrap_conformance.py',
-                'discovery/summarize.py', '.github/workflows/sdk-m0.yml')
-TARGETS = ('CKSimRuntimeC', 'CKSimRuntime', 'VoIPSDK')
+                'discovery/summarize.py', '.github/workflows/sdk-m0.yml', 'app.plugin.js', 'Tests',
+                'discovery/sdk_m1_conformance.py', 'discovery/check_sdk_m1.py',
+                'discovery/build_sdk_m1_contracts.sh', 'discovery/probe/sdk_m1_contracts.swift',
+                'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
+                'discovery/check_expo_bridge.py', 'discovery/check_expo_plugin.cjs',
+                'discovery/check_platform_shims.py', 'discovery/device_oracles.py',
+                'discovery/check_lck_provider_policy.py',
+                'docs/research/callkit-simulator-probe/livecommunicationkit')
+TARGETS = ('CKSimRuntimeC', 'CKSimRuntime', 'VoIPPlatform', 'VoIPSDK')
 BINARIES = dict(example='binaries/example', bootstrap='binaries/bootstrap',
                 device='binaries/device', javascript='binaries/main.jsbundle')
 
@@ -56,13 +63,13 @@ def validate_symbols(names):
         # SwiftPM can emit this linker bookkeeping from its resource-only module.
         if name.startswith('__swift_FORCE_LOAD_$_CKSimRuntime'):
             continue
-        require(name not in hooks and not any(token in name for token in
+        require(not name.startswith('_CKSim') and name not in hooks and not any(token in name for token in
                 ('CKSimRuntimeIsActive', 'CKSimRuntimeVersion', 'CKSimActivate', 'CKSimGetEngine',
                  'CKSimPrepareEngine', 'CKSimReleaseEngine', 'CKSimMakeCall', 'CKSimPerform',
                  'CKSimInjectPush', 'CKSimInstallPushHooks', 'CKSimReleasePushHooks', 'CKSimCaptureHook',
                  'CKSimReplaceHook', 'CKSimCurrentPushID', 'CKSimResourceDirectory', 'CKSimEmit',
                  'CKSimulatorEngine', 'CKRuntimePayload', 'CKRuntimeMetadata', 'RuntimeEngine',
-                 'RuntimeBootstrap', 'RuntimeStorage', 'ProviderRegistration', 'ObserverRegistration')),
+                 'RuntimeBootstrap', 'RuntimeStorage', 'RuntimePendingAction', 'ProviderRegistration', 'ObserverRegistration')),
                 'device product contains runtime implementation: ' + name)
 
 

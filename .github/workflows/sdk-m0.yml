@@ -1,4 +1,4 @@
-name: SDK M0 plain simulator acceptance
+name: SDK M0 and M1 plain simulator acceptance
 
 on:
   push:
@@ -49,10 +49,13 @@ jobs:
     env:
       CI: "1"
       EXPO_NO_TELEMETRY: "1"
+      SDK_M1_ACCEPTANCE: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Select the compiler and simulator host
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
       - name: Check offline evidence controls and shell syntax
         run: |
           set -euo pipefail
@@ -65,12 +68,21 @@ jobs:
             printf 'SDK_M0_DEVICE_PROBE=%s/device/SDKDeviceProbe\n' "$SDK_M0_BUILD_ROOT"
             printf 'SDK_M0_SPM_DEVICE_DIR=%s/spm-device\n' "$SDK_M0_BUILD_ROOT"
             printf 'SDK_M0_BUILD_RECEIPT=%s/build-receipt.json\n' "$SDK_M0_BUILD_ROOT"
+            printf 'SDK_M1_CONTRACT_BUILD=%s/m1-contracts\n' "$SDK_M0_BUILD_ROOT"
           } >> "$GITHUB_ENV"
           mkdir -p "$SDK_M0_BUILD_ROOT" "$SDK_M0_BUILD_LOGS"
           python3 discovery/check_sdk_m0.py | tee "$SDK_M0_BUILD_LOGS/offline-controls.json"
-          bash -n discovery/build_sdk_bootstrap.sh discovery/build_sdk_device_probe.sh discovery/run_sdk_m0.sh
-      - name: Select the compiler and simulator host
-        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+          python3 discovery/check_sdk_m1.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-offline-controls.log"
+          python3 discovery/check_sdk_m1_contracts.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-contract-controls.log"
+          python3 Tests/VoIPSDK/run_push_context.py | tee "$SDK_M0_BUILD_LOGS/push-context-controls.json"
+          python3 discovery/check_expo_bridge.py | tee "$SDK_M0_BUILD_LOGS/expo-relay-controls.json"
+          python3 discovery/check_platform_shims.py | tee "$SDK_M0_BUILD_LOGS/platform-controls.json"
+          python3 discovery/check_lck_provider_policy.py | tee "$SDK_M0_BUILD_LOGS/lck-policy-controls.json"
+          bash Tests/VoIPSDK/run.sh | tee "$SDK_M0_BUILD_LOGS/core-controls.log"
+          bash Tests/VoIPSDK/run_push.sh | tee "$SDK_M0_BUILD_LOGS/push-controls.log"
+          bash Tests/VoIPSDK/run_projection.sh | tee "$SDK_M0_BUILD_LOGS/projection-controls.log"
+          bash Tests/ProbeTraceWriter/run.sh | tee "$SDK_M0_BUILD_LOGS/probe-writer-controls.json"
+          bash -n discovery/build_sdk_bootstrap.sh discovery/build_sdk_device_probe.sh discovery/build_sdk_m1_contracts.sh discovery/run_sdk_m0.sh
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "24.22.1"
@@ -98,6 +110,8 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund 2>&1 | tee "$SDK_M0_BUILD_LOGS/npm-ci.log"
           npm run build 2>&1 | tee "$SDK_M0_BUILD_LOGS/typescript-build.log"
           npm run typecheck 2>&1 | tee "$SDK_M0_BUILD_LOGS/typescript-typecheck.log"
+          node --test Expo/tests/m1-runtime.test.cjs 2>&1 | tee "$SDK_M0_BUILD_LOGS/typescript-runtime-controls.log"
+          node discovery/check_expo_plugin.cjs 2>&1 | tee "$SDK_M0_BUILD_LOGS/plugin-controls.json"
       - name: Generate the iOS example and install its pods
         run: |
           set -euo pipefail
@@ -137,13 +151,14 @@ jobs:
             printf 'Source bootstrap build completed.\n'
           } 2>&1 | tee "$SDK_M0_BUILD_LOGS/bootstrap-build.log"
           bash discovery/build_sdk_device_probe.sh "$SDK_M0_BUILD_ROOT/device" 2>&1 | tee "$SDK_M0_BUILD_LOGS/device-probe-build.log"
+          bash discovery/build_sdk_m1_contracts.sh "$SDK_M1_CONTRACT_BUILD" 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-contracts-build.log"
       - name: Record the source and exact built artifacts
         run: |
           python3 discovery/sdk_m0_conformance.py --record-build "$SDK_M0_BUILD_RECEIPT" \
             --build-start "$SDK_M0_BUILD_ROOT/source-build-start.json" --app "$SDK_M0_APP" \
             --bootstrap "$SDK_M0_BOOTSTRAP_APP" --device-probe "$SDK_M0_DEVICE_PROBE" \
             --spm-device-dir "$SDK_M0_SPM_DEVICE_DIR"
-      - name: Measure the Expo journey and bootstrap in one plain simulator
+      - name: Measure M0 bootstrap and M1 push, handler and cold-launch journeys
         env:
           OUT: ${{ runner.temp }}/sdk-m0
         run: bash discovery/run_sdk_m0.sh

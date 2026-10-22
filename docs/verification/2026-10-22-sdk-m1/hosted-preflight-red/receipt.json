@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured hosted preflight red; no SDK app ran",
+  "workflowRun": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39717487624",
+  "attempt": 2,
+  "prHead": "44e3db8884470c24dd10fa8763d579b377266cb7",
+  "source": {
+    "sourceCommit": "12702a91350e3d56624601ce871e13ff424a7956",
+    "sourceInputsSHA256": "4895d79422f77d4a188603d6caaf00369695784bb334cb66fd468a2ccaaaeac4"
+  },
+  "failure": "empty build log: m1-offline-controls.json",
+  "cause": "unittest reports stderr; CI captured stdout only",
+  "nativeSDKAcceptance": false,
+  "cleanup": {
+    "simulatorID": "1423B0AF-0D85-4B26-9285-9B29BDFBA99E",
+    "shutdownExitCode": 0,
+    "deleteExitCode": 0,
+    "deleted": true
+  },
+  "capturedFiles": {
+    "failed-job.log": {
+      "bytes": 3583,
+      "sha256": "1330e3cd8e96bdd0404c4d8933f71e7e9f794e5d64a927dd57ce5823ac17e3fb"
+    },
+    "source-before.json": {
+      "bytes": 157,
+      "sha256": "4c7fa36c3cb4e59602fc3c11a4e8f0745b495e70859d50b32f42ff84bd3f6360"
+    },
+    "cleanup.json": {
+      "bytes": 127,
+      "sha256": "abcca2114fb9555cda34a6d716e87761b0121c99d5dfe90cd53e878c74c9c536"
+    },
+    "launch-environment-query.log": {
+      "bytes": 96,
+      "sha256": "76ade1fbb91fb2ab3f9222dfd6d11e9f086e66a9b702866fa9d2928fca72f08b"
+    },
+    "m1-offline-controls.json": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "m1-contract-controls.json": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  }
+}
