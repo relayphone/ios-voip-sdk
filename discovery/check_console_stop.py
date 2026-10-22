@@ -9,10 +9,12 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 ROOT = Path(__file__).resolve().parent
 BUNDLE = "dev.callkitsim.console.fixture"
+RAW_OUTPUT = b"CONSOLE raw: \r\t\x00\n"
 
 
 def require(condition, message):
@@ -30,12 +32,14 @@ def fixtures(work):
         "while not pathlib.Path(str(base)+'.ready').exists():\n"
         " if time.monotonic()>deadline: sys.exit(8)\n"
         " time.sleep(.01)\n"
+        f"if mode=='buffered-header': os.write(1,{RAW_OUTPUT!r})\n"
         "rows=[{'event':'app.entry','t_ms':0},{'event':'launch','t_ms':1,'pid':os.getpid()}]\n"
         "if mode!='early-exit': rows.append({'event':'done','t_ms':2})\n"
         "for row in rows: print('PROBE '+json.dumps(row),flush=True)\n"
         "if mode=='early-exit':\n"
         " os.close(1); os.close(2)\n"
         "pathlib.Path(str(base)+'.emitted').touch()\n"
+        "if mode=='quiet-orphan': os.close(1); os.close(2)\n"
         "if mode=='orphan-output':\n"
         " deadline=time.monotonic()+60\n"
         " while time.monotonic()<deadline:\n"
@@ -51,10 +55,13 @@ def fixtures(work):
         "def stop(signum,frame):\n"
         " pathlib.Path(str(base)+'.signal').write_text(str(signum))\n"
         " if mode=='orphan-output': sys.exit(0)\n"
+        " if mode=='quiet-orphan': os._exit(0)\n"
         " if mode!='ignored-signal':\n"
         "  try: app.send_signal(signum)\n"
         "  except ProcessLookupError: pass\n"
+        " if mode=='buffered-header': app.wait(); os._exit(0)\n"
         "signal.signal(signal.SIGTERM,stop)\n"
+        "if mode in ('buffered-header','quiet-orphan'): print('" + BUNDLE + ": '+str(app.pid),flush=mode=='quiet-orphan')\n"
         "pathlib.Path(str(base)+'.ready').touch()\n"
         "if mode=='early-exit':\n"
         " deadline=time.monotonic()+20\n"
@@ -62,8 +69,10 @@ def fixtures(work):
         "  if time.monotonic()>deadline: sys.exit(8)\n"
         "  time.sleep(.01)\n"
         " sys.exit(7)\n"
+        "if mode=='buffered-header':\n"
+        " while True: time.sleep(.1)\n"
         "app.wait()\n"
-        "if mode!='missing-pid':\n"
+        "if mode not in ('missing-pid','buffered-header','quiet-orphan'):\n"
         " header='" + BUNDLE + ": '+str(app.pid+(1 if mode=='wrong-pid' else 0))\n"
         " for _ in range(2 if mode=='duplicate-pid' else 1): print(header,flush=True)\n"
     )
@@ -140,6 +149,10 @@ def receipt_controls(receipt):
     require(successful_stop(receipt), "console receipt helper rejected the real positive")
     mutations = {
         "method": {"terminationMethod": "unknown"},
+        "transport": {"consoleTransport": "pipe"},
+        "absence-method": {"appAbsenceMethod": "none"},
+        "live-app": {"appAbsentAfterStop": False},
+        "integer-absence": {"appAbsentAfterStop": 1},
         "signal": {"terminationSignal": 9},
         "boolean-signal": {"terminationSignal": True},
         "undelivered": {"terminationSignalDelivered": False},
@@ -161,7 +174,7 @@ def receipt_controls(receipt):
     for name, changes in mutations.items():
         require(not successful_stop({**receipt, **changes}), f"console receipt helper accepted {name}")
         checks.append(f"receipt-console-rejects-{name}")
-    for field in ("terminationMethod", "terminationSignal", "terminationSignalDelivered", "launcherPID",
+    for field in ("consoleTransport", "appAbsenceMethod", "appAbsentAfterStop", "terminationMethod", "terminationSignal", "terminationSignalDelivered", "launcherPID",
                   "appPID", "launcherAppPID", "launchExitCode", "completed", "lastProbeEvent"):
         incomplete = dict(receipt)
         del incomplete[field]
@@ -173,13 +186,30 @@ def receipt_controls(receipt):
     return checks
 
 
+def failed_exec_control(work):
+    from run_scenario import run
+
+    output = work / "failed-exec.log"
+    receipt = work / "failed-exec.receipt.json"
+    descriptors = set(os.listdir("/dev/fd"))
+    threads = {thread.ident for thread in threading.enumerate()}
+    code = run([str(work / "nonexistent-launcher")], [sys.executable, "-c", "pass"],
+               output, receipt, 1, {"bundleID": BUNDLE}, console_launcher_stop=True)
+    evidence = json.loads(receipt.read_text())
+    require(code == 1 and evidence["success"] is False and "No such file" in evidence.get("error", ""),
+            f"failed exec lost its failure: {evidence}")
+    require(set(os.listdir("/dev/fd")) == descriptors, "failed exec leaked a PTY descriptor")
+    require({thread.ident for thread in threading.enumerate()} == threads, "failed exec leaked a reader thread")
+    return "runner-console-failed-exec-closes-pty"
+
+
 def run_checks(work):
     work.mkdir(parents=True, exist_ok=True)
     sources = fixtures(work)
-    checks = [traditional_red(work, sources)]
-    for mode in ("complete", "wrong-pid", "missing-pid", "duplicate-pid", "ignored-signal", "early-exit", "orphan-output"):
+    checks = [failed_exec_control(work), traditional_red(work, sources)]
+    for mode in ("complete", "buffered-header", "quiet-orphan", "wrong-pid", "missing-pid", "duplicate-pid", "ignored-signal", "early-exit", "orphan-output"):
         result, receipt, base = run_case(work, sources, mode)
-        expected = mode == "complete"
+        expected = mode in ("complete", "buffered-header")
         require((result.returncode == 0) is expected and receipt["success"] is expected,
                 f"runner-console-{mode}: {receipt}")
         if expected:
@@ -191,13 +221,19 @@ def run_checks(work):
                     receipt.get("launcherPID") == int(Path(str(base) + ".launcher.pid").read_text()),
                     f"runner-console-{mode}: unbound success: {receipt}")
             lines = Path(str(base) + ".log").read_text().splitlines()
-            require(lines[-1] == f"{BUNDLE}: {receipt['appPID']}" and
-                    json.loads(lines[-2].split("PROBE ", 1)[1])["event"] == "done",
-                    f"runner-console-{mode}: launcher PID did not arrive after done")
+            if mode == "complete":
+                require(lines[-1] == f"{BUNDLE}: {receipt['appPID']}" and
+                        json.loads(lines[-2].split("PROBE ", 1)[1])["event"] == "done",
+                        f"runner-console-{mode}: launcher PID did not arrive after done")
+            else:
+                require(lines[0] == f"{BUNDLE}: {receipt['appPID']}" and
+                        RAW_OUTPUT in Path(str(base) + ".log").read_bytes(),
+                        "buffered header or raw PTY bytes were lost")
             require(Path(str(base) + ".signal").read_text() == "15" and
                     not Path(str(base) + ".fallback").exists(),
                     f"runner-console-{mode}: wrong stop path")
-            checks.extend(receipt_controls(receipt))
+            if mode == "complete":
+                checks.extend(receipt_controls(receipt))
         elif mode in ("wrong-pid", "missing-pid", "duplicate-pid"):
             error = "launcher/probe app PID mismatch" if mode == "wrong-pid" else "require one launcher app PID acknowledgement"
             require(receipt["completed"] is True and error in receipt.get("error", ""),
@@ -211,6 +247,11 @@ def run_checks(work):
                 require(receipt["completed"] is True and receipt["elapsedSeconds"] >= 15 and
                         Path(str(base) + ".signal").read_text() == "15",
                         f"runner-console-{mode}: did not exercise launcher wait deadline: {receipt}")
+            elif mode == "quiet-orphan":
+                require(receipt["completed"] is True and receipt.get("appAbsentAfterStop") is False and
+                        receipt.get("appAbsenceMethod") == "signal-zero" and
+                        "run-owned app PID still exists" in receipt.get("error", ""),
+                        f"runner-console-{mode}: accepted a quiet surviving app: {receipt}")
             elif mode == "orphan-output":
                 require(receipt["completed"] is True and 5 <= receipt["elapsedSeconds"] < 15 and
                         "launcher output did not close after stop" in receipt.get("error", "") and

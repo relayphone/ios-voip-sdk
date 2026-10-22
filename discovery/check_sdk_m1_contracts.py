@@ -137,7 +137,8 @@ def save(capture, case, rows, engine):
         runID='synthetic-run', simulatorID='synthetic-simulator', completed=True, success=True,
         launcherPID=122, appPID=rows[0]['pid'], launcherAppPID=rows[0]['pid'], appEntryObserved=True, lastProbeEvent='done',
         launchExitCode=0, terminationMethod='console-launcher-signal', terminationSignal=15,
-        terminationSignalDelivered=True, traceSHA256=gate.digest(log), journalSHA256=gate.digest(journal)))
+        terminationSignalDelivered=True, consoleTransport='host-pty', appAbsenceMethod='signal-zero',
+        appAbsentAfterStop=True, traceSHA256=gate.digest(log), journalSHA256=gate.digest(journal)))
 
 
 class Controls(unittest.TestCase):

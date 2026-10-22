@@ -221,7 +221,8 @@ os.execv(sys.executable,[sys.executable,*sys.argv[1:]])
             def signal(receipt):
                 receipt.pop('terminateExitCode')
                 receipt.update(terminationMethod='console-launcher-signal', launcherPID=456,
-                    terminationSignal=15, terminationSignalDelivered=True, launchExitCode=-15)
+                    terminationSignal=15, terminationSignalDelivered=True, launchExitCode=-15,
+                    consoleTransport='host-pty', appAbsenceMethod='signal-zero', appAbsentAfterStop=True)
             for name in ('sdk-m0', *(f'bootstrap-{case}' for case in gate.CASES)):
                 change_json(root, name + '.receipt.json', signal)
 

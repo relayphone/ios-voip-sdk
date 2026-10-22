@@ -70,7 +70,9 @@ def successful_stop(receipt):
                 'terminationSignal' not in receipt and 'terminationSignalDelivered' not in receipt)
     if method != 'console-launcher-signal':
         return False
-    return (receipt.get('completed') is True and receipt.get('lastProbeEvent') == 'done' and
+    return (receipt.get('consoleTransport') == 'host-pty' and
+            receipt.get('appAbsenceMethod') == 'signal-zero' and receipt.get('appAbsentAfterStop') is True and
+            receipt.get('completed') is True and receipt.get('lastProbeEvent') == 'done' and
             type(receipt.get('launcherPID')) is int and receipt['launcherPID'] > 0 and
             type(receipt.get('appPID')) is int and receipt['appPID'] > 0 and
             type(receipt.get('launcherAppPID')) is int and receipt['launcherAppPID'] == receipt['appPID'] and

@@ -76,6 +76,7 @@ def fixture(root):
                   launcherAppPID=pid, success=True, completed=True, scenario='sdk-a1-' + mode,
                   launcherPID=2000 + index, launchExitCode=-15, terminationMethod='console-launcher-signal',
                   terminationSignal=15, terminationSignalDelivered=True, lastProbeEvent='done',
+                  consoleTransport='host-pty', appAbsenceMethod='signal-zero', appAbsentAfterStop=True,
                   traceSHA256=gate.digest(log), journalSHA256=gate.digest(journal)))
     gate.save(root / 'manifest.json', dict(schemaVersion=1, source=SOURCE, simulatorID=SIMULATOR, cases=identities,
               classification=gate.CLASSIFICATION,
