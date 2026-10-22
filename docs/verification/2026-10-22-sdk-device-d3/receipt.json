@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "status": "measured D3 observation on one OS and source-bound run",
+  "question": "START-HERE section4.D.3: LCK reporting on a cold PushKit launch",
+  "source": {
+    "sourceCommit": "e2de09c90c34085c2eb27e1d279640ef75346944",
+    "sourceInputsSHA256": "18e913a43fca0302c3433558f4b4600429298d5c55700cfec49470a0a9d0d42c",
+    "binarySHA256": "bfc30744a9c490eddc1b0c67d195458713f114381c0578495acdff571a97d2e0",
+    "configuration": "Debug",
+    "platform": "iphoneos"
+  },
+  "osVersion": "Version 27.0 (Build 24A5355q)",
+  "runID": "C98AA2BE-E857-4C55-B612-FE2DB835D985",
+  "launchID": "8B80A8DD-6A20-4C33-9F96-887053A917CC",
+  "readinessPID": 4511,
+  "measurementPID": 4512,
+  "apns": {
+    "environment": "sandbox",
+    "status": 200,
+    "responseIDMatchedRequest": true,
+    "acceptanceAloneConfirmsDelivery": false
+  },
+  "observation": {
+    "coldReadinessProcessTerminatedAndAbsentBeforeSend": true,
+    "newLaunchObserved": true,
+    "api": "metadata",
+    "mustReport": true,
+    "deliveryID": "0C1DEA5C-C143-4F66-A734-1B1526C784FC",
+    "conversationID": "C49C61C2-BF19-4CDC-B7E1-A1EBED48F417",
+    "reportSucceeded": true,
+    "completionInvocationMarkObserved": true,
+    "sameProcessSecondsAfterCompletionReported": 62.299819416,
+    "independentSequentialCommandSecondsLowerBound": 49.916574833,
+    "requiredObservationSeconds": 30,
+    "ringingThenEndedAndEmptyStateObserved": true
+  },
+  "cleanup": {
+    "scheduledNanoseconds": 135679415898000,
+    "fixtureDeadlineMarkNanoseconds": 135739515765125,
+    "scheduledToMarkSeconds": 60.099867125,
+    "genuineEndActionsObserved": 2,
+    "firstEndIngressBeforeFixtureMarkMilliseconds": 8.22225,
+    "subsequentEndIngressAfterFixtureMarkMilliseconds": 27.136,
+    "completionToFinalEmptySeconds": 60.147275958,
+    "endActionCausesAttributed": false
+  },
+  "bindings": {
+    "rawColdTraceSHA256": "c8c40a2fbe189cf658eed9279e3fb9365ba87228e52e7f47c41910d9a66fb494",
+    "rawColdTraceRecordCount": 28,
+    "consistentColdTraceVersions": 13,
+    "operatorSHA256": "a2ba144ee00d761dfdd512be0ce621379f153f819b9de341b694a734738d9538",
+    "operatorInputProofSHA256": "58f87f27be6452608923f0539108d05925ea100b5a487d092ca0d316944d204b",
+    "operatorResultSHA256": "110368db092c9c438e21b7d8977cef1a69c34078ac53e5526610b463f478e9b2",
+    "operatorManifestSHA256": "9d7cbcd45cf00661fd2fea1c3172977f57ce8020cbe6818920223860e95a91af",
+    "buildReceiptSHA256": "d598f89ca8c15a300e4a517bfc2e316c84c29553259bf59f5ff79113284caf42",
+    "signatureReceiptSHA256": "7dc17c4702a169498939992eede328aaf793cef5c2c1278aac1ec27490b340cb",
+    "temporarySecretCleanupReceiptSHA256": "061e449fe71caf56104f857dceb1ecb505303d55f93497a9f39ba619c44b49c8",
+    "sanitizedTraceExcerptSHA256": "f5317575799d98ed905f54e9ccc129e7098556d7377776624cb2b778af42d483",
+    "sourceInventoryReceiptSHA256": "b8eedb0d34d104227e4ddd8d4014a7d9e4b07096e899476d35c1b50d73fecfd2",
+    "readinessTraceSHA256": "b4c8f8a4092e20d1ccfd8ba5300dd7ad9abce9fea3c6388f9ec4b181e1bbb645",
+    "readinessLaunchReceiptSHA256": "5ea1f1928cb36307782031f1630dbf79e9fd190aa5b13306dce457f52901cebe",
+    "readinessTerminationReceiptSHA256": "f3326f829b4d4489c353d04c5254032ab8a65f8817b33e1dafef0a9293956826",
+    "preSendAbsenceReceiptSHA256": "fa926e648ced0cdd58e1ad112b9d454dc29865b6c5a0a5856c28a6c5eedf1f30",
+    "sandboxSenderReceiptSHA256": "96f3922ac31b796df29c91f09642d8d2228ff2c90efc05bef36704f1d0f4a178",
+    "privateIndependentReviewSHA256": "1fe5f0027aa5b9ac1bff3a2165eecfc331f1fc9d9dfcb0487a07c110b0df7c7e",
+    "priorFocusFilteredProofSHA256": "505c11e5a65b1e9b5d621d3f3a6314f424f7b9729ba83ad975e775cfbf85f3f3",
+    "priorCLIOrderingFailureReceiptSHA256": "7724ed29f6236e498793771abc6b18ceb6ed41f36a5684e94ea9927bd1bae57f",
+    "priorCLIOrderingFailureManifestSHA256": "cbc095dc7a096f1628ebc09f06c4f5890196daf09fa9a750145bfdb90893c249",
+    "separateD2ReadinessFailureReceiptSHA256": "3c1bafc1be35d291557423d4a6f27e252c29b18398705e69c6d90ed7fdb2132f"
+  },
+  "limits": [
+    "Observed same-process survival after a required cold report in this instrumented SDK fixture on one OS. The completion mark records invocation, not a system reporting-check acknowledgement or universal guarantee.",
+    "Thirty seconds is an operator observation window, not an Apple deadline. The independently verified 49.916574833-second lower bound sums sequential command durations after the first completion observation; the operator recorded 62.299819416 seconds including other elapsed work.",
+    "Native timestamps precede serialization, but synchronous MainActor JSON/fsync logging remains on the measured fixture path. No production latency baseline is claimed.",
+    "The first end action precedes the fixture cleanup mark and a second follows it. The ordering is measured; neither action cause nor an OS timeout is inferred.",
+    "The earlier generic-caller Focus3 report failure and initial CLI-ordering failure with zero sends remain separate preparation evidence. No causal comparison about phoneNumber or Focus is established.",
+    "D1 awaits physical locked answer and timing. D2 readiness failed with zero pushes and has no qualification from this record. Media transport, audio-engine health and R3 remain unqualified.",
+    "The public excerpt omits private app/device/team identities, token records and paths and intentionally has sequence gaps. Private raw bytes and their manifest remain retained; this lean publication is not a standalone replay bundle."
+  ],
+  "audit": {
+    "operatorCommands": 45,
+    "allOperatorCommandExitCodesZero": true,
+    "sandboxSends": 1,
+    "nonSecretManifestDigestsIndependentlyVerified": 209,
+    "retainedTokenFilesNotReadOrRehashed": 1,
+    "nonSecretCommandStreamsIndependentlyVerified": 86,
+    "deletedSecretStreamsNotReadOrRehashed": 4,
+    "temporarySecretPathsConfirmedAbsent": 5
+  }
+}
