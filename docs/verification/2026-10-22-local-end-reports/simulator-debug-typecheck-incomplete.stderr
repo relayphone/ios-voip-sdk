@@ -15,11 +15,11 @@ Sources/VoIPSDK/SimulatorSupport.swift:43:9: error: cannot find 'RuntimeBootstra
 45 |     }
 
 Sources/VoIPSDK/SimulatorSupport.swift:54:59: error: cannot find 'RuntimeBootstrap' in scope
-52 | 
+52 |
 53 |   #if os(iOS) && targetEnvironment(simulator)
 54 |   nonisolated static var currentPushIdentifier: String? { RuntimeBootstrap.currentPushIdentifier }
    |                                                           `- error: cannot find 'RuntimeBootstrap' in scope
-55 | 
+55 |
 56 |   nonisolated static func associateIncomingReport(_ id: UUID) {
 
 Sources/VoIPSDK/SimulatorSupport.swift:58:5: error: cannot find 'RuntimeBootstrap' in scope
@@ -28,7 +28,7 @@ Sources/VoIPSDK/SimulatorSupport.swift:58:5: error: cannot find 'RuntimeBootstra
 58 |     RuntimeBootstrap.associateIncomingReport(id, pushID: pushID)
    |     `- error: cannot find 'RuntimeBootstrap' in scope
 59 |   }
-60 | 
+60 |
 
 Sources/VoIPSDK/SimulatorSupport.swift:63:5: error: cannot find 'RuntimeBootstrap' in scope
 61 |   nonisolated static func finishIncomingReport(_ id: UUID) {

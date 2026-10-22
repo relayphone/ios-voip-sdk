@@ -299,7 +299,12 @@
       "elapsedSeconds": 1.4832,
       "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "stderrSHA256": "de42c57b2b4ae8299cff0b01a149afea0743ac87e3f0e7cea236f5d47f0f8490",
-      "classification": "incomplete typecheck command omitted Engine sources that define RuntimeBootstrap; not a production-source failure"
+      "classification": "incomplete typecheck command omitted Engine sources that define RuntimeBootstrap; not a production-source failure",
+      "publishedDiagnostic": {
+        "file": "simulator-debug-typecheck-incomplete.stderr",
+        "sha256": "c2ba83443dc8058be0eb31871f9694a559e0fcde56be256ef5f7043cdf5deb9d",
+        "transformation": "trailing whitespace removed from compiler source excerpts; raw stderr digest remains above and the raw artifact is retained privately"
+      }
     }
   ]
 }
