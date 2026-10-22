@@ -73,7 +73,7 @@ check_build_receipt(pathlib.Path(sys.argv[6]),*(pathlib.Path(p) for p in sys.arg
 pathlib.Path(sys.argv[1]).write_text(json.dumps(source_identity(),indent=2)+'\n')
 PY
 # Keep raw runtime inventories, which contain local SDK paths, out of evidence.
-RUNTIME_JSON=$(limit 30 xcrun simctl list runtimes -j)
+RUNTIME_JSON=$(limit 60 xcrun simctl list runtimes -j)
 SDK_M0_RUNTIME_JSON="$RUNTIME_JSON" python3 - "${SDK_M0_RUNTIME:-}" "$OUT/runtime.json" <<'PY'
 import json,os,pathlib,sys
 rows=[r for r in json.loads(os.environ['SDK_M0_RUNTIME_JSON'])['runtimes']
