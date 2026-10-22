@@ -189,6 +189,8 @@ def native_source_identity():
            'Tests/VoIPSDK/IncomingDeliveryHost.m.in','Tests/VoIPSDK/IncomingIntakeTests.swift',
            'Tests/VoIPSDK/run_incoming_intake.sh','Tests/VoIPSDK/IncomingCachePlatform.swift',
            'Tests/VoIPSDK/IncomingCacheTests.swift','Tests/VoIPSDK/run_incoming_cache.py']
+    scope += ['discovery/probe/push_entry_main_stall.h','discovery/probe/push_entry_main_stall.m',
+              'discovery/push_main_stall_conformance.py','discovery/check_push_main_stall.py']
     dirty=subprocess.check_output(['git','status','--porcelain','--untracked-files=all','--',*scope],cwd=ROOT)
     if dirty: raise RuntimeError('Commit all A1 source/fixture inputs before a native measurement')
     names=sorted(filter(None,subprocess.check_output(['git','ls-files','-z','--',*scope],cwd=ROOT).decode().split('\0')))
@@ -199,6 +201,8 @@ def native_source_identity():
               'Tests/VoIPSDK/IncomingDeliveryHost.m.in','Tests/VoIPSDK/IncomingIntakeTests.swift',
               'Tests/VoIPSDK/run_incoming_intake.sh','Tests/VoIPSDK/IncomingCachePlatform.swift',
               'Tests/VoIPSDK/IncomingCacheTests.swift','Tests/VoIPSDK/run_incoming_cache.py']
+    required += ['discovery/probe/push_entry_main_stall.h','discovery/probe/push_entry_main_stall.m',
+                 'discovery/push_main_stall_conformance.py','discovery/check_push_main_stall.py']
     if any(name not in names for name in required): raise RuntimeError('Missing committed A1 measurement inputs')
     digest=hashlib.sha256()
     for name in names: digest.update(name.encode()+b'\0'+(ROOT/name).read_bytes()+b'\0')

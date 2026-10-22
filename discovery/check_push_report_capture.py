@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 import run_push_report_entry as gate
+from check_push_main_stall import synthetic_fixture
 
 SOURCE = dict(sourceCommit='host-fixture', sourceInputsSHA256='host-fixture', inputs=['host-fixture'])
 SIMULATOR = '21974CC4-7C06-43E3-8F35-EEDCAF325739'
@@ -36,7 +37,7 @@ def fixture(root):
         events = []
         def row(event, **fields):
             events.append(dict(common, event=event, sequence=len(events) + 1, t_ms=len(events), profile='ios-27.0', **fields))
-        for delivery in range(2 if mode == 'sdk-duplicate' else 1):
+        for delivery in range(0 if mode == 'sdk-main-stall' else 2 if mode == 'sdk-duplicate' else 1):
             push = dict(pushID=run_id + '-' + str(delivery))
             boundary = dict(push, api='metadata', mustReport=mode != 'optional')
             violation = dict(push, severity='error')
@@ -56,14 +57,19 @@ def fixture(root):
             if mode != 'deferred':
                 row('push.callbackReturned', **boundary, reportEntered=mode != 'optional')
             row('push.completed', **boundary, reportEntered=mode != 'optional')
+        observation = None
+        if mode == 'sdk-main-stall':
+            events, observation = synthetic_fixture(run_id, pid)
         journal = root / (mode + '.runtime.jsonl')
         journal.write_text(''.join(json.dumps(row) + '\n' for row in events))
         gate.save(root / (mode + '.session.json'), dict(common, schemaVersion=1, profile='ios-27.0',
                   notification='dev.callkitsim.control.' + str(pid)))
-        probes = [dict(event=event, sequence=i + 1, t_ms=i, main=True, simulatorID=SIMULATOR, **common,
-                       **(dict(case=mode, executableSHA256=files['PushEntry.app/PushEntry']) if event == 'launch' else
-                          dict(boundariesObserved=True) if event == 'entry.capture' else {}))
-                  for i, event in enumerate(('app.entry', 'launch', 'entry.capture', 'done'))]
+        fields = [dict(event='app.entry'), dict(event='launch', case=mode,
+                  executableSHA256=files['PushEntry.app/PushEntry'])]
+        if observation: fields.append(observation)
+        fields += [dict(event='entry.capture', boundariesObserved=True), dict(event='done')]
+        probes = [dict(item, sequence=i + 1, t_ms=i, main=True, simulatorID=SIMULATOR, **common)
+                  for i, item in enumerate(fields)]
         log = root / (mode + '.log')
         log.write_text(gate.BUNDLE + ': ' + str(pid) + '\n' + ''.join('PROBE ' + json.dumps(row) + '\n' for row in probes))
         gate.save(root / (mode + '.receipt.json'), dict(common, schemaVersion=2, simulatorID=SIMULATOR, appPID=pid,
@@ -72,11 +78,36 @@ def fixture(root):
                   terminationSignal=15, terminationSignalDelivered=True, lastProbeEvent='done',
                   traceSHA256=gate.digest(log), journalSHA256=gate.digest(journal)))
     gate.save(root / 'manifest.json', dict(schemaVersion=1, source=SOURCE, simulatorID=SIMULATOR, cases=identities,
-              classification='simulator in-app PushKit injection; not cold launch or APNs',
+              classification=gate.CLASSIFICATION,
               files={str(p.relative_to(root)): gate.digest(p) for p in root.rglob('*') if p.is_file()}))
 
 
 class CaptureControls(unittest.TestCase):
+    def test_rebound_main_stall_evidence_cannot_substitute_for_actual_entry(self):
+        for tamper in ('remove-report', 'replace-public-payload'):
+            with self.subTest(tamper=tamper), tempfile.TemporaryDirectory(prefix='push-stall-host-') as temporary:
+                root = Path(temporary)
+                fixture(root)
+                manifest = json.loads((root / 'manifest.json').read_text())
+                receipt = json.loads((root / 'sdk-main-stall.receipt.json').read_text())
+                if tamper == 'remove-report':
+                    path = root / 'sdk-main-stall.runtime.jsonl'
+                    rows = [json.loads(line) for line in path.read_text().splitlines()]
+                    rows = [row for row in rows if row['event'] != 'report.incoming']
+                    for index, row in enumerate(rows): row['sequence'] = index + 1
+                    path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+                    receipt['journalSHA256'] = gate.digest(path)
+                else:
+                    path = root / 'sdk-main-stall.log'
+                    path.write_text(path.read_text().replace('main-stall-server', 'substituted-server'))
+                    receipt['traceSHA256'] = gate.digest(path)
+                gate.save(root / 'sdk-main-stall.receipt.json', receipt)
+                for name in ('sdk-main-stall.receipt.json', str(path.relative_to(root))):
+                    manifest['files'][name] = gate.digest(root / name)
+                gate.save(root / 'manifest.json', manifest)
+                with patch.object(gate, 'native_source_identity', return_value=SOURCE):
+                    with self.assertRaises(ValueError): gate.validate(root)
+
     def test_complete_capture_and_tamper_refusals(self):
         with tempfile.TemporaryDirectory(prefix='push-entry-host-') as temporary:
             root = Path(temporary)

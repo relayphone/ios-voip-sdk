@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Five A0/A1 cases on the caller's fresh, owned M0 simulator; never boots one."""
+"""A0/A1 cases on the caller's fresh, owned M0 simulator; never boots one."""
 from pathlib import Path
 import argparse
 import hashlib
@@ -11,11 +11,13 @@ import subprocess
 import uuid
 
 from check_push_report_entry import native_source_identity, qualify_journal, qualify_negative_journal
+from push_main_stall_conformance import qualify_main_stall_journal
 from run_scenario import run
 from summarize import successful_stop
 
 BUNDLE = 'dev.iosvoipsdk.pushentry'
-CASES = ('sdk-required', 'sdk-duplicate', 'missing', 'deferred', 'optional')
+CASES = ('sdk-required', 'sdk-duplicate', 'missing', 'deferred', 'optional', 'sdk-main-stall')
+CLASSIFICATION = 'simulator in-app PushKit injections and direct SDK callback-body main-stall fixture; not cold launch or APNs'
 PRODUCTS = {'PushEntry.app/PushEntry', 'PushEntry.app/Info.plist',
             'PushEntry.app/IosVoipSDKRuntime.bundle/ios-27.0.json'}
 
@@ -47,7 +49,7 @@ def validate(out):
     require(type(manifest.get('schemaVersion')) is int and manifest['schemaVersion'] == 1,
             'unsupported native capture manifest')
     require(manifest['source'] == native_source_identity(), 'capture source differs from checkout')
-    require(manifest['classification'] == 'simulator in-app PushKit injection; not cold launch or APNs',
+    require(manifest['classification'] == CLASSIFICATION,
             'incorrect acceptance scope')
     sim = str(uuid.UUID(manifest['simulatorID'])).upper()
     require(sim == manifest['simulatorID'], 'invalid simulator identity')
@@ -116,8 +118,11 @@ def validate(out):
                 session.get('notification') == 'dev.callkitsim.control.' + str(pid), 'unbound runtime session')
         rows = [json.loads(line) for line in (out / (mode + '.runtime.jsonl')).read_text().splitlines()]
         require(rows and all(row.get('profile') == profile['id'] for row in rows), 'mixed native runtime profile')
-        gate = qualify_negative_journal if mode in ('missing', 'deferred') else qualify_journal
-        results.append(gate(rows, mode, run_id, pid))
+        if mode == 'sdk-main-stall':
+            results.append(qualify_main_stall_journal(rows, probes, run_id, pid))
+        else:
+            gate = qualify_negative_journal if mode in ('missing', 'deferred') else qualify_journal
+            results.append(gate(rows, mode, run_id, pid))
     require(len({item['pid'] for item in manifest['cases'].values()}) == len(CASES) and
             len({item['runID'] for item in manifest['cases'].values()}) == len(CASES),
             'native cases reused a process or run')
@@ -174,7 +179,7 @@ def capture(build, out, sim):
         identities[mode] = dict(runID=run_id, pid=supervisor['appPID'])
     require(native_source_identity() == identity, 'source changed during native capture')
     save(out / 'manifest.json', dict(schemaVersion=1, source=identity, simulatorID=sim, cases=identities,
-         classification='simulator in-app PushKit injection; not cold launch or APNs',
+         classification=CLASSIFICATION,
          files={str(path.relative_to(out)): digest(path) for path in out.rglob('*') if path.is_file()}))
     result = validate(out)
     save(out / 'summary.json', result)
