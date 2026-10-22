@@ -143,7 +143,12 @@ function CallingJourney() {
       />
       <Button
         title="Report connected"
-        disabled={automated || busy || conversation?.status !== 'connected'}
+        disabled={
+          automated ||
+          busy ||
+          conversation?.pending !== undefined ||
+          !['connecting', 'dialing'].includes(conversation?.status ?? '')
+        }
         onPress={() =>
           conversation &&
           void command(() =>

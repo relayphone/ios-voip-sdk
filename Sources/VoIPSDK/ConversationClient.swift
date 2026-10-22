@@ -370,7 +370,7 @@ public final class ConversationClient: NSObject {
     switch conversation.state {
     case .idle: status = record.connecting ? .connecting : direction == .incoming ? .ringing : .dialing
     case .joining: status = .connecting
-    case .joined: status = .connected
+    case .joined: status = record.connectedAt == nil ? .connecting : .connected
     case .paused: status = .held
     case .leaving: status = .ending
     case .left: status = .ended

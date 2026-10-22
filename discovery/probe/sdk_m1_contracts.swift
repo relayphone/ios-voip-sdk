@@ -197,8 +197,20 @@ private final class SDKM1ContractsProbe {
       "deadlineMS": Int(pending.deadline.timeIntervalSince1970 * 1000),
       "remainingMS": Int(pending.deadline.timeIntervalSinceNow * 1000), "handlerAttached": false,
       "clockBeforeMS": clockBefore])
-    let connected = await wait(seconds: pending.deadline.timeIntervalSinceNow + 3) {
-      client.snapshots.first(where: { $0.id == id })?.status == .connected
+    let joined = await wait(seconds: pending.deadline.timeIntervalSinceNow + 3) {
+      guard let call = client.snapshots.first(where: { $0.id == id }) else { return false }
+      return call.status == .connecting && call.pending == nil && call.connectedAt == nil
+    }
+    ContractTrace.log("contract.joinSettled", ["joined": joined, "conversationID": id.uuidString])
+    var connected = false
+    if joined {
+      ContractTrace.log("contract.backendConnectedRequested", ["conversationID": id.uuidString])
+      try await client.reportConversation(id, report: .connected)
+      ContractTrace.log("contract.backendConnected", ["accepted": true, "conversationID": id.uuidString])
+      connected = await wait(seconds: 3) {
+        guard let call = client.snapshots.first(where: { $0.id == id }) else { return false }
+        return call.status == .connected && call.connectedAt != nil
+      }
     }
     ContractTrace.log("contract.observation", ["connected": connected, "conversationID": id.uuidString])
     if client.snapshots.contains(where: { $0.id == id }) {

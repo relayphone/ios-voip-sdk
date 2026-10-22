@@ -25,6 +25,12 @@ Incoming metadata stays in `payload`; outgoing metadata is passed to native.
 Snapshot arrays and their nested bridge JSON are frozen copies. Applications
 should treat state as read-only and use commands/reports to change it.
 
+Fulfilling `join` or `start` confirms signaling acceptance. Incoming calls remain
+`connecting` after the system joins; outgoing calls can remain `dialing` until a
+`connecting` report. Neither path publishes `connected` or `connectedAt` until the
+backend calls `reportConversation(id, { type: 'connected' })`. System hold and
+termination states still take precedence over that transport progress.
+
 `setConversationHandler(null)` removes the handler. Replacing or removing it
 aborts the old handler's signals with `handlerReplaced` and ignores its late
 promise results. Native retains unexpired actions, may redeliver them to the new

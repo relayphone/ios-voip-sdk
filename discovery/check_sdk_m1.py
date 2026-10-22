@@ -71,8 +71,9 @@ def fixture_case(root, case, pid):
         for label in ('dedup-event', 'dedup-server', 'dedup-single-conversation'):
             assertion(label)
         handler('join')
-        snapshot('connected')
+        snapshot('connecting')
         assertion('joined')
+        add('m1.backendConnectedRequested', dict(conversationID=CONVERSATION))
         snapshot('connected', connected=True)
         hook('connected', connected=True)
         assertion('connected-report')
@@ -99,8 +100,12 @@ def fixture_case(root, case, pid):
             clock = 5_000
             add('m1.handlerAttached', dict(attached=True))
             handler('join', deadline=iso(WALL + 30_000))
-            snapshot('connected', connected=True)
+            snapshot('connecting')
             assertion('cold-redelivered')
+            add('m1.backendConnectedRequested', dict(conversationID=CONVERSATION))
+            snapshot('connected', connected=True)
+            hook('connected', connected=True)
+            assertion('connected-report')
         else:
             assertion('platform-deadline-visible')
     if case != 'unhandled-expiry':
@@ -208,6 +213,44 @@ class Controls(unittest.TestCase):
 
     def test_positive_all_cases(self):
         self.check()
+
+    def test_backend_connection_boundary(self):
+        for case in ('journey', 'cold-launch'):
+            for field, value in (('status', 'connected'), ('hasConnectedAt', True),
+                                 ('pending', dict(kind='join'))):
+                with self.subTest(case=case, field=field):
+                    self.check(lambda root, case=case, field=field, value=value:
+                        mutate_rows(root / 'm1', case, lambda rows:
+                            next(row for row in rows if row['event'] == 'sdk.snapshot' and row['conversations'] and
+                                 row['conversations'][0]['status'] == 'connecting' and
+                                 'pending' not in row['conversations'][0])['conversations'][0].update({field: value})))
+            self.check(lambda root, case=case: mutate_rows(root / 'm1', case, lambda rows:
+                next(row for row in rows if row['event'] == 'sdk.snapshot' and row['conversations'] and
+                     row['conversations'][0]['status'] == 'connected')['conversations'][0].update(hasConnectedAt=False)))
+
+    def test_backend_report_marker_identity_and_order(self):
+        for case in ('journey', 'cold-launch'):
+            self.check(lambda root, case=case: mutate_rows(root / 'm1', case, lambda rows:
+                next(row for row in rows if row['event'] == 'm1.backendConnectedRequested').update(conversationID='other-call')))
+            self.check(lambda root, case=case: mutate_rows(root / 'm1', case, lambda rows:
+                next(row for row in rows if row['event'] == 'm1.backendConnectedRequested').pop('conversationID')))
+            self.check(lambda root, case=case: mutate_rows(root / 'm1', case, lambda rows:
+                rows.remove(next(row for row in rows if row['event'] == 'm1.backendConnectedRequested'))))
+            def move(rows, after):
+                marker = next(row for row in rows if row['event'] == 'm1.backendConnectedRequested')
+                rows.remove(marker)
+                if after:
+                    target = next(row for row in rows if row['event'] == 'sdk.snapshot' and row['conversations'] and
+                                  row['conversations'][0]['status'] == 'connected')
+                else:
+                    target = next(row for row in rows if row['event'] == 'm1.assertion' and
+                                  row.get('label') in ('joined', 'cold-redelivered'))
+                marker.update(t_ms=target['t_ms'], wallTimeMS=target['wallTimeMS'])
+                rows.insert(rows.index(target) + int(after), marker)
+            for after in (False, True):
+                with self.subTest(case=case, after_connected=after):
+                    self.check(lambda root, case=case, after=after: mutate_rows(root / 'm1', case,
+                        lambda rows: move(rows, after)))
 
     def test_base_build_bytes_and_receipts_remain_required(self):
         self.check(lambda root: (root / 'binaries/example').write_bytes(b'tampered'))
