@@ -27,13 +27,13 @@ resource=dict(CFBundleIdentifier='dev.callkitsim.sdkbootstrap.runtime',CFBundleN
               CFBundlePackageType='BNDL',CFBundleVersion='1')
 (path.parent/'IosVoipSDKRuntime.bundle/Info.plist').write_bytes(plistlib.dumps(resource))
 PY
-for source in CKInterposition CKPushDelivery; do
+for source in CKInterposition CKPushDelivery CKPushLaunch; do
   xcrun --sdk iphonesimulator clang -target "$TARGET" -isysroot "$SDK" -fobjc-arc -fmodules \
     -DCKSIM_SDK_SOURCE=1 -DCKSIM_ABI_TESTING=1 -DCKSIM_RUNTIME_VERSION=\""$VERSION"\" \
     -c "Sources/Interposition/$source.m" -o "$WORK/$source.o"
 done
 xcrun --sdk iphonesimulator swiftc -target "$TARGET" -sdk "$SDK" -swift-version 6 -parse-as-library \
   -import-objc-header Sources/Interposition/CKRuntimeSeam.h Sources/Engine/RuntimeEngine.swift \
-  Sources/VoIPSDK/SimulatorSupport.swift discovery/probe/sdk_bootstrap.swift "$WORK/CKInterposition.o" "$WORK/CKPushDelivery.o" \
+  Sources/VoIPSDK/SimulatorSupport.swift discovery/probe/sdk_bootstrap.swift "$WORK/CKInterposition.o" "$WORK/CKPushDelivery.o" "$WORK/CKPushLaunch.o" \
   -o "$APP/SDKBootstrap"
 codesign -s - --force "$APP"

@@ -15,6 +15,8 @@ on:
       - "expo-module.config.json"
       - "IosVoipSDK.podspec"
       - "discovery/**"
+      - "Tools/**"
+      - "scripts/build-runtime.sh"
       - ".github/workflows/sdk-m0.yml"
   pull_request:
     paths:
@@ -29,6 +31,8 @@ on:
       - "expo-module.config.json"
       - "IosVoipSDK.podspec"
       - "discovery/**"
+      - "Tools/**"
+      - "scripts/build-runtime.sh"
       - ".github/workflows/sdk-m0.yml"
   workflow_dispatch:
 
@@ -50,6 +54,7 @@ jobs:
       CI: "1"
       EXPO_NO_TELEMETRY: "1"
       SDK_M1_ACCEPTANCE: "1"
+      SDK_SYSTEM_ACCEPTANCE: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -69,11 +74,16 @@ jobs:
             printf 'SDK_M0_SPM_DEVICE_DIR=%s/spm-device\n' "$SDK_M0_BUILD_ROOT"
             printf 'SDK_M0_BUILD_RECEIPT=%s/build-receipt.json\n' "$SDK_M0_BUILD_ROOT"
             printf 'SDK_M1_CONTRACT_BUILD=%s/m1-contracts\n' "$SDK_M0_BUILD_ROOT"
+            printf 'SDK_SYSTEM_CONTROL_PACKAGE=%s/system-control\n' "$SDK_M0_BUILD_ROOT"
           } >> "$GITHUB_ENV"
           mkdir -p "$SDK_M0_BUILD_ROOT" "$SDK_M0_BUILD_LOGS"
           python3 discovery/check_sdk_m0.py | tee "$SDK_M0_BUILD_LOGS/offline-controls.json"
           python3 discovery/check_sdk_m1.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-offline-controls.log"
           python3 discovery/check_sdk_m1_contracts.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-contract-controls.log"
+          python3 discovery/check_sdk_system.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/system-controls.log"
+          python3 discovery/check_cli_controls.py | tee "$SDK_M0_BUILD_LOGS/cli-controls.json"
+          python3 discovery/check_cli_push_launch.py | tee "$SDK_M0_BUILD_LOGS/cli-push-launch-controls.json"
+          bash Tests/PushLaunch/run.sh | tee "$SDK_M0_BUILD_LOGS/push-launch-filesystem-controls.json"
           python3 Tests/VoIPSDK/run_push_context.py | tee "$SDK_M0_BUILD_LOGS/push-context-controls.json"
           python3 discovery/check_expo_bridge.py | tee "$SDK_M0_BUILD_LOGS/expo-relay-controls.json"
           python3 discovery/check_platform_shims.py | tee "$SDK_M0_BUILD_LOGS/platform-controls.json"
@@ -152,6 +162,7 @@ jobs:
           } 2>&1 | tee "$SDK_M0_BUILD_LOGS/bootstrap-build.log"
           bash discovery/build_sdk_device_probe.sh "$SDK_M0_BUILD_ROOT/device" 2>&1 | tee "$SDK_M0_BUILD_LOGS/device-probe-build.log"
           bash discovery/build_sdk_m1_contracts.sh "$SDK_M1_CONTRACT_BUILD" 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-contracts-build.log"
+          CKSIM_BUILD_ARCHS="$(uname -m)" bash scripts/build-runtime.sh "$SDK_SYSTEM_CONTROL_PACKAGE" 2>&1 | tee "$SDK_M0_BUILD_LOGS/system-control-build.log"
       - name: Record the source and exact built artifacts
         run: |
           python3 discovery/sdk_m0_conformance.py --record-build "$SDK_M0_BUILD_RECEIPT" \

@@ -1,0 +1,273 @@
+#!/usr/bin/env python3
+"""Seven external cksim journeys on the simulator already owned by M0.
+
+No simulator creation, installation, DYLD mutation or device access lives here.
+Native acceptance is decided by sdk_system_conformance, never by this driver.
+"""
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import uuid
+
+import sdk_m0_conformance as m0
+from summarize import require
+
+ROOT = Path(__file__).resolve().parents[1]
+BUNDLE = 'dev.iosvoipsdk.example'
+CASES = ('answer-end', 'decline', 'hold-accept', 'end-accept', 'mute-echo', 'provider-reset', 'push-launch')
+
+
+def write(path, value):
+    with path.open('x') as stream:
+        json.dump(value, stream, indent=2)
+        stream.write('\n')
+
+
+def live(path, probe=False):
+    if not path.exists():
+        return []
+    # Observations may race a live file append. Only the unterminated final
+    # line is deferred; every complete PROBE line is parsed strictly. The final
+    # gate rereads and hashes the entire original capture without this view.
+    rows = []
+    for line in path.read_bytes().splitlines(keepends=True):
+        if not line.endswith(b'\n'):
+            continue
+        if probe:
+            if b'PROBE ' not in line:
+                continue
+            line = line.split(b'PROBE ', 1)[1]
+        rows.append(json.loads(line))
+    return rows
+
+
+class Journey:
+    def __init__(self, args, directory, case):
+        self.args, self.root, self.case = args, directory, case
+        directory.mkdir()
+        self.name = 'sdk-system-' + case
+        self.trace = directory / (self.name + '.log')
+        self.process = None
+        self.bindings, self.controls, self.commands = [], [], []
+        self.container = Path(self.sim('get_app_container', args.simulator, BUNDLE, 'data'))
+        self.runtime = self.container / 'Documents/.callkit-simulator' / args.run_id
+        self.journal = self.runtime / 'events.jsonl'
+        self.pid = None
+
+    def sim(self, *command):
+        result = subprocess.run(['xcrun', 'simctl', *command], capture_output=True, text=True, timeout=60)
+        require(result.returncode == 0, 'simctl ' + command[0] + ' failed: ' + result.stderr)
+        return result.stdout.removesuffix('\n')
+
+    def wait(self, condition, seconds=12):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if self.process and self.process.poll() is not None:
+                raise RuntimeError('system supervisor exited before checkpoint')
+            value = condition()
+            if value:
+                return value
+            time.sleep(.025)
+        raise RuntimeError(self.case + ': checkpoint deadline')
+
+    def rows(self):
+        return live(self.trace, True)
+
+    def engine(self):
+        return live(self.journal)
+
+    def snapshot(self, predicate):
+        rows = [row for row in self.rows() if row['event'] == 'sdk.snapshot']
+        return rows and predicate(rows[-1]['conversations']) and rows[-1]
+
+    def command(self, operation, conversation=None):
+        value = dict(id=str(uuid.uuid4()).upper(), runID=self.args.run_id, case=self.case, pid=self.pid, operation=operation)
+        if conversation:
+            value['conversationID'] = conversation
+        name = f'fixture-{len(self.commands):02}.json'
+        write(self.root / name, value)
+        target = self.container / ('tmp/sdk-system-control-' + self.args.run_id + '.json')
+        require(not target.exists(), 'unconsumed fixture command')
+        temporary = target.with_suffix('.tmp')
+        write(temporary, value)
+        temporary.replace(target)
+        self.commands.append(name)
+        if operation != 'finish':
+            self.wait(lambda: any(row['event'] == 'system.commandCompleted' and row.get('id') == value['id'] for row in self.rows()))
+
+    def cli(self, operation, *arguments, expected_error=None):
+        name = f'control-{len(self.controls):02}.json'
+        command = [str(self.args.package / 'cksim'), '--simulator', self.args.simulator, '--bundle', BUNDLE,
+                   '--runtime-dir', str(self.args.package), '--timeout', '10', '--command-receipt', str(self.root / name),
+                   operation, *arguments]
+        result = subprocess.run(command, capture_output=True, timeout=75)
+        (self.root / (name + '.stdout')).write_bytes(result.stdout)
+        (self.root / (name + '.stderr')).write_bytes(result.stderr)
+        self.controls.append(name)
+        response = json.loads(result.stdout)
+        require((result.returncode == 1 and response.get('success') is False and expected_error in response.get('error', '')) if expected_error else
+                result.returncode == 0, 'cksim ' + operation + ' refused: ' + result.stderr.decode(errors='replace'))
+        return response
+
+    def push(self, role, duplicate=False):
+        path = self.root / (role + ('-duplicate' if duplicate else '') + '.payload.json')
+        payload = dict(incomingCall=dict(eventId='system-event-' + self.args.run_id + '-' + role,
+            serverCallId='system-server-' + self.args.run_id + '-' + role,
+            caller=dict(id='system-fixture', displayName='System acceptance', phoneNumber='+15555550142'), hasVideo=False))
+        write(path, payload)
+        response = self.cli('push', '--payload-file', str(path), '--must-report', 'false' if duplicate else 'true')
+        if duplicate:
+            self.wait(lambda: any(row['event'] == 'push.completed' and row.get('pushID') == response['id'] for row in self.engine()))
+            return
+        return self.bind(role, response['id'])
+
+    def bind(self, role, push_id):
+        report = self.wait(lambda: next((row for row in self.engine() if row['event'] == 'report.incoming' and row.get('pushID') == push_id), None))
+        known = {value['conversationID'] for value in self.bindings}
+        snapshot = self.wait(lambda: self.snapshot(lambda calls: len([call for call in calls if call['id'] not in known and call['status'] == 'ringing']) == 1))
+        call = next(call for call in snapshot['conversations'] if call['id'] not in known and call['status'] == 'ringing')
+        binding = dict(role=role, conversationID=call['id'], callUUID=report['callUUID'], pushID=push_id,
+                       reportSequence=report['sequence'], snapshotSequence=snapshot['sequence'])
+        self.bindings.append(binding)
+        return binding
+
+    def settle(self, response):
+        ids = response['result']['actionIDs']
+        self.wait(lambda: all(any(row['event'] == 'action.settled' and row.get('actionID') == identity and row.get('fulfilled') is True
+                                  for row in self.engine()) for identity in ids))
+
+    def answer(self, call):
+        self.settle(self.cli('answer', call['callUUID']))
+        self.connected(call)
+
+    def connected(self, call):
+        # Signaling fulfillment is not backend connection (A8). Wait for the
+        # real connecting projection, then issue an explicit public report.
+        self.wait(lambda: self.snapshot(lambda calls: any(value['id'] == call['conversationID'] and value['status'] == 'connecting' and 'pending' not in value for value in calls)))
+        self.command('backend-connected', call['conversationID'])
+        self.wait(lambda: self.snapshot(lambda calls: any(value['id'] == call['conversationID'] and value['status'] == 'connected' and value['hasConnectedAt'] for value in calls)))
+        self.wait(lambda: any(row['event'] == 'system.hook' and row.get('conversationID') == call['conversationID'] and row.get('status') == 'connected' and row.get('hasConnectedAt') is True for row in self.rows()))
+
+    def end(self, call, decline=False):
+        self.settle(self.cli('decline' if decline else 'end', call['callUUID']))
+        self.wait(lambda: self.snapshot(lambda calls: all(value['id'] != call['conversationID'] for value in calls)))
+
+    def run(self):
+        env = dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=self.args.run_id,
+            SIMCTL_CHILD_SDK_SYSTEM_RUN_ID=self.args.run_id, SIMCTL_CHILD_SDK_SYSTEM_CASE=self.case,
+            SIMCTL_CHILD_SDK_M0_ACCEPTANCE='0', SIMCTL_CHILD_SDK_M1_CASE='')
+        launch = ['xcrun', 'simctl', 'launch', '--console', self.args.simulator, BUNDLE]
+        if self.case == 'push-launch':
+            path = self.root / 'first.payload.json'
+            write(path, dict(incomingCall=dict(eventId='system-event-' + self.args.run_id + '-first',
+                serverCallId='system-server-' + self.args.run_id + '-first', caller=dict(id='cold-fixture'), hasVideo=False)))
+            launch = [str(self.args.package / 'cksim'), '--simulator', self.args.simulator, '--bundle', BUNDLE,
+                '--runtime-dir', str(self.args.package), 'push', '--payload-file', str(path), '--must-report', 'true',
+                '--launch', '--run-id', self.args.run_id, '--launch-receipt', str(self.root / 'launch-push.json')]
+        command = [sys.executable, str(ROOT / 'discovery/run_scenario.py'), '--console-launcher-stop', '--timeout', '120',
+            '--output', str(self.trace), '--receipt', str(self.root / (self.name + '.receipt.json')),
+            '--run-id', self.args.run_id, '--simulator-id', self.args.simulator, '--scenario', self.name, '--bundle-id', BUNDLE,
+            '--terminate-command', 'xcrun', 'simctl', 'terminate', self.args.simulator, BUNDLE, '--launch-command', *launch]
+        with (self.root / 'supervisor.log').open('xb') as log:
+            self.process = subprocess.Popen(command, env=env, stdout=log, stderr=subprocess.STDOUT)
+            try:
+                ready = self.wait(lambda: next((row for row in self.rows() if row['event'] == 'system.ready'), None), 30)
+                self.pid = ready['pid']
+                session = json.loads((self.runtime.parent / 'session.json').read_text())
+                require(session['runID'] == self.args.run_id and session['pid'] == self.pid and session['bundleID'] == BUNDLE, 'fresh runtime session differs')
+                write(self.root / 'session.json', session)
+                if self.case == 'push-launch':
+                    first = self.bind('first', json.loads((self.root / 'launch-push.json').read_text())['pushID'])
+                    response = self.cli('answer', first['callUUID'])
+                    self.wait(lambda: self.snapshot(lambda calls: any(value['id'] == first['conversationID'] and value.get('pending', {}).get('kind') == 'join' and value['pending']['origin'] == 'system' for value in calls)))
+                    self.command('attach-handler')
+                    self.settle(response)
+                    self.connected(first)
+                    self.end(first)
+                else:
+                    first = self.push('first')
+                    if self.case == 'decline':
+                        self.end(first, True)
+                    else:
+                        self.answer(first)
+                        if self.case in ('hold-accept', 'end-accept'):
+                            waiting = self.push('waiting')
+                            self.settle(self.cli('hold-and-accept' if self.case == 'hold-accept' else 'end-and-accept', waiting['callUUID'], '--active-call', first['callUUID']))
+                            self.wait(lambda: self.snapshot(lambda calls: any(value['id'] == first['conversationID'] and value['status'] == 'held' for value in calls) if self.case == 'hold-accept' else all(value['id'] != first['conversationID'] for value in calls)))
+                            self.connected(waiting)
+                            self.end(waiting)
+                            if self.case == 'hold-accept': self.end(first)
+                        elif self.case == 'mute-echo':
+                            self.settle(self.cli('mute', first['callUUID'], '--muted', 'true'))
+                            self.push('first', True)
+                            self.command('app-mute', first['conversationID'])
+                            self.wait(lambda: any(row['event'] == 'system.handler' and row.get('origin') == 'app' and row.get('kind') == 'mute' for row in self.rows()))
+                            self.cli('reset', expected_error='selected-provider reset requires no pending runtime actions')
+                            self.settle(self.cli('mute', first['callUUID'], '--muted', 'false'))
+                            self.command('release-mute')
+                            self.wait(lambda: any(row['event'] == 'action.settled' and row.get('origin') == 'muteEcho' for row in self.engine()))
+                            self.settle(self.cli('tones', first['callUUID'], '--digits', '12#A'))
+                            self.end(first)
+                        elif self.case == 'provider-reset':
+                            self.cli('reset')
+                            self.wait(lambda: any(row['event'] == 'system.event' and row.get('name') == 'providerReset' for row in self.rows()))
+                        else: self.end(first)
+                empty = self.wait(lambda: self.snapshot(lambda calls: calls == []))
+                self.wait(lambda: any(row['event'] == 'system.hook' and row.get('count') == 0 and row['sequence'] > empty['sequence'] for row in self.rows()))
+                self.command('finish')
+                require(self.process.wait(timeout=30) == 0, 'system supervisor refused capture')
+            finally:
+                cleanup_error = None
+                if self.process.poll() is None:
+                    try: self.sim('terminate', self.args.simulator, BUNDLE)
+                    except Exception as error:
+                        cleanup_error = str(error)
+                        write(self.root / 'process-cleanup-error.json', dict(error=cleanup_error))
+                    finally:
+                        self.process.terminate()
+                        try: self.process.wait(timeout=15)
+                        except subprocess.TimeoutExpired:
+                            self.process.kill(); self.process.wait(timeout=5)
+                if self.journal.exists():
+                    destination = self.root / (self.name + '.runtime.jsonl')
+                    shutil.copyfile(self.journal, destination)
+                    receipt_path = self.root / (self.name + '.receipt.json')
+                    if receipt_path.exists():
+                        receipt = json.loads(receipt_path.read_text())
+                        receipt['journalSHA256'] = m0.digest(destination)
+                        receipt_path.write_text(json.dumps(receipt, indent=2) + '\n')
+                write(self.root / 'index.json', dict(bindings=self.bindings, controls=self.controls, fixtureCommands=self.commands))
+                if cleanup_error: raise RuntimeError(cleanup_error)
+
+
+def run(args):
+    args.package = args.package.resolve()
+    from sdk_system_conformance import package_check
+    identity = m0.source_identity()
+    package_check(args.package, identity)
+    # The shipping CLI still validates every package file before each operation.
+    args.output.mkdir()
+    shutil.copytree(args.package, args.output / 'control-package')
+    for case in CASES:
+        Journey(args, args.output / case, case).run()
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--simulator', required=True)
+    parser.add_argument('--run-id', required=True)
+    parser.add_argument('--package', type=Path, required=True)
+    parser.add_argument('--output', type=Path, required=True)
+    args = parser.parse_args()
+    require(str(uuid.UUID(args.simulator)).upper() == args.simulator and
+            __import__('re').fullmatch(r'[A-Za-z0-9_-]{1,64}', args.run_id), 'invalid owned simulator/run identity')
+    def interrupted(_signum, _frame):
+        raise KeyboardInterrupt('system runner interrupted')
+    signal.signal(signal.SIGTERM, interrupted)
+    run(args)

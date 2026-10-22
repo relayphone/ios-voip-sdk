@@ -109,6 +109,8 @@ private struct Command: Decodable {
   var callUUID: UUID?
   var activeCallUUID: UUID?
   var held: Bool?
+  var muted: Bool?
+  var digits: String?
   var mustReport: Bool?
   var faults: Faults?
 }
@@ -465,6 +467,13 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     record(event: "transaction.delivered", fields: ["transactionID": delivered.uuid.uuidString,
       "requestID": requestID?.uuidString ?? "system", "origin": origin.rawValue,
       "provider": providerID(provider.provider), "actionIDs": actions.map { $0.uuid.uuidString },
+      "callUUIDs": actions.map { ($0 as? CXCallAction)?.callUUID.uuidString ?? "" },
+      "parameters": actions.map { action -> [String: Any] in
+        if let hold = action as? CXSetHeldCallAction { return ["held": hold.isOnHold] }
+        if let mute = action as? CXSetMutedCallAction { return ["muted": mute.isMuted] }
+        if let tones = action as? CXPlayDTMFCallAction { return ["digits": tones.digits] }
+        return [:]
+      },
       "kinds": actions.map { NSStringFromClass(type(of: $0)) }])
     for action in actions {
       let deadline = action is CXAnswerCallAction ? profile.answerDeadlineSeconds :
@@ -735,7 +744,11 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] ?? [:]
         response["result"] = try execute(command, object)
         response["success"] = true
-      } catch { response["success"] = false; response["error"] = String(describing: error) }
+      } catch {
+        response["success"] = false; response["error"] = String(describing: error)
+        record(event: "control.rejected", fields: ["requestID": command.id.uuidString,
+          "operation": command.operation, "error": String(describing: error)])
+      }
       commandResults[command.id] = response
       }
       do {
@@ -765,6 +778,25 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       guard bytes.count <= 5120 else { throw ControlError.invalid("payload too large") }
       CKSimInjectPush(payload, mustReport, command.id.uuidString)
       return ["scheduled": true, "pushID": command.id.uuidString]
+    case "reset":
+      // Explicit selected-provider fault. This does not model invalidation of
+      // an older provider (R3) or change provider-selection behavior.
+      guard let provider = selected, provider.valid else { throw ControlError.invalid("no selected provider") }
+      guard !pendingActions.values.contains(where: { $0.provider === provider }) else {
+        throw ControlError.invalid("selected-provider reset requires no pending runtime actions")
+      }
+      provider.generation += 1
+      handoffPending = false
+      let owned = calls.values.filter { $0.reporter === provider }
+      for call in owned {
+        calls.removeValue(forKey: call.id)
+        call.ended = true; call.ringing = false; changed(call)
+      }
+      record(event: "provider.reset", fields: ["provider": providerID(provider.provider),
+        "requestID": command.id.uuidString, "callUUIDs": owned.map { $0.id.uuidString }, "cancelledActionIDs": [String]()])
+      reconcileAudio(provider: provider, delay: 0)
+      callback(provider) { $0.providerDidReset(provider.provider) }
+      return ["reset": true, "provider": providerID(provider.provider)]
     default:
       guard let provider = selected, provider.valid, let uuid = command.callUUID, calls[uuid] != nil else { throw ControlError.invalid("unknown call or provider") }
       let actions: [CXAction]
@@ -774,6 +806,14 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       case "hold":
         guard let held = command.held else { throw ControlError.invalid("held required") }
         actions = [CXSetHeldCallAction(call: uuid, onHold: held)]
+      case "mute":
+        guard let muted = command.muted else { throw ControlError.invalid("muted required") }
+        actions = [CXSetMutedCallAction(call: uuid, muted: muted)]
+      case "tones":
+        guard let digits = command.digits, digits.range(of: "^[0-9*#ABCDabcd]{1,64}$", options: .regularExpression) != nil else {
+          throw ControlError.invalid("invalid DTMF digits")
+        }
+        actions = [CXPlayDTMFCallAction(call: uuid, digits: digits, type: .singleTone)]
       case "hold-and-accept", "end-and-accept":
         guard let active = command.activeCallUUID, active != uuid, calls[active]?.connected == true else { throw ControlError.invalid("activeCallUUID required") }
         actions = [command.operation == "hold-and-accept" ? CXSetHeldCallAction(call: active, onHold: true) : CXEndCallAction(call: active), CXAnswerCallAction(call: uuid)]
@@ -787,7 +827,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         let revision = audioRevision
         after(0.12) { self.changeAudio(false, provider: provider, revision: revision) }
       }
-      deliver(actions, provider, origin: .system)
+      deliver(actions, provider, origin: .system, requestID: command.id)
       if actions.count == 2 && faults.invalidateDuringHandoff == true { provider.provider.invalidate() }
       return ["actionIDs": actions.map { $0.uuid.uuidString }]
     }

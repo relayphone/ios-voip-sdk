@@ -30,6 +30,11 @@ import {
   trace,
 } from './acceptance';
 import { journey } from './journey';
+import {
+  observeSystem,
+  runSystemAcceptance,
+  systemTrace,
+} from './system-acceptance';
 
 type Status =
   | { phase: 'loading' }
@@ -54,7 +59,10 @@ function CallingJourney() {
   const pushToken = usePushToken();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Ready for an example call.');
-  const automated = journey().acceptanceEnabled || journey().m1Case !== '';
+  const automated =
+    journey().acceptanceEnabled ||
+    journey().m1Case !== '' ||
+    journey().systemCase !== '';
   const conversation = conversations[0];
 
   useEffect(() => {
@@ -65,12 +73,14 @@ function CallingJourney() {
   }, [automated]);
   useEffect(() => {
     if (journey().m1Case !== '') observeConversations(conversations);
+    if (journey().systemCase !== '') observeSystem(conversations);
   }, [conversations]);
   useEffect(() => {
     if (journey().m1Case !== '') observeToken(pushToken);
   }, [pushToken]);
   const observeEvent = (name: string) => {
     if (journey().m1Case !== '') void trace('m1.event', { name });
+    if (journey().systemCase !== '') void systemTrace('system.event', { name });
   };
   useConversationEvent('audioActivated', () => observeEvent('audioActivated'));
   useConversationEvent('audioDeactivated', () =>
@@ -188,13 +198,18 @@ export default function App() {
       const info = await bootstrap();
       if (
         !acceptanceStarted.current &&
-        (journey().acceptanceEnabled || journey().m1Case !== '')
+        (journey().acceptanceEnabled ||
+          journey().m1Case !== '' ||
+          journey().systemCase !== '')
       ) {
         acceptanceStarted.current = true;
         setAcceptanceMessage('Running simulator acceptance…');
         if (journey().acceptanceEnabled) {
           setStatus({ phase: 'ready', info });
           await journey().acceptance();
+        } else if (journey().systemCase !== '') {
+          setStatus({ phase: 'ready', info });
+          await runSystemAcceptance();
         } else {
           if (['cold-launch', 'unhandled-expiry'].includes(journey().m1Case)) {
             // No public SDK runtime/state hook has been created yet. Cold state
@@ -212,7 +227,8 @@ export default function App() {
       }
     } catch (error) {
       try {
-        if (journey().m1Case !== '') await journey().finish(false);
+        if (journey().m1Case !== '' || journey().systemCase !== '')
+          await journey().finish(false);
       } catch {
         // Preserve the screen's native-module loading error if no fixture exists.
       }

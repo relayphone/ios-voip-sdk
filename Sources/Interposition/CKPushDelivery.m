@@ -1,9 +1,11 @@
 #import "CKRuntimeSeam.h"
+#import "CKPushLaunch.h"
 
 #if TARGET_OS_SIMULATOR && TARGET_OS_IOS
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import <stdatomic.h>
+#include <unistd.h>
 
 #ifndef CKSIM_HAS_VOIP_METADATA
 #if __has_include(<PushKit/PKVoIPPushMetadata.h>)
@@ -146,6 +148,16 @@ NSString *CKSimInstallPushHooks(void) {
   }
   pushHooksActive=true;
   NSDictionary *env=NSProcessInfo.processInfo.environment;
+  NSString *directory=[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject
+      stringByAppendingPathComponent:@".callkit-simulator"];
+  NSString *reason=nil;
+  NSDictionary *launched=CKSimConsumeLaunchPush(directory,env[@"CKSIM_RUN_ID"]?:@"",
+      NSBundle.mainBundle.bundleIdentifier?:@"",NSDate.date.timeIntervalSince1970,getuid(),&reason);
+  if(launched) {
+    CKSimEmit(@"push.launchConsumed",@{@"pushID":launched[@"id"],@"createdAtMS":launched[@"createdAtMS"],
+      @"expiresAtMS":launched[@"expiresAtMS"],@"mustReport":launched[@"mustReport"],@"envelopeSHA256":launched[@"envelopeSHA256"]});
+    CKSimInjectPush(launched[@"payload"],[launched[@"mustReport"] boolValue],launched[@"id"]);
+  } else if(reason) CKSimEmit(@"push.launchRefused",@{@"reason":reason});
   void (^fixture)(void)=^{
     CKSimInjectPush(@{@"aps":@{},@"from":@"+15555550142",@"callId":@"synthetic-1"},[env[@"CKSIM_PUSH_MUST_REPORT"] isEqual:@"1"],NSUUID.UUID.UUIDString);
   };
