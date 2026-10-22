@@ -35,6 +35,14 @@ successful Release build and are listed in the receipt. This result qualifies
 this pinned compilation pair; it does not qualify app linking, media behavior,
 real activation/interruption delivery, additional dependency versions or CI.
 
+A separate read-only check of all 14 retained Release arm64 Mach-O products found
+no direct CallKit load command, CallKit `LC_LINKER_OPTION` autolink entry or
+unresolved CX/CallKit symbol. `linkage-receipt.json` binds 42 inspection commands,
+20 direct load-library entries and 554 autolink entries, including the genuine
+WebRTC/UniFFI frameworks and both consumer objects. This inspects those products
+with the default package traits; it does not qualify final app linkage,
+linker-added settings, other dependencies or transitive system frameworks.
+
 The disposable consumer and raw products remain under the ignored qualification
 output directory. The manifest and small consumer are embedded in the receipt.
 To reproduce the full sequence, archive the recorded SDK revision and copy the
