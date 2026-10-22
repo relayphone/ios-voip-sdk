@@ -10,7 +10,7 @@ import subprocess
 import uuid
 
 from sdk_bootstrap_conformance import validate as bootstrap_conformance
-from summarize import EvidenceError, load, one, require
+from summarize import EvidenceError, load, one, require, successful_stop
 
 ROOT = Path(__file__).resolve().parent.parent
 CASES = ('healthy', 'profile', 'push-after-install')
@@ -179,7 +179,7 @@ def bound_rows(root, name, manifest, bundle):
     rows = load(root, name)
     receipt = json.loads((root / f'{name}.receipt.json').read_text())
     require(receipt.get('schemaVersion') == 2 and receipt.get('success') is True and
-            receipt.get('completed') is True and receipt.get('terminateExitCode') == 0 and
+            receipt.get('completed') is True and successful_stop(receipt) and
             receipt.get('lastProbeEvent') == 'done' and receipt.get('launchExitCode') in (0, -15, 143),
             name + ': incomplete supervisor receipt')
     require(receipt.get('scenario') == name and receipt.get('bundleID') == bundle,

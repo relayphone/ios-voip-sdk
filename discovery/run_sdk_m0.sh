@@ -89,7 +89,7 @@ DEVTYPE=${SDK_M0_DEVICE_TYPE:-com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pr
 UDID=$(limit 30 xcrun simctl create "sdk-m0-$RUN_ID" "$DEVTYPE" "$RUNTIME")
 OWNED_SIMULATOR=$UDID
 limit 60 xcrun simctl boot "$UDID"
-limit 180 xcrun simctl bootstatus "$UDID" -b > "$OUT/boot.log" 2>&1
+limit 300 xcrun simctl bootstatus "$UDID" -b > "$OUT/boot.log" 2>&1
 if [[ -n "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" ]]; then
   INHERITED_DYLD=$SIMCTL_CHILD_DYLD_INSERT_LIBRARIES
 else
@@ -138,14 +138,14 @@ pathlib.Path(sys.argv[1]).write_text(json.dumps(dict(example=digest(executable(a
 PY
 env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_SDK_M0_ACCEPTANCE=1 \
   SIMCTL_CHILD_SDK_M0_RUN_ID="$RUN_ID" \
-  python3 discovery/run_scenario.py --timeout 120 --output "$OUT/sdk-m0.log" --receipt "$OUT/sdk-m0.receipt.json" \
+  python3 discovery/run_scenario.py --console-launcher-stop --timeout 120 --output "$OUT/sdk-m0.log" --receipt "$OUT/sdk-m0.receipt.json" \
   --run-id "$RUN_ID" --simulator-id "$UDID" --scenario sdk-m0 --bundle-id dev.iosvoipsdk.example \
   --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.example \
   --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.iosvoipsdk.example
 for case in healthy profile push-after-install; do
   env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" \
     SIMCTL_CHILD_CKSIM_BOOTSTRAP_CASE="$case" \
-    python3 discovery/run_scenario.py --timeout 90 --output "$OUT/bootstrap-$case.log" --receipt "$OUT/bootstrap-$case.receipt.json" \
+    python3 discovery/run_scenario.py --console-launcher-stop --timeout 90 --output "$OUT/bootstrap-$case.log" --receipt "$OUT/bootstrap-$case.receipt.json" \
     --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "bootstrap-$case" --bundle-id dev.callkitsim.sdkbootstrap \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.sdkbootstrap \
     --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.sdkbootstrap
