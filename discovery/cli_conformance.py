@@ -57,8 +57,10 @@ def journal():
 def managed_environment():
     result = {}
     for key in ('DYLD_INSERT_LIBRARIES', 'CKSIM_RUNTIME', 'CKSIM_BUNDLE_IDS', 'CKSIM_ENABLED', 'CKSIM_PROFILE'):
-        observed = subprocess.run(['xcrun', 'simctl', 'getenv', device, key], capture_output=True, text=True, timeout=15)
-        assert observed.returncode == 0, 'cannot inspect managed environment'
+        observed = subprocess.run(['xcrun', 'simctl', 'spawn', device, 'launchctl', 'getenv', key],
+                                  env={**os.environ, 'SIMCTL_CHILD_DYLD_INSERT_LIBRARIES': ''},
+                                  capture_output=True, text=True, timeout=15)
+        assert observed.returncode == 0 and not observed.stderr, 'cannot inspect managed environment'
         result[key] = (observed.stdout, observed.stderr)
     return result
 

@@ -31,6 +31,8 @@ jobs:
         run: |
           python3 discovery/check_harness.py
           python3 discovery/check_cli_controls.py
+          python3 discovery/check_cli_repair.py
+          python3 discovery/check_repair_diagnostics.py
           python3 discovery/check_environment.py
           python3 discovery/check_release_controls.py
       - name: Select simulator host and compiler independently
@@ -41,6 +43,11 @@ jobs:
         env:
           COMPILER_DEVELOPER_DIR: /Applications/Xcode_${{ matrix.compiler }}.app/Contents/Developer
         run: OUT="$RUNNER_TEMP/abi" bash discovery/run_abi.sh
+      - name: Deleted-package simulator loader repair
+        if: matrix.compiler == '26.6'
+        env:
+          COMPILER_DEVELOPER_DIR: /Applications/Xcode_${{ matrix.compiler }}.app/Contents/Developer
+        run: python3 discovery/run_repair.py --output "$RUNNER_TEMP/repair"
       - name: Genuine CallKit versus injected runtime
         env:
           COMPILER_DEVELOPER_DIR: /Applications/Xcode_${{ matrix.compiler }}.app/Contents/Developer
@@ -55,3 +62,8 @@ jobs:
         with:
           name: callkit-abi-macos-26-xcode-${{ matrix.compiler }}
           path: ${{ runner.temp }}/abi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always() && matrix.compiler == '26.6'
+        with:
+          name: callkit-repair-macos-26-xcode-${{ matrix.compiler }}
+          path: ${{ runner.temp }}/repair
