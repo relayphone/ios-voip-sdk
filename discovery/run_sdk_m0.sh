@@ -175,6 +175,8 @@ for case in healthy profile push-after-install; do
 done
 if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
   mkdir "$OUT/m1"
+  # Reuse the first observed data container across relaunches of this installation.
+  example_container=""
   for case in journey cold-launch unhandled-expiry; do
     name="sdk-m1-$case"
     budget=90
@@ -187,8 +189,11 @@ if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
       --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.iosvoipsdk.example \
       --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.example \
       --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.iosvoipsdk.example
-    container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.example data)
-    cp "$container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m1/$name.runtime.jsonl"
+    if [[ -z "$example_container" ]]; then
+      example_container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.example data)
+      [[ -n "$example_container" && -d "$example_container" ]] || { echo "Missing owned example data container" >&2; exit 1; }
+    fi
+    cp "$example_container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m1/$name.runtime.jsonl"
     python3 - "$OUT/m1/$name.receipt.json" "$OUT/m1/$name.runtime.jsonl" <<'PY'
 import hashlib,json,pathlib,sys
 receipt,journal=map(pathlib.Path,sys.argv[1:])

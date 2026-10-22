@@ -2,7 +2,11 @@
 """Offline positive and tamper controls for the M0 evidence gate."""
 import hashlib
 import json
+import os
 from pathlib import Path
+import shlex
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -114,6 +118,85 @@ def change_bound_json(root, name, key, edit):
 
 
 class Controls(unittest.TestCase):
+    def capture_journals(self, mode):
+        # Execute the actual M1 shell loop, replacing only its external services.
+        source = (Path(__file__).parent / 'run_sdk_m0.sh').read_text()
+        start = source.index('  mkdir "$OUT/m1"\n')
+        end = source.index('  mkdir "$OUT/m1/contracts"\n', start)
+        with tempfile.TemporaryDirectory(prefix='sdk-journal-host-') as temporary:
+            root = Path(temporary)
+            binaries, output, container = (root / name for name in ('bin', 'out', 'container'))
+            binaries.mkdir(); output.mkdir()
+            journal = container / 'Documents/.callkit-simulator/host-fixture/events.jsonl'
+            journal.parent.mkdir(parents=True)
+            services = {
+                'xcrun': """import os,pathlib,sys,time
+assert sys.argv[1:] == ['simctl','get_app_container','owned-fixture','dev.iosvoipsdk.example','data']
+count=pathlib.Path(os.environ['FIXTURE_COUNT'])
+n=int(count.read_text())+1 if count.exists() else 1
+count.write_text(str(n)); mode=os.environ['FIXTURE_MODE']
+if mode=='first-timeout' or (mode=='repeat-timeout' and n==3): time.sleep(3)
+if mode=='failed-query': sys.exit(7)
+if mode=='empty': print('')
+elif mode=='missing-directory': print(os.environ['FIXTURE_CONTAINER']+'/absent')
+else: print(os.environ['FIXTURE_CONTAINER'])
+""",
+                'python3': """import json,os,pathlib,sys
+if sys.argv[1]=='discovery/run_scenario.py':
+ args=sys.argv[2:]
+ pathlib.Path(args[args.index('--output')+1]).write_text('fixture supervisor completed\\n')
+ pathlib.Path(args[args.index('--receipt')+1]).write_text(json.dumps({'success':True,'completed':True}))
+ pathlib.Path(os.environ['FIXTURE_JOURNAL']).write_text(json.dumps({'case':os.environ['SIMCTL_CHILD_SDK_M1_CASE']})+'\\n')
+ sys.exit(0)
+os.execv(sys.executable,[sys.executable,*sys.argv[1:]])
+""",
+            }
+            for name, body in services.items():
+                executable = binaries / name
+                executable.write_text('#!' + sys.executable + '\n' + body)
+                executable.chmod(0o755)
+            driver = root / 'driver.sh'
+            driver.write_text('set -euo pipefail\nOUT=' + shlex.quote(str(output)) +
+                '\nRUN_ID=host-fixture\nUDID=owned-fixture\nINHERITED_DYLD=""\n' +
+                # Keep asserting the production query asks for its original 30s.
+                # Only the host fixture's alarm is shortened to one second.
+                "limit() { test \"$1\" = 30; shift; perl -e 'alarm 1; exec @ARGV' \"$@\"; }\n" +
+                source[start:end])
+            result = subprocess.run(['/bin/bash', str(driver)], capture_output=True, text=True, timeout=8,
+                env={**os.environ, 'PATH': f'{binaries}:/usr/bin:/bin', 'FIXTURE_MODE': mode,
+                     'FIXTURE_COUNT': str(root / 'queries'), 'FIXTURE_CONTAINER': str(container),
+                     'FIXTURE_JOURNAL': str(journal)})
+            captured = {}
+            for path in (output / 'm1').glob('*.runtime.jsonl'):
+                receipt = json.loads(path.with_name(path.name.replace('.runtime.jsonl', '.receipt.json')).read_text())
+                self.assertEqual(receipt['journalSHA256'], hashlib.sha256(path.read_bytes()).hexdigest())
+                captured[path.stem] = json.loads(path.read_text())['case']
+            return result, int((root / 'queries').read_text()), captured
+
+    def test_relaunch_journals_do_not_repeat_container_service_queries(self):
+        result, queries, captured = self.capture_journals('repeat-timeout')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(queries, 1)
+        self.assertEqual(captured, {f'sdk-m1-{case}.runtime': case
+                                   for case in ('journey', 'cold-launch', 'unhandled-expiry')})
+
+    def test_initial_container_query_failure_is_preserved(self):
+        for mode, status in (('first-timeout', 142), ('failed-query', 7)):
+            with self.subTest(mode=mode):
+                result, queries, captured = self.capture_journals(mode)
+                self.assertEqual(result.returncode, status, result.stderr)
+                self.assertEqual(queries, 1)
+                self.assertEqual(captured, {})
+
+    def test_initial_container_must_be_a_nonempty_existing_directory(self):
+        for mode in ('empty', 'missing-directory'):
+            with self.subTest(mode=mode):
+                result, queries, captured = self.capture_journals(mode)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Missing owned example data container', result.stderr)
+                self.assertEqual(queries, 1)
+                self.assertEqual(captured, {})
+
     def check(self, edit=None, names=SYMBOLS, *, succeeds=False):
         with tempfile.TemporaryDirectory(prefix='cksim-sdk-m0-controls-') as temporary:
             root = Path(temporary)
