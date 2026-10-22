@@ -19,6 +19,35 @@ Claude independently confirmed the two highest-risk findings (A1 and A2) in the 
 - strict TypeScript without `any`;
 - `useSyncExternalStore` with revisions.
 
+## A0. Release blockers found by the Apple-capabilities research (do these first)
+
+Research notes, with sources: `scratchpad/research-apple/NOTES.md`, summarized here. Claude confirmed both conditions in the code on `main`.
+
+1. **The PushKit delegate must not return before the LiveCommunicationKit (LCK) report has started.**
+   - **The bug:** LCK's async `reportNewIncomingConversation` reportedly crashes the app if the PushKit delegate returns before the report has been *entered* (FB16655952; Apple Forums 774958). DTS's workaround is the completion-handler delegate plus a `Task`, with a short wait before calling `completion()`.
+   - **Our code** returns from a **main-queue** registry (`VSPushRegistryOwner.m:58`) after only scheduling a `Task`, which is exactly this failure mode. The simulator can't catch it, because the runtime doesn't model it.
+   - **Fix:**
+     1. Give `PKPushRegistry` its own serial queue, not main.
+     2. In the callback, parse synchronously and register metadata.
+     3. Start the report in a non-main `Task`.
+     4. Wait a bounded time on that queue for a "report entered" signal, then return.
+     5. Call PushKit's `completion` when the report settles, with a bounded watchdog.
+   - **Simulator:** add this rule to the runtime's push lane, so returning before the report starts fails in the simulator too.
+   - **Device:** measure it on the iPhone 13: a cold launch, both locked and unlocked.
+2. **Don't link CallKit.framework in device builds** (China).
+   - **The risk:** China's MIIT asked Apple to disable CallKit in 2018. It was recently reported (2026-10-20) that *linking* CallKit triggers rejection when China is a selected territory. LCK is the route WeChat and QQ use in China.
+   - **Our code links it today:**
+     - `ConversationClient` uses `CXCallObserver`;
+     - `VSProviderCreationMonitor.m` imports `CXProvider`.
+   - **Fix:**
+     - derive call direction from the SDK's own bookkeeping, since it knows what it reported and what it started;
+     - compare `NSError` domain/code strings instead of `CXError*` symbols;
+     - make the provider-creation monitor simulator/Debug-only, or an opt-in subspec;
+     - keep the CallKit-interposing runtime compiled out of device builds, as it is.
+   - **CI:** add a check that `otool -L` on a pod-built Release `iphoneos` app shows no CallKit.
+   - **Optional China module:** a Notification Service Extension path (`ConversationManager.reportNewIncomingVoIPPushPayload`, with the request-only `com.apple.developer.usernotifications.filtering` entitlement) for end-to-end-encrypted payloads.
+3. **Audio interruptions differ on iOS 27.** `AVAudioSessionInterruptionNotification` is deprecated there in favor of `didBecomeActive`/`didBecomeInactive` (with a `DeactivationContext`) and `resumptionRecommendation`. Handle both paths: the old notification on 17.4–26, the new pair on 27+.
+
 ## A. Fix before merging more on top (ordered)
 
 1. **Start the PushKit report inside the callback.**
@@ -145,35 +174,50 @@ Claude independently confirmed the two highest-risk findings (A1 and A2) in the 
    - **Hermes:** needs Babel configuration, and a release that includes the `DateTime` fix (#8707).
    - **When:** after M2/M3, but keep the TypeScript core shaped so this is a thin layer.
 
-## C. Product direction to design for now (Hamza)
+## C. Product direction, backed by research (reserve the extension points now; implement later)
 
-Reserve the extension points in the API now; implement later. Each item becomes its own optional module, so the core stays small.
+Each item below is its own optional module, so the core stays small.
 
-1. **Default calling app (international) and default dialer (EU),** replacing the Phone app where Apple allows it, plus **China mainland** distribution, where CallKit/LCK are restricted. Research is in progress; don't implement until it lands.
-2. **Focus and Do Not Disturb.**
-   - **Typed outcome:** `reportIncomingConversation` returns `reported`, `filtered(reason: doNotDisturb | blockList | …)` or `failed`.
-   - **Native hook:** fires even with JS absent, so a backend or AI can take a filtered call.
-   - **Breakthrough:** only through legitimate, user-consented mechanisms. Research is in progress; never re-report silently to get past Focus.
-3. **Dynamic Island and Live Activities during calls; picture-in-picture for video calls** (`AVPictureInPictureVideoCallViewController`). Research is in progress.
-4. **Multi-call, as a first-class feature:**
-   - call waiting;
-   - system-composed transactions delivered with a transaction id, so Hold & Accept can be handled atomically;
-   - merge and unmerge;
-   - groups.
-5. **Simulator developer experience.** Plan this as M4; design the runtime's event channel now.
-   - **What it is:** a "call UI and inspector" in the simulator. It renders an emulated incoming call (banner and full screen) with answer, decline, Hold & Accept and End & Accept.
-   - **Inspector:** a live timeline of actions, deadlines, latencies against the device profile, and audio activation.
-   - **Prerequisite:** a structured runtime event stream, so the inspector, the CLI and CI read the same events.
-6. **Later:**
-   - Apple Watch (keep the core watchOS-compatible);
-   - Mac Catalyst once Apple fixes LCK linking;
-   - Android as a sibling repo, mirroring this one with a native SDK plus React Native;
-   - a web subset: foreground and desktop-background softphone, `setSinkId`, Media Session call actions, PiP, Web Push; iOS Safari only as Home Screen push;
-   - media providers beyond WebRTC and LiveKit (Cloudflare).
+1. **Filtered calls and Focus.**
+   - **Typed outcome:** `reportIncomingConversation` returns `reported`, `filtered(reason)` or `failed`. The reasons are `doNotDisturb` (3), `blockList` (4), `restrictedSharingMode` (5), `callIsProtected` (6) and `sensitiveParticipants` (7). Map them from the error domain and code; never through CallKit symbols.
+   - **Native hook:** fires with JS absent, so the backend (an AI agent or voicemail) can take the call. A filtered report doesn't kill the app.
+   - **Pre-routing:** focus-status sharing (`INFocusStatusCenter`, plus an `INShareFocusStatusIntent` Intents extension that forwards changes to the server).
+   - **Missed calls:** Communication Notification alerts (`INStartCallIntent` donation plus `updating(from:)`).
+   - **"Urgent" is caller-initiated and explicit only.**
+   - **Never** auto-redial or send duplicate reports to trigger iOS's "repeated calls" rule (two calls within 3 minutes), and never use Critical Alerts or Time Sensitive notifications as a ringer. Guideline 2.5.9 forbids it.
+2. **Default calling app** (worldwide; iOS 18.2+, watchOS 11.2+).
+   - Handle `INStartCallIntent` delivered by `NSUserActivity`; the documented `startCallHandle` doesn't exist in the SDK.
+   - Fall back to `telephony:` only after an explicit user action.
+   - **EU dialer module** (iOS 26+, iPhone only): `TelephonyConversationManager.startCellularConversation` and `ConversationHistoryManager`, testable only from an EU account on an EU device.
+   - **Note:** iOS has no InCallService equivalent, so no third-party app can own cellular calls.
+3. **Siri and App Intents.**
+   - iOS 27's `@AppIntent(schema: .phone.startCall)`, with `CallDestination` and `CallAVMode`, alongside `INStartCallIntent`.
+   - Donate an intent at the end of each conversation, with stable handles, so redial works from Recents, Spotlight and Apple Intelligence.
+4. **Call UI surfaces.**
+   - **No system call UI in the foreground.** This is by design, so offer optional in-app call UI building blocks (SwiftUI views and React Native components).
+   - **Live Activity** as a call-status companion (DTS recommends it); measure how it coexists with the system call pill in the Dynamic Island.
+   - **Picture in Picture** via `AVPictureInPictureVideoCallViewController`, plus `isMultitaskingCameraAccessEnabled` (no entitlement for a 17.4 minimum). It must never show a black or static frame.
+   - **Video answer:** answering "video" on the lock screen unlocks and launches the app.
+   - **Translation (iOS 26):** `supportsAudioTranslation` and `SetTranslatingAction`, with a custom-engine hook.
+5. **Multi-call:**
+   - `maximumConversationGroups` and conversations per group;
+   - `.pausing`, `.merging` and `.unmerging`;
+   - mid-call updates to members and active members;
+   - system-composed transactions delivered with a transaction id.
+
+   A VoIP call can't be merged with a cellular call.
+6. **Simulator developer experience (M4):** the call UI and inspector plus a structured runtime event stream, as before.
+7. **Later:**
+   - **Apple Watch:** LCK on watchOS 10.4+. No keypad, route picker or Recents for third-party calls. The watch locks into the system call UI and treats video as audio.
+   - **CarPlay:** the `carplay-communication` entitlement, with LCK behavior to be measured.
+   - **Mac Catalyst:** once Apple fixes linking.
+   - **Android** as a sibling repository.
+   - **A web subset.**
+   - **Media providers** beyond WebRTC and LiveKit.
 
 ## D. Order
 
-1. Finish M2 (#17) and M3 (#19) **with A1–A9 applied**, as small PRs.
+1. **A0 first** (PushKit queue and entry, no CallKit linkage, the iOS 27 interruption API). Then finish M2 (#17) and M3 (#19) **with A1–A9 applied**, as small PRs.
 2. **M3.5:**
    - the Expo Modules 2.0 bridge;
    - the threading contract plus the stall check;
