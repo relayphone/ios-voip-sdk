@@ -72,3 +72,68 @@ results bind old head `b44c35a` and test merge `36aabf8`; they do not qualify th
 integrated source. Original runs were not retried or relabeled. Fresh native CI
 and Claude's physical delayed-fulfill echo measurement remain pending. This
 preparation performed no local app, simulator or device run.
+
+
+**Measured main-forward preparation:** the [new receipt](../verification/2026-10-22-a3-pending-mute-echo/main-forward-preparation.json)
+binds normal merge code `d7872c4b8568384e726011d9c1da1fd58cd60aba`,
+reviewed A2 parent `12318c352b656b9d1b7c1535d773caaf0eed0986` and SDK
+source inputs `8010dac8497f9248632a1e3e5230ef1028859c8be7f52729b5d1c4f2a6d8d3f2`.
+The merge required no conflict resolution. All thirteen affected host checks
+pass, including the seven whole-client mute groups (minimum held-handler delay
+40.278 ms), core/deadline controls, three incoming-cache modes, the host incoming
+delivery regression, synthetic native-evidence gates, workflow validation and
+shell syntax. SPEC and isolated STANDARDS reviews are clear.
+
+The A3 production and host assertion bytes remain unchanged. The shared
+`IncomingCachePlatform.swift` facade is reused; there is no separate mute
+platform. Twenty-one deadline, engine/profile, intake, shared facade and native
+acceptance files match the incoming parent exactly. Both independent acceptance
+inventories remain intact: four M1 contracts, including `unhandled-fail`, and
+six focused PushEntry cases, including the direct native callback-body
+`sdk-main-stall` fixture. The latter is separate from actual PushKit delivery,
+APNs or a stopped-app cold launch. All four main-stall helper/gate files remain
+bound in both SDK and focused-probe source closures.
+
+The older `0a0047c9` SDK/runtime runs (`39784753328` / `39784753301`) and
+release controls (`39784753348`) remain attached to their original source.
+Their preserved snapshots and the earlier `b44c35a` red capture are historical
+evidence, without a current-source native acceptance claim. This forward
+preparation performed no local genuine SDK/app build or typecheck, simulator,
+audio-session or device action. Fresh final-head native CI and Claude's
+physical delayed-fulfill echo measurement remain pending.
+
+
+**Measured host-oracle correction:** [SDK CI `39796472844`](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39796472844)
+remains red at `7276218f`, before any app build or native journey. The matching
+echo precondition failed at line49; the artifact has no subcase identity, state
+operands or backtrace. Its exact invocation and scheduling cause remain unknown.
+The [new receipt](../verification/2026-10-22-a3-pending-mute-echo/oracle-fixture-correction.json)
+binds that original failure, two controlled negative-oracle reproductions and
+fixture correction code `bcc0e610ac9ddbc3677146959c2582f3c0d1fc63`.
+
+The short deadline case allowed only120ms after the SDK margin, while its40ms
+await had no upper wake-up bound. An ignored original-test copy fails the same
+assertion after a modeled late resume: the app action has expired and a new
+system action correctly reaches the handler. A blocked-actor model also fails
+when the old action is still platform-pending but its effective deadline has
+passed. The normal schedule passes. These prove the oracle can reject correct
+production behavior; they do not recover the original CI execution.
+
+The correction separates this deadline contract from its redundant delayed
+echo. It preserves the same120ms deadline, actual failed-action wait, rejection,
+`.deadline` signal, one settlement and stale-continuation/genuine-input checks.
+Both normal-budget groups still prove40ms held matching echoes, now binding
+the exact live app action/context immediately before delivery and requiring
+inline fulfillment at the synchronous host boundary. Opposite value, rejection,
+platform timeout, reset, already-settled entry and different-conversation
+coverage remain. All seven groups and final stdout JSON fields remain intact.
+No production, timeout, runner budget or shared platform source changed.
+
+The corrected whole-client control passes (minimum held delay44.714ms). An
+ignored corrected copy also passes with a modeled220ms resume after the short
+deadline; against the exact pre-A3 product, the corrected fixture still refuses
+the missing matching-echo filter. The M0 source/evidence controls and whitespace
+check pass. SPEC and independent STANDARDS reviews are clear. SDK source inputs
+are `535841205a2cf4d91f221308b09f3ac4a66951ec50d6514e49a408c91404e06c`.
+All previous receipts remain historical and unchanged. Fresh final-source CI
+and Claude's physical delayed-fulfill echo measurement remain pending.

@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured hosted acceptance with preserved strict old-source contract-oracle failure",
+  "runID": 39775914431,
+  "attempt": 1,
+  "conclusion": "failure",
+  "headCommit": "0b6a557b57e65e34541211532f50dd3d6d2641c3",
+  "testMergeCommit": "3efe87e5456d56c98be5cd26715276e9d7012e80",
+  "testMergeTreeSHA": "1a19c3b2342c37077ec9be7655fbc66631b1b556",
+  "headAndTestMergeTreesEqual": true,
+  "sourceInputsSHA256": "c8ac33b85002a654b6abba1631a71e5b019f11e3727fe5316c7d28336d4a30b3",
+  "artifactID": 12426227139,
+  "artifactName": "sdk-m0-macos-26-xcode-26.6",
+  "artifactZipSHA256": "86846a6e1d464f4405989dd2b3c04a2679a5aa221817aae29c04b098f45e42fb",
+  "githubArtifactDigest": "sha256:86846a6e1d464f4405989dd2b3c04a2679a5aa221817aae29c04b098f45e42fb",
+  "manifestSHA256": "edbcf5b94617aaf54e2f8b2e0955e892898084a473839868acbfa555501e55bc",
+  "environment": {
+    "simulatorID": "757DE3F8-361E-4A1A-9327-DD4B516699F1",
+    "simulatorRuntimeID": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+    "simulatorOS": "26.5",
+    "simulatorBuild": "23F77",
+    "xcodeVersion": "Xcode 26.6\nBuild version 17F113",
+    "sdkVersion": "26.5",
+    "hostArchitecture": "arm64",
+    "nodeVersion": "v24.22.1",
+    "npmVersion": "11.19.1"
+  },
+  "cleanup": {
+    "simulatorID": "757DE3F8-361E-4A1A-9327-DD4B516699F1",
+    "shutdownExitCode": 0,
+    "deleteExitCode": 0,
+    "deleted": true
+  },
+  "podDeviceInspection": {
+    "receiptSHA256": "3950d225dbbe090f48edcb958e633f2e94f94ca4b88039d1db2f709f4bc4f3ac",
+    "success": true,
+    "sourceCommit": "3efe87e5456d56c98be5cd26715276e9d7012e80",
+    "sourceInputsSHA256": "c8ac33b85002a654b6abba1631a71e5b019f11e3727fe5316c7d28336d4a30b3",
+    "limits": "Direct linkage only; Apple LiveCommunicationKit transitive dependencies are not claimed absent."
+  },
+  "limits": [
+    "Overall candidate CI remains red; the old-source contract gate is retained unchanged and reproduced red.",
+    "Expo Release builds and ordinary M0/M1 handler journeys pass; exact JavaScript rejection name/message retention is covered by the host relay, not a dedicated native rejection journey.",
+    "The five A1 cases are simulator in-app injection, not physical APNs or true push cold launch.",
+    "No retry, simulator or device operation was performed during qualification."
+  ],
+  "artifactURL": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39775914431/artifacts/12426227139",
+  "strictSameSourceGates": [
+    {
+      "gate": "m0",
+      "exitCode": 0,
+      "matchesHostedOutput": true,
+      "stdoutSHA256": "35f8c4a328d71ba13cc81bc35819e80e352dd3e80974198736ee822d3ee72989",
+      "stderrEmpty": true,
+      "success": true,
+      "error": null
+    },
+    {
+      "gate": "m1",
+      "exitCode": 0,
+      "matchesHostedOutput": true,
+      "stdoutSHA256": "d474be77661f7814240bdf6f3989d4b53d2d273e729585dc41f7135f8606dd31",
+      "stderrEmpty": true,
+      "success": true,
+      "error": null
+    },
+    {
+      "gate": "contracts",
+      "exitCode": 1,
+      "matchesHostedOutput": true,
+      "stdoutSHA256": "fd95bc397a82226a021281b474d3b487831ccb039faa1d4a2fa6d5dfe3e8a6da",
+      "stderrEmpty": true,
+      "success": false,
+      "error": "duplicate native cleanup was not one fulfilled app End action"
+    },
+    {
+      "gate": "push-entry",
+      "exitCode": 0,
+      "matchesHostedOutput": true,
+      "stdoutSHA256": "5f58fe75744b14df3b9259cdc3531fac7a864b7925e4365cd54031fd5c48b0af",
+      "stderrEmpty": true,
+      "success": true,
+      "error": null
+    }
+  ],
+  "nativeOriginProof": {
+    "runtimeSequence": 16,
+    "runtimeOrigin": "application",
+    "runtimeKinds": [
+      "CXEndCallAction"
+    ],
+    "nativeActionIDs": [
+      "06600878-7C2A-4AF2-83BA-CF5530315EFF"
+    ],
+    "settlementSequence": 18,
+    "settlementActionID": "06600878-7C2A-4AF2-83BA-CF5530315EFF",
+    "fulfilled": true,
+    "handlerSequence": 14,
+    "sdkHandlerOrigin": "app",
+    "oldGateExpects": "app",
+    "journalSHA256": "b055bd6f823b91441ff60f8b9e774e8442e9f0136c5b3204bc29ccdd5afd670c",
+    "appTraceSHA256": "b686fae832b7c114dbf9dcc6465bc55b8643271f4d9ef7068f98c0b2489e5e1b"
+  }
+}

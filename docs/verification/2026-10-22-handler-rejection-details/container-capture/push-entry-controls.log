@@ -1,0 +1,19 @@
+{
+  "success": true,
+  "classification": "host exact-source policy/pipeline controls; native PushKit entry remains separate",
+  "controls": [
+    "passed: native required, duplicate and optional positives and 23 strict evidence negatives (return-before-report, completion-before-entry, missing-report, wrong-push, wrong-settled-call, empty-report-call, invalid-settled-call, orphan-settlement, wrong-process, boolean-pid, float-sequence, clock-reversal, missing-completion, legacy-receipt, legacy-return, missing-completion-api, failed-required-report, missing-settlement-status, boolean-settlement-status, string-settlement-status, failed-first-duplicate, successful-second-duplicate, boolean-second-duplicate)",
+    "passed: synthetic missing/deferred negatives reproduced, normal rule remains red; 2 valid fixtures and 23 malformed journal refusals (demonstrated-compound-malformation, omitted-settlement, invalid-report-uuid, different-settlement-uuid, failed-fresh-report, boolean-report-status, completion-denies-entry, report-before-return, completion-before-settlement, foreign-diagnostic-push, wrong-diagnostic-severity, wrong-diagnostic-reason, missing-diagnostic, extra-diagnostic, diagnostic-not-at-boundary, legacy-path, wrong-run, wrong-process, extra-foreign-return, missing-completion-diagnostic, missing-completion-claims-entry, missing-return-before-completion, wrong-required-policy)",
+    "passed: required missing/late report, hook-entry observation, completion-before-return, optional omission, repeated/unknown boundaries and overlapping push isolation",
+    "passed: exact off-main receiver synchronous reservation/decoding, actual-await completion boundary, optional omission, required fallback success/failure, canonical pending termination and optional/required callEnded dedup"
+  ],
+  "sourceSHA256": {
+    "Sources/Engine/RuntimeEngine.swift": "5e6d7cea29c84f89c46b705b20e7e55796269ed3afb6304b61c059c8ecdccc49",
+    "Sources/Interposition/CKPushDelivery.m": "38e13a510427835c3ba884324654cd885424b2d9d913bd50706a65d01d69ad5e",
+    "Sources/VoIPSDK/PushService.swift": "f7a731d8c91ee2a4572dd37d2d96a36c258187fc4a38ba74143c7c9b07690e4c",
+    "Sources/VoIPSDK/ConversationClient.swift": "7d5f6f1958cf6b28e2fe74639dac25541b5af13d35589b2ffbcc628b30710164",
+    "Sources/VoIPSDK/IncomingIntake.swift": "5f6979dbc38bb4badeb2026ca8033341a5ce744ebba4e279aab1a4892d5f64c5",
+    "Sources/VoIPSDK/IncomingReportTransport.swift": "518a522f3dccc9f96f221f700a77c9c732b20b00dfb01dd094579c5b43a08cbf",
+    "discovery/check_push_report_entry.py": "d1f5ebe0a52da81519aa94c3497fd4c54c9973547e31430c8ab4aacaf6ba5948"
+  }
+}

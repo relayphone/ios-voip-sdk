@@ -210,7 +210,7 @@ def media_case(rows, engine, case, simulator_os):
     require(launch.get('mode') == 'sdk-m2' and launch.get('case') == case and launch.get('traceVersion') == 2,
             case + ': wrong example mode')
     require(one(rows, 'sdk.activation').get('active') is True and
-            one(rows, 'sdk.managerCreated').get('owner') == 'ConversationClient.shared' and
+            one(rows, 'sdk.managerCreated').get('owner') == 'VoIPApplication.start' and
             one(rows, 'm2.result').get('success') is True, case + ': SDK/result unavailable')
     labels = ['initial', 'demand'] + (['active', 'speaker', 'held', 'resumed', 'ended'] if case == 'livekit' else ['failed'])
     expected = ['initial-media', 'initial-same-engine', 'inactive-route-rejected', 'routes-observed',

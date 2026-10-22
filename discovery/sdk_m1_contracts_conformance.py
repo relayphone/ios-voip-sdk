@@ -223,7 +223,8 @@ def accept_contract(rows, engine, source_root):
     before_joined = [row for row in snapshots if rows.index(row) < rows.index(joined) and row['conversations']]
     require(before_joined and before_joined[-1]['conversations'][0].get('status') == 'connecting' and
             before_joined[-1]['conversations'][0].get('pending') is None and
-            deadline - 1 <= before_joined[-1]['wallTimeMS'] <= joined['wallTimeMS'],
+            deadline - 1 <= before_joined[-1]['wallTimeMS'] <= joined['wallTimeMS'] <= deadline + 3000 and
+            joined['wallTimeMS'] < platform_deadline,
             'no deadline-bound signaling settlement before backend connection')
     connected = []
     signaling = []
@@ -245,7 +246,7 @@ def accept_contract(rows, engine, source_root):
                     signaling.append(row)
             if value.get('status') == 'connected':
                 require(rows.index(row) > rows.index(backend_requested) and value.get('pending') is None and
-                        value['hasConnectedAt'] is True, 'connected projection lacks an explicit backend report')
+                        value['hasConnectedAt'] is True, 'connected projection lacks the explicit backend report')
                 connected.append(row)
     require(native_pending and native_pending[0]['wallTimeMS'] < deadline and signaling and connected and
             deadline - 1 <= signaling[-1]['wallTimeMS'] < platform_deadline and

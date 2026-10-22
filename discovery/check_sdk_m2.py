@@ -76,7 +76,7 @@ def fixture_case(root, case, pid):
     else:
         add('launch', mode='sdk-m2', case=case, traceVersion=2)
         add('sdk.activation', active=True)
-        add('sdk.managerCreated', owner='ConversationClient.shared')
+        add('sdk.managerCreated', owner='VoIPApplication.start')
         snapshot()
         media('initial')
         for label in ('inactive-route-rejected', 'routes-observed'): assertion(label)
@@ -307,6 +307,11 @@ class Controls(unittest.TestCase):
         self.assertTrue(result['success'])
         self.assertEqual(result['hostAudioControls'], 21)
         self.assertEqual(set(result['cases']), set(gate.CASES))
+
+    def test_removed_shared_owner_is_rejected(self):
+        change_rows(self.root, 'livekit', lambda rows: gate.one(rows, 'sdk.managerCreated').update(
+            owner='ConversationClient.shared'))
+        self.reject('SDK/result unavailable')
 
     def test_rebound_environment_preflight_must_identify_the_actual_lane(self):
         mutations = [lambda value: value.update(success=False),

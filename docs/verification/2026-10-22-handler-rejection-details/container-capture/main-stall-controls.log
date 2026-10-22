@@ -1,0 +1,260 @@
+{
+  "success": true,
+  "classification": "synthetic host gate controls only; no native evidence",
+  "positives": 4,
+  "negativeControls": 62,
+  "controls": [
+    {
+      "control": "report-before-stall",
+      "reason": "actual report entry, direct return or main-stall order differs"
+    },
+    {
+      "control": "report-after-return",
+      "reason": "actual report entry, direct return or main-stall order differs"
+    },
+    {
+      "control": "report-after-stall",
+      "reason": "actual report entry, direct return or main-stall order differs"
+    },
+    {
+      "control": "missing-report",
+      "reason": "missing or repeated report.incoming"
+    },
+    {
+      "control": "multiple-report",
+      "reason": "missing or repeated report.incoming"
+    },
+    {
+      "control": "missing-settlement",
+      "reason": "missing or repeated report.completed"
+    },
+    {
+      "control": "multiple-settlement",
+      "reason": "missing or repeated report.completed"
+    },
+    {
+      "control": "wrong-report-uuid",
+      "reason": "actual report and settlement UUID differ"
+    },
+    {
+      "control": "invalid-report-uuid",
+      "reason": "actual report and settlement UUID differ"
+    },
+    {
+      "control": "failed-settlement",
+      "reason": "actual fresh-call report did not settle successfully"
+    },
+    {
+      "control": "boolean-settlement-code",
+      "reason": "actual fresh-call report did not settle successfully"
+    },
+    {
+      "control": "missing-native-completion",
+      "reason": "missing or repeated fixture.nativeCompletion"
+    },
+    {
+      "control": "duplicate-native-completion",
+      "reason": "missing or repeated fixture.nativeCompletion"
+    },
+    {
+      "control": "completion-before-settlement",
+      "reason": "actual report settlement or native completion order differs"
+    },
+    {
+      "control": "settlement-before-actual-report",
+      "reason": "actual report settlement or native completion order differs"
+    },
+    {
+      "control": "wrong-completion-ordinal",
+      "reason": "native completion cardinality differs"
+    },
+    {
+      "control": "boolean-completion-ordinal",
+      "reason": "native completion cardinality differs"
+    },
+    {
+      "control": "wrong-owner",
+      "reason": "main-stall markers are not bound to one actual owner and fixture"
+    },
+    {
+      "control": "zero-owner",
+      "reason": "invalid actual native-owner pointer"
+    },
+    {
+      "control": "fabricated-owner",
+      "reason": "invalid actual native-owner pointer"
+    },
+    {
+      "control": "wrong-fixture-id",
+      "reason": "main-stall markers are not bound to one actual owner and fixture"
+    },
+    {
+      "control": "main-callback",
+      "reason": "false main-stall threading evidence"
+    },
+    {
+      "control": "main-return",
+      "reason": "false main-stall threading evidence"
+    },
+    {
+      "control": "worker-stall-begin",
+      "reason": "false main-stall threading evidence"
+    },
+    {
+      "control": "worker-stall-end",
+      "reason": "false main-stall threading evidence"
+    },
+    {
+      "control": "untyped-completion-thread",
+      "reason": "false main-stall threading evidence"
+    },
+    {
+      "control": "short-stall-observation",
+      "reason": "missing or short measured main stall"
+    },
+    {
+      "control": "nonfinite-stall-observation",
+      "reason": "missing or short measured main stall"
+    },
+    {
+      "control": "boolean-requested-stall",
+      "reason": "incorrect requested main stall"
+    },
+    {
+      "control": "short-runtime-clock-span",
+      "reason": "runtime clock does not prove the main stall"
+    },
+    {
+      "control": "artificial-push-boundary",
+      "reason": "direct native-owner case contains a push delivery or push association"
+    },
+    {
+      "control": "push-associated-report",
+      "reason": "direct native-owner case contains a push delivery or push association"
+    },
+    {
+      "control": "missing-explicit-empty-push-id",
+      "reason": "direct report unexpectedly has a push association"
+    },
+    {
+      "control": "probe-injection",
+      "reason": "direct native-owner case must not inject a PushKit delivery"
+    },
+    {
+      "control": "wrong-public-owner",
+      "reason": "unbound public main-stall observation"
+    },
+    {
+      "control": "wrong-public-fixture",
+      "reason": "unbound public main-stall observation"
+    },
+    {
+      "control": "wrong-public-uuid",
+      "reason": "unbound public main-stall observation"
+    },
+    {
+      "control": "duplicate-public-observation",
+      "reason": "missing or repeated entry.mainStallObservation"
+    },
+    {
+      "control": "wrong-public-completion-count",
+      "reason": "unbound public main-stall observation"
+    },
+    {
+      "control": "boolean-public-completion-count",
+      "reason": "unbound public main-stall observation"
+    },
+    {
+      "control": "missing-public-return",
+      "reason": "unbound public main-stall observation"
+    },
+    {
+      "control": "no-public-conversation",
+      "reason": "public observation must contain one conversation"
+    },
+    {
+      "control": "two-public-conversations",
+      "reason": "public observation must contain one conversation"
+    },
+    {
+      "control": "wrong-public-state",
+      "reason": "public main-stall state differs"
+    },
+    {
+      "control": "wrong-public-direction",
+      "reason": "public main-stall state differs"
+    },
+    {
+      "control": "wrong-public-event",
+      "reason": "public main-stall payload differs"
+    },
+    {
+      "control": "wrong-public-server",
+      "reason": "public main-stall payload differs"
+    },
+    {
+      "control": "wrong-public-caller",
+      "reason": "public main-stall caller differs"
+    },
+    {
+      "control": "wrong-public-name",
+      "reason": "public main-stall caller differs"
+    },
+    {
+      "control": "false-public-video-type",
+      "reason": "public main-stall payload differs"
+    },
+    {
+      "control": "unexpected-public-metadata",
+      "reason": "public main-stall payload differs"
+    },
+    {
+      "control": "wrong-runtime-pid",
+      "reason": "mixed main-stall row identity"
+    },
+    {
+      "control": "boolean-runtime-pid",
+      "reason": "mixed main-stall row identity"
+    },
+    {
+      "control": "wrong-runtime-run",
+      "reason": "mixed main-stall row identity"
+    },
+    {
+      "control": "wrong-runtime-bundle",
+      "reason": "mixed main-stall row identity"
+    },
+    {
+      "control": "wrong-runtime-profile",
+      "reason": "mixed main-stall runtime profile"
+    },
+    {
+      "control": "wrong-probe-run",
+      "reason": "mixed main-stall row identity"
+    },
+    {
+      "control": "wrong-probe-simulator",
+      "reason": "mixed probe simulator or unexpected probe executor"
+    },
+    {
+      "control": "worker-probe",
+      "reason": "mixed probe simulator or unexpected probe executor"
+    },
+    {
+      "control": "float-sequence",
+      "reason": "invalid main-stall row sequence or clock"
+    },
+    {
+      "control": "boolean-clock",
+      "reason": "invalid main-stall row sequence or clock"
+    },
+    {
+      "control": "reversed-clock",
+      "reason": "invalid main-stall row sequence or clock"
+    }
+  ],
+  "sourceSHA256": {
+    "check_push_main_stall.py": "a75594ac8f09de59ddb93bd448fd517e7a65cf3d3237fde31012fad155920195",
+    "push_main_stall_conformance.py": "9b633064ee6c9a4454d17bbb6554a21b871280898f642cfb68b4e964ed2b51ed"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured host follow-up after normal merge of the corrected native-origin parent; not native requalification",
+  "sourceCommit": "4ec4156712b0d19e748e942dbbb7cfa23538d6b1",
+  "parentCommit": "c19ef898ec585418f5b98e86dc2e2483062e06a3",
+  "checkedAtUTC": "2026-10-22T12:42:52.749534+00:00",
+  "sameFiveFileImplementationPatchSHA256": "0369ef67a93dbc7df5f084eed4aca843b02f5850eb9b464fea37071df28e17f8",
+  "gateSourceSHA256": {
+    "discovery/check_sdk_m1_contracts.py": "d1eb5d83277112d55f2f2ca928e1cf942dfa6d78b36edb2805daa3fb9ec05599",
+    "discovery/sdk_m1_contracts_conformance.py": "8d9bc3775d18fb923b99f14a6833a647740f114828f6073e5e19de7cfdcb4193"
+  },
+  "priorRejectionHostReceiptSHA256": "e84965e6de140319008eca46a761b93a9063dbaaf148c96c844d898c740fcfc5",
+  "all29RejectionHostSourceInputsUnchanged": true,
+  "priorStrictRedReceiptSHA256": "97b29d709670e70018c364fea991b79c2fc9153a72467dc975cca0dd6f2955d7",
+  "checks": [
+    {
+      "name": "native-origin-controls",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "output": "...........\n----------------------------------------------------------------------\nRan 11 tests in 0.476s\n\nOK\n",
+      "outputSHA256": "d8676801552768804212d4f08acbfc50f6f40c73035fdc407642ac78f96279aa"
+    },
+    {
+      "name": "python-syntax",
+      "argv": [
+        "python3",
+        "-m",
+        "py_compile",
+        "discovery/check_sdk_m1_contracts.py",
+        "discovery/sdk_m1_contracts_conformance.py"
+      ],
+      "exitCode": 0,
+      "stdoutEmpty": true,
+      "stderrEmpty": true
+    },
+    {
+      "name": "diff-whitespace",
+      "argv": [
+        "git",
+        "diff",
+        "--check",
+        "c19ef89"
+      ],
+      "exitCode": 0,
+      "stdoutEmpty": true,
+      "stderrEmpty": true
+    }
+  ],
+  "limits": [
+    "The old hosted run remains red. No source identity, manifest, trace or original summary was modified.",
+    "Fresh candidate hosted CI must qualify the corrected parent; no replay of a corrected gate against old artifacts is presented as new-source qualification."
+  ]
+}
