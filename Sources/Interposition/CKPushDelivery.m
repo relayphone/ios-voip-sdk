@@ -25,6 +25,7 @@ static NSHashTable<PKPushRegistry *> *registries;
 static NSMapTable<PKPushRegistry *, dispatch_queue_t> *registryQueues;
 static NSMutableArray<NSDictionary *> *waiting;
 static IMP originalInit, originalDelegate, originalTypes;
+typedef id (*QueueInitializer)(id __attribute__((ns_consumed)), SEL, dispatch_queue_t) __attribute__((ns_returns_retained));
 static NSString *const contextKey=@"dev.callkitsim.push-context";
 NSString *CKSimCurrentPushID(void) { return NSThread.currentThread.threadDictionary[contextKey] ?: @""; }
 static void deliver(PKPushRegistry *registry, NSDictionary *item) {
@@ -80,19 +81,46 @@ static void ready(PKPushRegistry *registry) {
   __weak PKPushRegistry *weak=registry;
   dispatch_async(dispatch_get_main_queue(),^{if (weak) [registries addObject:weak];attempt();});
 }
-static id registryInit(PKPushRegistry *self,SEL selector,dispatch_queue_t queue) {
-  id registry=((id (*)(id,SEL,dispatch_queue_t))originalInit)(self,selector,queue);
+__attribute__((ns_returns_retained)) static id registryInit(PKPushRegistry * __attribute__((ns_consumed)) self,SEL selector,dispatch_queue_t queue) {
+  id registry=((QueueInitializer)originalInit)(self,selector,queue);
   __weak PKPushRegistry *weak=registry;
   dispatch_async(dispatch_get_main_queue(),^{if(weak){[registryQueues setObject:queue ?: dispatch_get_main_queue() forKey:weak];[registries addObject:weak];attempt();}});
   return registry;
 }
 static void setDelegate(PKPushRegistry *self,SEL selector,id delegate) { ((void (*)(id,SEL,id))originalDelegate)(self,selector,delegate);ready(self); }
 static void setTypes(PKPushRegistry *self,SEL selector,NSSet *types) { ((void (*)(id,SEL,id))originalTypes)(self,selector,types);ready(self); }
-void CKSimInstallPushHooks(void) {
+NSString *CKSimInstallPushHooks(void) {
+  Class concrete;
+  Class sampleClass=PKPushRegistry.class;
+  #if CKSIM_ABI_TESTING
+  Class testClass=NSClassFromString(NSProcessInfo.processInfo.environment[@"CKSIM_TEST_PUSH_REGISTRY_CLASS"]);
+  if (testClass && [testClass isSubclassOfClass:PKPushRegistry.class]) sampleClass=testClass;
+  #endif
+  @try { concrete=object_getClass([[sampleClass alloc] initWithQueue:dispatch_get_main_queue()]); }
+  @catch(NSException *exception) { return [NSString stringWithFormat:@"PKPushRegistry preflight: %@: %@",exception.name,exception.reason]; }
+  if (!concrete) return @"PKPushRegistry initializer returned nil";
+  SEL selectors[]={@selector(initWithQueue:),@selector(setDelegate:),@selector(setDesiredPushTypes:)};
+  IMP replacements[]={(IMP)registryInit,(IMP)setDelegate,(IMP)setTypes};
+  IMP *originals[]={&originalInit,&originalDelegate,&originalTypes};
+  for (NSUInteger i=0;i<3;i++) {
+    Method method=class_getInstanceMethod(PKPushRegistry.class,selectors[i]);
+    if (!method || !class_getInstanceMethod(concrete,selectors[i]))
+      return [NSString stringWithFormat:@"%@ missing selector %@",NSStringFromClass(concrete),NSStringFromSelector(selectors[i])];
+    if (class_getMethodImplementation(concrete,selectors[i])!=method_getImplementation(method))
+      return [NSString stringWithFormat:@"%@ overrides %@",NSStringFromClass(concrete),NSStringFromSelector(selectors[i])];
+  }
   registries=[NSHashTable weakObjectsHashTable];registryQueues=[NSMapTable weakToStrongObjectsMapTable];waiting=[NSMutableArray new];
-  originalInit=method_setImplementation(class_getInstanceMethod(PKPushRegistry.class,@selector(initWithQueue:)),(IMP)registryInit);
-  originalDelegate=method_setImplementation(class_getInstanceMethod(PKPushRegistry.class,@selector(setDelegate:)),(IMP)setDelegate);
-  originalTypes=method_setImplementation(class_getInstanceMethod(PKPushRegistry.class,@selector(setDesiredPushTypes:)),(IMP)setTypes);
+  for (NSUInteger i=0;i<3;i++) {
+    Method method=class_getInstanceMethod(PKPushRegistry.class,selectors[i]);
+    *originals[i]=method_getImplementation(method);
+    const char *encoding=method_getTypeEncoding(method);
+    if (!class_addMethod(PKPushRegistry.class,selectors[i],replacements[i],encoding))
+      method_setImplementation(class_getInstanceMethod(PKPushRegistry.class,selectors[i]),replacements[i]);
+    if (i>0 && concrete!=PKPushRegistry.class && !class_addMethod(concrete,selectors[i],replacements[i],encoding))
+      method_setImplementation(class_getInstanceMethod(concrete,selectors[i]),replacements[i]);
+    if (class_getMethodImplementation(concrete,selectors[i])!=replacements[i])
+      return [NSString stringWithFormat:@"%@ failed to bind %@",NSStringFromClass(concrete),NSStringFromSelector(selectors[i])];
+  }
   NSDictionary *env=NSProcessInfo.processInfo.environment;
   void (^fixture)(void)=^{
     CKSimInjectPush(@{@"aps":@{},@"from":@"+15555550142",@"callId":@"synthetic-1"},[env[@"CKSIM_PUSH_MUST_REPORT"] isEqual:@"1"],NSUUID.UUID.UUIDString);
@@ -102,4 +130,5 @@ void CKSimInstallPushHooks(void) {
   } else if ([env[@"CKSIM_PUSH_AFTER"] length]) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)([env[@"CKSIM_PUSH_AFTER"] doubleValue]*NSEC_PER_SEC)),dispatch_get_main_queue(),fixture);
   }
+  return nil;
 }

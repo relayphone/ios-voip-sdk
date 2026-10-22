@@ -1,0 +1,20 @@
+{
+  "completed": true,
+  "success": true,
+  "schemaVersion": 2,
+  "runID": "4C25A98A-DFF9-4BD3-8C25-5696745C9429",
+  "simulatorID": "180DE56E-73FA-4F9C-93F7-6DB9A9861C86",
+  "scenario": "refused-queues",
+  "bundleID": "dev.callkitsim.abi",
+  "launcherPID": 39664,
+  "lastProbeEvent": "done",
+  "lastProbeTimestampMS": 271,
+  "appEntryObserved": true,
+  "appPID": 40119,
+  "terminateExitCode": 0,
+  "launchExitCode": 0,
+  "launchExitCodeBeforeCleanup": 0,
+  "elapsedSeconds": 81.222,
+  "traceSHA256": "7d094890f193b7abe28ee53cf549f466c925dc1f82a7e4261c937b74d0b0523e",
+  "launcherAppPID": 40119
+}

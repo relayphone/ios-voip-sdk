@@ -27,7 +27,7 @@ NS_ASSUME_NONNULL_BEGIN
 CXCall *CKSimMakeCall(NSUUID *uuid, BOOL outgoing, BOOL connected, BOOL held, BOOL ended);
 void CKSimPerform(id<CXProviderDelegate> delegate, CXProvider *provider, CXTransaction *transaction);
 void CKSimInjectPush(NSDictionary *payload, BOOL mustReport, NSString *identifier);
-void CKSimInstallPushHooks(void);
+NSString * _Nullable CKSimInstallPushHooks(void);
 NSString *CKSimCurrentPushID(void);
 NSString *CKSimResourceDirectory(void);
 void CKSimEmit(NSString *event, NSDictionary *fields);

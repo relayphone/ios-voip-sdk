@@ -1,0 +1,21 @@
+2026-10-22 00:43:45.176 Probe[54111:3861650] [NativeDevtoolsIos] devtools connection established
+2026-10-22 00:43:45.177 Probe[54111:3861650] [NativeDevtoolsIos] connected to /tmp/argent-nd-547E79A2.sock
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"app.entry","main":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":0}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"launch","main":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":0}
+CKSIM runtime refused: Shadow mode cannot forward CXXPCProvider override setDelegate:queue:
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"abi.check","label":"runtime-loads","main":true,"passed":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":120}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"abi.check","label":"activation-result","main":true,"passed":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":120}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"abi.check","label":"nonnull-initializers","main":true,"passed":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":122}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"abi.check","label":"incoming-result","main":true,"passed":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":136}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"abi.check","label":"diagnostic-identifies-abi","main":true,"passed":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":136}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"abi.check","label":"no-genuine-report","main":true,"passed":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":145}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"abi.check","label":"snapshot-result","main":true,"passed":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":146}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"abi.check","label":"transaction-result","main":true,"passed":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":156}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"abi.check","label":"transaction-direct-result","main":true,"passed":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":159}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"abi.check","label":"transaction-array-result","main":true,"passed":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":167}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"abi.check","label":"no-genuine-report-after-request","main":true,"passed":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":272}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"abi.check","label":"final-state","main":true,"passed":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":272}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"abi.check","label":"no-genuine-operations","main":true,"passed":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":273}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","concreteClass":"CXXPCProvider","event":"abi.result","main":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","success":1,"t_ms":273}
+PROBE {"bundleID":"dev.callkitsim.abi","case":"shadow-concrete-override","event":"done","main":true,"pid":54111,"runID":"56C0C998-F75B-4620-943C-EDBB810EB056","t_ms":273}
+dev.callkitsim.abi: 54111

@@ -1,0 +1,6 @@
+EXPERIMENT allocation-refused
+EXPERIMENT objc-constructor-returned-nil=1
+EXPERIMENT allocation-refused
+EXPERIMENT swift-constructor-returned
+EXPERIMENT swift-description-returned=
+EXPERIMENT done

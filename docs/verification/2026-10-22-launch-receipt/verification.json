@@ -1,0 +1,18 @@
+{
+  "classification": "measured synthetic subprocess controls and saved hosted-trace order; no new native run",
+  "baseCommit": "f071a5e0ad0ce3d968b349aebe527cc843499611",
+  "success": true,
+  "harnessChecks": 57,
+  "commands": [
+    "python3 discovery/check_harness.py",
+    "python3 -m py_compile discovery/run_scenario.py discovery/check_harness.py",
+    "git diff --check"
+  ],
+  "sourceAndEvidenceSHA256": {
+    "discovery/run_scenario.py": "039224f2a69dae469af44ff94b2db14fa22da7cd19990cc93ffb9f1c40200bb0",
+    "discovery/check_harness.py": "28c531c0a1f679fa651092d185f19e4446c01e10054927e24c5b10bb8791fee2",
+    "docs/verification/2026-10-22-launch-receipt/post-stop-red.json": "9135139d1e9ed2db982047ba339959ccfd1f6eafd3cba4fc5a8b72a18f22936e",
+    "docs/verification/2026-10-22-launch-receipt/green.json": "b3be7b73306e8d5d35fd46b9e186ccdf9c2fef4086783a4440bdc69f2b32b112",
+    "docs/verification/2026-10-22-launch-receipt/saved-header-order.json": "75004e1068da77fe988c3d49904b0546266dd0a0e91c21bbdadb7fd97c3c5fcf"
+  }
+}

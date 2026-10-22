@@ -5,7 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
-from summarize import EvidenceError, load, one, require
+from summarize import EvidenceError, load, one, require, successful_stop
 
 ROOT = Path(__file__).resolve().parent.parent
 CASES = ('single', 'ab', 'ba', 'handles', 'late', 'drop', 'inv', 'recreate')
@@ -16,7 +16,7 @@ def bound_capture(directory, name):
     receipt = json.loads((directory / f'{name}.receipt.json').read_text())
     launch = one(rows, 'launch')
     require(receipt.get('schemaVersion') == 2 and receipt.get('success') is True and
-            receipt.get('completed') is True and receipt.get('terminateExitCode') == 0 and
+            receipt.get('completed') is True and successful_stop(receipt) and
             receipt.get('lastProbeEvent') == 'done', 'incomplete scenario receipt')
     for key in ('runID', 'simulatorID', 'bundleID'):
         require(receipt.get(key) == launch.get(key), f'{key} mismatch')
