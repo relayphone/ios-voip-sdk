@@ -324,6 +324,9 @@ def main():
                 raise RuntimeError(f"runner-bound-{mode}: owned process survived")
             checks.append(f"runner-bound-{mode}")
 
+        from check_console_stop import run_checks as console_stop_checks
+        checks.extend(console_stop_checks(work / "console-stop"))
+
         # Execute the actual shell run() failure branch. Diagnostics must not
         # replace a scenario failure with a secondary copy failure.
         binaries = work / "bin"

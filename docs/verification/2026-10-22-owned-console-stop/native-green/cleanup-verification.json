@@ -1,0 +1,7 @@
+{
+  "classification": "measured independent read after native runner cleanup",
+  "command": "xcrun simctl list devices -j",
+  "runOwnedSimulator": "18CF978F-EB87-434C-9678-0F64141B47F8",
+  "present": false,
+  "verifiedAt": "2026-10-22T00:33:42.657653+00:00"
+}

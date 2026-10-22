@@ -61,6 +61,24 @@ def run_environment(directory, manifest):
                 compiler=dict(xcodeVersion=metadata['compilerXcodeVersion'], buildVersion=metadata['compilerXcodeBuildVersion']))
 
 
+def successful_stop(receipt):
+    if type(receipt.get('launchExitCode')) is not int or receipt['launchExitCode'] not in (0, -15, 143):
+        return False
+    method = receipt.get('terminationMethod', 'command')
+    if method == 'command':
+        return (type(receipt.get('terminateExitCode')) is int and receipt['terminateExitCode'] == 0 and
+                'terminationSignal' not in receipt and 'terminationSignalDelivered' not in receipt)
+    if method != 'console-launcher-signal':
+        return False
+    return (receipt.get('completed') is True and receipt.get('lastProbeEvent') == 'done' and
+            type(receipt.get('launcherPID')) is int and receipt['launcherPID'] > 0 and
+            type(receipt.get('appPID')) is int and receipt['appPID'] > 0 and
+            type(receipt.get('launcherAppPID')) is int and receipt['launcherAppPID'] == receipt['appPID'] and
+            type(receipt.get('terminationSignal')) is int and receipt['terminationSignal'] == 15 and
+            receipt.get('terminationSignalDelivered') is True and 'terminateExitCode' not in receipt and
+            'cleanupExitCode' not in receipt and 'cleanupError' not in receipt)
+
+
 def load(directory, name):
     paths = [directory / f"{name}.{suffix}" for suffix in ("log", "jsonl")]
     paths = [path for path in paths if path.exists()]
@@ -450,7 +468,7 @@ def validate(directory, require_receipts=True, allow_legacy=False):
                 receipt = json.loads((directory / f"{name}.receipt.json").read_text())
                 require(receipt.get("success") is True and receipt.get("completed") is True,
                         f"{name}: runner did not complete successfully")
-                require(receipt.get("schemaVersion") == 2 and receipt.get("terminateExitCode") == 0 and
+                require(receipt.get("schemaVersion") == 2 and successful_stop(receipt) and
                         receipt.get("lastProbeEvent") == "done" and
                         receipt.get("launchExitCode") in (0, -15, 143), "invalid runner receipt")
             rows = load(directory, name)
