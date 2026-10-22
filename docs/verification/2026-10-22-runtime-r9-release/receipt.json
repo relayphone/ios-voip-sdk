@@ -1,0 +1,226 @@
+{
+  "schemaVersion": 1,
+  "status": "measured",
+  "recordedAtUTC": "2026-10-22T04:42:18.326908+00:00",
+  "acceptance": "Published standalone v0.1.1 runtime assets verify against the successful annotated-tag CI run and exact qualified distribution.",
+  "release": {
+    "tag": "v0.1.1",
+    "name": "CallKit Simulator v0.1.1",
+    "prerelease": true,
+    "publishedAt": "2026-10-22T04:23:03Z",
+    "url": "https://github.com/ziahamza/ios-voip-sdk/releases/tag/v0.1.1",
+    "assets": [
+      {
+        "name": "attestation.sigstore.json",
+        "bytes": 11270,
+        "sha256": "649cb5636504403396d9edbf31e9f284b49b8560b0b35ac5068e7049736cdfa4",
+        "url": "https://github.com/ziahamza/ios-voip-sdk/releases/download/v0.1.1/attestation.sigstore.json"
+      },
+      {
+        "name": "callkit-simulator-v0.1.1-macos.tar.gz",
+        "bytes": 285361,
+        "sha256": "0c1f43d58fd0f5f9dd954a66c2ab64fddc459d99586bb05aab58da2de886e418",
+        "url": "https://github.com/ziahamza/ios-voip-sdk/releases/download/v0.1.1/callkit-simulator-v0.1.1-macos.tar.gz"
+      },
+      {
+        "name": "qualification.json",
+        "bytes": 6869,
+        "sha256": "c111bd56755b55326c0065a2b1dfb93d43b55e1ab9cedc28d31f5ab543184f33",
+        "url": "https://github.com/ziahamza/ios-voip-sdk/releases/download/v0.1.1/qualification.json"
+      },
+      {
+        "name": "SHA256SUMS",
+        "bytes": 104,
+        "sha256": "0377a93c988bb263d5fad959b35ce5e73bf862d7bdddc5e68d342e995730e270",
+        "url": "https://github.com/ziahamza/ios-voip-sdk/releases/download/v0.1.1/SHA256SUMS"
+      }
+    ]
+  },
+  "source": {
+    "commit": "cbfcc5373eb5ca4955476bd753038790c87b25bd",
+    "inputsSHA256": "9125127c1267070639214a2f4be03c4f2a97ae00776be570d5684e733f2f1a04",
+    "dirty": false,
+    "tagRef": "refs/tags/v0.1.1",
+    "tagObjectType": "tag",
+    "tagObjectID": "a1fe74c8a447fb81100b1432d5ea4c28797a1c88"
+  },
+  "ci": {
+    "url": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39719750680",
+    "runID": 39719750680,
+    "attempt": 1,
+    "workflow": ".github/workflows/runtime-release.yml",
+    "jobs": [
+      {
+        "name": "release-controls",
+        "jobID": 119630238820,
+        "conclusion": "success"
+      },
+      {
+        "name": "release",
+        "jobID": 119630267514,
+        "conclusion": "success"
+      }
+    ],
+    "qualificationChecks": [
+      "cli-conformance.json",
+      "conformance-checks.json",
+      "conformance.json",
+      "generations-conformance.json",
+      "image-identity-checks.json",
+      "report-threading-conformance.json",
+      "semantics-conformance.json",
+      "summary.json"
+    ]
+  },
+  "coverage": {
+    "hostOS": "macOS 26.6.2 (25G83)",
+    "executedArchitecture": "arm64",
+    "builtArchitectures": [
+      "arm64",
+      "x86_64"
+    ],
+    "compiler": {
+      "xcode": "26.6",
+      "build": "17F113",
+      "swift": "6.3.3",
+      "clang": "21.0.0 (clang-2100.1.1.101)"
+    },
+    "sdk": {
+      "build": "23F81a",
+      "version": "26.5"
+    },
+    "simulator": {
+      "runtimeID": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+      "version": "26.5",
+      "build": "23F77"
+    },
+    "behaviorProfile": {
+      "id": "ios-27.0",
+      "sha256": "ca7bf656f565ffff93c6cd4b2275bf52485c7555694890db60028731c13040a5"
+    },
+    "mediaProof": false
+  },
+  "postDownloadVerification": {
+    "checksums": {
+      "command": [
+        "shasum",
+        "-a",
+        "256",
+        "-c",
+        "SHA256SUMS"
+      ],
+      "exitCode": 0,
+      "archiveMatches": true
+    },
+    "attestations": {
+      "commandTemplate": [
+        "gh",
+        "attestation",
+        "verify",
+        "<subject>",
+        "--repo",
+        "ziahamza/ios-voip-sdk",
+        "--signer-workflow",
+        "ziahamza/ios-voip-sdk/.github/workflows/runtime-release.yml",
+        "--source-ref",
+        "refs/tags/v0.1.1",
+        "--source-digest",
+        "cbfcc5373eb5ca4955476bd753038790c87b25bd",
+        "--deny-self-hosted-runners",
+        "--bundle",
+        "attestation.sigstore.json",
+        "--format",
+        "json"
+      ],
+      "results": [
+        {
+          "subject": "callkit-simulator-v0.1.1-macos.tar.gz",
+          "sha256": "0c1f43d58fd0f5f9dd954a66c2ab64fddc459d99586bb05aab58da2de886e418",
+          "exitCode": 0,
+          "verificationOutputSHA256": "0e3f0d698936690153150515829ed31a6eda613f15db23eff75443845808dc61"
+        },
+        {
+          "subject": "SHA256SUMS",
+          "sha256": "0377a93c988bb263d5fad959b35ce5e73bf862d7bdddc5e68d342e995730e270",
+          "exitCode": 0,
+          "verificationOutputSHA256": "0e3f0d698936690153150515829ed31a6eda613f15db23eff75443845808dc61"
+        },
+        {
+          "subject": "qualification.json",
+          "sha256": "c111bd56755b55326c0065a2b1dfb93d43b55e1ab9cedc28d31f5ab543184f33",
+          "exitCode": 0,
+          "verificationOutputSHA256": "0e3f0d698936690153150515829ed31a6eda613f15db23eff75443845808dc61"
+        }
+      ],
+      "provenanceFile": "provenance.json",
+      "provenanceSHA256": "868d8635727a6abbd934851cd710ddc3785818789240641ad059345074b122d2"
+    },
+    "archive": {
+      "sha256": "0c1f43d58fd0f5f9dd954a66c2ab64fddc459d99586bb05aab58da2de886e418",
+      "safeRelativePaths": true,
+      "fileCount": 8,
+      "everyFileEqualsQualifiedDistribution": true,
+      "files": {
+        "CKSimLoader.dylib": "3cf7ef54c3944476539a372c37d9bb72d77ff1e3220187d27a36646e4d4e6d0b",
+        "CKSimRuntime.dylib": "8c010a6990bae4026d499b78be7acabdbfc584bf75119a774d904e0cff65d91a",
+        "README.md": "9a11f7517e9e7d83dfca941ece4b750c6bc394bd8354cfe98f6d81155a29f469",
+        "VERSION": "80447316529fc62014fbaa047fb67c51ac30e32830cda370405349d8d66d196c",
+        "build-info.json": "9ae00707004d7a39b2083817189ff278ead9ee1aa1d036a273b4764482cbd496",
+        "cksim": "db83a8ae45029d0b7fc91d8f3368e5ad72131f4ce3ac20005ba27403fb2cc084",
+        "cksim-notify": "85fe97f65b8089680d6ed34003433a627b6964de089357488929f55d7ed6e78b",
+        "profiles/ios-27.0.json": "ca7bf656f565ffff93c6cd4b2275bf52485c7555694890db60028731c13040a5"
+      },
+      "originalComparisonReceiptSHA256": "e527ca09765091b1ba5efa53d2603b3f312ccfe11f1366f13fed9c01d03b8a6c",
+      "onlyRegularFilesAndDirectories": true
+    },
+    "taggedPackageCheck": {
+      "command": [
+        "python3",
+        "scripts/check-runtime-release.py",
+        "v0.1.1",
+        "--package",
+        "<downloaded-and-extracted-package>"
+      ],
+      "checkoutCommit": "cbfcc5373eb5ca4955476bd753038790c87b25bd",
+      "exitCode": 0,
+      "packageVerified": true,
+      "ciOutputFile": "tagged-package-check.json",
+      "ciOutputSHA256": "bc216adea2c6a06f393b093f1d71cab3e6d84904938f74b20beb2f7e7cc8c828"
+    }
+  },
+  "documentationChecks": {
+    "sourceCommit": "9852433a52bc2970b98b7691e1b8becb9f52d6d8",
+    "inputs": {
+      "discovery/check_release_controls.py": "14801dc82587619bb92bb1050373b1412a3825ade33cfeb02fbbd48f1491ba07",
+      "discovery/check_image_identity.py": "d0802b43adb1d1fe899840bc448dae77b07dc44e53ac0063f9040e0225e41199",
+      "discovery/summarize.py": "ffc84d6b15aff1563f30f238fe83f51fbcbc6cd0afa61bbebf8e1e349649b64c",
+      "scripts/check-runtime-release.py": "6484408f8dabf18e16d70f56b09a6fc8cfdb1bc9db7b58c04627dbe7bbe7964e",
+      "scripts/package-runtime.sh": "a4f4e6aaad2c11f6dec7ecf8c31263e30831e5f488411eeec8dfebf23c622a50"
+    },
+    "results": [
+      {
+        "command": [
+          "python3",
+          "discovery/check_release_controls.py"
+        ],
+        "exitCode": 0,
+        "syntheticControls": 18
+      },
+      {
+        "command": [
+          "python3",
+          "discovery/check_image_identity.py"
+        ],
+        "exitCode": 0,
+        "syntheticControls": 14
+      }
+    ]
+  },
+  "limits": [
+    "This tag is the standalone runtime at cbfcc53, before SDK M0 and the dedicated LCK acceptance target B; it qualifies neither Swift/Expo SDK milestones nor that later LCK target.",
+    "Both simulator slices were built; only arm64 executed in this run.",
+    "The iPhone-derived ios-27.0 profile is a device reference, not evidence of iOS 27 simulator execution.",
+    "No media transport, real APNs delivery or new physical-device behavior is qualified. R3 teardown callbacks remain uncharacterized.",
+    "No tag, release asset, runtime implementation or license was changed by this documentation follow-up."
+  ]
+}
