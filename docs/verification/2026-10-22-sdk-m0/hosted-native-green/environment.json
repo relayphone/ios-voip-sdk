@@ -1,0 +1,11 @@
+{
+  "simulatorID": "D9109A72-50B7-43C0-9BD4-9CFA4CFF37E2",
+  "simulatorRuntimeID": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+  "simulatorOS": "26.5",
+  "simulatorBuild": "23F77",
+  "xcodeVersion": "Xcode 26.6\nBuild version 17F113",
+  "sdkVersion": "26.5",
+  "hostArchitecture": "arm64",
+  "nodeVersion": "v24.22.1",
+  "npmVersion": "11.19.1"
+}
