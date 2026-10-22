@@ -1,0 +1,23 @@
+{
+  "classification": "measured offline controls; native qualification pending",
+  "baseCommit": "d274fe9100f88e7ff9ffbd4b570b9877b02d210f",
+  "success": true,
+  "harnessChecks": 93,
+  "commands": [
+    "python3 discovery/check_harness.py",
+    "python3 -m py_compile discovery/*.py",
+    "bash -n discovery/run.sh discovery/run_abi.sh",
+    "git -c core.whitespace=cr-at-eol diff --check"
+  ],
+  "sourceAndEvidenceSHA256": {
+    "discovery/run_scenario.py": "cb0508a61f049443d8e7aa809c1fffa6a7a76d40a155c5bedfa66ca89bef4926",
+    "discovery/summarize.py": "6acd36da00848aac263de997dadf88330a90929329973e914a04dbb67ba4933a",
+    "discovery/conformance.py": "26b5095725ec913ea508b0776b2eae2c942abac754bd776a832270c80abbbac3",
+    "discovery/abi_conformance.py": "286c2c669d90c283c2235e42ec9050a1dada3f10be4692efe593cfd64f400ce1",
+    "discovery/check_harness.py": "177ca519e9a276f937a0a907e0df7711823a7c250050bd776391ffe25aa40ee8",
+    "discovery/check_console_stop.py": "b42a3d8a901977813a82e015f5e24de987b6cc69115f9f74ed419034daf5ae39",
+    "discovery/run.sh": "49c17ae3a80427a07e6a34a5be0610245b2c544b4bb1e8c56d31747bd20b052d",
+    "discovery/run_abi.sh": "3ba4a47afce8c80f5729025cfd5987b267f819904b7f9c04c84bdb57c9d24f80",
+    "docs/verification/2026-10-22-owned-console-stop/offline-checks.json": "837ba6b6ed456f0aa431a96ffc89bc56956c358d1a4eac6b1f9ee39b64a3fd15"
+  }
+}
