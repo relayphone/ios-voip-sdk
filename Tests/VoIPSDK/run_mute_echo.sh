@@ -16,16 +16,26 @@ assert source.count(guard) == source.count(framework) == source.count(audio) == 
 source = source.replace(guard, '#if true', 1).replace(framework, '', 1).replace(audio, '', 1)
 Path(sys.argv[1]).write_text(source)
 PY
-swiftc -swift-version 6 -warnings-as-errors -parse-as-library \
-  Sources/VoIPSDK/ConversationModels.swift Sources/VoIPSDK/ConversationRecord.swift \
-  Sources/VoIPSDK/ConversationHandler.swift Sources/VoIPSDK/IncomingInvitationGate.swift \
-  Sources/VoIPSDK/SimulatorSupport.swift "$TEST_OUTPUT/ConversationClient.swift" \
-  Tests/VoIPSDK/MuteEchoPlatform.swift Tests/VoIPSDK/MuteEchoTests.swift \
-  -o "$TEST_OUTPUT/MuteEchoTests"
-python3 - "$TEST_OUTPUT/MuteEchoTests" <<'PY'
-import subprocess,sys
-result = subprocess.run([sys.argv[1]], capture_output=True, text=True, timeout=15)
-print(result.stdout,end='')
-print(result.stderr,file=sys.stderr,end='')
-raise SystemExit(result.returncode)
-PY
+python3 - "$TEST_OUTPUT" <<'PYTHON'
+import os,signal,subprocess,sys
+from pathlib import Path
+out=Path(sys.argv[1])
+def bounded(command, seconds):
+    process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
+    try:
+        stdout,stderr=process.communicate(timeout=seconds)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid,signal.SIGKILL)
+        stdout,stderr=process.communicate()
+        sys.stdout.buffer.write(stdout); sys.stderr.buffer.write(stderr)
+        raise SystemExit('Owned host check exceeded its bounded compiler/runtime budget')
+    sys.stdout.buffer.write(stdout); sys.stderr.buffer.write(stderr)
+    if process.returncode: raise SystemExit(process.returncode)
+for name in ('MuteEchoTests','ClientContractTests'):
+    bounded(['swiftc','-swift-version','6','-warnings-as-errors','-parse-as-library',
+      'Sources/VoIPSDK/ConversationModels.swift','Sources/VoIPSDK/ConversationRecord.swift',
+      'Sources/VoIPSDK/ConversationHandler.swift','Sources/VoIPSDK/IncomingInvitationGate.swift',
+      'Sources/VoIPSDK/PushWire.swift','Sources/VoIPSDK/SimulatorSupport.swift',str(out/'ConversationClient.swift'),
+      'Tests/VoIPSDK/MuteEchoPlatform.swift','Tests/VoIPSDK/'+name+'.swift','-o',str(out/name)],90)
+    bounded([str(out/name)],15)
+PYTHON

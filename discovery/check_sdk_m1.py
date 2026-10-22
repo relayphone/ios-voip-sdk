@@ -36,7 +36,7 @@ def fixture_case(root, case, pid):
         calls = [] if status is None else [dict(id=CONVERSATION, direction='incoming', status=status,
             isMuted=False, isVideo=False, hasConnectedAt=connected)]
         if pending:
-            calls[0]['pending'] = dict(id=PENDING, kind='join', deadline=iso(WALL + 30_000), origin='app')
+            calls[0]['pending'] = dict(id=PENDING, kind='join', deadline=iso(WALL + 28_500), origin='app')
         add('sdk.snapshot', dict(revision=revision, conversations=calls))
         revision += 1
 
@@ -71,7 +71,7 @@ def fixture_case(root, case, pid):
         for label in ('dedup-event', 'dedup-server', 'dedup-single-conversation'):
             assertion(label)
         handler('join')
-        snapshot('connected')
+        snapshot('connecting')
         assertion('joined')
         snapshot('connected', connected=True)
         hook('connected', connected=True)
@@ -88,7 +88,7 @@ def fixture_case(root, case, pid):
         add('m1.coldJoinRequested', dict(conversationID=CONVERSATION))
         snapshot('connecting', pending=True)
         add('m1.coldPending', dict(conversationID=CONVERSATION, actionID=PENDING,
-            deadline=iso(WALL + 30_000), remainingMS=30_000 - clock - 1, handlerAttached=False,
+            deadline=iso(WALL + 28_500), remainingMS=28_500 - clock - 1, handlerAttached=False,
             clockBeforeMS=WALL + clock + 1))
         add('m1.jsReady')
         add('m1.subscriptionsStarting')
@@ -98,15 +98,16 @@ def fixture_case(root, case, pid):
         if case == 'cold-launch':
             clock = 5_000
             add('m1.handlerAttached', dict(attached=True))
-            handler('join', deadline=iso(WALL + 30_000))
-            snapshot('connected', connected=True)
+            handler('join', deadline=iso(WALL + 28_500))
+            snapshot('connecting')
             assertion('cold-redelivered')
+            snapshot('connected', connected=True)
         else:
             assertion('platform-deadline-visible')
     if case != 'unhandled-expiry':
         handler('end')
     else:
-        clock = 30_300
+        clock = 28_800
     snapshot('ended')
     snapshot()
     hook()
@@ -151,7 +152,7 @@ def fixture_case(root, case, pid):
         if case != 'journey' and index == 0:
             pending = next(row for row in rows if row['event'] == 'm1.coldPending')
             runtime('m1.coldPendingClock', at=pending['t_ms'], conversationID=CONVERSATION, actionID=PENDING)
-        runtime('action.settled', at=30_000 if case == 'unhandled-expiry' else 5020 if case == 'cold-launch' else None,
+        runtime('action.settled', at=28_500 if case == 'unhandled-expiry' else 5020 if case == 'cold-launch' else None,
                 actionID='action-' + str(index), fulfilled=case != 'unhandled-expiry')
         if kind == 'CXAnswerCallAction' and case != 'unhandled-expiry': call(connected=True)
         if kind == 'CXSetHeldCallAction': call(connected=True, held=index == 1)
@@ -208,6 +209,17 @@ class Controls(unittest.TestCase):
     def test_positive_all_cases(self):
         self.check()
 
+    def test_signaling_connection_boundary(self):
+        for case in ('journey', 'cold-launch'):
+            with self.subTest(case=case):
+                self.check(lambda root: mutate_rows(root / 'm1', case, lambda rows:
+                    next(row for row in rows if row['event'] == 'sdk.snapshot' and row['conversations'] and
+                         row['conversations'][0]['status'] == 'connecting' and
+                         'pending' not in row['conversations'][0])['conversations'][0].update(status='connected')))
+                self.check(lambda root: mutate_rows(root / 'm1', case, lambda rows:
+                    next(row for row in rows if row['event'] == 'sdk.snapshot' and row['conversations'] and
+                         row['conversations'][0]['status'] == 'connected')['conversations'][0].update(hasConnectedAt=False)))
+
     def test_base_build_bytes_and_receipts_remain_required(self):
         self.check(lambda root: (root / 'binaries/example').write_bytes(b'tampered'))
         self.check(lambda root: (root / 'sdk-m0.receipt.json').unlink())
@@ -259,7 +271,7 @@ class Controls(unittest.TestCase):
         self.check(lambda root: mutate_rows(root / 'm1', 'cold-launch', lambda rows:
             next(row for row in rows if row['event'] == 'm1.coldPending').update(actionID='different')))
         self.check(lambda root: mutate_rows(root / 'm1', 'unhandled-expiry', lambda rows:
-            [row.update(t_ms=row['t_ms'] - 30_000) for row in rows if row['t_ms'] > 30_000]))
+            [row.update(t_ms=row['t_ms'] - 28_500) for row in rows if row['t_ms'] > 28_500]))
         self.check(lambda root: mutate_rows(root / 'm1', 'cold-launch', lambda rows:
             next(row for row in rows if row['event'] == 'm1.handler').update(deadline=iso(WALL + 35_000))))
         self.check(lambda root: mutate_rows(root / 'm1', 'cold-launch', lambda rows:

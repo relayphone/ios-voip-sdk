@@ -114,7 +114,7 @@ public final class PushService: NSObject, PushReceiver {
       if let ended { client.receiveCallEnded(ended) }
       do {
         let id = try await client.reportIncomingConversation(incoming, source: .pushKit)
-        try client.reportConversation(id, report: .ended(.failed))
+        try await client.reportConversation(id, report: .ended(.failed))
       } catch { NSLog("VoIPSDK: required fallback push reporting failed.") }
     default: break
     }

@@ -293,6 +293,9 @@ public final class ConversationClient: NSObject {
 
   @discardableResult
   public func receiveCallEnded(_ payload: CallEndedPayload) -> Bool {
+    // This entry is a remote transport notification. A local operation must use
+    // endConversation/report(.ended(.local)) so it awaits the system command.
+    guard payload.reason != .local else { return false }
     let now = Date(); endEventIDs = endEventIDs.filter { now.timeIntervalSince($0.value) <= 120 }
     guard endEventIDs[payload.eventId] == nil else { return false }
     endEventIDs[payload.eventId] = now
@@ -305,7 +308,11 @@ public final class ConversationClient: NSObject {
     return true
   }
 
-  public func reportConversation(_ id: UUID, report: ConversationReport) throws {
+  public func reportConversation(_ id: UUID, report: ConversationReport) async throws {
+    if case .ended(.local) = report {
+      try await endConversation(id)
+      return
+    }
     guard let conversation = manager.conversations.first(where: { $0.uuid == id }), records[id] != nil else {
       throw ConversationClientError.unknownConversation
     }
@@ -325,8 +332,9 @@ public final class ConversationClient: NSObject {
       if let video { records[id]?.video = video }
       if let record = records[id] { manager.reportConversationEvent(.conversationUpdated(update(for: record)), for: conversation) }
     case .ended(let reason):
+      guard let nativeReason = endedReason(reason) else { throw ConversationClientError.unsupported }
       records[id]?.ended = .init(at: now, reason: reason)
-      manager.reportConversationEvent(.conversationEnded(now, endedReason(reason)), for: conversation)
+      manager.reportConversationEvent(.conversationEnded(now, nativeReason), for: conversation)
     }
     refresh()
   }
@@ -391,9 +399,10 @@ public final class ConversationClient: NSObject {
     if record.video { capabilities.insert(.video) }
     return .init(members: Set(record.members.map(handle)), capabilities: capabilities)
   }
-  private func endedReason(_ reason: ConversationEndedReason) -> Conversation.EndedReason {
+  private func endedReason(_ reason: ConversationEndedReason) -> Conversation.EndedReason? {
     switch reason {
-    case .local, .remoteEnded: .remoteEnded
+    case .local: nil
+    case .remoteEnded: .remoteEnded
     case .failed: .failed
     case .unanswered: .unanswered
     case .answeredElsewhere: .joinedElsewhere
@@ -411,7 +420,7 @@ public final class ConversationClient: NSObject {
     switch conversation.state {
     case .idle: status = record.connecting ? .connecting : direction == .incoming ? .ringing : .dialing
     case .joining: status = .connecting
-    case .joined: status = .connected
+    case .joined: status = record.connectedAt == nil ? .connecting : .connected
     case .paused: status = .held
     case .leaving: status = .ending
     case .left: status = .ended
@@ -440,9 +449,10 @@ public final class ConversationClient: NSObject {
         invitations.markActive(conversation.uuid, serverCallId: payload.serverCallId, now: Date())
       }
       if records[conversation.uuid]?.endReportPending == true,
-         let ended = records[conversation.uuid]?.ended, conversation.state != .left {
+         let ended = records[conversation.uuid]?.ended, let nativeReason = endedReason(ended.reason),
+         conversation.state != .left {
         records[conversation.uuid]?.endReportPending = false
-        manager.reportConversationEvent(.conversationEnded(ended.at, endedReason(ended.reason)), for: conversation)
+        manager.reportConversationEvent(.conversationEnded(ended.at, nativeReason), for: conversation)
       }
     }
     for (id, record) in records where record.seenInManager && !ids.contains(id) {

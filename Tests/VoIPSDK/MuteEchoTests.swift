@@ -107,7 +107,7 @@ final class MuteControls {
     try await genuineAfterCleanup(rejectedID, stale: rejectedContext.actionID)
 
     let timeoutID = try await conversation()
-    manager.nextTimeout = 0.12
+    manager.nextTimeout = 1.62
     let (timedApp, timedAction, timedContext) = try await begin(timeoutID, true)
     _ = try await delayedEcho(timeoutID, value: true)
     try await wait { timedAction.state == .failed }

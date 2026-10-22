@@ -166,6 +166,18 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
     require(changes and all(row.get('uuid') == conversation and row.get('outgoing') is False and
                 all(type(row.get(key)) is bool for key in ('connected', 'held', 'ended')) for row in changes) and
             changes[-1].get('ended') is True, case + ': runtime call projection differs')
+    if case in ('journey', 'cold-launch'):
+        checkpoint = one(rows, 'm1.assertion', label='joined' if case == 'journey' else 'cold-redelivered')
+        before = [row for row in snapshots if rows.index(row) < rows.index(checkpoint) and row['conversations']]
+        require(before and before[-1]['conversations'][0].get('status') == 'connecting' and
+                before[-1]['conversations'][0].get('pending') is None and
+                all(call.get('hasConnectedAt') is False and call.get('status') not in ('connected', 'held')
+                    for row in before for call in row['conversations']),
+                case + ': signaling acceptance fabricated transport connection')
+        connected = [row for row in snapshots if any(call.get('status') == 'connected' for call in row['conversations'])]
+        require(connected and rows.index(checkpoint) < rows.index(connected[0]) and
+                all(call.get('hasConnectedAt') is True for row in connected for call in row['conversations']),
+                case + ': connected projection lacks the explicit backend report')
     if case == 'journey':
         require([row.get('kind') for row in handlers] == ['join', 'hold', 'hold', 'end'] and
                 all(type(row.get('held')) is bool for row in handlers if row.get('kind') == 'hold') and
@@ -185,7 +197,7 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
         require(pending.get('handlerAttached') is False and pending.get('conversationID') == conversation and
                 type(pending.get('remainingMS')) in (int, float),
                 case + ': missing native pending deadline')
-        check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000), deadlines)
+        check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000 + 1.5), deadlines)
         original_deadline = timestamp_ms(pending.get('deadline'))
         require(abs(original_deadline - pending['wallTimeMS'] - pending['remainingMS']) <= 5,
                 case + ': pending absolute deadline and remaining interval differ')

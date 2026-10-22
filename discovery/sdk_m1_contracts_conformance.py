@@ -98,23 +98,39 @@ def accept_contract(rows, engine, source_root):
     require(snapshots and all(type(r.get('revision')) is int for r in snapshots) and
             all(a['revision'] < b['revision'] for a, b in zip(snapshots, snapshots[1:])), 'invalid snapshot revision')
     connected = []
+    signaling = []
     native_pending = []
+    joined = one(rows, 'contract.joinSettled')
+    backend_requested = one(rows, 'contract.backendConnectedRequested')
+    backend = one(rows, 'contract.backendConnected')
+    require(joined.get('joined') is True and
+            all(r.get('conversationID') == call for r in (joined, backend_requested, backend)) and
+            deadline - 1 <= joined['wallTimeMS'] < platform_deadline and
+            rows.index(pending) < rows.index(joined) < rows.index(backend_requested) < rows.index(backend),
+            'signaling must settle before native expiry and precede the explicit backend report')
     for row in snapshots:
         calls = row.get('conversations')
         require(isinstance(calls, list) and len(calls) <= 1, 'duplicate conversation projection')
         for value in calls:
-            require(value.get('id') == call and value.get('hasConnectedAt') is False, 'unbound/fabricated connected report')
+            require(value.get('id') == call and type(value.get('hasConnectedAt')) is bool, 'unbound/invalid connected report')
             require(value.get('status') in ('ringing', 'connecting', 'connected', 'ending', 'ended'), 'unexpected accept state')
             if 'pending' in value:
                 action = value['pending']
                 require(action == dict(id=pending['actionID'], kind='join', origin='app', deadlineMS=deadline), 'pending identity/deadline changed')
                 native_pending.append(row)
+            if rows.index(row) < rows.index(backend_requested):
+                require(value.get('status') != 'connected' and value['hasConnectedAt'] is False,
+                        'join signaling fabricated transport connection')
+                if value.get('status') == 'connecting' and value.get('pending') is None:
+                    signaling.append(row)
             if value.get('status') == 'connected':
-                require(deadline - 1 <= row['wallTimeMS'] < platform_deadline and value.get('pending') is None,
-                        'accepted before effective deadline, after platform timeout, or still pending')
+                require(rows.index(row) > rows.index(backend_requested) and value.get('pending') is None and
+                        value['hasConnectedAt'] is True, 'connected projection lacks an explicit backend report')
                 connected.append(row)
-    require(native_pending and native_pending[0]['wallTimeMS'] < deadline and connected and
-            deadline - 1 <= connected[0]['wallTimeMS'] <= deadline + 3000, 'no deadline-bound connected state')
+    require(native_pending and native_pending[0]['wallTimeMS'] < deadline and signaling and connected and
+            deadline - 1 <= signaling[-1]['wallTimeMS'] < platform_deadline and
+            rows.index(signaling[-1]) <= rows.index(joined) < rows.index(connected[0]),
+            'no deadline-bound signaling settlement before backend connection')
     require(one(rows, 'contract.observation').get('connected') is True and
             one(rows, 'contract.joinResult').get('accepted') is True, 'join never became connected')
     end_request = one(rows, 'contract.endReportRequested')
@@ -148,8 +164,9 @@ def accept_contract(rows, engine, source_root):
             'native delivery/settlement/connection/cleanup order differs')
     require(len([r for r in engine if r['event'] == 'provider.created']) == 1, 'accept created another provider')
     return dict(success=True, effectiveDeadlineMS=deadline, runtimeDeadlineMS=platform_deadline,
-                connectedAfterEffectiveDeadlineMS=connected[0]['wallTimeMS'] - deadline,
-                connectedBeforeRuntimeDeadlineMS=platform_deadline - connected[0]['wallTimeMS'])
+                signalingAfterEffectiveDeadlineMS=joined['wallTimeMS'] - deadline,
+                signalingBeforeRuntimeDeadlineMS=platform_deadline - joined['wallTimeMS'],
+                explicitBackendConnected=True)
 
 
 def validate_build(build, source_root=ROOT):

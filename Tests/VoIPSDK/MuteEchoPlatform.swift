@@ -22,7 +22,7 @@ public struct Handle: Hashable {
     public static let unmerging = Self(rawValue: 16)
   }
   public struct Update { public let members: Set<Handle>; public let capabilities: Capabilities }
-  public enum EndedReason { case remoteEnded, failed, unanswered, joinedElsewhere, declinedElsewhere }
+  public enum EndedReason: Equatable { case remoteEnded, failed, unanswered, joinedElsewhere, declinedElsewhere }
   public enum Event {
     case conversationStartedConnecting(Date), conversationConnected(Date)
     case conversationUpdated(Update), conversationEnded(Date, EndedReason)
@@ -39,6 +39,7 @@ public struct Handle: Hashable {
   public private(set) var state: State = .idle
   public private(set) var settlements = 0
   private var waiter: CheckedContinuation<Void, any Error>?
+  var whenFulfilled: (@MainActor () -> Void)?
   init(conversationUUID: UUID) { self.conversationUUID = conversationUUID }
   func running() { state = .running }
   public func fulfill() { settle(true) }
@@ -46,6 +47,7 @@ public struct Handle: Hashable {
   private func settle(_ accepted: Bool) {
     guard state == .idle || state == .running else { preconditionFailure("Platform action settled twice") }
     settlements += 1; state = accepted ? .complete : .failed
+    if accepted { whenFulfilled?() }
     if accepted { waiter?.resume() } else { waiter?.resume(throwing: PlatformFailure.rejected) }
     waiter = nil
   }
@@ -100,12 +102,25 @@ public protocol ConversationManagerDelegate: AnyObject {
   public var conversations: [Conversation] = []
   var nextTimeout: TimeInterval?
   var appActions: [ConversationAction] = []
+  var reports: [(UUID, Conversation.Event)] = []
+  var incomingErrors: [any Error] = []
+  var reportedIncoming: [UUID] = []
+  var pauseIncoming = false
+  var incomingWork: CheckedContinuation<Void, Never>?
   public init(configuration: Configuration) { Self.latest = self }
   public func perform(_ actions: [ConversationAction]) async throws {
     precondition(actions.count == 1)
     let action = actions[0]
     if let timeout = nextTimeout { action.timeoutDate = Date().addingTimeInterval(timeout); nextTimeout = nil }
-    if action is StartConversationAction { conversations.append(Conversation(action.conversationUUID, state: .joined)) }
+    if action is StartConversationAction { conversations.append(Conversation(action.conversationUUID, state: .idle)) }
+    action.whenFulfilled = { [weak self, weak action] in
+      guard let self, let action,
+            let conversation = self.conversations.first(where: { $0.uuid == action.conversationUUID }) else { return }
+      // Genuine reference Start fulfillment can remain idle; Join becomes joined.
+      if action is JoinConversationAction { conversation.state = .joined }
+      if action is EndConversationAction { conversation.state = .left }
+      self.delegate?.conversationManager(self, conversationChanged: conversation)
+    }
     appActions.append(action)
     deliver(action)
     try await action.wait()
@@ -115,9 +130,16 @@ public protocol ConversationManagerDelegate: AnyObject {
     delegate?.conversationManager(self, perform: action)
   }
   public func reportNewIncomingConversation(uuid: UUID, update: Conversation.Update) async throws {
+    reportedIncoming.append(uuid)
+    if pauseIncoming {
+      await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in incomingWork = continuation }
+    }
+    if !incomingErrors.isEmpty { throw incomingErrors.removeFirst() }
     conversations.append(Conversation(uuid, state: .idle))
   }
   public func reportConversationEvent(_ event: Conversation.Event, for conversation: Conversation) {
+    reports.append((conversation.uuid, event))
+    if case .conversationConnected = event { conversation.state = .joined }
     if case .conversationEnded = event { conversation.state = .left }
     delegate?.conversationManager(self, conversationChanged: conversation)
   }

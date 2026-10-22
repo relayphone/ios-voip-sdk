@@ -93,7 +93,7 @@ public final class IosVoipSDKModule: Module {
       guard let data = try? BridgeJSON.data(report) else { Self.rejectArguments(promise); return }
       Self.respond(promise) {
         let report = try BridgeJSON.decode(ReportOptions.self, from: data)
-        try VoIPApplication.startFromBundle().client.reportConversation(Self.uuid(id), report: report.report())
+        try await VoIPApplication.startFromBundle().client.reportConversation(Self.uuid(id), report: report.report())
         return nil
       }
     }
