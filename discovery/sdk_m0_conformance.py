@@ -76,9 +76,16 @@ def record_symbols(root, relative):
 
 def device_objects(spm_device):
     for target in TARGETS:
-        paths = sorted(path for path in spm_device.rglob('*.o') if target + '.build' in path.parts)
+        directories = (target + '.build', target + '-t.build')
+        paths = []
+        for path in spm_device.rglob('*.o'):
+            parts = path.relative_to(spm_device).parts
+            # The outer project can also be VoIPSDK.build: bind the target to its platform directory.
+            if any(platform == 'Release-iphoneos' and directory in directories
+                   for platform, directory in zip(parts, parts[1:])):
+                paths.append(path)
         require(paths, 'missing SwiftPM device objects for ' + target)
-        for index, path in enumerate(paths):
+        for index, path in enumerate(sorted(paths)):
             yield target, f'device-objects/{target}-{index}.o', path
 
 

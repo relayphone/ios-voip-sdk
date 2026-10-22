@@ -219,6 +219,44 @@ class Controls(unittest.TestCase):
                 gate.validate_symbols([name])
         self.check(lambda root: None, SYMBOLS + ['_CKSimGetEngine'])
 
+    def test_device_object_paths(self):
+        sources = dict(CKSimRuntimeC=('CKInterposition.o', 'CKPushDelivery.o'),
+                       CKSimRuntime=('RuntimeEngine.o', 'resource_bundle_accessor.o'),
+                       VoIPSDK=('SimulatorSupport.o',))
+        for suffix in ('.build', '-t.build'):
+            with self.subTest(target_directory_suffix=suffix), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                intermediates = root / 'Build/Intermediates.noindex/VoIPSDK.build'
+                expected = set()
+                for target, names in sources.items():
+                    for name in names:
+                        path = intermediates / 'Release-iphoneos' / (target + suffix) / 'Objects-normal/arm64' / name
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(b'device object fixture')
+                        expected.add((target, path))
+                    for spelling in ('prefix-' + target + suffix, target + suffix + '-extra',
+                                     target + '-test.build', target + '_t.build'):
+                        path = intermediates / 'Release-iphoneos' / spelling / 'counterfeit.o'
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(b'counterfeit target fixture')
+                    simulator = intermediates / 'Release-iphonesimulator' / (target + suffix) / 'simulator.o'
+                    simulator.parent.mkdir(parents=True, exist_ok=True)
+                    simulator.write_bytes(b'simulator object fixture')
+                    product = root / 'Build/Products/Release-iphoneos' / (target + '.o')
+                    product.parent.mkdir(parents=True, exist_ok=True)
+                    product.write_bytes(b'combined product fixture')
+                found = list(gate.device_objects(root))
+                self.assertEqual({(target, source) for target, _, source in found}, expected)
+                self.assertEqual(len(found), 5)
+                for missing in gate.TARGETS:
+                    paths = [path for target, path in expected if target == missing]
+                    for path in paths:
+                        path.unlink()
+                    with self.subTest(missing_target=missing), self.assertRaises(gate.EvidenceError):
+                        list(gate.device_objects(root))
+                    for path in paths:
+                        path.write_bytes(b'device object fixture')
+
 
 if __name__ == '__main__':
     result = unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromTestCase(Controls))
