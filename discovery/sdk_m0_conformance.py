@@ -60,13 +60,13 @@ def validate_symbols(names):
         # SwiftPM can emit this linker bookkeeping from its resource-only module.
         if name.startswith('__swift_FORCE_LOAD_$_CKSimRuntime'):
             continue
-        require(name not in hooks and not any(token in name for token in
+        require(not name.startswith('_CKSim') and name not in hooks and not any(token in name for token in
                 ('CKSimRuntimeIsActive', 'CKSimRuntimeVersion', 'CKSimActivate', 'CKSimGetEngine',
                  'CKSimPrepareEngine', 'CKSimReleaseEngine', 'CKSimMakeCall', 'CKSimPerform',
                  'CKSimInjectPush', 'CKSimInstallPushHooks', 'CKSimReleasePushHooks', 'CKSimCaptureHook',
                  'CKSimReplaceHook', 'CKSimCurrentPushID', 'CKSimResourceDirectory', 'CKSimEmit',
                  'CKSimulatorEngine', 'CKRuntimePayload', 'CKRuntimeMetadata', 'RuntimeEngine',
-                 'RuntimeBootstrap', 'RuntimeStorage', 'ProviderRegistration', 'ObserverRegistration')),
+                 'RuntimeBootstrap', 'RuntimeStorage', 'RuntimePendingAction', 'ProviderRegistration', 'ObserverRegistration')),
                 'device product contains runtime implementation: ' + name)
 
 

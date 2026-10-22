@@ -233,7 +233,7 @@ class Controls(unittest.TestCase):
 
     def test_device_symbols(self):
         gate.validate_symbols(SYMBOLS + ['_$s12CKSimRuntime19resource_bundle_accessor'])
-        for name in ('_CKSimRuntimeIsActive', '_CKSimGetEngine', '_OBJC_CLASS_$_CKSimulatorEngine',
+        for name in ('_CKSimRuntimeIsActive', '_CKSimGetEngine', '_CKSimFutureHook', '_OBJC_CLASS_$_CKSimulatorEngine',
                      '_$s13RuntimeEngine', '_$s16RuntimeBootstrap', '_providerInit', '_bindHook'):
             with self.subTest(symbol=name), self.assertRaises(gate.EvidenceError):
                 gate.validate_symbols([name])
@@ -242,6 +242,8 @@ class Controls(unittest.TestCase):
     def test_device_object_paths(self):
         sources = dict(CKSimRuntimeC=('CKInterposition.o', 'CKPushDelivery.o'),
                        CKSimRuntime=('RuntimeEngine.o', 'resource_bundle_accessor.o'),
+                       VoIPPlatform=('VSCompletionOnce.o', 'VSProviderCreationMonitor.o',
+                                     'VSProviderMonitorInternal.o', 'VSPushRegistryOwner.o'),
                        VoIPSDK=('SimulatorSupport.o',))
         for suffix in ('.build', '-t.build'):
             with self.subTest(target_directory_suffix=suffix), tempfile.TemporaryDirectory() as temporary:
@@ -267,7 +269,7 @@ class Controls(unittest.TestCase):
                     product.write_bytes(b'combined product fixture')
                 found = list(gate.device_objects(root))
                 self.assertEqual({(target, source) for target, _, source in found}, expected)
-                self.assertEqual(len(found), 5)
+                self.assertEqual(len(found), sum(len(names) for names in sources.values()))
                 for missing in gate.TARGETS:
                     paths = [path for target, path in expected if target == missing]
                     for path in paths:
