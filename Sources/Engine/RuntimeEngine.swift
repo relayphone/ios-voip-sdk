@@ -25,10 +25,20 @@ private struct BehaviorProfile: Decodable {
   let startDeadlineSeconds: Double
   let answerDeadlineSeconds: Double
   let ordinaryDeadlineSeconds: Double
+  let lckActionDeadlineSeconds: Double
   let reportLatencySeconds: Double
   let muteEchoSeconds: Double
   let postEndUnmuteSeconds: Double
   let fulfilledPostEndUnmutePolicy: FulfilledPostEndUnmutePolicy
+
+  func timing(api: ProviderAPIKind, answer: Bool, start: Bool) -> (deadline: Double, expiry: Double) {
+    if api == .livecommunicationkit {
+      return (lckActionDeadlineSeconds, lckActionDeadlineSeconds)
+    }
+    if answer { return (answerDeadlineSeconds, answerExpirySeconds) }
+    if start { return (startDeadlineSeconds, startDeadlineSeconds) }
+    return (ordinaryDeadlineSeconds, actionTimeoutSeconds)
+  }
 }
 
 private final class ProviderRegistration: @unchecked Sendable {
@@ -467,17 +477,21 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       "provider": providerID(provider.provider), "actionIDs": actions.map { $0.uuid.uuidString },
       "kinds": actions.map { NSStringFromClass(type(of: $0)) }])
     for action in actions {
-      let deadline = action is CXAnswerCallAction ? profile.answerDeadlineSeconds :
-        (action is CXStartCallAction ? profile.startDeadlineSeconds : profile.ordinaryDeadlineSeconds)
-      deadlines.setObject(Date(timeIntervalSinceNow: deadline) as NSDate, forKey: action)
+      let timing = profile.timing(api: provider.apiKind,
+        answer: action is CXAnswerCallAction, start: action is CXStartCallAction)
+      let issued = Date()
+      let deadline = issued.addingTimeInterval(timing.deadline)
+      deadlines.setObject(deadline as NSDate, forKey: action)
+      record(event: "action.deadline", fields: ["actionID": action.uuid.uuidString,
+        "provider": providerID(provider.provider), "apiKind": provider.apiKind.rawValue,
+        "deadlineMS": Int64(deadline.timeIntervalSince1970 * 1000),
+        "deadlineSeconds": timing.deadline, "expirySeconds": timing.expiry])
       if let answer = action as? CXAnswerCallAction { calls[answer.callUUID]?.ringing = false }
       let pending = RuntimePendingAction(action, provider, delivered, origin,
         call: (action as? CXCallAction).flatMap { calls[$0.callUUID] },
         groupTarget: (action as? CXSetGroupCallAction)?.callUUIDToGroupWith.flatMap { calls[$0] })
       pendingActions[action.uuid] = pending
-      let seconds = action is CXAnswerCallAction ? profile.answerExpirySeconds :
-        (action is CXStartCallAction ? profile.startDeadlineSeconds : profile.actionTimeoutSeconds)
-      after(seconds) { [weak self, weak pending] in
+      after(max(0, issued.addingTimeInterval(timing.expiry).timeIntervalSinceNow)) { [weak self, weak pending] in
         guard let self, let pending, self.pendingActions[action.uuid] === pending, !pending.expired else { return }
         self.expire(pending)
       }
