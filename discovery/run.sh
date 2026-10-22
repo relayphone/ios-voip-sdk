@@ -3,6 +3,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 python3 check_oracles.py
+if [[ -z "${CKSIM_ONLY:-}" || "${CKSIM_ONLY:-}" == lck || "${CKSIM_ONLY:-}" == lck-* ]]; then
+  python3 check_lck_conformance.py
+fi
 if [[ -n "${OUT:-}" ]]; then
   mkdir "$OUT" # Refuse stale output, including an existing empty directory.
 else
@@ -14,7 +17,7 @@ UDID=""
 LOGGER=""
 RUN_ID=$(uuidgen)
 ONLY=${CKSIM_ONLY:-}
-case "$ONLY" in ""|report-threading|generations|providers-single|providers-ab|providers-ba|providers-handles|providers-late|providers-drop|providers-inv|providers-recreate) ;; *) echo "Unsupported diagnostic selection" >&2; exit 1;; esac
+case "$ONLY" in ""|report-threading|generations|providers-single|providers-ab|providers-ba|providers-handles|providers-late|providers-drop|providers-inv|providers-recreate|lck|lck-basic|lck-cx-after|lck-lck-after|lck-two-managers) ;; *) echo "Unsupported diagnostic selection" >&2; exit 1;; esac
 limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
 prepare_stage() {
   local phase=$1 budget=$2 started status
@@ -106,7 +109,14 @@ assert source.count(revival) == 1
 source=source.replace(revival, 'Trace.shared.log("revival.requested")\n      ' + revival)
 Path(sys.argv[1]).write_text(source.replace('    exit(0)', '    return'))
 PYPROVIDERS
-compiler swiftc -target "$SDK_TARGET" "${SWIFT_DEFS[@]}" -D CKSIM_CONFORMANCE -swift-version 5 -parse-as-library -O probe/main.swift probe/generations.swift probe/report_threading.swift "$BUILD/providers.swift" -o "$BUILD/Probe.app/Probe" \
+python3 - "$BUILD/lck.swift" <<'PYLCK'
+from pathlib import Path
+import sys
+source=Path('../docs/research/callkit-simulator-probe/lck.swift').read_text()
+assert source.count('    exit(0)') == 1
+Path(sys.argv[1]).write_text(source.replace('    exit(0)', '    return'))
+PYLCK
+compiler swiftc -target "$SDK_TARGET" "${SWIFT_DEFS[@]}" -D CKSIM_CONFORMANCE -swift-version 5 -parse-as-library -O probe/main.swift probe/generations.swift probe/report_threading.swift "$BUILD/providers.swift" "$BUILD/lck.swift" -o "$BUILD/Probe.app/Probe" \
   -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker probe/probe.entitlements > "$OUT/build.log" 2>&1
 codesign -s - --force "$BUILD/Probe.app"
 env DEVELOPER_DIR="${COMPILER_DEVELOPER_DIR:-${DEVELOPER_DIR:-$(xcode-select -p)}}" \
@@ -134,7 +144,9 @@ run() {
   local name=$1
   local inherited
   shift
-  if [[ -n "${ONLY:-}" && "$name" != "${ONLY:-}" ]]; then return 0; fi
+  if [[ -n "${ONLY:-}" && "$name" != "${ONLY:-}" ]]; then
+    if [[ "$ONLY" != lck || "$name" != lck-* ]]; then return 0; fi
+  fi
   echo "Starting $name"
   inherited=${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES-$(limit 20 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>/dev/null || true)}
   local libraries=$inherited
@@ -180,6 +192,15 @@ if [[ -z "$ONLY" || "$ONLY" == report-threading ]]; then
   limit 20 python3 report_threading_conformance.py "$OUT" | tee "$OUT/report-threading-conformance.json"
   limit 20 python3 check_image_identity.py --capture "$OUT" | tee "$OUT/image-identity-checks.json"
   if [[ "$ONLY" == report-threading ]]; then exit; fi
+fi
+for case in basic cx-after lck-after two-managers; do
+  run "lck-$case" SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_MODE=lck SIMCTL_CHILD_PROBE_LCK="$case"
+done
+if [[ -z "$ONLY" || "$ONLY" == lck || "$ONLY" == lck-* ]]; then
+  lck_args=("$OUT")
+  if [[ -n "$ONLY" && "$ONLY" != lck ]]; then lck_args+=(--case "${ONLY#lck-}"); fi
+  limit 20 python3 lck_conformance.py "${lck_args[@]}" | tee "$OUT/lck-conformance.json"
+  if [[ -n "$ONLY" ]]; then exit; fi
 fi
 run genuine SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=12 SIMCTL_CHILD_PROBE_WAIT_FOR_TEARDOWN=1
 run runtime SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_LATENCY=device SIMCTL_CHILD_PROBE_TIMEOUT_WAIT=70
