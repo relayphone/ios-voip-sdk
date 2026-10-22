@@ -1,0 +1,326 @@
+{
+  "schemaVersion": 1,
+  "claimKind": "measured host oracle reproduction and correction; original CI cause remains uncertain",
+  "sourceCodeCommit": "bcc0e610ac9ddbc3677146959c2582f3c0d1fc63",
+  "previousHead": "7276218f9917afacf0fc2f8c3d313406b139aad1",
+  "SDKSourceInputsSHA256": "535841205a2cf4d91f221308b09f3ac4a66951ec50d6514e49a408c91404e06c",
+  "fixedTestSHA256": "3a9dff783647cef5a680879c7a737b3dd29102a14f50177e61a45bfed47adb7f",
+  "previousTestSHA256": "de75646a656ee59c0e6b38c7bcd77fa86ef8366560af32bf2be9bfd1da05287c",
+  "productionAndRunnerSHA256Unchanged": {
+    "Sources/VoIPSDK/ConversationModels.swift": "a9f49822a15b4ba0db15572af322e5c1da4f7d34f037089b1f55aa76ec1aa0ee",
+    "Sources/VoIPSDK/ConversationRecord.swift": "90f94cf5baf4085478ed0e2437d520e9066367b9bb23615ff88d5fade3288d64",
+    "Sources/VoIPSDK/ConversationHandler.swift": "7300ea6a9b84a66e55e8c7c048e608f200835d846ed005d212caa7aa23234d29",
+    "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+    "Sources/VoIPSDK/IncomingIntake.swift": "5f6979dbc38bb4badeb2026ca8033341a5ce744ebba4e279aab1a4892d5f64c5",
+    "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+    "Sources/VoIPSDK/SimulatorSupport.swift": "45b5b31b3943603d7a20ebbed2b2a76feddbb7b6fb83fc1c532def2cbc059563",
+    "Sources/VoIPSDK/ConversationClient.swift": "b012028cb0b197aaf5a56a2f1fe1cce035c541bdfb23155f4cb99026e900652f",
+    "Sources/VoIPSDK/IncomingReportTransport.swift": "518a522f3dccc9f96f221f700a77c9c732b20b00dfb01dd094579c5b43a08cbf",
+    "Tests/VoIPSDK/IncomingCachePlatform.swift": "360a13f4591b7c9f4653b61478ad5136859e133391abbdf0bb15d7621583d01d",
+    "Tests/VoIPSDK/run_mute_echo.sh": "5c8111002410013f6c87625361f4623dea55e00a7509790e5e3dc5760de07ad0"
+  },
+  "originalCI": {
+    "runID": 39796472844,
+    "attempt": 1,
+    "head": "7276218f9917afacf0fc2f8c3d313406b139aad1",
+    "checkout": "14a7e37af9d71ae7194334a4342871bc741d2404",
+    "conclusion": "failure",
+    "step": "Check offline evidence controls and shell syntax",
+    "failure": "MuteEchoTests.swift:49 matching system echo precondition; exit251",
+    "artifactID": 12434028542,
+    "artifactZIP_SHA256": "4de29ce983c8aecf6117ade50de64ef2ff67044717d541c8dd0b87be47ece209",
+    "boundPrivateClassificationSHA256": "35f682a579acd9e38a35bdab98059319aa1d67611189b9dd650a800de31bcfe2",
+    "whichDelayedEchoInvocationKnown": false,
+    "timingAndOperandStateRetained": false,
+    "nativeBuildOrJourneyReached": false
+  },
+  "modeledProcedure": [
+    "Compile the complete original production client/coordinator and shared IncomingCachePlatform with the existing host compilation/import boundary; label only the three delayedEcho call sites in an ignored test copy.",
+    "Run the same instrumented binary with the original schedule, then change only the third (deadline-group) schedule: original40ms sleep plus180ms asynchronous delay, or original40ms sleep plus180ms synchronous actor block. All original preconditions remain.",
+    "The short action keeps its1.62s platform deadline and1.5s SDK margin. Record the actual app state, effective deadline remainder, signal, pending identity, echo settlement and handler count before/after delivery. These are modeled negative oracles, not recovered CI execution."
+  ],
+  "modeledOriginalOracleRuns": [
+    {
+      "mode": "baseline",
+      "exitCode": 0,
+      "elapsedSeconds": 0.78829,
+      "stdoutSHA256": "2f0e90cbec225255e158145dbbf23a499650f8714867b6823b113ca67cfdd31f",
+      "stderrSHA256": "785461535d80aebb6fc9b8f877600554d4ebe1f5460bd6b96f1de7386f490ee4",
+      "deadlineGroupObservations": [
+        {
+          "appSettlements": 0,
+          "appState": "running",
+          "calls": 5,
+          "committedMuted": false,
+          "effectiveDeadlineRemainingMS": 72.69704341888428,
+          "mode": "baseline",
+          "pendingActionMatchesApp": true,
+          "phase": "before-delivery",
+          "platformDeadlineRemainingMS": 1572.6970434188843,
+          "scenario": "deadline",
+          "signalReason": "none"
+        },
+        {
+          "appSettlements": 0,
+          "appState": "running",
+          "calls": 5,
+          "callsBeforeEcho": 5,
+          "committedMuted": false,
+          "echoSettlements": 1,
+          "echoState": "complete",
+          "effectiveDeadlineRemainingMS": 72.4020004272461,
+          "mode": "baseline",
+          "originalAssertion": true,
+          "pendingActionMatchesApp": true,
+          "phase": "after-delivery",
+          "platformDeadlineRemainingMS": 1572.4010467529297,
+          "scenario": "deadline",
+          "signalReason": "none"
+        },
+        {
+          "appSettlements": 0,
+          "appState": "running",
+          "calls": 5,
+          "callsBeforeEcho": 5,
+          "committedMuted": false,
+          "echoSettlements": 1,
+          "echoState": "complete",
+          "effectiveDeadlineRemainingMS": 72.14903831481934,
+          "mode": "baseline",
+          "originalAssertion": true,
+          "pendingActionMatchesApp": true,
+          "phase": "before-original-assertion",
+          "platformDeadlineRemainingMS": 1572.1490383148193,
+          "scenario": "deadline",
+          "signalReason": "none"
+        }
+      ]
+    },
+    {
+      "mode": "late-resume",
+      "exitCode": -5,
+      "elapsedSeconds": 0.447694,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "945674cdfdcefefd8f657b7019c6e8722e6bc5f7c33bed73ef62d75d21fd570e",
+      "deadlineGroupObservations": [
+        {
+          "appSettlements": 1,
+          "appState": "failed",
+          "calls": 5,
+          "committedMuted": false,
+          "effectiveDeadlineRemainingMS": -109.56692695617676,
+          "mode": "late-resume",
+          "pendingActionMatchesApp": false,
+          "phase": "before-delivery",
+          "platformDeadlineRemainingMS": 1390.4320001602173,
+          "scenario": "deadline",
+          "signalReason": "deadline"
+        },
+        {
+          "appSettlements": 1,
+          "appState": "failed",
+          "calls": 5,
+          "callsBeforeEcho": 5,
+          "committedMuted": false,
+          "echoSettlements": 0,
+          "echoState": "running",
+          "effectiveDeadlineRemainingMS": -109.732985496521,
+          "mode": "late-resume",
+          "originalAssertion": false,
+          "pendingActionMatchesApp": false,
+          "phase": "after-delivery",
+          "platformDeadlineRemainingMS": 1390.267014503479,
+          "scenario": "deadline",
+          "signalReason": "deadline"
+        },
+        {
+          "appSettlements": 1,
+          "appState": "failed",
+          "calls": 6,
+          "callsBeforeEcho": 5,
+          "committedMuted": false,
+          "echoSettlements": 0,
+          "echoState": "running",
+          "effectiveDeadlineRemainingMS": -109.87496376037598,
+          "mode": "late-resume",
+          "originalAssertion": false,
+          "pendingActionMatchesApp": false,
+          "phase": "before-original-assertion",
+          "platformDeadlineRemainingMS": 1390.125036239624,
+          "scenario": "deadline",
+          "signalReason": "deadline"
+        }
+      ]
+    },
+    {
+      "mode": "blocked-deadline",
+      "exitCode": -5,
+      "elapsedSeconds": 0.432006,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "bd9b90c9d9dfa11ccbd96d9a6e3622ce17ce1aba679501b1622bb52ef0ae8269",
+      "deadlineGroupObservations": [
+        {
+          "appSettlements": 0,
+          "appState": "running",
+          "calls": 5,
+          "committedMuted": false,
+          "effectiveDeadlineRemainingMS": -112.27095127105713,
+          "mode": "blocked-deadline",
+          "pendingActionMatchesApp": true,
+          "phase": "before-delivery",
+          "platformDeadlineRemainingMS": 1387.7290487289429,
+          "scenario": "deadline",
+          "signalReason": "none"
+        },
+        {
+          "appSettlements": 0,
+          "appState": "running",
+          "calls": 5,
+          "callsBeforeEcho": 5,
+          "committedMuted": false,
+          "echoSettlements": 0,
+          "echoState": "running",
+          "effectiveDeadlineRemainingMS": -112.43700981140137,
+          "mode": "blocked-deadline",
+          "originalAssertion": false,
+          "pendingActionMatchesApp": true,
+          "phase": "after-delivery",
+          "platformDeadlineRemainingMS": 1387.5629901885986,
+          "scenario": "deadline",
+          "signalReason": "none"
+        },
+        {
+          "appSettlements": 1,
+          "appState": "failed",
+          "calls": 6,
+          "callsBeforeEcho": 5,
+          "committedMuted": false,
+          "echoSettlements": 0,
+          "echoState": "running",
+          "effectiveDeadlineRemainingMS": -112.65099048614502,
+          "mode": "blocked-deadline",
+          "originalAssertion": false,
+          "pendingActionMatchesApp": false,
+          "phase": "before-original-assertion",
+          "platformDeadlineRemainingMS": 1387.349009513855,
+          "scenario": "deadline",
+          "signalReason": "deadline"
+        }
+      ]
+    }
+  ],
+  "originalInstrumentedTestSHA256": "ef905b0406348ebf1f28a3ce98151c77d69392e657011e59af0b203ba392e0af",
+  "retainedModeledReceiptSHA256": "dcc223ab371f26a17cce01ede4d9e7cccd97c3a7dfebf9d648744b05302b8205",
+  "correction": {
+    "trackedChange": "Tests/VoIPSDK/MuteEchoTests.swift only; evidence/handoff aside",
+    "keptBehaviorGroups": 7,
+    "deadlinePlatformSeconds": 1.62,
+    "deadlineSDKMarginSeconds": 1.5,
+    "deadlineEffectiveSeconds": 0.12,
+    "matchingEchoSleepMilliseconds": 40,
+    "executableBudgetSeconds": 15,
+    "changes": [
+      "Remove only redundant delayedEcho from the short deadline group; preserve actual failure wait, task rejection, deadline signal, one settlement and genuineAfterCleanup stale-work assertions.",
+      "Both default30s groups still hold app work at least40ms; bind the exact app action/context/group and live, unsettled, uncancelled, effective-unexpired pending state immediately before synchronous host delivery.",
+      "Require inline matching-echo fulfillment/one settlement/no second handler, then preserve all three operands after the existing eight yields. Failure text carries group and state; final stdout JSON contract is unchanged."
+    ],
+    "unchangedOtherCoverage": [
+      "opposite value",
+      "settled no-op",
+      "application rejection cleanup",
+      "platform timeout",
+      "manager reset",
+      "already-settled platform entry",
+      "different conversation",
+      "deadline cleanup and genuine subsequent system action"
+    ]
+  },
+  "correctedWholeClientRun": {
+    "command": [
+      "bash",
+      "Tests/VoIPSDK/run_mute_echo.sh"
+    ],
+    "exitCode": 0,
+    "result": {
+      "success": true,
+      "groups": 7,
+      "minimumPendingHandlerDelayMS": 44.714292,
+      "actualClientAndHandler": true,
+      "nativeDeviceTimingMeasured": false
+    },
+    "stdoutSHA256": "bcb2f5c893179b6f88a074772f2d7b2dcfc6000f3be1764232de4db9eeb2b76e",
+    "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "correctedRegressions": [
+    {
+      "mode": "fixed-late-deadline",
+      "productionSource": "unchanged working727 production",
+      "compileExitCode": 0,
+      "compileElapsedSeconds": 40.01579,
+      "runExitCode": 0,
+      "runElapsedSeconds": 1.44553,
+      "result": {
+        "success": true,
+        "groups": 7,
+        "minimumPendingHandlerDelayMS": 52.030042,
+        "actualClientAndHandler": true,
+        "nativeDeviceTimingMeasured": false
+      },
+      "compiledTestSHA256": "b3b3c86932c7a6b5a2393ed4a10f2e310d11c21d1d73b8d96c1ef3958546f078",
+      "binarySHA256": "4d74ecf521aba4262842360b27c30d088650dac3d925fde970d9959ad2be144a",
+      "stdoutSHA256": "2f92fa28b9e772611f1a23910336c8be1e1b2ba2caec4b9f0b4f8c57be946961",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "mode": "pre-A3-filter-negative",
+      "productionSource": "12318c352b656b9d1b7c1535d773caaf0eed0986",
+      "compileExitCode": 0,
+      "compileElapsedSeconds": 16.694292,
+      "runExitCode": -5,
+      "runElapsedSeconds": 0.426203,
+      "expectedRefusal": "Matching system echo must fulfill inline; group=accepted; valid live default-budget app mute",
+      "compiledTestSHA256": "3a9dff783647cef5a680879c7a737b3dd29102a14f50177e61a45bfed47adb7f",
+      "binarySHA256": "d9fcedcac0e517ac899db0d30d7fa8888949f7807ddf647a452270fdb117b553",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "93920a5d1bfe9bfc83a2766d8903b142c5a260cade17775045294100cd016891"
+    }
+  ],
+  "additionalAffectedChecks": [
+    {
+      "label": "m0-source-controls",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m0.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.669624,
+      "stdoutSHA256": "d66b3d99f66757cadfd8e1cdb633286dfc3036b4fb090e43c555f5eba06c1f3e",
+      "stderrSHA256": "3b2784dc59dcd297f1e659f5404c4228309aa8ca07e2b1159e3f999631c6bdb5"
+    },
+    {
+      "label": "whitespace",
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.028303,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "retainedFixedRegressionReceiptSHA256": "4360a932a5b094b09d7e1d1acd75a726dea6e63e51050256e4d7891a7a5f3e1a",
+  "review": {
+    "SPEC": "clear on fixed test SHA3a9dff78; seven groups and unchanged deadline/budgets",
+    "STANDARDS": "independently clear on same fixed test SHA; no product changes"
+  },
+  "success": true,
+  "limits": [
+    "The original CI has no subcase identity, operand state or backtrace; these reproductions do not identify its exact invocation, observed delay or sole cause.",
+    "The modeled invalid pending oracle fails under correct production expiry behavior. The corrected test passes with a modeled220ms resume after expiry and still rejects the exact pre-A3 product at parent12318c35.",
+    "Controlled scheduling and diagnostic instrumentation live only in ignored host copies. No production, deadline, tolerance, budget or shared platform source changed.",
+    "All actual native/app builds and journeys were skipped in original CI. No current native qualification, physical delayed-fulfill echo, genuine LCK timing, simulator, audio or device claim.",
+    "All earlier CI and host receipts remain unchanged. Fresh CI must qualify the next published source."
+  ]
+}

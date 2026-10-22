@@ -1,6 +1,6 @@
 # A7 process owner core preparation — October 22, 2026
 
-**Current status:** the ordered core union below has eighteen passing host/compiler checks and independent SPEC review. Root final source/receipt review and combined native acceptance are pending. Earlier green CI and parent failures retain their original source identities.
+**Current status:** the final ordered parent retains the eighteen-command preparation and adds one passing affected seven-group mute check. Root final source review is clear. Combined native acceptance remains pending; earlier run and failure identities stay separate.
 
 **Proposed acceptance target:** every SDK creation path claims one process owner
 before constructing its only LCK manager. Native Swift and Expo use the same
@@ -143,3 +143,29 @@ The previous `de188217` run metadata is retained with its observed queued or
 in-progress states. The audited green `031da3f` source and parent red runs remain
 historical. Root final review precedes publication; combined native acceptance
 remains pending at the final ordered stack tip.
+
+## Reviewed mute fixture follow-up
+
+The ordered-union checkpoint is retained as local normal merge `8524de3`.
+Reviewed parent #29 `9f328b50` is then merged normally, preserving the public
+factory acquisition and real Swift/Objective-C claim runner. Only
+`MuteEchoTests.swift` changes among the 140 SDK inputs; the other 139 files,
+including production code, actual Debug compiler inputs and all native inventories,
+remain byte-identical.
+
+The original A3 `7276218` hosted run remains a host assertion failure. Controlled
+host diagnostics reproduced an invalid pending-echo expectation after the
+120 ms application deadline; the original CI subcase, delay and sole cause remain
+unproven. The reviewed fixture keeps that short deadline and every cancellation,
+single-settlement, late-result and genuine-action assertion. Its two long-budget
+groups retain the forty-millisecond echo delay with explicit live-context and
+inline-fulfillment checks. No product or time budget changes.
+
+**Measured:** one affected seven-group mute control passed after the final
+source freeze. The [follow-up receipt](../verification/2026-10-22-sdk-process-owner-core/mute-fixture-followup.json)
+binds the current SDK digest `802e0f340958ec9529f213fb9c2bf9b8b671852d8f10e563eb9ffcc4732ae906`
+and the exact one-file delta. The prior eighteen-command preparation and actual
+Debug compiler proof retain their original source labels; no broad suite or
+compiler/native execution was repeated. Root final source review is clear;
+bound receipt and independent SPEC completion precede publication. Combined
+native acceptance remains pending at the final ordered stack tip.
