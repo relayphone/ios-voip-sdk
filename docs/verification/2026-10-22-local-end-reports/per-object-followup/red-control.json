@@ -1,0 +1,15 @@
+{
+  "classification": "whole-production-client host control with deliberately modeled replacement timing; no genuine LCK replacement or runtime/R3 claim",
+  "baseCommit": "8f745535752c4386e94bc0cba905ce509b24f893",
+  "exitCode": 133,
+  "failure": "after the old queued local termination skipped object A because B replaced it, the new regression timed out waiting for B first End on a subsequent refresh without a pending bit",
+  "sourceSHA256": {
+    "Sources/VoIPSDK/ConversationClient.swift": "d65572113b01bb5f28896d2091ed66c2d0d7e142a44cbb42e32aa62e0fa5e86e",
+    "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
+    "Sources/VoIPSDK/IncomingIntake.swift": "2bfd4ced0cf779fb49c4645239ae5e566d0e5fdbe420ab3fce9fbb9f954d3fa8",
+    "Tests/VoIPSDK/ReportContractTests.swift": "c2664562ab4a03026cea272a7eaa7185d445973327b6e24765e643708673473a",
+    "Tests/VoIPSDK/IncomingCachePlatform.swift": "e20fd9a4461c5950cd089a1baef3adf23d76b5de58b864d721cb6d801c447977",
+    "Tests/VoIPSDK/run_report_contracts.sh": "f1b7180308acc4f54bb4e17620109dfbdcd34786a3c1a50c1e657111ecb83352"
+  },
+  "stderrSHA256": "a7471998cd88900c9d97cbe5a50f03e2f1fe68d59590a03e801865cef1200c28"
+}

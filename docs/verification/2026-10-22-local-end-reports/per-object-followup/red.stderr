@@ -1,0 +1,3 @@
+2026-10-22 15:59:29.368 ReportContractTests[35702:1498581] VoIPSDK: retained local termination request failed.
+ReportContractTests/ReportContractTests.swift:39: Precondition failed: Report contract observation timed out
+Tests/VoIPSDK/run_report_contracts.sh: line 32: 35702 Trace/BPT trap: 5       perl -e 'alarm shift; exec @ARGV' 20 "$TEST_OUTPUT/ReportContractTests"
