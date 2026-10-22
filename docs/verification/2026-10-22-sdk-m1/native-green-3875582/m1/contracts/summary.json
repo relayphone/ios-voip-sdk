@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "classification": "measured native contracts",
+  "cases": {
+    "guard": {
+      "success": true,
+      "warnings": 2,
+      "providers": 3
+    },
+    "unhandled-accept": {
+      "success": true,
+      "pendingDeadlineMS": 1792638942492,
+      "connectedAfterDeadlineMS": 25
+    }
+  },
+  "simulatorOS": "27.0",
+  "source": {
+    "sourceCommit": "387558275bdd1ff43185a567be646999f69afa69",
+    "sourceInputsSHA256": "27d53d76352cf613e0b602d2239e3f1381aa029bb5d88ded2f1c2bac134c7dfb",
+    "sourceDirty": false
+  },
+  "buildInfoSHA256": "43b2de46f80af199b93cbc0c86e8b768e2a4e1cc7114cb0f46f383f6e5972336"
+}
