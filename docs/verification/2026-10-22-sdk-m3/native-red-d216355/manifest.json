@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "scenario": "sdk-m3",
+  "runID": "ECAD8EC2-FDE9-4F5B-9D66-49F95FE69249",
+  "ownsSimulator": true,
+  "runtimeInjectionRequested": false,
+  "directIngressInjectionRequested": false,
+  "sourceCommit": "d216355ba76b1f52d8c292bc418f3be8e932b0cf",
+  "sourceInputsSHA256": "61487a434cd06ab564bc13357a64bf7ab3ae3857c62f9c701d0696a65f573a83",
+  "inputBuildReceiptSHA256": "7b9b6a7b9a78b4bea2cb63bf96cfae5b422baa0b11ff8c8818832b14351ee184",
+  "files": {
+    "binaries/example": "a09272ceaf212c574fab67d71110edcd1dde12ca5eba79f1f8b3d348bcac4d6d",
+    "binaries/main.jsbundle": "ef1f430a755ad3c13e2502e260180c3fcdf3051329fd47e936713c5a06822d4d",
+    "Info.plist": "9dbdc9392cb114072e713e119b7f15d4ec03c96bfa0e73fb8a96d353e5b2c19e",
+    "simulated-entitlements.plist": "ee02bbadf7768214dcc0167a216e4f6ea923aec952a5c3d48c623d8c281e72f2",
+    "host-entitlements.plist": "00491886daae07a5296c8bad50f116bf006b0004d7bf7338ad46669fbd903a4a"
+  },
+  "simulatorID": "E4AD7856-B534-4CDB-93BF-53500EF1D769",
+  "environmentSHA256": "04664ea11937b505726229812680e9095133b4d810e059ccf09e7c755bf98b30",
+  "installed": {
+    "executableSHA256": "a09272ceaf212c574fab67d71110edcd1dde12ca5eba79f1f8b3d348bcac4d6d",
+    "javascriptSHA256": "ef1f430a755ad3c13e2502e260180c3fcdf3051329fd47e936713c5a06822d4d",
+    "infoPlistSHA256": "9dbdc9392cb114072e713e119b7f15d4ec03c96bfa0e73fb8a96d353e5b2c19e"
+  },
+  "settingsRunSHA256": "41c184a9436a74bd3c7c73ed1c548dd4124b906f23eaaa2f1c0aff61bfc3d8a0",
+  "inheritedDYLDSHA256": "03ded35c2adac0ac24600c1dd4388174ce9e4231602a2fc8d015b8a6268b474d",
+  "settingsFiles": {
+    "settings/attachments/CA980E8E-A97A-4050-B4B6-22B454004A20.txt": "91bf6513cc3e192df28a63c4840cb9244baec83e4168c0fd8a8a845ec5d0ff6a",
+    "settings/attachments/0DEE45FE-1B93-440C-A496-DEA3F62F1D31.png": "8e7fc3de3642ba38ad44bc369fb8752a791c230365375fedc35ba589d2b83e13",
+    "settings/attachments/817C322A-219F-4A6D-848E-E7EFF85E9599.txt": "6b4eb780accbb81271a628808c929d073133e03f656f39fec4917903b3593c15",
+    "settings/attachments/B78E1ABA-4FBC-46D5-A464-8C586AB630B5.png": "7e7c9b84e4c3a2d509b86ca56cc1188dcd6e41bc6fd7c610820774053539abb9",
+    "settings/attachments/101C5833-07C0-4D87-A3A3-F2B99F23A4A1.png": "8e7fc3de3642ba38ad44bc369fb8752a791c230365375fedc35ba589d2b83e13",
+    "settings/attachments/manifest.json": "05d04ac6faafb254180e4ba489de80ab2c2d43608b383488c2f73fcec6455626",
+    "settings/attachments/7B793B5E-FCB9-4B2B-B1BC-9D896385A8C7.txt": "163391c9776abcf5c07d1d003047c0d62a1d4262bddbeeeed0be62a9719baa91",
+    "settings/test.log": "aade512d67d18f2f83b493797ed7536c7051d2badc03c45efcbe570549c603d8"
+  },
+  "dispatchSHA256": "ce46c2c65038971883961bd82b79daa9ecabc70354e3a123b1f474df540e03f4",
+  "cleanupSHA256": "7c57d78a467bf78033bc82cd238bdf615868ba38705f9e3af7fdc2a3d039de78",
+  "commandsSHA256": "cbe607061ed4d4639945a77596506eb4ae1929f7a5d124fed353cfe36c2d8566"
+}

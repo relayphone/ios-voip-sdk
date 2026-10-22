@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "product": "sdk-m3",
+  "configuration": "Release",
+  "mediaAdapter": "none",
+  "sourceStart": {
+    "sourceCommit": "d216355ba76b1f52d8c292bc418f3be8e932b0cf",
+    "sourceInputsSHA256": "61487a434cd06ab564bc13357a64bf7ab3ae3857c62f9c701d0696a65f573a83"
+  },
+  "sourceEnd": {
+    "sourceCommit": "d216355ba76b1f52d8c292bc418f3be8e932b0cf",
+    "sourceInputsSHA256": "61487a434cd06ab564bc13357a64bf7ab3ae3857c62f9c701d0696a65f573a83"
+  },
+  "sourceCommit": "d216355ba76b1f52d8c292bc418f3be8e932b0cf",
+  "sourceInputsSHA256": "61487a434cd06ab564bc13357a64bf7ab3ae3857c62f9c701d0696a65f573a83",
+  "files": {
+    "binaries/example": "a09272ceaf212c574fab67d71110edcd1dde12ca5eba79f1f8b3d348bcac4d6d",
+    "binaries/main.jsbundle": "ef1f430a755ad3c13e2502e260180c3fcdf3051329fd47e936713c5a06822d4d",
+    "Info.plist": "9dbdc9392cb114072e713e119b7f15d4ec03c96bfa0e73fb8a96d353e5b2c19e"
+  },
+  "settingsProducts": {
+    "Debug-iphonesimulator/SettingsProbe-Runner.app/Info.plist": "b210f268e2a747b6eb9d253f9dc73fe00161f87dd9f956bdc0018dcf893322cc",
+    "Debug-iphonesimulator/SettingsProbe-Runner.app/PkgInfo": "82502191c9484b04d685374f9879a0066069c49b8acae7a04b01d38d07e8eca0",
+    "Debug-iphonesimulator/SettingsProbe-Runner.app/PlugIns/SettingsProbe.xctest/Info.plist": "210e94ae67ed3035c3e1d44fca475667639cd5f40cfd5294ced06aaa921bbf7f",
+    "Debug-iphonesimulator/SettingsProbe-Runner.app/PlugIns/SettingsProbe.xctest/SettingsProbe": "b778cb3d55ee608fa6f488a143f9bda23fd3e0cce153540de4e7ce7d0086d178",
+    "Debug-iphonesimulator/SettingsProbe-Runner.app/SettingsProbe-Runner": "4864817e2f14f43211dc6815327976a6eee1dcc05bff45b5b4d53f24b301cf19",
+    "Debug-iphonesimulator/SettingsProbe.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo": "d01e03782e7a675182b59b185fd94dd6d8a10932eee94486c49b7453dabd3d8d",
+    "Debug-iphonesimulator/SettingsProbe.swiftmodule/arm64-apple-ios-simulator.abi.json": "4277ac6b49f8511196028a5ac20f5b1b1dfa754c24615d34068089f0b1739728",
+    "Debug-iphonesimulator/SettingsProbe.swiftmodule/arm64-apple-ios-simulator.swiftdoc": "f3349a05717e0298e2bdd6026fc0e894ce4132fd767187ead9cf0819fd89ba62",
+    "Debug-iphonesimulator/SettingsProbe.swiftmodule/arm64-apple-ios-simulator.swiftmodule": "12e80d2e57fa56ae07c059513777e32f627c79b395f97a4a06fdd907c020fec9",
+    "Debug-iphonesimulator/SettingsProbeHost.app/Info.plist": "c22f91fc0519868e2350c661ec71289741393ba40eb5fbf8eb42b6564c2be80a",
+    "Debug-iphonesimulator/SettingsProbeHost.app/PkgInfo": "82502191c9484b04d685374f9879a0066069c49b8acae7a04b01d38d07e8eca0",
+    "Debug-iphonesimulator/SettingsProbeHost.app/SettingsProbeHost": "b915ced9758bb8c1bc792762f6659a7d4e38d5793198983696e1422b3b9bd53c",
+    "Debug-iphonesimulator/SettingsProbeHost.app/SettingsProbeHost.debug.dylib": "ce1902575d45811235c5fd0e5d3aea1956cc54a05f8f5a6916fa16740b213c07",
+    "Debug-iphonesimulator/SettingsProbeHost.app/__preview.dylib": "6f1ef0ee81659020f819e3e57b62eb85a1ca77ead1a6023cd529e52cec4b8d3d",
+    "Debug-iphonesimulator/SettingsProbeHost.swiftmodule/Project/arm64-apple-ios-simulator.swiftsourceinfo": "bd062f2384a17d17f148f6565ed90e387e3ab65e6d304efa70a46b411227cba7",
+    "Debug-iphonesimulator/SettingsProbeHost.swiftmodule/arm64-apple-ios-simulator.abi.json": "4277ac6b49f8511196028a5ac20f5b1b1dfa754c24615d34068089f0b1739728",
+    "Debug-iphonesimulator/SettingsProbeHost.swiftmodule/arm64-apple-ios-simulator.swiftdoc": "265cd9ca8bda906348bde4ad0a12963f21b5026b48e8714c5c8426ec4f614ee5",
+    "Debug-iphonesimulator/SettingsProbeHost.swiftmodule/arm64-apple-ios-simulator.swiftmodule": "5790a74d9c3fad3796561112257fc5a77d89d3d85c463bd558e451d800bdb167",
+    "SDKM3SettingsProbe_iphonesimulator27.1-arm64.xctestrun": "39e949e4812640d6924ef6fae7c936d85e24adb90fc20704a20834075c17fa90"
+  },
+  "buildLogs": {
+    "example-build.log": "84232085a264a99482cd740e0ee9752dd8de9c3217a7015a816c80e9c073d2af",
+    "settings-generate.log": "292f35ba7bc14e16379a6bfa5f6a62a2d52d6ba2cd0a43fc1f4a9dfa2f1bb6e7",
+    "settings-build.log": "12a5f187e2b77ea8ddd39d448b4c134710b865af304b1bd00bd1a63805e7f8f6"
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured source-bound native red; M3 acceptance pending",
+  "source": {
+    "sourceCommit": "d216355ba76b1f52d8c292bc418f3be8e932b0cf",
+    "sourceInputsSHA256": "61487a434cd06ab564bc13357a64bf7ab3ae3857c62f9c701d0696a65f573a83"
+  },
+  "runID": "ECAD8EC2-FDE9-4F5B-9D66-49F95FE69249",
+  "simulatorID": "E4AD7856-B534-4CDB-93BF-53500EF1D769",
+  "appPID": 49371,
+  "launcherAppPID": 49371,
+  "observations": {
+    "normalXcodeBuildExitCode": 0,
+    "settingsSelectionExitCode": 0,
+    "settingsSelectionVerified": true,
+    "defaultAlreadySelected": true,
+    "osTelDispatchExitCode": 115,
+    "nativeIngressObserved": false,
+    "publicDialRequestObserved": false,
+    "strictGateExitCode": 1,
+    "simulatorIndependentlyAbsent": true,
+    "globalEnvironmentUnchanged": true
+  },
+  "limits": [
+    "The strict gate remains red at the actual OS dispatch; no expected-red exception is used.",
+    "This measures the local iOS 27.0 / Xcode 27.1 combination, not a universal simulator limitation.",
+    "The owner stopped the example after dispatch failed; no terminal done/public-event success is claimed.",
+    "Compiled products, full console, raw signing claims, test log and command paths remain private and hash-bound.",
+    "probe-observations.jsonl is an exact-line reading excerpt, never a substitute gate trace."
+  ],
+  "privateArtifactSHA256": {
+    "commands.json": "cbe607061ed4d4639945a77596506eb4ae1929f7a5d124fed353cfe36c2d8566",
+    "sdk-m3-tel.log": "9be32069abd12c0125cda0a88777efe75f829216cdaef460c1821a2857f49ec5",
+    "host-entitlements.plist": "00491886daae07a5296c8bad50f116bf006b0004d7bf7338ad46669fbd903a4a",
+    "simulated-entitlements.plist": "ee02bbadf7768214dcc0167a216e4f6ea923aec952a5c3d48c623d8c281e72f2",
+    "settings/test.log": "aade512d67d18f2f83b493797ed7536c7051d2badc03c45efcbe570549c603d8",
+    "binaries/example": "a09272ceaf212c574fab67d71110edcd1dde12ca5eba79f1f8b3d348bcac4d6d",
+    "binaries/main.jsbundle": "ef1f430a755ad3c13e2502e260180c3fcdf3051329fd47e936713c5a06822d4d",
+    "Info.plist": "9dbdc9392cb114072e713e119b7f15d4ec03c96bfa0e73fb8a96d353e5b2c19e"
+  },
+  "buildLogSHA256": {
+    "example-build.log": "84232085a264a99482cd740e0ee9752dd8de9c3217a7015a816c80e9c073d2af",
+    "settings-generate.log": "292f35ba7bc14e16379a6bfa5f6a62a2d52d6ba2cd0a43fc1f4a9dfa2f1bb6e7",
+    "settings-build.log": "12a5f187e2b77ea8ddd39d448b4c134710b865af304b1bd00bd1a63805e7f8f6"
+  },
+  "files": {
+    "after-selection-accessibility.txt": "91bf6513cc3e192df28a63c4840cb9244baec83e4168c0fd8a8a845ec5d0ff6a",
+    "after-selection-screen.png": "8e7fc3de3642ba38ad44bc369fb8752a791c230365375fedc35ba589d2b83e13",
+    "before-selection-accessibility.txt": "163391c9776abcf5c07d1d003047c0d62a1d4262bddbeeeed0be62a9719baa91",
+    "before-selection-screen.png": "8e7fc3de3642ba38ad44bc369fb8752a791c230365375fedc35ba589d2b83e13",
+    "cleanup.json": "7c57d78a467bf78033bc82cd238bdf615868ba38705f9e3af7fdc2a3d039de78",
+    "control-observations.json": "dbafe8e1d89c6900ce482de92630aab8594be142914650e007d1d402c3e2e55a",
+    "dispatch.json": "ce46c2c65038971883961bd82b79daa9ecabc70354e3a123b1f474df540e03f4",
+    "environment.json": "04664ea11937b505726229812680e9095133b4d810e059ccf09e7c755bf98b30",
+    "independent-cleanup.json": "ffee409ebf102437c1004042284ef3fd8c927cacddd670366b9912204065ff4f",
+    "input-build-receipt.json": "7b9b6a7b9a78b4bea2cb63bf96cfae5b422baa0b11ff8c8818832b14351ee184",
+    "manifest.json": "cc13b422355691d319601d1ecaefeba8391d64b81ab76ef4f4c516bd35bdeced",
+    "probe-observations.jsonl": "a939601d73c9ddec8d38002933ea910704a37ced8b6bd02f7146211455843851",
+    "sdk-m3-tel.receipt.json": "7266b783c83714bc4c0af936f356ea5033b107477d7d028a77d95842d0032191",
+    "settings-attachments.json": "05d04ac6faafb254180e4ba489de80ab2c2d43608b383488c2f73fcec6455626",
+    "settings-selection.json": "be385b78f547d454e770c3fd942dd95462e5f14cb624759f87d277c920fbdc10",
+    "standalone-gate.json": "90a1e003f395e234b394c77f09b21bfbb941714ec7ad7d8869e0a40c2928e0a7",
+    "summary.json": "5552d26b185d74178a1ffb9612746add2eed83e69554fdaea632749177ef3a0e"
+  }
+}

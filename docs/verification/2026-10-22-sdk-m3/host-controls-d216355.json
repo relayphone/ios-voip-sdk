@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured host controls; external native boundaries mocked; native acceptance remains pending",
+  "source": {
+    "sourceCommit": "d216355ba76b1f52d8c292bc418f3be8e932b0cf",
+    "sourceInputsSHA256": "61487a434cd06ab564bc13357a64bf7ab3ae3857c62f9c701d0696a65f573a83"
+  },
+  "sources": {
+    ".github/workflows/sdk-m3.yml": "49e6809fe1c4080bcf002d9bc645ac7a87df2b62c74f7c76e9de395b48c4edca",
+    "discovery/build_sdk_m3.sh": "0e13986aef943e641a844b54baac5d2acfbad5e26671330d5ee1076039c38cd9",
+    "discovery/check_sdk_m3.py": "2251e75d813d6998858b847f9c7c768f075f3af9eeeda0a0b46fb9f046f07113",
+    "discovery/m3-settings/DefaultCallingTests.swift": "8de9cbb5a90a2f2cbc14018acd31e79a19abe4e0578e054aa2936672a3fc7c4e",
+    "discovery/m3-settings/Host.swift": "1e964c0410ba578938bcedc66f5a7c8902fd6e9ac45ecefd6a9c5d4e6053b9fd",
+    "discovery/m3-settings/project.yml": "a49807f79b59e7cc3f7afa2f87c63d5465d94d003912e993ad5a1b75a2dd3aee",
+    "discovery/run_sdk_m3.py": "c60575cf9520454889bf0fe0b51ef40a72eedf8069c02b65a7723998e5357838",
+    "discovery/sdk_m0_conformance.py": "18eb21a76f70843c5f685daa4f4d8c6e29e9df03e5668d3125ab42effcce4469",
+    "discovery/sdk_m3_conformance.py": "d2df37b0373d65e4ce2a0873b55b1b2ea9ffd77b44127e73878949a34910eff8"
+  },
+  "checks": [
+    {
+      "name": "m3-controls",
+      "argv": [
+        "/Applications/Xcode.app/Contents/Developer/usr/bin/python3",
+        "discovery/check_sdk_m3.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.446,
+      "logSHA256": "8db924a3c472f65fccdd813b9df312f58a46edca905cba4e4a8fd88999af2121",
+      "publishedLog": "host-m3-controls-d216355.log"
+    },
+    {
+      "name": "workflow",
+      "argv": [
+        "actionlint",
+        ".github/workflows/sdk-m3.yml"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.09,
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "shell-syntax",
+      "argv": [
+        "bash",
+        "-n",
+        "discovery/build_sdk_m3.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.011,
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "diff-check",
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.013,
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "actualBuildReceiptSHA256": "7b9b6a7b9a78b4bea2cb63bf96cfae5b422baa0b11ff8c8818832b14351ee184"
+}

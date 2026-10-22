@@ -1,0 +1,22 @@
+{
+  "completed": false,
+  "success": false,
+  "schemaVersion": 2,
+  "runID": "ECAD8EC2-FDE9-4F5B-9D66-49F95FE69249",
+  "simulatorID": "E4AD7856-B534-4CDB-93BF-53500EF1D769",
+  "scenario": "sdk-m3-tel",
+  "bundleID": "dev.iosvoipsdk.example",
+  "launcherPID": 49327,
+  "lastProbeEvent": "m3.listenerReady",
+  "lastProbeTimestampMS": 445,
+  "appEntryObserved": true,
+  "appPID": 49371,
+  "stdoutEOFSeconds": 61.912,
+  "error": "launcher exited before terminal done event",
+  "launchExitCodeBeforeCleanup": 0,
+  "cleanupExitCode": 3,
+  "launchExitCode": 0,
+  "elapsedSeconds": 62.06,
+  "traceSHA256": "9be32069abd12c0125cda0a88777efe75f829216cdaef460c1821a2857f49ec5",
+  "launcherAppPID": 49371
+}

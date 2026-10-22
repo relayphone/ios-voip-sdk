@@ -1,0 +1,8 @@
+{
+  "success": false,
+  "failure": {
+    "type": "RuntimeError",
+    "reason": "OS tel dispatch failed; M3 delivery remains unqualified on this OS/build"
+  },
+  "nativeM3Acceptance": "pending"
+}

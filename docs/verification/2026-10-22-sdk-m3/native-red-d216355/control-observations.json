@@ -1,0 +1,138 @@
+{
+  "classification": "phase/exit projection; exact command bytes retained privately and hash-bound",
+  "steps": [
+    {
+      "phase": "verify-built-signature",
+      "exitCode": 0,
+      "elapsedSeconds": 0.021,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "read-host-entitlements",
+      "exitCode": 0,
+      "elapsedSeconds": 0.009,
+      "stdoutSHA256": "00491886daae07a5296c8bad50f116bf006b0004d7bf7338ad46669fbd903a4a",
+      "stderrSHA256": "8ee7277e3b5336bc35465d247a74e62d91c45d60fb1ae1a18dc5a5c726aa6aed"
+    },
+    {
+      "phase": "runtimes",
+      "exitCode": 0,
+      "elapsedSeconds": 0.106,
+      "stdoutSHA256": "9cfa58f260058a8e8fd29341de23412742bfe1a5bd6f53696374fc2fb0c9b71a",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "create",
+      "exitCode": 0,
+      "elapsedSeconds": 0.202,
+      "stdoutSHA256": "e56b910ce9b09ff8353fa20eae1a753e45487097886a9ce88dbaff73dd9dc94b",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "boot",
+      "exitCode": 0,
+      "elapsedSeconds": 0.451,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "bootstatus",
+      "exitCode": 0,
+      "elapsedSeconds": 30.334,
+      "stdoutSHA256": "6d48dcd560e4ba9a0ae38e7b4b3dd2bcd0c91141f82f3b27da64631b56674780",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "read-original-dyld",
+      "exitCode": 0,
+      "elapsedSeconds": 2.688,
+      "stdoutSHA256": "2ea3aad5b0a83ac60aa6f0c14657641ca6623e75e2959d3a9392d1e37ed63038",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "xcode-version",
+      "exitCode": 0,
+      "elapsedSeconds": 0.256,
+      "stdoutSHA256": "ee3fe26035862d2b9653c1a570be3eca4ee5be2815f0ce99ff2d8ffa3399e4c8",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "install",
+      "exitCode": 0,
+      "elapsedSeconds": 8.902,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "installed-app",
+      "exitCode": 0,
+      "elapsedSeconds": 0.285,
+      "stdoutSHA256": "a4707f6780f76fe139e906bd2f1159ed1389ab736ca268ae16c4f4ff2483e385",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "app-data",
+      "exitCode": 0,
+      "elapsedSeconds": 0.19,
+      "stdoutSHA256": "9ac745c98268596bb0586a60016527484d5ede568360277b5cfabc8226d9fef2",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "select-calling-app",
+      "exitCode": 0,
+      "elapsedSeconds": 56.358,
+      "stdoutSHA256": "2a758231901a7363bd1660d392c7b6e45fa3af09b800541672672284e181ae88",
+      "stderrSHA256": "f13d9ee61e797361bde313696dfee20626e42a995de4ad77c86d8e19e49f91b1"
+    },
+    {
+      "phase": "export-settings-attachments",
+      "exitCode": 0,
+      "elapsedSeconds": 0.136,
+      "stdoutSHA256": "59f9d7f32a77156c0783bb522fad2efc1d60a13198f66a13762f2ddbc220f3a4",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "os-tel-dispatch",
+      "exitCode": 115,
+      "elapsedSeconds": 0.144,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "6c98a03d7b043feb52bfacfdd20455eb5a333eba58f045d8c6cb8a9ea1507694"
+    },
+    {
+      "phase": "stop-owned-example",
+      "exitCode": 0,
+      "elapsedSeconds": 0.195,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "read-final-dyld",
+      "exitCode": 0,
+      "elapsedSeconds": 0.341,
+      "stdoutSHA256": "2ea3aad5b0a83ac60aa6f0c14657641ca6623e75e2959d3a9392d1e37ed63038",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "shutdown",
+      "exitCode": 0,
+      "elapsedSeconds": 3.261,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "delete",
+      "exitCode": 0,
+      "elapsedSeconds": 0.158,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "phase": "verify-deletion",
+      "exitCode": 0,
+      "elapsedSeconds": 0.111,
+      "stdoutSHA256": "5a1b5651e6786fee21a0ecebf05f1f3b658750b3d76a3c4e95668a0c0f926233",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

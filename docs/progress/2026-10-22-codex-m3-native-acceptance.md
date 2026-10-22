@@ -47,6 +47,32 @@ identity and zero conversations. Failure stays failure. Cleanup is bounded on
 success, error, TERM and INT; it deletes only the runner's simulator. The
 existing supervisor and conformance gates are retained.
 
+## Source-bound local result
+
+**Measured, source `d216355ba76b1f52d8c292bc418f3be8e932b0cf`:** the corrected
+normal-Xcode Release build and public Settings test both passed. Build-time
+and installed executable, JavaScript and plist hashes match; all nineteen UI
+product files and the configured run file are bound. App PID `49371` matches
+the console launcher, runtime session and Settings selection result. The
+actual public row tap passed with before/after selected state and screenshots.
+
+The exact `simctl openurl` then returned 115. No native ingress or public
+`dialRequest` arrived. The standalone gate exited 1 with `M3 control failed:
+os-tel-dispatch`; the run remains red. After that failure the owner stopped the
+example, so its incomplete supervisor receipt is retained without claiming a
+terminal success. The [source-bound red receipt](../verification/2026-10-22-sdk-m3/native-red-d216355/receipt.json)
+(SHA-256 `04171327046e1960b1ba86ec497b5ea86cf7877ddee3d4c9689de8b6d50f12a0`)
+contains the actual selection, dispatch, source/build hashes and cleanup.
+The one owned simulator was shut down and deleted, then independently absent
+from inventory; launchd's original environment remained unchanged. Full
+binaries, raw paths and console remain private and hash-bound. The public
+PROBE excerpt is for reading and is never substituted into a gate trace.
+
+Independent specification and standards reviews cleared the harness before
+this frozen-source run. The standards review corrected uncertain-create
+cleanup, build-time plist binding and bool/float protocol aliases; focused
+controls cover each. The hosted comparison is still pending.
+
 ## Build and measure
 
 Commit the integrated sources first. Select the default media variant, install
@@ -76,7 +102,7 @@ the exact owned UUID/run ID before boot: announce that UUID, then copy
 the checkpoint for unattended CI. No simulator starts during the builder.
 Raw captures remain private until reviewed for sharing.
 
-**Measured host preparation:** eighteen M3 control groups pass, including
+**Measured host preparation:** [eighteen M3 control groups and final workflow checks](../verification/2026-10-22-sdk-m3/host-controls-d216355.json) pass, including
 rehashed binary/Settings tampering, stale identity, environment read errors,
 OS dispatch failure and interruption cleanup. The tracked public UI test
 compiles with Xcode 27.1; `actionlint` and shell syntax checks pass. These

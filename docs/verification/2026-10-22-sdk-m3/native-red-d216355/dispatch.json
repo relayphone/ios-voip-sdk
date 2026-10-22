@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "runID": "ECAD8EC2-FDE9-4F5B-9D66-49F95FE69249",
+  "simulatorID": "E4AD7856-B534-4CDB-93BF-53500EF1D769",
+  "appPID": 49371,
+  "argv": [
+    "xcrun",
+    "simctl",
+    "openurl",
+    "E4AD7856-B534-4CDB-93BF-53500EF1D769",
+    "tel:+15555550142"
+  ],
+  "startedWallTimeMS": 1792647123897,
+  "exitCode": 115,
+  "finishedWallTimeMS": 1792647124042
+}
