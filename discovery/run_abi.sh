@@ -42,7 +42,8 @@ codesign -s - --force "$BUILD/Probe.app" >> "$OUT/build.log" 2>&1
 env DEVELOPER_DIR="${COMPILER_DEVELOPER_DIR:-${DEVELOPER_DIR:-$(xcode-select -p)}}" \
   CKSIM_BUILD_ARCHS="$(uname -m)" CKSIM_ABI_TESTING=1 bash scripts/build-runtime.sh "$BUILD/runtime" >> "$OUT/build.log" 2>&1
 cp "$BUILD/runtime/build-info.json" "$OUT/build-info.json"
-RUNTIME=$(limit 30 xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x.get("platform")=="iOS" and x["isAvailable"]]; print(sorted(r,key=lambda x:[int(p) for p in x["version"].split(".")])[-1]["identifier"])')
+limit 60 xcrun simctl list runtimes -j > "$BUILD/runtimes.json"
+RUNTIME=$(python3 -c 'import json,sys; r=[x for x in json.load(open(sys.argv[1]))["runtimes"] if x.get("platform")=="iOS" and x["isAvailable"]]; print(sorted(r,key=lambda x:[int(p) for p in x["version"].split(".")])[-1]["identifier"])' "$BUILD/runtimes.json")
 UDID=$(limit 30 xcrun simctl create "callkit-abi-$$" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$RUNTIME")
 echo "runOwnedSimulator=$UDID runtime=$RUNTIME" >> "$OUT/environment.txt"
 limit 60 xcrun simctl boot "$UDID"
