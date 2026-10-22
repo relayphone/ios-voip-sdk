@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured local native red; three M1 processes completed, combined M0/M1 acceptance failed",
+  "sourceCommit": "83e396bac6b9c3465b17320cc80ba7088bf53ca4",
+  "sourceInputsSHA256": "ba0b475bac39b0adc6edddca74e86c790f47a26bcb63c1de627b97fec9ffdea5",
+  "capture": "discovery/out/sdk-m1-red-83e396b",
+  "runID": "6AE1F33A-A788-49D2-BF5A-9258A2081CEF",
+  "environment": {
+    "simulatorID": "2236975E-4BC9-43CC-BA30-7DDE510FAE9B",
+    "simulatorRuntimeID": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+    "simulatorOS": "27.0",
+    "simulatorBuild": "24A434",
+    "xcodeVersion": "Xcode 27.1\nBuild version 27A9275",
+    "sdkVersion": "27.1",
+    "hostArchitecture": "arm64",
+    "nodeVersion": "v26.4.0",
+    "npmVersion": "11.17.0"
+  },
+  "runtimeInjectionRequested": false,
+  "recordedCombinedResult": {
+    "success": false,
+    "error": "missing LCK state left"
+  },
+  "failureBoundary": {
+    "validator": "discovery/sdk_m0_conformance.py",
+    "assertion": "missing LCK state left",
+    "m1CaseValidationReached": false
+  },
+  "baselineObservedStates": [
+    "idle",
+    "joined"
+  ],
+  "baselineSupervisorSuccess": true,
+  "baselineSdkResultSuccess": [
+    true
+  ],
+  "m1Cases": {
+    "journey": {
+      "supervisor": {
+        "completed": true,
+        "success": true,
+        "lastProbeEvent": "done",
+        "lastProbeTimestampMS": 1791,
+        "appEntryObserved": true,
+        "terminationMethod": "console-launcher-signal",
+        "launchExitCode": 0,
+        "elapsedSeconds": 4.38
+      },
+      "traceAndJournalHashesVerified": true,
+      "sdkResultSuccess": [
+        true
+      ],
+      "observedAssertionCount": 11,
+      "observedAssertionsAllPassed": true,
+      "observedStates": [
+        "idle",
+        "joined",
+        "paused",
+        "joined"
+      ],
+      "observedHandlerKinds": [
+        "join",
+        "hold",
+        "hold",
+        "end"
+      ],
+      "finalHookConversationCount": 0,
+      "runtimeEventCounts": {
+        "runtime.installed": 1,
+        "provider.created": 1,
+        "provider.abi": 1,
+        "provider.apiKind": 1,
+        "push.received": 1,
+        "report.incoming": 1,
+        "call.changed": 6,
+        "report.completed": 1,
+        "push.completed": 1,
+        "request.accepted": 4,
+        "transaction.delivered": 4,
+        "action.settled": 4
+      },
+      "strictM1ConformanceEvaluated": false
+    },
+    "cold-launch": {
+      "supervisor": {
+        "completed": true,
+        "success": true,
+        "lastProbeEvent": "done",
+        "lastProbeTimestampMS": 476,
+        "appEntryObserved": true,
+        "terminationMethod": "console-launcher-signal",
+        "launchExitCode": 0,
+        "elapsedSeconds": 3.454
+      },
+      "traceAndJournalHashesVerified": true,
+      "sdkResultSuccess": [
+        true
+      ],
+      "observedAssertionCount": 5,
+      "observedAssertionsAllPassed": true,
+      "observedStates": [
+        "idle",
+        "joined"
+      ],
+      "observedHandlerKinds": [
+        "join",
+        "end"
+      ],
+      "finalHookConversationCount": 0,
+      "runtimeEventCounts": {
+        "runtime.installed": 1,
+        "provider.created": 1,
+        "provider.abi": 1,
+        "provider.apiKind": 1,
+        "push.received": 1,
+        "report.incoming": 1,
+        "call.changed": 4,
+        "report.completed": 1,
+        "push.completed": 1,
+        "request.accepted": 2,
+        "transaction.delivered": 2,
+        "action.settled": 2
+      },
+      "strictM1ConformanceEvaluated": false
+    },
+    "unhandled-expiry": {
+      "supervisor": {
+        "completed": true,
+        "success": true,
+        "lastProbeEvent": "done",
+        "lastProbeTimestampMS": 32050,
+        "appEntryObserved": true,
+        "terminationMethod": "console-launcher-signal",
+        "launchExitCode": 0,
+        "elapsedSeconds": 34.483
+      },
+      "traceAndJournalHashesVerified": true,
+      "sdkResultSuccess": [
+        true
+      ],
+      "observedAssertionCount": 5,
+      "observedAssertionsAllPassed": true,
+      "observedStates": [
+        "idle"
+      ],
+      "observedHandlerKinds": [],
+      "finalHookConversationCount": 0,
+      "runtimeEventCounts": {
+        "runtime.installed": 1,
+        "provider.created": 1,
+        "provider.abi": 1,
+        "provider.apiKind": 1,
+        "push.received": 1,
+        "report.incoming": 1,
+        "call.changed": 2,
+        "report.completed": 1,
+        "push.completed": 1,
+        "request.accepted": 1,
+        "transaction.delivered": 2,
+        "action.settled": 1
+      },
+      "strictM1ConformanceEvaluated": false
+    }
+  },
+  "cleanup": {
+    "simulatorID": "2236975E-4BC9-43CC-BA30-7DDE510FAE9B",
+    "shutdownExitCode": 0,
+    "deleteExitCode": 0,
+    "deleted": true
+  },
+  "originalCaptureFileSHA256": {
+    "source-before.json": "e3fe5ed4475f0dae8eaa3becf3fe3e37dc9344c65cd020a2becd5bb86e5813f8",
+    "manifest.json": "bdf8f2691ea977ea3b36c55f7e60f417eb73e888b1aa6e2d63a53bc3ade0af23",
+    "summary.json": "c72dcd9dfd12219e46003753e3bd89e61c9d4806bf9386037805e996924b14e1",
+    "environment.json": "2a17dd78046233d1fceb071e3b5de47c0b7f8592f9c77259e7368cc207a90bf1",
+    "build-receipt.json": "fe913810354e27d8df664800ba41949df445d66a010fbc112ef34a179316571a",
+    "device-build.json": "10ecfd0e41c9df26daf374b41c52e8ea1b344c185a442528cd38d9f0e03d1323",
+    "cleanup.json": "bc81c8d45d11d182e05b8b057547187dbb105b7685819c3e353b8f348d709d3c",
+    "m1/sdk-m1-journey.log": "b07031854b67d99c12e38b92819125f3ba1fa3fdfcecc9d0dad6b79adc86d514",
+    "m1/sdk-m1-journey.runtime.jsonl": "952bd9363a2beca5299e3c39ae1f1bbb63fa6674b7e415459c310ef09c637c06",
+    "m1/sdk-m1-journey.receipt.json": "f249afbd24ffa45ca9c445bdec55f8d7dcbb9ad6285c69b47c264a8770df3169",
+    "m1/sdk-m1-cold-launch.log": "82bfc881b374da7fff17729da2b8d4c65f0db078e0b8c093a4c491219f6fe219",
+    "m1/sdk-m1-cold-launch.runtime.jsonl": "71c472118b29cd0ff36b2a3107803bf918789ff91eee247cba59f4fde000890e",
+    "m1/sdk-m1-cold-launch.receipt.json": "bf3f2c9b51b3f5b3081418d931cd699f4ffcd1bc305d8688095c9963b6169539",
+    "m1/sdk-m1-unhandled-expiry.log": "8d53193d7d07394bd9cb182a70ccc4f762923d85020837efa20a4c8ab5fb49a8",
+    "m1/sdk-m1-unhandled-expiry.runtime.jsonl": "a2ee6cf01dd2041bbc0351b9a2b3d7ef1bc3cceb8ebe0baf36ee111dfc8e5e5c",
+    "m1/sdk-m1-unhandled-expiry.receipt.json": "635ba31bbddc3b7f6e529ac74efb40aebb01326e9336810d6199d29350da2f8f",
+    "sdk-m0.log": "e92c5b1c1a75f63b83360a0946cb9eff82c14c90fc5620431c7cb0d84b00a704",
+    "sdk-m0.receipt.json": "9bd1bcc7ec2efd4209252500e228f2e09ca02bbef731b1ee617bb4abebdfdef1"
+  },
+  "evidenceLimits": [
+    "No M1 conformance pass: the combined gate fails in its M0 prerequisite before evaluating M1 cases.",
+    "Synthetic simulator push injection only; no real APNs, physical-device, locked-launch or audio-activation measurement.",
+    "Recorded shutdown/delete exit statuses are preserved; no independent post-cleanup simulator query was performed for this draft.",
+    "No raw capture logs, tokens, payloads, keys, binaries or device objects copied into this draft."
+  ]
+}

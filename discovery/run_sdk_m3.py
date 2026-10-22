@@ -41,9 +41,12 @@ def main():
     parser.add_argument('--out', type=Path, required=True, help='fresh private capture directory')
     parser.add_argument('--runtime', help='installed iOS runtime identifier; otherwise latest available')
     parser.add_argument('--device-type', default='com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro')
+    parser.add_argument('--preboot-wait-seconds', type=int, default=0,
+                        help='bounded owned-UUID announcement checkpoint before boot')
     parser.add_argument('--settings-wait-seconds', type=int, default=0,
                         help='bounded public Settings UI checkpoint; does not select an app automatically')
     args = parser.parse_args()
+    if not 0 <= args.preboot_wait_seconds <= 240: parser.error('Preboot checkpoint must be 0...240 seconds')
     if not 0 <= args.settings_wait_seconds <= 240: parser.error('Settings checkpoint must be 0...240 seconds')
     root = Path(__file__).resolve().parent.parent
     os.chdir(root)
@@ -127,6 +130,17 @@ def main():
         simulator = sim('create', 'create', 'sdk-m3-' + run_id, args.device_type, runtime['identifier']).stdout.decode().strip()
         uuid.UUID(simulator)
         manifest['simulatorID'] = simulator
+        print('Created owned M3 simulator ' + simulator + '; boot has not started.', flush=True)
+        if args.preboot_wait_seconds:
+            checkpoint = dict(runID=run_id, simulatorID=simulator, ownsSimulator=True)
+            write(out / 'preboot-checkpoint.json', checkpoint)
+            deadline = time.monotonic() + args.preboot_wait_seconds
+            observation = out / 'boot-observation.json'
+            while not observation.exists():
+                if time.monotonic() >= deadline: raise RuntimeError('Deadline waiting for owned UUID announcement')
+                time.sleep(0.05)
+            if json.loads(observation.read_text()) != checkpoint:
+                raise RuntimeError('Preboot observation does not match this owned simulator')
         sim('boot', 'boot', simulator)
         sim('bootstatus', 'bootstatus', simulator, '-b', timeout=300)
         original_dyld = read_dyld('read-original-dyld')

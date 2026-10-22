@@ -44,7 +44,7 @@ def sample():
 
 class Controls(unittest.TestCase):
     def run_capture(self, *, dyld_status=0, dyld=b'', dyld_timeout=False, dyld_stderr=b'',
-                    dispatch_status=0, omit_receipt=False, terminate_during_boot=False):
+                    dispatch_status=0, omit_receipt=False, terminate_during_boot=False, preboot=False):
         with tempfile.TemporaryDirectory(prefix='sdk-m3-runner-controls-') as directory:
             root = Path(directory); app = root / 'Original.app'; app.mkdir(); data = root / 'data'; data.mkdir()
             out = root / 'capture'
@@ -100,13 +100,20 @@ class Controls(unittest.TestCase):
                 def terminate(self): self.status = -15
                 def kill(self): self.status = -9
 
+            def observe_preboot(_):
+                checkpoint = json.loads((out / 'preboot-checkpoint.json').read_text())
+                self.assertFalse(any(call[:3] == ['xcrun', 'simctl', 'boot'] for call in calls))
+                m0_controls.write_json(out / 'boot-observation.json', checkpoint)
+
             captured = io.StringIO()
             handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
             with patch.object(runner.m0, 'source_identity', return_value=m0_controls.IDENTITY), \
                  patch.object(runner.subprocess, 'run', side_effect=external), \
                  patch.object(runner.subprocess, 'Popen', Supervisor), \
                  patch.object(runner.time, 'time_ns', return_value=1_790_000_000_025_000_000), \
-                 patch.object(sys, 'argv', ['run_sdk_m3.py', '--app', str(app), '--build-receipt', str(receipt), '--out', str(out)]), \
+                 patch.object(sys, 'argv', ['run_sdk_m3.py', '--app', str(app), '--build-receipt', str(receipt), '--out', str(out)] +
+                              (['--preboot-wait-seconds', '1'] if preboot else [])), \
+                 patch.object(runner.time, 'sleep', side_effect=observe_preboot if preboot else lambda _: None), \
                  patch.dict(os.environ, {'SIMCTL_CHILD_DYLD_INSERT_LIBRARIES': '/private/fixture-injector.dylib'}), \
                  contextlib.redirect_stdout(captured):
                 status = runner.main()
@@ -231,6 +238,11 @@ class Controls(unittest.TestCase):
 
     def test_mocked_runner_signs_only_copy_and_preserves_environment(self):
         status, result = self.run_capture()
+        self.assertEqual(status, 0)
+        self.assertTrue(result['success'])
+
+    def test_mocked_preboot_checkpoint_precedes_boot(self):
+        status, result = self.run_capture(preboot=True)
         self.assertEqual(status, 0)
         self.assertTrue(result['success'])
 

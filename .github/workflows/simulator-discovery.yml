@@ -32,6 +32,7 @@ jobs:
           python3 discovery/check_harness.py
           python3 discovery/check_cli_controls.py
           python3 discovery/check_cli_repair.py
+          python3 discovery/check_repair_diagnostics.py
           python3 discovery/check_environment.py
           python3 discovery/check_release_controls.py
       - name: Select simulator host and compiler independently

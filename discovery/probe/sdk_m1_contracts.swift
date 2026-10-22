@@ -1,0 +1,171 @@
+import CallKit
+import AVFAudio
+import CryptoKit
+import Foundation
+@preconcurrency import LiveCommunicationKit
+import SwiftUI
+
+@MainActor
+private enum ContractTrace {
+  static let start = ProcessInfo.processInfo.systemUptime
+  static var sequence = 0
+  static func log(_ event: String, _ fields: [String: Any] = [:]) {
+    sequence += 1
+    let env = ProcessInfo.processInfo.environment
+    var row = fields
+    row.merge(["event": event, "sequence": sequence, "main": Thread.isMainThread,
+      "t_ms": Int((ProcessInfo.processInfo.systemUptime - start) * 1000),
+      "wallTimeMS": Int(Date().timeIntervalSince1970 * 1000), "pid": Int(getpid()),
+      "runID": env["CKSIM_RUN_ID"] ?? "", "simulatorID": env["SIMULATOR_UDID"] ?? "",
+      "bundleID": Bundle.main.bundleIdentifier ?? ""]) { _, actual in actual }
+    if let data = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) {
+      FileHandle.standardError.write(Data("PROBE ".utf8) + data + Data("\n".utf8))
+    }
+  }
+}
+
+@MainActor
+private final class ReentrantMediaAdapter: MediaAdapter {
+  private(set) var observedClient: ConversationClient?
+  private(set) var authorizationCalls = 0
+  func setSystemAudioAuthorization(_ active: Bool) {
+    authorizationCalls += 1
+    observedClient = ConversationClient.shared
+  }
+  func prepare() async throws {}
+  func didActivate(_ session: AVAudioSession) async throws {}
+  func didDeactivate(_ session: AVAudioSession) async throws {}
+}
+
+@MainActor
+private final class SDKM1ContractsProbe {
+  private var warnings = 0
+  private var phase = "owned"
+  private var extraProvider: CXProvider?
+  private var extraManager: ConversationManager?
+
+  private func wait(seconds: Double, until condition: () -> Bool) async -> Bool {
+    let stop = Date().addingTimeInterval(max(0, seconds))
+    while !condition(), Date() < stop { try? await Task.sleep(for: .milliseconds(20)) }
+    return condition()
+  }
+
+  func run() async {
+    let mode = ProcessInfo.processInfo.environment["SDK_M1_CONTRACT_CASE"] ?? ""
+    let executable = (try? Data(contentsOf: Bundle.main.executableURL!)) ?? Data()
+    let inserted = (ProcessInfo.processInfo.environment["DYLD_INSERT_LIBRARIES"] ?? "").split(separator: ":")
+    let injected = inserted.contains { ["CKSimRuntime.dylib", "CKSimLoader.dylib"].contains(URL(fileURLWithPath: String($0)).lastPathComponent) }
+    ContractTrace.log("launch", ["traceVersion": 2, "mode": "sdk-m1-contracts", "case": mode,
+      "executableSHA256": SHA256.hash(data: executable).map { String(format: "%02x", $0) }.joined(),
+      "runtimeInjectionPresent": injected, "simulatorOS": UIDevice.current.systemVersion])
+    let active = SimulatorSupport.activateIfNeeded()
+    ContractTrace.log("contract.activation", ["active": active])
+    guard active else { finish(false); return }
+    ProviderCreationMonitor.install { [self] message in
+      warnings += 1
+      ContractTrace.log("contract.warning", ["message": message, "phase": phase, "count": warnings])
+    }
+    do {
+      if mode == "media-reentrancy" {
+        let adapter = ReentrantMediaAdapter()
+        try ConversationClient.registerMediaAdapter(adapter)
+        let client = ConversationClient.shared
+        let sameOwner = adapter.observedClient === client && client === ConversationClient.shared
+        ContractTrace.log("contract.mediaReentrancy", ["authorizationCalls": adapter.authorizationCalls,
+          "sameOwner": sameOwner, "warnings": warnings])
+        finish(sameOwner && adapter.authorizationCalls == 1 && warnings == 0)
+        return
+      }
+      if mode == "unhandled-accept" {
+        try ConversationClient.configure(.init(includesConversationInRecents: false, unhandledAction: .accept))
+        ContractTrace.log("contract.configuration", ["policy": "accept", "handlerAttached": false])
+      }
+      let client = ConversationClient.shared
+      ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(client)),
+        "sharedIdentity": String(describing: ObjectIdentifier(ConversationClient.shared)), "warnings": warnings])
+      if mode == "guard" { guardContract() }
+      else if mode == "unhandled-accept" { try await acceptContract(client) }
+      else { finish(false) }
+    } catch {
+      ContractTrace.log("contract.error", ["type": String(describing: type(of: error))])
+      finish(false)
+    }
+  }
+
+  private func guardContract() {
+    phase = "extra-cx"
+    ContractTrace.log("contract.creationBegin", ["phase": phase])
+    extraProvider = CXProvider(configuration: CXProviderConfiguration())
+    ContractTrace.log("contract.creationEnd", ["phase": phase, "warnings": warnings,
+      "identity": String(describing: ObjectIdentifier(extraProvider!))])
+    phase = "extra-lck"
+    ContractTrace.log("contract.creationBegin", ["phase": phase])
+    extraManager = ConversationManager(configuration: .init(ringtoneName: nil, iconTemplateImageData: nil,
+      maximumConversationGroups: 2, maximumConversationsPerConversationGroup: 1,
+      includesConversationInRecents: false, supportsVideo: false, supportedHandleTypes: [.generic]))
+    ContractTrace.log("contract.creationEnd", ["phase": phase, "warnings": warnings,
+      "identity": String(describing: ObjectIdentifier(extraManager!))])
+    // Extra owners exist only in this diagnostic fixture; no SDK command uses them.
+    finish(warnings == 2)
+  }
+
+  private func acceptContract(_ client: ConversationClient) async throws {
+    let token = client.observeState { update in
+      let calls: [[String: Any]] = update.conversations.map { call in
+        var value: [String: Any] = ["id": call.id.uuidString, "status": call.status.rawValue,
+          "hasConnectedAt": call.connectedAt != nil]
+        if let pending = call.pending {
+          value["pending"] = ["id": pending.id.uuidString, "kind": pending.kind.rawValue,
+            "origin": pending.origin.rawValue, "deadlineMS": Int(pending.deadline.timeIntervalSince1970 * 1000)]
+        }
+        return value
+      }
+      ContractTrace.log("contract.snapshot", ["revision": update.revision, "conversations": calls])
+    }
+    defer { client.removeStateObserver(token) }
+    let id = try await client.reportIncomingConversation(.init(eventId: UUID().uuidString,
+      serverCallId: UUID().uuidString, caller: .init(id: "native-accept-fixture")))
+    ContractTrace.log("contract.incoming", ["conversationID": id.uuidString])
+    let request = Task { @MainActor in
+      do { try await client.joinConversation(id); ContractTrace.log("contract.joinResult", ["accepted": true]) }
+      catch { ContractTrace.log("contract.joinResult", ["accepted": false]) }
+    }
+    defer { request.cancel() }
+    _ = await wait(seconds: 5) { client.snapshots.first(where: { $0.id == id })?.pending != nil }
+    guard let pending = client.snapshots.first(where: { $0.id == id })?.pending else {
+      try? client.reportConversation(id, report: .ended(.failed)); finish(false); return
+    }
+    let clockBefore = Int(Date().timeIntervalSince1970 * 1000)
+    CKSimEmit("contract.pendingClock", ["actionID": pending.id.uuidString])
+    ContractTrace.log("contract.pending", ["conversationID": id.uuidString, "actionID": pending.id.uuidString,
+      "kind": pending.kind.rawValue, "origin": pending.origin.rawValue,
+      "deadlineMS": Int(pending.deadline.timeIntervalSince1970 * 1000),
+      "remainingMS": Int(pending.deadline.timeIntervalSinceNow * 1000), "handlerAttached": false,
+      "clockBeforeMS": clockBefore])
+    let connected = await wait(seconds: pending.deadline.timeIntervalSinceNow + 3) {
+      client.snapshots.first(where: { $0.id == id })?.status == .connected
+    }
+    ContractTrace.log("contract.observation", ["connected": connected, "conversationID": id.uuidString])
+    if client.snapshots.contains(where: { $0.id == id }) {
+      ContractTrace.log("contract.endReportRequested", ["conversationID": id.uuidString])
+      try client.reportConversation(id, report: .ended(.remoteEnded))
+      ContractTrace.log("contract.reportEnded", ["conversationID": id.uuidString])
+    }
+    let empty = await wait(seconds: 3) { client.snapshots.isEmpty }
+    finish(connected && empty && warnings == 0)
+  }
+
+  private func finish(_ success: Bool) { ContractTrace.log("contract.result", ["success": success]); ContractTrace.log("done") }
+}
+
+@main
+private struct SDKM1ContractsApp: App {
+  @State private var started = false
+  init() { ContractTrace.log("app.entry") }
+  var body: some Scene {
+    WindowGroup { Text("M1 native contracts").task {
+      guard !started else { return }; started = true
+      await SDKM1ContractsProbe().run()
+    } }
+  }
+}

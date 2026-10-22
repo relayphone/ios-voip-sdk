@@ -113,6 +113,39 @@ private struct Command: Decodable {
   var faults: Faults?
 }
 
+// RuntimeEngine's serial state queue owns this value. An ambiguous same-UUID
+// overlap remains unbound instead of assigning a different push's identifier.
+private struct IncomingPushAssociations {
+  enum Resolution: Equatable { case absent, associated(String), ambiguous }
+  private struct Entry {
+    var identifiers: Set<String>
+    var ambiguous = false
+  }
+  private var pending: [UUID: Entry] = [:]
+  mutating func associate(_ id: UUID, pushID: String) -> Bool {
+    guard !pushID.isEmpty else { return false }
+    var entry = pending[id] ?? Entry(identifiers: [])
+    entry.identifiers.insert(pushID)
+    entry.ambiguous = entry.ambiguous || entry.identifiers.count > 1
+    pending[id] = entry
+    return !entry.ambiguous
+  }
+  mutating func consume(_ id: UUID) -> Resolution {
+    guard let entry = pending[id] else { return .absent }
+    guard !entry.ambiguous, let identifier = entry.identifiers.first else { return .ambiguous }
+    pending.removeValue(forKey: id)
+    return .associated(identifier)
+  }
+  mutating func finish(_ id: UUID, pushID: String) {
+    guard var entry = pending[id], entry.identifiers.remove(pushID) != nil else { return }
+    pending[id] = entry.identifiers.isEmpty ? nil : entry
+  }
+  mutating func complete(pushID: String) {
+    guard !pushID.isEmpty else { return }
+    for id in Array(pending.keys) { finish(id, pushID: pushID) }
+  }
+}
+
 /// One private serial queue owns all state. App code always executes elsewhere.
 @objc(CKSimulatorEngine)
 final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendable {
@@ -144,6 +177,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private var selected: ProviderRegistration?
   private let controllerQueues = NSMapTable<CXCallController, DispatchQueue>.weakToStrongObjects()
   private var calls: [UUID: CallState] = [:]
+  private var incomingPushAssociations = IncomingPushAssociations()
   private var pendingActions: [UUID: RuntimePendingAction] = [:]
   private let deadlines = NSMapTable<CXAction, NSDate>.weakToStrongObjects()
   private var observers: [ObjectIdentifier: ObserverRegistration] = [:]
@@ -286,6 +320,9 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   func record(event: String, fields: [String: Any]) {
     withState {
       guard !stopped else { return }
+      if event == "push.completed", let pushID = fields["pushID"] as? String {
+        incomingPushAssociations.complete(pushID: pushID)
+      }
       sequence += 1
       var row = fields
       row.merge(["event": event, "sequence": sequence, "runID": runID, "pid": Int(getpid()),
@@ -542,8 +579,14 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   }
   func incoming(provider: CXProvider, uuid: UUID, update: CXCallUpdate, completion: @escaping (Error?) -> Void) {
     let reply = Completion(completion)
-    let pushID = CKSimCurrentPushID()
+    let synchronousPushID = CKSimCurrentPushID()
     withState {
+      let pushID: String
+      switch incomingPushAssociations.consume(uuid) {
+      case .absent: pushID = synchronousPushID
+      case .associated(let identifier): pushID = identifier
+      case .ambiguous: pushID = ""
+      }
       let owner = registration(provider)
       if !owner.valid {
         owner.generation += 1; owner.valid = true
@@ -568,6 +611,20 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
           reply.invoke(error)
         }
       }
+    }
+  }
+  func associateIncomingReport(_ id: UUID, pushID: String) {
+    withState {
+      guard !stopped, !pushID.isEmpty else { return }
+      if !incomingPushAssociations.associate(id, pushID: pushID) {
+        record(event: "diagnostic.ambiguousIncomingPush", fields: ["callUUID": id.uuidString])
+      }
+    }
+  }
+  func finishIncomingReport(_ id: UUID, pushID: String) {
+    withState {
+      guard !stopped else { return }
+      incomingPushAssociations.finish(id, pushID: pushID)
     }
   }
   func updated(provider: CXProvider, uuid: UUID, update: CXCallUpdate) {
@@ -757,6 +814,29 @@ func releaseRuntimeEngine() { RuntimeEngine.releasePrepared() }
 public enum RuntimeBootstrap {
   @discardableResult
   public static func activate() -> Bool { CKSimActivateRuntime() }
+
+  #if DEBUG
+  /// SDK diagnostic integration; does not replace or relax verified runtime hooks.
+  public static func installProviderCreationObserver(_ observer: @escaping (Any) -> Void) -> Bool {
+    CKSimInstallProviderCreationObserver(observer)
+  }
+  #endif
+
+  public static var currentPushIdentifier: String? {
+    guard CKSimRuntimeIsActive() else { return nil }
+    let identifier = CKSimCurrentPushID()
+    return identifier.isEmpty ? nil : identifier
+  }
+
+  public static func associateIncomingReport(_ id: UUID, pushID: String) {
+    guard CKSimRuntimeIsActive() else { return }
+    RuntimeEngine.existing()?.associateIncomingReport(id, pushID: pushID)
+  }
+
+  public static func finishIncomingReport(_ id: UUID, pushID: String) {
+    guard CKSimRuntimeIsActive() else { return }
+    RuntimeEngine.existing()?.finishIncomingReport(id, pushID: pushID)
+  }
 }
 
 private final class RuntimeStorage: @unchecked Sendable {

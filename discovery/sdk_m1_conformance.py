@@ -189,6 +189,11 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
         original_deadline = timestamp_ms(pending.get('deadline'))
         require(abs(original_deadline - pending['wallTimeMS'] - pending['remainingMS']) <= 5,
                 case + ': pending absolute deadline and remaining interval differ')
+        marker = one(engine, 'm1.coldPendingClock')
+        require(marker.get('conversationID') == conversation and marker.get('actionID') == pending.get('actionID') and
+                type(pending.get('clockBeforeMS')) is int and
+                0 <= pending['wallTimeMS'] - pending['clockBeforeMS'] <= 25,
+                case + ': unbound or imprecise pending journal clock')
         require(isinstance(pending.get('actionID'), str) and
                 any(call.get('pending', {}).get('id') == pending['actionID'] and
                     call['pending'].get('kind') == 'join' and call['pending'].get('deadline') == pending['deadline'] and
@@ -216,6 +221,15 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
             answer = one(settled, 'action.settled', actionID=actions[0][0])
             require(answer.get('fulfilled') is False and not any(row.get('connected') is True for row in changes),
                     'unhandled-expiry: default fail accepted the join')
+            require(engine.index(transactions[0]) < engine.index(marker) < engine.index(answer),
+                    'unhandled-expiry: pending clock is not between native join and settlement')
+            # Journal and app t_ms have different epochs. The synchronous marker
+            # brackets their offset within 25 ms; keep the existing 8 s liveness
+            # budget around the actual, device-checked LCK deadline.
+            relative = answer['t_ms'] - marker['t_ms']
+            require(pending['clockBeforeMS'] + relative >= original_deadline - 25 and
+                    pending['wallTimeMS'] + relative <= original_deadline + 8_025,
+                    'unhandled-expiry: native settlement did not follow the actual pending deadline')
             observed = one(rows, 'm1.expiryObserved')
             elapsed = observed['t_ms'] - pending['t_ms']
             require(pending['remainingMS'] - 100 <= elapsed <= pending['remainingMS'] + 8_000,

@@ -1,4 +1,5 @@
 import type {
+  AudioRoutes,
   Conversation,
   ConversationEventMap,
   ConversationHandler,
@@ -9,12 +10,17 @@ import type { NativeBridge } from './protocol';
 import { immutableCopy, RevisionStore } from './store';
 
 export const EMPTY_CONVERSATIONS: readonly Conversation[] = Object.freeze([]);
+export const EMPTY_AUDIO_ROUTES: AudioRoutes = Object.freeze({
+  routes: Object.freeze([]),
+  current: null,
+});
 
 export class ConversationRuntime {
   readonly conversations = new RevisionStore<readonly Conversation[]>(
     EMPTY_CONVERSATIONS,
   );
   readonly pushToken = new RevisionStore<PushToken | null>(null);
+  readonly audioRoutes = new RevisionStore<AudioRoutes>(EMPTY_AUDIO_ROUTES);
   private readonly handlers: HandlerDispatcher;
   private dialRequestListeners = 0;
   private dialRequestGeneration = 0;
@@ -36,6 +42,12 @@ export class ConversationRuntime {
     bridge.addListener('handlerAction', (event) =>
       this.handlers.dispatch(immutableCopy(event)),
     );
+    bridge.addListener('audioRoutesChanged', (event) => {
+      this.audioRoutes.accept(event.revision, {
+        routes: event.routes,
+        current: event.current,
+      });
+    });
     bridge.addListener('actionCancelled', (event) =>
       this.handlers.cancel(event),
     );
@@ -58,6 +70,16 @@ export class ConversationRuntime {
   async getConversations(): Promise<readonly Conversation[]> {
     await this.readConversations();
     return this.conversations.getSnapshot();
+  }
+
+  startAudioRoutes(): void {
+    this.audioRoutes.start(async () => {
+      const event = await this.bridge.getAudioRoutes();
+      this.audioRoutes.accept(event.revision, {
+        routes: event.routes,
+        current: event.current,
+      });
+    });
   }
 
   setHandler(handler: ConversationHandler | null): void {

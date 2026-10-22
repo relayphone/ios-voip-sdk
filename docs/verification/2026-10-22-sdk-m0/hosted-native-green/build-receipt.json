@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "5be2b61507089b0218b4877e3c6937acf531ef2c",
+  "sourceInputsSHA256": "98a7367201744ece69a1c0e41764148ecd95c45107ffb2ee5a7b5917c567393f",
+  "sourceStart": {
+    "sourceCommit": "5be2b61507089b0218b4877e3c6937acf531ef2c",
+    "sourceInputsSHA256": "98a7367201744ece69a1c0e41764148ecd95c45107ffb2ee5a7b5917c567393f"
+  },
+  "files": {
+    "binaries/example": "ae73d045c62cd435a9fb977648116a0dd32983d12ad81976bcad9bab9e248018",
+    "binaries/bootstrap": "89c60cc5f82c4f2f8e6ed6cdf1535659c24c9423b5b31f2699eee075210cc58d",
+    "binaries/device": "345bcef05b791508b40151cf5b5089bd564f523583d14680c3dcac9a89bfa415",
+    "binaries/main.jsbundle": "0ae51da9698efc019ed6e94f47f35615886876c1cd011a93119a648d10e36dc0"
+  },
+  "swiftPMDeviceObjects": [
+    {
+      "target": "CKSimRuntimeC",
+      "path": "device-objects/CKSimRuntimeC-0.o",
+      "sha256": "3ce23e858acff008c609d87e6d85b43b1f32b7212e1a2cf13d6f30adb31fd32c"
+    },
+    {
+      "target": "CKSimRuntimeC",
+      "path": "device-objects/CKSimRuntimeC-1.o",
+      "sha256": "4444394e2a6bd891dd992f184182887bd30c3aadb7a63b52316ac19897920408"
+    },
+    {
+      "target": "CKSimRuntime",
+      "path": "device-objects/CKSimRuntime-0.o",
+      "sha256": "b9de2dfdf577b06eea97edbd425799dfa8527aed81b7c984ce6231d95a864aa9"
+    },
+    {
+      "target": "CKSimRuntime",
+      "path": "device-objects/CKSimRuntime-1.o",
+      "sha256": "795aed729a102e9f9c9136e06f9ad678c21c0385b3983e748456e4def4a4b90c"
+    },
+    {
+      "target": "VoIPSDK",
+      "path": "device-objects/VoIPSDK-0.o",
+      "sha256": "beaad45bb78674a547ca77f3427777e72aa37cc295f8b763339a575972a7cc84"
+    }
+  ]
+}

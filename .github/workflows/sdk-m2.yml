@@ -1,0 +1,111 @@
+name: SDK M2 selected LiveKit simulator acceptance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Package.swift"
+      - "VERSION"
+      - "Sources/**"
+      - "Expo/**"
+      - "ExpoMedia/**"
+      - "Integrations/**"
+      - "Tests/**"
+      - "Tools/cksim-notify.c"
+      - "example/**"
+      - "package*.json"
+      - "tsconfig.json"
+      - "expo-module.config.json"
+      - "IosVoipSDK.podspec"
+      - "discovery/**"
+      - ".github/workflows/sdk-m2.yml"
+  pull_request:
+    paths:
+      - "Package.swift"
+      - "VERSION"
+      - "Sources/**"
+      - "Expo/**"
+      - "ExpoMedia/**"
+      - "Integrations/**"
+      - "Tests/**"
+      - "Tools/cksim-notify.c"
+      - "example/**"
+      - "package*.json"
+      - "tsconfig.json"
+      - "expo-module.config.json"
+      - "IosVoipSDK.podspec"
+      - "discovery/**"
+      - ".github/workflows/sdk-m2.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-m2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  selected-livekit:
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+      SDK_EXAMPLE_MEDIA_ADAPTER: livekit
+      SDK_M2_BUILD_ROOT: ${{ runner.temp }}/sdk-m2-build
+      SDK_M2_CAPTURE: ${{ runner.temp }}/sdk-m2
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Select Xcode 26.6 (CI qualification host)
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "24.22.1"
+          package-manager-cache: false
+      - name: Check M2 evidence controls and selected adapter configuration
+        run: |
+          set -euo pipefail
+          python3 discovery/check_sdk_m2.py
+          python3 discovery/check_expo_media.py
+          python3 discovery/check_expo_media_config.py
+          bash Tests/AudioCore/run_livekit.sh
+          bash -n discovery/build_sdk_m2.sh
+          python3 -m py_compile discovery/run_sdk_m2.py
+      - name: Install and check the pinned JavaScript workspace
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+          npm run typecheck
+          node --test Expo/tests/m1-runtime.test.cjs
+      - name: Generate the selected LiveKit iOS example
+        run: |
+          set -euo pipefail
+          npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install
+          cd example/ios
+          pod install
+      - name: Build source-bound Release example and Debug media contract
+        run: bash discovery/build_sdk_m2.sh "$SDK_M2_BUILD_ROOT"
+      - name: Measure LiveKit, stale audio and media reentrancy on one owned simulator
+        run: python3 discovery/run_sdk_m2.py --build-root "$SDK_M2_BUILD_ROOT" --output "$SDK_M2_CAPTURE"
+      - name: Preserve M2 receipts, products and native build diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sdk-m2-macos-26-xcode-26.6
+          path: |
+            ${{ runner.temp }}/sdk-m2
+            ${{ runner.temp }}/sdk-m2-build/*.json
+            ${{ runner.temp }}/sdk-m2-build/*.log
+            ${{ runner.temp }}/sdk-m2-build/binaries
+            ${{ runner.temp }}/sdk-m2-build/products
+            ${{ runner.temp }}/sdk-m2-build/contracts/*.json
+            ${{ runner.temp }}/sdk-m2-build/contracts/*.log
+          if-no-files-found: error
+          retention-days: 14

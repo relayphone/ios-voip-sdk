@@ -106,12 +106,24 @@ export interface PushToken {
   value: string;
 }
 
+export interface AudioRoute {
+  readonly id: string;
+  readonly name: string;
+  /** AVAudioSession's existing port type value on iOS. */
+  readonly type: string;
+}
+
+export interface AudioRoutes {
+  readonly routes: readonly AudioRoute[];
+  readonly current: AudioRoute | null;
+}
+
 /** Lifecycle signals and user-requested system destinations. */
 export interface ConversationEventMap {
   audioActivated: { conversationId?: string };
   audioDeactivated: { conversationId?: string };
-  audioActivationMissing: { conversationId: string };
-  audioActivationFailed: { conversationId: string };
+  audioActivationMissing: { conversationId?: string };
+  audioActivationFailed: { conversationId?: string };
   pushTokenUpdated: PushToken | null;
   dialRequest: { handle: string; video: boolean };
   providerReset: Record<string, never>;

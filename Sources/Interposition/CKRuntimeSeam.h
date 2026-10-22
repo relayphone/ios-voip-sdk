@@ -36,6 +36,8 @@ void * _Nullable CKSimGetEngine(void);
 bool CKSimActivateRuntime(void);
 bool CKSimRuntimeIsActive(void);
 const char *CKSimRuntimeVersion(void);
+// SDK Debug simulator builds only. No implementation is linked in Release.
+bool CKSimInstallProviderCreationObserver(void (^observer)(id provider));
 
 // Capture before replacing any superclass implementation. SDK activation uses
 // the same journal for CallKit and PushKit so a refusal restores both together.

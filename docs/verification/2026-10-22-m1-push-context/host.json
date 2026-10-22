@@ -1,0 +1,59 @@
+{
+  "success": true,
+  "classification": "host concurrency controls; no native PushKit acceptance",
+  "result": "passed: task suspension, child inheritance, unrelated/detached work, 32 concurrent UUIDs, once-consumption, matching cleanup, UUID reuse, ambiguous-overlap refusal",
+  "productionSHA256": "d3c86aa2c4fdf3f672db23204e17856ff4737aaa7521183b742774e09a43b1bf",
+  "sourceFiles": {
+    "Sources/VoIPSDK/SimulatorSupport.swift": "1d903a060f6b1690f0f98d5f3652549d50e532d06858e686b9a94dfc1d6f514b",
+    "Sources/VoIPSDK/PushService.swift": "de33029911b568dd888ac7ed8bea10a47167096f8b52b9b4cea4be81d1289aef",
+    "Sources/Engine/RuntimeEngine.swift": "ec0bcc9dd6bc2e437514b70256aef7845db3ce547562cb0678eeb70f726a4179",
+    "Tests/VoIPSDK/run_push_context.py": "f207ad34044f4d9d7ae7b67a69f956117377a08260bfc5948c7800ea86a367b4"
+  },
+  "existingPushPolicyControls": {
+    "success": true,
+    "command": "bash Tests/VoIPSDK/run_push.sh",
+    "stdoutSHA256": "14373b0b637343bec1149a022f1c809ed97ff3142da6a4c10eeeacfba49652a0"
+  },
+  "compilerChecks": [
+    {
+      "kind": "SwiftPM simulator module-boundary build",
+      "success": true,
+      "target": "arm64-apple-ios17.4-simulator",
+      "swiftVersion": 6,
+      "jobs": 2,
+      "command": "swift build --triple arm64-apple-ios17.4-simulator --sdk <installed iphonesimulator SDK> --jobs 2 --scratch-path <temporary directory>",
+      "temporaryProductsRemoved": true,
+      "warnings": "Existing ConversationClient region-isolation warnings at native LCK report/perform sites; no new correlation-source warnings."
+    },
+    {
+      "kind": "uncommitted-source device link and symbol inspection",
+      "binaryLinked": true,
+      "target": "arm64-apple-ios17.4",
+      "binarySHA256": "d8a100daa3374c73730453c3d70d0977f9120107b9bfe4407c3870a9313d8670",
+      "forbiddenSymbolSubstrings": [
+        "CKSim",
+        "RuntimeBootstrap",
+        "SimulatorPushContext",
+        "IncomingPushAssociations"
+      ],
+      "forbiddenSymbolMatches": 0,
+      "acceptanceReceipt": false,
+      "wrapperExitCode": 1,
+      "reason": "Compilation and link succeeded; source_identity correctly refused to attest dirty inputs. Root must produce a clean-source native receipt after integration. The final overlap hardening was simulator-only and followed this device link."
+    }
+  ],
+  "reviews": [
+    {
+      "axis": "specification",
+      "result": "no actionable findings",
+      "scope": "three changed Swift files and exact-production host control",
+      "limits": "No native correlation run; actual client report-site serialization is separate."
+    },
+    {
+      "axis": "standards",
+      "result": "no actionable findings",
+      "scope": "three changed Swift files and exact-production host control",
+      "limits": "No native correlation run, caller-side serialization audit, or clean-source release attestation."
+    }
+  ]
+}

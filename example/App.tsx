@@ -5,6 +5,7 @@ import {
   reportIncomingConversation,
   setConversationHandler,
   setHeld,
+  useAudioRoutes,
   useConversationEvent,
   useConversations,
   usePushToken,
@@ -31,6 +32,7 @@ import {
   trace,
 } from './acceptance';
 import { journey } from './journey';
+import { observeMediaEvent, runMediaAcceptance } from './media';
 
 type Status =
   | { phase: 'loading' }
@@ -53,6 +55,7 @@ function StatusRow({ label, value }: { label: string; value: string }) {
 function CallingJourney() {
   const conversations = useConversations();
   const pushToken = usePushToken();
+  const audioRoutes = useAudioRoutes();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Ready for an example call.');
   const [dialRequest, setDialRequest] = useState<
@@ -61,6 +64,7 @@ function CallingJourney() {
   const automated =
     journey().acceptanceEnabled ||
     journey().m1Case !== '' ||
+    journey().m2Case !== '' ||
     journey().m3Enabled;
   const conversation = conversations[0];
 
@@ -78,10 +82,17 @@ function CallingJourney() {
   }, [pushToken]);
   const observeEvent = (name: string) => {
     if (journey().m1Case !== '') void trace('m1.event', { name });
+    if (journey().m2Case !== '') observeMediaEvent(name);
   };
   useConversationEvent('audioActivated', () => observeEvent('audioActivated'));
   useConversationEvent('audioDeactivated', () =>
     observeEvent('audioDeactivated'),
+  );
+  useConversationEvent('audioActivationMissing', () =>
+    observeEvent('audioActivationMissing'),
+  );
+  useConversationEvent('audioActivationFailed', () =>
+    observeEvent('audioActivationFailed'),
   );
   useConversationEvent('providerReset', () => observeEvent('providerReset'));
   useConversationEvent('pushTokenUpdated', () =>
@@ -152,6 +163,10 @@ function CallingJourney() {
             : 'No dial request'
         }
       />
+      <StatusRow
+        label="Audio route"
+        value={audioRoutes.current?.name ?? 'Inactive'}
+      />
       <Text style={styles.body} accessibilityLiveRegion="polite">
         {message}
       </Text>
@@ -214,11 +229,16 @@ export default function App() {
       const info = await bootstrap();
       if (
         !acceptanceStarted.current &&
-        (journey().acceptanceEnabled || journey().m1Case !== '')
+        (journey().acceptanceEnabled ||
+          journey().m1Case !== '' ||
+          journey().m2Case !== '')
       ) {
         acceptanceStarted.current = true;
         setAcceptanceMessage('Running simulator acceptance…');
-        if (journey().acceptanceEnabled) {
+        if (journey().m2Case !== '') {
+          setStatus({ phase: 'ready', info });
+          await runMediaAcceptance();
+        } else if (journey().acceptanceEnabled) {
           setStatus({ phase: 'ready', info });
           await journey().acceptance();
         } else {
@@ -238,7 +258,8 @@ export default function App() {
       }
     } catch (error) {
       try {
-        if (journey().m1Case !== '') await journey().finish(false);
+        if (journey().m1Case !== '' || journey().m2Case !== '')
+          await journey().finish(false);
       } catch {
         // Preserve the screen's native-module loading error if no fixture exists.
       }

@@ -1,0 +1,35 @@
+{
+  "source": {
+    "sourceCommit": "20c44f07a78ddf0748779dd5f289165f5e778f9e",
+    "sourceInputsSHA256": "98834697fa47fd159fdcc7b61c87d83d5b79802fa10c0537d40ed1232d4b6555"
+  },
+  "classification": "measured native red; Release M0 and all three clock-bound M1 cases green, Debug contracts failed",
+  "failure": {
+    "success": false,
+    "error": "foreign provider warning inventory/identity differs"
+  },
+  "observations": {
+    "guardWarnings": 0,
+    "journals": [
+      "runtime.installed only"
+    ],
+    "diagnostic": "CKSIM runtime refused: CXXPCProvider overrides initWithConfiguration:",
+    "acceptReachedPendingAction": false
+  },
+  "cleanup": {
+    "simulatorID": "C0D2B25B-D075-4C61-95D5-60BBF8E09FA1",
+    "inventoryMatches": 0,
+    "deviceDirectoryAbsent": true
+  },
+  "originalFileSHA256": {
+    "manifest.json": "6078be9afdfe190e207fefa72087e2dd39e87f16568b9eecf27e38b99a1a4a94",
+    "source-before.json": "b702971269c62d82c195a7238dcdb9f83b5db827dd069881d8782331f7269699",
+    "cleanup.json": "ea0c53a611bac965138d2fcc7185f1703a064313b115409ea52b997003e16574",
+    "m1/summary.json": "384fc4c4431146071c80320ba5b755eff5471196a7adf8e30f0c0bac5dfde0b9",
+    "m1/contracts/summary.json": "7639e7eabcdf9cb3251a2658f3ee5e72a7ac10216ad11468c713d86e0926f758",
+    "m1/contracts/sdk-m1-contract-guard.log": "ef1993664ee6ee58084df93a6924378c046560cba9c2b1cba85fd6da675c7fa1",
+    "m1/contracts/sdk-m1-contract-guard.runtime.jsonl": "160d1b9d111d6c2a7f7ee0629547b2d02298f492ff283e5f828b39d3ac8c0da3",
+    "m1/contracts/sdk-m1-contract-unhandled-accept.log": "c702b6eeaee89365107c1eadd025f3945f685dc431e381bb69f733d568b3e2de",
+    "m1/contracts/sdk-m1-contract-unhandled-accept.runtime.jsonl": "08338c8c116b4450e51380558bb2bff79083839ae665be7d7f51e560d7c0d7cb"
+  }
+}

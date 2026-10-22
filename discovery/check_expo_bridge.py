@@ -13,6 +13,7 @@ SOURCES = (
     'Sources/VoIPSDK/DialRequest.swift',
     'Sources/VoIPSDK/ConversationHandler.swift',
     'Sources/VoIPSDK/PushService.swift',
+    'Sources/VoIPSDK/AudioRoutes.swift',
     'Expo/apple/ConversationBridge.swift',
     'Tests/ExpoBridge/OwnerDoubles.swift',
     'Tests/ExpoBridge/BridgeTests.swift',

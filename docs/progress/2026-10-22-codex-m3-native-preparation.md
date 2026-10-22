@@ -15,8 +15,10 @@ Commit the integrated source before rebuilding. Use the M0 workflow's source-bef
 ```sh
 python3 discovery/run_sdk_m3.py \
   --app "$SDK_M0_APP" --build-receipt "$SDK_M0_BUILD_RECEIPT" \
-  --out "$PRIVATE_CAPTURE" --settings-wait-seconds 180
+  --out "$PRIVATE_CAPTURE" --preboot-wait-seconds 180 --settings-wait-seconds 180
 ```
+
+The optional preboot checkpoint writes `preboot-checkpoint.json` after creation and before boot. Announce that owned UUID, then copy its exact identity object to `boot-observation.json` within the configured deadline; a mismatch or timeout fails and enters owned cleanup. This allows a coordinated run to announce its UUID before booting it.
 
 The capture directory must not exist. It is created with mode 0700 and holds the signed app copy, raw console output and evidence. Keep it ignored/private until reviewed for sharing.
 
