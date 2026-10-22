@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured focused host integration for a test-and-evidence-only A3 fixture forward; no new production or native qualification",
+  "source": {
+    "sourceCommit": "18dcefa8fdea0626cb847ed3cd073305c0626431",
+    "sourceInputsSHA256": "7074a41b374c0e7f8adf542a7094863922ba9ac343a97a383a0481657e78f49f"
+  },
+  "parentCommit": "d013eaf9591a4a95701af3b706d19a8f9465b07b",
+  "previousHead": "047fc28f4a5a1b6408f711fae3caa2fceadf969b",
+  "changedPathsFromPreviousHead": [
+    "Tests/VoIPSDK/MuteEchoTests.swift",
+    "docs/progress/2026-10-22-codex-a3-pending-mute-echo.md",
+    "docs/verification/2026-10-22-a3-pending-mute-echo/oracle-fixture-correction.json"
+  ],
+  "allForwardedPathsExactlyMatchParent": true,
+  "productionRunnerAndOtherSourcesUnchangedFromPreviousHead": true,
+  "all13PreviouslyTypecheckedSDKAndContractSourcesUnchanged": true,
+  "incomingFixtureReceiptSHA256": "c2110ddf1fb61c567224904e64fc9b6d5f42f8e54212d271820991534ba16a54",
+  "checks": [
+    {
+      "name": "mute-echo-seven-groups",
+      "argv": [
+        "bash",
+        "Tests/VoIPSDK/run_mute_echo.sh"
+      ],
+      "exitCode": 0,
+      "stdout": "{\"success\":true,\"groups\":7,\"minimumPendingHandlerDelayMS\":41.698417,\"actualClientAndHandler\":true,\"nativeDeviceTimingMeasured\":false}\n",
+      "stderr": "",
+      "stdoutSHA256": "934dc55531a1a298cc091149b3ed3c3ebc75cb734da76794f07a159b1a92a4fd",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "diff-whitespace",
+      "argv": [
+        "git",
+        "diff",
+        "--check",
+        "d013eaf9591a4a95701af3b706d19a8f9465b07b"
+      ],
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "",
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "priorHeadSnapshot": {
+    "capturedAtUTC": "2026-10-22T15:24:41.223279+00:00",
+    "runs": [
+      {
+        "id": 39798392296,
+        "head_sha": "047fc28f4a5a1b6408f711fae3caa2fceadf969b",
+        "status": "pending",
+        "conclusion": null,
+        "run_attempt": 1,
+        "html_url": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39798392296"
+      },
+      {
+        "id": 39798392298,
+        "head_sha": "047fc28f4a5a1b6408f711fae3caa2fceadf969b",
+        "status": "queued",
+        "conclusion": null,
+        "run_attempt": 1,
+        "html_url": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39798392298"
+      },
+      {
+        "id": 39798392327,
+        "head_sha": "047fc28f4a5a1b6408f711fae3caa2fceadf969b",
+        "status": "completed",
+        "conclusion": "success",
+        "run_attempt": 1,
+        "html_url": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39798392327"
+      }
+    ]
+  },
+  "limits": [
+    "The original 727 CI report lacks case and operand details; this forward does not attribute its actual cause.",
+    "The published A3 correction removes only the redundant delayed echo from the 120 ms effective-deadline fixture group. Seven behaviors, production, deadlines and budgets stay unchanged.",
+    "The two 30-second positive groups retain an actual 40 ms delayed echo and now assert exact live action/context plus inline fulfillment.",
+    "Only the focused seven-group host integration was executed; no broad harness, actual SDK compiler, app, simulator, device, native run, manual CI retry or cancellation was performed."
+  ],
+  "priorActualSDKPreparationReceiptSHA256": "841cb8948be464299fbcde863a95bf86bcac5c2c55fd9d46879bec203c008bf7"
+}

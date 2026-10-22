@@ -433,18 +433,15 @@ private final class SDKM1ContractsProbe {
       } == true
     }
     ContractTrace.log("contract.joinSettled", ["joined": joined, "conversationID": id.uuidString])
-    guard joined else {
-      try? await client.reportConversation(id, report: .ended(.failed)); finish(false); return
-    }
-    // Explicit fixture backend event, after signaling has settled. Never infer
-    // transport connection from LCK's joined action state.
-    ContractTrace.log("contract.backendConnectedRequested", ["conversationID": id.uuidString])
-    try await client.reportConversation(id, report: .connected)
-    ContractTrace.log("contract.backendConnected", ["accepted": true, "conversationID": id.uuidString])
-    let connected = await wait(seconds: 3) {
-      client.snapshots.first(where: { $0.id == id }).map {
-        $0.status == .connected && $0.connectedAt != nil
-      } == true
+    var connected = false
+    if joined {
+      ContractTrace.log("contract.backendConnectedRequested", ["conversationID": id.uuidString])
+      try await client.reportConversation(id, report: .connected)
+      ContractTrace.log("contract.backendConnected", ["accepted": true, "conversationID": id.uuidString])
+      connected = await wait(seconds: 3) {
+        guard let call = client.snapshots.first(where: { $0.id == id }) else { return false }
+        return call.status == .connected && call.connectedAt != nil
+      }
     }
     ContractTrace.log("contract.observation", ["connected": connected, "conversationID": id.uuidString])
     if client.snapshots.contains(where: { $0.id == id }) {

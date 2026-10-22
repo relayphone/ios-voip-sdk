@@ -1,0 +1,329 @@
+{
+  "schemaVersion": 1,
+  "claimKind": "measured",
+  "classification": "main-forward host preparation for A3 pending mute echoes; no native app/simulator/audio/device run",
+  "sourceCodeCommit": "d7872c4b8568384e726011d9c1da1fd58cd60aba",
+  "mergeParents": [
+    "0a0047c9bf1a3b526259e438ad3a0b288d39e04d",
+    "12318c352b656b9d1b7c1535d773caaf0eed0986"
+  ],
+  "reviewedIncomingParent": "12318c352b656b9d1b7c1535d773caaf0eed0986",
+  "incomingMainAncestor": "6f58777f3fd16a9dc1378660e49b9011e7653fd6",
+  "SDKSourceInputsSHA256": "8010dac8497f9248632a1e3e5230ef1028859c8be7f52729b5d1c4f2a6d8d3f2",
+  "SDKSourceInputCount": 135,
+  "checkedA3SourceSHA256": {
+    "Sources/VoIPSDK/ConversationClient.swift": "b012028cb0b197aaf5a56a2f1fe1cce035c541bdfb23155f4cb99026e900652f",
+    "Sources/VoIPSDK/ConversationHandler.swift": "7300ea6a9b84a66e55e8c7c048e608f200835d846ed005d212caa7aa23234d29",
+    "Tests/VoIPSDK/MuteEchoTests.swift": "de75646a656ee59c0e6b38c7bcd77fa86ef8366560af32bf2be9bfd1da05287c",
+    "Tests/VoIPSDK/run_mute_echo.sh": "5c8111002410013f6c87625361f4623dea55e00a7509790e5e3dc5760de07ad0",
+    "Tests/VoIPSDK/IncomingCachePlatform.swift": "360a13f4591b7c9f4653b61478ad5136859e133391abbdf0bb15d7621583d01d"
+  },
+  "A3ProductionAndHostAssertionBytesUnchangedFromOldHead": true,
+  "wholeClientMuteResult": {
+    "success": true,
+    "groups": 7,
+    "minimumPendingHandlerDelayMS": 40.278417,
+    "actualClientAndHandler": true,
+    "nativeDeviceTimingMeasured": false
+  },
+  "sharedPlatformFacade": "Tests/VoIPSDK/IncomingCachePlatform.swift",
+  "incomingParentByteBindings": [
+    {
+      "path": "Sources/Engine/RuntimeEngine.swift",
+      "sha256": "c715b76b869af5659cbf4543210892c2b473e1b3be31e9768045430acb95c1c3",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "Sources/Engine/Resources/ios-27.0.json",
+      "sha256": "f34933eb5ad2eaa7db2b19efba87e94345bbb8b77c4312f697010cde108a88d8",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "Sources/VoIPSDK/IncomingIntake.swift",
+      "sha256": "5f6979dbc38bb4badeb2026ca8033341a5ce744ebba4e279aab1a4892d5f64c5",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "Sources/VoIPSDK/IncomingReportTransport.swift",
+      "sha256": "518a522f3dccc9f96f221f700a77c9c732b20b00dfb01dd094579c5b43a08cbf",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "Sources/VoIPSDK/PushService.swift",
+      "sha256": "f7a731d8c91ee2a4572dd37d2d96a36c258187fc4a38ba74143c7c9b07690e4c",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "discovery/probe/sdk_m1_contracts.swift",
+      "sha256": "c6ef0bb8612eb535d2afeb342da2b8d82ccb807ee8aa28981ebe0aadc57c2e3d",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "discovery/sdk_m1_contracts_conformance.py",
+      "sha256": "f6833bfc909511c573366a44d2a29db9a9d27c594e55074c38b8a572d83c09ee",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "discovery/check_sdk_m1_contracts.py",
+      "sha256": "a757a2cc1c6a3146473ee14f9b1b8a1008feeb0d7a89f2fdca9037c0a95224e8",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "discovery/run_sdk_m0.sh",
+      "sha256": "81139eba9a4a75de67d0879a152d774e7b211d8270089b40371af9fd78b9de1f",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "discovery/probe/push_report_entry.swift",
+      "sha256": "9475ff663f9baac2e50ec29e030202173e52a5d739438b0002d52934c3046056",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "discovery/probe/push_entry_main_stall.h",
+      "sha256": "39e81fafe6189afab9e32c4159e477f595986771dacb94052f2a8d04b2bfa3bf",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "discovery/probe/push_entry_main_stall.m",
+      "sha256": "c94c926982b976ba2ed4e072ee59f65c97d1ce22efb37b90d0c2c8ee7b7a8a9e",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "discovery/run_push_report_entry.py",
+      "sha256": "6a6546943fbc25c5061d7a245cf786f652283388c35180ee126c5c7131623310",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "discovery/build_push_report_entry.sh",
+      "sha256": "61dc91820e66a33065705cd9ac881a9b53e22aaa47194d8af8bbdcdeec344af0",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "discovery/check_push_report_entry.py",
+      "sha256": "d1f5ebe0a52da81519aa94c3497fd4c54c9973547e31430c8ab4aacaf6ba5948",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "discovery/check_push_report_capture.py",
+      "sha256": "a78393f0f0187cf170b04cc7326d57701645f09f3f68e992918f45315d6a1b43",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "discovery/check_push_main_stall.py",
+      "sha256": "a75594ac8f09de59ddb93bd448fd517e7a65cf3d3237fde31012fad155920195",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "discovery/push_main_stall_conformance.py",
+      "sha256": "9b633064ee6c9a4454d17bbb6554a21b871280898f642cfb68b4e964ed2b51ed",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "discovery/sdk_m0_conformance.py",
+      "sha256": "94ad00f855dd42a75a511961ca631fefd3dc2326fd0fb3fbe4c4f68de4387f65",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "Tests/VoIPSDK/IncomingCachePlatform.swift",
+      "sha256": "360a13f4591b7c9f4653b61478ad5136859e133391abbdf0bb15d7621583d01d",
+      "equalIncomingParent": true
+    },
+    {
+      "path": "Tests/VoIPSDK/run_incoming_cache.py",
+      "sha256": "3ba61daaaf1df9d39a434317760c1e9a9c6d3410c3e73138fd6b28e754b5939e",
+      "equalIncomingParent": true
+    }
+  ],
+  "M1ContractCases": [
+    "guard",
+    "unhandled-accept",
+    "unhandled-fail",
+    "duplicate-wrapper"
+  ],
+  "PushEntryCases": [
+    "sdk-required",
+    "sdk-duplicate",
+    "missing",
+    "deferred",
+    "optional",
+    "sdk-main-stall"
+  ],
+  "allFourMainStallInputsInBothSourceClosures": true,
+  "checks": [
+    {
+      "label": "mute-echo",
+      "argv": [
+        "bash",
+        "Tests/VoIPSDK/run_mute_echo.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 9.352681,
+      "stdoutSHA256": "b362c9b017b6de83695eeb6651f382fced81011650f421b85a19c69adcbd88b9",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "core",
+      "argv": [
+        "bash",
+        "Tests/VoIPSDK/run.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 11.150732,
+      "stdoutSHA256": "37e5b3c81714975c6258144064f301756c63cb884d503c1ce2f4740e2a719567",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "deadlines",
+      "argv": [
+        "bash",
+        "Tests/VoIPSDK/run_deadlines.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 6.778821,
+      "stdoutSHA256": "fb4e763429dfaaea7e49babb7f2930a89bab72f468f7476bb33924f3a1c9e809",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "incoming-cache",
+      "argv": [
+        "python3",
+        "Tests/VoIPSDK/run_incoming_cache.py",
+        "--out",
+        "<capture>/incoming-cache"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 6.77442,
+      "stdoutSHA256": "b5832a088dcba5e17f1719af6e329e9151490d50e9924f78fb99cee997859fec",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "m0-controls",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m0.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.864662,
+      "stdoutSHA256": "d66b3d99f66757cadfd8e1cdb633286dfc3036b4fb090e43c555f5eba06c1f3e",
+      "stderrSHA256": "81b92c8f2a0aec0cd873fb6b7039fa27af4e9c695e9827905b80ff430afe6432"
+    },
+    {
+      "label": "m1-controls",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 3.102085,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "f1a5a2561623d600851c94e370c9e5284d15dca57f480ee52c926e656e6cc6b7"
+    },
+    {
+      "label": "contract-controls",
+      "argv": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.590081,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "cd0b48185032f4e6c6a66084729c7bcb503c8bf6b5aaff9be0818d3d3a8329d4"
+    },
+    {
+      "label": "push-entry-controls",
+      "argv": [
+        "python3",
+        "discovery/check_push_report_entry.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 6.357626,
+      "stdoutSHA256": "bb636dc14c5185ced244c4f868ecf52afd263b39306be1041fc01ad09b0e2bf6",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "main-stall-controls",
+      "argv": [
+        "python3",
+        "discovery/check_push_main_stall.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.079653,
+      "stdoutSHA256": "915431db2b9a9f584e0cddfb2182166d3a207c2af01643cf3dadd05edf141528",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "entry-capture-controls",
+      "argv": [
+        "python3",
+        "discovery/check_push_report_capture.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.356569,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "5ba2344f7c077537b21b38f58c7f93d225b1d32496accdaf62711f6bc618d4ce"
+    },
+    {
+      "label": "incoming-delivery",
+      "argv": [
+        "python3",
+        "Tests/VoIPSDK/run_incoming_delivery.py",
+        "--out",
+        "<capture>/incoming-delivery"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 13.47416,
+      "stdoutSHA256": "51f4df22fafc5986bbec6ee5a60c2a0362f4cab7c27ede8f350900147177d372",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "workflow",
+      "argv": [
+        "actionlint",
+        ".github/workflows/sdk-m0.yml"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.416845,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "shell-syntax",
+      "argv": [
+        "bash",
+        "-n",
+        "Tests/VoIPSDK/run_mute_echo.sh",
+        "Tests/VoIPSDK/run_deadlines.sh",
+        "discovery/run_sdk_m0.sh",
+        "discovery/build_push_report_entry.sh"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.021602,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "success": true,
+  "retainedPrivateHostReceiptSHA256": "5768086cd501e37cfb078157f538a09955d7ead753abd19473d766f87cb780c0",
+  "retainedPrivateParentBindingSHA256": "59b724d40b02b469278bbba629b3820e3b6c183d1ace1e0a6d8541da2cdccc8e",
+  "preForwardHostBaselineSHA256": "ff319132f833816401b3ec262ca6729beb9863e4cc77fec3a1f85f15c57ec7f0",
+  "review": {
+    "SPEC": "clear on exact staged merge relative incoming12318c35; product bytes unchanged",
+    "STANDARDS": "clear on exact staged merge relative incoming12318c35; both inventories and shared facade preserved"
+  },
+  "historicalCILimits": {
+    "old0aSource": "0a0047c9bf1a3b526259e438ad3a0b288d39e04d",
+    "SDKRun": 39784753328,
+    "runtimeRun": 39784753301,
+    "releaseControls": 39784753348,
+    "status": "Preserved source-bound snapshots remain separate. No current-source native qualification is inferred; eventual original conclusions must retain this old source.",
+    "earlierB44SDKRun39761951380": "red, exit142 after nine successful supervisor receipts; final contract journal/source-after/manifest/aggregate summary absent; exact failure cause unproven."
+  },
+  "limits": [
+    "The thirteen checks are host controls, synthetic evidence comparators, workflow validation and shell syntax only.",
+    "Whole-client controls compile production Swift6 sources with a shared LCK/AVAudioSession boundary facade; they are not native LCK echo timing.",
+    "The incoming deadline, engine/profile, native4-contract fixture and focused6-case fixture bytes match the reviewed parent; its native results remain source-bound to that parent.",
+    "Fresh native CI must qualify the final pushed head. Claude delayed-fulfill iPhone echo timing remains pending.",
+    "No local genuine SDK/app build or typecheck, simulator, audio-session or device operation occurred.",
+    "Only retained command workspace/capture paths are redacted from this public receipt; exact private receipt digest is bound."
+  ]
+}

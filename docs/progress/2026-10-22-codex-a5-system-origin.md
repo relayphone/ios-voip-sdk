@@ -54,3 +54,25 @@ replay the strict source/product-bound gates, and record the actual receipts.
 No A5 simulator, device, APNs/key, push, PR or publication action has occurred.
 The initial native pass may expose framework behavior; retain any red capture
 and do not repair logs, fabricate SDK state or weaken case checks.
+
+## Ordered-core source checkpoint
+
+**Proposed source-only forward:** M2 checkpoint
+`65eea31a5e3d318d67481a6be2a3d89a53cacbd8` is normally forwarded after A5
+`004c85257fbad477d1e15c820fd19edb0655d908`. The sole content conflict combines
+the new stubbed M1 container-capture control with all existing A5 workflow
+checks. Source binding includes that control, and conditional backend connection
+in the native contract fixture remains intact. Shipping SDK, runtime, CLI,
+media, example and packaging inputs are unchanged from the preceding A5 commit.
+
+**Measured source preparation only:** six pure Python/stubbed commands pass:
+4 container-capture, 9 M0, 17 M1, 23 native-contract, 27 M2 gate groups, and 62
+logical system controls. Their local receipt is
+`discovery/out/a5-m2-forward-65ee/receipt.json`; 221 verification inputs stayed
+unchanged and all 100 protected shipping inputs match the preceding A5 commit.
+The earlier host receipts remain historical. The M2 parent's three-executable
+host mute check and actual SDK Debug contract typecheck remain held and
+unqualified here. All seven
+system cases, the selected-provider no-pending-action reset boundary, the staged
+launch guard and the six native push-entry build inputs remain present. Native
+A5 acceptance remains pending and the recorded audio27 red remains unresolved.

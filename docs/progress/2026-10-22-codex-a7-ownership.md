@@ -3,8 +3,11 @@
 **Proposed behavior:** [the process-ownership guide](../sdk-process-ownership.md)
 describes the single launch owner, media selection and optional diagnostics.
 This work applies steering A7 while preserving A0's default Release exclusions.
-Native call journeys and a pod-built device Release inspection of this integrated
-source remain pending; host/compiler checks do not qualify either.
+Integrated native acceptance and a pod-built device Release inspection of the
+current source remain pending; host/compiler checks do not qualify either. The
+actual iOS 27 audio lifecycle failure remains a release blocker in the
+[M2 correction handoff](2026-10-22-codex-m2-corrections.md). The focused core's
+historical green runs below do not qualify that M2 audio behavior.
 
 ## Implementation
 
@@ -89,13 +92,20 @@ blocked-main report-entry redesign and does not qualify that push implementation
 
 ## Focused core provenance and forward integration
 
-**Proposed current integration:** the M2 correction stack merges focused core
-head `6051601dc725f5cb84c885513afde4d24450f9e0` normally. The core branch retained
+**Proposed current forward integration:** after merging focused core head
+`6051601dc725f5cb84c885513afde4d24450f9e0`, the M2 correction stack now merges
+`f40bfca6dcfe3841d815316a72304695d5956cf5` normally. The core branch retained
 foundation `68911b0` and merged main `ef5a1f6`, then deliberately reduced only its
 own acceptance scope: optional Release diagnostics, the tools 6.1 trait and Expo
 opt-in remained on the separate M2 stack. This M2 integration preserves all of
 those options, its media packaging and the typed process-scoped event. It does
 not treat the core branch's narrower scope as a removal from M2.
+
+**Focused core status:** its final ordered parent retains the eighteen-command
+preparation and adds one passing affected seven-group mute check. Root final
+source review is clear for that core source. Combined native acceptance remains
+pending; earlier run and failure identities stay separate from the current M2
+source and its audio release blocker.
 
 The receipts below belong to their recorded core source. No verification build,
 app, simulator, audio or device run was performed for this documentation and
@@ -154,3 +164,78 @@ both independent review axes cleared the repair. This is host evidence with
 modeled LCK timing. The M2 integration must retain that ownership fix while
 including its actual media/client dependencies; inherited core results are not
 current native or device acceptance.
+
+### Core first parent forward merge
+
+Reviewed PR #29 `4e7bba33` was merged normally into the focused core, retaining
+main `6f58777`, the six-case native PushKit fixture, measured host metadata and
+the example-container lookup cache. Production SDK, Expo and packaging bytes
+remained identical to the prior qualified core head `031da3f`; source inputs
+used the unique union of both parents.
+
+**Measured historical core evidence:** the
+[forward receipt](../verification/2026-10-22-sdk-process-owner-core/rejection-parent-forward.json)
+binds 136 SDK inputs to digest
+`15d443b079a5324f54e5e294d334c41a291490723cea6d914609e066f52ef1e7`.
+All fourteen affected host commands passed once, including eleven ownership
+groups, three cache modes, the incoming-delivery control, six-case push gates,
+eleven native-origin controls, four actual-loop container controls and eleven
+TypeScript runtime controls. Both integration review axes cleared the freeze.
+
+The historical [SDK run](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39780116081)
+and [runtime run](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39780115888)
+remain green and artifact-audited at `031da3f`. Their identities and both parent
+red runs remain separate from the new host result. No native execution, product
+build, audio work or workflow retry was used for this core forward merge; fresh
+hosted acceptance remained required for its changed fixture and capture inputs.
+
+### Ordered core parent
+
+Reviewed PR #29 `047fc28f` was merged normally over core head `de188217`,
+retaining the ordered A2/A3 ancestry: thirty-second LCK platform deadline/expiry,
+the SDK's 1.5-second safety margin and the live pending app-mute echo filter.
+Four native contract cases, six push cases, the container cache and public
+five-code error guard were preserved, with `VoIPApplication.start` for both
+unhandled policies.
+
+One host compile reproduced the mute runner's omitted `ProcessSDKOwnership`
+source. The narrow repair used the actual factory and one-shot setup, plus the
+real Swift/Objective-C process claim and header. The
+[ordered-union receipt](../verification/2026-10-22-sdk-process-owner-core/ordered-core-parent.json)
+binds 140 inputs to digest
+`e6425b26f93bee6cb8b0775f19783d11db0a63c5e53528a4c8337614302e3479`.
+All eighteen focused commands passed once after repair, including core and
+seven deadline groups, seven mute groups, ownership/cache/delivery checks,
+strict native-oracle controls and TypeScript checks. A single actual shared
+Engine/SDK/Debug-contract typecheck passed in 12.59 seconds with empty diagnostics
+and real Apple SDK declarations/bridge headers. It produced no target object or
+app, linked nothing, and ran no simulator, device or audio code. Previous
+`de188217` queued/in-progress run metadata, `031da3f` green evidence and parent
+red runs retain their original source labels.
+
+### Reviewed core mute fixture follow-up
+
+The ordered-union checkpoint is retained as local normal merge `8524de3`.
+Reviewed parent #29 `9f328b50` was then merged normally. Only
+`MuteEchoTests.swift` changed among the 140 core SDK inputs; production code,
+actual Debug compiler inputs and native inventories remained byte-identical.
+
+The original A3 `7276218` hosted run remains a host assertion failure. Controlled
+host diagnostics reproduced an invalid pending-echo expectation after the
+120 ms application deadline; the original CI subcase, delay and sole cause remain
+unproven. The reviewed fixture keeps that deadline and every cancellation,
+single-settlement, late-result and genuine-action assertion. Its two long-budget
+groups retain the forty-millisecond echo delay with explicit live-context and
+inline-fulfillment checks. No product or time budget changed.
+
+**Measured historical core evidence:** one affected seven-group mute control
+passed after the final source freeze. The
+[follow-up receipt](../verification/2026-10-22-sdk-process-owner-core/mute-fixture-followup.json)
+binds core SDK digest
+`802e0f340958ec9529f213fb9c2bf9b8b671852d8f10e563eb9ffcc4732ae906`
+and the exact one-file delta. The eighteen-command preparation and actual Debug
+compiler proof retain their earlier source labels; no broad suite or compiler/
+native execution was repeated. Root final source review was clear; the bound
+receipt and independent SPEC completion remain prerequisites for publication.
+Combined native acceptance at that final core stack tip remained pending. None of these inherited results
+supersedes the current M2 source qualification or its actual audio lifecycle RED.

@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "acceptance": "Source-only local M2 forward of final ordered core",
+  "classification": "Five synthetic offline controls; compiler and native acceptance remain pending",
+  "sourceParent": "0743f14486bba8437c66c2221a3f38be5b1828d8",
+  "mergeParent": "f40bfca6dcfe3841d815316a72304695d5956cf5",
+  "sourceTreeBeforeDocumentation": "9c024e1971b744bc079780e759a878ff4cb2e952",
+  "verificationInputs": {
+    "count": 247,
+    "sha256": "06a131361d6e1d10cd4f2ef874d3751320d767c2c4f45593a01f696fbcfdb724",
+    "hashFormat": "SHA-256 of compact sorted JSON mapping repository-relative path to file SHA-256",
+    "selectors": [
+      "Sources",
+      "Tests",
+      "Expo",
+      "ExpoMedia",
+      "Integrations",
+      "example",
+      "discovery",
+      ".github/workflows",
+      "Package.swift",
+      "IosVoipSDK.podspec",
+      "package.json",
+      "package-lock.json"
+    ],
+    "unchanged": true
+  },
+  "protectedShipping": {
+    "base": "0743f14486bba8437c66c2221a3f38be5b1828d8",
+    "selectors": [
+      "Sources",
+      "ExpoMedia",
+      "Integrations",
+      "Package.swift",
+      "IosVoipSDK.podspec",
+      "Expo/plugin"
+    ],
+    "count": 56,
+    "sha256": "4c45875d56ce344a0b59359b01a08558297efef69f2f3a86344a83339564d87d",
+    "unchanged": true
+  },
+  "privatePhase1ReceiptSHA256": "813b1405c62e2262a224b523a5f03c890efd1ff739885350bff67c25d6b5c518",
+  "checks": [
+    {
+      "label": "m1-container-capture",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1_container_capture.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 9.05,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "67cfd05b5c1fb0e8bc2f0de21b58934601a0c5ef4fe2837dcbad298d8df51516"
+    },
+    {
+      "label": "m2-owner-oracle",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m2.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 15.602,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "2dfacc6eec2aa7ed4e0b2ae6a07463eab5033e449e323e8fbcad2b11aea55a9a"
+    },
+    {
+      "label": "m1-contract-oracle",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 14.051,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "2b21d65c6e15d1f2b27bb321b8fb314c223899d52b00c49d361ce262d80837fd"
+    },
+    {
+      "label": "m1-generic-oracle",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 12.838,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "ad750105a28f216aec294406a15acd438ca51b974281b67953716a1aa7ecff62"
+    },
+    {
+      "label": "m0-oracle",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m0.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 9.531,
+      "stdoutSHA256": "667bb6dd667e2f7a5cc618be0987b9c3a092e9fec90bbaff0ff399b39bda2973",
+      "stderrSHA256": "10654a83436c934f8119d1ab1ea658446a824d673be40f748c8ddc9e342b2173"
+    }
+  ],
+  "phase1Success": true,
+  "independentReview": {
+    "spec": "CLEAR",
+    "standards": "CLEAR"
+  },
+  "heldRequiredChecks": [
+    {
+      "check": "Existing three-executable host mute/client/watchdog runner",
+      "status": "pending-root-compiler-window"
+    },
+    {
+      "check": "Actual Apple SDK Debug native-contract typecheck",
+      "status": "pending-root-compiler-window"
+    }
+  ],
+  "publicationAllowed": false,
+  "audioQualification": "Actual audio27 failure remains unresolved as recorded in the preceding handoff; no new audio-source or native-qualification change."
+}

@@ -87,6 +87,7 @@ jobs:
           python3 discovery/check_sdk_m0.py | tee "$SDK_M0_BUILD_LOGS/offline-controls.json"
           python3 discovery/check_sdk_m1.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-offline-controls.log"
           python3 discovery/check_sdk_m1_contracts.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-contract-controls.log"
+          python3 discovery/check_sdk_m1_container_capture.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-container-controls.log"
           python3 discovery/check_sdk_system.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/system-controls.log"
           python3 discovery/check_cli_controls.py | tee "$SDK_M0_BUILD_LOGS/cli-controls.json"
           python3 discovery/check_cli_push_launch.py | tee "$SDK_M0_BUILD_LOGS/cli-push-launch-controls.json"
