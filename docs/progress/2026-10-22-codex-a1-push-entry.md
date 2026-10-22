@@ -168,3 +168,7 @@ subsequent focused runner/gate checks cover the sole script change, retain all
 three contract cases, and bind the unchanged production inputs. Independent
 SPEC and STANDARDS reviews cleared both merge resolutions. Native acceptance
 still belongs to CI on the final published head.
+
+## Native transaction origin oracle follow-up
+
+**Measured host correction:** the duplicate-wrapper native journal gate expected `app`, while `RuntimeEngine.ActionOrigin.application.rawValue` emits `application`. The SDK handler origin remains `app`. The old gate rejected an otherwise valid synthetic native `application` transaction; the corrected gate and eleven controls pass, including a negative control for native `app`. Production sources are unchanged. [The derivative receipt](../verification/2026-10-22-push-entry-main-stall/native-origin-control.json) binds both changed files and the original/fixed controls. Independent SPEC and STANDARDS are clear; fresh native CI remains required.
