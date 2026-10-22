@@ -48,3 +48,12 @@ passes strict Swift 6 typechecking. The [receipt](../verification/2026-10-22-nat
 binds all shipping sources and the affected fixture/build/gate inputs, with no
 shipping-source changes against `8077f0d`. It does not claim an app build or run.
 Independent SPEC and STANDARDS reviews cleared the source and retained evidence.
+
+The native-origin oracle correction `c19ef89` and preboot host-metadata correction
+`6121c0a` were merged normally. All 40 preparation inputs remain identical; the
+[merged receipt](../verification/2026-10-22-native-push-main-stall/merged-host-checks.json)
+binds the three additional integration inputs and eight passing affected gate,
+workflow and syntax checks at digest
+`ae3c7e79ab7778d19cb24ebf23c86ea81f256caf0309d79af3a6f62942c4e9fc`.
+The unchanged compiler and intake suites were not repeated. Both review axes
+cleared the integration. Native CI and corrected-device acceptance remain pending.
