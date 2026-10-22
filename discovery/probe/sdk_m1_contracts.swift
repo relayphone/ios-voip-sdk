@@ -8,6 +8,9 @@ import SwiftUI
 private enum ContractTrace {
   static let start = ProcessInfo.processInfo.systemUptime
   static var sequence = 0
+  #if DEBUG && targetEnvironment(simulator)
+  static var platformDeadlines: [String: Int] = [:]
+  #endif
   static func log(_ event: String, _ fields: [String: Any] = [:]) {
     sequence += 1
     let env = ProcessInfo.processInfo.environment
@@ -37,6 +40,19 @@ private final class SDKM1ContractsProbe {
   }
 
   func run() async {
+    #if DEBUG && targetEnvironment(simulator)
+    // This fixture owns synchronous trace I/O; its overhead is part of the
+    // measured Debug timeline. The SDK sink only passes scalar observations.
+    ConversationActionCoordinator.diagnosticSink = { value in
+      ContractTrace.platformDeadlines[value.actionID] = value.platformDeadlineMS
+      ContractTrace.log("contract.actionDiagnostic", ["phase": value.phase,
+        "actionID": value.actionID, "sdkWallTimeMS": value.wallTimeMS,
+        "effectiveDeadlineMS": value.effectiveDeadlineMS,
+        "platformDeadlineMS": value.platformDeadlineMS,
+        "entryPending": value.entryPending, "platformPending": value.platformPending])
+    }
+    defer { ConversationActionCoordinator.diagnosticSink = nil }
+    #endif
     let mode = ProcessInfo.processInfo.environment["SDK_M1_CONTRACT_CASE"] ?? ""
     let executable = (try? Data(contentsOf: Bundle.main.executableURL!)) ?? Data()
     let inserted = (ProcessInfo.processInfo.environment["DYLD_INSERT_LIBRARIES"] ?? "").split(separator: ":")
@@ -52,15 +68,18 @@ private final class SDKM1ContractsProbe {
       ContractTrace.log("contract.warning", ["message": message, "phase": phase, "count": warnings])
     }
     do {
-      if mode == "unhandled-accept" {
-        try ConversationClient.configure(.init(includesConversationInRecents: false, unhandledAction: .accept))
-        ContractTrace.log("contract.configuration", ["policy": "accept", "handlerAttached": false])
+      if mode == "unhandled-accept" || mode == "unhandled-fail" {
+        let policy: UnhandledActionPolicy = mode == "unhandled-accept" ? .accept : .fail
+        try ConversationClient.configure(.init(includesConversationInRecents: false, unhandledAction: policy))
+        ContractTrace.log("contract.configuration", ["policy": policy.rawValue, "handlerAttached": false])
       }
       let client = ConversationClient.shared
       ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(client)),
         "sharedIdentity": String(describing: ObjectIdentifier(ConversationClient.shared)), "warnings": warnings])
       if mode == "guard" { guardContract() }
-      else if mode == "unhandled-accept" { try await acceptContract(client) }
+      else if mode == "unhandled-accept" || mode == "unhandled-fail" {
+        try await policyContract(client, accepting: mode == "unhandled-accept")
+      }
       else { finish(false) }
     } catch {
       ContractTrace.log("contract.error", ["type": String(describing: type(of: error))])
@@ -85,7 +104,7 @@ private final class SDKM1ContractsProbe {
     finish(warnings == 2)
   }
 
-  private func acceptContract(_ client: ConversationClient) async throws {
+  private func policyContract(_ client: ConversationClient, accepting: Bool) async throws {
     let token = client.observeState { update in
       let calls: [[String: Any]] = update.conversations.map { call in
         var value: [String: Any] = ["id": call.id.uuidString, "status": call.status.rawValue,
@@ -100,7 +119,7 @@ private final class SDKM1ContractsProbe {
     }
     defer { client.removeStateObserver(token) }
     let id = try await client.reportIncomingConversation(.init(eventId: UUID().uuidString,
-      serverCallId: UUID().uuidString, caller: .init(id: "native-accept-fixture")))
+      serverCallId: UUID().uuidString, caller: .init(id: "native-policy-fixture")))
     ContractTrace.log("contract.incoming", ["conversationID": id.uuidString])
     let request = Task { @MainActor in
       do { try await client.joinConversation(id); ContractTrace.log("contract.joinResult", ["accepted": true]) }
@@ -118,6 +137,35 @@ private final class SDKM1ContractsProbe {
       "deadlineMS": Int(pending.deadline.timeIntervalSince1970 * 1000),
       "remainingMS": Int(pending.deadline.timeIntervalSinceNow * 1000), "handlerAttached": false,
       "clockBeforeMS": clockBefore])
+    if !accepting {
+      let cleared = await wait(seconds: pending.deadline.timeIntervalSinceNow + 3) {
+        client.snapshots.first(where: { $0.id == id })?.pending?.id != pending.id
+      }
+      #if DEBUG && targetEnvironment(simulator)
+      // Give any valid asynchronous LCK-to-CX forwarding its whole platform
+      // window. Cleanup after expiry cannot create a pre-expiry native failure.
+      guard let platformDeadline = ContractTrace.platformDeadlines[pending.id.uuidString],
+            await wait(seconds: 3, until: { Int(Date().timeIntervalSince1970 * 1000) >= platformDeadline }) else {
+        finish(false); return
+      }
+      #endif
+      let call = client.snapshots.first(where: { $0.id == id })
+      ContractTrace.log("contract.failureObservation", ["conversationID": id.uuidString,
+        "pendingCleared": cleared, "conversationPresent": call != nil,
+        "status": call?.status.rawValue ?? "absent"])
+      // RFC policy fails the action; it does not promise that a failed join ends
+      // its conversation. Explicit fixture cleanup is a separate observation.
+      if call != nil {
+        ContractTrace.log("contract.fixtureCleanupRequested", ["conversationID": id.uuidString, "reason": "failed"])
+        try client.reportConversation(id, report: .ended(.failed))
+        ContractTrace.log("contract.fixtureCleanupReported", ["conversationID": id.uuidString, "reason": "failed"])
+      } else {
+        ContractTrace.log("contract.fixtureCleanupSkipped", ["conversationID": id.uuidString])
+      }
+      let empty = await wait(seconds: 3) { client.snapshots.isEmpty }
+      finish(cleared && empty && warnings == 0)
+      return
+    }
     let connected = await wait(seconds: pending.deadline.timeIntervalSinceNow + 3) {
       client.snapshots.first(where: { $0.id == id })?.status == .connected
     }
