@@ -191,6 +191,9 @@ PY
   mkdir "$OUT/m1/contracts"
   cp -R "$SDK_M1_CONTRACT_BUILD" "$OUT/m1/contracts-build"
   limit 180 xcrun simctl install "$UDID" "$OUT/m1/contracts-build/SDKM1Contracts.app" > "$OUT/m1/contracts-install.log" 2>&1
+  # The app is installed once and only relaunched below. Reuse its first
+  # observed data container instead of making another IPC query after each case.
+  contract_container=""
   for case in guard unhandled-accept; do
     name="sdk-m1-contract-$case"
     env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
@@ -200,8 +203,11 @@ PY
       --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.iosvoipsdk.m1contracts \
       --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.m1contracts \
       --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.iosvoipsdk.m1contracts
-    container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.m1contracts data)
-    cp "$container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m1/contracts/$name.runtime.jsonl"
+    if [[ -z "$contract_container" ]]; then
+      contract_container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.m1contracts data)
+      [[ -n "$contract_container" && -d "$contract_container" ]] || { echo "Missing owned contract data container" >&2; exit 1; }
+    fi
+    cp "$contract_container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m1/contracts/$name.runtime.jsonl"
     python3 - "$OUT/m1/contracts/$name.receipt.json" "$OUT/m1/contracts/$name.runtime.jsonl" <<'PY'
 import hashlib,json,pathlib,sys
 receipt,journal=map(pathlib.Path,sys.argv[1:])
