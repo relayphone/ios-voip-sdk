@@ -120,7 +120,7 @@ def fixture(build, capture):
                 runtime('contract.duplicateReportBoundary', **fields, stage='returned', callUUID=CALL)
             runtime('contract.duplicateEndBoundary', stage='requested', callUUID=CALL)
             runtime('contract.duplicateEndBoundary', stage='command-returned', callUUID=CALL)
-            runtime('transaction.delivered', origin='app', provider='provider-1', kinds=['CXEndCallAction'], actionIDs=['native-cx-end'])
+            runtime('transaction.delivered', origin='application', provider='provider-1', kinds=['CXEndCallAction'], actionIDs=['native-cx-end'])
             runtime('action.settled', actionID='native-cx-end', fulfilled=True)
             runtime('call.changed', uuid=CALL, outgoing=False, connected=False, ended=True)
             runtime('contract.duplicateEndBoundary', stage='observed-complete', callUUID=CALL, empty=True)
@@ -203,7 +203,8 @@ class Controls(unittest.TestCase):
             with self.subTest(event=event, field=field):
                 self.check('duplicate-wrapper', lambda rows, engine:
                     next(r for r in rows if r['event'] == event).update({field: value}))
-        for event, field, value in (('transaction.delivered', 'kinds', ['CXAnswerCallAction']),
+        for event, field, value in (('transaction.delivered', 'origin', 'app'),
+                                   ('transaction.delivered', 'kinds', ['CXAnswerCallAction']),
                                    ('transaction.delivered', 'actionIDs', ['wrong-action']),
                                    ('action.settled', 'fulfilled', False),
                                    ('provider.apiKind', 'apiKind', 'callkit')):
