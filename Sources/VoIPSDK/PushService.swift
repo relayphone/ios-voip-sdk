@@ -82,6 +82,10 @@ public final class PushService: NSObject, PushReceiver {
 
   public func receiveVoIPPush(_ payload: [AnyHashable: Any], mustReport: Bool,
                              completion: @escaping () -> Void) {
+    #if SDK_DEVICE_QA
+    let qaDeliveryID = VSDeviceQACurrentDeliveryID() as UUID?
+    SDKDeviceQADiagnostics.emit(.receiverIngress, deliveryID: qaDeliveryID, mustReport: mustReport)
+    #endif
     #if os(iOS) && targetEnvironment(simulator)
     // The runtime's thread context ends when this synchronous callback returns.
     let pushIdentifier = SimulatorSupport.currentPushIdentifier
@@ -94,12 +98,22 @@ public final class PushService: NSObject, PushReceiver {
     case .incoming, .fallback:
       Task { @MainActor in
         defer { completion() }
+        #if SDK_DEVICE_QA
+        await SDKDeviceQAPushContext.$deliveryID.withValue(qaDeliveryID) {
+          #if os(iOS) && targetEnvironment(simulator)
+          await SimulatorPushContext.$pushIdentifier.withValue(pushIdentifier) { await self.report(plan) }
+          #else
+          await self.report(plan)
+          #endif
+        }
+        #else
         #if os(iOS) && targetEnvironment(simulator)
         await SimulatorPushContext.$pushIdentifier.withValue(pushIdentifier) {
           await self.report(plan)
         }
         #else
         await self.report(plan)
+        #endif
         #endif
       }
     }

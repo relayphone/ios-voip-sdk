@@ -1,0 +1,357 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured compiler and host controls only",
+  "baseCommit": "387558275bdd1ff43185a567be646999f69afa69",
+  "startedAt": "2026-10-22T03:45:58.109161+00:00",
+  "completedAt": "2026-10-22T03:46:37.164017+00:00",
+  "xcode": "Xcode 27.1\nBuild version 27A9275",
+  "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+  "inputs": [
+    {
+      "path": "Sources/VoIPPlatform/VSCompletionOnce.h",
+      "sha256": "3a6dd1d6e1c727339a3ea965b4ea2fc199304801472657103584aa817754ec5b"
+    },
+    {
+      "path": "Sources/VoIPPlatform/VSCompletionOnce.m",
+      "sha256": "653eb974fe96d17c6c1579b59376d3986cced8a9d7f8c00458296add7821508d"
+    },
+    {
+      "path": "Sources/VoIPPlatform/VSDeviceQADiagnostics.m",
+      "sha256": "a8317ccf356e74884a6f82e31f3b091d7b7b73a73a4594db9037b6d4822492e0"
+    },
+    {
+      "path": "Sources/VoIPPlatform/VSProviderCreationMonitor.m",
+      "sha256": "59a4614bb8325ed6d5573546bae3bebd959e11914fdac4763b57bb5c1d5984bc"
+    },
+    {
+      "path": "Sources/VoIPPlatform/VSProviderMonitorInternal.h",
+      "sha256": "e360be44ea0657e62153f39ca4be0ed78b4369d086d299242a1fd3cb88c6ffc5"
+    },
+    {
+      "path": "Sources/VoIPPlatform/VSProviderMonitorInternal.m",
+      "sha256": "0c9a9dcfe37777460272a9fdaa34e9d96e571b8bdc31cde6a44343d2d08b3658"
+    },
+    {
+      "path": "Sources/VoIPPlatform/VSPushRegistryOwner.m",
+      "sha256": "0073567628585f102288b96c148a4e47eb6935c4d2f636ff67350738f0dd20c7"
+    },
+    {
+      "path": "Sources/VoIPPlatform/include/VSDeviceQADiagnostics.h",
+      "sha256": "752ffba1d1749f6a2bc3f2bec8990b0d18cf917e7840926baeb773ce8c58fe18"
+    },
+    {
+      "path": "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h",
+      "sha256": "9bb26a4584e0c0dafb4d7cfc6969e194c1f5ad3066e81300abd8ed8a76f954ee"
+    },
+    {
+      "path": "Sources/VoIPPlatform/include/VSPushRegistryOwner.h",
+      "sha256": "6c193787c8dd70d4e0633615ea0728559bf10a53fcd41c6e6362827e3083d57b"
+    },
+    {
+      "path": "Sources/VoIPPlatform/include/VoIPPlatform.h",
+      "sha256": "4bcf87f616731af877f390499bed993c37b1960f882f5debc8ae13104ecb823f"
+    },
+    {
+      "path": "Sources/VoIPSDK/ConversationClient.swift",
+      "sha256": "c4aec5d4fe291a1da8f9a1c71887cb66e5b13cfbd42f378bb2e6384eb607f613"
+    },
+    {
+      "path": "Sources/VoIPSDK/ConversationHandler.swift",
+      "sha256": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96"
+    },
+    {
+      "path": "Sources/VoIPSDK/ConversationModels.swift",
+      "sha256": "ff4be06d66d1efacd5060c08c9ca7507eb7b35d09107573e43f44bba4a4c1a2b"
+    },
+    {
+      "path": "Sources/VoIPSDK/ConversationRecord.swift",
+      "sha256": "93208e379e1732e2bd48e74c8e256a2f06e83c5729e3d168e5bdf48191009029"
+    },
+    {
+      "path": "Sources/VoIPSDK/IncomingInvitationGate.swift",
+      "sha256": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19"
+    },
+    {
+      "path": "Sources/VoIPSDK/PushService.swift",
+      "sha256": "f311c890d8595c4fa40e9687b15113e18657346a7eccc38c110811eff454af56"
+    },
+    {
+      "path": "Sources/VoIPSDK/PushWire.swift",
+      "sha256": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a"
+    },
+    {
+      "path": "Sources/VoIPSDK/SDKDeviceQADiagnostics.swift",
+      "sha256": "8ceeadba8d9f3176d8abc098a91188ac77656b92aefa155cf0d09cf8aef62353"
+    },
+    {
+      "path": "Sources/VoIPSDK/SimulatorSupport.swift",
+      "sha256": "adf83443fee4f0233325bbe84fd98816d82f8450fdc1893c4623e54986768149"
+    },
+    {
+      "path": "Sources/VoIPSDK/VoIPApplication.swift",
+      "sha256": "a222dbeeb4675938862fd9cfddda591af614509cb55c011da3f7bd233ca077de"
+    },
+    {
+      "path": "Tests/DeviceQADiagnostics/Bridge.h",
+      "sha256": "49810af135307cab213b88ae45e457d94ee889689e0e740dfcd0e678b746c862"
+    },
+    {
+      "path": "Tests/DeviceQADiagnostics/CompletionTests.m",
+      "sha256": "2106fc0158023cd72f1deaababd5917fc68bb9627aadc256013ae4d5267cf6b3"
+    },
+    {
+      "path": "Tests/DeviceQADiagnostics/DiagnosticTests.swift",
+      "sha256": "2b764f20e83281993e2ab03a9064bfbae7bfc1fb60b2b9c820553e78672e8acf"
+    },
+    {
+      "path": "Tests/DeviceQADiagnostics/run.sh",
+      "sha256": "0d5edc377d1caf240d346a836f5abdd04fe847823f98e50df2bd9a6ba5f625f0"
+    },
+    {
+      "path": "Tests/DeviceQAStorage/StorageTests.swift",
+      "sha256": "64dd7aabe7629035104b2122b3b872e73c60e72d6bbc95dae9365040df2a9058"
+    },
+    {
+      "path": "Tests/DeviceQAStorage/run.sh",
+      "sha256": "a6fee02ebbf33c4dcd84d6205f5e24603addc384fa1a9d9704f97548a14706f1"
+    },
+    {
+      "path": "discovery/check_sdk_device_build.py",
+      "sha256": "7085d76e8e5efc8e5dd60f2edcc07f140ed89bcec09ff306fab870a7a97436d3"
+    },
+    {
+      "path": "discovery/device/DeviceQAStorage.swift",
+      "sha256": "89db2c8b57b539329345f39b1148fd2d4e606230209bcfc93ce687f4645c1604"
+    },
+    {
+      "path": "discovery/device/SDKDeviceProbe.swift",
+      "sha256": "4c5c98f68640f703682e7d48abbfd5efb70fad862242c7aa8e3af305ac3675fc"
+    },
+    {
+      "path": "discovery/device/build_sdk.sh",
+      "sha256": "4a0b56a0f1d11bc5bc943a12fb6d7f2bdd57ec70a8d58ba26180c9ee7287e25f"
+    }
+  ],
+  "checks": [
+    {
+      "name": "qa-debug-ios-typecheck",
+      "command": [
+        "swiftc",
+        "-D",
+        "SDK_DEVICE_QA",
+        "-D",
+        "DEBUG",
+        "-Xcc",
+        "-DSDK_DEVICE_QA=1",
+        "-Xcc",
+        "-DDEBUG=1",
+        "-swift-version",
+        "6",
+        "-warnings-as-errors",
+        "-parse-as-library",
+        "-target",
+        "arm64-apple-ios17.4",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS27.1.sdk",
+        "-import-objc-header",
+        "Sources/VoIPPlatform/include/VoIPPlatform.h",
+        "-typecheck",
+        "Sources/VoIPSDK/ConversationClient.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationRecord.swift",
+        "Sources/VoIPSDK/IncomingInvitationGate.swift",
+        "Sources/VoIPSDK/PushService.swift",
+        "Sources/VoIPSDK/PushWire.swift",
+        "Sources/VoIPSDK/SDKDeviceQADiagnostics.swift",
+        "Sources/VoIPSDK/SimulatorSupport.swift",
+        "Sources/VoIPSDK/VoIPApplication.swift",
+        "discovery/device/DeviceQAStorage.swift",
+        "discovery/device/SDKDeviceProbe.swift"
+      ],
+      "exitCode": 0,
+      "seconds": 2.41,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "normal-ios-typecheck",
+      "command": [
+        "swiftc",
+        "-swift-version",
+        "6",
+        "-warnings-as-errors",
+        "-parse-as-library",
+        "-target",
+        "arm64-apple-ios17.4",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS27.1.sdk",
+        "-import-objc-header",
+        "Sources/VoIPPlatform/include/VoIPPlatform.h",
+        "-typecheck",
+        "Sources/VoIPSDK/ConversationClient.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationRecord.swift",
+        "Sources/VoIPSDK/IncomingInvitationGate.swift",
+        "Sources/VoIPSDK/PushService.swift",
+        "Sources/VoIPSDK/PushWire.swift",
+        "Sources/VoIPSDK/SDKDeviceQADiagnostics.swift",
+        "Sources/VoIPSDK/SimulatorSupport.swift",
+        "Sources/VoIPSDK/VoIPApplication.swift"
+      ],
+      "exitCode": 0,
+      "seconds": 1.741,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "qa-debug-objc-ios-syntax",
+      "command": [
+        "xcrun",
+        "--sdk",
+        "iphoneos",
+        "clang",
+        "-fobjc-arc",
+        "-fmodules",
+        "-target",
+        "arm64-apple-ios17.4",
+        "-isysroot",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS27.1.sdk",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsyntax-only",
+        "-DSDK_DEVICE_QA=1",
+        "-DDEBUG=1",
+        "Sources/VoIPPlatform/VSDeviceQADiagnostics.m",
+        "Sources/VoIPPlatform/VSPushRegistryOwner.m"
+      ],
+      "exitCode": 0,
+      "seconds": 0.085,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "normal-objc-ios-syntax",
+      "command": [
+        "xcrun",
+        "--sdk",
+        "iphoneos",
+        "clang",
+        "-fobjc-arc",
+        "-fmodules",
+        "-target",
+        "arm64-apple-ios17.4",
+        "-isysroot",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS27.1.sdk",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsyntax-only",
+        "Sources/VoIPPlatform/VSDeviceQADiagnostics.m",
+        "Sources/VoIPPlatform/VSPushRegistryOwner.m"
+      ],
+      "exitCode": 0,
+      "seconds": 0.069,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "diagnostic-host-controls",
+      "command": [
+        "bash",
+        "Tests/DeviceQADiagnostics/run.sh"
+      ],
+      "exitCode": 0,
+      "seconds": 3.823,
+      "stdout": "{\"success\":true,\"testGroups\":4}\n{\"success\":true,\"symbolStripping\":true}\n",
+      "stderr": ""
+    },
+    {
+      "name": "storage-host-controls",
+      "command": [
+        "bash",
+        "Tests/DeviceQAStorage/run.sh"
+      ],
+      "exitCode": 0,
+      "seconds": 0.955,
+      "stdout": "{\"checks\":[\"private-default-enrollment-paths-and-modes\",\"persisted-run-config-and-separate-launch-traces\",\"utf8-json-lines-and-invalid-data-rejection\",\"stable-private-token-replacement-and-invalidation\",\"documents-and-private-directory-symlinks-rejected\",\"config-symlink-directory-fifo-and-hardlink-rejected\",\"token-symlink-and-hardlink-never-write-external-referents\",\"trace-symlink-hardlink-and-inode-replacement-rejected\",\"live-directory-replacement-rejects-later-writes\"],\"success\":true}\n",
+      "stderr": ""
+    },
+    {
+      "name": "builder-mocked-controls",
+      "command": [
+        "python3",
+        "discovery/check_sdk_device_build.py"
+      ],
+      "exitCode": 0,
+      "seconds": 25.656,
+      "stdout": "{\"success\": true, \"testGroups\": 12, \"nativeExecution\": false, \"controls\": [\"private-fresh-output\", \"environment-validation\", \"shared-source-target\", \"generic-build-only\", \"development-profile-binding\", \"signed-entitlement-binding\", \"source-before-and-after-binding\"]}\n",
+      "stderr": "............\n----------------------------------------------------------------------\nRan 12 tests in 25.605s\n\nOK\n"
+    },
+    {
+      "name": "core-host-controls",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run.sh"
+      ],
+      "exitCode": 0,
+      "seconds": 1.906,
+      "stdout": "Core tests passed: dedup/in-flight, two-minute boundary, cold launch, late attachment, replacement, deadline/policy, no resurrection, optional handlers and wire roundtrip\n",
+      "stderr": ""
+    },
+    {
+      "name": "push-host-controls",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_push.sh"
+      ],
+      "exitCode": 0,
+      "seconds": 1.573,
+      "stdout": "Push tests passed: envelope/JSON/date parsing, required-report policy, FCM end, token hydration/invalidation/reentrancy and simulator preference\n",
+      "stderr": ""
+    },
+    {
+      "name": "projection-host-controls",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_projection.sh"
+      ],
+      "exitCode": 0,
+      "seconds": 0.801,
+      "stdout": "Terminal projection and incoming report serialization tests passed\n",
+      "stderr": ""
+    },
+    {
+      "name": "builder-shell-syntax",
+      "command": [
+        "bash",
+        "-n",
+        "discovery/device/build_sdk.sh"
+      ],
+      "exitCode": 0,
+      "seconds": 0.007,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "name": "whitespace",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "seconds": 0.015,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "success": true,
+  "nativeAppBuilt": false,
+  "deviceInstalled": false,
+  "deviceLaunched": false,
+  "credentialsFetched": false,
+  "apnsSent": false
+}

@@ -1,6 +1,9 @@
 #import "include/VSPushRegistryOwner.h"
 #import "VSCompletionOnce.h"
 #import <TargetConditionals.h>
+#if defined(SDK_DEVICE_QA) && SDK_DEVICE_QA
+#import "include/VSDeviceQADiagnostics.h"
+#endif
 
 #if TARGET_OS_IOS || TARGET_OS_WATCH
 #import <PushKit/PushKit.h>
@@ -83,12 +86,26 @@ static BOOL fail(NSError **error, NSInteger code, NSString *reason) {
 }
 
 - (void)deliverPayload:(PKPushPayload *)payload mustReport:(BOOL)mustReport
+          #if defined(SDK_DEVICE_QA) && SDK_DEVICE_QA
+                  api:(NSString *)api
+          #endif
            completion:(dispatch_block_t)completion {
   NSDictionary *dictionary = [payload.dictionaryPayload copy];
   id<VSPushReceiver> receiver = _receiver;
+  #if defined(SDK_DEVICE_QA) && SDK_DEVICE_QA
+  NSUUID *deliveryID = [NSUUID UUID];
+  VSDeviceQAEmitPushEvent(@"push.ingress", deliveryID, api, mustReport);
+  completion = VSDeviceQAObserveCompletion(deliveryID, api, mustReport, completion);
+  #endif
   VSCompletionOnce *once = [[VSCompletionOnce alloc] initWithCompletion:completion retaining:receiver];
   dispatch_block_t deliver = ^{
+    #if defined(SDK_DEVICE_QA) && SDK_DEVICE_QA
+    VSDeviceQAWithDelivery(deliveryID, ^{
+      [receiver receiveVoIPPush:dictionary mustReport:mustReport completion:^{ [once finish]; }];
+    });
+    #else
     [receiver receiveVoIPPush:dictionary mustReport:mustReport completion:^{ [once finish]; }];
+    #endif
   };
   if ([NSThread isMainThread]) deliver();
   else dispatch_async(dispatch_get_main_queue(), deliver);
@@ -102,7 +119,11 @@ static BOOL fail(NSError **error, NSInteger code, NSString *reason) {
     [once finish];
     return;
   }
-  [self deliverPayload:payload mustReport:YES completion:completion];
+  [self deliverPayload:payload mustReport:YES
+    #if defined(SDK_DEVICE_QA) && SDK_DEVICE_QA
+                  api:@"legacy"
+    #endif
+           completion:completion];
 }
 
 #if VS_HAS_VOIP_METADATA
@@ -113,7 +134,11 @@ static BOOL fail(NSError **error, NSInteger code, NSString *reason) {
     API_AVAILABLE(ios(26.4), watchos(26.4), macCatalyst(26.4)) {
   BOOL mustReport = YES;
   if (@available(iOS 26.4, watchOS 26.4, macCatalyst 26.4, *)) mustReport = metadata.mustReport;
-  [self deliverPayload:payload mustReport:mustReport completion:completion];
+  [self deliverPayload:payload mustReport:mustReport
+    #if defined(SDK_DEVICE_QA) && SDK_DEVICE_QA
+                  api:@"metadata"
+    #endif
+           completion:completion];
 }
 #endif
 @end

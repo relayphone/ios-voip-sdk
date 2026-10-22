@@ -273,8 +273,17 @@ public final class ConversationClient: NSObject {
         SimulatorSupport.associateIncomingReport(id)
         defer { SimulatorSupport.finishIncomingReport(id) }
         #endif
+        #if SDK_DEVICE_QA
+        SDKDeviceQADiagnostics.emit(.reportBegin, conversationID: id)
+        #endif
         try await self.manager.reportNewIncomingConversation(uuid: id, update: update)
+        #if SDK_DEVICE_QA
+        SDKDeviceQADiagnostics.emit(.reportResult, conversationID: id, succeeded: true)
+        #endif
       } catch {
+        #if SDK_DEVICE_QA
+        SDKDeviceQADiagnostics.emit(.reportResult, conversationID: id, succeeded: false, error: error)
+        #endif
         if knownLiveConversation && self.isAlreadyReported(error) { self.refresh(); return id }
         // Only the newest queued attempt may roll back shared metadata. A
         // successful prior report leaves its intentional ended-call tombstone.
@@ -536,6 +545,22 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
     coordinator.cancelAll(reason: .reset); appActions.removeAll(); refresh(); emit(.providerReset)
   }
   public func conversationManager(_ manager: ConversationManager, perform action: ConversationAction) {
+    #if SDK_DEVICE_QA
+    let qaKind: ConversationActionKind?
+    switch action {
+    case is JoinConversationAction: qaKind = .join
+    case is StartConversationAction: qaKind = .start
+    case is EndConversationAction: qaKind = .end
+    case is PauseConversationAction: qaKind = .hold
+    case is MuteConversationAction: qaKind = .mute
+    case is PlayToneAction: qaKind = .tones
+    case is MergeConversationAction: qaKind = .merge
+    case is UnmergeConversationAction: qaKind = .unmerge
+    default: qaKind = nil
+    }
+    SDKDeviceQADiagnostics.emit(.actionIngress, conversationID: action.conversationUUID,
+      actionID: action.uuid, actionKind: qaKind)
+    #endif
     switch action.state { case .idle, .running: break; default: return }
     let id = action.conversationUUID
     let origin: ConversationActionOrigin = appActions.removeValue(forKey: action.uuid) == nil ? .system : .app
@@ -572,13 +597,29 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
       origin: origin, held: held, muted: muted, digits: digits)
     coordinator.enqueue(conversationID: id, action: pending, isPending: {
       switch action.state { case .idle, .running: true; default: false }
-    }, settle: { accepted in if accepted { action.fulfill() } else { action.fail() } })
+    }, settle: { accepted in
+      #if SDK_DEVICE_QA
+      SDKDeviceQADiagnostics.emit(.actionSettlement, conversationID: id, actionID: action.uuid,
+        actionKind: kind, succeeded: accepted)
+      #endif
+      if accepted { action.fulfill() } else { action.fail() }
+    })
   }
   public func conversationManager(_ manager: ConversationManager, timedOutPerforming action: ConversationAction) {
     coordinator.cancel(action.uuid, reason: .platformTimeout)
   }
-  public func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) { emit(.audioActivated) }
-  public func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession) { emit(.audioDeactivated) }
+  public func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) {
+    #if SDK_DEVICE_QA
+    SDKDeviceQADiagnostics.emit(.audioActivated)
+    #endif
+    emit(.audioActivated)
+  }
+  public func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession) {
+    #if SDK_DEVICE_QA
+    SDKDeviceQADiagnostics.emit(.audioDeactivated)
+    #endif
+    emit(.audioDeactivated)
+  }
 }
 #if os(iOS)
 extension ConversationClient: @preconcurrency CXCallObserverDelegate {
