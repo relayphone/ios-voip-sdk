@@ -1,17 +1,19 @@
 #import <Foundation/Foundation.h>
+#import "VSPushDelivery.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
 /// The native receiver must be ready during app launch, before push registration.
 /// It decides reporting policy and finishes each push after its native work settles.
-NS_SWIFT_UI_ACTOR
 NS_SWIFT_NAME(PushReceiver)
 @protocol VSPushReceiver <NSObject>
-- (void)pushTokenDidUpdate:(NSData *)token;
-- (void)pushTokenDidInvalidate;
+- (void)pushTokenDidUpdate:(NSData *)token NS_SWIFT_UI_ACTOR;
+- (void)pushTokenDidInvalidate NS_SWIFT_UI_ACTOR;
+/// Called directly on the registry's serial queue. Parse before creating a Task.
 - (void)receiveVoIPPush:(NSDictionary *)payload
            mustReport:(BOOL)mustReport
-           completion:(dispatch_block_t)completion;
+             delivery:(VSPushDelivery *)delivery
+    NS_SWIFT_NAME(receiveVoIPPush(_:mustReport:delivery:));
 @end
 
 /// One process-lifetime registry and native receiver. Never logs a push token.

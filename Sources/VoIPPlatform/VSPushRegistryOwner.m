@@ -1,5 +1,4 @@
 #import "include/VSPushRegistryOwner.h"
-#import "VSCompletionOnce.h"
 #import <TargetConditionals.h>
 
 #if TARGET_OS_IOS || TARGET_OS_WATCH
@@ -15,6 +14,13 @@ static BOOL fail(NSError **error, NSInteger code, NSString *reason) {
   return NO;
 }
 
+@interface VSPushDelivery (NativeOwner)
+- (instancetype)initWithCompletion:(dispatch_block_t)completion
+                         retaining:(id)receiver
+                 completionTimeout:(NSTimeInterval)timeout;
+- (BOOL)waitForSettlement:(NSTimeInterval)timeout;
+@end
+
 @interface VSPushRegistryOwner () <PKPushRegistryDelegate>
 - (instancetype)initWithReceiver:(id<VSPushReceiver>)receiver;
 @end
@@ -22,6 +28,7 @@ static BOOL fail(NSError **error, NSInteger code, NSString *reason) {
 @implementation VSPushRegistryOwner {
   id<VSPushReceiver> _receiver;
   PKPushRegistry *_registry;
+  dispatch_queue_t _registryQueue;
 }
 
 + (instancetype)sharedOwnerWithReceiver:(id<VSPushReceiver>)receiver error:(NSError **)error {
@@ -32,7 +39,7 @@ static BOOL fail(NSError **error, NSInteger code, NSString *reason) {
   }
   if (!receiver || ![receiver respondsToSelector:@selector(pushTokenDidUpdate:)] ||
       ![receiver respondsToSelector:@selector(pushTokenDidInvalidate)] ||
-      ![receiver respondsToSelector:@selector(receiveVoIPPush:mustReport:completion:)]) {
+      ![receiver respondsToSelector:@selector(receiveVoIPPush:mustReport:delivery:)]) {
     fail(error, 2, @"A complete native push receiver is required before registration.");
     return nil;
   }
@@ -45,7 +52,10 @@ static BOOL fail(NSError **error, NSInteger code, NSString *reason) {
 }
 
 - (instancetype)initWithReceiver:(id<VSPushReceiver>)receiver {
-  if ((self = [super init])) _receiver = receiver;
+  if ((self = [super init])) {
+    _receiver = receiver;
+    _registryQueue = dispatch_queue_create("dev.iosvoipsdk.push-registry", DISPATCH_QUEUE_SERIAL);
+  }
   return self;
 }
 
@@ -55,7 +65,7 @@ static BOOL fail(NSError **error, NSInteger code, NSString *reason) {
   if (![NSThread isMainThread])
     return fail(error, 1, @"Register PushKit on main during app launch.");
   if (_registry) return YES;
-  PKPushRegistry *registry = [[PKPushRegistry alloc] initWithQueue:dispatch_get_main_queue()];
+  PKPushRegistry *registry = [[PKPushRegistry alloc] initWithQueue:_registryQueue];
   if (!registry) return fail(error, 4, @"PushKit could not create the process registry.");
   registry.delegate = self;
   // Retain before registration: a framework callback may arrive immediately.
@@ -86,20 +96,22 @@ static BOOL fail(NSError **error, NSInteger code, NSString *reason) {
            completion:(dispatch_block_t)completion {
   NSDictionary *dictionary = [payload.dictionaryPayload copy];
   id<VSPushReceiver> receiver = _receiver;
-  VSCompletionOnce *once = [[VSCompletionOnce alloc] initWithCompletion:completion retaining:receiver];
-  dispatch_block_t deliver = ^{
-    [receiver receiveVoIPPush:dictionary mustReport:mustReport completion:^{ [once finish]; }];
-  };
-  if ([NSThread isMainThread]) deliver();
-  else dispatch_async(dispatch_get_main_queue(), deliver);
+  VSPushDelivery *delivery = [[VSPushDelivery alloc] initWithCompletion:completion
+      retaining:receiver completionTimeout:4.0];
+  [receiver receiveVoIPPush:dictionary mustReport:mustReport delivery:delivery];
+  // This acknowledges actual report settlement, a stronger condition than entry.
+  // Only this dedicated callback queue waits; main and completion remain free.
+  if (![delivery waitForSettlement:2.0])
+    NSLog(@"[VoIPSDK] Push report settlement was not acknowledged before the delegate wait expired.");
 }
 
 - (void)pushRegistry:(PKPushRegistry *)registry
     didReceiveIncomingPushWithPayload:(PKPushPayload *)payload
     forType:(PKPushType)type withCompletionHandler:(dispatch_block_t)completion {
   if (![type isEqualToString:PKPushTypeVoIP]) {
-    VSCompletionOnce *once = [[VSCompletionOnce alloc] initWithCompletion:completion retaining:_receiver];
-    [once finish];
+    VSPushDelivery *delivery = [[VSPushDelivery alloc] initWithCompletion:completion
+        retaining:_receiver completionTimeout:4.0];
+    [delivery finish];
     return;
   }
   [self deliverPayload:payload mustReport:YES completion:completion];
