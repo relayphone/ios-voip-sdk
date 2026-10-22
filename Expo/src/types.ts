@@ -42,6 +42,7 @@ export type ConversationActionKind =
 export interface PendingAction {
   id: string;
   kind: ConversationActionKind;
+  /** Effective application deadline, initially 1.5 seconds before platform timeout. */
   deadline: string;
   origin: ActionOrigin;
   held?: boolean;
@@ -69,6 +70,7 @@ export interface Conversation {
 }
 
 export interface ActionContext {
+  /** Effective application deadline, initially 1.5 seconds before platform timeout. */
   deadline: string;
   signal: AbortSignal;
   origin: ActionOrigin;

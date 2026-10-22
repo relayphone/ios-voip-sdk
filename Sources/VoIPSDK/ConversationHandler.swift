@@ -26,6 +26,7 @@ public final class ConversationCancellationSignal {
 @MainActor
 public struct ConversationActionContext {
   public let actionID: UUID
+  /// Application policy deadline, initially 1.5 seconds before the platform timeout.
   public let deadline: Date
   public let origin: ConversationActionOrigin
   public let signal: ConversationCancellationSignal
@@ -67,18 +68,21 @@ public struct ConversationHandler {
 @MainActor
 final class ConversationActionCoordinator {
   typealias Schedule = @MainActor (Date, @escaping @MainActor () -> Void) -> @MainActor () -> Void
+  private static let deadlineMargin: TimeInterval = 1.5
   private final class Entry {
     let conversationID: UUID
     let action: PendingAction
+    let platformDeadline: Date
     let isPending: @MainActor () -> Bool
     let settle: @MainActor (Bool) -> Void
     var cancelTimer: (@MainActor () -> Void)?
     var task: Task<Void, Never>?
     var signal: ConversationCancellationSignal?
     var delivery: UUID?
-    init(conversationID: UUID, action: PendingAction, isPending: @escaping @MainActor () -> Bool,
+    init(conversationID: UUID, action: PendingAction, platformDeadline: Date, isPending: @escaping @MainActor () -> Bool,
          settle: @escaping @MainActor (Bool) -> Void) {
       self.conversationID = conversationID; self.action = action
+      self.platformDeadline = platformDeadline
       self.isPending = isPending; self.settle = settle
     }
   }
@@ -119,7 +123,11 @@ final class ConversationActionCoordinator {
   func enqueue(conversationID: UUID, action: PendingAction,
                isPending: @escaping @MainActor () -> Bool, settle: @escaping @MainActor (Bool) -> Void) {
     guard entries[action.id] == nil else { return }
-    let entry = Entry(conversationID: conversationID, action: action, isPending: isPending, settle: settle)
+    let platformDeadline = action.deadline
+    var action = action
+    action.deadline = platformDeadline.addingTimeInterval(-Self.deadlineMargin)
+    let entry = Entry(conversationID: conversationID, action: action, platformDeadline: platformDeadline,
+      isPending: isPending, settle: settle)
     entries[action.id] = entry
     if action.deadline <= now() { expire(action.id); return }
     entry.cancelTimer = schedule(action.deadline) { [weak self] in self?.expire(action.id) }
@@ -210,6 +218,7 @@ final class ConversationActionCoordinator {
     entry.task?.cancel()
     // A platform timeout/state change wins; fulfillment cannot resurrect a settled action.
     if entry.isPending() {
+      let accepted = accepted && now() < entry.platformDeadline
       // Install accepted mute/end metadata before fulfillment can synchronously
       // emit conversationChanged or a system echo.
       willSettle?(entry.conversationID, entry.action, accepted)
