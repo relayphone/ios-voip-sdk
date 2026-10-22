@@ -22,6 +22,7 @@ SOURCE_PATHS = ('Sources', 'Expo', 'example', 'Package.swift', 'IosVoipSDK.podsp
                 'discovery/run_scenario.py', 'discovery/sdk_bootstrap_conformance.py',
                 'discovery/summarize.py', '.github/workflows/sdk-m0.yml', 'app.plugin.js', 'Tests',
                 'discovery/sdk_m1_conformance.py', 'discovery/check_sdk_m1.py',
+                'discovery/check_sdk_m1_container_capture.py',
                 'discovery/build_sdk_m1_contracts.sh', 'discovery/probe/sdk_m1_contracts.swift',
                 'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
                 'discovery/check_expo_bridge.py', 'discovery/check_expo_plugin.cjs',
