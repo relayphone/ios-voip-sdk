@@ -50,61 +50,7 @@ struct ProjectionTests {
     }
     precondition(admitted != nil && cancellationSideEffects == 1)
     if let admitted { buffer.remove(id, generation: admitted) }
-    let queue = SerializedIncomingReports()
-    var firstResume: CheckedContinuation<Void, Never>?
-    var secondResume: CheckedContinuation<Void, Never>?
-    var invoked: [String] = []
-    let firstReport = PushIdentity.$value.withValue("first-push") {
-      queue.enqueue(id: id, previouslyReported: false) { context in
-        invoked.append(PushIdentity.value ?? "missing")
-        precondition(!context.previouslyReported)
-        await withCheckedContinuation { firstResume = $0 }
-        precondition(!context.isLatest(), "A queued successor owns cleanup")
-        return id
-      }
-    }
-    let secondReport = PushIdentity.$value.withValue("second-push") {
-      queue.enqueue(id: id, previouslyReported: false) { context in
-        invoked.append(PushIdentity.value ?? "missing")
-        precondition(context.previouslyReported && context.isLatest())
-        await withCheckedContinuation { secondResume = $0 }
-        return id
-      }
-    }
-    for _ in 0..<8 { await Task.yield() }
-    precondition(invoked == ["first-push"] && firstResume != nil && secondResume == nil)
-    firstResume?.resume()
-    _ = try await firstReport.value
-    for _ in 0..<8 { await Task.yield() }
-    precondition(queue.pending(for: id) != nil && invoked == ["first-push", "second-push"])
-    secondResume?.resume()
-    _ = try await secondReport.value
-    precondition(queue.pending(for: id) == nil)
-    let failedFirst = queue.enqueue(id: id, previouslyReported: false) { context in
-      precondition(!context.previouslyReported && !context.isLatest())
-      throw ReportFailure.failed
-    }
-    let following = queue.enqueue(id: id, previouslyReported: false) { context in
-      precondition(!context.previouslyReported && context.isLatest(),
-        "A failed predecessor cannot turn an unreported invitation into a tombstone")
-      return id
-    }
-    do { _ = try await failedFirst.value; preconditionFailure("Failed report unexpectedly succeeded") }
-    catch ReportFailure.failed {}
-    _ = try await following.value
-    precondition(queue.pending(for: id) == nil)
-    let historical = queue.enqueue(id: id, previouslyReported: true) { context in
-      precondition(context.previouslyReported)
-      throw ReportFailure.failed
-    }
-    do { _ = try await historical.value; preconditionFailure("Historical attempt unexpectedly succeeded") }
-    catch ReportFailure.failed {}
-    precondition(queue.pending(for: id) == nil, "Failed reports also own immediate cleanup")
-    print("Terminal projection and incoming report serialization tests passed")
+    print("Terminal projection tests passed; incoming intake concurrency has its own suite")
   }
 }
 final class SystemConversation {}
-
-enum PushIdentity { @TaskLocal static var value: String? }
-
-enum ReportFailure: Error { case failed }

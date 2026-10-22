@@ -1,0 +1,97 @@
+{
+  "success": true,
+  "classification": "host whole-client cache contracts; modeled platform timing, no LCK/device run",
+  "sourceSHA256": {
+    "Sources/VoIPSDK/ConversationClient.swift": "7d5f6f1958cf6b28e2fe74639dac25541b5af13d35589b2ffbcc628b30710164",
+    "Sources/VoIPSDK/IncomingReportTransport.swift": "518a522f3dccc9f96f221f700a77c9c732b20b00dfb01dd094579c5b43a08cbf",
+    "Sources/VoIPSDK/ConversationModels.swift": "ff4be06d66d1efacd5060c08c9ca7507eb7b35d09107573e43f44bba4a4c1a2b",
+    "Sources/VoIPSDK/ConversationRecord.swift": "90f94cf5baf4085478ed0e2437d520e9066367b9bb23615ff88d5fade3288d64",
+    "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
+    "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+    "Sources/VoIPSDK/IncomingIntake.swift": "5f6979dbc38bb4badeb2026ca8033341a5ce744ebba4e279aab1a4892d5f64c5",
+    "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+    "Sources/VoIPSDK/SimulatorSupport.swift": "45b5b31b3943603d7a20ebbed2b2a76feddbb7b6fb83fc1c532def2cbc059563",
+    "Tests/VoIPSDK/IncomingCachePlatform.swift": "360a13f4591b7c9f4653b61478ad5136859e133391abbdf0bb15d7621583d01d",
+    "Tests/VoIPSDK/IncomingCacheTests.swift": "2c64a032195f2ac7835bcc85c110384c6a9c5f16fdb6d4852ba8505bda8be2f2",
+    "Tests/VoIPSDK/run_incoming_cache.py": "3ba61daaaf1df9d39a434317760c1e9a9c6d3410c3e73138fd6b28e754b5939e"
+  },
+  "commands": [
+    {
+      "label": "compile",
+      "exitCode": 0,
+      "elapsedSeconds": 3.545319,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "reported",
+      "exitCode": 0,
+      "elapsedSeconds": 0.201354,
+      "stdoutSHA256": "3ec3e642e6230f2408539fc25a3373adadc209466650a7e69fb4bc7ef9b6b66c",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "joined-success",
+      "exitCode": 0,
+      "elapsedSeconds": 0.011325,
+      "stdoutSHA256": "3b194aad0175550e6ea86c8d3b0bc138e931cb198fdc029814683e7dd5de4276",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "joined-failure",
+      "exitCode": 0,
+      "elapsedSeconds": 0.010686,
+      "stdoutSHA256": "8bfc443f4ab3bea811a98c9d7147d5da81c3d759a009026bf4162cbf1ca905fe",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "results": [
+    {
+      "exitCode": 0,
+      "observation": {
+        "beforeCount": 0,
+        "callerCacheCount": 1,
+        "callerPayloadMatches": true,
+        "classification": "whole production client with platform callback timing deliberately modeled; no LCK execution",
+        "mode": "reported",
+        "returnedCanonicalID": true,
+        "success": true
+      }
+    },
+    {
+      "exitCode": 0,
+      "observation": {
+        "callerCacheCount": 1,
+        "callerPayloadMatches": true,
+        "classification": "whole production client with platform callback timing deliberately modeled; no LCK execution",
+        "mode": "joined-success",
+        "returnedCanonicalID": true,
+        "success": true
+      }
+    },
+    {
+      "exitCode": 0,
+      "observation": {
+        "callerCacheCount": 0,
+        "callerCaughtExpectedFailure": true,
+        "classification": "whole production client with platform callback timing deliberately modeled; no LCK execution",
+        "mode": "joined-failure",
+        "seededLiveCache": true,
+        "success": true
+      }
+    }
+  ],
+  "artifactSHA256": {
+    "joined-failure.stdout": "8bfc443f4ab3bea811a98c9d7147d5da81c3d759a009026bf4162cbf1ca905fe",
+    "IncomingReportTransport.swift": "6788f16003f2a238cceb5d1fc93ddae466c36142c489d973d8b926aba2cb2e52",
+    "joined-failure.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "compile.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "joined-success.stdout": "3b194aad0175550e6ea86c8d3b0bc138e931cb198fdc029814683e7dd5de4276",
+    "ConversationClient.swift": "b340286786e6903aec02fa859fe1a915ec789524c64f8c8542dfe3453b2af3e3",
+    "reported.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "reported.stdout": "3ec3e642e6230f2408539fc25a3373adadc209466650a7e69fb4bc7ef9b6b66c",
+    "joined-success.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "IncomingCacheTests": "37208f1abff95f9fce99f7ab6adc8fc73b5b6b24165b950a9178729fe8ac3e56",
+    "compile.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

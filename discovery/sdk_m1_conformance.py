@@ -9,7 +9,7 @@ import uuid
 
 import sdk_m0_conformance as m0
 from device_oracles import check_deadline, deadline_bands
-from summarize import EvidenceError, one, require
+from summarize import EvidenceError, one, push_report_boundaries, require
 
 ROOT = Path(__file__).resolve().parent.parent
 CASES = ('journey', 'cold-launch', 'unhandled-expiry')
@@ -115,16 +115,19 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
     injected = one(rows, 'm1.pushInjected')
     require(injected.get('mustReport') is True and injected.get('label') == ('primary' if case == 'journey' else 'cold'),
             case + ': wrong synthetic push policy')
+    require(push_report_boundaries(engine, require_settlement_before_return=True) == 1,
+            case + ': required callback boundary proof differs')
     received = one(engine, 'push.received')
     completed = one(engine, 'push.completed')
+    returned = one(engine, 'push.callbackReturned')
     incoming = one(engine, 'report.incoming')
     reported = one(engine, 'report.completed')
     push_id = injected.get('pushID')
     require(isinstance(push_id, str) and str(uuid.UUID(push_id)).upper() == push_id.upper(), 'invalid synthetic push ID')
-    require(all(row.get('pushID') == push_id for row in (received, completed, incoming, reported)),
+    require(all(row.get('pushID') == push_id for row in (received, completed, returned, incoming, reported)),
             case + ': incoming report is not correlated to the injected PushKit delivery')
     modern = tuple(int(part) for part in simulator_os.split('.')[:2]) >= (26, 4)
-    require(received.get('api') == completed.get('api') == ('metadata' if modern else 'legacy') and
+    require(received.get('api') == completed.get('api') == returned.get('api') == ('metadata' if modern else 'legacy') and
             received.get('mustReport') is True, case + ': wrong PushKit callback or policy')
     require(incoming.get('callUUID') == reported.get('callUUID') == conversation and reported.get('error') == 0,
             case + ': incoming report failed or targeted another conversation')
@@ -149,7 +152,7 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
         remaining = timestamp_ms(row.get('deadline')) - row['wallTimeMS']
         kind = {'join': 'JoinConversationAction', 'start': 'StartConversationAction', 'end': 'EndConversationAction',
                 'hold': 'PauseConversationAction', 'mute': 'MuteConversationAction', 'tones': 'PlayToneAction'}.get(row.get('kind'))
-        # Cold actions may be delivered late. Their original platform deadline
+        # Cold actions may be delivered late. Their effective application deadline
         # remains authoritative; JS must not receive an extension at attachment.
         require(kind in deadlines and 0 < remaining <= deadlines[kind][1] * 1000 and row.get('origin') == 'app',
                 case + ': invalid handler deadline/origin')
@@ -185,7 +188,7 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
         require(pending.get('handlerAttached') is False and pending.get('conversationID') == conversation and
                 type(pending.get('remainingMS')) in (int, float),
                 case + ': missing native pending deadline')
-        check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000), deadlines)
+        check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000 + 1.5), deadlines)
         original_deadline = timestamp_ms(pending.get('deadline'))
         require(abs(original_deadline - pending['wallTimeMS'] - pending['remainingMS']) <= 5,
                 case + ': pending absolute deadline and remaining interval differ')
@@ -194,6 +197,22 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
                 type(pending.get('clockBeforeMS')) is int and
                 0 <= pending['wallTimeMS'] - pending['clockBeforeMS'] <= 25,
                 case + ': unbound or imprecise pending journal clock')
+        # The one actual native answer binds the runtime deadline separately
+        # from the LCK pending UUID. This allowance is shared with the dedicated
+        # native contract; device sampling bands do not prove the safety margin.
+        native_answer = one([row for row in transactions if row['kinds'][0].split('.')[-1] == 'CXAnswerCallAction'],
+                            'transaction.delivered')
+        advertised = one(engine, 'action.deadline', actionID=native_answer['actionIDs'][0])
+        native_settlement = one(settled, 'action.settled', actionID=native_answer['actionIDs'][0])
+        platform_deadline = advertised.get('deadlineMS')
+        require(isinstance(native_answer['actionIDs'][0], str) and native_answer['actionIDs'][0] and
+                isinstance(native_answer.get('provider'), str) and native_answer['provider'] and
+                advertised.get('provider') == native_answer['provider'] and
+                advertised.get('apiKind') == 'livecommunicationkit' and type(platform_deadline) is int and
+                advertised.get('deadlineSeconds') == advertised.get('expirySeconds') == 30 and
+                1000 <= platform_deadline - original_deadline <= 3500 and
+                engine.index(native_answer) < engine.index(advertised) < engine.index(marker) < engine.index(native_settlement),
+                case + ': effective deadline lacks the bound native LCK safety margin')
         require(isinstance(pending.get('actionID'), str) and
                 any(call.get('pending', {}).get('id') == pending['actionID'] and
                     call['pending'].get('kind') == 'join' and call['pending'].get('deadline') == pending['deadline'] and
@@ -225,7 +244,7 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
                     'unhandled-expiry: pending clock is not between native join and settlement')
             # Journal and app t_ms have different epochs. The synchronous marker
             # brackets their offset within 25 ms; keep the existing 8 s liveness
-            # budget around the actual, device-checked LCK deadline.
+            # budget around the actual pending effective deadline.
             relative = answer['t_ms'] - marker['t_ms']
             require(pending['clockBeforeMS'] + relative >= original_deadline - 25 and
                     pending['wallTimeMS'] + relative <= original_deadline + 8_025,
