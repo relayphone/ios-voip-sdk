@@ -1,0 +1,21 @@
+{
+  "completed": true,
+  "success": false,
+  "schemaVersion": 2,
+  "runID": "E9808AB3-27F5-4B0C-BAEA-6F5C3B393FA7",
+  "simulatorID": "4B8724B4-5274-463B-A96D-0C256ABB2533",
+  "scenario": "refused-queues",
+  "bundleID": "dev.callkitsim.abi",
+  "launcherPID": 6521,
+  "lastProbeEvent": "done",
+  "lastProbeTimestampMS": 1085,
+  "appEntryObserved": true,
+  "appPID": 7906,
+  "error": "Command '['xcrun', 'simctl', 'terminate', '4B8724B4-5274-463B-A96D-0C256ABB2533', 'dev.callkitsim.abi']' timed out after 20 seconds",
+  "launchExitCodeBeforeCleanup": null,
+  "cleanupError": "Command '['xcrun', 'simctl', 'terminate', '4B8724B4-5274-463B-A96D-0C256ABB2533', 'dev.callkitsim.abi']' timed out after 10 seconds",
+  "launchExitCode": 0,
+  "elapsedSeconds": 79.564,
+  "traceSHA256": "8d9dd35b2762be025b32cda7b73c8b06d2bb02f714b657be3422dc68f7c2a8ee",
+  "identityError": "require one launcher app PID acknowledgement; got 0"
+}
