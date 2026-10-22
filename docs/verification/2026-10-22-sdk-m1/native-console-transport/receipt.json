@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured local native synthetic transport experiment; not SDK acceptance",
+  "runtime": "iOS27.0",
+  "hostSDK": "Xcode27.1",
+  "simulatorID": "A57CCDF0-513F-4C4E-801F-B2056A099357",
+  "sourceSHA256": "469f97b70c24c641ac22fa66d109fdd1aa8a0cc1ad7a7a22f41c83d742a758c2",
+  "harnessSHA256": "68a70bfaf9da879738b9650e78ad73c123f5adf4f7309a097030cf423b535e88",
+  "binarySHA256": "a967b9e962c40b4de1386b631e0d02b376d72e30c8271c98d527e59572a36293",
+  "buildReceiptSHA256": "8a6928ca002873c14d2aee9ae8773354f754515f7346395d581290cc5199da2c",
+  "fullExperimentResultSHA256": "9089338a7a0a4571a6efded853b640d9a60a29e14dff162baf4c8a5f4cf2fcd0",
+  "sameBinary": true,
+  "cases": {
+    "pty-merged": {
+      "mode": "pty",
+      "separateHostCapture": false,
+      "runID": "e2e358ab-d808-4332-b926-065e76ed53dc",
+      "command": [
+        "xcrun",
+        "simctl",
+        "launch",
+        "--console-pty",
+        "--terminate-running-process",
+        "A57CCDF0-513F-4C4E-801F-B2056A099357",
+        "dev.iosvoipsdk.transport-probe"
+      ],
+      "pid": 74722,
+      "launcherPIDHeaders": [
+        74722
+      ],
+      "pidHeaderMatches": true,
+      "expectedProbeRows": 4002,
+      "probeRows": 4000,
+      "strictSequenceMatches": false,
+      "malformedProbeRows": [
+        {
+          "file": "launcher.stdout.log",
+          "line": 2880,
+          "bytes": 379,
+          "sha256": "3a667fbe430ef4fc51cb4b6b4b59dbc41e285b55218380b147de9eb7d39f6b88"
+        },
+        {
+          "file": "launcher.stdout.log",
+          "line": 3023,
+          "bytes": 311,
+          "sha256": "2a75cf6121a759f69a8e3a277b969969838d3830cda27c3576f20db80cc67be0"
+        }
+      ],
+      "foreignDiagnosticLines": 8000,
+      "recordByteSizes": [
+        303
+      ],
+      "done": true,
+      "writeFailures": 0,
+      "launcherExitBeforeExplicitTermination": null,
+      "launcherExitAfterExplicitTermination": 0,
+      "appAliveAtDone": true,
+      "appAliveAfterExplicitTermination": false,
+      "terminateExitCode": 0,
+      "elapsedAtDone": 3.923546041,
+      "totalElapsed": 4.275236,
+      "regularFileRedirection": false,
+      "preexistingAppFiles": {},
+      "files": {
+        "pty-merged/launcher.stdout.log": {
+          "bytes": 2176408,
+          "sha256": "8e968dca1f2a9c37bff64964763fd86d61bb50415aa42a4be43b6d1963178c94"
+        },
+        "pty-merged/launcher.stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    "console-merged": {
+      "mode": "console",
+      "separateHostCapture": false,
+      "runID": "adb6b3ec-1dbe-4ad4-9cc3-13609d87ca87",
+      "command": [
+        "xcrun",
+        "simctl",
+        "launch",
+        "--console",
+        "--terminate-running-process",
+        "A57CCDF0-513F-4C4E-801F-B2056A099357",
+        "dev.iosvoipsdk.transport-probe"
+      ],
+      "pid": 74787,
+      "launcherPIDHeaders": [
+        74787
+      ],
+      "pidHeaderMatches": true,
+      "expectedProbeRows": 4002,
+      "probeRows": 4002,
+      "strictSequenceMatches": true,
+      "malformedProbeRows": [],
+      "foreignDiagnosticLines": 8000,
+      "recordByteSizes": [
+        303
+      ],
+      "done": true,
+      "writeFailures": 0,
+      "launcherExitBeforeExplicitTermination": null,
+      "launcherExitAfterExplicitTermination": 0,
+      "appAliveAtDone": true,
+      "appAliveAfterExplicitTermination": false,
+      "terminateExitCode": 0,
+      "elapsedAtDone": 3.5113942089999997,
+      "totalElapsed": 4.211310458999999,
+      "regularFileRedirection": false,
+      "preexistingAppFiles": {},
+      "files": {
+        "console-merged/launcher.stdout.log": {
+          "bytes": 2164403,
+          "sha256": "113485d1fae3377d61b90fe2ac52e4f365b8383878adad05531322fceffa94b5"
+        },
+        "console-merged/launcher.stderr.log": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    }
+  },
+  "caseReceiptSHA256": {
+    "pty-merged": "5f54576a8e9d58bc2008f9f30f14ef8c144b61b504a8e7b8ac13cef21e7c0c07",
+    "console-merged": "930b0de0f4b46c66635e8ab0d21bf1316f545a46d27ad124058e9fe80fdd8fe0"
+  },
+  "cleanup": {
+    "simulatorID": "A57CCDF0-513F-4C4E-801F-B2056A099357",
+    "absentFromIndependentList": true,
+    "defaultDeviceDirectoryAbsent": true
+  },
+  "cleanupReceiptSHA256": {
+    "cleanup.json": "ea6db697e710f6eb40c5fb3c12b09f1a0a41ba744b3f3cec56752756cab2972a",
+    "independent-cleanup.json": "e4667121014f5d4c575452eafc5a198363be9a057df08ef11fc991b3d81f5c38"
+  },
+  "limits": "One native synthetic comparison. The native fixture uses explicit simctl terminate after done; real SDK post-done launcher signal/drain/PID binding and strict gates are unchanged. No unconditional transport guarantee or SDK acceptance claim.",
+  "retention": "Raw native fixture/harness, build receipt, binary and captures remain in the ignored transport-redirection-04b410767bd6 directory; this public lean receipt is not a standalone acceptance input."
+}

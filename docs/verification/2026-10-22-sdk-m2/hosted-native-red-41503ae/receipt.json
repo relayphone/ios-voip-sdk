@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured fixed-writer hosted M2 acceptance failure; original strict trace remains red",
+  "run": {
+    "id": 39727342968,
+    "url": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39727342968",
+    "submittedHead": "41503aee03efae60015487f0bfdf85626d90ff27",
+    "capturedSource": {
+      "sourceCommit": "b20c1942e8ec89fd0e29a9cebe4da48531693714",
+      "sourceInputsSHA256": "e5a28d64538d85990e2bcc47725c08bf79debaf7526c5a053251a8b8ebf9ad40"
+    },
+    "failedStep": "Measure LiveKit, stale audio and media reentrancy on one owned simulator"
+  },
+  "environment": {
+    "simulatorID": "23F02F4F-52AC-4CAC-978B-21878D9CF594",
+    "simulatorRuntimeID": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+    "simulatorOS": "26.5",
+    "xcodeVersion": "Xcode 26.6\nBuild version 17F113",
+    "sdkVersion": "26.5",
+    "hostArchitecture": "arm64"
+  },
+  "artifact": {
+    "id": 12404331260,
+    "sha256": "1f6ae67e9556c3c1041ce4d7a6e4a7b433a169afc4cfb467b2bd9b4bd5a9064f",
+    "manifestSHA256": "b8694b8888d4f168d822b5ac5f46904e62e35747805544cd0b038f18cadfb332",
+    "jobLogSHA256": "e0d5034f3dd2423b04bbf27369e4b45f22cc1b9b891f626cdf7d84f5ef8bc32c"
+  },
+  "independentCapturedCommitReplay": {
+    "result": {
+      "success": false,
+      "error": "sdk-m2-livekit:120: malformed probe JSON"
+    },
+    "sha256": "1b5448e2e6849b19f13934032d87a7d091b6e583896eb3429ddaefcfd648f1fd"
+  },
+  "framingObservation": {
+    "trace": "sdk-m2-livekit.log",
+    "traceSHA256": "addc806db4ef3fed5d0ce12ace8fa2126cab33d3d6a6d84310d3108d58073395",
+    "malformedLine": 120,
+    "suffixLine": 121,
+    "event": "m2.assertion",
+    "label": "active-media",
+    "sequence": 31,
+    "nativeDiagnostic": "(audio_device_buffer.cc:329): Invalid audio transport",
+    "line120SHA256": "634807d78f76009b39950abe851c005f7ee49faaa8dda9050a4df0d06cc1c6be",
+    "line121SHA256": "cd05354f455a722c052795d395c4c8bd4838c3b931e01a8c332bbf288308f289",
+    "originalTraceUnmodified": true,
+    "diagnosticOnlyReconstruction": {
+      "jsonParses": true,
+      "encodedBytesIncludingLF": 303,
+      "acceptedByGate": false
+    },
+    "lineHashNormalization": "UTF-8 line bytes without line terminator",
+    "frameNormalization": "PROBE prefix + captured JSON UTF-8 + LF (terminal CRLF normalized)",
+    "darwinPipeBufBytes": 512,
+    "belowDarwinPipeBuf": true,
+    "appWriterIntendedDescriptor": "STDERR_FILENO",
+    "preciseForwardingBoundary": "unmeasured; no causal attribution beyond corruption in current console capture"
+  },
+  "supervisedProcessOutcomes": {
+    "livekit": {
+      "completed": true,
+      "reportedSuccess": true,
+      "receiptSHA256": "c80a3c7cba337c1ab8aa43080cbb749ae509afc158b61eeb424be1576d32afb2",
+      "traceSHA256": "addc806db4ef3fed5d0ce12ace8fa2126cab33d3d6a6d84310d3108d58073395",
+      "journalSHA256": "ae48b5730e7ada8c13b8e27a95a035047ee507d20cbf89c343be1895db0c99cc",
+      "scope": "process completion is not native acceptance; strict final gate fails"
+    },
+    "stale-audio": {
+      "completed": true,
+      "reportedSuccess": true,
+      "receiptSHA256": "0baa1873852042cc5d0e549e9451a3288e42fd5135265833011bb12b68c4db8a",
+      "traceSHA256": "4aeed351d8ea4a9d5f5fa885dddda9b601374b0a3e4bc0bafbe89277f59a0377",
+      "journalSHA256": "36e093b3fa81ebc6a7ce5d03cec86ab897783f44b62e8a8442708868e79f574f",
+      "scope": "process completion is not native acceptance; strict final gate fails"
+    },
+    "media-reentrancy": {
+      "completed": true,
+      "reportedSuccess": true,
+      "receiptSHA256": "8b7d5f18cc1b90707169535d7a5a65af437d26c056a8a5d7953b369219a54e9c",
+      "traceSHA256": "23afc4f230cccc08af7541f30800384f84c94bb1c8a0735f3aa244e7b5a6a95e",
+      "journalSHA256": "244e76fb4f69748ff7ce3d55249b6225c868c47571ce567b137fdeee91325596",
+      "scope": "process completion is not native acceptance; strict final gate fails"
+    }
+  },
+  "cleanup": {
+    "simulatorID": "23F02F4F-52AC-4CAC-978B-21878D9CF594",
+    "deleted": true,
+    "absentFromInventory": true,
+    "shutdownExitCode": 0,
+    "deleteExitCode": 0
+  },
+  "cleanupSHA256": "d3a03b1f05974349018dbf46a3c22c5adc2e5c2014ea18c40442b956e8919dce",
+  "compiledWriterEvidence": {
+    "introducedCommit": "5063b96327edeb76bb433b24ce8e98129bd7e56a",
+    "file": "example/modules/journey/apple/ProbeTraceWriter.swift",
+    "sourceSHA256": "6834855e885e985522028877caf5030340ea02fee6487ed82b4bf38068faae17",
+    "buildLogContainsSwiftCompile": true,
+    "scope": "Build log includes SwiftCompile ProbeTraceWriter.swift; one checked application stderr write did not preserve this captured frame. No universal pipe atomicity claim."
+  },
+  "correctionStatus": {
+    "candidate": "M1 plain-console experiment and EXAMPLE-only M2 launch selection",
+    "parent": "f1b6e30cbdfe436e7ca2031d923db943fab75578",
+    "scope": "Synthetic transport evidence only; fresh hosted M2 acceptance remains required. SDK implementation and strict parsers are unchanged."
+  }
+}

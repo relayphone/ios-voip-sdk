@@ -129,11 +129,12 @@ def scenario(out, build, run_id, udid, inherited, case, budget):
     else:
         env['SIMCTL_CHILD_SDK_M1_CONTRACT_CASE'] = case
     data = Path(sim(['get_app_container', udid, bundle, 'data'], timeout=20).stdout.decode().strip())
+    console_mode = '--console' if bundle == EXAMPLE else '--console-pty'
     args = [sys.executable, ROOT / 'discovery/run_scenario.py', '--console-launcher-stop', '--timeout', str(budget),
             '--output', out / (name + '.log'), '--receipt', out / (name + '.receipt.json'),
             '--run-id', run_id, '--simulator-id', udid, '--scenario', name, '--bundle-id', bundle,
             '--terminate-command', 'xcrun', 'simctl', 'terminate', udid, bundle,
-            '--launch-command', 'xcrun', 'simctl', 'launch', '--console-pty', '--terminate-running-process', udid, bundle]
+            '--launch-command', 'xcrun', 'simctl', 'launch', console_mode, '--terminate-running-process', udid, bundle]
     with (out / (name + '.supervisor.log')).open('xb') as log:
         process = subprocess.Popen(list(map(str, args)), env=env, stdout=log, stderr=subprocess.STDOUT)
         try:
