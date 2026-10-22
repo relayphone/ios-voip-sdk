@@ -76,7 +76,6 @@ for scenario in refused-queues missing-provider-init missing-controller-init pus
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.abi \
     --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.abi
 done
-CHECK_ARGS=()
+CHECK_ARGS=("$OUT" --runtime "$BUILD/runtime/CKSimRuntime.dylib" --probe "$BUILD/Probe.app/Probe")
 if [[ -n "${CKSIM_ABI_ONLY:-}" ]]; then CHECK_ARGS+=(--case "$CKSIM_ABI_ONLY"); fi
-python3 discovery/abi_conformance.py "$OUT" --runtime "$BUILD/runtime/CKSimRuntime.dylib" \
-  --probe "$BUILD/Probe.app/Probe" "${CHECK_ARGS[@]}" | tee "$OUT/summary.json"
+python3 discovery/abi_conformance.py "${CHECK_ARGS[@]}" | tee "$OUT/summary.json"
