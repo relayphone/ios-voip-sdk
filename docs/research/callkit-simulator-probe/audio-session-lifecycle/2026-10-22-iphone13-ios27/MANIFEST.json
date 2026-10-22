@@ -18,7 +18,7 @@
     "project.yml": "d24823b1ac3ca4590d67c93d7c5668a5ae365ee3be0bd6c28a94687240c19669"
   },
   "files": {
-    "README.md": "04de0c8482aa633725422632194b63fdca7c0b505cc697bc997fb919dd4cd07c",
+    "README.md": "478fd66ed2c15a2ec418fe7b5b0d113f3bfe9b8257fc36e93d1271753239c843",
     "core/Sources/VoIPPlatform/VSAudioSessionLifecycleObserver.m": "0a45a42509fc10759147e09f645839ed50fb14c9fe1fa2791caca303b8cf0c14",
     "core/Sources/VoIPPlatform/VSAudioSessionQueue.m": "585379d32703da325bb9016bbf37a088e472c1d6c47b861552e09e912e1f7411",
     "core/Sources/VoIPPlatform/include/VSAudioSessionLifecycleObserver.h": "2524b3c957d7b895d508c3669f9b2d337f0ff07d4692477d37475494bca3b0d6",

@@ -33,7 +33,7 @@ The public receipt contains only allowlisted derived fields and SHA256 reference
 
 ## Proposed manual reproduction
 
-Use a dedicated, authorized device with iOS 27 or later and private signing values. The generic XcodeGen project has no team or device identifier. Start from this directory; set `AUDIO_PROBE_DEVICE`, `AUDIO_PROBE_TEAM`, and an absolute `AUDIO_PROBE_OUTPUT` privately. Refuse to overwrite an existing app with this bundle identifier. After installing your own probe, complete any device trust step by opening it without pressing **Run once**.
+Use a dedicated, authorized device with iOS 27 or later and private signing values. The generic XcodeGen project has no team or device identifier. First copy this entire packet into an external or ignored scratch directory **before running `xcodegen generate`**; run the commands from that copy so generated projects, build outputs, and private signing artifacts stay outside the tracked checkout. Set `AUDIO_PROBE_DEVICE`, `AUDIO_PROBE_TEAM`, and an absolute scratch `AUDIO_PROBE_OUTPUT` privately. Refuse to overwrite an existing app with this bundle identifier. After installing your own probe, complete any device trust step by opening it without pressing **Run once**.
 
 ```bash
 xcodegen generate
