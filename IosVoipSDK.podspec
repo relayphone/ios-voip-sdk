@@ -19,7 +19,7 @@ Pod::Spec.new do |s|
   s.source_files = 'Sources/**/*.{swift,h,m}', 'Expo/apple/**/*.swift'
   # The external DYLD loader is not part of the embedded SDK.
   s.exclude_files = 'Sources/Interposition/CKLoader.m'
-  s.public_header_files = 'Sources/Interposition/**/CKRuntimeSeam.h'
+  s.public_header_files = 'Sources/Interposition/**/CKRuntimeSeam.h', 'Sources/VoIPPlatform/include/*.h'
   s.resource_bundles = {
     'IosVoipSDKRuntime' => ['Sources/Engine/Resources/**/*.json', 'profiles/*.json']
   }

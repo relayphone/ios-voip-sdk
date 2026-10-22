@@ -27,7 +27,8 @@ let package = Package(
       path: "Sources/Engine",
       resources: [.copy("Resources/ios-27.0.json")]
     ),
-    .target(name: "VoIPSDK", dependencies: ["CKSimRuntime"], path: "Sources/VoIPSDK")
+    .target(name: "VoIPPlatform", path: "Sources/VoIPPlatform", publicHeadersPath: "include"),
+    .target(name: "VoIPSDK", dependencies: ["CKSimRuntime", "VoIPPlatform"], path: "Sources/VoIPSDK")
   ],
   swiftLanguageModes: [.v6]
 )
