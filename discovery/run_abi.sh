@@ -71,7 +71,7 @@ for scenario in refused-queues missing-provider-init missing-controller-init pus
     SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_CKSIM_ABI_CASE="$scenario" \
     SIMCTL_CHILD_CKSIM_TEST_ACTION_CLASSES=ABILeafAction,ABISiblingAction \
     SIMCTL_CHILD_CKSIM_TEST_MISSING_SELECTOR="$missing" SIMCTL_CHILD_CKSIM_TEST_PUSH_REGISTRY_CLASS="$pushclass" \
-    python3 discovery/run_scenario.py --timeout 200 --output "$OUT/$scenario.log" --receipt "$OUT/$scenario.receipt.json" \
+    python3 discovery/run_scenario.py --console-launcher-stop --timeout 200 --output "$OUT/$scenario.log" --receipt "$OUT/$scenario.receipt.json" \
     --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$scenario" --bundle-id dev.callkitsim.abi \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.abi \
     --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.abi
