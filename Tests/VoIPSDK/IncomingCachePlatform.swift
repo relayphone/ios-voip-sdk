@@ -2,6 +2,14 @@ import Foundation
 import Observation
 import Dispatch
 
+@MainActor enum HostClientOwner {
+  static func acquire() -> ConversationClient {
+    let client = try! ConversationClient.forApplication(configuration: .init())
+    client.finishLaunch()
+    return client
+  }
+}
+
 // Explicit inert host audio boundaries; production policy/adapter ordering is compiled.
 private let hostAudioQueue = DispatchQueue(label: "VoIPSDK.HostMuteAudioBoundary")
 func VSAudioSessionGetQueue() -> DispatchQueue { hostAudioQueue }
