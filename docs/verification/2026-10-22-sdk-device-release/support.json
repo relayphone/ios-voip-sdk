@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "qualification": "local compile and artifact inspection only",
+  "environment": {
+    "xcode": "27.1",
+    "xcodeBuild": "27A9275",
+    "iphoneosSDK": "27.1",
+    "hostOS": "27.0.1"
+  },
+  "execution": {
+    "deviceUsed": false,
+    "simulatorBooted": false,
+    "signingAllowed": false,
+    "buildCache": "task-owned incremental retry after retained module-header failure"
+  },
+  "receiptSHA256": "af5c70affd1c6915d04917b518aba9b6b13dc924bf87ff357684eb4ba6625766",
+  "appFilesInventorySHA256": "ef589d152b5815e3437d4d0f7740620f1081a9fa32a3760915578c073d309ca0",
+  "appFileCount": 122,
+  "appMinimumOS": "17.4",
+  "hostControls": {
+    "sourceBefore": {
+      "sourceCommit": "ad18324c758cef39fc39f6ea0c0921e6c1258e34",
+      "sourceInputsSHA256": "bcb5606b7c54013f1e2f62c3b214539d06ab970d539a7866375eff10860f8643"
+    },
+    "sourceAfter": {
+      "sourceCommit": "ad18324c758cef39fc39f6ea0c0921e6c1258e34",
+      "sourceInputsSHA256": "bcb5606b7c54013f1e2f62c3b214539d06ab970d539a7866375eff10860f8643"
+    },
+    "exitCode": 0,
+    "success": true,
+    "logSHA256": "7f1a44fbbb1c7af7d82f5d388c50a9f4daa6c39c5a70a061d9860a982c6e1fad"
+  },
+  "swiftPMSimulator": {
+    "success": true,
+    "qualification": "SwiftPM Release simulator build only; no launch",
+    "sourceCommit": "ad18324c758cef39fc39f6ea0c0921e6c1258e34",
+    "sourceInputsSHA256": "bcb5606b7c54013f1e2f62c3b214539d06ab970d539a7866375eff10860f8643",
+    "exitCode": 0,
+    "logSHA256": "6ea442c6a5a679e51ede02678559d92e5446df9cda4702f098ceeb629a32cc3b",
+    "artifacts": {
+      "Intermediates.noindex/VoIPSDK.build/Release-iphonesimulator/CKSimRuntimeC-t.build/Objects-normal/arm64/CKInterposition.o": {
+        "sha256": "120e18cc0e2730f7413a4c8eea63ad6d4c937f66d989a7a8c9e9c39d12238e6a",
+        "bytes": 119512
+      },
+      "Intermediates.noindex/VoIPSDK.build/Release-iphonesimulator/CKSimRuntimeC-t.build/Objects-normal/arm64/CKPushDelivery.o": {
+        "sha256": "8e208658f3e94e824a9efe2ed89ff603dd5e3abf3e040e153c0f71f9c9b05098",
+        "bytes": 63528
+      },
+      "Intermediates.noindex/VoIPSDK.build/Release-iphonesimulator/CKSimRuntime-t.build/Objects-normal/arm64/RuntimeEngine.o": {
+        "sha256": "38d5fb2f193138c5e0808384d0e9d0de934e8a880d38d85893a0620940da0c0f",
+        "bytes": 996680
+      },
+      "Products/Release-iphonesimulator/CKSimRuntime.o": {
+        "sha256": "4b847d3d721719c331d815a1348fd00ea3dd3f1a0a4584b256ae1892050c0ba6",
+        "bytes": 521320
+      },
+      "Products/Release-iphonesimulator/VoIPSDK.o": {
+        "sha256": "2d32cfb22d11f32b067752dbcfa337a1c16cbb6f5cc8e7324a8dafe8fd44fbb2",
+        "bytes": 1098888
+      }
+    }
+  },
+  "preparationRed": {
+    "source": {
+      "sourceCommit": "bd00856b23b7e9b79cb7992cb0aaebd1d7141f60",
+      "sourceInputsSHA256": "53b73561c9e0ff4693e5f0522d02c04411e2c92d904f659164da018318ebc4db"
+    },
+    "buildExitCode": 65,
+    "sourceBeforeSHA256": "66b0b593cbe9b3db763c81117f09314e8156e7a5b277ad3684748146089ec852",
+    "commandSHA256": "396e024034ef18d6f46b32b87f5c7e096bb76fa76747f81b8e9ceef042049077",
+    "buildLogSHA256": "49ccec17672bc2eb479968be4a13853fedf2a4f051533ae9462601002cea9d53",
+    "diagnostic": "Consumer Clang module could not find now-private CKRuntimeSeam.h imported by public Expo header."
+  },
+  "retainedCapture": "discovery/out/device-release-exclusion",
+  "limits": "Full app, source build logs and inventory remain in the ignored local capture; this publication is not a standalone native replay. Hosted CI and native calling journeys for these inputs are pending. No China distribution approval or Apple transitive dependency claim."
+}

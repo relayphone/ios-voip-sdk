@@ -12,6 +12,14 @@ provider routing, incoming and outgoing calls, answer, end, hold, mute, grouping
 DTMF, action deadlines, observer state and audio-session ownership. Its CLI can
 deliver synthetic VoIP pushes and issue system call-waiting transactions.
 
+For LCK-owned providers, the profile advertises 30-second action deadlines and
+expires unfulfilled actions at that boundary. The 30-second value is measured
+in the committed LCK traces; expiry at that boundary is runtime policy, since
+those captures did not wait for an unfulfilled LCK timeout. The later CX owner in
+`cx-after` retains CallKit timing: answer 60 seconds, start 600, ordinary actions
+5, with the separate measured expiry values in the profile. The journal's
+`action.deadline` binds the selected API kind and timing to each actual CX action.
+
 This is experimental test infrastructure. It uses private simulator ABI and must
 never be embedded in a device or App Store build. Both native layers reject device
 compilation. There is no system call-screen app in v0.1; use the CLI or your app's

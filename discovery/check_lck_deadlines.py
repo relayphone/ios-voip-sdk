@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Compile the production profile selector; bind LCK timing to device evidence."""
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import tempfile
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def main():
+    profile_path = ROOT / 'Sources/Engine/Resources/ios-27.0.json'
+    profile = json.loads(profile_path.read_text())
+    assert profile.get('lckActionDeadlineSeconds') == 30, 'missing separate measured LCK 30-second deadline'
+    evidence = profile['lckActionDeadlineEvidence']
+    directory = 'docs/research/callkit-simulator-probe/livecommunicationkit/'
+    expected = {directory + '2026-10-21-iphone13-ios27-lck-' + case + '.jsonl': count
+                for case, count in [('basic', 10), ('cx-after', 0), ('lck-after', 10), ('two-managers', 4)]}
+    assert set(evidence['captures']) == set(expected), 'require all four committed LCK captures'
+    for name, count in expected.items():
+        path = ROOT / name
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        samples = [row for row in rows if row['event'] == 'lck.perform']
+        assert evidence['captures'][name] == dict(sha256=hashlib.sha256(path.read_bytes()).hexdigest(), samples=count)
+        assert len(samples) == count and all(row['timeoutIn'] == 30 for row in samples)
+        if not count:
+            assert any(row['event'] == 'lck.cx.perform' for row in rows), 'CX takeover must remain explicit'
+    engine = (ROOT / 'Sources/Engine/RuntimeEngine.swift').read_text()
+    production = engine[engine.index('private enum ProviderAPIKind:'):engine.index('private final class ProviderRegistration:')]
+    validation_start = engine.index('    let durations = ')
+    validation = engine[validation_start:engine.index('    let requestedRun = ', validation_start)]
+    with tempfile.TemporaryDirectory(prefix='cksim-lck-deadlines-') as temporary:
+        out = Path(temporary)
+        source = out / 'profile.swift'
+        source.write_text('import Foundation\n' + production + '''
+private enum BootstrapError: Error { case invalid(String) }
+private func validate(_ profile: BehaviorProfile) throws {
+  let profileID = "ios-27.0"
+''' + validation + '''
+}
+private let profile = try JSONDecoder().decode(BehaviorProfile.self,
+  from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1])))
+try validate(profile)
+private let original = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]))
+for value: Any in [0.0, -1.0, "Infinity", "-Infinity", "NaN"] {
+  var raw = try JSONSerialization.jsonObject(with: original) as! [String: Any]
+  raw["lckActionDeadlineSeconds"] = value
+  let data = try JSONSerialization.data(withJSONObject: raw)
+  let decoder = JSONDecoder()
+  // Test-only decoding lets non-finite values reach the exact production guard.
+  // The shipping decoder already refuses these strings before that guard.
+  decoder.nonConformingFloatDecodingStrategy = .convertFromString(
+    positiveInfinity: "Infinity", negativeInfinity: "-Infinity", nan: "NaN")
+  let invalid = try decoder.decode(BehaviorProfile.self, from: data)
+  var refused = false
+  do { try validate(invalid) } catch { refused = true }
+  precondition(refused, "invalid LCK duration was accepted")
+}
+for (answer, start) in [(false, false), (true, false), (false, true)] {
+  let lck = profile.timing(api: .livecommunicationkit, answer: answer, start: start)
+  precondition(lck.deadline == 30 && lck.expiry == 30)
+}
+let answer = profile.timing(api: .callkit, answer: true, start: false)
+let start = profile.timing(api: .callkit, answer: false, start: true)
+let ordinary = profile.timing(api: .callkit, answer: false, start: false)
+precondition(answer.deadline == 60 && answer.expiry == 59.58)
+precondition(start.deadline == 600 && start.expiry == 600)
+precondition(ordinary.deadline == 5 && ordinary.expiry == 5.2)
+print("passed")
+''')
+        binary = out / 'profile'
+        subprocess.run(['swiftc', '-swift-version', '6', '-warnings-as-errors', str(source), '-o', str(binary)], check=True)
+        subprocess.run([str(binary), str(profile_path)], check=True)
+    print(json.dumps(dict(success=True, classification='device-evidence and exact production profile host controls; no native expiry measurement',
+                          measuredLCKSamples=24, routingOnlyCapture='cx-after',
+                          invalidLCKDurationControls=5,
+                          profileSHA256=hashlib.sha256(profile_path.read_bytes()).hexdigest())))
+
+
+if __name__ == '__main__':
+    main()

@@ -95,10 +95,10 @@ struct CoreTests {
     var acceptedWithoutHandler: [Bool] = []
     let noHandlerAction = PendingAction(id: UUID(), kind: .join, deadline: now.addingTimeInterval(7), origin: .system)
     noHandlerAccept.enqueue(conversationID: conversationID, action: noHandlerAction, isPending: { true }, settle: { acceptedWithoutHandler.append($0) })
-    acceptClock.advance(to: now.addingTimeInterval(6.9))
+    acceptClock.advance(to: now.addingTimeInterval(5.49))
     precondition(acceptedWithoutHandler.isEmpty)
-    acceptClock.advance(to: now.addingTimeInterval(7))
-    precondition(acceptedWithoutHandler == [true], "Explicit accept policy applies at the actual deadline")
+    acceptClock.advance(to: now.addingTimeInterval(5.5))
+    precondition(acceptedWithoutHandler == [true], "Explicit accept policy applies at the effective deadline")
 
     let activeClock = TestClock(now: now)
     let active = ConversationActionCoordinator(policy: .accept, now: { activeClock.now }, schedule: activeClock.schedule)
@@ -191,11 +191,11 @@ struct CoreTests {
       await withCheckedContinuation { hungContinuation = $0 }
     }, start: { _, _ in }, end: { _, _ in }))
     weakCoordinator.enqueue(conversationID: conversationID,
-      action: PendingAction(id: UUID(), kind: .join, deadline: now.addingTimeInterval(1), origin: .system),
+      action: PendingAction(id: UUID(), kind: .join, deadline: now.addingTimeInterval(3), origin: .system),
       isPending: { true }, settle: { [owned = resource!] _ in owned.wasSettled = true })
     resource = nil
     for _ in 0..<8 { await Task.yield() }
-    weakClock.advance(to: now.addingTimeInterval(1))
+    weakClock.advance(to: now.addingTimeInterval(3))
     precondition(releasedResource.value == nil, "Expired platform-action closures are released even if the handler ignores cancellation")
     hungContinuation?.resume()
     for _ in 0..<8 { await Task.yield() }
