@@ -4,6 +4,7 @@ from pathlib import Path
 import copy
 import hashlib
 import json
+import re
 import subprocess
 import tempfile
 
@@ -177,6 +178,8 @@ def qualify_journal(rows, mode, run_id, pid):
     received=[r for r in rows if r.get('event')=='push.received']
     require(len(received)==count and {r.get('pushID') for r in received}==expected,'missing or substituted delivery')
     incoming=[r for r in rows if r.get('event')=='report.incoming']
+    settlements=[r for r in rows if r.get('event')=='report.completed']
+    require(all(r.get('pushID') in expected for r in incoming+settlements),'unbound incoming report or settlement')
     required=mode!='optional'
     for identifier in expected:
         def event(name):
@@ -190,10 +193,14 @@ def qualify_journal(rows, mode, run_id, pid):
             require(returned.get('reportEntered') is True,'required report was not entered before callback returned')
             require(completed.get('reportEntered') is True,'required completion preceded report entry')
             report=event('report.incoming'); settled=event('report.completed')
+            call=report.get('callUUID')
+            require(isinstance(call,str) and re.fullmatch(
+                    r'[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}',call) and
+                    settled.get('callUUID')==call,'actual report and settlement call identity differs')
             require(received_row['sequence']<report['sequence']<settled['sequence']<min(returned['sequence'],completed['sequence']),
                     'actual awaited report did not settle before both native boundaries')
         else:
-            require(returned.get('reportEntered') is False and completed.get('reportEntered') is False and not incoming,
+            require(returned.get('reportEntered') is False and completed.get('reportEntered') is False and not incoming and not settlements,
                     'optional omission unexpectedly reported')
     require(not any(r.get('event')=='diagnostic.pushReportingViolation' for r in rows),'runtime detected a push reporting violation')
     if mode=='sdk-duplicate':
@@ -205,7 +212,7 @@ def qualify_journal(rows, mode, run_id, pid):
 def journal_controls():
     def fixture():
         return [dict(event=event,pid=123,runID='host',bundleID='dev.iosvoipsdk.pushentry',sequence=i+1,t_ms=i,
-                     pushID='host-0',mustReport=True,reportEntered=True,callUUID='call') for i,event in enumerate([
+                     pushID='host-0',mustReport=True,reportEntered=True,callUUID='E715ACF2-A7C1-4D74-8BD9-EAFA47693255') for i,event in enumerate([
                      'push.received','report.incoming','report.completed','push.callbackReturned','push.completed'])]
     qualify_journal(fixture(),'sdk-required','host',123)
     controls=[]
@@ -214,6 +221,10 @@ def journal_controls():
         ('completion-before-entry',lambda r:r[4].update(reportEntered=False)),
         ('missing-report',lambda r:r.__delitem__(1)),
         ('wrong-push',lambda r:r[1].update(pushID='other')),
+        ('wrong-settled-call',lambda r:r[2].update(callUUID='9BB7DFDA-423D-4FA8-9202-055C5750FD55')),
+        ('empty-report-call',lambda r:r[1].update(callUUID='')),
+        ('invalid-settled-call',lambda r:r[2].update(callUUID='call')),
+        ('orphan-settlement',lambda r:r.append(dict(r[2],sequence=6,t_ms=5,pushID='other'))),
         ('wrong-process',lambda r:r[2].update(pid=124)),
         ('boolean-pid',lambda r:r[0].update(pid=True)),
         ('float-sequence',lambda r:r[2].update(sequence=3.0)),
