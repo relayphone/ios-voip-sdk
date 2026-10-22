@@ -1,0 +1,43 @@
+{
+  "classification": "measured hosted workflow validation failure and local CI-only correction; no SDK job or native journey ran in the failed workflow",
+  "failedRun": {
+    "id": 39721344208,
+    "url": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39721344208",
+    "headSHA": "d7b57aff76c826458ea80ec8aed7e0bd95d1b221",
+    "conclusion": "failure",
+    "jobs": 0,
+    "workflow": ".github/workflows/sdk-m2.yml",
+    "annotations": [
+      {
+        "line": 59,
+        "column": 26,
+        "error": "Unrecognized named-value: 'runner'",
+        "expression": "runner.temp"
+      },
+      {
+        "line": 60,
+        "column": 23,
+        "error": "Unrecognized named-value: 'runner'",
+        "expression": "runner.temp"
+      }
+    ]
+  },
+  "primaryContextRules": "https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability",
+  "workflowBeforeSHA256": "58e5ab238b3704be5f7e47d3e34bed29e011166ca0196ee7e32def70d4dd8529",
+  "workflowAfterSHA256": "46a6dc5ce03349405594d480ed696e691f2b06a3e7be3c25d28fa01f92734bd2",
+  "localChecks": {
+    "actionlintVersion": "1.7.12",
+    "shellcheck": "disabled; context and workflow validation exercised",
+    "beforeExitCode": 1,
+    "beforeMatchingRunnerContextErrors": 2,
+    "afterExitCode": 0,
+    "actualEnvironmentStep": [
+      "ordinary RUNNER_TEMP",
+      "space-containing RUNNER_TEMP"
+    ]
+  },
+  "nativeAcceptanceUnchanged": {
+    "sourceCommit": "82c1b8ff27cd41f7b45083101d8df18465158092",
+    "scope": "workflow-only correction; no native rerun or broadened native qualification"
+  }
+}
