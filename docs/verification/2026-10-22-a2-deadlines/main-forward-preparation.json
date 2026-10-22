@@ -1,0 +1,309 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured host/compiler integration preparation; current-tree native CI pending",
+  "codeSourceCommit": "cc8914c9d3d40f13d9cd153859d61e8945ed661c",
+  "parents": [
+    "257c0cd9776b56843793ec963f0db2fd5fcf5d2b",
+    "6f58777f3fd16a9dc1378660e49b9011e7653fd6"
+  ],
+  "commonParent": "a406b38414e856f52dac22f64a87baefdf4419b1",
+  "sdkSource": {
+    "sourceCommit": "cc8914c9d3d40f13d9cd153859d61e8945ed661c",
+    "sourceInputsSHA256": "4cbe5147c8be7b9bb9a8045e7c7cbc4a4a8c7e8c625d465d5cccfe39340b5da7"
+  },
+  "pushEntrySource": {
+    "sourceCommit": "cc8914c9d3d40f13d9cd153859d61e8945ed661c",
+    "sourceInputsSHA256": "7b2fa77f8b7865c55f3254ee5ae0fea8c3a8146f7874f1c04bb4c62a69b5bbbf",
+    "inputs": [
+      "Sources/Engine/Resources/ios-27.0.json",
+      "Sources/Engine/RuntimeEngine.swift",
+      "Sources/Interposition/CKInterposition.m",
+      "Sources/Interposition/CKLoader.m",
+      "Sources/Interposition/CKPushDelivery.m",
+      "Sources/Interposition/CKRuntimeSeam.h",
+      "Sources/Interposition/include/CKRuntimeBridge.h",
+      "Sources/VoIPPlatform/VSCompletionOnce.h",
+      "Sources/VoIPPlatform/VSCompletionOnce.m",
+      "Sources/VoIPPlatform/VSProviderCreationMonitor.m",
+      "Sources/VoIPPlatform/VSProviderMonitorInternal.h",
+      "Sources/VoIPPlatform/VSProviderMonitorInternal.m",
+      "Sources/VoIPPlatform/VSPushDelivery.m",
+      "Sources/VoIPPlatform/VSPushRegistryOwner.m",
+      "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h",
+      "Sources/VoIPPlatform/include/VSPushDelivery.h",
+      "Sources/VoIPPlatform/include/VSPushRegistryOwner.h",
+      "Sources/VoIPPlatform/include/VoIPPlatform.h",
+      "Sources/VoIPSDK/ConversationClient.swift",
+      "Sources/VoIPSDK/ConversationHandler.swift",
+      "Sources/VoIPSDK/ConversationModels.swift",
+      "Sources/VoIPSDK/ConversationRecord.swift",
+      "Sources/VoIPSDK/IncomingIntake.swift",
+      "Sources/VoIPSDK/IncomingInvitationGate.swift",
+      "Sources/VoIPSDK/IncomingReportTransport.swift",
+      "Sources/VoIPSDK/PushService.swift",
+      "Sources/VoIPSDK/PushWire.swift",
+      "Sources/VoIPSDK/SimulatorSupport.swift",
+      "Sources/VoIPSDK/VoIPApplication.swift",
+      "Tests/VoIPSDK/IncomingCachePlatform.swift",
+      "Tests/VoIPSDK/IncomingCacheTests.swift",
+      "Tests/VoIPSDK/IncomingDeliveryHost.h",
+      "Tests/VoIPSDK/IncomingDeliveryHost.m.in",
+      "Tests/VoIPSDK/IncomingIntakeTests.swift",
+      "Tests/VoIPSDK/run_incoming_cache.py",
+      "Tests/VoIPSDK/run_incoming_delivery.py",
+      "Tests/VoIPSDK/run_incoming_intake.sh",
+      "VERSION",
+      "discovery/build_push_report_entry.sh",
+      "discovery/check_push_delivery.py",
+      "discovery/check_push_main_stall.py",
+      "discovery/check_push_report_capture.py",
+      "discovery/check_push_report_entry.py",
+      "discovery/probe/Info.plist",
+      "discovery/probe/push_entry_main_stall.h",
+      "discovery/probe/push_entry_main_stall.m",
+      "discovery/probe/push_report_entry.swift",
+      "discovery/push_main_stall_conformance.py",
+      "discovery/run_push_report_entry.py",
+      "discovery/run_scenario.py",
+      "discovery/summarize.py"
+    ]
+  },
+  "incomingMainPaths": [
+    ".github/workflows/sdk-m0.yml",
+    "discovery/build_push_report_entry.sh",
+    "discovery/check_push_main_stall.py",
+    "discovery/check_push_report_capture.py",
+    "discovery/check_push_report_entry.py",
+    "discovery/probe/push_entry_main_stall.h",
+    "discovery/probe/push_entry_main_stall.m",
+    "discovery/probe/push_report_entry.swift",
+    "discovery/push_main_stall_conformance.py",
+    "discovery/run_push_report_entry.py",
+    "discovery/sdk_m0_conformance.py",
+    "docs/progress/2026-10-22-codex-native-push-main-stall.md",
+    "docs/verification/2026-10-22-native-push-main-stall/host-preparation.json",
+    "docs/verification/2026-10-22-native-push-main-stall/merged-host-checks.json",
+    "docs/verification/2026-10-22-native-push-main-stall/oracle-correction.json"
+  ],
+  "incomingMainSHA256": {
+    ".github/workflows/sdk-m0.yml": "9da86fea53b8f36047e5ff82cf089885e45256ad8b05332fa3b79d17b45019a0",
+    "discovery/build_push_report_entry.sh": "61dc91820e66a33065705cd9ac881a9b53e22aaa47194d8af8bbdcdeec344af0",
+    "discovery/check_push_main_stall.py": "a75594ac8f09de59ddb93bd448fd517e7a65cf3d3237fde31012fad155920195",
+    "discovery/check_push_report_capture.py": "a78393f0f0187cf170b04cc7326d57701645f09f3f68e992918f45315d6a1b43",
+    "discovery/check_push_report_entry.py": "d1f5ebe0a52da81519aa94c3497fd4c54c9973547e31430c8ab4aacaf6ba5948",
+    "discovery/probe/push_entry_main_stall.h": "39e81fafe6189afab9e32c4159e477f595986771dacb94052f2a8d04b2bfa3bf",
+    "discovery/probe/push_entry_main_stall.m": "c94c926982b976ba2ed4e072ee59f65c97d1ce22efb37b90d0c2c8ee7b7a8a9e",
+    "discovery/probe/push_report_entry.swift": "9475ff663f9baac2e50ec29e030202173e52a5d739438b0002d52934c3046056",
+    "discovery/push_main_stall_conformance.py": "9b633064ee6c9a4454d17bbb6554a21b871280898f642cfb68b4e964ed2b51ed",
+    "discovery/run_push_report_entry.py": "6a6546943fbc25c5061d7a245cf786f652283388c35180ee126c5c7131623310",
+    "discovery/sdk_m0_conformance.py": "94ad00f855dd42a75a511961ca631fefd3dc2326fd0fb3fbe4c4f68de4387f65",
+    "docs/progress/2026-10-22-codex-native-push-main-stall.md": "44e95385bdcd97e6995b122f0a203361821cc55080cad9a547aa614d47cbdf76",
+    "docs/verification/2026-10-22-native-push-main-stall/host-preparation.json": "e1c8d0b56fbe62c1b55d2c4f5793ec261b92928ec2fcef83b9eb9b82632149b2",
+    "docs/verification/2026-10-22-native-push-main-stall/merged-host-checks.json": "e85aa7570ebf2c3126427bbcf543f15b46562efdf56e14652fc7f304aaba2a82",
+    "docs/verification/2026-10-22-native-push-main-stall/oracle-correction.json": "f225dc4f8789059d6a4dc31e65a40c15ab3f89d51e961fb2efc4d2dc2ab7cd4c"
+  },
+  "sourceChangesAgainstQualifiedA2": [
+    ".github/workflows/sdk-m0.yml",
+    "discovery/build_push_report_entry.sh",
+    "discovery/check_push_main_stall.py",
+    "discovery/check_push_report_capture.py",
+    "discovery/check_push_report_entry.py",
+    "discovery/probe/push_entry_main_stall.h",
+    "discovery/probe/push_entry_main_stall.m",
+    "discovery/probe/push_report_entry.swift",
+    "discovery/push_main_stall_conformance.py",
+    "discovery/run_push_report_entry.py",
+    "discovery/sdk_m0_conformance.py",
+    "docs/progress/2026-10-22-codex-native-push-main-stall.md",
+    "docs/verification/2026-10-22-native-push-main-stall/host-preparation.json",
+    "docs/verification/2026-10-22-native-push-main-stall/merged-host-checks.json",
+    "docs/verification/2026-10-22-native-push-main-stall/oracle-correction.json"
+  ],
+  "productionSourceChangesAgainstQualifiedA2": [],
+  "nativeContractCases": [
+    "guard",
+    "unhandled-accept",
+    "unhandled-fail",
+    "duplicate-wrapper"
+  ],
+  "pushEntryCases": [
+    "sdk-required",
+    "sdk-duplicate",
+    "missing",
+    "deferred",
+    "optional",
+    "sdk-main-stall"
+  ],
+  "checks": [
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m0.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "94a6bc11e45d3c68075f9eeb7e098f6e898068e40d26814040cb5bf2dbad8653"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "c6174fedff6d22c61b8b7c252c4e8b3e3f46a03faaea1d7d555a74166fe86236"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "82f198fc5537ec694b8a113f5328b72dd7601c20e16db02ddc936a5d8f3123b0"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_push_report_entry.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "33b63465a1ee1edee288001f9bfe824ad31be0cc7b13be802dd54da84fd213d4"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_push_main_stall.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "915431db2b9a9f584e0cddfb2182166d3a207c2af01643cf3dadd05edf141528"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_push_report_capture.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "19993fd151f191d2cd5b4555cef589d532a6452bea274221d6bc6ba707982f50"
+    },
+    {
+      "command": [
+        "bash",
+        "-n",
+        "discovery/build_push_report_entry.sh",
+        "discovery/run_sdk_m0.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "actionlint",
+        ".github/workflows/sdk-m0.yml"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "xcrun",
+        "clang",
+        "-fsyntax-only",
+        "-fobjc-arc",
+        "-fblocks",
+        "-fmodules",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-isysroot",
+        "<selected-apple-sdk>",
+        "discovery/probe/push_entry_main_stall.m"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "xcrun",
+        "swiftc",
+        "-typecheck",
+        "-swift-version",
+        "6",
+        "-strict-concurrency=complete",
+        "-warnings-as-errors",
+        "-parse-as-library",
+        "-sdk",
+        "<selected-apple-sdk>",
+        "-target",
+        "arm64-apple-ios17.4-simulator",
+        "-D",
+        "DEBUG",
+        "-import-objc-header",
+        "<capture>/Headers.h",
+        "-module-cache-path",
+        "<capture>/modules",
+        "Sources/Engine/RuntimeEngine.swift",
+        "Sources/VoIPSDK/ConversationClient.swift",
+        "Sources/VoIPSDK/ConversationHandler.swift",
+        "Sources/VoIPSDK/ConversationModels.swift",
+        "Sources/VoIPSDK/ConversationRecord.swift",
+        "Sources/VoIPSDK/IncomingIntake.swift",
+        "Sources/VoIPSDK/IncomingInvitationGate.swift",
+        "Sources/VoIPSDK/IncomingReportTransport.swift",
+        "Sources/VoIPSDK/PushService.swift",
+        "Sources/VoIPSDK/PushWire.swift",
+        "Sources/VoIPSDK/SimulatorSupport.swift",
+        "Sources/VoIPSDK/VoIPApplication.swift",
+        "discovery/probe/push_report_entry.swift"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "limits": [
+    "No local iOS app, simulator, physical-device or live CLI execution; compiler checks perform no link or launch.",
+    "Qualified257 SDK and partial runtime CI remain historical source-bound results; they do not qualify this new harness.",
+    "No production SDK or A2 deadline/generic/native-contract bytes changed during the main forward merge.",
+    "The native6 fixture and its oracle are inherited from main; A2 remains the only acceptance target of PR25.",
+    "The sixth case directly invokes the native callback body while main is stalled; it is not a PushKit delivery, APNs or cold-launch measurement.",
+    "Fresh current-source SDK and runtime CI qualification is required; no retry, cancellation or merge to main was performed."
+  ],
+  "a2ChangedPathsBytePreservedAtMergeCommit": [
+    "Expo/M1-API.md",
+    "Expo/src/types.ts",
+    "Sources/Engine/Resources/ios-27.0.json",
+    "Sources/Engine/RuntimeEngine.swift",
+    "Sources/VoIPSDK/ConversationHandler.swift",
+    "Sources/VoIPSDK/ConversationModels.swift",
+    "Tests/VoIPSDK/CoreTests.swift",
+    "Tests/VoIPSDK/DeadlineTests.swift",
+    "Tests/VoIPSDK/run.sh",
+    "Tests/VoIPSDK/run_deadlines.sh",
+    "discovery/check_lck_deadlines.py",
+    "discovery/check_sdk_m1.py",
+    "discovery/check_sdk_m1_contracts.py",
+    "discovery/probe/sdk_m1_contracts.swift",
+    "discovery/run.sh",
+    "discovery/run_sdk_m0.sh",
+    "discovery/sdk_m1_conformance.py",
+    "discovery/sdk_m1_contracts_conformance.py",
+    "docs/progress/2026-10-22-codex-a2-deadlines.md",
+    "docs/simulator-runtime.md",
+    "docs/verification/2026-10-22-a2-deadlines/ci-dfc81fc-pre-app-failure.json",
+    "docs/verification/2026-10-22-a2-deadlines/generic-margin-followup.json",
+    "docs/verification/2026-10-22-a2-deadlines/integrated-preparation.json",
+    "docs/verification/2026-10-22-a2-deadlines/original-ci-failure.json",
+    "docs/verification/2026-10-22-a2-deadlines/receipt.json",
+    "docs/verification/2026-10-22-a2-deadlines/stack-followup.json",
+    "docs/verification/2026-10-22-a2-deadlines/zero-tolerance-followup.json",
+    "docs/verification/2026-10-22-a2-deadlines/zero-tolerance-pre-review.json"
+  ]
+}
