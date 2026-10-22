@@ -352,7 +352,9 @@ private final class SDKM1ContractsProbe {
     }))
     ContractTrace.log("contract.duplicateEndRequested", ["conversationID": first.uuidString])
     CKSimEmit("contract.duplicateEndBoundary", ["stage": "requested", "callUUID": first.uuidString])
-    try await client.endConversation(first)
+    // Exercise the local report's real End request using the same native action
+    // oracle; the original A1 qualification used endConversation at this seam.
+    try await client.reportConversation(first, report: .ended(.local))
     // LCK command completion acknowledges the request and may precede perform.
     // Observe actual handler/terminal cleanup separately before completing proof.
     CKSimEmit("contract.duplicateEndBoundary", ["stage": "command-returned", "callUUID": first.uuidString])
@@ -438,7 +440,7 @@ private final class SDKM1ContractsProbe {
     // transport connection from LCK's joined action state.
     ContractTrace.log("contract.backendConnectedRequested", ["conversationID": id.uuidString])
     try await client.reportConversation(id, report: .connected)
-    ContractTrace.log("contract.backendConnected", ["conversationID": id.uuidString])
+    ContractTrace.log("contract.backendConnected", ["accepted": true, "conversationID": id.uuidString])
     let connected = await wait(seconds: 3) {
       client.snapshots.first(where: { $0.id == id }).map {
         $0.status == .connected && $0.connectedAt != nil

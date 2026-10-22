@@ -90,6 +90,7 @@ jobs:
           python3 Tests/VoIPSDK/run_incoming_delivery.py | tee "$SDK_M0_BUILD_LOGS/push-main-stall-controls.json"
           python3 Tests/VoIPSDK/run_incoming_cache.py | tee "$SDK_M0_BUILD_LOGS/incoming-cache-controls.json"
           bash Tests/VoIPSDK/run_incoming_intake.sh | tee "$SDK_M0_BUILD_LOGS/incoming-intake-controls.log"
+          bash Tests/VoIPSDK/run_report_contracts.sh | tee "$SDK_M0_BUILD_LOGS/report-contract-controls.log"
           python3 discovery/check_push_report_capture.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/push-entry-capture-controls.log"
           python3 discovery/check_device_release.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/device-release-controls.log"
           python3 discovery/check_lck_provider_policy.py | tee "$SDK_M0_BUILD_LOGS/lck-policy-controls.json"

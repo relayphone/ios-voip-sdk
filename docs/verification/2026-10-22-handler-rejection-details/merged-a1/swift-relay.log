@@ -1,0 +1,24 @@
+{
+  "checks": [
+    "production-model-json-and-millisecond-dates",
+    "all-handler-kinds-success-rejection-and-duplicate-settlement",
+    "native-cancellation-and-pre-cancelled-signal",
+    "handler-removal-replacement-and-old-generation-settlement",
+    "cancellation-during-action-publication",
+    "overlapping-lifetimes-reload-and-stale-owner",
+    "destroyed-bridge-observers-continuations-and-release",
+    "invalid-model-encoding-rejects-handler-delivery",
+    "production-state-event-and-null-token-encoding"
+  ],
+  "success": true,
+  "hostOnly": true,
+  "sourceSHA256": {
+    "Sources/VoIPSDK/ConversationModels.swift": "ff4be06d66d1efacd5060c08c9ca7507eb7b35d09107573e43f44bba4a4c1a2b",
+    "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
+    "Sources/VoIPSDK/PushService.swift": "f7a731d8c91ee2a4572dd37d2d96a36c258187fc4a38ba74143c7c9b07690e4c",
+    "Expo/apple/ConversationBridge.swift": "516f95b045765f88423e95cfa427ebb5baf16e99c325166dab93101627921fe6",
+    "Tests/ExpoBridge/OwnerDoubles.swift": "a82aaa5cd5dcbe09594aecdf6c261ce5c956f7555666ec637a720029afefc09b",
+    "Tests/ExpoBridge/BridgeTests.swift": "2a36d57faabdc2193f31350aae591c18e01bb3913a01e90cf3cc54515bb390bb",
+    "discovery/check_expo_bridge.py": "a668ba87be9db4910c2f37321b338b6850e939abed495b34533b46eddeb7abd5"
+  }
+}

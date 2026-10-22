@@ -1,0 +1,19 @@
+✔ native command rejection guard retains only declared codes (0.419667ms)
+✔ subscribes before hydration; stale reads and equal revisions preserve the latest stable snapshot (0.274416ms)
+✔ snapshots are independent deeply frozen copies, including opaque metadata (0.199416ms)
+✔ nullable token invalidation beats stale hydration and emits one public event (2.1295ms)
+✔ hydration failure is observable; a newer native event recovers the snapshot (0.341125ms)
+✔ handler resolution/rejection settles once; missing optional actions default to accept (0.510291ms)
+✔ native cancellation aborts the signal and prevents late fulfilment (0.285416ms)
+✔ replacement/removal abort prior work, ignores old generations and permits native redelivery (0.412542ms)
+✔ cancellation before the scheduled callback never invokes app code (0.192541ms)
+✔ abort listeners can supersede replacement/removal without a stale native attachment (0.452791ms)
+✔ non-state signals are routed by name and unsubscribe removes the listener (0.098708ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 417.271459

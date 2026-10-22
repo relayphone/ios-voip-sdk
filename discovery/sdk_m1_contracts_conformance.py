@@ -211,17 +211,23 @@ def accept_contract(rows, engine, source_root):
     snapshots = [r for r in rows if r['event'] == 'contract.snapshot']
     require(snapshots and all(type(r.get('revision')) is int for r in snapshots) and
             all(a['revision'] < b['revision'] for a, b in zip(snapshots, snapshots[1:])), 'invalid snapshot revision')
-    connected = []
-    signaling = []
-    native_pending = []
     joined = one(rows, 'contract.joinSettled')
     backend_requested = one(rows, 'contract.backendConnectedRequested')
     backend = one(rows, 'contract.backendConnected')
-    require(joined.get('joined') is True and
-            all(r.get('conversationID') == call for r in (joined, backend_requested, backend)) and
+    observation = one(rows, 'contract.observation')
+    require(joined.get('joined') is True and backend.get('accepted') is True and
+            all(row.get('conversationID') == call for row in (joined, backend_requested, backend, observation)) and
             deadline - 1 <= joined['wallTimeMS'] < platform_deadline and
-            rows.index(pending) < rows.index(joined) < rows.index(backend_requested) < rows.index(backend),
+            rows.index(pending) < rows.index(joined) < rows.index(backend_requested) < rows.index(backend) < rows.index(observation),
             'signaling must settle before native expiry and precede the explicit backend report')
+    before_joined = [row for row in snapshots if rows.index(row) < rows.index(joined) and row['conversations']]
+    require(before_joined and before_joined[-1]['conversations'][0].get('status') == 'connecting' and
+            before_joined[-1]['conversations'][0].get('pending') is None and
+            deadline - 1 <= before_joined[-1]['wallTimeMS'] <= joined['wallTimeMS'],
+            'no deadline-bound signaling settlement before backend connection')
+    connected = []
+    signaling = []
+    native_pending = []
     for row in snapshots:
         calls = row.get('conversations')
         require(isinstance(calls, list) and len(calls) <= 1, 'duplicate conversation projection')
@@ -243,9 +249,9 @@ def accept_contract(rows, engine, source_root):
                 connected.append(row)
     require(native_pending and native_pending[0]['wallTimeMS'] < deadline and signaling and connected and
             deadline - 1 <= signaling[-1]['wallTimeMS'] < platform_deadline and
-            rows.index(signaling[-1]) <= rows.index(joined) < rows.index(connected[0]),
+            rows.index(signaling[-1]) <= rows.index(joined) < rows.index(connected[0]) < rows.index(observation),
             'no deadline-bound signaling settlement before backend connection')
-    require(one(rows, 'contract.observation').get('connected') is True and
+    require(observation.get('connected') is True and
             one(rows, 'contract.joinResult').get('accepted') is True, 'join never became connected')
     end_request = one(rows, 'contract.endReportRequested')
     ended = one(rows, 'contract.reportEnded')

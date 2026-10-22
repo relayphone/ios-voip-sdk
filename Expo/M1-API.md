@@ -25,15 +25,18 @@ Incoming metadata stays in `payload`; outgoing metadata is passed to native.
 Snapshot arrays and their nested bridge JSON are frozen copies. Applications
 should treat state as read-only and use commands/reports to change it.
 
-Join/start fulfillment acknowledges signaling. An incoming joined call remains
-`connecting`; outgoing may remain `dialing` until a transport `connecting` report.
-Neither becomes `connected` or gets `connectedAt` until the app's transport calls
-`reportConversation(id, { type: 'connected' })`. An `ended` report with reason
-`local` awaits the same system end command and handler as `endConversation`; its
-promise rejects if that command fails. LCK has no local ended-report reason.
-Remote `callEnded` wire fallback remains unchanged, including a peer's `local`
-reason being remote on this device. Native `receiveCallEnded` refuses `.local`
-without consuming its event ID; local operations use the public command/report.
+Fulfilling `join` or `start` confirms signaling acceptance. Incoming calls remain
+`connecting` after the system joins; outgoing calls can remain `dialing` until a
+`connecting` report. Neither path publishes `connected` or `connectedAt` until the
+backend calls `reportConversation(id, { type: 'connected' })`. System hold and
+termination states still take precedence over that transport progress.
+
+An `ended` report with reason `local` submits the same ordinary End command as
+`endConversation`. Its await confirms request acceptance; handler settlement and
+terminal state may arrive afterward. A rejected request rejects that await. LCK
+has no local ended-report reason. Remote `callEnded` wire fallback remains
+unchanged, including a peer's `local` reason being remote on this device. Native
+`receiveCallEnded` refuses `.local` without consuming its event ID.
 
 `setConversationHandler(null)` removes the handler. Replacing or removing it
 aborts the old handler's signals with `handlerReplaced` and ignores its late

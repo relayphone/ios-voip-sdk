@@ -1,0 +1,183 @@
+import Foundation
+
+/// The production client/coordinator/intake run against a modeled framework
+/// boundary. Request acceptance, handler completion and terminal state are
+/// deliberately separate; this does not measure LCK scheduling or device use.
+@MainActor private final class ReportControls {
+  var endCalls: [UUID] = []
+  var held: [UUID: CheckedContinuation<Void, any Error>] = [:]
+  var hold: Set<UUID> = []
+  var reject: Set<UUID> = []
+  var endedReasons: [UUID: ConversationEndedReason] = [:]
+
+  func run() async throws {
+    let client = try ConversationClient.forApplication(configuration: .init())
+    client.finishLaunch()
+    let manager = ConversationManager.latest!
+    manager.waitForActionSettlement = false
+    let observer = client.observeState { update in
+      for call in update.conversations {
+        if let reason = call.ended?.reason { self.endedReasons[call.id] = reason }
+      }
+    }
+    defer { client.removeStateObserver(observer) }
+    client.setConversationHandler(.init(join: { _, _ in }, start: { _, _ in }, end: { call, context in
+      precondition(context.origin == .app)
+      self.endCalls.append(call.id)
+      if self.reject.contains(call.id) { throw PlatformFailure.rejected }
+      if self.hold.contains(call.id) {
+        try await withCheckedThrowingContinuation { self.held[call.id] = $0 }
+      }
+    }))
+    func payload(_ value: String) -> IncomingCallPayload {
+      .init(eventId: "report-event-" + value, serverCallId: "report-server-" + value,
+        caller: .init(id: "report-fixture"))
+    }
+    func wait(_ condition: @escaping @MainActor () -> Bool) async throws {
+      let limit = ContinuousClock.now + .seconds(2)
+      while !condition() {
+        precondition(ContinuousClock.now < limit, "Report contract observation timed out")
+        try await Task.sleep(for: .milliseconds(1))
+      }
+    }
+    func snapshot(_ id: UUID) -> ConversationSnapshot? { client.snapshots.first { $0.id == id } }
+    func remove(_ id: UUID) {
+      manager.conversations.removeAll { $0.uuid == id }
+      client.incomingIntakeDidChange()
+    }
+
+    let localPayload = payload("local")
+    let local = try await client.reportIncomingConversation(localPayload)
+    hold.insert(local)
+    manager.deferActionDelivery = true
+    let reportsBefore = manager.reports.count
+    try await client.reportConversation(local, report: .ended(.local))
+    let action = manager.appActions.last!
+    precondition(action is EndConversationAction && action.conversationUUID == local)
+    precondition(endCalls.isEmpty && snapshot(local)?.ended == nil && manager.reports.count == reportsBefore,
+      "Accepted local request cannot invent fulfillment, terminal metadata or a remote end")
+    manager.deferActionDelivery = false
+    manager.deliver(action)
+    try await wait { self.held[local] != nil }
+    precondition(snapshot(local)?.pending?.kind == .end && snapshot(local)?.ended == nil)
+    hold.remove(local); held.removeValue(forKey: local)?.resume()
+    try await wait { action.state == .complete && self.endedReasons[local] == .local }
+    precondition(manager.reports.count == reportsBefore && endCalls == [local])
+
+    let requestFailure = try await client.reportIncomingConversation(payload("request-failure"))
+    manager.performError = PlatformFailure.rejected
+    do {
+      try await client.reportConversation(requestFailure, report: .ended(.local))
+      preconditionFailure("A rejected command request must reject the report await")
+    } catch PlatformFailure.rejected {}
+    precondition(snapshot(requestFailure)?.ended == nil && manager.reports.count == reportsBefore)
+    let handlerFailure = try await client.reportIncomingConversation(payload("handler-failure"))
+    reject.insert(handlerFailure)
+    try await client.reportConversation(handlerFailure, report: .ended(.local))
+    let failedAction = manager.appActions.last!
+    try await wait { failedAction.state == .failed }
+    precondition(snapshot(handlerFailure)?.ended == nil && manager.reports.count == reportsBefore,
+      "A later handler rejection cannot fabricate terminal metadata after request acceptance")
+    do {
+      try await client.reportConversation(UUID(), report: .ended(.local))
+      preconditionFailure("Unknown local request must reject")
+    } catch ConversationClientError.unknownConversation {}
+
+    let reasons: [(ConversationEndedReason, Conversation.EndedReason)] = [
+      (.remoteEnded, .remoteEnded), (.failed, .failed), (.unanswered, .unanswered),
+      (.answeredElsewhere, .joinedElsewhere), (.declinedElsewhere, .declinedElsewhere)]
+    for (index, pair) in reasons.enumerated() {
+      let id = try await client.reportIncomingConversation(payload("reason-\(index)"))
+      try await client.reportConversation(id, report: .ended(pair.0))
+      guard case .conversationEnded(_, let actual) = manager.reports.last?.1 else {
+        preconditionFailure("Transport termination must use LCK report")
+      }
+      precondition(actual == pair.1 && manager.reports.last?.0 == id)
+    }
+    precondition(PushWire.decodeCallEnded(["eventId": "wire-local", "serverCallId": "wire-server", "reason": "local"])?.reason == .remoteEnded,
+      "The legacy wire fallback remains remote from the receiver's perspective")
+    let wirePayload = payload("wire")
+    let wireID = try await client.reportIncomingConversation(wirePayload)
+    precondition(!client.receiveCallEnded(.init(eventId: "typed-end", serverCallId: wirePayload.serverCallId, reason: .local)))
+    precondition(client.receiveCallEnded(.init(eventId: "typed-end", serverCallId: wirePayload.serverCallId, reason: .declinedElsewhere)),
+      "Rejecting typed local cannot poison event dedup")
+    guard case .conversationEnded(_, .declinedElsewhere) = manager.reports.last?.1 else { preconditionFailure() }
+    precondition(manager.reports.last?.0 == wireID)
+
+    // A new actual object for a retained, locally ended UUID needs a real End
+    // request too. No fake local native enum or remote report is available.
+    remove(local)
+    await Task.yield()
+    let attemptsBefore = manager.performAttempts
+    let endReportsBefore = manager.reports.count
+    hold.insert(local)
+    manager.deferEndedState = true
+    let repeated = try await client.reportIncomingConversation(localPayload, source: .pushKit)
+    precondition(repeated == local)
+    try await wait { self.held[local] != nil }
+    manager.incomingErrors = [NSError(domain: "com.apple.CallKit.error.incomingcall", code: 2)]
+    _ = try await client.reportIncomingConversation(localPayload, source: .pushKit)
+    for _ in 0..<3 { await Task.yield() }
+    precondition(manager.performAttempts == attemptsBefore + 1,
+      "A same-object required duplicate cannot submit another End while the first is pending")
+    hold.remove(local); held.removeValue(forKey: local)?.resume()
+    try await wait { manager.appActions.last?.state == .complete }
+    precondition(endCalls.filter { $0 == local }.count == 2 && manager.reports.count == endReportsBefore)
+    manager.incomingErrors = [NSError(domain: "com.apple.CallKit.error.incomingcall", code: 2)]
+    _ = try await client.reportIncomingConversation(localPayload, source: .pushKit)
+    for _ in 0..<3 { await Task.yield() }
+    precondition(manager.performAttempts == attemptsBefore + 1,
+      "Accepted End with delayed terminal membership cannot re-end the same object after its local revision changes")
+    manager.deferEndedState = false
+
+    // Failure is bounded to one request; it neither relabels history nor retries.
+    remove(local)
+    await Task.yield()
+    manager.performError = PlatformFailure.rejected
+    let failedAttempts = manager.performAttempts
+    _ = try await client.reportIncomingConversation(localPayload, source: .pushKit)
+    try await wait { manager.performAttempts == failedAttempts + 1 }
+    for _ in 0..<3 { client.incomingIntakeDidChange(); await Task.yield() }
+    precondition(manager.performAttempts == failedAttempts + 1 && snapshot(local)?.ended?.reason == .local &&
+      manager.conversations.first(where: { $0.uuid == local })?.state == .idle && manager.reports.count == endReportsBefore)
+
+    manager.incomingErrors = [NSError(domain: "com.apple.CallKit.error.incomingcall", code: 2)]
+    _ = try await client.reportIncomingConversation(localPayload, source: .pushKit)
+    for _ in 0..<3 { await Task.yield() }
+    precondition(manager.performAttempts == failedAttempts + 1,
+      "Required duplicate report cannot retry the same failed local terminal request")
+
+    // A queued cleanup must not target an object that replaced its captured one.
+    let stale = try await client.reportIncomingConversation(payload("stale"))
+    let generation = client.incomingIntake.projection(stale)!.generation
+    client.incomingIntake.terminate(stale, generation: generation, reason: .local)
+    let staleAttempts = manager.performAttempts
+    client.incomingIntakeDidChange()
+    let replacement = Conversation(stale, state: .idle)
+    manager.conversations.removeAll { $0.uuid == stale }; manager.conversations.append(replacement)
+    for _ in 0..<3 { await Task.yield() }
+    precondition(manager.performAttempts == staleAttempts && replacement.state == .idle)
+
+    let revised = try await client.reportIncomingConversation(payload("revised"))
+    let revisedGeneration = client.incomingIntake.projection(revised)!.generation
+    client.incomingIntake.terminate(revised, generation: revisedGeneration, reason: .local)
+    let revisedAttempts = manager.performAttempts
+    client.incomingIntakeDidChange()
+    client.incomingIntake.terminate(revised, generation: revisedGeneration, reason: .failed, requiresReport: false)
+    for _ in 0..<3 { await Task.yield() }
+    precondition(manager.performAttempts == revisedAttempts, "A newer terminal revision must invalidate queued local cleanup")
+
+    let reset = try await client.reportIncomingConversation(payload("reset"))
+    client.incomingIntake.terminate(reset, generation: client.incomingIntake.projection(reset)!.generation, reason: .local)
+    let resetAttempts = manager.performAttempts
+    client.incomingIntakeDidChange()
+    client.incomingIntake.reset()
+    for _ in 0..<3 { await Task.yield() }
+    precondition(manager.performAttempts == resetAttempts, "Reset invalidation must stop queued old-generation cleanup")
+    print("{\"success\":true,\"groups\":13,\"actualClientAndCoordinatorAndIntake\":true,\"nativeFrameworkMeasured\":false}")
+  }
+}
+
+@main struct ReportContractTests {
+  @MainActor static func main() async throws { try await ReportControls().run() }
+}

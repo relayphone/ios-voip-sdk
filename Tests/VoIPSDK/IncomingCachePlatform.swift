@@ -129,6 +129,11 @@ public protocol ConversationManagerDelegate: AnyObject {
   @ObservationIgnored public var conversations: [Conversation] = []
   var nextTimeout: TimeInterval?
   var appActions: [ConversationAction] = []
+  var performAttempts = 0
+  var performError: (any Error)?
+  var deferActionDelivery = false
+  var waitForActionSettlement = true
+  var deferEndedState = false
   var reports: [(UUID, Conversation.Event)] = []
   var incomingErrors: [any Error] = []
   var reportedIncoming: [UUID] = []
@@ -137,6 +142,8 @@ public protocol ConversationManagerDelegate: AnyObject {
   public init(configuration: Configuration) { Self.latest = self }
   public func perform(_ actions: [ConversationAction]) async throws {
     precondition(actions.count == 1)
+    performAttempts += 1
+    if let error = performError { performError = nil; throw error }
     let action = actions[0]
     if let timeout = nextTimeout { action.timeoutDate = Date().addingTimeInterval(timeout); nextTimeout = nil }
     if action is StartConversationAction { conversations.append(Conversation(action.conversationUUID, state: .idle)) }
@@ -145,12 +152,12 @@ public protocol ConversationManagerDelegate: AnyObject {
             let conversation = self.conversations.first(where: { $0.uuid == action.conversationUUID }) else { return }
       // Genuine reference Start fulfillment can remain idle; Join becomes joined.
       if action is JoinConversationAction { conversation.state = .joined }
-      if action is EndConversationAction { conversation.state = .left }
+      if action is EndConversationAction && !self.deferEndedState { conversation.state = .left }
       self.delegate?.conversationManager(self, conversationChanged: conversation)
     }
     appActions.append(action)
-    deliver(action)
-    try await action.wait()
+    if !deferActionDelivery { deliver(action) }
+    if waitForActionSettlement { try await action.wait() }
   }
   func deliver(_ action: ConversationAction) {
     action.running()

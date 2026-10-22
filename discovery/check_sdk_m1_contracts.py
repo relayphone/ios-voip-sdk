@@ -96,7 +96,7 @@ def fixture(build, capture):
                 add('contract.joinSettled', joined=True, conversationID=CALL)
                 add('contract.backendConnectedRequested', conversationID=CALL)
                 snapshot('connected', connected=True)
-                add('contract.backendConnected', conversationID=CALL)
+                add('contract.backendConnected', accepted=True, conversationID=CALL)
                 add('contract.observation', connected=True, conversationID=CALL)
                 add('contract.endReportRequested', conversationID=CALL)
                 snapshot()
@@ -327,14 +327,39 @@ class Controls(unittest.TestCase):
         self.check('unhandled-accept', lambda rows, engine: next(r for r in engine if r['event'] == 'call.changed').update(connected=False))
         self.check('unhandled-accept', lambda rows, engine: next(r for r in rows if r['event'] == 'contract.snapshot' and r['conversations'] and r['conversations'][0]['status'] == 'connected')['conversations'][0].update(hasConnectedAt=False))
 
-    def test_signaling_does_not_fabricate_connected(self):
-        self.check('unhandled-accept', lambda rows, engine:
-            next(r for r in rows if r['event'] == 'contract.snapshot' and r['conversations'] and
-                 r['conversations'][0]['status'] == 'connecting')['conversations'][0].update(status='connected'))
-        self.check('unhandled-accept', lambda rows, engine:
-            next(r for r in rows if r['event'] == 'contract.backendConnectedRequested').update(conversationID='other'))
+    def test_backend_connection_projection(self):
+        for field, value in (('status', 'connected'), ('hasConnectedAt', True), ('pending', dict(kind='join'))):
+            with self.subTest(field=field):
+                self.check('unhandled-accept', lambda rows, engine, field=field, value=value:
+                    next(r for r in rows if r['event'] == 'contract.snapshot' and r['conversations'] and
+                         r['conversations'][0]['status'] == 'connecting')['conversations'][0].update({field: value}))
+
+    def test_backend_report_marker_identity_and_order(self):
+        for event in ('contract.joinSettled', 'contract.backendConnectedRequested', 'contract.backendConnected'):
+            with self.subTest(event=event):
+                self.check('unhandled-accept', lambda rows, engine, event=event:
+                    next(r for r in rows if r['event'] == event).update(conversationID='other-call'))
+                self.check('unhandled-accept', lambda rows, engine, event=event:
+                    next(r for r in rows if r['event'] == event).pop('conversationID'))
+                self.check('unhandled-accept', lambda rows, engine, event=event:
+                    rows.remove(next(r for r in rows if r['event'] == event)))
         self.check('unhandled-accept', lambda rows, engine:
             next(r for r in rows if r['event'] == 'contract.joinSettled').update(joined=False))
+        self.check('unhandled-accept', lambda rows, engine:
+            next(r for r in rows if r['event'] == 'contract.backendConnected').update(accepted=False))
+        def move(rows, engine, event, before):
+            marker = next(r for r in rows if r['event'] == event)
+            rows.remove(marker)
+            target = next(r for r in rows if r['event'] == before)
+            marker.update(t_ms=target['t_ms'], wallTimeMS=target['wallTimeMS'])
+            rows.insert(rows.index(target), marker)
+            reindex(rows)
+        for event, before in (('contract.backendConnectedRequested', 'contract.joinSettled'),
+                              ('contract.backendConnectedRequested', 'contract.backendConnected'),
+                              ('contract.backendConnected', 'contract.backendConnectedRequested')):
+            with self.subTest(event=event, before=before):
+                self.check('unhandled-accept', lambda rows, engine, event=event, before=before:
+                    move(rows, engine, event, before))
 
     def test_native_early_late_timing(self):
         def timing(rows, engine, settlement, connection):

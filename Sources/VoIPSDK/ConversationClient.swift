@@ -379,6 +379,8 @@ public final class ConversationClient: NSObject {
     return accepted
   }
 
+  /// Local termination submits the ordinary End action. The await confirms request
+  /// acceptance; the handler and terminal snapshot may arrive afterward.
   public func reportConversation(_ id: UUID, report: ConversationReport) async throws {
     if case .ended(.local) = report {
       try await endConversation(id)

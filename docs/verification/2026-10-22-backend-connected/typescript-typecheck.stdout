@@ -1,0 +1,7 @@
+
+> ios-voip-sdk@0.0.0 typecheck
+> tsc --noEmit --project tsconfig.json && npm run typecheck --workspace ios-voip-sdk-example
+
+
+> ios-voip-sdk-example@0.0.0 typecheck
+> tsc --noEmit --project tsconfig.json

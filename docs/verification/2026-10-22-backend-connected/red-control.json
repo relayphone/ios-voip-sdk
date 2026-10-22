@@ -1,0 +1,11 @@
+{
+  "classification": "measured whole-client regression with modeled LCK boundary; not genuine framework or device behavior",
+  "exitCode": 133,
+  "failure": "old incoming joined projection published connected before the backend report",
+  "sourceSHA256": {
+    "Sources/VoIPSDK/ConversationClient.swift": "f480c5d86741ba0e1e34b499c87d9148c7d5874452c7ab8c59c221e3194b2e5c",
+    "Tests/VoIPSDK/ConnectionContractTests.swift": "0520bf575e94acf612ccb3ed45084ce21c7b78ddd4e358a175ec8213760f7f91",
+    "Tests/VoIPSDK/run_report_contracts.sh": "e9e31d14c4862627830da552004234c249c4472517588ce57019708833d8443e"
+  },
+  "stderrSHA256": "9d0604677f1e92b0a333ce06faef062245761e5d668d2577c661e5ffd8bb9ebe"
+}

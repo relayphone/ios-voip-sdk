@@ -99,6 +99,8 @@ def main():
 @MainActor public final class ConversationClient {
 ''' + configuration + selection + '''
   static var creations = 0
+  static var tracks = 0
+  static var onTrack: (@MainActor () -> Void)?
   static var emittedContextsForHost: [ConversationEventContext] = []
   private let configuration: Configuration
   private let mediaAdapter: any MediaAdapter
@@ -110,7 +112,9 @@ def main():
     Self.creations += 1 // Explicit facade for the LCK manager construction.
     eventObservers[UUID()] = { Self.emittedContextsForHost.append($0) }
   }
-  private func trackManager() {} // Explicit facade for LCK observation.
+  private func trackManager() { // Explicit facade for LCK observation.
+    Self.tracks += 1; Self.onTrack?()
+  }
   var selectedAdapterForHost: any MediaAdapter { mediaAdapter }
   func observeForHost(_ observer: @escaping @MainActor (ConversationEventContext) -> Void) {
     eventObservers[UUID()] = observer
@@ -133,29 +137,50 @@ def main():
 @MainActor public func managerCreations() -> Int { ConversationClient.creations }
 @MainActor public func reentrantStartProbe() -> Bool {
   do {
+    // Invalid first configurations fail before the actual client factory may
+    // construct its manager. The same linked SDK retains its process claim.
+    for (groups, members) in [(0, 2), (2, 0)] {
+      do {
+        _ = try VoIPApplication.start(configuration: .init(client: .init(
+          maximumConversationGroups: groups, maximumConversationsPerGroup: members)))
+        return false
+      } catch {
+        guard (error as? ConversationClientError) == .invalidConfiguration,
+              ConversationClient.creations == 0, ConversationClient.tracks == 0,
+              VoIPApplication.current == nil else { return false }
+      }
+    }
     let adapter = RecordingMediaAdapter()
     let policy = try AudioActivationPolicy(activationTimeout: 12, recoveryTimeout: 6)
-    let configuration = VoIPApplication.Configuration(client: .init(providerOwnershipMonitoring: true))
-    var reentered = false
-    adapter.onAuthorization = { active in
-      guard !active, let published = VoIPApplication.current else { return }
+    let configuration = VoIPApplication.Configuration(client: .init(supportsVideo: false, providerOwnershipMonitoring: true))
+    @MainActor func seesPublishedOwner() -> Bool {
+      guard let published = VoIPApplication.current else { return false }
       do {
         let repeated = try VoIPApplication.start(configuration: configuration, mediaAdapter: adapter, audioPolicy: policy)
         let publishedClient = try ConversationClient.forApplication(configuration: configuration.client,
           mediaAdapter: adapter, audioPolicy: policy)
-        reentered = repeated === published && repeated.client === publishedClient &&
+        return repeated === published && repeated.client === publishedClient &&
           repeated.client === published.client && ConversationClient.creations == 1
-      } catch {}
+      } catch { return false }
+    }
+    var reentered = false
+    var observationReentered = false
+    ConversationClient.onTrack = { observationReentered = seesPublishedOwner() }
+    adapter.onAuthorization = { active in
+      guard !active else { return }
+      reentered = seesPublishedOwner()
     }
     let application = try VoIPApplication.start(configuration: configuration, mediaAdapter: adapter, audioPolicy: policy)
-    guard reentered, application === VoIPApplication.current,
+    guard reentered, observationReentered, application === VoIPApplication.current,
+          ConversationClient.creations == 1, ConversationClient.tracks == 1,
           application.client.selectedAdapterForHost === adapter,
           adapter.authorizations == [false], ProviderCreationMonitor.installs == 1,
           ProviderCreationMonitor.coverageDiagnostics == 1,
           ConversationClient.emittedContextsForHost.isEmpty else { return false }
     guard try VoIPApplication.start(configuration: configuration, mediaAdapter: adapter, audioPolicy: policy) === application,
           try VoIPApplication.start(configuration: configuration, audioPolicy: policy) === application,
-          application.client.selectedAdapterForHost === adapter, adapter.authorizations == [false] else { return false }
+          application.client.selectedAdapterForHost === adapter, adapter.authorizations == [false],
+          ConversationClient.tracks == 1 else { return false }
     @MainActor func refuses(_ start: () throws -> VoIPApplication) -> Bool {
       do { _ = try start(); return false }
       catch { return (error as? ConversationClientError) == .alreadyConfigured }
@@ -190,7 +215,7 @@ def main():
     conflict()
     return contexts == [.init(type: .providerOwnershipLost)] &&
       ConversationClient.emittedContextsForHost == contexts && contexts[0].conversationID == nil &&
-      ConversationClient.creations == 1 && adapter.authorizations == [false]
+      ConversationClient.creations == 1 && ConversationClient.tracks == 1 && adapter.authorizations == [false]
   } catch { return false }
 }
 public func claimOnly() -> Bool {
@@ -198,14 +223,12 @@ public func claimOnly() -> Bool {
 }
 ''')
         gate = ROOT / 'Sources/VoIPPlatform/VSProcessSDKOwnership.m'
-        objects = []
+        assert gate.is_file(), 'the actual Objective-C process claim must exist'
         header = out / 'Ownership.h'
-        header.write_text('#import <Foundation/Foundation.h>\n')
-        if gate.exists():
-            header.write_text('#import "' + str(ROOT / 'Sources/VoIPPlatform/include/VSProcessSDKOwnership.h') + '"\n')
-            obj = out / 'gate.o'
-            run(['clang', '-fobjc-arc', '-fmodules', '-c', str(gate), '-o', str(obj)])
-            objects.append(str(obj))
+        header.write_text('#import "' + str(ROOT / 'Sources/VoIPPlatform/include/VSProcessSDKOwnership.h') + '"\n')
+        obj = out / 'gate.o'
+        run(['clang', '-fobjc-arc', '-fmodules', '-c', str(gate), '-o', str(obj)])
+        objects = [str(obj)]
         models = (ROOT / 'Sources/VoIPSDK/ConversationModels.swift').read_text()
         selected_models = '\n'.join(re.findall(r'public enum (?:UnhandledActionPolicy|ConversationClientError)[^{]+\{.*?\}', models, re.S))
         assert selected_models.count('public enum ') == 2
@@ -216,7 +239,7 @@ public func claimOnly() -> Bool {
         combined = out / 'SDK.swift'
         combined.write_text('import Foundation\n' + selected_models + '\n' + events + context + policy + '\n' +
                             '\n'.join((out / name).read_text() for name in ('Facades.swift', 'VoIPApplication.swift', 'Probe.swift')) +
-                            ('\n' + claim.read_text() if claim.exists() else ''))
+                            '\n' + claim.read_text())
         for module in ('SwiftPackageSDK', 'ExpoPodSDK'):
             print('Compiling ' + module, flush=True)
             run(['swiftc', '-O', '-swift-version', '6', '-warnings-as-errors', '-parse-as-library',
@@ -231,9 +254,12 @@ import SwiftPackageSDK
 import ExpoPodSDK
 @main struct Driver {
   @MainActor static func main() {
-    if CommandLine.arguments.last == "reentrant" {
-      precondition(SwiftPackageSDK.reentrantStartProbe(), "A startup callback must see the fully published application and client")
-      precondition(ExpoPodSDK.startProbe() == "duplicateSDKLinkage")
+    if CommandLine.arguments.last == "package-contract" || CommandLine.arguments.last == "pod-contract" {
+      let podFirst = CommandLine.arguments.last == "pod-contract"
+      precondition(podFirst ? ExpoPodSDK.reentrantStartProbe() : SwiftPackageSDK.reentrantStartProbe(),
+        "Actual selection and finishLaunch must validate config and publish before reentrant observation or adapter callbacks")
+      precondition((podFirst ? SwiftPackageSDK.startProbe() : ExpoPodSDK.startProbe()) == "duplicateSDKLinkage")
+      precondition(SwiftPackageSDK.managerCreations() + ExpoPodSDK.managerCreations() == 1)
       print("passed"); return
     }
     let podFirst = CommandLine.arguments.last == "pod-first"
@@ -255,7 +281,7 @@ import ExpoPodSDK
         run(['swiftc', '-swift-version', '6', '-warnings-as-errors', '-parse-as-library', str(driver),
              '-I', str(out), '-L', str(out), '-lSwiftPackageSDK', '-lExpoPodSDK',
              '-Xlinker', '-rpath', '-Xlinker', str(out), '-o', str(binary)])
-        for order in ('package-first', 'pod-first', 'reentrant'):
+        for order in ('package-first', 'pod-first', 'package-contract', 'pod-contract'):
             assert run([str(binary), order]).stdout.strip() == b'passed'
         # Static-link duplicates can fail before startup; this is already loud
         # and is separate from the dynamic two-SDK error path above.
@@ -267,14 +293,17 @@ import ExpoPodSDK
                                 capture_output=True, timeout=30)
         assert static.returncode != 0 and b'duplicate symbol' in static.stderr, 'static duplicate failure must be an actual linker collision'
     assert before == {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in inputs}, 'sources changed during host qualification'
-    print(json.dumps(dict(success=True, sourceSHA256=before, classification='two real optimized host modules/dylibs; actual Application, selection, finishLaunch and emit; LCK/PushKit factories, media adapter and provider monitor are explicit facades',
+    print(json.dumps(dict(success=True, sourceSHA256=before, classification='two real optimized host modules/dylibs; actual Application, selection, finishLaunch, emit and process claim; LCK observation/construction, simulator configuration, PushKit factories, media adapter and provider monitor are explicit facades',
                           checks=['package-first-duplicate-refused-before-second-manager', 'pod-first-duplicate-refused-before-second-manager',
                                   'same-objc-helper-present-in-both-images', 'concurrent-claims-preserve-owner', 'static-linker-duplicate-is-already-loud',
                                   'actual-forApplication-idempotent-adapter-config-and-policy-selection',
+                                  'actual-forApplication-rejects-invalid-first-configurations-before-manager',
                                   'omitted-repeat-adapter-preserves-initial-selection',
                                   'conflicting-adapter-policy-client-and-application-configuration-refuse-before-second-manager',
                                   'actual-finishLaunch-reentrant-start-sees-published-application-and-client',
                                   'actual-finishLaunch-authorizes-false-exactly-once',
+                                  'actual-finishLaunch-reentrant-observation-sees-published-application-and-client',
+                                  'actual-finishLaunch-observes-exactly-once-for-both-linked-module-orders',
                                   'actual-emit-produces-typed-process-ownership-event-without-conversation-id',
                                   'coverage-diagnostic-does-not-emit-ownership-loss',
                                   'actual-swiftpm-trait-guards-paired-c-and-swift-flags',

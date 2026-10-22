@@ -18,7 +18,7 @@ ASSERTIONS = {
                 'dedup-single-conversation', 'joined', 'connected-report', 'held',
                 'resumed', 'ended-empty', 'token-hook-observed'),
     'cold-launch': ('cold-snapshot-pending', 'cold-hook-pending', 'cold-redelivered',
-                    'ended-empty', 'token-hook-observed'),
+                    'connected-report', 'ended-empty', 'token-hook-observed'),
     'unhandled-expiry': ('cold-snapshot-pending', 'cold-hook-pending', 'platform-deadline-visible',
                          'unhandled-expired-empty', 'token-hook-observed'),
 }
@@ -170,15 +170,22 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
                 all(type(row.get(key)) is bool for key in ('connected', 'held', 'ended')) for row in changes) and
             changes[-1].get('ended') is True, case + ': runtime call projection differs')
     if case in ('journey', 'cold-launch'):
-        checkpoint = one(rows, 'm1.assertion', label='joined' if case == 'journey' else 'cold-redelivered')
-        before = [row for row in snapshots if rows.index(row) < rows.index(checkpoint) and row['conversations']]
-        require(before and before[-1]['conversations'][0].get('status') == 'connecting' and
-                before[-1]['conversations'][0].get('pending') is None and
-                all(call.get('hasConnectedAt') is False and call.get('status') not in ('connected', 'held')
-                    for row in before for call in row['conversations']),
+        joined = one(rows, 'm1.assertion', label='joined' if case == 'journey' else 'cold-redelivered')
+        backend = one(rows, 'm1.backendConnectedRequested')
+        reported_connected = one(rows, 'm1.assertion', label='connected-report')
+        require(backend.get('conversationID') == conversation and
+                rows.index(joined) < rows.index(backend) < rows.index(reported_connected),
+                case + ': backend report must follow signaling acceptance')
+        before_joined = [row for row in snapshots if rows.index(row) < rows.index(joined) and row['conversations']]
+        require(before_joined and before_joined[-1]['conversations'][0].get('status') == 'connecting' and
+                before_joined[-1]['conversations'][0].get('pending') is None,
+                case + ': signaling acceptance lacks a settled connecting snapshot')
+        require(all(call.get('hasConnectedAt') is False and call.get('status') not in ('connected', 'held')
+                    for row in snapshots if rows.index(row) < rows.index(backend) for call in row['conversations']),
                 case + ': signaling acceptance fabricated transport connection')
         connected = [row for row in snapshots if any(call.get('status') == 'connected' for call in row['conversations'])]
-        require(connected and rows.index(checkpoint) < rows.index(connected[0]) and
+        require(connected and rows.index(backend) < rows.index(connected[0]) < rows.index(reported_connected) and
+                connected[0]['conversations'][0].get('pending') is None and
                 all(call.get('hasConnectedAt') is True for row in connected for call in row['conversations']),
                 case + ': connected projection lacks the explicit backend report')
     if case == 'journey':
