@@ -17,8 +17,9 @@ final class SDKBootstrapProbe: NSObject, UIApplicationDelegate {
     row["simulatorID"] = ProcessInfo.processInfo.environment["SIMULATOR_UDID"] ?? ""
     row["bundleID"] = Bundle.main.bundleIdentifier ?? ""
     row["main"] = Thread.isMainThread
-    if let bytes = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]),
-       let text = String(data: bytes, encoding: .utf8) { print("PROBE " + text) }
+    if let bytes = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) {
+      FileHandle.standardError.write(Data("PROBE ".utf8) + bytes + Data([10]))
+    }
   }
 
   private func check(_ condition: Bool, _ label: String) {
@@ -84,7 +85,6 @@ final class SDKBootstrapProbe: NSObject, UIApplicationDelegate {
       check(!SimulatorSupport.activateIfNeeded() && before == snapshot(), "refusal-idempotent")
     }
     trace("done", ["success": failures == 0, "checks": mode == "healthy" ? 4 : 5, "snapshots": entries.count])
-    fflush(stdout)
   }
 }
 

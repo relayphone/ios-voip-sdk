@@ -33,9 +33,19 @@ def fixtures(work):
         " if time.monotonic()>deadline: sys.exit(8)\n"
         " time.sleep(.01)\n"
         f"if mode=='buffered-header': os.write(1,{RAW_OUTPUT!r})\n"
+        "if mode=='stdout-eof': os.close(1)\n"
         "rows=[{'event':'app.entry','t_ms':0},{'event':'launch','t_ms':1,'pid':os.getpid()}]\n"
         "if mode!='early-exit': rows.append({'event':'done','t_ms':2})\n"
-        "for row in rows: print('PROBE '+json.dumps(row),flush=True)\n"
+        "for row in rows:\n"
+        " data=('PROBE '+json.dumps(row)+'\\n').encode()\n"
+        " if mode=='interleaved-streams' and row['event']=='launch':\n"
+        "  split=len(data)//2; os.write(2,data[:split])\n"
+        "  pathlib.Path(str(base)+'.prefix').touch()\n"
+        "  while not pathlib.Path(str(base)+'.header').exists():\n"
+        "   if time.monotonic()>deadline: sys.exit(8)\n"
+        "   time.sleep(.01)\n"
+        "  os.write(2,data[split:])\n"
+        " else: os.write(2 if mode in ('interleaved-streams','stdout-eof') else 1,data)\n"
         "if mode=='early-exit':\n"
         " os.close(1); os.close(2)\n"
         "pathlib.Path(str(base)+'.emitted').touch()\n"
@@ -61,8 +71,16 @@ def fixtures(work):
         "  except ProcessLookupError: pass\n"
         " if mode=='buffered-header': app.wait(); os._exit(0)\n"
         "signal.signal(signal.SIGTERM,stop)\n"
-        "if mode in ('buffered-header','quiet-orphan'): print('" + BUNDLE + ": '+str(app.pid),flush=mode=='quiet-orphan')\n"
+        "if mode in ('buffered-header','quiet-orphan','stdout-eof'): print('" + BUNDLE + ": '+str(app.pid),flush=mode!='buffered-header')\n"
+        "if mode=='stdout-eof': os.close(1)\n"
         "pathlib.Path(str(base)+'.ready').touch()\n"
+        "if mode=='interleaved-streams':\n"
+        " deadline=time.monotonic()+20\n"
+        " while not pathlib.Path(str(base)+'.prefix').exists():\n"
+        "  if time.monotonic()>deadline: sys.exit(8)\n"
+        "  time.sleep(.01)\n"
+        " print('" + BUNDLE + ": '+str(app.pid),flush=True)\n"
+        " pathlib.Path(str(base)+'.header').touch()\n"
         "if mode=='early-exit':\n"
         " deadline=time.monotonic()+20\n"
         " while not pathlib.Path(str(base)+'.emitted').exists():\n"
@@ -72,7 +90,7 @@ def fixtures(work):
         "if mode=='buffered-header':\n"
         " while True: time.sleep(.1)\n"
         "app.wait()\n"
-        "if mode not in ('missing-pid','buffered-header','quiet-orphan'):\n"
+        "if mode not in ('missing-pid','buffered-header','quiet-orphan','interleaved-streams','stdout-eof'):\n"
         " header='" + BUNDLE + ": '+str(app.pid+(1 if mode=='wrong-pid' else 0))\n"
         " for _ in range(2 if mode=='duplicate-pid' else 1): print(header,flush=True)\n"
     )
@@ -207,9 +225,9 @@ def run_checks(work):
     work.mkdir(parents=True, exist_ok=True)
     sources = fixtures(work)
     checks = [failed_exec_control(work), traditional_red(work, sources)]
-    for mode in ("complete", "buffered-header", "quiet-orphan", "wrong-pid", "missing-pid", "duplicate-pid", "ignored-signal", "early-exit", "orphan-output"):
+    for mode in ("complete", "buffered-header", "interleaved-streams", "stdout-eof", "quiet-orphan", "wrong-pid", "missing-pid", "duplicate-pid", "ignored-signal", "early-exit", "orphan-output"):
         result, receipt, base = run_case(work, sources, mode)
-        expected = mode in ("complete", "buffered-header")
+        expected = mode in ("complete", "buffered-header", "interleaved-streams", "stdout-eof")
         require((result.returncode == 0) is expected and receipt["success"] is expected,
                 f"runner-console-{mode}: {receipt}")
         if expected:
@@ -225,10 +243,15 @@ def run_checks(work):
                 require(lines[-1] == f"{BUNDLE}: {receipt['appPID']}" and
                         json.loads(lines[-2].split("PROBE ", 1)[1])["event"] == "done",
                         f"runner-console-{mode}: launcher PID did not arrive after done")
-            else:
+            elif mode == "buffered-header":
                 require(lines[0] == f"{BUNDLE}: {receipt['appPID']}" and
                         RAW_OUTPUT in Path(str(base) + ".log").read_bytes(),
                         "buffered header or raw PTY bytes were lost")
+            else:
+                rows = [json.loads(line.split("PROBE ", 1)[1]) for line in lines if "PROBE " in line]
+                require([row["event"] for row in rows] == ["app.entry", "launch", "done"] and
+                        lines.count(f"{BUNDLE}: {receipt['appPID']}") == 1,
+                        "separate stdout/stderr bytes corrupted a protocol row")
             require(Path(str(base) + ".signal").read_text() == "15" and
                     not Path(str(base) + ".fallback").exists(),
                     f"runner-console-{mode}: wrong stop path")

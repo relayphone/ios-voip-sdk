@@ -45,49 +45,60 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
         with output.open("xb") as log:
             if console_launcher_stop:
                 master, slave = os.openpty()
-                tty.setraw(slave)  # Preserve bytes; this is the host launcher's stdio only.
+                tty.setraw(slave)  # Preserve bytes; only the launcher stdout uses this PTY.
                 result["consoleTransport"] = "host-pty"
             try:
                 process = subprocess.Popen(launch, stdout=slave if console_launcher_stop else subprocess.PIPE,
-                                           stderr=subprocess.STDOUT, start_new_session=True)
+                                           stderr=subprocess.PIPE if console_launcher_stop else subprocess.STDOUT,
+                                           start_new_session=True)
             finally:
                 if slave is not None:
                     os.close(slave)
                     slave = None
             result["launcherPID"] = process.pid
-            read_fd = master if console_launcher_stop else process.stdout.fileno()
+            read_fds = [master, process.stderr.fileno()] if console_launcher_stop else [process.stdout.fileno()]
 
             def read():
-                pending = b""
+                pending = {fd: b"" for fd in read_fds}
+                active = set(read_fds)
                 try:
-                    while not reader_stop.is_set():
-                        if not select.select([read_fd], [], [], .1)[0]:
-                            continue
-                        try:
-                            chunk = os.read(read_fd, 65536)
-                        except OSError as error:
-                            if console_launcher_stop and error.errno == errno.EIO:
-                                break  # Darwin and Linux PTYs can report EIO at EOF.
-                            raise
-                        if not chunk:
-                            break
-                        pending += chunk
-                        while b"\n" in pending:
-                            line, pending = pending.split(b"\n", 1)
-                            messages.put(line + b"\n")
-                    if pending:
-                        messages.put(pending)
+                    while active and not reader_stop.is_set():
+                        ready, _, _ = select.select(list(active), [], [], .1)
+                        for fd in ready:
+                            try:
+                                chunk = os.read(fd, 65536)
+                            except OSError as error:
+                                if fd != master or error.errno != errno.EIO:
+                                    raise
+                                chunk = b""  # A closed PTY can report EIO instead of EOF.
+                            if not chunk:
+                                if pending[fd]:
+                                    messages.put(pending[fd])
+                                    pending[fd] = b""
+                                active.remove(fd)
+                                continue
+                            pending[fd] += chunk
+                            while b"\n" in pending[fd]:
+                                line, pending[fd] = pending[fd].split(b"\n", 1)
+                                messages.put(line + b"\n")
+                    for tail in pending.values():
+                        if tail:
+                            messages.put(tail)
                 except OSError as error:
                     messages.put(error)
                 finally:
-                    try:
-                        if console_launcher_stop:
-                            os.close(read_fd)
-                        else:
-                            process.stdout.close()
-                    except OSError as error:
-                        messages.put(error)
-                    messages.put(None)
+                    if console_launcher_stop:
+                        try:
+                            os.close(master)
+                        except OSError as error:
+                            messages.put(error)
+                    for stream in (process.stdout, process.stderr):
+                        if stream is not None:
+                            try:
+                                stream.close()
+                            except OSError as error:
+                                messages.put(error)
+                    messages.put(None)  # Both streams have closed, or the reader failed.
 
             reader = threading.Thread(target=read, daemon=True)
             reader.start()
@@ -224,8 +235,10 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
             os.close(master)
         if slave is not None:
             os.close(slave)
-        if not reader_started and process is not None and process.stdout is not None:
-            process.stdout.close()
+        if not reader_started and process is not None:
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
         result["elapsedSeconds"] = round(time.monotonic() - started, 3)
         if output.exists():
             data = output.read_bytes()
