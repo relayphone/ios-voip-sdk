@@ -18,6 +18,7 @@ final class ConversationBridge {
   private var stateObserver: UUID?
   private var eventObserver: UUID?
   private var tokenObserver: UUID?
+  private var audioRoutesObserver: UUID?
   private var deliveries: [UUID: Delivery] = [:]
   private var generation = -1
   private var destroyed = false
@@ -34,6 +35,9 @@ final class ConversationBridge {
     }
     tokenObserver = pushService.observeToken { [weak self] token in
       self?.emitValue("pushTokenUpdated", token)
+    }
+    audioRoutesObserver = client.observeAudioRoutes { [weak self] routes in
+      self?.emitValue("audioRoutesChanged", routes)
     }
   }
 
@@ -71,7 +75,8 @@ final class ConversationBridge {
     if let stateObserver { client.removeStateObserver(stateObserver) }
     if let eventObserver { client.removeEventObserver(eventObserver) }
     if let tokenObserver { pushService.removeTokenObserver(tokenObserver) }
-    stateObserver = nil; eventObserver = nil; tokenObserver = nil
+    if let audioRoutesObserver { client.removeAudioRoutesObserver(audioRoutesObserver) }
+    stateObserver = nil; eventObserver = nil; tokenObserver = nil; audioRoutesObserver = nil
   }
 
   private func deliver(_ kind: ConversationActionKind, conversation: ConversationSnapshot,
@@ -164,7 +169,7 @@ enum ConversationBridges {
 
   static func install(_ id: UUID, emit: @escaping ConversationBridge.Emit) throws {
     guard bridges[id] == nil else { return }
-    bridges[id] = ConversationBridge(application: try VoIPApplication.startFromBundle(), emit: emit)
+    bridges[id] = ConversationBridge(application: try ExpoMediaSupport.startFromBundle(), emit: emit)
   }
   static func attach(_ id: UUID, attached: Bool, generation: Int) {
     guard let bridge = bridges[id], bridge.accepts(generation: generation) else { return }

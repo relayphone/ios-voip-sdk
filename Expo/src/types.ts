@@ -106,12 +106,24 @@ export interface PushToken {
   value: string;
 }
 
-/** M2 supplies watchdog signals; M3 supplies dial requests. */
+export interface AudioRoute {
+  readonly id: string;
+  readonly name: string;
+  /** AVAudioSession's existing port type value on iOS. */
+  readonly type: string;
+}
+
+export interface AudioRoutes {
+  readonly routes: readonly AudioRoute[];
+  readonly current: AudioRoute | null;
+}
+
+/** Audio signals are process-wide; M3 supplies dial requests. */
 export interface ConversationEventMap {
   audioActivated: { conversationId?: string };
   audioDeactivated: { conversationId?: string };
-  audioActivationMissing: { conversationId: string };
-  audioActivationFailed: { conversationId: string };
+  audioActivationMissing: { conversationId?: string };
+  audioActivationFailed: { conversationId?: string };
   pushTokenUpdated: PushToken | null;
   dialRequest: { handle: string; video: boolean };
   providerReset: Record<string, never>;
