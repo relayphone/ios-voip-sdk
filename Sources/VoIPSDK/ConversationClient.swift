@@ -37,6 +37,14 @@ public final class ConversationClient: NSObject {
 
   private static var configuration = Configuration()
   private static var instance: ConversationClient?
+  private static var registeredMediaAdapter: (any MediaAdapter)?
+  private static var audioPolicy = AudioActivationPolicy.standard
+  /// Register the selected native backend once, before the process's client is created.
+  public static func registerMediaAdapter(_ adapter: any MediaAdapter,
+                                          activationPolicy: AudioActivationPolicy = .standard) throws {
+    guard instance == nil, registeredMediaAdapter == nil else { throw ConversationClientError.alreadyConfigured }
+    registeredMediaAdapter = adapter; audioPolicy = activationPolicy
+  }
   public static func configure(_ configuration: Configuration) throws {
     guard instance == nil else { throw ConversationClientError.alreadyConfigured }
     guard configuration.maximumConversationGroups > 0, configuration.maximumConversationsPerGroup > 0 else {
@@ -64,6 +72,10 @@ public final class ConversationClient: NSObject {
   private let manager: ConversationManager
   private let coordinator: ConversationActionCoordinator
   private let configuration: Configuration
+  private let mediaAdapter: any MediaAdapter
+  private let audio: AudioActivationCoordinator
+  private let audioOperations = AudioAdapterOperations()
+  private let systemAudio = SystemAudioSession()
   private var records: [UUID: Record] = [:]
   private var invitations = IncomingInvitationGate()
   private var incomingReports: [UUID: Task<UUID, Error>] = [:]
@@ -77,9 +89,12 @@ public final class ConversationClient: NSObject {
   #endif
   public private(set) var state = ConversationStateUpdate(revision: 0, conversations: [])
   public var snapshots: [ConversationSnapshot] { state.conversations }
+  public var audioRoutes: AudioRoutesSnapshot { systemAudio.routes.snapshot }
 
   private init(configuration: Configuration) {
     self.configuration = configuration
+    mediaAdapter = Self.registeredMediaAdapter ?? NoMediaAdapter()
+    audio = AudioActivationCoordinator(policy: Self.audioPolicy)
     coordinator = ConversationActionCoordinator(policy: configuration.unhandledAction)
     SimulatorSupport.activateIfNeeded()
     #if DEBUG
@@ -108,7 +123,54 @@ public final class ConversationClient: NSObject {
       if action.kind == .mute, let muted = action.muted { self.records[id]?.muted = muted }
       if action.kind == .end { self.records[id]?.ended = .init(at: Date(), reason: .local) }
     }
+    configureAudio()
     trackManager()
+  }
+
+  private func configureAudio() {
+    mediaAdapter.setSystemAudioAuthorization(false)
+    if Self.registeredMediaAdapter == nil {
+      NSLog("VoIPSDK audio: no native media adapter registered; emitting events only")
+    }
+    audioOperations.onError = { message in NSLog("VoIPSDK media adapter: %@", message) }
+    audio.onEvent = { [weak self] event in
+      switch event {
+      case .activated: self?.emit(.audioActivated)
+      case .deactivated: self?.emit(.audioDeactivated)
+      case .missing: self?.emit(.audioActivationMissing)
+      case .failed: self?.emit(.audioActivationFailed)
+      }
+    }
+    audio.recover = {
+      do { try await SystemAudioSession.configureForConversation() }
+      catch { NSLog("VoIPSDK audio recovery configuration failed: %@", String(describing: error)) }
+    }
+    audio.endConversations = { [weak self] ids in self?.endForMissingAudio(ids) }
+    audioOperations.enqueue { [mediaAdapter] in try await mediaAdapter.prepare() }
+    Task { @MainActor in
+      do { try await SystemAudioSession.configureForConversation() }
+      catch { NSLog("VoIPSDK audio preparation configuration failed: %@", String(describing: error)) }
+    }
+  }
+
+  @discardableResult
+  public func observeAudioRoutes(_ callback: @escaping @MainActor (AudioRoutesSnapshot) -> Void) -> UUID {
+    systemAudio.routes.observe(callback)
+  }
+  public func removeAudioRoutesObserver(_ token: UUID) { systemAudio.routes.removeObserver(token) }
+  public func selectAudioRoute(_ id: String) throws { try systemAudio.selectRoute(id, isActive: audio.isActive) }
+
+  private func endForMissingAudio(_ ids: Set<UUID>) {
+    for id in ids.sorted(by: { $0.uuidString < $1.uuidString }) {
+      guard !audio.isActive, let conversation = manager.conversations.first(where: { $0.uuid == id }),
+            conversation.state == .joined else { continue }
+      let ended = ConversationEnded(at: Date(), reason: .failed)
+      records[id]?.ended = ended
+      coordinator.cancelConversation(id)
+      guard !audio.isActive, conversation.state == .joined else { continue }
+      manager.reportConversationEvent(.conversationEnded(ended.at, .failed), for: conversation)
+    }
+    refresh()
   }
 
   @discardableResult
@@ -383,6 +445,9 @@ public final class ConversationClient: NSObject {
       invitations.removeConversation(id); coordinator.cancelConversation(id)
     }
     let projected = current.compactMap { snapshot($0.uuid) }.sorted { $0.id.uuidString < $1.id.uuidString }
+    // Joining can still be waiting for signaling/handler settlement. LCK joined means
+    // start/join was accepted and audio is now expected, independently of media reports.
+    audio.updateDemand(Set(current.filter { $0.state == .joined }.map(\.uuid)))
     guard projected != state.conversations else { return }
     state = ConversationStateUpdate(revision: state.revision &+ 1, conversations: projected)
     guard !publishingState else { return }
@@ -412,6 +477,9 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
   }
   public func conversationManagerDidBegin(_ manager: ConversationManager) { refresh() }
   public func conversationManagerDidReset(_ manager: ConversationManager) {
+    mediaAdapter.setSystemAudioAuthorization(false)
+    audio.reset()
+    audioOperations.enqueue { [mediaAdapter] in try await mediaAdapter.prepare() }
     coordinator.cancelAll(reason: .reset); appActions.removeAll(); refresh(); emit(.providerReset)
   }
   public func conversationManager(_ manager: ConversationManager, perform action: ConversationAction) {
@@ -456,8 +524,16 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
   public func conversationManager(_ manager: ConversationManager, timedOutPerforming action: ConversationAction) {
     coordinator.cancel(action.uuid, reason: .platformTimeout)
   }
-  public func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) { emit(.audioActivated) }
-  public func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession) { emit(.audioDeactivated) }
+  public func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) {
+    mediaAdapter.setSystemAudioAuthorization(true)
+    audioOperations.enqueue { [mediaAdapter] in try await mediaAdapter.didActivate(audioSession) }
+    audio.didActivate(); systemAudio.refreshRoutes()
+  }
+  public func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession) {
+    mediaAdapter.setSystemAudioAuthorization(false)
+    audioOperations.enqueue { [mediaAdapter] in try await mediaAdapter.didDeactivate(audioSession) }
+    audio.didDeactivate(); systemAudio.refreshRoutes()
+  }
 }
 #if os(iOS)
 extension ConversationClient: @preconcurrency CXCallObserverDelegate {
