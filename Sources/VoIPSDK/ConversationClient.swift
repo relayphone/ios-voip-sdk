@@ -129,6 +129,10 @@ public final class ConversationClient: NSObject {
     if let instance { return instance }
     let client = ConversationClient(configuration: configuration)
     instance = client
+    // Native adapters may synchronously consult shared from their nonblocking
+    // authorization callback. Publish the complete owner before calling app code.
+    client.configureAudio()
+    client.trackManager()
     return client
   }
 
@@ -199,8 +203,6 @@ public final class ConversationClient: NSObject {
       if action.kind == .mute, let muted = action.muted { self.records[id]?.muted = muted }
       if action.kind == .end { self.records[id]?.ended = .init(at: Date(), reason: .local) }
     }
-    configureAudio()
-    trackManager()
   }
 
   private func configureAudio() {
