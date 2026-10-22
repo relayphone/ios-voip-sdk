@@ -10,6 +10,23 @@ from summarize import build_identity, EvidenceError, load, one, require, run_env
 
 ROOT = Path(__file__).resolve().parent.parent
 CASES = ('basic', 'cx-after', 'lck-after', 'two-managers')
+PROVIDER_APIS = {'basic': ['livecommunicationkit'], 'cx-after': ['livecommunicationkit', 'callkit'],
+                 'lck-after': ['callkit', 'livecommunicationkit'], 'two-managers': ['livecommunicationkit', 'livecommunicationkit']}
+
+
+def provider_apis(engine, case):
+    created = [row['provider'] for row in engine if row['event'] == 'provider.created']
+    require(len(created) == len(set(created)) == len(PROVIDER_APIS[case]), 'LCK provider inventory differs')
+    observed = {}
+    for row in engine:
+        if row['event'] != 'provider.apiKind': continue
+        require(row['provider'] in created and type(row['delegatePresent']) is bool, 'unbound provider API classification')
+        require(row['apiKind'] in ('callkit', 'livecommunicationkit'), 'unknown provider API classification')
+        if not row['delegatePresent']: continue
+        require(row['provider'] not in observed or observed[row['provider']] == row['apiKind'], 'provider API classification changed')
+        observed[row['provider']] = row['apiKind']
+    require([observed.get(identity) for identity in created] == PROVIDER_APIS[case], 'provider framework API classification differs')
+    return [observed[identity] for identity in created]
 
 
 def roles(rows):
@@ -169,6 +186,7 @@ def validate(directory, case):
     manifest = build_identity(directory, rows)
     require(launch['mode'] == 'lck', 'capture is not LCK mode')
     one(engine, 'runtime.installed')
+    api_kinds = provider_apis(engine, case)
     require(any(row['event'] == 'transaction.delivered' for row in engine), 'missing LCK provider-layer execution')
     require(all(left['t_ms'] <= right['t_ms'] for left, right in zip(engine, engine[1:])), 'LCK journal time mismatch')
     reference_directory = ROOT / 'docs/research/callkit-simulator-probe/livecommunicationkit'
@@ -180,6 +198,7 @@ def validate(directory, case):
                   deadlineBands=deadlines, actualOS=one(rows, 'lck.start')['os'], referenceOS=one(sources[case], 'lck.start')['os'],
                   journalBinding='process/build bound; LCK-to-CX action UUID mapping unmeasured',
                   cxTapLimit='measured CX callbacks expose only receiver/kind; tone/pause handlers absent')
+    result['providerAPIs'] = api_kinds
     return result
 
 

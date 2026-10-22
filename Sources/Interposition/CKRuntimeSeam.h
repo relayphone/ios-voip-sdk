@@ -49,6 +49,7 @@ NSString * _Nullable CKSimInstallPushHooks(void);
 void CKSimReleasePushHooks(void);
 NSString *CKSimCurrentPushID(void);
 NSString *CKSimResourceDirectory(void);
+BOOL CKSimDelegateUsesLiveCommunicationKit(id _Nullable delegate);
 void CKSimEmit(NSString *event, NSDictionary *fields);
 NS_ASSUME_NONNULL_END
 #endif

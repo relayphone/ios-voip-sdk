@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "runID": "1756E70A-90D2-47AF-BD5F-76DEF0B689A0",
+  "simulatorID": "716A0138-A56C-4466-8328-3504ED0F6562",
+  "simulatorRuntimeID": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+  "deviceTypeID": "com.apple.CoreSimulator.SimDeviceType.iPhone-11-Pro",
+  "profileID": "ios-27.0",
+  "sourceCommit": "2e6afe6eda3bea287fb0d3505f0e5266be10e61a",
+  "runtimeVersion": "0.1.1",
+  "probeSHA256": "478e6500cd62cf93268fa432e55c8ccb3185acbfe731c88e16d3a32bddbb9541",
+  "runtimeSHA256": "31567d7cf338304bfea3a58ef96e44ed2964759cf4db69885aae37152dd95e3c",
+  "profileSHA256": "ca7bf656f565ffff93c6cd4b2275bf52485c7555694890db60028731c13040a5",
+  "simulatorOSVersion": "27.0",
+  "simulatorOSBuildVersion": "24A434",
+  "compilerXcodeVersion": "27.1",
+  "compilerXcodeBuildVersion": "27A9275"
+}
