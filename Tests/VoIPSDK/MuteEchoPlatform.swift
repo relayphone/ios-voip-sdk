@@ -1,5 +1,46 @@
 import Foundation
 import Observation
+import Dispatch
+
+// These controls execute the real Client, Handler, activation coordinator and
+// adapter operation ordering. Only framework/platform edges below are inert.
+// Duplicate-image ownership and native audio behavior have separate controls.
+@MainActor enum ProcessSDKOwnership {
+  private static var claimed = false
+  static func claim() throws { claimed = true }
+}
+
+@MainActor enum HostClientOwner {
+  static func acquire() -> ConversationClient {
+    let client = try! ConversationClient.forApplication(configuration: .init())
+    client.finishLaunch()
+    return client
+  }
+}
+
+private let hostAudioQueue = DispatchQueue(label: "VoIPSDK.HostMuteAudioBoundary")
+func VSAudioSessionGetQueue() -> DispatchQueue { hostAudioQueue }
+
+extension AudioSessionQueue {
+  public func configureForConversation() throws {
+    try Self.checkCancellation()
+  }
+}
+
+enum SystemAudioLifecycleEvent: Sendable {
+  case active, inactive, mediaServicesReset, resumptionRecommended(Bool)
+}
+
+@MainActor final class SystemAudioSession {
+  let routes = AudioRoutesStore()
+  var onLifecycle: (@MainActor (SystemAudioLifecycleEvent) -> Void)?
+  private(set) var authorized = false
+  func setSystemAudioAuthorization(_ active: Bool) { authorized = active }
+  func refreshRoutes() {}
+  func selectRoute(_ id: String, isActive: Bool) async throws {
+    _ = try routes.selection(id, isActive: isActive)
+  }
+}
 
 // Test-only LCK boundary. The production client and handler remain unchanged.
 public struct Handle: Hashable {

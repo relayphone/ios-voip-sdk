@@ -53,7 +53,7 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
             [row.get('sequence') for row in rows] == list(range(1, len(rows) + 1)) and
             all(type(row.get('wallTimeMS')) is int and row['wallTimeMS'] > 0 for row in rows), 'invalid app sequence/clock')
     require(one(rows, 'sdk.activation').get('active') is True and
-            one(rows, 'sdk.managerCreated').get('owner') == 'ConversationClient.shared' and
+            one(rows, 'sdk.managerCreated').get('owner') == 'VoIPApplication.start' and
             one(rows, 'sdk.result').get('success') is True, 'SDK journey failed')
     require(not any(row['event'].startswith(('m1.', 'diagnostic.')) or row.get('errorType') or row.get('error') for row in rows) and
             not any(row['event'].startswith(('diagnostic.', 'action.timeout', 'push.launchRefused')) for row in engine), 'unexpected injection/error/timeout')
@@ -69,6 +69,15 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
         require(len({uuid_value(value.get(field)) for value in bindings}) == len(bindings), 'ambiguous ' + field)
     by_sdk = {value['conversationID']: value for value in bindings}
     by_native = {value['callUUID']: value for value in bindings}
+    for event in [row for row in rows if row['event'] == 'system.event']:
+        name = event.get('name')
+        require('conversationId' not in event, 'invalid SDK event context field')
+        if name in ('audioActivationMissing', 'audioActivationFailed'):
+            require(event.get('conversationID') in by_sdk, 'unbound scoped SDK event context')
+        else:
+            require(name in ('audioActivated', 'audioDeactivated', 'providerReset', 'pushTokenUpdated', 'providerOwnershipLost'),
+                    'unexpected SDK event context')
+            require('conversationID' not in event, 'invalid global SDK event context')
     snapshots = [row for row in rows if row['event'] == 'sdk.snapshot']
     require(snapshots and all(type(row.get('revision')) is int for row in snapshots) and
             all(a['revision'] < b['revision'] for a, b in zip(snapshots, snapshots[1:])) and

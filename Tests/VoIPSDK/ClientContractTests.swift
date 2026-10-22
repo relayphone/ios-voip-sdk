@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 private final class ContractControls {
-  let client = ConversationClient.shared
+  let client = HostClientOwner.acquire()
   var manager: ConversationManager { ConversationManager.latest! }
   var endWork: CheckedContinuation<Void, any Error>?
   var endCalls = 0

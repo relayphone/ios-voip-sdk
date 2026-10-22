@@ -3,7 +3,11 @@ export type JSONValue =
 
 /** Rejection codes emitted by native conversation commands. */
 export type ConversationErrorCode =
-  'invalid_arguments' | 'unknown_conversation' | 'unsupported' | 'conversation';
+  | 'invalid_arguments'
+  | 'unknown_conversation'
+  | 'unsupported'
+  | 'conversation'
+  | 'duplicate_sdk_linkage';
 
 export interface ConversationCommandError extends Error {
   readonly code: ConversationErrorCode;
@@ -18,6 +22,7 @@ export function isConversationCommandError(
     value.code === 'invalid_arguments' ||
     value.code === 'unknown_conversation' ||
     value.code === 'unsupported' ||
+    value.code === 'duplicate_sdk_linkage' ||
     value.code === 'conversation'
   );
 }
@@ -129,13 +134,26 @@ export interface PushToken {
   value: string;
 }
 
-/** M2 supplies watchdog signals; M3 supplies dial requests. */
+export interface AudioRoute {
+  readonly id: string;
+  readonly name: string;
+  /** AVAudioSession's existing port type value on iOS. */
+  readonly type: string;
+}
+
+export interface AudioRoutes {
+  readonly routes: readonly AudioRoute[];
+  readonly current: AudioRoute | null;
+}
+
+/** Activation callbacks are process-wide; watchdog signals identify each affected conversation. */
 export interface ConversationEventMap {
   audioActivated: { conversationId?: string };
   audioDeactivated: { conversationId?: string };
-  audioActivationMissing: { conversationId: string };
-  audioActivationFailed: { conversationId: string };
+  audioActivationMissing: { conversationId?: string };
+  audioActivationFailed: { conversationId?: string };
   pushTokenUpdated: PushToken | null;
   dialRequest: { handle: string; video: boolean };
   providerReset: Record<string, never>;
+  providerOwnershipLost: Record<string, never>;
 }

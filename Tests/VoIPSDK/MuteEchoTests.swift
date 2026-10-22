@@ -10,7 +10,7 @@ final class MuteControls {
   var minimumDelayMS = Double.infinity
 
   init() {
-    client = .shared
+    client = HostClientOwner.acquire()
     manager = ConversationManager.latest!
     client.setConversationHandler(.init(join: { _, _ in }, start: { _, _ in }, end: { _, _ in },
       mute: { [weak self] _, context in

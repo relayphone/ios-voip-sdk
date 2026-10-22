@@ -14,7 +14,7 @@ from summarize import EvidenceError, load, one, require, successful_stop
 
 ROOT = Path(__file__).resolve().parent.parent
 CASES = ('healthy', 'profile', 'push-after-install')
-SOURCE_PATHS = ('Sources', 'Expo', 'example', 'Package.swift', 'IosVoipSDK.podspec',
+SOURCE_PATHS = ('Sources', 'Expo', 'ExpoMedia', 'Integrations', 'example', 'Package.swift', 'IosVoipSDK.podspec',
                 'expo-module.config.json', 'package.json', 'package-lock.json', 'tsconfig.json', 'VERSION',
                 'discovery/build_sdk_bootstrap.sh', 'discovery/build_sdk_device_probe.sh',
                 'discovery/probe/sdk_bootstrap.swift', 'discovery/run_sdk_m0.sh',
@@ -25,9 +25,14 @@ SOURCE_PATHS = ('Sources', 'Expo', 'example', 'Package.swift', 'IosVoipSDK.podsp
                 'discovery/build_sdk_m1_contracts.sh', 'discovery/probe/sdk_m1_contracts.swift',
                 'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
                 'discovery/check_expo_bridge.py', 'discovery/check_expo_plugin.cjs',
-                'discovery/check_platform_shims.py', 'discovery/check_push_delivery.py',
-                'discovery/check_push_report_entry.py', 'discovery/build_push_report_entry.sh',
-                'discovery/probe/push_report_entry.swift', 'discovery/device_oracles.py',
+                'discovery/check_expo_media.py', 'discovery/check_expo_media_config.py',
+                'discovery/sdk_m2_conformance.py', 'discovery/check_sdk_m2.py',
+                'discovery/run_sdk_m2.py', 'discovery/build_sdk_m2.sh',
+                '.github/workflows/sdk-m2.yml', 'Tools/cksim-notify.c',
+                'discovery/check_platform_shims.py', 'discovery/check_sdk_ownership.py',
+                'discovery/check_push_delivery.py', 'discovery/check_push_report_entry.py',
+                'discovery/build_push_report_entry.sh', 'discovery/probe/push_report_entry.swift',
+                'discovery/device_oracles.py',
                 'discovery/check_lck_provider_policy.py',
                 'Tools', 'scripts/build-runtime.sh', 'discovery/run_sdk_system.py',
                 'discovery/sdk_system_conformance.py', 'discovery/check_sdk_system.py',

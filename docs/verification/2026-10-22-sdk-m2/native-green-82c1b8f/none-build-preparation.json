@@ -1,0 +1,12 @@
+{
+  "classification": "measured native Release compilation only; no launch or media qualification",
+  "success": true,
+  "sourceCommit": "604cff73aedaa4e378a6487108761e6bc0ec2615",
+  "sourceInputsSHA256": "cc1022bbd400e478595b411fd9558c151b0ccf36248b1bc8f0d313de35c306e8",
+  "mediaAdapter": "none",
+  "javascriptSHA256": "4fc24a9c0645dfed2ebef6d52078f36fc7ac17bdb12db7bdabd128eedca97648",
+  "executableSHA256": "bce149cee64e0e59f6ca0583fb1dc8b6149c1f57c092cbd709456d591d716248",
+  "buildLogSHA256": "8965b54ab0e5ac31c3b86ad1362ee35ce0a560417913820fbb63beddf840f1e3",
+  "symbolSHA256": "4f3336f30466cbd575b4fc0acb83dd46f076e0c2a3300092988a07393e15ee8a",
+  "optionalMediaClassSymbolsAbsent": true
+}

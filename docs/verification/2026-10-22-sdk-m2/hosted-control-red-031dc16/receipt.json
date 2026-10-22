@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured fixture-control handshake red; no call journey reached",
+  "run": {
+    "id": 39731064855,
+    "url": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39731064855",
+    "submittedHead": "031dc16c5b798d5c849ae745a8798605954ee40f",
+    "sourceBefore": {
+      "sourceCommit": "4d03b9015832c0f47288982a535d09d11b4eb2e8",
+      "sourceInputsSHA256": "f25b7ec5e0d13435eee35b0cf6583c0a1e44a67ed6c7df4ae47d6f5dcbf71ce9"
+    },
+    "failedStep": "Measure LiveKit, stale audio and media reentrancy on one owned simulator",
+    "runnerError": "deadline before fault handshake"
+  },
+  "artifact": {
+    "id": 12406966278,
+    "sha256": "a2f9eb375a90aaf6489cc7f4d3c0c3c9889206019af2f7bafb5cf0abbb796870",
+    "jobLogSHA256": "52f21cb3e5b564aedf1f6e95a537319cd0079932d412a59f5a0c058099ae5bd6",
+    "buildReceiptSHA256": "b70104c209fd32c8f645e18214fb93589921b96ac8d97c549566f3d0091b5ebe",
+    "sourceBeforeSHA256": "8fc9b0c47e27ee491616ead7256df4fbb659e05e51dd207c28cf33517aa709a5",
+    "installedSHA256": "77cf9d56dfacdd1cad1e1461a5193d8d2874d66d55f407edc722ff24c9be8d2f",
+    "environmentSHA256": "3174b46b26ce8b0b490695da1fd5c6fad89fc63c8c4034455bfe081773511509",
+    "finalManifestPresent": false
+  },
+  "firstProcess": {
+    "case": "livekit",
+    "appPID": 20755,
+    "supervisorCompleted": true,
+    "supervisorReportedSuccess": true,
+    "supervisorElapsedSeconds": 59.693,
+    "fixtureSuccess": false,
+    "validProbeRecords": 19,
+    "malformedProbeRecords": 0,
+    "receiptSHA256": "bfc517bf02d0926e07ed0b936c1cee6bbc3c47870c5c0ec4a66051ac988388e2",
+    "traceSHA256": "bc6f2147494bf52360d41a34a8888c48abe220a6ffe0cadc590715173d048232",
+    "journalSHA256": "83eba72c6d5125018ca6075051abd63f3a638e5d692a088a2a85824fa1b982f7",
+    "pushInjectedRecords": 0,
+    "nativePushReceivedRecords": 0,
+    "nativeDeliveredActions": 0
+  },
+  "appTiming": {
+    "appEntry": {
+      "t_ms": 0,
+      "wallTimeMS": 1792651101165
+    },
+    "captureDemand": {
+      "t_ms": 1438,
+      "wallTimeMS": 1792651102603
+    },
+    "failedResult": {
+      "t_ms": 16513,
+      "wallTimeMS": 1792651117678
+    },
+    "demandToFailureMS": 15075
+  },
+  "timingLimit": {
+    "candidateWaitsSeconds": {
+      "consoleLaunchRow": 30,
+      "matchingRuntimeSession": 30
+    },
+    "fixtureControlWaitSeconds": 15,
+    "perPhaseHostTimesRetained": false,
+    "classification": "Original error does not distinguish the two waits; console arrival latency and exact causal boundary are unmeasured. App and supervisor elapsed times have different origins."
+  },
+  "controlEvidence": {
+    "sessionCaptured": false,
+    "requestCaptured": false,
+    "ackCaptured": false,
+    "readyCaptured": false
+  },
+  "cleanup": {
+    "simulatorID": "AAE73000-953A-4D94-97B8-8B2A0F5E883A",
+    "deleted": true,
+    "absentFromInventory": true,
+    "shutdownExitCode": null,
+    "shutdownError": "Command '['xcrun', 'simctl', 'shutdown', 'AAE73000-953A-4D94-97B8-8B2A0F5E883A']' timed out after 30 seconds",
+    "deleteExitCode": 0
+  },
+  "cleanupSHA256": "e351caaaed091981bcfb262b4a45c2a7acb93501c3164fa978818d21465d6802",
+  "candidateStatus": "Session-first runner handoff is implemented as a proposed correction; fresh hosted media acceptance remains required. Fixture 15-second wait, native action deadlines, supervisor and final gates are unchanged."
+}

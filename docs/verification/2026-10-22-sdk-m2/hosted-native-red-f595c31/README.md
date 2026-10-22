@@ -1,0 +1,13 @@
+# Hosted M2 trace-framing failure
+
+**Measured red:** [run 39723730801](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39723730801), submitted head `f595c31`, captured GitHub test merge `567fdabeaabcbd1ed69fa84bf990a7c01489c843`. The Release example and Debug contract built; all three supervised processes reported completion. The strict final gate still failed: `sdk-m2-livekit:170: malformed probe JSON`. A fresh checkout of the exact captured commit reproduced that error against the unchanged downloaded artifact.
+
+In the healthy journey's hold transition, a native WebRTC `Invalid audio transport` diagnostic appears inside an `sdk.snapshot` JSON record; the next line contains the record's remaining fields. Joining those controlled fragments after removing the diagnostic parses sequence 37, but that reconstruction is diagnostic only and was never submitted to acceptance. This run remains red. It does not establish a new native media result, PCM quality, or that the backend diagnostic is harmless.
+
+The captured example producer uses `print` followed by global `fflush(nil)`. The shared M1 fixture fix `5063b96327edeb76bb433b24ce8e98129bd7e56a`, integrated through parent `abdae51`, assembles the complete UTF-8 frame and performs one checked low-level write on this same example trace path. No M2 SDK implementation or parser relaxation is included. Fresh fixed-writer native CI remains required; this red run does not qualify the correction.
+
+[receipt.json](receipt.json) binds the artifact, original trace, exact red replay, process receipts and successful shutdown/delete plus inventory absence. The artifact ZIP SHA-256 is `9e87360291f712be44a18c3e331181cd18db8ca07e24801bbb28e7506ab26e4b`. Raw logs and products remain in the ignored downloaded capture; these lean receipts cannot replay the gate alone.
+
+[frame-size-audit.json](frame-size-audit.json) measures nine retained M2 process traces across the local green, earlier hosted green, and this red run. The largest complete encoded frame, including `PROBE ` and LF, is 640 bytes. The diagnostic-only reconstructed frame is 542 bytes. All measured current frames fit the proposed 4096-byte writer cap; this is not a universal pipe-atomicity claim, because Darwin's 512-byte `PIPE_BUF` is smaller than some frames. Future fixture sizes are not qualified by this audit.
+
+The earlier local `82c1b8f` and selected hosted `43fa15d` green runs retain their original measured scope. They do not override this red result. The failed M2 run was not retried or cancelled. The deliberate source update may supersede still-running runtime checks; cancelled jobs are not acceptance.

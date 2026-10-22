@@ -52,6 +52,9 @@ device trace. A journal clock bracket checks settlement against actual platform
 deadlines; handlers/pending state expose the earlier A2 policy deadline. Backend
 connected reports occur only after native join fulfillment and an actual
 connecting projection. Existing M1 cases retain their app-origin restriction.
+The manager marker identifies the sole `VoIPApplication.start` owner. SDK event
+hooks retain real conversation scope for watchdog events; session and provider
+callbacks remain process-wide and carry no fabricated conversation identifier.
 
 **Boundary.** The `reset` operation is an explicit fault on the selected provider.
 It does not model R3 invalidation of older providers or change provider routing.

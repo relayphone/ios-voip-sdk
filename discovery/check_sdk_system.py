@@ -31,7 +31,7 @@ class Fixture:
         self.app('app.entry')
         self.app('launch', mode='sdk-system', case=case, traceVersion=2)
         self.app('sdk.activation', active=True)
-        self.app('sdk.managerCreated', owner='ConversationClient.shared')
+        self.app('sdk.managerCreated', owner='VoIPApplication.start')
         self.snapshot()
         self.hook()
         if case != 'push-launch': self.app('system.handlerAttached', attached=True)
@@ -366,6 +366,11 @@ def controls():
         checks.append(dict(name=name, passed=True, expected=error or 'synthetic logical case accepted'))
 
     for case in gate.CASES: check('positive-' + case, case)
+    check('removed-shared-owner', 'answer-end', lambda value: first(value['rows'], 'sdk.managerCreated').update(owner='ConversationClient.shared'), 'SDK journey failed')
+    check('reset-event-fabricated-conversation', 'provider-reset', lambda value: first(value['rows'], 'system.event').update(
+        conversationID=value['index']['bindings'][0]['conversationID']), 'invalid global SDK event context')
+    check('audio-event-fabricated-conversation', 'provider-reset', lambda value: first(value['rows'], 'system.event').update(
+        name='audioActivated', conversationID=value['index']['bindings'][0]['conversationID']), 'invalid global SDK event context')
     check('positive-legacy-duplicate-required', 'mute-echo', legacy_pushes)
     check('system-handler-as-app', 'answer-end', lambda value: first(value['rows'], 'system.handler').update(origin='app'), 'handler origin/kind/role unbound')
     check('native-origin-as-app', 'answer-end', lambda value: first(value['engine'], 'transaction.delivered').update(origin='application'), 'system native action binding/origin differs')
@@ -398,7 +403,7 @@ def controls():
              next(control['response']['result']['actionIDs'] for control in value['controls'] if control['request']['operation'] == 'mute' and control['request']['muted'] is False))), 'same-value echo was not pending')
     check('pending-reset-wrong-rejection', 'mute-echo', lambda value: first(value['engine'], 'control.rejected').update(requestID=str(uuid.UUID(int=999)).upper()), 'pending reset refusal was not bound')
     check('reset-target', 'provider-reset', lambda value: first(value['engine'], 'provider.reset').update(callUUIDs=[]), 'selected-provider reset did not reach the SDK')
-    check('reset-missing-event', 'provider-reset', lambda value: first(value['rows'], 'system.event').update(name='other'), 'selected-provider reset did not reach the SDK')
+    check('reset-missing-event', 'provider-reset', lambda value: first(value['rows'], 'system.event').update(name='other'), 'unexpected SDK event context')
     check('cold-launched-active-app', 'push-launch', lambda value: value['launch_receipt'].update(appServiceAbsent=False), 'cold launch was not external/stopped/bound')
     active_services = SERVICES + '\n12345\t0\tUIKitApplication:' + gate.BUNDLE + '[synthetic-active]'
     check('cold-rehashed-active-service', 'push-launch', lambda value: value['launch_receipt'].update(

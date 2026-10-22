@@ -1,0 +1,47 @@
+{
+  "success": true,
+  "scenario": "sdk-m2",
+  "source": {
+    "sourceCommit": "82c1b8ff27cd41f7b45083101d8df18465158092",
+    "sourceInputsSHA256": "494e90b94164d6d62dc6eb2fe1f59b564415c2e69df508719fdc393b1cef2c05"
+  },
+  "executionOS": "27.0",
+  "simulatorRuntime": {
+    "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+    "version": "27.0",
+    "buildversion": "24A434"
+  },
+  "cases": {
+    "livekit": {
+      "success": true,
+      "existingMediaObjectStable": true,
+      "localCaptureDemand": true,
+      "nativeStages": [
+        "initial",
+        "demand",
+        "active",
+        "speaker",
+        "held",
+        "resumed",
+        "ended"
+      ]
+    },
+    "stale-audio": {
+      "success": true,
+      "existingMediaObjectStable": true,
+      "localCaptureDemand": true,
+      "nativeStages": [
+        "initial",
+        "demand",
+        "failed"
+      ]
+    },
+    "media-reentrancy": {
+      "success": true,
+      "owners": 1,
+      "authorizationCalls": 1
+    }
+  },
+  "hostAudioControls": 21,
+  "recoveryEvidence": "One recovery is host-proved; native absence events and clean end are measured. AV configuration call count is not measured."
+}

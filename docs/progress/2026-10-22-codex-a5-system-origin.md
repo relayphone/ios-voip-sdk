@@ -10,7 +10,7 @@ Existing M1 handler-origin checks remain unchanged.
 The shipping CLI passes 20 synthetic mailbox controls and 21 external-launch
 subprocess controls. The actual Foundation envelope consumer passes 20 filesystem
 assertions. Python/shell/Swift syntax and TypeScript/Prettier checks pass.
-The dedicated checker passes 59 logical system-case and filesystem evidence
+The dedicated checker passes 62 logical system-case and filesystem evidence
 controls, including legacy M1's app-origin restriction. None of these results is
 a simulator measurement.
 
@@ -23,9 +23,14 @@ pending action. This is not R3 invalidation of an older provider.
 report-entry rule, A2's actual LCK deadlines, A3's pending app-mute echo fix and
 A8's explicit connected semantics are integrated from `f65d171`. The evidence path
 inventory retains both the system-control/D5 inputs and the device-release inputs.
+Audio/ownership/contracts integration from `47834d5` keeps both system and media
+fixtures. The example uses `ExpoMediaSupport` to start the sole `VoIPApplication`
+owner, the system and M2 gates check that owner, and system hooks preserve typed
+event context. Global callbacks never acquire an invented conversation identifier.
+The focused incoming-push build also includes the staged-envelope consumer.
 
-**Pending:** integrate A4/A7's stable audio and ownership changes. Then build
-once, capture all seven cases on one assigned throwaway simulator,
+**Pending:** integrate the corrected A0.1 incoming intake before any final
+integrated app acceptance. Then build once, capture all seven cases on one assigned throwaway simulator,
 replay the strict source/product-bound gates, and record the actual receipts.
 No A5 simulator, device, APNs/key, push, PR or publication action has occurred.
 The initial native pass may expose framework behavior; retain any red capture

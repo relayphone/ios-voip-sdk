@@ -3,6 +3,7 @@ const {
   IOSConfig,
   withEntitlementsPlist,
   withInfoPlist,
+  withPodfileProperties,
   withXcodeProject,
 } = require('expo/config-plugins');
 const fs = require('node:fs');
@@ -12,6 +13,7 @@ const PREFIX = 'ios-voip-sdk: ';
 const RESOURCE_DIRECTORY = 'VoIPSDKResources';
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const DEFAULTS = {
+  mediaAdapter: 'webrtc',
   unhandledAction: 'fail',
   simulatorSupport: true,
   includesCallsInRecents: true,
@@ -27,6 +29,7 @@ const KEYS = new Set([
   'iconTemplateIos',
   'microphonePermission',
   'cameraPermission',
+  'providerOwnershipMonitoring',
 ]);
 
 function fail(message) {
@@ -44,9 +47,7 @@ function validate(options) {
   if (!isDictionary(options)) fail('plugin options must be an object.');
   for (const key of Object.keys(options)) {
     if (!KEYS.has(key))
-      fail(
-        `unsupported option "${key}". Media adapters arrive in M2; default calling arrives in M3.`,
-      );
+      fail(`unsupported option "${key}". Default calling arrives in M3.`);
   }
   const settings = {
     ...DEFAULTS,
@@ -54,6 +55,13 @@ function validate(options) {
       Object.entries(options).filter(([, value]) => value !== undefined),
     ),
   };
+  if (
+    settings.providerOwnershipMonitoring !== undefined &&
+    typeof settings.providerOwnershipMonitoring !== 'boolean'
+  )
+    fail('providerOwnershipMonitoring must be a boolean.');
+  if (!['webrtc', 'livekit', 'none'].includes(settings.mediaAdapter))
+    fail('mediaAdapter must be webrtc, livekit, or none.');
   if (!['fail', 'accept'].includes(settings.unhandledAction))
     fail('unhandledAction must be fail or accept.');
   for (const key of [
@@ -310,11 +318,17 @@ function withVoIPSDK(config, options) {
       fail('UIBackgroundModes must be an array of strings.');
     if (plist.VoIPSDK !== undefined && !isDictionary(plist.VoIPSDK))
       fail('Info.plist VoIPSDK must be a dictionary.');
-    plist.UIBackgroundModes = modes.includes('voip')
-      ? [...modes]
-      : [...modes, 'voip'];
+    const backgroundModes = [...modes];
+    for (const mode of [
+      'voip',
+      ...(settings.mediaAdapter === 'none' ? [] : ['audio']),
+    ]) {
+      if (!backgroundModes.includes(mode)) backgroundModes.push(mode);
+    }
+    plist.UIBackgroundModes = backgroundModes;
     plist.VoIPSDK = {
       ...plist.VoIPSDK,
+      mediaAdapter: settings.mediaAdapter,
       unhandledAction: settings.unhandledAction,
       simulatorSupport: settings.simulatorSupport,
       includesCallsInRecents: settings.includesCallsInRecents,
@@ -324,6 +338,11 @@ function withVoIPSDK(config, options) {
         settings.maximumConversationsPerConversationGroup,
       ringtoneName: settings.defaultRingtoneIos,
     };
+    if (settings.providerOwnershipMonitoring === undefined)
+      delete plist.VoIPSDK.providerOwnershipMonitoring;
+    else
+      plist.VoIPSDK.providerOwnershipMonitoring =
+        settings.providerOwnershipMonitoring;
     if (settings.iconTemplateIos === undefined)
       delete plist.VoIPSDK.iconTemplateImageName;
     else
@@ -338,11 +357,21 @@ function withVoIPSDK(config, options) {
     }
     return mod;
   });
+  config = withPodfileProperties(config, (mod) => {
+    mod.modResults['ios-voip-sdk.providerOwnershipMonitoring'] = String(
+      settings.providerOwnershipMonitoring === true,
+    );
+    return mod;
+  });
   config = withEntitlementsPlist(config, (mod) => {
     if (settings.apsEnvironment !== undefined)
       mod.modResults['aps-environment'] = settings.apsEnvironment;
     else if (mod.modResults['aps-environment'] === undefined)
       mod.modResults['aps-environment'] = 'development';
+    return mod;
+  });
+  config = withPodfileProperties(config, (mod) => {
+    mod.modResults['ios-voip-sdk.mediaAdapter'] = settings.mediaAdapter;
     return mod;
   });
   return withResources(config, settings);

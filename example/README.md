@@ -6,7 +6,8 @@ resume and end. It owns no `ConversationManager` or `CXProvider`. The SDK starts
 its sole client and PushKit service during native launch, before JavaScript.
 The screen also shows native module loading and runtime activation, with loading,
 error and retry states. The example handler accepts requests locally; production
-apps provide signaling and media. No media adapter is demonstrated in M1.
+apps provide signaling and media. The normal example selects `none`; the optional
+M2 acceptance variant demonstrates the existing React Native LiveKit engine.
 
 Install and build the package from repository root:
 
@@ -46,14 +47,11 @@ buttons. iPhone/iPad, Dark Mode and large-text visual checks remain pending.
 
 ## Acceptance fixtures
 
-**Measured for this slice:** the package builds, the example typechecks against
-this worktree's public declarations, Swift grammar parsing passes, and
-`python3 discovery/check_sdk_m1.py` passes eight offline control groups containing
-two positive three-case fixture variants and 29 tamper cases. The local dependency symlink
-points to another worktree's M0 package, so this slice's example typecheck uses a
-temporary TypeScript path mapping; it does not modify shared dependencies.
-**Proposed:** the combined native build and M1 journeys await source-bound runs.
-These host controls do not claim simulator or device qualification.
+**Measured:** [M1 native receipts](../docs/progress/2026-10-22-codex-m1.md) and
+[M2 native receipts](../docs/verification/2026-10-22-sdk-m2/native-green-82c1b8f/README.md)
+record the qualified source, toolchain, installed products and journeys. Package
+and example typechecks use the shared workspace installation directly. Host
+controls remain separate from simulator and device qualification.
 
 `SDK_M0_ACCEPTANCE=1` preserves the M0 incoming/ring/join/end journey. Its small
 Swift handler exists only in that mode. It uses the SDK client; the legacy trace
@@ -97,3 +95,30 @@ trace precision and rejects a changed deadline on attachment. Expiry follows the
 interval rather than a new timer derived from JS startup. An expected rejection
 of the native join request during the no-handler expiry case is retained as
 evidence; it is not counted as an unrelated fixture error.
+
+## M2 selected LiveKit fixture
+
+The default `none` variant disables optional LiveKit native autolinking. To build
+the measured LiveKit variant, use the exact locked workspace dependencies, select
+the adapter for prebuild, and run CocoaPods from the generated iOS directory:
+
+```sh
+SDK_EXAMPLE_MEDIA_ADAPTER=livekit npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install
+(cd example/ios && SDK_EXAMPLE_MEDIA_ADAPTER=livekit pod install)
+bash discovery/build_sdk_m2.sh /tmp/sdk-m2-build
+python3 discovery/run_sdk_m2.py --build-root /tmp/sdk-m2-build --output /tmp/sdk-m2-capture
+```
+
+Both output directories must be fresh. Commit source inputs before the bound
+build; the runner refuses stale or malformed products before creating a simulator.
+It creates and deletes one owned simulator, grants only that example's microphone
+permission, preserves inherited external libraries per launch and rejects runtime
+injection. `SDK_M2_CASE` is runner-owned (`livekit` or `stale-audio`); the third
+case uses the Debug native singleton-reentrancy fixture.
+
+The media fixture uses public getUserMedia and startLocalRecording to keep actual
+capture demand on the existing ADM. It observes the native engine on that module's
+worker queue; it never creates another factory or activates the session. The
+simulator-only fault handshake observes the runner's acknowledged control before
+push/join. Diagnostics and injection remain example-only. See
+[M2 integration](../Expo/M2-AUDIO.md) for setup, public routes and support limits.

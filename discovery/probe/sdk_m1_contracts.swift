@@ -1,4 +1,5 @@
 import CallKit
+import AVFAudio
 import CryptoKit
 import Foundation
 @preconcurrency import LiveCommunicationKit
@@ -21,6 +22,19 @@ private enum ContractTrace {
       FileHandle.standardError.write(Data("PROBE ".utf8) + data + Data("\n".utf8))
     }
   }
+}
+
+@MainActor
+private final class ReentrantMediaAdapter: MediaAdapter {
+  private(set) var observedClient: ConversationClient?
+  private(set) var authorizationCalls = 0
+  func setSystemAudioAuthorization(_ active: Bool) {
+    authorizationCalls += 1
+    observedClient = try? VoIPApplication.start(mediaAdapter: self).client
+  }
+  func prepare() async throws {}
+  func didActivate(_ session: AVAudioSession) async throws {}
+  func didDeactivate(_ session: AVAudioSession) async throws {}
 }
 
 @MainActor
@@ -52,6 +66,17 @@ private final class SDKM1ContractsProbe {
       ContractTrace.log("contract.warning", ["message": message, "phase": phase, "count": warnings])
     }
     do {
+      if mode == "media-reentrancy" {
+        let adapter = ReentrantMediaAdapter()
+        let application = try VoIPApplication.start(mediaAdapter: adapter)
+        let client = application.client
+        let repeated = try VoIPApplication.start(mediaAdapter: adapter)
+        let sameOwner = adapter.observedClient === client && application === repeated
+        ContractTrace.log("contract.mediaReentrancy", ["authorizationCalls": adapter.authorizationCalls,
+          "sameOwner": sameOwner, "warnings": warnings])
+        finish(sameOwner && adapter.authorizationCalls == 1 && warnings == 0)
+        return
+      }
       if mode == "unhandled-accept" {
         ContractTrace.log("contract.configuration", ["policy": "accept", "handlerAttached": false])
       }

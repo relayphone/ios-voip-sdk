@@ -56,7 +56,7 @@ def fixture_case(root, case, pid):
     add('app.entry')
     add('launch', dict(traceVersion=2, mode='sdk-m1', case=case))
     add('sdk.activation', dict(active=True))
-    add('sdk.managerCreated', dict(owner='ConversationClient.shared'))
+    add('sdk.managerCreated', dict(owner='VoIPApplication.start'))
     snapshot()
     if case == 'journey':
         add('m1.jsReady')

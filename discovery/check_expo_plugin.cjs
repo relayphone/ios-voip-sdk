@@ -95,6 +95,7 @@ async function main() {
     assert.deepEqual(Object.keys(defaults.mods.ios).sort(), [
       'entitlements',
       'infoPlist',
+      'podfileProperties',
     ]);
     checks.push('apple-mods-only');
     const plist = await apply(defaults, 'infoPlist', {
@@ -106,6 +107,7 @@ async function main() {
     assert.deepEqual(plist.UIBackgroundModes, ['audio', 'location', 'voip']);
     assert.deepEqual(plist.VoIPSDK, {
       custom: 'preserved',
+      mediaAdapter: 'webrtc',
       unhandledAction: 'fail',
       simulatorSupport: true,
       includesCallsInRecents: true,
@@ -117,6 +119,45 @@ async function main() {
     assert.deepEqual(plist.Custom, { nested: true });
     assert.deepEqual(plist.NSUserActivityTypes, ['OtherIntent']);
     checks.push('defaults-and-existing-plist-preserved');
+    assert.equal(plist.VoIPSDK.providerOwnershipMonitoring, undefined);
+    assert.deepEqual(
+      await apply(defaults, 'podfileProperties', { custom: 'preserved' }),
+      {
+        custom: 'preserved',
+        'ios-voip-sdk.mediaAdapter': 'webrtc',
+        'ios-voip-sdk.providerOwnershipMonitoring': 'false',
+      },
+    );
+    for (const enabled of [false, true]) {
+      const monitored = configured({ providerOwnershipMonitoring: enabled });
+      assert.equal(
+        (await apply(monitored, 'infoPlist', {})).VoIPSDK
+          .providerOwnershipMonitoring,
+        enabled,
+      );
+      assert.equal(
+        (await apply(monitored, 'podfileProperties', {}))[
+          'ios-voip-sdk.providerOwnershipMonitoring'
+        ],
+        String(enabled),
+      );
+    }
+    assert.throws(
+      () => configured({ providerOwnershipMonitoring: 'true' }),
+      /boolean/,
+    );
+    assert.equal(
+      (
+        await apply(defaults, 'infoPlist', {
+          VoIPSDK: { providerOwnershipMonitoring: true },
+        })
+      ).VoIPSDK.providerOwnershipMonitoring,
+      undefined,
+    );
+    checks.push(
+      'provider-monitor-explicit-build-and-runtime-opt-in-with-debug-default',
+    );
+
     assert.deepEqual(
       await apply(configured(), 'infoPlist', structuredClone(plist)),
       plist,
@@ -179,6 +220,58 @@ async function main() {
       { 'aps-environment': 'production', custom: true },
     );
     checks.push('apns-development-default-preservation-and-explicit-selection');
+    for (const mediaAdapter of ['webrtc', 'livekit', 'none']) {
+      const selection = configured({ mediaAdapter });
+      const properties = await apply(selection, 'podfileProperties', {
+        custom: 'preserved',
+        'ios-voip-sdk.mediaAdapter': 'stale',
+      });
+      assert.deepEqual(properties, {
+        custom: 'preserved',
+        'ios-voip-sdk.mediaAdapter': mediaAdapter,
+        'ios-voip-sdk.providerOwnershipMonitoring': 'false',
+      });
+      const native = await apply(selection, 'infoPlist', {});
+      assert.equal(native.VoIPSDK.mediaAdapter, mediaAdapter);
+      assert.deepEqual(
+        native.UIBackgroundModes,
+        mediaAdapter === 'none' ? ['voip'] : ['voip', 'audio'],
+      );
+      const existingModes = await apply(
+        configured({ mediaAdapter }),
+        'infoPlist',
+        {
+          UIBackgroundModes: ['location', 'audio', 'remote-notification'],
+        },
+      );
+      assert.deepEqual(existingModes.UIBackgroundModes, [
+        'location',
+        'audio',
+        'remote-notification',
+        'voip',
+      ]);
+      assert.deepEqual(
+        (await apply(configured({ mediaAdapter }), 'infoPlist', native))
+          .UIBackgroundModes,
+        native.UIBackgroundModes,
+      );
+      assert.deepEqual(
+        await apply(
+          configured({ mediaAdapter }),
+          'podfileProperties',
+          properties,
+        ),
+        properties,
+      );
+    }
+    assert.deepEqual(await apply(configured(), 'podfileProperties', {}), {
+      'ios-voip-sdk.mediaAdapter': 'webrtc',
+      'ios-voip-sdk.providerOwnershipMonitoring': 'false',
+    });
+    checks.push('media-selection-native-plist-and-pod-properties-idempotent');
+    checks.push(
+      'media-background-audio-required-mode-and-existing-mode-preservation',
+    );
 
     for (const options of [
       null,
@@ -200,7 +293,8 @@ async function main() {
       { iconTemplateIos: false },
       { microphonePermission: '' },
       { defaultCallingApp: true },
-      { mediaAdapter: 'livekit' },
+      { mediaAdapter: 'unknown' },
+      { mediaAdapter: null },
       { incomingCallTimeout: 45 },
       { typo: true },
     ]) {

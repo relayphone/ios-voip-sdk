@@ -1,0 +1,285 @@
+{
+  "classification": "derived controlled-field summary; original trace bytes remain in ignored capture",
+  "cases": {
+    "livekit": {
+      "traceSHA256": "cfcf940c50fff0c62d2c3c413958e3c5df28857f1898608ab7a5f448bd403287",
+      "existingMediaObjectStable": true,
+      "observations": [
+        {
+          "event": "m2.mediaSnapshot",
+          "label": "initial",
+          "t_ms": 734,
+          "sequence": 6,
+          "category": "AVAudioSessionCategoryPlayAndRecord",
+          "mode": "AVAudioSessionModeVoiceChat",
+          "currentRouteType": "Speaker",
+          "routeCount": 2,
+          "inputAvailable": false,
+          "outputAvailable": false,
+          "isEngineRunning": false,
+          "activatedCount": 0,
+          "deactivatedCount": 0,
+          "missingCount": 0,
+          "failedCount": 0
+        },
+        {
+          "event": "m2.recordingDemand",
+          "t_ms": 819,
+          "sequence": 13,
+          "accepted": true
+        },
+        {
+          "event": "m2.mediaSnapshot",
+          "label": "demand",
+          "t_ms": 860,
+          "sequence": 14,
+          "category": "AVAudioSessionCategoryPlayAndRecord",
+          "mode": "AVAudioSessionModeVoiceChat",
+          "currentRouteType": "Speaker",
+          "routeCount": 2,
+          "inputAvailable": false,
+          "outputAvailable": false,
+          "isEngineRunning": false,
+          "activatedCount": 0,
+          "deactivatedCount": 0,
+          "missingCount": 0,
+          "failedCount": 0
+        },
+        {
+          "event": "m2.audioEvent",
+          "t_ms": 1288,
+          "sequence": 28,
+          "name": "audioActivated",
+          "count": 1
+        },
+        {
+          "event": "m2.mediaSnapshot",
+          "label": "active",
+          "t_ms": 1952,
+          "sequence": 30,
+          "category": "AVAudioSessionCategoryPlayAndRecord",
+          "mode": "AVAudioSessionModeVoiceChat",
+          "currentRouteType": "Speaker",
+          "routeCount": 2,
+          "inputAvailable": true,
+          "outputAvailable": true,
+          "isEngineRunning": true,
+          "activatedCount": 1,
+          "deactivatedCount": 0,
+          "missingCount": 0,
+          "failedCount": 0
+        },
+        {
+          "event": "m2.mediaSnapshot",
+          "label": "speaker",
+          "t_ms": 1960,
+          "sequence": 33,
+          "category": "AVAudioSessionCategoryPlayAndRecord",
+          "mode": "AVAudioSessionModeVoiceChat",
+          "currentRouteType": "Speaker",
+          "routeCount": 2,
+          "inputAvailable": true,
+          "outputAvailable": true,
+          "isEngineRunning": true,
+          "activatedCount": 1,
+          "deactivatedCount": 0,
+          "missingCount": 0,
+          "failedCount": 0
+        },
+        {
+          "event": "m2.audioEvent",
+          "t_ms": 2155,
+          "sequence": 42,
+          "name": "audioDeactivated",
+          "count": 1
+        },
+        {
+          "event": "m2.mediaSnapshot",
+          "label": "held",
+          "t_ms": 2190,
+          "sequence": 44,
+          "category": "AVAudioSessionCategoryPlayAndRecord",
+          "mode": "AVAudioSessionModeVoiceChat",
+          "currentRouteType": "Speaker",
+          "routeCount": 2,
+          "inputAvailable": false,
+          "outputAvailable": false,
+          "isEngineRunning": false,
+          "activatedCount": 1,
+          "deactivatedCount": 1,
+          "missingCount": 0,
+          "failedCount": 0
+        },
+        {
+          "event": "m2.audioEvent",
+          "t_ms": 2588,
+          "sequence": 52,
+          "name": "audioActivated",
+          "count": 2
+        },
+        {
+          "event": "m2.mediaSnapshot",
+          "label": "resumed",
+          "t_ms": 2803,
+          "sequence": 54,
+          "category": "AVAudioSessionCategoryPlayAndRecord",
+          "mode": "AVAudioSessionModeVoiceChat",
+          "currentRouteType": "Speaker",
+          "routeCount": 2,
+          "inputAvailable": true,
+          "outputAvailable": true,
+          "isEngineRunning": true,
+          "activatedCount": 2,
+          "deactivatedCount": 1,
+          "missingCount": 0,
+          "failedCount": 0
+        },
+        {
+          "event": "m2.audioEvent",
+          "t_ms": 3060,
+          "sequence": 63,
+          "name": "audioDeactivated",
+          "count": 2
+        },
+        {
+          "event": "m2.mediaSnapshot",
+          "label": "ended",
+          "t_ms": 3225,
+          "sequence": 65,
+          "category": "AVAudioSessionCategoryPlayAndRecord",
+          "mode": "AVAudioSessionModeVoiceChat",
+          "currentRouteType": "Speaker",
+          "routeCount": 2,
+          "inputAvailable": false,
+          "outputAvailable": false,
+          "isEngineRunning": false,
+          "activatedCount": 2,
+          "deactivatedCount": 2,
+          "missingCount": 0,
+          "failedCount": 0
+        },
+        {
+          "event": "m2.localTrackReleased",
+          "t_ms": 3227,
+          "sequence": 69,
+          "count": 1
+        },
+        {
+          "event": "m2.result",
+          "t_ms": 3227,
+          "sequence": 70,
+          "success": true
+        }
+      ]
+    },
+    "stale-audio": {
+      "traceSHA256": "42519e3cc2ac3a5567b2b563de707549fd537240d9c2f9d0119b9aa46ebec636",
+      "existingMediaObjectStable": true,
+      "observations": [
+        {
+          "event": "m2.mediaSnapshot",
+          "label": "initial",
+          "t_ms": 717,
+          "sequence": 6,
+          "category": "AVAudioSessionCategoryPlayAndRecord",
+          "mode": "AVAudioSessionModeVoiceChat",
+          "currentRouteType": "Speaker",
+          "routeCount": 2,
+          "inputAvailable": false,
+          "outputAvailable": false,
+          "isEngineRunning": false,
+          "activatedCount": 0,
+          "deactivatedCount": 0,
+          "missingCount": 0,
+          "failedCount": 0
+        },
+        {
+          "event": "m2.recordingDemand",
+          "t_ms": 864,
+          "sequence": 13,
+          "accepted": true
+        },
+        {
+          "event": "m2.mediaSnapshot",
+          "label": "demand",
+          "t_ms": 882,
+          "sequence": 14,
+          "category": "AVAudioSessionCategoryPlayAndRecord",
+          "mode": "AVAudioSessionModeVoiceChat",
+          "currentRouteType": "Speaker",
+          "routeCount": 2,
+          "inputAvailable": false,
+          "outputAvailable": false,
+          "isEngineRunning": false,
+          "activatedCount": 0,
+          "deactivatedCount": 0,
+          "missingCount": 0,
+          "failedCount": 0
+        },
+        {
+          "event": "m2.audioEvent",
+          "t_ms": 10987,
+          "sequence": 28,
+          "name": "audioActivationMissing",
+          "count": 1
+        },
+        {
+          "event": "m2.audioEvent",
+          "t_ms": 16037,
+          "sequence": 30,
+          "name": "audioActivationFailed",
+          "count": 1
+        },
+        {
+          "event": "m2.mediaSnapshot",
+          "label": "failed",
+          "t_ms": 16052,
+          "sequence": 36,
+          "category": "AVAudioSessionCategoryPlayAndRecord",
+          "mode": "AVAudioSessionModeVoiceChat",
+          "currentRouteType": "Speaker",
+          "routeCount": 2,
+          "inputAvailable": false,
+          "outputAvailable": false,
+          "isEngineRunning": false,
+          "activatedCount": 0,
+          "deactivatedCount": 0,
+          "missingCount": 1,
+          "failedCount": 1
+        },
+        {
+          "event": "m2.localTrackReleased",
+          "t_ms": 16076,
+          "sequence": 40,
+          "count": 1
+        },
+        {
+          "event": "m2.result",
+          "t_ms": 16076,
+          "sequence": 41,
+          "success": true
+        }
+      ]
+    },
+    "media-reentrancy": {
+      "traceSHA256": "1c512640a7bb91136433755618845ece60999e847179db9398f7799e5c3554d3",
+      "existingMediaObjectStable": null,
+      "observations": [
+        {
+          "event": "contract.mediaReentrancy",
+          "t_ms": 2088,
+          "sequence": 4,
+          "authorizationCalls": 1,
+          "sameOwner": true,
+          "warnings": 0
+        },
+        {
+          "event": "contract.result",
+          "t_ms": 2088,
+          "sequence": 5,
+          "success": true
+        }
+      ]
+    }
+  }
+}
