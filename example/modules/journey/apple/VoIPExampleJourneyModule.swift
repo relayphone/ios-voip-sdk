@@ -274,7 +274,7 @@ private final class ExampleJourney {
   #if targetEnvironment(simulator) && canImport(livekit_react_native_webrtc)
   /// Public getters on the existing RN module's worker. No factory/session
   /// activation, availability writes, or private runtime lookup is performed.
-  func mediaSnapshot(_ module: WebRTCModule, label: String) async throws -> [String: Any] {
+  func mediaSnapshot(_ module: WebRTCModule, label: String) async throws -> String {
     let labels: Set<String> = ["poll", "initial", "demand", "active", "speaker", "held", "resumed", "ended", "failed"]
     guard !JourneyTrace.m2Case.isEmpty, !completed, labels.contains(label) else { throw JourneyError.wrongMode }
     let client = try bindClient()
@@ -300,7 +300,9 @@ private final class ExampleJourney {
       "missingCount": mediaEventCounts[ConversationEvent.audioActivationMissing.rawValue, default: 0],
       "failedCount": mediaEventCounts[ConversationEvent.audioActivationFailed.rawValue, default: 0]]
     if label != "poll" { JourneyTrace.record("m2.mediaSnapshot", snapshot) }
-    return snapshot
+    let bytes = try JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys])
+    guard let json = String(data: bytes, encoding: .utf8) else { throw JourneyError.mediaUnavailable }
+    return json
   }
   #endif
 

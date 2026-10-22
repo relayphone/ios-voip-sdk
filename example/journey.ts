@@ -24,7 +24,7 @@ type JourneyModule = NativeModule & {
   runID: string;
   acceptance(): Promise<void>;
   /** Simulator-only, example-only public getters on the existing selected ADM. */
-  mediaSnapshot(label: string): Promise<MediaSnapshot>;
+  mediaSnapshot(label: string): Promise<string>;
   /** Runner-bound sandbox control receipt, simulator-only. */
   awaitMediaControl(): Promise<void>;
   simulatePush(

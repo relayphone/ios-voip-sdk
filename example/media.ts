@@ -63,6 +63,14 @@ async function waitForConversations(
   throw new Error('Example media conversation observation deadline');
 }
 
+async function mediaSnapshot(label: string): Promise<MediaSnapshot> {
+  // The example native method serializes only its whitelisted primitive fields.
+  const snapshot: MediaSnapshot = JSON.parse(
+    await journey().mediaSnapshot(label),
+  );
+  return snapshot;
+}
+
 async function waitForMedia(
   label: string,
   predicate: (snapshot: MediaSnapshot) => boolean,
@@ -71,7 +79,7 @@ async function waitForMedia(
 ): Promise<MediaSnapshot> {
   const deadline = Date.now() + timeoutMS;
   while (Date.now() < deadline) {
-    const snapshot = await journey().mediaSnapshot('poll');
+    const snapshot = await mediaSnapshot('poll');
     if (
       identity &&
       (snapshot.moduleID !== identity.moduleID ||
@@ -80,7 +88,7 @@ async function waitForMedia(
       throw new Error('Example media engine identity changed');
     }
     if (predicate(snapshot)) {
-      const recorded = await journey().mediaSnapshot(label);
+      const recorded = await mediaSnapshot(label);
       await check(label + '-media', predicate(recorded));
       await check(
         label + '-same-engine',
