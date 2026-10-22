@@ -60,9 +60,17 @@ import Foundation
     manager.deliver(action)
     try await wait { self.held[local] != nil }
     precondition(snapshot(local)?.pending?.kind == .end && snapshot(local)?.ended == nil)
+    manager.deferEndedState = true
     hold.remove(local); held.removeValue(forKey: local)?.resume()
     try await wait { action.state == .complete && self.endedReasons[local] == .local }
     precondition(manager.reports.count == reportsBefore && endCalls == [local])
+    let explicitAttempts = manager.performAttempts
+    manager.incomingErrors = [NSError(domain: "com.apple.CallKit.error.incomingcall", code: 2)]
+    _ = try await client.reportIncomingConversation(localPayload, source: .pushKit)
+    for _ in 0..<3 { await Task.yield() }
+    precondition(manager.performAttempts == explicitAttempts && endCalls == [local] && manager.reports.count == reportsBefore,
+      "A required duplicate cannot re-end the same object after an explicit public local End fulfills while terminal membership lags")
+    manager.deferEndedState = false
 
     let requestFailure = try await client.reportIncomingConversation(payload("request-failure"))
     manager.performError = PlatformFailure.rejected
@@ -174,7 +182,7 @@ import Foundation
     client.incomingIntake.reset()
     for _ in 0..<3 { await Task.yield() }
     precondition(manager.performAttempts == resetAttempts, "Reset invalidation must stop queued old-generation cleanup")
-    print("{\"success\":true,\"groups\":13,\"actualClientAndCoordinatorAndIntake\":true,\"nativeFrameworkMeasured\":false}")
+    print("{\"success\":true,\"groups\":14,\"actualClientAndCoordinatorAndIntake\":true,\"nativeFrameworkMeasured\":false}")
   }
 }
 
