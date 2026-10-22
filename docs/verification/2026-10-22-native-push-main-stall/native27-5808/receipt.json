@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1,
+  "success": true,
+  "classification": "measured local iOS27 simulator six-case acceptance; main-stall case directly invokes the real native-owner body, not APNs, actual PushKit delivery or a physical cold launch",
+  "sourceCommit": "5808a2000edf16a26b8c776ddd4d47655f133947",
+  "sourceInputsSHA256": "ccdb609525a1a9a86734f389c9796b74b94eff7f46bdb78f9e7d7f30db0622a4",
+  "sourceInputCount": 51,
+  "executionOS": "27.0",
+  "profile": "ios-27.0",
+  "ownedSimulatorID": "295A7492-109D-4ACE-B80B-24C91FC72007",
+  "buildReceiptSHA256": "5773cc3d0ed6aba027416966cf8b3fa716800560c70afdfd0ac1bc38a015c781",
+  "builtProductSHA256": {
+    "PushEntry.app/PushEntry": "677f42911932b211b052e88ce0ea17eda46c9c1027de882bf36c3c2facd34488",
+    "PushEntry.app/Info.plist": "a9e1f3843e818629920a7d1b987087f2e688e3a858db09e1e76e3243f929bef3",
+    "PushEntry.app/IosVoipSDKRuntime.bundle/ios-27.0.json": "a5c2931c42886773ab3070b521e46dfb9dcbacf6761e8759139ed9d5c59d5d4d"
+  },
+  "installedProductSHA256": {
+    "PushEntry.app/PushEntry": "677f42911932b211b052e88ce0ea17eda46c9c1027de882bf36c3c2facd34488",
+    "PushEntry.app/Info.plist": "a9e1f3843e818629920a7d1b987087f2e688e3a858db09e1e76e3243f929bef3",
+    "PushEntry.app/IosVoipSDKRuntime.bundle/ios-27.0.json": "a5c2931c42886773ab3070b521e46dfb9dcbacf6761e8759139ed9d5c59d5d4d"
+  },
+  "launchedExecutableSHA256": "677f42911932b211b052e88ce0ea17eda46c9c1027de882bf36c3c2facd34488",
+  "captureManifestSHA256": "efdeee0905540497521096027a62cdb5fffc1fb12d09fbbc876975fe63119fc8",
+  "strictSummarySHA256": "f86cad955d85d1c398a12b2d6cac859106a06bc9c028f6bd1ebfa68aef4a75a5",
+  "independentReplay": {
+    "exitCode": 0,
+    "stdoutSHA256": "f86cad955d85d1c398a12b2d6cac859106a06bc9c028f6bd1ebfa68aef4a75a5",
+    "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "fullPrivateOperatorReceiptSHA256": "6d2ed8be682d06cd473ec3bbf64ab1a8354e7e06909357f22893a60224cbdbd5",
+  "operatorSHA256": "d213c27eec8ea5bd2a4fa5fa391fbe459bcd43256c09066b6590fdb651a12ba9",
+  "elapsedSeconds": 129.57,
+  "oneAttempt": true,
+  "launchEnvironment": {
+    "globalLaunchdModified": false,
+    "inheritedPreserved": true,
+    "fullPrivateEnvironmentReceiptSHA256": "ff5a9c1a2ed755c64a695804985cc56ef4780a968d5dd1396dd5643b9280668b"
+  },
+  "cleanup": {
+    "shutdownExitCode": 0,
+    "deleteExitCode": 0,
+    "independentlyAbsent": true,
+    "independentInventorySHA256": "f092e51b260aa5e3f6163c94028d03eb50e9e1270a9175464425d2b7fa9a88d1",
+    "extraTerminateExitCode": 3,
+    "extraTerminateReason": "found nothing to terminate after the six owned supervisors stopped",
+    "fullPrivateCleanupReceiptSHA256": "001d3754e77f57982a3a74c29dbb5c78c9b7892dca23e91644af0ded7ba2fb86"
+  },
+  "cases": [
+    {
+      "mode": "sdk-required",
+      "pid": 58319,
+      "runID": "89e6834e-e48d-4ec4-a227-d7e7f79df0a8",
+      "strictResult": {
+        "success": true,
+        "mode": "sdk-required",
+        "deliveries": 1,
+        "reportEntryBeforeReturn": true,
+        "settlementBeforeCompletion": true
+      },
+      "consoleSHA256": "bc4d9cef387c45ec8e02fb828e0b8213bba285df4357a22d9e2ffb16da36a0be",
+      "supervisorReceiptSHA256": "08cf00a608d1b8b95ed4c04535d52e2f163d4c450938e73b04fbaf3aeb965787",
+      "journalSHA256": "575df5131d1d72170dc25153030dde8aa336775f51a18f2f6719e545e69513d4",
+      "sessionSHA256": "cdcb4fc933f41bfb58ab6f04294ebe7f266640493494cebb6a6e9cde1911d49f",
+      "ownedSupervisorStopped": true
+    },
+    {
+      "mode": "sdk-duplicate",
+      "pid": 58387,
+      "runID": "932f4164-1636-49ef-9b67-bb537decb08f",
+      "strictResult": {
+        "success": true,
+        "mode": "sdk-duplicate",
+        "deliveries": 2,
+        "reportEntryBeforeReturn": true,
+        "settlementBeforeCompletion": true
+      },
+      "consoleSHA256": "71f6868a0ebfc3997a9cce68b7f89860a94c1d34e224eac6ca6d7c6df5d8bb82",
+      "supervisorReceiptSHA256": "f2212c5383c8e8c9100eef547666d128bb58e0affc370572f11ede63349073d1",
+      "journalSHA256": "74f5c563956b0cad4d7e5b8d223a6e20d0a86688c56be748083ff0003925e048",
+      "sessionSHA256": "fc8d73a68cff2eb37f2a646b156f71f93eb9b18eff4b8ce0c309fd6075f628b5",
+      "ownedSupervisorStopped": true
+    },
+    {
+      "mode": "missing",
+      "pid": 58534,
+      "runID": "f2743db3-0112-46c3-937f-e770db0a32ab",
+      "strictResult": {
+        "success": false,
+        "mode": "missing",
+        "strictGateRefusal": "required report was not entered before callback returned",
+        "negativeControlReproduced": true,
+        "completeBoundaryEvidence": true,
+        "deliveries": 1,
+        "actualReports": 0,
+        "actualSettlements": 0,
+        "reportingViolations": 2
+      },
+      "consoleSHA256": "e7a81937185a8c88adbbccb0381a77733fa8e8c0d10d48ee5a6e74605d9ff42a",
+      "supervisorReceiptSHA256": "4d7b192e8f3b6497e0dbe88ee148766e927b493c1df62889022efbb8f6e1665f",
+      "journalSHA256": "413b9b23ed58524683654427cd98a1a674bda0a51a2bd241d03d40c0a3a7bc5d",
+      "sessionSHA256": "e01c984d707f22d1b9105592abd1d2e34d2980d17900f56ae0a28363ebec760f",
+      "ownedSupervisorStopped": true
+    },
+    {
+      "mode": "deferred",
+      "pid": 58595,
+      "runID": "ca036aeb-006a-4a8b-8e9e-88d15f539aad",
+      "strictResult": {
+        "success": false,
+        "mode": "deferred",
+        "strictGateRefusal": "required report was not entered before callback returned",
+        "negativeControlReproduced": true,
+        "completeBoundaryEvidence": true,
+        "deliveries": 1,
+        "actualReports": 1,
+        "actualSettlements": 1,
+        "reportingViolations": 1
+      },
+      "consoleSHA256": "736893aecb17d1458464c10e655ea2c9f6961b2f54c0a2f31701e30ada980968",
+      "supervisorReceiptSHA256": "175abafcb79ea25882a6d18b821b9b0709b200947f70d03691b670fb4b11b53a",
+      "journalSHA256": "7cb3cff7dd24a04bd66eb26dfed482d41ed7573fa032c8e9952c6ef7b76102c3",
+      "sessionSHA256": "9dc53c1681792c94769c4c7fe07261180c64bb57aab223bf40b07179981cd671",
+      "ownedSupervisorStopped": true
+    },
+    {
+      "mode": "optional",
+      "pid": 58676,
+      "runID": "ff52975a-2d24-4840-aab0-c091b3989c14",
+      "strictResult": {
+        "success": true,
+        "mode": "optional",
+        "deliveries": 1,
+        "reportEntryBeforeReturn": true,
+        "settlementBeforeCompletion": false
+      },
+      "consoleSHA256": "0f30e157c48040c4ec4fecd5d7bd3e32b9be37ebd9c2f44626f1c6b0c839ec03",
+      "supervisorReceiptSHA256": "4525ce5106c625033658c53f8415162272b4ef75181d0a5ed7d5cd424a39fad1",
+      "journalSHA256": "ae3c635ae0a0df3917fe6cea1d9bfb6a77d6ed71b7c0a9e2b29801a70ff4f8b4",
+      "sessionSHA256": "e0717d151c155faa2761e4b8a391e18182550cb2dcfcdff1b056270ce99b3093",
+      "ownedSupervisorStopped": true
+    },
+    {
+      "mode": "sdk-main-stall",
+      "pid": 58711,
+      "runID": "cd60b72c-6274-4e41-a422-3f16fef5c183",
+      "strictResult": {
+        "success": true,
+        "mode": "sdk-main-stall",
+        "classification": "simulator direct real native-owner method with stalled main; not PushKit delivery, CKSimInjectPush, APNs or cold launch",
+        "owner": "0x108540480",
+        "fixtureID": "cd60b72c-6274-4e41-a422-3f16fef5c183-native-main-stall",
+        "conversationID": "93C7E567-3EA7-49B7-8730-536C5F4AE30C",
+        "actualReports": 1,
+        "actualSettlements": 1,
+        "nativeCompletions": 1,
+        "reportEntryBeforeNativeReturn": true,
+        "actualSettlementBeforeNativeCompletion": true,
+        "mainStallRuntimeMilliseconds": 3001,
+        "mainStallElapsedSeconds": 3.001097291666156,
+        "canonicalPublicPayload": true
+      },
+      "consoleSHA256": "a57e09f9be7e6b6d985e26a39495fa47f12071a13b523b2cfaa73c5f33382d41",
+      "supervisorReceiptSHA256": "4f336bfe232291f45033a4d8db342d4247054f6a1ef0e8961931582192781bce",
+      "journalSHA256": "d864f9a48f1386cc368d9b4cba0315d2e5d612af96d08abbcc30d11090d889b6",
+      "sessionSHA256": "dc4f32372969495d46f8c5a18899738fa5dc104bb991603bcf83c749ed1499b9",
+      "ownedSupervisorStopped": true
+    }
+  ],
+  "mainStall": {
+    "millisecondsFromRuntimeEpoch": {
+      "fixture.mainStallBegan": 19,
+      "report.incoming": 48,
+      "fixture.nativeCallbackReturned": 2025,
+      "fixture.mainStallEnded": 3020,
+      "report.completed": 3045,
+      "fixture.nativeCompletion": 3045
+    },
+    "measuredStallSeconds": 3.001097291666156,
+    "waitExpiryDiagnostics": 1,
+    "actualSettlementBeforeNativeCompletion": true,
+    "actualReportEntryBeforeNativeReturn": true,
+    "excerptSHA256": "6d1fa1d4bf79c450b39683bfc0d0e86174d7b25fdc59ea34471b7a8ed012f7ef",
+    "queueLimit": "This run settled after main resumed; it does not establish a general framework private completion queue."
+  },
+  "runtimeMetadata": {
+    "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+    "version": "27.0",
+    "buildversion": "24A434",
+    "supportedArchitectures": [
+      "arm64"
+    ],
+    "privateOwnershipReceiptSHA256": "82baab3a8466280a4e84feda86c6a6041a4c9445adcad5ac4b6e909df60898e7"
+  },
+  "compilerMetadata": {
+    "xcodeVersion": "27.1",
+    "buildVersion": "27A9275",
+    "privateCompilerObservationSHA256": "ee3fe26035862d2b9653c1a570be3eca4ee5be2815f0ce99ff2d8ffa3399e4c8"
+  }
+}
