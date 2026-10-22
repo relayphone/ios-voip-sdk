@@ -120,6 +120,7 @@ All of this is under `docs/research/callkit-simulator-probe/` unless noted. The 
 | **Runtime v0.1:** what it covers and how it was qualified | `../simulator-runtime.md`, `../verification/2026-10-21-discovery-harness/` |
 | **Measured iOS 27 ordinary audio diagnostic, full fixture RED:** raw, C-decoded and Swift-consumed modern notifications agree (2 active, 3 inactive); the silent engine stopped after async activation, before the fourth operation. No A0.3/M2 or LCK-interruption acceptance. | [`audio-session-lifecycle/2026-10-22-iphone13-ios27/`](research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/README.md) |
 | **Proposed audio acceptance split:** full modern LCK authority journey plus a separate bounded physical scalar-transport validator; strict diagnostics retain their REDs. Fresh native/current-pod acceptance remains pending. | [`progress/2026-10-22-codex-audio-acceptance-split.md`](progress/2026-10-22-codex-audio-acceptance-split.md) |
+| **Measured iOS 27 ordinary no-I/O transport, complete separate fixture PASS:** all four sync/async activation/deactivation operations succeeded; raw, C-decoded and Swift-consumed modern notifications agree (2 active, 4 inactive). Same frozen executable; no engine or rendered frames. Earlier silent-engine fixture remains RED; no A0.3/M2 or LCK/system-interruption acceptance. | [`audio-session-lifecycle/2026-10-22-iphone13-ios27-noio/`](research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27-noio/README.md) |
 
 ## 6. Related work outside this repository
 
