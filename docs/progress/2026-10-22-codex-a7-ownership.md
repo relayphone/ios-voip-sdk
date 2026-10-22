@@ -84,5 +84,73 @@ report remains after real join completion.
 
 This does not complete native A7/M2 acceptance. Integrated simulator journeys,
 fresh pod-built device Release inspection, physical device measurements and
-hosted CI remain pending. A0.1's blocked-main report-entry redesign is separate
-and unfinished; this receipt does not qualify the inherited push implementation.
+hosted CI remain pending. This historical receipt predates A0.1's corrected
+blocked-main report-entry redesign and does not qualify that push implementation.
+
+## Focused core provenance and forward integration
+
+**Proposed current integration:** the M2 correction stack merges focused core
+head `6051601dc725f5cb84c885513afde4d24450f9e0` normally. The core branch retained
+foundation `68911b0` and merged main `ef5a1f6`, then deliberately reduced only its
+own acceptance scope: optional Release diagnostics, the tools 6.1 trait and Expo
+opt-in remained on the separate M2 stack. This M2 integration preserves all of
+those options, its media packaging and the typed process-scoped event. It does
+not treat the core branch's narrower scope as a removal from M2.
+
+The receipts below belong to their recorded core source. No verification build,
+app, simulator, audio or device run was performed for this documentation and
+packaging conflict resolution; current merged-source qualification remains
+pending.
+
+### Initial core freeze
+
+**Measured historical core evidence:** the
+[focused receipt](../verification/2026-10-22-sdk-process-owner-core/host-checks.json)
+binds 54 inputs and nine verification entries. The real two-SDK host harness
+passed eleven groups, including both load orders, concurrent claims, real static
+duplicate-symbol failure, invalid-first and conflicting configurations, and
+reentrant published ownership with exactly-once setup. LCK and PushKit
+construction/observation were explicit facades.
+
+The genuine SwiftPM Release `iphoneos` library build passed and recorded ten
+product hashes before removing its owned DerivedData. Four existing manager
+region-isolation warning lines remained in the compiler log. The process helper
+compiled for watchOS 10.4. TypeScript typecheck, eleven runtime controls,
+formatting, five device-exclusion controls and the M1/contract host gates passed;
+both independent review axes cleared that frozen core scope. These results do
+not measure duplicate linkage in a shipping app or current native calls.
+
+### A1 and rejection-details parents
+
+Reviewed A1 `8077f0d` was merged normally into the focused core after its initial
+freeze. The factory, process claim and one-shot setup remained unchanged, and
+the resolutions preserved the union of CI gates and source inputs. The
+[A1 follow-up receipt](../verification/2026-10-22-sdk-process-owner-core/a1-forward.json)
+records passing ownership controls, report/capture/M1 host gates, workflow lint
+and a merged-SDK source typecheck; both integration review axes cleared. It did
+not repeat the SwiftPM product build or run an app, simulator, audio or device.
+
+Rejection-details head `0b6a557` was then merged normally. The result preserved
+its four native command error codes and added `duplicate_sdk_linkage` once in
+the error union, guard and control. The
+[parent-integration receipt](../verification/2026-10-22-sdk-process-owner-core/rejection-parent.json)
+records passing TypeScript checks, actual Swift relay and ownership controls,
+with both bounded integration review axes clear. These inherited receipts do
+not attest to the current M2 merge.
+
+### Mandatory cache-control compatibility
+
+The core's first published head `ee61cbd` retained the A1 cache fixture's removed
+shared getter. A local host run reproduced that missing-member compile failure
+while its original hosted SDK run was still queued. Its two-file repair acquires
+through the actual internal factory and one-shot setup, and compiles/links the
+real Swift and Foundation Objective-C process claim. The platform facade and
+all existing cache assertions/modes were unchanged.
+
+The [cache repair receipt](../verification/2026-10-22-sdk-process-owner-core/cache-compatibility.json)
+preserves that local red and the original hosted state separately. All three
+mandatory whole-client cache modes and the incoming-delivery host control passed;
+both independent review axes cleared the repair. This is host evidence with
+modeled LCK timing. The M2 integration must retain that ownership fix while
+including its actual media/client dependencies; inherited core results are not
+current native or device acceptance.

@@ -60,78 +60,110 @@ PIPELINE = r'''
 import Synchronization
 public final class PushDelivery: Sendable {
   private let finishes = Mutex(0)
-  public init() {}
   public func finish() { finishes.withLock { $0 += 1 } }
   var finishCount: Int { finishes.withLock { $0 } }
 }
 private enum FixtureFailure: Error { case failed }
-@MainActor private final class FixtureClient {
-  var incoming: [IncomingCallPayload] = []
-  var ended: [CallEndedPayload] = []
-  var reportsEnded = 0
-  var releaseReport: CheckedContinuation<Void, Never>?
-  var failReport = false
-  func reportIncomingConversation(_ payload: IncomingCallPayload, source: IncomingReportSource) async throws -> UUID {
-    incoming.append(payload)
-    await withCheckedContinuation { releaseReport = $0 }
-    if failReport { throw FixtureFailure.failed }
-    return UUID()
+private actor IncomingReportTransport {
+  private var reservations: [IncomingIntake.Reservation] = []
+  private var replies: [CheckedContinuation<IncomingIntake.ReportOutcome, Never>] = []
+  func report(_ reservation: IncomingIntake.Reservation) async -> IncomingIntake.ReportOutcome {
+    reservations.append(reservation)
+    return await withCheckedContinuation { replies.append($0) }
   }
-  func receiveCallEnded(_ payload: CallEndedPayload) { ended.append(payload) }
-  func reportConversation(_ id: UUID, report: ConversationReport) async throws { reportsEnded += 1 }
+  var count: Int { reservations.count }
+  func reservation(_ index: Int = 0) -> IncomingIntake.Reservation { reservations[index] }
+  func settle(_ outcome: IncomingIntake.ReportOutcome) { replies.removeFirst().resume(returning: outcome) }
+}
+@MainActor private final class FixtureClient {
+  nonisolated let incomingIntake = IncomingIntake()
+  nonisolated let incomingTransport = IncomingReportTransport()
+  var projections = 0
+  func incomingIntakeDidChange() { projections += 1 }
 }
 @MainActor private final class PushService {
   let client: FixtureClient
-  init(_ client: FixtureClient) { self.client = client }
+  nonisolated let intake: IncomingIntake
+  nonisolated let transport: IncomingReportTransport
+  init(_ client: FixtureClient) {
+    self.client = client; intake = client.incomingIntake; transport = client.incomingTransport
+  }
 // EXACT_METHODS
 }
 @main private struct PipelineTests {
-  @MainActor static func wait(_ predicate: () -> Bool) async {
-    let deadline = ContinuousClock.now.advanced(by:.seconds(3))
-    while !predicate() { precondition(ContinuousClock.now < deadline); await Task.yield() }
+  @MainActor static func wait(_ predicate: () async -> Bool) async {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+    while !(await predicate()) { precondition(ContinuousClock.now < deadline); await Task.yield() }
   }
   @MainActor static func main() async {
     do {
-      let client=FixtureClient(), ticket=PushDelivery()
-      let actual=PushService(client)
+      let client = FixtureClient(), ticket = PushDelivery()
+      let actual = PushService(client)
       await Task.detached {
-        let caller=NSMutableDictionary(dictionary:["id":"original"])
-        let body: [String:Any] = ["eventId":"e", "serverCallId":"s", "caller":caller]
-        actual.receiveVoIPPush(["incomingCall":body],mustReport:true,delivery:ticket)
-        caller["id"]="mutated-after-callback"
+        let caller = NSMutableDictionary(dictionary: ["id":"original"])
+        actual.receiveVoIPPush(["incomingCall":["eventId":"e","serverCallId":"s","caller":caller]],
+                              mustReport:true, delivery:ticket)
+        caller["id"] = "mutated-after-callback"
       }.value
-      await wait { client.releaseReport != nil }
-      precondition(client.incoming.count == 1 && client.incoming[0].caller.id == "original", "payload values are decoded before the detached Task")
-      precondition(ticket.finishCount == 0, "completion cannot precede the actual awaited report settlement")
-      client.releaseReport?.resume()
-      await wait { ticket.finishCount == 1 }
+      await wait { await client.incomingTransport.count == 1 }
+      let reservation = await client.incomingTransport.reservation()
+      precondition(reservation.payload.caller.id == "original")
+      precondition(client.incomingIntake.projection(reservation.id)?.payload == reservation.payload)
+      precondition(ticket.finishCount == 0 && client.projections == 0)
+      await client.incomingTransport.settle(.reported)
+      await wait { ticket.finishCount == 1 && client.projections == 1 }
+      precondition(!client.incomingIntake.hasPending(reservation.id))
     }
     do {
-      let client=FixtureClient(), ticket=PushDelivery()
-      let actual=PushService(client)
-      await Task.detached { actual.receiveVoIPPush([:],mustReport:false,delivery:ticket) }.value
-      precondition(ticket.finishCount == 1 && client.incoming.isEmpty)
+      let client = FixtureClient(), ticket = PushDelivery()
+      let actual = PushService(client)
+      await Task.detached { actual.receiveVoIPPush([:], mustReport:false, delivery:ticket) }.value
+      let count = await client.incomingTransport.count
+      precondition(ticket.finishCount == 1 && count == 0 && client.projections == 0)
     }
-    for failed in [false,true] {
-      let client=FixtureClient(), ticket=PushDelivery(); client.failReport=failed
-      let service=PushService(client)
-      await Task.detached { service.receiveVoIPPush([:],mustReport:true,delivery:ticket) }.value
-      await wait { client.releaseReport != nil }
-      precondition(client.incoming.count == 1 && client.incoming[0].caller.id == "unknown" && ticket.finishCount == 0)
-      client.releaseReport?.resume()
-      await wait { ticket.finishCount == 1 }
-      precondition(client.reportsEnded == (failed ? 0 : 1))
+    for failed in [false, true] {
+      let client = FixtureClient(), ticket = PushDelivery()
+      let service = PushService(client)
+      await Task.detached { service.receiveVoIPPush([:], mustReport:true, delivery:ticket) }.value
+      await wait { await client.incomingTransport.count == 1 }
+      let reservation = await client.incomingTransport.reservation()
+      precondition(reservation.payload.caller.id == "unknown" && ticket.finishCount == 0)
+      precondition(client.incomingIntake.projection(reservation.id)?.terminal?.ended.reason == .failed)
+      await client.incomingTransport.settle(failed ? .failed(FixtureFailure.failed) : .reported)
+      await wait { ticket.finishCount == 1 && client.projections == 1 }
+      if failed { precondition(client.incomingIntake.projection(reservation.id) == nil) }
+      else {
+        precondition(client.incomingIntake.takePendingTermination(reservation.id, generation:reservation.generation)?.ended.reason == .failed)
+        precondition(client.incomingIntake.takePendingTermination(reservation.id, generation:reservation.generation) == nil)
+      }
     }
-    do {
-      let client=FixtureClient(), ticket=PushDelivery()
-      let actual=PushService(client)
+    for required in [false, true] {
+      let client = FixtureClient(), ticket = PushDelivery()
+      let actual = PushService(client)
+      let known = try! client.incomingIntake.reserve(.init(eventId:"known", serverCallId:"s", caller:.init(id:"caller")), source:.foreground)
+      guard case .report(let first) = known.disposition else { preconditionFailure() }
+      client.incomingIntake.complete(first, outcome:.reported)
       await Task.detached {
-        actual.receiveVoIPPush(["messageType":"callEnded","callEnded":"{\"eventId\":\"end\",\"serverCallId\":\"s\",\"reason\":\"remoteEnded\"}"],mustReport:false,delivery:ticket)
+        actual.receiveVoIPPush(["messageType":"callEnded","callEnded":"{\"eventId\":\"end\",\"serverCallId\":\"s\",\"reason\":\"remoteEnded\"}"],
+                              mustReport:required, delivery:ticket)
       }.value
-      await wait { ticket.finishCount == 1 }
-      precondition(client.ended.count == 1 && client.incoming.isEmpty)
+      precondition(client.incomingIntake.projection(known.id)?.terminal?.ended.reason == .remoteEnded)
+      if required {
+        await wait { await client.incomingTransport.count == 1 }
+        await wait { client.projections == 1 }
+        precondition(ticket.finishCount == 0,
+          "Target termination projects without waiting for the unrelated required fallback report")
+        let fallback = await client.incomingTransport.reservation()
+        precondition(fallback.id != known.id && fallback.payload.caller.id == "unknown")
+        precondition(ticket.finishCount == 0)
+        await client.incomingTransport.settle(.reported)
+      }
+      await wait { ticket.finishCount == 1 && client.projections == (required ? 2 : 1) }
+      let count = await client.incomingTransport.count
+      precondition(count == (required ? 1 : 0))
+      precondition(!client.incomingIntake.terminate(.init(eventId:"end",serverCallId:"s",reason:.remoteEnded)))
     }
-    print("passed: exact off-main receiver synchronous decoding, actual-await completion boundary, optional omission, required fallback, thrown reporting and callEnded handling")
+    print("passed: exact off-main receiver synchronous reservation/decoding, actual-await completion boundary, optional omission, required fallback success/failure, canonical pending termination and optional/required callEnded dedup")
   }
 }
 '''
@@ -149,13 +181,28 @@ def compile_run(out, name, text, paths=()):
 
 
 def native_source_identity():
-    scope=['Sources','VERSION','discovery/probe/push_report_entry.swift',
+    scope=['Sources','VERSION','discovery/probe/push_report_entry.swift','discovery/probe/Info.plist',
            'discovery/build_push_report_entry.sh','discovery/check_push_report_entry.py',
-           'discovery/check_push_delivery.py','discovery/run_scenario.py']
+           'discovery/check_push_delivery.py','discovery/run_scenario.py',
+           'discovery/run_push_report_entry.py','discovery/check_push_report_capture.py','discovery/summarize.py',
+           'Tests/VoIPSDK/run_incoming_delivery.py','Tests/VoIPSDK/IncomingDeliveryHost.h',
+           'Tests/VoIPSDK/IncomingDeliveryHost.m.in','Tests/VoIPSDK/IncomingIntakeTests.swift',
+           'Tests/VoIPSDK/run_incoming_intake.sh','Tests/VoIPSDK/IncomingCachePlatform.swift',
+           'Tests/VoIPSDK/IncomingCacheTests.swift','Tests/VoIPSDK/run_incoming_cache.py']
+    scope += ['discovery/probe/push_entry_main_stall.h','discovery/probe/push_entry_main_stall.m',
+              'discovery/push_main_stall_conformance.py','discovery/check_push_main_stall.py']
     dirty=subprocess.check_output(['git','status','--porcelain','--untracked-files=all','--',*scope],cwd=ROOT)
     if dirty: raise RuntimeError('Commit all A1 source/fixture inputs before a native measurement')
     names=sorted(filter(None,subprocess.check_output(['git','ls-files','-z','--',*scope],cwd=ROOT).decode().split('\0')))
-    required=['discovery/probe/push_report_entry.swift','discovery/build_push_report_entry.sh','discovery/check_push_delivery.py']
+    required=['discovery/probe/push_report_entry.swift','discovery/build_push_report_entry.sh',
+              'discovery/check_push_delivery.py','discovery/run_push_report_entry.py',
+              'discovery/probe/Info.plist','discovery/check_push_report_capture.py','discovery/summarize.py',
+              'Tests/VoIPSDK/run_incoming_delivery.py','Tests/VoIPSDK/IncomingDeliveryHost.h',
+              'Tests/VoIPSDK/IncomingDeliveryHost.m.in','Tests/VoIPSDK/IncomingIntakeTests.swift',
+              'Tests/VoIPSDK/run_incoming_intake.sh','Tests/VoIPSDK/IncomingCachePlatform.swift',
+              'Tests/VoIPSDK/IncomingCacheTests.swift','Tests/VoIPSDK/run_incoming_cache.py']
+    required += ['discovery/probe/push_entry_main_stall.h','discovery/probe/push_entry_main_stall.m',
+                 'discovery/push_main_stall_conformance.py','discovery/check_push_main_stall.py']
     if any(name not in names for name in required): raise RuntimeError('Missing committed A1 measurement inputs')
     digest=hashlib.sha256()
     for name in names: digest.update(name.encode()+b'\0'+(ROOT/name).read_bytes()+b'\0')
@@ -188,6 +235,7 @@ def qualify_journal(rows, mode, run_id, pid):
             return found[0]
         received_row=event('push.received'); returned=event('push.callbackReturned'); completed=event('push.completed')
         require(all(r.get('mustReport') is required for r in (received_row,returned,completed)),'required-report policy differs')
+        require(all(r.get('api')=='metadata' for r in (received_row,returned,completed)),'expected metadata delivery path')
         require(received_row['sequence']<min(returned['sequence'],completed['sequence']),'delivery boundaries precede receipt')
         if required:
             require(returned.get('reportEntered') is True,'required report was not entered before callback returned')
@@ -199,6 +247,10 @@ def qualify_journal(rows, mode, run_id, pid):
                     settled.get('callUUID')==call,'actual report and settlement call identity differs')
             require(received_row['sequence']<report['sequence']<settled['sequence']<min(returned['sequence'],completed['sequence']),
                     'actual awaited report did not settle before both native boundaries')
+            if mode in ('sdk-required','sdk-duplicate'):
+                expected_error=2 if mode=='sdk-duplicate' and identifier==run_id+'-1' else 0
+                require(type(settled.get('error')) is int and settled['error']==expected_error,
+                        'actual report settlement status differs from expected push index')
         else:
             require(returned.get('reportEntered') is False and completed.get('reportEntered') is False and not incoming and not settlements,
                     'optional omission unexpectedly reported')
@@ -212,7 +264,8 @@ def qualify_journal(rows, mode, run_id, pid):
 def journal_controls():
     def fixture():
         return [dict(event=event,pid=123,runID='host',bundleID='dev.iosvoipsdk.pushentry',sequence=i+1,t_ms=i,
-                     pushID='host-0',mustReport=True,reportEntered=True,callUUID='E715ACF2-A7C1-4D74-8BD9-EAFA47693255') for i,event in enumerate([
+                     pushID='host-0',mustReport=True,reportEntered=True,api='metadata',error=0,
+                     callUUID='E715ACF2-A7C1-4D74-8BD9-EAFA47693255') for i,event in enumerate([
                      'push.received','report.incoming','report.completed','push.callbackReturned','push.completed'])]
     qualify_journal(fixture(),'sdk-required','host',123)
     controls=[]
@@ -230,12 +283,202 @@ def journal_controls():
         ('float-sequence',lambda r:r[2].update(sequence=3.0)),
         ('clock-reversal',lambda r:r[3].update(t_ms=0)),
         ('missing-completion',lambda r:r.pop()),
+        ('legacy-receipt',lambda r:r[0].update(api='legacy')),
+        ('legacy-return',lambda r:r[3].update(api='legacy')),
+        ('missing-completion-api',lambda r:r[4].pop('api')),
+        ('failed-required-report',lambda r:r[2].update(error=2)),
+        ('missing-settlement-status',lambda r:r[2].pop('error')),
+        ('boolean-settlement-status',lambda r:r[2].update(error=False)),
+        ('string-settlement-status',lambda r:r[2].update(error='0')),
     ]:
         changed=copy.deepcopy(fixture());mutate(changed)
         try: qualify_journal(changed,'sdk-required','host',123)
         except ValueError: controls.append(label)
         else: raise AssertionError('native gate accepted '+label)
-    return 'passed: native journal positive and '+str(len(controls))+' strict evidence negatives ('+', '.join(controls)+')'
+    duplicate=fixture()+[dict(row,pushID='host-1',sequence=row['sequence']+5,t_ms=row['t_ms']+5,
+                              error=2 if row['event']=='report.completed' else row['error']) for row in fixture()]
+    qualify_journal(duplicate,'sdk-duplicate','host',123)
+    optional=[dict(row,mustReport=False,reportEntered=False) for row in fixture()
+              if row['event'] not in ('report.incoming','report.completed')]
+    for index,row in enumerate(optional): row['sequence']=index+1
+    qualify_journal(optional,'optional','host',123)
+    for label,index,error in [('failed-first-duplicate',2,2),('successful-second-duplicate',7,0),
+                              ('boolean-second-duplicate',7,True)]:
+        changed=copy.deepcopy(duplicate);changed[index]['error']=error
+        try: qualify_journal(changed,'sdk-duplicate','host',123)
+        except ValueError: controls.append(label)
+        else: raise AssertionError('native gate accepted '+label)
+    return 'passed: native required, duplicate and optional positives and '+str(len(controls))+' strict evidence negatives ('+', '.join(controls)+')'
+
+
+EXPECTED_REFUSAL = 'required report was not entered before callback returned'
+UUID_PATTERN = r'[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}'
+
+
+def qualify_negative_journal(rows, mode, run_id, pid):
+    """Require the complete missing/deferred fixture, then preserve normal red.
+
+    This is intentionally restricted to GenericEntryDelegate's two
+    metadata fixtures. It never converts their required-report failure into a
+    normal-rule success, nor substitutes a diagnostic for an actual report.
+    """
+    def require(condition, reason):
+        if not condition:
+            raise ValueError(reason)
+
+    require(mode in ('missing', 'deferred'), 'unsupported negative fixture')
+    require(isinstance(rows, list) and rows and all(isinstance(row, dict) for row in rows),
+            'negative journal must contain object rows')
+    # The shipping normal gate checks every row's process/run/bundle identity,
+    # all sequence/clock values, the expected delivery, policy and boundary
+    # presence, and all incoming/settlement push associations before it refuses.
+    try:
+        qualify_journal(rows, mode, run_id, pid)
+    except ValueError as error:
+        require(str(error) == EXPECTED_REFUSAL, 'negative journal failed an unrelated normal rule: ' + str(error))
+    else:
+        raise ValueError('broken delegate unexpectedly passed strict normal rule')
+
+    push_id = run_id + '-0'
+
+    def one(event):
+        found = [row for row in rows if row.get('event') == event]
+        require(len(found) == 1 and found[0].get('pushID') == push_id,
+                'missing, repeated or substituted ' + event)
+        return found[0]
+
+    received = one('push.received')
+    returned = one('push.callbackReturned')
+    completed = one('push.completed')
+    boundaries = (received, returned, completed)
+    require(all(row.get('api') == 'metadata' and row.get('mustReport') is True for row in boundaries),
+            'negative fixture did not use the required metadata path')
+    require(returned.get('reportEntered') is False, 'negative return did not observe missing report')
+    require(all(not str(row.get('event', '')).startswith('push.') or row.get('event') in
+                ('push.received', 'push.callbackReturned', 'push.completed') for row in rows),
+            'unexpected push boundary event')
+
+    reports = [row for row in rows if row.get('event') == 'report.incoming']
+    settlements = [row for row in rows if row.get('event') == 'report.completed']
+    violations = [row for row in rows if row.get('event') == 'diagnostic.pushReportingViolation']
+    expected = [('required-report-missing-at-callback-return', returned)]
+    if mode == 'missing':
+        expected.append(('required-report-missing-at-completion', completed))
+    require(len(violations) == len(expected), 'missing or extra reporting violation')
+    for reason, boundary in expected:
+        matches = [row for row in violations if row.get('reason') == reason]
+        require(len(matches) == 1 and matches[0].get('pushID') == push_id and
+                matches[0].get('severity') == 'error' and matches[0]['sequence'] == boundary['sequence'] + 1,
+                'reporting diagnostic is not bound to its actual boundary: ' + reason)
+
+    if mode == 'missing':
+        require(not reports and not settlements, 'missing fixture unexpectedly entered or settled a report')
+        require(completed.get('reportEntered') is False and
+                received['sequence'] < completed['sequence'] < returned['sequence'],
+                'missing fixture did not complete inline before returning without a report')
+    else:
+        report = one('report.incoming')
+        settled = one('report.completed')
+        call = report.get('callUUID')
+        require(isinstance(call, str) and re.fullmatch(UUID_PATTERN, call) is not None and
+                settled.get('callUUID') == call, 'deferred report and settlement call identity differs')
+        require(type(settled.get('error')) is int and settled['error'] == 0,
+                'deferred fresh-call report did not settle successfully')
+        require(completed.get('reportEntered') is True and received['sequence'] < returned['sequence'] <
+                report['sequence'] < settled['sequence'] < completed['sequence'],
+                'deferred fixture did not actually report after return and settle before completion')
+
+    return dict(success=False, mode=mode, strictGateRefusal=EXPECTED_REFUSAL,
+                negativeControlReproduced=True, completeBoundaryEvidence=True,
+                deliveries=1, actualReports=len(reports), actualSettlements=len(settlements),
+                reportingViolations=len(violations))
+
+
+def negative_journal_controls():
+    """Synthetic evidence controls, never native acceptance or repaired traces."""
+    def fixture(mode):
+        common = dict(pid=123, runID='host', bundleID='dev.iosvoipsdk.pushentry')
+        push = dict(pushID='host-0')
+        boundary = dict(push, api='metadata', mustReport=True)
+        violation = dict(push, severity='error')
+        report = dict(push, callUUID='E715ACF2-A7C1-4D74-8BD9-EAFA47693255')
+        events = [('push.received', boundary)]
+        if mode == 'missing':
+            events += [
+                ('push.completed', dict(boundary, reportEntered=False)),
+                ('diagnostic.pushReportingViolation', dict(violation, reason='required-report-missing-at-completion')),
+                ('push.callbackReturned', dict(boundary, reportEntered=False)),
+                ('diagnostic.pushReportingViolation', dict(violation, reason='required-report-missing-at-callback-return'))]
+        else:
+            events += [
+                ('push.callbackReturned', dict(boundary, reportEntered=False)),
+                ('diagnostic.pushReportingViolation', dict(violation, reason='required-report-missing-at-callback-return')),
+                ('report.incoming', report),
+                ('observer.changed', {}),  # Ordinary native rows may interleave.
+                ('report.completed', dict(report, error=0)),
+                ('push.completed', dict(boundary, reportEntered=True))]
+        return [dict(common, **fields, event=event, sequence=index + 1, t_ms=index // 2)
+                for index, (event, fields) in enumerate(events)]
+
+    def find(rows, event):
+        return next(row for row in rows if row['event'] == event)
+
+    def delete(rows, event):
+        rows.remove(find(rows, event))
+
+    def resequence(rows):
+        for index, row in enumerate(rows):
+            row.update(sequence=index + 1, t_ms=index // 2)
+
+    def move_before(rows, event, before):
+        row = find(rows, event)
+        rows.remove(row)
+        rows.insert(rows.index(find(rows, before)), row)
+
+    def demonstrated(rows):
+        delete(rows, 'report.completed')
+        find(rows, 'report.incoming')['callUUID'] = 'invalid'
+        find(rows, 'push.completed')['reportEntered'] = False
+        find(rows, 'diagnostic.pushReportingViolation')['pushID'] = 'different-push'
+
+    positives = [qualify_negative_journal(fixture(mode), mode, 'host', 123) for mode in ('missing', 'deferred')]
+    cases = [
+        ('demonstrated-compound-malformation', 'deferred', demonstrated),
+        ('omitted-settlement', 'deferred', lambda r: delete(r, 'report.completed')),
+        ('invalid-report-uuid', 'deferred', lambda r: find(r, 'report.incoming').update(callUUID='invalid')),
+        ('different-settlement-uuid', 'deferred', lambda r: find(r, 'report.completed').update(callUUID='9BB7DFDA-423D-4FA8-9202-055C5750FD55')),
+        ('failed-fresh-report', 'deferred', lambda r: find(r, 'report.completed').update(error=2)),
+        ('boolean-report-status', 'deferred', lambda r: find(r, 'report.completed').update(error=False)),
+        ('completion-denies-entry', 'deferred', lambda r: find(r, 'push.completed').update(reportEntered=False)),
+        ('report-before-return', 'deferred', lambda r: move_before(r, 'report.incoming', 'push.callbackReturned')),
+        ('completion-before-settlement', 'deferred', lambda r: move_before(r, 'push.completed', 'report.completed')),
+        ('foreign-diagnostic-push', 'deferred', lambda r: find(r, 'diagnostic.pushReportingViolation').update(pushID='different-push')),
+        ('wrong-diagnostic-severity', 'deferred', lambda r: find(r, 'diagnostic.pushReportingViolation').update(severity='warning')),
+        ('wrong-diagnostic-reason', 'deferred', lambda r: find(r, 'diagnostic.pushReportingViolation').update(reason='unknown-delivery')),
+        ('missing-diagnostic', 'deferred', lambda r: delete(r, 'diagnostic.pushReportingViolation')),
+        ('extra-diagnostic', 'deferred', lambda r: r.append(copy.deepcopy(find(r, 'diagnostic.pushReportingViolation')))),
+        ('diagnostic-not-at-boundary', 'deferred', lambda r: move_before(r, 'observer.changed', 'diagnostic.pushReportingViolation')),
+        ('legacy-path', 'deferred', lambda r: find(r, 'push.completed').update(api='legacy')),
+        ('wrong-run', 'deferred', lambda r: find(r, 'report.completed').update(runID='other')),
+        ('wrong-process', 'deferred', lambda r: find(r, 'report.completed').update(pid=124)),
+        ('extra-foreign-return', 'deferred', lambda r: r.append(dict(find(r, 'push.callbackReturned'), pushID='other'))),
+        ('missing-completion-diagnostic', 'missing', lambda r: delete(r, 'diagnostic.pushReportingViolation')),
+        ('missing-completion-claims-entry', 'missing', lambda r: find(r, 'push.completed').update(reportEntered=True)),
+        ('missing-return-before-completion', 'missing', lambda r: move_before(r, 'push.callbackReturned', 'push.completed')),
+        ('wrong-required-policy', 'missing', lambda r: find(r, 'push.completed').update(mustReport=False)),
+    ]
+    negatives = []
+    for label, mode, mutate in cases:
+        rows = copy.deepcopy(fixture(mode))
+        mutate(rows)
+        resequence(rows)
+        try:
+            qualify_negative_journal(rows, mode, 'host', 123)
+        except ValueError as error:
+            negatives.append(dict(control=label, refused=True, reason=str(error)))
+        else:
+            raise AssertionError('negative validator accepted malformed evidence: ' + label)
+    return 'passed: synthetic missing/deferred negatives reproduced, normal rule remains red; '+str(len(positives))+' valid fixtures and '+str(len(negatives))+' malformed journal refusals ('+', '.join(row['control'] for row in negatives)+')'
 
 
 def main():
@@ -244,19 +487,20 @@ def main():
     client=(ROOT/'Sources/VoIPSDK/ConversationClient.swift').read_text()
     obligations=braced(engine,'private struct PushReportingObligations {')
     receiver=braced(service,'  public nonisolated func receiveVoIPPush(')
-    reporting=braced(service,'  private func report(')
-    serializer=braced(client,'final class SerializedIncomingReports {')
-    assert 'Task {' not in serializer and 'Task.detached' not in serializer, 'new UUID serializer must not create a child Task'
-    assert receiver.count('Task.detached(')==1 and '[AnyHashable: Any]' not in reporting, 'one typed report Task is required'
+    projection=braced(service,'  private nonisolated func scheduleProjection(')
+    assert 'SerializedIncomingReports' not in client, 'PushKit must not wait for a same-UUID predecessor'
+    assert receiver.count('Task.detached(')==1, 'one typed report Task is required'
     hook=(ROOT/'Sources/Interposition/CKPushDelivery.m').read_text()
     assert '@finally' in hook and 'CKSimEmit(@"push.callbackReturned"' in hook, 'runtime must record the actual callback exit'
     with tempfile.TemporaryDirectory(prefix='ios-voip-push-entry-') as temp:
         out=Path(temp)
-        results=[journal_controls(),compile_run(out,'policy',obligations+'\n'+POLICY),
-                 compile_run(out,'pipeline',PIPELINE.replace('// EXACT_METHODS',receiver+'\n'+reporting),
-                             [ROOT/'Sources/VoIPSDK/ConversationModels.swift',ROOT/'Sources/VoIPSDK/PushWire.swift'])]
+        results=[journal_controls(),negative_journal_controls(),compile_run(out,'policy',obligations+'\n'+POLICY),
+                 compile_run(out,'pipeline',PIPELINE.replace('// EXACT_METHODS',receiver+'\n'+projection),
+                             [ROOT/'Sources/VoIPSDK/ConversationModels.swift',ROOT/'Sources/VoIPSDK/PushWire.swift',
+                              ROOT/'Sources/VoIPSDK/IncomingInvitationGate.swift',ROOT/'Sources/VoIPSDK/IncomingIntake.swift'])]
     files=['Sources/Engine/RuntimeEngine.swift','Sources/Interposition/CKPushDelivery.m',
-           'Sources/VoIPSDK/PushService.swift','Sources/VoIPSDK/ConversationClient.swift',str(Path(__file__).relative_to(ROOT))]
+           'Sources/VoIPSDK/PushService.swift','Sources/VoIPSDK/ConversationClient.swift',
+           'Sources/VoIPSDK/IncomingIntake.swift','Sources/VoIPSDK/IncomingReportTransport.swift',str(Path(__file__).relative_to(ROOT))]
     print(json.dumps(dict(success=True,classification='host exact-source policy/pipeline controls; native PushKit entry remains separate',
                          controls=results,sourceSHA256={p:hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in files}),indent=2))
 

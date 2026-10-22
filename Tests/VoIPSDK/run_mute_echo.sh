@@ -16,6 +16,10 @@ assert source.count(guard) == source.count(framework) == source.count(audio) == 
 source = source.replace(guard, '#if true', 1).replace(framework, '', 1).replace(audio, '', 1)
 out = Path(sys.argv[1])
 (out / 'ConversationClient.swift').write_text(source)
+transport = Path('Sources/VoIPSDK/IncomingReportTransport.swift').read_text()
+assert transport.count(guard) == transport.count(framework) == 1
+(out / 'IncomingReportTransport.swift').write_text(
+    transport.replace(guard, '#if true', 1).replace(framework, '', 1))
 adapter = Path('Sources/VoIPSDK/MediaAdapter.swift').read_text()
 adapter_guard = '#if canImport(AVFAudio) && (os(iOS) || os(watchOS))'
 assert adapter.count(adapter_guard) == adapter.count(audio) == 1
@@ -37,13 +41,16 @@ def bounded(command, seconds):
         raise SystemExit('Owned host check exceeded its bounded compiler/runtime budget')
     sys.stdout.buffer.write(stdout); sys.stderr.buffer.write(stderr)
     if process.returncode: raise SystemExit(process.returncode)
-for name in ('MuteEchoTests','ClientContractTests'):
+bounded(['xcrun','clang','-fobjc-arc','-fmodules','-c',
+    str(root/'Sources/VoIPPlatform/VSProcessSDKOwnership.m'),'-o',str(out/'ownership.o')],30)
+for name in ('MuteEchoTests','ClientContractTests','WatchdogIntakeTests'):
     bounded(['swiftc','-swift-version','6','-warnings-as-errors','-parse-as-library',
+      '-import-objc-header',str(root/'Sources/VoIPPlatform/include/VSProcessSDKOwnership.h'),
       *[str(root/'Sources/VoIPSDK'/file) for file in ('ConversationModels.swift','ConversationRecord.swift',
-        'ConversationHandler.swift','IncomingInvitationGate.swift','PushWire.swift','SimulatorSupport.swift',
-        'AudioActivation.swift','AudioRoutes.swift','AudioSessionQueue.swift')],
-      str(out/'ConversationClient.swift'),str(out/'MediaAdapter.swift'),
-      str(root/'Tests/VoIPSDK/MuteEchoPlatform.swift'),str(root/'Tests/VoIPSDK'/ (name+'.swift')),
+        'ConversationHandler.swift','IncomingInvitationGate.swift','IncomingIntake.swift','PushWire.swift','SimulatorSupport.swift',
+        'AudioActivation.swift','AudioRoutes.swift','AudioSessionQueue.swift','ProcessSDKOwnership.swift')],
+      str(out/'ConversationClient.swift'),str(out/'IncomingReportTransport.swift'),str(out/'MediaAdapter.swift'),
+      str(root/'Tests/VoIPSDK/IncomingCachePlatform.swift'),str(root/'Tests/VoIPSDK'/ (name+'.swift')),str(out/'ownership.o'),
       '-o',str(out/name)],90)
     bounded([str(out/name)],15)
 PYTHON

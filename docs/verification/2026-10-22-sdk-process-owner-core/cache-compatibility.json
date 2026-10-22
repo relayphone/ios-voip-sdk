@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured mandatory host-control compatibility repair; no LCK, app, simulator, device or audio run",
+  "createdAtUTC": "2026-10-22T12:38:22.279616+00:00",
+  "publishedHead": "ee61cbde30c2c19d14de45acc87078df6c0f42d4",
+  "priorHostedRun": {
+    "id": 39778170149,
+    "head": "ee61cbde30c2c19d14de45acc87078df6c0f42d4",
+    "statusBeforeFix": "queued",
+    "conclusionBeforeFix": "",
+    "attempt": 1
+  },
+  "baseline": {
+    "success": false,
+    "classification": "local host compile failure, distinct from hosted CI state",
+    "reason": "ConversationClient has no member 'shared'",
+    "sourceSHA256": {
+      "Sources/VoIPSDK/ConversationClient.swift": "ee4c973be79d2700907427c3be98a66fe8a8afcdeecfe43fd62a88153c04c3ed",
+      "Sources/VoIPSDK/IncomingReportTransport.swift": "518a522f3dccc9f96f221f700a77c9c732b20b00dfb01dd094579c5b43a08cbf",
+      "Sources/VoIPSDK/ConversationModels.swift": "f482b84dc091851a740c5c645242fef4aec9e99e518296df81a277d62cf84e9b",
+      "Sources/VoIPSDK/ConversationRecord.swift": "90f94cf5baf4085478ed0e2437d520e9066367b9bb23615ff88d5fade3288d64",
+      "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
+      "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+      "Sources/VoIPSDK/IncomingIntake.swift": "5f6979dbc38bb4badeb2026ca8033341a5ce744ebba4e279aab1a4892d5f64c5",
+      "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+      "Sources/VoIPSDK/SimulatorSupport.swift": "45b5b31b3943603d7a20ebbed2b2a76feddbb7b6fb83fc1c532def2cbc059563",
+      "Tests/VoIPSDK/IncomingCachePlatform.swift": "360a13f4591b7c9f4653b61478ad5136859e133391abbdf0bb15d7621583d01d",
+      "Tests/VoIPSDK/IncomingCacheTests.swift": "2c64a032195f2ac7835bcc85c110384c6a9c5f16fdb6d4852ba8505bda8be2f2",
+      "Tests/VoIPSDK/run_incoming_cache.py": "3ba61daaaf1df9d39a434317760c1e9a9c6d3410c3e73138fd6b28e754b5939e"
+    },
+    "commands": [
+      {
+        "label": "compile",
+        "exitCode": 1,
+        "elapsedSeconds": 4.385428,
+        "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSHA256": "ae62395a92bcdb9daaf64b5366ae08c577f8fd13a94c1de1f9ad390c4dd9e556"
+      }
+    ],
+    "receiptSHA256": "1a1b21e38804f40cd154d99eede7b8fb75e14b93f5d6281106d77ef9d15965f8"
+  },
+  "cache": {
+    "success": true,
+    "classification": "host whole-client cache contracts with actual Swift/ObjC ownership; modeled LCK timing, no device run",
+    "sourceSHA256": {
+      "Sources/VoIPSDK/ConversationClient.swift": "ee4c973be79d2700907427c3be98a66fe8a8afcdeecfe43fd62a88153c04c3ed",
+      "Sources/VoIPSDK/IncomingReportTransport.swift": "518a522f3dccc9f96f221f700a77c9c732b20b00dfb01dd094579c5b43a08cbf",
+      "Sources/VoIPSDK/ConversationModels.swift": "f482b84dc091851a740c5c645242fef4aec9e99e518296df81a277d62cf84e9b",
+      "Sources/VoIPSDK/ConversationRecord.swift": "90f94cf5baf4085478ed0e2437d520e9066367b9bb23615ff88d5fade3288d64",
+      "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
+      "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+      "Sources/VoIPSDK/IncomingIntake.swift": "5f6979dbc38bb4badeb2026ca8033341a5ce744ebba4e279aab1a4892d5f64c5",
+      "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+      "Sources/VoIPSDK/SimulatorSupport.swift": "45b5b31b3943603d7a20ebbed2b2a76feddbb7b6fb83fc1c532def2cbc059563",
+      "Sources/VoIPSDK/ProcessSDKOwnership.swift": "4fe8a3493c3b6756beab43a9f67a28933f4f80c8860e8bb4619ffd2248e95a8b",
+      "Sources/VoIPPlatform/VSProcessSDKOwnership.m": "ea509d0194e3746d104093b2256bd0ee4fd3f9c7ec73c96bbeb42e16ac2d8e90",
+      "Sources/VoIPPlatform/include/VSProcessSDKOwnership.h": "3a206de32bf2787e6a3ae81938a91914e885625041c3caca308c39a374816ec2",
+      "Tests/VoIPSDK/IncomingCachePlatform.swift": "360a13f4591b7c9f4653b61478ad5136859e133391abbdf0bb15d7621583d01d",
+      "Tests/VoIPSDK/IncomingCacheTests.swift": "89809f587d85b55c6a094b86324533989eb282f4c5711aa448716ae239d464ea",
+      "Tests/VoIPSDK/run_incoming_cache.py": "17ee238620419b006f5f168a3994e6b46e901c83213a71759c4c1e13bb9c8238"
+    },
+    "commands": [
+      {
+        "label": "compile-ownership",
+        "exitCode": 0,
+        "elapsedSeconds": 0.056294,
+        "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "label": "compile",
+        "exitCode": 0,
+        "elapsedSeconds": 4.334704,
+        "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "label": "reported",
+        "exitCode": 0,
+        "elapsedSeconds": 0.246813,
+        "stdoutSHA256": "3ec3e642e6230f2408539fc25a3373adadc209466650a7e69fb4bc7ef9b6b66c",
+        "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "label": "joined-success",
+        "exitCode": 0,
+        "elapsedSeconds": 0.013067,
+        "stdoutSHA256": "3b194aad0175550e6ea86c8d3b0bc138e931cb198fdc029814683e7dd5de4276",
+        "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "label": "joined-failure",
+        "exitCode": 0,
+        "elapsedSeconds": 0.016191,
+        "stdoutSHA256": "8bfc443f4ab3bea811a98c9d7147d5da81c3d759a009026bf4162cbf1ca905fe",
+        "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "results": [
+      {
+        "exitCode": 0,
+        "observation": {
+          "beforeCount": 0,
+          "callerCacheCount": 1,
+          "callerPayloadMatches": true,
+          "classification": "whole production client with platform callback timing deliberately modeled; no LCK execution",
+          "mode": "reported",
+          "returnedCanonicalID": true,
+          "success": true
+        }
+      },
+      {
+        "exitCode": 0,
+        "observation": {
+          "callerCacheCount": 1,
+          "callerPayloadMatches": true,
+          "classification": "whole production client with platform callback timing deliberately modeled; no LCK execution",
+          "mode": "joined-success",
+          "returnedCanonicalID": true,
+          "success": true
+        }
+      },
+      {
+        "exitCode": 0,
+        "observation": {
+          "callerCacheCount": 0,
+          "callerCaughtExpectedFailure": true,
+          "classification": "whole production client with platform callback timing deliberately modeled; no LCK execution",
+          "mode": "joined-failure",
+          "seededLiveCache": true,
+          "success": true
+        }
+      }
+    ],
+    "receiptSHA256": "6f5cc867dffcb5c9fd6d6d3175de2a867a4512a8b9c4d1beb596b842e74930d6"
+  },
+  "delivery": {
+    "success": true,
+    "classification": "host actual intake, receiver, transport and native wait with reporting facade; no LCK, simulator, APNs or device",
+    "sourceSHA256": {
+      "Sources/VoIPSDK/PushService.swift": "f7a731d8c91ee2a4572dd37d2d96a36c258187fc4a38ba74143c7c9b07690e4c",
+      "Sources/VoIPSDK/ConversationClient.swift": "ee4c973be79d2700907427c3be98a66fe8a8afcdeecfe43fd62a88153c04c3ed",
+      "Sources/VoIPSDK/IncomingReportTransport.swift": "518a522f3dccc9f96f221f700a77c9c732b20b00dfb01dd094579c5b43a08cbf",
+      "Sources/VoIPSDK/IncomingIntake.swift": "5f6979dbc38bb4badeb2026ca8033341a5ce744ebba4e279aab1a4892d5f64c5",
+      "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+      "Sources/VoIPSDK/ConversationModels.swift": "f482b84dc091851a740c5c645242fef4aec9e99e518296df81a277d62cf84e9b",
+      "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+      "Sources/VoIPPlatform/VSPushRegistryOwner.m": "02d45bb525b3cebde887846de514a03fdffbb113a419821eae3bf41dece7bfc6",
+      "Sources/VoIPPlatform/VSPushDelivery.m": "10fd4879c48205523efd7a3f9052518dada6c86024267e7957d13b76e62fc1c9",
+      "Sources/VoIPPlatform/include/VSPushRegistryOwner.h": "b6db5cf75a4bcda293e06f27a0af05b0607b290e87f30848a8cdc8c989db5f2e",
+      "Sources/VoIPPlatform/include/VSPushDelivery.h": "3769eecacf2f8e64d1e3a9c9bc749db26d65be7186c4f176dd7cb1a277ec83ff",
+      "Tests/VoIPSDK/run_incoming_delivery.py": "259b2cf4c021924adf4590fe4a15b06a6e6ee6285f557e4e05b4b637abb75dc5",
+      "Tests/VoIPSDK/IncomingDeliveryHost.h": "982a04bf40c52d15413632ad81b3c9d23c09dbd82eb28452852b78fec94d4a22",
+      "Tests/VoIPSDK/IncomingDeliveryHost.m.in": "a820190571f0f42abb4fed1b4b009fc085360a3f6fb0b551ffd2b26f3355608f"
+    },
+    "commands": [
+      {
+        "label": "native-owner",
+        "exitCode": 0,
+        "elapsedSeconds": 1.068251,
+        "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "label": "native-ticket",
+        "exitCode": 0,
+        "elapsedSeconds": 0.065665,
+        "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "label": "swift-compile",
+        "exitCode": 0,
+        "elapsedSeconds": 4.802052,
+        "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "label": "main-stall",
+        "exitCode": 0,
+        "elapsedSeconds": 4.172387,
+        "stdoutSHA256": "5f392dfadf21ead1ec904146b02ace88538170a9180f6a0d6630a3373f2fd498",
+        "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "receiptSHA256": "91b6063aa92c8a3600996fcf8c00c9af250768a2df0603b56eddefdfcfc46f87"
+  },
+  "review": {
+    "spec": "clear",
+    "standards": "clear"
+  },
+  "limits": [
+    "Only cache fixture acquisition and its source/link inputs changed; all cache assertions/modes and IncomingCachePlatform.swift are unchanged.",
+    "The cache control now compiles the actual Swift and Foundation Objective-C process claim; LCK and callback timing remain modeled.",
+    "No production API, simulator, device, real PushKit, APNs, media, CI rerun or heavy product build was used.",
+    "The original hosted run is retained with its actual state; this receipt does not label it a native or offline CI failure."
+  ]
+}

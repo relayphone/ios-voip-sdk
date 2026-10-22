@@ -16,13 +16,13 @@ mkdir "$PACKAGE"
 trap 'rm -rf "$WORK"' EXIT
 for arch in $ARCHS; do
   target="$arch-apple-ios18.0-simulator"
-  for source in CKInterposition CKPushDelivery; do
+  for source in CKInterposition CKPushDelivery CKPushLaunch; do
     xcrun --sdk iphonesimulator clang -target "$target" -isysroot "$SDK" -fobjc-arc -fmodules -DCKSIM_RUNTIME_VERSION=\""$VERSION"\" -DCKSIM_HAS_VOIP_METADATA="$METADATA" -DCKSIM_ABI_TESTING="${CKSIM_ABI_TESTING:-0}" \
       -c "Sources/Interposition/$source.m" -o "$WORK/$source-$arch.o"
   done
   xcrun --sdk iphonesimulator swiftc -target "$target" -sdk "$SDK" -swift-version 6 -O -emit-library -module-name CKSimRuntime \
     -import-objc-header Sources/Interposition/CKRuntimeSeam.h Sources/Engine/RuntimeEngine.swift \
-    "$WORK/CKInterposition-$arch.o" "$WORK/CKPushDelivery-$arch.o" \
+    "$WORK/CKInterposition-$arch.o" "$WORK/CKPushDelivery-$arch.o" "$WORK/CKPushLaunch-$arch.o" \
     -Xlinker -install_name -Xlinker @rpath/CKSimRuntime.dylib -o "$WORK/CKSimRuntime-$arch.dylib"
   xcrun --sdk iphonesimulator clang -target "$target" -isysroot "$SDK" Tools/cksim-notify.c -o "$WORK/cksim-notify-$arch"
   xcrun --sdk iphonesimulator clang -target "$target" -isysroot "$SDK" -fobjc-arc -dynamiclib -framework Foundation \

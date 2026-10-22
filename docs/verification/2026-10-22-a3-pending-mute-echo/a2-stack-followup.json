@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "qualification": "measured host behavior of the actual client and coordinator after integrating A2 and A0; native delayed-fulfill echo measurement remains pending",
+  "capturedAt": "2026-10-22T10:13:52.164130+00:00",
+  "originalA3Commit": "509d9a7e7482877c7ca220cd532f56204b734ca3",
+  "a2ParentCommit": "1fd33b4969a5a19dee14b18da354612f9b9534ef",
+  "integrationCommit": "2cd4006f00ed345544e1d39045c1ecd6495393cc",
+  "workingTreeChange": "Tests/VoIPSDK/MuteEchoTests.swift supplies 1.62 s at the LCK boundary, retaining a 0.12 s effective host deadline after the production 1.5 s A2 margin",
+  "originalReceiptSHA256": "77abba0074f89f2cc54aca3c89ceaa674bde25083afeacc923ab3077f54b66a1",
+  "inputs": {
+    "Sources/VoIPSDK/ConversationClient.swift": "4325f34799e5687f6a236ee5add539a76f71d9d9c99c6f371604b32dd6c865c1",
+    "Sources/VoIPSDK/ConversationHandler.swift": "489c64f2792fe6b611bc9d66c207522216d1fda187c47720128c574d848e1373",
+    "Sources/VoIPSDK/ConversationModels.swift": "a9f49822a15b4ba0db15572af322e5c1da4f7d34f037089b1f55aa76ec1aa0ee",
+    "Sources/VoIPSDK/ConversationRecord.swift": "93208e379e1732e2bd48e74c8e256a2f06e83c5729e3d168e5bdf48191009029",
+    "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+    "Sources/VoIPSDK/SimulatorSupport.swift": "adf83443fee4f0233325bbe84fd98816d82f8450fdc1893c4623e54986768149",
+    "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+    "Sources/VoIPSDK/PushService.swift": "de33029911b568dd888ac7ed8bea10a47167096f8b52b9b4cea4be81d1289aef",
+    "Tests/VoIPSDK/MuteEchoPlatform.swift": "a613cd3c4ee975e327f31c3a847ad4c5940edc25191835b8ba727a1c532df053",
+    "Tests/VoIPSDK/MuteEchoTests.swift": "de75646a656ee59c0e6b38c7bcd77fa86ef8366560af32bf2be9bfd1da05287c",
+    "Tests/VoIPSDK/run_mute_echo.sh": "521833e6568de6e7f0459e60f0280efaadc200c8f273e8e0858be7872c25c50d",
+    "Tests/VoIPSDK/CoreTests.swift": "c7580921251a5e04f6563d44e8835cf50f09bf1552bc1151a37aaab3be99fb86",
+    "Tests/VoIPSDK/run.sh": "c60e866f6c6ebe507abd58fd8970230e5ed2f7b19465df833eec9a93f5ab85f1",
+    "Tests/VoIPSDK/PushTests.swift": "8d4bb3d1e65fedec7b6eff2ca6df50c058738b20493da22ee41faec0911a8301",
+    "Tests/VoIPSDK/run_push.sh": "a82a0e37bb5726f022fe1189aea9116b333f76086fcbc514b3009a56cce8ee28",
+    "Tests/VoIPSDK/ProjectionTests.swift": "e9b493706b26a76094c55ca6a736d3969f86ccee16a3eefe7ee1c51fe882b705",
+    "Tests/VoIPSDK/run_projection.sh": "b0656f1fea04e24fb761be7cbebe37f0e3b24f03dce3725d73951863da271019",
+    "Tests/VoIPSDK/DeadlineTests.swift": "57dd084c653f2777a1c7ccba236b68559ab4091a09154bac5bbd5718086dbc28",
+    "Tests/VoIPSDK/run_deadlines.sh": "5ab45fc64b153b6e6433b077f0fe7482d1ed1d6d60797ab328d49a25a8459ed5",
+    ".github/workflows/sdk-m0.yml": "ac12ecf93368375d01e53e3747696fb03ee347499adb3400e20ec292474c9d6c"
+  },
+  "checks": [
+    {
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_mute_echo.sh"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "stdout": "{\"success\":true,\"groups\":7,\"minimumPendingHandlerDelayMS\":42.369375,\"actualClientAndHandler\":true,\"nativeDeviceTimingMeasured\":false}\n",
+      "stderr": "",
+      "stdoutSHA256": "47092b35e34a419685647b85073ec070d80c455106bc5ebbf777b3f659f3b8b5",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run.sh"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "stdout": "Core tests passed: dedup/in-flight, two-minute boundary, cold launch, late attachment, replacement, deadline/policy, no resurrection, optional handlers and wire roundtrip\nDeadline controls passed: seven real-clock boundary, policy, context, late-handler, cancellation and blocked-actor groups\n",
+      "stderr": "",
+      "stdoutSHA256": "37e5b3c81714975c6258144064f301756c63cb884d503c1ce2f4740e2a719567",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_push.sh"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "stdout": "Push tests passed: envelope/JSON/date parsing, required-report policy, FCM end, token hydration/invalidation/reentrancy and simulator preference\n",
+      "stderr": "",
+      "stdoutSHA256": "14373b0b637343bec1149a022f1c809ed97ff3142da6a4c10eeeacfba49652a0",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_projection.sh"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "stdout": "Terminal projection and incoming report serialization tests passed\n",
+      "stderr": "",
+      "stdoutSHA256": "3de153b0c0d70f110b6720b8cfd2cbada4f4e5dcbb403c869a7dfd5382b59130",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_deadlines.sh"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "stdout": "Deadline controls passed: seven real-clock boundary, policy, context, late-handler, cancellation and blocked-actor groups\n",
+      "stderr": "",
+      "stdoutSHA256": "fb4e763429dfaaea7e49babb7f2930a89bab72f468f7476bb33924f3a1c9e809",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "observed": {
+    "success": true,
+    "groups": 7,
+    "minimumPendingHandlerDelayMS": 42.369375,
+    "actualClientAndHandler": true,
+    "nativeDeviceTimingMeasured": false
+  },
+  "toolchain": {
+    "swift": {
+      "command": [
+        "swiftc",
+        "--version"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "stdout": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0\n",
+      "stderr": "swift-driver version: 1.168.6 ",
+      "stdoutSHA256": "04630ab8fa201f57c63c59730e638135e32584a97e16e004a417eb8ed283dc83",
+      "stderrSHA256": "bbc8b176d3c74d4c5a7fd00b40280f98168e116d5272273bfe8e71407625540e"
+    },
+    "xcode": {
+      "command": [
+        "xcodebuild",
+        "-version"
+      ],
+      "exitCode": 0,
+      "timedOut": false,
+      "stdout": "Xcode 27.1\nBuild version 27A9275\n",
+      "stderr": "",
+      "stdoutSHA256": "ee3fe26035862d2b9653c1a570be3eca4ee5be2815f0ce99ff2d8ffa3399e4c8",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "nativeOrSimulatorRun": false,
+  "deviceEchoTimingMeasured": false
+}

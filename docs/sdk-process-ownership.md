@@ -52,3 +52,21 @@ pending; the foundation receipt records its earlier, narrower source.
 
 **Measured host/compiler evidence** and the limits of native qualification are
 recorded in the [A7 handoff](progress/2026-10-22-codex-a7-ownership.md).
+
+## Core provenance and cache compatibility
+
+The M2 correction stack merges the focused process-owner core through
+`6051601dc725f5cb84c885513afde4d24450f9e0`. That core acceptance target deliberately
+left media selection and optional Release diagnostics on the M2 stack. Its scope
+reduction does not remove the M2 adapter identity/policy checks, SwiftPM trait,
+paired CocoaPods/plugin options or the typed process-scoped ownership event
+described above.
+
+The core's A1 cache compatibility repair acquires the host client through the
+actual internal factory and one-shot setup, with the real Swift and Foundation
+Objective-C process claim. Its source-bound receipt preserves the original local
+missing-shared-getter failure and all three passing cache modes separately. Those
+are historical host controls with modeled LCK timing. Current merged-source
+qualification, native calling and fresh pod-built device Release inspection
+remain pending; the [A7 handoff](progress/2026-10-22-codex-a7-ownership.md) records
+the separate receipt provenance.

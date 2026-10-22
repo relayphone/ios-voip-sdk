@@ -156,7 +156,7 @@ import Foundation
             def external(argv, **kwargs):
                 calls.append(argv); output = b''; status = 0
                 if argv[:3] in (['xcrun', 'simctl', 'create'], ['xcrun', 'simctl', 'boot']):
-                    self.assertFalse(any(key.startswith(('SIMCTL_CHILD_SDK_M3_', 'SIMCTL_CHILD_SDK_M1_')) for key in kwargs['env']))
+                    self.assertFalse(any(key.startswith(('SIMCTL_CHILD_SDK_M3_', 'SIMCTL_CHILD_SDK_M1_', 'SIMCTL_CHILD_SDK_SYSTEM_')) for key in kwargs['env']))
                 if terminate_during_boot and argv[:3] == ['xcrun', 'simctl', 'boot']:
                     signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
                 if argv[0] == 'codesign':
@@ -238,7 +238,8 @@ import Foundation
                               (['--preboot-wait-seconds', '1'] if preboot else [])), \
                  patch.object(runner.time, 'sleep', side_effect=observe_preboot if preboot else lambda _: None), \
                  patch.dict(os.environ, {'SIMCTL_CHILD_DYLD_INSERT_LIBRARIES': '/private/fixture-injector.dylib',
-                                        'SIMCTL_CHILD_SDK_M3_RUN_ID': 'stale-boot-run', 'SIMCTL_CHILD_SDK_M1_CASE': 'stale-case'}), \
+                                        'SIMCTL_CHILD_SDK_M3_RUN_ID': 'stale-boot-run', 'SIMCTL_CHILD_SDK_M1_CASE': 'stale-case',
+                                        'SIMCTL_CHILD_SDK_SYSTEM_CASE': 'stale-system', 'SIMCTL_CHILD_SDK_SYSTEM_RUN_ID': 'stale-system-run'}), \
                  contextlib.redirect_stdout(captured):
                 status = runner.main(direct=direct_rows is not None)
             self.assertEqual(handlers, {sig: signal.getsignal(sig) for sig in handlers})

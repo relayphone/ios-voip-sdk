@@ -13,6 +13,10 @@ import json
 from pathlib import Path
 import plistlib
 import uuid
+from types import SimpleNamespace
+
+from sdk_m2_audio_lifecycle import validate_lifecycle
+from sdk_m2_environment import COMMANDS as ENVIRONMENT_COMMANDS, inspect as inspect_environment
 
 import sdk_m0_conformance as m0
 from sdk_m1_conformance import projected
@@ -21,7 +25,7 @@ from summarize import EvidenceError, one, require
 ROOT = Path(__file__).resolve().parent.parent
 EXAMPLE = 'dev.iosvoipsdk.example'
 CONTRACTS = 'dev.iosvoipsdk.m1contracts'
-CASES = ('livekit', 'stale-audio', 'media-reentrancy')
+CASES = ('livekit', 'stale-audio', 'media-reentrancy', 'audio-lifecycle')
 PRODUCT_FILES = ('binaries/example', 'binaries/main.jsbundle', 'binaries/contracts', 'binaries/cksim-notify',
                  'binaries/livekit-webrtc', 'products/LiveKitWebRTC.Info.plist',
                  'products/Podfile.lock', 'products/Podfile.properties.json', 'products/Info.plist',
@@ -206,7 +210,7 @@ def media_case(rows, engine, case, simulator_os):
     require(launch.get('mode') == 'sdk-m2' and launch.get('case') == case and launch.get('traceVersion') == 2,
             case + ': wrong example mode')
     require(one(rows, 'sdk.activation').get('active') is True and
-            one(rows, 'sdk.managerCreated').get('owner') == 'ConversationClient.shared' and
+            one(rows, 'sdk.managerCreated').get('owner') == 'VoIPApplication.start' and
             one(rows, 'm2.result').get('success') is True, case + ': SDK/result unavailable')
     labels = ['initial', 'demand'] + (['active', 'speaker', 'held', 'resumed', 'ended'] if case == 'livekit' else ['failed'])
     expected = ['initial-media', 'initial-same-engine', 'inactive-route-rejected', 'routes-observed',
@@ -382,6 +386,49 @@ def reentrancy_case(rows, engine, manifest, simulator_os):
     return dict(success=True, owners=1, authorizationCalls=1)
 
 
+def validate_preflight(root, manifest, runtime, environment, source_root):
+    receipt = read(root, 'environment-preflight.json')
+    path = manifest.get('audioPath')
+    require(path in ('legacy', 'modern') and
+            path == ('modern' if int(runtime['version'].split('.')[0]) >= 27 else 'legacy'),
+            'preflight: audio path/runtime differs')
+    request = dict(runtime='iOS 27.0' if path == 'modern' else 'iOS 26.5', audioPath=path,
+                   architecture='arm64', xcodeVersion='27.1' if path == 'modern' else '26.6',
+                   xcodeBuild='27A9275' if path == 'modern' else None)
+    require(type(receipt.get('schemaVersion')) is int and receipt['schemaVersion'] == 1 and
+            receipt.get('product') == 'sdk-m2-environment' and receipt.get('success') is True and
+            receipt.get('errors') == [] and exact(receipt.get('requested'), request) and
+            receipt.get('sourceSHA256') == digest(source_root / 'discovery/sdk_m2_environment.py'),
+            'preflight: missing successful source-bound lane receipt')
+    commands = receipt.get('commands', {})
+    require(commands.keys() == ENVIRONMENT_COMMANDS.keys(), 'preflight: command inventory differs')
+    for key, argv in ENVIRONMENT_COMMANDS.items():
+        command = commands[key]
+        require(exact(command.get('argv'), argv) and type(command.get('exitCode')) is int and
+                command['exitCode'] == 0 and type(command.get('timeoutSeconds')) is int and
+                command['timeoutSeconds'] == 30 and
+                all(isinstance(command.get(field), str) for field in ('stdout', 'stderr')),
+                'preflight: failed/unbound command ' + key)
+    runner = receipt.get('runner', {})
+    require(runner.keys() == {'ImageOS', 'ImageVersion', 'RUNNER_ARCH', 'GITHUB_RUN_ID',
+                              'GITHUB_RUN_ATTEMPT', 'GITHUB_SHA'} and
+            all(value is None or (isinstance(value, str) and value) for value in runner.values()) and
+            runner['GITHUB_SHA'] in (None, manifest['sourceCommit']), 'preflight: runner/source identity differs')
+    def replay(args, **options):
+        key = next(key for key, argv in ENVIRONMENT_COMMANDS.items() if args == argv)
+        command = commands[key]
+        return SimpleNamespace(returncode=command['exitCode'], stdout=command['stdout'], stderr=command['stderr'])
+    replayed = inspect_environment(request['runtime'], path, request['xcodeVersion'], request['xcodeBuild'],
+        execute=replay, environment={key: value for key, value in runner.items() if value is not None})
+    require(replayed['success'] is True and exact(replayed.get('selectedRuntime'), receipt.get('selectedRuntime')) and
+            all(receipt['selectedRuntime'].get(key) == runtime[key] for key in ('identifier', 'version', 'buildversion')) and
+            commands['xcode']['stdout'].strip() == environment['xcodeVersion'] and
+            commands['simulatorSDKVersion']['stdout'].strip() == environment['sdkVersion'] and
+            commands['architecture']['stdout'].strip() == environment['hostArchitecture'],
+            'preflight: actual image/compiler/runtime binding differs')
+    return dict(audioPath=path, runner=runner, selectedRuntime=receipt['selectedRuntime'])
+
+
 def validate(root, source_root=ROOT):
     manifest = read(root, 'manifest.json')
     identity = source_identity(source_root)
@@ -392,7 +439,8 @@ def validate(root, source_root=ROOT):
     require(all(isinstance(manifest.get(k), str) and manifest[k] for k in ('runID', 'simulatorID')), 'missing run/simulator identity')
     bindings = dict(sourceBeginSHA256='source-before.json', sourceEndSHA256='source-after.json', cleanupSHA256='cleanup.json',
                     environmentSHA256='environment.json', runtimeSHA256='runtime.json', installedSHA256='installed.json',
-                    buildReceiptSHA256='build-info.json', hostAudioControlsSHA256='host-audio-controls.json')
+                    buildReceiptSHA256='build-info.json', hostAudioControlsSHA256='host-audio-controls.json',
+                    environmentPreflightSHA256='environment-preflight.json')
     for field, name in bindings.items(): require(digest(root / name) == manifest.get(field), 'unbound ' + name)
     build = validate_build(root, identity, require_apps=False)
     require(manifest.get('files') == build['files'], 'manifest product inventory differs')
@@ -409,6 +457,7 @@ def validate(root, source_root=ROOT):
             all(isinstance(environment.get(k), str) and environment[k] for k in
                 ('simulatorRuntimeID', 'simulatorOS', 'xcodeVersion', 'sdkVersion', 'hostArchitecture')) and
             isinstance(runtime.get('buildversion'), str) and runtime['buildversion'], 'unbound execution OS/compiler')
+    preflight = validate_preflight(root, manifest, runtime, environment, source_root)
     inherited = manifest.get('externalDYLDInsertLibrariesSHA256')
     require(type(manifest.get('externalDYLDInsertLibrariesPresent')) is bool and isinstance(inherited, str) and
             len(inherited) == 64 and all(c in '0123456789abcdef' for c in inherited) and
@@ -431,19 +480,29 @@ def validate(root, source_root=ROOT):
     version = (source_root / 'VERSION').read_text().strip()
     for case in CASES:
         name = 'sdk-m2-' + case
-        bundle = CONTRACTS if case == 'media-reentrancy' else EXAMPLE
+        bundle = EXAMPLE if case in CASES[:2] else CONTRACTS
         rows, receipt = m0.bound_rows(root, name, manifest, bundle)
         require(type(receipt.get('schemaVersion')) is int and type(receipt.get('appPID')) is int and
                 type(receipt.get('launcherAppPID')) is int and type(receipt.get('launchExitCode')) is int,
                 name + ': invalid supervisor schema/process types')
         engine = journal(root, name, manifest, receipt, bundle, version)
-        if case == 'media-reentrancy':
+        if case == 'audio-lifecycle':
+            trace_shape(rows, case)
+            launch = one(rows, 'launch')
+            require(launch.get('mode') == 'sdk-m1-contracts' and launch.get('case') == case and
+                    launch.get('traceVersion') == 2 and launch.get('simulatorOS') == environment['simulatorOS'] and
+                    launch.get('runtimeInjectionPresent') is False and
+                    launch.get('executableSHA256') == manifest['files']['binaries/contracts'] and
+                    one(rows, 'contract.activation').get('active') is True and
+                    one(rows, 'contract.result').get('success') is True, 'lifecycle: unbound/failed native contract')
+            results[case] = validate_lifecycle(rows, engine, manifest['audioPath'])
+        elif case == 'media-reentrancy':
             results[case] = reentrancy_case(rows, engine, manifest, environment['simulatorOS'])
         else:
             controls(root, name, case, manifest, receipt, rows)
             results[case] = media_case(rows, engine, case, environment['simulatorOS'])
     return dict(success=True, scenario='sdk-m2', source=identity, executionOS=environment['simulatorOS'],
-                simulatorRuntime=runtime, cases=results, hostAudioControls=len(HOST_CHECKS),
+                simulatorRuntime=runtime, environmentPreflight=preflight, cases=results, hostAudioControls=len(HOST_CHECKS),
                 recoveryEvidence='Exact activation/recovery policy and one recovery are host-proved. Native liveness is bounded from pre-fulfillment recording demand through scoped absence events and clean end; the actual watchdog start, exact activation interval and AV configuration call count are not measured.')
 
 

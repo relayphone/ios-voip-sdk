@@ -31,6 +31,14 @@ int main(void) { @autoreleasepool {
       [values addObject:[NSValue valueWithBytes:&value objCType:@encode(VSAudioSessionLifecycleValue)]];
     }];
   VSAudioSessionLifecycleValue value = {0};
+  __block NSUInteger observed = 0;
+  __block VSAudioSessionLifecycleValue observedValue = {0};
+  VSAudioSessionSetLifecycleDiagnosticHandler(^(NSString *name, NSString *context, bool main,
+                                               VSAudioSessionLifecycleValue raw) {
+    onlyMain = onlyMain && name.length > 0 && main;
+    (void)context;
+    observed++; observedValue = raw;
+  });
   NSUInteger cases = 0;
 #if VS_HOST_NEW_API
   post(AVAudioSessionInterruptionNotification, @{ AVAudioSessionInterruptionTypeKey: @1 });
@@ -116,6 +124,11 @@ int main(void) { @autoreleasepool {
     [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
   }
   CHECK(values.count == beforeBackgroundPost + 1 && onlyMain); cases++;
+  CHECK(observed == values.count && observedValue.kind == VSAudioSessionLifecycleKindMediaServicesReset); cases++;
+  VSAudioSessionSetLifecycleDiagnosticHandler(nil);
+  NSUInteger observedBeforeDisabled = observed;
+  post(AVAudioSessionMediaServicesWereResetNotification, nil);
+  CHECK(observed == observedBeforeDisabled && values.count == observed + 1); cases++;
   NSUInteger beforeInvalidation = values.count;
   [observer invalidate]; [observer invalidate];
   post(AVAudioSessionMediaServicesWereResetNotification, nil);

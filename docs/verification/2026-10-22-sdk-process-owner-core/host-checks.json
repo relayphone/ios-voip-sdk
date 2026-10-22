@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 1,
+  "qualification": "measured host/compiler preparation for one SDK process owner",
+  "createdAtUTC": "2026-10-22T12:04:12.890139+00:00",
+  "baseMain": "ef5a1f6f14c5a151b8bc9d41cc0451fc64c9d305",
+  "retainedFoundation": "68911b0ab6bebb79662651edbc286bd944bf6632",
+  "mergeParent": "8908eaed8ad3069e27fc5835552dd7e35ca9f494",
+  "sourceFiles": {
+    ".github/workflows/sdk-m0.yml": "bdc77271689ff3a5633cf106abe9d7b2757c7ef5247145000477ee6209568ac4",
+    "Expo/apple/IosVoipSDKModule.swift": "66e721954d5e5a27b97e17e2bb245333a7c36005cf50be62de8342d9dd036149",
+    "Expo/src/hooks.ts": "c7678edd88409e4d38465a9623c04b1b985eb0a82f30e57eaf6012e22bc23318",
+    "Expo/src/index.ts": "47f6a96c3217458e88ae952075b755ed22ed858a34a9d2894e075b1298247c00",
+    "Expo/src/internal/bootstrap.ts": "2bbdbfa840d6fb475f2cb385acea26ace671a812a02ee8902ebff6f4c79b4bc4",
+    "Expo/src/internal/client.ts": "7217923f83410f35c426f3bcf24177bb56bc08f02e93005e0fd44d7470e3986a",
+    "Expo/src/internal/handler.ts": "0822968e954d0f9d7a9a4875b7da08b5d897519df2bb391b6ab6b4ad83d85bab",
+    "Expo/src/internal/native.ts": "45d4a9c16633646863bb0438b78921ffbdb734cd4c279c1a4503bc7d049ccd1a",
+    "Expo/src/internal/protocol.ts": "07289c7fb1a90f9727552b44c7f6d89d0a249e7b3c2c5a2805b6e2ac3c672517",
+    "Expo/src/internal/store.ts": "6624ea42d8ee6fa5b70ac7cd97128a131857c17d196d317315d31cdef79fec53",
+    "Expo/src/types.ts": "b9d0f739142918880c8e8e90096c13658bda17ec0780ac7d34e36e9936a098b0",
+    "Expo/tests/m1-runtime.test.cjs": "7009c9811ef7b0e40c273f860f0a3a3c08d8c3f31e0081dc321def2f5687c046",
+    "IosVoipSDK.podspec": "8fadc2b3b87ae252cde2426e8c4730d1310967457ada81ac976cf91be0a3e6bb",
+    "Package.swift": "d3206f8aaac253ba3a571caba878a4c7fe638d6381093985612c0803b88ae0a4",
+    "Sources/Engine/RuntimeEngine.swift": "1b59b1e916355bda989a9b8f6041b47781e56603c069f65f3b81592f08dedf50",
+    "Sources/Interposition/CKInterposition.m": "8aa3433a646790a24576edc1f65fd84c4b062733ec30136629f699c19a7ab999",
+    "Sources/Interposition/CKLoader.m": "7f32927a00a6e863c2c26a1166e2846e36c7264cb122d17dba5469e5b06bb26f",
+    "Sources/Interposition/CKPushDelivery.m": "64f38820b49289bfad82a1c1a96cf46289057e32a96873ee04aeacd1e8975719",
+    "Sources/Interposition/CKRuntimeSeam.h": "47e32a8965a0dd1dfaef592eaec456841c2cbc80ea87059a8adba2c4ae1421cd",
+    "Sources/Interposition/include/CKRuntimeBridge.h": "565e067907f10700a4f7083b8b0dd4b25ae263b832f479ae3689c61435ba8bf3",
+    "Sources/VoIPPlatform/VSCompletionOnce.h": "3a6dd1d6e1c727339a3ea965b4ea2fc199304801472657103584aa817754ec5b",
+    "Sources/VoIPPlatform/VSCompletionOnce.m": "653eb974fe96d17c6c1579b59376d3986cced8a9d7f8c00458296add7821508d",
+    "Sources/VoIPPlatform/VSProcessSDKOwnership.m": "ea509d0194e3746d104093b2256bd0ee4fd3f9c7ec73c96bbeb42e16ac2d8e90",
+    "Sources/VoIPPlatform/VSProviderCreationMonitor.m": "42d19821e78257e8952cc87a610253d786fa15a028baac2a218f637d5db43eba",
+    "Sources/VoIPPlatform/VSProviderMonitorInternal.h": "e360be44ea0657e62153f39ca4be0ed78b4369d086d299242a1fd3cb88c6ffc5",
+    "Sources/VoIPPlatform/VSProviderMonitorInternal.m": "0c9a9dcfe37777460272a9fdaa34e9d96e571b8bdc31cde6a44343d2d08b3658",
+    "Sources/VoIPPlatform/VSPushRegistryOwner.m": "20495224101e3e05ecccd8dc70d4e29f8e44ae59e56fe367699842da12c81ea6",
+    "Sources/VoIPPlatform/include/VSProcessSDKOwnership.h": "3a206de32bf2787e6a3ae81938a91914e885625041c3caca308c39a374816ec2",
+    "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h": "31cb18b30406602c323ebb3e58ffafcaff0106a2f3ab4e378fb252a2a0c00ccd",
+    "Sources/VoIPPlatform/include/VSPushRegistryOwner.h": "6c193787c8dd70d4e0633615ea0728559bf10a53fcd41c6e6362827e3083d57b",
+    "Sources/VoIPPlatform/include/VoIPPlatform.h": "98b524b6c1216f2666e8c5d7f8db87cf86f9750caeb6941a2ca111b0b6c943dd",
+    "Sources/VoIPSDK/ConversationClient.swift": "d3146e1e8d6704767243609d15136937ff7f4b182747756758db677f41c8e189",
+    "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
+    "Sources/VoIPSDK/ConversationModels.swift": "f482b84dc091851a740c5c645242fef4aec9e99e518296df81a277d62cf84e9b",
+    "Sources/VoIPSDK/ConversationRecord.swift": "93208e379e1732e2bd48e74c8e256a2f06e83c5729e3d168e5bdf48191009029",
+    "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+    "Sources/VoIPSDK/ProcessSDKOwnership.swift": "4fe8a3493c3b6756beab43a9f67a28933f4f80c8860e8bb4619ffd2248e95a8b",
+    "Sources/VoIPSDK/PushService.swift": "de33029911b568dd888ac7ed8bea10a47167096f8b52b9b4cea4be81d1289aef",
+    "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+    "Sources/VoIPSDK/SimulatorSupport.swift": "adf83443fee4f0233325bbe84fd98816d82f8450fdc1893c4623e54986768149",
+    "Sources/VoIPSDK/VoIPApplication.swift": "ad924a4478d1a35f35267d826a5ad6c28837a8918e4fb848325f139ea0d09552",
+    "VERSION": "80447316529fc62014fbaa047fb67c51ac30e32830cda370405349d8d66d196c",
+    "discovery/check_device_release.py": "a0635afb76e0660671c015ed6f1545882e0acf56ce18d647349443f357d879e5",
+    "discovery/check_sdk_m1.py": "4b851febb12924ab0113f70572f583b8034293962ab922ceb6cd934edbc0cfff",
+    "discovery/check_sdk_m1_contracts.py": "2fdecce7c3dc07f33f9fb9d6084afc940c3cbf50f810c93ac884575e008605ea",
+    "discovery/check_sdk_ownership.py": "96dc27d60864dd6d5a6778b349fa651a42521177f1e5fadb1a1a5b6d101499e9",
+    "discovery/probe/sdk_m1_contracts.swift": "07c3d9dbc25d24f4c0362a02beffdede518730fcf84ee4df8c95254bd7082a0a",
+    "discovery/sdk_m0_conformance.py": "c0dcba1e7892d7bb74ec6ffa84af9f91a98850bb0ee49d2caf2e21160f021ed3",
+    "discovery/sdk_m1_conformance.py": "c08e9f2c07d83f66c334f84d77b9e7417653cc5d34488cb16db84512d4d92487",
+    "docs/sdk-process-ownership.md": "1fe380aca8e0b05748352f0cc4dab70fdd82bf9fd85f929c54068d2dd729e757",
+    "example/modules/journey/apple/VoIPExampleJourneyModule.swift": "35ec00b1ae32bebe0b52f43fa79060a2956379e73f754298b891d92a4fc4d027",
+    "package-lock.json": "a58fc38dceca2f003ce7269a5a116aec630061afbe45d09902e989329dd7f1d0",
+    "package.json": "b27efab561b531d37cf2b47c19bc073f9e2ec2cb5f4a2fb3da2f79f9dabc9655",
+    "tsconfig.json": "bd4b85df5c37c240a9e017d386dae3aad3763cbde5614f3e48fe0723b3074acc"
+  },
+  "sourceDigestSHA256": "9777034ced84efe449f63019a5604faa455a8e051a4be7e816cb904b41978bdd",
+  "review": {
+    "spec": "clear",
+    "standards": "clear",
+    "freezeSHA256": "9aadcc2e340e5a764b3ae849b67b004fa4e019ffaa14615fdd3b9006c7a5350c",
+    "freezeMapDigestSHA256": "a1af9a85eca4fabf0ff5cce0ea4138fffb7af17b914121373963adc4e293eeeb"
+  },
+  "checks": [
+    {
+      "name": "device-controls",
+      "command": [
+        "python3",
+        "discovery/check_device_release.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.838245625,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "39ce1d1dd9a6a7fa8482ac23c9a4303362201e31a41b503dcf0d1310f6120618"
+    },
+    {
+      "name": "m1-gate",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.6435069590000002,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "a6530c890bb0dd7819d02a493d043e6e42d09acfddaa25ccbbc50a8ff9df826b"
+    },
+    {
+      "name": "m1-contract-gate",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.24319133299999995,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "35a45a4b2a0c0867401d2f2b5f5978dfa3747ffa8a0f60b8a60a8e61ef0c1995"
+    },
+    {
+      "name": "typecheck",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.021906166,
+      "stdoutSHA256": "01d5bb4c9623a561fbd8d3a9f2b49a7793b1c7711b89c6b5792062c65e6247b7",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "runtime",
+      "command": [
+        "node",
+        "--test",
+        "Expo/tests/m1-runtime.test.cjs"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.6066554999999996,
+      "stdoutSHA256": "de6e5f2d20d5892deb099a81bf062022d491ced2fe8ec360797bf7fa1e0558c6",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "format",
+      "command": [
+        "npm",
+        "exec",
+        "--",
+        "prettier",
+        "--check",
+        "Expo/src/types.ts"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.6275514169999998,
+      "stdoutSHA256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "two SDK image process ownership",
+      "exitCode": 0,
+      "groups": [
+        "package-first-duplicate-refused-before-second-manager",
+        "pod-first-duplicate-refused-before-second-manager",
+        "same-objc-helper-present-in-both-images",
+        "concurrent-claims-preserve-owner",
+        "static-linker-duplicate-is-already-loud",
+        "actual-forApplication-repeated-same-configuration-is-idempotent",
+        "actual-forApplication-rejects-invalid-first-configurations-before-manager",
+        "actual-forApplication-rejects-changed-configuration-before-second-manager",
+        "actual-Application-rejects-client-and-simulator-configuration-conflicts",
+        "actual-finishLaunch-reentrant-observation-sees-published-application-and-client",
+        "actual-finishLaunch-observes-exactly-once-for-both-linked-module-orders"
+      ],
+      "outputSHA256": "1bebe4430e5449f6322eae8c917e87880423c3c6fd8a722165fb4e3a088fd8ef",
+      "classification": "two real optimized host modules/dylibs; actual Application, client selection, finishLaunch and process claim; LCK observation/construction, simulator configuration and PushKit factories are explicit facades"
+    },
+    {
+      "name": "genuine SwiftPM Release iphoneos library compiler",
+      "exitCode": 0,
+      "buildLogSHA256": "44fa46e097966fd3ac21114375eb92088b2d88706bf099ede1ee1973d94a236a",
+      "elapsedSeconds": 10.734520584,
+      "classification": "genuine SwiftPM VoIPSDK Release iphoneos library compilation only; no app, simulator, device or PushKit registration"
+    },
+    {
+      "name": "watchOS process-helper compiler",
+      "exitCode": 0,
+      "outputSHA256": "2ae33e773e29245beb634ff44cd7017034cd4e4e4c48416babda581c2174459a",
+      "classification": "actual Objective-C process helper watchOS 10.4 compiler check only"
+    }
+  ],
+  "swiftPMProducts": {
+    "Build/Products/Release-iphoneos/CKSimRuntime.o": {
+      "bytes": 1264,
+      "sha256": "5a11c1ece04133a893e5b2ee450f3290466866299206ee3761d27b9efc734960"
+    },
+    "Build/Products/Release-iphoneos/CKSimRuntime.swiftmodule/arm64-apple-ios.abi.json": {
+      "bytes": 149,
+      "sha256": "4277ac6b49f8511196028a5ac20f5b1b1dfa754c24615d34068089f0b1739728"
+    },
+    "Build/Products/Release-iphoneos/CKSimRuntime.swiftmodule/arm64-apple-ios.swiftdoc": {
+      "bytes": 392,
+      "sha256": "07bce1f3b3e9f9597105211d3501c377bb8710c8db2fb7727046b0a106ef680b"
+    },
+    "Build/Products/Release-iphoneos/CKSimRuntime.swiftmodule/arm64-apple-ios.swiftmodule": {
+      "bytes": 23264,
+      "sha256": "e9c9b371de648fee47ec62028c63b60163cf6853f2fa5f35aec462f50ece864b"
+    },
+    "Build/Products/Release-iphoneos/CKSimRuntimeC.o": {
+      "bytes": 304,
+      "sha256": "926e6dd411764ea1799612e218b689c816da3d79a4e8c1692ebeb71d22a7953a"
+    },
+    "Build/Products/Release-iphoneos/VoIPPlatform.o": {
+      "bytes": 30368,
+      "sha256": "f7d7deeec5494cdcb713bcffd0d2e20d8ad09efa070a329b2aafc5380a3a4630"
+    },
+    "Build/Products/Release-iphoneos/VoIPSDK.o": {
+      "bytes": 1109104,
+      "sha256": "dd4df5e4187f6dcd3862d5c2c64bad0d9383563cb34df1021b5721a5f3241e8e"
+    },
+    "Build/Products/Release-iphoneos/VoIPSDK.swiftmodule/arm64-apple-ios.abi.json": {
+      "bytes": 149,
+      "sha256": "4277ac6b49f8511196028a5ac20f5b1b1dfa754c24615d34068089f0b1739728"
+    },
+    "Build/Products/Release-iphoneos/VoIPSDK.swiftmodule/arm64-apple-ios.swiftdoc": {
+      "bytes": 4396,
+      "sha256": "28d32528b6774a1e30b5656d5f6d7a0005ad41a351e199aad747408e3a6656ae"
+    },
+    "Build/Products/Release-iphoneos/VoIPSDK.swiftmodule/arm64-apple-ios.swiftmodule": {
+      "bytes": 469892,
+      "sha256": "9ef30a5ac53a8f2d9a8e661a2ead8b139bd1f362ac8d3e8429b988f1c0bb46d7"
+    }
+  },
+  "compilerWarnings": 4,
+  "ownedDerivedDataRemoved": true,
+  "dependencyPreparation": "TypeScript checks temporarily linked an existing exact-lock dependency directory; the owned link was removed. No dependency installation or edits.",
+  "limits": [
+    "No native application was linked or launched; no simulator, physical device, APNs, PushKit registration, hosted CI or publication was used.",
+    "Two real optimized Swift SDK dylibs contain production Application, client factory, finishLaunch, Swift image identity and Objective-C process gate. LCK/PushKit construction/observation and simulator configuration are explicit host facades; manager creation count is a facade boundary.",
+    "The actual SwiftPM Release iphoneos library compiled successfully; this does not measure duplicate linkage in a shipping app or native call behavior.",
+    "Optional Release diagnostics, media selection and audio implementation remain outside this pure core change.",
+    "The final A0.1 correction must be merged forward and qualified before publication."
+  ]
+}

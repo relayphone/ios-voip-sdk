@@ -14,6 +14,14 @@ enum SystemAudioLifecycleEvent: Sendable, Equatable {
   case mediaServicesReset
 }
 
+#if DEBUG && targetEnvironment(simulator)
+@MainActor
+enum AudioLifecycleDiagnostics {
+  /// Internal scalar-only acceptance observation, compiled out of device and Release builds.
+  static var didConsume: (@MainActor (SystemAudioLifecycleEvent, Bool, Bool) -> Void)?
+}
+#endif
+
 private struct ObservedAudioRoutes: Sendable {
   let inputs: [AudioRoutePort]
   let currentInputs: [AudioRoutePort]
@@ -52,11 +60,17 @@ final class SystemAudioSession {
 
   /// Resumption is advisory: it never activates a session or authorizes an engine.
   private func deliver(_ event: SystemAudioLifecycleEvent) {
+    #if DEBUG && targetEnvironment(simulator)
+    let authorizedBefore = authorization.withLock { $0 }
+    #endif
     switch event {
     case .inactive, .mediaServicesReset: authorization.withLock { $0 = false }
     case .active, .resumptionRecommended: break
     }
     onLifecycle?(event)
+    #if DEBUG && targetEnvironment(simulator)
+    AudioLifecycleDiagnostics.didConsume?(event, authorizedBefore, authorization.withLock { $0 })
+    #endif
     refreshRoutes()
   }
 

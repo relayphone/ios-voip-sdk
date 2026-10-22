@@ -1,0 +1,2 @@
+ReportContractTests/ReportContractTests.swift:71: Precondition failed: A required duplicate cannot re-end the same object after an explicit public local End fulfills while terminal membership lags
+Tests/VoIPSDK/run_report_contracts.sh: line 32: 80030 Trace/BPT trap: 5       perl -e 'alarm shift; exec @ARGV' 20 "$TEST_OUTPUT/ReportContractTests"

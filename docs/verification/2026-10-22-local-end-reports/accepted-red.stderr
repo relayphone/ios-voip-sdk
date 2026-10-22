@@ -1,0 +1,2 @@
+ReportContractTests/ReportContractTests.swift:129: Precondition failed: Accepted End with delayed terminal membership cannot re-end the same object after its local revision changes
+Tests/VoIPSDK/run_report_contracts.sh: line 32: 32615 Trace/BPT trap: 5       perl -e 'alarm shift; exec @ARGV' 20 "$TEST_OUTPUT/ReportContractTests"

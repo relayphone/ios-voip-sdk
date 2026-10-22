@@ -1,0 +1,3 @@
+2026-10-22 14:45:41.381 ReportContractTests[43152:1061593] VoIPSDK: retained local termination request failed.
+ConnectionContractTests/ConnectionContractTests.swift:20: Precondition failed: Accepted incoming signaling cannot fabricate transport connection
+Tests/VoIPSDK/run_report_contracts.sh: line 23: 43205 Trace/BPT trap: 5       perl -e 'alarm shift; exec @ARGV' 20 "$TEST_OUTPUT/$TEST_CASE"

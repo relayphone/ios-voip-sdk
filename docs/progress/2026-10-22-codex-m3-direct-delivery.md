@@ -98,3 +98,32 @@ is separate from the earlier A9 host receipt. This is compiler evidence only;
 no native build, simulator launch or device action was performed. The genuine
 SwiftPM LiveKit consumer check remains evidence of the separately reviewed A4
 followup. The A5 manual connected-report button change will arrive separately.
+
+**Measured A5/M2 forward preparation:** this branch normally merges reviewed
+A5 `004c85257fbad477d1e15c820fd19edb0655d908`, including corrected M2
+`0743f14486bba8437c66c2221a3f38be5b1828d8`. The two example conflicts retain
+both system-control and direct dial-request paths. The manual connected report
+now remains available while connecting or dialing; the canonical asynchronous
+local reports, per-object end handling and explicit backend-connected markers
+are inherited unchanged. The shared source inventory retains A5's external
+system controls, four M1 contract cases and all six push-entry cases, including
+the native main-stall helper and `CKPushLaunch` build input.
+
+The shared M3 runner also removes inherited `SDK_SYSTEM_` child environment
+settings before launching either M3 mode, and the system runner removes
+inherited M3 child settings before either its warm or cold launch. Mocked
+subprocess-boundary controls fail against the exact prior `c45ab865` M3 runner
+and `004c8525` system runner, then pass against the combined source. These
+controls create no simulator or native process. Sixteen focused
+host commands pass at the 238-input working-source digest in the
+[forward receipt](../verification/2026-10-22-sdk-m3-direct/forward-004c852-host.json),
+including all 13 direct and 19 original OS groups, the inherited gate controls,
+TypeScript and Swift parsing. These checks do not qualify an Expo app build or
+native journey. The original OS gate and its error-115 RED evidence are
+unchanged.
+
+**Still pending:** a committed-source Expo build and direct simulator capture,
+independent capture review and physical default-calling dispatch. A0's iOS 27
+native audio-interruption acceptance remains unresolved, and physical PushKit
+cold-launch measurements remain required before beta. This source-only forward
+does not close those gates.

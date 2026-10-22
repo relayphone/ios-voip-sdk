@@ -32,8 +32,9 @@ PY
 cat > "$WORK/Headers.h" <<HEADERS
 #import "$PWD/Sources/Interposition/CKRuntimeSeam.h"
 #import "$PWD/Sources/VoIPPlatform/include/VoIPPlatform.h"
+#import "$PWD/discovery/probe/push_entry_main_stall.h"
 HEADERS
-for source in Sources/Interposition/CKInterposition.m Sources/Interposition/CKPushDelivery.m Sources/VoIPPlatform/*.m; do
+for source in Sources/Interposition/CKInterposition.m Sources/Interposition/CKPushDelivery.m Sources/Interposition/CKPushLaunch.m Sources/VoIPPlatform/*.m discovery/probe/push_entry_main_stall.m; do
   limit 90 xcrun --sdk iphonesimulator clang -target "$TARGET" -isysroot "$SDK" -fobjc-arc -fmodules \
     -DDEBUG=1 -DCKSIM_SDK_SOURCE=1 -DCKSIM_RUNTIME_VERSION=\""$VERSION"\" \
     -c "$source" -o "$WORK/$(basename "$source" .m).o" >> "$OUT/build.log" 2>&1

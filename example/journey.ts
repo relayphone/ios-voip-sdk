@@ -22,8 +22,22 @@ type JourneyModule = NativeModule & {
   m3Enabled: boolean;
   m3DirectEnabled: boolean;
   m1Case: '' | 'journey' | 'cold-launch' | 'unhandled-expiry';
+  systemCase:
+    | ''
+    | 'answer-end'
+    | 'decline'
+    | 'hold-accept'
+    | 'end-accept'
+    | 'mute-echo'
+    | 'provider-reset'
+    | 'push-launch';
   m2Case: '' | 'livekit' | 'stale-audio';
   runID: string;
+  nextSystemCommand(): Promise<{
+    id: string;
+    operation: string;
+    conversationID?: string;
+  }>;
   acceptance(): Promise<void>;
   dialListenerReady(): Promise<void>;
   deliverDirectDialRequests(): Promise<void>;

@@ -14,6 +14,7 @@ from unittest.mock import Mock, patch
 
 from check_sdk_m0 import IDENTITY, write_json, write_trace
 import sdk_m2_conformance as gate
+from sdk_m2_environment import COMMANDS as ENVIRONMENT_COMMANDS, inspect as inspect_environment
 import run_sdk_m2 as runner
 
 CALL = 'E715ACF2-A7C1-4D74-8BD9-EAFA47693255'
@@ -26,7 +27,7 @@ def fixture_case(root, case, pid):
     rows = []
     revision = 0
     clock = 0
-    bundle = gate.CONTRACTS if case == 'media-reentrancy' else gate.EXAMPLE
+    bundle = gate.EXAMPLE if case in gate.CASES[:2] else gate.CONTRACTS
 
     def add(event, at=None, **fields):
         nonlocal clock
@@ -61,16 +62,21 @@ def fixture_case(root, case, pid):
         add('m2.handler', kind=kind, conversationID=CALL, origin='app')
 
     add('app.entry')
-    if case == 'media-reentrancy':
+    if case in ('media-reentrancy', 'audio-lifecycle'):
         add('launch', mode='sdk-m1-contracts', case=case, traceVersion=2, simulatorOS='27.0',
             runtimeInjectionPresent=False, executableSHA256=gate.digest(root / 'binaries/contracts'))
         add('contract.activation', active=True)
-        add('contract.mediaReentrancy', authorizationCalls=1, sameOwner=True, warnings=0)
+        if case == 'audio-lifecycle':
+            from check_sdk_m2_audio_lifecycle import lifecycle_rows
+            for row in lifecycle_rows('modern'):
+                row = dict(row); add(row.pop('event'), **row)
+        else:
+            add('contract.mediaReentrancy', authorizationCalls=1, sameOwner=True, warnings=0)
         add('contract.result', success=True)
     else:
         add('launch', mode='sdk-m2', case=case, traceVersion=2)
         add('sdk.activation', active=True)
-        add('sdk.managerCreated', owner='ConversationClient.shared')
+        add('sdk.managerCreated', owner='VoIPApplication.start')
         snapshot()
         media('initial')
         for label in ('inactive-route-rejected', 'routes-observed'): assertion(label)
@@ -133,7 +139,13 @@ def fixture_case(root, case, pid):
 
     native('runtime.installed', version=(gate.ROOT / 'VERSION').read_text().strip())
     native('provider.created', provider='one-provider')
-    if case != 'media-reentrancy':
+    if case == 'audio-lifecycle':
+        from check_sdk_m2_audio_lifecycle import lifecycle_engine
+        for row in lifecycle_engine():
+            row = dict(row)
+            if row['event'] == 'transaction.delivered': row['provider'] = 'one-provider'
+            native(row.pop('event'), **row)
+    elif case in gate.CASES[:2]:
         native('push.received', pushID=PUSH, api='metadata', mustReport=True)
         native('report.incoming', pushID=PUSH, callUUID=CALL)
         native('call.changed', uuid=CALL, outgoing=False, connected=False, held=False, ended=False)
@@ -156,7 +168,7 @@ def fixture_case(root, case, pid):
     journal.write_text(''.join(json.dumps(r) + '\n' for r in engine))
     receipt['journalSHA256'] = gate.digest(journal)
     write_json(path, receipt)
-    if case != 'media-reentrancy':
+    if case in gate.CASES[:2]:
         write_json(root / (name + '.session.json'), dict(schemaVersion=1, runID='run-1', pid=pid,
             bundleID=gate.EXAMPLE, profile='ios-27.0', notification=f'dev.callkitsim.control.{pid}'))
         write_json(root / (name + '.control.request.json'), dict(id=NONCE, runID='run-1', pid=pid,
@@ -202,8 +214,19 @@ def fixture(root):
         contractsConfiguration='Debug', mediaAdapter='livekit', sourceStart=IDENTITY, sourceEnd=IDENTITY,
         **IDENTITY, files=files))
     write_json(root / 'environment.json', dict(simulatorID='sim-1', simulatorRuntimeID='ios-27', simulatorOS='27.0',
-        xcodeVersion='Xcode 27.1', sdkVersion='27.1', hostArchitecture='arm64'))
+        xcodeVersion='Xcode 27.1\nBuild version 27A9275', sdkVersion='27.1', hostArchitecture='arm64'))
     write_json(root / 'runtime.json', dict(identifier='ios-27', version='27.0', buildversion='27A'))
+    environment_outputs = dict(macOS='ProductName: macOS\nProductVersion: 27.0.1\nBuildVersion: 26A434\n',
+        architecture='arm64\n', xcode='Xcode 27.1\nBuild version 27A9275\n', simulatorSDKVersion='27.1\n',
+        simulatorSDKBuild='24B78\n', simulatorSDKPath='/synthetic/SDK', runtimes=json.dumps(dict(runtimes=[dict(
+            platform='iOS', name='iOS 27.0', identifier='ios-27', version='27.0', buildversion='27A', isAvailable=True)])))
+    def replay(args, **options):
+        key = next(key for key, argv in ENVIRONMENT_COMMANDS.items() if args == argv)
+        return SimpleNamespace(returncode=0, stdout=environment_outputs[key], stderr='')
+    write_json(root / 'environment-preflight.json', inspect_environment('iOS 27.0', 'modern', '27.1', '27A9275',
+        execute=replay, environment=dict(ImageOS='synthetic-image', ImageVersion='synthetic-version', RUNNER_ARCH='ARM64',
+            GITHUB_RUN_ID='1', GITHUB_RUN_ATTEMPT='1', GITHUB_SHA=IDENTITY['sourceCommit'])))
+
     write_json(root / 'cleanup.json', dict(simulatorID='sim-1', deleted=True, deleteExitCode=0, absentFromInventory=True))
     write_json(root / 'installed.json', dict(exampleSHA256=files['binaries/example'],
         javascriptSHA256=files['binaries/main.jsbundle'], contractsSHA256=files['binaries/contracts'],
@@ -212,13 +235,14 @@ def fixture(root):
     write_json(root / 'host-audio-controls.json', dict(source=IDENTITY, result=dict(success=True, checks=list(gate.HOST_CHECKS))))
     for pid, case in enumerate(gate.CASES, 123): fixture_case(root, case, pid)
     manifest = dict(schemaVersion=1, scenario='sdk-m2', configuration='Release', mediaAdapter='livekit',
-        runID='run-1', simulatorID='sim-1', ownsSimulator=True, runtimeInjectionRequested=False, **IDENTITY,
+        runID='run-1', simulatorID='sim-1', ownsSimulator=True, runtimeInjectionRequested=False, audioPath='modern', **IDENTITY,
         files=files, controlFiles={name: gate.digest(root / name) for name in [
             'sdk-m2-' + case + suffix for case in gate.CASES[:2] for suffix in gate.CONTROL_SUFFIXES]},
         externalDYLDInsertLibrariesPresent=False, externalDYLDInsertLibrariesSHA256=gate.hashlib.sha256(b'').hexdigest())
     for key, name in dict(sourceBeginSHA256='source-before.json', sourceEndSHA256='source-after.json',
             cleanupSHA256='cleanup.json', environmentSHA256='environment.json', runtimeSHA256='runtime.json',
-            installedSHA256='installed.json', buildReceiptSHA256='build-info.json', hostAudioControlsSHA256='host-audio-controls.json').items():
+            installedSHA256='installed.json', buildReceiptSHA256='build-info.json', hostAudioControlsSHA256='host-audio-controls.json',
+            environmentPreflightSHA256='environment-preflight.json').items():
         manifest[key] = gate.digest(root / name)
     write_json(root / 'manifest.json', manifest)
 
@@ -230,7 +254,8 @@ def rebind(root):
     for name in manifest['controlFiles']: manifest['controlFiles'][name] = gate.digest(root / name)
     for key, name in dict(sourceBeginSHA256='source-before.json', sourceEndSHA256='source-after.json',
             cleanupSHA256='cleanup.json', environmentSHA256='environment.json', runtimeSHA256='runtime.json',
-            installedSHA256='installed.json', buildReceiptSHA256='build-info.json', hostAudioControlsSHA256='host-audio-controls.json').items():
+            installedSHA256='installed.json', buildReceiptSHA256='build-info.json', hostAudioControlsSHA256='host-audio-controls.json',
+            environmentPreflightSHA256='environment-preflight.json').items():
         manifest[key] = gate.digest(root / name)
     write_json(root / 'manifest.json', manifest)
 
@@ -277,11 +302,44 @@ class Controls(unittest.TestCase):
     def reject(self, pattern):
         with self.assertRaisesRegex(gate.EvidenceError, pattern): gate.validate(self.root)
 
-    def test_positive_source_bound_three_cases(self):
+    def test_positive_source_bound_four_cases(self):
         result = gate.validate(self.root)
         self.assertTrue(result['success'])
         self.assertEqual(result['hostAudioControls'], 21)
         self.assertEqual(set(result['cases']), set(gate.CASES))
+
+    def test_removed_shared_owner_is_rejected(self):
+        change_rows(self.root, 'livekit', lambda rows: gate.one(rows, 'sdk.managerCreated').update(
+            owner='ConversationClient.shared'))
+        self.reject('SDK/result unavailable')
+
+    def test_rebound_environment_preflight_must_identify_the_actual_lane(self):
+        mutations = [lambda value: value.update(success=False),
+            lambda value: value.update(sourceSHA256='f' * 64),
+            lambda value: value['requested'].update(runtime='iOS 27.1'),
+            lambda value: value['selectedRuntime'].update(buildversion='different'),
+            lambda value: value['commands']['xcode'].update(stdout='Xcode 27.0\nBuild version 27A9275\n'),
+            lambda value: value['commands']['architecture'].update(stdout='x86_64\n'),
+            lambda value: value['commands']['runtimes'].update(argv=['invented']),
+            lambda value: value['runner'].update(GITHUB_SHA='f' * 40),
+            lambda value: value['runner'].update(ImageVersion=False)]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                fixture(self.root)
+                change_json(self.root, 'environment-preflight.json', mutation)
+                self.reject('preflight')
+        fixture(self.root)
+        change_json(self.root, 'manifest.json', lambda value: value.update(audioPath='legacy'))
+        self.reject('audio path/runtime')
+
+    def test_rebound_lifecycle_capture_cannot_be_empty_or_substitute_an_advisory_enable(self):
+        change_rows(self.root, 'audio-lifecycle', lambda rows: rows.__setitem__(slice(None),
+            [row for row in rows if row['event'] not in ('lifecycle.observed', 'lifecycle.consumed')]))
+        self.reject('capture empty')
+        fixture(self.root)
+        change_rows(self.root, 'audio-lifecycle', lambda rows: gate.one(rows, 'lifecycle.consumed',
+            phase='fixture-app-activation').update(authorizedAfter=True))
+        self.reject('advisory notification changed authorization')
 
     def test_missing_empty_or_unbound_products(self):
         for mode in ('missing', 'empty', 'changed'):

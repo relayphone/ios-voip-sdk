@@ -66,7 +66,7 @@ def main(*, direct=False):
     owned_name = 'sdk-m3-' + run_id
     steps = []
     control_env = {key: value for key, value in os.environ.items()
-                   if not key.startswith(('SIMCTL_CHILD_CKSIM_', 'SIMCTL_CHILD_SDK_M0_', 'SIMCTL_CHILD_SDK_M1_', 'SIMCTL_CHILD_SDK_M2_', 'SIMCTL_CHILD_SDK_M3_'))}
+                   if not key.startswith(('SIMCTL_CHILD_CKSIM_', 'SIMCTL_CHILD_SDK_M0_', 'SIMCTL_CHILD_SDK_M1_', 'SIMCTL_CHILD_SDK_M2_', 'SIMCTL_CHILD_SDK_M3_', 'SIMCTL_CHILD_SDK_SYSTEM_'))}
     manifest = dict(schemaVersion=1, scenario='sdk-m3-direct' if direct else 'sdk-m3', runID=run_id, ownsSimulator=True,
                     runtimeInjectionRequested=False, directIngressInjectionRequested=direct)
     if direct: manifest['delivery'] = 'direct-url-and-intent'

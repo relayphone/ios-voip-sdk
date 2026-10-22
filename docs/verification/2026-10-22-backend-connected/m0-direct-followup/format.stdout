@@ -1,0 +1,6 @@
+
+> ios-voip-sdk@0.0.0 format:check
+> prettier --check package.json tsconfig.json expo-module.config.json .prettierrc.json 'Expo/**/*.{ts,md}' 'example/*.{ts,tsx,js,json,md}'
+
+Checking formatting...
+All matched files use Prettier code style!

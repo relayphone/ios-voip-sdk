@@ -73,6 +73,7 @@ def fixture_case(root, case, pid):
         handler('join')
         snapshot('connecting')
         assertion('joined')
+        add('m1.backendConnectedRequested', dict(conversationID=CONVERSATION))
         snapshot('connected', connected=True)
         hook('connected', connected=True)
         assertion('connected-report')
@@ -101,7 +102,10 @@ def fixture_case(root, case, pid):
             handler('join', deadline=iso(WALL + 28_500))
             snapshot('connecting')
             assertion('cold-redelivered')
+            add('m1.backendConnectedRequested', dict(conversationID=CONVERSATION))
             snapshot('connected', connected=True)
+            hook('connected', connected=True)
+            assertion('connected-report')
         else:
             assertion('platform-deadline-visible')
     if case != 'unhandled-expiry':
@@ -151,6 +155,8 @@ def fixture_case(root, case, pid):
     for index, kind in enumerate(kinds):
         runtime('transaction.delivered', provider='synthetic-provider', actionIDs=['action-' + str(index)], kinds=[kind])
         if case != 'journey' and index == 0:
+            runtime('action.deadline', actionID='action-' + str(index), provider='synthetic-provider',
+                    apiKind='livecommunicationkit', deadlineMS=WALL + 30_000, deadlineSeconds=30, expirySeconds=30)
             pending = next(row for row in rows if row['event'] == 'm1.coldPending')
             runtime('m1.coldPendingClock', at=pending['t_ms'], conversationID=CONVERSATION, actionID=PENDING)
         runtime('action.settled', at=28_500 if case == 'unhandled-expiry' else 5020 if case == 'cold-launch' else None,
@@ -188,6 +194,17 @@ def mutate_journal(root, case, edit):
     write_journal(root, name, rows)
 
 
+def restore_public_platform_deadline(rows):
+    public = iso(WALL + 30_000)
+    for row in rows:
+        if row['event'] == 'm1.coldPending':
+            row.update(deadline=public, remainingMS=WALL + 30_000 - row['wallTimeMS'])
+        if row['event'] == 'sdk.snapshot':
+            for call in row['conversations']:
+                if call.get('pending', {}).get('id') == PENDING: call['pending']['deadline'] = public
+        if row['event'] == 'm1.handler' and row.get('kind') == 'join': row['deadline'] = public
+
+
 class Controls(unittest.TestCase):
     def check(self, edit=None, succeeds=False):
         with tempfile.TemporaryDirectory(prefix='ios-voip-sdk-m1-controls-') as temporary:
@@ -210,16 +227,43 @@ class Controls(unittest.TestCase):
     def test_positive_all_cases(self):
         self.check()
 
-    def test_signaling_connection_boundary(self):
+    def test_backend_connection_boundary(self):
         for case in ('journey', 'cold-launch'):
-            with self.subTest(case=case):
-                self.check(lambda root: mutate_rows(root / 'm1', case, lambda rows:
-                    next(row for row in rows if row['event'] == 'sdk.snapshot' and row['conversations'] and
-                         row['conversations'][0]['status'] == 'connecting' and
-                         'pending' not in row['conversations'][0])['conversations'][0].update(status='connected')))
-                self.check(lambda root: mutate_rows(root / 'm1', case, lambda rows:
-                    next(row for row in rows if row['event'] == 'sdk.snapshot' and row['conversations'] and
-                         row['conversations'][0]['status'] == 'connected')['conversations'][0].update(hasConnectedAt=False)))
+            for field, value in (('status', 'connected'), ('hasConnectedAt', True),
+                                 ('pending', dict(kind='join'))):
+                with self.subTest(case=case, field=field):
+                    self.check(lambda root, case=case, field=field, value=value:
+                        mutate_rows(root / 'm1', case, lambda rows:
+                            next(row for row in rows if row['event'] == 'sdk.snapshot' and row['conversations'] and
+                                 row['conversations'][0]['status'] == 'connecting' and
+                                 'pending' not in row['conversations'][0])['conversations'][0].update({field: value})))
+            self.check(lambda root, case=case: mutate_rows(root / 'm1', case, lambda rows:
+                next(row for row in rows if row['event'] == 'sdk.snapshot' and row['conversations'] and
+                     row['conversations'][0]['status'] == 'connected')['conversations'][0].update(hasConnectedAt=False)))
+
+    def test_backend_report_marker_identity_and_order(self):
+        for case in ('journey', 'cold-launch'):
+            self.check(lambda root, case=case: mutate_rows(root / 'm1', case, lambda rows:
+                next(row for row in rows if row['event'] == 'm1.backendConnectedRequested').update(conversationID='other-call')))
+            self.check(lambda root, case=case: mutate_rows(root / 'm1', case, lambda rows:
+                next(row for row in rows if row['event'] == 'm1.backendConnectedRequested').pop('conversationID')))
+            self.check(lambda root, case=case: mutate_rows(root / 'm1', case, lambda rows:
+                rows.remove(next(row for row in rows if row['event'] == 'm1.backendConnectedRequested'))))
+            def move(rows, after):
+                marker = next(row for row in rows if row['event'] == 'm1.backendConnectedRequested')
+                rows.remove(marker)
+                if after:
+                    target = next(row for row in rows if row['event'] == 'sdk.snapshot' and row['conversations'] and
+                                  row['conversations'][0]['status'] == 'connected')
+                else:
+                    target = next(row for row in rows if row['event'] == 'm1.assertion' and
+                                  row.get('label') in ('joined', 'cold-redelivered'))
+                marker.update(t_ms=target['t_ms'], wallTimeMS=target['wallTimeMS'])
+                rows.insert(rows.index(target) + int(after), marker)
+            for after in (False, True):
+                with self.subTest(case=case, after_connected=after):
+                    self.check(lambda root, case=case, after=after: mutate_rows(root / 'm1', case,
+                        lambda rows: move(rows, after)))
 
     def test_base_build_bytes_and_receipts_remain_required(self):
         self.check(lambda root: (root / 'binaries/example').write_bytes(b'tampered'))
@@ -364,6 +408,30 @@ class Controls(unittest.TestCase):
                 for index, row in enumerate(rows): row['t_ms'] = index
             mutate_rows(root / 'm1', 'cold-launch', edit)
         self.check(late_pending)
+
+    def test_cold_effective_deadline_requires_native_margin(self):
+        for case in ('cold-launch', 'unhandled-expiry'):
+            with self.subTest(case=case):
+                self.check(lambda root, case=case: mutate_rows(root / 'm1', case, restore_public_platform_deadline))
+
+    def test_cold_native_deadline_binding(self):
+        for case in ('cold-launch', 'unhandled-expiry'):
+            def missing(rows): rows.remove(next(row for row in rows if row['event'] == 'action.deadline'))
+            def duplicate(rows):
+                index = next(i for i, row in enumerate(rows) if row['event'] == 'action.deadline')
+                rows.insert(index + 1, dict(rows[index]))
+            def late(rows):
+                deadline = next(row for row in rows if row['event'] == 'action.deadline'); rows.remove(deadline)
+                index = next(i for i, row in enumerate(rows) if row['event'] == 'm1.coldPendingClock')
+                deadline['t_ms'] = rows[index]['t_ms']; rows.insert(index + 1, deadline)
+            for name, edit in (('missing', missing), ('duplicate', duplicate), ('after-pending-clock', late)):
+                with self.subTest(case=case, mutation=name):
+                    self.check(lambda root, case=case, edit=edit: mutate_journal(root / 'm1', case, edit))
+            for field, value in (('actionID', PENDING), ('provider', 'different-provider'), ('apiKind', 'callkit'),
+                                 ('deadlineMS', WALL + 28_500), ('deadlineSeconds', 60), ('expirySeconds', 60)):
+                with self.subTest(case=case, field=field):
+                    self.check(lambda root, case=case, field=field, value=value: mutate_journal(root / 'm1', case,
+                        lambda rows: next(row for row in rows if row['event'] == 'action.deadline').update({field: value})))
 
     def test_native_expiry_deadline_clock_binding(self):
         def timing(rows, at):

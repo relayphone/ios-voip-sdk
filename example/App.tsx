@@ -32,6 +32,11 @@ import {
   trace,
 } from './acceptance';
 import { journey } from './journey';
+import {
+  observeSystem,
+  runSystemAcceptance,
+  systemTrace,
+} from './system-acceptance';
 import { observeMediaEvent, runMediaAcceptance } from './media';
 
 type Status =
@@ -64,6 +69,7 @@ function CallingJourney() {
   const automated =
     journey().acceptanceEnabled ||
     journey().m1Case !== '' ||
+    journey().systemCase !== '' ||
     journey().m2Case !== '' ||
     journey().m3Enabled;
   const conversation = conversations[0];
@@ -76,23 +82,33 @@ function CallingJourney() {
   }, [automated]);
   useEffect(() => {
     if (journey().m1Case !== '') observeConversations(conversations);
+    if (journey().systemCase !== '') observeSystem(conversations);
   }, [conversations]);
   useEffect(() => {
     if (journey().m1Case !== '') observeToken(pushToken);
   }, [pushToken]);
-  const observeEvent = (name: string) => {
+  const observeEvent = (name: string, conversationId?: string) => {
     if (journey().m1Case !== '') void trace('m1.event', { name });
+    if (journey().systemCase !== '')
+      void systemTrace('system.event', {
+        name,
+        ...(conversationId === undefined
+          ? {}
+          : { conversationID: conversationId }),
+      });
     if (journey().m2Case !== '') observeMediaEvent(name);
   };
-  useConversationEvent('audioActivated', () => observeEvent('audioActivated'));
-  useConversationEvent('audioDeactivated', () =>
-    observeEvent('audioDeactivated'),
+  useConversationEvent('audioActivated', (event) =>
+    observeEvent('audioActivated', event.conversationId),
   );
-  useConversationEvent('audioActivationMissing', () =>
-    observeEvent('audioActivationMissing'),
+  useConversationEvent('audioDeactivated', (event) =>
+    observeEvent('audioDeactivated', event.conversationId),
   );
-  useConversationEvent('audioActivationFailed', () =>
-    observeEvent('audioActivationFailed'),
+  useConversationEvent('audioActivationMissing', (event) =>
+    observeEvent('audioActivationMissing', event.conversationId),
+  );
+  useConversationEvent('audioActivationFailed', (event) =>
+    observeEvent('audioActivationFailed', event.conversationId),
   );
   useConversationEvent('providerReset', () => observeEvent('providerReset'));
   useConversationEvent('pushTokenUpdated', () =>
@@ -188,7 +204,12 @@ function CallingJourney() {
       />
       <Button
         title="Report connected"
-        disabled={automated || busy || conversation?.status !== 'connected'}
+        disabled={
+          automated ||
+          busy ||
+          conversation?.pending !== undefined ||
+          !['connecting', 'dialing'].includes(conversation?.status ?? '')
+        }
         onPress={() =>
           conversation &&
           void command(() =>
@@ -235,6 +256,7 @@ export default function App() {
         !acceptanceStarted.current &&
         (journey().acceptanceEnabled ||
           journey().m1Case !== '' ||
+          journey().systemCase !== '' ||
           journey().m2Case !== '')
       ) {
         acceptanceStarted.current = true;
@@ -245,6 +267,9 @@ export default function App() {
         } else if (journey().acceptanceEnabled) {
           setStatus({ phase: 'ready', info });
           await journey().acceptance();
+        } else if (journey().systemCase !== '') {
+          setStatus({ phase: 'ready', info });
+          await runSystemAcceptance();
         } else {
           if (['cold-launch', 'unhandled-expiry'].includes(journey().m1Case)) {
             // No public SDK runtime/state hook has been created yet. Cold state
@@ -262,7 +287,11 @@ export default function App() {
       }
     } catch (error) {
       try {
-        if (journey().m1Case !== '' || journey().m2Case !== '')
+        if (
+          journey().m1Case !== '' ||
+          journey().m2Case !== '' ||
+          journey().systemCase !== ''
+        )
           await journey().finish(false);
       } catch {
         // Preserve the screen's native-module loading error if no fixture exists.
