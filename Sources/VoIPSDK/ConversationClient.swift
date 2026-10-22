@@ -31,13 +31,30 @@ struct TerminalConversationProjection<Object: AnyObject> {
   }
 }
 
-/// Each actual report waits for the preceding attempt with this UUID. The Task
-/// itself owns generation-checked cleanup, before any caller continuation resumes.
+/// A new UUID reports in the caller's Task. Only an actual predecessor with the
+/// same UUID suspends an attempt; continuations preserve each delivery's context.
 @MainActor
 final class SerializedIncomingReports {
   struct Context {
     let previouslyReported: Bool
     let isLatest: @MainActor () -> Bool
+  }
+  @MainActor
+  final class Pending {
+    private var settled: Result<UUID, Error>?
+    private var waiters: [CheckedContinuation<UUID, Error>] = []
+    var value: UUID {
+      get async throws {
+        if let settled { return try settled.get() }
+        return try await withCheckedThrowingContinuation { waiters.append($0) }
+      }
+    }
+    fileprivate func resolve(_ result: Result<UUID, Error>) {
+      guard settled == nil else { return }
+      settled = result
+      let pending = waiters; waiters.removeAll()
+      for waiter in pending { waiter.resume(with: result) }
+    }
   }
   private final class History {
     var reported: Bool
@@ -45,30 +62,32 @@ final class SerializedIncomingReports {
   }
   private struct Entry {
     let generation: UUID
-    let task: Task<UUID, Error>
+    let pending: Pending
     let history: History
   }
   private var entries: [UUID: Entry] = [:]
-  func pending(for id: UUID) -> Task<UUID, Error>? { entries[id]?.task }
-  func enqueue(id: UUID, previouslyReported: Bool,
-               operation: @escaping @MainActor (Context) async throws -> UUID) -> Task<UUID, Error> {
-    let predecessor = entries[id]?.task
-    let history = entries[id]?.history ?? History(previouslyReported)
-    let generation = UUID()
-    let task = Task { @MainActor [weak self] in
-      if let predecessor { _ = await predecessor.result }
-      let context = Context(previouslyReported: history.reported, isLatest: { [weak self] in
-        self?.entries[id]?.generation == generation
-      })
-      defer {
-        if self?.entries[id]?.generation == generation { self?.entries.removeValue(forKey: id) }
-      }
-      let result = try await operation(context)
+  func pending(for id: UUID) -> Pending? { entries[id]?.pending }
+  func perform(id: UUID, previouslyReported: Bool,
+               operation: @MainActor (Context) async throws -> UUID) async throws -> UUID {
+    let predecessor = entries[id]
+    let history = predecessor?.history ?? History(previouslyReported)
+    let generation = UUID(), pending = Pending()
+    entries[id] = Entry(generation: generation, pending: pending, history: history)
+    if let predecessor { _ = try? await predecessor.pending.value }
+    let context = Context(previouslyReported: history.reported, isLatest: { [weak self] in
+      self?.entries[id]?.generation == generation
+    })
+    let result: Result<UUID, Error>
+    do {
+      let id = try await operation(context)
       history.reported = true
-      return result
-    }
-    entries[id] = Entry(generation: generation, task: task, history: history)
-    return task
+      result = .success(id)
+    } catch { result = .failure(error) }
+    // Cleanup precedes resuming any caller or queued attempt. A successor keeps
+    // ownership, so an older failure cannot erase its metadata or association.
+    if entries[id]?.generation == generation { entries.removeValue(forKey: id) }
+    pending.resolve(result)
+    return try result.get()
   }
 }
 
@@ -257,7 +276,7 @@ public final class ConversationClient: NSObject {
       if let pending = incomingReports.pending(for: id) { return try await pending.value }
       return id
     }
-    // Register metadata before a report Task or predecessor can suspend. Every
+    // Register metadata before the platform call or a predecessor can suspend. Every
     // PushKit delivery retains its own actual report attempt, using the same UUID.
     let existing = records[id]
     let previouslyReported = !registration.isNew && (existing == nil || existing?.seenInManager == true)
@@ -265,7 +284,7 @@ public final class ConversationClient: NSObject {
     if record.payload == nil { record.payload = payload }
     records[id] = record
     recordRemovalGenerations.removeValue(forKey: id)
-    let report = incomingReports.enqueue(id: id, previouslyReported: previouslyReported) { context in
+    return try await incomingReports.perform(id: id, previouslyReported: previouslyReported) { context in
       let knownLiveConversation = self.manager.conversations.contains { $0.uuid == id }
       do {
         let update = self.update(for: self.records[id] ?? record)
@@ -288,7 +307,6 @@ public final class ConversationClient: NSObject {
       self.refresh()
       return id
     }
-    return try await report.value
   }
 
   @discardableResult
