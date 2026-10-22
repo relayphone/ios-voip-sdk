@@ -1,15 +1,17 @@
-# Expo module preparation
+# iOS Expo module
 
-This is M0 packaging infrastructure for the iOS-only Expo module. The public
-conversation API is specified by [RFC 0001](https://github.com/ziahamza/expo-callkit-telecom/blob/rfc/v2-conversations-api/rfcs/0001-v2-conversations-api.md)
-and arrives in M1. The package root currently exports no conversation API.
+The iOS-only Expo module exposes the conversation API specified by
+[RFC 0001](https://github.com/ziahamza/expo-callkit-telecom/blob/rfc/v2-conversations-api/rfcs/0001-v2-conversations-api.md).
+See [the M1 API](M1-API.md), [launch configuration](M1-plugin.md), and
+[M2 audio integration](M2-AUDIO.md) for usage and the limits of current evidence.
 
 ## Shared native sources
 
 `IosVoipSDK.podspec` lives at repository root so it can compile `Sources/` and
-`Expo/apple/` directly, without copying Swift sources. Its only native dependency
-is `ExpoModulesCore`; LiveCommunicationKit and the simulator runtime belong to the
-shared SDK sources. The separate `CKLoader.m` external injection loader is excluded.
+`Expo/apple/` directly, without copying Swift sources. `ExpoModulesCore` is always
+required; only the selected LiveKit adapter adds its typed RN/WebRTC dependency.
+LiveCommunicationKit and the simulator runtime belong to the shared SDK sources.
+The separate `CKLoader.m` external injection loader is excluded.
 The pod sets `CKSIM_SDK_SOURCE=1` and derives `CKSIM_RUNTIME_VERSION` from the
 repository's canonical `VERSION` file.
 
@@ -38,7 +40,7 @@ public enum SimulatorSupport {
 Activation must be idempotent. It returns whether the simulator runtime is active;
 on devices it returns `false`. Failure logs its reason and allows genuine system
 behavior, as required by `docs/START-HERE.md`. The wrapper dispatches to `MainActor`
-before calling it. No `ConversationManager` is created by this scaffold.
+before calling it. The launch owner subsequently creates the SDK's single manager.
 
 `IosVoipSDK.bootstrap()` is exposed only through the package's explicitly internal
 `ios-voip-sdk/internal/bootstrap` entry. It returns `{ platform: 'ios', simulator,
@@ -65,8 +67,9 @@ pod ipc spec IosVoipSDK.podspec
 ```
 
 These checks validate TypeScript, configuration and discovery of the pod. They do
-not compile Swift, test simulator activation or prove call behavior. The native
-`SimulatorSupport` implementation and the full M0 acceptance still need integration.
+not compile Swift, test simulator activation or prove call behavior. Native
+acceptance is recorded separately in milestone evidence; these commands alone do
+not establish it.
 
 The scaffold uses direct TypeScript compilation instead of the larger
 `expo-module-scripts` development toolchain. Dependency versions are pinned in
