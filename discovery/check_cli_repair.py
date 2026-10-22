@@ -38,12 +38,20 @@ path.write_text(json.dumps(state))
 assert args[0] == 'simctl', args
 if args[1] == 'getenv':
     key = args[3]
-    if key in state['environment']:
-        print(state['environment'][key])
+    observed = state.get('simctlEnvironment', state['environment'])
+    if key in observed:
+        print(observed[key])
     else:
         print("'%s' not found" % key, file=sys.stderr)
 elif args[1:4] == ['spawn', '@DEVICE@', 'launchctl']:
     operation, key = args[4:6]
+    if state.get('requireSafeControlEnvironment') and os.environ.get('SIMCTL_CHILD_DYLD_INSERT_LIBRARIES') != '':
+        print('deleted loader would be injected into launchctl', file=sys.stderr)
+        sys.exit(78)
+    if operation == 'getenv':
+        if key in state['environment']:
+            print(state['environment'][key])
+        sys.exit(0)
     if state.get('failKey') == key:
         print('injected launchctl failure', file=sys.stderr)
         sys.exit(7)
@@ -102,6 +110,33 @@ else:
                 fake_state.write_text(json.dumps(current))
 
             return package, ownership, run, state, update
+
+        original = {LIBRARY_KEY: '/opt/Argent.dylib'}
+        package, ownership, run, state, update = case('stale-simctl-getenv', original)
+        update(simctlEnvironment={LIBRARY_KEY: '/opt/stale.dylib'})
+        run('install')
+        check(state()['environment'][LIBRARY_KEY] == original[LIBRARY_KEY]+':'+str(package/'CKSimLoader.dylib'),
+              'install read stale simctl environment instead of current launchd')
+        shutil.rmtree(package)
+        run('repair', bundle=False)
+        check(state()['environment'] == original, 'repair restored stale simctl environment')
+        checks.append('current-launchd-read-not-stale-simctl')
+
+        original = {LIBRARY_KEY: '/opt/Argent.dylib'}
+        package, ownership, run, state, update = case('deleted-loader-control-process', original)
+        run('install')
+        shutil.rmtree(package)
+        update(requireSafeControlEnvironment=True)
+        run('repair', bundle=False)
+        check(state()['environment'] == original, 'safe launchctl repair changed inherited environment')
+        checks.append('deleted-loader-never-injected-into-control-process')
+
+        original = {LIBRARY_KEY: '/opt/Argent.dylib\n', 'CKSIM_PROFILE': ' \n', 'CKSIM_ENABLED': ''}
+        package, ownership, run, state, update = case('launchctl-empty-and-newline', original)
+        run('install')
+        run('repair', bundle=False)
+        check(state()['environment'] == original, 'launchctl transport changed empty/unset/trailing newline values')
+        checks.append('launchctl-preserves-empty-unset-and-trailing-newlines')
 
         original = {LIBRARY_KEY: "/opt/Argent.dylib", "CKSIM_PROFILE": "previous-profile", "CKSIM_ENABLED": ""}
         package, ownership, run, state, update = case("deleted-package", original)

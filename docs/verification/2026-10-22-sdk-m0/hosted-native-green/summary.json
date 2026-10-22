@@ -1,0 +1,27 @@
+{
+  "success": true,
+  "scenario": "sdk-m0",
+  "conversationID": "5711EE6D-660E-42F3-8648-470420D72B8E",
+  "simulatorOS": "26.5",
+  "profile": "ios-27.0",
+  "bootstrap": {
+    "healthy": {
+      "success": true,
+      "checks": 4,
+      "effectiveMethods": 65
+    },
+    "profile": {
+      "success": true,
+      "checks": 5,
+      "effectiveMethods": 65
+    },
+    "push-after-install": {
+      "success": true,
+      "checks": 5,
+      "effectiveMethods": 65
+    }
+  },
+  "deviceRuntimeImplementationAbsent": true,
+  "swiftPMDeviceObjects": 5,
+  "manifestSHA256": "fb9f32a0947dd606a908e131ef612d443e65e9764a2aa6234e3ccea082badc19"
+}
