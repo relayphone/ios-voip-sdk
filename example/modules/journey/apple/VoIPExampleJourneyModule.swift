@@ -48,10 +48,8 @@ private enum JourneyTrace {
       "wallTimeMS": Int64(observedAt.timeIntervalSince1970 * 1000),
       "main": Thread.isMainThread
     ]) { _, value in value }
-    guard let bytes = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]),
-          let text = String(data: bytes, encoding: .utf8) else { return }
-    print("PROBE " + text)
-    fflush(nil)
+    guard let bytes = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) else { return }
+    ProbeTraceWriter.emit(bytes)
   }
 
   private static let formatter: ISO8601DateFormatter = {

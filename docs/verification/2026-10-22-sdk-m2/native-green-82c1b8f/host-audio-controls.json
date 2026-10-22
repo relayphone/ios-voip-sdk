@@ -1,0 +1,32 @@
+{
+  "source": {
+    "sourceCommit": "82c1b8ff27cd41f7b45083101d8df18465158092",
+    "sourceInputsSHA256": "494e90b94164d6d62dc6eb2fe1f59b564415c2e69df508719fdc393b1cef2c05"
+  },
+  "result": {
+    "checks": [
+      "finite-positive-policy",
+      "default-activation-and-final-recovery-deadlines",
+      "caller-configured-activation-and-recovery-intervals",
+      "healthy-activation-cancels-watchdog",
+      "hold-cancels-resume-starts-a-new-absence",
+      "multicall-demand-preserves-deadline-and-current-ids",
+      "suspended-recovery-cannot-delay-clean-end",
+      "real-activation-invalidates-final-and-late-recovery",
+      "stale-call-timers-cannot-end-a-new-call",
+      "reset-clears-demand-without-synthetic-audio-events",
+      "missing-observer-reentrancy-skips-stale-recovery",
+      "failed-observer-reentrancy-skips-stale-end",
+      "end-callback-may-start-a-fresh-episode",
+      "replacement-demand-without-empty-gap-gets-new-watchdog",
+      "suspended-adapter-preparation-orders-callbacks-and-errors",
+      "route-hydration-and-explicit-null-current",
+      "duplicate-routes-and-unchanged-updates-preserve-revision",
+      "reentrant-route-observers-receive-monotonic-revisions",
+      "observed-native-routes-map-to-speaker-and-preferred-input",
+      "inactive-stale-and-backend-route-errors-have-no-state-effects",
+      "unmatched-current-output-is-observed-without-inventing-selectable-outputs"
+    ],
+    "success": true
+  }
+}

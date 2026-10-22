@@ -1,0 +1,101 @@
+{
+  "classification": "retained example/native-contract frame-size measurement; no repaired trace accepted",
+  "proposedWriterCapBytes": 4096,
+  "maximumMeasuredEncodedBytesIncludingLF": 640,
+  "allMeasuredFramesFit": true,
+  "pipeAtomicity": "No universal pipe atomicity claim: Darwin PIPE_BUF is512, smaller than some measured frames.",
+  "traces": [
+    {
+      "capture": "discovery/out/m2-native/final-capture",
+      "trace": "sdk-m2-livekit.log",
+      "traceSHA256": "cfcf940c50fff0c62d2c3c413958e3c5df28857f1898608ab7a5f448bd403287",
+      "validCompleteFrames": 71,
+      "malformedLines": [],
+      "maximumEncodedBytesIncludingLF": 638,
+      "diagnosticOnlyReconstruction": []
+    },
+    {
+      "capture": "discovery/out/m2-native/final-capture",
+      "trace": "sdk-m2-media-reentrancy.log",
+      "traceSHA256": "1c512640a7bb91136433755618845ece60999e847179db9398f7799e5c3554d3",
+      "validCompleteFrames": 6,
+      "malformedLines": [],
+      "maximumEncodedBytesIncludingLF": 449,
+      "diagnosticOnlyReconstruction": []
+    },
+    {
+      "capture": "discovery/out/m2-native/final-capture",
+      "trace": "sdk-m2-stale-audio.log",
+      "traceSHA256": "42519e3cc2ac3a5567b2b563de707549fd537240d9c2f9d0119b9aa46ebec636",
+      "validCompleteFrames": 42,
+      "malformedLines": [],
+      "maximumEncodedBytesIncludingLF": 640,
+      "diagnosticOnlyReconstruction": []
+    },
+    {
+      "capture": "discovery/out/m2-hosted-39722112712/download/sdk-m2",
+      "trace": "sdk-m2-livekit.log",
+      "traceSHA256": "6ce706c18cf46260766b47021ab228f44cf31f238c8cb2e09952fe4d727f5bd2",
+      "validCompleteFrames": 71,
+      "malformedLines": [],
+      "maximumEncodedBytesIncludingLF": 639,
+      "diagnosticOnlyReconstruction": []
+    },
+    {
+      "capture": "discovery/out/m2-hosted-39722112712/download/sdk-m2",
+      "trace": "sdk-m2-media-reentrancy.log",
+      "traceSHA256": "c86aa824068f5faf83c7e41654fed90004b3418c363f9cdad29b8de9c58d44f7",
+      "validCompleteFrames": 6,
+      "malformedLines": [],
+      "maximumEncodedBytesIncludingLF": 448,
+      "diagnosticOnlyReconstruction": []
+    },
+    {
+      "capture": "discovery/out/m2-hosted-39722112712/download/sdk-m2",
+      "trace": "sdk-m2-stale-audio.log",
+      "traceSHA256": "134c87c296f73f7eedce3be1666503197053e54dab062e3fbc0459c926c5a70f",
+      "validCompleteFrames": 42,
+      "malformedLines": [],
+      "maximumEncodedBytesIncludingLF": 640,
+      "diagnosticOnlyReconstruction": []
+    },
+    {
+      "capture": "discovery/out/m2-hosted-39723730801/download/sdk-m2",
+      "trace": "sdk-m2-livekit.log",
+      "traceSHA256": "df2e520d78e7067bc14efd6f97b533edae70f09202cafa915ef2720fa9441d61",
+      "validCompleteFrames": 70,
+      "malformedLines": [
+        170
+      ],
+      "maximumEncodedBytesIncludingLF": 638,
+      "diagnosticOnlyReconstruction": [
+        {
+          "line": 170,
+          "event": "sdk.snapshot",
+          "sequence": 37,
+          "completeEncodedBytesIncludingLF": 542,
+          "classification": "diagnostic-only reconstruction for size; original trace is invalid and unchanged"
+        }
+      ]
+    },
+    {
+      "capture": "discovery/out/m2-hosted-39723730801/download/sdk-m2",
+      "trace": "sdk-m2-media-reentrancy.log",
+      "traceSHA256": "b6ba95ccdd77d134683a42facd165ac7f773921133fb1993c12bfc3f64271f26",
+      "validCompleteFrames": 6,
+      "malformedLines": [],
+      "maximumEncodedBytesIncludingLF": 448,
+      "diagnosticOnlyReconstruction": []
+    },
+    {
+      "capture": "discovery/out/m2-hosted-39723730801/download/sdk-m2",
+      "trace": "sdk-m2-stale-audio.log",
+      "traceSHA256": "c2d9842f5392e883143792b3a984bbd0f4d96db7c4dfdb18af4056077427041c",
+      "validCompleteFrames": 42,
+      "malformedLines": [],
+      "maximumEncodedBytesIncludingLF": 640,
+      "diagnosticOnlyReconstruction": []
+    }
+  ],
+  "normalization": "PROBE prefix + captured JSON UTF-8 + LF (terminal CRLF normalized)"
+}
