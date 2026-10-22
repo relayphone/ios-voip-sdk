@@ -51,14 +51,14 @@ public enum SimulatorSupport {
   }
 
   #if os(iOS) && targetEnvironment(simulator)
-  static var currentPushIdentifier: String? { RuntimeBootstrap.currentPushIdentifier }
+  nonisolated static var currentPushIdentifier: String? { RuntimeBootstrap.currentPushIdentifier }
 
-  static func associateIncomingReport(_ id: UUID) {
+  nonisolated static func associateIncomingReport(_ id: UUID) {
     guard let pushID = SimulatorPushContext.pushIdentifier else { return }
     RuntimeBootstrap.associateIncomingReport(id, pushID: pushID)
   }
 
-  static func finishIncomingReport(_ id: UUID) {
+  nonisolated static func finishIncomingReport(_ id: UUID) {
     guard let pushID = SimulatorPushContext.pushIdentifier else { return }
     RuntimeBootstrap.finishIncomingReport(id, pushID: pushID)
   }

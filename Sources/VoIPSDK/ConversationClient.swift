@@ -45,52 +45,11 @@ struct TerminalConversationProjection<Object: AnyObject> {
   }
 }
 
-/// Each actual report waits for the preceding attempt with this UUID. The Task
-/// itself owns generation-checked cleanup, before any caller continuation resumes.
-@MainActor
-final class SerializedIncomingReports {
-  struct Context {
-    let previouslyReported: Bool
-    let isLatest: @MainActor () -> Bool
-  }
-  private final class History {
-    var reported: Bool
-    init(_ reported: Bool) { self.reported = reported }
-  }
-  private struct Entry {
-    let generation: UUID
-    let task: Task<UUID, Error>
-    let history: History
-  }
-  private var entries: [UUID: Entry] = [:]
-  func pending(for id: UUID) -> Task<UUID, Error>? { entries[id]?.task }
-  func enqueue(id: UUID, previouslyReported: Bool,
-               operation: @escaping @MainActor (Context) async throws -> UUID) -> Task<UUID, Error> {
-    let predecessor = entries[id]?.task
-    let history = entries[id]?.history ?? History(previouslyReported)
-    let generation = UUID()
-    let task = Task { @MainActor [weak self] in
-      if let predecessor { _ = await predecessor.result }
-      let context = Context(previouslyReported: history.reported, isLatest: { [weak self] in
-        self?.entries[id]?.generation == generation
-      })
-      defer {
-        if self?.entries[id]?.generation == generation { self?.entries.removeValue(forKey: id) }
-      }
-      let result = try await operation(context)
-      history.reported = true
-      return result
-    }
-    entries[id] = Entry(generation: generation, task: task, history: history)
-    return task
-  }
-}
-
 #if canImport(LiveCommunicationKit) && (os(iOS) || os(watchOS))
 import Observation
 import AVFAudio
 // Apple's LCK manager/actions and delegate lack concurrency annotations in Xcode 27.1.
-// Keep this compatibility import here: all framework access and mutation stays on MainActor.
+// All manager access stays on MainActor except the narrow incoming-report transport.
 @preconcurrency import LiveCommunicationKit
 #if SWIFT_PACKAGE
 import VoIPPlatform
@@ -152,9 +111,8 @@ public final class ConversationClient: NSObject {
   private var terminalProjection = TerminalConversationProjection<Conversation>()
   private var recordRemovalGenerations: [UUID: UUID] = [:]
   private var refreshSuspensionDepth = 0
-  private var invitations = IncomingInvitationGate()
-  private let incomingReports = SerializedIncomingReports()
-  private var endEventIDs: [String: Date] = [:]
+  nonisolated let incomingIntake = IncomingIntake()
+  nonisolated let incomingTransport: IncomingReportTransport
   private var appActions: [UUID: Date] = [:]
   private var stateObservers: [UUID: @MainActor (ConversationStateUpdate) -> Void] = [:]
   private var publishingState = false
@@ -177,6 +135,7 @@ public final class ConversationClient: NSObject {
       includesConversationInRecents: configuration.includesConversationInRecents,
       supportsVideo: configuration.supportsVideo,
       supportedHandleTypes: [.generic, .phoneNumber, .emailAddress]))
+    incomingTransport = IncomingReportTransport(manager: manager)
     super.init()
     #if DEBUG
     ProviderCreationMonitor.endOwnedManagerCreation()
@@ -187,7 +146,14 @@ public final class ConversationClient: NSObject {
     coordinator.willSettle = { [weak self] id, action, accepted in
       guard let self, accepted else { return }
       if action.kind == .mute, let muted = action.muted { self.records[id]?.muted = muted }
-      if action.kind == .end { self.records[id]?.ended = .init(at: Date(), reason: .local) }
+      if action.kind == .end {
+        let now = Date()
+        self.records[id]?.ended = .init(at: now, reason: .local)
+        if let incoming = self.incomingIntake.projection(id) {
+          self.incomingIntake.terminate(id, generation: incoming.generation, reason: .local,
+            now: now, requiresReport: false)
+        }
+      }
     }
     trackManager()
   }
@@ -221,7 +187,8 @@ public final class ConversationClient: NSObject {
   }
   private var outgoingMetadata: [UUID: [String: JSONValue]] = [:]
   public func metadata(for id: UUID) -> [String: JSONValue]? {
-    records[id]?.payload?.metadata ?? outgoingMetadata[id]
+    if let incoming = incomingIntake.projection(id) { return incoming.payload.metadata }
+    return records[id]?.payload?.metadata ?? outgoingMetadata[id]
   }
 
   public func joinConversation(_ id: UUID) async throws {
@@ -251,63 +218,50 @@ public final class ConversationClient: NSObject {
 
   public func reportIncomingConversation(_ payload: IncomingCallPayload,
                                          source: IncomingReportSource = .foreground) async throws -> UUID {
-    guard !payload.eventId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          !payload.serverCallId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          !payload.caller.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      throw ConversationClientError.invalidPayload
+    let reservation = try incomingIntake.reserve(payload, source: source)
+    hydrateIncoming(reservation.id)
+    switch reservation.disposition {
+    case .reported:
+      refresh()
+      return reservation.id
+    case .join(let ticket):
+      defer { refresh() }
+      return try await ticket.value
+    case .report(let attempt):
+      let outcome = await incomingTransport.report(reservation)
+      incomingIntake.complete(attempt, outcome: outcome)
+      refresh()
+      return try await attempt.ticket.value
     }
-    let registration = invitations.register(eventId: payload.eventId, serverCallId: payload.serverCallId, now: Date())
-    let id = registration.id
-    if !registration.isNew && source == .foreground {
-      if let pending = incomingReports.pending(for: id) { return try await pending.value }
-      return id
+  }
+
+  /// Reporting can finish while MainActor is busy. Its one canonical intake is
+  /// already registered; actor state is a projection, never a second gate.
+  func incomingIntakeDidChange() { refresh() }
+
+  @discardableResult
+  private func hydrateIncoming(_ id: UUID) -> IncomingIntake.Projection? {
+    guard let projection = incomingIntake.projection(id) else { return nil }
+    if records[id] == nil || records[id]?.metadataIsPlaceholder == true {
+      var record = makeRecord(direction: .incoming, members: [projection.payload.caller],
+        video: projection.payload.hasVideo)
+      record.payload = projection.payload
+      records[id] = record
     }
-    // Register metadata before a report Task or predecessor can suspend. Every
-    // PushKit delivery retains its own actual report attempt, using the same UUID.
-    let existing = records[id]
-    let previouslyReported = !registration.isNew && (existing == nil || existing?.seenInManager == true)
-    var record = existing ?? makeRecord(direction: .incoming, members: [payload.caller], video: payload.hasVideo)
-    if record.payload == nil { record.payload = payload }
-    records[id] = record
+    // Actor records cache the canonical payload/terminal marker. Explicit app
+    // member/video updates remain actor state; intake generations never replace
+    // the canonical caller payload of a retained UUID.
+    records[id]?.payload = projection.payload
+    records[id]?.ended = projection.terminal?.ended
     recordRemovalGenerations.removeValue(forKey: id)
-    let report = incomingReports.enqueue(id: id, previouslyReported: previouslyReported) { context in
-      let knownLiveConversation = self.manager.conversations.contains { $0.uuid == id }
-      do {
-        let update = self.update(for: self.records[id] ?? record)
-        #if os(iOS) && targetEnvironment(simulator)
-        SimulatorSupport.associateIncomingReport(id)
-        defer { SimulatorSupport.finishIncomingReport(id) }
-        #endif
-        try await self.manager.reportNewIncomingConversation(uuid: id, update: update)
-      } catch {
-        if knownLiveConversation && self.isAlreadyReported(error) { self.refresh(); return id }
-        // Only the newest queued attempt may roll back shared metadata. A
-        // successful prior report leaves its intentional ended-call tombstone.
-        if context.isLatest() && self.records[id]?.seenInManager != true {
-          self.records.removeValue(forKey: id)
-          if !context.previouslyReported { self.invitations.discardUnreported(id) }
-        }
-        self.refresh()
-        throw error
-      }
-      self.refresh()
-      return id
-    }
-    return try await report.value
+    return projection
   }
 
   @discardableResult
   public func receiveCallEnded(_ payload: CallEndedPayload) -> Bool {
-    let now = Date(); endEventIDs = endEventIDs.filter { now.timeIntervalSince($0.value) <= 120 }
-    guard endEventIDs[payload.eventId] == nil else { return false }
-    endEventIDs[payload.eventId] = now
-    guard let id = invitations.conversation(serverCallId: payload.serverCallId),
-          records[id] != nil || incomingReports.pending(for: id) != nil else { return false }
-    // A termination racing an incoming report is retained until the manager publishes the conversation.
-    records[id]?.ended = .init(at: now, reason: payload.reason)
-    records[id]?.endReportPending = true
-    refresh()
-    return true
+    let accepted = incomingIntake.terminate(payload)
+    if accepted { refresh() }
+    return accepted
   }
 
   public func reportConversation(_ id: UUID, report: ConversationReport) throws {
@@ -331,6 +285,10 @@ public final class ConversationClient: NSObject {
       if let record = records[id] { manager.reportConversationEvent(.conversationUpdated(update(for: record)), for: conversation) }
     case .ended(let reason):
       records[id]?.ended = .init(at: now, reason: reason)
+      if let incoming = incomingIntake.projection(id) {
+        incomingIntake.terminate(id, generation: incoming.generation, reason: reason,
+          now: now, requiresReport: false)
+      }
       manager.reportConversationEvent(.conversationEnded(now, endedReason(reason)), for: conversation)
     }
     refresh()
@@ -360,9 +318,6 @@ public final class ConversationClient: NSObject {
     appActions[id] = action.timeoutDate
     do { try await manager.perform([action]) }
     catch { appActions.removeValue(forKey: id); throw error }
-  }
-  private func isAlreadyReported(_ error: any Error) -> Bool {
-    IncomingReportErrors.isAlreadyReported(error)
   }
   private func requireConversation(_ id: UUID) throws {
     guard manager.conversations.contains(where: { $0.uuid == id && $0.state != .left }) else {
@@ -422,6 +377,8 @@ public final class ConversationClient: NSObject {
     let ids = Set(projectedObjects.keys)
     for conversation in current {
       recordRemovalGenerations.removeValue(forKey: conversation.uuid)
+      incomingIntake.observeMembership(conversation.uuid)
+      let incoming = hydrateIncoming(conversation.uuid)
       if records[conversation.uuid] == nil {
         // LCK only exposes localMember; it must never be mislabeled as a remote party.
         var placeholder = makeRecord(direction: .outgoing, members: [], video: false)
@@ -429,17 +386,17 @@ public final class ConversationClient: NSObject {
         records[conversation.uuid] = placeholder
       }
       records[conversation.uuid]?.seenInManager = true
-      if let payload = records[conversation.uuid]?.payload {
-        invitations.markActive(conversation.uuid, serverCallId: payload.serverCallId, now: Date())
-      }
-      if records[conversation.uuid]?.endReportPending == true,
-         let ended = records[conversation.uuid]?.ended, conversation.state != .left {
-        records[conversation.uuid]?.endReportPending = false
-        manager.reportConversationEvent(.conversationEnded(ended.at, endedReason(ended.reason)), for: conversation)
+      if let incoming {
+        if conversation.state != .left,
+           let terminal = incomingIntake.takePendingTermination(conversation.uuid, generation: incoming.generation) {
+          manager.reportConversationEvent(.conversationEnded(terminal.ended.at, endedReason(terminal.ended.reason)), for: conversation)
+        }
       }
     }
-    for (id, record) in records where record.seenInManager && !ids.contains(id) {
-      scheduleRecordRemoval(id)
+    for (id, record) in records {
+      if record.seenInManager && !ids.contains(id) { scheduleRecordRemoval(id) }
+      else if record.payload != nil && !record.seenInManager && !ids.contains(id) &&
+                incomingIntake.projection(id) == nil { records.removeValue(forKey: id) }
     }
     let projected = projectedObjects.keys.compactMap(snapshot).sorted { $0.id.uuidString < $1.id.uuidString }
     guard projected != state.conversations else { return }
@@ -464,7 +421,7 @@ public final class ConversationClient: NSObject {
       self.recordRemovalGenerations.removeValue(forKey: id)
       guard self.terminalProjection.object(for: id) == nil,
             !self.manager.conversations.contains(where: { $0.uuid == id }),
-            self.incomingReports.pending(for: id) == nil else { return }
+            !self.incomingIntake.hasPending(id) else { return }
       self.removeRecord(id)
       self.refresh()
     }
@@ -478,18 +435,23 @@ public final class ConversationClient: NSObject {
     refreshSuspensionDepth -= 1
     guard terminalProjection.object(for: id) == nil else { return }
     records.removeValue(forKey: id); outgoingMetadata.removeValue(forKey: id)
-    invitations.removeConversation(id)
+    incomingIntake.removeConversation(id)
   }
   private func publishTerminal(_ conversation: Conversation) {
     let id = conversation.uuid
     let current = manager.conversations.first { $0.uuid == id }
     let generation = TerminalConversationProjection<Conversation>.acceptingTerminal(conversation, current: current) {
       let generation = terminalProjection.publishTerminal(conversation, id: id)
+      incomingIntake.observeMembership(id)
+      hydrateIncoming(id)
       if records[id] == nil {
         var placeholder = makeRecord(direction: .outgoing, members: [], video: false)
         placeholder.metadataIsPlaceholder = true; placeholder.seenInManager = true
         records[id] = placeholder
       }
+      // The accepted terminal delegate is itself a real manager object, even
+      // when it disappeared before observation or incoming report settlement.
+      records[id]?.seenInManager = true
       recordRemovalGenerations.removeValue(forKey: id)
       // Cancel only after accepting this object identity and buffering it. A
       // stale terminal delegate must not cancel a reused UUID's pending actions.
@@ -502,7 +464,7 @@ public final class ConversationClient: NSObject {
     refresh()
     Task { @MainActor [weak self] in
       guard let self, self.terminalProjection.remove(id, generation: generation) else { return }
-      if !self.manager.conversations.contains(where: { $0.uuid == id }), self.incomingReports.pending(for: id) == nil {
+      if !self.manager.conversations.contains(where: { $0.uuid == id }), !self.incomingIntake.hasPending(id) {
         self.removeRecord(id)
       }
       self.refresh()
@@ -526,12 +488,14 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
   }
   public func conversationManagerDidBegin(_ manager: ConversationManager) { refresh() }
   public func conversationManagerDidReset(_ manager: ConversationManager) {
+    incomingIntake.reset()
     coordinator.cancelAll(reason: .reset); appActions.removeAll(); refresh(); emit(.providerReset)
   }
   public func conversationManager(_ manager: ConversationManager, perform action: ConversationAction) {
     switch action.state { case .idle, .running: break; default: return }
     let id = action.conversationUUID
     let origin: ConversationActionOrigin = appActions.removeValue(forKey: action.uuid) == nil ? .system : .app
+    hydrateIncoming(id)
     if let start = action as? StartConversationAction, records[id]?.metadataIsPlaceholder != false {
       let members = start.handles.map { handle -> Participant in
         Participant(id: handle.value, displayName: handle.displayName,

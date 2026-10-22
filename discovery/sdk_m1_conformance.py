@@ -9,7 +9,7 @@ import uuid
 
 import sdk_m0_conformance as m0
 from device_oracles import check_deadline, deadline_bands
-from summarize import EvidenceError, one, require
+from summarize import EvidenceError, one, push_report_boundaries, require
 
 ROOT = Path(__file__).resolve().parent.parent
 CASES = ('journey', 'cold-launch', 'unhandled-expiry')
@@ -115,16 +115,19 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
     injected = one(rows, 'm1.pushInjected')
     require(injected.get('mustReport') is True and injected.get('label') == ('primary' if case == 'journey' else 'cold'),
             case + ': wrong synthetic push policy')
+    require(push_report_boundaries(engine, require_settlement_before_return=True) == 1,
+            case + ': required callback boundary proof differs')
     received = one(engine, 'push.received')
     completed = one(engine, 'push.completed')
+    returned = one(engine, 'push.callbackReturned')
     incoming = one(engine, 'report.incoming')
     reported = one(engine, 'report.completed')
     push_id = injected.get('pushID')
     require(isinstance(push_id, str) and str(uuid.UUID(push_id)).upper() == push_id.upper(), 'invalid synthetic push ID')
-    require(all(row.get('pushID') == push_id for row in (received, completed, incoming, reported)),
+    require(all(row.get('pushID') == push_id for row in (received, completed, returned, incoming, reported)),
             case + ': incoming report is not correlated to the injected PushKit delivery')
     modern = tuple(int(part) for part in simulator_os.split('.')[:2]) >= (26, 4)
-    require(received.get('api') == completed.get('api') == ('metadata' if modern else 'legacy') and
+    require(received.get('api') == completed.get('api') == returned.get('api') == ('metadata' if modern else 'legacy') and
             received.get('mustReport') is True, case + ': wrong PushKit callback or policy')
     require(incoming.get('callUUID') == reported.get('callUUID') == conversation and reported.get('error') == 0,
             case + ': incoming report failed or targeted another conversation')
