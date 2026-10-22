@@ -139,7 +139,7 @@ def accept_contract(rows, engine, source_root):
     return dict(success=True, pendingDeadlineMS=deadline, connectedAfterDeadlineMS=connected[0]['wallTimeMS'] - deadline)
 
 
-def validate(build, capture, source_root=ROOT):
+def validate_build(build, source_root=ROOT):
     info = json.loads((build / 'build-info.json').read_text())
     identity = source_identity(source_root)
     require(info.get('schemaVersion') == 1 and info.get('product') == 'sdk-m1-contracts' and
@@ -148,9 +148,18 @@ def validate(build, capture, source_root=ROOT):
     require(info.get('files') == {name: digest(build / name) for name in BUILD_FILES} and
             json.loads((build / 'source-before.json').read_text()) == identity ==
             json.loads((build / 'source-after.json').read_text()), 'build files/source binding differs')
+    return info, identity
+
+
+def validate(build, capture, source_root=ROOT, parent_manifest=None):
+    info, identity = validate_build(build, source_root)
     first = json.loads((capture / 'sdk-m1-contract-guard.receipt.json').read_text())
     manifest = {k: first.get(k) for k in ('runID', 'simulatorID')}
     require(all(isinstance(v, str) and v for v in manifest.values()), 'missing run/simulator identity')
+    if parent_manifest is not None:
+        parent = json.loads(parent_manifest.read_text())
+        require(all(parent.get(k) == v for k, v in manifest.items()) and
+                parent.get('sourceCommit') == identity['sourceCommit'], 'contracts differ from the parent SDK run')
     results = {}
     execution_os = None
     processes = set()
@@ -191,8 +200,9 @@ def validate(build, capture, source_root=ROOT):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('build', type=Path); parser.add_argument('capture', type=Path)
+    parser.add_argument('--parent-manifest', type=Path)
     args = parser.parse_args()
-    try: result = validate(args.build, args.capture)
+    try: result = validate(args.build, args.capture, parent_manifest=args.parent_manifest)
     except (EvidenceError, OSError, ValueError, KeyError, TypeError, StopIteration, subprocess.SubprocessError) as error:
         result = dict(success=False, error=str(error))
     print(json.dumps(result, indent=2))

@@ -97,7 +97,7 @@ def save(capture, case, rows, engine):
 
 
 class Controls(unittest.TestCase):
-    def check(self, case=None, edit=None, file_edit=None, succeeds=False):
+    def check(self, case=None, edit=None, file_edit=None, succeeds=False, parent=None):
         with tempfile.TemporaryDirectory(prefix='sdk-m1-contract-controls-') as temporary:
             root = Path(temporary); build = root / 'build'; capture = root / 'capture'
             build.mkdir(); capture.mkdir(); fixture(build, capture)
@@ -107,13 +107,24 @@ class Controls(unittest.TestCase):
                 engine = [json.loads(line) for line in (capture / (name + '.runtime.jsonl')).read_text().splitlines()]
                 edit(rows, engine); save(capture, case, rows, engine)
             if file_edit: file_edit(build, capture)
+            parent_path = None
+            if parent is not None:
+                parent_path = root / 'parent-manifest.json'
+                write(parent_path, parent)
             with patch.object(gate, 'source_identity', return_value=IDENTITY):
-                if succeeds: self.assertTrue(gate.validate(build, capture)['success'])
+                if succeeds: self.assertTrue(gate.validate(build, capture, parent_manifest=parent_path)['success'])
                 else:
                     with self.assertRaises((gate.EvidenceError, OSError, ValueError, KeyError, TypeError)):
-                        gate.validate(build, capture)
+                        gate.validate(build, capture, parent_manifest=parent_path)
 
     def test_positive(self): self.check(succeeds=True)
+
+    def test_parent_sdk_run_binding(self):
+        parent = dict(runID='synthetic-run', simulatorID='synthetic-simulator', sourceCommit=IDENTITY['sourceCommit'])
+        self.check(parent=parent, succeeds=True)
+        for key in parent:
+            with self.subTest(key=key):
+                self.check(parent={**parent, key: 'different-' + key})
 
     def test_guard_warnings(self):
         for field, value in [('main', False), ('message', 'monitor disabled'), ('count', 0), ('phase', 'owned')]:
@@ -150,6 +161,18 @@ class Controls(unittest.TestCase):
     def test_build_and_receipt_binding(self):
         self.check(file_edit=lambda build, capture: (build / gate.BUILD_FILES[0]).write_text('tampered'))
         self.check(file_edit=lambda build, capture: (capture / 'sdk-m1-contract-guard.runtime.jsonl').write_text(''))
+        for key, value in (('configuration', 'Release'), ('product', 'different'), ('schemaVersion', 0)):
+            def metadata(build, capture, key=key, value=value):
+                path = build / 'build-info.json'
+                info = json.loads(path.read_text()); info[key] = value; write(path, info)
+            self.check(file_edit=metadata)
+        def rehashed_source_after(build, capture):
+            write(build / 'source-after.json', {**IDENTITY, 'sourceInputsSHA256': 'c' * 64})
+            path = build / 'build-info.json'
+            info = json.loads(path.read_text())
+            info['files']['source-after.json'] = gate.digest(build / 'source-after.json')
+            write(path, info)
+        self.check(file_edit=rehashed_source_after)
         def bad_pid(build, capture):
             path = capture / 'sdk-m1-contract-guard.receipt.json'
             receipt = json.loads(path.read_text()); receipt['launcherAppPID'] = 999; write(path, receipt)
