@@ -180,7 +180,7 @@ def main():
             '--receipt', str(out / (gate.NAME + '.receipt.json')), '--run-id', run_id, '--simulator-id', simulator,
             '--scenario', gate.NAME, '--bundle-id', gate.BUNDLE,
             '--terminate-command', 'xcrun', 'simctl', 'terminate', simulator, gate.BUNDLE,
-            '--launch-command', 'xcrun', 'simctl', 'launch', '--console-pty', '--terminate-running-process', simulator, gate.BUNDLE],
+            '--launch-command', 'xcrun', 'simctl', 'launch', '--console', '--terminate-running-process', simulator, gate.BUNDLE],
             env=launch_env, stdout=control, stderr=subprocess.STDOUT)
         trace = out / (gate.NAME + '.log')
         ready = wait_for(lambda: next((r for r in probe_rows(trace) if r.get('event') == 'm3.listenerReady'), None),

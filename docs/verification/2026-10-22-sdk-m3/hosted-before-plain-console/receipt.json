@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured pre-source-update workflow snapshot; no native qualification",
+  "runID": 39729097105,
+  "url": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39729097105",
+  "head": "6227dc20ab9df7143676b4b296e6ea2122577a76",
+  "attempt": 1,
+  "statusAtSnapshot": "queued",
+  "conclusionAtSnapshot": "",
+  "snapshotSHA256": "b84c23b5d0fba4414a2293bbdd1e556379e37e58c0c0539dfe713913eeaf6289",
+  "jobs": [
+    {
+      "name": "public-tel",
+      "status": "queued",
+      "conclusion": ""
+    }
+  ],
+  "sourceUpdateReason": "Integrate reviewed M1/M2 transport candidate and change the M3 example launch from PTY to plain public console.",
+  "limits": [
+    "No job steps or native artifact existed at this snapshot.",
+    "Source-update cancellation or supersession is not acceptance; the PR description records the later workflow result.",
+    "The source-bound local d216355 OS-dispatch red is preserved unchanged."
+  ]
+}

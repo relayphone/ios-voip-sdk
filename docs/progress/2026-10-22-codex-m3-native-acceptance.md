@@ -73,6 +73,23 @@ this frozen-source run. The standards review corrected uncertain-create
 cleanup, build-time plist binding and bool/float protocol aliases; focused
 controls cover each. The hosted comparison is still pending.
 
+## Shared console transport integration
+
+**Proposed correction; fresh hosted qualification required.** M3 integrates
+M2 parent `031dc16c5b798d5c849ae745a8798605954ee40f`, including M1's reviewed
+plain-console candidate. Only the M3 example launch changes from
+`simctl launch --console-pty` to public `--console`; its existing runner host
+control checks that external command. The SDK, supervisor, Settings helper,
+strict gates and local `d216355` OS 115 evidence are unchanged. The parent's
+[synthetic native experiment](../verification/2026-10-22-sdk-m1/native-console-transport/receipt.json)
+scopes the transport observation; it is not an M3 delivery measurement.
+
+Before this source update, [hosted run 39729097105](../verification/2026-10-22-sdk-m3/hosted-before-plain-console/receipt.json)
+was still queued at head `6227dc2`, attempt 1, with no job steps or native
+artifact. Any deliberate cancellation or supersession supplies no acceptance;
+the PR description records the later result. The new exact head must qualify
+through the unchanged real-OS delivery gate.
+
 ## Build and measure
 
 Commit the integrated sources first. Select the default media variant, install

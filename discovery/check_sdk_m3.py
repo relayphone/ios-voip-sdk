@@ -144,6 +144,9 @@ class Controls(unittest.TestCase):
 
             class Supervisor:
                 def __init__(self, argv, **kwargs):
+                    launch_command = argv[argv.index('--launch-command') + 1:]
+                    if launch_command != ['xcrun', 'simctl', 'launch', '--console', '--terminate-running-process', simulator, gate.BUNDLE]:
+                        raise AssertionError('M3 example must use the plain public console transport')
                     self.status = None; launches.append(kwargs['env'])
                     run = kwargs['env']['SIMCTL_CHILD_SDK_M3_RUN_ID']; rows, _ = sample()
                     for row in rows: row.update(runID=run, simulatorID=simulator)
