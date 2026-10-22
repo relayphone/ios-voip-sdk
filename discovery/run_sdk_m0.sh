@@ -155,6 +155,31 @@ for case in healthy profile push-after-install; do
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.sdkbootstrap \
     --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.sdkbootstrap
 done
+if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
+  mkdir "$OUT/m1"
+  for case in journey cold-launch unhandled-expiry; do
+    name="sdk-m1-$case"
+    budget=90
+    [[ "$case" != journey ]] || budget=120
+    env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
+      SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M0_RUN_ID="$RUN_ID" \
+      SIMCTL_CHILD_SDK_M1_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M1_CASE="$case" \
+      python3 discovery/run_scenario.py --console-launcher-stop --timeout "$budget" \
+      --output "$OUT/m1/$name.log" --receipt "$OUT/m1/$name.receipt.json" \
+      --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.iosvoipsdk.example \
+      --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.example \
+      --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.iosvoipsdk.example
+    container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.example data)
+    cp "$container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m1/$name.runtime.jsonl"
+    python3 - "$OUT/m1/$name.receipt.json" "$OUT/m1/$name.runtime.jsonl" <<'PY'
+import hashlib,json,pathlib,sys
+receipt,journal=map(pathlib.Path,sys.argv[1:])
+row=json.loads(receipt.read_text())
+row['journalSHA256']=hashlib.sha256(journal.read_bytes()).hexdigest()
+receipt.write_text(json.dumps(row,indent=2)+'\n')
+PY
+  done
+fi
 cleanup_simulator
 redact_external_paths
 SDK_M0_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - "$OUT" "$SDK_M0_APP" "$SDK_M0_BOOTSTRAP_APP" \
@@ -165,3 +190,6 @@ from sdk_m0_conformance import record_manifest
 record_manifest(*(pathlib.Path(p) for p in sys.argv[1:7]),*sys.argv[7:],os.environ['SDK_M0_EXTERNAL_DYLD'])
 PY
 python3 discovery/sdk_m0_conformance.py "$OUT" | tee "$OUT/summary.json"
+if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
+  python3 discovery/sdk_m1_conformance.py "$OUT" | tee "$OUT/m1/summary.json"
+fi

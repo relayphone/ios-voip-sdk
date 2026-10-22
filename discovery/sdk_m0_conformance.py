@@ -20,8 +20,12 @@ SOURCE_PATHS = ('Sources', 'Expo', 'example', 'Package.swift', 'IosVoipSDK.podsp
                 'discovery/probe/sdk_bootstrap.swift', 'discovery/run_sdk_m0.sh',
                 'discovery/sdk_m0_conformance.py', 'discovery/check_sdk_m0.py',
                 'discovery/run_scenario.py', 'discovery/sdk_bootstrap_conformance.py',
-                'discovery/summarize.py', '.github/workflows/sdk-m0.yml')
-TARGETS = ('CKSimRuntimeC', 'CKSimRuntime', 'VoIPSDK')
+                'discovery/summarize.py', '.github/workflows/sdk-m0.yml', 'app.plugin.js', 'Tests',
+                'discovery/sdk_m1_conformance.py', 'discovery/check_sdk_m1.py',
+                'discovery/check_expo_bridge.py', 'discovery/check_expo_plugin.cjs',
+                'discovery/check_platform_shims.py', 'discovery/device_oracles.py',
+                'docs/research/callkit-simulator-probe/livecommunicationkit')
+TARGETS = ('CKSimRuntimeC', 'CKSimRuntime', 'VoIPPlatform', 'VoIPSDK')
 BINARIES = dict(example='binaries/example', bootstrap='binaries/bootstrap',
                 device='binaries/device', javascript='binaries/main.jsbundle')
 

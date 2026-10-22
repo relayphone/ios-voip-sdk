@@ -19,14 +19,19 @@ struct SDKDeviceProbe {
   }
 }
 SWIFT
-for source in CKInterposition CKPushDelivery; do
+cat > "$WORK/SDKDeviceHeaders.h" <<HEADERS
+#import "$PWD/Sources/Interposition/CKRuntimeSeam.h"
+#import "$PWD/Sources/VoIPPlatform/include/VoIPPlatform.h"
+HEADERS
+for source in Sources/Interposition/CKInterposition.m Sources/Interposition/CKPushDelivery.m Sources/VoIPPlatform/*.m; do
+  object=$(basename "$source" .m)
   limit 90 xcrun --sdk iphoneos clang -target "$TARGET" -isysroot "$SDK" -fobjc-arc -fmodules \
     -DCKSIM_SDK_SOURCE=1 -DCKSIM_RUNTIME_VERSION=\""$VERSION"\" \
-    -c "Sources/Interposition/$source.m" -o "$WORK/$source.o"
+    -c "$source" -o "$WORK/$object.o"
 done
 limit 180 xcrun --sdk iphoneos swiftc -target "$TARGET" -sdk "$SDK" -swift-version 6 -parse-as-library \
-  -import-objc-header Sources/Interposition/CKRuntimeSeam.h Sources/Engine/RuntimeEngine.swift \
-  Sources/VoIPSDK/SimulatorSupport.swift "$WORK/main.swift" "$WORK/CKInterposition.o" "$WORK/CKPushDelivery.o" \
+  -import-objc-header "$WORK/SDKDeviceHeaders.h" Sources/Engine/*.swift \
+  Sources/VoIPSDK/*.swift "$WORK/main.swift" "$WORK/"*.o \
   -o "$OUT/SDKDeviceProbe"
 python3 - "$OUT" "$TARGET" <<'PY'
 import hashlib,json,pathlib,subprocess,sys
