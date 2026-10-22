@@ -1,0 +1,46 @@
+{
+  "outcome": "measured startup failure; no SDK activation or LCK journey",
+  "source": {
+    "sourceCommit": "e03a59f7f19e19e2f0f2c7925d613508fda7020c",
+    "sourceInputsSHA256": "21ae06ae66d6dfaa5ea2975766f4775aa3cbb4404e77c35aed809a6016353436"
+  },
+  "products": {
+    "binaries/example": "18bb9b8b02d3549948ef87d8b026daa9dfa3f410272cb30722245cb61de13483",
+    "binaries/bootstrap": "79b87ee60a73454f31d4d6ea04b9bd57ab30853ddcbfc19ebe9ec4e910a8f687",
+    "binaries/device": "f24d4b810852fac518eaef9a695dbd9ddac1e173f0eb4ff79de249ba6fb34ff6",
+    "binaries/main.jsbundle": "b0996ca9c20fb4a1f3049b1a84c9aceefadeb831dcabc08637714ff36fef6096"
+  },
+  "export": {
+    "format": "filtered native PROBE JSON rows; original console retained privately",
+    "sha256": "a6c70c99058e1dbd172a8dbef6723685661beca0407bc5dd58d10095e7dbe9d2",
+    "originalConsoleSHA256": "f4bdf2a1cd3f13e427146ec1da092063f77408867a1641f86d1c740aa8b47763"
+  },
+  "process": {
+    "appPID": 17834,
+    "launcherAppPID": 17834,
+    "completed": false,
+    "success": false,
+    "lastProbeEvent": "launch"
+  },
+  "crash": {
+    "rawReportSHA256": "ca9b732dbaa29b114984455075a782cd075eb69b227470f843a56fdbdf23c2d0",
+    "matchingAppPID": 17834,
+    "exception": "EXC_BREAKPOINT",
+    "signal": "SIGTRAP",
+    "faultingThread": 0,
+    "topSymbols": [
+      "___UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption_block_invoke",
+      "_dispatch_client_callout",
+      "_dispatch_once_callout",
+      "-[UIApplication workspace:didCreateScene:withTransitionContext:completion:]"
+    ]
+  },
+  "cleanup": {
+    "simulatorID": "EC4474FF-7B4F-4FFF-B1AB-82E9A2D0B602",
+    "shutdownExitCode": 0,
+    "deleteExitCode": 0,
+    "deleted": true,
+    "independentlyAbsentFromInventory": true,
+    "deviceDirectoryAbsent": true
+  }
+}
