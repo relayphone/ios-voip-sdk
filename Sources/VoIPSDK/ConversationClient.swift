@@ -106,48 +106,51 @@ public final class ConversationClient: NSObject {
     public var maximumConversationsPerGroup: Int
     public var includesConversationInRecents: Bool
     public var supportsVideo: Bool
+    /// Debug defaults on; Release requires both explicit configuration and the
+    /// ProviderOwnershipDiagnostics build option. Coverage is best effort.
+    public var providerOwnershipMonitoring: Bool
+    public static var defaultProviderOwnershipMonitoring: Bool {
+      #if DEBUG
+      true
+      #else
+      false
+      #endif
+    }
     public var unhandledAction: UnhandledActionPolicy
     public init(ringtoneName: String? = nil, iconTemplateImageData: Data? = nil,
                 maximumConversationGroups: Int = 2, maximumConversationsPerGroup: Int = 2,
                 includesConversationInRecents: Bool = true, supportsVideo: Bool = true,
-                unhandledAction: UnhandledActionPolicy = .fail) {
+                unhandledAction: UnhandledActionPolicy = .fail,
+                providerOwnershipMonitoring: Bool = Self.defaultProviderOwnershipMonitoring) {
       self.ringtoneName = ringtoneName; self.iconTemplateImageData = iconTemplateImageData
       self.maximumConversationGroups = maximumConversationGroups
       self.maximumConversationsPerGroup = maximumConversationsPerGroup
       self.includesConversationInRecents = includesConversationInRecents
       self.supportsVideo = supportsVideo; self.unhandledAction = unhandledAction
+      self.providerOwnershipMonitoring = providerOwnershipMonitoring
     }
   }
 
-  private static var configuration = Configuration()
   private static var instance: ConversationClient?
-  public static func configure(_ configuration: Configuration) throws {
-    guard instance == nil else { throw ConversationClientError.alreadyConfigured }
+  static func forApplication(configuration: Configuration) throws -> ConversationClient {
+    try ProcessSDKOwnership.claim()
+    if let instance {
+      guard instance.configuration == configuration else { throw ConversationClientError.alreadyConfigured }
+      return instance
+    }
     guard configuration.maximumConversationGroups > 0, configuration.maximumConversationsPerGroup > 0 else {
       throw ConversationClientError.invalidConfiguration
     }
-    self.configuration = configuration
-  }
-  public static var shared: ConversationClient {
-    if let instance { return instance }
     let client = ConversationClient(configuration: configuration)
     instance = client
     return client
-  }
-
-  static func forApplication(configuration: Configuration) throws -> ConversationClient {
-    if let instance {
-      guard self.configuration == configuration else { throw ConversationClientError.alreadyConfigured }
-      return instance
-    }
-    try configure(configuration)
-    return shared
   }
 
   private typealias Record = ConversationRecord
   private let manager: ConversationManager
   private let coordinator: ConversationActionCoordinator
   private let configuration: Configuration
+  private var launchFinished = false
   private var records: [UUID: Record] = [:]
   private var terminalProjection = TerminalConversationProjection<Conversation>()
   private var recordRemovalGenerations: [UUID: UUID] = [:]
@@ -166,8 +169,7 @@ public final class ConversationClient: NSObject {
     self.configuration = configuration
     coordinator = ConversationActionCoordinator(policy: configuration.unhandledAction)
     SimulatorSupport.activateIfNeeded()
-    #if DEBUG
-    ProviderCreationMonitor.install { message in NSLog("VoIPSDK provider ownership: %@", message) }
+    #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
     ProviderCreationMonitor.beginOwnedManagerCreation()
     #endif
     manager = ConversationManager(configuration: .init(ringtoneName: configuration.ringtoneName,
@@ -178,7 +180,7 @@ public final class ConversationClient: NSObject {
       supportsVideo: configuration.supportsVideo,
       supportedHandleTypes: [.generic, .phoneNumber, .emailAddress]))
     super.init()
-    #if DEBUG
+    #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
     ProviderCreationMonitor.endOwnedManagerCreation()
     #endif
     manager.delegate = self
@@ -188,6 +190,22 @@ public final class ConversationClient: NSObject {
       guard let self, accepted else { return }
       if action.kind == .mute, let muted = action.muted { self.records[id]?.muted = muted }
       if action.kind == .end { self.records[id]?.ended = .init(at: Date(), reason: .local) }
+    }
+  }
+
+  /// Called only after VoIPApplication has published the complete process owner.
+  /// Mark first: later setup may invoke a nonblocking application adapter callback.
+  func finishLaunch() {
+    guard !launchFinished else { return }
+    launchFinished = true
+    if configuration.providerOwnershipMonitoring {
+      #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
+      // Install after the owned manager has exposed the system class. The
+      // monitor never loads a framework or constructs a provider to find it.
+      ProviderCreationMonitor.install { message in NSLog("VoIPSDK provider ownership: %@", message) }
+      #else
+      NSLog("VoIPSDK: provider ownership diagnostics were not compiled in; enable the build option.")
+      #endif
     }
     trackManager()
   }

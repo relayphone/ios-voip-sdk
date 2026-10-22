@@ -128,7 +128,7 @@ public enum ConversationReport: Sendable {
 public enum IncomingReportSource: Sendable { case foreground, pushKit }
 public enum UnhandledActionPolicy: String, Codable, Sendable { case fail, accept }
 public enum ConversationClientError: Error, Sendable, Equatable {
-  case alreadyConfigured, invalidConfiguration, invalidPayload, unknownConversation, unsupported, invalidDigits
+  case alreadyConfigured, invalidConfiguration, invalidPayload, unknownConversation, unsupported, invalidDigits, duplicateSDKLinkage
 }
 
 public struct ConversationStateUpdate: Codable, Sendable, Equatable {

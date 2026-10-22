@@ -64,12 +64,14 @@ public final class VoIPApplication {
         maximumConversationGroups: integer("maximumConversationGroups", default: 2),
         maximumConversationsPerGroup: integer("maximumConversationsPerConversationGroup", default: 2),
         includesConversationInRecents: bool("includesCallsInRecents", default: true),
-        supportsVideo: bool("supportsVideo", default: true), unhandledAction: policy),
+        supportsVideo: bool("supportsVideo", default: true), unhandledAction: policy,
+        providerOwnershipMonitoring: bool("providerOwnershipMonitoring", default: ConversationClient.Configuration.defaultProviderOwnershipMonitoring)),
         simulatorSupport: bool("simulatorSupport", default: true))
     }
   }
 
   public private(set) static var current: VoIPApplication?
+  private static var starting = false
   public let client: ConversationClient
   public let pushService: PushService
   private let configuration: Configuration
@@ -82,15 +84,21 @@ public final class VoIPApplication {
   /// without creating another manager or receiver.
   @discardableResult
   public static func start(configuration: Configuration = .init()) throws -> VoIPApplication {
+    try ProcessSDKOwnership.claim()
     if let current {
       guard current.configuration == configuration else { throw ConversationClientError.alreadyConfigured }
+      current.client.finishLaunch()
       try current.pushService.start()
       return current
     }
+    guard !starting else { throw ConversationClientError.alreadyConfigured }
+    starting = true
+    defer { starting = false }
     try SimulatorSupport.configure(enabled: configuration.simulatorSupport)
     let client = try ConversationClient.forApplication(configuration: configuration.client)
     let application = VoIPApplication(client: client, configuration: configuration)
     current = application
+    client.finishLaunch()
     try application.pushService.start()
     return application
   }

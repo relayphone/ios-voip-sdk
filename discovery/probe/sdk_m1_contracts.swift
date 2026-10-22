@@ -53,12 +53,14 @@ private final class SDKM1ContractsProbe {
     }
     do {
       if mode == "unhandled-accept" {
-        try ConversationClient.configure(.init(includesConversationInRecents: false, unhandledAction: .accept))
         ContractTrace.log("contract.configuration", ["policy": "accept", "handlerAttached": false])
       }
-      let client = ConversationClient.shared
+      let configuration = VoIPApplication.Configuration(client: .init(includesConversationInRecents: false,
+        unhandledAction: mode == "unhandled-accept" ? .accept : .fail))
+      let client = try VoIPApplication.start(configuration: configuration).client
+      let repeated = try VoIPApplication.start(configuration: configuration).client
       ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(client)),
-        "sharedIdentity": String(describing: ObjectIdentifier(ConversationClient.shared)), "warnings": warnings])
+        "sharedIdentity": String(describing: ObjectIdentifier(repeated)), "warnings": warnings])
       if mode == "guard" { guardContract() }
       else if mode == "unhandled-accept" { try await acceptContract(client) }
       else { finish(false) }
