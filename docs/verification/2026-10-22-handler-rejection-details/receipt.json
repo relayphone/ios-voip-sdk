@@ -84,7 +84,9 @@
       "startedAtUTC": "2026-10-22T11:38:29.805121+00:00",
       "exitCode": 0,
       "log": "docs/verification/2026-10-22-handler-rejection-details/typescript-typecheck.log",
-      "logSHA256": "01d5bb4c9623a561fbd8d3a9f2b49a7793b1c7711b89c6b5792062c65e6247b7"
+      "logSHA256": "49a87ae22511f3068c65000109c14ec4ea7c3e8a9fc6cc709cf1bab4c845691a",
+      "rawLogSHA256": "01d5bb4c9623a561fbd8d3a9f2b49a7793b1c7711b89c6b5792062c65e6247b7",
+      "logNormalization": "Terminal blank lines removed; exactly one final LF retained."
     },
     {
       "name": "diff-whitespace",
