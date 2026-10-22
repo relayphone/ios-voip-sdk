@@ -37,17 +37,30 @@ final class MuteControls {
     precondition(context.origin == .app && context.muted == value)
     return (task, manager.appActions.last!, context)
   }
-  func delayedEcho(_ id: UUID, value: Bool) async throws -> MuteConversationAction {
+  func delayedEcho(_ id: UUID, value: Bool, appAction: ConversationAction,
+                   context: ConversationActionContext, group: String) async throws -> MuteConversationAction {
     let before = DispatchTime.now().uptimeNanoseconds
     try await Task.sleep(for: .milliseconds(40))
     let delay = Double(DispatchTime.now().uptimeNanoseconds - before) / 1_000_000
     precondition(delay >= 40, "Host handler must remain pending beyond the measured device echo interval")
     minimumDelayMS = min(minimumDelayMS, delay)
+    let remainingMS = context.deadline.timeIntervalSinceNow * 1000
+    let pending = client.snapshots.first { $0.id == id }?.pending
+    let diagnostic = "group=\(group) app=\(appAction.uuid) context=\(context.actionID) " +
+      "state=\(appAction.state) settlements=\(appAction.settlements) remainingMS=\(remainingMS) " +
+      "signal=\(context.signal.reason?.rawValue ?? "none") pending=\(String(describing: pending?.id)) calls=\(calls.count)"
+    precondition(!group.isEmpty && appAction.conversationUUID == id && appAction.uuid == context.actionID &&
+      context.origin == .app && context.muted == value &&
+      (appAction as? MuteConversationAction)?.isMuted == value && appAction.state == .running &&
+      appAction.settlements == 0 && !context.signal.isCancelled && remainingMS > 0 && pending?.id == appAction.uuid,
+      "Matching echo fixture requires the exact live, unexpired app mute immediately before delivery: \(diagnostic)")
     let count = calls.count
     let echo = system(id, value)
+    precondition(echo.state == .complete && echo.settlements == 1 && calls.count == count,
+      "Matching system echo must fulfill inline at the synchronous host boundary: \(diagnostic) echo=\(echo.state)/\(echo.settlements) calls=\(calls.count)")
     for _ in 0..<8 { await Task.yield() }
     precondition(echo.state == .complete && echo.settlements == 1 && calls.count == count,
-      "Matching system echo must fulfill without invoking a second handler while app mute is pending")
+      "Matching system echo must not invoke a second handler while app mute is pending: \(diagnostic) echo=\(echo.state)/\(echo.settlements) calls=\(calls.count)")
     return echo
   }
   func system(_ id: UUID, _ value: Bool) -> MuteConversationAction {
@@ -83,8 +96,8 @@ final class MuteControls {
     // The opposite system value equals committed state here. It is still genuine
     // because app work with the other value remains pending.
     let id = try await conversation()
-    let (app, _, context) = try await begin(id, true)
-    _ = try await delayedEcho(id, value: true)
+    let (app, appAction, context) = try await begin(id, true)
+    _ = try await delayedEcho(id, value: true, appAction: appAction, context: context, group: "accepted")
     let count = calls.count
     let opposite = system(id, false)
     try await wait { self.calls.count == count + 1 }
@@ -99,8 +112,8 @@ final class MuteControls {
       "The established-state no-op filter remains intact after app fulfillment")
 
     let rejectedID = try await conversation()
-    let (rejectedApp, _, rejectedContext) = try await begin(rejectedID, true)
-    _ = try await delayedEcho(rejectedID, value: true)
+    let (rejectedApp, rejectedAction, rejectedContext) = try await begin(rejectedID, true)
+    _ = try await delayedEcho(rejectedID, value: true, appAction: rejectedAction, context: rejectedContext, group: "rejected")
     resume(rejectedContext.actionID, accepted: false)
     await rejected(rejectedApp)
     precondition(client.snapshots.first { $0.id == rejectedID }?.pending == nil)
@@ -109,7 +122,9 @@ final class MuteControls {
     let timeoutID = try await conversation()
     manager.nextTimeout = 1.62
     let (timedApp, timedAction, timedContext) = try await begin(timeoutID, true)
-    _ = try await delayedEcho(timeoutID, value: true)
+    // This 120 ms effective deadline tests expiry and subsequent genuine input.
+    // A 40 ms sleep has no upper wake-up bound, so it cannot establish pending
+    // state within this budget. The two normal-budget groups cover held echoes.
     try await wait { timedAction.state == .failed }
     await rejected(timedApp)
     precondition(timedContext.signal.reason == .deadline && timedAction.settlements == 1)
