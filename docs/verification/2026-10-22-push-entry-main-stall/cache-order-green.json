@@ -2,8 +2,8 @@
   "success": true,
   "classification": "host whole-client cache contracts; modeled platform timing, no LCK/device run",
   "sourceSHA256": {
-    "Sources/VoIPSDK/ConversationClient.swift": "35af33b00dc216ab33137f3599574c27aef3fbfa11a796954566ef3c89d53e91",
-    "Sources/VoIPSDK/IncomingReportTransport.swift": "8ec9c10dfc6ac937d0e86629e6efbd30cbea0fdd6ef3937e64659a572956dade",
+    "Sources/VoIPSDK/ConversationClient.swift": "7d5f6f1958cf6b28e2fe74639dac25541b5af13d35589b2ffbcc628b30710164",
+    "Sources/VoIPSDK/IncomingReportTransport.swift": "518a522f3dccc9f96f221f700a77c9c732b20b00dfb01dd094579c5b43a08cbf",
     "Sources/VoIPSDK/ConversationModels.swift": "ff4be06d66d1efacd5060c08c9ca7507eb7b35d09107573e43f44bba4a4c1a2b",
     "Sources/VoIPSDK/ConversationRecord.swift": "90f94cf5baf4085478ed0e2437d520e9066367b9bb23615ff88d5fade3288d64",
     "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
@@ -19,28 +19,28 @@
     {
       "label": "compile",
       "exitCode": 0,
-      "elapsedSeconds": 2.956106,
+      "elapsedSeconds": 3.545319,
       "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
       "label": "reported",
       "exitCode": 0,
-      "elapsedSeconds": 0.267953,
+      "elapsedSeconds": 0.201354,
       "stdoutSHA256": "3ec3e642e6230f2408539fc25a3373adadc209466650a7e69fb4bc7ef9b6b66c",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
       "label": "joined-success",
       "exitCode": 0,
-      "elapsedSeconds": 0.008943,
+      "elapsedSeconds": 0.011325,
       "stdoutSHA256": "3b194aad0175550e6ea86c8d3b0bc138e931cb198fdc029814683e7dd5de4276",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
       "label": "joined-failure",
       "exitCode": 0,
-      "elapsedSeconds": 0.00902,
+      "elapsedSeconds": 0.010686,
       "stdoutSHA256": "8bfc443f4ab3bea811a98c9d7147d5da81c3d759a009026bf4162cbf1ca905fe",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
@@ -83,15 +83,15 @@
   ],
   "artifactSHA256": {
     "joined-failure.stdout": "8bfc443f4ab3bea811a98c9d7147d5da81c3d759a009026bf4162cbf1ca905fe",
-    "IncomingReportTransport.swift": "1e83fa778a14704a3cae37d17b6f8c379cccf87150b2ca0cd2d347edac474d82",
+    "IncomingReportTransport.swift": "6788f16003f2a238cceb5d1fc93ddae466c36142c489d973d8b926aba2cb2e52",
     "joined-failure.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "compile.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "joined-success.stdout": "3b194aad0175550e6ea86c8d3b0bc138e931cb198fdc029814683e7dd5de4276",
-    "ConversationClient.swift": "6e557d0a56f042c8a65b4eb82bd3d58be97edd8114252d0fbc106cd26c931926",
+    "ConversationClient.swift": "b340286786e6903aec02fa859fe1a915ec789524c64f8c8542dfe3453b2af3e3",
     "reported.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "reported.stdout": "3ec3e642e6230f2408539fc25a3373adadc209466650a7e69fb4bc7ef9b6b66c",
     "joined-success.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "IncomingCacheTests": "8bf08c64fe69f1b594600bb0122c8a145e550694c130b03fb40652e60aedec96",
+    "IncomingCacheTests": "37208f1abff95f9fce99f7ab6adc8fc73b5b6b24165b950a9178729fe8ac3e56",
     "compile.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   }
 }

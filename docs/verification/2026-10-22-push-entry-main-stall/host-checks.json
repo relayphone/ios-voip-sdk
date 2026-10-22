@@ -1,34 +1,35 @@
 {
   "schemaVersion": 1,
-  "runID": "6404057c-fb91-452c-988e-4f36df62056a",
+  "runID": "cf6972bc-ce3c-4b03-8a1f-e1c69e81524a",
   "classification": "host/compiler controls and framework facades only; native simulator and device acceptance remain separate",
-  "baseCommit": "166e057b79741e354e7c8d916f1c70bfa8a225e9",
+  "baseCommit": "9823b85378bb03340cf403977178d6e198d4e8d4",
   "sourceSHA256": {
-    ".github/workflows/sdk-m0.yml": "6cfd416728ceb8c99288ba8f708806c1637b08a2cdc6cb126c4acd1fb96d615f",
+    ".github/workflows/sdk-m0.yml": "c779aa6682df87787dd390c0fcf576c8e89c770be3a3d8f53e4e2ef8b15fd42f",
     "Sources/Engine/Resources/ios-27.0.json": "a5c2931c42886773ab3070b521e46dfb9dcbacf6761e8759139ed9d5c59d5d4d",
-    "Sources/Engine/RuntimeEngine.swift": "bdd53ebac7396b2188461ae71774447f38127988e3e6031919d6c94fb534721d",
+    "Sources/Engine/RuntimeEngine.swift": "5e6d7cea29c84f89c46b705b20e7e55796269ed3afb6304b61c059c8ecdccc49",
     "Sources/Interposition/CKInterposition.m": "8aa3433a646790a24576edc1f65fd84c4b062733ec30136629f699c19a7ab999",
     "Sources/Interposition/CKLoader.m": "7f32927a00a6e863c2c26a1166e2846e36c7264cb122d17dba5469e5b06bb26f",
     "Sources/Interposition/CKPushDelivery.m": "38e13a510427835c3ba884324654cd885424b2d9d913bd50706a65d01d69ad5e",
-    "Sources/Interposition/CKRuntimeSeam.h": "a04c01b57c6993216717c93bbda3b771e5d932602c04369a3e12726d4f953cc0",
+    "Sources/Interposition/CKRuntimeSeam.h": "47e32a8965a0dd1dfaef592eaec456841c2cbc80ea87059a8adba2c4ae1421cd",
+    "Sources/Interposition/include/CKRuntimeBridge.h": "565e067907f10700a4f7083b8b0dd4b25ae263b832f479ae3689c61435ba8bf3",
     "Sources/VoIPPlatform/VSCompletionOnce.h": "3a6dd1d6e1c727339a3ea965b4ea2fc199304801472657103584aa817754ec5b",
     "Sources/VoIPPlatform/VSCompletionOnce.m": "653eb974fe96d17c6c1579b59376d3986cced8a9d7f8c00458296add7821508d",
-    "Sources/VoIPPlatform/VSProviderCreationMonitor.m": "59a4614bb8325ed6d5573546bae3bebd959e11914fdac4763b57bb5c1d5984bc",
+    "Sources/VoIPPlatform/VSProviderCreationMonitor.m": "42d19821e78257e8952cc87a610253d786fa15a028baac2a218f637d5db43eba",
     "Sources/VoIPPlatform/VSProviderMonitorInternal.h": "e360be44ea0657e62153f39ca4be0ed78b4369d086d299242a1fd3cb88c6ffc5",
     "Sources/VoIPPlatform/VSProviderMonitorInternal.m": "0c9a9dcfe37777460272a9fdaa34e9d96e571b8bdc31cde6a44343d2d08b3658",
     "Sources/VoIPPlatform/VSPushDelivery.m": "10fd4879c48205523efd7a3f9052518dada6c86024267e7957d13b76e62fc1c9",
     "Sources/VoIPPlatform/VSPushRegistryOwner.m": "02d45bb525b3cebde887846de514a03fdffbb113a419821eae3bf41dece7bfc6",
-    "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h": "9bb26a4584e0c0dafb4d7cfc6969e194c1f5ad3066e81300abd8ed8a76f954ee",
+    "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h": "31cb18b30406602c323ebb3e58ffafcaff0106a2f3ab4e378fb252a2a0c00ccd",
     "Sources/VoIPPlatform/include/VSPushDelivery.h": "3769eecacf2f8e64d1e3a9c9bc749db26d65be7186c4f176dd7cb1a277ec83ff",
     "Sources/VoIPPlatform/include/VSPushRegistryOwner.h": "b6db5cf75a4bcda293e06f27a0af05b0607b290e87f30848a8cdc8c989db5f2e",
     "Sources/VoIPPlatform/include/VoIPPlatform.h": "c418e07676e68979b00a4be43ec76a95f5614875458c705158b0f8b2c8179377",
-    "Sources/VoIPSDK/ConversationClient.swift": "35af33b00dc216ab33137f3599574c27aef3fbfa11a796954566ef3c89d53e91",
+    "Sources/VoIPSDK/ConversationClient.swift": "7d5f6f1958cf6b28e2fe74639dac25541b5af13d35589b2ffbcc628b30710164",
     "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
     "Sources/VoIPSDK/ConversationModels.swift": "ff4be06d66d1efacd5060c08c9ca7507eb7b35d09107573e43f44bba4a4c1a2b",
     "Sources/VoIPSDK/ConversationRecord.swift": "90f94cf5baf4085478ed0e2437d520e9066367b9bb23615ff88d5fade3288d64",
     "Sources/VoIPSDK/IncomingIntake.swift": "5f6979dbc38bb4badeb2026ca8033341a5ce744ebba4e279aab1a4892d5f64c5",
     "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
-    "Sources/VoIPSDK/IncomingReportTransport.swift": "8ec9c10dfc6ac937d0e86629e6efbd30cbea0fdd6ef3937e64659a572956dade",
+    "Sources/VoIPSDK/IncomingReportTransport.swift": "518a522f3dccc9f96f221f700a77c9c732b20b00dfb01dd094579c5b43a08cbf",
     "Sources/VoIPSDK/PushService.swift": "f7a731d8c91ee2a4572dd37d2d96a36c258187fc4a38ba74143c7c9b07690e4c",
     "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
     "Sources/VoIPSDK/SimulatorSupport.swift": "45b5b31b3943603d7a20ebbed2b2a76feddbb7b6fb83fc1c532def2cbc059563",
@@ -39,11 +40,11 @@
     "Tests/VoIPSDK/IncomingDeliveryHost.h": "982a04bf40c52d15413632ad81b3c9d23c09dbd82eb28452852b78fec94d4a22",
     "Tests/VoIPSDK/IncomingDeliveryHost.m.in": "a820190571f0f42abb4fed1b4b009fc085360a3f6fb0b551ffd2b26f3355608f",
     "Tests/VoIPSDK/IncomingIntakeTests.swift": "3e3a433ae29cbd18de58d6a78eac0944bf35a56c7f62f4b7c970fe1b0a271e70",
-    "Tests/VoIPSDK/ProjectionTests.swift": "1495ae77ee434524adaaf8a6c94fc6b8deb87bdec1059ade09badcdda2da1bc5",
+    "Tests/VoIPSDK/ProjectionTests.swift": "8e3275adc5aba6a7d5a2f8abd7713610347b9511d4420c3d448eac371cbb4548",
     "Tests/VoIPSDK/PushTests.swift": "8d4bb3d1e65fedec7b6eff2ca6df50c058738b20493da22ee41faec0911a8301",
     "Tests/VoIPSDK/run.sh": "38a9019b72f97a1d4a2751b9e19ee5d65d1b04f085374816dac5d3488401f407",
     "Tests/VoIPSDK/run_incoming_cache.py": "3ba61daaaf1df9d39a434317760c1e9a9c6d3410c3e73138fd6b28e754b5939e",
-    "Tests/VoIPSDK/run_incoming_delivery.py": "0c23b074d937008dacec0e6f5d8c07ac34c1695955a6c2de4b66641cd8959974",
+    "Tests/VoIPSDK/run_incoming_delivery.py": "259b2cf4c021924adf4590fe4a15b06a6e6ee6285f557e4e05b4b637abb75dc5",
     "Tests/VoIPSDK/run_incoming_intake.sh": "0fb403c73f7736a43ecd25e415330398c47eed883f432e73a6eb62b3cb226b05",
     "Tests/VoIPSDK/run_projection.sh": "b0656f1fea04e24fb761be7cbebe37f0e3b24f03dce3725d73951863da271019",
     "Tests/VoIPSDK/run_push.sh": "a82a0e37bb5726f022fe1189aea9116b333f76086fcbc514b3009a56cce8ee28",
@@ -53,21 +54,23 @@
     "discovery/build_push_report_entry.sh": "c150c0fc0df18b25a3d7838fe6b12589b409fefed230422ac63f0e5c62f95999",
     "discovery/build_sdk_bootstrap.sh": "eb5928bca33823a78c07a064c588f875e6edf00f1e1537877236a2d3dccf9f5b",
     "discovery/build_sdk_device_probe.sh": "f5c14b8ce0bcd2c4203d5a5a160db35194425316de821b9eb1ff10babfffbc0a",
+    "discovery/build_sdk_device_release.py": "a31c890809cf48f7431fe688950eed2a6eae05d46e39addc9037ce4b1b8dbdf8",
     "discovery/build_sdk_m1_contracts.sh": "bdeb83c4cb9b1ae3ca4187263c197191e9ce0f5596f67ffe54a7bd1181a00534",
     "discovery/check_cli_controls.py": "dfc35443aa81fd39b9fc2412aefac31176f2b106abf6f889e7cffe24a21e4137",
     "discovery/check_cli_repair.py": "be0833a6fe924843cebfaa01fdde20c0f08068dbc0844b9182ff0f75682b29a1",
     "discovery/check_conformance.py": "c8ef1780417e83d27f116ad288e290c475a0e1b5c585913e9c4ab3cf9d832709",
     "discovery/check_console_stop.py": "b42a3d8a901977813a82e015f5e24de987b6cc69115f9f74ed419034daf5ae39",
+    "discovery/check_device_release.py": "a0635afb76e0660671c015ed6f1545882e0acf56ce18d647349443f357d879e5",
     "discovery/check_environment.py": "1895aa7f6ffeb46bb276a481c4350c05a02ae579c6baefe1d2035139e7a6ff75",
     "discovery/check_expo_bridge.py": "a668ba87be9db4910c2f37321b338b6850e939abed495b34533b46eddeb7abd5",
     "discovery/check_expo_plugin.cjs": "12e13ba17c7b24f1a58a1e95b413f58800d576c23c3d59d2e93219aebd104bb0",
-    "discovery/check_harness.py": "ab160795b34f25b1f8cfab64f6d84f4b11088053a71d53735c6abe4c99286842",
+    "discovery/check_harness.py": "336f6375746186ebf819138a53ff560433f67b4e142cb102a135bf1718b232f0",
     "discovery/check_image_identity.py": "d0802b43adb1d1fe899840bc448dae77b07dc44e53ac0063f9040e0225e41199",
     "discovery/check_lck_conformance.py": "82f1605d23b4a8db0577d54e0b07bd0e67092322c6249a2c0c8b6a47fab81da5",
     "discovery/check_lck_probe_readiness.py": "6e9b8021bed1dcf952b2f0ac823b617a62a800a6616934f80fac09a23a3da589",
     "discovery/check_lck_provider_policy.py": "395f16c1a7a3e862e6340ff8b1bf81c0a804151deb2363eba61519997bc0ae87",
     "discovery/check_oracles.py": "af3a52e159b85a6bd9d82e637862b6f4a06d64e826178297af7166d10f355948",
-    "discovery/check_platform_shims.py": "a49a977624a654d02165e8a3a50a758505c538ee00dd4168be8ba6ec61edb82b",
+    "discovery/check_platform_shims.py": "9f9170ab5475c9d8f242dd9424f8f7d396a4d0c6a9e20d5bbbfc5ff00a54736f",
     "discovery/check_push_delivery.py": "acf16b895dc08125e959540315f58218641a386320e53bf079fc0c9e4b9d36d1",
     "discovery/check_push_report_capture.py": "f38cc5339fb14a552c97daf47f55478bc69226d216c6a7f2816943465baf0038",
     "discovery/check_push_report_entry.py": "8403ca18ddc210afba7a8f7960e9629b6e9f8200374a4817a69faa2003d118f3",
@@ -83,6 +86,7 @@
     "discovery/device/README.md": "60fcbb655fc06cfe19dfa66384d83cf6ea85527607aa134def0e2ee23a0cff05",
     "discovery/device/project.yml": "dba2a4730cc38cae23280173287ae54aba015ba2e8a37db05a68310b8311a1b0",
     "discovery/device_oracles.py": "a8ab789c0ac0da96fc73c8e124ae8ff694413e57f845c3bd453a8aff01e4db5d",
+    "discovery/device_release_exclusion.py": "c2d86cc8c205412b527a0844feba3bee32415feed695b58ba937bbd82c711466",
     "discovery/fixtures/strict-v2/fixture.json": "4686de914d67d83ba345b2a4138dcaebf75ac17c56bd66899ee66d5b48ea0edf",
     "discovery/fixtures/strict-v2/genuine.jsonl": "31fe037ecf8c76ea89fca86f38198a6f4e7777b9513208de67b0d17627e644a1",
     "discovery/fixtures/strict-v2/genuine.receipt.json": "d411f2041867491dbaef7c189534ca43f730afe5d6132c52ab2ee9cf40ada28b",
@@ -97,7 +101,7 @@
     "discovery/probe/abi.m": "25a2e1eabce670b4c88d42c90d9b5f7713d22cbdc42b17fca0780585fdd1bcaf",
     "discovery/probe/generations.swift": "7ba20ccd0a3c845bb26a1bc7f603c6e8f4760aaab6bdd96e4d5192d84a1bb72f",
     "discovery/probe/lck_readiness.swift": "b10ddf8101eed054ef04aeafe59f83c0c46ec884a8b5ed240a2201fba9216c1d",
-    "discovery/probe/main.swift": "8dadde4deab5a7ea5856821f227f3c99d334ebd5fe17515243e00f188bab2c43",
+    "discovery/probe/main.swift": "994c55b8e0e02f8c06decb0c4e51739d9e39f19a88388832c8d1ef2332a55913",
     "discovery/probe/probe.entitlements": "f5dfadd87b081bb2f628ac78298797f922131cace19da02d73b15721feeb2c36",
     "discovery/probe/push_report_entry.swift": "18d49f6ddfe5e3c9e87486ea6da6d294222a3c82246971805c1ca6e716f80fac",
     "discovery/probe/report_threading.swift": "4baaa81154bf99203dcd5a279f85ed1afb7c393440f4e03f60d193bd08a45d3a",
@@ -111,7 +115,7 @@
     "discovery/run_scenario.py": "cb0508a61f049443d8e7aa809c1fffa6a7a76d40a155c5bedfa66ca89bef4926",
     "discovery/run_sdk_m0.sh": "999ae5f946f25521120cc7983c64b3ba84115f5c5a37cf4c8a18641f1e81f6a7",
     "discovery/sdk_bootstrap_conformance.py": "8c0cf540a21dd763abf6b640ec6148809938abd4f20fc83b9311abb7e7e21025",
-    "discovery/sdk_m0_conformance.py": "01d80776a7d33c698c50e0b0252e7e9f98991cb61a16cece59a76ee50b071522",
+    "discovery/sdk_m0_conformance.py": "57291a8962c24002ed05d797f97dd16ff112f390a4bfd168df8ce512b5f8622c",
     "discovery/sdk_m1_conformance.py": "a7391c202d7cfc343609e7a11acabc8ebcb04380796a7194187e932d68e5bd2d",
     "discovery/sdk_m1_contracts_conformance.py": "7696c9e92349adb00f1b52cb65d631162f4433bc10bfca3b329415f6abeda4f7",
     "discovery/semantics_conformance.py": "3d6d194b010130b8a5fd21fd26e240280549db6a1204d2f6a292afc5c7aaab31",
@@ -119,9 +123,9 @@
     "discovery/spike/CKSimBootstrap.c": "60f880c3f5dd5ae1691cf3582e623ea73ebca325826166ce89245901f2ab8ee9",
     "discovery/spike/CKSimPush.m": "ea4dac06bb5e928cc8cf74fa9a4d9839f5baae7c48e138285b65d721b7461f11",
     "discovery/spike/CKSimRuntime.m": "74bd3d8edebee5cbb67d7cb95eb7b1c7bfbd2665146070ca737f36ae6f7f433e",
-    "discovery/summarize.py": "4b6af629a82da5093bcd88b2774a23e237b91441064037bac0b41ad71d19ac92"
+    "discovery/summarize.py": "6c3c8a7d6fbb3b7ba7a8a232ba70252fdeac75b0e68db2abd5ffc6af0dbb6bb6"
   },
-  "workingInputsSHA256": "4dc269abb4ed0377f50a24253003329da3196745284913b3d79f4df020b442cf",
+  "workingInputsSHA256": "db8056389279fe5062cc80e0d848d2fcfaae72bb540f69a6b170c244075d46b2",
   "sourceUnchanged": true,
   "checks": [
     {
@@ -130,10 +134,10 @@
         "python3",
         "discovery/check_push_report_entry.py"
       ],
-      "startedWallTimeNS": 1792669299571882000,
-      "finishedWallTimeNS": 1792669302347971000,
+      "startedWallTimeNS": 1792670215920383000,
+      "finishedWallTimeNS": 1792670218944293000,
       "exitCode": 0,
-      "stdoutSHA256": "e6778e0188af626530c2f99196ee8503b4d5e4ac3e560e36c74e0dc1c5221e31",
+      "stdoutSHA256": "77ab2c7f996d1948a7fa8a5022379b3b1be56728364ae7c6de77e7d7e49d77e6",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
@@ -142,12 +146,12 @@
         "python3",
         "Tests/VoIPSDK/run_incoming_delivery.py",
         "--out",
-        "<capture>/main-stall"
+        "discovery/out/a1-main-merge-20261022/main-stall"
       ],
-      "startedWallTimeNS": 1792669299571931000,
-      "finishedWallTimeNS": 1792669306809796000,
+      "startedWallTimeNS": 1792670215922039000,
+      "finishedWallTimeNS": 1792670224075813000,
       "exitCode": 0,
-      "stdoutSHA256": "03dbeb6be348b3df56638b21e3f4c285be0460ac77ab199ead28e9f24bb8ea1c",
+      "stdoutSHA256": "5550a6f521ea960cd99de3fa8eccc2f8ba24457135a137b98e221d5ca9ab66d7",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
@@ -156,12 +160,12 @@
         "python3",
         "Tests/VoIPSDK/run_incoming_cache.py",
         "--out",
-        "<capture>/incoming-cache"
+        "discovery/out/a1-main-merge-20261022/incoming-cache"
       ],
-      "startedWallTimeNS": 1792669299572047000,
-      "finishedWallTimeNS": 1792669302856731000,
+      "startedWallTimeNS": 1792670215922168000,
+      "finishedWallTimeNS": 1792670219746790000,
       "exitCode": 0,
-      "stdoutSHA256": "afb873a8af8b48ea8d2b2a9815bdcb0783b4fedda28fb05ba0f7166940fa3ed6",
+      "stdoutSHA256": "b737a501823ed5e6feb1b645377bb0ca176d9ac0785853d1925854ac7a7c7ba6",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
@@ -170,8 +174,8 @@
         "bash",
         "Tests/VoIPSDK/run_incoming_intake.sh"
       ],
-      "startedWallTimeNS": 1792669302348019000,
-      "finishedWallTimeNS": 1792669303927447000,
+      "startedWallTimeNS": 1792670218944405000,
+      "finishedWallTimeNS": 1792670220897147000,
       "exitCode": 0,
       "stdoutSHA256": "fa4a4b7d987c9b605324dac12f9dff39caedc131af09769ffa53226bef12b21b",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -182,8 +186,8 @@
         "bash",
         "Tests/VoIPSDK/run_projection.sh"
       ],
-      "startedWallTimeNS": 1792669302856773000,
-      "finishedWallTimeNS": 1792669303562049000,
+      "startedWallTimeNS": 1792670219746851000,
+      "finishedWallTimeNS": 1792670220498487000,
       "exitCode": 0,
       "stdoutSHA256": "1d7bd9daeed53a866094887bdbef3b8dec7b0fcdda9dae03bb435f8e5d71e2f7",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -194,10 +198,10 @@
         "python3",
         "Tests/VoIPSDK/run_push_context.py"
       ],
-      "startedWallTimeNS": 1792669303562095000,
-      "finishedWallTimeNS": 1792669304225598000,
+      "startedWallTimeNS": 1792670220498534000,
+      "finishedWallTimeNS": 1792670221397445000,
       "exitCode": 0,
-      "stdoutSHA256": "9545ec5ac42403c945e5dbb5bb5667378e8f7dc408f8975aa04c0ade05cbf78b",
+      "stdoutSHA256": "b0fd7f3e4af53e685a42ae04f422275aedf4bd64730b90fa3d2e142775df1cab",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
@@ -206,8 +210,8 @@
         "bash",
         "Tests/VoIPSDK/run.sh"
       ],
-      "startedWallTimeNS": 1792669303927498000,
-      "finishedWallTimeNS": 1792669305587011000,
+      "startedWallTimeNS": 1792670220897202000,
+      "finishedWallTimeNS": 1792670223135850000,
       "exitCode": 0,
       "stdoutSHA256": "8f2f46f9cbbdee0027b970b636ffce0a87558e537924d16bd4604a6ca2e852d8",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -218,8 +222,8 @@
         "bash",
         "Tests/VoIPSDK/run_push.sh"
       ],
-      "startedWallTimeNS": 1792669304225635000,
-      "finishedWallTimeNS": 1792669305638961000,
+      "startedWallTimeNS": 1792670221397502000,
+      "finishedWallTimeNS": 1792670223297597000,
       "exitCode": 0,
       "stdoutSHA256": "14373b0b637343bec1149a022f1c809ed97ff3142da6a4c10eeeacfba49652a0",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -230,8 +234,8 @@
         "python3",
         "discovery/check_push_delivery.py"
       ],
-      "startedWallTimeNS": 1792669305587084000,
-      "finishedWallTimeNS": 1792669310679377000,
+      "startedWallTimeNS": 1792670223135902000,
+      "finishedWallTimeNS": 1792670230229851000,
       "exitCode": 0,
       "stdoutSHA256": "da2d18ad3a9cdb08c36f0183fd4bca88b4f9682f781bc4a9fe2594307acd5dbd",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -242,11 +246,11 @@
         "python3",
         "discovery/check_sdk_m0.py"
       ],
-      "startedWallTimeNS": 1792669305639003000,
-      "finishedWallTimeNS": 1792669306425879000,
+      "startedWallTimeNS": 1792670223297655000,
+      "finishedWallTimeNS": 1792670224969008000,
       "exitCode": 0,
       "stdoutSHA256": "d66b3d99f66757cadfd8e1cdb633286dfc3036b4fb090e43c555f5eba06c1f3e",
-      "stderrSHA256": "d150531ebc678c17be7d412c57acc2d64c35604495c4d1dff3e75e55dc1b46f1"
+      "stderrSHA256": "0309eedea54f5c54a1d80848c45709060bde0506aa4f5e1a036b6657728a82de"
     },
     {
       "check": "m1",
@@ -254,11 +258,11 @@
         "python3",
         "discovery/check_sdk_m1.py"
       ],
-      "startedWallTimeNS": 1792669306425913000,
-      "finishedWallTimeNS": 1792669307202900000,
+      "startedWallTimeNS": 1792670224075944000,
+      "finishedWallTimeNS": 1792670225681441000,
       "exitCode": 0,
       "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stderrSHA256": "863b9621d350bbe8bb253f7d7cf13cbfcc429c6b5ea10dbaf78ca4b93cfcc4c8"
+      "stderrSHA256": "05f29530f1aee0d2d9549d27851247e2b0b966c1e254c3689e4e14deb47b6cdf"
     },
     {
       "check": "contracts",
@@ -266,11 +270,11 @@
         "python3",
         "discovery/check_sdk_m1_contracts.py"
       ],
-      "startedWallTimeNS": 1792669306809839000,
-      "finishedWallTimeNS": 1792669307255228000,
+      "startedWallTimeNS": 1792670224969058000,
+      "finishedWallTimeNS": 1792670225691021000,
       "exitCode": 0,
       "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stderrSHA256": "7bb62b8387fa00dc722b0f2fbc7d73db633beb9bb2e503d2665b708522ceda53"
+      "stderrSHA256": "415bc3c7397713d33f0fa9502e55a0790b69823839696a2632aa165936f0adb0"
     },
     {
       "check": "capture",
@@ -278,11 +282,11 @@
         "python3",
         "discovery/check_push_report_capture.py"
       ],
-      "startedWallTimeNS": 1792669307202934000,
-      "finishedWallTimeNS": 1792669307367901000,
+      "startedWallTimeNS": 1792670225681496000,
+      "finishedWallTimeNS": 1792670226040098000,
       "exitCode": 0,
       "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stderrSHA256": "8f71a68091b29800ed34a8b75bf13a5f917f3ee5d925687f3fd5d24011e2284a"
+      "stderrSHA256": "e4daf93ac1294a518c30940c894a122da302621f1f2ebdf1dc5f7073b00f39b0"
     },
     {
       "check": "workflow",
@@ -290,8 +294,8 @@
         "actionlint",
         ".github/workflows/sdk-m0.yml"
       ],
-      "startedWallTimeNS": 1792669307255269000,
-      "finishedWallTimeNS": 1792669307346626000,
+      "startedWallTimeNS": 1792670225691083000,
+      "finishedWallTimeNS": 1792670225915347000,
       "exitCode": 0,
       "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -305,10 +309,82 @@
         "discovery/build_push_report_entry.sh",
         "discovery/run_sdk_m0.sh"
       ],
-      "startedWallTimeNS": 1792669307346659000,
-      "finishedWallTimeNS": 1792669307353627000,
+      "startedWallTimeNS": 1792670225915391000,
+      "finishedWallTimeNS": 1792670225925904000,
       "exitCode": 0,
       "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "check": "device-release",
+      "argv": [
+        "python3",
+        "discovery/check_device_release.py"
+      ],
+      "startedWallTimeNS": 1792670225925943000,
+      "finishedWallTimeNS": 1792670228863587000,
+      "exitCode": 0,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "07ccf7b5999a63244b9bcafaaac84fe8d01ddebd516bff4e6baa76db263610f1"
+    },
+    {
+      "check": "platform",
+      "argv": [
+        "python3",
+        "discovery/check_platform_shims.py"
+      ],
+      "startedWallTimeNS": 1792670226040156000,
+      "finishedWallTimeNS": 1792670235225870000,
+      "exitCode": 0,
+      "stdoutSHA256": "880a77b1ed9451108320b4b161ff89669bade240061fd39f7206b3e5332c0120",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "check": "harness",
+      "argv": [
+        "python3",
+        "discovery/check_harness.py"
+      ],
+      "startedWallTimeNS": 1792670228863635000,
+      "finishedWallTimeNS": 1792670254854603000,
+      "exitCode": 0,
+      "stdoutSHA256": "f857b811209fb90e07a6e093880266fcf2e5c89be6847f61cd2826a6a78f4c8e",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "check": "lck-policy",
+      "argv": [
+        "python3",
+        "discovery/check_lck_provider_policy.py"
+      ],
+      "startedWallTimeNS": 1792670230229896000,
+      "finishedWallTimeNS": 1792670232304863000,
+      "exitCode": 0,
+      "stdoutSHA256": "a3e4829189473a073f4253576e3ab5dee641b934e13362554d963c5a296f66e6",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "check": "expo-bridge",
+      "argv": [
+        "python3",
+        "discovery/check_expo_bridge.py"
+      ],
+      "startedWallTimeNS": 1792670232304908000,
+      "finishedWallTimeNS": 1792670234877417000,
+      "exitCode": 0,
+      "stdoutSHA256": "4215423403cdbee41496d33560daf4549e85a8a75222bfb34cc25cf2bad85609",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "check": "probe-writer",
+      "argv": [
+        "bash",
+        "Tests/ProbeTraceWriter/run.sh"
+      ],
+      "startedWallTimeNS": 1792670234877494000,
+      "finishedWallTimeNS": 1792670235709047000,
+      "exitCode": 0,
+      "stdoutSHA256": "2cddcfd26d975d4e11b39ab60bedddc6a0edeea5302a1868e309f9e32adca785",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
@@ -322,15 +398,15 @@
         "-strict-concurrency=complete",
         "-warnings-as-errors",
         "-sdk",
-        "<selected Apple SDK>",
+        "<selected-apple-sdk>",
         "-target",
         "arm64-apple-ios17.4-simulator",
         "-D",
         "DEBUG",
         "-import-objc-header",
-        "<capture>/Headers.h",
+        "discovery/out/a1-main-merge-20261022/Headers.h",
         "-module-cache-path",
-        "<capture>/modules-swift-simulator",
+        "discovery/out/a1-main-merge-20261022/modules-swift-simulator",
         "Sources/Engine/RuntimeEngine.swift",
         "Sources/VoIPSDK/ConversationClient.swift",
         "Sources/VoIPSDK/ConversationHandler.swift",
@@ -344,8 +420,8 @@
         "Sources/VoIPSDK/SimulatorSupport.swift",
         "Sources/VoIPSDK/VoIPApplication.swift"
       ],
-      "startedWallTimeNS": 1792669307353655000,
-      "finishedWallTimeNS": 1792669312717281000,
+      "startedWallTimeNS": 1792670235225916000,
+      "finishedWallTimeNS": 1792670242999920000,
       "exitCode": 0,
       "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -361,13 +437,13 @@
         "-strict-concurrency=complete",
         "-warnings-as-errors",
         "-sdk",
-        "<selected Apple SDK>",
+        "<selected-apple-sdk>",
         "-target",
         "arm64-apple-ios17.4",
         "-import-objc-header",
-        "<capture>/Headers.h",
+        "discovery/out/a1-main-merge-20261022/Headers.h",
         "-module-cache-path",
-        "<capture>/modules-swift-device-release",
+        "discovery/out/a1-main-merge-20261022/modules-swift-device-release",
         "Sources/Engine/RuntimeEngine.swift",
         "Sources/VoIPSDK/ConversationClient.swift",
         "Sources/VoIPSDK/ConversationHandler.swift",
@@ -381,8 +457,8 @@
         "Sources/VoIPSDK/SimulatorSupport.swift",
         "Sources/VoIPSDK/VoIPApplication.swift"
       ],
-      "startedWallTimeNS": 1792669307367937000,
-      "finishedWallTimeNS": 1792669312221064000,
+      "startedWallTimeNS": 1792670235709091000,
+      "finishedWallTimeNS": 1792670242593563000,
       "exitCode": 0,
       "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -398,15 +474,15 @@
         "-strict-concurrency=complete",
         "-warnings-as-errors",
         "-sdk",
-        "<selected Apple SDK>",
+        "<selected-apple-sdk>",
         "-target",
         "arm64-apple-ios17.4-simulator",
         "-D",
         "DEBUG",
         "-import-objc-header",
-        "<capture>/Headers.h",
+        "discovery/out/a1-main-merge-20261022/Headers.h",
         "-module-cache-path",
-        "<capture>/modules-swift-contract-probe",
+        "discovery/out/a1-main-merge-20261022/modules-swift-contract-probe",
         "Sources/Engine/RuntimeEngine.swift",
         "Sources/VoIPSDK/ConversationClient.swift",
         "Sources/VoIPSDK/ConversationHandler.swift",
@@ -422,8 +498,8 @@
         "-parse-as-library",
         "discovery/probe/sdk_m1_contracts.swift"
       ],
-      "startedWallTimeNS": 1792669310679434000,
-      "finishedWallTimeNS": 1792669316031059000,
+      "startedWallTimeNS": 1792670242593630000,
+      "finishedWallTimeNS": 1792670251457333000,
       "exitCode": 0,
       "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -439,15 +515,15 @@
         "-strict-concurrency=complete",
         "-warnings-as-errors",
         "-sdk",
-        "<selected Apple SDK>",
+        "<selected-apple-sdk>",
         "-target",
         "arm64-apple-ios17.4-simulator",
         "-D",
         "DEBUG",
         "-import-objc-header",
-        "<capture>/Headers.h",
+        "discovery/out/a1-main-merge-20261022/Headers.h",
         "-module-cache-path",
-        "<capture>/modules-swift-push-probe",
+        "discovery/out/a1-main-merge-20261022/modules-swift-push-probe",
         "Sources/Engine/RuntimeEngine.swift",
         "Sources/VoIPSDK/ConversationClient.swift",
         "Sources/VoIPSDK/ConversationHandler.swift",
@@ -463,15 +539,15 @@
         "-parse-as-library",
         "discovery/probe/push_report_entry.swift"
       ],
-      "startedWallTimeNS": 1792669312221115000,
-      "finishedWallTimeNS": 1792669317420550000,
+      "startedWallTimeNS": 1792670242999976000,
+      "finishedWallTimeNS": 1792670251678683000,
       "exitCode": 0,
       "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
   "success": true,
-  "retainedPrivateReceiptSHA256": "394ac450be00b277a3aadec826f3a3f4c3566d191c6baf5b91fce6217c14d4d2",
+  "retainedPrivateReceiptSHA256": "f857877ae52b68497c3584d8e666672c8d1bc6ece0aa57b6e32fa24bd92700d8",
   "redactions": [
     "Selected Apple SDK installation paths and capture directory in compiler arguments only; exact retained private receipt digest is bound above."
   ]

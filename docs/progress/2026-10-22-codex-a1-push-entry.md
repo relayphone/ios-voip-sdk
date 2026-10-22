@@ -141,11 +141,11 @@ answer to genuine `didActivate`. The simulator fixtures do not replace these run
 No RFC 0001 public API deviation was identified. No device action, APNs credential
 or real push is part of this change.
 
-The source-bound red/green, 19 integrated host/compiler checks and debug/optimized
+The source-bound red/green, 25 integrated host/compiler checks and debug/optimized
 intake controls are indexed in
 [`docs/verification/2026-10-22-push-entry-main-stall/`](../verification/2026-10-22-push-entry-main-stall/README.md).
-The final host candidate entered its report facade at 0.000379 s and returned the
-native callback at 0.000424 s while main was measured blocked for 3.006523 s.
+The final host candidate entered its report facade at 0.000768 s and returned the
+native callback at 0.000859 s while main was measured blocked for 3.001435 s.
 These values are host fixture timings, not Apple framework latency.
 
 For later A2 integration, union its `unhandled-fail` native contract case with
@@ -159,3 +159,12 @@ retains its early refresh, which can establish observed membership for duplicate
 normalization. A whole-client host control with held platform observation delivery
 reproduced all three old stale-cache paths and passes after this change; it is
 separate from genuine framework timing evidence.
+
+Main at `ef5a1f6` and the contract-container capture correction at `a8e1b84`
+were merged normally. Direction remains SDK-owned with no device CallKit import
+or observer; the incoming transport reuses main's bounded Foundation error
+classifier. The 25-check packet covers the combined production source. Seven
+subsequent focused runner/gate checks cover the sole script change, retain all
+three contract cases, and bind the unchanged production inputs. Independent
+SPEC and STANDARDS reviews cleared both merge resolutions. Native acceptance
+still belongs to CI on the final published head.

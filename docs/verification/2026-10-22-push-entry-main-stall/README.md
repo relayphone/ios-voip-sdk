@@ -7,8 +7,8 @@ facade first entered at 3.001280 s. The invariant failed with exit 1 and valid
 single-report/completion cardinality. [Baseline receipt](baseline-red.json).
 
 **Measured host result after the change:** the reporting dependency entered off
-main at 0.000379 s, the native callback returned at 0.000424 s and completion ran
-once at 0.000464 s. The host measured main blocked for 3.006523 s; state projection
+main at 0.000768 s, the native callback returned at 0.000859 s and completion ran
+once at 0.001017 s. The host measured main blocked for 3.001435 s; state projection
 remained at zero until main resumed, then ran once. Canonical UUID/payload and the
 pending attempt were checked at report entry. [Green receipt](main-stall-green.json).
 
@@ -26,14 +26,23 @@ receiver, incoming transport and native wait body, the actual native delivery
 ticket, and the actual intake/models/wire decoder. It substitutes only the
 framework report dependency and actor projection client.
 
-[Host/compiler checks](host-checks.json) bind 116 code inputs and 19 successful
+[Host/compiler checks](host-checks.json) bind 120 code inputs and 25 successful
 commands at working input digest
-`4dc269abb4ed0377f50a24253003329da3196745284913b3d79f4df020b442cf`.
+`db8056389279fe5062cc80e0d848d2fcfaae72bb540f69a6b170c244075d46b2`.
 They include receiver-policy controls, missing/empty/substituted evidence gates,
 store/core/projection/context controls, workflow syntax, full SDK simulator and
 Release device typechecking, and both native probes' SDK typechecking. No app was
 built or launched for these compiler checks. The SDK paths in command arguments
 are redacted; exact private receipt digests and stream hashes remain bound.
+
+The subsequent [capture integration](capture-integration.json) passed seven
+affected runner/gate checks at input digest
+`8979584ddaa93d124930fe536cef3e4b19c69e8c07076f464eb5cd0ca719b05c`.
+It merges main's Release-device exclusion and the contract-container capture fix.
+Only `discovery/run_sdk_m0.sh` changed after the 25-check packet; its receipt
+binds that difference and the unchanged production/compiler inputs. The runner
+retains all three contract cases and refuses an empty/missing first container.
+No compiler/store rerun or native launch is implied by these focused checks.
 
 The [intake controls](intake-controls.json) independently compile and run 13 groups
 in debug and optimized builds. They cover concurrent identity/settlement, rollback,
