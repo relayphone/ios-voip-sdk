@@ -18,6 +18,10 @@ INSTALL_KEYS = ("DYLD_INSERT_LIBRARIES", "CKSIM_RUNTIME", "CKSIM_BUNDLE_IDS", "C
 
 
 def simctl(*args, env=None):
+    if len(args) >= 3 and args[0] == "spawn" and args[2] == "launchctl":
+        # Recovery must run even when launchd names a loader deleted from disk.
+        # This changes only the control process, never the saved global value.
+        env = {**(os.environ if env is None else env), "SIMCTL_CHILD_DYLD_INSERT_LIBRARIES": ""}
     try:
         result = subprocess.run(["xcrun", "simctl", *map(str, args)], capture_output=True, text=True,
                                 env=env, timeout=SIMCTL_TIMEOUT)
@@ -40,18 +44,16 @@ def simulator(identifier):
 
 def launch_environment(device, key):
     try:
-        result = subprocess.run(["xcrun", "simctl", "getenv", device, key], capture_output=True, text=True,
-                                timeout=SIMCTL_TIMEOUT)
+        result = subprocess.run(["xcrun", "simctl", "spawn", device, "launchctl", "getenv", key], capture_output=True, text=True,
+                                env={**os.environ, "SIMCTL_CHILD_DYLD_INSERT_LIBRARIES": ""}, timeout=SIMCTL_TIMEOUT)
     except subprocess.TimeoutExpired as error:
         raise RuntimeError(f"Reading simulator environment key {key} timed out after {SIMCTL_TIMEOUT}s.") from error
     diagnostic = result.stderr.strip()
-    if result.returncode == 0 and diagnostic == f"'{key}' not found":
-        return None
     if result.returncode or diagnostic:
         raise RuntimeError(f"Cannot read simulator environment key {key}: {diagnostic}")
-    # simctl appends one newline; preserve intentional empty values and any
-    # newlines already present in the value itself.
-    return result.stdout.removesuffix("\n")
+    # launchctl emits no bytes for an unset key and one newline for an empty
+    # value. Preserve empty values and any newlines already in the value.
+    return None if not result.stdout else result.stdout.removesuffix("\n")
 
 
 def validate_package(runtime):

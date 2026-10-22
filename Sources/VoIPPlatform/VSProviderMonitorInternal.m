@@ -58,6 +58,21 @@ static BOOL signatureMatches(Method method, char argumentType) {
   return matches;
 }
 
+static void observedProvider(id provider) {
+  if (!provider) return;
+  [monitorLock lock];
+  // Class-cluster initializers may return an object already observed in the
+  // same constructor chain. The cooperative runtime source shares this gate.
+  BOOL alreadyObserved = [observedProviders containsObject:provider];
+  if (!alreadyObserved) [observedProviders addObject:provider];
+  BOOL expected = [NSThread isMainThread] && ownedCreation;
+  if (expected && !alreadyObserved) ownedProviderCount++;
+  BOOL extraOwned = expected && ownedProviderCount > 1;
+  [monitorLock unlock];
+  if (!alreadyObserved && (!expected || extraOwned))
+    diagnose(@"Another CXProvider was created. D13 routes actions to the newest provider; keep one ConversationManager in this process.");
+}
+
 __attribute__((ns_returns_retained)) static id observedInitialize(
     id __attribute__((ns_consumed)) receiver, SEL selector, id configuration) {
   void *identity = (__bridge void *)receiver;
@@ -83,19 +98,7 @@ __attribute__((ns_returns_retained)) static id observedInitialize(
   id result;
   @try { result = ((ProviderInitializer)original)(receiver, selector, configuration); }
   @finally { currentFrame = frame.previous; }
-  if (result && outermost) {
-    [monitorLock lock];
-    // Class-cluster initializers can replace a placeholder with an instance
-    // whose own initializer was already observed in this call chain.
-    BOOL alreadyObserved = [observedProviders containsObject:result];
-    if (!alreadyObserved) [observedProviders addObject:result];
-    BOOL expected = [NSThread isMainThread] && ownedCreation;
-    if (expected && !alreadyObserved) ownedProviderCount++;
-    BOOL extraOwned = expected && ownedProviderCount > 1;
-    [monitorLock unlock];
-    if (!alreadyObserved && (!expected || extraOwned))
-      diagnose(@"Another CXProvider was created. D13 routes actions to the newest provider; keep one ConversationManager in this process.");
-  }
+  if (outermost) observedProvider(result);
   return result;
 }
 
@@ -142,6 +145,11 @@ __attribute__((ns_returns_retained)) static id observedAllocate(Class receiver, 
 }
 
 BOOL VSProviderMonitorInstall(Class providerClass, void (^diagnostic)(NSString *)) {
+  return VSProviderMonitorInstallWithSource(providerClass, diagnostic, nil);
+}
+
+BOOL VSProviderMonitorInstallWithSource(Class providerClass, void (^diagnostic)(NSString *),
+    BOOL (^registerObserver)(void (^)(id))) {
   if (![NSThread isMainThread]) {
     // Do not mutate runtime methods from a wrongly isolated client setup.
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -152,6 +160,17 @@ BOOL VSProviderMonitorInstall(Class providerClass, void (^diagnostic)(NSString *
   }
   if (monitoring) return monitoredClass == providerClass;
   diagnosticHandler = [diagnostic copy];
+  if (registerObserver) {
+    monitorLock = [NSLock new];
+    observedProviders = [[NSHashTable alloc] initWithOptions:
+        NSPointerFunctionsWeakMemory | NSPointerFunctionsObjectPointerPersonality capacity:0];
+    monitoredClass = providerClass;
+    // Do not hold monitorLock across runtime registration. Provider observation
+    // also runs outside the runtime install lock, so neither lock nests the other.
+    monitoring = registerObserver(^(id provider) { observedProvider(provider); });
+    if (!monitoring) diagnose(@"The simulator provider creation source was unavailable; creation monitoring is disabled.");
+    return monitoring;
+  }
   SEL initializer = @selector(initWithConfiguration:);
   SEL allocator = @selector(allocWithZone:);
   Class metaclass = object_getClass(providerClass);

@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "classification": "host concurrency controls; no native PushKit acceptance",
+  "result": "passed: task suspension, child inheritance, unrelated/detached work, 32 concurrent UUIDs, once-consumption, matching cleanup, UUID reuse, ambiguous-overlap refusal, early-report settlement, stale-finish isolation",
+  "productionSHA256": "cf420f65ebd3dcbc7f73e7fd94b0b3e553b2185068c0c57dfcc3a027b0887c21",
+  "sourceFiles": {
+    "Sources/VoIPSDK/SimulatorSupport.swift": "adf83443fee4f0233325bbe84fd98816d82f8450fdc1893c4623e54986768149",
+    "Sources/VoIPSDK/PushService.swift": "de33029911b568dd888ac7ed8bea10a47167096f8b52b9b4cea4be81d1289aef",
+    "Sources/Engine/RuntimeEngine.swift": "28e29088a617dc834bfbe3e09652e4ebcd07943f84ba3bb2cf0c97e99f98a720",
+    "Tests/VoIPSDK/run_push_context.py": "f440bd468b9e5f46e3309ac8eb19823dbe5cf52ba6dddcd303cf3491b92f97c6"
+  }
+}

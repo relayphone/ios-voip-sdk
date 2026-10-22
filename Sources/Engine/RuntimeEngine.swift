@@ -815,6 +815,13 @@ public enum RuntimeBootstrap {
   @discardableResult
   public static func activate() -> Bool { CKSimActivateRuntime() }
 
+  #if DEBUG
+  /// SDK diagnostic integration; does not replace or relax verified runtime hooks.
+  public static func installProviderCreationObserver(_ observer: @escaping (Any) -> Void) -> Bool {
+    CKSimInstallProviderCreationObserver(observer)
+  }
+  #endif
+
   public static var currentPushIdentifier: String? {
     guard CKSimRuntimeIsActive() else { return nil }
     let identifier = CKSimCurrentPushID()

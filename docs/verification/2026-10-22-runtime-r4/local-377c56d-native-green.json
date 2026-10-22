@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "acceptance": "R4 deleted-package repair preserves unrelated injectors",
+  "runID": "F4B4FA1A-5839-464C-B649-CD49723AAD88",
+  "startedAt": "2026-10-22T02:44:12.702242+00:00",
+  "finishedAt": "2026-10-22T02:46:24.438805+00:00",
+  "sourceCommit": "377c56d41cc78b9262831ef6f39f96ae4a82fd5e",
+  "cliSHA256": "db83a8ae45029d0b7fc91d8f3368e5ad72131f4ce3ac20005ba27403fb2cc084",
+  "testSHA256": "995ab646f191bf0d2c96de740a4ce3c96869148918a634af612b08204cd9aac3",
+  "success": true,
+  "checks": [
+    "clean-source-package-bound",
+    "before-injector-read-back",
+    "no-prior-ownership-for-owned-simulator",
+    "install-success",
+    "install-preserves-inherited-plus-unrelated-before",
+    "owned-install-state-saved",
+    "package-deleted-before-repair",
+    "source-cli-repairs-deleted-package",
+    "repair-removes-only-owned-loader",
+    "repair-preserves-original-owned-keys",
+    "repair-deletes-ownership-state",
+    "repeated-repair-no-op",
+    "repeated-repair-preserves-environment",
+    "original-global-environment-restored",
+    "owned-simulator-deleted",
+    "owned-build-directory-deleted"
+  ],
+  "simulator": {
+    "udid": "DA3699E4-9618-4358-BE5A-13728C9128F8",
+    "runtimeID": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+    "version": "27.0",
+    "buildVersion": "24A434"
+  },
+  "evidenceKind": "measured native acceptance summary",
+  "fullReceiptSHA256": "8b1669035e6ad8c6990e5569218dfd331b057e68911dc7c60965dca3ae4c5ee6",
+  "package": {
+    "version": "0.1.1",
+    "sourceCommit": "377c56d41cc78b9262831ef6f39f96ae4a82fd5e",
+    "sourceDirty": false,
+    "sourceInputsSHA256": "9125127c1267070639214a2f4be03c4f2a97ae00776be570d5684e733f2f1a04",
+    "architectures": [
+      "arm64"
+    ],
+    "files": {
+      "CKSimLoader.dylib": "d9c88198cd1cefac86082b13f7581e6f2aef7a712b24e29e59f6cbd6b0b56761",
+      "CKSimRuntime.dylib": "e72ab99430cb3a608114865fbfd1981837a0fbaf895acf2e4b8486c414c2597f",
+      "README.md": "9a11f7517e9e7d83dfca941ece4b750c6bc394bd8354cfe98f6d81155a29f469",
+      "VERSION": "80447316529fc62014fbaa047fb67c51ac30e32830cda370405349d8d66d196c",
+      "cksim": "db83a8ae45029d0b7fc91d8f3368e5ad72131f4ce3ac20005ba27403fb2cc084",
+      "cksim-notify": "698972e88c860cf7f2aa5c0ae7937c44daf045714b51a2fea79d9258c161d45c",
+      "profiles/ios-27.0.json": "ca7bf656f565ffff93c6cd4b2275bf52485c7555694890db60028731c13040a5"
+    },
+    "sdk": {
+      "build": "24A94232",
+      "version": "27.1"
+    },
+    "toolchain": {
+      "clang": "Apple clang version 21.0.0 (clang-2100.3.34.2)\nTarget: arm64-apple-darwin27.0.0\nThread model: posix\nInstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin",
+      "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+      "xcode": "Xcode 27.1\nBuild version 27A9275"
+    },
+    "buildInfoSHA256": "0016104bab84282861a38e24d17bb9830c44f82d0af3cfb9c27568b09c43b9b1"
+  },
+  "environmentMatches": {
+    "beforeInstall": {
+      "DYLD_INSERT_LIBRARIES": true,
+      "CKSIM_RUNTIME": true,
+      "CKSIM_BUNDLE_IDS": true,
+      "CKSIM_ENABLED": true,
+      "CKSIM_PROFILE": true
+    },
+    "installed": {
+      "DYLD_INSERT_LIBRARIES": true,
+      "CKSIM_RUNTIME": true,
+      "CKSIM_BUNDLE_IDS": true,
+      "CKSIM_ENABLED": true,
+      "CKSIM_PROFILE": true
+    },
+    "repaired": {
+      "DYLD_INSERT_LIBRARIES": true,
+      "CKSIM_RUNTIME": true,
+      "CKSIM_BUNDLE_IDS": true,
+      "CKSIM_ENABLED": true,
+      "CKSIM_PROFILE": true
+    }
+  },
+  "dyldEntryOrderMatches": {
+    "beforeInstall": true,
+    "installed": true,
+    "repaired": true
+  },
+  "originalRestorationMatches": {
+    "DYLD_INSERT_LIBRARIES": true,
+    "CKSIM_RUNTIME": true,
+    "CKSIM_BUNDLE_IDS": true,
+    "CKSIM_ENABLED": true,
+    "CKSIM_PROFILE": true
+  },
+  "independentCleanup": {
+    "simulatorID": "DA3699E4-9618-4358-BE5A-13728C9128F8",
+    "inventoryMatches": 0,
+    "deviceDirectoryAbsent": true,
+    "ownershipFileAbsent": true,
+    "fixtureBuildDirectoryAbsent": true,
+    "receiptSHA256": "8b1669035e6ad8c6990e5569218dfd331b057e68911dc7c60965dca3ae4c5ee6"
+  }
+}

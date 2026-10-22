@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Measure deleted-package loader repair on one disposable simulator."""
 import argparse
+from collections import Counter
 import datetime
 import hashlib
 import json
@@ -27,6 +28,24 @@ def sha(path):
 def hashes(values):
     return {key: None if value is None else hashlib.sha256(value.encode()).hexdigest()
             for key, value in values.items()}
+
+
+def environment_diagnostic(actual, expected, fixture_paths):
+    """Describe exact values and entry order without retaining inherited paths."""
+    actual_entries = actual['DYLD_INSERT_LIBRARIES'].split(':') if actual['DYLD_INSERT_LIBRARIES'] is not None else []
+    expected_entries = expected['DYLD_INSERT_LIBRARIES'].split(':') if expected['DYLD_INSERT_LIBRARIES'] is not None else []
+
+    def entries(values):
+        return [dict(role=next((role for role, path in fixture_paths.items() if value == path), 'inherited'),
+                     sha256=hashlib.sha256(value.encode()).hexdigest(), utf8Bytes=len(value.encode()),
+                     expectedIndices=[index for index, entry in enumerate(expected_entries) if value == entry])
+                for value in values]
+
+    return dict(actualSHA256=hashes(actual), expectedSHA256=hashes(expected),
+                matchingKeys={key: actual[key] == expected[key] for key in KEYS},
+                dyld=dict(actualEntries=entries(actual_entries), expectedEntries=entries(expected_entries),
+                          sameEntryInventory=Counter(actual_entries) == Counter(expected_entries),
+                          sameEntryOrder=actual_entries == expected_entries))
 
 
 def main():
@@ -75,7 +94,9 @@ def main():
             stderr.seek(0)
             result = subprocess.CompletedProcess(argv, process.returncode, stdout.read(), stderr.read())
         receipt["steps"].append(dict(phase=label, timeoutSeconds=timeout,
-                                    elapsedSeconds=round(time.monotonic()-started, 3), exitCode=result.returncode))
+                                    elapsedSeconds=round(time.monotonic()-started, 3), exitCode=result.returncode,
+                                    stdoutSHA256=hashlib.sha256(result.stdout.encode()).hexdigest(),
+                                    stderrSHA256=hashlib.sha256(result.stderr.encode()).hexdigest()))
         if not sensitive:
             (out / (label+".stdout")).write_text(result.stdout)
             (out / (label+".stderr")).write_text(result.stderr)
@@ -84,9 +105,13 @@ def main():
         return result
 
     def sim(label, *argv, **kwargs):
+        if len(argv) >= 3 and argv[0] == 'spawn' and argv[2] == 'launchctl':
+            kwargs['env'] = {**os.environ, 'SIMCTL_CHILD_DYLD_INSERT_LIBRARIES': ''}
         return command(label, ["xcrun", "simctl", *argv], **kwargs)
 
     def expect(name, condition):
+        nonlocal phase
+        phase = name
         if not condition:
             raise RuntimeError(name + " failed")
         receipt["checks"].append(name)
@@ -94,13 +119,11 @@ def main():
     def snapshot(label):
         values = {}
         for key in KEYS:
-            result = sim(label+"-"+key.lower(), "getenv", simulator, key, sensitive=True)
-            if result.stderr.strip() == "'%s' not found" % key:
-                values[key] = None
-            elif result.stderr:
+            result = sim(label+"-"+key.lower(), 'spawn', simulator, 'launchctl', 'getenv', key, sensitive=True)
+            if result.stderr:
                 raise RuntimeError("Environment read diagnostic for " + key)
-            else:
-                values[key] = result.stdout.removesuffix("\n")
+            values[key] = None if not result.stdout else result.stdout.removesuffix("\n")
+        receipt.setdefault('environmentSHA256', {})[label] = hashes(values)
         return values
 
     def write_key(label, key, value):
@@ -153,11 +176,25 @@ def main():
         original = snapshot("original")
         receipt["originalEnvironmentSHA256"] = hashes(original)
         libraries_before = ":".join(filter(None, [original["DYLD_INSERT_LIBRARIES"], str(before)]))
+        loader = str(work/"runtime/CKSimLoader.dylib")
+        fixture_paths = dict(before=str(before), loader=loader, after=str(after))
+        expected_before = dict(original, DYLD_INSERT_LIBRARIES=libraries_before)
         write_key("append-before-injector", "DYLD_INSERT_LIBRARIES", libraries_before)
+        before_install = snapshot('before-install')
+        receipt['environmentDiagnostics'] = dict(beforeInstall=environment_diagnostic(before_install, expected_before, fixture_paths))
+        expect('before-injector-read-back', before_install == expected_before)
         expect("no-prior-ownership-for-owned-simulator", not ownership.exists())
         expect("install-success", cli("cli-install", "install")["installed"] is True)
         applied = snapshot("installed")
-        loader = str(work/"runtime/CKSimLoader.dylib")
+        expected_applied = dict(expected_before, DYLD_INSERT_LIBRARIES=libraries_before+":"+loader,
+                                CKSIM_RUNTIME=str(work/'runtime/CKSimRuntime.dylib'),
+                                CKSIM_BUNDLE_IDS='dev.callkitsim.repair', CKSIM_ENABLED='1', CKSIM_PROFILE='ios-27.0')
+        receipt['environmentDiagnostics']['installed'] = environment_diagnostic(applied, expected_applied, fixture_paths)
+        if ownership.exists():
+            saved = json.loads(ownership.read_text())
+            receipt['ownershipDiagnostic'] = dict(fileSHA256=sha(ownership),
+                original=environment_diagnostic(saved['original'], before_install, fixture_paths),
+                applied=environment_diagnostic(saved['applied'], expected_applied, fixture_paths))
         expect("install-preserves-inherited-plus-unrelated-before", applied["DYLD_INSERT_LIBRARIES"] == libraries_before+":"+loader)
         expect("owned-install-state-saved", ownership.exists())
         receipt["ownershipSHA256"] = sha(ownership)
@@ -166,6 +203,8 @@ def main():
         expect("package-deleted-before-repair", not (work/"runtime").exists())
         expect("source-cli-repairs-deleted-package", cli("cli-repair", "repair")["repaired"] is True)
         repaired = snapshot("repaired")
+        expected_repaired = dict(original, DYLD_INSERT_LIBRARIES=libraries_before+":"+str(after))
+        receipt['environmentDiagnostics']['repaired'] = environment_diagnostic(repaired, expected_repaired, fixture_paths)
         expect("repair-removes-only-owned-loader", repaired["DYLD_INSERT_LIBRARIES"] == libraries_before+":"+str(after)
                and loader not in repaired["DYLD_INSERT_LIBRARIES"].split(":"))
         expect("repair-preserves-original-owned-keys", all(repaired[key] == original[key] for key in KEYS[1:]))

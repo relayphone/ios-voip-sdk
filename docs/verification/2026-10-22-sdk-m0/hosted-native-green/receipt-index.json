@@ -1,0 +1,22 @@
+{
+  "workflowRun": "https://github.com/ziahamza/ios-voip-sdk/actions/runs/39708791374",
+  "sourceCommit": "5be2b61507089b0218b4877e3c6937acf531ef2c",
+  "parents": [
+    "b6ef037426b09331a12c40307661101e88e7b4c8",
+    "e3796f15e02b450f3f4b70f8410d9ffedc3538b3"
+  ],
+  "manifestSHA256": "fb9f32a0947dd606a908e131ef612d443e65e9764a2aa6234e3ccea082badc19",
+  "files": {
+    "summary.json": "2342178e971118027d48a26ad1889cb17686997c55a6518850dfc63ede12707a",
+    "manifest.json": "fb9f32a0947dd606a908e131ef612d443e65e9764a2aa6234e3ccea082badc19",
+    "build-receipt.json": "c5de7d54f9531723bbceb32719120bcef9b0e9759e5204b85986963401a3a7b1",
+    "source-before.json": "d2be1b01eb65642cdc60882b87b90712a807b2f14497b126c2462148475b98ce",
+    "environment.json": "fb24623185d3816ad0218606a54a9d964e061086680b19b70f196f2b2d85382a",
+    "cleanup.json": "2e64ba18c96dc82e3bff216fa373e802c22143e4f61b11af03c8e0b8f8431f2c",
+    "device-build.json": "4463466eb44003f5e66a4e4ef766b0b0ec075676b5fefbbe2d71c6f1fb0e2151",
+    "sdk-m0.receipt.json": "317805119249121c4cb45b8e5f20848a645ace1b2e0093389266ab6fdfbe9d98",
+    "bootstrap-healthy.receipt.json": "06c00f2dbcffd1b56fdee1fdc52f8ae9cb16988eb26ede839c60e11d8f70a186",
+    "bootstrap-profile.receipt.json": "aff1728239d210311375377b7cf5e1dfeb9ded8b2274e23bb77bd7a4ab36cbba",
+    "bootstrap-push-after-install.receipt.json": "f25784ac351ae8ee1059f417bf9356f72fda307886dd5f98bbbf3e77592d7a3b"
+  }
+}
