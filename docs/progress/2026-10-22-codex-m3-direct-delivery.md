@@ -88,3 +88,13 @@ reviews clear the resolved integration. The original host receipt and OS red
 exports are historical and unchanged. This is not an Expo native build or call
 journey: the final A0.1 fix and committed-source simulator capture remain pending.
 No push, simulator or device operation was performed for this integration.
+
+**Measured audio consumer followup:** merge `19f37c9` removes the unused
+`Notification` payload from the route-refresh closure, preserving the main-queue
+refresh and preventing the payload from crossing Swift isolation. The affected
+installed-SDK compiler control passes for iphoneos, iphonesimulator, watch
+simulator and the Expo wrapper. Its [receipt](../verification/2026-10-22-sdk-m3-direct/audio-consumer-followup.json)
+is separate from the earlier A9 host receipt. This is compiler evidence only;
+no native build, simulator launch or device action was performed. The genuine
+SwiftPM LiveKit consumer check remains evidence of the separately reviewed A4
+followup. The A5 manual connected-report button change will arrive separately.

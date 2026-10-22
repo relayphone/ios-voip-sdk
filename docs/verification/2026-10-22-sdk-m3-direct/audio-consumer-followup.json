@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "qualification": "measured affected installed-SDK compiler followup only; no native app build or execution",
+  "createdAtUTC": "2026-10-22T10:54:23.428836+00:00",
+  "sourceCommit": "53941887c5f93e18a97c203a3a86eecda08f664e",
+  "incomingCommit": "19f37c98816ebf5d2937af1b881ae4f07d457f02",
+  "workingSourceInputsSHA256": "c12fafb85a3ea9aace918b7a0ab4815c5b61cba6da7566189db70f9be8dbe9eb",
+  "sourceInputCount": 201,
+  "command": {
+    "command": [
+      "python3",
+      "Tests/AudioSessionQueue/check_audio_compilation.py"
+    ],
+    "exitCode": 0,
+    "sourceSHA256": "41df31e3c2e781ebab5a7508527600fbffea759caeb6f25814e369ab128d068a",
+    "logSHA256": "f8765cdc7f090e8bd269fe952c15e2e6f86c2aae129180bcbff285a593df850a"
+  },
+  "compilerChecks": [
+    {
+      "label": "iphoneos-VSAudioSessionQueue",
+      "exitCode": 0
+    },
+    {
+      "label": "iphoneos-VSAudioSessionLifecycleObserver",
+      "exitCode": 0
+    },
+    {
+      "label": "iphoneos-core",
+      "exitCode": 0
+    },
+    {
+      "label": "iphoneos-expo-queued-wrapper",
+      "exitCode": 0
+    },
+    {
+      "label": "iphonesimulator-VSAudioSessionQueue",
+      "exitCode": 0
+    },
+    {
+      "label": "iphonesimulator-VSAudioSessionLifecycleObserver",
+      "exitCode": 0
+    },
+    {
+      "label": "iphonesimulator-core",
+      "exitCode": 0
+    },
+    {
+      "label": "watchsimulator-VSAudioSessionQueue",
+      "exitCode": 0
+    },
+    {
+      "label": "watchsimulator-VSAudioSessionLifecycleObserver",
+      "exitCode": 0
+    },
+    {
+      "label": "watchsimulator-core",
+      "exitCode": 0
+    }
+  ],
+  "sourceFiles": {
+    "ExpoMedia/Shared/ExpoMediaSupport.swift": "bcbdad2edef73f335942c4680d9f5386ea2976880fecce5d89821938ad5e39d3",
+    "ExpoMedia/Shared/QueuedMediaAdapter.swift": "b5a89087e8b31b556effacf215bd2c6b87012c6d2faac9e92e9328ada51efe0e",
+    "ExpoMedia/Shared/VSMediaBinding.h": "fd8c9e2130a7a59ec4919453e2b77a445707dad8d94c66ed2a9a31e61ef13fe0",
+    "ExpoMedia/WebRTC/MediaSelection.swift": "9b39adfdae5b8f94c66307aebbcda085e0e3189df788ba4c719be18f97a5615f",
+    "Sources/Engine/RuntimeEngine.swift": "43bf497d927f7934a7c1c58a67d3b69d4544d0f9d361a4d5b2c7abd51e649503",
+    "Sources/Interposition/CKRuntimeSeam.h": "47e32a8965a0dd1dfaef592eaec456841c2cbc80ea87059a8adba2c4ae1421cd",
+    "Sources/Interposition/include/CKRuntimeBridge.h": "dd8dc66208f9551aa873254f818d8e7df44b77fe11a53438aa0fb9cc5776c658",
+    "Sources/VoIPPlatform/VSAudioSessionLifecycleObserver.m": "b7e65ad7c4d207dbd2a71793e7158bacdebe556e9605c413c68d043b11a2de89",
+    "Sources/VoIPPlatform/VSAudioSessionQueue.m": "585379d32703da325bb9016bbf37a088e472c1d6c47b861552e09e912e1f7411",
+    "Sources/VoIPPlatform/include/VSAudioSessionLifecycleObserver.h": "f0d41e58192701b1e9de119801874e5bd0e9bb3ba6bdcde0c9c9f105197ca347",
+    "Sources/VoIPPlatform/include/VSAudioSessionQueue.h": "80074ec15fc99ca8fe029489106f439793939ae8c6b438edd214d5d69e380366",
+    "Sources/VoIPPlatform/include/VSProcessSDKOwnership.h": "3a206de32bf2787e6a3ae81938a91914e885625041c3caca308c39a374816ec2",
+    "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h": "cfa3de64cc0824e9a692ac2071dbbefdcd855b9847e14d1eecf18de4e6519234",
+    "Sources/VoIPPlatform/include/VSPushDelivery.h": "3769eecacf2f8e64d1e3a9c9bc749db26d65be7186c4f176dd7cb1a277ec83ff",
+    "Sources/VoIPPlatform/include/VSPushRegistryOwner.h": "b6db5cf75a4bcda293e06f27a0af05b0607b290e87f30848a8cdc8c989db5f2e",
+    "Sources/VoIPPlatform/include/VoIPPlatform.h": "aa1f1d0b6d6dea02867c0fe65882ace623bef9888d81bf038d13f16b817ff30a",
+    "Sources/VoIPSDK/AudioActivation.swift": "e93e9bcd2772655f62f01d397d2d70ee60eb618c99c4bd2bd1cc74b3a7968e48",
+    "Sources/VoIPSDK/AudioRoutes.swift": "2e171719efad2a810cc10acd142fbb06c451fc6d80e637e875450a75fed4e313",
+    "Sources/VoIPSDK/AudioSessionConfiguration.swift": "96072d7d376ffe205c435a6b6e87af0b9b17ace95e2ff5df6459bed56c9dc8f6",
+    "Sources/VoIPSDK/AudioSessionQueue.swift": "cca9fde6227f51d20ee2c6aa29db6a9183a66587194c54367f82a6647f353391",
+    "Sources/VoIPSDK/ConversationClient.swift": "999c0de828dd9dbfad800cfd296a6f3d12b61ca74df3e907c7a86e39077ccea2",
+    "Sources/VoIPSDK/ConversationHandler.swift": "29a9c62bc3a75d4a36ad8ae6d2bd798b6002e7aefbd98259b58395090c046ea1",
+    "Sources/VoIPSDK/ConversationModels.swift": "c93eba6e6573da78de06f88002ca309de719f3813b72b3359d2ec576a12e40d7",
+    "Sources/VoIPSDK/ConversationRecord.swift": "93208e379e1732e2bd48e74c8e256a2f06e83c5729e3d168e5bdf48191009029",
+    "Sources/VoIPSDK/DialRequest+Intents.swift": "15c67cf5273a51e7eb449b26854cf4e355be53fb081702d94d729e3943c60a97",
+    "Sources/VoIPSDK/DialRequest.swift": "10a702d0774062368e935032eeffe55d06a0ef594debb5269fecf8dcd801027e",
+    "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+    "Sources/VoIPSDK/MediaAdapter.swift": "59f80f074dda3659600f585a0c8cbcb10432f171e1316eb61206015a8615b559",
+    "Sources/VoIPSDK/ProcessSDKOwnership.swift": "4fe8a3493c3b6756beab43a9f67a28933f4f80c8860e8bb4619ffd2248e95a8b",
+    "Sources/VoIPSDK/PushService.swift": "82a0b47c0a184efbf3d69101fc820aba158da50e020e49304b4be3fd67cd7f09",
+    "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+    "Sources/VoIPSDK/SimulatorSupport.swift": "e9416d0133288ddbce90a7cc7275565c1844394a617afa7122674c2ede57e37a",
+    "Sources/VoIPSDK/SystemAudioSession.swift": "41df31e3c2e781ebab5a7508527600fbffea759caeb6f25814e369ab128d068a",
+    "Sources/VoIPSDK/VoIPApplication.swift": "ca6660cef674a4c8a43c4f4a6c8bd467ffbb3e055cbd32b81b7845f374e5433a",
+    "Sources/VoIPSDK/VoIPSystemEntryPoints.swift": "0e1ce5e9b59de2a341dbcf3b7876b7ba0a8b2aa64cb5c8709bb04adec2442797",
+    "Tests/AudioSessionQueue/check_audio_compilation.py": "f66d09b1df5e1f44f7f51b2868c49f7f2e45f5ae0dd9faebb6f8027d0a670054"
+  },
+  "temporaryProductsRemoved": true,
+  "limits": [
+    "Only the installed-SDK compile control was rerun for the route observer payload removal. Earlier A9 host receipts retain historical source bindings.",
+    "The genuine SwiftPM LiveKit consumer acceptance belongs to the separately reviewed A4 followup; this receipt does not claim to reproduce it.",
+    "App.tsx is untouched; final A0.1 integration and A5 manual report button change remain pending.",
+    "No push, app launch, simulator boot, device or APNs operation was performed."
+  ]
+}
