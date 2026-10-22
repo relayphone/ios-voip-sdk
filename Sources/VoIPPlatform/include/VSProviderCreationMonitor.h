@@ -2,6 +2,7 @@
 #import <TargetConditionals.h>
 
 NS_ASSUME_NONNULL_BEGIN
+#if DEBUG || (TARGET_OS_IOS && TARGET_OS_SIMULATOR)
 /// A diagnostic aid for D13, not a provider backend or a manager factory.
 /// Install after simulator activation, then bracket the sole manager's creation.
 NS_SWIFT_UI_ACTOR
@@ -19,4 +20,5 @@ NS_SWIFT_NAME(ProviderCreationMonitor)
 + (void)prepareSimulatorProviderCreationSource:(BOOL (^)(void (^observer)(id provider)))registerObserver;
 #endif
 @end
+#endif
 NS_ASSUME_NONNULL_END
