@@ -24,7 +24,7 @@ def sample():
     rows = []
     events = [
         ('app.entry', {}), ('launch', dict(mode='sdk-m3-direct', traceVersion=2)),
-        ('sdk.activation', dict(active=True)), ('sdk.managerCreated', dict(owner='ConversationClient.shared')),
+        ('sdk.activation', dict(active=True)), ('sdk.managerCreated', dict(owner='VoIPApplication.start')),
         ('sdk.snapshot', dict(conversations=[])), ('m3.listenerReady', dict(conversationCount=0)),
         ('m3.directControl', dict(conversationCount=0, controlSHA256=manifest['directControlSHA256'])),
     ]
@@ -201,6 +201,7 @@ import Foundation
         for key, value in (('video', False), ('conversationCount', 1), ('handleSHA256', '0' * 64)):
             self.check_rows(lambda rows, *_, key=key, value=value: [r for r in rows if r['event'] == 'm3.dialRequest'][1].update({key: value}))
         self.check_rows(lambda rows, *_: next(r for r in rows if r['event'] == 'sdk.snapshot').update(conversations=[{}]))
+        self.check_rows(lambda rows, *_: next(r for r in rows if r['event'] == 'sdk.managerCreated').update(owner='ConversationClient.shared'))
         self.check_rows(lambda rows, *_: next(r for r in rows if r['event'] == 'm3.directDeliveryReturned').update(handled=False))
 
     def test_exact_scalar_protocol(self):

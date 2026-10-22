@@ -19,7 +19,7 @@ The API is specified in [RFC 0001](https://github.com/ziahamza/expo-callkit-tele
 
 - **LCK only.**
   - No CallKit provider backend.
-  - `CXCallObserver` is still used read-only, for call direction and the system-wide view.
+  - Direction comes from the SDK's incoming/outgoing bookkeeping. Device Release builds must not directly link CallKit (October 22 steering §A0.2); the SDK no longer observes system-wide calls through `CXCallObserver`.
   - The minimum is iOS/iPadOS **17.4**.
 - **Mac Catalyst waits for Apple.** It is blocked by an SDK defect (see §5). There is no temporary CallKit adapter.
 - **Apple Watch is deferred.** Keep the Swift core compatible with watchOS.
@@ -58,6 +58,12 @@ The API is specified in [RFC 0001](https://github.com/ziahamza/expo-callkit-tele
   - simulator support.
 
 ## 4. Work plan (in order)
+
+> **Steering, October 22:** read [`progress/2026-10-22-claude-steering.md`](progress/2026-10-22-claude-steering.md) first. Its §A0 (release blockers: PushKit report entry and queue, no CallKit linkage in device builds for China, the iOS 27 interruption API) comes first, and §A must be applied to M2/M3 (#17, #19) before they merge.
+> - §A covers: the PushKit report starting inside the callback, the deadline margin, the echo filter, audio work off main and at call time, system-originated acceptance, and keeping simulator code out of device builds.
+> - §B decides the bridge (Expo Modules 2.0) and the threading contract.
+> - §C reserves extension points for the product direction.
+
 
 ### A. Fix the runtime from the v0.1 review
 

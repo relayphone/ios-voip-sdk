@@ -33,13 +33,14 @@ private final class Events {
 private final class Invocation {
   enum Outcome { case accepted, cancelled, rejected, encodingFailed, unexpected }
   private(set) var outcome: Outcome?
+  private(set) var rejection: HandlerRejection?
   private(set) var completions = 0
   init(_ action: @escaping ConversationHandler.Action, snapshot: ConversationSnapshot,
        context: ConversationActionContext) {
     Task { @MainActor in
       do { try await action(snapshot, context); outcome = .accepted }
       catch is CancellationError { outcome = .cancelled }
-      catch BridgeError.handlerRejected { outcome = .rejected }
+      catch let error as HandlerRejection { rejection = error; outcome = .rejected }
       catch is EncodingError { outcome = .encodingFailed }
       catch { outcome = .unexpected }
       completions += 1
@@ -147,9 +148,12 @@ struct BridgeTests {
                  "Handler context must retain origin and precise deadline.")
       try expect(body["held"] as? Bool == true && body["muted"] as? Bool == false && body["digits"] as? String == "12#",
                  "Optional action inputs must survive the relay.")
-      bridge.settle(actionContext.actionID, generation: 0, success: kind != .end)
+      let rejection = HandlerRejection(["name": "CallDeclined", "message": "The callee declined this invitation."])
+      bridge.settle(actionContext.actionID, generation: 0, success: kind != .end, rejection: rejection)
       try await eventually("Settled handler continuation must complete.") { invocation.outcome != nil }
       try expect(invocation.outcome == (kind == .end ? .rejected : .accepted), "JS rejection must fail the native action.")
+      try expect(invocation.rejection == (kind == .end ? rejection : nil),
+                 "Only a rejected continuation must retain the exact JavaScript name and message.")
       bridge.settle(actionContext.actionID, generation: 0, success: true)
       actionContext.signal.cancel(.deadline)
       try expect(invocation.completions == 1, "Late settlement or cancellation must never resume twice.")
@@ -332,6 +336,16 @@ struct BridgeTests {
     let event = events.named("conversationEvent").last
     try expect(event?["type"] as? String == "audioActivated" && (event?["payload"] as? [String: Any])?.isEmpty == true,
                "Native events must use the public event envelope.")
+    application.client.publish(.audioActivationMissing, conversationID: conversation.id)
+    let scoped = events.named("conversationEvent").last
+    try expect(scoped?["type"] as? String == "audioActivationMissing" &&
+               (scoped?["payload"] as? [String: Any])?["conversationId"] as? String == conversation.id.uuidString,
+               "A watchdog event must preserve its affected conversation identity.")
+    application.client.publish(.providerOwnershipLost)
+    let ownership = events.named("conversationEvent").last
+    try expect(ownership?["type"] as? String == "providerOwnershipLost" &&
+               (ownership?["payload"] as? [String: Any])?.isEmpty == true,
+               "Process ownership loss must not invent a conversation identity.")
     let initialRoutes = events.named("audioRoutesChanged")
     try expect(initialRoutes.count == 1 && initialRoutes[0]["current"] is NSNull && (initialRoutes[0]["routes"] as? [Any])?.isEmpty == true,
                "Route hydration must encode an explicit null before system audio exists.")

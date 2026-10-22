@@ -1,6 +1,6 @@
 #if os(iOS) && targetEnvironment(simulator) && SWIFT_PACKAGE
 import CKSimRuntime
-#if DEBUG
+#if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
 import VoIPPlatform
 #endif
 #endif
@@ -37,7 +37,7 @@ public enum SimulatorSupport {
     guard enabled else { return false }
     #if os(iOS) && targetEnvironment(simulator)
     let active = RuntimeBootstrap.activate()
-    #if DEBUG
+    #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
     if active {
       ProviderCreationMonitor.prepareSimulatorProviderCreationSource { observer in
         RuntimeBootstrap.installProviderCreationObserver(observer)
@@ -51,7 +51,7 @@ public enum SimulatorSupport {
   }
 
   #if os(iOS) && targetEnvironment(simulator)
-  static var currentPushIdentifier: String? { RuntimeBootstrap.currentPushIdentifier }
+  nonisolated static var currentPushIdentifier: String? { RuntimeBootstrap.currentPushIdentifier }
 
   static func associateIncomingReport(_ id: UUID) {
     guard let pushID = SimulatorPushContext.pushIdentifier else { return }

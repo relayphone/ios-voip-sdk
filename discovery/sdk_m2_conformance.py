@@ -3,7 +3,9 @@
 
 The native watchdog episode measures absence, its two public events, and clean
 termination. Exactly one recovery is proved separately by the source-bound
-host controls; this capture does not count AVAudioSession configuration calls.
+host controls. Native liveness starts at pre-fulfillment recording demand,
+which is not the watchdog's unrecorded start; this capture does not measure the
+exact activation interval or count AVAudioSession configuration calls.
 """
 import argparse
 import hashlib
@@ -208,7 +210,8 @@ def media_case(rows, engine, case, simulator_os):
             one(rows, 'm2.result').get('success') is True, case + ': SDK/result unavailable')
     labels = ['initial', 'demand'] + (['active', 'speaker', 'held', 'resumed', 'ended'] if case == 'livekit' else ['failed'])
     expected = ['initial-media', 'initial-same-engine', 'inactive-route-rejected', 'routes-observed',
-                'one-local-audio-track', 'demand-media', 'demand-same-engine', 'push-ringing', 'joined']
+                'push-ringing', 'one-local-audio-track', 'demand-media', 'demand-same-engine', 'joined',
+                'backend-connected']
     for label in labels[2:]: expected.extend([label + '-media', label + '-same-engine'])
     expected.append('ended-empty-with-demand' if case == 'livekit' else 'stale-ended-empty-with-demand')
     assertions = [r for r in rows if r['event'] == 'm2.assertion']
@@ -229,6 +232,10 @@ def media_case(rows, engine, case, simulator_os):
         if row['event'] == 'm2.audioEvent':
             key = event_counters.get(row.get('name'))
             require(key is not None, case + ': unknown native audio event')
+            scoped = row.get('name') in ('audioActivationMissing', 'audioActivationFailed')
+            require('conversationId' not in row and
+                    (row.get('conversationID') == call if scoped else 'conversationID' not in row),
+                    case + ': native audio event conversation scope differs')
             observed_counts[key] += 1
             require(type(row.get('count')) is int and row['count'] == observed_counts[key],
                     case + ': native audio event counter differs')
@@ -241,33 +248,59 @@ def media_case(rows, engine, case, simulator_os):
               'ended': (False, 2, 2, 0, 0), 'failed': (False, 0, 0, 1, 1)}
     for sample in samples:
         active, *counts = states[sample['label']]
-        require(all(type(sample.get(k)) is bool and sample[k] == active for k in
+        initial = sample['label'] == 'initial'
+        # Launch observes the existing ADM/session. Gating and call category are
+        # established only by native preparation of the actual join action.
+        require(all(type(sample.get(k)) is bool for k in
                     ('inputAvailable', 'outputAvailable', 'isEngineRunning')) and
+                (sample['isEngineRunning'] is False if initial else
+                 all(sample[k] == active for k in ('inputAvailable', 'outputAvailable', 'isEngineRunning'))) and
                 all(type(sample.get(k)) is int and sample[k] == count for k, count in zip(counters, counts)),
                 case + ': native availability/running/event counts differ at ' + sample['label'])
         require(type(sample.get('routeCount')) is int and sample['routeCount'] > 0 and
                 (sample.get('currentRouteType') is None or isinstance(sample['currentRouteType'], str)) and
-                sample.get('category') == 'AVAudioSessionCategoryPlayAndRecord' and
-                sample.get('mode') == 'AVAudioSessionModeVoiceChat', case + ': route/session observation differs')
+                all(isinstance(sample.get(k), str) and sample[k] for k in ('category', 'mode')) and
+                (initial or (sample['category'] == 'AVAudioSessionCategoryPlayAndRecord' and
+                             sample['mode'] == 'AVAudioSessionModeVoiceChat')),
+                case + ': route/session observation differs')
     if case == 'livekit':
         require(one(samples, 'm2.mediaSnapshot', label='speaker').get('currentRouteType') == 'Speaker',
                 'livekit: speaker selection was not observed')
         require(any(c.get('hasConnectedAt') is True for r in snapshots for c in r['conversations']) and
                 any(c.get('status') == 'held' for r in snapshots for c in r['conversations']),
                 'livekit: connected report/held projection absent')
+    handlers = [r for r in rows if r['event'] == 'm2.handler']
+    kinds = ['join', 'hold', 'hold', 'end'] if case == 'livekit' else ['join']
+    require([r.get('kind') for r in handlers] == kinds and all(r.get('origin') == 'app' and
+            r.get('conversationID') == call for r in handlers), case + ': handler delivery differs')
+    ringing = one(rows, 'm2.assertion', label='push-ringing')
+    joined = one(rows, 'm2.assertion', label='joined')
+    backend = one(rows, 'm2.assertion', label='backend-connected')
+    require(all(c['hasConnectedAt'] is False and c['status'] != 'connected'
+                for r in snapshots if rows.index(r) < rows.index(joined) for c in r['conversations']) and
+            any(rows.index(samples[1]) < rows.index(r) < rows.index(joined) and
+                len(r['conversations']) == 1 and r['conversations'][0]['status'] == 'connecting' and
+                'pending' not in r['conversations'][0] and r['conversations'][0]['hasConnectedAt'] is False
+                for r in snapshots), case + ': joined action lacks settled connecting projection')
+    require(any(rows.index(joined) < rows.index(r) < rows.index(backend) and
+                len(r['conversations']) == 1 and r['conversations'][0]['status'] == 'connected' and
+                'pending' not in r['conversations'][0] and r['conversations'][0]['hasConnectedAt'] is True
+                for r in snapshots) and
+            all(c['hasConnectedAt'] is True for r in snapshots for c in r['conversations']
+                if c['status'] == 'connected'), case + ': backend connected report/timestamp projection absent')
     track, demand, release = one(rows, 'm2.localTrack'), one(rows, 'm2.recordingDemand'), one(rows, 'm2.localTrackReleased')
     require(exact((track.get('count'), release.get('count')), (1, 1)) and track.get('enabled') is True and
-            demand.get('accepted') is True and rows.index(samples[0]) < rows.index(track) < rows.index(demand) <
-            rows.index(samples[1]) < rows.index(one(rows, 'm2.controlReady')) < rows.index(one(rows, 'm2.pushInjected')) and
+            demand.get('accepted') is True and rows.index(samples[0]) < rows.index(one(rows, 'm2.controlReady')) <
+            rows.index(one(rows, 'm2.pushInjected')) < rows.index(ringing) < rows.index(handlers[0]) <
+            rows.index(track) < rows.index(demand) < rows.index(samples[1]) < rows.index(joined) < rows.index(backend) and
+            rows.index(backend) < rows.index(samples[2]) and
+            any(rows.index(one(rows, 'm2.pushInjected')) < rows.index(r) < rows.index(ringing) and
+                len(r['conversations']) == 1 and r['conversations'][0]['status'] == 'ringing' for r in snapshots) and
             rows.index(samples[-1]) < rows.index(assertions[-1]) < rows.index(release) < rows.index(one(rows, 'm2.result')),
             case + ': local demand/release/control ordering differs')
     require(rows.index(snapshots[-1]) < rows.index(assertions[-1]) and
             (case != 'livekit' or rows.index(snapshots[-1]) < rows.index(samples[-1])),
             case + ': empty SDK projection was not observed while demand remained')
-    handlers = [r for r in rows if r['event'] == 'm2.handler']
-    kinds = ['join', 'hold', 'hold', 'end'] if case == 'livekit' else ['join']
-    require([r.get('kind') for r in handlers] == kinds and all(r.get('origin') == 'app' and
-            r.get('conversationID') == call for r in handlers), case + ': handler delivery differs')
     push = one(rows, 'm2.pushInjected')
     received, incoming, reported, completed = [one(engine, event) for event in
         ('push.received', 'report.incoming', 'report.completed', 'push.completed')]
@@ -313,14 +346,16 @@ def media_case(rows, engine, case, simulator_os):
                 any(r['event'] == 'fault.audioSuppressed' for r in engine) and
                 not any(r['event'] in ('audio.activated', 'audio.deactivated') for r in engine),
                 'stale-audio: suppressed activation/absence event inventory differs')
-        joined = next((r for r in rows if r['event'] == 'sdk.state' and r.get('state') == 'joined'), None)
-        require(joined is not None, 'stale-audio: joined checkpoint missing')
         missing, failed = native_events
-        # These are local simulator liveness/clock budgets, not device oracles.
-        require(9900 <= missing['t_ms'] - joined['t_ms'] <= 13000 and
+        # Recording demand precedes join fulfillment. The actual watchdog start
+        # is not recorded, so this is an upper liveness budget, not a measured
+        # ten-second activation deadline. Exact 10+5 policy is host-proved.
+        # The recovery/failure and end observations use this same native clock.
+        require(rows.index(demand) < rows.index(missing) < rows.index(failed) and
+                0 <= missing['t_ms'] - demand['t_ms'] <= 13000 and
                 4900 <= failed['t_ms'] - missing['t_ms'] <= 8000 and
                 failed['t_ms'] <= snapshots[-1]['t_ms'] <= failed['t_ms'] + 8000,
-                'stale-audio: default 10+5 second watchdog/termination timing differs')
+                'stale-audio: bounded demand/watchdog recovery/termination liveness differs')
         require(one(engine, 'report.ended').get('callUUID') == call and
                 type(one(engine, 'report.ended').get('reason')) is int and
                 one(engine, 'report.ended')['reason'] == 1, 'stale-audio: failed report missing')
@@ -409,7 +444,7 @@ def validate(root, source_root=ROOT):
             results[case] = media_case(rows, engine, case, environment['simulatorOS'])
     return dict(success=True, scenario='sdk-m2', source=identity, executionOS=environment['simulatorOS'],
                 simulatorRuntime=runtime, cases=results, hostAudioControls=len(HOST_CHECKS),
-                recoveryEvidence='One recovery is host-proved; native absence events and clean end are measured. AV configuration call count is not measured.')
+                recoveryEvidence='Exact activation/recovery policy and one recovery are host-proved. Native liveness is bounded from pre-fulfillment recording demand through scoped absence events and clean end; the actual watchdog start, exact activation interval and AV configuration call count are not measured.')
 
 
 if __name__ == '__main__':

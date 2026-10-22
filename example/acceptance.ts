@@ -196,7 +196,12 @@ async function run(): Promise<void> {
         id,
       );
       await joinConversation(id);
-      await waitFor((snapshot) => snapshot[0]?.status === 'connected');
+      await waitFor(
+        (snapshot) =>
+          snapshot[0]?.status === 'connecting' &&
+          snapshot[0].pending === undefined &&
+          snapshot[0].connectedAt === undefined,
+      );
       await check('joined', true, id);
       await reportConversation(id, { type: 'connected' });
       await waitFor((snapshot) => snapshot[0]?.connectedAt !== undefined);
@@ -236,8 +241,9 @@ async function run(): Promise<void> {
         await attachHandler();
         await waitFor(
           (snapshot) =>
-            snapshot[0]?.status === 'connected' &&
-            snapshot[0].pending === undefined,
+            snapshot[0]?.status === 'connecting' &&
+            snapshot[0].pending === undefined &&
+            snapshot[0].connectedAt === undefined,
         );
         await check('cold-redelivered', true, cold.conversationID);
         await reportConversation(cold.conversationID, { type: 'connected' });

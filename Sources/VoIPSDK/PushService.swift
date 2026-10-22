@@ -80,28 +80,26 @@ public final class PushService: NSObject, PushReceiver {
     return client.receiveCallEnded(ended)
   }
 
-  public func receiveVoIPPush(_ payload: [AnyHashable: Any], mustReport: Bool,
-                             completion: @escaping () -> Void) {
+  /// Decode on PushKit's serial queue. The owner waits there, never on main,
+  /// until this delivery's actual report settles or its bounded wait expires.
+  public nonisolated func receiveVoIPPush(_ payload: [AnyHashable: Any], mustReport: Bool,
+                                         delivery: PushDelivery) {
     #if os(iOS) && targetEnvironment(simulator)
-    // The runtime's thread context ends when this synchronous callback returns.
     let pushIdentifier = SimulatorSupport.currentPushIdentifier
     #endif
     let plan = IncomingPushPolicy.plan(PushWire.parse(payload), mustReport: mustReport)
-    // Never capture the untyped dictionary in a Task. All decision inputs are values.
-    switch plan {
-    case .skip: completion()
-    case .callEnded(let ended): client.receiveCallEnded(ended); completion()
-    case .incoming, .fallback:
-      Task { @MainActor in
-        defer { completion() }
-        #if os(iOS) && targetEnvironment(simulator)
-        await SimulatorPushContext.$pushIdentifier.withValue(pushIdentifier) {
-          await self.report(plan)
-        }
-        #else
+    if case .skip = plan { delivery.finish(); return }
+    // Only Sendable decision values cross executors. A new UUID registers its
+    // metadata and calls LCK in this one Task; it has no serializer Task hop.
+    Task.detached(priority: .userInitiated) {
+      defer { delivery.finish() }
+      #if os(iOS) && targetEnvironment(simulator)
+      await SimulatorPushContext.$pushIdentifier.withValue(pushIdentifier) {
         await self.report(plan)
-        #endif
       }
+      #else
+      await self.report(plan)
+      #endif
     }
   }
 
@@ -114,9 +112,10 @@ public final class PushService: NSObject, PushReceiver {
       if let ended { client.receiveCallEnded(ended) }
       do {
         let id = try await client.reportIncomingConversation(incoming, source: .pushKit)
-        try client.reportConversation(id, report: .ended(.failed))
+        try await client.reportConversation(id, report: .ended(.failed))
       } catch { NSLog("VoIPSDK: required fallback push reporting failed.") }
-    default: break
+    case .callEnded(let ended): client.receiveCallEnded(ended)
+    case .skip: break
     }
   }
 }

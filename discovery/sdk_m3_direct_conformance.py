@@ -73,7 +73,7 @@ def qualify(rows, control, manifest, pid):
     snapshots = [row for row in rows if row['event'] == 'sdk.snapshot']
     require(last < rows.index(one(rows, 'sdk.result')) < rows.index(one(rows, 'done')) == len(rows) - 1 and
             one(rows, 'sdk.result').get('success') is True and one(rows, 'sdk.activation').get('active') is True and
-            one(rows, 'sdk.managerCreated').get('owner') == 'ConversationClient.shared' and
+            one(rows, 'sdk.managerCreated').get('owner') == 'VoIPApplication.start' and
             snapshots and all(row.get('conversations') == [] for row in snapshots),
             'direct journey failed or created a conversation')
     require(not any(row.get('error') or row.get('errorType') for row in rows) and

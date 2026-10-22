@@ -1,5 +1,19 @@
 import Foundation
 
+enum IncomingReportErrors {
+  static func isAlreadyReported(_ error: any Error) -> Bool {
+    var candidate = error as NSError
+    for _ in 0..<4 {
+      // Measured CallKit error wrapping remains meaningful through LCK without
+      // importing or linking CallKit into the device SDK.
+      if candidate.domain == "com.apple.CallKit.error.incomingcall" && candidate.code == 2 { return true }
+      guard let underlying = candidate.userInfo[NSUnderlyingErrorKey] as? NSError else { return false }
+      candidate = underlying
+    }
+    return false
+  }
+}
+
 /// Carries an actual terminal delegate object through the current actor turn.
 /// A new manager object wins immediately; generation checks protect UUID reuse.
 struct TerminalConversationProjection<Object: AnyObject> {
@@ -31,13 +45,30 @@ struct TerminalConversationProjection<Object: AnyObject> {
   }
 }
 
-/// Each actual report waits for the preceding attempt with this UUID. The Task
-/// itself owns generation-checked cleanup, before any caller continuation resumes.
+/// A new UUID reports in the caller's Task. Only an actual predecessor with the
+/// same UUID suspends an attempt; continuations preserve each delivery's context.
 @MainActor
 final class SerializedIncomingReports {
   struct Context {
     let previouslyReported: Bool
     let isLatest: @MainActor () -> Bool
+  }
+  @MainActor
+  final class Pending {
+    private var settled: Result<UUID, Error>?
+    private var waiters: [CheckedContinuation<UUID, Error>] = []
+    var value: UUID {
+      get async throws {
+        if let settled { return try settled.get() }
+        return try await withCheckedThrowingContinuation { waiters.append($0) }
+      }
+    }
+    fileprivate func resolve(_ result: Result<UUID, Error>) {
+      guard settled == nil else { return }
+      settled = result
+      let pending = waiters; waiters.removeAll()
+      for waiter in pending { waiter.resume(with: result) }
+    }
   }
   private final class History {
     var reported: Bool
@@ -45,30 +76,32 @@ final class SerializedIncomingReports {
   }
   private struct Entry {
     let generation: UUID
-    let task: Task<UUID, Error>
+    let pending: Pending
     let history: History
   }
   private var entries: [UUID: Entry] = [:]
-  func pending(for id: UUID) -> Task<UUID, Error>? { entries[id]?.task }
-  func enqueue(id: UUID, previouslyReported: Bool,
-               operation: @escaping @MainActor (Context) async throws -> UUID) -> Task<UUID, Error> {
-    let predecessor = entries[id]?.task
-    let history = entries[id]?.history ?? History(previouslyReported)
-    let generation = UUID()
-    let task = Task { @MainActor [weak self] in
-      if let predecessor { _ = await predecessor.result }
-      let context = Context(previouslyReported: history.reported, isLatest: { [weak self] in
-        self?.entries[id]?.generation == generation
-      })
-      defer {
-        if self?.entries[id]?.generation == generation { self?.entries.removeValue(forKey: id) }
-      }
-      let result = try await operation(context)
+  func pending(for id: UUID) -> Pending? { entries[id]?.pending }
+  func perform(id: UUID, previouslyReported: Bool,
+               operation: @MainActor (Context) async throws -> UUID) async throws -> UUID {
+    let predecessor = entries[id]
+    let history = predecessor?.history ?? History(previouslyReported)
+    let generation = UUID(), pending = Pending()
+    entries[id] = Entry(generation: generation, pending: pending, history: history)
+    if let predecessor { _ = try? await predecessor.pending.value }
+    let context = Context(previouslyReported: history.reported, isLatest: { [weak self] in
+      self?.entries[id]?.generation == generation
+    })
+    let result: Result<UUID, Error>
+    do {
+      let id = try await operation(context)
       history.reported = true
-      return result
-    }
-    entries[id] = Entry(generation: generation, task: task, history: history)
-    return task
+      result = .success(id)
+    } catch { result = .failure(error) }
+    // Cleanup precedes resuming any caller or queued attempt. A successor keeps
+    // ownership, so an older failure cannot erase its metadata or association.
+    if entries[id]?.generation == generation { entries.removeValue(forKey: id) }
+    pending.resolve(result)
+    return try result.get()
   }
 }
 
@@ -81,9 +114,6 @@ import AVFAudio
 #if SWIFT_PACKAGE
 import VoIPPlatform
 #endif
-#if os(iOS)
-@preconcurrency import CallKit
-#endif
 
 /// The process's sole LCK owner. Calling code never receives the manager or a provider.
 @MainActor
@@ -95,61 +125,58 @@ public final class ConversationClient: NSObject {
     public var maximumConversationsPerGroup: Int
     public var includesConversationInRecents: Bool
     public var supportsVideo: Bool
+    /// Debug defaults on; Release requires both explicit configuration and the
+    /// ProviderOwnershipDiagnostics build option. Coverage is best effort.
+    public var providerOwnershipMonitoring: Bool
+    public static var defaultProviderOwnershipMonitoring: Bool {
+      #if DEBUG
+      true
+      #else
+      false
+      #endif
+    }
     public var unhandledAction: UnhandledActionPolicy
     public init(ringtoneName: String? = nil, iconTemplateImageData: Data? = nil,
                 maximumConversationGroups: Int = 2, maximumConversationsPerGroup: Int = 2,
                 includesConversationInRecents: Bool = true, supportsVideo: Bool = true,
-                unhandledAction: UnhandledActionPolicy = .fail) {
+                unhandledAction: UnhandledActionPolicy = .fail,
+                providerOwnershipMonitoring: Bool = Self.defaultProviderOwnershipMonitoring) {
       self.ringtoneName = ringtoneName; self.iconTemplateImageData = iconTemplateImageData
       self.maximumConversationGroups = maximumConversationGroups
       self.maximumConversationsPerGroup = maximumConversationsPerGroup
       self.includesConversationInRecents = includesConversationInRecents
       self.supportsVideo = supportsVideo; self.unhandledAction = unhandledAction
+      self.providerOwnershipMonitoring = providerOwnershipMonitoring
     }
   }
 
-  private static var configuration = Configuration()
   private static var instance: ConversationClient?
-  private static var registeredMediaAdapter: (any MediaAdapter)?
-  private static var audioPolicy = AudioActivationPolicy.standard
-  /// Register the selected native backend once, before the process's client is created.
-  public static func registerMediaAdapter(_ adapter: any MediaAdapter,
-                                          activationPolicy: AudioActivationPolicy = .standard) throws {
-    guard instance == nil, registeredMediaAdapter == nil else { throw ConversationClientError.alreadyConfigured }
-    registeredMediaAdapter = adapter; audioPolicy = activationPolicy
-  }
-  public static func configure(_ configuration: Configuration) throws {
-    guard instance == nil else { throw ConversationClientError.alreadyConfigured }
+  static func forApplication(configuration: Configuration, mediaAdapter: (any MediaAdapter)? = nil,
+                             audioPolicy: AudioActivationPolicy = .standard) throws -> ConversationClient {
+    try ProcessSDKOwnership.claim()
+    if let instance {
+      guard instance.configuration == configuration, instance.audioPolicy == audioPolicy,
+            mediaAdapter == nil || instance.mediaAdapter === mediaAdapter else {
+        throw ConversationClientError.alreadyConfigured
+      }
+      return instance
+    }
     guard configuration.maximumConversationGroups > 0, configuration.maximumConversationsPerGroup > 0 else {
       throw ConversationClientError.invalidConfiguration
     }
-    self.configuration = configuration
-  }
-  public static var shared: ConversationClient {
-    if let instance { return instance }
-    let client = ConversationClient(configuration: configuration)
+    let client = ConversationClient(configuration: configuration,
+      mediaAdapter: mediaAdapter ?? NoMediaAdapter(), audioPolicy: audioPolicy)
     instance = client
-    // Native adapters may synchronously consult shared from their nonblocking
-    // authorization callback. Publish the complete owner before calling app code.
-    client.configureAudio()
-    client.trackManager()
     return client
-  }
-
-  static func forApplication(configuration: Configuration) throws -> ConversationClient {
-    if let instance {
-      guard self.configuration == configuration else { throw ConversationClientError.alreadyConfigured }
-      return instance
-    }
-    try configure(configuration)
-    return shared
   }
 
   private typealias Record = ConversationRecord
   private let manager: ConversationManager
   private let coordinator: ConversationActionCoordinator
   private let configuration: Configuration
+  private var launchFinished = false
   private let mediaAdapter: any MediaAdapter
+  private let audioPolicy: AudioActivationPolicy
   private let audio: AudioActivationCoordinator
   private let audioOperations = AudioAdapterOperations()
   private let systemAudio = SystemAudioSession()
@@ -163,22 +190,18 @@ public final class ConversationClient: NSObject {
   private var appActions: [UUID: Date] = [:]
   private var stateObservers: [UUID: @MainActor (ConversationStateUpdate) -> Void] = [:]
   private var publishingState = false
-  private var eventObservers: [UUID: @MainActor (ConversationEvent) -> Void] = [:]
-  #if os(iOS)
-  private let callObserver = CXCallObserver()
-  #endif
+  private var eventObservers: [UUID: @MainActor (ConversationEventContext) -> Void] = [:]
   public private(set) var state = ConversationStateUpdate(revision: 0, conversations: [])
   public var snapshots: [ConversationSnapshot] { state.conversations }
   public var audioRoutes: AudioRoutesSnapshot { systemAudio.routes.snapshot }
 
-  private init(configuration: Configuration) {
+  private init(configuration: Configuration, mediaAdapter: any MediaAdapter, audioPolicy: AudioActivationPolicy) {
     self.configuration = configuration
-    mediaAdapter = Self.registeredMediaAdapter ?? NoMediaAdapter()
-    audio = AudioActivationCoordinator(policy: Self.audioPolicy)
+    self.mediaAdapter = mediaAdapter; self.audioPolicy = audioPolicy
+    audio = AudioActivationCoordinator(policy: audioPolicy)
     coordinator = ConversationActionCoordinator(policy: configuration.unhandledAction)
     SimulatorSupport.activateIfNeeded()
-    #if DEBUG
-    ProviderCreationMonitor.install { message in NSLog("VoIPSDK provider ownership: %@", message) }
+    #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
     ProviderCreationMonitor.beginOwnedManagerCreation()
     #endif
     manager = ConversationManager(configuration: .init(ringtoneName: configuration.ringtoneName,
@@ -189,13 +212,10 @@ public final class ConversationClient: NSObject {
       supportsVideo: configuration.supportsVideo,
       supportedHandleTypes: [.generic, .phoneNumber, .emailAddress]))
     super.init()
-    #if DEBUG
+    #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
     ProviderCreationMonitor.endOwnedManagerCreation()
     #endif
     manager.delegate = self
-    #if os(iOS)
-    callObserver.setDelegate(self, queue: .main)
-    #endif
     coordinator.snapshot = { [weak self] id in self?.snapshot(id) }
     coordinator.didChange = { [weak self] in self?.refresh() }
     coordinator.willSettle = { [weak self] id, action, accepted in
@@ -203,31 +223,75 @@ public final class ConversationClient: NSObject {
       if action.kind == .mute, let muted = action.muted { self.records[id]?.muted = muted }
       if action.kind == .end { self.records[id]?.ended = .init(at: Date(), reason: .local) }
     }
+    configureAudio()
+  }
+
+  /// Called only after VoIPApplication has published the complete process owner.
+  /// Mark first: later setup may invoke a nonblocking application adapter callback.
+  func finishLaunch() {
+    guard !launchFinished else { return }
+    launchFinished = true
+    if configuration.providerOwnershipMonitoring {
+      #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
+      // Install after the owned manager has exposed the system class. The
+      // monitor never loads a framework or constructs a provider to find it.
+      ProviderCreationMonitor.setOwnershipConflictHandler { [weak self] in self?.emit(.providerOwnershipLost) }
+      ProviderCreationMonitor.install { message in NSLog("VoIPSDK provider ownership: %@", message) }
+      #else
+      NSLog("VoIPSDK: provider ownership diagnostics were not compiled in; enable the build option.")
+      #endif
+    }
+    trackManager()
+    mediaAdapter.setSystemAudioAuthorization(false)
   }
 
   private func configureAudio() {
-    mediaAdapter.setSystemAudioAuthorization(false)
-    if Self.registeredMediaAdapter == nil {
-      NSLog("VoIPSDK audio: no native media adapter registered; emitting events only")
-    }
     audioOperations.onError = { message in NSLog("VoIPSDK media adapter: %@", message) }
-    audio.onEvent = { [weak self] event in
+    audio.onEvent = { [weak self] event, affected in
       switch event {
       case .activated: self?.emit(.audioActivated)
       case .deactivated: self?.emit(.audioDeactivated)
-      case .missing: self?.emit(.audioActivationMissing)
-      case .failed: self?.emit(.audioActivationFailed)
+      case .missing:
+        for id in affected.sorted(by: { $0.uuidString < $1.uuidString }) { self?.emit(.audioActivationMissing, conversationID: id) }
+      case .failed:
+        for id in affected.sorted(by: { $0.uuidString < $1.uuidString }) { self?.emit(.audioActivationFailed, conversationID: id) }
       }
     }
-    audio.recover = {
-      do { try await SystemAudioSession.configureForConversation() }
+    coordinator.prepareAction = { [weak self] _, _ in
+      guard let self else { throw CancellationError() }
+      try await AudioPreparationScope.perform { [audioOperations = self.audioOperations, mediaAdapter = self.mediaAdapter] in
+        try await audioOperations.perform {
+          try AudioSessionQueue.checkCancellation()
+          try await mediaAdapter.prepare()
+        }
+      }
+    }
+    audio.recover = { [weak self] in
+      guard let self else { return }
+      do {
+        try await AudioPreparationScope.perform { [audioOperations = self.audioOperations, mediaAdapter = self.mediaAdapter] in
+          try await audioOperations.perform {
+            try AudioSessionQueue.checkCancellation()
+            try await mediaAdapter.prepare()
+          }
+        }
+      }
       catch { NSLog("VoIPSDK audio recovery configuration failed: %@", String(describing: error)) }
     }
     audio.endConversations = { [weak self] ids in self?.endForMissingAudio(ids) }
-    audioOperations.enqueue { [mediaAdapter] in try await mediaAdapter.prepare() }
-    Task { @MainActor in
-      do { try await SystemAudioSession.configureForConversation() }
-      catch { NSLog("VoIPSDK audio preparation configuration failed: %@", String(describing: error)) }
+    systemAudio.onLifecycle = { [weak self] event in
+      guard let self else { return }
+      switch event {
+      case .inactive, .mediaServicesReset:
+        // Revoke before external adapter code can reenter. These are actual AV
+        // observations, never fabricated LCK activation/deactivation callbacks.
+        self.systemAudio.setSystemAudioAuthorization(false)
+        self.audio.systemBecameInactive()
+        self.mediaAdapter.setSystemAudioAuthorization(false)
+      case .active, .resumptionRecommended:
+        // LCK owns activation. A recommendation cannot authorize media.
+        break
+      }
     }
   }
 
@@ -236,7 +300,7 @@ public final class ConversationClient: NSObject {
     systemAudio.routes.observe(callback)
   }
   public func removeAudioRoutesObserver(_ token: UUID) { systemAudio.routes.removeObserver(token) }
-  public func selectAudioRoute(_ id: String) throws { try systemAudio.selectRoute(id, isActive: audio.isActive) }
+  public func selectAudioRoute(_ id: String) async throws { try await systemAudio.selectRoute(id, isActive: audio.isActive) }
 
   private func endForMissingAudio(_ ids: Set<UUID>) {
     for id in ids.sorted(by: { $0.uuidString < $1.uuidString }) {
@@ -257,7 +321,7 @@ public final class ConversationClient: NSObject {
   }
   public func removeStateObserver(_ token: UUID) { stateObservers.removeValue(forKey: token) }
   @discardableResult
-  public func observeEvents(_ callback: @escaping @MainActor (ConversationEvent) -> Void) -> UUID {
+  public func observeEvents(_ callback: @escaping @MainActor (ConversationEventContext) -> Void) -> UUID {
     let token = UUID(); eventObservers[token] = callback; return token
   }
   public func removeEventObserver(_ token: UUID) { eventObservers.removeValue(forKey: token) }
@@ -321,7 +385,7 @@ public final class ConversationClient: NSObject {
       if let pending = incomingReports.pending(for: id) { return try await pending.value }
       return id
     }
-    // Register metadata before a report Task or predecessor can suspend. Every
+    // Register metadata before the platform call or a predecessor can suspend. Every
     // PushKit delivery retains its own actual report attempt, using the same UUID.
     let existing = records[id]
     let previouslyReported = !registration.isNew && (existing == nil || existing?.seenInManager == true)
@@ -329,7 +393,7 @@ public final class ConversationClient: NSObject {
     if record.payload == nil { record.payload = payload }
     records[id] = record
     recordRemovalGenerations.removeValue(forKey: id)
-    let report = incomingReports.enqueue(id: id, previouslyReported: previouslyReported) { context in
+    return try await incomingReports.perform(id: id, previouslyReported: previouslyReported) { context in
       let knownLiveConversation = self.manager.conversations.contains { $0.uuid == id }
       do {
         let update = self.update(for: self.records[id] ?? record)
@@ -352,11 +416,13 @@ public final class ConversationClient: NSObject {
       self.refresh()
       return id
     }
-    return try await report.value
   }
 
   @discardableResult
   public func receiveCallEnded(_ payload: CallEndedPayload) -> Bool {
+    // This entry is a remote transport notification. A local operation must use
+    // endConversation/report(.ended(.local)) so it awaits the system command.
+    guard payload.reason != .local else { return false }
     let now = Date(); endEventIDs = endEventIDs.filter { now.timeIntervalSince($0.value) <= 120 }
     guard endEventIDs[payload.eventId] == nil else { return false }
     endEventIDs[payload.eventId] = now
@@ -369,7 +435,11 @@ public final class ConversationClient: NSObject {
     return true
   }
 
-  public func reportConversation(_ id: UUID, report: ConversationReport) throws {
+  public func reportConversation(_ id: UUID, report: ConversationReport) async throws {
+    if case .ended(.local) = report {
+      try await endConversation(id)
+      return
+    }
     guard let conversation = manager.conversations.first(where: { $0.uuid == id }), records[id] != nil else {
       throw ConversationClientError.unknownConversation
     }
@@ -389,8 +459,9 @@ public final class ConversationClient: NSObject {
       if let video { records[id]?.video = video }
       if let record = records[id] { manager.reportConversationEvent(.conversationUpdated(update(for: record)), for: conversation) }
     case .ended(let reason):
+      guard let nativeReason = endedReason(reason) else { throw ConversationClientError.unsupported }
       records[id]?.ended = .init(at: now, reason: reason)
-      manager.reportConversationEvent(.conversationEnded(now, endedReason(reason)), for: conversation)
+      manager.reportConversationEvent(.conversationEnded(now, nativeReason), for: conversation)
     }
     refresh()
   }
@@ -421,16 +492,7 @@ public final class ConversationClient: NSObject {
     catch { appActions.removeValue(forKey: id); throw error }
   }
   private func isAlreadyReported(_ error: any Error) -> Bool {
-    #if os(iOS)
-    var candidate = error as NSError
-    for _ in 0..<4 {
-      if candidate.domain == CXErrorDomainIncomingCall &&
-          candidate.code == CXErrorCodeIncomingCallError.callUUIDAlreadyExists.rawValue { return true }
-      guard let underlying = candidate.userInfo[NSUnderlyingErrorKey] as? NSError else { return false }
-      candidate = underlying
-    }
-    #endif
-    return false
+    IncomingReportErrors.isAlreadyReported(error)
   }
   private func requireConversation(_ id: UUID) throws {
     guard manager.conversations.contains(where: { $0.uuid == id && $0.state != .left }) else {
@@ -455,9 +517,10 @@ public final class ConversationClient: NSObject {
     if record.video { capabilities.insert(.video) }
     return .init(members: Set(record.members.map(handle)), capabilities: capabilities)
   }
-  private func endedReason(_ reason: ConversationEndedReason) -> Conversation.EndedReason {
+  private func endedReason(_ reason: ConversationEndedReason) -> Conversation.EndedReason? {
     switch reason {
-    case .local, .remoteEnded: .remoteEnded
+    case .local: nil
+    case .remoteEnded: .remoteEnded
     case .failed: .failed
     case .unanswered: .unanswered
     case .answeredElsewhere: .joinedElsewhere
@@ -467,15 +530,12 @@ public final class ConversationClient: NSObject {
   private func snapshot(_ id: UUID) -> ConversationSnapshot? {
     guard let conversation = manager.conversations.first(where: { $0.uuid == id }) ?? terminalProjection.object(for: id),
           let record = records[id] else { return nil }
-    var direction = record.direction
-    #if os(iOS)
-    if let call = callObserver.calls.first(where: { $0.uuid == id }) { direction = call.isOutgoing ? .outgoing : .incoming }
-    #endif
+    let direction = record.direction
     let status: ConversationStatus
     switch conversation.state {
     case .idle: status = record.connecting ? .connecting : direction == .incoming ? .ringing : .dialing
     case .joining: status = .connecting
-    case .joined: status = .connected
+    case .joined: status = record.connectedAt == nil ? .connecting : .connected
     case .paused: status = .held
     case .leaving: status = .ending
     case .left: status = .ended
@@ -504,9 +564,10 @@ public final class ConversationClient: NSObject {
         invitations.markActive(conversation.uuid, serverCallId: payload.serverCallId, now: Date())
       }
       if records[conversation.uuid]?.endReportPending == true,
-         let ended = records[conversation.uuid]?.ended, conversation.state != .left {
+         let ended = records[conversation.uuid]?.ended, let nativeReason = endedReason(ended.reason),
+         conversation.state != .left {
         records[conversation.uuid]?.endReportPending = false
-        manager.reportConversationEvent(.conversationEnded(ended.at, endedReason(ended.reason)), for: conversation)
+        manager.reportConversationEvent(.conversationEnded(ended.at, nativeReason), for: conversation)
       }
     }
     for (id, record) in records where record.seenInManager && !ids.contains(id) {
@@ -588,7 +649,10 @@ public final class ConversationClient: NSObject {
       Task { @MainActor in self?.trackManager() }
     }
   }
-  private func emit(_ event: ConversationEvent) { for callback in Array(eventObservers.values) { callback(event) } }
+  private func emit(_ event: ConversationEvent, conversationID: UUID? = nil) {
+    let context = ConversationEventContext(type: event, conversationID: conversationID)
+    for callback in Array(eventObservers.values) { callback(context) }
+  }
 }
 
 // Device traces prove all LCK delegate callbacks arrive on main. @preconcurrency limits
@@ -600,10 +664,11 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
   }
   public func conversationManagerDidBegin(_ manager: ConversationManager) { refresh() }
   public func conversationManagerDidReset(_ manager: ConversationManager) {
-    mediaAdapter.setSystemAudioAuthorization(false)
+    systemAudio.setSystemAudioAuthorization(false)
     audio.reset()
-    audioOperations.enqueue { [mediaAdapter] in try await mediaAdapter.prepare() }
-    coordinator.cancelAll(reason: .reset); appActions.removeAll(); refresh(); emit(.providerReset)
+    coordinator.cancelAll(reason: .reset); appActions.removeAll(); refresh()
+    mediaAdapter.setSystemAudioAuthorization(false)
+    emit(.providerReset)
   }
   public func conversationManager(_ manager: ConversationManager, perform action: ConversationAction) {
     switch action.state { case .idle, .running: break; default: return }
@@ -631,7 +696,11 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
          let snapshot = snapshot(id), (snapshot.status == .held) == pause.isPaused { action.fulfill(); return }
     case let mute as MuteConversationAction:
       kind = .mute; muted = mute.isMuted
-      if snapshot(id) == nil || snapshot(id)?.status == .ended || (!coordinator.hasPendingAction(for: id, kind: .mute) && records[id]?.muted == mute.isMuted) { action.fulfill(); return }
+      let matchesPendingAppMute = origin == .system && coordinator.hasPendingAppMute(for: id, value: mute.isMuted)
+      if snapshot(id) == nil || snapshot(id)?.status == .ended || matchesPendingAppMute ||
+          (!coordinator.hasPendingAction(for: id, kind: .mute) && records[id]?.muted == mute.isMuted) {
+        action.fulfill(); return
+      }
     case let tone as PlayToneAction: kind = .tones; digits = tone.digits
     case is MergeConversationAction, is UnmergeConversationAction:
       // RFC has no merge handler; LCK owns topology. No transport/media work is fabricated.
@@ -648,19 +717,16 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
     coordinator.cancel(action.uuid, reason: .platformTimeout)
   }
   public func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) {
+    systemAudio.setSystemAudioAuthorization(true)
+    audio.didActivate(); systemAudio.refreshRoutes()
     mediaAdapter.setSystemAudioAuthorization(true)
     audioOperations.enqueue { [mediaAdapter] in try await mediaAdapter.didActivate(audioSession) }
-    audio.didActivate(); systemAudio.refreshRoutes()
   }
   public func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession) {
+    systemAudio.setSystemAudioAuthorization(false)
+    audio.didDeactivate(); systemAudio.refreshRoutes()
     mediaAdapter.setSystemAudioAuthorization(false)
     audioOperations.enqueue { [mediaAdapter] in try await mediaAdapter.didDeactivate(audioSession) }
-    audio.didDeactivate(); systemAudio.refreshRoutes()
   }
 }
-#if os(iOS)
-extension ConversationClient: @preconcurrency CXCallObserverDelegate {
-  public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) { refresh() }
-}
-#endif
 #endif

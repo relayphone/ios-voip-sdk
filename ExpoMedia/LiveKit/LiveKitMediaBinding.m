@@ -13,7 +13,7 @@ static NSError *mediaError(NSInteger code) {
 
 @interface VSSelectedMediaBinding (Registry)
 - (uint64_t)beginOwner;
-- (void)attach:(LKRTCAudioDeviceModule *)device owner:(uint64_t)owner;
+- (void)attach:(WebRTCModule *)module owner:(uint64_t)owner;
 - (void)invalidateOwner:(uint64_t)owner;
 @end
 
@@ -21,10 +21,12 @@ static NSError *mediaError(NSInteger code) {
   dispatch_queue_t _worker;
   NSLock *_stateLock;
   BOOL _authorized;
+  BOOL _prepared;
   uint64_t _nextOwner;
   uint64_t _currentOwner;
   // Framework objects are confined to the serial media worker.
   LKRTCAudioDeviceModule *_device;
+  WebRTCModule *_module;
   uint64_t _deviceOwner;
 }
 + (instancetype)sharedBinding {
@@ -36,7 +38,7 @@ static NSError *mediaError(NSInteger code) {
 - (instancetype)init {
   self = [super init];
   if (self) {
-    _worker = dispatch_queue_create("VoIPSDK.media.livekit", DISPATCH_QUEUE_SERIAL);
+    _worker = VSAudioSessionGetQueue();
     _stateLock = [NSLock new];
   }
   return self;
@@ -65,9 +67,10 @@ static NSError *mediaError(NSInteger code) {
 }
 - (void)retireObsoleteDevice {
   if (_device && _deviceOwner != [self currentOwner]) {
-    NSError *error = [self applyAvailability:NO device:_device];
+    NSError *error = _prepared ? [self applyAvailability:NO device:_device] : nil;
     if (error) NSLog(@"[VoIPSDK] The retired LiveKit engine could not revoke media availability.");
     _device = nil;
+    _module = nil;
     _deviceOwner = 0;
   }
 }
@@ -82,20 +85,27 @@ static NSError *mediaError(NSInteger code) {
   });
   return owner;
 }
-- (void)attach:(LKRTCAudioDeviceModule *)device owner:(uint64_t)owner {
+- (void)attach:(WebRTCModule *)module owner:(uint64_t)owner {
   dispatch_async(_worker, ^{
     @try {
+      LKRTCAudioDeviceModule *device = module.audioDeviceModule;
+      if (!device) { NSLog(@"[VoIPSDK] The selected LiveKit React Native audio module is unavailable."); return; }
       [self retireObsoleteDevice];
       if (!owner || owner != [self currentOwner]) {
         // A stale lookup may have initialized an otherwise available old ADM.
         // Gate that object, but never gate the identical newer bound engine.
-        if (device != _device && [self applyAvailability:NO device:device]) {
+        if (_prepared && device != _device && [self applyAvailability:NO device:device]) {
           NSLog(@"[VoIPSDK] The obsolete LiveKit audio engine could not revoke media availability.");
         }
         return;
       }
       _device = device;
+      _module = module;
       _deviceOwner = owner;
+      if (!_prepared) return;
+      _module.audioDeviceModuleObserver.automaticAudioSessionConfig = nil;
+      _module.audioDeviceModuleObserver.isWillEnableEngineActive = NO;
+      _module.audioDeviceModuleObserver.isDidDisableEngineActive = NO;
       NSError *error = [self applyAvailability:NO device:device];
       // Binding only replays genuine system authorization, never an activation
       // event. A newer RN instance or invalidation makes this result obsolete.
@@ -120,6 +130,7 @@ static NSError *mediaError(NSInteger code) {
   _authorized = active;
   [_stateLock unlock];
   if (!active) dispatch_async(_worker, ^{
+    if (!_prepared) return;
     if ([self isAuthorized]) return;
     @try {
       if (_device && [self applyAvailability:NO device:_device]) NSLog(@"[VoIPSDK] LiveKit could not revoke media availability.");
@@ -128,6 +139,7 @@ static NSError *mediaError(NSInteger code) {
 }
 - (void)performAvailability:(BOOL)active completion:(VSMediaCompletion)completion {
   dispatch_async(_worker, ^{
+    if (!_prepared) { completion(active ? mediaError(2) : nil); return; }
     NSError *error = nil;
     @try {
       [self retireObsoleteDevice];
@@ -141,8 +153,27 @@ static NSError *mediaError(NSInteger code) {
     completion(error);
   });
 }
-- (void)prepareWithCompletion:(VSMediaCompletion)completion {
-  [self performAvailability:NO completion:completion];
+- (void)prepareWithCheck:(VSMediaConfiguration)check configuration:(VSMediaConfiguration)configuration completion:(VSMediaCompletion)completion {
+  dispatch_async(_worker, ^{
+    NSError *error = nil;
+    @try {
+      // A cancelled queued action must not resolve or mutate a backend.
+      error = check();
+      if (error) { completion(error); return; }
+      [self retireObsoleteDevice];
+      if (!_device || !_module) { completion(mediaError(1)); return; }
+      _module.audioDeviceModuleObserver.automaticAudioSessionConfig = nil;
+      _module.audioDeviceModuleObserver.isWillEnableEngineActive = NO;
+      _module.audioDeviceModuleObserver.isDidDisableEngineActive = NO;
+      error = configuration();
+      if (!error) {
+        _prepared = YES;
+        // A second call must preserve an engine already authorized by LCK.
+        if (![self isAuthorized]) error = [self applyAvailability:NO device:_device];
+      }
+    } @catch (NSException *exception) { error = mediaError(2); }
+    completion(error);
+  });
 }
 - (void)activate:(AVAudioSession *)session completion:(VSMediaCompletion)completion {
   [self performAvailability:YES completion:completion];
@@ -176,8 +207,7 @@ RCT_EXPORT_MODULE(VoIPSDKMediaRegistry)
   dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     @try {
       WebRTCModule *module = [registry moduleForClass:WebRTCModule.class];
-      LKRTCAudioDeviceModule *device = module.audioDeviceModule;
-      if (device) [[VSSelectedMediaBinding sharedBinding] attach:device owner:owner];
+      if (module) [[VSSelectedMediaBinding sharedBinding] attach:module owner:owner];
       else NSLog(@"[VoIPSDK] The selected LiveKit React Native audio module is unavailable.");
     } @catch (NSException *exception) { NSLog(@"[VoIPSDK] The selected LiveKit React Native audio module is unavailable."); }
   });

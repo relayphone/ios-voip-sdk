@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 1,
+  "qualification": "measured integrated host/compiler preparation only; no app, simulator or device run",
+  "createdAtUTC": "2026-10-22T10:48:45.217044+00:00",
+  "baseCommit": "466e3efa761801bb44b5a79a3c04485104382b38",
+  "incomingCommit": "47834d58ad2a086c29d23066c4217d7eb6563fd7",
+  "workingSourceInputsSHA256": "443d465372e42da2bfee51f590950c2acae6aae4a83167f69e4dd5d7b58f1d48",
+  "sourceInputCount": 201,
+  "sourceFiles": {
+    "Expo/apple/ConversationBridge.swift": "c11c04bacce5fd142ec1d1699fea74281135e2ba906d430951a5ebf31c7443aa",
+    "Expo/apple/IosVoipSDKModule.swift": "7a89b6ea73fac91cf32e3a539a9a9e4840657d852641987f601cdf1f189ecb36",
+    "Expo/src/types.ts": "b54bef6c14821e4b5840ab713cb4978d9416561efc97bc661c32d85a3e07775d",
+    "ExpoMedia/Shared/ExpoMediaSupport.swift": "bcbdad2edef73f335942c4680d9f5386ea2976880fecce5d89821938ad5e39d3",
+    "Sources/VoIPSDK/VoIPApplication.swift": "ca6660cef674a4c8a43c4f4a6c8bd467ffbb3e055cbd32b81b7845f374e5433a",
+    "Sources/VoIPSDK/ConversationClient.swift": "999c0de828dd9dbfad800cfd296a6f3d12b61ca74df3e907c7a86e39077ccea2",
+    "Sources/VoIPSDK/ConversationHandler.swift": "29a9c62bc3a75d4a36ad8ae6d2bd798b6002e7aefbd98259b58395090c046ea1",
+    "Sources/VoIPSDK/ConversationModels.swift": "c93eba6e6573da78de06f88002ca309de719f3813b72b3359d2ec576a12e40d7",
+    "Sources/VoIPSDK/AudioSessionQueue.swift": "cca9fde6227f51d20ee2c6aa29db6a9183a66587194c54367f82a6647f353391",
+    "Sources/VoIPSDK/SystemAudioSession.swift": "56780d0ba44f0353296500f24cd33533a806c6e91e68334ae9c8504270e56bab",
+    "example/modules/journey/apple/VoIPExampleJourneyModule.swift": "088a836c1ecdd4b3b5a2f66cd40b431fe668e46343649eb20d757e7efb6ca46d",
+    "example/modules/journey/apple/M3DirectControl.swift": "887012f8498095f03cf11b0ea6f184d008955875e30c2139f26ae56593f998a5",
+    "example/acceptance.ts": "85372404553bca51fa1b794144688e3b11134bfced9290f603409a935cdb0506",
+    "example/media.ts": "04d0d26c80462fa5dcad11ef0ea5befd51c619f8972f2bddf2b6271f4337a3d3",
+    "discovery/check_sdk_m3_direct.py": "6176ae1b7b1730fccd2245286b7409d0aa7aa05b04589648b56a544d161f18ca",
+    "discovery/sdk_m3_direct_conformance.py": "0a3da2a983dd4000ab853bff9afdf66b3259147723f902d11305e7179a9a89d0",
+    "discovery/sdk_m3_conformance.py": "d2df37b0373d65e4ce2a0873b55b1b2ea9ffd77b44127e73878949a34910eff8"
+  },
+  "originalOSGateSHA256": "d2df37b0373d65e4ce2a0873b55b1b2ea9ffd77b44127e73878949a34910eff8",
+  "historicalHostReceiptSHA256": "60e93d8634e358eac95d5b81cbbdc179cc428ff0345c5754dfff96de5087e703",
+  "checks": [
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m3.py"
+      ],
+      "exitCode": 0,
+      "logSHA256": "d6ea567b0b07e7c0f6b8f72f2ec3f5766de00f5b12d31fc6955a8f9743567da3",
+      "log": "discovery/out/a9-integrated-host-20261022/01.log"
+    },
+    {
+      "command": [
+        "bash",
+        "Tests/DialRequests/run.sh"
+      ],
+      "exitCode": 0,
+      "logSHA256": "e546cebd21c3e4e57013f27bf37d9be41687cad10e766e44ecd5e9f1c98e2372",
+      "log": "discovery/out/a9-integrated-host-20261022/02.log"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_expo_bridge.py"
+      ],
+      "exitCode": 0,
+      "logSHA256": "4210cb82dbc06cba7e3e340c28c776ce146702d1a747595e717a9f1b8f597756",
+      "log": "discovery/out/a9-integrated-host-20261022/03.log"
+    },
+    {
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exitCode": 0,
+      "logSHA256": "80b983d0d6ddf0414b031b45a740d401b2506d5d6997b5aeb1500085c065a2fa",
+      "log": "discovery/out/a9-integrated-host-20261022/04.log"
+    },
+    {
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "exitCode": 0,
+      "logSHA256": "01d5bb4c9623a561fbd8d3a9f2b49a7793b1c7711b89c6b5792062c65e6247b7",
+      "log": "discovery/out/a9-integrated-host-20261022/05.log"
+    },
+    {
+      "command": [
+        "node",
+        "--test",
+        "Expo/tests/m1-runtime.test.cjs"
+      ],
+      "exitCode": 0,
+      "logSHA256": "e5a9f8d72fbc6c80ad894111e7468ae24e4d1a5e3b5a7e72a820b9730bdd3174",
+      "log": "discovery/out/a9-integrated-host-20261022/06.log"
+    },
+    {
+      "command": [
+        "node",
+        "discovery/check_expo_plugin.cjs"
+      ],
+      "exitCode": 0,
+      "logSHA256": "02dc69ca8e5c99211d4b8cffdf6d52ca4a9005a56223f53aac07834975df01c3",
+      "log": "discovery/out/a9-integrated-host-20261022/07.log"
+    },
+    {
+      "command": [
+        "actionlint",
+        ".github/workflows/sdk-m3.yml"
+      ],
+      "exitCode": 0,
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log": "discovery/out/a9-integrated-host-20261022/08.log"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "log": "discovery/out/a9-integrated-host-20261022/09.log"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m3_direct.py"
+      ],
+      "exitCode": 0,
+      "logSHA256": "6ee9b2ad15754075286ecea1ddf2c790d557c503c08a5fd520be2a906aef772e",
+      "log": "discovery/out/a9-integrated-host-20261022/10.log"
+    },
+    {
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run.sh"
+      ],
+      "exitCode": 0,
+      "logSHA256": "01142fc9211822f2f71c148f5fd06bb6dfbcb0aeee09e8e54427e791ec3a0764",
+      "log": "discovery/out/a9-integrated-host-20261022/11.log"
+    },
+    {
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_mute_echo.sh"
+      ],
+      "exitCode": 0,
+      "logSHA256": "dc75a4cf6e8f05993796dcc2d8371c506336cbfcf0c9e551d4a6bb3afd395b16",
+      "log": "discovery/out/a9-integrated-host-20261022/12.log"
+    },
+    {
+      "command": [
+        "bash",
+        "Tests/AudioCore/run.sh"
+      ],
+      "exitCode": 0,
+      "logSHA256": "f26794158b91c2b2ba373a78e3c36162118258ecd1f957e3007664a08434f0d3",
+      "log": "discovery/out/a9-integrated-host-20261022/13.log"
+    },
+    {
+      "command": [
+        "bash",
+        "Tests/AudioSessionQueue/run.sh"
+      ],
+      "exitCode": 0,
+      "logSHA256": "01ea06d04fa5ad65d414580b1c605efa591fadf2deba67d3b914994b4fa4c05f",
+      "log": "discovery/out/a9-integrated-host-20261022/14.log"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_expo_media.py"
+      ],
+      "exitCode": 0,
+      "logSHA256": "32c76f800875f70b31e24323950f3336a54a02fa10e211a0eb716f2e4ab8cd7d",
+      "log": "discovery/out/a9-integrated-host-20261022/15.log"
+    },
+    {
+      "command": [
+        "python3",
+        "Tests/AudioLifecycle/check_audio_lifecycle.py"
+      ],
+      "exitCode": 0,
+      "logSHA256": "97d71c040523d3d2c8b883dbebe93eb2a4a128e091ef9e4901aec05d82adb3c8",
+      "log": "discovery/out/a9-integrated-host-20261022/16.log"
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_ownership.py"
+      ],
+      "exitCode": 0,
+      "logSHA256": "e97461cdabea45930b8a5dad9b9e524e315e24026568f547b6ad26a1e83b26f6",
+      "log": "discovery/out/a9-integrated-host-20261022/17.log"
+    }
+  ],
+  "reviews": {
+    "spec": "clear; independent read-only A9 integration review",
+    "standards": "clear; independent read-only A9 integration review"
+  },
+  "limits": [
+    "The direct gate owner migrates to VoIPApplication.start; the obsolete owner label has a failing synthetic control.",
+    "The first direct-host invocation is superseded by its green rerun after that final negative-control addition.",
+    "Host facade, statement typechecks and compiler controls do not qualify an Expo app build or native journey.",
+    "Original OS-dispatch gate and historical red exports remain unchanged; old native receipts do not qualify these source inputs.",
+    "Final A0.1 fix and committed-source native acceptance remain pending."
+  ]
+}

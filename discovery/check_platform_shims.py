@@ -16,7 +16,7 @@ HOST = r'''
 #import "VSCompletionOnce.h"
 #import "VSProviderMonitorInternal.h"
 
-static NSUInteger warnings, roots, concretes, destroyed;
+static NSUInteger warnings, roots, concretes, destroyed, conflicts;
 static void (^fixtureCreationObserver)(id);
 static BOOL inheritedShape;
 static BOOL foreignShape;
@@ -130,6 +130,13 @@ int main(int argc, const char **argv) {
       });
       [[NSRunLoop mainRunLoop] run];
     }
+    VSProviderMonitorSetOwnershipConflictHandler(^{
+      require([NSThread isMainThread], "ownership events must run on main");
+      conflicts++;
+      // Reentrant registration proves the external callback is outside the lock.
+      VSProviderMonitorSetOwnershipConflictHandler(nil);
+      VSProviderMonitorSetOwnershipConflictHandler(^{ conflicts++; });
+    });
     IMP globalAllocator = class_getMethodImplementation(object_getClass(NSObject.class), @selector(allocWithZone:));
     if ([mode hasPrefix:@"cooperative"]) {
       IMP initializer = class_getMethodImplementation(VSFixtureProvider.class, @selector(initWithConfiguration:));
@@ -149,6 +156,7 @@ int main(int argc, const char **argv) {
               globalAllocator == class_getMethodImplementation(object_getClass(NSObject.class), @selector(allocWithZone:)),
               "cooperative monitoring must never replace initializer or allocator IMPs");
       if (reject) {
+        require(conflicts == 0, "unavailable source must not invent ownership loss");
         require(warnings == 1 && !sdkDebugProviderCreationObserver, "rejected source must diagnose without installing hooks");
         puts("passed"); return 0;
       }
@@ -158,13 +166,13 @@ int main(int argc, const char **argv) {
       VSFixtureProvider *owned = [[VSFixtureProvider alloc] initWithConfiguration:[NSObject new]];
       observeSDKDebugProviderCreation(owned);
       VSProviderMonitorEndOwnedCreation();
-      require(warnings == 0, "owned creation and repeated object observation must not warn");
+      require(warnings == 0 && conflicts == 0, "owned creation and repeated object observation must not warn or emit loss");
       if ([mode isEqual:@"cooperative-background"]) {
         VSProviderMonitorBeginOwnedCreation();
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
           created(VSFixtureProvider.class);
           dispatch_async(dispatch_get_main_queue(), ^{
-            require(warnings == 1, "background cooperative creation must not consume owned bracket");
+            require(warnings == 1 && conflicts == 1, "background cooperative creation must emit actual ownership loss");
             VSProviderMonitorEndOwnedCreation();
             require(warnings == 2, "empty owned bracket must still diagnose");
             puts("passed"); exit(0);
@@ -178,12 +186,12 @@ int main(int argc, const char **argv) {
       VSProviderMonitorEndOwnedCreation();
       require(warnings == 1, "second cooperative provider in owned bracket must warn once");
       created(VSFixtureProvider.class);
-      require(warnings == 2, "later cooperative provider must warn once");
+      require(warnings == 2 && conflicts == 2, "later cooperative providers must emit one loss per actual new identity");
       puts("passed"); return 0;
     }
     if ([mode isEqual:@"unsupported"]) {
       require(!VSProviderMonitorInstall(NSObject.class, ^(NSString *m){ diagnostic(m); }), "missing initializer must refuse");
-      require(warnings == 1, "unsupported ABI must diagnose");
+      require(warnings == 1 && conflicts == 0, "unsupported ABI must diagnose without ownership loss");
       require(globalAllocator == class_getMethodImplementation(object_getClass(NSObject.class), @selector(allocWithZone:)), "NSObject must remain untouched");
       puts("passed"); return 0;
     }
@@ -201,7 +209,7 @@ int main(int argc, const char **argv) {
       VSProviderMonitorBeginOwnedCreation();
       created(cls);
       VSProviderMonitorEndOwnedCreation();
-      require(warnings == 2, "unrelated allocation must diagnose unsupported coverage");
+      require(warnings == 2 && conflicts == 0, "unsupported allocator coverage must not invent ownership loss");
       require(foreignInit == class_getMethodImplementation(VSFixtureForeign.class, @selector(initWithConfiguration:)), "unrelated class methods must not be changed");
       require(globalAllocator == class_getMethodImplementation(object_getClass(NSObject.class), @selector(allocWithZone:)), "NSObject must remain untouched");
       puts("passed"); return 0;
@@ -211,7 +219,7 @@ int main(int argc, const char **argv) {
       dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
         created(cls);
         dispatch_async(dispatch_get_main_queue(), ^{
-          require(warnings == 1, "background creation cannot consume the owned bracket");
+          require(warnings == 1 && conflicts == 1, "background foreign creation must emit ownership loss");
           VSProviderMonitorEndOwnedCreation();
           require(warnings == 2, "missing owned creation must diagnose");
           puts("passed"); exit(0);
@@ -223,7 +231,7 @@ int main(int argc, const char **argv) {
     if ([mode isEqual:@"nil"]) {
       require([[cls alloc] initWithConfiguration:[NSObject new]] == nil, "nil initializer result must remain nil");
       VSProviderMonitorEndOwnedCreation();
-      require(warnings == 1, "missing owned creation must diagnose");
+      require(warnings == 1 && conflicts == 0, "missing coverage must diagnose without ownership loss");
       puts("passed"); return 0;
     }
     created(constructClass);
@@ -237,6 +245,7 @@ int main(int argc, const char **argv) {
       created(constructClass);
       require(warnings == 1, "later provider must warn exactly once");
     }
+    require(conflicts == 1, "exactly the actual foreign provider must emit ownership loss");
     require(roots == (inheritedShape ? 0 : 2) && destroyed == (replacement ? 4 : 2), "initializer and ARC ownership must remain balanced");
     if ([mode isEqual:@"cluster"] || inheritedShape) require(concretes == 2, "concrete/super initializer chain must run once");
     puts("passed");
@@ -251,8 +260,8 @@ import VoIPPlatform
 @MainActor final class Receiver: NSObject, PushReceiver {
   func pushTokenDidUpdate(_ token: Data) {}
   func pushTokenDidInvalidate() {}
-  func receiveVoIPPush(_ payload: [AnyHashable: Any], mustReport: Bool,
-                       completion: @escaping () -> Void) { completion() }
+  nonisolated func receiveVoIPPush(_ payload: [AnyHashable: Any], mustReport: Bool,
+                                   delivery: PushDelivery) { delivery.finish() }
 }
 @MainActor func checkImports() throws {
   let receiver = Receiver()
@@ -279,11 +288,11 @@ def main() -> None:
         out = Path(directory)
         host = out / "host.m"
         runtime = (ROOT / 'Sources/Interposition/CKInterposition.m').read_text()
-        start = runtime.index('#if CKSIM_SDK_SOURCE && DEBUG\n')
+        start = runtime.index('#if CKSIM_SDK_SOURCE && (DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS)\n')
         end = runtime.index('#endif', start)
         # Execute the actual runtime registration/notification helpers against
         # the host fixture; no Apple call service or simulator is involved.
-        helper = runtime[start + len('#if CKSIM_SDK_SOURCE && DEBUG\n'):end]
+        helper = runtime[start + len('#if CKSIM_SDK_SOURCE && (DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS)\n'):end]
         host.write_text(HOST.replace('// RUNTIME_PROVIDER_SOURCE',
             '#define CXProvider VSFixtureProvider\nstatic BOOL installed;\n' + helper + '\n#undef CXProvider'))
         binary = out / "platform-controls"
@@ -291,12 +300,24 @@ def main() -> None:
              "-Werror", "-Wno-unused-parameter", "-I", str(PLATFORM), str(host),
              str(PLATFORM / "VSCompletionOnce.m"), str(PLATFORM / "VSProviderMonitorInternal.m"),
              "-framework", "Foundation", "-o", str(binary)])
-        for case in ["completion-race", "plain", "cluster", "inherited-cluster", "init-substitution", "extra-owned", "background", "nil", "unsupported", "unrelated-allocation",
-                     "cooperative", "cooperative-background", "cooperative-rejected"]:
+        cases = ["completion-race", "plain", "cluster", "inherited-cluster", "init-substitution", "extra-owned", "background", "nil", "unsupported", "unrelated-allocation",
+                     "cooperative", "cooperative-background", "cooperative-rejected"]
+        for case in cases:
             result = run([str(binary), case])
             if result.stdout.strip() != "passed":
                 raise RuntimeError(f"Host control did not acknowledge success: {case}")
             checks.append(f"host:{case}")
+
+        # Run the identical actual monitor controls with DEBUG=0 and the
+        # explicit Release flag, not a separate implementation or debug build.
+        release_binary = out / "platform-release-opt-in"
+        run(["xcrun", "clang", "-fobjc-arc", "-fblocks", "-DDEBUG=0", "-DVSSDK_ENABLE_PROVIDER_DIAGNOSTICS=1",
+             "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", "-I", str(PLATFORM), str(host),
+             str(PLATFORM / "VSCompletionOnce.m"), str(PLATFORM / "VSProviderMonitorInternal.m"),
+             "-framework", "Foundation", "-o", str(release_binary)])
+        for case in cases:
+            assert run([str(release_binary), case]).stdout.strip() == "passed", case
+            checks.append(f"release-opt-in-host:{case}")
 
         module = out / "module.modulemap"
         module.write_text(f'module VoIPPlatform {{ umbrella header "{PLATFORM / "include/VoIPPlatform.h"}" export * }}\n')
@@ -310,14 +331,18 @@ def main() -> None:
         ]
         for sdk_name, target in configurations:
             sdk = run(["xcrun", "--sdk", sdk_name, "--show-sdk-path"]).stdout.strip()
-            for debug in [0, 1]:
+            for debug, diagnostics in [(0, 0), (1, 0), (0, 1)]:
                 run(["xcrun", "clang", "-fobjc-arc", "-fblocks", "-fsyntax-only", "-Werror", "-Wall", "-Wextra",
-                     "-Wno-unused-parameter", "-isysroot", sdk, "-target", target, f"-DDEBUG={debug}", *implementations])
-                checks.append(f"compile:{sdk_name}:DEBUG={debug}")
-            run(["xcrun", "swiftc", "-typecheck", "-swift-version", "6", "-strict-concurrency=complete",
+                     "-Wno-unused-parameter", "-isysroot", sdk, "-target", target, f"-DDEBUG={debug}", f"-DVSSDK_ENABLE_PROVIDER_DIAGNOSTICS={diagnostics}", *implementations])
+                checks.append(f"compile:{sdk_name}:DEBUG={debug}:diagnostics={diagnostics}")
+            run(["xcrun", "swiftc", "-typecheck", "-D", "DEBUG", "-Xcc", "-DDEBUG=1", "-swift-version", "6", "-strict-concurrency=complete",
                  "-sdk", sdk, "-target", target, "-I", str(out),
                  "-module-cache-path", str(out / "modules"), str(swift)])
             checks.append(f"swift-import:{sdk_name}")
+            run(["xcrun", "swiftc", "-typecheck", "-D", "VSSDK_ENABLE_PROVIDER_DIAGNOSTICS",
+                 "-Xcc", "-DVSSDK_ENABLE_PROVIDER_DIAGNOSTICS=1", "-swift-version", "6", "-strict-concurrency=complete",
+                 "-sdk", sdk, "-target", target, "-I", str(out), "-module-cache-path", str(out / "opt-in-modules"), str(swift)])
+            checks.append(f"release-opt-in-swift-import:{sdk_name}")
         # Release device objects must not carry debug monitor implementation or CallKit references.
         device_sdk = run(["xcrun", "--sdk", "iphoneos", "--show-sdk-path"]).stdout.strip()
         for filename in ["VSProviderMonitorInternal.m", "VSProviderCreationMonitor.m"]:
@@ -344,6 +369,14 @@ def main() -> None:
                     'sdkDebugProviderCreationObserver', 'observeSDKDebugProviderCreation']):
                 raise RuntimeError('Debug simulator observer leaked into ' + name)
             checks.append('observer-excluded:' + name)
+        obj = out / 'opt-in-simulator.o'
+        run(['xcrun', 'clang', '-c', '-fobjc-arc', '-fblocks', '-fmodules', '-DDEBUG=0',
+             '-DVSSDK_ENABLE_PROVIDER_DIAGNOSTICS=1', '-DCKSIM_SDK_SOURCE=1', f'-DCKSIM_RUNTIME_VERSION="{version}"',
+             '-isysroot', simulator_sdk, '-target', 'arm64-apple-ios17.4-simulator',
+             str(ROOT / 'Sources/Interposition/CKInterposition.m'), '-o', str(obj)])
+        symbols = run(['xcrun', 'nm', str(obj)]).stdout
+        assert 'CKSimInstallProviderCreationObserver' in symbols
+        checks.append('release-opt-in-observer-present:simulator')
     print(json.dumps({"success": True, "checks": checks, "count": len(checks)}, indent=2))
 
 

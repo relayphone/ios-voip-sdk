@@ -103,7 +103,7 @@ async function waitForMedia(
   throw new Error('Example media engine observation deadline');
 }
 
-function handler(): ConversationHandler {
+function handler(prepareJoin: () => Promise<void>): ConversationHandler {
   const accept = async (
     kind: string,
     conversation: Conversation,
@@ -114,6 +114,12 @@ function handler(): ConversationHandler {
       conversationID: conversation.id,
       origin: context.origin,
     });
+    if (context.signal.aborted)
+      throw new Error('Example media action cancelled');
+    // Native call preparation has completed before this handler is delivered.
+    // Request capture while its real join action is still pending, so the
+    // demand sample proves that capture cannot start before LCK activation.
+    if (kind === 'join') await prepareJoin();
     if (context.signal.aborted)
       throw new Error('Example media action cancelled');
   };
@@ -149,13 +155,48 @@ async function run(): Promise<void> {
       await import('@livekit/react-native-webrtc');
     // One-time public media setup. System activation remains exclusively native.
     registerGlobals({ autoConfigureAudioSession: false });
-    setConversationHandler(handler());
     const initial = await waitForMedia(
       'initial',
       (sample) =>
-        !sample.inputAvailable &&
-        !sample.outputAvailable &&
-        !sample.isEngineRunning,
+        typeof sample.inputAvailable === 'boolean' &&
+        typeof sample.outputAvailable === 'boolean' &&
+        !sample.isEngineRunning &&
+        sample.activatedCount === 0 &&
+        sample.deactivatedCount === 0 &&
+        sample.missingCount === 0 &&
+        sample.failedCount === 0 &&
+        sample.category.length > 0 &&
+        sample.mode.length > 0,
+    );
+    setConversationHandler(
+      handler(async () => {
+        stream = await mediaDevices.getUserMedia({ audio: true, video: false });
+        await check(
+          'one-local-audio-track',
+          stream.getAudioTracks().length === 1,
+        );
+        await trace('m2.localTrack', {
+          count: stream.getAudioTracks().length,
+          enabled: stream.getAudioTracks()[0].enabled,
+        });
+        // This requests capture on the existing ADM. It neither grants engine
+        // availability nor activates AVAudioSession; native LCK is the authority.
+        stopRecording = () => AudioDeviceModule.stopLocalRecording();
+        await AudioDeviceModule.startLocalRecording();
+        await trace('m2.recordingDemand', { accepted: true });
+        await waitForMedia(
+          'demand',
+          (sample) =>
+            !sample.inputAvailable &&
+            !sample.outputAvailable &&
+            !sample.isEngineRunning &&
+            sample.activatedCount === 0 &&
+            sample.deactivatedCount === 0 &&
+            sample.missingCount === 0 &&
+            sample.failedCount === 0,
+          initial,
+        );
+      }),
     );
     let inactiveRouteRejected = false;
     try {
@@ -165,26 +206,6 @@ async function run(): Promise<void> {
     }
     await check('inactive-route-rejected', inactiveRouteRejected);
     await check('routes-observed', initial.routeCount > 0);
-    stream = await mediaDevices.getUserMedia({ audio: true, video: false });
-    await check('one-local-audio-track', stream.getAudioTracks().length === 1);
-    await trace('m2.localTrack', {
-      count: stream.getAudioTracks().length,
-      enabled: stream.getAudioTracks()[0].enabled,
-    });
-    // This requests capture on the existing ADM. It neither grants engine
-    // availability nor activates AVAudioSession; native LCK remains the authority.
-    stopRecording = () => AudioDeviceModule.stopLocalRecording();
-    await AudioDeviceModule.startLocalRecording();
-    await trace('m2.recordingDemand', { accepted: true });
-    await waitForMedia(
-      'demand',
-      (sample) =>
-        !sample.inputAvailable &&
-        !sample.outputAvailable &&
-        !sample.isEngineRunning &&
-        sample.activatedCount === 0,
-      initial,
-    );
     await journey().awaitMediaControl();
     await journey().simulatePush(
       JSON.stringify({ incomingCall: payload() }),
@@ -199,10 +220,23 @@ async function run(): Promise<void> {
     await joinConversation(conversationID);
     await waitForConversations(
       (snapshot) =>
+        snapshot.length === 1 &&
         snapshot[0]?.id === conversationID &&
-        snapshot[0].status === 'connected',
+        snapshot[0].status === 'connecting' &&
+        snapshot[0].pending === undefined &&
+        snapshot[0].connectedAt === undefined,
     );
     await check('joined', true, conversationID);
+    await reportConversation(conversationID, { type: 'connected' });
+    await waitForConversations(
+      (snapshot) =>
+        snapshot.length === 1 &&
+        snapshot[0]?.id === conversationID &&
+        snapshot[0].status === 'connected' &&
+        snapshot[0].pending === undefined &&
+        snapshot[0].connectedAt !== undefined,
+    );
+    await check('backend-connected', true, conversationID);
     if (mode === 'livekit') {
       await waitForMedia(
         'active',
@@ -223,7 +257,6 @@ async function run(): Promise<void> {
           sample.isEngineRunning,
         initial,
       );
-      await reportConversation(conversationID, { type: 'connected' });
       await setHeld(conversationID, true);
       await waitForConversations((snapshot) => snapshot[0]?.status === 'held');
       await waitForMedia(

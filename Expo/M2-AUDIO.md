@@ -4,7 +4,8 @@
 engine passed active, hold, resume and end, and the stale-audio fault ended cleanly.
 [Source-bound M2 receipts](../docs/verification/2026-10-22-sdk-m2/native-green-82c1b8f/README.md)
 bind actual availability/running observations to the built and installed product.
-Current-head hosted CI and physical-device media remain pending. The host checks
+These captures predate the A0/A7/A8 corrections; integrated native qualification,
+current-head hosted CI and physical-device media remain pending. The host checks
 below separately establish bridge behavior and packaging.
 
 Configure one adapter in the iOS-only plugin:
@@ -20,8 +21,9 @@ without linking a media binding. The plugin writes the same selection to
 `Info.plist` (`VoIPSDK.mediaAdapter`) and `Podfile.properties.json`
 (`ios-voip-sdk.mediaAdapter`). Run prebuild and regenerate pods when changing it;
 editing only Info.plist cannot switch compiled backends. The podspec includes
-exactly one backend source directory. A mismatched launch setting logs a diagnostic
-while required PushKit reporting still starts. The Swift package has no media
+exactly one backend source directory. A mismatched launch setting throws a
+configuration error; commands reject until the build and launch settings agree.
+The Swift package has no media
 dependency; Expo's optional bindings live outside its `Sources/` target.
 
 The plugin always adds `voip` to `UIBackgroundModes`, and adds `audio` for
@@ -35,9 +37,11 @@ Apps selecting `none` still need `audio` if their own integration plays or recor
 background media. [Apple playAndRecord requirements](https://developer.apple.com/documentation/avfaudio/avaudiosession/category-swift.struct/playandrecord),
 [Apple recording requirements](https://developer.apple.com/documentation/avfaudio/avaudiosession/category-swift.struct/record).
 
-`ExpoMediaSupport.startFromBundle()` registers the selected adapter before calling
-the core launch owner. An Expo app with a custom early launch hook must use this
-wrapper before directly obtaining the SDK client. Adapter preparation configures
+`ExpoMediaSupport.startFromBundle()` passes the selected adapter to the core's
+single launch entry in one operation. Use this wrapper for an Expo app's custom
+early launch hook. Repeated calls reuse the same adapter and owner; a conflicting
+selection throws. Native Swift apps pass their adapter directly to
+`VoIPApplication.start(mediaAdapter:)`. Adapter preparation configures
 external ownership and gates media. Genuine LCK callbacks provide authorization;
 JavaScript has no audio activation method. Potentially blocking engine calls run
 on a serial Objective-C worker. A separate, nonblocking authorization value lets

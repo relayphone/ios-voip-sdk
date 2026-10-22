@@ -17,7 +17,7 @@ static BOOL activationAttempted;
 static NSMapTable<CXProvider *, dispatch_queue_t> *providerQueues;
 static NSMapTable<CXCallController *, dispatch_queue_t> *controllerQueues;
 bool CKSimRuntimeIsActive(void) { return installed; }
-#if CKSIM_SDK_SOURCE && DEBUG
+#if CKSIM_SDK_SOURCE && (DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS)
 static void (^sdkDebugProviderCreationObserver)(id);
 bool CKSimInstallProviderCreationObserver(void (^observer)(id)) {
   @synchronized(CXProvider.class) {
@@ -202,7 +202,7 @@ static void initializedProvider(CXProvider *provider) {
   @synchronized(CXProvider.class) { bindConcrete(object_getClass(provider), CXProvider.class); }
   if (!installed) return;
   [Engine() registerProvider:provider];
-  #if CKSIM_SDK_SOURCE && DEBUG
+  #if CKSIM_SDK_SOURCE && (DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS)
   observeSDKDebugProviderCreation(provider);
   #endif
   Dl_info info = {0};

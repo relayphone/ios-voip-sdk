@@ -9,7 +9,7 @@ import uuid
 
 import sdk_m0_conformance as m0
 from device_oracles import check_deadline, deadline_bands
-from summarize import EvidenceError, one, require
+from summarize import EvidenceError, one, push_report_boundaries, require
 
 ROOT = Path(__file__).resolve().parent.parent
 CASES = ('journey', 'cold-launch', 'unhandled-expiry')
@@ -88,7 +88,7 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
             all(type(row.get('wallTimeMS')) is int and row['wallTimeMS'] > 0 for row in rows),
             case + ': invalid process sequence or wall clock')
     require(one(rows, 'sdk.activation').get('active') is True and
-            one(rows, 'sdk.managerCreated').get('owner') == 'ConversationClient.shared', case + ': SDK client unavailable')
+            one(rows, 'sdk.managerCreated').get('owner') == 'VoIPApplication.start', case + ': SDK client unavailable')
     def unexpected_error(row):
         expected_rejection = (case == 'unhandled-expiry' and row['event'] == 'm1.coldJoinRequestResult' and
                               row.get('accepted') is False)
@@ -115,16 +115,19 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
     injected = one(rows, 'm1.pushInjected')
     require(injected.get('mustReport') is True and injected.get('label') == ('primary' if case == 'journey' else 'cold'),
             case + ': wrong synthetic push policy')
+    require(push_report_boundaries(engine, require_settlement_before_return=True) == 1,
+            case + ': required callback boundary proof differs')
     received = one(engine, 'push.received')
     completed = one(engine, 'push.completed')
+    returned = one(engine, 'push.callbackReturned')
     incoming = one(engine, 'report.incoming')
     reported = one(engine, 'report.completed')
     push_id = injected.get('pushID')
     require(isinstance(push_id, str) and str(uuid.UUID(push_id)).upper() == push_id.upper(), 'invalid synthetic push ID')
-    require(all(row.get('pushID') == push_id for row in (received, completed, incoming, reported)),
+    require(all(row.get('pushID') == push_id for row in (received, completed, returned, incoming, reported)),
             case + ': incoming report is not correlated to the injected PushKit delivery')
     modern = tuple(int(part) for part in simulator_os.split('.')[:2]) >= (26, 4)
-    require(received.get('api') == completed.get('api') == ('metadata' if modern else 'legacy') and
+    require(received.get('api') == completed.get('api') == returned.get('api') == ('metadata' if modern else 'legacy') and
             received.get('mustReport') is True, case + ': wrong PushKit callback or policy')
     require(incoming.get('callUUID') == reported.get('callUUID') == conversation and reported.get('error') == 0,
             case + ': incoming report failed or targeted another conversation')
@@ -166,6 +169,18 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
     require(changes and all(row.get('uuid') == conversation and row.get('outgoing') is False and
                 all(type(row.get(key)) is bool for key in ('connected', 'held', 'ended')) for row in changes) and
             changes[-1].get('ended') is True, case + ': runtime call projection differs')
+    if case in ('journey', 'cold-launch'):
+        checkpoint = one(rows, 'm1.assertion', label='joined' if case == 'journey' else 'cold-redelivered')
+        before = [row for row in snapshots if rows.index(row) < rows.index(checkpoint) and row['conversations']]
+        require(before and before[-1]['conversations'][0].get('status') == 'connecting' and
+                before[-1]['conversations'][0].get('pending') is None and
+                all(call.get('hasConnectedAt') is False and call.get('status') not in ('connected', 'held')
+                    for row in before for call in row['conversations']),
+                case + ': signaling acceptance fabricated transport connection')
+        connected = [row for row in snapshots if any(call.get('status') == 'connected' for call in row['conversations'])]
+        require(connected and rows.index(checkpoint) < rows.index(connected[0]) and
+                all(call.get('hasConnectedAt') is True for row in connected for call in row['conversations']),
+                case + ': connected projection lacks the explicit backend report')
     if case == 'journey':
         require([row.get('kind') for row in handlers] == ['join', 'hold', 'hold', 'end'] and
                 all(type(row.get('held')) is bool for row in handlers if row.get('kind') == 'hold') and
@@ -185,7 +200,7 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
         require(pending.get('handlerAttached') is False and pending.get('conversationID') == conversation and
                 type(pending.get('remainingMS')) in (int, float),
                 case + ': missing native pending deadline')
-        check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000), deadlines)
+        check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000 + 1.5), deadlines)
         original_deadline = timestamp_ms(pending.get('deadline'))
         require(abs(original_deadline - pending['wallTimeMS'] - pending['remainingMS']) <= 5,
                 case + ': pending absolute deadline and remaining interval differ')

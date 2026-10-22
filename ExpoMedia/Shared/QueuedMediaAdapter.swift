@@ -12,7 +12,26 @@ final class QueuedMediaAdapter: MediaAdapter {
   }
 
   func prepare() async throws {
-    try await complete { binding.prepare(completion: $0) }
+    let permit = AudioPreparationScope.permit
+    while true {
+      try AudioSessionQueue.checkCancellation()
+      do {
+        try await complete { binding.prepare(check: {
+          do { try permit?.check(); return nil }
+          catch { return error as NSError }
+        }, configuration: {
+          do { try AudioSessionConfiguration.applyOnAudioQueue(permit: permit); return nil }
+          catch { return error as NSError }
+        }, completion: $0) }
+        return
+      } catch {
+        let failure = error as NSError
+        guard ExpoMediaSelection.name == "livekit", failure.domain == "VoIPSDK.MediaAdapter", failure.code == 1 else { throw error }
+        // Registry acquisition never blocks the audio queue. The real action's
+        // preparation permit/deadline bounds this readiness wait.
+        try await Task.sleep(for: .milliseconds(50))
+      }
+    }
   }
   func didActivate(_ audioSession: AVAudioSession) async throws {
     try await complete { binding.activate(audioSession, completion: $0) }

@@ -33,7 +33,7 @@ struct AudioRoutePort: Sendable, Equatable {
   let name: String
   let type: String
 }
-enum AudioRouteSelection: Equatable { case speaker, input(String) }
+enum AudioRouteSelection: Sendable, Equatable { case speaker, input(String) }
 
 /// Projects only observed inputs/current output. It never invents other output devices.
 @MainActor
@@ -91,12 +91,16 @@ final class AudioRoutesStore {
   }
 
   func select(_ id: String, isActive: Bool, apply: (AudioRouteSelection) throws -> Void) throws {
+    if let selection = try selection(id, isActive: isActive) { try apply(selection) }
+  }
+
+  func selection(_ id: String, isActive: Bool) throws -> AudioRouteSelection? {
     guard isActive else { throw AudioRouteError.audioSessionInactive }
     guard let selection = selections[id] else {
       // The already-current output needs no unavailable arbitrary-output API.
-      if snapshot.current?.id == id { return }
+      if snapshot.current?.id == id { return nil }
       throw AudioRouteError.unknownRoute
     }
-    try apply(selection)
+    return selection
   }
 }

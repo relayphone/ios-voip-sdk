@@ -15,6 +15,7 @@ The API design is [RFC 0001](https://github.com/ziahamza/expo-callkit-telecom/pu
 ## Requirements
 
 - iOS and iPadOS 17.4 or later.
+- Swift tools 6.1 or later for the Swift package; Swift language mode 6.
 - Mac Catalyst waits for an Apple SDK fix: with Xcode 27.1, `ConversationManagerDelegate` conformances fail to link on Catalyst.
 - Apple Watch is deferred.
 

@@ -48,8 +48,10 @@ def fixture_case(root, case, pid):
 
     def media(label, active=False, counts=(0, 0, 0, 0)):
         add('m2.mediaSnapshot', label=label, moduleID='existing-module', deviceID='existing-adm',
-            inputAvailable=active, outputAvailable=active, isEngineRunning=active,
-            category='AVAudioSessionCategoryPlayAndRecord', mode='AVAudioSessionModeVoiceChat',
+            inputAvailable=label == 'initial' or active, outputAvailable=label == 'initial' or active,
+            isEngineRunning=active,
+            category='AVAudioSessionCategoryAmbient' if label == 'initial' else 'AVAudioSessionCategoryPlayAndRecord',
+            mode='AVAudioSessionModeDefault' if label == 'initial' else 'AVAudioSessionModeVoiceChat',
             routeCount=2, currentRouteType='Speaker', **dict(zip(
                 ('activatedCount', 'deactivatedCount', 'missingCount', 'failedCount'), counts)))
         assertion(label + '-media')
@@ -71,23 +73,26 @@ def fixture_case(root, case, pid):
         add('sdk.managerCreated', owner='ConversationClient.shared')
         snapshot()
         media('initial')
-        for label in ('inactive-route-rejected', 'routes-observed', 'one-local-audio-track'): assertion(label)
-        add('m2.localTrack', count=1, enabled=True)
-        add('m2.recordingDemand', accepted=True)
-        media('demand')
+        for label in ('inactive-route-rejected', 'routes-observed'): assertion(label)
         add('m2.controlReady', staleAudio=case == 'stale-audio')
         add('m2.pushInjected', pushID=PUSH, mustReport=True, label='primary')
         snapshot('ringing')
         assertion('push-ringing', CALL)
         handler('join')
-        snapshot('connected')
-        joined = add('sdk.state', state='joined', conversationID=CALL)
+        assertion('one-local-audio-track')
+        add('m2.localTrack', count=1, enabled=True)
+        recording = add('m2.recordingDemand', accepted=True)
+        media('demand')
+        snapshot('connecting')
+        add('sdk.state', state='joining', conversationID=CALL)
         assertion('joined', CALL)
+        snapshot('connected', True)
+        add('sdk.state', state='joined', conversationID=CALL)
+        assertion('backend-connected', CALL)
         if case == 'livekit':
             add('m2.audioEvent', name='audioActivated', count=1)
             media('active', True, (1, 0, 0, 0))
             media('speaker', True, (1, 0, 0, 0))
-            snapshot('connected', True)
             handler('hold')
             snapshot('held', True)
             add('m2.audioEvent', name='audioDeactivated', count=1)
@@ -103,9 +108,11 @@ def fixture_case(root, case, pid):
             media('ended', False, (2, 2, 0, 0))
             assertion('ended-empty-with-demand', CALL)
         else:
-            add('m2.audioEvent', at=joined['t_ms'] + 10000, name='audioActivationMissing', count=1)
-            add('m2.audioEvent', at=joined['t_ms'] + 15000, name='audioActivationFailed', count=1)
-            snapshot('ended')
+            add('m2.audioEvent', at=recording['t_ms'] + 10000, name='audioActivationMissing', count=1,
+                conversationID=CALL)
+            add('m2.audioEvent', at=recording['t_ms'] + 15000, name='audioActivationFailed', count=1,
+                conversationID=CALL)
+            snapshot('ended', True)
             snapshot()
             media('failed', False, (0, 0, 1, 1))
             assertion('stale-ended-empty-with-demand', CALL)
@@ -316,6 +323,69 @@ class Controls(unittest.TestCase):
         change_rows(self.root, 'livekit', late_activation)
         self.reject('sample counters')
 
+    def test_initial_session_is_observed_without_requiring_launch_configuration(self):
+        for availability in ((True, False), (False, True), (False, False)):
+            with self.subTest(availability=availability):
+                fixture(self.root)
+                change_rows(self.root, 'livekit', lambda rows: gate.one(rows, 'm2.mediaSnapshot', label='initial').update(
+                    inputAvailable=availability[0], outputAvailable=availability[1],
+                    category='observed-category', mode='observed-mode'))
+                self.assertTrue(gate.validate(self.root)['success'])
+        for field, value in [('inputAvailable', 1), ('outputAvailable', 0), ('isEngineRunning', True),
+                             ('activatedCount', 1), ('category', ''), ('mode', None)]:
+            with self.subTest(field=field):
+                fixture(self.root)
+                change_rows(self.root, 'livekit', lambda rows: gate.one(rows, 'm2.mediaSnapshot', label='initial').update({field: value}))
+                self.reject('availability|counters|session')
+        fixture(self.root)
+        change_rows(self.root, 'livekit', lambda rows: gate.one(rows, 'm2.mediaSnapshot', label='demand').update(
+            category='AVAudioSessionCategoryAmbient', mode='AVAudioSessionModeDefault'))
+        self.reject('session')
+
+    def test_capture_demand_must_follow_actual_join_handler(self):
+        for event in ('m2.localTrack', 'm2.recordingDemand'):
+            with self.subTest(event=event):
+                fixture(self.root)
+                def before_join(rows):
+                    moved = gate.one(rows, event)
+                    rows.remove(moved)
+                    join = gate.one(rows, 'm2.handler', kind='join')
+                    moved.update(t_ms=join['t_ms'], wallTimeMS=join['wallTimeMS'])
+                    rows.insert(rows.index(join), moved)
+                change_rows(self.root, 'livekit', before_join)
+                self.reject('demand/release/control ordering')
+
+    def test_join_settles_connecting_before_backend_connected_report(self):
+        for edit in (lambda call: call.update(status='connected', hasConnectedAt=True),
+                     lambda call: call.update(pending={'kind': 'join'}),
+                     lambda call: call.update(hasConnectedAt=True)):
+            with self.subTest(edit=edit):
+                fixture(self.root)
+                def corrupt_settlement(rows):
+                    call = next(r['conversations'][0] for r in rows if r['event'] == 'sdk.snapshot' and
+                                r['conversations'] and r['conversations'][0]['status'] == 'connecting')
+                    edit(call)
+                change_rows(self.root, 'livekit', corrupt_settlement)
+                self.reject('settled connecting')
+        fixture(self.root)
+        def missing_backend_timestamp(rows):
+            call = next(r['conversations'][0] for r in rows if r['event'] == 'sdk.snapshot' and
+                        r['conversations'] and r['conversations'][0]['status'] == 'connected')
+            call['hasConnectedAt'] = False
+        change_rows(self.root, 'livekit', missing_backend_timestamp)
+        self.reject('backend connected report/timestamp')
+        fixture(self.root)
+        def early_active_stage(rows):
+            active = gate.one(rows, 'm2.mediaSnapshot', label='active')
+            activation = gate.one(rows, 'm2.audioEvent', name='audioActivated', count=1)
+            backend = gate.one(rows, 'm2.assertion', label='backend-connected')
+            for row in (activation, active):
+                rows.remove(row)
+                row.update(t_ms=backend['t_ms'], wallTimeMS=backend['wallTimeMS'])
+                rows.insert(rows.index(backend), row)
+        change_rows(self.root, 'livekit', early_active_stage)
+        self.reject('demand/release/control ordering')
+
     def test_ended_gate_observed_before_demand_release(self):
         change_rows(self.root, 'livekit', lambda rows: rows.insert(rows.index(gate.one(rows, 'm2.mediaSnapshot', label='ended')),
             rows.pop(rows.index(gate.one(rows, 'm2.localTrackReleased')))))
@@ -371,12 +441,12 @@ class Controls(unittest.TestCase):
         self.reject('failed/missing/duplicate')
 
     def test_stale_fault_events_timing_and_failure(self):
-        for offset in (-9000, 5000):
-            with self.subTest(offset=offset):
+        for event, offset in (('audioActivationMissing', 5000), ('audioActivationFailed', -4000)):
+            with self.subTest(event=event, offset=offset):
                 fixture(self.root)
                 def shift(rows):
-                    missing = gate.one(rows, 'm2.audioEvent', name='audioActivationMissing')
-                    for row in rows[rows.index(missing):]:
+                    marker = gate.one(rows, 'm2.audioEvent', name=event)
+                    for row in rows[rows.index(marker):]:
                         row['t_ms'] += offset; row['wallTimeMS'] += offset
                 change_rows(self.root, 'stale-audio', shift)
                 self.reject('watchdog')
@@ -386,6 +456,33 @@ class Controls(unittest.TestCase):
         fixture(self.root)
         change_rows(self.root, 'stale-audio', lambda rows: gate.one(rows, 'm2.audioEvent', name='audioActivationFailed').update(count=2))
         self.reject('counter')
+
+    def test_native_absence_is_bounded_liveness_without_precise_start_claim(self):
+        def earlier_missing(rows):
+            missing = gate.one(rows, 'm2.audioEvent', name='audioActivationMissing')
+            for row in rows[rows.index(missing):]:
+                row['t_ms'] -= 9000; row['wallTimeMS'] -= 9000
+        change_rows(self.root, 'stale-audio', earlier_missing)
+        result = gate.validate(self.root)
+        self.assertTrue(result['success'])
+        self.assertIn('actual watchdog start', result['recoveryEvidence'])
+        self.assertIn('not measured', result['recoveryEvidence'])
+
+    def test_native_audio_events_preserve_conversation_scope(self):
+        for event in ('audioActivationMissing', 'audioActivationFailed'):
+            for edit in (lambda row: row.pop('conversationID'),
+                         lambda row: row.update(conversationID=NONCE),
+                         lambda row: row.update(conversationId=row.pop('conversationID'))):
+                with self.subTest(event=event, edit=edit):
+                    fixture(self.root)
+                    change_rows(self.root, 'stale-audio', lambda rows: edit(gate.one(rows, 'm2.audioEvent', name=event)))
+                    self.reject('conversation scope|conversation identity')
+        for event in ('audioActivated', 'audioDeactivated'):
+            with self.subTest(event=event):
+                fixture(self.root)
+                change_rows(self.root, 'livekit', lambda rows: gate.one(rows, 'm2.audioEvent', name=event, count=1).update(
+                    conversationID=CALL))
+                self.reject('conversation scope')
 
     def test_control_ack_pid_nonce_and_pre_push_order(self):
         for suffix, edit in [('.session.json', lambda v: v.update(pid=999, notification='dev.callkitsim.control.999')),

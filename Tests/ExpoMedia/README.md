@@ -31,3 +31,12 @@ Bounded semaphores establish ordering without sleeps. Temporary compiler and
 module-cache outputs are removed. The receipt rejects source changes during the
 run and hashes the production and facade inputs. These are host controls, not
 native media/activation acceptance or SDK version-pair qualification.
+
+Call-time preparation is checked on the shared native audio queue. Idle attachment
+and initial authorization withdrawal cannot configure/gate a backend. WebRTC
+configuration and manual gating share one non-reentrant lock block, including
+failure/exception unlock. A canceled worker-entry check prevents backend lookup or
+ownership changes before the AV configuration closure. A second call preserves an
+already genuinely authorized engine. LiveKit policy controls inspect all three
+public observer flags before configuration, with readiness failures distinct from
+configuration failures.

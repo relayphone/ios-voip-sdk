@@ -34,8 +34,9 @@ final class AudioActivationCoordinator {
   private var phase: Phase?
   private var cancelTimer: (@MainActor () -> Void)?
   private var recoveryTask: Task<Void, Never>?
+  private var lckActive = false
   private(set) var isActive = false
-  var onEvent: (@MainActor (AudioActivationEvent) -> Void)?
+  var onEvent: (@MainActor (AudioActivationEvent, Set<UUID>) -> Void)?
   var recover: (@MainActor () async -> Void)?
   var endConversations: (@MainActor (Set<UUID>) -> Void)?
 
@@ -70,19 +71,27 @@ final class AudioActivationCoordinator {
   }
 
   func didActivate() {
-    guard !isActive else { return }
-    isActive = true; cancelEpisode(); onEvent?(.activated)
+    let changed = !isActive
+    lckActive = true; isActive = true; cancelEpisode()
+    if changed { onEvent?(.activated, []) }
   }
   func didDeactivate() {
-    guard isActive else { return }
-    isActive = false
-    onEvent?(.deactivated)
+    let changed = lckActive
+    lckActive = false; isActive = false
+    if changed { onEvent?(.deactivated, []) }
     if !isActive && !demand.isEmpty && generation == nil { beginEpisode() }
+  }
+
+  /// A real inactive/interruption observation revokes authorization without
+  /// inventing an LCK delegate callback. Only a later genuine callback restores it.
+  func systemBecameInactive() {
+    isActive = false
+    if !demand.isEmpty && generation == nil { beginEpisode() }
   }
 
   /// Reset invalidates authorization without fabricating a deactivation callback/event.
   func reset() {
-    cancelEpisode(); demand.removeAll(); isActive = false
+    cancelEpisode(); demand.removeAll(); lckActive = false; isActive = false
   }
 
   private func beginEpisode() {
@@ -95,7 +104,7 @@ final class AudioActivationCoordinator {
     cancelTimer?()
     // Arm the final deadline before any observer or async recovery can suspend.
     cancelTimer = schedule(now() + policy.recoveryTimeout) { [weak self] in self?.fail(id) }
-    onEvent?(.missing)
+    onEvent?(.missing, demand)
     guard generation == id, phase == .recovering, !isActive, !demand.isEmpty else { return }
     recoveryTask = Task { @MainActor [weak self] in
       guard self?.generation == id, self?.isActive == false, self?.demand.isEmpty == false else { return }
@@ -111,7 +120,7 @@ final class AudioActivationCoordinator {
     recoveryTask?.cancel(); recoveryTask = nil
     let affected = demand
     failedDemand = affected
-    onEvent?(.failed)
+    onEvent?(.failed, affected)
     // Observers can synchronously end, hold, reset or genuinely activate the session.
     guard generation == id, phase == .failed, !isActive else { return }
     let remaining = affected.intersection(demand)
@@ -131,6 +140,14 @@ final class AudioAdapterOperations {
   private var tail: Task<Void, Never>?
   private var tailID: UUID?
   var onError: (@MainActor (String) -> Void)?
+  func perform(_ operation: @escaping @MainActor () async throws -> Void) async throws {
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+      enqueue {
+        do { try await operation(); continuation.resume() }
+        catch { continuation.resume(throwing: error) }
+      }
+    }
+  }
   func enqueue(_ operation: @escaping @MainActor () async throws -> Void) {
     let previous = tail; let id = UUID(); tailID = id
     tail = Task { @MainActor [weak self] in

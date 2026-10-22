@@ -49,19 +49,23 @@ def fixture(build, capture):
                 add('contract.warning', phase=phase, count=count, message=gate.WARNING)
                 add('contract.creationEnd', phase=phase, warnings=count, identity=identity)
         else:
-            pending = dict(id=ACTION, kind='join', origin='app', deadlineMS=WALL + 30_000)
-            def snapshot(status=None, pending=None, at=None):
-                calls = [] if status is None else [dict(id=CALL, status=status, hasConnectedAt=False)]
+            pending = dict(id=ACTION, kind='join', origin='app', deadlineMS=WALL + 28_500)
+            def snapshot(status=None, pending=None, at=None, connected=False):
+                calls = [] if status is None else [dict(id=CALL, status=status, hasConnectedAt=connected)]
                 if pending: calls[0]['pending'] = pending
                 add('contract.snapshot', at=at, revision=len([r for r in rows if r['event'] == 'contract.snapshot']), conversations=calls)
             snapshot()
             add('contract.incoming', conversationID=CALL)
             snapshot('ringing', pending=pending)
             sample = add('contract.pending', conversationID=CALL, actionID=ACTION, kind='join', origin='app',
-                         deadlineMS=WALL + 30_000, remainingMS=0, handlerAttached=False, clockBeforeMS=WALL + clock + 1)
+                         deadlineMS=WALL + 28_500, remainingMS=0, handlerAttached=False, clockBeforeMS=WALL + clock + 1)
             sample['remainingMS'] = sample['deadlineMS'] - sample['wallTimeMS']
             add('contract.joinResult', accepted=True)
-            snapshot('connected', at=30_001)
+            snapshot('connecting', at=28_501)
+            add('contract.joinSettled', joined=True, conversationID=CALL)
+            add('contract.backendConnectedRequested', conversationID=CALL)
+            snapshot('connected', connected=True)
+            add('contract.backendConnected', conversationID=CALL)
             add('contract.observation', connected=True, conversationID=CALL)
             add('contract.endReportRequested', conversationID=CALL)
             snapshot()
@@ -75,11 +79,13 @@ def fixture(build, capture):
         for count in range(1, 4 if case == 'guard' else 2): runtime('provider.created', provider='provider-' + str(count))
         if case == 'unhandled-accept':
             runtime('transaction.delivered', kinds=['CXAnswerCallAction'], actionIDs=['native-cx-action'])
+            runtime('action.deadline', actionID='native-cx-action', apiKind='livecommunicationkit',
+                    deadlineMS=WALL + 30_000, deadlineSeconds=30, expirySeconds=30)
             runtime('contract.pendingClock', at=sample['t_ms'], actionID=ACTION)
-            runtime('action.settled', at=30_000, actionID='native-cx-action', fulfilled=True)
-            runtime('call.changed', at=30_001, uuid=CALL, connected=True, ended=False)
-            runtime('report.ended', at=30_010, callUUID=CALL)
-            runtime('call.changed', at=30_011, uuid=CALL, connected=True, ended=True)
+            runtime('action.settled', at=28_500, actionID='native-cx-action', fulfilled=True)
+            runtime('call.changed', at=28_501, uuid=CALL, connected=True, ended=False)
+            runtime('report.ended', at=28_510, callUUID=CALL)
+            runtime('call.changed', at=28_511, uuid=CALL, connected=True, ended=True)
         save(capture, case, rows, engine)
 
 
@@ -97,6 +103,10 @@ def save(capture, case, rows, engine):
 
 
 class Controls(unittest.TestCase):
+    def test_accept_cannot_race_the_platform_deadline(self):
+        self.check('unhandled-accept', lambda rows, engine:
+            next(row for row in engine if row['event'] == 'action.deadline').update(deadlineMS=WALL + 28_500))
+
     def check(self, case=None, edit=None, file_edit=None, succeeds=False, parent=None):
         with tempfile.TemporaryDirectory(prefix='sdk-m1-contract-controls-') as temporary:
             root = Path(temporary); build = root / 'build'; capture = root / 'capture'
@@ -137,7 +147,7 @@ class Controls(unittest.TestCase):
         self.check('unhandled-accept', lambda rows, engine: next(r for r in rows if r['event'] == 'contract.pending').update(deadlineMS=WALL + 5000, remainingMS=4990))
         self.check('unhandled-accept', lambda rows, engine: next(r for r in rows if r['event'] == 'contract.pending').update(handlerAttached=True))
         def early(rows, engine):
-            row = next(r for r in rows if r['event'] == 'contract.snapshot' and r['conversations'] and r['conversations'][0]['status'] == 'connected')
+            row = next(r for r in rows if r['event'] == 'contract.snapshot' and r['conversations'] and r['conversations'][0]['status'] == 'connecting')
             row['wallTimeMS'] = WALL + 1000
         self.check('unhandled-accept', early)
         self.check('unhandled-accept', lambda rows, engine: next(r for r in rows if r['event'] == 'contract.snapshot' and r['conversations'] and 'pending' in r['conversations'][0])['conversations'][0]['pending'].update(id='different-action'))
@@ -145,7 +155,16 @@ class Controls(unittest.TestCase):
     def test_native_settlement(self):
         self.check('unhandled-accept', lambda rows, engine: next(r for r in engine if r['event'] == 'action.settled').update(fulfilled=False))
         self.check('unhandled-accept', lambda rows, engine: next(r for r in engine if r['event'] == 'call.changed').update(connected=False))
-        self.check('unhandled-accept', lambda rows, engine: next(r for r in rows if r['event'] == 'contract.snapshot' and r['conversations'] and r['conversations'][0]['status'] == 'connected')['conversations'][0].update(hasConnectedAt=True))
+        self.check('unhandled-accept', lambda rows, engine: next(r for r in rows if r['event'] == 'contract.snapshot' and r['conversations'] and r['conversations'][0]['status'] == 'connected')['conversations'][0].update(hasConnectedAt=False))
+
+    def test_signaling_does_not_fabricate_connected(self):
+        self.check('unhandled-accept', lambda rows, engine:
+            next(r for r in rows if r['event'] == 'contract.snapshot' and r['conversations'] and
+                 r['conversations'][0]['status'] == 'connecting')['conversations'][0].update(status='connected'))
+        self.check('unhandled-accept', lambda rows, engine:
+            next(r for r in rows if r['event'] == 'contract.backendConnectedRequested').update(conversationID='other'))
+        self.check('unhandled-accept', lambda rows, engine:
+            next(r for r in rows if r['event'] == 'contract.joinSettled').update(joined=False))
 
     def test_native_early_late_timing(self):
         def timing(rows, engine, settlement, connection):

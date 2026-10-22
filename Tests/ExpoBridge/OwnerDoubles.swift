@@ -6,7 +6,7 @@ import Foundation
 final class ConversationClient {
   private(set) var handler: ConversationHandler?
   private var states: [UUID: @MainActor (ConversationStateUpdate) -> Void] = [:]
-  private var events: [UUID: @MainActor (ConversationEvent) -> Void] = [:]
+  private var events: [UUID: @MainActor (ConversationEventContext) -> Void] = [:]
   private var routes: [UUID: @MainActor (AudioRoutesSnapshot) -> Void] = [:]
   var state = ConversationStateUpdate(revision: 0, conversations: [])
   var audioRoutes = AudioRoutesSnapshot(revision: 0, routes: [], current: nil)
@@ -19,7 +19,7 @@ final class ConversationClient {
     let id = UUID(); states[id] = callback; callback(state); return id
   }
   func removeStateObserver(_ id: UUID) { states.removeValue(forKey: id) }
-  func observeEvents(_ callback: @escaping @MainActor (ConversationEvent) -> Void) -> UUID {
+  func observeEvents(_ callback: @escaping @MainActor (ConversationEventContext) -> Void) -> UUID {
     let id = UUID(); events[id] = callback; return id
   }
   func removeEventObserver(_ id: UUID) { events.removeValue(forKey: id) }
@@ -35,8 +35,9 @@ final class ConversationClient {
     state = update
     for callback in Array(states.values) { callback(update) }
   }
-  func publish(_ event: ConversationEvent) {
-    for callback in Array(events.values) { callback(event) }
+  func publish(_ event: ConversationEvent, conversationID: UUID? = nil) {
+    let context = ConversationEventContext(type: event, conversationID: conversationID)
+    for callback in Array(events.values) { callback(context) }
   }
 }
 

@@ -30,7 +30,7 @@ private final class ReentrantMediaAdapter: MediaAdapter {
   private(set) var authorizationCalls = 0
   func setSystemAudioAuthorization(_ active: Bool) {
     authorizationCalls += 1
-    observedClient = ConversationClient.shared
+    observedClient = try? VoIPApplication.start(mediaAdapter: self).client
   }
   func prepare() async throws {}
   func didActivate(_ session: AVAudioSession) async throws {}
@@ -68,21 +68,24 @@ private final class SDKM1ContractsProbe {
     do {
       if mode == "media-reentrancy" {
         let adapter = ReentrantMediaAdapter()
-        try ConversationClient.registerMediaAdapter(adapter)
-        let client = ConversationClient.shared
-        let sameOwner = adapter.observedClient === client && client === ConversationClient.shared
+        let application = try VoIPApplication.start(mediaAdapter: adapter)
+        let client = application.client
+        let repeated = try VoIPApplication.start(mediaAdapter: adapter)
+        let sameOwner = adapter.observedClient === client && application === repeated
         ContractTrace.log("contract.mediaReentrancy", ["authorizationCalls": adapter.authorizationCalls,
           "sameOwner": sameOwner, "warnings": warnings])
         finish(sameOwner && adapter.authorizationCalls == 1 && warnings == 0)
         return
       }
       if mode == "unhandled-accept" {
-        try ConversationClient.configure(.init(includesConversationInRecents: false, unhandledAction: .accept))
         ContractTrace.log("contract.configuration", ["policy": "accept", "handlerAttached": false])
       }
-      let client = ConversationClient.shared
+      let configuration = VoIPApplication.Configuration(client: .init(includesConversationInRecents: false,
+        unhandledAction: mode == "unhandled-accept" ? .accept : .fail))
+      let client = try VoIPApplication.start(configuration: configuration).client
+      let repeated = try VoIPApplication.start(configuration: configuration).client
       ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(client)),
-        "sharedIdentity": String(describing: ObjectIdentifier(ConversationClient.shared)), "warnings": warnings])
+        "sharedIdentity": String(describing: ObjectIdentifier(repeated)), "warnings": warnings])
       if mode == "guard" { guardContract() }
       else if mode == "unhandled-accept" { try await acceptContract(client) }
       else { finish(false) }
@@ -133,7 +136,7 @@ private final class SDKM1ContractsProbe {
     defer { request.cancel() }
     _ = await wait(seconds: 5) { client.snapshots.first(where: { $0.id == id })?.pending != nil }
     guard let pending = client.snapshots.first(where: { $0.id == id })?.pending else {
-      try? client.reportConversation(id, report: .ended(.failed)); finish(false); return
+      try? await client.reportConversation(id, report: .ended(.failed)); finish(false); return
     }
     let clockBefore = Int(Date().timeIntervalSince1970 * 1000)
     CKSimEmit("contract.pendingClock", ["actionID": pending.id.uuidString])
@@ -142,13 +145,29 @@ private final class SDKM1ContractsProbe {
       "deadlineMS": Int(pending.deadline.timeIntervalSince1970 * 1000),
       "remainingMS": Int(pending.deadline.timeIntervalSinceNow * 1000), "handlerAttached": false,
       "clockBeforeMS": clockBefore])
-    let connected = await wait(seconds: pending.deadline.timeIntervalSinceNow + 3) {
-      client.snapshots.first(where: { $0.id == id })?.status == .connected
+    let joined = await wait(seconds: pending.deadline.timeIntervalSinceNow + 3) {
+      client.snapshots.first(where: { $0.id == id }).map {
+        $0.status == .connecting && $0.pending == nil && $0.connectedAt == nil
+      } == true
+    }
+    ContractTrace.log("contract.joinSettled", ["joined": joined, "conversationID": id.uuidString])
+    guard joined else {
+      try? await client.reportConversation(id, report: .ended(.failed)); finish(false); return
+    }
+    // Explicit fixture backend event, after signaling has settled. Never infer
+    // transport connection from LCK's joined action state.
+    ContractTrace.log("contract.backendConnectedRequested", ["conversationID": id.uuidString])
+    try await client.reportConversation(id, report: .connected)
+    ContractTrace.log("contract.backendConnected", ["conversationID": id.uuidString])
+    let connected = await wait(seconds: 3) {
+      client.snapshots.first(where: { $0.id == id }).map {
+        $0.status == .connected && $0.connectedAt != nil
+      } == true
     }
     ContractTrace.log("contract.observation", ["connected": connected, "conversationID": id.uuidString])
     if client.snapshots.contains(where: { $0.id == id }) {
       ContractTrace.log("contract.endReportRequested", ["conversationID": id.uuidString])
-      try client.reportConversation(id, report: .ended(.remoteEnded))
+      try await client.reportConversation(id, report: .ended(.remoteEnded))
       ContractTrace.log("contract.reportEnded", ["conversationID": id.uuidString])
     }
     let empty = await wait(seconds: 3) { client.snapshots.isEmpty }

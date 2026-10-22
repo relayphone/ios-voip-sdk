@@ -1,0 +1,60 @@
+{
+  "classification": "simulator public-header compile regression; not another app build or journey",
+  "originalCI": {
+    "runID": 39752379561,
+    "headCommit": "31e3d8de2f11a953557edb3fd3cf33ea44914cf0",
+    "checkoutCommit": "5c14d58b1c9dc2603bcf30c87bbaab2a03f6da47",
+    "checkoutTreeSHA": "2f8d3ade34df343f1cfd3058e3a272f4b8c1c483",
+    "artifactID": 12414373540,
+    "artifactSHA256": "09a82b326c938b70b99d1029330db4112d23c9bc3211ea072256fc07f054c0af",
+    "buildLogSHA256": "31f8e011bbf10bc5ceb7eb76ba3e766f3ac577b590c8c2e4172c66adb0bf2470",
+    "error": "example/modules/journey/apple/VoIPExampleJourneyModule.swift:197: cannot find CKSimEmit in scope",
+    "phase": "simulator Release compile; device gate and native journeys not reached"
+  },
+  "localRed": {
+    "source": {
+      "sourceCommit": "31e3d8de2f11a953557edb3fd3cf33ea44914cf0",
+      "sourceInputsSHA256": "bcb5606b7c54013f1e2f62c3b214539d06ab970d539a7866375eff10860f8643"
+    },
+    "exitCode": 1,
+    "logSHA256": "1b733c424b74c353d3f7b18b3b487e0940ecb52fd68c1b36abbc6ef06cf7227c"
+  },
+  "fixedHostControls": {
+    "groups": 5,
+    "logSHA256": "dcbf87312a76c2daf555ebad6cf1349f855ceb060e2d61f1e0e7e53a40171603"
+  },
+  "sourceSHA256": {
+    "Sources/Interposition/include/CKRuntimeBridge.h": "565e067907f10700a4f7083b8b0dd4b25ae263b832f479ae3689c61435ba8bf3",
+    "Sources/Interposition/CKRuntimeSeam.h": "47e32a8965a0dd1dfaef592eaec456841c2cbc80ea87059a8adba2c4ae1421cd",
+    "Expo/apple/IosVoipSDK.h": "3f58b6c3fc2395bed11c25a5fe86859781efae7d50297ed4761999f1d57b9eb9",
+    "discovery/check_device_release.py": "a0635afb76e0660671c015ed6f1545882e0acf56ce18d647349443f357d879e5"
+  },
+  "devicePublicHeaders": {
+    "CKRuntimeBridge.h": {
+      "sourceSHA256": "565e067907f10700a4f7083b8b0dd4b25ae263b832f479ae3689c61435ba8bf3",
+      "devicePreprocessedSHA256": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070"
+    },
+    "IosVoipSDK-umbrella.h": {
+      "sourceSHA256": "f954e7059a40962735f3e3326628e599220e8787172baf433b849ff0ebc0b38f",
+      "devicePreprocessedSHA256": "c7a8db89c839327e6dd3cea76d6ecfb9a4f6dca2c553108eeb2f46ab5dd1d464"
+    },
+    "IosVoipSDK.h": {
+      "sourceSHA256": "3f58b6c3fc2395bed11c25a5fe86859781efae7d50297ed4761999f1d57b9eb9",
+      "devicePreprocessedSHA256": "34cba7cc932327282d401260c7d2bfac15026db7beea801f6487e579e71aa6ac"
+    },
+    "VSProviderCreationMonitor.h": {
+      "sourceSHA256": "31cb18b30406602c323ebb3e58ffafcaff0106a2f3ab4e378fb252a2a0c00ccd",
+      "devicePreprocessedSHA256": "077af8a86fdccb2c4cbca0d520915f8ba2dd59c5ba8bbf84c2d659578c837ad1"
+    },
+    "VSPushRegistryOwner.h": {
+      "sourceSHA256": "6c193787c8dd70d4e0633615ea0728559bf10a53fcd41c6e6362827e3083d57b",
+      "devicePreprocessedSHA256": "6b7ca5eb843a59ee1cdd1e1a809e8aca398e75ee34efb07653a3f4bde4033f15"
+    },
+    "VoIPPlatform.h": {
+      "sourceSHA256": "09884ca1f838088e33358a96013466a142c5c8773549e599beb43710b1043dd8",
+      "devicePreprocessedSHA256": "91771aea4947c183b167f5c217a3c4b369f440f210406ff083d0deb0d6027135"
+    }
+  },
+  "devicePreprocessedHeadersMatchNativeAd18324": true,
+  "limits": "Original CI failure is retained unchanged. Full device native acceptance remains the recorded ad18324 result; the guarded simulator declaration followup has compile-only consumer/device-header controls and awaits new hosted qualification."
+}

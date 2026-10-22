@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "classification": "Measured host contract preparation; native simulator/device acceptance pending",
+  "baseCommit": "3ebd46d281b535571232d2ee7e114bff76b6ddae",
+  "createdAt": "2026-10-22T08:58:18.172424+00:00",
+  "inputs": {
+    "Expo/M1-API.md": "22cb255d286366100ae07c95f58fd3e60fa2df0d789f5b7d5f8545b52af7c37d",
+    "Expo/apple/IosVoipSDKModule.swift": "bcafc0b2ee1556ef6a849aed2221537340f3f2d2207f3abfac288b8ab6baeea6",
+    "Sources/VoIPSDK/ConversationClient.swift": "07bbed62e2c0bfdc6161971d0f165a159a4b5f1c52c4cf21f1fbb96e530e4c6f",
+    "Sources/VoIPSDK/ConversationHandler.swift": "489c64f2792fe6b611bc9d66c207522216d1fda187c47720128c574d848e1373",
+    "Sources/VoIPSDK/ConversationModels.swift": "a9f49822a15b4ba0db15572af322e5c1da4f7d34f037089b1f55aa76ec1aa0ee",
+    "Sources/VoIPSDK/ConversationRecord.swift": "93208e379e1732e2bd48e74c8e256a2f06e83c5729e3d168e5bdf48191009029",
+    "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+    "Sources/VoIPSDK/PushService.swift": "1d73684d33525d203ea528aae193e72bbb694fc9ecfc129b66dcf00a7cde0fc9",
+    "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+    "Sources/VoIPSDK/SimulatorSupport.swift": "adf83443fee4f0233325bbe84fd98816d82f8450fdc1893c4623e54986768149",
+    "Tests/VoIPSDK/ClientContractTests.swift": "9624aadaf0fb05c09e87211b9c7e3416e8ddb8da63482de26133235fdf0efc93",
+    "Tests/VoIPSDK/MuteEchoPlatform.swift": "45ec1e9a87d08074f1b117bcf400d7899c3666d8058adea8b01746acc88ac99e",
+    "Tests/VoIPSDK/MuteEchoTests.swift": "de75646a656ee59c0e6b38c7bcd77fa86ef8366560af32bf2be9bfd1da05287c",
+    "Tests/VoIPSDK/run_mute_echo.sh": "048e139efcb94d173286b0f108f657eb92887f82255300bdf880e3e216bf6108",
+    "discovery/check_sdk_m1.py": "31be664bfae51d853b0f45620eb78a87690ff50be7b33837a5ca28e1ddfacba8",
+    "discovery/check_sdk_m1_contracts.py": "43abce48ebe152ad890eda3ac8b40ca32c51e6d65d21792e0725b7c708154b65",
+    "discovery/probe/sdk_m1_contracts.swift": "78e38cf1dd240dbaf99b0a54f11d482b133e50d30ce303fabaaf3351add81fb5",
+    "discovery/sdk_m1_conformance.py": "a872d9075d24e6de8d3faee61441bf19e17d791af6ee477fc1b2a788c6ae4974",
+    "discovery/sdk_m1_contracts_conformance.py": "82260c0ca95f75ef0473c8d020c1548b3da4631463e78afb05e04e01675af257",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-basic.jsonl": "9fd5e48b62a826af7e62388de87119ab431fe2019a7d40445cdd9b528dde4bf7",
+    "example/acceptance.ts": "85372404553bca51fa1b794144688e3b11134bfced9290f603409a935cdb0506",
+    "example/modules/journey/apple/VoIPExampleJourneyModule.swift": "345b09f4d776781223c2d7834ab8e127f78f35d9046a2fef18a0d4f7ac04cfa2"
+  },
+  "checks": [
+    {
+      "name": "client",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_mute_echo.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "861a924ef7e2528d72e1a682154175906e3bb692a51b546a560f041b02df7f47"
+    },
+    {
+      "name": "core",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "37e5b3c81714975c6258144064f301756c63cb884d503c1ce2f4740e2a719567"
+    },
+    {
+      "name": "projection",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_projection.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "3de153b0c0d70f110b6720b8cfd2cbada4f4e5dcbb403c869a7dfd5382b59130"
+    },
+    {
+      "name": "push",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_push.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "14373b0b637343bec1149a022f1c809ed97ff3142da6a4c10eeeacfba49652a0"
+    },
+    {
+      "name": "relay",
+      "command": [
+        "python3",
+        "discovery/check_expo_bridge.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "164c7700037f804e1d71f7db37e6063d9ade116d12fae4726079d0d40648a1a4"
+    },
+    {
+      "name": "contracts",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "61996b66e6c46ee376f5d9f0de84837c7059b6c09d1c3a70d3ce37f5ea5dcd39"
+    },
+    {
+      "name": "m1",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e11559016d66835699eb442ae0e616f2746c9457d5223ea1cd0494d49b64c031"
+    },
+    {
+      "name": "ts-build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "80b983d0d6ddf0414b031b45a740d401b2506d5d6997b5aeb1500085c065a2fa"
+    },
+    {
+      "name": "ts-typecheck",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "01d5bb4c9623a561fbd8d3a9f2b49a7793b1c7711b89c6b5792062c65e6247b7"
+    },
+    {
+      "name": "ts-runtime",
+      "command": [
+        "node",
+        "--test",
+        "Expo/tests/m1-runtime.test.cjs"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "ed37895d1f6433a7404bdae9c50aa3e62f73d3fba422c6aef14867ce8d046550"
+    },
+    {
+      "name": "format",
+      "command": [
+        "npm",
+        "run",
+        "format:check"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "827607e2ff79bf46788cddd6fc2263e6d906db286e225bf06b5559131fa2fbf3"
+    },
+    {
+      "name": "shell-syntax",
+      "command": [
+        "bash",
+        "-n",
+        "Tests/VoIPSDK/run_mute_echo.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "toolchain",
+      "command": [
+        "swiftc",
+        "--version"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "30bb0d72a580e8e936ab32e24cab2876f82fa6b06d66fef876fe21a47e828acc"
+    }
+  ],
+  "behaviorRegression": {
+    "exitCode": 251,
+    "controlSHA256": "9ddbb166c938727a21f46a6e2fb194af91c0ce85b2de220d15fff7763c1d765f",
+    "sourceAdjustment": "await removed only for the previous synchronous reportConversation signature; no production changes",
+    "outputSHA256": "946317f7203b61cbd1a6e287812f482c62c6a97fa3dbe7378a37bf2964facd35",
+    "productionClientSHA256": "765495f66cd409a0156eeeade6fc586ccce87c70e1a93977c4c004dc9d9ecce5",
+    "assertion": "Incoming join accepts signaling; only a backend connected report connects"
+  },
+  "incompletePreparation": {
+    "initialPrototype": "Compiler rejected unnecessary await against the old synchronous signature; await was removed only in the red control copy.",
+    "laterRegressionBatch": "Outer host compiler/script budget expired after180 seconds before its first check result; no product cause inferred. Later bounded owned-process-group runner passed."
+  },
+  "results": {
+    "muteGroups": 7,
+    "clientContractGroups": 6,
+    "nativeFrameworkMeasured": false,
+    "nativeContractGateGroups": 9,
+    "m1GateGroups": 10
+  },
+  "limits": [
+    "Client and Handler are actual production sources; only LCK/AVAudioSession boundaries are host facades.",
+    "Start remains native idle/dialing after signaling; Join becomes native joined/SDK connecting until transport report.",
+    "Native fixture source/gate changes are prepared, not executed under runtime here.",
+    "Global audio event context and actual-client duplicate wrapping controls will be integrated from their respective owners."
+  ]
+}

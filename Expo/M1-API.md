@@ -25,10 +25,25 @@ Incoming metadata stays in `payload`; outgoing metadata is passed to native.
 Snapshot arrays and their nested bridge JSON are frozen copies. Applications
 should treat state as read-only and use commands/reports to change it.
 
+Join/start fulfillment acknowledges signaling. An incoming joined call remains
+`connecting`; outgoing may remain `dialing` until a transport `connecting` report.
+Neither becomes `connected` or gets `connectedAt` until the app's transport calls
+`reportConversation(id, { type: 'connected' })`. An `ended` report with reason
+`local` awaits the same system end command and handler as `endConversation`; its
+promise rejects if that command fails. LCK has no local ended-report reason.
+Remote `callEnded` wire fallback remains unchanged, including a peer's `local`
+reason being remote on this device. Native `receiveCallEnded` refuses `.local`
+without consuming its event ID; local operations use the public command/report.
+
 `setConversationHandler(null)` removes the handler. Replacing or removing it
 aborts the old handler's signals with `handlerReplaced` and ignores its late
 promise results. Native retains unexpired actions, may redeliver them to the new
-generation, and owns the platform deadline and unhandled-action policy. JS never
+generation, and owns the deadline and unhandled-action policy. `deadline` in both
+the pending snapshot and handler context is the effective application deadline:
+initially 1.5 seconds before the native `timeoutDate`. The margin is an application
+safety policy, not a measured platform interval. Native applies the policy there,
+cancels running work, and refuses an accept if execution resumes after platform
+expiry. Handler attachment does not subtract the margin again. JS never
 uses a timer to extend or fulfill an expired action. Optional hold, mute and tones
 callbacks accept when omitted. Handler callbacks may return `void` or a promise,
 matching the RFC's synchronous mute example. Native filters system echoes.

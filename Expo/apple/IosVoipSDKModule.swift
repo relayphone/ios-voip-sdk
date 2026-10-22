@@ -36,10 +36,13 @@ public final class IosVoipSDKModule: Module {
       let id = self.bridgeID
       DispatchQueue.main.async { ConversationBridges.listenForDialRequests(id, attached: attached, generation: generation) }
     }
-    Function("settleAction") { (actionID: String, generation: Int, success: Bool, _: [String: String]?) in
+    Function("settleAction") { (actionID: String, generation: Int, success: Bool, reason: [String: String]?) in
       guard let action = UUID(uuidString: actionID) else { return }
       let id = self.bridgeID
-      DispatchQueue.main.async { ConversationBridges.settle(id, id: action, generation: generation, success: success) }
+      let rejection = HandlerRejection(reason)
+      DispatchQueue.main.async {
+        ConversationBridges.settle(id, id: action, generation: generation, success: success, rejection: rejection)
+      }
     }
 
     AsyncFunction("getConversations") { (promise: Promise) in
@@ -61,7 +64,7 @@ public final class IosVoipSDKModule: Module {
     }
     AsyncFunction("selectAudioRoute") { (id: String, promise: Promise) in
       Self.respond(promise, failureCode: "audio_route", failureMessage: "The system could not select this audio route.") {
-        try ExpoMediaSupport.startFromBundle().client.selectAudioRoute(id)
+        try await ExpoMediaSupport.startFromBundle().client.selectAudioRoute(id)
         return nil
       }
     }
@@ -106,7 +109,7 @@ public final class IosVoipSDKModule: Module {
       guard let data = try? BridgeJSON.data(report) else { Self.rejectArguments(promise); return }
       Self.respond(promise) {
         let report = try BridgeJSON.decode(ReportOptions.self, from: data)
-        try ExpoMediaSupport.startFromBundle().client.reportConversation(Self.uuid(id), report: report.report())
+        try await ExpoMediaSupport.startFromBundle().client.reportConversation(Self.uuid(id), report: report.report())
         return nil
       }
     }
@@ -147,6 +150,9 @@ public final class IosVoipSDKModule: Module {
       catch ConversationClientError.unsupported { promise.reject("unsupported", "This conversation operation is unsupported.") }
       catch ConversationClientError.invalidPayload { rejectArguments(promise) }
       catch ConversationClientError.invalidDigits { rejectArguments(promise) }
+      catch ConversationClientError.duplicateSDKLinkage {
+        promise.reject("duplicate_sdk_linkage", "Link one VoIP SDK product in this process; both SwiftPM and the Expo pod were loaded.")
+      }
       catch { promise.reject(failureCode, failureMessage) }
     }
   }

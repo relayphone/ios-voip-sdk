@@ -69,3 +69,22 @@ A0 first and A1–A9 integration remain merge prerequisites. No device, APNs or
 simulator action was performed while preparing this branch. The public RFC
 API is unchanged, so no RFC deviation comment is introduced by the acceptance
 mode change.
+
+**Measured integrated host preparation:** the A9 branch merges the reviewed
+A7/A4/A8 integration `47834d58` normally. The three content conflicts retain
+the dial listener and generation isolation while preserving typed handler
+rejections, the sole `VoIPApplication.start` owner, atomic media selection and
+optional conversation identity on audio events. The shared audio queue and
+explicit backend connected report remain in the example; its main-thread
+category setter remains removed. The direct gate now requires the real owner
+label and rejects the obsolete shared-client label.
+
+Seventeen affected host/compiler/build/lint commands pass, including 13 direct
+and 19 original OS groups, the real relay, action preparation/deadline/echo
+contracts, audio queue/lifecycle/media controls, process ownership and TypeScript.
+The [integration receipt](../verification/2026-10-22-sdk-m3-direct/integration-host-checks.json)
+binds these source inputs and command logs. Independent SPEC and STANDARDS
+reviews clear the resolved integration. The original host receipt and OS red
+exports are historical and unchanged. This is not an Expo native build or call
+journey: the final A0.1 fix and committed-source simulator capture remain pending.
+No push, simulator or device operation was performed for this integration.
