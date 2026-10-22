@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "classification": "measured exploratory diagnostics; not M3 native acceptance",
+  "source": {
+    "sourceCommit": "a24ac916e8592efe477322e3f69d13652100ab22",
+    "sourceInputsSHA256": "1d5e26527ab785e532e6bd7c2e7333d6f83a7898b77d84971ae4a263393a1453"
+  },
+  "environment": {
+    "simulatorOS": "27.0",
+    "xcodeVersion": "27.1"
+  },
+  "privateDiagnosisIndexSHA256": "a5495d7fa163b0ebf097acd7004db68c0c159bf21d13d41d9a09894b3edddd74",
+  "observations": {
+    "headlessPublicSettings": {
+      "testIdentifier": "SettingsProbe/testSelectObservedExample()",
+      "selectedBeforeTap": true,
+      "selectedAfterTap": true
+    },
+    "normalXcodeSimulatorPackaging": {
+      "callingAppClaimInMachO": true,
+      "hostEntitlementsEmpty": true,
+      "publicLaunchSucceeded": true
+    },
+    "postBuildRestrictedHostSigning": {
+      "launchSucceeded": false,
+      "domain": "AppleMobileFileIntegrityError",
+      "code": -424,
+      "message": "The file is adhoc signed but contains restricted entitlements"
+    },
+    "directTel": {
+      "exitCode": 115,
+      "nativeIngressObserved": false,
+      "publicDialRequestObserved": false,
+      "identityLimit": "Boot inherited stale M3 fixture run identity; this is not a strict bound M3 journey"
+    },
+    "safariTel": {
+      "publicAnchorTapped": true,
+      "visibleError": "Safari cannot open the page because the address is invalid.",
+      "nativeIngressObserved": false,
+      "publicDialRequestObserved": false
+    }
+  },
+  "limits": [
+    "Exploratory UI revisions were not all retained as complete source-bound binary cohorts.",
+    "The candidate was already selected; the public row was tapped and remained selected.",
+    "The numeric OS dispatch error has no established stable public meaning.",
+    "No universal simulator limitation or missing production declaration is established.",
+    "Raw host logs and signing inventory remain private; no device/provisioning acceptance is claimed."
+  ],
+  "privateArtifactSHA256": {
+    "sdk-m3-xctest-probe-a24/host-launch-system.log": "9f1e80727a9163343bbaa19c774c6e9796882002bac73c0b3b302dbcd71f7506",
+    "sdk-m3-xctest-probe-a24/normal-host-entitlements.stdout": "00491886daae07a5296c8bad50f116bf006b0004d7bf7338ad46669fbd903a4a",
+    "sdk-m3-xctest-probe-a24/normal-simulated-entitlements.plist": "ee02bbadf7768214dcc0167a216e4f6ea923aec952a5c3d48c623d8c281e72f2",
+    "sdk-m3-xctest-probe-a24/normal-simulator-signing-build.log": "5a616838b21692e38984f518636748e1d0fadb5ad0a3e78ce0f68c1c8d3ac3ff",
+    "sdk-m3-normal-entitlements-probe2-a24/selection-test.log": "7831562dbe32bfec36281c7d62f3ff11c602b9a85313de46bbb4670d817baf3f",
+    "sdk-m3-normal-entitlements-probe2-a24/exploratory-safari-tel/sdk-m3-tel.log": "1afcd209d124ce7f7ba71b98e53a8a988f5c707bf80800844c96a1676879a56b",
+    "sdk-m3-normal-entitlements-probe2-a24/exploratory-safari-tel/sdk-m3-tel.receipt.json": "0172a367b76447716c39e5ce582c335ad99fc8b5e0a49832fc88b85b48a5e6de"
+  },
+  "ownedSimulatorCleanup": [
+    {
+      "simulatorID": "531FF828-9075-48F8-8267-AE9162F233B8",
+      "ownsSimulator": true,
+      "shutdownExitCode": 0,
+      "deleteExitCode": 0,
+      "inventoryExitCode": 0,
+      "independentlyAbsent": true
+    },
+    {
+      "simulatorID": "9D0AA655-B2D5-4B4B-9C16-7E36EDF1E803",
+      "ownsSimulator": true,
+      "shutdownExitCode": 0,
+      "deleteExitCode": 0,
+      "inventoryExitCode": 0,
+      "independentlyAbsent": true
+    },
+    {
+      "simulatorID": "EE34C316-DB0F-4DAF-A8AE-BEDDB5835B9F",
+      "ownsSimulator": true,
+      "shutdownExitCode": 0,
+      "deleteExitCode": 0,
+      "inventoryExitCode": 0,
+      "independentlyAbsent": true
+    }
+  ],
+  "files": {
+    "before-selection-accessibility.txt": "4c30bf7c88c1e9f95c092927856752170292840c64657b173c255ea58995da4c",
+    "after-selection-accessibility.txt": "ae094cea4072a0b00126c0cf906f3e67d4fb914f59c1de61e271f65f700f3433",
+    "selected-calling-app.png": "c91563ebc53e620ab1517a95610b889d3e923acc3b575d4649976ac97eaaa4aa",
+    "selection-attachments.json": "b47a8ae066e3d82e869441ad883cfda3b717f0bb5763c67c49f201ae199c9d05",
+    "direct-dispatch.json": "3a91dc4b6d74ff0c29f5f1817aa8446736ceb5f4949522d9edc787bf84d4b452",
+    "direct-dispatch.stderr": "6c98a03d7b043feb52bfacfdd20455eb5a333eba58f045d8c6cb8a9ea1507694",
+    "safari-after-tap-accessibility.txt": "7172ca319c2b9fab32bbc556f391840a801b021b204f9640485e866a4a713cbc",
+    "safari-fixture.html": "f756c5edee7f10de28450771b56c2a93ab081ad8d3b46589f75cb252ca046aa3"
+  }
+}

@@ -38,27 +38,29 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--app', type=Path, required=True)
     parser.add_argument('--build-receipt', type=Path, required=True)
+    parser.add_argument('--settings-products', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True, help='fresh private capture directory')
     parser.add_argument('--runtime', help='installed iOS runtime identifier; otherwise latest available')
     parser.add_argument('--device-type', default='com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro')
     parser.add_argument('--preboot-wait-seconds', type=int, default=0,
                         help='bounded owned-UUID announcement checkpoint before boot')
-    parser.add_argument('--settings-wait-seconds', type=int, default=0,
-                        help='bounded public Settings UI checkpoint; does not select an app automatically')
     args = parser.parse_args()
     if not 0 <= args.preboot_wait_seconds <= 240: parser.error('Preboot checkpoint must be 0...240 seconds')
-    if not 0 <= args.settings_wait_seconds <= 240: parser.error('Settings checkpoint must be 0...240 seconds')
     root = Path(__file__).resolve().parent.parent
     os.chdir(root)
     args.out.mkdir(mode=0o700)
     out = args.out.resolve()
     simulator = None
+    creation_attempted = False
     supervisor = None
     control = None
     original_dyld = None
     dyld_sampled = False
     run_id = str(uuid.uuid4()).upper()
+    owned_name = 'sdk-m3-' + run_id
     steps = []
+    control_env = {key: value for key, value in os.environ.items()
+                   if not key.startswith(('SIMCTL_CHILD_CKSIM_', 'SIMCTL_CHILD_SDK_M0_', 'SIMCTL_CHILD_SDK_M1_', 'SIMCTL_CHILD_SDK_M2_', 'SIMCTL_CHILD_SDK_M3_'))}
     manifest = dict(schemaVersion=1, scenario='sdk-m3', runID=run_id, ownsSimulator=True,
                     runtimeInjectionRequested=False, directIngressInjectionRequested=False)
     failure = None
@@ -68,8 +70,8 @@ def main():
 
     def command(label, argv, timeout=60, env=None, check=True):
         started = time.monotonic()
-        result = subprocess.run(argv, capture_output=True, timeout=timeout, env=env)
-        steps.append(dict(phase=label, exitCode=result.returncode,
+        result = subprocess.run(argv, capture_output=True, timeout=timeout, env=control_env if env is None else env)
+        steps.append(dict(phase=label, argv=argv, exitCode=result.returncode,
                           elapsedSeconds=round(time.monotonic() - started, 3),
                           stdoutSHA256=hashlib.sha256(result.stdout).hexdigest(),
                           stderrSHA256=hashlib.sha256(result.stderr).hexdigest()))
@@ -84,7 +86,7 @@ def main():
 
     def read_dyld(label):
         result = sim(label, 'spawn', simulator, 'launchctl', 'getenv', 'DYLD_INSERT_LIBRARIES',
-                     env={**os.environ, 'SIMCTL_CHILD_DYLD_INSERT_LIBRARIES': ''})
+                     env={**control_env, 'SIMCTL_CHILD_DYLD_INSERT_LIBRARIES': ''})
         if result.stderr: raise RuntimeError('Cannot read simulator launch environment')
         return None if not result.stdout else result.stdout.removesuffix(b'\n')
 
@@ -101,34 +103,45 @@ def main():
         identity = m0.source_identity()
         app = args.app.resolve()
         build = json.loads(args.build_receipt.read_text())
-        gate.check_input_build(app, build, identity)
+        gate.check_input_build(app, build, identity, args.settings_products)
         manifest.update(identity)
         shutil.copyfile(args.build_receipt, out / 'input-build-receipt.json')
         manifest['inputBuildReceiptSHA256'] = m0.digest(out / 'input-build-receipt.json')
         (out / 'binaries').mkdir()
-        shutil.copyfile(m0.executable(app), out / 'binaries/unsigned-example')
-        signed = out / 'signed-example.app'
-        shutil.copytree(app, signed, symlinks=True)
-        request = out / 'requested-entitlements.plist'
-        request.write_bytes(plistlib.dumps({'com.apple.developer.calling-app': True}))
-        command('sign-owned-copy', ['codesign', '--force', '--sign', '-', '--entitlements', str(request), str(signed)])
-        command('verify-owned-signature', ['codesign', '--verify', '--strict', str(signed)])
-        entitlements = command('read-signed-entitlements', ['codesign', '--display', '--entitlements', ':-', str(signed)])
-        plistlib.loads(entitlements.stdout)
-        (out / 'signed-entitlements.plist').write_bytes(entitlements.stdout)
-        shutil.copyfile(m0.executable(signed), out / 'binaries/example')
-        shutil.copyfile(signed / 'main.jsbundle', out / 'binaries/main.jsbundle')
-        shutil.copyfile(signed / 'Info.plist', out / 'Info.plist')
+        copied = out / 'example.app'
+        shutil.copytree(app, copied, symlinks=True)
+        command('verify-built-signature', ['codesign', '--verify', '--strict', str(copied)])
+        host = command('read-host-entitlements', ['codesign', '--display', '--entitlements', ':-', str(copied)])
+        host_claims = plistlib.loads(host.stdout)
+        if not isinstance(host_claims, dict) or any(key in host_claims for key in
+                ('com.apple.developer.calling-app', 'com.apple.developer.dialing-app')):
+            raise RuntimeError('Restricted simulator claims must come from normal Xcode packaging, not host signing')
+        (out / 'host-entitlements.plist').write_bytes(host.stdout)
+        (out / 'simulated-entitlements.plist').write_bytes(gate.simulated_entitlements(m0.executable(copied)))
+        shutil.copyfile(m0.executable(copied), out / 'binaries/example')
+        shutil.copyfile(copied / 'main.jsbundle', out / 'binaries/main.jsbundle')
+        shutil.copyfile(copied / 'Info.plist', out / 'Info.plist')
         manifest['files'] = {name: m0.digest(out / name) for name in gate.FILES}
-        # Signing is confined to the copy; retain the original build receipt chain.
-        gate.check_input_build(app, build, identity)
+        (out / 'build-logs').mkdir()
+        if not build.get('buildLogs'): raise RuntimeError('Missing M3 build logs')
+        for name, digest in build['buildLogs'].items():
+            if Path(name).name != name: raise RuntimeError('Invalid build log filename')
+            path = args.build_receipt.parent / name
+            if path.stat().st_size == 0 or m0.digest(path) != digest: raise RuntimeError('Unbound or empty M3 build log')
+            shutil.copyfile(path, out / 'build-logs' / name)
+        # Preserve original app bytes; there is deliberately no post-build signing.
+        gate.check_input_build(app, build, identity, args.settings_products)
+        (out / 'settings').mkdir()
+        shutil.copytree(args.settings_products, out / 'settings/products')
         runtimes = json.loads(command('runtimes', ['xcrun', 'simctl', 'list', 'runtimes', '-j']).stdout)['runtimes']
         available = [r for r in runtimes if r.get('platform') == 'iOS' and r.get('isAvailable') and
                      (not args.runtime or r.get('identifier') == args.runtime)]
         if not available: raise RuntimeError('Requested iOS simulator runtime is unavailable')
         runtime = max(available, key=lambda r: tuple(int(p) for p in r['version'].split('.')))
-        simulator = sim('create', 'create', 'sdk-m3-' + run_id, args.device_type, runtime['identifier']).stdout.decode().strip()
-        uuid.UUID(simulator)
+        creation_attempted = True
+        created = sim('create', 'create', owned_name, args.device_type, runtime['identifier']).stdout.decode().strip()
+        uuid.UUID(created)
+        simulator = created
         manifest['simulatorID'] = simulator
         print('Created owned M3 simulator ' + simulator + '; boot has not started.', flush=True)
         if args.preboot_wait_seconds:
@@ -153,18 +166,17 @@ def main():
                            xcodeVersion=command('xcode-version', ['xcodebuild', '-version']).stdout.decode().strip())
         write(out / 'environment.json', environment)
         manifest['environmentSHA256'] = m0.digest(out / 'environment.json')
-        sim('install', 'install', simulator, str(signed), timeout=180)
+        sim('install', 'install', simulator, str(copied), timeout=180)
         installed = Path(sim('installed-app', 'get_app_container', simulator, gate.BUNDLE, 'app').stdout.decode().strip())
         manifest['installed'] = dict(executableSHA256=m0.digest(m0.executable(installed)),
                                      javascriptSHA256=m0.digest(installed / 'main.jsbundle'),
                                      infoPlistSHA256=m0.digest(installed / 'Info.plist'))
-        launch_env = {key: value for key, value in os.environ.items()
-                      if not key.startswith(('SIMCTL_CHILD_CKSIM_', 'SIMCTL_CHILD_SDK_M0_', 'SIMCTL_CHILD_SDK_M1_', 'SIMCTL_CHILD_SDK_M2_', 'SIMCTL_CHILD_SDK_M3_'))}
+        launch_env = dict(control_env)
         launch_env.update(SIMCTL_CHILD_DYLD_INSERT_LIBRARIES=inherited, SIMCTL_CHILD_CKSIM_RUN_ID=run_id,
                           SIMCTL_CHILD_SDK_M3_RUN_ID=run_id, SIMCTL_CHILD_SDK_M3_ACCEPTANCE='1')
         control = (out / 'supervisor-control.log').open('wb')
         supervisor = subprocess.Popen([sys.executable, 'discovery/run_scenario.py', '--console-launcher-stop',
-            '--timeout', str(args.settings_wait_seconds + 150), '--output', str(out / (gate.NAME + '.log')),
+            '--timeout', '480', '--output', str(out / (gate.NAME + '.log')),
             '--receipt', str(out / (gate.NAME + '.receipt.json')), '--run-id', run_id, '--simulator-id', simulator,
             '--scenario', gate.NAME, '--bundle-id', gate.BUNDLE,
             '--terminate-command', 'xcrun', 'simctl', 'terminate', simulator, gate.BUNDLE,
@@ -174,27 +186,33 @@ def main():
         ready = wait_for(lambda: next((r for r in probe_rows(trace) if r.get('event') == 'm3.listenerReady'), None),
                          60, 'the actual public listener')
         launch = next(r for r in probe_rows(trace) if r.get('event') == 'launch')
-        if ready.get('runID') != run_id or ready.get('simulatorID') != simulator or ready.get('pid') != launch.get('pid'):
+        if launch.get('runID') != run_id or launch.get('simulatorID') != simulator or ready.get('runID') != run_id or ready.get('simulatorID') != simulator or ready.get('pid') != launch.get('pid'):
             raise RuntimeError('M3 listener readiness has mixed launch identity')
         pid = launch['pid']
         data = Path(sim('app-data', 'get_app_container', simulator, gate.BUNDLE, 'data').stdout.decode().strip())
         session = json.loads((data / 'Documents/.callkit-simulator/session.json').read_text())
         if any(session.get(k) != v for k, v in [('runID', run_id), ('pid', pid), ('bundleID', gate.BUNDLE)]):
             raise RuntimeError('Runtime session does not match the launched example')
-        if args.settings_wait_seconds:
-            checkpoint = dict(runID=run_id, simulatorID=simulator, appPID=pid,
-                              requiredMethod='public-settings-ui', selected=False)
-            write(out / 'settings-checkpoint.json', checkpoint)
-            print('Public Settings checkpoint: ' + str(out / 'settings-checkpoint.json'), flush=True)
-            print('Select the example in Calling defaults on owned simulator ' + simulator +
-                  ', then write matching selection-observation.json. This step is not automated.', flush=True)
-            selection = out / 'selection-observation.json'
-            wait_for(lambda: selection.exists(), args.settings_wait_seconds, 'public Settings selection observation')
-            observed = json.loads(selection.read_text())
-            if any(observed.get(k) != checkpoint[k] for k in ('runID', 'simulatorID', 'appPID')) or \
-                    observed.get('method') != 'public-settings-ui' or observed.get('selected') is not True:
-                raise RuntimeError('Invalid Settings selection observation')
-            manifest['selectionObservationSHA256'] = m0.digest(selection)
+        original = next(path for path in (out / 'settings/products').glob('*.xctestrun'))
+        configured = gate.settings_configuration(plistlib.loads(original.read_bytes()), run_id, simulator, pid, inherited)
+        run_file = out / 'settings/products/M3Run.xctestrun'
+        run_file.write_bytes(plistlib.dumps(configured))
+        manifest['settingsRunSHA256'] = m0.digest(run_file)
+        manifest['inheritedDYLDSHA256'] = hashlib.sha256(inherited.encode()).hexdigest()
+        selection = command('select-calling-app', ['xcodebuild', 'test-without-building', '-xctestrun', str(run_file),
+            '-destination', 'platform=iOS Simulator,id=' + simulator, '-destination-timeout', '30',
+            '-parallel-testing-enabled', 'NO', '-maximum-concurrent-test-simulator-destinations', '1',
+            '-resultBundlePath', str(out / 'settings/result.xcresult'), '-only-testing:SettingsProbe/DefaultCallingTests/testSelectCallingApp',
+            '-test-timeouts-enabled', 'YES', '-default-test-execution-time-allowance', '150',
+            '-maximum-test-execution-time-allowance', '180'], timeout=240, check=False)
+        (out / 'settings/test.log').write_bytes(selection.stdout + b'\n' + selection.stderr)
+        command('export-settings-attachments', ['xcrun', 'xcresulttool', 'export', 'attachments', '--path',
+            str(out / 'settings/result.xcresult'), '--output-path', str(out / 'settings/attachments')], timeout=60)
+        attachments = gate.settings_attachments(out / 'settings/attachments', simulator)
+        paths = [out / 'settings/test.log', out / 'settings/attachments/manifest.json', *attachments.values()]
+        manifest['settingsFiles'] = {path.relative_to(out).as_posix(): m0.digest(path) for path in paths}
+        if selection.returncode: raise RuntimeError('Public Settings selection did not pass')
+        gate.validate_settings(out, manifest, build, ready, dict(startedWallTimeMS=time.time_ns() // 1_000_000))
         argv = ['xcrun', 'simctl', 'openurl', simulator, gate.URL]
         dispatch = dict(schemaVersion=1, runID=run_id, simulatorID=simulator, appPID=pid,
                         argv=argv, startedWallTimeMS=time.time_ns() // 1_000_000)
@@ -202,9 +220,10 @@ def main():
         dispatch.update(exitCode=result.returncode, finishedWallTimeMS=time.time_ns() // 1_000_000)
         write(out / 'dispatch.json', dispatch)
         manifest['dispatchSHA256'] = m0.digest(out / 'dispatch.json')
-        if result.returncode: raise RuntimeError('OS tel dispatch failed; simulator eligibility is unqualified')
+        if result.returncode: raise RuntimeError('OS tel dispatch failed; M3 delivery remains unqualified on this OS/build')
         if supervisor.wait(timeout=90): raise RuntimeError('No successful supervised public dialRequest; inspect eligibility and native ingress')
         if m0.source_identity() != identity: raise RuntimeError('M3 source changed during acceptance')
+        gate.check_input_build(app, build, identity, args.settings_products)
     except (Exception, KeyboardInterrupt) as error:
         failure = dict(type=type(error).__name__, reason=str(error))
     finally:
@@ -221,6 +240,19 @@ def main():
                 try: supervisor.wait(timeout=5)
                 except subprocess.TimeoutExpired: supervisor.kill(); supervisor.wait(timeout=5)
         if control is not None: control.close()
+        owned = [simulator] if simulator else []
+        if not simulator and creation_attempted:
+            # CoreSimulator can create the device before its CLI times out.
+            # Recover only this unpredictable exact name, never a QA simulator.
+            try:
+                inventory = json.loads(sim('recover-created-simulator', 'list', 'devices', '-j').stdout)['devices']
+                owned = [str(uuid.UUID(row['udid'])).upper() for rows in inventory.values() for row in rows
+                         if row.get('name') == owned_name]
+                cleanup['recoveredSimulators'] = owned
+            except Exception as error:
+                owned = []
+                cleanup['creationRecoveryError'] = type(error).__name__
+                failure = dict(reason='Could not recover uncertain simulator creation', priorFailure=failure)
         if simulator:
             cleanup['globalEnvironmentUnchanged'] = False
             if dyld_sampled:
@@ -230,16 +262,33 @@ def main():
                     if restored != original_dyld: failure = dict(reason='Simulator launch environment changed during M3', priorFailure=failure)
                 except Exception as error:
                     failure = dict(reason='Could not verify simulator launch environment', type=type(error).__name__, priorFailure=failure)
-            try: sim('shutdown', 'shutdown', simulator, timeout=30, check=False)
+        removals = []
+        for udid in owned:
+            removal = dict(simulatorID=udid, deleted=False, absentFromInventory=False)
+            try: sim('shutdown', 'shutdown', udid, timeout=30, check=False)
             except Exception: pass
             try:
-                deleted = sim('delete', 'delete', simulator, timeout=60, check=False)
-                cleanup.update(deleteExitCode=deleted.returncode, deleted=deleted.returncode == 0)
+                deleted = sim('delete', 'delete', udid, timeout=60, check=False)
+                removal['deleteExitCode'] = deleted.returncode
             except Exception as error:
-                cleanup['errorType'] = type(error).__name__
-            if not cleanup['deleted']: failure = dict(reason='Owned simulator deletion did not complete', priorFailure=failure)
+                removal['errorType'] = type(error).__name__
+            try:
+                inventory = json.loads(sim('verify-deletion', 'list', 'devices', '-j').stdout)['devices']
+                removal['absentFromInventory'] = all(row.get('udid') != udid for rows in inventory.values() for row in rows)
+                removal['deleted'] = removal.get('deleteExitCode') == 0 and removal['absentFromInventory']
+            except Exception as error:
+                removal['verificationError'] = type(error).__name__
+            removals.append(removal)
+        if simulator and removals: cleanup.update(removals[0])
+        elif owned: cleanup.update(deleted=all(row['deleted'] for row in removals), recoveredCleanup=removals)
+        if owned and not cleanup['deleted']:
+            failure = dict(reason='Owned simulator deletion did not complete', priorFailure=failure)
         write(out / 'cleanup.json', cleanup)
         write(out / 'commands.json', dict(steps=steps))
+        settings_paths = list((out / 'settings/attachments').rglob('*')) if (out / 'settings/attachments').exists() else []
+        if (out / 'settings/test.log').exists(): settings_paths.append(out / 'settings/test.log')
+        manifest['settingsFiles'] = {path.relative_to(out).as_posix(): m0.digest(path)
+                                     for path in settings_paths if path.is_file()}
         manifest['cleanupSHA256'] = m0.digest(out / 'cleanup.json')
         manifest['commandsSHA256'] = m0.digest(out / 'commands.json')
         write(out / 'manifest.json', manifest)

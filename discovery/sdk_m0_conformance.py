@@ -23,6 +23,7 @@ SOURCE_PATHS = ('Sources', 'Expo', 'ExpoMedia', 'Integrations', 'example', 'Pack
                 'discovery/summarize.py', '.github/workflows/sdk-m0.yml', 'app.plugin.js', 'Tests',
                 'discovery/sdk_m1_conformance.py', 'discovery/check_sdk_m1.py',
                 'discovery/run_sdk_m3.py', 'discovery/sdk_m3_conformance.py', 'discovery/check_sdk_m3.py',
+                'discovery/build_sdk_m3.sh', 'discovery/m3-settings', '.github/workflows/sdk-m3.yml',
                 'discovery/build_sdk_m1_contracts.sh', 'discovery/probe/sdk_m1_contracts.swift',
                 'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
                 'discovery/check_expo_bridge.py', 'discovery/check_expo_plugin.cjs',

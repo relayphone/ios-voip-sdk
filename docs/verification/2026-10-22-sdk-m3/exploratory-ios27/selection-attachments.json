@@ -1,0 +1,44 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "EE34C316-DB0F-4DAF-A8AE-BEDDB5835B9F",
+        "deviceName" : "sdk-m3-observed-ui-47E0BD9E-A19E-4FA4-97EE-68D13A99BE54",
+        "exportedFileName" : "ED22F3C3-E3FC-43CB-AEAF-3E20B4FCEE70.txt",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "after-selection-accessibility_0_7716FDAF-5397-4920-A652-1301C8C293D4.txt",
+        "timestamp" : 1792644806.286
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "EE34C316-DB0F-4DAF-A8AE-BEDDB5835B9F",
+        "deviceName" : "sdk-m3-observed-ui-47E0BD9E-A19E-4FA4-97EE-68D13A99BE54",
+        "exportedFileName" : "C0912E31-43D5-4E73-9CF9-6D4FEDBDE6BC.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "after-selection-screen_0_F5B3DA6F-3876-40ED-8C75-063F9BDDFAFD.png",
+        "timestamp" : 1792644806.198
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "EE34C316-DB0F-4DAF-A8AE-BEDDB5835B9F",
+        "deviceName" : "sdk-m3-observed-ui-47E0BD9E-A19E-4FA4-97EE-68D13A99BE54",
+        "exportedFileName" : "40639CB0-C34F-4739-B603-D52C9D02CC09.txt",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "before-selection-accessibility_0_A4AD3A8F-B717-4C1B-A3BB-DA6B4DD4D96F.txt",
+        "timestamp" : 1792644804.381
+      },
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "EE34C316-DB0F-4DAF-A8AE-BEDDB5835B9F",
+        "deviceName" : "sdk-m3-observed-ui-47E0BD9E-A19E-4FA4-97EE-68D13A99BE54",
+        "exportedFileName" : "BD59BE80-EBA7-457B-AB19-D46724BB3314.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "before-selection-screen_0_C1E1AC00-CA1E-453F-BF94-54BCF812ED7B.png",
+        "timestamp" : 1792644804.292
+      }
+    ],
+    "testIdentifier" : "SettingsProbe/testSelectObservedExample()",
+    "testIdentifierURL" : "test://com.apple.xcode/SDKM3SettingsProbe/SettingsProbe/SettingsProbe/testSelectObservedExample"
+  }
+]
