@@ -19,7 +19,7 @@ The API is specified in [RFC 0001](https://github.com/ziahamza/expo-callkit-tele
 
 - **LCK only.**
   - No CallKit provider backend.
-  - `CXCallObserver` is still used read-only, for call direction and the system-wide view.
+  - Direction comes from the SDK's incoming/outgoing bookkeeping. Device Release builds must not directly link CallKit (October 22 steering §A0.2); the SDK no longer observes system-wide calls through `CXCallObserver`.
   - The minimum is iOS/iPadOS **17.4**.
 - **Mac Catalyst waits for Apple.** It is blocked by an SDK defect (see §5). There is no temporary CallKit adapter.
 - **Apple Watch is deferred.** Keep the Swift core compatible with watchOS.

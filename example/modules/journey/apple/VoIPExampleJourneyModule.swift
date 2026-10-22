@@ -140,6 +140,13 @@ private final class ExampleJourney {
       guard client.snapshots.first(where: { $0.id == id })?.status == .ringing else { throw JourneyError.notRinging }
       JourneyTrace.record("sdk.ringing", ["conversationID": id.uuidString])
       try await client.joinConversation(id)
+      try await waitUntil {
+        client.snapshots.first(where: { $0.id == id }).map {
+          $0.status == .connecting && $0.pending == nil && $0.connectedAt == nil
+        } == true
+      }
+      // Fixture backend signal; accepting the join itself only completes signaling.
+      try await client.reportConversation(id, report: .connected)
       try await waitUntil { client.snapshots.first(where: { $0.id == id })?.status == .connected }
       JourneyTrace.record("sdk.joined", ["conversationID": id.uuidString])
       try await client.endConversation(id)

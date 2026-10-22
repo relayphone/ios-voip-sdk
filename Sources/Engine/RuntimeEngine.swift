@@ -25,10 +25,20 @@ private struct BehaviorProfile: Decodable {
   let startDeadlineSeconds: Double
   let answerDeadlineSeconds: Double
   let ordinaryDeadlineSeconds: Double
+  let lckActionDeadlineSeconds: Double
   let reportLatencySeconds: Double
   let muteEchoSeconds: Double
   let postEndUnmuteSeconds: Double
   let fulfilledPostEndUnmutePolicy: FulfilledPostEndUnmutePolicy
+
+  func timing(api: ProviderAPIKind, answer: Bool, start: Bool) -> (deadline: Double, expiry: Double) {
+    if api == .livecommunicationkit {
+      return (lckActionDeadlineSeconds, lckActionDeadlineSeconds)
+    }
+    if answer { return (answerDeadlineSeconds, answerExpirySeconds) }
+    if start { return (startDeadlineSeconds, startDeadlineSeconds) }
+    return (ordinaryDeadlineSeconds, actionTimeoutSeconds)
+  }
 }
 
 private final class ProviderRegistration: @unchecked Sendable {
@@ -148,6 +158,50 @@ private struct IncomingPushAssociations {
   }
 }
 
+// A report counts only when the interposed genuine provider report is entered.
+// This is simulator policy, not a synthetic SDK "about to await" signal.
+private struct PushReportingObligations {
+  struct Observation {
+    let required: Bool
+    let reportEntered: Bool
+    let violation: String?
+  }
+  private struct Delivery {
+    let required: Bool
+    var reportEntered = false
+    var returned = false
+    var completed = false
+  }
+  private var deliveries: [String: Delivery] = [:]
+  mutating func receive(_ id: String, required: Bool) -> Bool {
+    guard !id.isEmpty, deliveries[id] == nil else { return false }
+    deliveries[id] = Delivery(required: required)
+    return true
+  }
+  mutating func entered(_ id: String) {
+    guard !id.isEmpty else { return }
+    deliveries[id]?.reportEntered = true
+  }
+  mutating func returned(_ id: String) -> Observation {
+    observe(id, completion: false)
+  }
+  mutating func completed(_ id: String) -> Observation {
+    observe(id, completion: true)
+  }
+  private mutating func observe(_ id: String, completion: Bool) -> Observation {
+    guard var delivery = deliveries[id] else {
+      return Observation(required: false, reportEntered: false, violation: "unknown-delivery")
+    }
+    let repeated = completion ? delivery.completed : delivery.returned
+    if completion { delivery.completed = true } else { delivery.returned = true }
+    let violation = repeated ? "repeated-" + (completion ? "completion" : "callback-return") :
+      delivery.required && !delivery.reportEntered ? "required-report-missing-at-" + (completion ? "completion" : "callback-return") : nil
+    if delivery.completed && delivery.returned { deliveries.removeValue(forKey: id) }
+    else { deliveries[id] = delivery }
+    return Observation(required: delivery.required, reportEntered: delivery.reportEntered, violation: violation)
+  }
+}
+
 /// One private serial queue owns all state. App code always executes elsewhere.
 @objc(CKSimulatorEngine)
 final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendable {
@@ -180,6 +234,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private let controllerQueues = NSMapTable<CXCallController, DispatchQueue>.weakToStrongObjects()
   private var calls: [UUID: CallState] = [:]
   private var incomingPushAssociations = IncomingPushAssociations()
+  private var pushReportingObligations = PushReportingObligations()
   private var pendingActions: [UUID: RuntimePendingAction] = [:]
   private let deadlines = NSMapTable<CXAction, NSDate>.weakToStrongObjects()
   private var observers: [ObjectIdentifier: ObserverRegistration] = [:]
@@ -203,11 +258,10 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     let env = ProcessInfo.processInfo.environment
     let profileID = env["CKSIM_PROFILE"].flatMap { $0.isEmpty ? nil : $0 } ?? "ios-27.0"
     guard profileID == "ios-27.0" else { throw BootstrapError.invalid("unsupported behavior profile") }
-    let url = try Self.profileURL(profileID)
-    profile = try JSONDecoder().decode(BehaviorProfile.self, from: Data(contentsOf: url))
+    profile = try JSONDecoder().decode(BehaviorProfile.self, from: Self.profileData(profileID))
     let durations = [profile.answerExpirySeconds, profile.ringTimeoutSeconds, profile.unknownProviderSeconds,
       profile.actionTimeoutSeconds, profile.startDeadlineSeconds, profile.answerDeadlineSeconds,
-      profile.ordinaryDeadlineSeconds, profile.reportLatencySeconds, profile.muteEchoSeconds, profile.postEndUnmuteSeconds]
+      profile.ordinaryDeadlineSeconds, profile.lckActionDeadlineSeconds, profile.reportLatencySeconds, profile.muteEchoSeconds, profile.postEndUnmuteSeconds]
     guard profile.schemaVersion == 1 && profile.id == profileID && durations.allSatisfy({ $0.isFinite && $0 > 0 }) else {
       throw BootstrapError.invalid("invalid behavior profile")
     }
@@ -247,6 +301,72 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     }
     state.async { self.processCommands() }
   }
+
+  private static func profileData(_ profileID: String) throws -> Data {
+    #if SWIFT_PACKAGE || CKSIM_SDK_SOURCE
+    // SDK simulator builds embed the canonical profile under this file's simulator
+    // guard. No SwiftPM/CocoaPods resource bundle reaches a device build. The host
+    // exclusion control checks this JSON against the standalone profile source.
+    return Data(embeddedProfileJSON.utf8)
+    #else
+    return try Data(contentsOf: profileURL(profileID))
+    #endif
+  }
+
+  #if SWIFT_PACKAGE || CKSIM_SDK_SOURCE
+  private static let embeddedProfileJSON = #"""
+{
+  "id": "ios-27.0",
+  "schemaVersion": 1,
+  "reference": "iPhone 13 / iOS 27.0 (24A5355q)",
+  "answerExpirySeconds": 59.58,
+  "ringTimeoutSeconds": 60.1,
+  "unknownProviderSeconds": 10.6,
+  "actionTimeoutSeconds": 5.2,
+  "startDeadlineSeconds": 600,
+  "answerDeadlineSeconds": 60,
+  "ordinaryDeadlineSeconds": 5,
+  "reportLatencySeconds": 1.1,
+  "muteEchoSeconds": 0.015,
+  "providerRouting": "newest-created",
+  "waitingAnswer": "system-only",
+  "transactionIdentity": "fresh-transaction-preserved-actions",
+  "scope": "Measured iOS 27.0 behavior; not a guarantee for other iOS releases.",
+  "postEndUnmuteSeconds": 0.08,
+  "fulfilledPostEndUnmutePolicy": {
+    "callkit": "timeout",
+    "livecommunicationkit": "complete"
+  },
+  "fulfilledPostEndUnmuteEvidence": {
+    "callkit": "Measured fulfilled post-end unmute still times out in 5.0\u20135.9 s.",
+    "livecommunicationkit": "Measured no timeout through 5.542 s after fulfilled post-end unmute; terminal settlement follows public fulfill/complete semantics, not a measured infinite observation."
+  },
+  "lckActionDeadlineSeconds": 30,
+  "lckActionDeadlineEvidence": {
+    "measured": "24 lck.perform timeoutDate samples are 30 seconds. cx-after has no LCK deliveries; its later CX provider owns the actions.",
+    "expiryPolicy": "Proposed runtime expiry at the advertised LCK deadline; unfulfilled LCK expiry timing was not measured by these captures.",
+    "captures": {
+      "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-basic.jsonl": {
+        "sha256": "9fd5e48b62a826af7e62388de87119ab431fe2019a7d40445cdd9b528dde4bf7",
+        "samples": 10
+      },
+      "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-cx-after.jsonl": {
+        "sha256": "96d6e968c2cba8e098ec18872882f7a480476dd90611d5ae4cb5dc2dde78692b",
+        "samples": 0
+      },
+      "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-lck-after.jsonl": {
+        "sha256": "7b29c543492904cd1121c047d3fce125c4b0a16f1adc76240c80d6c091a15c89",
+        "samples": 10
+      },
+      "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-two-managers.jsonl": {
+        "sha256": "23ab443e1fd8623140e95cc7d34157d5fd8aa7d13b6321f90e1812825f65a042",
+        "samples": 4
+      }
+    }
+  }
+}
+"""#
+  #endif
 
   private static func profileURL(_ profileID: String) throws -> URL {
     #if SWIFT_PACKAGE
@@ -322,16 +442,34 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   func record(event: String, fields: [String: Any]) {
     withState {
       guard !stopped else { return }
-      if event == "push.completed", let pushID = fields["pushID"] as? String {
-        incomingPushAssociations.complete(pushID: pushID)
+      var row = fields
+      var pushViolation: String?
+      if let pushID = fields["pushID"] as? String, !pushID.isEmpty {
+        switch event {
+        case "push.received":
+          if !pushReportingObligations.receive(pushID, required: fields["mustReport"] as? Bool ?? true) {
+            pushViolation = "repeated-delivery"
+          }
+        case "report.incoming": pushReportingObligations.entered(pushID)
+        case "push.completed", "push.callbackReturned":
+          let observation = event == "push.completed" ? pushReportingObligations.completed(pushID) : pushReportingObligations.returned(pushID)
+          row["mustReport"] = observation.required
+          row["reportEntered"] = observation.reportEntered
+          pushViolation = observation.violation
+          if event == "push.completed" { incomingPushAssociations.complete(pushID: pushID) }
+        default: break
+        }
       }
       sequence += 1
-      var row = fields
       row.merge(["event": event, "sequence": sequence, "runID": runID, "pid": Int(getpid()),
                  "bundleID": bundleID, "profile": profile.id,
                  "t_ms": (DispatchTime.now().uptimeNanoseconds - epoch) / 1_000_000]) { _, new in new }
       if let data = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) {
         journal?.write(data + Data([10]))
+      }
+      if let pushViolation {
+        record(event: "diagnostic.pushReportingViolation", fields: ["severity": "error", "reason": pushViolation,
+          "pushID": fields["pushID"] as? String ?? ""])
       }
     }
   }
@@ -476,17 +614,21 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       },
       "kinds": actions.map { NSStringFromClass(type(of: $0)) }])
     for action in actions {
-      let deadline = action is CXAnswerCallAction ? profile.answerDeadlineSeconds :
-        (action is CXStartCallAction ? profile.startDeadlineSeconds : profile.ordinaryDeadlineSeconds)
-      deadlines.setObject(Date(timeIntervalSinceNow: deadline) as NSDate, forKey: action)
+      let timing = profile.timing(api: provider.apiKind,
+        answer: action is CXAnswerCallAction, start: action is CXStartCallAction)
+      let issued = Date()
+      let deadline = issued.addingTimeInterval(timing.deadline)
+      deadlines.setObject(deadline as NSDate, forKey: action)
+      record(event: "action.deadline", fields: ["actionID": action.uuid.uuidString,
+        "provider": providerID(provider.provider), "apiKind": provider.apiKind.rawValue,
+        "deadlineMS": Int64(deadline.timeIntervalSince1970 * 1000),
+        "deadlineSeconds": timing.deadline, "expirySeconds": timing.expiry])
       if let answer = action as? CXAnswerCallAction { calls[answer.callUUID]?.ringing = false }
       let pending = RuntimePendingAction(action, provider, delivered, origin,
         call: (action as? CXCallAction).flatMap { calls[$0.callUUID] },
         groupTarget: (action as? CXSetGroupCallAction)?.callUUIDToGroupWith.flatMap { calls[$0] })
       pendingActions[action.uuid] = pending
-      let seconds = action is CXAnswerCallAction ? profile.answerExpirySeconds :
-        (action is CXStartCallAction ? profile.startDeadlineSeconds : profile.actionTimeoutSeconds)
-      after(seconds) { [weak self, weak pending] in
+      after(max(0, issued.addingTimeInterval(timing.expiry).timeIntervalSinceNow)) { [weak self, weak pending] in
         guard let self, let pending, self.pendingActions[action.uuid] === pending, !pending.expired else { return }
         self.expire(pending)
       }
@@ -862,7 +1004,7 @@ public enum RuntimeBootstrap {
   }
   #endif
 
-  public static var currentPushIdentifier: String? {
+  public nonisolated static var currentPushIdentifier: String? {
     guard CKSimRuntimeIsActive() else { return nil }
     let identifier = CKSimCurrentPushID()
     return identifier.isEmpty ? nil : identifier

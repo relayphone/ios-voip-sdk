@@ -87,10 +87,14 @@ jobs:
           python3 Tests/VoIPSDK/run_push_context.py | tee "$SDK_M0_BUILD_LOGS/push-context-controls.json"
           python3 discovery/check_expo_bridge.py | tee "$SDK_M0_BUILD_LOGS/expo-relay-controls.json"
           python3 discovery/check_platform_shims.py | tee "$SDK_M0_BUILD_LOGS/platform-controls.json"
+          python3 discovery/check_push_delivery.py | tee "$SDK_M0_BUILD_LOGS/push-delivery-controls.json"
+          python3 discovery/check_push_report_entry.py | tee "$SDK_M0_BUILD_LOGS/push-entry-controls.json"
+          python3 discovery/check_device_release.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/device-release-controls.log"
           python3 discovery/check_lck_provider_policy.py | tee "$SDK_M0_BUILD_LOGS/lck-policy-controls.json"
           bash Tests/VoIPSDK/run.sh | tee "$SDK_M0_BUILD_LOGS/core-controls.log"
           bash Tests/VoIPSDK/run_push.sh | tee "$SDK_M0_BUILD_LOGS/push-controls.log"
           bash Tests/VoIPSDK/run_projection.sh | tee "$SDK_M0_BUILD_LOGS/projection-controls.log"
+          bash Tests/VoIPSDK/run_mute_echo.sh | tee "$SDK_M0_BUILD_LOGS/mute-echo-controls.json"
           bash Tests/ProbeTraceWriter/run.sh | tee "$SDK_M0_BUILD_LOGS/probe-writer-controls.json"
           bash -n discovery/build_sdk_bootstrap.sh discovery/build_sdk_device_probe.sh discovery/build_sdk_m1_contracts.sh discovery/run_sdk_m0.sh
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
@@ -144,6 +148,20 @@ jobs:
           test -d "${apps[0]}"
           test -s "${apps[0]}/main.jsbundle"
           printf 'SDK_M0_APP=%s\n' "${apps[0]}" >> "$GITHUB_ENV"
+      - name: Verify the pod-built Release device app excludes CallKit and the runtime
+        run: |
+          set -euo pipefail
+          python3 discovery/build_sdk_device_release.py "$SDK_M0_BUILD_ROOT/pod-device" \
+            > "$SDK_M0_BUILD_LOGS/pod-device-inspection.log" 2>&1
+          cp "$SDK_M0_BUILD_ROOT/pod-device/receipt.json" "$SDK_M0_BUILD_LOGS/pod-device-receipt.json"
+      - name: Preserve the Release device build diagnostics
+        if: always()
+        run: |
+          for name in build.log build-status.json source-before.json command.json; do
+            if test -f "$SDK_M0_BUILD_ROOT/pod-device/$name"; then
+              cp "$SDK_M0_BUILD_ROOT/pod-device/$name" "$SDK_M0_BUILD_LOGS/pod-device-$name"
+            fi
+          done
       - name: Build the Swift package for simulator and device
         run: |
           set -euo pipefail

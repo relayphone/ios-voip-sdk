@@ -8,3 +8,4 @@ swiftc -swift-version 6 -warnings-as-errors -parse-as-library \
   Sources/VoIPSDK/ConversationHandler.swift Sources/VoIPSDK/ConversationRecord.swift Tests/VoIPSDK/CoreTests.swift \
   -o "$TEST_OUTPUT/CoreTests"
 "$TEST_OUTPUT/CoreTests"
+bash Tests/VoIPSDK/run_deadlines.sh

@@ -1,6 +1,27 @@
 export type JSONValue =
   null | boolean | number | string | JSONValue[] | { [key: string]: JSONValue };
 
+/** Rejection codes emitted by native conversation commands. */
+export type ConversationErrorCode =
+  'invalid_arguments' | 'unknown_conversation' | 'unsupported' | 'conversation';
+
+export interface ConversationCommandError extends Error {
+  readonly code: ConversationErrorCode;
+}
+
+/** Narrow a caught native rejection without assuming every thrown value is ours. */
+export function isConversationCommandError(
+  value: unknown,
+): value is ConversationCommandError {
+  if (!(value instanceof Error) || !('code' in value)) return false;
+  return (
+    value.code === 'invalid_arguments' ||
+    value.code === 'unknown_conversation' ||
+    value.code === 'unsupported' ||
+    value.code === 'conversation'
+  );
+}
+
 export interface Participant {
   id: string;
   displayName?: string;
@@ -42,6 +63,7 @@ export type ConversationActionKind =
 export interface PendingAction {
   id: string;
   kind: ConversationActionKind;
+  /** Effective application deadline, initially 1.5 seconds before platform timeout. */
   deadline: string;
   origin: ActionOrigin;
   held?: boolean;
@@ -69,6 +91,7 @@ export interface Conversation {
 }
 
 export interface ActionContext {
+  /** Effective application deadline, initially 1.5 seconds before platform timeout. */
   deadline: string;
   signal: AbortSignal;
   origin: ActionOrigin;

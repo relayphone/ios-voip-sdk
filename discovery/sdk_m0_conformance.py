@@ -25,12 +25,16 @@ SOURCE_PATHS = ('Sources', 'Expo', 'example', 'Package.swift', 'IosVoipSDK.podsp
                 'discovery/build_sdk_m1_contracts.sh', 'discovery/probe/sdk_m1_contracts.swift',
                 'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
                 'discovery/check_expo_bridge.py', 'discovery/check_expo_plugin.cjs',
-                'discovery/check_platform_shims.py', 'discovery/device_oracles.py',
+                'discovery/check_platform_shims.py', 'discovery/check_push_delivery.py',
+                'discovery/check_push_report_entry.py', 'discovery/build_push_report_entry.sh',
+                'discovery/probe/push_report_entry.swift', 'discovery/device_oracles.py',
                 'discovery/check_lck_provider_policy.py',
                 'Tools', 'scripts/build-runtime.sh', 'discovery/run_sdk_system.py',
                 'discovery/sdk_system_conformance.py', 'discovery/check_sdk_system.py',
                 'discovery/check_cli_controls.py', 'discovery/check_cli_push_launch.py',
                 'docs/research/callkit-simulator-probe/device-system-ui/2026-10-20-iphone13-ui10-app.jsonl',
+                'discovery/build_sdk_device_release.py', 'discovery/device_release_exclusion.py',
+                'discovery/check_device_release.py',
                 'docs/research/callkit-simulator-probe/livecommunicationkit')
 TARGETS = ('CKSimRuntimeC', 'CKSimRuntime', 'VoIPPlatform', 'VoIPSDK')
 BINARIES = dict(example='binaries/example', bootstrap='binaries/bootstrap',

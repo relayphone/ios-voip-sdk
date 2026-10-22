@@ -251,8 +251,8 @@ import VoIPPlatform
 @MainActor final class Receiver: NSObject, PushReceiver {
   func pushTokenDidUpdate(_ token: Data) {}
   func pushTokenDidInvalidate() {}
-  func receiveVoIPPush(_ payload: [AnyHashable: Any], mustReport: Bool,
-                       completion: @escaping () -> Void) { completion() }
+  nonisolated func receiveVoIPPush(_ payload: [AnyHashable: Any], mustReport: Bool,
+                                   delivery: PushDelivery) { delivery.finish() }
 }
 @MainActor func checkImports() throws {
   let receiver = Receiver()
@@ -314,7 +314,7 @@ def main() -> None:
                 run(["xcrun", "clang", "-fobjc-arc", "-fblocks", "-fsyntax-only", "-Werror", "-Wall", "-Wextra",
                      "-Wno-unused-parameter", "-isysroot", sdk, "-target", target, f"-DDEBUG={debug}", *implementations])
                 checks.append(f"compile:{sdk_name}:DEBUG={debug}")
-            run(["xcrun", "swiftc", "-typecheck", "-swift-version", "6", "-strict-concurrency=complete",
+            run(["xcrun", "swiftc", "-typecheck", "-D", "DEBUG", "-Xcc", "-DDEBUG=1", "-swift-version", "6", "-strict-concurrency=complete",
                  "-sdk", sdk, "-target", target, "-I", str(out),
                  "-module-cache-path", str(out / "modules"), str(swift)])
             checks.append(f"swift-import:{sdk_name}")

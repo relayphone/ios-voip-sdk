@@ -19,9 +19,13 @@ action for that provider. The mute-echo case proves a pending-action reset is
 refused; a separate case checks successful reset of a connected call with no
 pending action. This is not R3 invalidation of an older provider.
 
-**Pending:** integrate A0's bounded PushKit queue/report-entry rule, A2's actual
-LCK deadlines, A3's pending app-mute echo fix and A8's explicit connected semantics.
-Then build once, capture all seven cases on one assigned throwaway simulator,
+**Source integration, not native acceptance:** A0's bounded PushKit queue and
+report-entry rule, A2's actual LCK deadlines, A3's pending app-mute echo fix and
+A8's explicit connected semantics are integrated from `f65d171`. The evidence path
+inventory retains both the system-control/D5 inputs and the device-release inputs.
+
+**Pending:** integrate A4/A7's stable audio and ownership changes. Then build
+once, capture all seven cases on one assigned throwaway simulator,
 replay the strict source/product-bound gates, and record the actual receipts.
 No A5 simulator, device, APNs/key, push, PR or publication action has occurred.
 The initial native pass may expose framework behavior; retain any red capture
