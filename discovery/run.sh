@@ -6,6 +6,7 @@ python3 check_oracles.py
 if [[ -z "${CKSIM_ONLY:-}" || "${CKSIM_ONLY:-}" == lck || "${CKSIM_ONLY:-}" == lck-* ]]; then
   python3 check_lck_conformance.py
   python3 check_lck_provider_policy.py
+  python3 check_lck_probe_readiness.py
 fi
 if [[ -n "${OUT:-}" ]]; then
   mkdir "$OUT" # Refuse stale output, including an existing empty directory.
@@ -115,9 +116,35 @@ from pathlib import Path
 import sys
 source=Path('../docs/research/callkit-simulator-probe/lck.swift').read_text()
 assert source.count('    exit(0)') == 1
+observed='  let label: String\n'
+changed='    log("conversationChanged", LCKTap.describe(conversation))'
+outgoing='  func outgoing(_ m: ConversationManager, _ tag: String) async {'
+checkpoint='    await sleep(2); snapshot("\\(tag)-outgoing", m)'
+for anchor in (observed, changed, outgoing, checkpoint):
+    assert source.count(anchor) == 1, 'measured LCK input changed; review the simulator adapter'
+source=source.replace(observed, observed + '  let observedConversationStates = LCKProbeConversationStates()\n')
+source=source.replace(changed, changed + '\n    observedConversationStates.record(conversation.uuid, state: "\\(conversation.state)")')
+source=source.replace(outgoing, '''  // Simulator-only causal checkpoint. The historical device input is unchanged.
+  func waitForOutgoingReadiness(_ id: UUID, _ tag: String) async {
+    // The measured later CX tap fulfills start without reporting connection.
+    if ProcessInfo.processInfo.environment["PROBE_LCK"] == "cx-after" { return }
+    let ready = await LCKProbeReadiness.wait {
+      !self.managers.isEmpty && self.managers.count == self.taps.count &&
+        zip(self.managers, self.taps).allSatisfy { manager, tap in
+          manager.conversations.contains { $0.uuid == id && String(describing: $0.state) == "joined" } &&
+            tap.observedConversationStates[id] == "joined"
+        } && self.observer.calls.contains { $0.uuid == id && $0.hasConnected && !$0.hasEnded }
+    }
+    guard ready else {
+      Trace.shared.log("error", ["stage": "lck-outgoing-readiness", "label": tag, "livenessLimitSeconds": 10])
+      exit(1)
+    }
+  }
+''' + outgoing)
+source=source.replace(checkpoint, '    await sleep(2); await waitForOutgoingReadiness(id, tag); snapshot("\\(tag)-outgoing", m)')
 Path(sys.argv[1]).write_text(source.replace('    exit(0)', '    return'))
 PYLCK
-compiler swiftc -target "$SDK_TARGET" "${SWIFT_DEFS[@]}" -D CKSIM_CONFORMANCE -swift-version 5 -parse-as-library -O probe/main.swift probe/generations.swift probe/report_threading.swift "$BUILD/providers.swift" "$BUILD/lck.swift" -o "$BUILD/Probe.app/Probe" \
+compiler swiftc -target "$SDK_TARGET" "${SWIFT_DEFS[@]}" -D CKSIM_CONFORMANCE -swift-version 5 -parse-as-library -O probe/main.swift probe/generations.swift probe/report_threading.swift probe/lck_readiness.swift "$BUILD/providers.swift" "$BUILD/lck.swift" -o "$BUILD/Probe.app/Probe" \
   -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __entitlements -Xlinker probe/probe.entitlements > "$OUT/build.log" 2>&1
 codesign -s - --force "$BUILD/Probe.app"
 env DEVELOPER_DIR="${COMPILER_DEVELOPER_DIR:-${DEVELOPER_DIR:-$(xcode-select -p)}}" \
