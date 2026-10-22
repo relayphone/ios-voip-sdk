@@ -58,6 +58,28 @@ RuntimeEngine also typechecks with the iOS 17.4 simulator SDK target and Swift 6
 No simulator or device was created or run for this preparation. The stricter
 native contract and current integrated CI must qualify the resulting source.
 
+## Stacked A0 integration preparation
+
+The branch now includes the reviewed A0 device Release exclusion change at
+`2605d4d`, as its stacked parent. The simulator-only embedded profile is
+regenerated from A2's canonical profile, so both source distributions include
+the separate LCK timing. The existing profile-drift control caught the stale
+embedded copy before regeneration. The new LCK duration also joins the existing
+finite, positive duration validation; zero, negative and three nonfinite values
+are refused by the exact production guard. The test deliberately uses a
+nonfinite decoding strategy only to reach that guard: the shipping decoder
+already refuses those strings earlier. The omitted-field regression failed
+before the one-line guard correction.
+
+**Measured host/compiler preparation:** the
+[stack integration receipt](../verification/2026-10-22-a2-deadlines/stack-followup.json)
+binds 119 source/control inputs and 13 passing checks, including the real-clock
+coordinator suite, exact production profile controls, existing SDK/LCK gates,
+the device exclusion host controls and an actual iOS 17.4 simulator-SDK runtime
+typecheck. Inputs remained unchanged across the checks. No simulator or device
+was created or run. This is preparation for native CI acceptance of the stacked
+head; the parent's native qualification does not qualify A2's changed source.
+
 ## RFC deviation text for the authorized fork comment
 
 RFC 0001 describes `ActionContext.deadline` as when the platform gives up. This
