@@ -1,7 +1,8 @@
 import AVFoundation
 import ExpoModulesCore
 import IosVoipSDK
-import LiveCommunicationKit
+// LCK lacks concurrency annotations; keep this compatibility boundary in the example.
+@preconcurrency import LiveCommunicationKit
 
 /// Example-only instrumentation. It carries no push credentials or payloads.
 @MainActor
