@@ -107,3 +107,27 @@ physical no-I/O packet proves its ordinary API/notification transport scope; the
 original silent-engine run remains red with its cause unknown. Neither packet
 qualifies LCK interruptions or the new native authority journey. Selected-provider
 reset still requires no pending action; R3 remains deferred.
+
+## Reviewed M2 CI-fix source forward
+
+**Measured source preparation only:** normal merge `7207c6f8` forwards M2
+`158afe4c` into A5 `50f2de171`. All 27 existing A5 delta paths and the shared
+source inventory remain byte-identical. Of the explicit 104 protected inputs,
+103 remain unchanged; the sole intentional change sets the CocoaPods header
+namespace in `IosVoipSDK.podspec`. The other inherited source changes fix Bash
+3.2 preflight argument handling and remove a 50 ms upper-bound assertion from
+the host main-thread wait-refusal control.
+
+The [forward receipt](../verification/2026-10-22-a5-audio-transport-forward/m2-ci-fix-forward.json)
+binds the four changed sources and their parent receipts. It carries the exact
+eight Bash/environment control groups and actual CocoaPods in-memory model;
+consumer compilation remains pending. PR #40's refusal control retains its
+source-only status. No unchanged 189-control round was repeated: its earlier
+results remain historical, and this forward has a new source digest.
+
+**Pending actual qualification:** original PR #39 SDK run `39853274996` remains
+red at `50f2de171`, before native journeys or the pod-built device Release check.
+Its API-bound artifact and duplicate-header failure are preserved. All seven A5
+journeys, current pod-built Release exclusion and current M2 native lanes require
+fresh CI on the corrected source. No local compiler, native, simulator, device,
+audio, dependency installation or manual CI rerun was used for this forward.

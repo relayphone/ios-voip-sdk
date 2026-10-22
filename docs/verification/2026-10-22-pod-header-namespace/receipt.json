@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "classification": "Measured failure and actual CocoaPods in-memory generator/header-store controls; consumer compilation remains proposed",
+  "sourceParent": "cefb3f02cffd6d35d018a18a8fa2d3e870c34c7f",
+  "podspecSHA256": "e7b0074c515d83d07ebebff112ccc5ac77de5239515197418a753f09177de130",
+  "change": "Declare header_dir = 'IosVoipSDK' for qualified umbrella imports",
+  "actualFailure": {
+    "sdkRunId": 39852241171,
+    "m2RunId": 39852241175,
+    "headSHA": "efbe4da6fc966dc18705278a3ca6f410feb2a502",
+    "actualCheckout": "bf1a1b09e6775241f7addd04217a0278a944c554",
+    "m2ArtifactId": 12459252900,
+    "m2ArchiveSHA256": "36934226ce93a03ebb89e381b2758ebdd8417c55f16391168ba82b2aee787fe2",
+    "causeReceiptSHA256": "c15796b45a5513d59c2ff747fd790a7be3f9ce0535b7ef7ece7156d9c23aaa1a"
+  },
+  "actualGeneratorControl": {
+    "cocoapodsVersion": "1.17.0",
+    "privateReceiptSHA256": "7ef9f96250f02eb672227ab3f418eb4a62c913537324fd533541469c373f546e",
+    "scriptSHA256": "863ca880ece5b3431576fb854c8001a1e6ee2d4d1f78391e602c0c6e804071d6",
+    "actualPodspecLoadedWithoutAttributeMutation": true,
+    "installerSourceFile": "lib/cocoapods/installer/xcode/pods_project_generator/pod_target_installer.rb",
+    "installerSourceSHA256": "197ab3b2c1753d8d6947c1a114a22e5558a6a69616f5b7fb2c161fc18151306e",
+    "importBuilderLineRange": [
+      80,
+      96
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 2.0797121670000003,
+    "capSeconds": 5,
+    "stdoutSHA256": "20312f44b4c75c835d9c6118ae8ab23a46a897b0722c0edc20d4a263142bb094",
+    "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "probes": 1,
+    "headerDir": "IosVoipSDK",
+    "sourceForensicFiles": [],
+    "developerForensicHeaders": [
+      "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/core/Sources/VoIPPlatform/include/VSAudioSessionLifecycleObserver.h",
+      "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/core/Sources/VoIPPlatform/include/VSAudioSessionQueue.h",
+      "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/probe/AudioOperations.h",
+      "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/probe/Probe-Bridging.h"
+    ],
+    "publicHeaders": [
+      "Sources/Interposition/include/CKRuntimeBridge.h",
+      "Sources/VoIPPlatform/include/VoIPPlatform.h",
+      "Sources/VoIPPlatform/include/VSAudioSessionLifecycleObserver.h",
+      "Sources/VoIPPlatform/include/VSAudioSessionQueue.h",
+      "Sources/VoIPPlatform/include/VSProcessSDKOwnership.h",
+      "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h",
+      "Sources/VoIPPlatform/include/VSPushDelivery.h",
+      "Sources/VoIPPlatform/include/VSPushRegistryOwner.h",
+      "Expo/apple/IosVoipSDK.h",
+      "ExpoMedia/Shared/VSMediaBinding.h"
+    ],
+    "publicHeaderDestinations": {
+      "${PODS_ROOT}/Headers/Public/IosVoipSDK/IosVoipSDK": [
+        "CKRuntimeBridge.h",
+        "VoIPPlatform.h",
+        "VSAudioSessionLifecycleObserver.h",
+        "VSAudioSessionQueue.h",
+        "VSProcessSDKOwnership.h",
+        "VSProviderCreationMonitor.h",
+        "VSPushDelivery.h",
+        "VSPushRegistryOwner.h",
+        "IosVoipSDK.h",
+        "VSMediaBinding.h"
+      ]
+    },
+    "publicHeaderSearchPaths": [
+      "${PODS_ROOT}/Headers/Public",
+      "${PODS_ROOT}/Headers/Public/IosVoipSDK"
+    ],
+    "namespacedRequestedHeader": "IosVoipSDK/VSAudioSessionLifecycleObserver.h",
+    "namespacedRequestHasCanonicalSearchResolution": true,
+    "generatedUmbrella": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n#import \"IosVoipSDK/CKRuntimeBridge.h\"\n#import \"IosVoipSDK/VoIPPlatform.h\"\n#import \"IosVoipSDK/VSAudioSessionLifecycleObserver.h\"\n#import \"IosVoipSDK/VSAudioSessionQueue.h\"\n#import \"IosVoipSDK/VSProcessSDKOwnership.h\"\n#import \"IosVoipSDK/VSProviderCreationMonitor.h\"\n#import \"IosVoipSDK/VSPushDelivery.h\"\n#import \"IosVoipSDK/VSPushRegistryOwner.h\"\n#import \"IosVoipSDK/IosVoipSDK.h\"\n#import \"IosVoipSDK/VSMediaBinding.h\"\n\nFOUNDATION_EXPORT double IosVoipSDKVersionNumber;\nFOUNDATION_EXPORT const unsigned char IosVoipSDKVersionString[];\n\n"
+  },
+  "forensicEvidence": {
+    "packetManifestSHA256": "0c6b26bf65d3f5ac5e4ab2028046b9643e85163afab364bcce2ee92fed8263ce",
+    "sourceFiles": 14,
+    "allPathsAndBytesUnchanged": true,
+    "sourceFileSHA256": {
+      "core/Sources/VoIPPlatform/VSAudioSessionLifecycleObserver.m": "0a45a42509fc10759147e09f645839ed50fb14c9fe1fa2791caca303b8cf0c14",
+      "core/Sources/VoIPPlatform/VSAudioSessionQueue.m": "585379d32703da325bb9016bbf37a088e472c1d6c47b861552e09e912e1f7411",
+      "core/Sources/VoIPPlatform/include/VSAudioSessionLifecycleObserver.h": "2524b3c957d7b895d508c3669f9b2d337f0ff07d4692477d37475494bca3b0d6",
+      "core/Sources/VoIPPlatform/include/VSAudioSessionQueue.h": "80074ec15fc99ca8fe029489106f439793939ae8c6b438edd214d5d69e380366",
+      "core/Sources/VoIPSDK/AudioRoutes.swift": "2e171719efad2a810cc10acd142fbb06c451fc6d80e637e875450a75fed4e313",
+      "core/Sources/VoIPSDK/AudioSessionConfiguration.swift": "96072d7d376ffe205c435a6b6e87af0b9b17ace95e2ff5df6459bed56c9dc8f6",
+      "core/Sources/VoIPSDK/AudioSessionQueue.swift": "cca9fde6227f51d20ee2c6aa29db6a9183a66587194c54367f82a6647f353391",
+      "core/Sources/VoIPSDK/SystemAudioSession.swift": "366ec4fb2eb7705f976e559f072d9e00f9c073102b7e7d1e8a80343264c76a8e",
+      "probe/AudioOperations.h": "b7562c0c0847bba22d86015352d0c1ae39b3f7e2cfb44dbc2867789a4ad8fab7",
+      "probe/AudioOperations.m": "46ebc8f6ae6e5462e5e753dcad962b9f392c27d09fece44a0ca2c33a0d000739",
+      "probe/Info.plist": "70b7f672d5e56153813df3ce8b747f1b751087f628a9b91fa0a5bfdac376eece",
+      "probe/Probe-Bridging.h": "95a8b412f210f3ec5415ca268101fc185ac0fb0d5061c96ea9000f2b229bb185",
+      "probe/Probe.swift": "98bd3b41126e42390af16fe3744ff11aeb9929bd7136e7feca1e8e7953c82a50",
+      "project.yml": "d24823b1ac3ca4590d67c93d7c5668a5ae365ee3be0bd6c28a94687240c19669"
+    }
+  },
+  "protectedShipping": {
+    "base": "efbe4da6fc966dc18705278a3ca6f410feb2a502",
+    "count": 56,
+    "unchangedCount": 55,
+    "intentionallyChangedFiles": [
+      "IosVoipSDK.podspec"
+    ],
+    "selectors": [
+      "Sources",
+      "ExpoMedia",
+      "Integrations",
+      "Package.swift",
+      "IosVoipSDK.podspec",
+      "Expo/plugin"
+    ]
+  },
+  "scope": {
+    "podInstall": false,
+    "generatedProject": false,
+    "actualHeaderMap": false,
+    "consumerCompile": false,
+    "frameworkBranch": false,
+    "simulatorUsed": false,
+    "deviceUsed": false,
+    "audioPlayedOrCaptured": false,
+    "remoteCIStarted": false
+  },
+  "pending": [
+    "Actual pod-built SDK and LiveKit M2 consumer compilation",
+    "Current modern and legacy M2 native journeys",
+    "Current pod-built Release iphoneos exclusion",
+    "Framework-branch consumer compilation"
+  ]
+}

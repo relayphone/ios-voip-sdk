@@ -1,0 +1,86 @@
+{
+  "A5DeltaPathCount": 27,
+  "A5DeltaPathsAllUnchanged": true,
+  "acceptance": {
+    "A5SevenNative": "pending actual current-source CI",
+    "M1FourContractsSixPushM2ModernLegacyAndPhysicalPackets": "source gates unchanged; current native qualification pending",
+    "R3": "deferred; selected-provider no-pending reset only",
+    "currentPodBuiltReleaseIphoneosExclusion": "pending"
+  },
+  "baseCommit": "50f2de17134fc02e3c547e7335b5b9b7e4b5a5a6",
+  "capturedAtUTC": "2026-10-22T21:33:50.337681+00:00",
+  "carriedReceipts": {
+    "bash": {
+      "path": "docs/verification/2026-10-22-m2-preflight-bash-compat/receipt.json",
+      "sha256": "57a7e9ee60256eb78885f813da97037fd0f0d3ef85022d391cd1fb8535a67701"
+    },
+    "parentIntegration": {
+      "path": "docs/verification/2026-10-22-m2-ci-fixes/source-only.json",
+      "sha256": "2f86a524cddf97f5c4f3a211dbb5b0cb21f01fee2472e508e21924f8424edf77"
+    },
+    "pod": {
+      "path": "docs/verification/2026-10-22-pod-header-namespace/receipt.json",
+      "sha256": "2aaf4f1058a1dbb391d1c667223d910ac3d19680900b6a9aee291358b93500a3"
+    },
+    "pushMainRefusal": {
+      "path": "docs/verification/2026-10-22-push-main-refusal-control/source-only.json",
+      "sha256": "f3fb14098fe368098945e9117e17fcc678a1573c89164ea9518a5673049f7c1b"
+    }
+  },
+  "changedSourceFiles": {
+    ".github/workflows/sdk-m2.yml": {
+      "after": "294fde4cd768de2691d7c95b53684a5c9629f9f11b7b6ee18468ad47ff4870fe",
+      "before": "d51740ccb726bb20ff043f640e46b54f5b406d88598492365bc991bc31faab78"
+    },
+    "IosVoipSDK.podspec": {
+      "after": "e7b0074c515d83d07ebebff112ccc5ac77de5239515197418a753f09177de130",
+      "before": "506b301d684880f3ca2fd2c3a9a61b459d43ed8d349ddaacd546fb45f91327a9"
+    },
+    "discovery/check_push_delivery.py": {
+      "after": "0fb541519a3a01a73682e3431c3135f4868d011f9c13d6154a33986b48708517",
+      "before": "acf16b895dc08125e959540315f58218641a386320e53bf079fc0c9e4b9d36d1"
+    },
+    "discovery/check_sdk_m2_environment.py": {
+      "after": "b640f74f6dd6b634e1f4acc5802c960cf76c3a59ef2f3c4ef4ee4de88054a897",
+      "before": "257a1c0a11f8ea7d3c97d79686c22dc89be137a1887af810d71c361081680b8d"
+    }
+  },
+  "changedSourceFilesMatchIncomingExactly": true,
+  "classification": "measured source-only normal A5 forward; carried exact-source parent controls; fresh CI pending",
+  "controlScope": {
+    "bash": "carried eight actual Bash/synthetic environment groups, exact changed source hashes",
+    "historicalA5": "189 pure controls measured at15d801b5; source digest changed in this forward, not rerun or requalified",
+    "pod": "carried actual CocoaPods 1.17 in-memory edited-podspec namespace/header model; no consumer compilation",
+    "pushMainRefusal": "reviewed source-only control from PR40; host execution and CI remain pending"
+  },
+  "incomingCommit": "158afe4cb658b135afd4014965e40bbf51f98f35",
+  "localControlsExecutedForThisForward": false,
+  "measuredMergeCommit": "7207c6f8778fa7dd62a5e508cc9dc682fffea20a",
+  "measuredMergeTree": "d7e47c62dfa7d4f9116ba3aa10849b4911fceb2a",
+  "noCompilerNativeSimulatorDeviceAudioDependencyCIManualRerunOrPush": true,
+  "oldPR39Failure": {
+    "artifactZIPAndAPIDigestSHA256": "bfa18f1000daaeb56ee5b3c92dafe19d00ac5094e6e73f156b178b8fcefaa375",
+    "headCommit": "50f2de17134fc02e3c547e7335b5b9b7e4b5a5a6",
+    "nativeCasesAttempted": 0,
+    "originalRemainsRed": true,
+    "podDeviceReleaseAttempted": false,
+    "proofSHA256": "32e09e503c299aabb956c59df1c1f242372352f2e96b23f1efb7fd389196178a",
+    "runID": 39853274996
+  },
+  "protectedIntentionallyChanged": {
+    "IosVoipSDK.podspec": {
+      "after": "e7b0074c515d83d07ebebff112ccc5ac77de5239515197418a753f09177de130",
+      "before": "506b301d684880f3ca2fd2c3a9a61b459d43ed8d349ddaacd546fb45f91327a9"
+    }
+  },
+  "protectedShippingExpandedCount": 104,
+  "protectedUnchangedCount": 103,
+  "schemaVersion": 1,
+  "sourceIdentity": {
+    "sourceCommit": "7207c6f8778fa7dd62a5e508cc9dc682fffea20a",
+    "sourceInputsSHA256": "fc5b1d9a0751c71acb8ace13ac504551b05897f6237b4e05b0c57246eaf337c6"
+  },
+  "sourceInputCount": 247,
+  "sourceInventoryUnchanged": true,
+  "sourceMapSHA256": "b460039fbf94983ec119e49880c9fc3593af80814e33bcdf79ff10f0c0fb5ed2"
+}
