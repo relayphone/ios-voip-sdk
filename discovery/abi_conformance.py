@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from summarize import successful_stop
 
 CASES = ["refused-queues", "missing-provider-init", "missing-controller-init", "push-delegate-override", "push-types-override", "concrete-override", "shadow-concrete-override", "missing-selector", "kvc-exception",
          "kvc-ignored-outgoing", "kvc-ignored-hasConnected", "kvc-ignored-onHold", "kvc-ignored-hasEnded"]
@@ -36,6 +37,7 @@ def check(root, selected=None, runtime=None, probe=None):
         receipt = json.loads(receipt_path.read_text())
         trace = root / (receipt_path.name.removesuffix(".receipt.json") + ".log")
         assert receipt["success"] and receipt["completed"], f"incomplete scenario: {receipt_path.name}"
+        assert successful_stop(receipt), f"unverified owned stop: {receipt_path.name}"
         assert receipt["traceSHA256"] == digest(trace), f"trace bytes mismatch: {receipt_path.name}"
         assert receipt["runID"] == manifest["runID"] and receipt["simulatorID"] == manifest["simulatorID"], "run identity mismatch"
         assert receipt["appPID"] == receipt["launcherAppPID"], "launcher/probe PID mismatch"
