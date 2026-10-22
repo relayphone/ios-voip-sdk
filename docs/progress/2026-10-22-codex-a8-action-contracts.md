@@ -43,3 +43,15 @@ compiler/script budget before its first result; no product cause is inferred.
 The completed client runner bounds each compiler/test process and cleans only
 its owned process group on timeout. Native integration and hosted acceptance
 must still qualify the final combined source.
+
+**Measured host integration:** A1 `4dbe796` and A0 `31e3d8d` are integrated in the
+follow-up [receipt](../verification/2026-10-22-a8-action-contracts/integration-receipt.json).
+The actual-client suite now has ten contract groups, adding direct/wrapped
+duplicate-error acceptance only for a known live conversation, propagation of
+wrong-domain/code failures, and rollback/retry after an unreported failure.
+These inject representative `NSError` shapes at the framework boundary; they
+do not measure genuine LCK error wrapping. The A1 pipeline facade awaits the
+async report signature. Both branches' workflow checks remain, and the embedded
+simulator JSON exactly matches A2's canonical profile. A0's retained native
+device-exclusion evidence keeps its original source identity. The combined
+source still needs native acceptance; audio-event context remains with A4.

@@ -98,7 +98,55 @@ private final class ContractControls {
       preconditionFailure("Deferred remote end lost its correct native reason")
     }
     precondition(manager.reports.last?.0 == pendingID && endCalls == 2)
-    print("{\"success\":true,\"groups\":6,\"actualClientAndHandler\":true,\"nativeFrameworkMeasured\":false}")
+    try await duplicateReportErrors()
+    print("{\"success\":true,\"groups\":10,\"actualClientAndHandler\":true,\"nativeFrameworkMeasured\":false}")
+  }
+
+  func duplicateReportErrors() async throws {
+    let invitation = payload("duplicate-errors")
+    let live = try await client.reportIncomingConversation(invitation)
+    let duplicate = NSError(domain: "com.apple.CallKit.error.incomingcall", code: 2)
+    // Representative framework-boundary NSError wrapping. The production
+    // classifier and Client catch/rollback paths run unchanged; this is not a
+    // measurement of the genuine framework's wrapper shape.
+    func wrapped(_ error: NSError) -> NSError {
+      NSError(domain: "host.lck-boundary", code: 1, userInfo: [NSUnderlyingErrorKey: error])
+    }
+    for error in [duplicate, wrapped(wrapped(duplicate))] {
+      let attempts = manager.reportedIncoming.count
+      manager.incomingErrors = [error]
+      let id = try await client.reportIncomingConversation(invitation, source: .pushKit)
+      precondition(id == live && manager.reportedIncoming.count == attempts + 1 &&
+        manager.reportedIncoming.last == live && manager.conversations.filter { $0.uuid == live }.count == 1,
+        "Each delivery must make its own report; a known-live duplicate may be accepted without a second conversation")
+    }
+    let negatives = [NSError(domain: duplicate.domain, code: 3),
+      NSError(domain: "unrelated.domain", code: 2), wrapped(NSError(domain: duplicate.domain, code: 4))]
+    for expected in negatives {
+      manager.incomingErrors = [expected]
+      do {
+        _ = try await client.reportIncomingConversation(invitation, source: .pushKit)
+        preconditionFailure("A nonduplicate report failure must propagate")
+      } catch {
+        let actual = error as NSError
+        precondition(actual.domain == expected.domain && actual.code == expected.code,
+          "Report rejection must preserve the actual boundary error")
+      }
+      precondition(snapshot(live).payload == invitation && manager.conversations.filter { $0.uuid == live }.count == 1,
+        "A failed repeated report must preserve existing live metadata")
+    }
+    let fresh = payload("not-yet-reported")
+    manager.incomingErrors = [wrapped(duplicate)]
+    do {
+      _ = try await client.reportIncomingConversation(fresh, source: .pushKit)
+      preconditionFailure("Duplicate-shaped error cannot prove a never-reported conversation exists")
+    } catch {
+      precondition((error as NSError).domain == "host.lck-boundary")
+    }
+    let failedID = manager.reportedIncoming.last!
+    let retry = try await client.reportIncomingConversation(fresh)
+    precondition(retry != failedID && snapshot(retry).payload == fresh,
+      "A genuinely unreported failure must roll metadata/dedup back for a fresh retry")
   }
 }
 

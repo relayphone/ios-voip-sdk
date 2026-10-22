@@ -256,11 +256,10 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     let env = ProcessInfo.processInfo.environment
     let profileID = env["CKSIM_PROFILE"].flatMap { $0.isEmpty ? nil : $0 } ?? "ios-27.0"
     guard profileID == "ios-27.0" else { throw BootstrapError.invalid("unsupported behavior profile") }
-    let url = try Self.profileURL(profileID)
-    profile = try JSONDecoder().decode(BehaviorProfile.self, from: Data(contentsOf: url))
+    profile = try JSONDecoder().decode(BehaviorProfile.self, from: Self.profileData(profileID))
     let durations = [profile.answerExpirySeconds, profile.ringTimeoutSeconds, profile.unknownProviderSeconds,
       profile.actionTimeoutSeconds, profile.startDeadlineSeconds, profile.answerDeadlineSeconds,
-      profile.ordinaryDeadlineSeconds, profile.reportLatencySeconds, profile.muteEchoSeconds, profile.postEndUnmuteSeconds]
+      profile.ordinaryDeadlineSeconds, profile.lckActionDeadlineSeconds, profile.reportLatencySeconds, profile.muteEchoSeconds, profile.postEndUnmuteSeconds]
     guard profile.schemaVersion == 1 && profile.id == profileID && durations.allSatisfy({ $0.isFinite && $0 > 0 }) else {
       throw BootstrapError.invalid("invalid behavior profile")
     }
@@ -300,6 +299,72 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     }
     state.async { self.processCommands() }
   }
+
+  private static func profileData(_ profileID: String) throws -> Data {
+    #if SWIFT_PACKAGE || CKSIM_SDK_SOURCE
+    // SDK simulator builds embed the canonical profile under this file's simulator
+    // guard. No SwiftPM/CocoaPods resource bundle reaches a device build. The host
+    // exclusion control checks this JSON against the standalone profile source.
+    return Data(embeddedProfileJSON.utf8)
+    #else
+    return try Data(contentsOf: profileURL(profileID))
+    #endif
+  }
+
+  #if SWIFT_PACKAGE || CKSIM_SDK_SOURCE
+  private static let embeddedProfileJSON = #"""
+{
+  "id": "ios-27.0",
+  "schemaVersion": 1,
+  "reference": "iPhone 13 / iOS 27.0 (24A5355q)",
+  "answerExpirySeconds": 59.58,
+  "ringTimeoutSeconds": 60.1,
+  "unknownProviderSeconds": 10.6,
+  "actionTimeoutSeconds": 5.2,
+  "startDeadlineSeconds": 600,
+  "answerDeadlineSeconds": 60,
+  "ordinaryDeadlineSeconds": 5,
+  "reportLatencySeconds": 1.1,
+  "muteEchoSeconds": 0.015,
+  "providerRouting": "newest-created",
+  "waitingAnswer": "system-only",
+  "transactionIdentity": "fresh-transaction-preserved-actions",
+  "scope": "Measured iOS 27.0 behavior; not a guarantee for other iOS releases.",
+  "postEndUnmuteSeconds": 0.08,
+  "fulfilledPostEndUnmutePolicy": {
+    "callkit": "timeout",
+    "livecommunicationkit": "complete"
+  },
+  "fulfilledPostEndUnmuteEvidence": {
+    "callkit": "Measured fulfilled post-end unmute still times out in 5.0\u20135.9 s.",
+    "livecommunicationkit": "Measured no timeout through 5.542 s after fulfilled post-end unmute; terminal settlement follows public fulfill/complete semantics, not a measured infinite observation."
+  },
+  "lckActionDeadlineSeconds": 30,
+  "lckActionDeadlineEvidence": {
+    "measured": "24 lck.perform timeoutDate samples are 30 seconds. cx-after has no LCK deliveries; its later CX provider owns the actions.",
+    "expiryPolicy": "Proposed runtime expiry at the advertised LCK deadline; unfulfilled LCK expiry timing was not measured by these captures.",
+    "captures": {
+      "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-basic.jsonl": {
+        "sha256": "9fd5e48b62a826af7e62388de87119ab431fe2019a7d40445cdd9b528dde4bf7",
+        "samples": 10
+      },
+      "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-cx-after.jsonl": {
+        "sha256": "96d6e968c2cba8e098ec18872882f7a480476dd90611d5ae4cb5dc2dde78692b",
+        "samples": 0
+      },
+      "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-lck-after.jsonl": {
+        "sha256": "7b29c543492904cd1121c047d3fce125c4b0a16f1adc76240c80d6c091a15c89",
+        "samples": 10
+      },
+      "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-two-managers.jsonl": {
+        "sha256": "23ab443e1fd8623140e95cc7d34157d5fd8aa7d13b6321f90e1812825f65a042",
+        "samples": 4
+      }
+    }
+  }
+}
+"""#
+  #endif
 
   private static func profileURL(_ profileID: String) throws -> URL {
     #if SWIFT_PACKAGE

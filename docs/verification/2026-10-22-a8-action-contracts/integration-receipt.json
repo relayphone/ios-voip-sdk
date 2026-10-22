@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "classification": "Measured affected host integration checks; combined native acceptance pending",
+  "firstSliceCommit": "bbabcd774bf251aebba07c144f707dc99d320c7b",
+  "firstSliceReceiptSHA256": "9d22f161ad338b3f11dd107bfd1e4063af71d1499835f6183796fcb92069171d",
+  "a1MergeCommit": "f7ce7481cf09a09209ce502811834fa5dcd5cb69",
+  "incomingA0Commit": "31e3d8de2f11a953557edb3fd3cf33ea44914cf0",
+  "createdAt": "2026-10-22T09:06:26.336508+00:00",
+  "inputs": {
+    ".github/workflows/sdk-m0.yml": "217f1edd109a4a78926c19dc1446ea9f6e672396edc3de41091cc79913b02bf1",
+    "Expo/M1-API.md": "22cb255d286366100ae07c95f58fd3e60fa2df0d789f5b7d5f8545b52af7c37d",
+    "Expo/apple/IosVoipSDKModule.swift": "bcafc0b2ee1556ef6a849aed2221537340f3f2d2207f3abfac288b8ab6baeea6",
+    "Sources/Engine/Resources/ios-27.0.json": "f34933eb5ad2eaa7db2b19efba87e94345bbb8b77c4312f697010cde108a88d8",
+    "Sources/Engine/RuntimeEngine.swift": "ad16255feebe010f90939d9fe8e7dc958e93670adc965ea50c85c13cee6aba83",
+    "Sources/VoIPSDK/ConversationClient.swift": "997e855914a0c8273c6661280a49a8e85eadd7c37632dcc24a697cd871691b32",
+    "Sources/VoIPSDK/ConversationHandler.swift": "489c64f2792fe6b611bc9d66c207522216d1fda187c47720128c574d848e1373",
+    "Sources/VoIPSDK/ConversationModels.swift": "a9f49822a15b4ba0db15572af322e5c1da4f7d34f037089b1f55aa76ec1aa0ee",
+    "Sources/VoIPSDK/ConversationRecord.swift": "93208e379e1732e2bd48e74c8e256a2f06e83c5729e3d168e5bdf48191009029",
+    "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+    "Sources/VoIPSDK/PushService.swift": "82a0b47c0a184efbf3d69101fc820aba158da50e020e49304b4be3fd67cd7f09",
+    "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+    "Sources/VoIPSDK/SimulatorSupport.swift": "f873001e8decc0572901bc7b93a0db5fecf91f44251f3a019c2f6a463ac02d6e",
+    "Tests/VoIPSDK/ClientContractTests.swift": "ee3322efa68770e938d24118998326ce70b5ad6babad1845accc5846967d3abb",
+    "Tests/VoIPSDK/MuteEchoPlatform.swift": "45ec1e9a87d08074f1b117bcf400d7899c3666d8058adea8b01746acc88ac99e",
+    "Tests/VoIPSDK/MuteEchoTests.swift": "de75646a656ee59c0e6b38c7bcd77fa86ef8366560af32bf2be9bfd1da05287c",
+    "Tests/VoIPSDK/run_mute_echo.sh": "048e139efcb94d173286b0f108f657eb92887f82255300bdf880e3e216bf6108",
+    "discovery/check_device_release.py": "2cb5fc9baf6e62152eead5bf52e17552842325c2272c748c6119b253c018f1dc",
+    "discovery/check_push_report_entry.py": "a74004ca81b25962a0234a33265264ccdb790e6fe1483b1a814f4f999810234b",
+    "discovery/check_sdk_m1.py": "31be664bfae51d853b0f45620eb78a87690ff50be7b33837a5ca28e1ddfacba8",
+    "discovery/check_sdk_m1_contracts.py": "43abce48ebe152ad890eda3ac8b40ca32c51e6d65d21792e0725b7c708154b65",
+    "discovery/probe/sdk_m1_contracts.swift": "78e38cf1dd240dbaf99b0a54f11d482b133e50d30ce303fabaaf3351add81fb5",
+    "discovery/sdk_m1_conformance.py": "a872d9075d24e6de8d3faee61441bf19e17d791af6ee477fc1b2a788c6ae4974",
+    "discovery/sdk_m1_contracts_conformance.py": "82260c0ca95f75ef0473c8d020c1548b3da4631463e78afb05e04e01675af257",
+    "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-basic.jsonl": "9fd5e48b62a826af7e62388de87119ab431fe2019a7d40445cdd9b528dde4bf7",
+    "example/acceptance.ts": "85372404553bca51fa1b794144688e3b11134bfced9290f603409a935cdb0506",
+    "example/modules/journey/apple/VoIPExampleJourneyModule.swift": "345b09f4d776781223c2d7834ab8e127f78f35d9046a2fef18a0d4f7ac04cfa2"
+  },
+  "checks": [
+    {
+      "name": "integration-client",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_mute_echo.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "f9cf606db543c20eabb5bd7121490b575677df2e792503ea65f366a9ef3fe965"
+    },
+    {
+      "name": "integration-projection",
+      "command": [
+        "bash",
+        "Tests/VoIPSDK/run_projection.sh"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "3de153b0c0d70f110b6720b8cfd2cbada4f4e5dcbb403c869a7dfd5382b59130"
+    },
+    {
+      "name": "integration-relay",
+      "command": [
+        "python3",
+        "discovery/check_expo_bridge.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "9354c27bc90cf3bf43109c1d49a34bcabba6a1bd01c28e15332e1e22fc758c6e"
+    },
+    {
+      "name": "integration-pipeline",
+      "command": [
+        "python3",
+        "discovery/check_push_report_entry.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "868bc335319fbd06af63406144e9ec98c65d975ebb4235e03f05329523d8e4b2"
+    },
+    {
+      "name": "integration-deadlines",
+      "command": [
+        "python3",
+        "discovery/check_lck_deadlines.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "feba0a72471b7a6702c2a087f145a9ac974ce5e17386987f7fec1ec0c17c3304"
+    },
+    {
+      "name": "integration-platform",
+      "command": [
+        "python3",
+        "discovery/check_platform_shims.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "880a77b1ed9451108320b4b161ff89669bade240061fd39f7206b3e5332c0120"
+    },
+    {
+      "name": "integration-contracts",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1_contracts.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "5d7a03ba8edf9bfa1d13102e407e2fb284bf7b3d2631233c7a9d8c787450df62"
+    },
+    {
+      "name": "integration-m1",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "34769d43df73aa49fd50f18c08e5ca1aa2b82bcc38eb5aefe13bd436383bb490"
+    },
+    {
+      "name": "integration-device-release",
+      "command": [
+        "python3",
+        "discovery/check_device_release.py"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "046fb9035ea46550fc5abd364cdb0dc8113c17616174562c516b695255d7ff1f"
+    },
+    {
+      "name": "integration-diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "outputSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "results": {
+    "muteGroups": 7,
+    "clientContractGroups": 10,
+    "embeddedProfileMatchesCanonical": true,
+    "nativeFrameworkMeasured": false
+  },
+  "duplicateErrorRegression": {
+    "beforeClassifierIntegrationExitCode": 251,
+    "outputSHA256": "eb843ed7d288f624afbcb316fb79dbde26f1954491d8f9b9f0c10d0ace2096d1",
+    "classification": "Host NSError duplicate propagated before the Foundation classifier became active on the host; representative framework-boundary error controls, not genuine LCK wrapper measurement."
+  },
+  "integrationDelta": [
+    "Workflow retains all push-entry and device-release checks.",
+    "SDK embedded simulator JSON regenerated exactly from the canonical A2 profile; LCK duration included in the finite/positive validation.",
+    "Push pipeline facade reportConversation signature is async, matching the awaited production fallback report."
+  ],
+  "limits": [
+    "A0 native device exclusion evidence retains its original source identity; it is not relabeled as execution of this combined source.",
+    "These controls execute real Client/Handler policy with a host LCK boundary, not device duplicate-push measurements.",
+    "Typed audio event context is owned by A4 and not yet integrated here."
+  ]
+}

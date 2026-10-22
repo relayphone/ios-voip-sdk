@@ -77,7 +77,7 @@ private enum FixtureFailure: Error { case failed }
     return UUID()
   }
   func receiveCallEnded(_ payload: CallEndedPayload) { ended.append(payload) }
-  func reportConversation(_ id: UUID, report: ConversationReport) throws { reportsEnded += 1 }
+  func reportConversation(_ id: UUID, report: ConversationReport) async throws { reportsEnded += 1 }
 }
 @MainActor private final class PushService {
   let client: FixtureClient

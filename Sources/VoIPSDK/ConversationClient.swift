@@ -1,5 +1,19 @@
 import Foundation
 
+enum IncomingReportErrors {
+  static func isAlreadyReported(_ error: any Error) -> Bool {
+    var candidate = error as NSError
+    for _ in 0..<4 {
+      // Measured CallKit error wrapping remains meaningful through LCK without
+      // importing or linking CallKit into the device SDK.
+      if candidate.domain == "com.apple.CallKit.error.incomingcall" && candidate.code == 2 { return true }
+      guard let underlying = candidate.userInfo[NSUnderlyingErrorKey] as? NSError else { return false }
+      candidate = underlying
+    }
+    return false
+  }
+}
+
 /// Carries an actual terminal delegate object through the current actor turn.
 /// A new manager object wins immediately; generation checks protect UUID reuse.
 struct TerminalConversationProjection<Object: AnyObject> {
@@ -100,9 +114,6 @@ import AVFAudio
 #if SWIFT_PACKAGE
 import VoIPPlatform
 #endif
-#if os(iOS)
-@preconcurrency import CallKit
-#endif
 
 /// The process's sole LCK owner. Calling code never receives the manager or a provider.
 @MainActor
@@ -167,9 +178,6 @@ public final class ConversationClient: NSObject {
   private var stateObservers: [UUID: @MainActor (ConversationStateUpdate) -> Void] = [:]
   private var publishingState = false
   private var eventObservers: [UUID: @MainActor (ConversationEvent) -> Void] = [:]
-  #if os(iOS)
-  private let callObserver = CXCallObserver()
-  #endif
   public private(set) var state = ConversationStateUpdate(revision: 0, conversations: [])
   public var snapshots: [ConversationSnapshot] { state.conversations }
 
@@ -193,9 +201,6 @@ public final class ConversationClient: NSObject {
     ProviderCreationMonitor.endOwnedManagerCreation()
     #endif
     manager.delegate = self
-    #if os(iOS)
-    callObserver.setDelegate(self, queue: .main)
-    #endif
     coordinator.snapshot = { [weak self] id in self?.snapshot(id) }
     coordinator.didChange = { [weak self] in self?.refresh() }
     coordinator.willSettle = { [weak self] id, action, accepted in
@@ -383,16 +388,7 @@ public final class ConversationClient: NSObject {
     catch { appActions.removeValue(forKey: id); throw error }
   }
   private func isAlreadyReported(_ error: any Error) -> Bool {
-    #if os(iOS)
-    var candidate = error as NSError
-    for _ in 0..<4 {
-      if candidate.domain == CXErrorDomainIncomingCall &&
-          candidate.code == CXErrorCodeIncomingCallError.callUUIDAlreadyExists.rawValue { return true }
-      guard let underlying = candidate.userInfo[NSUnderlyingErrorKey] as? NSError else { return false }
-      candidate = underlying
-    }
-    #endif
-    return false
+    IncomingReportErrors.isAlreadyReported(error)
   }
   private func requireConversation(_ id: UUID) throws {
     guard manager.conversations.contains(where: { $0.uuid == id && $0.state != .left }) else {
@@ -430,10 +426,7 @@ public final class ConversationClient: NSObject {
   private func snapshot(_ id: UUID) -> ConversationSnapshot? {
     guard let conversation = manager.conversations.first(where: { $0.uuid == id }) ?? terminalProjection.object(for: id),
           let record = records[id] else { return nil }
-    var direction = record.direction
-    #if os(iOS)
-    if let call = callObserver.calls.first(where: { $0.uuid == id }) { direction = call.isOutgoing ? .outgoing : .incoming }
-    #endif
+    let direction = record.direction
     let status: ConversationStatus
     switch conversation.state {
     case .idle: status = record.connecting ? .connecting : direction == .incoming ? .ringing : .dialing
@@ -612,9 +605,4 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
   public func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) { emit(.audioActivated) }
   public func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession) { emit(.audioDeactivated) }
 }
-#if os(iOS)
-extension ConversationClient: @preconcurrency CXCallObserverDelegate {
-  public func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) { refresh() }
-}
-#endif
 #endif
