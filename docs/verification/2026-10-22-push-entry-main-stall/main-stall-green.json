@@ -1,0 +1,102 @@
+{
+  "success": true,
+  "classification": "host actual intake, receiver, transport and native wait with reporting facade; no LCK, simulator, APNs or device",
+  "sourceSHA256": {
+    "Sources/VoIPSDK/PushService.swift": "f7a731d8c91ee2a4572dd37d2d96a36c258187fc4a38ba74143c7c9b07690e4c",
+    "Sources/VoIPSDK/IncomingReportTransport.swift": "8ec9c10dfc6ac937d0e86629e6efbd30cbea0fdd6ef3937e64659a572956dade",
+    "Sources/VoIPSDK/IncomingIntake.swift": "5f6979dbc38bb4badeb2026ca8033341a5ce744ebba4e279aab1a4892d5f64c5",
+    "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+    "Sources/VoIPSDK/ConversationModels.swift": "ff4be06d66d1efacd5060c08c9ca7507eb7b35d09107573e43f44bba4a4c1a2b",
+    "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+    "Sources/VoIPPlatform/VSPushRegistryOwner.m": "02d45bb525b3cebde887846de514a03fdffbb113a419821eae3bf41dece7bfc6",
+    "Sources/VoIPPlatform/VSPushDelivery.m": "10fd4879c48205523efd7a3f9052518dada6c86024267e7957d13b76e62fc1c9",
+    "Sources/VoIPPlatform/include/VSPushRegistryOwner.h": "b6db5cf75a4bcda293e06f27a0af05b0607b290e87f30848a8cdc8c989db5f2e",
+    "Sources/VoIPPlatform/include/VSPushDelivery.h": "3769eecacf2f8e64d1e3a9c9bc749db26d65be7186c4f176dd7cb1a277ec83ff",
+    "Tests/VoIPSDK/run_incoming_delivery.py": "0c23b074d937008dacec0e6f5d8c07ac34c1695955a6c2de4b66641cd8959974",
+    "Tests/VoIPSDK/IncomingDeliveryHost.h": "982a04bf40c52d15413632ad81b3c9d23c09dbd82eb28452852b78fec94d4a22",
+    "Tests/VoIPSDK/IncomingDeliveryHost.m.in": "a820190571f0f42abb4fed1b4b009fc085360a3f6fb0b551ffd2b26f3355608f"
+  },
+  "extractions": {
+    "receiverSHA256": "7ad3ca318b460af4fe3573b40d62192b1dc76f8399b1774f11a19fb793b856a0",
+    "scheduleProjectionSHA256": "9c64f6c2218b2628e9591b033fe7b3e5b7ee208f82ce7fcb9dce02289a7545a9",
+    "transportBodySHA256": "2837ecf36565111455073e370c9415d035470cc38c67bfebb9a2ff3f38b33b59",
+    "nativeDeliveryMethodSHA256": "b2cde702b15f23b269b9923c977a244fea77e97cee56b1f434b3bc74aed234bc",
+    "transportRemovedLines": [
+      "outer platform #if",
+      "closing #endif",
+      "import Foundation",
+      "@preconcurrency import LiveCommunicationKit"
+    ],
+    "generatedSwiftSHA256": "41ad63b21b6785d29fba8b81f78d2cff8ce846ea6ace42823599415a3f715a4d",
+    "generatedNativeSHA256": "819ce45b483a7f382a10c535890de0a14d96b7a25998260eab9fe69ff48a1952"
+  },
+  "result": {
+    "callbackElapsedSeconds": 0.000424,
+    "callbackReturned": true,
+    "callbackWasMainThread": false,
+    "classification": "host exact production intake, receiver, transport and native delegate wait with framework facade; no LCK, PushKit app or device run",
+    "completionCount": 1,
+    "completionElapsedSeconds": 0.000464,
+    "driveHandshakeSucceeded": true,
+    "entryInvariantPassed": true,
+    "eventualProjectionCount": 1,
+    "eventualReportCount": 1,
+    "expectedInvariant": "report dependency entered before actual native delegate return while MainActor remains blocked; actor projection follows main unblock",
+    "fixtureReportDependencyObservedOffMain": true,
+    "fixtureReportEnteredAtCallbackReturn": true,
+    "intakeMetadataValidatedAtReportEntry": true,
+    "mainStallElapsedSeconds": 3.006523,
+    "mainStallSeconds": 3,
+    "projectionsAtMainUnblock": 0,
+    "reportEntryElapsedSeconds": 0.000379,
+    "reportObservation": "fixture reporting seam; no LiveCommunicationKit execution",
+    "reportsAtMainUnblock": 1,
+    "returnedDuringMainStall": true
+  },
+  "commands": [
+    {
+      "label": "native-owner",
+      "exitCode": 0,
+      "elapsedSeconds": 0.843023,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "native-ticket",
+      "exitCode": 0,
+      "elapsedSeconds": 0.039625,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "swift-compile",
+      "exitCode": 0,
+      "elapsedSeconds": 3.00145,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "main-stall",
+      "exitCode": 0,
+      "elapsedSeconds": 3.311132,
+      "stdoutSHA256": "33910a37a91b66633edf1718f712b614bdd0c2733cebc209521b723c895a6e68",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "artifactSHA256": {
+    "IncomingDeliveryHost.h": "982a04bf40c52d15413632ad81b3c9d23c09dbd82eb28452852b78fec94d4a22",
+    "IncomingDeliveryHost.m": "819ce45b483a7f382a10c535890de0a14d96b7a25998260eab9fe69ff48a1952",
+    "IncomingDelivery.swift": "41ad63b21b6785d29fba8b81f78d2cff8ce846ea6ace42823599415a3f715a4d",
+    "native-owner.o": "3f8bf237fb8cbfc5799f4bd3d5872fed925c4a2e7dd72241e72a1e54c9a9fb83",
+    "native-ticket.o": "e0228a37c239bb7d1af947708e48f1e60649a0c0aa6c78d8c297646d4501dcb3",
+    "IncomingDelivery": "0cf96e9316e061815af67d1f77bdd6fa2b9fea69c4c433aab92a33844dc6d98c",
+    "native-owner.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native-owner.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native-ticket.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "native-ticket.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "swift-compile.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "swift-compile.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "main-stall.stdout": "33910a37a91b66633edf1718f712b614bdd0c2733cebc209521b723c895a6e68",
+    "main-stall.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

@@ -192,7 +192,7 @@ PY
   mkdir "$OUT/m1/contracts"
   cp -R "$SDK_M1_CONTRACT_BUILD" "$OUT/m1/contracts-build"
   limit 180 xcrun simctl install "$UDID" "$OUT/m1/contracts-build/SDKM1Contracts.app" > "$OUT/m1/contracts-install.log" 2>&1
-  for case in guard unhandled-accept; do
+  for case in guard unhandled-accept duplicate-wrapper; do
     name="sdk-m1-contract-$case"
     env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
       SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M1_CONTRACT_CASE="$case" \

@@ -60,78 +60,110 @@ PIPELINE = r'''
 import Synchronization
 public final class PushDelivery: Sendable {
   private let finishes = Mutex(0)
-  public init() {}
   public func finish() { finishes.withLock { $0 += 1 } }
   var finishCount: Int { finishes.withLock { $0 } }
 }
 private enum FixtureFailure: Error { case failed }
-@MainActor private final class FixtureClient {
-  var incoming: [IncomingCallPayload] = []
-  var ended: [CallEndedPayload] = []
-  var reportsEnded = 0
-  var releaseReport: CheckedContinuation<Void, Never>?
-  var failReport = false
-  func reportIncomingConversation(_ payload: IncomingCallPayload, source: IncomingReportSource) async throws -> UUID {
-    incoming.append(payload)
-    await withCheckedContinuation { releaseReport = $0 }
-    if failReport { throw FixtureFailure.failed }
-    return UUID()
+private actor IncomingReportTransport {
+  private var reservations: [IncomingIntake.Reservation] = []
+  private var replies: [CheckedContinuation<IncomingIntake.ReportOutcome, Never>] = []
+  func report(_ reservation: IncomingIntake.Reservation) async -> IncomingIntake.ReportOutcome {
+    reservations.append(reservation)
+    return await withCheckedContinuation { replies.append($0) }
   }
-  func receiveCallEnded(_ payload: CallEndedPayload) { ended.append(payload) }
-  func reportConversation(_ id: UUID, report: ConversationReport) throws { reportsEnded += 1 }
+  var count: Int { reservations.count }
+  func reservation(_ index: Int = 0) -> IncomingIntake.Reservation { reservations[index] }
+  func settle(_ outcome: IncomingIntake.ReportOutcome) { replies.removeFirst().resume(returning: outcome) }
+}
+@MainActor private final class FixtureClient {
+  nonisolated let incomingIntake = IncomingIntake()
+  nonisolated let incomingTransport = IncomingReportTransport()
+  var projections = 0
+  func incomingIntakeDidChange() { projections += 1 }
 }
 @MainActor private final class PushService {
   let client: FixtureClient
-  init(_ client: FixtureClient) { self.client = client }
+  nonisolated let intake: IncomingIntake
+  nonisolated let transport: IncomingReportTransport
+  init(_ client: FixtureClient) {
+    self.client = client; intake = client.incomingIntake; transport = client.incomingTransport
+  }
 // EXACT_METHODS
 }
 @main private struct PipelineTests {
-  @MainActor static func wait(_ predicate: () -> Bool) async {
-    let deadline = ContinuousClock.now.advanced(by:.seconds(3))
-    while !predicate() { precondition(ContinuousClock.now < deadline); await Task.yield() }
+  @MainActor static func wait(_ predicate: () async -> Bool) async {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+    while !(await predicate()) { precondition(ContinuousClock.now < deadline); await Task.yield() }
   }
   @MainActor static func main() async {
     do {
-      let client=FixtureClient(), ticket=PushDelivery()
-      let actual=PushService(client)
+      let client = FixtureClient(), ticket = PushDelivery()
+      let actual = PushService(client)
       await Task.detached {
-        let caller=NSMutableDictionary(dictionary:["id":"original"])
-        let body: [String:Any] = ["eventId":"e", "serverCallId":"s", "caller":caller]
-        actual.receiveVoIPPush(["incomingCall":body],mustReport:true,delivery:ticket)
-        caller["id"]="mutated-after-callback"
+        let caller = NSMutableDictionary(dictionary: ["id":"original"])
+        actual.receiveVoIPPush(["incomingCall":["eventId":"e","serverCallId":"s","caller":caller]],
+                              mustReport:true, delivery:ticket)
+        caller["id"] = "mutated-after-callback"
       }.value
-      await wait { client.releaseReport != nil }
-      precondition(client.incoming.count == 1 && client.incoming[0].caller.id == "original", "payload values are decoded before the detached Task")
-      precondition(ticket.finishCount == 0, "completion cannot precede the actual awaited report settlement")
-      client.releaseReport?.resume()
-      await wait { ticket.finishCount == 1 }
+      await wait { await client.incomingTransport.count == 1 }
+      let reservation = await client.incomingTransport.reservation()
+      precondition(reservation.payload.caller.id == "original")
+      precondition(client.incomingIntake.projection(reservation.id)?.payload == reservation.payload)
+      precondition(ticket.finishCount == 0 && client.projections == 0)
+      await client.incomingTransport.settle(.reported)
+      await wait { ticket.finishCount == 1 && client.projections == 1 }
+      precondition(!client.incomingIntake.hasPending(reservation.id))
     }
     do {
-      let client=FixtureClient(), ticket=PushDelivery()
-      let actual=PushService(client)
-      await Task.detached { actual.receiveVoIPPush([:],mustReport:false,delivery:ticket) }.value
-      precondition(ticket.finishCount == 1 && client.incoming.isEmpty)
+      let client = FixtureClient(), ticket = PushDelivery()
+      let actual = PushService(client)
+      await Task.detached { actual.receiveVoIPPush([:], mustReport:false, delivery:ticket) }.value
+      let count = await client.incomingTransport.count
+      precondition(ticket.finishCount == 1 && count == 0 && client.projections == 0)
     }
-    for failed in [false,true] {
-      let client=FixtureClient(), ticket=PushDelivery(); client.failReport=failed
-      let service=PushService(client)
-      await Task.detached { service.receiveVoIPPush([:],mustReport:true,delivery:ticket) }.value
-      await wait { client.releaseReport != nil }
-      precondition(client.incoming.count == 1 && client.incoming[0].caller.id == "unknown" && ticket.finishCount == 0)
-      client.releaseReport?.resume()
-      await wait { ticket.finishCount == 1 }
-      precondition(client.reportsEnded == (failed ? 0 : 1))
+    for failed in [false, true] {
+      let client = FixtureClient(), ticket = PushDelivery()
+      let service = PushService(client)
+      await Task.detached { service.receiveVoIPPush([:], mustReport:true, delivery:ticket) }.value
+      await wait { await client.incomingTransport.count == 1 }
+      let reservation = await client.incomingTransport.reservation()
+      precondition(reservation.payload.caller.id == "unknown" && ticket.finishCount == 0)
+      precondition(client.incomingIntake.projection(reservation.id)?.terminal?.ended.reason == .failed)
+      await client.incomingTransport.settle(failed ? .failed(FixtureFailure.failed) : .reported)
+      await wait { ticket.finishCount == 1 && client.projections == 1 }
+      if failed { precondition(client.incomingIntake.projection(reservation.id) == nil) }
+      else {
+        precondition(client.incomingIntake.takePendingTermination(reservation.id, generation:reservation.generation)?.ended.reason == .failed)
+        precondition(client.incomingIntake.takePendingTermination(reservation.id, generation:reservation.generation) == nil)
+      }
     }
-    do {
-      let client=FixtureClient(), ticket=PushDelivery()
-      let actual=PushService(client)
+    for required in [false, true] {
+      let client = FixtureClient(), ticket = PushDelivery()
+      let actual = PushService(client)
+      let known = try! client.incomingIntake.reserve(.init(eventId:"known", serverCallId:"s", caller:.init(id:"caller")), source:.foreground)
+      guard case .report(let first) = known.disposition else { preconditionFailure() }
+      client.incomingIntake.complete(first, outcome:.reported)
       await Task.detached {
-        actual.receiveVoIPPush(["messageType":"callEnded","callEnded":"{\"eventId\":\"end\",\"serverCallId\":\"s\",\"reason\":\"remoteEnded\"}"],mustReport:false,delivery:ticket)
+        actual.receiveVoIPPush(["messageType":"callEnded","callEnded":"{\"eventId\":\"end\",\"serverCallId\":\"s\",\"reason\":\"remoteEnded\"}"],
+                              mustReport:required, delivery:ticket)
       }.value
-      await wait { ticket.finishCount == 1 }
-      precondition(client.ended.count == 1 && client.incoming.isEmpty)
+      precondition(client.incomingIntake.projection(known.id)?.terminal?.ended.reason == .remoteEnded)
+      if required {
+        await wait { await client.incomingTransport.count == 1 }
+        await wait { client.projections == 1 }
+        precondition(ticket.finishCount == 0,
+          "Target termination projects without waiting for the unrelated required fallback report")
+        let fallback = await client.incomingTransport.reservation()
+        precondition(fallback.id != known.id && fallback.payload.caller.id == "unknown")
+        precondition(ticket.finishCount == 0)
+        await client.incomingTransport.settle(.reported)
+      }
+      await wait { ticket.finishCount == 1 && client.projections == (required ? 2 : 1) }
+      let count = await client.incomingTransport.count
+      precondition(count == (required ? 1 : 0))
+      precondition(!client.incomingIntake.terminate(.init(eventId:"end",serverCallId:"s",reason:.remoteEnded)))
     }
-    print("passed: exact off-main receiver synchronous decoding, actual-await completion boundary, optional omission, required fallback, thrown reporting and callEnded handling")
+    print("passed: exact off-main receiver synchronous reservation/decoding, actual-await completion boundary, optional omission, required fallback success/failure, canonical pending termination and optional/required callEnded dedup")
   }
 }
 '''
@@ -152,13 +184,21 @@ def native_source_identity():
     scope=['Sources','VERSION','discovery/probe/push_report_entry.swift','discovery/probe/Info.plist',
            'discovery/build_push_report_entry.sh','discovery/check_push_report_entry.py',
            'discovery/check_push_delivery.py','discovery/run_scenario.py',
-           'discovery/run_push_report_entry.py','discovery/check_push_report_capture.py','discovery/summarize.py']
+           'discovery/run_push_report_entry.py','discovery/check_push_report_capture.py','discovery/summarize.py',
+           'Tests/VoIPSDK/run_incoming_delivery.py','Tests/VoIPSDK/IncomingDeliveryHost.h',
+           'Tests/VoIPSDK/IncomingDeliveryHost.m.in','Tests/VoIPSDK/IncomingIntakeTests.swift',
+           'Tests/VoIPSDK/run_incoming_intake.sh','Tests/VoIPSDK/IncomingCachePlatform.swift',
+           'Tests/VoIPSDK/IncomingCacheTests.swift','Tests/VoIPSDK/run_incoming_cache.py']
     dirty=subprocess.check_output(['git','status','--porcelain','--untracked-files=all','--',*scope],cwd=ROOT)
     if dirty: raise RuntimeError('Commit all A1 source/fixture inputs before a native measurement')
     names=sorted(filter(None,subprocess.check_output(['git','ls-files','-z','--',*scope],cwd=ROOT).decode().split('\0')))
     required=['discovery/probe/push_report_entry.swift','discovery/build_push_report_entry.sh',
               'discovery/check_push_delivery.py','discovery/run_push_report_entry.py',
-              'discovery/probe/Info.plist','discovery/check_push_report_capture.py','discovery/summarize.py']
+              'discovery/probe/Info.plist','discovery/check_push_report_capture.py','discovery/summarize.py',
+              'Tests/VoIPSDK/run_incoming_delivery.py','Tests/VoIPSDK/IncomingDeliveryHost.h',
+              'Tests/VoIPSDK/IncomingDeliveryHost.m.in','Tests/VoIPSDK/IncomingIntakeTests.swift',
+              'Tests/VoIPSDK/run_incoming_intake.sh','Tests/VoIPSDK/IncomingCachePlatform.swift',
+              'Tests/VoIPSDK/IncomingCacheTests.swift','Tests/VoIPSDK/run_incoming_cache.py']
     if any(name not in names for name in required): raise RuntimeError('Missing committed A1 measurement inputs')
     digest=hashlib.sha256()
     for name in names: digest.update(name.encode()+b'\0'+(ROOT/name).read_bytes()+b'\0')
@@ -443,19 +483,20 @@ def main():
     client=(ROOT/'Sources/VoIPSDK/ConversationClient.swift').read_text()
     obligations=braced(engine,'private struct PushReportingObligations {')
     receiver=braced(service,'  public nonisolated func receiveVoIPPush(')
-    reporting=braced(service,'  private func report(')
-    serializer=braced(client,'final class SerializedIncomingReports {')
-    assert 'Task {' not in serializer and 'Task.detached' not in serializer, 'new UUID serializer must not create a child Task'
-    assert receiver.count('Task.detached(')==1 and '[AnyHashable: Any]' not in reporting, 'one typed report Task is required'
+    projection=braced(service,'  private nonisolated func scheduleProjection(')
+    assert 'SerializedIncomingReports' not in client, 'PushKit must not wait for a same-UUID predecessor'
+    assert receiver.count('Task.detached(')==1, 'one typed report Task is required'
     hook=(ROOT/'Sources/Interposition/CKPushDelivery.m').read_text()
     assert '@finally' in hook and 'CKSimEmit(@"push.callbackReturned"' in hook, 'runtime must record the actual callback exit'
     with tempfile.TemporaryDirectory(prefix='ios-voip-push-entry-') as temp:
         out=Path(temp)
         results=[journal_controls(),negative_journal_controls(),compile_run(out,'policy',obligations+'\n'+POLICY),
-                 compile_run(out,'pipeline',PIPELINE.replace('// EXACT_METHODS',receiver+'\n'+reporting),
-                             [ROOT/'Sources/VoIPSDK/ConversationModels.swift',ROOT/'Sources/VoIPSDK/PushWire.swift'])]
+                 compile_run(out,'pipeline',PIPELINE.replace('// EXACT_METHODS',receiver+'\n'+projection),
+                             [ROOT/'Sources/VoIPSDK/ConversationModels.swift',ROOT/'Sources/VoIPSDK/PushWire.swift',
+                              ROOT/'Sources/VoIPSDK/IncomingInvitationGate.swift',ROOT/'Sources/VoIPSDK/IncomingIntake.swift'])]
     files=['Sources/Engine/RuntimeEngine.swift','Sources/Interposition/CKPushDelivery.m',
-           'Sources/VoIPSDK/PushService.swift','Sources/VoIPSDK/ConversationClient.swift',str(Path(__file__).relative_to(ROOT))]
+           'Sources/VoIPSDK/PushService.swift','Sources/VoIPSDK/ConversationClient.swift',
+           'Sources/VoIPSDK/IncomingIntake.swift','Sources/VoIPSDK/IncomingReportTransport.swift',str(Path(__file__).relative_to(ROOT))]
     print(json.dumps(dict(success=True,classification='host exact-source policy/pipeline controls; native PushKit entry remains separate',
                          controls=results,sourceSHA256={p:hashlib.sha256((ROOT/p).read_bytes()).hexdigest() for p in files}),indent=2))
 
