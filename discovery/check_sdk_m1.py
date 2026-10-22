@@ -88,7 +88,8 @@ def fixture_case(root, case, pid):
         add('m1.coldJoinRequested', dict(conversationID=CONVERSATION))
         snapshot('connecting', pending=True)
         add('m1.coldPending', dict(conversationID=CONVERSATION, actionID=PENDING,
-            deadline=iso(WALL + 30_000), remainingMS=30_000 - clock - 1, handlerAttached=False))
+            deadline=iso(WALL + 30_000), remainingMS=30_000 - clock - 1, handlerAttached=False,
+            clockBeforeMS=WALL + clock + 1))
         add('m1.jsReady')
         add('m1.subscriptionsStarting')
         hook('connecting', pending='join')
@@ -127,8 +128,9 @@ def fixture_case(root, case, pid):
 
     journal = []
 
-    def runtime(event, **fields):
-        journal.append(dict(event=event, sequence=len(journal) + 1, t_ms=len(journal),
+    def runtime(event, at=None, **fields):
+        elapsed = max(journal[-1]['t_ms'] + 1 if journal else 0, at or 0)
+        journal.append(dict(event=event, sequence=len(journal) + 1, t_ms=elapsed,
             runID='run-1', pid=pid, bundleID='dev.iosvoipsdk.example', profile='ios-27.0', **fields))
 
     def call(**fields):
@@ -146,7 +148,11 @@ def fixture_case(root, case, pid):
     if case != 'unhandled-expiry': kinds.append('CXEndCallAction')
     for index, kind in enumerate(kinds):
         runtime('transaction.delivered', provider='synthetic-provider', actionIDs=['action-' + str(index)], kinds=[kind])
-        runtime('action.settled', actionID='action-' + str(index), fulfilled=case != 'unhandled-expiry')
+        if case != 'journey' and index == 0:
+            pending = next(row for row in rows if row['event'] == 'm1.coldPending')
+            runtime('m1.coldPendingClock', at=pending['t_ms'], conversationID=CONVERSATION, actionID=PENDING)
+        runtime('action.settled', at=30_000 if case == 'unhandled-expiry' else 5020 if case == 'cold-launch' else None,
+                actionID='action-' + str(index), fulfilled=case != 'unhandled-expiry')
         if kind == 'CXAnswerCallAction' and case != 'unhandled-expiry': call(connected=True)
         if kind == 'CXSetHeldCallAction': call(connected=True, held=index == 1)
     call(ended=True)
@@ -279,6 +285,22 @@ class Controls(unittest.TestCase):
                 for index, row in enumerate(rows): row['t_ms'] = index
             mutate_rows(root / 'm1', 'cold-launch', edit)
         self.check(late_pending)
+
+    def test_native_expiry_deadline_clock_binding(self):
+        def timing(rows, at):
+            index = next(i for i, row in enumerate(rows) if row['event'] == 'action.settled')
+            rows[index]['t_ms'] = at
+            for row in rows[index + 1:]: row['t_ms'] = max(row['t_ms'], at + 1)
+        for at in (1000, 40_000):
+            with self.subTest(at=at):
+                self.check(lambda root, at=at: mutate_journal(root / 'm1', 'unhandled-expiry',
+                    lambda rows: timing(rows, at)))
+        self.check(lambda root: mutate_journal(root / 'm1', 'unhandled-expiry', lambda rows:
+            next(row for row in rows if row['event'] == 'm1.coldPendingClock').update(actionID='different-native-action')))
+        self.check(lambda root: mutate_journal(root / 'm1', 'unhandled-expiry', lambda rows:
+            next(row for row in rows if row['event'] == 'm1.coldPendingClock').update(conversationID='different-conversation')))
+        self.check(lambda root: mutate_rows(root / 'm1', 'unhandled-expiry', lambda rows:
+            next(row for row in rows if row['event'] == 'm1.coldPending').update(clockBeforeMS=WALL - 1000)))
 
 
 if __name__ == '__main__':

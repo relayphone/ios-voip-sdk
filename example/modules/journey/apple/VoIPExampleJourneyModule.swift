@@ -194,10 +194,14 @@ private final class ExampleJourney {
       }
       try await waitUntil { client.snapshots.first(where: { $0.id == id })?.pending?.kind == .join }
       guard let pending = client.snapshots.first(where: { $0.id == id })?.pending else { throw JourneyError.noPendingAction }
+      let clockBefore = Date()
+      #if targetEnvironment(simulator)
+      CKSimEmit("m1.coldPendingClock", ["conversationID": id.uuidString, "actionID": pending.id.uuidString])
+      #endif
       let observedAt = Date()
       JourneyTrace.record("m1.coldPending", ["conversationID": id.uuidString, "actionID": pending.id.uuidString,
         "deadline": JourneyTrace.iso(pending.deadline), "remainingMS": pending.deadline.timeIntervalSince(observedAt) * 1000,
-        "handlerAttached": false], observedAt: observedAt)
+        "handlerAttached": false, "clockBeforeMS": Int64(clockBefore.timeIntervalSince1970 * 1000)], observedAt: observedAt)
       return ["conversationID": id.uuidString, "actionID": pending.id.uuidString,
         "deadline": JourneyTrace.iso(pending.deadline)]
     }
