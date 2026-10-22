@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "scenario": "sdk-m0",
+  "configuration": "Release",
+  "runID": "64F65E09-65D3-4B03-831A-164BDF75BB58",
+  "simulatorID": "AD6C529B-3978-4384-B559-0123D994D589",
+  "ownsSimulator": true,
+  "runtimeInjectionRequested": false,
+  "sourceCommit": "b17c50bed95b20be856a99c28b71ec73f65a2a2a",
+  "sourceInputsSHA256": "1e580e0cf6181480180d3ae889ed4e8a7f689f42e4b1d61f37d9b6009fc38424",
+  "deviceSymbolsSHA256": "d998db03c2bdeafea06eafe045c8d5e6e89a9422c86384beea904183ddb78add",
+  "files": {
+    "binaries/example": "06ef9ff7c4404978ef40e80c9d6936371099f8b7cbe017f55564a4ea62e35788",
+    "binaries/bootstrap": "164d934e6accf49e28cc2abf3c66c0c35e01026d216a8d9e79488608c3ebaa5e",
+    "binaries/main.jsbundle": "870ca3a776ba7d8419bcee7e8fe75d3c5703409a51b27bc376ed06e278a3d9b3",
+    "binaries/device": "412c4823bab5894134f7a25142a642d2daa016c0b45757ebef39465bf3b64574"
+  },
+  "swiftPMDeviceObjects": [
+    {
+      "target": "CKSimRuntimeC",
+      "path": "device-objects/CKSimRuntimeC-0.o",
+      "sha256": "5ce96fb3779de5dee14a8136aaeb89852331238866aba4a34632e852c0b789c8",
+      "symbolsSHA256": "19eacd60f1c821c15f7e378a2dc5e38c9a07eabd54f6b66b24ed6feded099167"
+    },
+    {
+      "target": "CKSimRuntimeC",
+      "path": "device-objects/CKSimRuntimeC-1.o",
+      "sha256": "d88c7b550f9cb22febe5210ffbd5b488851b14e1e1628ee82e54e30acf635dcd",
+      "symbolsSHA256": "19eacd60f1c821c15f7e378a2dc5e38c9a07eabd54f6b66b24ed6feded099167"
+    },
+    {
+      "target": "CKSimRuntime",
+      "path": "device-objects/CKSimRuntime-0.o",
+      "sha256": "079cff071f81718cd2636402b0b92ae1e63e43565dca07ccb8a23ca0284da80a",
+      "symbolsSHA256": "15863bf4f5a783990d9f8b8cc2006d92800dee30286c295fd65239516e7dd731"
+    },
+    {
+      "target": "CKSimRuntime",
+      "path": "device-objects/CKSimRuntime-1.o",
+      "sha256": "366782f83d002fbf33a6ad4a654fdc12e3054438ac1dab0df92433ee6cc0dcc4",
+      "symbolsSHA256": "29aaed149667f05437340f2f18f47912853876a6113af2c0b1e9a6de384bd2dc"
+    },
+    {
+      "target": "VoIPPlatform",
+      "path": "device-objects/VoIPPlatform-0.o",
+      "sha256": "0a6347625c1811f9957fc9877f61019bf78a17682345367a773cd37c17ef9e5b",
+      "symbolsSHA256": "635ac5ba78e5960ff0a6aa3c037531dcc8d9b8c8c70c9712503da4682ec8c8ce"
+    },
+    {
+      "target": "VoIPPlatform",
+      "path": "device-objects/VoIPPlatform-1.o",
+      "sha256": "7e294407f6439f0626dbda44666bcb9d466c046e159f8fe8ef2eaa1aa671f01d",
+      "symbolsSHA256": "ef9fcc9f2b77cb6f779a9ce8c12f4787fba4bd9fb94f366589647dbda96c5825"
+    },
+    {
+      "target": "VoIPPlatform",
+      "path": "device-objects/VoIPPlatform-2.o",
+      "sha256": "ab91a0c095574c8c7285e350c55a4387249faa1ccaa205059bfc143f62766013",
+      "symbolsSHA256": "19eacd60f1c821c15f7e378a2dc5e38c9a07eabd54f6b66b24ed6feded099167"
+    },
+    {
+      "target": "VoIPPlatform",
+      "path": "device-objects/VoIPPlatform-3.o",
+      "sha256": "5eb0a79ac76ca7098cc4a9f1770773e9ba08ef0de68a9563a9e364e78c093596",
+      "symbolsSHA256": "dac39820099eb9cc031c081d2ea3a16974ea9981925f3048f7eb01f082eb286b"
+    },
+    {
+      "target": "VoIPSDK",
+      "path": "device-objects/VoIPSDK-0.o",
+      "sha256": "ed5c1c89e09c4dcd17b41f011863661e884d5648fa7ca27692b62cd76ffb08d5",
+      "symbolsSHA256": "504882e0a988b3aac3aef2d588eb1d850a4d3f8c448f1574ff6fa031f1816792"
+    },
+    {
+      "target": "VoIPSDK",
+      "path": "device-objects/VoIPSDK-1.o",
+      "sha256": "ed545ee91b9ee71ef8c2cb6df703541975edaba034174f02ca623a60d52f3689",
+      "symbolsSHA256": "16d9c42d61159fad4df43e8d7013d4b6247c4f7af95fc6c3645fc7f3ad949cbb"
+    },
+    {
+      "target": "VoIPSDK",
+      "path": "device-objects/VoIPSDK-2.o",
+      "sha256": "95e3f9f8007f137121931daa7839c5c39ee1f1ba8c445f34039349225f813f28",
+      "symbolsSHA256": "5e26be8f9294d5a1f633c0d5368540a4d213980ac31a043436981f41c79f83c0"
+    },
+    {
+      "target": "VoIPSDK",
+      "path": "device-objects/VoIPSDK-3.o",
+      "sha256": "9c3593aa7d0d9996b92b52d25f5e3677495a8b0429009b8b9bc13bc72be01f1a",
+      "symbolsSHA256": "18910f4777f4571d47469188468249af0d5e4da9f0a1d5c6b80606619d9aa803"
+    },
+    {
+      "target": "VoIPSDK",
+      "path": "device-objects/VoIPSDK-4.o",
+      "sha256": "0898badef06c6934c6bd61a79ddbe8ce6356cd7f72304ae349a90bb39c124318",
+      "symbolsSHA256": "7b277ace6bcf062e7535071983620da5036a71f3892d16937d3a53085184306e"
+    },
+    {
+      "target": "VoIPSDK",
+      "path": "device-objects/VoIPSDK-5.o",
+      "sha256": "3ae1a018587a172dde6ded3493447d49d15aa2cd3dac519a112d5dbcf6f4aa95",
+      "symbolsSHA256": "fed13c438c646390f3d1a1462976e2b8fe692904994c2faf747dcc62ef4d639c"
+    },
+    {
+      "target": "VoIPSDK",
+      "path": "device-objects/VoIPSDK-6.o",
+      "sha256": "6a8001dbf3ace9811623b37306bafaecc01fab9aaf559716348374553293bf6b",
+      "symbolsSHA256": "f0f8580f44a90cbd0cd2aa715c9ced71136268a00a301cc93d009df8c39fa84d"
+    },
+    {
+      "target": "VoIPSDK",
+      "path": "device-objects/VoIPSDK-7.o",
+      "sha256": "59fb452931f8c53b28fa2a22d7dfbf5d7a1fe370d25d4960a002dfc25de2458f",
+      "symbolsSHA256": "90648f8e7f9f032e3ba33fb99700cac0f459744f2a141646ff22597a1fb74eee"
+    },
+    {
+      "target": "VoIPSDK",
+      "path": "device-objects/VoIPSDK-8.o",
+      "sha256": "0722c56553a55a6f0ae6765d0df02e67403b4bda8cbf99cb0d20440104197823",
+      "symbolsSHA256": "c5ca4639ede5c3d85b4d6c230211c9b648f51ae36c62eca018929e52f217a4f6"
+    }
+  ],
+  "environmentSHA256": "dad391aaad6f9d3722109567f1fccd6a2b14fef6a1ff2941950296110c2a4feb",
+  "sourceBeginSHA256": "db8c1797bfc30603bca55532a866f37707bb8cb52481061a8642b3157aee5813",
+  "cleanupSHA256": "50fafcf422c622db414518f021ed978e372d62bd66e190b18b045d9b3a120186",
+  "installedSHA256": "6b352dd32b6d609874928d117045d34321e491d870b980e9d1b5a7177d500683",
+  "runtimeSHA256": "fd6123148eb979be3dff52edc92e3db7054dd85d7ba408b094c7647af6463120",
+  "deviceBuildSHA256": "0bc2b9ddee2f7bd0b4a766d929dfbbd4c0716506069219acf2df53a3a5844dac",
+  "buildReceiptSHA256": "5efdc430d68feafabc3cb2148b663f28c3b5cacb2fa951906d5f41477cf69cbf",
+  "installedBinarySHA256": {
+    "example": "06ef9ff7c4404978ef40e80c9d6936371099f8b7cbe017f55564a4ea62e35788",
+    "bootstrap": "164d934e6accf49e28cc2abf3c66c0c35e01026d216a8d9e79488608c3ebaa5e",
+    "javascript": "870ca3a776ba7d8419bcee7e8fe75d3c5703409a51b27bc376ed06e278a3d9b3"
+  },
+  "inheritedExternalDYLD": {
+    "present": true,
+    "sha256": "1b2abd33c25a23a9f2e1b583b31f87c2dcd0d2487710217002542c0594d81120"
+  },
+  "buildLogs": {
+    "bootstrap-build.log": "38875f7e7fd1afa9f9effd7e6e91d8e569d0146d0ac2ecdaf5e1b7d06fd9e9e4",
+    "device-probe-build.log": "185b07452977adc8e7c0b7682874351c69dfb459e1ca7ad0fb8d189915263977",
+    "environment.txt": "1684394693cd81c2baceddbb4c8cca2c4d7b0f5923068ff14f56c441d8b25db6",
+    "expo-release.log": "45226246d0c516034efda365320fff028f515fb4513420b97e7f2273157cd02d",
+    "swiftpm-device.log": "319bf6d6998fb1704075bfefcd1ee860ce4677ad1d8bc008724ba69efe1c82b7",
+    "swiftpm-simulator.log": "57719095837d5277684f3158e1bef5cbdc62dbc9356c24158cb344f18f355b6d",
+    "typescript-build.log": "d8c7fd8342cb29f5454b27d686e954235c1368a0649b5f51d1cc9852073af79a",
+    "typescript-typecheck.log": "a7c92ecd50b12b9ea07c7d046a1e9b0267476b56b856537f3cd96682b4b2df1f"
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "success": true,
+  "scenario": "sdk-m1",
+  "cases": [
+    {
+      "success": true,
+      "case": "journey",
+      "conversationID": "FB159642-2DDD-4361-BB1A-131D9022613E",
+      "pushID": "F6DD3A2D-ECB2-4616-9A72-8D4B34581A62",
+      "assertions": 11,
+      "handlerActions": 4,
+      "providerActions": 4
+    },
+    {
+      "success": true,
+      "case": "cold-launch",
+      "conversationID": "0714681F-ADFE-4741-849D-73CB46047D5A",
+      "pushID": "4A28D5A0-A085-4FA2-AA3A-0CD6DE4140F6",
+      "assertions": 5,
+      "handlerActions": 2,
+      "providerActions": 2
+    },
+    {
+      "success": true,
+      "case": "unhandled-expiry",
+      "conversationID": "7AE5CF81-D214-4FD8-9449-BA825CF4FAEC",
+      "pushID": "A68E4D74-34BE-4B40-A8DE-FDD948F52697",
+      "assertions": 5,
+      "handlerActions": 0,
+      "providerActions": 2
+    }
+  ],
+  "m0": {
+    "success": true,
+    "scenario": "sdk-m0",
+    "conversationID": "D022A9EA-88EC-4A0F-8BD2-C5E1D8D7DADD",
+    "simulatorOS": "27.0",
+    "profile": "ios-27.0",
+    "bootstrap": {
+      "healthy": {
+        "success": true,
+        "checks": 4,
+        "effectiveMethods": 65
+      },
+      "profile": {
+        "success": true,
+        "checks": 5,
+        "effectiveMethods": 65
+      },
+      "push-after-install": {
+        "success": true,
+        "checks": 5,
+        "effectiveMethods": 65
+      }
+    },
+    "deviceRuntimeImplementationAbsent": true,
+    "swiftPMDeviceObjects": 17,
+    "manifestSHA256": "ccd7905fcb51af091fc45de2eb63fb4b03c01d635c9c525ec34b7fea56fc09cf"
+  },
+  "manifestSHA256": "ccd7905fcb51af091fc45de2eb63fb4b03c01d635c9c525ec34b7fea56fc09cf",
+  "deadlineBands": {
+    "StartConversationAction": [
+      28.0,
+      30.1
+    ],
+    "EndConversationAction": [
+      28.0,
+      30.1
+    ],
+    "JoinConversationAction": [
+      28.0,
+      30.1
+    ],
+    "MuteConversationAction": [
+      28.0,
+      30.1
+    ],
+    "PlayToneAction": [
+      28.0,
+      30.1
+    ],
+    "PauseConversationAction": [
+      28.0,
+      30.1
+    ]
+  },
+  "deadlineReferenceSHA256": {
+    "2026-10-21-iphone13-ios27-lck-basic.jsonl": "9fd5e48b62a826af7e62388de87119ab431fe2019a7d40445cdd9b528dde4bf7",
+    "2026-10-21-iphone13-ios27-lck-cx-after.jsonl": "96d6e968c2cba8e098ec18872882f7a480476dd90611d5ae4cb5dc2dde78692b",
+    "2026-10-21-iphone13-ios27-lck-lck-after.jsonl": "7b29c543492904cd1121c047d3fce125c4b0a16f1adc76240c80d6c091a15c89",
+    "2026-10-21-iphone13-ios27-lck-two-managers.jsonl": "23ab443e1fd8623140e95cc7d34157d5fd8aa7d13b6321f90e1812825f65a042"
+  }
+}
