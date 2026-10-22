@@ -7,26 +7,30 @@ compiled by the root package or Expo pod. The core keeps no LiveKit dependency.
 The Expo `livekit` adapter instead controls the existing React Native WebRTC ADM;
 do not use this file with `@livekit/react-native`.
 
-During native startup, before any room connection or client creation:
+During native startup, before any room connection:
 
 ```swift
 let adapter = LiveKitMediaAdapter()
-try await adapter.prepare() // establish external ownership before media can start
-try ConversationClient.registerMediaAdapter(adapter)
-let calls = ConversationClient.shared
+let application = try VoIPApplication.start(mediaAdapter: adapter)
+let calls = application.client
 ```
 
-Run setup on MainActor and retain the process's single client. SDK preparation is
-idempotent and repeats the gate safely. The app still owns room/signaling, tracks,
+Run setup on MainActor and retain the process's single client. The SDK prepares
+category/mode and external ownership when a real start/join action arrives,
+before delivering the handler. Create capture demand in that prepared handler,
+after checking its cancellation signal. Do not call `prepare()` at launch.
+Repeated preparation preserves an already authorized call's engine. The app still owns room/signaling, tracks,
 permissions and media lifetime. Request microphone permission before publishing
 audio; restoring input availability can fail if permission has not been granted.
 Do not independently activate/deactivate AVAudioSession or restore LiveKit's
 automatic configuration while this integration owns it. Only genuine LCK delegate
-callbacks release/gate the engine; enabling availability is not proof of audio flow.
+callbacks enable the engine; genuine deactivation, interruption or reset gates it.
+Resumption recommendations never enable it. Availability is not proof of audio flow.
 The SDK's synchronous authorization update prevents queued stale callbacks from
 enabling media after deactivation/reset. Do not invoke that update yourself.
 
-The private actor resolves and uses `AudioManager.shared` inside its own isolation;
+The private actor resolves and uses `AudioManager.shared` on the shared
+`AudioSessionQueue` custom serial executor, outside the Swift cooperative pool;
 no framework object crosses actors and no Sendable assertion is added. Its native
 operation can still block: the core watchdog remains independent, and does not
 promise to preempt a backend operation.

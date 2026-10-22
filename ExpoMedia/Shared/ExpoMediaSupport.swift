@@ -1,24 +1,27 @@
 import Foundation
 
 /// Expo launch adapter selection. Native Swift apps use the dependency-free
-/// core's explicit MediaAdapter registration instead of this Expo-only wrapper.
+/// core's explicit application-start adapter instead of this Expo-only wrapper.
 @MainActor
 public enum ExpoMediaSupport {
-  private static var attempted = false
+  public enum ConfigurationError: Error, Sendable, Equatable {
+    case invalidMediaAdapter
+    case nativeSelectionMismatch(requested: String, compiled: String)
+  }
+  private static let adapter = selectedMediaAdapter()
 
   @discardableResult
   public static func startFromBundle(_ bundle: Bundle = .main) throws -> VoIPApplication {
-    if !attempted {
-      attempted = true
-      let settings = bundle.object(forInfoDictionaryKey: "VoIPSDK") as? [String: Any]
-      let requested = settings?["mediaAdapter"] as? String ?? "webrtc"
-      if requested != ExpoMediaSelection.name {
-        NSLog("[VoIPSDK] Media adapter configuration differs from the pod selection; regenerate the iOS project and pods.")
-      }
-      do { try ConversationClient.registerMediaAdapter(selectedMediaAdapter()) }
-      catch { NSLog("[VoIPSDK] The selected media adapter could not register before client creation.") }
+    let settings = bundle.object(forInfoDictionaryKey: "VoIPSDK") as? [String: Any]
+    if let raw = settings?["mediaAdapter"], !(raw is String) {
+      throw ConfigurationError.invalidMediaAdapter
     }
-    // Media configuration must never prevent required native PushKit reporting.
-    return try VoIPApplication.startFromBundle(bundle)
+    let requested = settings?["mediaAdapter"] as? String ?? "webrtc"
+    guard requested == ExpoMediaSelection.name else {
+      throw ConfigurationError.nativeSelectionMismatch(requested: requested, compiled: ExpoMediaSelection.name)
+    }
+    // The application owner validates repeated starts. Reuse exactly this native
+    // adapter instance; a failed start cannot silently select another backend.
+    return try VoIPApplication.startFromBundle(bundle, mediaAdapter: adapter)
   }
 }

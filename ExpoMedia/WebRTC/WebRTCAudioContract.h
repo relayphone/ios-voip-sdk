@@ -7,6 +7,8 @@
 @protocol VSMediaRTCAudioSession <NSObject>
 @property(nonatomic) BOOL useManualAudio;
 @property(nonatomic) BOOL isAudioEnabled;
+- (void)lockForConfiguration;
+- (void)unlockForConfiguration;
 - (void)audioSessionDidActivate:(AVAudioSession *)session;
 - (void)audioSessionDidDeactivate:(AVAudioSession *)session;
 @end

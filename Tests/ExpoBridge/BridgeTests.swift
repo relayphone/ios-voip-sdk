@@ -331,6 +331,16 @@ struct BridgeTests {
     let event = events.named("conversationEvent").last
     try expect(event?["type"] as? String == "audioActivated" && (event?["payload"] as? [String: Any])?.isEmpty == true,
                "Native events must use the public event envelope.")
+    application.client.publish(.audioActivationMissing, conversationID: conversation.id)
+    let scoped = events.named("conversationEvent").last
+    try expect(scoped?["type"] as? String == "audioActivationMissing" &&
+               (scoped?["payload"] as? [String: Any])?["conversationId"] as? String == conversation.id.uuidString,
+               "A watchdog event must preserve its affected conversation identity.")
+    application.client.publish(.providerOwnershipLost)
+    let ownership = events.named("conversationEvent").last
+    try expect(ownership?["type"] as? String == "providerOwnershipLost" &&
+               (ownership?["payload"] as? [String: Any])?.isEmpty == true,
+               "Process ownership loss must not invent a conversation identity.")
     let initialRoutes = events.named("audioRoutesChanged")
     try expect(initialRoutes.count == 1 && initialRoutes[0]["current"] is NSNull && (initialRoutes[0]["routes"] as? [Any])?.isEmpty == true,
                "Route hydration must encode an explicit null before system audio exists.")

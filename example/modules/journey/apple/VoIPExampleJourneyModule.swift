@@ -11,6 +11,8 @@ private struct MediaEngineSample: Sendable {
   let inputAvailable: Bool
   let outputAvailable: Bool
   let isEngineRunning: Bool
+  let category: String
+  let mode: String
 }
 #endif
 
@@ -97,10 +99,13 @@ private final class ExampleJourney {
     if !JourneyTrace.m2Case.isEmpty {
       mediaObserver = client.observeEvents { [weak self] event in
         guard let self, !self.completed else { return }
-        switch event {
+        switch event.type {
         case .audioActivated, .audioDeactivated, .audioActivationMissing, .audioActivationFailed:
-          self.mediaEventCounts[event.rawValue, default: 0] += 1
-          JourneyTrace.record("m2.audioEvent", ["name": event.rawValue, "count": self.mediaEventCounts[event.rawValue]!])
+          let name = event.type.rawValue
+          self.mediaEventCounts[name, default: 0] += 1
+          var values: [String: Any] = ["name": name, "count": self.mediaEventCounts[name]!]
+          if let id = event.conversationID { values["conversationID"] = id.uuidString }
+          JourneyTrace.record("m2.audioEvent", values)
         default: break
         }
       }
@@ -270,29 +275,28 @@ private final class ExampleJourney {
   #endif
 
   #if targetEnvironment(simulator) && canImport(livekit_react_native_webrtc)
-  /// Public getters on the existing RN module's worker. No factory/session
+  /// Public getters on the shared audio executor. No factory/session
   /// activation, availability writes, or private runtime lookup is performed.
   func mediaSnapshot(_ module: WebRTCModule, label: String) async throws -> String {
     let labels: Set<String> = ["poll", "initial", "demand", "active", "speaker", "held", "resumed", "ended", "failed"]
     guard !JourneyTrace.m2Case.isEmpty, !completed, labels.contains(label) else { throw JourneyError.wrongMode }
     let client = try bindClient()
     let moduleID = String(describing: ObjectIdentifier(module))
-    guard let worker = module.workerQueue else { throw JourneyError.mediaUnavailable }
     let sample = try await withCheckedThrowingContinuation { (reply: CheckedContinuation<MediaEngineSample, Error>) in
-      worker.async {
+      VSAudioSessionGetQueue().async {
         guard let device = module.audioDeviceModule else { reply.resume(throwing: JourneyError.mediaUnavailable); return }
         let availability = device.engineAvailability
+        let session = AVAudioSession.sharedInstance()
         reply.resume(returning: MediaEngineSample(deviceID: String(describing: ObjectIdentifier(device)),
           inputAvailable: availability.isInputAvailable.boolValue, outputAvailable: availability.isOutputAvailable.boolValue,
-          isEngineRunning: device.isEngineRunning))
+          isEngineRunning: device.isEngineRunning, category: session.category.rawValue, mode: session.mode.rawValue))
       }
     }
-    let session = AVAudioSession.sharedInstance()
     let routes = client.audioRoutes
     let snapshot: [String: Any] = ["label": label, "moduleID": moduleID, "deviceID": sample.deviceID,
       "inputAvailable": sample.inputAvailable, "outputAvailable": sample.outputAvailable,
       "isEngineRunning": sample.isEngineRunning, "routeCount": routes.routes.count,
-      "currentRouteType": (routes.current?.type as Any?) ?? NSNull(), "category": session.category.rawValue, "mode": session.mode.rawValue,
+      "currentRouteType": (routes.current?.type as Any?) ?? NSNull(), "category": sample.category, "mode": sample.mode,
       "activatedCount": mediaEventCounts[ConversationEvent.audioActivated.rawValue, default: 0],
       "deactivatedCount": mediaEventCounts[ConversationEvent.audioDeactivated.rawValue, default: 0],
       "missingCount": mediaEventCounts[ConversationEvent.audioActivationMissing.rawValue, default: 0],
@@ -321,7 +325,7 @@ private final class ExampleJourney {
     }
     if event == "m2.hookEvent" {
       let names: Set<String> = ["audioActivated", "audioDeactivated", "audioActivationMissing", "audioActivationFailed",
-        "providerReset", "pushTokenUpdated"]
+        "providerReset", "providerOwnershipLost", "pushTokenUpdated"]
       guard Set(value.keys) == ["name"], let name = value["name"] as? String, names.contains(name) else {
         throw JourneyError.invalidTrace
       }

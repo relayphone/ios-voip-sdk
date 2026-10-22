@@ -99,7 +99,7 @@ private final class Probe {
     let clock = TestClock()
     self.clock = clock
     coordinator = AudioActivationCoordinator(policy: policy, now: { clock.now }, schedule: clock.schedule)
-    coordinator.onEvent = { [weak self] event in
+    coordinator.onEvent = { [weak self] event, _ in
       guard let self else { return }
       switch event {
       case .activated: self.events.append("activated")
@@ -221,6 +221,13 @@ struct AudioTests {
     alreadyActive.clock.advance(to: 200)
     try expect(alreadyActive.coordinator.isActive && alreadyActive.events == ["activated"] && alreadyActive.endings.isEmpty,
                "Conversations joining an already active session must not start an absence episode.")
+    alreadyActive.coordinator.systemBecameInactive()
+    try expect(!alreadyActive.coordinator.isActive && alreadyActive.events == ["activated"],
+               "An AV interruption must revoke authorization without fabricating an LCK deactivation event.")
+    alreadyActive.coordinator.didActivate()
+    alreadyActive.clock.advance(to: 230)
+    try expect(alreadyActive.coordinator.isActive && alreadyActive.events == ["activated", "activated"] && alreadyActive.endings.isEmpty,
+               "Only a later genuine LCK activation restores interrupted audio and cancels its watchdog.")
   }
 
   @MainActor private static func customDeadlines() async throws {

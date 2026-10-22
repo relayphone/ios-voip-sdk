@@ -12,6 +12,7 @@ static NSError *mediaError(NSInteger code) {
   dispatch_queue_t _worker;
   NSLock *_authorizationLock;
   BOOL _authorized;
+  BOOL _prepared;
 }
 + (instancetype)sharedBinding {
   static VSSelectedMediaBinding *binding;
@@ -22,7 +23,7 @@ static NSError *mediaError(NSInteger code) {
 - (instancetype)init {
   self = [super init];
   if (self) {
-    _worker = dispatch_queue_create("VoIPSDK.media.webrtc", DISPATCH_QUEUE_SERIAL);
+    _worker = VSAudioSessionGetQueue();
     _authorizationLock = [NSLock new];
   }
   return self;
@@ -40,6 +41,7 @@ static NSError *mediaError(NSInteger code) {
   // The setter never waits on media. A reset must gate media even when no
   // genuine deactivation callback follows it.
   if (!active) dispatch_async(_worker, ^{
+    if (!_prepared) return;
     if ([self isAuthorized]) return;
     @try {
       NSError *error = nil;
@@ -60,21 +62,32 @@ static NSError *mediaError(NSInteger code) {
   id<VSMediaRTCAudioSession> session = [factory sharedInstance];
   SEL required[] = {@selector(useManualAudio), @selector(setUseManualAudio:),
     @selector(isAudioEnabled), @selector(setIsAudioEnabled:),
+    @selector(lockForConfiguration), @selector(unlockForConfiguration),
     @selector(audioSessionDidActivate:), @selector(audioSessionDidDeactivate:)};
   for (NSUInteger index = 0; index < sizeof(required) / sizeof(required[0]); index++) {
     if (![session respondsToSelector:required[index]]) { *error = mediaError(1); return nil; }
   }
   return session;
 }
-- (void)prepareWithCompletion:(VSMediaCompletion)completion {
+- (void)prepareWithCheck:(VSMediaConfiguration)check configuration:(VSMediaConfiguration)configuration completion:(VSMediaCompletion)completion {
   dispatch_async(_worker, ^{
     NSError *error = nil;
     @try {
+      // A cancelled queued action must not resolve or mutate a backend.
+      error = check();
+      if (error) { completion(error); return; }
       id<VSMediaRTCAudioSession> session = [self audioSession:&error];
       if (session) {
-        session.useManualAudio = YES;
-        session.isAudioEnabled = NO;
-        if (!session.useManualAudio || session.isAudioEnabled) error = mediaError(2);
+        [session lockForConfiguration];
+        @try {
+          error = configuration();
+          if (!error) {
+            session.useManualAudio = YES;
+            if (![self isAuthorized]) session.isAudioEnabled = NO;
+            _prepared = YES;
+            if (!session.useManualAudio || (![self isAuthorized] && session.isAudioEnabled)) error = mediaError(2);
+          }
+        } @finally { [session unlockForConfiguration]; }
       }
     } @catch (NSException *exception) { error = mediaError(2); }
     completion(error);
@@ -82,6 +95,7 @@ static NSError *mediaError(NSInteger code) {
 }
 - (void)activate:(AVAudioSession *)audioSession completion:(VSMediaCompletion)completion {
   dispatch_async(_worker, ^{
+    if (!_prepared) { completion(mediaError(2)); return; }
     NSError *error = nil;
     @try {
       id<VSMediaRTCAudioSession> session = [self audioSession:&error];
@@ -97,6 +111,7 @@ static NSError *mediaError(NSInteger code) {
 }
 - (void)deactivate:(AVAudioSession *)audioSession completion:(VSMediaCompletion)completion {
   dispatch_async(_worker, ^{
+    if (!_prepared) { completion(nil); return; }
     NSError *error = nil;
     @try {
       id<VSMediaRTCAudioSession> session = [self audioSession:&error];

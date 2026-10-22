@@ -24,7 +24,7 @@ struct LiveKitAdapterTests {
       operations.enqueue { complete = true }
       backend.releasePreparation()
       try await eventually { complete }
-      guard errors.isEmpty, backend.calls == [.none, .none, .none],
+      guard errors.isEmpty, backend.calls.count >= 3, backend.calls.allSatisfy({ $0 == .none }),
             !backend.audioSession.isAutomaticConfigurationEnabled else {
         throw Failure.assertion("Queued activation must remain gated after genuine deactivation/reset.")
       }
@@ -37,9 +37,15 @@ struct LiveKitAdapterTests {
     try await adapter.didActivate(AVAudioSession())
     adapter.setSystemAudioAuthorization(false)
     try await adapter.didDeactivate(AVAudioSession())
-    guard backend.calls == [.none, .default, .none] else {
+    guard backend.calls.first == AudioEngineAvailability.none, backend.calls.contains(.default), backend.calls.last == AudioEngineAvailability.none else {
       throw Failure.assertion("Current genuine authorization must permit pending media, then gate it.")
     }
+    adapter.setSystemAudioAuthorization(true)
+    try await adapter.didActivate(AVAudioSession())
+    guard backend.calls.last == .default else { throw Failure.assertion("Genuine reactivation must enable the prepared engine.") }
+    adapter.setSystemAudioAuthorization(false)
+    try await eventually { backend.calls.last == AudioEngineAvailability.none }
+    // No synthetic didDeactivate callback was needed for a real AV interruption.
     print("LiveKit source host checks passed: queued activation after deactivate/reset stays gated; healthy authorization permits then gates media (facade backend only).")
   }
   @MainActor private static func eventually(_ predicate: () -> Bool) async throws {

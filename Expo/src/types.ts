@@ -120,7 +120,7 @@ export interface AudioRoutes {
   readonly current: AudioRoute | null;
 }
 
-/** Audio signals are process-wide; M3 supplies dial requests. */
+/** Activation callbacks are process-wide; watchdog signals identify each affected conversation. */
 export interface ConversationEventMap {
   audioActivated: { conversationId?: string };
   audioDeactivated: { conversationId?: string };
@@ -129,4 +129,5 @@ export interface ConversationEventMap {
   pushTokenUpdated: PushToken | null;
   dialRequest: { handle: string; video: boolean };
   providerReset: Record<string, never>;
+  providerOwnershipLost: Record<string, never>;
 }

@@ -11,7 +11,9 @@ TEST = ROOT / 'Tests/ExpoMedia'
 
 
 def main():
-    inputs = [ROOT / 'ExpoMedia/Shared/VSMediaBinding.h', ROOT / 'ExpoMedia/WebRTC/WebRTCAudioContract.h',
+    inputs = [ROOT / 'Sources/VoIPPlatform/VSAudioSessionQueue.m',
+              ROOT / 'Sources/VoIPPlatform/include/VSAudioSessionQueue.h',
+              ROOT / 'ExpoMedia/Shared/VSMediaBinding.h', ROOT / 'ExpoMedia/WebRTC/WebRTCAudioContract.h',
               ROOT / 'ExpoMedia/WebRTC/WebRTCMediaBinding.m', ROOT / 'ExpoMedia/LiveKit/LiveKitMediaBinding.m',
               *sorted(path for path in TEST.rglob('*') if path.is_file()), Path(__file__)]
     snapshot = lambda: {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in inputs}
@@ -29,7 +31,9 @@ def main():
                        '-Werror', '-Wno-unused-parameter', '-DNSLog=VSHostMediaLog',
                        '-fmodules-cache-path=' + str(out / 'modules'), '-I' + str(TEST / 'Facades'),
                        '-I' + str(TEST), '-I' + str(ROOT / 'ExpoMedia/Shared'),
-                       '-I' + str(ROOT / 'ExpoMedia/WebRTC'), str(ROOT / production),
+                       '-I' + str(ROOT / 'ExpoMedia/WebRTC'),
+                       '-I' + str(ROOT / 'Sources/VoIPPlatform/include'),
+                       str(ROOT / 'Sources/VoIPPlatform/VSAudioSessionQueue.m'), str(ROOT / production),
                        str(TEST / 'HostSupport.m'), str(TEST / control), '-framework', 'Foundation', '-o', str(binary)]
             built = subprocess.run(command, capture_output=True, text=True, timeout=90)
             if built.returncode: raise RuntimeError(name + ' compile failed:\n' + built.stdout + built.stderr)

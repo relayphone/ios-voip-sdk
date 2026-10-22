@@ -1,4 +1,5 @@
 import Foundation
+import VoIPPlatform
 
 public enum AudioEngineAvailability: Sendable, Equatable { case none, `default` }
 
@@ -8,7 +9,10 @@ public final class AudioSession: @unchecked Sendable {
   private var automatic = true
   public var isAutomaticConfigurationEnabled: Bool {
     get { lock.withLock { automatic } }
-    set { lock.withLock { automatic = newValue } }
+    set {
+      precondition(VSAudioSessionIsOnQueue() && !Thread.isMainThread)
+      lock.withLock { automatic = newValue }
+    }
   }
 }
 public final class AudioManager: @unchecked Sendable {
@@ -35,6 +39,7 @@ public final class AudioManager: @unchecked Sendable {
     condition.lock(); blocked = false; condition.broadcast(); condition.unlock()
   }
   public func setEngineAvailability(_ value: AudioEngineAvailability) throws {
+    precondition(VSAudioSessionIsOnQueue() && !Thread.isMainThread)
     condition.lock(); defer { condition.unlock() }
     if blocked {
       started = true
