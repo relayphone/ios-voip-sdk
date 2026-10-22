@@ -10,6 +10,7 @@ cd "$(dirname "$0")/.."
 : "${SDK_M0_BUILD_LOGS:?provide the nonempty native build logs directory}"
 if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
   : "${SDK_M1_CONTRACT_BUILD:?provide the source-bound Debug M1 contract build}"
+  : "${SDK_PUSH_ENTRY_BUILD:?provide the source-bound Debug A0/A1 push-entry build}"
 fi
 if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then
   : "${SDK_SYSTEM_CONTROL_PACKAGE:?provide a source-bound cksim package for external controls}"
@@ -98,6 +99,16 @@ pathlib.Path(sys.argv[2]).write_text(json.dumps({k:selected[k] for k in
     ('identifier','version','buildversion')},indent=2)+'\n')
 PY
 RUNTIME=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["identifier"])' "$OUT/runtime.json")
+# Capture immutable host metadata once, before creating the owned simulator.
+# The final environment below adds the actual simulator identity to these fields.
+python3 - "$OUT/environment.json" <<'PY'
+import json,pathlib,subprocess,sys
+def output(command): return subprocess.check_output(command,text=True,timeout=30).strip()
+environment=dict(
+    xcodeVersion=output(['xcodebuild','-version']),sdkVersion=output(['xcrun','--sdk','iphonesimulator','--show-sdk-version']),
+    hostArchitecture=output(['uname','-m']),nodeVersion=output(['node','--version']),npmVersion=output(['npm','--version']))
+pathlib.Path(sys.argv[1]).write_text(json.dumps(environment,indent=2)+'\n')
+PY
 DEVTYPE=${SDK_M0_DEVICE_TYPE:-com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro}
 UDID=$(limit 30 xcrun simctl create "sdk-m0-$RUN_ID" "$DEVTYPE" "$RUNTIME")
 OWNED_SIMULATOR=$UDID
@@ -122,13 +133,11 @@ assert not any(pathlib.Path(p).name in ('CKSimRuntime.dylib','CKSimLoader.dylib'
     'Plain M0 acceptance refuses external SDK runtime injection'
 PY
 python3 - "$OUT" "$UDID" <<'PY'
-import json,pathlib,subprocess,sys
+import json,pathlib,sys
 root=pathlib.Path(sys.argv[1]); runtime=json.loads((root/'runtime.json').read_text())
-def output(command): return subprocess.check_output(command,text=True,timeout=30).strip()
-environment=dict(simulatorID=sys.argv[2],simulatorRuntimeID=runtime['identifier'],
-    simulatorOS=runtime['version'],simulatorBuild=runtime['buildversion'],
-    xcodeVersion=output(['xcodebuild','-version']),sdkVersion=output(['xcrun','--sdk','iphonesimulator','--show-sdk-version']),
-    hostArchitecture=output(['uname','-m']),nodeVersion=output(['node','--version']),npmVersion=output(['npm','--version']))
+environment=json.loads((root/'environment.json').read_text())
+environment.update(simulatorID=sys.argv[2],simulatorRuntimeID=runtime['identifier'],
+    simulatorOS=runtime['version'],simulatorBuild=runtime['buildversion'])
 (root/'environment.json').write_text(json.dumps(environment,indent=2)+'\n')
 PY
 if [[ -n "${SDK_M0_BUILD_LOGS:-}" ]]; then
@@ -197,7 +206,10 @@ PY
   mkdir "$OUT/m1/contracts"
   cp -R "$SDK_M1_CONTRACT_BUILD" "$OUT/m1/contracts-build"
   limit 180 xcrun simctl install "$UDID" "$OUT/m1/contracts-build/SDKM1Contracts.app" > "$OUT/m1/contracts-install.log" 2>&1
-  for case in guard unhandled-accept; do
+  # The app is installed once and only relaunched below. Reuse its first
+  # observed data container instead of making another IPC query after each case.
+  contract_container=""
+  for case in guard unhandled-accept unhandled-fail duplicate-wrapper; do
     name="sdk-m1-contract-$case"
     env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
       SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M1_CONTRACT_CASE="$case" \
@@ -206,8 +218,11 @@ PY
       --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.iosvoipsdk.m1contracts \
       --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.m1contracts \
       --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.iosvoipsdk.m1contracts
-    container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.m1contracts data)
-    cp "$container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m1/contracts/$name.runtime.jsonl"
+    if [[ -z "$contract_container" ]]; then
+      contract_container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.m1contracts data)
+      [[ -n "$contract_container" && -d "$contract_container" ]] || { echo "Missing owned contract data container" >&2; exit 1; }
+    fi
+    cp "$contract_container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m1/contracts/$name.runtime.jsonl"
     python3 - "$OUT/m1/contracts/$name.receipt.json" "$OUT/m1/contracts/$name.runtime.jsonl" <<'PY'
 import hashlib,json,pathlib,sys
 receipt,journal=map(pathlib.Path,sys.argv[1:])
@@ -216,6 +231,12 @@ row['journalSHA256']=hashlib.sha256(journal.read_bytes()).hexdigest()
 receipt.write_text(json.dumps(row,indent=2)+'\n')
 PY
   done
+  # Reuse this fresh owned simulator and its preserved launch environment. The
+  # focused fixture runs three conforming deliveries and two required refusals;
+  # these in-app injections do not stand in for a push-initiated cold launch.
+  SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
+    python3 discovery/run_push_report_entry.py --build "$SDK_PUSH_ENTRY_BUILD" \
+      --out "$OUT/push-entry" --simulator "$UDID"
 fi
 if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then
   env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \

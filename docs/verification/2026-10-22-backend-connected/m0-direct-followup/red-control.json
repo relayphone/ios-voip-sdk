@@ -1,0 +1,15 @@
+{
+  "oldGateCommit": "6fd755432d69689366a731968bfdf91ec0f13a49",
+  "oldGateSHA256": "0b61ce5c1102702df04269768f0c6388a7e91c938c599c861032dfd3b91f386b",
+  "currentControlsSHA256": "4b260759df7f288176554048479f22d63799dd26c8b1742cdc982725450700be",
+  "classification": "old production gate with only its checkout dependency ROOT selected, against current synthetic causal-marker tamper controls; native commands forbidden by controls",
+  "exitCode": 1,
+  "failedControlGroups": 2,
+  "falseAcceptances": 11,
+  "rawStderrSHA256": "95b86f1150fe04ebef40c0ef9f36c1dfcbcaa609a33ed33f6107df7247635853",
+  "publishedDiagnostic": {
+    "file": "red.stderr",
+    "sha256": "bff2c3cdd3289eef84972e578a42dcea36c2b9bac90b3081cf68778acba1174b",
+    "transformation": "checkout path and trailing whitespace normalized; raw stream retained privately"
+  }
+}

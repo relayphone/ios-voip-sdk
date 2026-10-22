@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "qualification": "measured light host/offline/typecheck integration only",
+  "createdAtUTC": "2026-10-22T12:11:11.476391+00:00",
+  "coreParent": "d62dd35e1f283fdc582bf018c365fd2308f382e9",
+  "incomingA1": "8077f0d126d2a30c66e21d3e09d65d6a7dd801a0",
+  "sourceFiles": {
+    ".github/workflows/sdk-m0.yml": "201d863bd912f6c3b90b0d3ea6d46d5daa6cdb1741cd8697887f3faf92070a7e",
+    "Sources/Engine/RuntimeEngine.swift": "5e6d7cea29c84f89c46b705b20e7e55796269ed3afb6304b61c059c8ecdccc49",
+    "Sources/Interposition/CKRuntimeSeam.h": "47e32a8965a0dd1dfaef592eaec456841c2cbc80ea87059a8adba2c4ae1421cd",
+    "Sources/Interposition/include/CKRuntimeBridge.h": "565e067907f10700a4f7083b8b0dd4b25ae263b832f479ae3689c61435ba8bf3",
+    "Sources/VoIPPlatform/VSProcessSDKOwnership.m": "ea509d0194e3746d104093b2256bd0ee4fd3f9c7ec73c96bbeb42e16ac2d8e90",
+    "Sources/VoIPPlatform/include/VSProcessSDKOwnership.h": "3a206de32bf2787e6a3ae81938a91914e885625041c3caca308c39a374816ec2",
+    "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h": "31cb18b30406602c323ebb3e58ffafcaff0106a2f3ab4e378fb252a2a0c00ccd",
+    "Sources/VoIPPlatform/include/VSPushDelivery.h": "3769eecacf2f8e64d1e3a9c9bc749db26d65be7186c4f176dd7cb1a277ec83ff",
+    "Sources/VoIPPlatform/include/VSPushRegistryOwner.h": "b6db5cf75a4bcda293e06f27a0af05b0607b290e87f30848a8cdc8c989db5f2e",
+    "Sources/VoIPPlatform/include/VoIPPlatform.h": "eec80d9f49e9db87b2d42e7bdf5593bb270b053a5c3d233fc17eafe5ea771cfa",
+    "Sources/VoIPSDK/ConversationClient.swift": "ee4c973be79d2700907427c3be98a66fe8a8afcdeecfe43fd62a88153c04c3ed",
+    "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
+    "Sources/VoIPSDK/ConversationModels.swift": "f482b84dc091851a740c5c645242fef4aec9e99e518296df81a277d62cf84e9b",
+    "Sources/VoIPSDK/ConversationRecord.swift": "90f94cf5baf4085478ed0e2437d520e9066367b9bb23615ff88d5fade3288d64",
+    "Sources/VoIPSDK/IncomingIntake.swift": "5f6979dbc38bb4badeb2026ca8033341a5ce744ebba4e279aab1a4892d5f64c5",
+    "Sources/VoIPSDK/IncomingInvitationGate.swift": "631185d051fc9e5b90108092efefa55429f7230908b73f212c01ad3152115a19",
+    "Sources/VoIPSDK/IncomingReportTransport.swift": "518a522f3dccc9f96f221f700a77c9c732b20b00dfb01dd094579c5b43a08cbf",
+    "Sources/VoIPSDK/ProcessSDKOwnership.swift": "4fe8a3493c3b6756beab43a9f67a28933f4f80c8860e8bb4619ffd2248e95a8b",
+    "Sources/VoIPSDK/PushService.swift": "f7a731d8c91ee2a4572dd37d2d96a36c258187fc4a38ba74143c7c9b07690e4c",
+    "Sources/VoIPSDK/PushWire.swift": "d43515bc7f6ac74d44addf08ecdcc920183543ad5da3f7007cb4144658f7378a",
+    "Sources/VoIPSDK/SimulatorSupport.swift": "45b5b31b3943603d7a20ebbed2b2a76feddbb7b6fb83fc1c532def2cbc059563",
+    "Sources/VoIPSDK/VoIPApplication.swift": "ad924a4478d1a35f35267d826a5ad6c28837a8918e4fb848325f139ea0d09552",
+    "discovery/check_sdk_ownership.py": "96dc27d60864dd6d5a6778b349fa651a42521177f1e5fadb1a1a5b6d101499e9",
+    "discovery/sdk_m0_conformance.py": "0b61ce5c1102702df04269768f0c6388a7e91c938c599c861032dfd3b91f386b"
+  },
+  "sourceDigestSHA256": "136ed56e9d1411be0905a16b669adbfdacbd11d625cf558a6f19fe6f8b9d6474",
+  "review": {
+    "spec": "clear",
+    "standards": "clear",
+    "freezeSHA256": "9ad60576b8b516db42ec169af47f8d307f8c671e7469559695c0db498f8f074b",
+    "freezeMapDigestSHA256": "b4f0eb3e451325cdc77f9b578da4ab0f63deb948da5a42ad6c981bb963c4493f"
+  },
+  "checks": [
+    {
+      "name": "a1-report-gate",
+      "command": [
+        "python3",
+        "discovery/check_push_report_entry.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.702346167,
+      "stdoutSHA256": "def8df7d54532864307053644ed2114865973080c1a8973c01ecccb1844b3429",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "a1-capture-gate",
+      "command": [
+        "python3",
+        "discovery/check_push_report_capture.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.16613320899999984,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e37504215e3cebe1d3aaa207267b297f7fca7e35de1d4267cacd74ef961f6046"
+    },
+    {
+      "name": "a1-m1-gate",
+      "command": [
+        "python3",
+        "discovery/check_sdk_m1.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.769522416,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "0f788cc0b8f8981e75cec631a8bc881f90aa12bbb885968e47787cf49c37d7b2"
+    },
+    {
+      "name": "a1-workflow",
+      "command": [
+        "actionlint",
+        ".github/workflows/sdk-m0.yml"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.10424458300000028,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "ownership-after-A1",
+      "exitCode": 0,
+      "groups": [
+        "package-first-duplicate-refused-before-second-manager",
+        "pod-first-duplicate-refused-before-second-manager",
+        "same-objc-helper-present-in-both-images",
+        "concurrent-claims-preserve-owner",
+        "static-linker-duplicate-is-already-loud",
+        "actual-forApplication-repeated-same-configuration-is-idempotent",
+        "actual-forApplication-rejects-invalid-first-configurations-before-manager",
+        "actual-forApplication-rejects-changed-configuration-before-second-manager",
+        "actual-Application-rejects-client-and-simulator-configuration-conflicts",
+        "actual-finishLaunch-reentrant-observation-sees-published-application-and-client",
+        "actual-finishLaunch-observes-exactly-once-for-both-linked-module-orders"
+      ],
+      "outputSHA256": "a493ef87e7dfaf62186bc2870e543614510e0d1a2ac483419141d26647dec226"
+    },
+    {
+      "name": "merged-SDK-typecheck",
+      "exitCode": 0,
+      "classification": "actual merged SDK source typecheck only; no application, simulator, device, audio or SwiftPM product build",
+      "outputSHA256": "10ca5f7208b6c39b0bd8d775922039058f7112c68e822115e18ae383f15ce89b"
+    }
+  ],
+  "limits": [
+    "No new SwiftPM build, app, simulator, audio, device, APNs, PushKit registration or hosted CI execution.",
+    "Core ownership proof retains explicitly named LCK/PushKit construction/observation facades.",
+    "A1 behavior qualification remains bound to its own source/receipts; this follow-up qualifies merge seams and host/typecheck preparation only."
+  ]
+}

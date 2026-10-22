@@ -1,0 +1,115 @@
+F
+======================================================================
+FAIL: test_backend_connection_projection (check_sdk_m0.Controls) (field='status')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<checkout>/discovery/check_sdk_m0.py", line 194, in test_backend_connection_projection
+    self.check(lambda root, field=field, value=value: change_rows(root, lambda rows:
+  File "<checkout>/discovery/check_sdk_m0.py", line 136, in check
+    gate.validate(root)
+AssertionError: (<class 'summarize.EvidenceError'>, <class 'OSError'>, <class 'ValueError'>, <class 'KeyError'>, <class 'TypeError'>, <class 'StopIteration'>) not raised
+
+======================================================================
+FAIL: test_backend_connection_projection (check_sdk_m0.Controls) (field='hasConnectedAt')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<checkout>/discovery/check_sdk_m0.py", line 194, in test_backend_connection_projection
+    self.check(lambda root, field=field, value=value: change_rows(root, lambda rows:
+  File "<checkout>/discovery/check_sdk_m0.py", line 136, in check
+    gate.validate(root)
+AssertionError: (<class 'summarize.EvidenceError'>, <class 'OSError'>, <class 'ValueError'>, <class 'KeyError'>, <class 'TypeError'>, <class 'StopIteration'>) not raised
+
+======================================================================
+FAIL: test_backend_connection_projection (check_sdk_m0.Controls) (field='pending')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<checkout>/discovery/check_sdk_m0.py", line 194, in test_backend_connection_projection
+    self.check(lambda root, field=field, value=value: change_rows(root, lambda rows:
+  File "<checkout>/discovery/check_sdk_m0.py", line 136, in check
+    gate.validate(root)
+AssertionError: (<class 'summarize.EvidenceError'>, <class 'OSError'>, <class 'ValueError'>, <class 'KeyError'>, <class 'TypeError'>, <class 'StopIteration'>) not raised
+
+======================================================================
+FAIL: test_backend_connection_projection (check_sdk_m0.Controls) (connected_field='hasConnectedAt')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<checkout>/discovery/check_sdk_m0.py", line 199, in test_backend_connection_projection
+    self.check(lambda root, field=field, value=value: change_rows(root, lambda rows:
+  File "<checkout>/discovery/check_sdk_m0.py", line 136, in check
+    gate.validate(root)
+AssertionError: (<class 'summarize.EvidenceError'>, <class 'OSError'>, <class 'ValueError'>, <class 'KeyError'>, <class 'TypeError'>, <class 'StopIteration'>) not raised
+
+======================================================================
+FAIL: test_backend_connection_projection (check_sdk_m0.Controls) (connected_field='id')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<checkout>/discovery/check_sdk_m0.py", line 199, in test_backend_connection_projection
+    self.check(lambda root, field=field, value=value: change_rows(root, lambda rows:
+  File "<checkout>/discovery/check_sdk_m0.py", line 136, in check
+    gate.validate(root)
+AssertionError: (<class 'summarize.EvidenceError'>, <class 'OSError'>, <class 'ValueError'>, <class 'KeyError'>, <class 'TypeError'>, <class 'StopIteration'>) not raised
+
+======================================================================
+FAIL: test_backend_connection_projection (check_sdk_m0.Controls) (connected_field='status')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<checkout>/discovery/check_sdk_m0.py", line 199, in test_backend_connection_projection
+    self.check(lambda root, field=field, value=value: change_rows(root, lambda rows:
+  File "<checkout>/discovery/check_sdk_m0.py", line 136, in check
+    gate.validate(root)
+AssertionError: (<class 'summarize.EvidenceError'>, <class 'OSError'>, <class 'ValueError'>, <class 'KeyError'>, <class 'TypeError'>, <class 'StopIteration'>) not raised
+
+======================================================================
+FAIL: test_backend_connection_projection (check_sdk_m0.Controls)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<checkout>/discovery/check_sdk_m0.py", line 202, in test_backend_connection_projection
+    self.check(lambda root: change_rows(root, lambda rows:
+  File "<checkout>/discovery/check_sdk_m0.py", line 136, in check
+    gate.validate(root)
+AssertionError: (<class 'summarize.EvidenceError'>, <class 'OSError'>, <class 'ValueError'>, <class 'KeyError'>, <class 'TypeError'>, <class 'StopIteration'>) not raised
+
+======================================================================
+FAIL: test_backend_report_marker_identity_and_order (check_sdk_m0.Controls) (event='sdk.joinSettled')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<checkout>/discovery/check_sdk_m0.py", line 209, in test_backend_report_marker_identity_and_order
+    self.check(lambda root, event=event: change_rows(root, lambda rows:
+  File "<checkout>/discovery/check_sdk_m0.py", line 136, in check
+    gate.validate(root)
+AssertionError: (<class 'summarize.EvidenceError'>, <class 'OSError'>, <class 'ValueError'>, <class 'KeyError'>, <class 'TypeError'>, <class 'StopIteration'>) not raised
+
+======================================================================
+FAIL: test_backend_report_marker_identity_and_order (check_sdk_m0.Controls) (event='sdk.backendConnectedRequested')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<checkout>/discovery/check_sdk_m0.py", line 209, in test_backend_report_marker_identity_and_order
+    self.check(lambda root, event=event: change_rows(root, lambda rows:
+  File "<checkout>/discovery/check_sdk_m0.py", line 136, in check
+    gate.validate(root)
+AssertionError: (<class 'summarize.EvidenceError'>, <class 'OSError'>, <class 'ValueError'>, <class 'KeyError'>, <class 'TypeError'>, <class 'StopIteration'>) not raised
+
+======================================================================
+FAIL: test_backend_report_marker_identity_and_order (check_sdk_m0.Controls) (after_connected=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<checkout>/discovery/check_sdk_m0.py", line 225, in test_backend_report_marker_identity_and_order
+    self.check(lambda root, after_connected=after_connected: change_rows(root,
+  File "<checkout>/discovery/check_sdk_m0.py", line 136, in check
+    gate.validate(root)
+AssertionError: (<class 'summarize.EvidenceError'>, <class 'OSError'>, <class 'ValueError'>, <class 'KeyError'>, <class 'TypeError'>, <class 'StopIteration'>) not raised
+
+======================================================================
+FAIL: test_backend_report_marker_identity_and_order (check_sdk_m0.Controls) (after_connected=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<checkout>/discovery/check_sdk_m0.py", line 225, in test_backend_report_marker_identity_and_order
+    self.check(lambda root, after_connected=after_connected: change_rows(root,
+  File "<checkout>/discovery/check_sdk_m0.py", line 136, in check
+    gate.validate(root)
+AssertionError: (<class 'summarize.EvidenceError'>, <class 'OSError'>, <class 'ValueError'>, <class 'KeyError'>, <class 'TypeError'>, <class 'StopIteration'>) not raised
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.109s
+
+FAILED (failures=11)

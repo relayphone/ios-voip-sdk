@@ -2,14 +2,6 @@ import Foundation
 import Observation
 import Dispatch
 
-// These controls execute the real Client, Handler, activation coordinator and
-// adapter operation ordering. Only framework/platform edges below are inert.
-// Duplicate-image ownership and native audio behavior have separate controls.
-@MainActor enum ProcessSDKOwnership {
-  private static var claimed = false
-  static func claim() throws { claimed = true }
-}
-
 @MainActor enum HostClientOwner {
   static func acquire() -> ConversationClient {
     let client = try! ConversationClient.forApplication(configuration: .init())
@@ -18,6 +10,7 @@ import Dispatch
   }
 }
 
+// Explicit inert host audio boundaries; production policy/adapter ordering is compiled.
 private let hostAudioQueue = DispatchQueue(label: "VoIPSDK.HostMuteAudioBoundary")
 func VSAudioSessionGetQueue() -> DispatchQueue { hostAudioQueue }
 
@@ -42,9 +35,10 @@ enum SystemAudioLifecycleEvent: Sendable {
   }
 }
 
+
 // Test-only LCK boundary. The production client and handler remain unchanged.
-public struct Handle: Hashable {
-  public enum Kind { case generic, phoneNumber, emailAddress }
+public struct Handle: Hashable, Sendable {
+  public enum Kind: Sendable { case generic, phoneNumber, emailAddress }
   public let type: Kind
   public let value: String
   public let displayName: String?
@@ -62,7 +56,7 @@ public struct Handle: Hashable {
     public static let playingTones = Self(rawValue: 4), video = Self(rawValue: 8)
     public static let unmerging = Self(rawValue: 16)
   }
-  public struct Update { public let members: Set<Handle>; public let capabilities: Capabilities }
+  public struct Update: Sendable { public let members: Set<Handle>; public let capabilities: Capabilities }
   public enum EndedReason: Equatable { case remoteEnded, failed, unanswered, joinedElsewhere, declinedElsewhere }
   public enum Event {
     case conversationStartedConnecting(Date), conversationConnected(Date)
@@ -140,9 +134,14 @@ public protocol ConversationManagerDelegate: AnyObject {
   }
   static var latest: ConversationManager?
   public weak var delegate: (any ConversationManagerDelegate)?
-  public var conversations: [Conversation] = []
+  @ObservationIgnored public var conversations: [Conversation] = []
   var nextTimeout: TimeInterval?
   var appActions: [ConversationAction] = []
+  var performAttempts = 0
+  var performError: (any Error)?
+  var deferActionDelivery = false
+  var waitForActionSettlement = true
+  var deferEndedState = false
   var reports: [(UUID, Conversation.Event)] = []
   var incomingErrors: [any Error] = []
   var reportedIncoming: [UUID] = []
@@ -151,6 +150,8 @@ public protocol ConversationManagerDelegate: AnyObject {
   public init(configuration: Configuration) { Self.latest = self }
   public func perform(_ actions: [ConversationAction]) async throws {
     precondition(actions.count == 1)
+    performAttempts += 1
+    if let error = performError { performError = nil; throw error }
     let action = actions[0]
     if let timeout = nextTimeout { action.timeoutDate = Date().addingTimeInterval(timeout); nextTimeout = nil }
     if action is StartConversationAction { conversations.append(Conversation(action.conversationUUID, state: .idle)) }
@@ -159,12 +160,12 @@ public protocol ConversationManagerDelegate: AnyObject {
             let conversation = self.conversations.first(where: { $0.uuid == action.conversationUUID }) else { return }
       // Genuine reference Start fulfillment can remain idle; Join becomes joined.
       if action is JoinConversationAction { conversation.state = .joined }
-      if action is EndConversationAction { conversation.state = .left }
+      if action is EndConversationAction && !self.deferEndedState { conversation.state = .left }
       self.delegate?.conversationManager(self, conversationChanged: conversation)
     }
     appActions.append(action)
-    deliver(action)
-    try await action.wait()
+    if !deferActionDelivery { deliver(action) }
+    if waitForActionSettlement { try await action.wait() }
   }
   func deliver(_ action: ConversationAction) {
     action.running()

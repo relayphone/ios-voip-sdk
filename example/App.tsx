@@ -179,9 +179,8 @@ function CallingJourney() {
         disabled={
           automated ||
           busy ||
-          !conversation ||
-          conversation.pending !== undefined ||
-          !['connecting', 'dialing'].includes(conversation.status)
+          conversation?.pending !== undefined ||
+          !['connecting', 'dialing'].includes(conversation?.status ?? '')
         }
         onPress={() =>
           conversation &&

@@ -12,7 +12,6 @@ struct ConversationRecord {
   var ended: ConversationEnded?
   var payload: IncomingCallPayload?
   var seenInManager = false
-  var endReportPending = false
   var metadataIsPlaceholder = false
 
   /// LCK may announce an idle conversation before delivering its system start action.

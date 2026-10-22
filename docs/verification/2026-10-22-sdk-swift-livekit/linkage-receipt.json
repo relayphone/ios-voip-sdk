@@ -1,0 +1,1085 @@
+{
+  "schemaVersion": 1,
+  "classification": "Measured read-only inspection of retained genuine Release iphoneos arm64 products. No build, app link, launch, simulator or device action.",
+  "compileReceiptSHA256": "08506f23830e867d7c3893cbf0a08b6ea9659ea79fe60ad40e8c32f560997714",
+  "sdkCommit": "1f1bc98e9f4803c86ed6bea460683099d644973e",
+  "adapterSHA256": "072b3fce77b513cba42869d83ff4c11985113231e23488a5c7fd36b8b03b0c7b",
+  "dependencies": [
+    {
+      "identity": "client-sdk-swift",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/livekit/client-sdk-swift.git",
+      "state": {
+        "revision": "93a7251057bdb6a80a7b1f6d11464d578ebdc09b",
+        "version": "2.18.0"
+      }
+    },
+    {
+      "identity": "livekit-uniffi-xcframework",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/livekit/livekit-uniffi-xcframework.git",
+      "state": {
+        "revision": "7a9bf91b1601d5c408ae0cac7dc2047b5a4f615e",
+        "version": "0.1.9"
+      }
+    },
+    {
+      "identity": "webrtc-xcframework",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/livekit/webrtc-xcframework.git",
+      "state": {
+        "revision": "a41df9e9bcc7ab1d62131fda75c123ea391e5188",
+        "version": "150.7871.3"
+      }
+    }
+  ],
+  "counts": {
+    "products": 14,
+    "commands": 42,
+    "directLoadLibraries": 20,
+    "autolinkEntries": 554,
+    "callkitDirectLoads": 0,
+    "callkitAutolinkEntries": 0,
+    "undefinedCXOrCallKitSymbols": 0
+  },
+  "products": [
+    {
+      "path": "DerivedData/Build/Products/Release-iphoneos/CKSimRuntime.o",
+      "bytes": 1328,
+      "sha256": "37aa869d2b370e88a9873b02e59e15123a81eb37137e7e62c230da370c951c05",
+      "classification": "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/CKSimRuntime.o: Mach-O 64-bit object arm64",
+      "loadLibraries": [],
+      "findings": {
+        "callkitLoadCommands": [],
+        "callkitAutolinkOptions": [],
+        "undefinedCXOrCallKitSymbols": []
+      },
+      "commands": {
+        "type": {
+          "command": [
+            "file",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/CKSimRuntime.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "0cbbbf3f58bf2543ebffafed9d5ab31780f4ffdd9b6c5fe1eaa95d683ebaa7ee",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "load-commands": {
+          "command": [
+            "xcrun",
+            "otool",
+            "-l",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/CKSimRuntime.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "7014edcf7e8a07e2c8100330772ef25db2d96b0902bef4f0d159c022c3a35335",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "undefined-symbols": {
+          "command": [
+            "xcrun",
+            "nm",
+            "-u",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/CKSimRuntime.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "autolinkEntryCount": 4,
+      "autolinkEntriesSHA256": "a6b80dfb47f5edfe8bc7e7f1d92f1de925ef4392283da3cf80e0d42b0dc6d051",
+      "frameworkAutolinkNames": []
+    },
+    {
+      "path": "DerivedData/Build/Products/Release-iphoneos/CKSimRuntimeC.o",
+      "bytes": 304,
+      "sha256": "926e6dd411764ea1799612e218b689c816da3d79a4e8c1692ebeb71d22a7953a",
+      "classification": "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/CKSimRuntimeC.o: Mach-O 64-bit object arm64",
+      "loadLibraries": [],
+      "findings": {
+        "callkitLoadCommands": [],
+        "callkitAutolinkOptions": [],
+        "undefinedCXOrCallKitSymbols": []
+      },
+      "commands": {
+        "type": {
+          "command": [
+            "file",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/CKSimRuntimeC.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "8908a3aa9df8a4092eff23821501b37d68d124322fdde7b1b1931cf7d0274292",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "load-commands": {
+          "command": [
+            "xcrun",
+            "otool",
+            "-l",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/CKSimRuntimeC.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "9cc0c3be4869215137414eedff2fedc80aaf864731a65befc3f90e3548d5362b",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "undefined-symbols": {
+          "command": [
+            "xcrun",
+            "nm",
+            "-u",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/CKSimRuntimeC.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSHA256": "ff9c14950ec9445ae500f8ff4a1f7fe6039698258b484521e00511b79eda3886"
+        }
+      },
+      "autolinkEntryCount": 0,
+      "autolinkEntriesSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "frameworkAutolinkNames": []
+    },
+    {
+      "path": "DerivedData/Build/Products/Release-iphoneos/CLiveKitProto.o",
+      "bytes": 71400,
+      "sha256": "0668a3315bd57c4560072769865a35bdfa65f578f975a251f57534a861215e2a",
+      "classification": "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/CLiveKitProto.o: Mach-O 64-bit object arm64",
+      "loadLibraries": [],
+      "findings": {
+        "callkitLoadCommands": [],
+        "callkitAutolinkOptions": [],
+        "undefinedCXOrCallKitSymbols": []
+      },
+      "commands": {
+        "type": {
+          "command": [
+            "file",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/CLiveKitProto.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "6dffab484e6454a13ccddd4bd4fbb34a31768992a62f95a197d9e68f77878bd4",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "load-commands": {
+          "command": [
+            "xcrun",
+            "otool",
+            "-l",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/CLiveKitProto.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "6952d3c27e2a452faa3862a8a8e8d8bf94196e9052ea69e715f4407c1045c704",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "undefined-symbols": {
+          "command": [
+            "xcrun",
+            "nm",
+            "-u",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/CLiveKitProto.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "1152259b5b5f9d8b2047521efbe87ba42790d4379e34e3a58138d13d5ac8d07c",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "autolinkEntryCount": 0,
+      "autolinkEntriesSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "frameworkAutolinkNames": []
+    },
+    {
+      "path": "DerivedData/Build/Products/Release-iphoneos/LKObjCHelpers.o",
+      "bytes": 5472,
+      "sha256": "ef39b2a381947f811448ffd8b5e1f51ba62974d6f479acdbe817bf8c950267b5",
+      "classification": "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LKObjCHelpers.o: Mach-O 64-bit object arm64",
+      "loadLibraries": [],
+      "findings": {
+        "callkitLoadCommands": [],
+        "callkitAutolinkOptions": [],
+        "undefinedCXOrCallKitSymbols": []
+      },
+      "commands": {
+        "type": {
+          "command": [
+            "file",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LKObjCHelpers.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "a18d53c6555e1f418892ffe606e95b982776bd17e64e2d5ad784a7ed72420b1f",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "load-commands": {
+          "command": [
+            "xcrun",
+            "otool",
+            "-l",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LKObjCHelpers.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "e0516c2130a9504ac316dfd1bcb3b45173b5527deecc952fa49e6d0defb774f1",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "undefined-symbols": {
+          "command": [
+            "xcrun",
+            "nm",
+            "-u",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LKObjCHelpers.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "8798b23e8811beee1e00f4ba8e3908336a4d5149bc2f31aa330265a8c4736a96",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "autolinkEntryCount": 34,
+      "autolinkEntriesSHA256": "b3b1cd27af46bb74e3b4aa8e261920e3d9d0bcaadf61033e5fedfc0ceb855705",
+      "frameworkAutolinkNames": [
+        "AVFAudio",
+        "AVFoundation",
+        "AVRouting",
+        "AudioToolbox",
+        "CFNetwork",
+        "CoreAudio",
+        "CoreAudioTypes",
+        "CoreFoundation",
+        "CoreGraphics",
+        "CoreImage",
+        "CoreLocation",
+        "CoreMIDI",
+        "CoreMedia",
+        "CoreMotion",
+        "CoreText",
+        "CoreVideo",
+        "FileProvider",
+        "Foundation",
+        "IOSurface",
+        "ImageIO",
+        "MediaToolbox",
+        "Metal",
+        "Network",
+        "OpenGLES",
+        "QuartzCore",
+        "ReplayKit",
+        "Security",
+        "Symbols",
+        "UIKit",
+        "UIUtilities",
+        "UniformTypeIdentifiers",
+        "UserNotifications",
+        "VideoToolbox",
+        "_LocationEssentials"
+      ]
+    },
+    {
+      "path": "DerivedData/Build/Products/Release-iphoneos/LiveKit.o",
+      "bytes": 12959816,
+      "sha256": "148c3941bc00ac93244180dfd4641769ac4beea085874df085f522cb174f19a6",
+      "classification": "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKit.o: Mach-O 64-bit object arm64",
+      "loadLibraries": [],
+      "findings": {
+        "callkitLoadCommands": [],
+        "callkitAutolinkOptions": [],
+        "undefinedCXOrCallKitSymbols": []
+      },
+      "commands": {
+        "type": {
+          "command": [
+            "file",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKit.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "8a969f07c54c3e64580e7d96efb3b2f519c725ef0d732ac70159e932a5961ead",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "load-commands": {
+          "command": [
+            "xcrun",
+            "otool",
+            "-l",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKit.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "1327830dd435cde145280949882c17c18df502f663669435c0b4f5c10cb2c1e9",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "undefined-symbols": {
+          "command": [
+            "xcrun",
+            "nm",
+            "-u",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKit.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "e389d8515e6e937be0744a3736e7da8b674d106cd25a77708678112d7be015d7",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "autolinkEntryCount": 96,
+      "autolinkEntriesSHA256": "a4d22a62472ca4959721a339ebf054e00ea3dfa5357009d6f41ea3f6e19d157a",
+      "frameworkAutolinkNames": [
+        "AVFAudio",
+        "AVFoundation",
+        "AVKit",
+        "AVRouting",
+        "Accelerate",
+        "Accessibility",
+        "AudioToolbox",
+        "AudioUnit",
+        "CFNetwork",
+        "Combine",
+        "CoreAudio",
+        "CoreAudioTypes",
+        "CoreData",
+        "CoreFoundation",
+        "CoreGraphics",
+        "CoreImage",
+        "CoreLocation",
+        "CoreMIDI",
+        "CoreML",
+        "CoreMedia",
+        "CoreMotion",
+        "CoreServices",
+        "CoreText",
+        "CoreTransferable",
+        "CoreVideo",
+        "DataDetection",
+        "DeveloperToolsSupport",
+        "FileProvider",
+        "Foundation",
+        "IOSurface",
+        "ImageIO",
+        "LiveKitWebRTC",
+        "MediaToolbox",
+        "Metal",
+        "MetalKit",
+        "ModelIO",
+        "Network",
+        "OSLog",
+        "OpenGLES",
+        "QuartzCore",
+        "ReplayKit",
+        "RustLiveKitUniFFI",
+        "ScreenCaptureKit",
+        "Security",
+        "SwiftUI",
+        "SwiftUICore",
+        "Symbols",
+        "TipKit",
+        "UIKit",
+        "UIUtilities",
+        "UniformTypeIdentifiers",
+        "UserNotifications",
+        "VideoToolbox",
+        "Vision",
+        "_AVKit_SwiftUI",
+        "_LocationEssentials"
+      ]
+    },
+    {
+      "path": "DerivedData/Build/Products/Release-iphoneos/LiveKitConsumer.o",
+      "bytes": 51000,
+      "sha256": "eb9d7d7a2bed709608f4cc97355141c063a2e3b53f6cd6822e3cc7a74f8823dd",
+      "classification": "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitConsumer.o: Mach-O 64-bit object arm64",
+      "loadLibraries": [],
+      "findings": {
+        "callkitLoadCommands": [],
+        "callkitAutolinkOptions": [],
+        "undefinedCXOrCallKitSymbols": []
+      },
+      "commands": {
+        "type": {
+          "command": [
+            "file",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitConsumer.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "696d2991d038a091bf712301e8fc29d7860daf0897b4191b5deaf5d19e9082aa",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "load-commands": {
+          "command": [
+            "xcrun",
+            "otool",
+            "-l",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitConsumer.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "a25ab1403c14fac255a8ffd71af7151b35b8bbbce700cf260f522e09ad063771",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "undefined-symbols": {
+          "command": [
+            "xcrun",
+            "nm",
+            "-u",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitConsumer.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "797e84b20ac738d9716e71c5157d27a94a6b6298ee99302c4d1ca7e2c62fb89c",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "autolinkEntryCount": 94,
+      "autolinkEntriesSHA256": "eb29a0477580fee125e1a590d7408d2b500709c6edb4d980425a68988ec300d3",
+      "frameworkAutolinkNames": [
+        "AVFAudio",
+        "AVFoundation",
+        "AVKit",
+        "AVRouting",
+        "Accelerate",
+        "Accessibility",
+        "AudioToolbox",
+        "CFNetwork",
+        "Combine",
+        "CoreAudio",
+        "CoreAudioTypes",
+        "CoreData",
+        "CoreFoundation",
+        "CoreGraphics",
+        "CoreImage",
+        "CoreLocation",
+        "CoreMIDI",
+        "CoreML",
+        "CoreMedia",
+        "CoreMotion",
+        "CoreServices",
+        "CoreText",
+        "CoreTransferable",
+        "CoreVideo",
+        "DataDetection",
+        "DeveloperToolsSupport",
+        "ExtensionFoundation",
+        "FileProvider",
+        "Foundation",
+        "IOSurface",
+        "ImageIO",
+        "LightweightCodeRequirements",
+        "LiveCommunicationKit",
+        "MediaToolbox",
+        "Metal",
+        "MetalKit",
+        "ModelIO",
+        "Network",
+        "OSLog",
+        "OpenGLES",
+        "QuartzCore",
+        "ReplayKit",
+        "ScreenCaptureKit",
+        "Security",
+        "SwiftUI",
+        "SwiftUICore",
+        "Symbols",
+        "TipKit",
+        "UIKit",
+        "UIUtilities",
+        "UniformTypeIdentifiers",
+        "UserNotifications",
+        "VideoToolbox",
+        "Vision",
+        "_AVKit_SwiftUI",
+        "_LocationEssentials"
+      ]
+    },
+    {
+      "path": "DerivedData/Build/Products/Release-iphoneos/LiveKitNanopb.o",
+      "bytes": 94552,
+      "sha256": "6f42396985b3b2f4e7f8caabe7d137e840834ddd06f157ba22bb9ffd0f663af8",
+      "classification": "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitNanopb.o: Mach-O 64-bit object arm64",
+      "loadLibraries": [],
+      "findings": {
+        "callkitLoadCommands": [],
+        "callkitAutolinkOptions": [],
+        "undefinedCXOrCallKitSymbols": []
+      },
+      "commands": {
+        "type": {
+          "command": [
+            "file",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitNanopb.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "0c2f98c7edaa17f3f816cd9c10a3945c9a84b81388847e40920d0c5bf7f0a584",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "load-commands": {
+          "command": [
+            "xcrun",
+            "otool",
+            "-l",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitNanopb.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "00fb24b70b789abdbbf5cff747bab450e9ba378dbe831bd42fe78de7eb1d48c9",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "undefined-symbols": {
+          "command": [
+            "xcrun",
+            "nm",
+            "-u",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitNanopb.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "47bcf0e6b85341e9cc1974080df8c8bb404c35f21b5d34335e1bc395bb3f7ef6",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "autolinkEntryCount": 24,
+      "autolinkEntriesSHA256": "5d00186c89961bd2f8621ea64c0d64a91dc9b3d81b0bccabc8fdffa8a571d900",
+      "frameworkAutolinkNames": [
+        "CFNetwork",
+        "Combine",
+        "CoreFoundation",
+        "Foundation",
+        "Security"
+      ]
+    },
+    {
+      "path": "DerivedData/Build/Products/Release-iphoneos/LiveKitUniFFI.o",
+      "bytes": 973264,
+      "sha256": "6fdfe0b87e4c23ba3f4532e36b07727bf23801dea030c13ee8cf45b560b92361",
+      "classification": "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitUniFFI.o: Mach-O 64-bit object arm64",
+      "loadLibraries": [],
+      "findings": {
+        "callkitLoadCommands": [],
+        "callkitAutolinkOptions": [],
+        "undefinedCXOrCallKitSymbols": []
+      },
+      "commands": {
+        "type": {
+          "command": [
+            "file",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitUniFFI.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "c834ad889464c86f6a411302f2df228450cbf7b1bcece79c5635a7464de0edf7",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "load-commands": {
+          "command": [
+            "xcrun",
+            "otool",
+            "-l",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitUniFFI.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "b543f0a0c3091e9a1580a2fd26f314f70a304980993bd0e5ad9d2f451dc01760",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "undefined-symbols": {
+          "command": [
+            "xcrun",
+            "nm",
+            "-u",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitUniFFI.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "ca3a1a2abe7a64639c500f3cf88d6d370c951d01699afb85268988bc9e34e999",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "autolinkEntryCount": 24,
+      "autolinkEntriesSHA256": "4d2b3bd5fe9478f7aa8c9783f49b2a662d719b7ccf30047b4af28e85e358bb7a",
+      "frameworkAutolinkNames": [
+        "CFNetwork",
+        "Combine",
+        "CoreFoundation",
+        "Foundation",
+        "RustLiveKitUniFFI",
+        "Security"
+      ]
+    },
+    {
+      "path": "DerivedData/Build/Products/Release-iphoneos/LiveKitWebRTC.framework/LiveKitWebRTC",
+      "bytes": 12347240,
+      "sha256": "5975ceb2433c82a3fad04cd854f1254257988800955f3b2ab9db302eca0ec237",
+      "classification": "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitWebRTC.framework/LiveKitWebRTC: Mach-O universal binary with 1 architecture: [arm64:Mach-O 64-bit dynamically linked shared library arm64]\n<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitWebRTC.framework/LiveKitWebRTC (for architecture arm64):\tMach-O 64-bit dynamically linked shared library arm64",
+      "loadLibraries": [
+        "/System/Library/Frameworks/AVFoundation.framework/AVFoundation",
+        "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics",
+        "/System/Library/Frameworks/CoreMedia.framework/CoreMedia",
+        "/System/Library/Frameworks/Foundation.framework/Foundation",
+        "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation",
+        "/usr/lib/libobjc.A.dylib",
+        "/System/Library/Frameworks/UIKit.framework/UIKit",
+        "/System/Library/Frameworks/Security.framework/Security",
+        "/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox",
+        "/System/Library/Frameworks/CoreAudio.framework/CoreAudio",
+        "/System/Library/Frameworks/VideoToolbox.framework/VideoToolbox",
+        "/System/Library/Frameworks/CoreVideo.framework/CoreVideo",
+        "/System/Library/Frameworks/Accelerate.framework/Accelerate",
+        "/System/Library/Frameworks/Network.framework/Network",
+        "/System/Library/Frameworks/QuartzCore.framework/QuartzCore",
+        "/System/Library/Frameworks/Metal.framework/Metal",
+        "/System/Library/Frameworks/MetalKit.framework/MetalKit",
+        "/usr/lib/libSystem.B.dylib"
+      ],
+      "findings": {
+        "callkitLoadCommands": [],
+        "callkitAutolinkOptions": [],
+        "undefinedCXOrCallKitSymbols": []
+      },
+      "commands": {
+        "type": {
+          "command": [
+            "file",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitWebRTC.framework/LiveKitWebRTC"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "3f4ea65c5710758fc0bc7560e7a3172e3d1785f4f79d7fee6d2edde17d25cd3b",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "load-commands": {
+          "command": [
+            "xcrun",
+            "otool",
+            "-l",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitWebRTC.framework/LiveKitWebRTC"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "90c247b33ffae9371e61e171a05910031d4502e13b3939c93478664f8b152ade",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "undefined-symbols": {
+          "command": [
+            "xcrun",
+            "nm",
+            "-u",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/LiveKitWebRTC.framework/LiveKitWebRTC"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "609bc54d33c29b8e1daaecaedd710d08da816a952e9340f45f791e1ab020e48c",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "autolinkEntryCount": 0,
+      "autolinkEntriesSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "frameworkAutolinkNames": []
+    },
+    {
+      "path": "DerivedData/Build/Products/Release-iphoneos/RustLiveKitUniFFI.framework/RustLiveKitUniFFI",
+      "bytes": 1118384,
+      "sha256": "f44acf62acd7cea72a6e13a33be7bd8ee7634b58e86fca4ca550894cf6286ef8",
+      "classification": "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/RustLiveKitUniFFI.framework/RustLiveKitUniFFI: Mach-O 64-bit dynamically linked shared library arm64",
+      "loadLibraries": [
+        "/usr/lib/libiconv.2.dylib",
+        "/usr/lib/libSystem.B.dylib"
+      ],
+      "findings": {
+        "callkitLoadCommands": [],
+        "callkitAutolinkOptions": [],
+        "undefinedCXOrCallKitSymbols": []
+      },
+      "commands": {
+        "type": {
+          "command": [
+            "file",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/RustLiveKitUniFFI.framework/RustLiveKitUniFFI"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "9314f3cbe10b2dd4203a55ba6c6685171eba4851e77212e53d5493d6a1c9d023",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "load-commands": {
+          "command": [
+            "xcrun",
+            "otool",
+            "-l",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/RustLiveKitUniFFI.framework/RustLiveKitUniFFI"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "4541ba471bcd69f33ff4a221b678156cab254e3fea3819bbcb54a670e32f73c3",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "undefined-symbols": {
+          "command": [
+            "xcrun",
+            "nm",
+            "-u",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/RustLiveKitUniFFI.framework/RustLiveKitUniFFI"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "2aa120f6527ff357dffb99527ed003b1b08ddb406f91a4ce1cfdd5028597b451",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "autolinkEntryCount": 0,
+      "autolinkEntriesSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "frameworkAutolinkNames": []
+    },
+    {
+      "path": "DerivedData/Build/Products/Release-iphoneos/VoIPPlatform.o",
+      "bytes": 50480,
+      "sha256": "5ec5715d054c30694b09bc17b7df8a3072f311f40146965a01e682fc3c3d5ddc",
+      "classification": "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/VoIPPlatform.o: Mach-O 64-bit object arm64",
+      "loadLibraries": [],
+      "findings": {
+        "callkitLoadCommands": [],
+        "callkitAutolinkOptions": [],
+        "undefinedCXOrCallKitSymbols": []
+      },
+      "commands": {
+        "type": {
+          "command": [
+            "file",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/VoIPPlatform.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "b8e7b9546857e5eb7431af269a220c29421b6eb0a882521c1117764e50c2be7c",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "load-commands": {
+          "command": [
+            "xcrun",
+            "otool",
+            "-l",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/VoIPPlatform.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "a32130c4747a617ca71d742ab35850ca4a29587c13a68df0830781d8630dcd40",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "undefined-symbols": {
+          "command": [
+            "xcrun",
+            "nm",
+            "-u",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/VoIPPlatform.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "2475847c086f59af18f787d7d91308ed47af0b72b97732c3b5ff8c94084fca2a",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "autolinkEntryCount": 16,
+      "autolinkEntriesSHA256": "2739e9d6a46fb05c42138b1434f0b6d30f1780bdbfbb802c1d9ffb5dc9ae7c5e",
+      "frameworkAutolinkNames": [
+        "AVFAudio",
+        "AudioToolbox",
+        "CFNetwork",
+        "CoreAudio",
+        "CoreAudioTypes",
+        "CoreFoundation",
+        "CoreGraphics",
+        "CoreMIDI",
+        "CoreMedia",
+        "CoreVideo",
+        "Foundation",
+        "IOSurface",
+        "Metal",
+        "OpenGLES",
+        "PushKit",
+        "Security"
+      ]
+    },
+    {
+      "path": "DerivedData/Build/Products/Release-iphoneos/VoIPSDK.o",
+      "bytes": 1519992,
+      "sha256": "b823cdca238a684940eadf65993ed4b7bb5427308faffc72af8ac0a9f68cc089",
+      "classification": "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/VoIPSDK.o: Mach-O 64-bit object arm64",
+      "loadLibraries": [],
+      "findings": {
+        "callkitLoadCommands": [],
+        "callkitAutolinkOptions": [],
+        "undefinedCXOrCallKitSymbols": []
+      },
+      "commands": {
+        "type": {
+          "command": [
+            "file",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/VoIPSDK.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "613d81fa98ad338cce919944989195c7dae1a6f300cad8ea62aad4981e1384c0",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "load-commands": {
+          "command": [
+            "xcrun",
+            "otool",
+            "-l",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/VoIPSDK.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "f674b48a6283120f4e8a455b3198d1dc43aeec8c902e2f8bd365fb683b5989db",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "undefined-symbols": {
+          "command": [
+            "xcrun",
+            "nm",
+            "-u",
+            "<qualification-root>/DerivedData/Build/Products/Release-iphoneos/VoIPSDK.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "bbab3b8db8d639c3df292df7cb7b2af052e92e11439b6315e6d2ed86b7b5514d",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "autolinkEntryCount": 74,
+      "autolinkEntriesSHA256": "8879251e37d7af7ec5935500b2dc5eb48b562de166019530eeda2bb97781df53",
+      "frameworkAutolinkNames": [
+        "AVFAudio",
+        "AVFoundation",
+        "AVRouting",
+        "Accessibility",
+        "AudioToolbox",
+        "CFNetwork",
+        "Combine",
+        "CoreAudio",
+        "CoreAudioTypes",
+        "CoreFoundation",
+        "CoreGraphics",
+        "CoreImage",
+        "CoreLocation",
+        "CoreMIDI",
+        "CoreMedia",
+        "CoreMotion",
+        "CoreText",
+        "CoreTransferable",
+        "CoreVideo",
+        "DataDetection",
+        "DeveloperToolsSupport",
+        "ExtensionFoundation",
+        "FileProvider",
+        "Foundation",
+        "IOSurface",
+        "ImageIO",
+        "LightweightCodeRequirements",
+        "LiveCommunicationKit",
+        "MediaToolbox",
+        "Metal",
+        "Network",
+        "OSLog",
+        "OpenGLES",
+        "QuartzCore",
+        "Security",
+        "SwiftUICore",
+        "Symbols",
+        "UIKit",
+        "UIUtilities",
+        "UniformTypeIdentifiers",
+        "UserNotifications",
+        "VideoToolbox",
+        "_LocationEssentials"
+      ]
+    },
+    {
+      "path": "DerivedData/Build/Intermediates.noindex/LiveKitConsumer.build/Release-iphoneos/LiveKitConsumer-t.build/Objects-normal/arm64/Consumer.o",
+      "bytes": 26568,
+      "sha256": "988f16877d3e0f29e0185404a977aa12e0dc1ec058379d33396b9449a248cf88",
+      "classification": "<qualification-root>/DerivedData/Build/Intermediates.noindex/LiveKitConsumer.build/Release-iphoneos/LiveKitConsumer-t.build/Objects-normal/arm64/Consumer.o: Mach-O 64-bit object arm64",
+      "loadLibraries": [],
+      "findings": {
+        "callkitLoadCommands": [],
+        "callkitAutolinkOptions": [],
+        "undefinedCXOrCallKitSymbols": []
+      },
+      "commands": {
+        "type": {
+          "command": [
+            "file",
+            "<qualification-root>/DerivedData/Build/Intermediates.noindex/LiveKitConsumer.build/Release-iphoneos/LiveKitConsumer-t.build/Objects-normal/arm64/Consumer.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "17f5b474c196d80a9fd1f7355362b1a5ea4c247a2ee5a8ee65f2324dc4189d7b",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "load-commands": {
+          "command": [
+            "xcrun",
+            "otool",
+            "-l",
+            "<qualification-root>/DerivedData/Build/Intermediates.noindex/LiveKitConsumer.build/Release-iphoneos/LiveKitConsumer-t.build/Objects-normal/arm64/Consumer.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "0848200b135b812cd815b05ab4d4a5415d256d77ff1aa577fdb5fe427503a76a",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "undefined-symbols": {
+          "command": [
+            "xcrun",
+            "nm",
+            "-u",
+            "<qualification-root>/DerivedData/Build/Intermediates.noindex/LiveKitConsumer.build/Release-iphoneos/LiveKitConsumer-t.build/Objects-normal/arm64/Consumer.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "f0b8cea9b4b349194dd0fcf97732958ffc54e8f824e7e5927fd50da13b753c50",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "autolinkEntryCount": 94,
+      "autolinkEntriesSHA256": "167155b5f30720929f98838d3d9042862b693598fe320c140b309fb3e2f395f0",
+      "frameworkAutolinkNames": [
+        "Combine",
+        "Foundation",
+        "CoreFoundation",
+        "Security",
+        "CFNetwork",
+        "UIKit",
+        "UIUtilities",
+        "CoreGraphics",
+        "CoreMotion",
+        "_LocationEssentials",
+        "CoreLocation",
+        "QuartzCore",
+        "CoreVideo",
+        "IOSurface",
+        "Metal",
+        "OpenGLES",
+        "CoreImage",
+        "ImageIO",
+        "UniformTypeIdentifiers",
+        "CoreText",
+        "Symbols",
+        "UserNotifications",
+        "FileProvider",
+        "SwiftUICore",
+        "OSLog",
+        "DeveloperToolsSupport",
+        "CoreTransferable",
+        "Accessibility",
+        "DataDetection",
+        "LiveCommunicationKit",
+        "ExtensionFoundation",
+        "Network",
+        "LightweightCodeRequirements",
+        "CoreMedia",
+        "CoreAudio",
+        "CoreAudioTypes",
+        "AVFoundation",
+        "AVFAudio",
+        "AudioToolbox",
+        "CoreMIDI",
+        "AVRouting",
+        "MediaToolbox",
+        "VideoToolbox",
+        "_AVKit_SwiftUI",
+        "SwiftUI",
+        "CoreData",
+        "AVKit",
+        "TipKit",
+        "Vision",
+        "Accelerate",
+        "CoreML",
+        "ScreenCaptureKit",
+        "ReplayKit",
+        "MetalKit",
+        "ModelIO",
+        "CoreServices"
+      ]
+    },
+    {
+      "path": "DerivedData/Build/Intermediates.noindex/LiveKitConsumer.build/Release-iphoneos/LiveKitConsumer-t.build/Objects-normal/arm64/LiveKitMediaAdapter.o",
+      "bytes": 65240,
+      "sha256": "d2254ed1c3f9221639a2e8b485c94beefca60d6ae185aefd140c7cae4f56f75c",
+      "classification": "<qualification-root>/DerivedData/Build/Intermediates.noindex/LiveKitConsumer.build/Release-iphoneos/LiveKitConsumer-t.build/Objects-normal/arm64/LiveKitMediaAdapter.o: Mach-O 64-bit object arm64",
+      "loadLibraries": [],
+      "findings": {
+        "callkitLoadCommands": [],
+        "callkitAutolinkOptions": [],
+        "undefinedCXOrCallKitSymbols": []
+      },
+      "commands": {
+        "type": {
+          "command": [
+            "file",
+            "<qualification-root>/DerivedData/Build/Intermediates.noindex/LiveKitConsumer.build/Release-iphoneos/LiveKitConsumer-t.build/Objects-normal/arm64/LiveKitMediaAdapter.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "2d4701643c273b10e8f40ffe962d49ac16985cd4b798af294401640e6fb76bcd",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "load-commands": {
+          "command": [
+            "xcrun",
+            "otool",
+            "-l",
+            "<qualification-root>/DerivedData/Build/Intermediates.noindex/LiveKitConsumer.build/Release-iphoneos/LiveKitConsumer-t.build/Objects-normal/arm64/LiveKitMediaAdapter.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "484ced4f20417a86b24eb79f8ce5c3b8a9669d60da62f0d3aec06b9eb6ca8c0c",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "undefined-symbols": {
+          "command": [
+            "xcrun",
+            "nm",
+            "-u",
+            "<qualification-root>/DerivedData/Build/Intermediates.noindex/LiveKitConsumer.build/Release-iphoneos/LiveKitConsumer-t.build/Objects-normal/arm64/LiveKitMediaAdapter.o"
+          ],
+          "exitCode": 0,
+          "stdoutSHA256": "d857bf9944275a131b16348e79efd6aa399bc041b9f4284a25eb677ccb0f0be4",
+          "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "autolinkEntryCount": 94,
+      "autolinkEntriesSHA256": "167155b5f30720929f98838d3d9042862b693598fe320c140b309fb3e2f395f0",
+      "frameworkAutolinkNames": [
+        "Combine",
+        "Foundation",
+        "CoreFoundation",
+        "Security",
+        "CFNetwork",
+        "UIKit",
+        "UIUtilities",
+        "CoreGraphics",
+        "CoreMotion",
+        "_LocationEssentials",
+        "CoreLocation",
+        "QuartzCore",
+        "CoreVideo",
+        "IOSurface",
+        "Metal",
+        "OpenGLES",
+        "CoreImage",
+        "ImageIO",
+        "UniformTypeIdentifiers",
+        "CoreText",
+        "Symbols",
+        "UserNotifications",
+        "FileProvider",
+        "SwiftUICore",
+        "OSLog",
+        "DeveloperToolsSupport",
+        "CoreTransferable",
+        "Accessibility",
+        "DataDetection",
+        "LiveCommunicationKit",
+        "ExtensionFoundation",
+        "Network",
+        "LightweightCodeRequirements",
+        "CoreMedia",
+        "CoreAudio",
+        "CoreAudioTypes",
+        "AVFoundation",
+        "AVFAudio",
+        "AudioToolbox",
+        "CoreMIDI",
+        "AVRouting",
+        "MediaToolbox",
+        "VideoToolbox",
+        "_AVKit_SwiftUI",
+        "SwiftUI",
+        "CoreData",
+        "AVKit",
+        "TipKit",
+        "Vision",
+        "Accelerate",
+        "CoreML",
+        "ScreenCaptureKit",
+        "ReplayKit",
+        "MetalKit",
+        "ModelIO",
+        "CoreServices"
+      ]
+    }
+  ],
+  "linkerOptionCountsComplete": true,
+  "broadUndefinedSymbolSearch": "No case-sensitive CX or CallKit substring appears in any raw nm -u output.",
+  "limits": [
+    "Only the retained Release iphoneos arm64 slice and default package traits were inspected.",
+    "This checks direct load commands, LC_LINKER_OPTION autolinks and unresolved symbols in these products.",
+    "Final app linkage, linker-added settings, other app dependencies, runtime reflection and transitive system-framework dependencies are not qualified."
+  ]
+}

@@ -76,6 +76,27 @@ def main():
                         'AVAudioSessionDidBecomeInactive', 'AVAudioSessionResumptionRecommendation')):
                     raise RuntimeError(sdk_name + ': older compiler branch referenced iOS/watchOS27 symbols')
 
+        # The source-only diagnostic surface must disappear in every device
+        # build and every non-Debug simulator build.
+        for sdk_name, target, debug in [('iphonesimulator', 'arm64-apple-ios17.4-simulator', True),
+                                        ('iphonesimulator', 'arm64-apple-ios17.4-simulator', False),
+                                        ('iphoneos', 'arm64-apple-ios17.4', True),
+                                        ('iphoneos', 'arm64-apple-ios17.4', False)]:
+            label = sdk_name + ('-debug' if debug else '-release')
+            sdk = run(['xcrun', '--sdk', sdk_name, '--show-sdk-path'], results,
+                      label + '-diagnostic-sdk', timeout=20).stdout.strip()
+            object_file = out / (label + '-diagnostic.o')
+            command = ['xcrun', 'clang', '-target', target, '-isysroot', sdk,
+                       '-fobjc-arc', '-fblocks', '-Wall', '-Wextra', '-Werror',
+                       '-Wno-unused-parameter', '-Wno-deprecated-declarations',
+                       '-c', str(SOURCE), '-o', str(object_file)]
+            if debug: command += ['-DDEBUG=1']
+            run(command, results, label + '-diagnostic-compile')
+            symbols = run(['xcrun', 'nm', '-j', str(object_file)], results,
+                          label + '-diagnostic-symbols', timeout=20).stdout
+            if ('_VSAudioSessionSetLifecycleDiagnosticHandler' in symbols) != (debug and sdk_name == 'iphonesimulator'):
+                raise RuntimeError(label + ': diagnostic guard differs')
+
         mac_sdk = run(['xcrun', '--sdk', 'macosx', '--show-sdk-path'], results,
                       'macosx-path', timeout=20).stdout.strip()
         for new_api in (False, True):
@@ -85,6 +106,7 @@ def main():
                               '#import <TargetConditionals.h>\n'
                               '#undef TARGET_OS_IOS\n#define TARGET_OS_IOS 1\n'
                               '#undef TARGET_OS_WATCH\n#define TARGET_OS_WATCH 0\n'
+                              '#undef TARGET_OS_SIMULATOR\n#define TARGET_OS_SIMULATOR 1\n'
                               '#undef __IPHONE_OS_VERSION_MAX_ALLOWED\n'
                               '#define __IPHONE_OS_VERSION_MAX_ALLOWED ' + ('270000' if new_api else '260000') + '\n'
                               '#undef __WATCH_OS_VERSION_MAX_ALLOWED\n'
@@ -92,7 +114,7 @@ def main():
             binary = out / ('host-' + label)
             command = ['xcrun', 'clang', '-target', 'arm64-apple-macos14.0', '-isysroot', mac_sdk,
                        '-fobjc-arc', '-fblocks', '-Wall', '-Wextra', '-Werror',
-                       '-Wno-unused-parameter', '-DVS_HOST_NEW_API=' + ('1' if new_api else '0'),
+                       '-Wno-unused-parameter', '-DDEBUG=1', '-DVS_HOST_NEW_API=' + ('1' if new_api else '0'),
                        '-include', str(prefix), '-I' + str(TEST / 'Facades'),
                        '-I' + str(HEADER.parent), '-I' + str(SOURCE.parent),
                        str(SOURCE), str(TEST / 'Controls.m'), '-framework', 'Foundation', '-o', str(binary)]

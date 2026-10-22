@@ -1010,12 +1010,12 @@ public enum RuntimeBootstrap {
     return identifier.isEmpty ? nil : identifier
   }
 
-  public static func associateIncomingReport(_ id: UUID, pushID: String) {
+  public nonisolated static func associateIncomingReport(_ id: UUID, pushID: String) {
     guard CKSimRuntimeIsActive() else { return }
     RuntimeEngine.existing()?.associateIncomingReport(id, pushID: pushID)
   }
 
-  public static func finishIncomingReport(_ id: UUID, pushID: String) {
+  public nonisolated static func finishIncomingReport(_ id: UUID, pushID: String) {
     guard CKSimRuntimeIsActive() else { return }
     RuntimeEngine.existing()?.finishIncomingReport(id, pushID: pushID)
   }

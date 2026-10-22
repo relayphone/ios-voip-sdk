@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "claim": "measured",
+  "scope": "Host verification after normally merging corrected A0.1 core parent; same five-file rejection-details source delta.",
+  "sourceCommit": "ec8ed62cab52514f1377b6ae9ac11b76a6284f49",
+  "baseCommit": "8077f0d126d2a30c66e21d3e09d65d6a7dd801a0",
+  "reviewedSourceCommit": "c1e7dcb94fe5cf6fc5977d5b4938c313ff36bf62",
+  "sourceMatchesCheckedCommit": true,
+  "sourceSHA256": {
+    "Expo/apple/ConversationBridge.swift": "516f95b045765f88423e95cfa427ebb5baf16e99c325166dab93101627921fe6",
+    "Expo/apple/IosVoipSDKModule.swift": "299ecb09fc9a10d62c2f6e34f3354d6a2ce1ce5dedc744875b12f9927f08e35e",
+    "Expo/src/hooks.ts": "c7678edd88409e4d38465a9623c04b1b985eb0a82f30e57eaf6012e22bc23318",
+    "Expo/src/index.ts": "47f6a96c3217458e88ae952075b755ed22ed858a34a9d2894e075b1298247c00",
+    "Expo/src/internal/bootstrap.ts": "2bbdbfa840d6fb475f2cb385acea26ace671a812a02ee8902ebff6f4c79b4bc4",
+    "Expo/src/internal/client.ts": "7217923f83410f35c426f3bcf24177bb56bc08f02e93005e0fd44d7470e3986a",
+    "Expo/src/internal/handler.ts": "0822968e954d0f9d7a9a4875b7da08b5d897519df2bb391b6ab6b4ad83d85bab",
+    "Expo/src/internal/native.ts": "45d4a9c16633646863bb0438b78921ffbdb734cd4c279c1a4503bc7d049ccd1a",
+    "Expo/src/internal/protocol.ts": "07289c7fb1a90f9727552b44c7f6d89d0a249e7b3c2c5a2805b6e2ac3c672517",
+    "Expo/src/internal/store.ts": "6624ea42d8ee6fa5b70ac7cd97128a131857c17d196d317315d31cdef79fec53",
+    "Expo/src/types.ts": "cf920653dcd202352c30e1eeaf6d5ffc90ce039233d43d625ac82e68532e0844",
+    "Expo/tests/m1-runtime.test.cjs": "bfa01292a713355214611acdcfec3646fb50e7ecc21493e46c0e42264fdbc7db",
+    "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
+    "Sources/VoIPSDK/ConversationModels.swift": "ff4be06d66d1efacd5060c08c9ca7507eb7b35d09107573e43f44bba4a4c1a2b",
+    "Sources/VoIPSDK/PushService.swift": "f7a731d8c91ee2a4572dd37d2d96a36c258187fc4a38ba74143c7c9b07690e4c",
+    "Tests/ExpoBridge/BridgeTests.swift": "2a36d57faabdc2193f31350aae591c18e01bb3913a01e90cf3cc54515bb390bb",
+    "Tests/ExpoBridge/OwnerDoubles.swift": "a82aaa5cd5dcbe09594aecdf6c261ce5c956f7555666ec637a720029afefc09b",
+    "discovery/check_expo_bridge.py": "a668ba87be9db4910c2f37321b338b6850e939abed495b34533b46eddeb7abd5",
+    "example/App.tsx": "2869cad12585bb561927e011c2409a48dea3a833a07dbd4bb1b0200cee08fd1c",
+    "example/acceptance.ts": "c98cace2b413297750e0fb13dbf096241c0fee8f5609c3e66b74161356610aa4",
+    "example/babel.config.js": "4b96981e76f4da97464e553a3af2c16fbb8e2da6d8a1983246087ed5a0e6afa8",
+    "example/index.ts": "9feb78c747e7c526cb3ab8f57210053654d966ba71aa24328088c3ebcc5ff76f",
+    "example/journey.ts": "c8c8b2666ea69a80454a96555247f9534a3a42c6205d31eb3e77efea4b75ff7c",
+    "example/metro.config.js": "79acebb79a7b7536bf54fa2196599c866e69031bd8945322f78fa31e02cab8ec",
+    "example/package.json": "cc4cff7b03cc3449d5e94010e50fe26a9cd98e07a3c688560fb92cfba8432aff",
+    "example/tsconfig.json": "c2eef1ad2ff0e87ac2a54724aa0b3adf2b6c09822df90d8bacb67aa5acc677b6",
+    "package-lock.json": "a58fc38dceca2f003ce7269a5a116aec630061afbe45d09902e989329dd7f1d0",
+    "package.json": "b27efab561b531d37cf2b47c19bc073f9e2ec2cb5f4a2fb3da2f79f9dabc9655",
+    "tsconfig.json": "bd4b85df5c37c240a9e017d386dae3aad3763cbde5614f3e48fe0723b3074acc"
+  },
+  "toolVersions": {
+    "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+    "node": "v26.4.0",
+    "npm": "11.17.0",
+    "typescript": "Version 5.9.2"
+  },
+  "dependencies": {
+    "source": "read-only reuse of existing node_modules",
+    "packageManifestAndLockMatch": true
+  },
+  "checks": [
+    {
+      "name": "swift-relay",
+      "argv": [
+        "python3",
+        "discovery/check_expo_bridge.py"
+      ],
+      "startedAtUTC": "2026-10-22T12:05:14.826777+00:00",
+      "exitCode": 0,
+      "log": "docs/verification/2026-10-22-handler-rejection-details/merged-a1/swift-relay.log",
+      "logSHA256": "80b48e1a2986bbae70e745fe63e5cb4a79dc7c0e291e0f11faf09ecfdefd3dbd",
+      "groups": 9,
+      "success": true
+    },
+    {
+      "name": "typescript-runtime",
+      "argv": [
+        "node",
+        "--test",
+        "Expo/tests/m1-runtime.test.cjs"
+      ],
+      "startedAtUTC": "2026-10-22T12:05:18.007463+00:00",
+      "exitCode": 0,
+      "log": "docs/verification/2026-10-22-handler-rejection-details/merged-a1/typescript-runtime.log",
+      "logSHA256": "ddacc5dd1e1b7d73de273a2b17f622e4fe5dc83bf7c89cb00e04fea4cae8e45d",
+      "tests": 11
+    },
+    {
+      "name": "typescript-typecheck",
+      "argv": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "startedAtUTC": "2026-10-22T12:05:18.670315+00:00",
+      "exitCode": 0,
+      "log": "docs/verification/2026-10-22-handler-rejection-details/merged-a1/typescript-typecheck.log",
+      "logSHA256": "49a87ae22511f3068c65000109c14ec4ea7c3e8a9fc6cc709cf1bab4c845691a",
+      "rawLogSHA256": "01d5bb4c9623a561fbd8d3a9f2b49a7793b1c7711b89c6b5792062c65e6247b7",
+      "logNormalization": "Terminal blank lines removed; exactly one final LF retained."
+    },
+    {
+      "name": "diff-whitespace-after-log-normalization",
+      "argv": [
+        "git",
+        "diff",
+        "--check",
+        "8077f0d126d2a30c66e21d3e09d65d6a7dd801a0"
+      ],
+      "checkedAtUTC": "2026-10-22T12:06:48.679981+00:00",
+      "exitCode": 0,
+      "stdoutEmpty": true,
+      "stderrEmpty": true
+    }
+  ],
+  "priorWhitespaceCheck": {
+    "exitCode": 2,
+    "log": "docs/verification/2026-10-22-handler-rejection-details/merged-a1/whitespace-before-log-normalization.log",
+    "logSHA256": "bbbbe6944829a237164dbd205ada650753a0219d6d32651495428d3e3fc6bc83",
+    "finding": "Only a terminal blank line in the committed raw npm log; public log normalized with raw byte hash retained."
+  },
+  "limits": [
+    "The real Expo relay and core models compile and execute on the macOS host using owner doubles; the Expo module source is reviewed but not compiled by this host harness.",
+    "This relay harness executes the production PushTokenStore with a PushService owner double; it does not execute A1 PushKit intake or the platform PushService implementation.",
+    "No app, simulator, physical device, PushKit, LCK, or native Expo runtime measurement is claimed.",
+    "This is the rejection-details subset of steering A8; conversation event context, local-end mapping, connected semantics and LCK duplicate wrapping remain separate work."
+  ]
+}

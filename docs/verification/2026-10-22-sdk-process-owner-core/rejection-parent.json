@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "qualification": "measured light rejection-parent merge preparation",
+  "createdAtUTC": "2026-10-22T12:15:30.152671+00:00",
+  "coreParent": "1e7c5cf87748cff806d085d8b5fdd8e0afa0cda2",
+  "incomingRejectionParent": "0b6a557b57e65e34541211532f50dd3d6d2641c3",
+  "sourceFiles": {
+    "Expo/apple/ConversationBridge.swift": "516f95b045765f88423e95cfa427ebb5baf16e99c325166dab93101627921fe6",
+    "Expo/apple/IosVoipSDKModule.swift": "77a225673d6cd6e87f2420f45c6748042bf4c7770211142dadd6eee156e0b26c",
+    "Expo/src/hooks.ts": "c7678edd88409e4d38465a9623c04b1b985eb0a82f30e57eaf6012e22bc23318",
+    "Expo/src/index.ts": "47f6a96c3217458e88ae952075b755ed22ed858a34a9d2894e075b1298247c00",
+    "Expo/src/internal/bootstrap.ts": "2bbdbfa840d6fb475f2cb385acea26ace671a812a02ee8902ebff6f4c79b4bc4",
+    "Expo/src/internal/client.ts": "7217923f83410f35c426f3bcf24177bb56bc08f02e93005e0fd44d7470e3986a",
+    "Expo/src/internal/handler.ts": "0822968e954d0f9d7a9a4875b7da08b5d897519df2bb391b6ab6b4ad83d85bab",
+    "Expo/src/internal/native.ts": "45d4a9c16633646863bb0438b78921ffbdb734cd4c279c1a4503bc7d049ccd1a",
+    "Expo/src/internal/protocol.ts": "07289c7fb1a90f9727552b44c7f6d89d0a249e7b3c2c5a2805b6e2ac3c672517",
+    "Expo/src/internal/store.ts": "6624ea42d8ee6fa5b70ac7cd97128a131857c17d196d317315d31cdef79fec53",
+    "Expo/src/types.ts": "b9d0f739142918880c8e8e90096c13658bda17ec0780ac7d34e36e9936a098b0",
+    "Expo/tests/m1-runtime.test.cjs": "9d9da46c38441573a6ba155815a201c11583e61d11bf7d0a1965fd801bf080ac",
+    "Sources/VoIPPlatform/VSProcessSDKOwnership.m": "ea509d0194e3746d104093b2256bd0ee4fd3f9c7ec73c96bbeb42e16ac2d8e90",
+    "Sources/VoIPPlatform/include/VSProcessSDKOwnership.h": "3a206de32bf2787e6a3ae81938a91914e885625041c3caca308c39a374816ec2",
+    "Sources/VoIPSDK/ConversationClient.swift": "ee4c973be79d2700907427c3be98a66fe8a8afcdeecfe43fd62a88153c04c3ed",
+    "Sources/VoIPSDK/ConversationHandler.swift": "c24c2978bb29e6e1926ee6cc09a4b678bff80776d780adb18f7e6d876d0b6c96",
+    "Sources/VoIPSDK/ConversationModels.swift": "f482b84dc091851a740c5c645242fef4aec9e99e518296df81a277d62cf84e9b",
+    "Sources/VoIPSDK/ProcessSDKOwnership.swift": "4fe8a3493c3b6756beab43a9f67a28933f4f80c8860e8bb4619ffd2248e95a8b",
+    "Sources/VoIPSDK/PushService.swift": "f7a731d8c91ee2a4572dd37d2d96a36c258187fc4a38ba74143c7c9b07690e4c",
+    "Sources/VoIPSDK/VoIPApplication.swift": "ad924a4478d1a35f35267d826a5ad6c28837a8918e4fb848325f139ea0d09552",
+    "Tests/ExpoBridge/BridgeTests.swift": "2a36d57faabdc2193f31350aae591c18e01bb3913a01e90cf3cc54515bb390bb",
+    "Tests/ExpoBridge/OwnerDoubles.swift": "a82aaa5cd5dcbe09594aecdf6c261ce5c956f7555666ec637a720029afefc09b",
+    "discovery/check_expo_bridge.py": "a668ba87be9db4910c2f37321b338b6850e939abed495b34533b46eddeb7abd5",
+    "discovery/check_sdk_ownership.py": "96dc27d60864dd6d5a6778b349fa651a42521177f1e5fadb1a1a5b6d101499e9",
+    "package-lock.json": "a58fc38dceca2f003ce7269a5a116aec630061afbe45d09902e989329dd7f1d0",
+    "package.json": "b27efab561b531d37cf2b47c19bc073f9e2ec2cb5f4a2fb3da2f79f9dabc9655",
+    "tsconfig.json": "bd4b85df5c37c240a9e017d386dae3aad3763cbde5614f3e48fe0723b3074acc"
+  },
+  "review": {
+    "spec": "clear",
+    "standards": "clear",
+    "freezeSHA256": "259f1c35c7d68cf5ab4444a43dd24b7434b009c266dcd90fcac0df5ba3a10a92",
+    "freezeMapDigestSHA256": "a70bef48e540dae87474cca46aac02b47a4dc87e320aa2879e3a6307913fd3af"
+  },
+  "checks": [
+    {
+      "name": "typecheck",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.185269916,
+      "stdoutSHA256": "01d5bb4c9623a561fbd8d3a9f2b49a7793b1c7711b89c6b5792062c65e6247b7",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "runtime",
+      "command": [
+        "node",
+        "--test",
+        "Expo/tests/m1-runtime.test.cjs"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.6260240420000001,
+      "stdoutSHA256": "35bb1e92d1ddd2f28ffb79c260853ed0d08a512dea441e5000dbe2ff23ff74a5",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "format",
+      "command": [
+        "npm",
+        "exec",
+        "--",
+        "prettier",
+        "--check",
+        "Expo/src/types.ts"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 0.5239260410000002,
+      "stdoutSHA256": "17aa973d3f004560237d9a95171210b0671deff23d61628eecf7322ff5938f20",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "actual-Swift-relay",
+      "exitCode": 0,
+      "groups": [
+        "production-model-json-and-millisecond-dates",
+        "all-handler-kinds-success-rejection-and-duplicate-settlement",
+        "native-cancellation-and-pre-cancelled-signal",
+        "handler-removal-replacement-and-old-generation-settlement",
+        "cancellation-during-action-publication",
+        "overlapping-lifetimes-reload-and-stale-owner",
+        "destroyed-bridge-observers-continuations-and-release",
+        "invalid-model-encoding-rejects-handler-delivery",
+        "production-state-event-and-null-token-encoding"
+      ],
+      "outputSHA256": "97660a17aac001a85fb24f05831da810cd36c25806d84888886d7b039de85f59"
+    },
+    {
+      "name": "core-ownership",
+      "exitCode": 0,
+      "groups": [
+        "package-first-duplicate-refused-before-second-manager",
+        "pod-first-duplicate-refused-before-second-manager",
+        "same-objc-helper-present-in-both-images",
+        "concurrent-claims-preserve-owner",
+        "static-linker-duplicate-is-already-loud",
+        "actual-forApplication-repeated-same-configuration-is-idempotent",
+        "actual-forApplication-rejects-invalid-first-configurations-before-manager",
+        "actual-forApplication-rejects-changed-configuration-before-second-manager",
+        "actual-Application-rejects-client-and-simulator-configuration-conflicts",
+        "actual-finishLaunch-reentrant-observation-sees-published-application-and-client",
+        "actual-finishLaunch-observes-exactly-once-for-both-linked-module-orders"
+      ],
+      "outputSHA256": "a493ef87e7dfaf62186bc2870e543614510e0d1a2ac483419141d26647dec226"
+    }
+  ],
+  "limits": [
+    "No heavy SwiftPM rebuild, application, simulator, audio, physical device, APNs, PushKit registration, hosted CI or publication.",
+    "One five-code error union/guard/control retains the four actual parent codes and native duplicate_sdk_linkage.",
+    "Core actual Application/factory/process proof keeps explicitly named platform-construction/observation facades."
+  ]
+}
