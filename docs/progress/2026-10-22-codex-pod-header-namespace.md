@@ -1,0 +1,7 @@
+# Namespace CocoaPods umbrella imports
+
+**Measured failure:** the SDK and modern M2 jobs at `efbe4da6` failed when CocoaPods' generated umbrella imported `VSAudioSessionLifecycleObserver.h` by basename. A consumer's project header map resolved that name to the forensic copy under `docs/`, alongside the shipping header. CocoaPods 1.17 includes documentation headers as development helper references even though the pod's declared source and public-header patterns exclude them.
+
+**Measured source correction:** declare `header_dir = 'IosVoipSDK'`. The actual CocoaPods 1.17 import builder, public-header mappings and header-store search paths, evaluated against the edited podspec, generate `IosVoipSDK/VSAudioSessionLifecycleObserver.h` with a matching modeled destination and search path. The [receipt](../verification/2026-10-22-pod-header-namespace/receipt.json) records that bounded in-memory check. All fourteen forensic source/project paths and bytes are preserved. Of the 56 protected shipping/package inputs, only the podspec changes; SDK runtime, media and simulator source files remain unchanged.
+
+**Proposed acceptance:** the next actual SDK/M2 consumer builds must prove compilation and the native journeys. The control checks the nonframework static-library generator branch; it creates no Pods project, header map or installed product and compiles no consumer. Framework builds and current Release device exclusion remain unmeasured by this correction. The original failed runs retain their RED results.

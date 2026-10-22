@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "classification": "Measured source integration and carried bounded controls; fresh actual PR #17 qualification remains proposed",
+  "baseCommit": "efbe4da6fc966dc18705278a3ca6f410feb2a502",
+  "fixCommits": [
+    "cefb3f02cffd6d35d018a18a8fa2d3e870c34c7f",
+    "24c03cf1b74ebd1b0db628df2bec3cf05bd61a51"
+  ],
+  "normalDependencyMerge": {
+    "firstParent": "24c03cf1b74ebd1b0db628df2bec3cf05bd61a51",
+    "secondParent": "fa8ba5adc8d76538e878fd9058211a6c486fc2f6",
+    "pullRequest": 40,
+    "url": "https://github.com/ziahamza/ios-voip-sdk/pull/40",
+    "sourceMatchesExactly": true,
+    "receiptSHA256": "f3fb14098fe368098945e9117e17fcc678a1573c89164ea9518a5673049f7c1b",
+    "receiptClassification": "Measured source-only preparation; host execution and CI remain proposed",
+    "ciStateAtPreparation": "pending; not qualified by this receipt",
+    "hostControlExecutedLocallyForIntegration": false,
+    "productionPushDeliverySourceMatchesDependency": true
+  },
+  "preparedSourceInputs": {
+    "count": 234,
+    "sha256": "096182db59ed1de160320a5367fd7df702e8530d49990d49fe43745df6877a3d",
+    "hashFormat": "SHA-256 over sorted tracked paths: path + NUL + raw file bytes + NUL",
+    "sourceFileMapSHA256": "213f96682b9e3f86a974bd1dca425a008919116b2fa0436d90b896ca0a0e9a47",
+    "changedFiles": {
+      ".github/workflows/sdk-m2.yml": "294fde4cd768de2691d7c95b53684a5c9629f9f11b7b6ee18468ad47ff4870fe",
+      "IosVoipSDK.podspec": "e7b0074c515d83d07ebebff112ccc5ac77de5239515197418a753f09177de130",
+      "discovery/check_push_delivery.py": "0fb541519a3a01a73682e3431c3135f4868d011f9c13d6154a33986b48708517",
+      "discovery/check_sdk_m2_environment.py": "b640f74f6dd6b634e1f4acc5802c960cf76c3a59ef2f3c4ef4ee4de88054a897"
+    }
+  },
+  "carriedControls": {
+    "bashReceiptSHA256": "57a7e9ee60256eb78885f813da97037fd0f0d3ef85022d391cd1fb8535a67701",
+    "bashSourceBindingsStillExact": true,
+    "bashGroups": 8,
+    "bashScope": "actual workflow text under Bash 3.2 with Python stub plus existing synthetic environment controls",
+    "podReceiptSHA256": "2aaf4f1058a1dbb391d1c667223d910ac3d19680900b6a9aee291358b93500a3",
+    "actualPodspecControlSourceBindingStillExact": true,
+    "podControlScope": "actual edited podspec; in-memory CocoaPods 1.17 nonframework import builder/header mappings/search-path model; no consumer compilation",
+    "repeatedForUnchangedBytes": false
+  },
+  "protectedShipping": {
+    "count": 56,
+    "unchangedCount": 55,
+    "intentionallyChangedFiles": [
+      "IosVoipSDK.podspec"
+    ],
+    "sha256": "34596f7c242ae7e0f409876d8e5450354e43fe9d5fea16774cc9744e47f8564d",
+    "runtimeMediaAndSimulatorSourcesUnchanged": true
+  },
+  "forensicEvidence": {
+    "manifestSHA256": {
+      "2026-10-22-iphone13-ios27": "0c6b26bf65d3f5ac5e4ab2028046b9643e85163afab364bcce2ee92fed8263ce",
+      "2026-10-22-iphone13-ios27-noio": "164074e6adc853069c75ed1692c7820b95423772aee37bb209d9dae6a96de8eb"
+    },
+    "sharedForensicSourceFiles": 14,
+    "allPathsAndBytesUnchanged": true
+  },
+  "preservedAcceptanceFiles": {
+    "discovery/sdk_audio_device_transport.py": "89ae1c731b81b0d31187f11f43c2cd7ae7f8b88eeb05c231eddbfadd0780f973",
+    "discovery/check_sdk_audio_device_transport.py": "c87cd0eb0b7096cd1e1cac728c8a2e715dbe5c7614b970e89e5eb8421074a221",
+    "discovery/sdk_audio_device_noio_transport.py": "0533052dd1680339d45787a5e4d26bfb6d1c611fcdd8a5729bb0481f84a5528d",
+    "discovery/check_sdk_audio_device_noio_transport.py": "24b7f59fd7b5f88403fa881ac4125229ab9169b8427521ee586b5bf70d0536f3",
+    "discovery/sdk_m2_audio_lifecycle.py": "1fc2580c8c121ac79a31a2b7f9b3ffa1645403cff3c14ef00d0d1a055ed5413a",
+    "discovery/check_sdk_m2_audio_lifecycle.py": "8df823b9044fab3eba9fc1f2c1bfc60c799724ca09652c6f5080b53fc916cd4f",
+    "discovery/probe/sdk_m1_contracts.swift": "303780248265de095b3adab0524ab2b274597509c82fcc1b62306f5b3e3d0f0a",
+    "discovery/sdk_m2_environment.py": "a2736a4f70c7407ad2584dbe2f2194158cc7a70f754bf25f781da422a2bf0fd3",
+    "discovery/run_sdk_m2.py": "2dd4de6c858e12d0b6395403dc5590983479ada235304982eabb91549415979f",
+    "discovery/build_sdk_m2.sh": "8f1f8c60ae79d8737120da26f530aeaf03b63c15fd31d8f9a4d38bcb079a0438"
+  },
+  "priorActualFailures": {
+    "head": "efbe4da6fc966dc18705278a3ca6f410feb2a502",
+    "testedMerge": "bf1a1b09e6775241f7addd04217a0278a944c554",
+    "sdkRunId": 39852241171,
+    "m2RunId": 39852241175,
+    "m2AggregateFailureProofSHA256": "4e06350208084099bf4137c5e66e92e9fa3fdc3eea359659697217e29f8cfddc",
+    "statusesPreserved": true
+  },
+  "executionForThisIntegration": {
+    "nativeCompiler": false,
+    "podInstall": false,
+    "app": false,
+    "simulator": false,
+    "device": false,
+    "audio": false,
+    "remoteCI": false
+  },
+  "pending": [
+    "Final review and single publication to actual PR #17",
+    "Fresh actual SDK/runtime and modern/legacy M2 CI",
+    "Current pod-built Release iphoneos exclusion",
+    "Four native M2 cases and owned cleanup",
+    "Header-map and framework consumer compilation"
+  ]
+}

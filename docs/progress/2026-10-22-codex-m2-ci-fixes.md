@@ -1,0 +1,9 @@
+# M2 CI fixes ready for fresh qualification
+
+**Measured failures preserved:** actual PR #17 SDK/M2 runs at `efbe4da6` checked out equal-tree merge `bf1a1b09`. The legacy M2 shell failed before Python; SDK and modern M2 compilation failed on duplicate forensic/shipping headers. Modern runner assignment, Xcode 27.1 / iOS 27.0 preflight and audio lifecycle header/host controls passed. No native M2 case passed in those runs.
+
+The prepared stack contains two reviewed fixes: [Bash 3.2 argument initialization](2026-10-22-codex-m2-preflight-bash-compat.md), commit `cefb3f02`, and [qualified CocoaPods umbrella imports](2026-10-22-codex-pod-header-namespace.md), commit `24c03cf1`. The former passed eight local environment/shell controls; the latter passed the actual edited-podspec in-memory CocoaPods control. These results retain their separate scopes. The normal merge also includes reviewed [PR #40](https://github.com/ziahamza/ios-voip-sdk/pull/40), source `fa8ba5ad`, replacing a scheduling-sensitive host assertion. Its receipt is source-only, and its CI was pending when this integration was prepared.
+
+The [final source receipt](../verification/2026-10-22-m2-ci-fixes/source-only.json) binds the merged inputs and carried controls. Runtime/media source files, both physical packets and all fourteen forensic paths/bytes are unchanged. Of 56 protected shipping/package inputs, only the podspec intentionally changes. No native compiler, app, simulator, device or audio is used for this integration; the PR #40 host control is not re-executed here.
+
+**Proposed acceptance:** root will publish this combined source once to actual PR #17. Fresh SDK/device-exclusion, runtime and modern/legacy M2 CI remain required, including real consumer compilation, four native M2 cases and owned cleanup. Header-map and framework consumer behavior remain unmeasured by the local CocoaPods model. Prior failures and the original silent-engine RED remain intact.
