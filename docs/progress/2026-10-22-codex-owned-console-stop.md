@@ -1,0 +1,9 @@
+# Owned console-launcher stop
+
+Completed behavior probes were failing CI when a second `simctl terminate` invocation stalled. The runner now offers explicit `--console-launcher-stop`: after `done`, it signals only its known console-launcher process, using the CLI’s documented signal forwarding. It requires bounded launcher exit and output drain plus one positive final app PID matching the probe. Failed signaling, ignored signals, continued output or bad identity remains failed and invokes command cleanup. Unflagged callers retain command termination.
+
+Signal receipts record the method, SIGTERM and successful signal delivery. They do not synthesize a terminate-command exit code. `successful_stop` in `summarize.py` validates both receipt forms; discovery, provider and ABI validators use it. `run.sh` and `run_abi.sh` opt in. The SDK runner and its receipt checks need the same flag/helper when integrating this commit.
+
+**Measured evidence:** [bound red/green records](../verification/2026-10-22-owned-console-stop/). Hosted run 39698551274 completed all 23 refused-queue behavior assertions but failed 20-second normal and 10-second cleanup terminate-command deadlines. All 93 offline harness controls pass, including 36 new process/receipt controls, and both independent review axes are clean. A single native refused-queues run on iOS 27.0 from clean source `087025f90729bcbda0ef6dbcc81dd365fbe9f830` passes all 23 assertions and strict final identity/EOF checks in 3.805 seconds; launcher exit is 0 and no fallback is invoked. The owned simulator was independently confirmed deleted.
+
+**Proposed remaining acceptance:** hosted CI on iOS 26.5 with both Xcode lanes and the full ABI/discovery inventory. No further native run or remote mutation was performed for this handoff.

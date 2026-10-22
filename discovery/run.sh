@@ -143,7 +143,7 @@ run() {
     SIMCTL_CHILD_CKSIM_ENABLED=0 SIMCTL_CHILD_CKSIM_SHADOW=0 SIMCTL_CHILD_CKSIM_PUSH_AFTER= SIMCTL_CHILD_CKSIM_PUSH_TRIGGER_NOTIFICATION= \
     SIMCTL_CHILD_PROBE_MODE=default SIMCTL_CHILD_PROBE_PUSH_REPORT=report SIMCTL_CHILD_PROBE_WAIT_FOR_TEARDOWN=0 "$@" \
     SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" \
-    python3 run_scenario.py --output "$OUT/$name.log" --receipt "$OUT/$name.receipt.json" \
+    python3 run_scenario.py --console-launcher-stop --output "$OUT/$name.log" --receipt "$OUT/$name.receipt.json" \
     --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.callkitsim.probe \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.probe \
     --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.probe; then
