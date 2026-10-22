@@ -1,5 +1,7 @@
 # Native incoming report while main is blocked
 
+**Acceptance update:** the measured local iOS 27 and hosted iOS 26.5 results are now recorded in the [incoming-report handoff](2026-10-22-codex-push-entry-acceptance.md). The preparation record below preserves its original stage and evidence.
+
 **Proposed acceptance; native result pending.** PR #28's five native entry cases
 keep main responsive. Their actual LCK/provider-hook results cannot establish
 whether reporting also enters while main is blocked by application startup. The

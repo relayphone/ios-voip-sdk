@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "acceptance": "Separate modern native LCK audio authority from bounded physical notification transport",
+  "classification": "Measured offline controls and packet validation only; new native acceptance remains proposed",
+  "sourceParent": "4dbb07c882c8d42ba4e51bb8eaf5327396a1c5ca",
+  "normalMergeParent": "ad737219c3e7631c2400601a2cdb531dd1b7ad25",
+  "indexTreeBeforeHandoff": "d6eae00222757b8bd04b777c9e5c7b46bf999537",
+  "verificationInputs": {
+    "count": 267,
+    "sha256": "e7e6b77410f04fc60755d11b7c7e518c82ded2053f2748d9e59b6d0f0a28c153",
+    "hashFormat": "SHA-256 of compact sorted JSON mapping repository-relative path to file SHA-256",
+    "selectors": [
+      "Sources",
+      "Tests",
+      "Expo",
+      "ExpoMedia",
+      "Integrations",
+      "example",
+      "discovery",
+      ".github/workflows",
+      "Package.swift",
+      "IosVoipSDK.podspec",
+      "package.json",
+      "package-lock.json",
+      "docs/research/callkit-simulator-probe/audio-session-lifecycle"
+    ]
+  },
+  "changedAcceptanceFiles": {
+    ".github/workflows/sdk-m2.yml": "9a4f7e0518853a0a462b57b4a5127ac3e5e90c49de075027a5eaed8343d23ef5",
+    "discovery/check_sdk_audio_device_transport.py": "c87cd0eb0b7096cd1e1cac728c8a2e715dbe5c7614b970e89e5eb8421074a221",
+    "discovery/check_sdk_m2.py": "5d9c7ea4059ada9880e1a39ed28b87b2e46f7caf48738fb3e99c439202316ff8",
+    "discovery/check_sdk_m2_audio_lifecycle.py": "8df823b9044fab3eba9fc1f2c1bfc60c799724ca09652c6f5080b53fc916cd4f",
+    "discovery/probe/sdk_m1_contracts.swift": "303780248265de095b3adab0524ab2b274597509c82fcc1b62306f5b3e3d0f0a",
+    "discovery/sdk_audio_device_transport.py": "89ae1c731b81b0d31187f11f43c2cd7ae7f8b88eeb05c231eddbfadd0780f973",
+    "discovery/sdk_m0_conformance.py": "ab6eef428c348736dfe69edf7f70e92092a4a992afa7b8fe989822d430b2e352",
+    "discovery/sdk_m2_audio_lifecycle.py": "1fc2580c8c121ac79a31a2b7f9b3ffa1645403cff3c14ef00d0d1a055ed5413a",
+    "discovery/sdk_m2_conformance.py": "cdd71cadcf7e469220c02f9c0cf0e704828315dc837ad08ed809ded577d7c063"
+  },
+  "changedAcceptanceFilesSHA256": "3455c7def0249aa5edada643d08c1e037b075fc3ccdcc416f1ec1bee3af5f867",
+  "changedAcceptanceSourceUnchangedDuringFinalCheck": true,
+  "protectedShipping": {
+    "base": "4dbb07c882c8d42ba4e51bb8eaf5327396a1c5ca",
+    "selectors": [
+      "Sources",
+      "ExpoMedia",
+      "Integrations",
+      "Package.swift",
+      "IosVoipSDK.podspec",
+      "Expo/plugin"
+    ],
+    "count": 56,
+    "sha256": "4c45875d56ce344a0b59359b01a08558297efef69f2f3a86344a83339564d87d",
+    "unchanged": true
+  },
+  "sourceAudit": {
+    "strictValidatorAndOriginalTwelveControlsByteIdentical": true,
+    "nativeLegacyBlockAndNonLifecycleProbeCodeByteIdentical": true,
+    "fourM1SixPushM2RunnerAndBudgetsByteIdentical": true,
+    "mandatoryDecoderHarnessAndPhysicalPacketCIWiring": true
+  },
+  "checks": [
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_audio_device_transport.py"
+      ],
+      "exitCode": 0,
+      "groups": 10,
+      "unittestReportedSeconds": 0.086,
+      "separateOutputHashesRetained": false
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m2_audio_lifecycle.py"
+      ],
+      "exitCode": 0,
+      "groups": 22,
+      "strictGroups": 12,
+      "authorityGroups": 10,
+      "unittestReportedSeconds": 0.018,
+      "separateOutputHashesRetained": false
+    },
+    {
+      "command": [
+        "python3",
+        "discovery/check_sdk_m2.py"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 3.6,
+      "groups": 27,
+      "stdoutSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSHA256": "d1ffc5b63269bdeba38c23698b4ede969d1c500bff36dd1424d29ce4040350f8",
+      "sourceUnchanged": true,
+      "capSeconds": 30
+    }
+  ],
+  "physicalTransport": {
+    "scope": "physical ordinary-session raw/C/Swift scalar transport only",
+    "packetManifestSHA256": "0c6b26bf65d3f5ac5e4ab2028046b9643e85163afab364bcce2ee92fed8263ce",
+    "traceSHA256": "9684181eb77d61cfabd7eb382712ef119fd414adfc35711c6fe52d17e11e4f32",
+    "runID": "105C6DD8-5335-4413-B658-EA61C7ECFFC9",
+    "executableSHA256": "d7c1f3d9c5c1a450539c2677edcf1aa443a3fa3f92928b8d69c74c4afb7eca2b",
+    "transportSlicePassed": true,
+    "notificationTransportExercised": true,
+    "inventories": {
+      "raw.notification": {
+        "active": 2,
+        "inactive": 3,
+        "recommended": 0
+      },
+      "decoder.lifecycle": {
+        "active": 2,
+        "inactive": 3,
+        "recommended": 0
+      },
+      "consumer.lifecycle": {
+        "active": 2,
+        "inactive": 3,
+        "recommended": 0
+      }
+    },
+    "fullFixturePassed": false,
+    "fourOperationsCompleted": false,
+    "resumptionRecommendationExercised": false,
+    "hardwareLCKInterruptionExercised": false,
+    "ciAttested": false
+  },
+  "reviews": {
+    "spec": "CLEAR; independent read-only review against 4dbb07c",
+    "standards": "CLEAR; independent read-only review against 4dbb07c"
+  },
+  "notRun": [
+    "Any compiler or Tests/AudioLifecycle/check_audio_lifecycle.py locally",
+    "New native authority or legacy-wiring capture",
+    "App/simulator/device/audio run",
+    "Dependency installation",
+    "Remote CI",
+    "Current integrated pod-built Release iphoneos inspection"
+  ],
+  "preservedReds": [
+    "Original strict modern simulator diagnostic: no AV lifecycle notification observed after genuine LCK join",
+    "Committed physical full four-operation ordinary-session probe: failed after async activation; fourth operation absent"
+  ],
+  "remainingAcceptance": [
+    "Fresh full modern LCK authority capture",
+    "Fresh legacy native synthetic notification wiring",
+    "Current integrated M2/native and pod-built Release iphoneos checks",
+    "Genuine system interruption/nested reason and resumption recommendation",
+    "Hardware LCK interruption/recovery, provider media and stall timing",
+    "Complete standalone async four-operation measurement; engine-stop cause unknown"
+  ],
+  "A03Complete": false,
+  "M2Complete": false,
+  "published": false
+}

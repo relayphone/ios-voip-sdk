@@ -67,8 +67,8 @@ def fixture_case(root, case, pid):
             runtimeInjectionPresent=False, executableSHA256=gate.digest(root / 'binaries/contracts'))
         add('contract.activation', active=True)
         if case == 'audio-lifecycle':
-            from check_sdk_m2_audio_lifecycle import lifecycle_rows
-            for row in lifecycle_rows('modern'):
+            from check_sdk_m2_audio_lifecycle import authority_rows
+            for row in authority_rows():
                 row = dict(row); add(row.pop('event'), **row)
         else:
             add('contract.mediaReentrancy', authorizationCalls=1, sameOwner=True, warnings=0)
@@ -332,14 +332,24 @@ class Controls(unittest.TestCase):
         change_json(self.root, 'manifest.json', lambda value: value.update(audioPath='legacy'))
         self.reject('audio path/runtime')
 
-    def test_rebound_lifecycle_capture_cannot_be_empty_or_substitute_an_advisory_enable(self):
+    def test_zero_passive_capture_requires_complete_new_authority_scope(self):
+        result = gate.validate(self.root)
+        self.assertIs(result['cases']['audio-lifecycle']['notificationTransportExercised'], False)
+        self.assertTrue(result['physicalAudioTransport']['transportSlicePassed'])
+        self.assertIs(result['physicalAudioTransport']['fullFixturePassed'], False)
+        self.assertTrue(result['physicalAudioNoIOTransport']['fullNoIOComplete'])
+        self.assertTrue(result['physicalAudioNoIOTransport']['ordinaryPhysicalProducerDecoderConsumerQualified'])
         change_rows(self.root, 'audio-lifecycle', lambda rows: rows.__setitem__(slice(None),
-            [row for row in rows if row['event'] not in ('lifecycle.observed', 'lifecycle.consumed')]))
-        self.reject('capture empty')
+            [row for row in rows if row['event'] != 'lifecycle.noConversations']))
+        self.reject('noConversations')
         fixture(self.root)
-        change_rows(self.root, 'audio-lifecycle', lambda rows: gate.one(rows, 'lifecycle.consumed',
-            phase='fixture-app-activation').update(authorizedAfter=True))
-        self.reject('advisory notification changed authorization')
+        change_rows(self.root, 'audio-lifecycle', lambda rows: gate.one(rows, 'lifecycle.path').update(
+            evidence='native-session-lifecycle'))
+        self.reject('evidence scope differs')
+
+    def test_completed_physical_noio_evidence_is_required(self):
+        with patch.object(gate, 'validate_device_noio_transport', side_effect=gate.EvidenceError('no-I/O evidence refused')):
+            self.reject('no-I/O evidence refused')
 
     def test_missing_empty_or_unbound_products(self):
         for mode in ('missing', 'empty', 'changed'):

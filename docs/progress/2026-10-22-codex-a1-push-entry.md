@@ -1,5 +1,7 @@
 # A0.1 / A1: bounded PushKit report entry
 
+**Acceptance update:** the correction and native fixture have landed. See the [incoming-report handoff](2026-10-22-codex-push-entry-acceptance.md) for measured local and hosted acceptance, its pinned source and the remaining audio/device work. The preparation record below preserves its original stage.
+
 **Proposed implementation; measured host regression and compiler controls; native
 simulator acceptance pending CI.** This target concerns PushKit report entry and
 completion liveness. It does not qualify a physical-device cold launch.
