@@ -17,6 +17,7 @@ static _Thread_local VSInitializerFrame *currentFrame;
 static NSLock *monitorLock;
 static Class monitoredClass;
 static NSMutableDictionary<NSValue *, NSValue *> *initializers;
+static NSHashTable *observedProviders;
 static IMP originalAllocator;
 static void (^diagnosticHandler)(NSString *);
 static BOOL monitoring;
@@ -48,9 +49,13 @@ static Method ownMethod(Class cls, SEL selector) {
 
 static BOOL signatureMatches(Method method, char argumentType) {
   if (!method) return NO;
-  NSMethodSignature *signature = [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(method)];
-  return signature.numberOfArguments == 3 && signature.methodReturnType[0] == '@' &&
-      [signature getArgumentTypeAtIndex:2][0] == argumentType;
+  char *result = method_copyReturnType(method);
+  char *argument = method_copyArgumentType(method, 2);
+  BOOL matches = method_getNumberOfArguments(method) == 3 && result && result[0] == '@' &&
+      argument && argument[0] == argumentType;
+  free(result);
+  free(argument);
+  return matches;
 }
 
 __attribute__((ns_returns_retained)) static id observedInitialize(
@@ -80,11 +85,15 @@ __attribute__((ns_returns_retained)) static id observedInitialize(
   @finally { currentFrame = frame.previous; }
   if (result && outermost) {
     [monitorLock lock];
+    // Class-cluster initializers can replace a placeholder with an instance
+    // whose own initializer was already observed in this call chain.
+    BOOL alreadyObserved = [observedProviders containsObject:result];
+    if (!alreadyObserved) [observedProviders addObject:result];
     BOOL expected = [NSThread isMainThread] && ownedCreation;
-    if (expected) ownedProviderCount++;
+    if (expected && !alreadyObserved) ownedProviderCount++;
     BOOL extraOwned = expected && ownedProviderCount > 1;
     [monitorLock unlock];
-    if (!expected || extraOwned)
+    if (!alreadyObserved && (!expected || extraOwned))
       diagnose(@"Another CXProvider was created. D13 routes actions to the newest provider; keep one ConversationManager in this process.");
   }
   return result;
@@ -92,20 +101,33 @@ __attribute__((ns_returns_retained)) static id observedInitialize(
 
 // Called with monitorLock held; it never allocates a provider to discover a class.
 static NSString *observeConcreteClass(Class cls) {
-  if (!cls || cls == monitoredClass || initializers[key(cls)]) return nil;
-  Method method = ownMethod(cls, @selector(initWithConfiguration:));
-  if (!method) return nil; // The inherited public hook already observes it.
-  if (!signatureMatches(method, '@')) return @"The concrete provider initializer has an unsupported ABI; its creation cannot be monitored.";
-  IMP original = method_getImplementation(method);
-  if (original == (IMP)observedInitialize) return nil;
-  initializers[key(cls)] = [NSValue valueWithPointer:original];
-  method_setImplementation(method, (IMP)observedInitialize);
-  if (method_getImplementation(method) != (IMP)observedInitialize) {
-    // Preserve functional initialization if another tool prevented installation.
-    method_setImplementation(method, original);
-    return @"The concrete provider initializer monitor could not bind; normal initialization is preserved.";
+  Class ancestor = cls;
+  while (ancestor && ancestor != monitoredClass) ancestor = class_getSuperclass(ancestor);
+  if (!ancestor)
+    return @"The provider allocator returned an unrelated class; its methods are unchanged and creation monitoring is unavailable.";
+  NSString *reason = nil;
+  // An allocation can return a leaf inheriting an intermediate override. Follow
+  // the actual superclass chain, rather than assuming no leaf method means the
+  // public root hook will run.
+  for (Class owner = cls; owner && owner != monitoredClass; owner = class_getSuperclass(owner)) {
+    if (initializers[key(owner)]) continue;
+    Method method = ownMethod(owner, @selector(initWithConfiguration:));
+    if (!method) continue;
+    if (!signatureMatches(method, '@')) {
+      reason = @"The concrete provider initializer has an unsupported ABI; its creation cannot be fully monitored.";
+      continue;
+    }
+    IMP original = method_getImplementation(method);
+    if (original == (IMP)observedInitialize) continue;
+    initializers[key(owner)] = [NSValue valueWithPointer:original];
+    method_setImplementation(method, (IMP)observedInitialize);
+    if (method_getImplementation(method) != (IMP)observedInitialize) {
+      // Preserve functional initialization if another tool prevented installation.
+      method_setImplementation(method, original);
+      reason = @"The concrete provider initializer monitor could not bind; normal initialization is preserved.";
+    }
   }
-  return nil;
+  return reason;
 }
 
 __attribute__((ns_returns_retained)) static id observedAllocate(Class receiver, SEL selector, NSZone *zone) {
@@ -141,6 +163,8 @@ BOOL VSProviderMonitorInstall(Class providerClass, void (^diagnostic)(NSString *
   }
   monitorLock = [NSLock new];
   initializers = [NSMutableDictionary new];
+  observedProviders = [[NSHashTable alloc] initWithOptions:
+      NSPointerFunctionsWeakMemory | NSPointerFunctionsObjectPointerPersonality capacity:0];
   monitoredClass = providerClass;
   originalAllocator = method_getImplementation(allocMethod);
   IMP originalInit = method_getImplementation(initMethod);

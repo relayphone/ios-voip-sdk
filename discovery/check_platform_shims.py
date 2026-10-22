@@ -17,6 +17,8 @@ HOST = r'''
 #import "VSProviderMonitorInternal.h"
 
 static NSUInteger warnings, roots, concretes, destroyed;
+static BOOL inheritedShape;
+static BOOL foreignShape;
 static void require(BOOL condition, const char *reason) {
   if (!condition) { fprintf(stderr, "%s\n", reason); exit(1); }
 }
@@ -33,21 +35,53 @@ static void require(BOOL condition, const char *reason) {
 @end
 @interface VSFixtureCluster : VSFixtureProvider @end
 @interface VSFixtureConcrete : VSFixtureCluster @end
+@interface VSFixtureIndependent : VSFixtureCluster @end
+@interface VSFixtureLeaf : VSFixtureIndependent @end
+@implementation VSFixtureLeaf @end
+@interface VSFixtureForeign : NSObject
+@property(nonatomic, strong) id configuration;
+- (instancetype)initWithConfiguration:(id)configuration;
+@end
+@implementation VSFixtureForeign
+- (instancetype)initWithConfiguration:(id)configuration {
+  if ((self = [super init])) self.configuration = configuration;
+  return self;
+}
+@end
 @implementation VSFixtureConcrete
 - (instancetype)initWithConfiguration:(id)configuration {
   concretes++;
   return [super initWithConfiguration:configuration];
 }
 @end
+@implementation VSFixtureIndependent
+- (instancetype)initWithConfiguration:(id)configuration {
+  // A genuine class-cluster initializer need not call the public root's
+  // initWithConfiguration:. Its inherited leaf must still be observed.
+  if ((self = [super init])) { concretes++; self.configuration = configuration; }
+  return self;
+}
+@end
 @implementation VSFixtureCluster
 + (id)allocWithZone:(NSZone *)zone {
-  if (self == VSFixtureCluster.class) return [VSFixtureConcrete allocWithZone:zone];
+  if (self == VSFixtureCluster.class) {
+    Class concrete = foreignShape ? VSFixtureForeign.class :
+        (inheritedShape ? VSFixtureLeaf.class : VSFixtureConcrete.class);
+    return [concrete allocWithZone:zone];
+  }
   return [super allocWithZone:zone];
 }
 @end
 @interface VSFixtureNil : VSFixtureProvider @end
 @implementation VSFixtureNil
 - (instancetype)initWithConfiguration:(id)configuration { return nil; }
+@end
+@interface VSFixtureReplacement : VSFixtureProvider @end
+@implementation VSFixtureReplacement
+- (instancetype)initWithConfiguration:(id)configuration {
+  self = (id)[[VSFixtureConcrete alloc] initWithConfiguration:configuration];
+  return self;
+}
 @end
 
 static void diagnostic(NSString *message) {
@@ -97,11 +131,25 @@ int main(int argc, const char **argv) {
       require(globalAllocator == class_getMethodImplementation(object_getClass(NSObject.class), @selector(allocWithZone:)), "NSObject must remain untouched");
       puts("passed"); return 0;
     }
-    Class cls = [mode isEqual:@"cluster"] ? VSFixtureCluster.class :
+    inheritedShape = [mode isEqual:@"inherited-cluster"];
+    foreignShape = [mode isEqual:@"unrelated-allocation"];
+    Class cls = ([mode isEqual:@"cluster"] || inheritedShape || foreignShape) ? VSFixtureCluster.class :
         ([mode isEqual:@"nil"] ? VSFixtureNil.class : VSFixtureProvider.class);
+    BOOL replacement = [mode isEqual:@"init-substitution"];
+    Class constructClass = replacement ? VSFixtureReplacement.class : cls;
     require(VSProviderMonitorInstall(cls, ^(NSString *m){ diagnostic(m); }), "public hooks must install");
     require(VSProviderMonitorInstall(cls, ^(NSString *m){ diagnostic(m); }), "installation must be idempotent");
     require(globalAllocator == class_getMethodImplementation(object_getClass(NSObject.class), @selector(allocWithZone:)), "NSObject allocator must never be swapped");
+    if (foreignShape) {
+      IMP foreignInit = class_getMethodImplementation(VSFixtureForeign.class, @selector(initWithConfiguration:));
+      VSProviderMonitorBeginOwnedCreation();
+      created(cls);
+      VSProviderMonitorEndOwnedCreation();
+      require(warnings == 2, "unrelated allocation must diagnose unsupported coverage");
+      require(foreignInit == class_getMethodImplementation(VSFixtureForeign.class, @selector(initWithConfiguration:)), "unrelated class methods must not be changed");
+      require(globalAllocator == class_getMethodImplementation(object_getClass(NSObject.class), @selector(allocWithZone:)), "NSObject must remain untouched");
+      puts("passed"); return 0;
+    }
     if ([mode isEqual:@"background"]) {
       VSProviderMonitorBeginOwnedCreation();
       dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
@@ -122,19 +170,19 @@ int main(int argc, const char **argv) {
       require(warnings == 1, "missing owned creation must diagnose");
       puts("passed"); return 0;
     }
-    created(cls);
+    created(constructClass);
     if ([mode isEqual:@"extra-owned"]) {
-      created(cls);
+      created(constructClass);
       require(warnings == 1, "second provider inside the bracket must warn");
       VSProviderMonitorEndOwnedCreation();
     } else {
       VSProviderMonitorEndOwnedCreation();
       require(warnings == 0, "one owned provider must not warn");
-      created(cls);
+      created(constructClass);
       require(warnings == 1, "later provider must warn exactly once");
     }
-    require(roots == 2 && destroyed == 2, "initializer and ARC ownership must remain balanced");
-    if ([mode isEqual:@"cluster"]) require(concretes == 2, "concrete/super initializer chain must run once");
+    require(roots == (inheritedShape ? 0 : 2) && destroyed == (replacement ? 4 : 2), "initializer and ARC ownership must remain balanced");
+    if ([mode isEqual:@"cluster"] || inheritedShape) require(concretes == 2, "concrete/super initializer chain must run once");
     puts("passed");
   }
   return 0;
@@ -180,7 +228,7 @@ def main() -> None:
              "-Werror", "-Wno-unused-parameter", "-I", str(PLATFORM), str(host),
              str(PLATFORM / "VSCompletionOnce.m"), str(PLATFORM / "VSProviderMonitorInternal.m"),
              "-framework", "Foundation", "-o", str(binary)])
-        for case in ["completion-race", "plain", "cluster", "extra-owned", "background", "nil", "unsupported"]:
+        for case in ["completion-race", "plain", "cluster", "inherited-cluster", "init-substitution", "extra-owned", "background", "nil", "unsupported", "unrelated-allocation"]:
             result = run([str(binary), case])
             if result.stdout.strip() != "passed":
                 raise RuntimeError(f"Host control did not acknowledge success: {case}")

@@ -4,10 +4,13 @@
     "host:completion-race",
     "host:plain",
     "host:cluster",
+    "host:inherited-cluster",
+    "host:init-substitution",
     "host:extra-owned",
     "host:background",
     "host:nil",
     "host:unsupported",
+    "host:unrelated-allocation",
     "compile:iphonesimulator:DEBUG=0",
     "compile:iphonesimulator:DEBUG=1",
     "swift-import:iphonesimulator",
@@ -20,19 +23,19 @@
     "release-symbols:VSProviderMonitorInternal.m",
     "release-symbols:VSProviderCreationMonitor.m"
   ],
-  "count": 18,
+  "count": 21,
   "classification": "measured host controls and compiler-only checks; native M1 acceptance pending",
   "sourceFiles": {
     "Sources/VoIPPlatform/VSCompletionOnce.h": "3a6dd1d6e1c727339a3ea965b4ea2fc199304801472657103584aa817754ec5b",
     "Sources/VoIPPlatform/VSCompletionOnce.m": "653eb974fe96d17c6c1579b59376d3986cced8a9d7f8c00458296add7821508d",
     "Sources/VoIPPlatform/VSProviderCreationMonitor.m": "7c20e0b5175b827739ad5aba09902fd5ecf19343f6af7e1d5e5f4864db4a9fb6",
     "Sources/VoIPPlatform/VSProviderMonitorInternal.h": "4415ca97b000070152f127335bc27d03740dbece9935560afa8d1723ef88bde7",
-    "Sources/VoIPPlatform/VSProviderMonitorInternal.m": "0c992804401d3b54b2741dcaee885e0fa5dc2fadf1ed4f503a511a4b67efb3ae",
+    "Sources/VoIPPlatform/VSProviderMonitorInternal.m": "d082a871c72bbe96041bdee699f8d41e701c1eab29458bb7880631b87d22ead0",
     "Sources/VoIPPlatform/VSPushRegistryOwner.m": "20495224101e3e05ecccd8dc70d4e29f8e44ae59e56fe367699842da12c81ea6",
     "Sources/VoIPPlatform/include/VSProviderCreationMonitor.h": "1f3b26b5255045a64ef03dce66ac45d78016c8483264ad6435ce314841fdaa01",
     "Sources/VoIPPlatform/include/VSPushRegistryOwner.h": "6c193787c8dd70d4e0633615ea0728559bf10a53fcd41c6e6362827e3083d57b",
     "Sources/VoIPPlatform/include/VoIPPlatform.h": "09884ca1f838088e33358a96013466a142c5c8773549e599beb43710b1043dd8",
-    "discovery/check_platform_shims.py": "6cf8276e5dbfe1873034b02493a6a5776336bfbf3963901d1f6665cda616a156"
+    "discovery/check_platform_shims.py": "e8ed632587d89804d3c0d5a4f4b1a4c9d7367ad6c0fdb4eadbaf6d56f9ad7ac7"
   },
   "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)\nTarget: arm64-apple-darwin27.0.0\nThread model: posix\nInstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin\n"
 }
