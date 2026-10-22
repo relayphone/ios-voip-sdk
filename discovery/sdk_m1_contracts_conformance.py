@@ -165,7 +165,7 @@ def duplicate_contract(rows, engine):
             all(r.get('callUUID') == call for r in boundaries) and boundaries[-1].get('empty') is True,
             'unbound duplicate native end request/completion observation')
     require(len(delivered) == len(settled) == 1 and delivered[0].get('kinds') == ['CXEndCallAction'] and
-            delivered[0].get('origin') == 'app' and delivered[0].get('provider') == created[0].get('provider') and
+            delivered[0].get('origin') == 'application' and delivered[0].get('provider') == created[0].get('provider') and
             isinstance(settled[0].get('actionID'), str) and settled[0]['actionID'] and
             delivered[0].get('actionIDs') == [settled[0]['actionID']] and settled[0].get('fulfilled') is True,
             'duplicate native cleanup was not one fulfilled app End action')
