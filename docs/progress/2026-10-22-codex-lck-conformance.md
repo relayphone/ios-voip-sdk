@@ -1,6 +1,11 @@
 # B: prepared LCK runtime acceptance
 
-Status: native LCK acceptance is pending. Offline checks pass. A later local
+Current status: **local four-case native acceptance passes at clean source
+`f106e73` after the narrow LCK fulfilled-unmute correction**. Hosted CI remains
+pending. See the [current handoff](2026-10-22-codex-lck-post-end-unmute.md) and
+its bound red/green evidence. The preparation history below predates that run.
+
+Historical preparation status: native LCK acceptance was pending. Offline checks passed. A later local
 native preparation compiled the probe and runtime, but app installation timed
 out before any LCK launch. The owned simulator was deleted successfully after an initially failed cleanup;
 see the local attempt record below.

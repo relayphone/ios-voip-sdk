@@ -1,0 +1,32 @@
+{
+  "classification": "measured local native LCK conformance; runtime binaries retained in ignored original capture, no device/APNs measurement",
+  "sourceCommit": "f106e733ae39b1ccf2c8d220decfc93b11a062e1",
+  "capture": "discovery/out/lck-fulfilled-unmute-f106e73-20261022",
+  "basicFulfilledUnmuteObservation": {
+    "action": "DF80F234",
+    "timeoutCount": 0,
+    "unmuteToFinalSnapshotMS": 5654,
+    "unmuteToDoneMS": 6719
+  },
+  "fileSHA256": {
+    "build-info.json": "93cc266caec0f4b6960c3aad73da6f46afb643f6c20d3f344041a6e288b2382e",
+    "cleanup-confirmation.json": "fb2f28c8727418085b702eadee0545ec5a7f3878af9a042f0f0a14cf73f5e906",
+    "compiler-version.txt": "ee3fe26035862d2b9653c1a570be3eca4ee5be2815f0ce99ff2d8ffa3399e4c8",
+    "ios-27.0.json": "a5c2931c42886773ab3070b521e46dfb9dcbacf6761e8759139ed9d5c59d5d4d",
+    "lck-basic.engine.jsonl": "3f5038293b7468c6a86fb066b483c3bc13d75ec3aae2eef92daedc2d4a6b0fc1",
+    "lck-basic.log": "b467625331f493732a38a11c0653eeb4864b6b5391965091d119cbb27a07edd3",
+    "lck-basic.receipt.json": "31225fc21c4e31ba44b800492a2bd3a498901f04f7bf372989e0eac157e7c3b2",
+    "lck-conformance.json": "5053ea5480eaf20caf890d14f9878fe879c2bbab4215f11388fad665824de990",
+    "lck-cx-after.engine.jsonl": "688dd04cf0824ebf4a0be6bf6fb9cf29a6d531099092ccb39e86738204e4505e",
+    "lck-cx-after.log": "679e2da3bfcb4828312b02d8e28be308bcb1f576ebe32d18950fccf9b961ddd1",
+    "lck-cx-after.receipt.json": "eb683820c5d805d8da57344cbb5ef4dc9c5b770fd92cf3626e03292cb31432a5",
+    "lck-lck-after.engine.jsonl": "65f9edee5d91ded1b44685560745e604bc89e16d30d4bcbaa1aa1fccf8662726",
+    "lck-lck-after.log": "089aa1e921728688adf72e1de1ca82b187429fe4c8b4073f4cf94bdff784223e",
+    "lck-lck-after.receipt.json": "d666aabc3a7e9f1cd79abca4a0373b104fc6220602c0a308db4a2c483799e997",
+    "lck-two-managers.engine.jsonl": "4505b3adc1ff7f9330d8331c3100af91f8e09755c0fbb4a222d12707b7b05057",
+    "lck-two-managers.log": "2a9eb2c48641a76f2cd158400faa47caaa4638cebbf83f8154a613fe12f3a330",
+    "lck-two-managers.receipt.json": "90844036bbcf4371d2e3ae8c5599eba8ff28af90e072c42d2bc8e4ab7fa8d9c0",
+    "manifest.json": "a773ff75ca8bc774f887e55a3a22a0a744e6a85716276372d61af5116c55ffdd",
+    "runtimes.json": "5af482a50506b8c67d5d9bbcde07e07c42c207d6a476bea368c07986d5b35536"
+  }
+}
