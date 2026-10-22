@@ -1,0 +1,162 @@
+name: SDK M0 plain simulator acceptance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Package.swift"
+      - "VERSION"
+      - "Sources/**"
+      - "Expo/**"
+      - "example/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "expo-module.config.json"
+      - "IosVoipSDK.podspec"
+      - "discovery/**"
+      - ".github/workflows/sdk-m0.yml"
+  pull_request:
+    paths:
+      - "Package.swift"
+      - "VERSION"
+      - "Sources/**"
+      - "Expo/**"
+      - "example/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "expo-module.config.json"
+      - "IosVoipSDK.podspec"
+      - "discovery/**"
+      - ".github/workflows/sdk-m0.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-m0-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plain-simulator:
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check offline evidence controls and shell syntax
+        run: |
+          set -euo pipefail
+          SDK_M0_BUILD_ROOT="$RUNNER_TEMP/sdk-m0-build"
+          SDK_M0_BUILD_LOGS="$RUNNER_TEMP/sdk-m0-build-logs"
+          {
+            printf 'SDK_M0_BUILD_ROOT=%s\n' "$SDK_M0_BUILD_ROOT"
+            printf 'SDK_M0_BUILD_LOGS=%s\n' "$SDK_M0_BUILD_LOGS"
+            printf 'SDK_M0_BOOTSTRAP_APP=%s/bootstrap/SDKBootstrap.app\n' "$SDK_M0_BUILD_ROOT"
+            printf 'SDK_M0_DEVICE_PROBE=%s/device/SDKDeviceProbe\n' "$SDK_M0_BUILD_ROOT"
+            printf 'SDK_M0_SPM_DEVICE_DIR=%s/spm-device\n' "$SDK_M0_BUILD_ROOT"
+            printf 'SDK_M0_BUILD_RECEIPT=%s/build-receipt.json\n' "$SDK_M0_BUILD_ROOT"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$SDK_M0_BUILD_ROOT" "$SDK_M0_BUILD_LOGS"
+          python3 discovery/check_sdk_m0.py | tee "$SDK_M0_BUILD_LOGS/offline-controls.json"
+          bash -n discovery/build_sdk_bootstrap.sh discovery/build_sdk_device_probe.sh discovery/run_sdk_m0.sh
+      - name: Select the compiler and simulator host
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "24.22.1"
+          package-manager-cache: false
+      - name: Record the build environment
+        run: |
+          set -euo pipefail
+          {
+            sw_vers
+            xcodebuild -version
+            xcrun swift --version
+            xcrun --sdk iphonesimulator --show-sdk-version
+            xcrun --sdk iphoneos --show-sdk-version
+            uname -m
+            node --version
+            npm --version
+            pod --version
+            git rev-parse HEAD
+          } > "$SDK_M0_BUILD_LOGS/environment.txt" 2>&1
+      - name: Bind the source before building M0
+        run: python3 discovery/sdk_m0_conformance.py --begin-build "$SDK_M0_BUILD_ROOT/source-build-start.json"
+      - name: Install and typecheck the locked JavaScript workspace
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund 2>&1 | tee "$SDK_M0_BUILD_LOGS/npm-ci.log"
+          npm run build 2>&1 | tee "$SDK_M0_BUILD_LOGS/typescript-build.log"
+          npm run typecheck 2>&1 | tee "$SDK_M0_BUILD_LOGS/typescript-typecheck.log"
+      - name: Generate the iOS example and install its pods
+        run: |
+          set -euo pipefail
+          npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install 2>&1 | tee "$SDK_M0_BUILD_LOGS/expo-prebuild.log"
+          cd example/ios
+          pod install 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-install.log"
+      - name: Build the Release example with bundled JavaScript
+        run: |
+          set -euo pipefail
+          workspaces=(example/ios/*.xcworkspace)
+          test "${#workspaces[@]}" -eq 1
+          test -d "${workspaces[0]}"
+          scheme=$(basename "${workspaces[0]}" .xcworkspace)
+          xcodebuild -workspace "${workspaces[0]}" -scheme "$scheme" -configuration Release \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath "$SDK_M0_BUILD_ROOT/expo" \
+            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO build 2>&1 | tee "$SDK_M0_BUILD_LOGS/expo-release.log"
+          apps=("$SDK_M0_BUILD_ROOT"/expo/Build/Products/Release-iphonesimulator/*.app)
+          test "${#apps[@]}" -eq 1
+          test -d "${apps[0]}"
+          test -s "${apps[0]}/main.jsbundle"
+          printf 'SDK_M0_APP=%s\n' "${apps[0]}" >> "$GITHUB_ENV"
+      - name: Build the Swift package for simulator and device
+        run: |
+          set -euo pipefail
+          xcodebuild -scheme VoIPSDK -configuration Release -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$SDK_M0_BUILD_ROOT/spm-simulator" ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build 2>&1 | tee "$SDK_M0_BUILD_LOGS/swiftpm-simulator.log"
+          xcodebuild -scheme VoIPSDK -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath "$SDK_M0_SPM_DEVICE_DIR" ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build 2>&1 | tee "$SDK_M0_BUILD_LOGS/swiftpm-device.log"
+      - name: Build the source bootstrap and linked device probes
+        run: |
+          set -euo pipefail
+          {
+            bash discovery/build_sdk_bootstrap.sh "$SDK_M0_BUILD_ROOT/bootstrap"
+            printf 'Source bootstrap build completed.\n'
+          } 2>&1 | tee "$SDK_M0_BUILD_LOGS/bootstrap-build.log"
+          bash discovery/build_sdk_device_probe.sh "$SDK_M0_BUILD_ROOT/device" 2>&1 | tee "$SDK_M0_BUILD_LOGS/device-probe-build.log"
+      - name: Record the source and exact built artifacts
+        run: |
+          python3 discovery/sdk_m0_conformance.py --record-build "$SDK_M0_BUILD_RECEIPT" \
+            --build-start "$SDK_M0_BUILD_ROOT/source-build-start.json" --app "$SDK_M0_APP" \
+            --bootstrap "$SDK_M0_BOOTSTRAP_APP" --device-probe "$SDK_M0_DEVICE_PROBE" \
+            --spm-device-dir "$SDK_M0_SPM_DEVICE_DIR"
+      - name: Measure the Expo journey and bootstrap in one plain simulator
+        env:
+          OUT: ${{ runner.temp }}/sdk-m0
+        run: bash discovery/run_sdk_m0.sh
+      - name: Preserve M0 evidence and build logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sdk-m0-macos-26-xcode-26.6
+          path: |
+            ${{ runner.temp }}/sdk-m0
+            ${{ runner.temp }}/sdk-m0-build-logs
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove native build outputs
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/sdk-m0-build"
