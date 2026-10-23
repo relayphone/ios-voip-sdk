@@ -1,0 +1,190 @@
+#if targetEnvironment(simulator)
+import Foundation
+import Combine
+
+struct RuntimeSession: Decodable, Equatable {
+  let schemaVersion: Int
+  let bundleID: String
+  let runID: String
+  let pid: Int
+  let profile: String
+}
+struct RuntimeEvent: Decodable, Identifiable {
+  let schemaVersion: Int
+  let sequence: Int
+  let runID: String
+  let pid: Int
+  let bundleID: String
+  let event: String
+  let t_ms: Double
+  var uuid: String?
+  var callUUID: String?
+  var actionID: String?
+  var kind: String?
+  var origin: String?
+  var apiKind: String?
+  var deadlineMS: Double?
+  var deadlineSeconds: Double?
+  var latencyMS: Double?
+  var fulfilled: Bool?
+  var connected: Bool?
+  var ringing: Bool?
+  var held: Bool?
+  var ended: Bool?
+  var muted: Bool?
+  var callerName: String?
+  var handle: String?
+  var id: Int { sequence }
+  var caller: String { [callerName, handle].compactMap { $0 }.first { !$0.isEmpty } ?? "Unknown caller" }
+  var status: String {
+    if ended == true { return "Ended" }
+    if held == true { return "On hold" }
+    if connected == true { return "Connected" }
+    return ringing == true ? "Incoming call" : "Connecting"
+  }
+  var title: String {
+    if event == "call.changed" { return "\(caller) · \(status)" }
+    if event == "action.settled" { return "\(kind?.capitalized ?? "Action") \(fulfilled == true ? "fulfilled" : "failed")" }
+    if event == "action.deadline" { return "\(kind?.capitalized ?? "Action") delivered" }
+    return event
+  }
+  var detail: String {
+    var parts = [origin, apiKind].compactMap { $0 }
+    if let latencyMS, event != "action.deadline" { parts.append(String(format: "%.1f ms", latencyMS)) }
+    if let deadlineSeconds { parts.append(String(format: "%.0f s profile budget", deadlineSeconds)) }
+    return parts.joined(separator: " · ")
+  }
+}
+private struct EventBatch: Decodable {
+  let session: RuntimeSession
+  let events: [RuntimeEvent]
+  let cursor: Int
+}
+private struct ControlResult: Decodable {
+  struct Result: Decodable { var actionIDs: [String]? }
+  let success: Bool
+  var error: String?
+  var result: Result?
+}
+private struct BridgeError: Decodable { let error: String }
+
+@MainActor
+final class InspectorModel: ObservableObject {
+  @Published var session: RuntimeSession?
+  @Published var conversations: [String: RuntimeEvent] = [:]
+  @Published var pending: [String: RuntimeEvent] = [:]
+  @Published var timeline: [RuntimeEvent] = []
+  @Published var audioActive = false
+  @Published var online = false
+  @Published var busy = false
+  @Published var error: String?
+  @Published var commandError: String?
+  private var cursor = 0
+  private var acknowledgedActions = Set<String>()
+  private var actionOrder: [String] = []
+  private let endpoint: URL?
+  private let token: String
+  private let client = URLSession(configuration: .ephemeral)
+
+  init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+    endpoint = environment["CKSIM_INSPECTOR_URL"].flatMap(URL.init(string:))
+    token = environment["CKSIM_INSPECTOR_TOKEN"] ?? ""
+  }
+  var incoming: RuntimeEvent? {
+    conversations.values.filter { $0.ringing == true && $0.ended != true }.sorted { $0.sequence < $1.sequence }.first
+  }
+  func active(excluding id: String?) -> RuntimeEvent? {
+    conversations.values.filter { $0.uuid != id && $0.connected == true && $0.held != true && $0.ended != true }
+      .sorted { $0.sequence < $1.sequence }.first
+  }
+  func isPending(_ call: RuntimeEvent) -> Bool { pending.values.contains { $0.callUUID == call.uuid } }
+
+  private func request(_ path: String, body: [String: String]? = nil) async throws -> Data {
+    guard let endpoint, endpoint.host == "127.0.0.1", endpoint.scheme == "http", !token.isEmpty else {
+      throw NSError(domain: "Inspector", code: 1, userInfo: [NSLocalizedDescriptionKey: "Start this app with cksim inspect to connect to a runtime."])
+    }
+    let target = URL(string: path, relativeTo: endpoint)!
+    var request = URLRequest(url: target)
+    request.timeoutInterval = body == nil ? 3 : 20
+    request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+    if let body {
+      request.httpMethod = "POST"
+      request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+      request.httpBody = try JSONEncoder().encode(body)
+    }
+    let (data, response) = try await client.data(for: request)
+    guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+      let message = (try? JSONDecoder().decode(BridgeError.self, from: data).error) ?? "Inspector connection rejected. Restart cksim inspect."
+      throw NSError(domain: "Inspector", code: 2, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+    return data
+  }
+  func follow() async {
+    while !Task.isCancelled {
+      do {
+        let batch = try JSONDecoder().decode(EventBatch.self, from: await request("/events?after=\(cursor)"))
+        guard batch.session.schemaVersion == 1, session == nil || session == batch.session,
+              batch.cursor == cursor + batch.events.count else { throw URLError(.cannotParseResponse) }
+        for (offset, row) in batch.events.enumerated() {
+          guard row.schemaVersion == 1, row.sequence == cursor + offset + 1,
+                row.runID == batch.session.runID, row.pid == batch.session.pid,
+                row.bundleID == batch.session.bundleID else { throw URLError(.cannotParseResponse) }
+        }
+        session = batch.session
+        for row in batch.events { consume(row) }
+        cursor = batch.cursor
+        online = true
+        error = nil
+      } catch {
+        if Task.isCancelled { return }
+        online = false
+        self.error = error.localizedDescription
+      }
+      try? await Task.sleep(for: .milliseconds(250))
+    }
+  }
+  private func consume(_ row: RuntimeEvent) {
+    timeline.append(row)
+    if timeline.count > 300 { timeline.removeFirst(timeline.count - 300) }
+    if row.event == "call.changed", let id = row.uuid {
+      conversations[id] = row
+      let ended = conversations.values.filter { $0.ended == true }.sorted { $0.sequence > $1.sequence }
+      for old in ended.dropFirst(5) { if let id = old.uuid { conversations.removeValue(forKey: id) } }
+    }
+    if let id = row.actionID {
+      if acknowledgedActions.insert(id).inserted {
+        actionOrder.append(id)
+        if actionOrder.count > 1000 { acknowledgedActions.remove(actionOrder.removeFirst()) }
+      }
+      if row.event == "action.deadline" { pending[id] = row }
+      if ["action.settled", "action.expired", "action.timeout", "action.cancelled"].contains(row.event) { pending.removeValue(forKey: id) }
+    }
+    if row.event == "audio.activated" { audioActive = true }
+    if row.event == "audio.deactivated" { audioActive = false }
+  }
+  func send(_ operation: String, call: RuntimeEvent, active: RuntimeEvent? = nil) {
+    guard !busy, online, let id = call.uuid else { return }
+    busy = true
+    Task {
+      defer { busy = false }
+      do {
+        var command = ["operation": operation, "callUUID": id]
+        if let activeID = active?.uuid { command["activeCallUUID"] = activeID }
+        let response = try JSONDecoder().decode(ControlResult.self, from: await request("/command", body: command))
+        if !response.success {
+          throw NSError(domain: "Inspector", code: 3, userInfo: [NSLocalizedDescriptionKey: response.error ?? "Runtime rejected this call action."])
+        }
+        guard let ids = response.result?.actionIDs, !ids.isEmpty else { throw URLError(.cannotParseResponse) }
+        let deadline = Date().addingTimeInterval(3)
+        while !Set(ids).isSubset(of: acknowledgedActions) {
+          guard Date() < deadline else {
+            throw NSError(domain: "Inspector", code: 4, userInfo: [NSLocalizedDescriptionKey:
+              "The control was accepted but its events have not arrived. Its outcome is unknown; check the timeline before retrying."])
+          }
+          try await Task.sleep(for: .milliseconds(25))
+        }
+      } catch { self.commandError = error.localizedDescription }
+    }
+  }
+}
+#endif

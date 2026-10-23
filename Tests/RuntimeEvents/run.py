@@ -12,6 +12,13 @@ ROOT = Path(__file__).resolve().parents[2]
 BUNDLE = 'dev.callkitsim.eventfixture'
 
 
+def latest_runtime(runtimes):
+    available = [r for r in runtimes if r.get('isAvailable') and r.get('platform') == 'iOS']
+    if not available:
+        raise RuntimeError('No available iOS simulator runtime')
+    return max(available, key=lambda r: tuple(int(part) for part in r['version'].split('.')))['identifier']
+
+
 def run(*args, timeout=120, **kwargs):
     try:
         result = subprocess.run(list(map(str, args)), text=True, capture_output=True, timeout=timeout, **kwargs)
@@ -54,8 +61,8 @@ def main():
     parser.add_argument('--simulator')
     args = parser.parse_args()
     args.out.mkdir(parents=True)
-    runtime = next(r['identifier'] for r in json.loads(run('xcrun', 'simctl', 'list', 'runtimes', '-j'))['runtimes']
-                   if r.get('isAvailable') and r['name'].startswith('iOS'))
+    runtime = latest_runtime(json.loads(run('xcrun', 'simctl', 'list', 'runtimes', '-j'))['runtimes'])
+    print('Selected simulator runtime: ' + runtime, flush=True)
     device = args.simulator or run('xcrun', 'simctl', 'create', 'Codex M4 ' + str(uuid.uuid4())[:8],
                                    'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro', runtime)
     def sim(*parts, **kwargs):

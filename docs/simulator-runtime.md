@@ -223,3 +223,43 @@ Compare action latency to its advertised budget: the measured profile has LCK
 30 s deadlines and CallKit 60/600/5 s deadlines. This is a deadline comparison,
 not a measured device benchmark for the application's handler. Profile expiry
 policies retain the measured/proposed qualifications in the profile source.
+
+### SwiftUI call inspector (M4 MVP)
+
+Build the separate simulator app with
+`bash scripts/build-inspector.sh discovery/out/inspector`. With the target app
+running in its simulator, start:
+
+```sh
+Tools/cksim --simulator <target-UUID> --bundle <app.bundle.id> \
+  --runtime-dir <runtime-package> inspect --app discovery/out/inspector/CKSimInspector.app
+```
+
+The inspector creates its own disposable display simulator with the target's
+runtime and device type. Keeping the target app foregrounded avoids suspension
+while the inspector is visible. Ctrl-C closes the local bridge and deletes that
+display simulator. To reuse a separate, already booted simulator, pass
+`inspect --app <path> --inspector-simulator <display-UUID>`; that simulator is
+never deleted by the command. The inspector is iPhone-only for this MVP.
+
+The incoming banner expands to a full call screen. Answer and Decline handle a
+single incoming call; Call waiting options offers Hold & Accept and End & Accept
+when another call is active. End Call ends a connected call. Buttons dispatch the
+runtime's existing system-origin commands; acceptance is shown only after the
+journal records the resulting state. Conversations, pending deadlines, action
+settlement latency versus the profile budget, and audio activation remain live.
+The UI retains the latest 300 events and five ended conversations; the full
+journal remains available to watch and CI.
+
+A random-token-authenticated bridge binds only to host loopback. It incrementally
+reads the same event channel and forwards the five call commands through the
+existing mailbox. The target run/process identity is pinned for both reads and
+commands. A target restart requires reconnecting with `cksim inspect`; connection
+errors disable controls. A control timeout means its outcome is unknown: inspect
+the timeline before retrying. No inspector transport or app code is linked into
+the SDK or device builds.
+
+The runtime M4 CI job taps Answer through XCUITest and publishes the banner,
+full-screen incoming call, answered state, timeline, and consumed runtime stream
+as Actions artifacts. CI uses its installed simulator OS against the measured
+`ios-27.0` profile; the artifact's environment file identifies actual coverage.
