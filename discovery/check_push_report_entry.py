@@ -245,6 +245,10 @@ def qualify_journal(rows, mode, run_id, pid):
     settlements=[r for r in rows if r.get('event')=='report.completed']
     require(all(r.get('pushID') in expected for r in incoming+settlements),'unbound incoming report or settlement')
     required=mode!='optional'
+    deadlines=[r for r in rows if r.get('event')=='push.reportDeadline']
+    require(len(deadlines)==(count if required else 0) and all(r.get('pushID') in expected for r in deadlines),
+            'missing, extra or unbound push report deadline')
+    seconds=json.loads((ROOT/'Sources/Engine/Resources/ios-27.0.json').read_text())['pushReportDeadlineSeconds']
     for identifier in expected:
         def event(name):
             found=[r for r in rows if r.get('event')==name and r.get('pushID')==identifier]
@@ -255,6 +259,10 @@ def qualify_journal(rows, mode, run_id, pid):
         require(all(r.get('api')=='metadata' for r in (received_row,returned,completed)),'expected metadata delivery path')
         require(received_row['sequence']<min(returned['sequence'],completed['sequence']),'delivery boundaries precede receipt')
         if required:
+            deadline=event('push.reportDeadline')
+            require(type(deadline.get('seconds')) in (int,float) and deadline['seconds']==seconds and
+                    deadline['sequence']==received_row['sequence']+1,
+                    'push report deadline differs from the profile or delivery boundary')
             require(returned.get('reportEntered') is True,'required report was not entered before callback returned')
             require(completed.get('reportEntered') is True,'required completion preceded report entry')
             report=event('report.incoming'); settled=event('report.completed')
@@ -280,47 +288,50 @@ def qualify_journal(rows, mode, run_id, pid):
 
 def journal_controls():
     def fixture():
-        return [dict(event=event,pid=123,runID='host',bundleID='dev.iosvoipsdk.pushentry',sequence=i+1,t_ms=i,
+        rows=[dict(event=event,pid=123,runID='host',bundleID='dev.iosvoipsdk.pushentry',sequence=i+1,t_ms=i,
                      pushID='host-0',mustReport=True,reportEntered=True,api='metadata',error=0,
                      callUUID='E715ACF2-A7C1-4D74-8BD9-EAFA47693255') for i,event in enumerate([
                      'push.received','report.incoming','report.completed','push.callbackReturned','push.completed'])]
+        rows.insert(1,dict(rows[0],event='push.reportDeadline',seconds=4.4))
+        for index,row in enumerate(rows): row.update(sequence=index+1,t_ms=index)
+        return rows
     qualify_journal(fixture(),'sdk-required','host',123)
     controls=[]
     for label, mutate in [
-        ('return-before-report',lambda r:r[3].update(reportEntered=False)),
-        ('completion-before-entry',lambda r:r[4].update(reportEntered=False)),
-        ('missing-report',lambda r:r.__delitem__(1)),
-        ('wrong-push',lambda r:r[1].update(pushID='other')),
-        ('wrong-settled-call',lambda r:r[2].update(callUUID='9BB7DFDA-423D-4FA8-9202-055C5750FD55')),
-        ('empty-report-call',lambda r:r[1].update(callUUID='')),
-        ('invalid-settled-call',lambda r:r[2].update(callUUID='call')),
-        ('orphan-settlement',lambda r:r.append(dict(r[2],sequence=6,t_ms=5,pushID='other'))),
-        ('wrong-process',lambda r:r[2].update(pid=124)),
+        ('return-before-report',lambda r:r[4].update(reportEntered=False)),
+        ('completion-before-entry',lambda r:r[5].update(reportEntered=False)),
+        ('missing-report',lambda r:r.__delitem__(2)),
+        ('wrong-push',lambda r:r[2].update(pushID='other')),
+        ('wrong-settled-call',lambda r:r[3].update(callUUID='9BB7DFDA-423D-4FA8-9202-055C5750FD55')),
+        ('empty-report-call',lambda r:r[2].update(callUUID='')),
+        ('invalid-settled-call',lambda r:r[3].update(callUUID='call')),
+        ('orphan-settlement',lambda r:r.append(dict(r[3],sequence=7,t_ms=6,pushID='other'))),
+        ('wrong-process',lambda r:r[3].update(pid=124)),
         ('boolean-pid',lambda r:r[0].update(pid=True)),
-        ('float-sequence',lambda r:r[2].update(sequence=3.0)),
-        ('clock-reversal',lambda r:r[3].update(t_ms=0)),
+        ('float-sequence',lambda r:r[3].update(sequence=4.0)),
+        ('clock-reversal',lambda r:r[4].update(t_ms=0)),
         ('missing-completion',lambda r:r.pop()),
         ('legacy-receipt',lambda r:r[0].update(api='legacy')),
-        ('legacy-return',lambda r:r[3].update(api='legacy')),
-        ('missing-completion-api',lambda r:r[4].pop('api')),
-        ('failed-required-report',lambda r:r[2].update(error=2)),
-        ('missing-settlement-status',lambda r:r[2].pop('error')),
-        ('boolean-settlement-status',lambda r:r[2].update(error=False)),
-        ('string-settlement-status',lambda r:r[2].update(error='0')),
+        ('legacy-return',lambda r:r[4].update(api='legacy')),
+        ('missing-completion-api',lambda r:r[5].pop('api')),
+        ('failed-required-report',lambda r:r[3].update(error=2)),
+        ('missing-settlement-status',lambda r:r[3].pop('error')),
+        ('boolean-settlement-status',lambda r:r[3].update(error=False)),
+        ('string-settlement-status',lambda r:r[3].update(error='0')),
     ]:
         changed=copy.deepcopy(fixture());mutate(changed)
         try: qualify_journal(changed,'sdk-required','host',123)
         except ValueError: controls.append(label)
         else: raise AssertionError('native gate accepted '+label)
-    duplicate=fixture()+[dict(row,pushID='host-1',sequence=row['sequence']+5,t_ms=row['t_ms']+5,
+    duplicate=fixture()+[dict(row,pushID='host-1',sequence=row['sequence']+6,t_ms=row['t_ms']+6,
                               error=2 if row['event']=='report.completed' else row['error']) for row in fixture()]
     qualify_journal(duplicate,'sdk-duplicate','host',123)
     optional=[dict(row,mustReport=False,reportEntered=False) for row in fixture()
-              if row['event'] not in ('report.incoming','report.completed')]
+              if row['event'] not in ('report.incoming','report.completed','push.reportDeadline')]
     for index,row in enumerate(optional): row['sequence']=index+1
     qualify_journal(optional,'optional','host',123)
-    for label,index,error in [('failed-first-duplicate',2,2),('successful-second-duplicate',7,0),
-                              ('boolean-second-duplicate',7,True)]:
+    for label,index,error in [('failed-first-duplicate',3,2),('successful-second-duplicate',9,0),
+                              ('boolean-second-duplicate',9,True)]:
         changed=copy.deepcopy(duplicate);changed[index]['error']=error
         try: qualify_journal(changed,'sdk-duplicate','host',123)
         except ValueError: controls.append(label)
@@ -372,7 +383,7 @@ def qualify_negative_journal(rows, mode, run_id, pid):
             'negative fixture did not use the required metadata path')
     require(returned.get('reportEntered') is False, 'negative return did not observe missing report')
     require(all(not str(row.get('event', '')).startswith('push.') or row.get('event') in
-                ('push.received', 'push.callbackReturned', 'push.completed') for row in rows),
+                ('push.received', 'push.reportDeadline', 'push.callbackReturned', 'push.completed') for row in rows),
             'unexpected push boundary event')
 
     reports = [row for row in rows if row.get('event') == 'report.incoming']
@@ -419,7 +430,7 @@ def negative_journal_controls():
         boundary = dict(push, api='metadata', mustReport=True)
         violation = dict(push, severity='error')
         report = dict(push, callUUID='E715ACF2-A7C1-4D74-8BD9-EAFA47693255')
-        events = [('push.received', boundary)]
+        events = [('push.received', boundary), ('push.reportDeadline', dict(push, seconds=4.4))]
         if mode == 'missing':
             events += [
                 ('push.completed', dict(boundary, reportEntered=False)),

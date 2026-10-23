@@ -43,8 +43,9 @@ def fixture(root):
             boundary = dict(push, api='metadata', mustReport=mode != 'optional')
             violation = dict(push, severity='error')
             row('push.received', **boundary)
-            if mode == 'late-report':
+            if mode != 'optional':
                 row('push.reportDeadline', **push, seconds=4.4)
+            if mode == 'late-report':
                 row('push.completed', **boundary, reportEntered=False)
                 row('diagnostic.pushReportingViolation', **violation, reason='required-report-missing-at-completion')
                 row('push.callbackReturned', **boundary, reportEntered=False)
@@ -102,6 +103,53 @@ def fixture(root):
 
 
 class CaptureControls(unittest.TestCase):
+    def test_required_deadline_binding_and_optional_omission(self):
+        def deadline(rows):
+            return next(row for row in rows if row['event'] == 'push.reportDeadline')
+
+        def after_boundary(rows):
+            value = deadline(rows)
+            rows.remove(value)
+            boundary = next(row for row in rows if row['event'] in ('push.completed', 'push.callbackReturned'))
+            rows.insert(rows.index(boundary) + 1, value)
+
+        mutations = [
+            ('missing', lambda rows: rows.remove(deadline(rows)), 'deadline'),
+            ('duplicate', lambda rows: rows.insert(2, dict(deadline(rows))), 'deadline'),
+            ('foreign-push', lambda rows: deadline(rows).update(pushID='other'), 'deadline'),
+            ('foreign-run', lambda rows: deadline(rows).update(runID='other'), 'identity'),
+            ('foreign-process', lambda rows: deadline(rows).update(pid=9999), 'identity'),
+            ('wrong-duration', lambda rows: deadline(rows).update(seconds=4.3), 'deadline'),
+            ('boolean-duration', lambda rows: deadline(rows).update(seconds=True), 'deadline'),
+            ('after-boundary', after_boundary, 'deadline'),
+        ]
+        for mode in ('missing', 'deferred', 'optional'):
+            cases = mutations if mode != 'optional' else [('unexpected', None, 'deadline')]
+            for label, mutate, error in cases:
+                with self.subTest(mode=mode, deadline=label), tempfile.TemporaryDirectory(prefix='push-deadline-binding-') as temporary:
+                    root = Path(temporary)
+                    fixture(root)
+                    with patch.object(gate, 'native_source_identity', return_value=SOURCE):
+                        self.assertTrue(gate.validate(root)['success'], 'The intact shipping-shaped capture must pass first')
+                    path = root / (mode + '.runtime.jsonl')
+                    rows = [json.loads(line) for line in path.read_text().splitlines()]
+                    if mode == 'optional':
+                        fields = {key: rows[0][key] for key in ('pid', 'runID', 'bundleID', 'profile', 'pushID')}
+                        rows.insert(1, dict(fields, event='push.reportDeadline', seconds=4.4))
+                    else:
+                        mutate(rows)
+                    for index, row in enumerate(rows): row.update(sequence=index + 1, t_ms=index)
+                    path.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+                    receipt_path = root / (mode + '.receipt.json')
+                    receipt = json.loads(receipt_path.read_text())
+                    receipt['journalSHA256'] = gate.digest(path)
+                    gate.save(receipt_path, receipt)
+                    manifest = json.loads((root / 'manifest.json').read_text())
+                    for changed in (path, receipt_path): manifest['files'][changed.name] = gate.digest(changed)
+                    gate.save(root / 'manifest.json', manifest)
+                    with patch.object(gate, 'native_source_identity', return_value=SOURCE):
+                        with self.assertRaisesRegex(ValueError, error): gate.validate(root)
+
     def test_rebound_deadline_capture_refusals(self):
         def actual_report(rows):
             rows.insert(1, dict(rows[0], event='report.incoming', callUUID=CALL))
