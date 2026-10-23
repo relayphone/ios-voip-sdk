@@ -674,12 +674,15 @@ struct ProbeApp: App {
   init() {
     let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     if FileManager.default.fileExists(atPath: documents.appendingPathComponent("push-mode").path) { ProbeApp.probe.registerPushEarly() }
+    LCKPushProbe.startIfConfigured()
   }
   var body: some Scene {
     WindowGroup {
       Text("CallKit probe").task {
         guard !started else { return }
         started = true
+        // The LiveCommunicationKit push probe must stay the only provider in the process (D13).
+        if LCKPushProbe.shared != nil { return }
         // Kept apart from Probe, whose initializer registers its own CXProvider.
         if ProcessInfo.processInfo.environment["PROBE_MODE"] == "providers" { await ProvidersProbe().run(); return }
         #if !targetEnvironment(macCatalyst)

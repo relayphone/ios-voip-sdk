@@ -1,0 +1,10 @@
+{"appState":0,"build":"24A5355q","event":"lckpush.launch","main":true,"os":"27.0","pid":6852,"strategy":"entered","t_ms":1}
+{"event":"lckpush.registered","main":true,"t_ms":4}
+{"bytes":32,"event":"lckpush.token","main":false,"t_ms":8}
+{"api":"metadata","event":"lckpush.received","main":false,"mustReport":true,"strategy":"entered","t_ms":9}
+{"afterMs":0,"conversation":"30F5024A","event":"lckpush.reportStart","main":false,"t_ms":9}
+{"event":"lckpush.didBegin","main":true,"t_ms":49}
+{"afterMs":54,"event":"lckpush.delegateReturn","main":false,"reportEntered":true,"t_ms":63}
+{"appState":2,"event":"lckpush.alive","main":true,"n":1,"t_ms":2081}
+{"afterMs":2081,"code":3,"conversation":"30F5024A","description":"Error Domain=com.apple.CallKit.error.incomingcall Code=3 \"(null)\"","domain":"com.apple.CallKit.error.incomingcall","event":"lckpush.reported","main":false,"result":"error","t_ms":2090}
+{"afterMs":2081,"event":"lckpush.completionCalled","main":false,"t_ms":2091}
