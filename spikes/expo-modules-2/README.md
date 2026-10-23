@@ -1,7 +1,8 @@
 # Expo Modules 2.0 bridge spike
 
 Isolated SDK 58 app for [lane #52](https://github.com/ziahamza/ios-voip-sdk/issues/52).
-The scaffold calls one synchronous `@JS` greeting on a plain `@ExpoModule` class.
+The app checks a cached, frozen snapshot (`@Record` + `@Union`) and coalesced
+`@Event` notifications on an `@ExpoModule` class.
 It does not depend on the production SDK or change its bridge.
 
 ## Run the scaffold
@@ -18,30 +19,37 @@ bash scripts/smoke-ios.sh
 ```
 
 The smoke script generates iOS sources, installs pods, bundles a Release app,
-then installs and launches it on its own throwaway simulator. Check
-`out/scaffold.png` for the native greeting. It deletes its simulator and
-DerivedData on exit; `out/`, `ios/` and dependencies are ignored. Remove the
-remaining generated directories after a run when disk space is tight.
-`npm run ios -- --device <your-own-simulator-UUID>` is available for iteration.
-The scaffold smoke is a launch check, not acceptance for demonstrations 1–4.
+then installs and launches it on its own throwaway iPhone 17 Pro / iOS 27.0
+simulator. It polls `Documents/expo2-results.json` through the app's data
+container with a 60-second deadline. Every required demonstration must be present
+exactly once with `pass: true`, `values` and `threads`; missing, failed, malformed
+or duplicate results fail CI. Results are copied to ignored `out/` for artifacts.
+The screenshot is diagnostic only. The simulator and DerivedData are deleted on
+exit; remove ignored `ios/` and dependencies after a run when disk space is tight.
+The app and pod require iOS 17.4.
 
-## Proposed next slices
+The native snapshot is encoded and recursively frozen once per publication.
+A copyable envelope returns only a retained JSI handle, preserving JS identity
+and constant-time reads after initialization. Direct `@Record` return values
+would re-encode the conversation list on each read. Macro 0.22's generic return
+assertion requires `Copyable`, so a bare noncopyable `JavaScriptValue` cannot be
+the exported return type. The typed event encoder reuses the published handle.
+Typed `@Event` needs `: Module` in core 58.0.24/macros 0.22.0: the plain class
+fails to compile because it lacks `EventEmitter`. All exports still use macros;
+no 1.0 DSL is needed, matching Expo's [typed-event benchmark](https://github.com/expo/expo/blob/expo-modules-core%4058.0.24/packages/expo-modules-core/ios/Benchmarks/EventEmitterBenchmarks.swift#L97).
 
-1. Immutable `@Record` / `@Union` conversation fixtures and a cached, O(1)
-   synchronous snapshot with a version; introduce the branded TypeScript ID.
-2. One `@Event` change payload containing snapshot and version, coalesced by
-   version. Assert payloads and event counts from JavaScript.
-3. Async commands on a custom SDK global actor; record thread placement before
-   and after suspension alongside the default `@JavaScriptActor` behavior.
-4. Await an async JS handler with a deadline Task and cancellation mapped to an
-   `AbortSignal`; compare a value-returning JS closure's blocking behavior.
-5. Evaluate `scan-exports` for TypeScript drift, `@Event` on `@SharedObject`, and
-   the app delegate subscriber's early PushKit registration. Simulator results
-   cannot establish physical-device PushKit timing.
+Native version updates `[1, 1, 2, 2, 3]` in one JS turn schedule one flush with
+`runtime.schedule`; the listener must receive only version 3. A later duplicate
+emits nothing, and version 4 emits once. Two scheduler turns drain the flush and
+the asynchronous event without timing sleeps or JS-side event filtering.
 
-Automate slices 1–4 on an iOS 27.0 simulator before claiming bridge acceptance.
-The final findings note and M3.5 recommendation follow those demonstrations;
-its requested location outside this lane's owned directory needs coordination.
+## Next slice and stop
+
+Measure sync/default-async/custom-actor placement, background event delivery,
+and 1,000 synchronous snapshot reads (p50/p99). Then publish the findings in
+`docs/progress/2026-10-23-expo-modules-2-findings.md` and stop for orchestration
+review. The deadline/AbortSignal handler and remaining API checks wait for that
+review. The shipping SDK is unchanged by this spike.
 
 ## Research used for the scaffold
 

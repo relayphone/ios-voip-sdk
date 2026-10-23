@@ -37,6 +37,7 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run typecheck
       - run: npx expo install --check
+      - run: python3 -m unittest discover -s tests -p 'test_*.py'
       - run: bash -n scripts/smoke-ios.sh
       - run: bash scripts/smoke-ios.sh
       - name: Preserve scaffold diagnostics

@@ -5,7 +5,8 @@
     "version": "0.0.0",
     "platforms": ["ios"],
     "ios": {
-      "bundleIdentifier": "dev.iosvoipsdk.expo2spike"
+      "bundleIdentifier": "dev.iosvoipsdk.expo2spike",
+      "deploymentTarget": "17.4"
     }
   }
 }
