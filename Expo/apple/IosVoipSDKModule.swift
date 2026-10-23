@@ -7,6 +7,7 @@ public final class IosVoipSDKModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("IosVoipSDK")
+    Constants(["mediaAdapter": ExpoMediaSelection.name])
     Events("conversationsChanged", "pushTokenUpdated", "handlerAction", "actionCancelled", "conversationEvent")
 
     OnCreate {
@@ -42,12 +43,12 @@ public final class IosVoipSDKModule: Module {
 
     AsyncFunction("getConversations") { (promise: Promise) in
       Self.respond(promise) {
-        try BridgeJSON.dictionary(VoIPApplication.startFromBundle().client.state)
+        try BridgeJSON.dictionary(ExpoMediaSupport.startFromBundle().client.state)
       }
     }
     AsyncFunction("getPushToken") { (promise: Promise) in
       Self.respond(promise) {
-        var body = try BridgeJSON.dictionary(VoIPApplication.startFromBundle().pushService.tokenState)
+        var body = try BridgeJSON.dictionary(ExpoMediaSupport.startFromBundle().pushService.tokenState)
         if body["token"] == nil { body["token"] = NSNull() }
         return body
       }
@@ -57,7 +58,7 @@ public final class IosVoipSDKModule: Module {
       guard let data = try? BridgeJSON.data(options) else { Self.rejectArguments(promise); return }
       Self.respond(promise) {
         let options = try BridgeJSON.decode(StartOptions.self, from: data)
-        let client = try VoIPApplication.startFromBundle().client
+        let client = try ExpoMediaSupport.startFromBundle().client
         return try await client.startConversation(to: options.to, video: options.video, metadata: options.metadata).uuidString
       }
     }
@@ -65,27 +66,27 @@ public final class IosVoipSDKModule: Module {
       guard let data = try? BridgeJSON.data(payload) else { Self.rejectArguments(promise); return }
       Self.respond(promise) {
         let payload = try BridgeJSON.decode(IncomingCallPayload.self, from: data)
-        return try await VoIPApplication.startFromBundle().client.reportIncomingConversation(payload).uuidString
+        return try await ExpoMediaSupport.startFromBundle().client.reportIncomingConversation(payload).uuidString
       }
     }
     AsyncFunction("joinConversation") { (id: String, promise: Promise) in
-      Self.respond(promise) { try await VoIPApplication.startFromBundle().client.joinConversation(Self.uuid(id)); return nil }
+      Self.respond(promise) { try await ExpoMediaSupport.startFromBundle().client.joinConversation(Self.uuid(id)); return nil }
     }
     AsyncFunction("endConversation") { (id: String, promise: Promise) in
-      Self.respond(promise) { try await VoIPApplication.startFromBundle().client.endConversation(Self.uuid(id)); return nil }
+      Self.respond(promise) { try await ExpoMediaSupport.startFromBundle().client.endConversation(Self.uuid(id)); return nil }
     }
     AsyncFunction("setMuted") { (id: String, muted: Bool, promise: Promise) in
-      Self.respond(promise) { try await VoIPApplication.startFromBundle().client.setMuted(Self.uuid(id), muted); return nil }
+      Self.respond(promise) { try await ExpoMediaSupport.startFromBundle().client.setMuted(Self.uuid(id), muted); return nil }
     }
     AsyncFunction("setHeld") { (id: String, held: Bool, promise: Promise) in
-      Self.respond(promise) { try await VoIPApplication.startFromBundle().client.setHeld(Self.uuid(id), held); return nil }
+      Self.respond(promise) { try await ExpoMediaSupport.startFromBundle().client.setHeld(Self.uuid(id), held); return nil }
     }
     AsyncFunction("playTones") { (id: String, digits: String, promise: Promise) in
-      Self.respond(promise) { try await VoIPApplication.startFromBundle().client.playTones(Self.uuid(id), digits); return nil }
+      Self.respond(promise) { try await ExpoMediaSupport.startFromBundle().client.playTones(Self.uuid(id), digits); return nil }
     }
     AsyncFunction("mergeConversations") { (first: String, second: String, promise: Promise) in
       Self.respond(promise) {
-        try await VoIPApplication.startFromBundle().client.mergeConversations(Self.uuid(first), Self.uuid(second))
+        try await ExpoMediaSupport.startFromBundle().client.mergeConversations(Self.uuid(first), Self.uuid(second))
         return nil
       }
     }
@@ -93,7 +94,7 @@ public final class IosVoipSDKModule: Module {
       guard let data = try? BridgeJSON.data(report) else { Self.rejectArguments(promise); return }
       Self.respond(promise) {
         let report = try BridgeJSON.decode(ReportOptions.self, from: data)
-        try await VoIPApplication.startFromBundle().client.reportConversation(Self.uuid(id), report: report.report())
+        try await ExpoMediaSupport.startFromBundle().client.reportConversation(Self.uuid(id), report: report.report())
         return nil
       }
     }

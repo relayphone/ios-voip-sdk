@@ -53,3 +53,8 @@ final class VoIPApplication {
     return fixture
   }
 }
+
+@MainActor
+enum ExpoMediaSupport {
+  static func startFromBundle() throws -> VoIPApplication { try VoIPApplication.startFromBundle() }
+}

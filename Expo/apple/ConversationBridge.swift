@@ -178,7 +178,7 @@ enum ConversationBridges {
 
   static func install(_ id: UUID, emit: @escaping ConversationBridge.Emit) throws {
     guard bridges[id] == nil else { return }
-    bridges[id] = ConversationBridge(application: try VoIPApplication.startFromBundle(), emit: emit)
+    bridges[id] = ConversationBridge(application: try ExpoMediaSupport.startFromBundle(), emit: emit)
   }
   static func attach(_ id: UUID, attached: Bool, generation: Int) {
     guard let bridge = bridges[id], bridge.accepts(generation: generation) else { return }

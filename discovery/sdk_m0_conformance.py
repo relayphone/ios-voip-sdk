@@ -14,7 +14,7 @@ from summarize import EvidenceError, load, one, require, successful_stop
 
 ROOT = Path(__file__).resolve().parent.parent
 CASES = ('healthy', 'profile', 'push-after-install')
-SOURCE_PATHS = ('Sources', 'Expo', 'example', 'Package.swift', 'IosVoipSDK.podspec',
+SOURCE_PATHS = ('Sources', 'Expo', 'ExpoMedia', 'example', 'Package.swift', 'IosVoipSDK.podspec',
                 'expo-module.config.json', 'package.json', 'package-lock.json', 'tsconfig.json', 'VERSION',
                 'discovery/build_sdk_bootstrap.sh', 'discovery/build_sdk_device_probe.sh',
                 'discovery/probe/sdk_bootstrap.swift', 'discovery/run_sdk_m0.sh',
@@ -28,6 +28,7 @@ SOURCE_PATHS = ('Sources', 'Expo', 'example', 'Package.swift', 'IosVoipSDK.podsp
                 'discovery/run_audio_lifecycle_legacy.sh',
                 'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
                 'discovery/check_expo_bridge.py', 'discovery/check_expo_plugin.cjs',
+                'discovery/check_expo_media.py', 'discovery/check_expo_media_config.py',
                 'discovery/check_platform_shims.py', 'discovery/check_sdk_ownership.py',
                 'discovery/check_push_delivery.py', 'discovery/check_push_report_entry.py',
                 'discovery/build_push_report_entry.sh', 'discovery/run_push_report_entry.py',

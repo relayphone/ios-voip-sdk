@@ -107,6 +107,7 @@ async function main() {
     assert.deepEqual(plist.UIBackgroundModes, ['audio', 'location', 'voip']);
     assert.deepEqual(plist.VoIPSDK, {
       custom: 'preserved',
+      mediaAdapter: 'webrtc',
       unhandledAction: 'fail',
       simulatorSupport: true,
       includesCallsInRecents: true,
@@ -124,6 +125,7 @@ async function main() {
       {
         custom: 'preserved',
         'ios-voip-sdk.providerOwnershipMonitoring': 'false',
+        'ios-voip-sdk.mediaAdapter': 'webrtc',
       },
     );
     for (const enabled of [false, true]) {
