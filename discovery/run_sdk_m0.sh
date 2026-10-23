@@ -81,7 +81,8 @@ if os.environ.get('SDK_M1_ACCEPTANCE') == '1':
 pathlib.Path(sys.argv[1]).write_text(json.dumps(source_identity(),indent=2)+'\n')
 PY
 # Keep raw runtime inventories, which contain local SDK paths, out of evidence.
-RUNTIME_JSON=$(limit 60 xcrun simctl list runtimes -j)
+# Cold host/device service queries have a bounded startup budget.
+RUNTIME_JSON=$(limit 180 xcrun simctl list runtimes -j)
 SDK_M0_RUNTIME_JSON="$RUNTIME_JSON" python3 - "${SDK_M0_RUNTIME:-}" "$OUT/runtime.json" <<'PY'
 import json,os,pathlib,sys
 rows=[r for r in json.loads(os.environ['SDK_M0_RUNTIME_JSON'])['runtimes']
@@ -112,9 +113,10 @@ if [[ -n "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" ]]; then
   INHERITED_DYLD=$SIMCTL_CHILD_DYLD_INSERT_LIBRARIES
 else
   query_status=0
-  printf 'Read inherited DYLD_INSERT_LIBRARIES with a 60-second infrastructure budget.\n' > "$OUT/launch-environment-query.log"
-  INHERITED_DYLD=$(limit 60 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>> "$OUT/launch-environment-query.log") || query_status=$?
-  printf 'Query exit code: %s\n' "$query_status" >> "$OUT/launch-environment-query.log"
+  SDK_ENV_QUERY_STARTED=$SECONDS
+  printf 'Read inherited DYLD_INSERT_LIBRARIES with a 180-second cold-start infrastructure budget.\n' > "$OUT/launch-environment-query.log"
+  INHERITED_DYLD=$(limit 180 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>> "$OUT/launch-environment-query.log") || query_status=$?
+  printf 'Query exit code: %s; elapsed seconds: %s\n' "$query_status" "$((SECONDS - SDK_ENV_QUERY_STARTED))" >> "$OUT/launch-environment-query.log"
   [[ "$query_status" -le 1 ]] || {
     printf 'Cannot read inherited launch environment (exit %s); see %s/launch-environment-query.log\n' "$query_status" "$OUT" >&2
     exit 1

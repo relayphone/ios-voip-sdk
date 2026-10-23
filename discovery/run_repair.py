@@ -18,6 +18,8 @@ import uuid
 
 REPO = Path(__file__).resolve().parent.parent
 CLI = REPO / "Tools/cksim"
+# Budget cold host/device service requests separately from steady-state operations.
+STARTUP_TIMEOUT_SECONDS = 180
 KEYS = ("DYLD_INSERT_LIBRARIES", "CKSIM_RUNTIME", "CKSIM_BUNDLE_IDS", "CKSIM_ENABLED", "CKSIM_PROFILE")
 
 
@@ -78,16 +80,41 @@ def main():
             try:
                 process.wait(timeout=timeout)
             except BaseException as error:
+                timed_out = isinstance(error, subprocess.TimeoutExpired)
+                reaped = False
+                reap_timed_out = False
                 try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired as reap_error:
-                    raise RuntimeError(label + " process group did not reap within five seconds") from reap_error
-                if isinstance(error, subprocess.TimeoutExpired):
-                    receipt["steps"].append(dict(phase=label, timeoutSeconds=timeout, timedOut=True))
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    try:
+                        process.wait(timeout=5)
+                        reaped = True
+                    except subprocess.TimeoutExpired as reap_error:
+                        reap_timed_out = True
+                        raise RuntimeError(label + " process group did not reap within five seconds") from reap_error
+                finally:
+                    if timed_out or reap_timed_out:
+                        step = dict(phase=label, timeoutSeconds=timeout,
+                                    elapsedSeconds=round(time.monotonic()-started, 3),
+                                    timedOut=timed_out, reapTimedOut=reap_timed_out, reaped=reaped,
+                                    postCleanupReturnCode=process.returncode if reaped else None,
+                                    outputCapture="partial-reaped" if reaped else "partial-unreaped")
+                        receipt["steps"].append(step)
+                        try:
+                            for name, stream in (("stdout", stdout), ("stderr", stderr)):
+                                # Snapshot a fixed extent without decoding partial UTF-8,
+                                # moving a writer's offset, or waiting on inherited pipes.
+                                data = os.pread(stream.fileno(), os.fstat(stream.fileno()).st_size, 0)
+                                step[name+"Bytes"] = len(data)
+                                step[name+"SHA256"] = hashlib.sha256(data).hexdigest()
+                                if not sensitive:
+                                    (out / (label+"."+name)).write_bytes(data)
+                        except OSError as capture_error:
+                            # An I/O failure must not replace the original wait/reap failure.
+                            step["diagnosticCaptureErrorType"] = type(capture_error).__name__
+                if timed_out:
                     raise RuntimeError(label + " exceeded its bounded deadline") from error
                 raise
             stdout.seek(0)
@@ -119,7 +146,9 @@ def main():
     def snapshot(label):
         values = {}
         for key in KEYS:
-            result = sim(label+"-"+key.lower(), 'spawn', simulator, 'launchctl', 'getenv', key, sensitive=True)
+            timeout = STARTUP_TIMEOUT_SECONDS if label == "original" and key == "DYLD_INSERT_LIBRARIES" else 60
+            result = sim(label+"-"+key.lower(), 'spawn', simulator, 'launchctl', 'getenv', key,
+                         timeout=timeout, sensitive=True)
             if result.stderr:
                 raise RuntimeError("Environment read diagnostic for " + key)
             values[key] = None if not result.stdout else result.stdout.removesuffix("\n")
@@ -151,18 +180,16 @@ def main():
         expect("clean-source-package-bound", info["sourceCommit"] == receipt["sourceCommit"] and not info["sourceDirty"])
         sdk = command("sdk-path", ["xcrun", "--sdk", "iphonesimulator", "--show-sdk-path"], env=compiler_env).stdout.strip()
         (work/"unrelated.c").write_text("void CKSIMRepairUnrelatedInjector(void) {}\n")
-        (work/"ready.c").write_text("int main(void) { return 0; }\n")
-        before, after, ready = work/"unrelated-before.dylib", work/"unrelated-after.dylib", work/"ready"
+        before, after = work/"unrelated-before.dylib", work/"unrelated-after.dylib"
         receipt["helpers"] = {}
         for label, target, source, flags in (("before", before, "unrelated.c", ["-dynamiclib"]),
-                                             ("after", after, "unrelated.c", ["-dynamiclib"]),
-                                             ("ready", ready, "ready.c", [])):
+                                             ("after", after, "unrelated.c", ["-dynamiclib"])):
             command("build-"+label, ["xcrun", "--sdk", "iphonesimulator", "clang", "-target", platform.machine()+"-apple-ios18.0-simulator",
                                     "-isysroot", sdk, *flags, str(work/source), "-o", str(target)], env=compiler_env)
             command("sign-"+label, ["codesign", "-s", "-", "--force", str(target)])
             command("verify-"+label, ["codesign", "--verify", "--strict", str(target)])
             receipt["helpers"][label] = sha(target)
-        runtimes = json.loads(sim("runtime-inventory", "list", "runtimes", "-j", timeout=30).stdout)["runtimes"]
+        runtimes = json.loads(sim("runtime-inventory", "list", "runtimes", "-j", timeout=STARTUP_TIMEOUT_SECONDS).stdout)["runtimes"]
         available = [item for item in runtimes if item.get("platform") == "iOS" and item["isAvailable"]]
         runtime = max(available, key=lambda item: tuple(int(part) for part in item["version"].split(".")))
         simulator = sim("simulator-create", "create", "callkit-repair-"+receipt["runID"][:8],
@@ -172,7 +199,6 @@ def main():
         receipt["simulator"] = dict(udid=simulator, runtimeID=runtime["identifier"], version=runtime["version"], buildVersion=runtime["buildversion"])
         sim("simulator-boot", "boot", simulator, timeout=60)
         sim("simulator-bootstatus", "bootstatus", simulator, "-b", timeout=180)
-        sim("helper-spawn-readiness", "spawn", simulator, str(ready))
         original = snapshot("original")
         receipt["originalEnvironmentSHA256"] = hashes(original)
         libraries_before = ":".join(filter(None, [original["DYLD_INSERT_LIBRARIES"], str(before)]))
