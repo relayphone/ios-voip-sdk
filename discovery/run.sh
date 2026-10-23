@@ -173,6 +173,9 @@ pathlib.Path(p).write_text(json.dumps(manifest,indent=2)+'\n')
 PYMANIFEST
 cp -R "$BUILD/runtime" "$OUT/runtime-dist"
 prepare_stage app-install 180 xcrun simctl install "$UDID" "$BUILD/Probe.app"
+prepare_stage probe-data-container 180 xcrun simctl get_app_container "$UDID" dev.callkitsim.probe data
+PROBE_DATA_CONTAINER=$(cat "$OUT/probe-data-container.prepare.log")
+[[ -n "$PROBE_DATA_CONTAINER" && -d "$PROBE_DATA_CONTAINER" ]] || { echo "Missing run-owned probe data container" >&2; exit 1; }
 prepare_stage permissions 60 xcrun simctl privacy "$UDID" grant microphone dev.callkitsim.probe
 xcrun simctl spawn "$UDID" log stream --style compact --predicate 'process == "callservicesd" AND (composedMessage CONTAINS "wont be a UI" OR composedMessage CONTAINS "Error setting audio active" OR composedMessage CONTAINS "Failed to open URL" OR composedMessage CONTAINS "disconnect reason")' > "$OUT/callservicesd.log" 2>&1 &
 LOGGER=$!
@@ -195,9 +198,7 @@ run() {
     --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.callkitsim.probe \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.probe \
     --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.callkitsim.probe; then
-    local container
-    container=$(limit 20 xcrun simctl get_app_container "$UDID" dev.callkitsim.probe data)
-    local journal="$container/Documents/.callkit-simulator/$RUN_ID/events.jsonl"
+    local journal="$PROBE_DATA_CONTAINER/Documents/.callkit-simulator/$RUN_ID/events.jsonl"
     if [[ "$name" != genuine ]]; then
       cp "$journal" "$OUT/$name.engine.jsonl"
       python3 - "$OUT/$name.receipt.json" "$OUT/$name.engine.jsonl" <<'PY'
@@ -212,11 +213,9 @@ PY
       --predicate 'eventMessage CONTAINS "dev.callkitsim.probe"' > "$OUT/$name.system.log" 2>&1; then
       echo "System diagnostic collection failed" >> "$OUT/$name.system.log" || true
     fi
-    local container
-    container=$(limit 10 xcrun simctl get_app_container "$UDID" dev.callkitsim.probe data 2> "$OUT/$name.container-lookup.log") || container=""
-    if [[ -n "$container" && -f "$container/Documents/trace.jsonl" ]]; then
-      if ! cp "$container/Documents/trace.jsonl" "$OUT/$name.container.jsonl"; then
-        echo "Container trace recovery failed" >> "$OUT/$name.container-lookup.log" || true
+    if [[ -f "$PROBE_DATA_CONTAINER/Documents/trace.jsonl" ]]; then
+      if ! cp "$PROBE_DATA_CONTAINER/Documents/trace.jsonl" "$OUT/$name.container.jsonl"; then
+        echo "Container trace recovery failed" >> "$OUT/$name.container-recovery.log" || true
       fi
     fi
     return "$status"

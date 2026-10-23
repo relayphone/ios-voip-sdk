@@ -76,11 +76,65 @@ printf 'stderr:%s\\n' "$phase" >&2
     return labels
 
 
+def check_cached_container(work):
+    """The installed probe's data path is resolved once, before either launch."""
+    source = (ROOT / "run.sh").read_text()
+    prepare = source.split("prepare_stage() {\n", 1)[1].split("\n}\ncompiler()", 1)[0]
+    setup = source.split('prepare_stage app-install 180 xcrun simctl install "$UDID" "$BUILD/Probe.app"\n', 1)[1].split("prepare_stage permissions", 1)[0]
+    run = source.split("run() {\n", 1)[1].split("\n}\nLIBS=", 1)[0]
+    root = work / "cached-container"
+    root.mkdir()
+    tools = root / "bin"
+    tools.mkdir()
+    for name, body in {
+        "xcrun": '''[[ "$*" == "simctl get_app_container owned-fixture dev.callkitsim.probe data" ]] || exit 99
+[[ ! -e "$LAUNCH_LOG" ]] || { echo "Post-launch container query is forbidden" >&2; exit 88; }
+printf '%s\\n' "$*" >> "$LOOKUP_LOG"
+[[ "$CONTAINER_RESULT" != query-error ]] || exit 7
+printf '%s\\n' "$CONTAINER_RESULT"
+''',
+        "python3": 'if [[ "$1" == run_scenario.py ]]; then touch "$LAUNCH_LOG"; exit 0; fi\nexec ' + shlex.quote(sys.executable) + ' "$@"\n',
+    }.items():
+        path = tools / name
+        path.write_text("#!/bin/bash\n" + body)
+        path.chmod(0o755)
+    container = root / "container"
+    journal = container / "Documents/.callkit-simulator/fixture/events.jsonl"
+    journal.parent.mkdir(parents=True)
+    journal.write_bytes(b'{"event":"synthetic"}\n')
+    for variant, value in (("valid", str(container)), ("empty", ""), ("missing", str(root / "not-installed")), ("query-error", "query-error")):
+        out = root / variant
+        out.mkdir()
+        for case in ("first", "second"):
+            (out / (case + ".receipt.json")).write_text("{}")
+        driver = out / "driver.sh"
+        driver.write_text('set -euo pipefail\nOUT=' + shlex.quote(str(out)) +
+            '\nUDID=owned-fixture\nRUN_ID=fixture\nLIBS=fixture\nSIMCTL_CHILD_DYLD_INSERT_LIBRARIES=\n'
+            'limit() { shift; "$@"; }\nprepare_stage() {\n' + prepare + '\n}\n' + setup +
+            '\nrun() {\n' + run + '\n}\nrun first\nrun second\n')
+        result = subprocess.run(["/bin/bash", str(driver)], capture_output=True, text=True, timeout=10,
+            env={**os.environ, "PATH": f"{tools}:/usr/bin:/bin", "CONTAINER_RESULT": value,
+                 "LOOKUP_LOG": str(out / "lookups"), "LAUNCH_LOG": str(out / "launched")})
+        check((result.returncode == 0) == (variant == "valid"), f"container-{variant}: {result.returncode}: {result.stderr}")
+        check((out / "lookups").read_text().splitlines() == ["simctl get_app_container owned-fixture dev.callkitsim.probe data"],
+              f"container-{variant}: require one bound prelaunch container lookup")
+        if variant != "valid":
+            check(not (out / "launched").exists(), f"container-{variant}: invalid container reached a launch")
+            continue
+        for case in ("first", "second"):
+            copied = out / (case + ".engine.jsonl")
+            receipt = json.loads((out / (case + ".receipt.json")).read_text())
+            check(copied.read_bytes() == journal.read_bytes() and receipt["engineSHA256"] == hashlib.sha256(copied.read_bytes()).hexdigest(),
+                  f"container-{case}: cached journal copy/hash binding missing")
+    return ["shell-cached-container", "shell-container-refuses-empty-missing-query-error"]
+
+
 def main():
     checks = []
     with tempfile.TemporaryDirectory(prefix="callkit-harness-check-") as temporary:
         work = Path(temporary)
         checks.extend(check_startup_phases(work))
+        checks.extend(check_cached_container(work))
 
         def traces(label, mutate=None, expected=True, strict=False):
             target = work / label
@@ -415,8 +469,8 @@ def main():
         (container / "trace.jsonl").write_text("{}\n")
         for name, body in {
             "python3": "exit 7\n",
-            "cp": "exit 9\n",
-            "xcrun": "printf '%s\\n' " + shlex.quote(str(container.parent)) + "\n",
+            "cp": "printf '%s\\n' \"$@\" > " + shlex.quote(str(work / "failed-copy-arguments")) + "\nexit 9\n",
+            "xcrun": 'case "$*" in *get_app_container*) exit 99;; esac\n',
         }.items():
             executable = binaries / name
             executable.write_text("#!/bin/sh\n" + body)
@@ -425,10 +479,14 @@ def main():
         driver = work / "shell-failure.sh"
         driver.write_text("set -euo pipefail\nOUT=" + shlex.quote(str(work)) +
                           "\nUDID=owned-fixture\nRUN_ID=fixture\nLIBS=fixture\nSIMCTL_CHILD_DYLD_INSERT_LIBRARIES=''\n"
+                          "PROBE_DATA_CONTAINER=" + shlex.quote(str(container.parent)) + "\n" +
                           "limit() { shift; \"$@\"; }\nrun() {\n" + source + "\n}\nrun genuine\n")
         result = subprocess.run(["/bin/bash", str(driver)], capture_output=True, timeout=10,
                                 env={**os.environ, "PATH": f"{binaries}:/usr/bin:/bin"})
         check(result.returncode == 7, "diagnostic copy replaced scenario exit status")
+        check((work / "failed-copy-arguments").read_text().splitlines() ==
+              [str(container / "trace.jsonl"), str(work / "genuine.container.jsonl")],
+              "failure diagnostics did not use the cached container")
         checks.append("shell-preserves-scenario-failure")
     print(json.dumps({"success": True, "checks": checks}, indent=2))
 
