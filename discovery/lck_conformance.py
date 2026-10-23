@@ -4,8 +4,10 @@ from pathlib import Path
 import argparse
 import collections
 import json
+import math
+import re
 from conformance import bound_capture
-from device_oracles import check_deadline, deadline_bands
+from device_oracles import check_deadline, deadline_bands, DEADLINE_ROUNDING_SECONDS
 from summarize import build_identity, EvidenceError, load, one, require, run_environment
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -108,7 +110,56 @@ def projection(rows, mapping):
     return dict(managerStates=dict(states), observerStates=observed, snapshots=snapshots, audio=audio)
 
 
-def compare(rows, reference, deadlines):
+def native_deadlines(rows, engine, deadlines):
+    def public_anchor(row):
+        identity = row.get('actionID')
+        require(isinstance(identity, str) and
+                re.fullmatch(r'[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}', identity) and
+                row.get('action') == identity[:8], 'missing or inconsistent full LCK action UUID')
+        require(all(type(row.get(key)) is int and row[key] > 0 for key in ('deadlineMS', 'sampledAtMS')),
+                'missing or invalid LCK absolute deadline sample')
+        remaining = row.get('timeoutIn')
+        # Nearest-tenth rounding, plus millisecond truncation of the two dates.
+        require(type(remaining) in (int, float) and math.isfinite(remaining) and remaining >= 0 and
+                remaining == round(remaining, 1) and
+                row['sampledAtMS'] < row['deadlineMS'] and
+                abs(remaining * 1000 - (row['deadlineMS'] - row['sampledAtMS'])) <= DEADLINE_ROUNDING_SECONDS / 2 * 1000 + 1,
+                'LCK remaining deadline differs from its absolute sample or is expired')
+        return identity
+
+    requests = {}
+    for row in rows:
+        if row['event'] != 'lck.request': continue
+        public_anchor(row)
+        require(row['action'] not in requests, 'duplicate LCK request UUID prefix')
+        check_deadline(row, deadlines)
+        requests[row['action']] = row
+    for row in rows:
+        if row['event'] != 'lck.perform': continue
+        identity = public_anchor(row)
+        advertised = one(engine, 'action.deadline', actionID=identity)
+        require(advertised.get('apiKind') == 'livecommunicationkit' and
+                all(type(advertised.get(key)) is int and advertised[key] > 0
+                    for key in ('issuedAtMS', 'deadlineMS')), 'missing or invalid bound LCK engine deadline')
+        require(row['kind'] in deadlines, 'missing device LCK deadline kind')
+        expected_ms = round((deadlines[row['kind']][1] - DEADLINE_ROUNDING_SECONDS) * 1000)
+        require(abs(advertised['deadlineMS'] - advertised['issuedAtMS'] - expected_ms) <= DEADLINE_ROUNDING_SECONDS * 1000 and
+                row['sampledAtMS'] >= advertised['issuedAtMS'], 'LCK engine deadline duration or issuance differs')
+        # Native request and callback dates are not bitwise identical. Compare
+        # the callback with its bound issuance deadline at device trace precision.
+        require(abs(row['deadlineMS'] - advertised['deadlineMS']) <= DEADLINE_ROUNDING_SECONDS * 1000,
+                'LCK callback deadline differs from bound engine deadline')
+        requested = requests.get(row['action'])
+        if requested:
+            require(requested['actionID'] == identity and
+                    advertised['issuedAtMS'] >= requested['sampledAtMS'], 'LCK request/callback identity or sample differs')
+        else:
+            # Unsolicited actions have no public request sample. Keep their
+            # existing remaining-duration band in addition to engine binding.
+            check_deadline(row, deadlines)
+
+
+def compare(rows, reference, deadlines, engine=None):
     require(one(rows, 'lck.start')['scenario'] == one(reference, 'lck.start')['scenario'], 'LCK scenario differs')
     snapshots = [row for row in reference if row['event'] == 'lck.snapshot']
     require(snapshots, 'missing device snapshots')
@@ -140,7 +191,8 @@ def compare(rows, reference, deadlines):
                  'lck.didActivate', 'lck.didDeactivate', 'observer.callChanged')
     for row in actual:
         if row['event'] in callbacks: require(row.get('main') is True, 'LCK/observer callback not main')
-        if row['event'] == 'lck.perform': check_deadline(row, deadlines)
+        if row['event'] == 'lck.perform' and engine is None: check_deadline(row, deadlines)
+    if engine is not None: native_deadlines(actual, engine, deadlines)
     require([(row['p'], row['kind']) for row in actual if row['event'] == 'lck.timedOut'] ==
             [(row['p'], row['kind']) for row in expected if row['event'] == 'lck.timedOut'], 'LCK timeout inventory differs')
     actual_projection, expected_projection = projection(actual, actual_roles), projection(expected, expected_roles)
@@ -192,11 +244,11 @@ def validate(directory, case):
     reference_directory = ROOT / 'docs/research/callkit-simulator-probe/livecommunicationkit'
     sources = {name: load(reference_directory, '2026-10-21-iphone13-ios27-lck-' + name) for name in CASES}
     deadlines = deadline_bands([row for source in sources.values() for row in source if row['event'] == 'lck.perform'])
-    result = compare(rows, sources[case], deadlines)
+    result = compare(rows, sources[case], deadlines, engine=engine)
     result.update(reference='2026-10-21-iphone13-ios27-lck-' + case,
                   environment=run_environment(directory, manifest), runtimeVersion=manifest['runtimeVersion'],
                   deadlineBands=deadlines, actualOS=one(rows, 'lck.start')['os'], referenceOS=one(sources[case], 'lck.start')['os'],
-                  journalBinding='process/build bound; LCK-to-CX action UUID mapping unmeasured',
+                  journalBinding='process/build and full action UUID bound; callback deadline bound to engine issuance at device trace precision; request/issuance/callback samples ordered',
                   cxTapLimit='measured CX callbacks expose only receiver/kind; tone/pause handlers absent')
     result['providerAPIs'] = api_kinds
     return result

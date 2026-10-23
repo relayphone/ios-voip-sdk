@@ -3,6 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 python3 check_oracles.py
+python3 check_lck_deadlines.py
 if [[ -z "${CKSIM_ONLY:-}" || "${CKSIM_ONLY:-}" == lck || "${CKSIM_ONLY:-}" == lck-* ]]; then
   python3 check_lck_conformance.py
   python3 check_lck_provider_policy.py
