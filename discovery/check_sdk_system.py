@@ -27,8 +27,9 @@ def iso(value):
 
 
 class Fixture:
-    def __init__(self, case, expected):
+    def __init__(self, case, expected, report_start_ms=1):
         self.case, self.expected = case, expected
+        self.report_start_ms = report_start_ms
         self.rows, self.engine, self.controls, self.commands = [], [], [], []
         self.index = dict(bindings=[], controls=[], fixtureCommands=[])
         self.calls, self.clock, self.serial, self.revision = {}, 0, 0, 0
@@ -116,6 +117,7 @@ class Fixture:
         self.native('push.received', pushID=push_id, api='metadata', mustReport=not duplicate)
         if not duplicate:
             binding = dict(role=role, conversationID=self.uuid(), callUUID=self.uuid(), pushID=push_id)
+            self.clock += self.report_start_ms - 1
             report = self.native('report.incoming', pushID=push_id, callUUID=binding['callUUID'])
             self.calls[binding['conversationID']] = dict(id=binding['conversationID'], direction='incoming', status='ringing',
                                                        isMuted=False, isVideo=False, hasConnectedAt=False)
@@ -552,8 +554,9 @@ def controls():
     fixtures = {case: Fixture(case, expected).build() for case in gate.CASES}
     checks = []
 
-    def check(name, case, edit=None, error=None):
-        value = deepcopy(fixtures[case])
+    def check(name, case, edit=None, error=None, report_start_ms=None):
+        value = (Fixture(case, expected, report_start_ms).build() if report_start_ms is not None
+                 else deepcopy(fixtures[case]))
         if edit: edit(value)
         try:
             result = gate.validate_case(**value)
@@ -566,6 +569,10 @@ def controls():
         checks.append(dict(name=name, passed=True, expected=error or 'synthetic logical case accepted'))
 
     for case in gate.CASES: check('positive-' + case, case)
+    for delay in (0, 499):
+        check('cold-report-start-' + str(delay), 'push-launch', report_start_ms=delay)
+    check('cold-report-start-at-budget', 'push-launch', error='cold PushKit report start exceeded 500 ms', report_start_ms=500)
+    check('warm-report-start-outside-cold-budget', 'answer-end', report_start_ms=500)
     check('removed-shared-owner', 'answer-end', lambda value: first(value['rows'], 'sdk.managerCreated').update(owner='ConversationClient.shared'), 'SDK journey failed')
     check('reset-event-fabricated-conversation', 'provider-reset', lambda value: first(value['rows'], 'system.event').update(
         conversationID=value['index']['bindings'][0]['conversationID']), 'invalid global SDK event context')
@@ -621,6 +628,8 @@ def controls():
     check('final-hook-nonempty', 'answer-end', lambda value: [row for row in value['rows'] if row['event'] == 'system.hook'][-1].update(count=1), 'final hook not observed')
     old_m1_stays_app_only()
     checks.append(dict(name='legacy-M1-remains-app-only', passed=True, expected='system-origin legacy handler rejected'))
+    gate.cold_push_reference()
+    checks.append(dict(name='cold-device-reference', passed=True, expected='entered iOS27 report reference consumed'))
     checks.extend(manifest_controls())
     checks.extend(container_cache_controls())
     checks.extend(cleanup_controls())

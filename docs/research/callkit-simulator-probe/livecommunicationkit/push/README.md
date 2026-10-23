@@ -22,7 +22,7 @@
 | `d2-active-outgoing-background` | Connected outgoing conversation, app in the **background** (state 2) | `mustReport` **false**. "Already on a call" is its own rule, separate from being in the foreground. |
 | `fb16655952-cold-deferred` (filtered) and `-ringing` | Cold launch, `deferred` (the report started 13 ms or 88 ms after the delegate returned) | **No crash on iOS 27.0**, on either the filtered or the ringing path. The ringing call ended unanswered after 25 s. FB16655952 did not reproduce, but keep the `entered` strategy anyway. |
 | `late-report-3s` | Cold launch; the report started 3.15 s after delivery | Survived; the call rang. |
-| `late-report-5s` | Cold launch; the report was due 5 s after delivery | **Killed about 4.4 s after delivery.** The crash is SIGABRT from an `NSAssertionHandler` failure in `-[PKPushRegistry _terminateAppIfThereAreUnhandledVoIPPushes]`. The trace stops after the 2 s heartbeat. |
+| `late-report-5s` | Cold launch; the report was due 5 s after delivery | **Killed about 4.4 s after delivery.** The crash is SIGABRT from an `NSAssertionHandler` failure in `-[PKPushRegistry _terminateAppIfThereAreUnhandledVoIPPushes]`. The trace contains alive markers at 2.088 s and 4.200 s; termination timing and crash attribution come from the device crash observation. |
 | `echo-outgoing` | Connected outgoing conversation; app mute fulfilled 0, 300 or 1,000 ms after delivery | The system echo `MuteConversationAction` arrived **8–17 ms after the app *fulfilled*** its mute, never while it was pending. Unmute behaves the same. |
 
 ## Consequences
@@ -32,6 +32,7 @@
 **SDK:**
 
 - Nothing before the report may depend on main, the JS runtime or React Native boot.
+- Required simulator CI uses a **proposed <500 ms budget** from PushKit delivery to native provider-report entry. The D1 fixture records `afterMs: 0` (separately rounded trace timestamps differ by 1 ms); 500 ms is a CI safety budget, not a measured Apple deadline.
 - The 4.0 s completion watchdog is fine, but the *report start* is what must happen early.
 
 **Runtime:** the simulator's push lane should terminate the app at about 4.4 s when no report has been made, as an `ios-27.0` profile value.
