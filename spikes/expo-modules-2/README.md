@@ -43,13 +43,24 @@ Native version updates `[1, 1, 2, 2, 3]` in one JS turn schedule one flush with
 emits nothing, and version 4 emits once. Two scheduler turns drain the flush and
 the asynchronous event without timing sleeps or JS-side event filtering.
 
-## Next slice and stop
+## Threading and stop
 
-Measure sync/default-async/custom-actor placement, background event delivery,
-and 1,000 synchronous snapshot reads (p50/p99). Then publish the findings in
-`docs/progress/2026-10-23-expo-modules-2-findings.md` and stop for orchestration
-review. The deadline/AbortSignal handler and remaining API checks wait for that
-review. The shipping SDK is unchanged by this spike.
+Thread samples record pthread ID, main-thread status, thread name, current queue
+label, and the runtime's JS-thread predicate. The default async probe samples
+before and after a real suspension; a custom SDK global actor owns command state.
+A named background queue emits a typed event, and its JS listener calls a sync
+native probe to verify callback placement. No module instance or non-Sendable
+closure crosses the queue: the emitter resolves its registered identity using
+Expo's mutex-protected registry.
+
+The benchmark checks 1,000 cached reads at both 2 and 2,048 conversations after
+100 warmups. Per-read p50/p99 use nearest rank; complete batch time includes
+loop/timer overhead. It asserts identity and valid samples without setting a
+host-dependent latency budget. Initial encoding and publication are excluded.
+
+See the [findings and M3.5 recommendation](../../docs/progress/2026-10-23-expo-modules-2-findings.md).
+Stop after threading review. Handler/deadline/AbortSignal and remaining API checks
+wait for orchestration's reply; the shipping SDK is unchanged by this spike.
 
 ## Research used for the scaffold
 

@@ -1,10 +1,11 @@
-import bridge, { ChangeEvent } from './modules/expo2-spike';
+import bridge, { ChangeEvent, ThreadSample } from './modules/expo2-spike';
+import { runThreading } from './threading';
 
 export type Result = {
   id: string;
   pass: boolean;
   values: Record<string, unknown>;
-  threads: unknown[];
+  threads: ThreadSample[];
 };
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -13,7 +14,9 @@ function assert(condition: unknown, message: string): asserts condition {
 
 export async function runDemonstrations(): Promise<Result[]> {
   const results: Result[] = [];
+  const snapshotThreads: ThreadSample[] = [];
   try {
+    snapshotThreads.push(bridge.threadSample('snapshot-js-caller'));
     const initial = bridge.snapshot;
     assert(initial.version === 0, 'Initial version');
     assert(initial === bridge.snapshot, 'Stable cached JS identity');
@@ -40,20 +43,22 @@ export async function runDemonstrations(): Promise<Result[]> {
       id: 'snapshot',
       pass: true,
       values: { initial, stableIdentity: true, frozen: true },
-      threads: [],
+      threads: snapshotThreads,
     });
   } catch (error) {
     results.push({
       id: 'snapshot',
       pass: false,
       values: { error: String(error) },
-      threads: [],
+      threads: snapshotThreads,
     });
   }
   const events: ChangeEvent[] = [];
-  const subscription = bridge.addListener('change', (event) =>
-    events.push(event),
-  );
+  const eventThreads: ThreadSample[] = [];
+  const subscription = bridge.addListener('change', (event) => {
+    events.push(event);
+    eventThreads.push(bridge.threadSample('change-js-listener'));
+  });
   try {
     const initial = bridge.snapshot;
     [1, 1, 2, 2, 3].forEach((version) => bridge.publish(version));
@@ -86,7 +91,7 @@ export async function runDemonstrations(): Promise<Result[]> {
         versions: events.map((event) => event.version),
         stableEventIdentity: true,
       },
-      threads: [],
+      threads: eventThreads,
     });
   } catch (error) {
     results.push({
@@ -96,11 +101,12 @@ export async function runDemonstrations(): Promise<Result[]> {
         error: String(error),
         versions: events.map((event) => event.version),
       },
-      threads: [],
+      threads: eventThreads,
     });
   } finally {
     subscription.remove();
   }
+  results.push(...(await runThreading()));
   await bridge.writeResults(JSON.stringify(results));
   return results;
 }
