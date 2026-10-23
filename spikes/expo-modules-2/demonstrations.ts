@@ -1,6 +1,7 @@
 import bridge, { ChangeEvent, ThreadSample } from './modules/expo2-spike';
 import { runThreading } from './threading';
 import { runHazard } from './hazard';
+import { runHandlers } from './handlers';
 
 export type Result = {
   id: string;
@@ -14,6 +15,11 @@ function assert(condition: unknown, message: string): asserts condition {
 }
 
 export async function runDemonstrations(): Promise<Result[]> {
+  if (bridge.handlerSnapshot.checkpoint) {
+    const resumed = await runHandlers([]);
+    await bridge.writeResults(JSON.stringify(resumed));
+    return resumed;
+  }
   const results: Result[] = [];
   const snapshotThreads: ThreadSample[] = [];
   try {
@@ -22,18 +28,8 @@ export async function runDemonstrations(): Promise<Result[]> {
     assert(initial.version === 0, 'Initial version');
     assert(initial === bridge.snapshot, 'Stable cached JS identity');
     const [ringing, active] = initial.conversations;
-    assert(
-      ringing?.status === 'ringing' &&
-        ringing.id === 'ring-1' &&
-        ringing.caller === 'Ada',
-      'Ringing union',
-    );
-    assert(
-      active?.status === 'active' &&
-        active.id === 'active-1' &&
-        active.connectedAt === 123,
-      'Active union',
-    );
+    assert(ringing?.status === 'ringing' && ringing.id === 'ring-1' && ringing.caller === 'Ada', 'Ringing union');
+    assert(active?.status === 'active' && active.id === 'active-1' && active.connectedAt === 123, 'Active union');
     assert(
       Object.isFrozen(initial) &&
         Object.isFrozen(initial.conversations) &&
@@ -64,27 +60,15 @@ export async function runDemonstrations(): Promise<Result[]> {
     const initial = bridge.snapshot;
     [1, 1, 2, 2, 3].forEach((version) => bridge.publish(version));
     await bridge.drainChanges();
-    assert(
-      events.length === 1 && events[0].version === 3,
-      'One coalesced event at latest version',
-    );
-    assert(
-      events[0].snapshot === bridge.snapshot,
-      'Event uses published cached object',
-    );
-    assert(
-      initial.version === 0 && initial !== bridge.snapshot,
-      'Previous snapshot immutable',
-    );
+    assert(events.length === 1 && events[0].version === 3, 'One coalesced event at latest version');
+    assert(events[0].snapshot === bridge.snapshot, 'Event uses published cached object');
+    assert(initial.version === 0 && initial !== bridge.snapshot, 'Previous snapshot immutable');
     bridge.publish(3);
     await bridge.drainChanges();
     assert(events.length === 1, 'Duplicate version emits nothing');
     bridge.publish(4);
     await bridge.drainChanges();
-    assert(
-      Number(events.length) === 2 && events[1].version === 4,
-      'Next version emits once',
-    );
+    assert(Number(events.length) === 2 && events[1].version === 4, 'Next version emits once');
     results.push({
       id: 'change-event',
       pass: true,
@@ -109,6 +93,7 @@ export async function runDemonstrations(): Promise<Result[]> {
   }
   results.push(...(await runThreading()));
   results.push(await runHazard());
-  await bridge.writeResults(JSON.stringify(results));
-  return results;
+  const completed = await runHandlers(results);
+  await bridge.writeResults(JSON.stringify(completed));
+  return completed;
 }

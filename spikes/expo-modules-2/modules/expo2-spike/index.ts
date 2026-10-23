@@ -24,13 +24,51 @@ export type SDKReply = Readonly<{
   sequence: number;
   threads: readonly ThreadSample[];
 }>;
+export type HandlerWire = Readonly<{
+  id: string;
+  runtime: string;
+  kind: string;
+  sentMs: number;
+  dueMs: number;
+}>;
+export type HandlerReport = Readonly<{
+  id: string;
+  runtime: string;
+  outcome: string;
+  sentMs: number;
+  dueMs: number;
+  enteredMs: number;
+  settledMs: number;
+  finishedMs: number;
+  returnedMs: number;
+  abortedMs: number;
+  created: number;
+  resumes: number;
+  returned: number;
+  late: number;
+}>;
+export type HandlerSnapshot = Readonly<{
+  runtime: string;
+  checkpoint: string;
+  reloads: number;
+  pending: number;
+  cases: readonly HandlerReport[];
+}>;
 type Events = {
   change: (event: ChangeEvent) => void;
+  handler: (event: HandlerWire) => void;
   background: (event: ThreadSample) => void;
 };
 
 declare class Expo2SpikeModule extends NativeModule<Events> {
   readonly snapshot: Snapshot;
+  readonly handlerSnapshot: HandlerSnapshot;
+  handlerRegistered(enabled: boolean): void;
+  saveHandlerCheckpoint(json: string): void;
+  handlerClock(): number;
+  handlerMark(id: string, runtime: string, at: number, abort: boolean): void;
+  handlerSettle(id: string, runtime: string, success: boolean, at: number): boolean;
+  handlerStart(id: string, timeout: number): void;
   resetHazard(): void;
   hazardCount(scheduled: boolean): number;
   hazardIncrement(scheduled: boolean): Promise<ThreadSample>;
