@@ -21,10 +21,66 @@ def check(condition, label):
         raise RuntimeError(label)
 
 
+def check_startup_phases(work):
+    """Exercise the real Bash startup calls with only the xcrun boundary replaced."""
+    source = (ROOT / "run.sh").read_text()
+    prepare = source.split("prepare_stage() {\n", 1)[1].split("\n}\ncompiler()", 1)[0]
+    compiler = source.split("compiler() {\n", 1)[1].split("\n}\ncleanup()", 1)[0]
+    startup = source.split('echo "runOwnedSimulator=$UDID" >> "$OUT/environment.txt"\n', 1)[1].split("SWIFT_DEFS=", 1)[0]
+    tools = work / "startup-bin"
+    tools.mkdir()
+    xcrun = tools / "xcrun"
+    xcrun.write_text('''#!/bin/bash
+case "$*" in
+  "simctl boot owned-fixture") phase=simulator-boot ;;
+  "simctl bootstatus owned-fixture -b") phase=simulator-bootstatus ;;
+  "-sdk iphonesimulator --show-sdk-path") phase=sdk-path ;;
+  *) exit 99 ;;
+esac
+if [[ "$phase" == sdk-path ]]; then printf '/fixture/sdk\\n'; else printf 'stdout:%s\\n' "$phase"; fi
+printf 'stderr:%s\\n' "$phase" >&2
+[[ "$phase" != "${FAIL_PHASE:-}" ]] || exit "$FAIL_STATUS"
+''')
+    xcrun.chmod(0o755)
+    phases = [("simulator-boot", 30), ("simulator-bootstatus", 300), ("sdk-path", 30)]
+    labels = []
+    for failure, status in (("", 0), ("simulator-boot", 7), ("simulator-bootstatus", 142), ("sdk-path", 9)):
+        out = work / ("startup-" + (failure or "success"))
+        out.mkdir()
+        driver = out / "driver.sh"
+        driver.write_text('set -euo pipefail\nOUT=' + shlex.quote(str(out)) +
+                          '\nUDID=owned-fixture\nlimit() { shift; "$@"; }\nprepare_stage() {\n' + prepare +
+                          '\n}\ncompiler() {\n' + compiler + '\n}\n' + startup + '\n[[ "$SDK" == /fixture/sdk ]]\n')
+        result = subprocess.run(["/bin/bash", str(driver)], capture_output=True, text=True, timeout=10,
+            env={**os.environ, "PATH": f"{tools}:/usr/bin:/bin", "COMPILER_DEVELOPER_DIR": "/fixture/compiler",
+                 "FAIL_PHASE": failure, "FAIL_STATUS": str(status)})
+        check(result.returncode == status, f"startup-{failure}: original phase exit changed: {result.stderr}")
+        check((out / "preparation.txt").is_file(), f"startup-{failure}: missing phase timing records")
+        rows = [dict(field.split("=", 1) for field in line.split())
+                for line in (out / "preparation.txt").read_text().splitlines()]
+        count = next((index + 1 for index, (phase, _) in enumerate(phases) if phase == failure), len(phases))
+        check(len(rows) == count * 2, f"startup-{failure}: require start/end for each attempted phase: {rows}")
+        for index, (phase, budget) in enumerate(phases[:count]):
+            started, completed = rows[index * 2:index * 2 + 2]
+            check(started.get("phase") == completed.get("phase") == phase and
+                  started.get("event") == "started" and completed.get("event") == "completed" and
+                  started.get("budgetSeconds") == completed.get("budgetSeconds") == str(budget),
+                  f"startup-{failure}: phase identity/budget is unbound: {started}, {completed}")
+            check(int(completed["elapsedSeconds"]) >= 0 and int(completed["exitStatus"]) == (status if phase == failure else 0),
+                  f"startup-{failure}: phase completion missing elapsed/status")
+            stdout = "/fixture/sdk\n" if phase == "sdk-path" else f"stdout:{phase}\n"
+            check((out / (phase + ".prepare.log")).read_text() == stdout and
+                  (out / (phase + ".prepare.stderr.log")).read_text() == f"stderr:{phase}\n",
+                  f"startup-{failure}: stdout/stderr were lost or merged")
+        labels.append("shell-startup-" + (failure or "success"))
+    return labels
+
+
 def main():
     checks = []
     with tempfile.TemporaryDirectory(prefix="callkit-harness-check-") as temporary:
         work = Path(temporary)
+        checks.extend(check_startup_phases(work))
 
         def traces(label, mutate=None, expected=True, strict=False):
             target = work / label

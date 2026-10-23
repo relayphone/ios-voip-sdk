@@ -27,8 +27,9 @@ prepare_stage() {
   shift 2
   echo "Preparing $phase"
   started=$(date +%s)
-  if limit "$budget" "$@" > "$OUT/$phase.prepare.log" 2>&1; then status=0; else status=$?; fi
-  printf 'phase=%s budgetSeconds=%s elapsedSeconds=%s exitStatus=%s\n' "$phase" "$budget" "$(( $(date +%s) - started ))" "$status" >> "$OUT/preparation.txt" || true
+  printf 'phase=%s budgetSeconds=%s event=started startedAtEpochSeconds=%s\n' "$phase" "$budget" "$started" >> "$OUT/preparation.txt" || true
+  if limit "$budget" "$@" > "$OUT/$phase.prepare.log" 2> "$OUT/$phase.prepare.stderr.log"; then status=0; else status=$?; fi
+  printf 'phase=%s budgetSeconds=%s event=completed elapsedSeconds=%s exitStatus=%s\n' "$phase" "$budget" "$(( $(date +%s) - started ))" "$status" >> "$OUT/preparation.txt" || true
   return "$status"
 }
 compiler() {
@@ -78,11 +79,17 @@ DEVTYPE=$(limit 30 xcrun simctl list devicetypes -j | python3 -c 'import json,sy
 echo "runtime=$RUNTIME devicetype=$DEVTYPE" | tee -a "$OUT/environment.txt"
 UDID=$(limit 30 xcrun simctl create "callkit-probe-$$" "$DEVTYPE" "$RUNTIME")
 echo "runOwnedSimulator=$UDID" >> "$OUT/environment.txt"
-limit 30 xcrun simctl boot "$UDID"
-limit 180 xcrun simctl bootstatus "$UDID" -b > /dev/null
+prepare_stage simulator-boot 30 xcrun simctl boot "$UDID"
+# Proposed CI startup policy, matching the SDK runner; no action deadline changes.
+prepare_stage simulator-bootstatus 300 xcrun simctl bootstatus "$UDID" -b
 
 SDK_TARGET="$(uname -m)-apple-ios18.0-simulator"
-SDK=$(compiler --show-sdk-path)
+if [[ -n "${COMPILER_DEVELOPER_DIR:-}" ]]; then
+  prepare_stage sdk-path 30 env DEVELOPER_DIR="$COMPILER_DEVELOPER_DIR" xcrun -sdk iphonesimulator --show-sdk-path
+else
+  prepare_stage sdk-path 30 xcrun -sdk iphonesimulator --show-sdk-path
+fi
+SDK=$(cat "$OUT/sdk-path.prepare.log")
 SWIFT_DEFS=(-D CKSIM_LEGACY_PUSH_ONLY)
 CLANG_DEFS=(-DCKSIM_HAS_VOIP_METADATA=0)
 PUSH_API=legacy
