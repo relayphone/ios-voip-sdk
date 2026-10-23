@@ -23,13 +23,17 @@ HOST = r'''
 
 static atomic_uint completed, destroyed;
 static atomic_bool mainRan;
+static dispatch_semaphore_t receiverReleased;
 static char callbackKey;
 static void require(BOOL value, const char *reason) {
   if (!value) { fprintf(stderr, "%s\n", reason); exit(1); }
 }
 @interface FixtureReceiver : NSObject @end
 @implementation FixtureReceiver
-- (void)dealloc { atomic_fetch_add(&destroyed, 1); }
+- (void)dealloc {
+  atomic_fetch_add(&destroyed, 1);
+  dispatch_semaphore_signal(receiverReleased);
+}
 @end
 
 static void passed(void) { puts("passed"); exit(0); }
@@ -49,6 +53,7 @@ static dispatch_time_t deadline(NSTimeInterval seconds) {
 int main(int argc, const char **argv) {
   @autoreleasepool {
     require(argc == 2, "one host control is required");
+    receiverReleased = dispatch_semaphore_create(0);
     NSString *mode = @(argv[1]);
     dispatch_queue_t callback = dispatch_queue_create("fixture.pushkit", DISPATCH_QUEUE_SERIAL);
     dispatch_queue_set_specific(callback, &callbackKey, &callbackKey, NULL);
@@ -88,6 +93,10 @@ int main(int argc, const char **argv) {
           delivery = [[VSPushDelivery alloc] initWithCompletion:^{
             independentCompletion();
             require(weakReceiver != nil, "receiver must survive actual completion");
+            if ([mode isEqual:@"late-finish"]) {
+              [NSThread sleepForTimeInterval:0.2];
+              require(weakReceiver != nil, "receiver must survive a slow completion");
+            }
             if ([mode isEqual:@"completion-reentrancy"]) {
               [delivery finish];
               require([delivery waitForSettlement:0.01], "completion may reenter ticket without a held lock");
@@ -106,12 +115,14 @@ int main(int argc, const char **argv) {
           } else if ([mode isEqual:@"watchdog"]) {
             require(![delivery waitForSettlement:0.02], "callback wait must expire before watchdog");
             // Keep this callback queue blocked beyond the watchdog deadline.
-            dispatch_semaphore_wait(dispatch_semaphore_create(0), deadline(0.12));
+            require(dispatch_semaphore_wait(receiverReleased, deadline(2)) == 0,
+                    "watchdog must release the receiver while callback queue is blocked");
             require(atomic_load(&completed) == 1, "watchdog completion must run while callback queue is blocked");
             require(![delivery waitForSettlement:0.01], "watchdog completion must never fabricate a settlement ACK");
           } else if ([mode isEqual:@"late-finish"]) {
             require(![delivery waitForSettlement:0.02], "callback wait must expire before late settlement");
-            dispatch_semaphore_wait(dispatch_semaphore_create(0), deadline(0.10));
+            require(dispatch_semaphore_wait(receiverReleased, deadline(2)) == 0,
+                    "watchdog must release the receiver before late finish");
             require(atomic_load(&completed) == 1 && weakReceiver == nil,
                     "watchdog must complete and release receiver before late finish");
             [delivery finish]; [delivery finish];
