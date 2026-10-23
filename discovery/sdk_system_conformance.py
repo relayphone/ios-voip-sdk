@@ -18,8 +18,21 @@ ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = 'dev.iosvoipsdk.example'
 CASES = ('answer-end', 'decline', 'hold-accept', 'end-accept', 'mute-echo', 'provider-reset', 'push-launch')
 D5 = 'docs/research/callkit-simulator-probe/device-system-ui/2026-10-20-iphone13-ui10-app.jsonl'
+COLD_PUSH = 'docs/research/callkit-simulator-probe/livecommunicationkit/push/2026-10-23-iphone13-ios27-d1-locked-cold-answer.jsonl'
 NATIVE = dict(join='CXAnswerCallAction', end='CXEndCallAction', hold='CXSetHeldCallAction',
               mute='CXSetMutedCallAction', tones='CXPlayDTMFCallAction')
+
+
+def cold_push_reference(source_root=ROOT):
+    rows = [json.loads(line) for line in (source_root / COLD_PUSH).read_text().splitlines()]
+    launch, received, report, returned, completed = (one(rows, 'lckpush.' + event) for event in
+        ('launch', 'received', 'reportStart', 'delegateReturn', 'reported'))
+    require(launch.get('os') == '27.0' and launch.get('strategy') == 'entered' and
+            received.get('mustReport') is True and received.get('main') is False and
+            report.get('afterMs') == 0 and returned.get('reportEntered') is True and
+            received['t_ms'] <= report['t_ms'] < returned['t_ms'] < completed['t_ms'] and
+            completed.get('result') == 'ok', 'cold device reference differs')
+    return {COLD_PUSH: m0.digest(source_root / COLD_PUSH)}
 
 
 def uuid_value(value):
@@ -308,6 +321,7 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
                 consumed.get('createdAtMS') == envelope['createdAtMS'] and consumed.get('expiresAtMS') == envelope['expiresAtMS'], 'runtime consumed different launch bytes')
         push = [row for row in engine if row.get('pushID') == envelope['id']]
         received, report, returned, completed, reported = (one(push, event) for event in ('push.received', 'report.incoming', 'push.callbackReturned', 'push.completed', 'report.completed'))
+        require(0 <= report['t_ms'] - received['t_ms'] < 500, 'cold PushKit report start exceeded 500 ms')
         require(consumed['sequence'] < received['sequence'] < report['sequence'] < returned['sequence'] and
                 received.get('mustReport') is True and all(row.get('mustReport') is True and row.get('reportEntered') is True for row in (returned, completed)) and
                 report['sequence'] < reported['sequence'] < completed['sequence'] and reported.get('callUUID') == report.get('callUUID') and
@@ -362,6 +376,7 @@ def validate(parent, source_root=ROOT):
     package_check(root / 'control-package', identity, source_root)
     expected = d5_compositions([json.loads(line) for line in (source_root / D5).read_text().splitlines()])
     deadlines, reference_files = deadline_oracles(source_root)
+    reference_files.update(cold_push_reference(source_root))
     results = []
     for case in CASES:
         directory, name = root / case, 'sdk-system-' + case
