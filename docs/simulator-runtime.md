@@ -165,7 +165,12 @@ python3 discovery/check_cli_repair.py
 bash discovery/run.sh
 ```
 
-The existing macOS CI jobs compile with Xcode 26.6 and 26.3 on macOS 26.
+Legacy discovery compiles with Xcode 26.6 and 26.3 on macOS 26. It runs nightly
+at 02:20 UTC or by manual dispatch, outside the PR/main acceptance gate. Hosted
+simulator migration/startup continued to time out after the agreed hardening
+time-box. Failures remain visible; this lane no longer blocks SDK work.
+SDK M0/M1 is a separate required PR/main workflow, including Release device
+exclusion checks. Changes to either workflow trigger that SDK acceptance.
 **Measured:** [hosted run 39680771297](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39680771297)
 used the iOS **26.5 (23F77)** simulator against the `ios-27.0` behavior profile.
 That profile names the iPhone measurements being reproduced; it is separate

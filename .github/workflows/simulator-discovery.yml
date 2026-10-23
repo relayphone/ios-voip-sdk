@@ -1,16 +1,7 @@
-name: Simulator CallKit discovery
+name: Legacy simulator discovery (nightly)
 on:
-  push:
-    branches: [main, "discovery/**"]
-  pull_request:
-    paths:
-      - "VERSION"
-      - "discovery/**"
-      - "Sources/**"
-      - "Tools/**"
-      - "profiles/**"
-      - "scripts/**"
-      - ".github/workflows/simulator-discovery.yml"
+  schedule:
+    - cron: "20 2 * * *"
   workflow_dispatch:
 permissions:
   contents: read

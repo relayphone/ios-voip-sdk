@@ -59,11 +59,13 @@ The API is specified in [RFC 0001](https://github.com/ziahamza/expo-callkit-tele
 
 ## 4. Work plan (in order)
 
-> **Current order (Hamza, October 23):** restore every main CI lane first; remove archived receipt packets and correct the APNs workflow guard; land the §A0 and §A fixes in small PRs; finish M2 and M3; then complete the corrected-source iPhone measurement in [#22](https://github.com/ziahamza/ios-voip-sdk/pull/22), or record its exact blocker.
+> **Current order (Hamza, October 23):** restore every required main CI lane first; remove archived receipt packets and correct the APNs workflow guard; land the §A0 and §A fixes in small PRs; finish M2 and M3; then complete the corrected-source iPhone measurement in [#22](https://github.com/ziahamza/ios-voip-sdk/pull/22), or record its exact blocker.
+>
+> **CI time-box (Hamza, October 23):** legacy discovery on Xcode 26.3/26.6 is nightly/manual and non-blocking after repeated hosted simulator-startup failures. Failures remain visible in that workflow. SDK M0/M1 acceptance remains required on relevant PRs and main, including changes to either workflow. Do not add further legacy startup repair machinery.
 >
 > Read [`progress/2026-10-22-claude-steering.md`](progress/2026-10-22-claude-steering.md) for the technical requirements. §A0 covers PushKit report entry and its queue, no CallKit linkage in device builds, and both iOS 27 audio-interruption paths. Apply §A to M2/M3 before merging. §C reserves extension points; it is not a feature list to implement now.
 >
-> **M-Stable is the stopping point:** main is green on every lane, all §A0 and §A fixes are merged, M2 and M3 are merged, and #22 is measured on the corrected source or has an exact blocker recorded. Then **STOP**. Write `docs/progress/<date>-codex-m-stable.md`, at most one page: what landed with PR and CI links, what did not, and open risks or questions. Wait for Claude and Hamza's review. Do not start M3.5 or the Expo Modules 2.0 bridge until they reply; the older §B/§D schedule is deferred, not a design reversal.
+> **M-Stable is the stopping point:** main is green on every required lane, all §A0 and §A fixes are merged, M2 and M3 are merged, and #22 is measured on the corrected source or has an exact blocker recorded. Then **STOP**. Write `docs/progress/<date>-codex-m-stable.md`, at most one page: what landed with PR and CI links, what did not, and open risks or questions. Wait for Claude and Hamza's review. Do not start M3.5 or the Expo Modules 2.0 bridge until they reply; the older §B/§D schedule is deferred, not a design reversal.
 
 
 ### A. Fix the runtime from the v0.1 review
@@ -136,7 +138,7 @@ All of this is under `docs/research/callkit-simulator-probe/` unless noted. The 
 
 ## 7. Working rules
 
-- **Stop feature work when main is red.** Restore all required CI lanes before opening or advancing feature PRs.
+- **Stop feature work when required main CI is red.** Restore all required CI lanes before opening or advancing feature PRs.
 - **Evidence first.** Label claims *measured*, with a CI run or consumed trace, or *proposed*. Device behavior is the reference; record per-OS differences as profile data.
   - Deliver code and tests with CI links and a short result table in the PR description. Keep the description as the source of truth.
   - Do not commit JSON receipts, raw run logs, build inventories or proof packets. Fresh acceptance outputs belong in Actions artifacts or ignored `discovery/out/`.
