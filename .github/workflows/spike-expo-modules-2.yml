@@ -36,6 +36,8 @@ jobs:
           package-manager-cache: false
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run typecheck
+      - run: node scripts/check-exports.cjs
+      - run: node tests/test-drift.cjs
       - run: npx expo install --check
       - run: python3 -m unittest discover -s tests -p 'test_*.py'
       - run: bash tests/test-handler-cell.sh
