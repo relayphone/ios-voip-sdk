@@ -20,13 +20,18 @@ for name in ('ConversationClient.swift', 'IncomingReportTransport.swift'):
         source = source.replace(audio, '', 1)
     Path(sys.argv[1], name).write_text(source)
 PY
+xcrun clang -fobjc-arc -fmodules -c Sources/VoIPPlatform/VSProcessSDKOwnership.m \
+  -o "$TEST_OUTPUT/VSProcessSDKOwnership.o"
 swiftc -swift-version 6 -warnings-as-errors -parse-as-library \
+  -import-objc-header Sources/VoIPPlatform/include/VSProcessSDKOwnership.h \
   Sources/VoIPSDK/ConversationModels.swift Sources/VoIPSDK/ConversationRecord.swift \
   Sources/VoIPSDK/ConversationHandler.swift Sources/VoIPSDK/IncomingInvitationGate.swift \
+  Sources/VoIPSDK/ProcessSDKOwnership.swift \
   Sources/VoIPSDK/IncomingIntake.swift Sources/VoIPSDK/PushWire.swift \
   Sources/VoIPSDK/SimulatorSupport.swift "$TEST_OUTPUT/ConversationClient.swift" \
   "$TEST_OUTPUT/IncomingReportTransport.swift" \
   Tests/VoIPSDK/IncomingCachePlatform.swift Tests/VoIPSDK/MuteEchoTests.swift \
+  "$TEST_OUTPUT/VSProcessSDKOwnership.o" \
   -o "$TEST_OUTPUT/MuteEchoTests"
 python3 - "$TEST_OUTPUT/MuteEchoTests" <<'PY'
 import subprocess,sys

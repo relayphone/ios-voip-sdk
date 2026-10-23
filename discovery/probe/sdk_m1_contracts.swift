@@ -80,12 +80,14 @@ private final class SDKM1ContractsProbe {
       }
       if mode == "unhandled-accept" || mode == "unhandled-fail" {
         let policy: UnhandledActionPolicy = mode == "unhandled-accept" ? .accept : .fail
-        try ConversationClient.configure(.init(includesConversationInRecents: false, unhandledAction: policy))
         ContractTrace.log("contract.configuration", ["policy": policy.rawValue, "handlerAttached": false])
       }
-      let client = ConversationClient.shared
+      let configuration = VoIPApplication.Configuration(client: .init(includesConversationInRecents: false,
+        unhandledAction: mode == "unhandled-accept" ? .accept : .fail))
+      let client = try VoIPApplication.start(configuration: configuration).client
+      let repeated = try VoIPApplication.start(configuration: configuration).client
       ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(client)),
-        "sharedIdentity": String(describing: ObjectIdentifier(ConversationClient.shared)), "warnings": warnings])
+        "sharedIdentity": String(describing: ObjectIdentifier(repeated)), "warnings": warnings])
       if mode == "guard" { guardContract() }
       else if mode == "unhandled-accept" || mode == "unhandled-fail" {
         try await policyContract(client, accepting: mode == "unhandled-accept")

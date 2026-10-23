@@ -78,6 +78,7 @@ jobs:
           python3 Tests/VoIPSDK/run_push_context.py | tee "$SDK_M0_BUILD_LOGS/push-context-controls.json"
           python3 discovery/check_expo_bridge.py | tee "$SDK_M0_BUILD_LOGS/expo-relay-controls.json"
           python3 discovery/check_platform_shims.py | tee "$SDK_M0_BUILD_LOGS/platform-controls.json"
+          python3 discovery/check_sdk_ownership.py | tee "$SDK_M0_BUILD_LOGS/ownership-controls.json"
           python3 discovery/check_push_delivery.py | tee "$SDK_M0_BUILD_LOGS/push-delivery-controls.json"
           python3 discovery/check_push_report_entry.py | tee "$SDK_M0_BUILD_LOGS/push-entry-controls.json"
           python3 discovery/check_push_main_stall.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/push-native-main-stall-controls.log"
@@ -150,14 +151,6 @@ jobs:
           python3 discovery/build_sdk_device_release.py "$SDK_M0_BUILD_ROOT/pod-device" \
             > "$SDK_M0_BUILD_LOGS/pod-device-inspection.log" 2>&1
           cp "$SDK_M0_BUILD_ROOT/pod-device/receipt.json" "$SDK_M0_BUILD_LOGS/pod-device-receipt.json"
-      - name: Preserve the Release device build diagnostics
-        if: always()
-        run: |
-          for name in build.log build-status.json source-before.json command.json; do
-            if test -f "$SDK_M0_BUILD_ROOT/pod-device/$name"; then
-              cp "$SDK_M0_BUILD_ROOT/pod-device/$name" "$SDK_M0_BUILD_LOGS/pod-device-$name"
-            fi
-          done
       - name: Build the Swift package for simulator and device
         run: |
           set -euo pipefail
@@ -190,6 +183,36 @@ jobs:
         env:
           OUT: ${{ runner.temp }}/sdk-m0
         run: bash discovery/run_sdk_m0.sh
+      - name: Build and inspect explicitly opted-in Release provider diagnostics
+        run: |
+          set -euo pipefail
+          test -s example/ios/Podfile.lock
+          test -d example/ios/Pods
+          python3 - <<'PYCONFIG'
+          import json
+          from pathlib import Path
+          path = Path('example/ios/Podfile.properties.json')
+          properties = json.loads(path.read_text())
+          properties['ios-voip-sdk.providerOwnershipMonitoring'] = 'true'
+          path.write_text(json.dumps(properties, indent=2) + '\n')
+          PYCONFIG
+          pushd example/ios > /dev/null
+          pod install --no-repo-update 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-diagnostics-install.log"
+          popd > /dev/null
+          python3 discovery/build_sdk_device_release.py "$SDK_M0_BUILD_ROOT/pod-device-diagnostics" \
+            --derived-data "$SDK_M0_BUILD_ROOT/pod-device/DerivedData" --provider-diagnostics \
+            > "$SDK_M0_BUILD_LOGS/pod-device-diagnostics-inspection.log" 2>&1
+          cp "$SDK_M0_BUILD_ROOT/pod-device-diagnostics/receipt.json" "$SDK_M0_BUILD_LOGS/pod-device-diagnostics-receipt.json"
+      - name: Preserve Release device build diagnostics
+        if: always()
+        run: |
+          for variant in pod-device pod-device-diagnostics; do
+            for name in build.log build-status.json source-before.json command.json; do
+              if test -f "$SDK_M0_BUILD_ROOT/$variant/$name"; then
+                cp "$SDK_M0_BUILD_ROOT/$variant/$name" "$SDK_M0_BUILD_LOGS/$variant-$name"
+              fi
+            done
+          done
       - name: Preserve M0 evidence and build logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

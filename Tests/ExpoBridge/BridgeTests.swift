@@ -334,6 +334,11 @@ struct BridgeTests {
     let event = events.named("conversationEvent").last
     try expect(event?["type"] as? String == "audioActivated" && (event?["payload"] as? [String: Any])?.isEmpty == true,
                "Native events must use the public event envelope.")
+    application.client.publish(.providerOwnershipLost)
+    let ownership = events.named("conversationEvent").last
+    try expect(ownership?["type"] as? String == "providerOwnershipLost" &&
+               (ownership?["payload"] as? [String: Any])?.isEmpty == true,
+               "Process ownership loss must not invent a conversation identity.")
   }
 
   @MainActor private static func action(_ events: Events, id: UUID) throws -> [String: Any] {
