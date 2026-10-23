@@ -28,7 +28,8 @@ def bind_launcher_pid(result, matches):
     return None
 
 
-def run(launch, terminate, output, receipt, timeout, identity=None, console_launcher_stop=False):
+def run(launch, terminate, output, receipt, timeout, identity=None, console_launcher_stop=False,
+        inherit_launcher_group=False):
     started = time.monotonic()
     result = {"completed": False, "success": False, "schemaVersion": 2, **(identity or {})}
     process = None
@@ -42,6 +43,15 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
     try:
         if console_launcher_stop and not bundle:
             raise RuntimeError("console launcher stop requires a bound bundle ID")
+        if inherit_launcher_group:
+            if not console_launcher_stop:
+                raise RuntimeError("inherited launcher group requires console launcher stop")
+            supervisor = os.getpid()
+            group, session = os.getpgid(0), os.getsid(0)
+            if supervisor != group or supervisor != session:
+                raise RuntimeError("inherited launcher group requires a private session/group leader")
+            result.update(inheritLauncherGroup=True, supervisorPID=supervisor,
+                          supervisorPGID=group, supervisorSID=session)
         with output.open("xb") as log:
             if console_launcher_stop:
                 master, slave = os.openpty()
@@ -50,12 +60,16 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
             try:
                 process = subprocess.Popen(launch, stdout=slave if console_launcher_stop else subprocess.PIPE,
                                            stderr=subprocess.PIPE if console_launcher_stop else subprocess.STDOUT,
-                                           start_new_session=True)
+                                           start_new_session=not inherit_launcher_group)
             finally:
                 if slave is not None:
                     os.close(slave)
                     slave = None
             result["launcherPID"] = process.pid
+            if inherit_launcher_group:
+                result["launcherPGID"] = os.getpgid(process.pid)
+                if result["launcherPGID"] != result["supervisorPGID"]:
+                    raise RuntimeError("console launcher did not inherit its owned group")
             read_fds = [master, process.stderr.fileno()] if console_launcher_stop else [process.stdout.fileno()]
 
             def read():
@@ -286,6 +300,8 @@ def main():
     parser.add_argument("--bundle-id")
     parser.add_argument("--console-launcher-stop", action="store_true",
                         help="use a raw host PTY; after done, signal this launcher PID and require its sole app PID acknowledgement and absence")
+    parser.add_argument("--inherit-launcher-group", action="store_true",
+                        help="inherit this supervisor's verified private session/group; console mode only")
     parser.add_argument("--terminate-command", nargs="+", required=True)
     parser.add_argument("--launch-command", nargs=argparse.REMAINDER, required=True)
     args = parser.parse_args()
@@ -293,9 +309,11 @@ def main():
         parser.error("require a launch command, positive timeout, and fresh receipt path")
     if args.console_launcher_stop and not args.bundle_id:
         parser.error("--console-launcher-stop requires --bundle-id")
+    if args.inherit_launcher_group and not args.console_launcher_stop:
+        parser.error("--inherit-launcher-group requires --console-launcher-stop")
     return run(args.launch_command, args.terminate_command, args.output, args.receipt, args.timeout,
                dict(runID=args.run_id, simulatorID=args.simulator_id, scenario=args.scenario, bundleID=args.bundle_id),
-               console_launcher_stop=args.console_launcher_stop)
+               console_launcher_stop=args.console_launcher_stop, inherit_launcher_group=args.inherit_launcher_group)
 
 
 if __name__ == "__main__":
