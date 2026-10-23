@@ -3,7 +3,11 @@ export type JSONValue =
 
 /** Rejection codes emitted by native conversation commands. */
 export type ConversationErrorCode =
-  'invalid_arguments' | 'unknown_conversation' | 'unsupported' | 'conversation';
+  | 'invalid_arguments'
+  | 'unknown_conversation'
+  | 'unsupported'
+  | 'conversation'
+  | 'duplicate_sdk_linkage';
 
 export interface ConversationCommandError extends Error {
   readonly code: ConversationErrorCode;
@@ -18,6 +22,7 @@ export function isConversationCommandError(
     value.code === 'invalid_arguments' ||
     value.code === 'unknown_conversation' ||
     value.code === 'unsupported' ||
+    value.code === 'duplicate_sdk_linkage' ||
     value.code === 'conversation'
   );
 }
@@ -138,4 +143,5 @@ export interface ConversationEventMap {
   pushTokenUpdated: PushToken | null;
   dialRequest: { handle: string; video: boolean };
   providerReset: Record<string, never>;
+  providerOwnershipLost: Record<string, never>;
 }

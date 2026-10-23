@@ -9,8 +9,9 @@ final class MuteControls {
   var held: [UUID: CheckedContinuation<Void, any Error>] = [:]
   var minimumDelayMS = Double.infinity
 
-  init() {
-    client = .shared
+  init() throws {
+    client = try ConversationClient.forApplication(configuration: .init())
+    client.finishLaunch()
     manager = ConversationManager.latest!
     client.setConversationHandler(.init(join: { _, _ in }, start: { _, _ in }, end: { _, _ in },
       mute: { [weak self] _, context in

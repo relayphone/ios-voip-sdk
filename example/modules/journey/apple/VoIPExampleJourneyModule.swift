@@ -75,7 +75,7 @@ private final class ExampleJourney {
     self.client = client
     // Legacy M0 marker: bind the SDK-owned manager through its public client.
     // No manager/provider is constructed by this example.
-    JourneyTrace.record("sdk.managerCreated", ["owner": "ConversationClient.shared"])
+    JourneyTrace.record("sdk.managerCreated", ["owner": "VoIPApplication.start"])
     stateObserver = client.observeState { [weak self] update in self?.recordState(update) }
     return client
   }

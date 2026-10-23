@@ -133,6 +133,9 @@ public final class IosVoipSDKModule: Module {
       catch ConversationClientError.unsupported { promise.reject("unsupported", "This conversation operation is unsupported.") }
       catch ConversationClientError.invalidPayload { rejectArguments(promise) }
       catch ConversationClientError.invalidDigits { rejectArguments(promise) }
+      catch ConversationClientError.duplicateSDKLinkage {
+        promise.reject("duplicate_sdk_linkage", "Link one VoIP SDK product in this process; both SwiftPM and the Expo pod were loaded.")
+      }
       catch { promise.reject("conversation", "The system could not complete the conversation operation.") }
     }
   }

@@ -88,7 +88,7 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
             all(type(row.get('wallTimeMS')) is int and row['wallTimeMS'] > 0 for row in rows),
             case + ': invalid process sequence or wall clock')
     require(one(rows, 'sdk.activation').get('active') is True and
-            one(rows, 'sdk.managerCreated').get('owner') == 'ConversationClient.shared', case + ': SDK client unavailable')
+            one(rows, 'sdk.managerCreated').get('owner') == 'VoIPApplication.start', case + ': SDK client unavailable')
     def unexpected_error(row):
         expected_rejection = (case == 'unhandled-expiry' and row['event'] == 'm1.coldJoinRequestResult' and
                               row.get('accepted') is False)

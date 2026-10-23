@@ -5,7 +5,8 @@ import Foundation
 @main struct IncomingCacheTests {
   @MainActor static func main() async throws {
     let mode = CommandLine.arguments[1]
-    let client = ConversationClient.shared
+    let client = try ConversationClient.forApplication(configuration: .init())
+    client.finishLaunch()
     let manager = ConversationManager.latest!
     let payload = IncomingCallPayload(eventId: "cache-event-" + mode,
       serverCallId: "cache-server-" + mode,

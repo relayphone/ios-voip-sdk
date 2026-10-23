@@ -1,6 +1,6 @@
 #import "VSProviderMonitorInternal.h"
 
-#if DEBUG
+#if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
 #import <objc/runtime.h>
 
 // Both entry points and saved IMP calls preserve Objective-C's +1 convention.
@@ -20,6 +20,7 @@ static NSMutableDictionary<NSValue *, NSValue *> *initializers;
 static NSHashTable *observedProviders;
 static IMP originalAllocator;
 static void (^diagnosticHandler)(NSString *);
+static void (^ownershipConflictHandler)(void);
 static BOOL monitoring;
 static BOOL ownedCreation;
 static NSUInteger ownedProviderCount;
@@ -68,9 +69,16 @@ static void observedProvider(id provider) {
   BOOL expected = [NSThread isMainThread] && ownedCreation;
   if (expected && !alreadyObserved) ownedProviderCount++;
   BOOL extraOwned = expected && ownedProviderCount > 1;
+  BOOL conflict = !alreadyObserved && (!expected || extraOwned);
+  void (^handler)(void) = conflict ? ownershipConflictHandler : nil;
   [monitorLock unlock];
-  if (!alreadyObserved && (!expected || extraOwned))
+  if (conflict) {
+    if (handler) {
+      if ([NSThread isMainThread]) handler();
+      else dispatch_async(dispatch_get_main_queue(), handler);
+    }
     diagnose(@"Another CXProvider was created. D13 routes actions to the newest provider; keep one ConversationManager in this process.");
+  }
 }
 
 __attribute__((ns_returns_retained)) static id observedInitialize(
@@ -202,6 +210,13 @@ BOOL VSProviderMonitorInstallWithSource(Class providerClass, void (^diagnostic)(
     diagnose(@"Provider creation monitoring failed to bind; normal provider behavior is preserved.");
   }
   return monitoring;
+}
+
+void VSProviderMonitorSetOwnershipConflictHandler(void (^handler)(void)) {
+  void (^copied)(void) = [handler copy];
+  [monitorLock lock];
+  ownershipConflictHandler = copied;
+  [monitorLock unlock];
 }
 
 void VSProviderMonitorBeginOwnedCreation(void) {
