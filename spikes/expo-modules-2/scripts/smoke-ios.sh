@@ -34,5 +34,9 @@ xcrun simctl bootstatus "$simulator_id" -b
 xcrun simctl ui "$simulator_id" appearance light
 xcrun simctl install "$simulator_id" "$app_path"
 xcrun simctl launch "$simulator_id" dev.iosvoipsdk.expo2spike
-sleep 5
-xcrun simctl io "$simulator_id" screenshot out/scaffold.png
+container_path=$(xcrun simctl get_app_container "$simulator_id" dev.iosvoipsdk.expo2spike data)
+result_status=0
+python3 scripts/check-results.py "$container_path/Documents/expo2-results.json" \
+  --require snapshot change-event --timeout 60 || result_status=$?
+xcrun simctl io "$simulator_id" screenshot out/scaffold.png || true
+exit "$result_status"

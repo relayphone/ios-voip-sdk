@@ -1,14 +1,26 @@
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Expo2Spike from './modules/expo2-spike';
+import { runDemonstrations } from './demonstrations';
 
 export default function App() {
+  const [status, setStatus] = useState('Running demonstrations…');
+  useEffect(() => {
+    void runDemonstrations()
+      .then((results) => {
+        setStatus(
+          results.every((result) => result.pass)
+            ? `Passed ${results.length} demonstrations`
+            : JSON.stringify(results),
+        );
+      })
+      .catch((error) => setStatus(String(error)));
+  }, []);
   return (
     <View style={styles.container}>
       <Text accessibilityRole="header" style={styles.title}>
         Expo Modules 2.0 spike
       </Text>
-      <Text testID="native-greeting">{Expo2Spike.hello()}</Text>
-      <Text>Scaffold only. Bridge demonstrations follow in separate PRs.</Text>
+      <Text testID="demo-status">{status}</Text>
     </View>
   );
 }
