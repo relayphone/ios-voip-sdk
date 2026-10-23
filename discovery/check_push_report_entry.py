@@ -51,6 +51,19 @@ POLICY = r'''
     precondition(policy.returned("other").violation == "repeated-callback-return")
     precondition(policy.returned("unknown").violation == "unknown-delivery")
     precondition(!policy.receive("", required:true))
+    var expiry = PushReportingObligations()
+    precondition(expiry.receive("pending", required:true))
+    let firstToken = expiry.deadlineToken("pending")!
+    _ = expiry.completed("pending"); _ = expiry.returned("pending")
+    precondition(expiry.expire("pending", token:firstToken), "completion/return cannot cancel a required report")
+    precondition(expiry.receive("pending", required:true))
+    let secondToken = expiry.deadlineToken("pending")!
+    precondition(!expiry.expire("pending", token:firstToken), "old timers cannot expire a reused identifier")
+    expiry.entered("pending")
+    precondition(!expiry.expire("pending", token:secondToken), "actual report entry satisfies the deadline")
+    precondition(expiry.completed("pending").reportEntered && expiry.returned("pending").reportEntered)
+    precondition(expiry.receive("optional-expiry", required:false))
+    precondition(!expiry.expire("optional-expiry", token:expiry.deadlineToken("optional-expiry")!))
     print("passed: required missing/late report, hook-entry observation, completion-before-return, optional omission, repeated/unknown boundaries and overlapping push isolation")
   }
 }
@@ -191,6 +204,10 @@ def native_source_identity():
            'Tests/VoIPSDK/IncomingCacheTests.swift','Tests/VoIPSDK/run_incoming_cache.py']
     scope += ['discovery/probe/push_entry_main_stall.h','discovery/probe/push_entry_main_stall.m',
               'discovery/push_main_stall_conformance.py','discovery/check_push_main_stall.py']
+    scope += ['discovery/check_console_stop.py',
+              'docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md',
+              'docs/research/callkit-simulator-probe/livecommunicationkit/push/2026-10-23-iphone13-ios27-late-report-3s.jsonl',
+              'docs/research/callkit-simulator-probe/livecommunicationkit/push/2026-10-23-iphone13-ios27-late-report-5s.jsonl']
     dirty=subprocess.check_output(['git','status','--porcelain','--untracked-files=all','--',*scope],cwd=ROOT)
     if dirty: raise RuntimeError('Commit all A1 source/fixture inputs before a native measurement')
     names=sorted(filter(None,subprocess.check_output(['git','ls-files','-z','--',*scope],cwd=ROOT).decode().split('\0')))
@@ -481,6 +498,90 @@ def negative_journal_controls():
     return 'passed: synthetic missing/deferred negatives reproduced, normal rule remains red; '+str(len(positives))+' valid fixtures and '+str(len(negatives))+' malformed journal refusals ('+', '.join(row['control'] for row in negatives)+')'
 
 
+def push_deadline_references(profile):
+    def require(value, reason):
+        if not value: raise ValueError(reason)
+    evidence = profile['pushReportDeadlineEvidence']
+    seconds = profile['pushReportDeadlineSeconds']
+    reference = ROOT / evidence['reference']
+    text = reference.read_text()
+    require(f'{seconds:g} s' in text and '_terminateAppIfThereAreUnhandledVoIPPushes' in text, 'push deadline writeup differs')
+    references = {evidence['reference']: hashlib.sha256(reference.read_bytes()).hexdigest()}
+    captures = evidence['captures']
+    require(len(captures) == 2, 'expected surviving and terminated device captures')
+    for name, expected in captures.items():
+        path = ROOT / name
+        references[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        require(references[name] == expected, 'push deadline device trace differs')
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        received = next(row for row in rows if row['event'] == 'lckpush.received')
+        require(received['mustReport'] is True and received['strategy'] == 'deferred', 'device push policy differs')
+        starts = [row for row in rows if row['event'] == 'lckpush.reportStart']
+        if name.endswith('-3s.jsonl'):
+            require(len(starts) == 1 and starts[0]['afterMs'] < seconds * 1000, 'surviving report timing differs')
+            require(any(row['event'] == 'lckpush.alive' and row['t_ms'] - received['t_ms'] > seconds * 1000 for row in rows), 'surviving report lacks later liveness')
+        else:
+            require(name.endswith('-5s.jsonl') and not starts, 'late device trace contains a report')
+            last_alive = max(row['t_ms'] for row in rows if row['event'] == 'lckpush.alive') - received['t_ms']
+            require(4000 < last_alive < seconds * 1000 < 5000, 'raw late trace bound differs; no raw kill event is claimed')
+    return references
+
+
+def qualify_deadline_journal(rows, run_id, pid, profile):
+    def require(value, reason):
+        if not value: raise ValueError(reason)
+    require(type(pid) is int and pid > 0 and rows and all(type(row.get('pid')) is int and row['pid'] == pid and row.get('runID') == run_id and
+            row.get('bundleID') == 'dev.iosvoipsdk.pushentry' and row.get('profile') == profile['id'] for row in rows), 'deadline journal identity differs')
+    require([row.get('sequence') for row in rows] == list(range(1, len(rows) + 1)) and
+            all(type(row.get('t_ms')) is int and type(row.get('sequence')) is int for row in rows) and
+            all(a['t_ms'] <= b['t_ms'] for a, b in zip(rows, rows[1:])), 'deadline journal clock/sequence differs')
+    push_id = run_id + '-0'
+    def one(event):
+        found = [row for row in rows if row['event'] == event]
+        require(len(found) == 1 and found[0].get('pushID') == push_id, 'missing/repeated/foreign ' + event)
+        return found[0]
+    received, deadline, completed, returned, expired = (one(event) for event in
+        ('push.received', 'push.reportDeadline', 'push.completed', 'push.callbackReturned', 'diagnostic.pushReportExpired'))
+    require(received.get('api') == 'metadata' and all(row.get('mustReport') is True for row in (received, completed, returned)) and
+            all(row.get('reportEntered') is False for row in (completed, returned)), 'deadline required/completion policy differs')
+    seconds = profile['pushReportDeadlineSeconds']
+    require(received['sequence'] < deadline['sequence'] < completed['sequence'] < returned['sequence'] < expired['sequence'] and
+            deadline.get('seconds') == expired.get('seconds') == seconds and expired.get('severity') == 'error' and
+            type(expired.get('exitCode')) is int and expired['exitCode'] == 78, 'deadline event/exit policy differs')
+    elapsed = expired['t_ms'] - received['t_ms']
+    require(seconds * 1000 <= elapsed < 5000, 'deadline did not expire before the planned late report')
+    require(not any(row['event'] in ('report.incoming', 'report.completed') for row in rows), 'late native report escaped expiry')
+    return dict(case='late-report', expectedTerminated=True, reportDeadlineMS=seconds * 1000, observedExpiryMS=elapsed)
+
+
+def deadline_controls():
+    profile = json.loads((ROOT / 'Sources/Engine/Resources/ios-27.0.json').read_text())
+    push_deadline_references(profile)
+    events = [('push.received', dict(api='metadata', mustReport=True)),
+              ('push.reportDeadline', dict(seconds=4.4)),
+              ('push.completed', dict(mustReport=True, reportEntered=False)),
+              ('push.callbackReturned', dict(mustReport=True, reportEntered=False)),
+              ('diagnostic.pushReportExpired', dict(seconds=4.4, severity='error', exitCode=78))]
+    rows = [dict(event=event, sequence=i + 1, t_ms=(4401 if i == 4 else i), pid=123, runID='host',
+                 bundleID='dev.iosvoipsdk.pushentry', profile='ios-27.0', pushID='host-0', **fields)
+            for i, (event, fields) in enumerate(events)]
+    qualify_deadline_journal(rows, 'host', 123, profile)
+    cases = [('missing', lambda value: value.pop()),
+             ('foreign', lambda value: value[-1].update(pushID='other')),
+             ('early', lambda value: value[-1].update(t_ms=4399)),
+             ('late', lambda value: value[-1].update(t_ms=5000)),
+             ('wrong-profile', lambda value: value[-1].update(profile='other')),
+             ('exit', lambda value: value[-1].update(exitCode=0)),
+             ('completed-entry', lambda value: value[2].update(reportEntered=True)),
+             ('actual-report', lambda value: value.insert(1, dict(value[0], event='report.incoming')))]
+    for name, mutate in cases:
+        value = copy.deepcopy(rows); mutate(value)
+        try: qualify_deadline_journal(value, 'host', 123, profile)
+        except ValueError: pass
+        else: raise AssertionError('accepted malformed expiry ' + name)
+    return 'passed: deadline reference and journal positive plus ' + str(len(cases)) + ' refusals'
+
+
 def main():
     engine=(ROOT/'Sources/Engine/RuntimeEngine.swift').read_text()
     service=(ROOT/'Sources/VoIPSDK/PushService.swift').read_text()
@@ -494,7 +595,7 @@ def main():
     assert '@finally' in hook and 'CKSimEmit(@"push.callbackReturned"' in hook, 'runtime must record the actual callback exit'
     with tempfile.TemporaryDirectory(prefix='ios-voip-push-entry-') as temp:
         out=Path(temp)
-        results=[journal_controls(),negative_journal_controls(),compile_run(out,'policy',obligations+'\n'+POLICY),
+        results=[journal_controls(),negative_journal_controls(),deadline_controls(),compile_run(out,'policy',obligations+'\n'+POLICY),
                  compile_run(out,'pipeline',PIPELINE.replace('// EXACT_METHODS',receiver+'\n'+projection),
                              [ROOT/'Sources/VoIPSDK/ConversationModels.swift',ROOT/'Sources/VoIPSDK/PushWire.swift',
                               ROOT/'Sources/VoIPSDK/IncomingInvitationGate.swift',ROOT/'Sources/VoIPSDK/IncomingIntake.swift'])]
