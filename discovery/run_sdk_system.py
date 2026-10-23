@@ -119,7 +119,8 @@ class Journey:
     def cli(self, operation, *arguments, expected_error=None):
         name = f'control-{len(self.controls):02}.json'
         command = [str(self.args.package / 'cksim'), '--simulator', self.args.simulator, '--bundle', BUNDLE,
-                   '--runtime-dir', str(self.args.package), '--timeout', '10', '--command-receipt', str(self.root / name),
+                   '--runtime-dir', str(self.args.package), '--app-container', str(self.container),
+                   '--timeout', '10', '--command-receipt', str(self.root / name),
                    operation, *arguments]
         result = subprocess.run(command, capture_output=True, timeout=75)
         (self.root / (name + '.stdout')).write_bytes(result.stdout)

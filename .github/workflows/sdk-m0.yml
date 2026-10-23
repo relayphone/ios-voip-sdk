@@ -19,6 +19,7 @@ on:
       - "tsconfig.json"
       - "expo-module.config.json"
       - "IosVoipSDK.podspec"
+      - "Tools/cksim-notify.c"
       - "discovery/**"
       - "Tools/**"
       - "scripts/build-runtime.sh"
@@ -41,6 +42,7 @@ on:
       - "tsconfig.json"
       - "expo-module.config.json"
       - "IosVoipSDK.podspec"
+      - "Tools/cksim-notify.c"
       - "discovery/**"
       - "Tools/**"
       - "scripts/build-runtime.sh"
@@ -171,9 +173,12 @@ jobs:
           bash Tests/AudioCore/run.sh | tee "$SDK_M0_BUILD_LOGS/audio-watchdog-controls.log"
           python3 Tests/AudioLifecycle/check_audio_lifecycle.py | tee "$SDK_M0_BUILD_LOGS/audio-lifecycle-controls.log"
           python3 Tests/AudioLifecycle/check_audio_fixtures.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/audio-raw-fixtures.log"
+          python3 Tests/AudioRoutes/run.py | tee "$SDK_M0_BUILD_LOGS/audio-route-controls.log"
           python3 discovery/check_expo_media.py | tee "$SDK_M0_BUILD_LOGS/webrtc-facade-controls.log"
           python3 discovery/check_expo_media_config.py | tee "$SDK_M0_BUILD_LOGS/media-selection-controls.log"
           python3 Tests/ExpoMedia/check_standard_backend.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/standard-backend-gate-controls.log"
+          bash Tests/AudioCore/run_livekit.sh | tee "$SDK_M0_BUILD_LOGS/swift-livekit-adapter-controls.log"
+          python3 discovery/check_audio_contract_cleanup.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/audio-contract-cleanup-controls.log"
           python3 discovery/check_sdk_m2_audio_lifecycle.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/audio-lifecycle-capture-controls.log"
           bash Tests/VoIPSDK/run_push.sh | tee "$SDK_M0_BUILD_LOGS/push-controls.log"
           bash Tests/VoIPSDK/run_projection.sh | tee "$SDK_M0_BUILD_LOGS/projection-controls.log"
@@ -330,7 +335,7 @@ jobs:
             ${{ runner.temp }}/sdk-m0-build/pod-standard-webrtc/*.log
           if-no-files-found: error
           retention-days: 30
-      - name: Hand off the SDK 27 contract app for the older runtime
+      - name: Hand off the SDK 27 contract app for legacy audio and Duo routes
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sdk-27-m1-contract-app
@@ -379,6 +384,42 @@ jobs:
           name: audio-lifecycle-ios-26.5-sdk-27
           path: ${{ runner.temp }}/audio-lifecycle-legacy
           if-no-files-found: warn
+          retention-days: 7
+      - name: Remove the downloaded app
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/sdk-27-contract-build"
+
+  duo-audio-routes:
+    needs: plain-simulator
+    runs-on: xcode-27
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Select Xcode 27.1 for the iPhone Duo runtime
+        run: sudo xcode-select -s /Applications/Xcode_27.1.app
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sdk-27-m1-contract-app
+          path: ${{ runner.temp }}/sdk-27-contract-build
+      - name: Restore the app executable mode after artifact download
+        run: chmod +x "$RUNNER_TEMP/sdk-27-contract-build/SDKM1Contracts.app/SDKM1Contracts"
+      - name: Run only the route contract on the exact iPhone Duo and iOS 27.1 pair
+        env:
+          SDK_M1_CONTRACT_BUILD: ${{ runner.temp }}/sdk-27-contract-build
+          OUT: ${{ runner.temp }}/audio-routes-duo
+        run: bash discovery/run_audio_lifecycle_legacy.sh duo-routes
+      - name: Preserve the scoped Duo route capture
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: audio-routes-iphone-duo-ios-27.1
+          path: ${{ runner.temp }}/audio-routes-duo
+          if-no-files-found: error
           retention-days: 7
       - name: Remove the downloaded app
         if: always()
