@@ -12,6 +12,14 @@ const program = ts.createProgram([filename], {
 });
 const checker = program.getTypeChecker();
 const source = program.getSourceFile(filename);
+const coreImport = source.statements.find((s) => ts.isImportDeclaration(s) && ['expo', 'expo-modules-core'].includes(s.moduleSpecifier.text));
+const core = coreImport && checker.getSymbolAtLocation(coreImport.moduleSpecifier);
+const baseSymbol = (name) => {
+  const symbol = core && checker.getExportsOfModule(core).find((s) => s.name === name);
+  const resolved = symbol?.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+  const signature = resolved && checker.getTypeOfSymbolAtLocation(resolved, source).getConstructSignatures()[0];
+  return signature && checker.getReturnTypeOfSignature(signature).symbol;
+};
 const fail = (message) => { throw new Error(message); };
 const key = (value) => JSON.stringify(value);
 const union = (values) => {
@@ -95,6 +103,10 @@ const hasModifier = (node, kind) => node.modifiers?.some((m) => m.kind === kind)
 function owner(exported, actual, constructor) {
   const declaration = actual.symbol?.declarations?.find(ts.isClassDeclaration);
   if (!declaration) fail(`missing declared class for ${exported.jsName}`);
+  const heritage = declaration.heritageClauses?.find((h) => h.token === ts.SyntaxKind.ExtendsKeyword)?.types;
+  const expectedBase = surface.modules.includes(exported) ? 'NativeModule' : 'SharedObject';
+  compare(heritage?.length, 1, `${exported.jsName} base class`);
+  compare(checker.getTypeAtLocation(heritage[0]).symbol === baseSymbol(expectedBase), true, `${exported.jsName} ${expectedBase} base`);
   const constructorType = constructor || checker.getTypeOfSymbolAtLocation(actual.symbol, declaration);
   for (const isStatic of [false, true]) {
     const members = declaration.members.filter((m) => m.name && hasModifier(m, ts.SyntaxKind.StaticKeyword) === isStatic);

@@ -20,13 +20,15 @@ try {
     ['removed method', original.replace(/  publish\(version: number\): void;\n/, '')],
     ['parameter type', original.replace('publish(version: number)', 'publish(version: string)')],
     ['record field', original.replace('connectedAt: number', 'connectedAt: string')],
+    ['module base', original.replace('extends NativeModule<Events>', 'extends DriftBase<Events>') +
+      "\nimport { SharedObject as DriftBase } from 'expo-modules-core';\n"],
   ]) {
     assert.notEqual(source, original, `mutation did not apply: ${name}`);
     const result = run(source);
     assert.equal(result.status, 1, `${name}: ${result.stderr}`);
     assert.match(result.stderr, /export drift/, `${name}: checker must report drift`);
   }
-  console.log('Export drift: baseline and three declaration negative controls passed');
+  console.log('Export drift: baseline and declaration negative controls passed');
 } finally {
   fs.rmSync(temporary, { recursive: true, force: true });
 }
