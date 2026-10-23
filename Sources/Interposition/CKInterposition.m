@@ -267,7 +267,9 @@ static void incoming(CXProvider *self, SEL selector, NSUUID *uuid, CXCallUpdate 
 }
 static void updated(CXProvider *self, SEL selector, NSUUID *uuid, CXCallUpdate *update) { if (installed) [Engine() updatedProvider:self uuid:uuid update:update]; }
 static void ended(CXProvider *self, SEL selector, NSUUID *uuid, NSDate *date, CXCallEndedReason reason) { if (installed) [Engine() endedProvider:self uuid:uuid reason:reason]; }
-static void connecting(CXProvider *self, SEL selector, NSUUID *uuid, NSDate *date) {}
+static void connecting(CXProvider *self, SEL selector, NSUUID *uuid, NSDate *date) {
+  if (installed) [Engine() recordEvent:@"report.connecting" fields:@{@"callUUID": uuid.UUIDString}];
+}
 static void connected(CXProvider *self, SEL selector, NSUUID *uuid, NSDate *date) { if (installed) [Engine() connectedProvider:self uuid:uuid]; }
 static NSArray *pending(CXProvider *self, SEL selector) { return installed ? [Engine() pendingForProvider:self] : @[]; }
 static NSArray *pendingActions(CXProvider *self, SEL selector, Class cls, NSUUID *uuid) {

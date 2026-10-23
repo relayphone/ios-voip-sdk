@@ -1,0 +1,40 @@
+name: Runtime event stream and inspector
+on:
+  push:
+    branches: [main]
+    paths: ["Sources/Engine/**", "Sources/Interposition/**", "Tools/**", "Inspector/**", "Tests/RuntimeEvents/**", "Tests/Inspector/**", "scripts/build-runtime.sh", "scripts/build-inspector.sh", ".github/workflows/runtime-m4.yml"]
+  pull_request:
+    paths: ["Sources/Engine/**", "Sources/Interposition/**", "Tools/**", "Inspector/**", "Tests/RuntimeEvents/**", "Tests/Inspector/**", "scripts/build-runtime.sh", "scripts/build-inspector.sh", ".github/workflows/runtime-m4.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: runtime-m4-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  runtime-events:
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+      - name: Watcher and existing CLI controls
+        run: |
+          python3 Tests/RuntimeEvents/test_watch.py
+          python3 discovery/check_cli_controls.py
+          python3 discovery/check_lck_provider_policy.py
+      - name: Build simulator runtime and event fixture
+        run: |
+          CKSIM_BUILD_ARCHS="$(uname -m)" bash scripts/build-runtime.sh "$RUNNER_TEMP/runtime"
+          bash Tests/RuntimeEvents/build.sh "$RUNNER_TEMP/fixture"
+      - name: Consume the shared channel through watch
+        run: |
+          python3 Tests/RuntimeEvents/run.py --package "$RUNNER_TEMP/runtime" \
+            --app "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" --out "$RUNNER_TEMP/m4-events"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: m4-event-channel
+          path: ${{ runner.temp }}/m4-events
+          if-no-files-found: warn
