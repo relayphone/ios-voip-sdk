@@ -27,9 +27,14 @@ final class LCKTap: NSObject, ConversationManagerDelegate, CXProviderDelegate, @
   func conversationManagerDidBegin(_ manager: ConversationManager) { log("didBegin") }
   func conversationManagerDidReset(_ manager: ConversationManager) { log("didReset") }
   func conversationManager(_ manager: ConversationManager, perform action: ConversationAction) {
+    let deadline = action.timeoutDate
+    let sampled = Date()
     var f: [String: Any] = ["kind": "\(type(of: action))", "action": String(action.uuid.uuidString.prefix(8)),
+                            "actionID": action.uuid.uuidString,
+                            "deadlineMS": Int64(deadline.timeIntervalSince1970 * 1000),
+                            "sampledAtMS": Int64(sampled.timeIntervalSince1970 * 1000),
                             "conversation": String(action.conversationUUID.uuidString.prefix(8)),
-                            "timeoutIn": (action.timeoutDate.timeIntervalSinceNow * 10).rounded() / 10, "state": "\(action.state)"]
+                            "timeoutIn": (deadline.timeIntervalSince(sampled) * 10).rounded() / 10, "state": "\(action.state)"]
     if let m = action as? MuteConversationAction { f["muted"] = m.isMuted }
     if let p = action as? PauseConversationAction { f["paused"] = p.isPaused }
     log("perform", f)
@@ -100,7 +105,12 @@ final class LCKProbe: NSObject, CXCallObserverDelegate, @unchecked Sendable {
                                       "pending": m.pendingActions.count, "observer": observer.calls.map(describe)])
   }
   func perform(_ m: ConversationManager, _ action: ConversationAction, _ label: String) async {
-    Trace.shared.log("lck.request", ["label": label, "kind": "\(type(of: action))", "action": String(action.uuid.uuidString.prefix(8))])
+    let deadline = action.timeoutDate
+    let sampled = Date()
+    Trace.shared.log("lck.request", ["label": label, "kind": "\(type(of: action))", "action": String(action.uuid.uuidString.prefix(8)),
+      "actionID": action.uuid.uuidString, "deadlineMS": Int64(deadline.timeIntervalSince1970 * 1000),
+      "sampledAtMS": Int64(sampled.timeIntervalSince1970 * 1000),
+      "timeoutIn": (deadline.timeIntervalSince(sampled) * 10).rounded() / 10])
     do { try await m.perform([action]); Trace.shared.log("lck.requestCompleted", ["label": label, "result": "ok"]) }
     catch { Trace.shared.log("lck.requestCompleted", ["label": label, "result": "\(error)"]) }
   }

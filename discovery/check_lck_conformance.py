@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from device_oracles import deadline_bands
+from device_oracles import deadline_bands, DEADLINE_ROUNDING_SECONDS
 from lck_conformance import CASES, ROOT, PROVIDER_APIS, compare, provider_apis, validate
 from summarize import EvidenceError, load
 
@@ -21,7 +21,7 @@ def references():
     return {case: load(directory, '2026-10-21-iphone13-ios27-lck-' + case) for case in CASES}
 
 
-def write_capture(directory, case, source):
+def write_capture(directory, case, source, edit=None):
     """Bind a synthetic device replay; no native simulator execution is implied."""
     identity = dict(runID='synthetic-lck-replay', simulatorID='synthetic', bundleID='dev.callkitsim.probe', pid=1234)
     package = directory / 'runtime-dist'
@@ -50,12 +50,26 @@ def write_capture(directory, case, source):
     next(row for row in rows if row['event'] == 'lck.start').update(os='26.5', build='23F77', simulator='synthetic')
     name = 'lck-' + case
     path = directory / (name + '.log')
-    path.write_text(''.join('PROBE ' + json.dumps(row) + '\n' for row in rows))
     engine = [dict(event='runtime.installed'), dict(event='transaction.delivered', transactionID='synthetic-delivery',
               actionIDs=['synthetic-action'], kinds=['CXStartCallAction'], origin='system', requestID='system')]
     for index, api in enumerate(PROVIDER_APIS[case]):
         engine += [dict(event='provider.created', provider=f'synthetic-provider-{index}'),
                    dict(event='provider.apiKind', provider=f'synthetic-provider-{index}', apiKind=api, delegatePresent=True)]
+    bands = deadline_bands([row for source in references().values() for row in source if row['event'] == 'lck.perform'])
+    public_deadlines = {}
+    for row in rows:
+        if row['event'] not in ('lck.request', 'lck.perform'): continue
+        sampled = 1_800_000_000_000 + row['t_ms']
+        duration_ms = round((bands[row['kind']][1] - DEADLINE_ROUNDING_SECONDS) * 1000)
+        deadline = public_deadlines.setdefault(row['action'], sampled + duration_ms)
+        row.update(actionID=row['action'] + '-0000-4000-8000-000000000000', sampledAtMS=sampled,
+                   deadlineMS=deadline, timeoutIn=round((deadline - sampled) / 1000, 1))
+        if row['event'] == 'lck.perform':
+            engine.append(dict(event='action.deadline', actionID=row['actionID'], apiKind='livecommunicationkit',
+                               issuedAtMS=deadline - duration_ms, deadlineMS=deadline,
+                               deadlineSeconds=duration_ms / 1000, expirySeconds=duration_ms / 1000))
+    if edit: edit(rows, engine)
+    path.write_text(''.join('PROBE ' + json.dumps(row) + '\n' for row in rows))
     for index, row in enumerate(engine, 1): row.update(sequence=index, t_ms=index, profile='ios-27.0', **identity)
     journal = directory / (name + '.engine.jsonl')
     journal.write_text(''.join(json.dumps(row) + '\n' for row in engine))
@@ -297,6 +311,120 @@ class LCKChecks(unittest.TestCase):
         bands = deadline_bands(changed)
         with self.assertRaisesRegex(EvidenceError, 'deadline differs from device'):
             compare(copy.deepcopy(reference), reference, bands)
+
+    def native_deadline_capture(self, edit=None, case='two-managers'):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            write_capture(directory, case, self.sources[case], edit)
+            return validate(directory, case)
+
+    def test_native_delayed_callback_keeps_the_issuance_deadline(self):
+        def delayed(rows, engine):
+            row = next(r for r in rows if r['event'] == 'lck.perform' and r['kind'] == 'StartConversationAction')
+            row['sampledAtMS'] += 3000
+            row['timeoutIn'] -= 3
+        self.assertTrue(self.native_deadline_capture(delayed)['success'])
+
+    def test_native_request_and_callback_dates_need_not_be_identical(self):
+        def measured_offset(rows, engine):
+            request = next(r for r in rows if r['event'] == 'lck.request')
+            callback = next(r for r in rows if r['event'] == 'lck.perform' and r['action'] == request['action'])
+            issued = next(r for r in engine if r['event'] == 'action.deadline' and r['actionID'] == request['actionID'])
+            # Native CI observed request -> issuance +14 ms, callback date +5 ms,
+            # with the callback sampled another 18 ms after issuance.
+            issued.update(issuedAtMS=request['sampledAtMS'] + 14, deadlineMS=request['deadlineMS'] + 14)
+            callback.update(deadlineMS=issued['deadlineMS'] + 5,
+                            sampledAtMS=issued['issuedAtMS'] + 18, timeoutIn=30.0)
+        self.assertTrue(self.native_deadline_capture(measured_offset)['success'])
+
+    def test_native_delayed_callback_cannot_reset_its_deadline(self):
+        def reset(rows, engine):
+            row = next(r for r in rows if r['event'] == 'lck.perform')
+            row['sampledAtMS'] += 3000
+            row['deadlineMS'] += 3000
+        with self.assertRaisesRegex(EvidenceError, 'bound engine deadline'):
+            self.native_deadline_capture(reset)
+
+    def test_native_public_and_engine_deadlines_must_agree_at_trace_precision(self):
+        for delta in (-1000, 1000):
+            def move_engine(rows, engine, delta=delta):
+                row = next(r for r in engine if r['event'] == 'action.deadline')
+                row['issuedAtMS'] += delta
+                row['deadlineMS'] += delta
+            with self.subTest(delta=delta), self.assertRaises(EvidenceError):
+                self.native_deadline_capture(move_engine)
+
+    def test_native_absolute_sample_distinguishes_rounding_from_expiry(self):
+        def nearly_expired(rows, engine):
+            row = next(r for r in rows if r['event'] == 'lck.perform')
+            row.update(sampledAtMS=row['deadlineMS'] - 40, timeoutIn=0.0)
+        self.assertTrue(self.native_deadline_capture(nearly_expired)['success'])
+
+    def test_native_remaining_sample_rejects_adjacent_or_unrounded_values(self):
+        for delta in (-0.1, -0.09):
+            def tamper(rows, engine, delta=delta):
+                row = next(r for r in rows if r['event'] == 'lck.perform')
+                row['timeoutIn'] += delta
+            with self.subTest(delta=delta), self.assertRaises(EvidenceError):
+                self.native_deadline_capture(tamper)
+
+    def test_unsolicited_native_actions_keep_the_device_remaining_band(self):
+        def delayed_system(rows, engine):
+            requested = {r['action'] for r in rows if r['event'] == 'lck.request'}
+            row = next(r for r in rows if r['event'] == 'lck.perform' and r['action'] not in requested)
+            row['sampledAtMS'] += 3000
+            row['timeoutIn'] -= 3
+        with self.assertRaisesRegex(EvidenceError, 'deadline differs from device'):
+            self.native_deadline_capture(delayed_system, case='basic')
+
+    def test_native_deadlines_reject_missing_or_unbound_identity_and_anchors(self):
+        def mutate(field, value, native=False, remove=False, request=False):
+            def edit(rows, engine):
+                row = next(r for r in (engine if native else rows)
+                           if r['event'] == ('action.deadline' if native else 'lck.request' if request else 'lck.perform'))
+                if remove: row.pop(field)
+                else: row[field] = value
+            return edit
+        variants = [mutate(field, None, remove=True) for field in ('actionID', 'deadlineMS', 'sampledAtMS')]
+        variants += [mutate(field, None, remove=True, request=True)
+                     for field in ('actionID', 'deadlineMS', 'sampledAtMS', 'timeoutIn')]
+        variants += [mutate('issuedAtMS', None, native=True, remove=True),
+                     mutate('actionID', 'not-a-uuid'),
+                     mutate('actionID', 'FFFFFFFF-0000-4000-8000-000000000000'),
+                     mutate('actionID', '00000000-0000-4000-8000-000000000000', native=True),
+                     mutate('apiKind', 'callkit', native=True),
+                     mutate('deadlineMS', True), mutate('sampledAtMS', '1800000000000'),
+                     mutate('issuedAtMS', False, native=True)]
+        for index, edit in enumerate(variants):
+            with self.subTest(index=index), self.assertRaises(EvidenceError): self.native_deadline_capture(edit)
+        def duplicate(rows, engine):
+            engine.append(copy.deepcopy(next(r for r in engine if r['event'] == 'action.deadline')))
+        with self.assertRaises(EvidenceError): self.native_deadline_capture(duplicate)
+        def missing(rows, engine):
+            engine.remove(next(r for r in engine if r['event'] == 'action.deadline'))
+        with self.assertRaises(EvidenceError): self.native_deadline_capture(missing)
+        def changed_request_identity(rows, engine):
+            row = next(r for r in rows if r['event'] == 'lck.request')
+            row['actionID'] = row['actionID'][:-1] + '1'
+        with self.assertRaises(EvidenceError): self.native_deadline_capture(changed_request_identity)
+
+    def test_native_deadlines_reject_duration_absolute_and_sample_tampering(self):
+        for seconds in (5, 600):
+            def wrong_duration(rows, engine, seconds=seconds):
+                row = next(r for r in engine if r['event'] == 'action.deadline')
+                row.update(issuedAtMS=row['deadlineMS'] - seconds * 1000,
+                           deadlineSeconds=seconds, expirySeconds=seconds)
+            with self.subTest(seconds=seconds), self.assertRaises(EvidenceError):
+                self.native_deadline_capture(wrong_duration)
+        for target, delta in (('public', 200), ('remaining', -1), ('before', -1), ('expired', 30_000)):
+            def tamper(rows, engine, target=target, delta=delta):
+                row = next(r for r in rows if r['event'] == 'lck.perform')
+                if target == 'public': row['deadlineMS'] += delta
+                elif target == 'remaining': row['timeoutIn'] += delta
+                else:
+                    row['sampledAtMS'] += delta
+                    row['timeoutIn'] = (row['deadlineMS'] - row['sampledAtMS']) / 1000
+            with self.subTest(target=target), self.assertRaises(EvidenceError): self.native_deadline_capture(tamper)
 
 
 if __name__ == '__main__':
