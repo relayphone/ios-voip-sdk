@@ -11,7 +11,7 @@ targets:
   Probe:
     type: application
     platform: iOS
-    sources: [main.swift, providers.swift, lck.swift]
+    sources: [main.swift, providers.swift, lck.swift, lckpush.swift]
     settings:
       base:
         PRODUCT_NAME: Probe
@@ -20,3 +20,4 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         TARGETED_DEVICE_FAMILY: "1"
         OTHER_SWIFT_FLAGS: "-parse-as-library"
+        CODE_SIGN_ENTITLEMENTS: ../../../discovery/device/Probe.entitlements

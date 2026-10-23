@@ -10,6 +10,7 @@ import UIKit
 
 final class LCKTap: NSObject, ConversationManagerDelegate, CXProviderDelegate, @unchecked Sendable {
   let label: String
+  static var muteFulfillDelay: Double = 0
   init(_ label: String) { self.label = label }
   func log(_ event: String, _ fields: [String: Any] = [:]) {
     var f = fields
@@ -40,6 +41,13 @@ final class LCKTap: NSObject, ConversationManagerDelegate, CXProviderDelegate, @
     log("perform", f)
     if action is StartConversationAction || action is JoinConversationAction {
       try? AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .voiceChat, options: [])
+    }
+    if action is MuteConversationAction, LCKTap.muteFulfillDelay > 0 {
+      let delay = LCKTap.muteFulfillDelay
+      DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+        action.fulfill(); self.log("muteFulfilled", ["action": String(action.uuid.uuidString.prefix(8)), "delayMs": Int(delay * 1000)])
+      }
+      return
     }
     action.fulfill()
     if action is StartConversationAction, let c = manager.conversations.first(where: { $0.uuid == action.conversationUUID }) {
@@ -182,6 +190,23 @@ final class LCKProbe: NSObject, CXCallObserverDelegate, @unchecked Sendable {
       _ = makeProvider(); await sleep(1); let m = makeManager(); await sleep(1)
       await outgoing(m, "lckafter-out")
       await incoming(m, "lckafter-in")
+    case "echo":
+      let m = makeManager(); await sleep(1)
+      // Outgoing, so a Focus on the test phone can't filter it.
+      let id = UUID()
+      await perform(m, StartConversationAction(conversationUUID: id, handles: [Handle(type: .phoneNumber, value: "+15555550174")], isVideo: false), "echo-start")
+      await sleep(1.5)
+      for delay in [0.0, 0.3, 1.0] {
+        LCKTap.muteFulfillDelay = delay
+        Trace.shared.log("lck.echoRound", ["delayMs": Int(delay * 1000)])
+        await perform(m, MuteConversationAction(conversationUUID: id, isMuted: true), "echo-mute-\(Int(delay * 1000))")
+        await sleep(delay + 1.5)
+        await perform(m, MuteConversationAction(conversationUUID: id, isMuted: false), "echo-unmute-\(Int(delay * 1000))")
+        await sleep(delay + 1.5)
+      }
+      LCKTap.muteFulfillDelay = 0
+      await perform(m, EndConversationAction(conversationUUID: id), "echo-end")
+      await sleep(1.5)
     case "two-managers":
       let m1 = makeManager("L1"); await sleep(1); let m2 = makeManager("L2"); await sleep(1)
       await outgoing(m1, "two-m1-out")
