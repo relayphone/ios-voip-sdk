@@ -18,8 +18,8 @@ import uuid
 
 REPO = Path(__file__).resolve().parent.parent
 CLI = REPO / "Tools/cksim"
-# Budget cold host/device service requests separately from steady-state operations.
-STARTUP_TIMEOUT_SECONDS = 180
+# Simulator queries use an infrastructure budget, separate from call deadlines.
+SIMULATOR_QUERY_TIMEOUT_SECONDS = 180
 KEYS = ("DYLD_INSERT_LIBRARIES", "CKSIM_RUNTIME", "CKSIM_BUNDLE_IDS", "CKSIM_ENABLED", "CKSIM_PROFILE")
 
 
@@ -146,9 +146,8 @@ def main():
     def snapshot(label):
         values = {}
         for key in KEYS:
-            timeout = STARTUP_TIMEOUT_SECONDS if label == "original" and key == "DYLD_INSERT_LIBRARIES" else 60
             result = sim(label+"-"+key.lower(), 'spawn', simulator, 'launchctl', 'getenv', key,
-                         timeout=timeout, sensitive=True)
+                         timeout=SIMULATOR_QUERY_TIMEOUT_SECONDS, sensitive=True)
             if result.stderr:
                 raise RuntimeError("Environment read diagnostic for " + key)
             values[key] = None if not result.stdout else result.stdout.removesuffix("\n")
@@ -189,7 +188,7 @@ def main():
             command("sign-"+label, ["codesign", "-s", "-", "--force", str(target)])
             command("verify-"+label, ["codesign", "--verify", "--strict", str(target)])
             receipt["helpers"][label] = sha(target)
-        runtimes = json.loads(sim("runtime-inventory", "list", "runtimes", "-j", timeout=STARTUP_TIMEOUT_SECONDS).stdout)["runtimes"]
+        runtimes = json.loads(sim("runtime-inventory", "list", "runtimes", "-j", timeout=SIMULATOR_QUERY_TIMEOUT_SECONDS).stdout)["runtimes"]
         available = [item for item in runtimes if item.get("platform") == "iOS" and item["isAvailable"]]
         runtime = max(available, key=lambda item: tuple(int(part) for part in item["version"].split(".")))
         simulator = sim("simulator-create", "create", "callkit-repair-"+receipt["runID"][:8],

@@ -27,8 +27,9 @@ prepare_stage() {
   shift 2
   echo "Preparing $phase"
   started=$(date +%s)
-  if limit "$budget" "$@" > "$OUT/$phase.prepare.log" 2>&1; then status=0; else status=$?; fi
-  printf 'phase=%s budgetSeconds=%s elapsedSeconds=%s exitStatus=%s\n' "$phase" "$budget" "$(( $(date +%s) - started ))" "$status" >> "$OUT/preparation.txt" || true
+  printf 'phase=%s budgetSeconds=%s event=started startedAtEpochSeconds=%s\n' "$phase" "$budget" "$started" >> "$OUT/preparation.txt" || true
+  if limit "$budget" "$@" > "$OUT/$phase.prepare.log" 2> "$OUT/$phase.prepare.stderr.log"; then status=0; else status=$?; fi
+  printf 'phase=%s budgetSeconds=%s event=completed elapsedSeconds=%s exitStatus=%s\n' "$phase" "$budget" "$(( $(date +%s) - started ))" "$status" >> "$OUT/preparation.txt" || true
   return "$status"
 }
 compiler() {
@@ -78,11 +79,17 @@ DEVTYPE=$(limit 30 xcrun simctl list devicetypes -j | python3 -c 'import json,sy
 echo "runtime=$RUNTIME devicetype=$DEVTYPE" | tee -a "$OUT/environment.txt"
 UDID=$(limit 30 xcrun simctl create "callkit-probe-$$" "$DEVTYPE" "$RUNTIME")
 echo "runOwnedSimulator=$UDID" >> "$OUT/environment.txt"
-limit 30 xcrun simctl boot "$UDID"
-limit 180 xcrun simctl bootstatus "$UDID" -b > /dev/null
+prepare_stage simulator-boot 30 xcrun simctl boot "$UDID"
+# Proposed CI startup policy, matching the SDK runner; no action deadline changes.
+prepare_stage simulator-bootstatus 300 xcrun simctl bootstatus "$UDID" -b
 
 SDK_TARGET="$(uname -m)-apple-ios18.0-simulator"
-SDK=$(compiler --show-sdk-path)
+if [[ -n "${COMPILER_DEVELOPER_DIR:-}" ]]; then
+  prepare_stage sdk-path 30 env DEVELOPER_DIR="$COMPILER_DEVELOPER_DIR" xcrun -sdk iphonesimulator --show-sdk-path
+else
+  prepare_stage sdk-path 30 xcrun -sdk iphonesimulator --show-sdk-path
+fi
+SDK=$(cat "$OUT/sdk-path.prepare.log")
 SWIFT_DEFS=(-D CKSIM_LEGACY_PUSH_ONLY)
 CLANG_DEFS=(-DCKSIM_HAS_VOIP_METADATA=0)
 PUSH_API=legacy
@@ -166,6 +173,9 @@ pathlib.Path(p).write_text(json.dumps(manifest,indent=2)+'\n')
 PYMANIFEST
 cp -R "$BUILD/runtime" "$OUT/runtime-dist"
 prepare_stage app-install 180 xcrun simctl install "$UDID" "$BUILD/Probe.app"
+prepare_stage probe-data-container 180 xcrun simctl get_app_container "$UDID" dev.callkitsim.probe data
+PROBE_DATA_CONTAINER=$(cat "$OUT/probe-data-container.prepare.log")
+[[ -n "$PROBE_DATA_CONTAINER" && -d "$PROBE_DATA_CONTAINER" ]] || { echo "Missing run-owned probe data container" >&2; exit 1; }
 prepare_stage permissions 60 xcrun simctl privacy "$UDID" grant microphone dev.callkitsim.probe
 xcrun simctl spawn "$UDID" log stream --style compact --predicate 'process == "callservicesd" AND (composedMessage CONTAINS "wont be a UI" OR composedMessage CONTAINS "Error setting audio active" OR composedMessage CONTAINS "Failed to open URL" OR composedMessage CONTAINS "disconnect reason")' > "$OUT/callservicesd.log" 2>&1 &
 LOGGER=$!
@@ -188,9 +198,7 @@ run() {
     --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.callkitsim.probe \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.probe \
     --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.callkitsim.probe; then
-    local container
-    container=$(limit 20 xcrun simctl get_app_container "$UDID" dev.callkitsim.probe data)
-    local journal="$container/Documents/.callkit-simulator/$RUN_ID/events.jsonl"
+    local journal="$PROBE_DATA_CONTAINER/Documents/.callkit-simulator/$RUN_ID/events.jsonl"
     if [[ "$name" != genuine ]]; then
       cp "$journal" "$OUT/$name.engine.jsonl"
       python3 - "$OUT/$name.receipt.json" "$OUT/$name.engine.jsonl" <<'PY'
@@ -205,11 +213,9 @@ PY
       --predicate 'eventMessage CONTAINS "dev.callkitsim.probe"' > "$OUT/$name.system.log" 2>&1; then
       echo "System diagnostic collection failed" >> "$OUT/$name.system.log" || true
     fi
-    local container
-    container=$(limit 10 xcrun simctl get_app_container "$UDID" dev.callkitsim.probe data 2> "$OUT/$name.container-lookup.log") || container=""
-    if [[ -n "$container" && -f "$container/Documents/trace.jsonl" ]]; then
-      if ! cp "$container/Documents/trace.jsonl" "$OUT/$name.container.jsonl"; then
-        echo "Container trace recovery failed" >> "$OUT/$name.container-lookup.log" || true
+    if [[ -f "$PROBE_DATA_CONTAINER/Documents/trace.jsonl" ]]; then
+      if ! cp "$PROBE_DATA_CONTAINER/Documents/trace.jsonl" "$OUT/$name.container.jsonl"; then
+        echo "Container trace recovery failed" >> "$OUT/$name.container-recovery.log" || true
       fi
     fi
     return "$status"
