@@ -205,6 +205,33 @@ public final class ConversationClient: NSObject {
     }; refresh(); throw error }
   }
   private var outgoingMetadata: [UUID: [String: JSONValue]] = [:]
+  private struct IncomingLocalEndClaim {
+    let generation: UUID
+    weak var object: Conversation?
+  }
+  private var incomingLocalEndClaims: [UUID: [IncomingLocalEndClaim]] = [:]
+  private func incomingLocalEndTarget(_ id: UUID) -> IncomingLocalEndClaim? {
+    guard let incoming = incomingIntake.projection(id),
+          let object = manager.conversations.first(where: { $0.uuid == id }) else { return nil }
+    return IncomingLocalEndClaim(generation: incoming.generation, object: object)
+  }
+  private func hasIncomingLocalEndClaim(_ id: UUID, generation: UUID, object: Conversation) -> Bool {
+    incomingLocalEndClaims[id, default: []].contains { $0.generation == generation && $0.object === object }
+  }
+  @discardableResult
+  private func claimIncomingLocalEnd(_ id: UUID, generation: UUID, object: Conversation) -> Bool {
+    guard !hasIncomingLocalEndClaim(id, generation: generation, object: object) else { return false }
+    incomingLocalEndClaims[id, default: []].append(IncomingLocalEndClaim(generation: generation, object: object))
+    return true
+  }
+  private func pruneIncomingLocalEndClaims() {
+    for (id, claims) in incomingLocalEndClaims {
+      let generation = incomingIntake.projection(id)?.generation
+      let live = claims.filter { $0.generation == generation && $0.object != nil }
+      if live.isEmpty { incomingLocalEndClaims.removeValue(forKey: id) }
+      else { incomingLocalEndClaims[id] = live }
+    }
+  }
   public func metadata(for id: UUID) -> [String: JSONValue]? {
     if let incoming = incomingIntake.projection(id) { return incoming.payload.metadata }
     return records[id]?.payload?.metadata ?? outgoingMetadata[id]
@@ -283,7 +310,13 @@ public final class ConversationClient: NSObject {
     return accepted
   }
 
-  public func reportConversation(_ id: UUID, report: ConversationReport) throws {
+  /// Local termination submits the ordinary End action. The await confirms request
+  /// acceptance; the handler and terminal snapshot may arrive afterward.
+  public func reportConversation(_ id: UUID, report: ConversationReport) async throws {
+    if case .ended(.local) = report {
+      try await endConversation(id)
+      return
+    }
     guard let conversation = manager.conversations.first(where: { $0.uuid == id }), records[id] != nil else {
       throw ConversationClientError.unknownConversation
     }
@@ -303,12 +336,13 @@ public final class ConversationClient: NSObject {
       if let video { records[id]?.video = video }
       if let record = records[id] { manager.reportConversationEvent(.conversationUpdated(update(for: record)), for: conversation) }
     case .ended(let reason):
+      guard let nativeReason = endedReason(reason) else { throw ConversationClientError.unsupported }
       records[id]?.ended = .init(at: now, reason: reason)
       if let incoming = incomingIntake.projection(id) {
         incomingIntake.terminate(id, generation: incoming.generation, reason: reason,
           now: now, requiresReport: false)
       }
-      manager.reportConversationEvent(.conversationEnded(now, endedReason(reason)), for: conversation)
+      manager.reportConversationEvent(.conversationEnded(now, nativeReason), for: conversation)
     }
     refresh()
   }
@@ -333,6 +367,12 @@ public final class ConversationClient: NSObject {
       action = MergeConversationAction(conversationUUID: first, conversationUUIDToMergeWith: second)
     }
     let id = action.uuid
+    if case .end(let conversationID) = command,
+       let target = incomingLocalEndTarget(conversationID), let object = target.object {
+      // Account for the object targeted at submission, never a later replacement
+      // that happens to be current when the handler completes.
+      claimIncomingLocalEnd(conversationID, generation: target.generation, object: object)
+    }
     appActions = appActions.filter { $0.value > Date() }
     appActions[id] = action.timeoutDate
     do { try await manager.perform([action]) }
@@ -361,9 +401,10 @@ public final class ConversationClient: NSObject {
     if record.video { capabilities.insert(.video) }
     return .init(members: Set(record.members.map(handle)), capabilities: capabilities)
   }
-  private func endedReason(_ reason: ConversationEndedReason) -> Conversation.EndedReason {
+  private func endedReason(_ reason: ConversationEndedReason) -> Conversation.EndedReason? {
     switch reason {
-    case .local, .remoteEnded: .remoteEnded
+    case .local: nil
+    case .remoteEnded: .remoteEnded
     case .failed: .failed
     case .unanswered: .unanswered
     case .answeredElsewhere: .joinedElsewhere
@@ -391,6 +432,7 @@ public final class ConversationClient: NSObject {
   }
   private func refresh() {
     guard refreshSuspensionDepth == 0 else { return }
+    pruneIncomingLocalEndClaims()
     let current = manager.conversations
     let projectedObjects = terminalProjection.project(current: Dictionary(uniqueKeysWithValues: current.map { ($0.uuid, $0) }))
     let ids = Set(projectedObjects.keys)
@@ -405,10 +447,27 @@ public final class ConversationClient: NSObject {
         records[conversation.uuid] = placeholder
       }
       records[conversation.uuid]?.seenInManager = true
-      if let incoming {
-        if conversation.state != .left,
-           let terminal = incomingIntake.takePendingTermination(conversation.uuid, generation: incoming.generation) {
-          manager.reportConversationEvent(.conversationEnded(terminal.ended.at, endedReason(terminal.ended.reason)), for: conversation)
+      if let incoming, conversation.state != .left {
+        let pending = incomingIntake.takePendingTermination(conversation.uuid, generation: incoming.generation)
+        if let terminal = pending ?? incoming.terminal, terminal.ended.reason == .local {
+          // Canonical local termination applies to each observed platform object,
+          // including replacements published after an earlier task was skipped.
+          guard !hasIncomingLocalEndClaim(conversation.uuid, generation: incoming.generation,
+            object: conversation) else { continue }
+          Task { @MainActor [weak self] in
+            guard let self, let latest = self.incomingIntake.projection(conversation.uuid),
+                  latest.generation == incoming.generation, latest.terminal?.revision == terminal.revision,
+                  self.manager.conversations.first(where: { $0.uuid == conversation.uuid }) === conversation,
+                  conversation.state != .left else { return }
+            // Scheduling alone consumes no object. Mark immediately before the
+            // actual request, then retain the claim on either acceptance or error.
+            guard self.claimIncomingLocalEnd(conversation.uuid, generation: incoming.generation,
+              object: conversation) else { return }
+            do { try await self.perform(.end(conversation.uuid)) }
+            catch { NSLog("VoIPSDK: retained local termination request failed.") }
+          }
+        } else if let pending, let reason = endedReason(pending.ended.reason) {
+          manager.reportConversationEvent(.conversationEnded(pending.ended.at, reason), for: conversation)
         }
       }
     }
@@ -515,6 +574,12 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
     let id = action.conversationUUID
     let origin: ConversationActionOrigin = appActions.removeValue(forKey: action.uuid) == nil ? .system : .app
     hydrateIncoming(id)
+    if action is EndConversationAction, origin == .system,
+       let target = incomingLocalEndTarget(id), let object = target.object {
+      // Delivery is already an actual attempt. Claim its original object before
+      // refresh can schedule retained cleanup, including when the handler fails.
+      claimIncomingLocalEnd(id, generation: target.generation, object: object)
+    }
     if let start = action as? StartConversationAction, records[id]?.metadataIsPlaceholder != false {
       let members = start.handles.map { handle -> Participant in
         Participant(id: handle.value, displayName: handle.displayName,

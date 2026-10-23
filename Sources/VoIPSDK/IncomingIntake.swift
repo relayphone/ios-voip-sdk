@@ -235,6 +235,9 @@ final class IncomingIntake: @unchecked Sendable {
   /// an unknown server event. A known in-flight invitation retains termination.
   @discardableResult
   func terminate(_ payload: CallEndedPayload, now: Date = Date()) -> Bool {
+    // A transport notification cannot request a local system action. Reject it
+    // before event dedup so a corrected remote notification remains eligible.
+    guard payload.reason != .local else { return false }
     lock.lock()
     defer { lock.unlock() }
     endEventIDs = endEventIDs.filter { now.timeIntervalSince($0.value) <= 120 }

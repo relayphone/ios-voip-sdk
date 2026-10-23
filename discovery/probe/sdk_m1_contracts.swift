@@ -170,7 +170,9 @@ private final class SDKM1ContractsProbe {
     }))
     ContractTrace.log("contract.duplicateEndRequested", ["conversationID": first.uuidString])
     CKSimEmit("contract.duplicateEndBoundary", ["stage": "requested", "callUUID": first.uuidString])
-    try await client.endConversation(first)
+    // Exercise the local report's real End request using the same native action
+    // oracle; the original A1 qualification used endConversation at this seam.
+    try await client.reportConversation(first, report: .ended(.local))
     // LCK command completion acknowledges the request and may precede perform.
     // Observe actual handler/terminal cleanup separately before completing proof.
     CKSimEmit("contract.duplicateEndBoundary", ["stage": "command-returned", "callUUID": first.uuidString])
@@ -205,7 +207,7 @@ private final class SDKM1ContractsProbe {
     defer { request.cancel() }
     _ = await wait(seconds: 5) { client.snapshots.first(where: { $0.id == id })?.pending != nil }
     guard let pending = client.snapshots.first(where: { $0.id == id })?.pending else {
-      try? client.reportConversation(id, report: .ended(.failed)); finish(false); return
+      try? await client.reportConversation(id, report: .ended(.failed)); finish(false); return
     }
     let clockBefore = Int(Date().timeIntervalSince1970 * 1000)
     CKSimEmit("contract.pendingClock", ["actionID": pending.id.uuidString])
@@ -234,7 +236,7 @@ private final class SDKM1ContractsProbe {
       // its conversation. Explicit fixture cleanup is a separate observation.
       if call != nil {
         ContractTrace.log("contract.fixtureCleanupRequested", ["conversationID": id.uuidString, "reason": "failed"])
-        try client.reportConversation(id, report: .ended(.failed))
+        try await client.reportConversation(id, report: .ended(.failed))
         ContractTrace.log("contract.fixtureCleanupReported", ["conversationID": id.uuidString, "reason": "failed"])
       } else {
         ContractTrace.log("contract.fixtureCleanupSkipped", ["conversationID": id.uuidString])
@@ -249,7 +251,7 @@ private final class SDKM1ContractsProbe {
     ContractTrace.log("contract.observation", ["connected": connected, "conversationID": id.uuidString])
     if client.snapshots.contains(where: { $0.id == id }) {
       ContractTrace.log("contract.endReportRequested", ["conversationID": id.uuidString])
-      try client.reportConversation(id, report: .ended(.remoteEnded))
+      try await client.reportConversation(id, report: .ended(.remoteEnded))
       ContractTrace.log("contract.reportEnded", ["conversationID": id.uuidString])
     }
     let empty = await wait(seconds: 3) { client.snapshots.isEmpty }
