@@ -50,7 +50,9 @@ return exactly one owned native continuation; late settlements are rejected and
 pending ends at zero. A native deadline Task emits cancellation into an AbortSignal,
 including cancel-before-invoke. Observed local invoke latency was 0.064–0.160 ms,
 JS-to-native return 4.39–27.60 ms, and deadline-to-abort 11.57 ms
-(timer lateness included; dispatch-only 0.157 ms). No-handler policy applies immediately without continuations or JS dispatch.
+(timer lateness included; dispatch-only 0.157 ms). In the spike, a missing handler
+returns the native default immediately without continuations or JS dispatch;
+SDK system actions must retain their pending-until-effective-deadline policy.
 
 Bounded raw async callbacks resolve/reject; a value-returning callback blocks its
 background native caller for 15.14 ms. Raw async waiters have [no teardown
@@ -65,12 +67,14 @@ declaration mutations fail CI. Typed `@Event` on `@SharedObject` works.
 An AppDelegateSubscriber retains a real PKPushRegistry, sets its delegate, and
 requests VoIP registration 389.35 ms before RN's native bundle-load START. Both timestamps
 are recorded and survive reload unchanged. The native cold default also precedes
-initial loading. PushKit requires CallKit linkage.
+initial loading. This simulator probe requires CallKit linkage; device Release
+builds must retain the SDK's CallKit exclusion.
 
 **M3.5: GO with a thin macro adapter and native-owned lifetimes.** Keep SDK state
 in its chosen isolated service, cross it with Sendable values, schedule all JSI
 publication explicitly, and retain versioned frozen projections. Register PushKit
-and apply cold-push defaults natively without waiting for JS. Use the one-shot
+and apply cold-push defaults natively without waiting for JS, preserving the
+SDK's effective-deadline action policy. Use the one-shot
 request/settle protocol for handlers; default-actor affinity and raw untrusted
 async-callback cancellation are NO-GO. Keep the 1.0 fallback while this beta and
 device integration mature; these simulator results support beginning #50's adapter.
