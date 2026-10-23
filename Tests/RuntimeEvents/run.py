@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
+import sys
 import time
 import uuid
 
@@ -11,11 +12,28 @@ ROOT = Path(__file__).resolve().parents[2]
 BUNDLE = 'dev.callkitsim.eventfixture'
 
 
-def run(*args, **kwargs):
-    result = subprocess.run(list(map(str, args)), text=True, capture_output=True, timeout=120, **kwargs)
+def run(*args, timeout=120, **kwargs):
+    try:
+        result = subprocess.run(list(map(str, args)), text=True, capture_output=True, timeout=timeout, **kwargs)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(f'{args[0]} timed out after {timeout}s: {error.stdout!r}\n{error.stderr!r}') from error
     if result.returncode:
         raise RuntimeError(f'{args[0]} failed: {result.stdout}\n{result.stderr}')
     return result.stdout.strip()
+
+
+def remove_simulators(devices):
+    errors = []
+    for device in reversed(devices):
+        for operation in ('shutdown', 'delete'):
+            try:
+                run('xcrun', 'simctl', operation, device, timeout=30)
+            except (RuntimeError, subprocess.TimeoutExpired, OSError) as error:
+                errors.append(str(error))
+    if errors:
+        if sys.exc_info()[0] is None:
+            raise RuntimeError('\n'.join(errors))
+        print('\n'.join(errors), file=sys.stderr)
 
 
 def wait(predicate):
@@ -40,8 +58,8 @@ def main():
                    if r.get('isAvailable') and r['name'].startswith('iOS'))
     device = args.simulator or run('xcrun', 'simctl', 'create', 'Codex M4 ' + str(uuid.uuid4())[:8],
                                    'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro', runtime)
-    def sim(*parts):
-        return run('xcrun', 'simctl', *parts)
+    def sim(*parts, **kwargs):
+        return run('xcrun', 'simctl', *parts, **kwargs)
     def command(*parts):
         return json.loads(run(ROOT / 'Tools/cksim', '--simulator', device, '--bundle', BUNDLE,
                               '--runtime-dir', args.package.resolve(), *parts))
@@ -51,7 +69,7 @@ def main():
         state = next(d['state'] for group in devices.values() for d in group if d['udid'] == device)
         if state != 'Booted':
             sim('boot', device)
-        sim('bootstatus', device, '-b')
+        sim('bootstatus', device, '-b', timeout=300)
         sim('install', device, args.app.resolve())
         sim('launch', '--terminate-running-process', device, BUNDLE)
         container = Path(sim('get_app_container', device, BUNDLE, 'data'))
@@ -121,8 +139,7 @@ def main():
         print(json.dumps(dict(success=True, events=len(watched), channelMatchesWatch=True)))
     finally:
         if not args.simulator:
-            sim('shutdown', device)
-            sim('delete', device)
+            remove_simulators([device])
 
 
 if __name__ == '__main__':

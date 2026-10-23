@@ -22,6 +22,7 @@ jobs:
       - name: Watcher and existing CLI controls
         run: |
           python3 Tests/RuntimeEvents/test_watch.py
+          python3 Tests/RuntimeEvents/test_native_runner.py
           python3 discovery/check_cli_controls.py
           python3 discovery/check_lck_provider_policy.py
       - name: Build simulator runtime and event fixture
