@@ -2,17 +2,20 @@
 """Run a probe to its terminal marker, then stop only the run-owned app."""
 
 import argparse
+import errno
 import hashlib
 import json
 import math
 import os
 import re
+import select
 from pathlib import Path
 import queue
 import signal
 import subprocess
 import threading
 import time
+import tty
 
 
 def bind_launcher_pid(result, matches):
@@ -31,24 +34,74 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
     process = None
     stopped = False
     messages = queue.Queue()
+    reader = None
+    reader_stop = threading.Event()
+    master = slave = None
     bundle = result.get("bundleID")
     launcher_header = re.compile(rb"(?m)^" + re.escape(bundle.encode()) + rb": (\d+)\r?$") if bundle else None
     try:
         if console_launcher_stop and not bundle:
             raise RuntimeError("console launcher stop requires a bound bundle ID")
         with output.open("xb") as log:
-            process = subprocess.Popen(launch, stdout=subprocess.PIPE,
-                                       stderr=subprocess.STDOUT, start_new_session=True)
+            if console_launcher_stop:
+                master, slave = os.openpty()
+                tty.setraw(slave)  # Preserve bytes; only the launcher stdout uses this PTY.
+                result["consoleTransport"] = "host-pty"
+            try:
+                process = subprocess.Popen(launch, stdout=slave if console_launcher_stop else subprocess.PIPE,
+                                           stderr=subprocess.PIPE if console_launcher_stop else subprocess.STDOUT,
+                                           start_new_session=True)
+            finally:
+                if slave is not None:
+                    os.close(slave)
+                    slave = None
             result["launcherPID"] = process.pid
+            read_fds = [master, process.stderr.fileno()] if console_launcher_stop else [process.stdout.fileno()]
 
             def read():
+                pending = {fd: b"" for fd in read_fds}
+                active = set(read_fds)
                 try:
-                    for line in iter(process.stdout.readline, b""):
-                        messages.put(line)
+                    while active and not reader_stop.is_set():
+                        ready, _, _ = select.select(list(active), [], [], .1)
+                        for fd in ready:
+                            try:
+                                chunk = os.read(fd, 65536)
+                            except OSError as error:
+                                if fd != master or error.errno != errno.EIO:
+                                    raise
+                                chunk = b""  # A closed PTY can report EIO instead of EOF.
+                            if not chunk:
+                                if pending[fd]:
+                                    messages.put(pending[fd])
+                                    pending[fd] = b""
+                                active.remove(fd)
+                                continue
+                            pending[fd] += chunk
+                            while b"\n" in pending[fd]:
+                                line, pending[fd] = pending[fd].split(b"\n", 1)
+                                messages.put(line + b"\n")
+                    for tail in pending.values():
+                        if tail:
+                            messages.put(tail)
+                except OSError as error:
+                    messages.put(error)
                 finally:
-                    messages.put(None)
+                    if console_launcher_stop:
+                        try:
+                            os.close(master)
+                        except OSError as error:
+                            messages.put(error)
+                    for stream in (process.stdout, process.stderr):
+                        if stream is not None:
+                            try:
+                                stream.close()
+                            except OSError as error:
+                                messages.put(error)
+                    messages.put(None)  # Both streams have closed, or the reader failed.
 
-            threading.Thread(target=read, daemon=True).start()
+            reader = threading.Thread(target=read, daemon=True)
+            reader.start()
             deadline = started + timeout
             while not result["completed"]:
                 remaining = deadline - time.monotonic()
@@ -58,6 +111,8 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                     line = messages.get(timeout=min(remaining, 0.2))
                 except queue.Empty:
                     continue
+                if isinstance(line, OSError):
+                    raise line
                 if line is None:
                     result["stdoutEOFSeconds"] = round(time.monotonic() - started, 3)
                     raise RuntimeError("launcher exited before terminal done event")
@@ -82,8 +137,27 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
             # accepted only after done and a successful termination of our app.
             # simctl may flush its PID header only after termination; bind that
             # identity after draining the launcher, before accepting success.
+            reply_terminal = []
             if console_launcher_stop:
                 result["terminationMethod"] = "console-launcher-signal"
+                # Let an in-flight launcher reply arrive, without requiring it
+                # before stop: some launchers emit their header only after exit.
+                reply_deadline = min(deadline, time.monotonic() + 2)
+                have_reply = bool(launcher_header.search(output.read_bytes()))
+                while not have_reply:
+                    remaining = reply_deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    try:
+                        line = messages.get(timeout=remaining)
+                    except queue.Empty:
+                        break
+                    if line is None or isinstance(line, OSError):
+                        reply_terminal.append(line)
+                        break
+                    log.write(line)
+                    log.flush()
+                    have_reply = bool(launcher_header.search(line))
                 if process.poll() is not None:
                     raise RuntimeError("console launcher exited before owned stop signal")
                 # simctl launch --console[-pty] documents forwarding received
@@ -111,9 +185,11 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                 if remaining <= 0:
                     raise RuntimeError("launcher output did not close after stop")
                 try:
-                    line = messages.get(timeout=remaining)
+                    line = reply_terminal.pop() if reply_terminal else messages.get(timeout=remaining)
                 except queue.Empty:
                     raise RuntimeError("launcher output did not close after stop")
+                if isinstance(line, OSError):
+                    raise line
                 if line is None:
                     break
                 log.write(line)
@@ -122,34 +198,66 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                 identity_error = bind_launcher_pid(result, launcher_header.findall(output.read_bytes()))
                 if identity_error:
                     raise RuntimeError(identity_error)
+                result["appAbsenceMethod"] = "signal-zero"
+                result["appAbsentAfterStop"] = False
+                absence_deadline = time.monotonic() + 2
+                while True:
+                    try:
+                        os.kill(result["appPID"], 0)
+                    except ProcessLookupError:
+                        result["appAbsentAfterStop"] = True
+                        break
+                    if time.monotonic() >= absence_deadline:
+                        raise RuntimeError("run-owned app PID still exists after console stop")
+                    time.sleep(.02)
                 stopped = True
             result["success"] = True
     except (OSError, RuntimeError, subprocess.TimeoutExpired, queue.Empty) as error:
         result["error"] = str(error)
     finally:
-        if process is not None:
-            # Preserve the observed launcher state before cleanup can signal it.
-            result["launchExitCodeBeforeCleanup"] = process.poll()
-            # The launcher can exit while the app it launched remains alive.
-            if not stopped:
+        try:
+            if process is not None:
+                # Preserve the observed launcher state before cleanup can signal it.
+                result["launchExitCodeBeforeCleanup"] = process.poll()
+                # The launcher can exit while the app it launched remains alive.
+                if not stopped:
+                    try:
+                        stop = subprocess.run(terminate, capture_output=True, timeout=10)
+                        result["cleanupExitCode"] = stop.returncode
+                    except (OSError, subprocess.TimeoutExpired) as error:
+                        result["cleanupError"] = str(error)
                 try:
-                    stop = subprocess.run(terminate, capture_output=True, timeout=10)
-                    result["cleanupExitCode"] = stop.returncode
-                except (OSError, subprocess.TimeoutExpired) as error:
-                    result["cleanupError"] = str(error)
-            try:
-                process.wait(timeout=1)
-            except subprocess.TimeoutExpired:
-                try:
-                    process.terminate()
-                    process.wait(timeout=5)
+                    process.wait(timeout=1)
                 except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
-                except OSError as error:
-                    result["cleanupError"] = str(error)
-                    result["success"] = False
-            result["launchExitCode"] = process.returncode
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            result["cleanupError"] = str(error)
+            result["success"] = False
+        finally:
+            if process is not None:
+                result["launchExitCode"] = process.returncode
+        reader_stop.set()
+        reader_started = reader is not None and reader.ident is not None
+        if reader_started:
+            reader.join(timeout=1)
+            if reader.is_alive():
+                result["success"] = False
+                result["cleanupError"] = "console reader did not stop"
+        # A started reader owns its descriptor until exit, including a failed join.
+        # Never close/reuse that descriptor underneath a still-running reader.
+        if master is not None and not reader_started:
+            os.close(master)
+        if slave is not None:
+            os.close(slave)
+        if not reader_started and process is not None:
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
         result["elapsedSeconds"] = round(time.monotonic() - started, 3)
         if output.exists():
             data = output.read_bytes()
@@ -177,7 +285,7 @@ def main():
     parser.add_argument("--scenario")
     parser.add_argument("--bundle-id")
     parser.add_argument("--console-launcher-stop", action="store_true",
-                        help="after done, signal this console launcher's PID; require its final app PID acknowledgement")
+                        help="use a raw host PTY; after done, signal this launcher PID and require its sole app PID acknowledgement and absence")
     parser.add_argument("--terminate-command", nargs="+", required=True)
     parser.add_argument("--launch-command", nargs=argparse.REMAINDER, required=True)
     args = parser.parse_args()

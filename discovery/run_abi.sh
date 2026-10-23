@@ -42,8 +42,10 @@ codesign -s - --force "$BUILD/Probe.app" >> "$OUT/build.log" 2>&1
 env DEVELOPER_DIR="${COMPILER_DEVELOPER_DIR:-${DEVELOPER_DIR:-$(xcode-select -p)}}" \
   CKSIM_BUILD_ARCHS="$(uname -m)" CKSIM_ABI_TESTING=1 bash scripts/build-runtime.sh "$BUILD/runtime" >> "$OUT/build.log" 2>&1
 cp "$BUILD/runtime/build-info.json" "$OUT/build-info.json"
+printf 'ABI setup: list simulator runtimes (60-second limit).\n' >&2
 limit 60 xcrun simctl list runtimes -j > "$BUILD/runtimes.json"
 RUNTIME=$(python3 -c 'import json,sys; r=[x for x in json.load(open(sys.argv[1]))["runtimes"] if x.get("platform")=="iOS" and x["isAvailable"]]; print(sorted(r,key=lambda x:[int(p) for p in x["version"].split(".")])[-1]["identifier"])' "$BUILD/runtimes.json")
+printf 'ABI setup: create owned simulator (30-second limit).\n' >&2
 UDID=$(limit 30 xcrun simctl create "callkit-abi-$$" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$RUNTIME")
 echo "runOwnedSimulator=$UDID runtime=$RUNTIME" >> "$OUT/environment.txt"
 limit 60 xcrun simctl boot "$UDID"
@@ -75,7 +77,7 @@ for scenario in refused-queues missing-provider-init missing-controller-init pus
     python3 discovery/run_scenario.py --console-launcher-stop --timeout 200 --output "$OUT/$scenario.log" --receipt "$OUT/$scenario.receipt.json" \
     --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$scenario" --bundle-id dev.callkitsim.abi \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.abi \
-    --launch-command xcrun simctl launch --console-pty --terminate-running-process "$UDID" dev.callkitsim.abi
+    --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.callkitsim.abi
 done
 CHECK_ARGS=("$OUT" --runtime "$BUILD/runtime/CKSimRuntime.dylib" --probe "$BUILD/Probe.app/Probe")
 if [[ -n "${CKSIM_ABI_ONLY:-}" ]]; then CHECK_ARGS+=(--case "$CKSIM_ABI_ONLY"); fi
