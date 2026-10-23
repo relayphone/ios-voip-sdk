@@ -20,13 +20,15 @@ for filename in ('ConversationClient.swift', 'IncomingReportTransport.swift'):
 PY
 perl -e 'alarm shift; exec @ARGV' 30 xcrun clang -fobjc-arc -fmodules -c \
   Sources/VoIPPlatform/VSProcessSDKOwnership.m -o "$TEST_OUTPUT/ownership.o"
-perl -e 'alarm shift; exec @ARGV' 90 xcrun swiftc -swift-version 6 -warnings-as-errors -parse-as-library \
-  -import-objc-header Sources/VoIPPlatform/include/VSProcessSDKOwnership.h \
-  Sources/VoIPSDK/ConversationModels.swift Sources/VoIPSDK/ConversationRecord.swift \
-  Sources/VoIPSDK/ConversationHandler.swift Sources/VoIPSDK/IncomingInvitationGate.swift \
-  Sources/VoIPSDK/IncomingIntake.swift Sources/VoIPSDK/PushWire.swift \
-  Sources/VoIPSDK/SimulatorSupport.swift Sources/VoIPSDK/ProcessSDKOwnership.swift \
-  "$TEST_OUTPUT/ConversationClient.swift" "$TEST_OUTPUT/IncomingReportTransport.swift" \
-  Tests/VoIPSDK/IncomingCachePlatform.swift Tests/VoIPSDK/ReportContractTests.swift \
-  "$TEST_OUTPUT/ownership.o" -o "$TEST_OUTPUT/ReportContractTests"
-perl -e 'alarm shift; exec @ARGV' 20 "$TEST_OUTPUT/ReportContractTests"
+for TEST_CASE in ReportContractTests ConnectionContractTests; do
+  perl -e 'alarm shift; exec @ARGV' 90 xcrun swiftc -swift-version 6 -warnings-as-errors -parse-as-library \
+    -import-objc-header Sources/VoIPPlatform/include/VSProcessSDKOwnership.h \
+    Sources/VoIPSDK/ConversationModels.swift Sources/VoIPSDK/ConversationRecord.swift \
+    Sources/VoIPSDK/ConversationHandler.swift Sources/VoIPSDK/IncomingInvitationGate.swift \
+    Sources/VoIPSDK/IncomingIntake.swift Sources/VoIPSDK/PushWire.swift \
+    Sources/VoIPSDK/SimulatorSupport.swift Sources/VoIPSDK/ProcessSDKOwnership.swift \
+    "$TEST_OUTPUT/ConversationClient.swift" "$TEST_OUTPUT/IncomingReportTransport.swift" \
+    Tests/VoIPSDK/IncomingCachePlatform.swift "Tests/VoIPSDK/$TEST_CASE.swift" \
+    "$TEST_OUTPUT/ownership.o" -o "$TEST_OUTPUT/$TEST_CASE"
+  perl -e 'alarm shift; exec @ARGV' 20 "$TEST_OUTPUT/$TEST_CASE"
+done
