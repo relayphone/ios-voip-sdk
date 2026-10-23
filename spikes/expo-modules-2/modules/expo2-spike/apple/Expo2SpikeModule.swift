@@ -4,6 +4,31 @@ import Dispatch
 
 @ExpoModule("Expo2Spike")
 public final class Expo2SpikeModule: Module {
+  @JavaScriptActor private var racyCount = 0
+  @JavaScriptActor private var scheduledCount = 0
+
+  @JS func resetHazard() { racyCount = 0; scheduledCount = 0 }
+  @JS func hazardCount(_ scheduled: Bool) -> Int { scheduled ? scheduledCount : racyCount }
+  @JS func hazardIncrement(_ scheduled: Bool) async throws -> ThreadSample {
+    let runtime = try appContext!.runtime
+    try await Task.sleep(for: .milliseconds(5))
+    if scheduled {
+      return await withCheckedContinuation { continuation in
+        runtime.schedule {
+          let before = self.scheduledCount
+          let sample = captureThread("hazard-scheduled", runtime: runtime)
+          self.scheduledCount = before + 1
+          continuation.resume(returning: sample)
+        }
+      }
+    }
+    // Intentional read/capture/write race: this annotation provides no exclusion.
+    let before = racyCount
+    let sample = captureThread("hazard-racy", runtime: runtime)
+    racyCount = before + 1
+    return sample
+  }
+
   @JavaScriptActor private var version = 0
   @JavaScriptActor private var fixtureSize = 2
   @JavaScriptActor private var cached: CachedSnapshot?

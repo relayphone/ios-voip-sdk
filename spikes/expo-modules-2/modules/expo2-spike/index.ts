@@ -31,6 +31,9 @@ type Events = {
 
 declare class Expo2SpikeModule extends NativeModule<Events> {
   readonly snapshot: Snapshot;
+  resetHazard(): void;
+  hazardCount(scheduled: boolean): number;
+  hazardIncrement(scheduled: boolean): Promise<ThreadSample>;
   publish(version: number): void;
   configureFixture(count: number): void;
   threadSample(phase: string): ThreadSample;

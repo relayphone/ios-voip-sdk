@@ -1,5 +1,6 @@
 import bridge, { ChangeEvent, ThreadSample } from './modules/expo2-spike';
 import { runThreading } from './threading';
+import { runHazard } from './hazard';
 
 export type Result = {
   id: string;
@@ -107,6 +108,7 @@ export async function runDemonstrations(): Promise<Result[]> {
     subscription.remove();
   }
   results.push(...(await runThreading()));
+  results.push(await runHazard());
   await bridge.writeResults(JSON.stringify(results));
   return results;
 }
