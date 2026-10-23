@@ -295,7 +295,8 @@ def validate(root, source_root=ROOT):
     require(all(type(row.get('sequence')) is int for row in rows) and
             [row.get('sequence') for row in rows] == list(range(1, len(rows) + 1)), 'journey sequence mismatch')
     required = ('app.entry', 'launch', 'sdk.activation', 'sdk.managerCreated', 'sdk.incomingReported',
-                'sdk.ringing', 'sdk.joined', 'sdk.ended', 'sdk.result', 'done')
+                'sdk.ringing', 'sdk.joinSettled', 'sdk.backendConnectedRequested',
+                'sdk.joined', 'sdk.ended', 'sdk.result', 'done')
     ordered = [one(rows, event) for event in required]
     require([rows.index(row) for row in ordered] == sorted(rows.index(row) for row in ordered), 'journey order mismatch')
     require(one(rows, 'sdk.activation').get('active') is True, 'built-in simulator runtime inactive')
@@ -305,14 +306,42 @@ def validate(root, source_root=ROOT):
     conversation = one(rows, 'sdk.incomingReported').get('conversationID')
     require(isinstance(conversation, str) and str(uuid.UUID(conversation)).upper() == conversation.upper(), 'invalid conversation UUID')
     require(all(row.get('conversationID') == conversation for row in rows if row['event'] in
-                ('sdk.incomingReported', 'sdk.ringing', 'sdk.joined', 'sdk.ended', 'sdk.action', 'sdk.state')),
+                ('sdk.incomingReported', 'sdk.ringing', 'sdk.joinSettled', 'sdk.backendConnectedRequested',
+                 'sdk.joined', 'sdk.ended', 'sdk.action', 'sdk.state')),
             'mixed or missing conversation identity')
     require(one(rows, 'sdk.ringing')['t_ms'] - one(rows, 'sdk.incomingReported')['t_ms'] >= 950,
             'incoming call did not survive the acceptance interval')
     actions = [row for row in rows if row['event'] == 'sdk.action']
     require([row.get('kind') for row in actions] == ['JoinConversationAction', 'EndConversationAction'], 'unexpected action inventory')
-    require(rows.index(one(rows, 'sdk.ringing')) < rows.index(actions[0]) < rows.index(one(rows, 'sdk.joined')) <
-            rows.index(actions[1]) < rows.index(one(rows, 'sdk.ended')), 'action completion order mismatch')
+    settled = one(rows, 'sdk.joinSettled')
+    backend = one(rows, 'sdk.backendConnectedRequested')
+    joined = one(rows, 'sdk.joined')
+    require(rows.index(one(rows, 'sdk.ringing')) < rows.index(actions[0]) < rows.index(settled) <
+            rows.index(backend) < rows.index(joined) < rows.index(actions[1]) < rows.index(one(rows, 'sdk.ended')),
+            'action/signaling/backend completion order mismatch')
+    snapshots = [row for row in rows if row['event'] == 'sdk.snapshot']
+    require(snapshots and all(type(row.get('revision')) is int and row['revision'] >= 0 for row in snapshots) and
+            all(a['revision'] < b['revision'] for a, b in zip(snapshots, snapshots[1:])),
+            'missing or invalid client snapshot revisions')
+    for row in snapshots:
+        calls = row.get('conversations')
+        require(isinstance(calls, list) and len(calls) <= 1 and
+                all(call.get('id') == conversation and type(call.get('hasConnectedAt')) is bool and
+                    call.get('status') in ('ringing', 'connecting', 'connected', 'held', 'ending', 'ended')
+                    for call in calls), 'unbound or invalid client snapshot')
+    before_settled = [row for row in snapshots if
+                      rows.index(actions[0]) < rows.index(row) < rows.index(settled) and row['conversations']]
+    require(before_settled and before_settled[-1]['conversations'][0].get('status') == 'connecting' and
+            before_settled[-1]['conversations'][0].get('pending') is None,
+            'join settlement lacks a settled connecting snapshot')
+    require(all(call['hasConnectedAt'] is False and call['status'] not in ('connected', 'held')
+                for row in snapshots if rows.index(row) < rows.index(backend) for call in row['conversations']),
+            'join signaling fabricated transport connection')
+    connected = [row for row in snapshots if any(call['status'] == 'connected' for call in row['conversations'])]
+    require(connected and rows.index(backend) < rows.index(connected[0]) < rows.index(joined) and
+            connected[0]['conversations'][0].get('pending') is None and
+            all(call['hasConnectedAt'] is True for row in connected for call in row['conversations']),
+            'connected projection lacks the explicit backend report')
     for state, after, before in (('idle', 'sdk.managerCreated', 'sdk.ringing'),
                                  ('joined', 'sdk.ringing', 'sdk.joined'), ('left', 'sdk.joined', 'sdk.ended')):
         require(any(row['event'] == 'sdk.state' and row.get('state') == state and

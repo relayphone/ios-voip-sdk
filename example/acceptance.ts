@@ -196,10 +196,21 @@ async function run(): Promise<void> {
         id,
       );
       await joinConversation(id);
-      await waitFor((snapshot) => snapshot[0]?.status === 'connected');
+      await waitFor(
+        (snapshot) =>
+          snapshot[0]?.id === id &&
+          snapshot[0].status === 'connecting' &&
+          snapshot[0].pending === undefined &&
+          snapshot[0].connectedAt === undefined,
+      );
       await check('joined', true, id);
+      await trace('m1.backendConnectedRequested', { conversationID: id });
       await reportConversation(id, { type: 'connected' });
-      await waitFor((snapshot) => snapshot[0]?.connectedAt !== undefined);
+      await waitFor(
+        (snapshot) =>
+          snapshot[0]?.status === 'connected' &&
+          snapshot[0].connectedAt !== undefined,
+      );
       await waitForHook((snapshot) => snapshot[0]?.connectedAt !== undefined);
       await check('connected-report', true, id);
       await setHeld(id, true);
@@ -236,11 +247,27 @@ async function run(): Promise<void> {
         await attachHandler();
         await waitFor(
           (snapshot) =>
-            snapshot[0]?.status === 'connected' &&
-            snapshot[0].pending === undefined,
+            snapshot[0]?.id === cold.conversationID &&
+            snapshot[0].status === 'connecting' &&
+            snapshot[0].pending === undefined &&
+            snapshot[0].connectedAt === undefined,
         );
         await check('cold-redelivered', true, cold.conversationID);
+        await trace('m1.backendConnectedRequested', {
+          conversationID: cold.conversationID,
+        });
         await reportConversation(cold.conversationID, { type: 'connected' });
+        await waitFor(
+          (snapshot) =>
+            snapshot[0]?.status === 'connected' &&
+            snapshot[0].connectedAt !== undefined,
+        );
+        await waitForHook(
+          (snapshot) =>
+            snapshot[0]?.status === 'connected' &&
+            snapshot[0].connectedAt !== undefined,
+        );
+        await check('connected-report', true, cold.conversationID);
         await endAndObserve(cold.conversationID);
       } else {
         const remaining = Date.parse(cold.deadline) - Date.now();

@@ -75,17 +75,22 @@ def fixture(root):
         deviceSymbolsSHA256=gate.digest(root / (gate.BINARIES['device'] + '.symbols')),
         buildLogs={'build.log': gate.digest(root / 'build-logs/build.log')})
     write_json(root / 'manifest.json', manifest)
+    def snapshot(revision, status, connected=False):
+        return ('sdk.snapshot', dict(revision=revision, conversations=[dict(id=CONVERSATION,
+            direction='incoming', status=status, isMuted=False, isVideo=False, hasConnectedAt=connected)]))
     events = [('app.entry', {}), ('launch', dict(mode='sdk-m0', traceVersion=2)),
         ('sdk.activation', dict(active=True)), ('sdk.managerCreated', {}),
-        ('sdk.state', dict(state='idle')), ('sdk.incomingReported', {}), ('sdk.ringing', {}),
-        ('sdk.action', dict(kind='JoinConversationAction')), ('sdk.state', dict(state='joined')),
+        ('sdk.state', dict(state='idle')), ('sdk.incomingReported', {}), snapshot(0, 'ringing'), ('sdk.ringing', {}),
+        ('sdk.action', dict(kind='JoinConversationAction')), snapshot(1, 'connecting'),
+        ('sdk.joinSettled', {}), ('sdk.backendConnectedRequested', {}),
+        snapshot(2, 'connected', connected=True), ('sdk.state', dict(state='joined')),
         ('sdk.joined', {}), ('sdk.action', dict(kind='EndConversationAction')),
         ('sdk.state', dict(state='left')), ('sdk.ended', {}), ('sdk.result', dict(success=True)), ('done', {})]
     def row(event, fields, index, bundle):
         return dict(event=event, t_ms=index + (1000 if index >= 6 else 0), main=True,
                     pid=123, runID='run-1', simulatorID='sim-1', bundleID=bundle, **fields)
     rows = [row(event, dict(fields, **({'conversationID': CONVERSATION}
-        if event.startswith('sdk.') and event not in ('sdk.activation', 'sdk.managerCreated', 'sdk.result') else {})),
+        if event.startswith('sdk.') and event not in ('sdk.activation', 'sdk.managerCreated', 'sdk.result', 'sdk.snapshot') else {})),
         index, 'dev.iosvoipsdk.example') for index, (event, fields) in enumerate(events)]
     write_trace(root, 'sdk-m0', rows)
     for case in gate.CASES:
@@ -238,7 +243,8 @@ os.execv(sys.executable,[sys.executable,*sys.argv[1:]])
 
     def test_required_markers(self):
         for event in ('app.entry', 'launch', 'sdk.activation', 'sdk.managerCreated', 'sdk.incomingReported',
-                      'sdk.ringing', 'sdk.joined', 'sdk.ended', 'sdk.result', 'done'):
+                      'sdk.ringing', 'sdk.joinSettled', 'sdk.backendConnectedRequested',
+                      'sdk.joined', 'sdk.ended', 'sdk.result', 'done'):
             for duplicate in (False, True):
                 with self.subTest(event=event, duplicate=duplicate):
                     def edit(rows):
@@ -265,6 +271,55 @@ os.execv(sys.executable,[sys.executable,*sys.argv[1:]])
         for state in ('idle', 'joined', 'left'):
             self.check(lambda root: change_rows(root, lambda rows: rows.__setitem__(slice(None),
                 [row for row in rows if row.get('state') != state])))
+
+    def test_backend_connection_projection(self):
+        for field, value in (('status', 'connected'), ('hasConnectedAt', True), ('pending', dict(kind='join'))):
+            with self.subTest(field=field):
+                self.check(lambda root, field=field, value=value: change_rows(root, lambda rows:
+                    next(row for row in rows if row['event'] == 'sdk.snapshot' and
+                         row['conversations'][0]['status'] == 'connecting')['conversations'][0].update({field: value})))
+        for field, value in (('hasConnectedAt', False), ('id', 'other-call'), ('status', 'connecting')):
+            with self.subTest(connected_field=field):
+                self.check(lambda root, field=field, value=value: change_rows(root, lambda rows:
+                    next(row for row in rows if row['event'] == 'sdk.snapshot' and
+                         row['conversations'][0]['status'] == 'connected')['conversations'][0].update({field: value})))
+        self.check(lambda root: change_rows(root, lambda rows:
+            rows.remove(next(row for row in rows if row['event'] == 'sdk.snapshot' and
+                             row['conversations'][0]['status'] == 'connected'))))
+
+    def test_backend_report_marker_identity_and_order(self):
+        for event in ('sdk.joinSettled', 'sdk.backendConnectedRequested'):
+            with self.subTest(event=event):
+                self.check(lambda root, event=event: change_rows(root, lambda rows:
+                    next(row for row in rows if row['event'] == event).update(conversationID='other-call')))
+                self.check(lambda root, event=event: change_rows(root, lambda rows:
+                    next(row for row in rows if row['event'] == event).pop('conversationID')))
+        def move(rows, after_connected):
+            marker = next(row for row in rows if row['event'] == 'sdk.backendConnectedRequested')
+            rows.remove(marker)
+            if after_connected:
+                target = next(row for row in rows if row['event'] == 'sdk.snapshot' and
+                              row['conversations'][0]['status'] == 'connected')
+            else:
+                target = next(row for row in rows if row['event'] == 'sdk.joinSettled')
+            marker['t_ms'] = target['t_ms']
+            rows.insert(rows.index(target) + int(after_connected), marker)
+        for after_connected in (False, True):
+            with self.subTest(after_connected=after_connected):
+                self.check(lambda root, after_connected=after_connected: change_rows(root,
+                    lambda rows: move(rows, after_connected)))
+
+    def test_join_settlement_rejects_only_pre_join_connecting_snapshot(self):
+        def move_before_join(rows):
+            snapshot = next(row for row in rows if row['event'] == 'sdk.snapshot' and
+                            row['conversations'][0]['status'] == 'connecting')
+            action = next(row for row in rows if row['event'] == 'sdk.action' and
+                          row['kind'] == 'JoinConversationAction')
+            rows.remove(snapshot)
+            snapshot['t_ms'] = action['t_ms']
+            rows.insert(rows.index(action), snapshot)
+
+        self.check(lambda root: change_rows(root, move_before_join))
 
     def test_artifact_binding(self):
         for field, value in (('schemaVersion', 0), ('configuration', 'Debug'), ('ownsSimulator', False),

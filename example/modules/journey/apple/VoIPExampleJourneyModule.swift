@@ -137,7 +137,17 @@ private final class ExampleJourney {
       guard client.snapshots.first(where: { $0.id == id })?.status == .ringing else { throw JourneyError.notRinging }
       JourneyTrace.record("sdk.ringing", ["conversationID": id.uuidString])
       try await client.joinConversation(id)
-      try await waitUntil { client.snapshots.first(where: { $0.id == id })?.status == .connected }
+      try await waitUntil {
+        guard let call = client.snapshots.first(where: { $0.id == id }) else { return false }
+        return call.status == .connecting && call.pending == nil && call.connectedAt == nil
+      }
+      JourneyTrace.record("sdk.joinSettled", ["conversationID": id.uuidString])
+      JourneyTrace.record("sdk.backendConnectedRequested", ["conversationID": id.uuidString])
+      try await client.reportConversation(id, report: .connected)
+      try await waitUntil {
+        guard let call = client.snapshots.first(where: { $0.id == id }) else { return false }
+        return call.status == .connected && call.connectedAt != nil
+      }
       JourneyTrace.record("sdk.joined", ["conversationID": id.uuidString])
       try await client.endConversation(id)
       try await waitUntil { client.snapshots.isEmpty }
@@ -214,7 +224,7 @@ private final class ExampleJourney {
   func trace(_ event: String, fieldsJSON: String) throws {
     guard !completed else { return }
     let events: Set<String> = ["m1.jsReady", "m1.subscriptionsStarting", "m1.handlerAttached", "m1.handler", "m1.cancelled",
-      "m1.assertion", "m1.hookConversations", "m1.hookToken", "m1.event", "m1.expiryObserved"]
+      "m1.assertion", "m1.hookConversations", "m1.hookToken", "m1.event", "m1.expiryObserved", "m1.backendConnectedRequested"]
     let fields: Set<String> = ["label", "passed", "conversationID", "kind", "origin", "deadline",
       "held", "muted", "attached", "available", "tokenType", "name", "count", "status",
       "pending", "hasConnectedAt", "reason"]
