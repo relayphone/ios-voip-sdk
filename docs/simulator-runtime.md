@@ -259,7 +259,11 @@ errors disable controls. A control timeout means its outcome is unknown: inspect
 the timeline before retrying. No inspector transport or app code is linked into
 the SDK or device builds.
 
-The runtime M4 CI job taps Answer through XCUITest and publishes the banner,
-full-screen incoming call, answered state, timeline, and consumed runtime stream
-as Actions artifacts. CI uses its installed simulator OS against the measured
-`ios-27.0` profile; the artifact's environment file identifies actual coverage.
+On PRs and main, runtime M4 CI builds the inspector, tests the bridge, and checks
+the shared channel through the shipping watcher. Explicitly dispatch the
+"Runtime event stream and inspector" workflow to also tap Answer through
+XCUITest and publish the banner, full-screen call, answered state and timeline.
+Hosted XCTest startup is unreliable; GUI failures remain visible in dispatched
+runs. A green PR/main check therefore does not assert a completed GUI journey.
+CI uses its installed simulator OS against the measured `ios-27.0` profile;
+the artifact's environment file identifies actual coverage.
