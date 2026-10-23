@@ -14,7 +14,7 @@ Implemented in [#56](https://github.com/ziahamza/ios-voip-sdk/pull/56),
 [hazard CI](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40031867400),
 [handler CI](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40035458634),
 [drift CI](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40036685866),
-[interop CI](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40038196979).
+[interop CI](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40040182795).
 
 ## Threading and snapshots
 
@@ -74,7 +74,8 @@ builds must retain the SDK's CallKit exclusion.
 in its chosen isolated service, cross it with Sendable values, schedule all JSI
 publication explicitly, and retain versioned frozen projections. Register PushKit
 and apply cold-push defaults natively without waiting for JS, preserving the
-SDK's effective-deadline action policy. Use the one-shot
+SDK's effective-deadline action policy. Reload retires bridge waiters only;
+pending SDK actions retain their original deadlines for redelivery. Use the one-shot
 request/settle protocol for handlers; default-actor affinity and raw untrusted
 async-callback cancellation are NO-GO. Keep the 1.0 fallback while this beta and
 device integration mature; these simulator results support beginning #50's adapter.
