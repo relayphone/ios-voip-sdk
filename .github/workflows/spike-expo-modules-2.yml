@@ -1,0 +1,49 @@
+name: Expo Modules 2.0 scaffold
+
+on:
+  pull_request:
+    paths:
+      - 'spikes/expo-modules-2/**'
+      - '.github/workflows/spike-expo-modules-2.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'spikes/expo-modules-2/**'
+      - '.github/workflows/spike-expo-modules-2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: expo2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scaffold:
+    runs-on: xcode-27
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: spikes/expo-modules-2
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '24.22.1'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npx expo install --check
+      - run: bash -n scripts/smoke-ios.sh
+      - run: bash scripts/smoke-ios.sh
+      - name: Preserve scaffold diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: expo2-scaffold
+          path: spikes/expo-modules-2/out
+          if-no-files-found: warn
+          retention-days: 7
