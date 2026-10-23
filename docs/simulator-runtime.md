@@ -189,3 +189,37 @@ process, run and build identities are checked together. The prototype and raw
 device measurements remain under `docs/research` as reference evidence.
 
 CallX and GetStream's mock are not dependencies and no code was copied from them.
+
+### Live runtime timeline
+
+`cksim --simulator <UUID> --bundle <app.bundle.id> watch` replays the current
+run and follows new events until Ctrl-C. Add `--json` for the original JSONL,
+`--after <sequence>` to skip already consumed events, or `--duration <seconds>`
+for a bounded CI capture. Watching a source-activated SDK app requires no runtime
+package or injection. A new session resets the sequence and the watcher follows
+it with a diagnostic on stderr.
+
+The CLI, CI and inspector consume the same append-only
+`Documents/.callkit-simulator/<runID>/events.jsonl` channel. Every row has
+`schemaVersion: 1`, `sequence`, `runID`, `pid`, `bundleID`, `profile`, monotonic
+`t_ms` since runtime preparation, and Unix `wallTimeMS`. Sequences start at 1
+within each session; consumers reject unsupported versions and identity/order
+mismatches and buffer incomplete trailing lines. New event names and fields are
+additive within version 1. Do not assume a fixed set of event names.
+
+Reports use `report.*`; conversation snapshots use `call.changed` (including
+caller name, handle, ringing, connected, held, muted and ended). Actions use
+`action.deadline`, `action.settled`, `action.expired`, `action.timeout` and
+`action.cancelled`. Action rows carry kind, origin, call and transaction identity,
+provider API, issue/deadline wall times, the device profile's deadline/expiry
+seconds, and monotonic `latencyMS` since delivery. Settlement includes
+`fulfilled` and whether expiry already occurred. `expired` records the runtime's
+expiry decision; `timeout` separately records the provider timeout callback path.
+Provider invalidation cancels remaining actions. Push lifecycle and reporting
+violations, audio activation/deactivation/failure and runtime diagnostics are on
+this channel too. Caller metadata is local development data in the app container.
+
+Compare action latency to its advertised budget: the measured profile has LCK
+30 s deadlines and CallKit 60/600/5 s deadlines. This is a deadline comparison,
+not a measured device benchmark for the application's handler. Profile expiry
+policies retain the measured/proposed qualifications in the profile source.

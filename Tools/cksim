@@ -250,6 +250,101 @@ def control(args, device):
     raise RuntimeError(f"Command {identifier} timed out; outcome is unknown. Query status/events before retrying.")
 
 
+class RuntimeJournal:
+    """Incremental reader of the runtime's versioned channel, shared by viewers."""
+    def __init__(self, root, bundle):
+        self.root = root
+        self.session = json.loads((root / "session.json").read_text())
+        s = self.session
+        if (not isinstance(s, dict) or s.get("schemaVersion") != 1 or s.get("bundleID") != bundle or
+                type(s.get("pid")) is not int or s["pid"] <= 0 or
+                not isinstance(s.get("runID"), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", s["runID"])):
+            raise RuntimeError("Invalid runtime session; launch the app with this runtime first.")
+        self.path = root / s["runID"] / "events.jsonl"
+        self.offset = 0
+        self.partial = b""
+        self.sequence = 0
+
+    def read(self):
+        if json.loads((self.root / "session.json").read_text()) != self.session:
+            raise RuntimeError("Runtime session changed; reconnect to the new run.")
+        if self.path.stat().st_size < self.offset:
+            raise RuntimeError("Runtime journal was truncated; reconnect to the run.")
+        with self.path.open("rb") as stream:
+            stream.seek(self.offset)
+            data = stream.read(1024 * 1024)
+        self.offset += len(data)
+        lines = (self.partial + data).split(b"\n")
+        self.partial = lines.pop()
+        if len(self.partial) > 1024 * 1024:
+            raise RuntimeError("Runtime event exceeds 1 MiB.")
+        rows = []
+        for line in lines:
+            row = json.loads(line)
+            if (not isinstance(row, dict) or row.get("schemaVersion") != 1 or any(row.get(k) != self.session[k] for k in ("runID", "pid", "bundleID")) or
+                    type(row.get("sequence")) is not int or row["sequence"] != self.sequence + 1 or
+                    not isinstance(row.get("event"), str) or type(row.get("t_ms")) is not int or
+                    type(row.get("wallTimeMS")) is not int):
+                raise RuntimeError("Unsupported or inconsistent runtime event channel.")
+            self.sequence = row["sequence"]
+            rows.append(row)
+        return rows
+
+
+def timeline_line(row):
+    detail = []
+    for key in ("kind", "origin", "callerName", "callUUID", "uuid"):
+        if row.get(key):
+            detail.append("".join(c if c.isprintable() else "?" for c in str(row[key])))
+    if "deadlineSeconds" in row:
+        detail.append(f"budget {row['deadlineSeconds']:g}s ({row.get('apiKind', '')})")
+    if row["event"] == "action.settled":
+        detail.append(("fulfilled" if row["fulfilled"] else "failed") + f" in {row['latencyMS']:.1f}ms")
+    if row["event"] == "call.changed":
+        detail.append("ended" if row["ended"] else "held" if row["held"] else "connected" if row["connected"] else "ringing")
+    return f"{row['sequence']:6} {row['t_ms'] / 1000:9.3f}s  {row['event']:<25} " + " · ".join(detail)
+
+
+def watch(args, device):
+    container = Path(simctl("get_app_container", device, args.bundle, "data"))
+    root = container / "Documents/.callkit-simulator"
+    journal = RuntimeJournal(root, args.bundle)
+    end = time.monotonic() + args.duration if args.duration else float("inf")
+    after = args.after
+    disconnected = False
+    try:
+        while True:
+            try:
+                rows = journal.read()
+                disconnected = False
+            except FileNotFoundError:
+                if not disconnected:
+                    print("Runtime disconnected; waiting for its next session.", file=sys.stderr)
+                    disconnected = True
+                if time.monotonic() >= end:
+                    return
+                time.sleep(0.1)
+                continue
+            except RuntimeError as error:
+                if "session changed" not in str(error):
+                    raise
+                try:
+                    journal = RuntimeJournal(root, args.bundle)
+                except FileNotFoundError:
+                    continue
+                after = 0
+                print("Runtime session changed; following " + journal.session["runID"], file=sys.stderr)
+                continue
+            for row in rows:
+                if row["sequence"] > after:
+                    print(json.dumps(row, separators=(",", ":")) if args.json else timeline_line(row), flush=True)
+            if time.monotonic() >= end:
+                return
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        return
+
+
 def launch_push(args, device):
     """Stage a single simulator-only delivery, then become its real launcher.
 
@@ -320,6 +415,10 @@ def main():
     parser.add_argument("--timeout", type=float, default=15)
     parser.add_argument("--command-receipt", type=Path, help="Retain the exact request, response and session in a fresh file")
     commands = parser.add_subparsers(dest="operation", required=True)
+    live = commands.add_parser("watch", help="Follow the shared runtime timeline (Ctrl-C to stop)")
+    live.add_argument("--json", action="store_true", help="Emit the original versioned events as JSONL")
+    live.add_argument("--after", type=int, default=0, help="Skip this run's events through this sequence")
+    live.add_argument("--duration", type=float, help="Stop after this many seconds (for CI captures)")
     for operation in ("status", "events", "inspect-adapter", "install", "uninstall", "repair", "launch", "reset"):
         commands.add_parser(operation)
     for operation in ("answer", "decline", "end"):
@@ -355,9 +454,14 @@ def main():
     if (args.bundle is not None and not re.fullmatch(r"[A-Za-z0-9.-]+", args.bundle) or
             args.bundle is None and args.operation not in ("uninstall", "repair") or not 0 < args.timeout <= 120):
         parser.error("Require a bundle identifier and timeout in (0,120].")
-    if args.operation not in ("uninstall", "repair"):
+    if args.operation == "watch" and (args.after < 0 or args.duration is not None and not 0 < args.duration <= 86400):
+        parser.error("watch requires nonnegative --after and --duration in (0,86400].")
+    if args.operation not in ("uninstall", "repair", "watch"):
         validate_package(args.runtime_dir.resolve())
     device = simulator(args.simulator)
+    if args.operation == "watch":
+        watch(args, device)
+        return 0
     if args.operation == "install":
         result = install(args, device)
     elif args.operation == "uninstall":
