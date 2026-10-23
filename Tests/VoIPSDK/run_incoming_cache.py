@@ -10,7 +10,7 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
-MODES = ('reported', 'joined-success', 'joined-failure')
+MODES = ('reported', 'joined-success', 'joined-sibling-success', 'joined-failure')
 PLATFORM_GUARD = '#if canImport(LiveCommunicationKit) && (os(iOS) || os(watchOS))'
 INPUTS = [
     'Sources/VoIPSDK/ConversationClient.swift',
