@@ -1,5 +1,5 @@
 Pod::Spec.new do |s|
-  s.name = 'Expo2Spike'
+  s.name = 'Expo2SpikeBridge'
   s.version = '0.0.0'
   s.summary = 'Isolated Expo Modules 2.0 bridge spike.'
   s.homepage = 'https://github.com/ziahamza/ios-voip-sdk'

@@ -2,6 +2,6 @@
   "platforms": ["apple"],
   "apple": {
     "modules": ["Expo2SpikeModule"],
-    "podspecPath": "Expo2Spike.podspec"
+    "podspecPath": "Expo2SpikeBridge.podspec"
   }
 }

@@ -11,7 +11,7 @@ cleanup() {
     xcrun simctl shutdown "$simulator_id" >/dev/null 2>&1 || true
     xcrun simctl delete "$simulator_id" || cleanup_status=1
   fi
-  rm -rf out/DerivedData || cleanup_status=1
+  node -e "require('node:fs').rmSync('out/DerivedData', {recursive: true, force: true, maxRetries: 3})" || cleanup_status=1
   exit "$cleanup_status"
 }
 trap cleanup EXIT
