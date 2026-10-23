@@ -49,21 +49,21 @@ establish physical PushKit acceptance or general LCK thread safety.
 new gate accepts three synthetic positives and refuses 62 malformed variants;
 full-capture controls also refuse rebound missing entry and substituted payloads.
 The Objective-C helper passes syntax checking, and the actual SDK plus probe
-passes strict Swift 6 typechecking. The [receipt](../verification/2026-10-22-native-push-main-stall/host-preparation.json)
+passes strict Swift 6 typechecking. The [receipt](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-native-push-main-stall/host-preparation.json)
 binds all shipping sources and the affected fixture/build/gate inputs, with no
 shipping-source changes against `8077f0d`. It does not claim an app build or run.
 Independent SPEC and STANDARDS reviews cleared the source and retained evidence.
 
 The native-origin oracle correction `c19ef89` and preboot host-metadata correction
 `6121c0a` were merged normally. All 40 preparation inputs remain identical; the
-[merged receipt](../verification/2026-10-22-native-push-main-stall/merged-host-checks.json)
+[merged receipt](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-native-push-main-stall/merged-host-checks.json)
 binds the three additional integration inputs and eight passing affected gate,
 workflow and syntax checks at digest
 `ae3c7e79ab7778d19cb24ebf23c86ea81f256caf0309d79af3a6f62942c4e9fc`.
 The unchanged compiler and intake suites were not repeated. Both review axes
 cleared the integration. Native CI and corrected-device acceptance remain pending.
 
-A subsequent [synthetic oracle correction](../verification/2026-10-22-native-push-main-stall/oracle-correction.json)
+A subsequent [synthetic oracle correction](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-native-push-main-stall/oracle-correction.json)
 removes the unmeasured private-queue assumption. The old gate rejects a valid
 early-settlement fixture; the revised gate accepts it while requiring the same
 strict entry/return/stall chain and the separate report/settlement/completion

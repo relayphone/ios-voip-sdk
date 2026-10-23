@@ -1,6 +1,0 @@
-{
-  "classification": "measured local CLI help, no simulator launch",
-  "command": "xcrun simctl help launch",
-  "excerpt": "Signals received by simctl are passed through to the application.",
-  "helpSHA256": "94ae148cf375cb65a0e14daa78230d1cd0520ea6772d75afecba422d96fcc4b2"
-}

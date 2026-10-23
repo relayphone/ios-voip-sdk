@@ -35,7 +35,7 @@ key was revoked, rotated or given another capability.
 
 ## Real device smoke test
 
-[Evidence](../verification/2026-10-21-apns-sandbox/README.md) contains one real
+[Evidence](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-21-apns-sandbox/README.md) contains one real
 sandbox APNs acceptance receipt and the corresponding metadata callback from
 the dedicated iPhone 13. The topic remains **dev.callkitsim.probe.voip**.
 

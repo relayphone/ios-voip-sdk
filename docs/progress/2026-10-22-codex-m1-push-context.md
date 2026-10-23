@@ -6,7 +6,7 @@ journal correlation; it is not evidence of device PushKit reporting acceptance.
 Measured red: the three M1 cases at source `83e396b` each recorded a nonempty
 `push.received.pushID`, an empty `report.incoming.pushID`, then the original
 `push.completed.pushID`. The supervisors succeeded. The preserved
-[identifier-only red receipt](../verification/2026-10-22-m1-push-context/red-correlation.json)
+[identifier-only red receipt](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-m1-push-context/red-correlation.json)
 binds the original journal and supervisor digests; the private original capture
 was not changed.
 
@@ -26,7 +26,7 @@ The client change is a separate commit with one shared queued report site.
 The helpers require an already-active runtime and never activate or prepare one.
 This change does not alter R3 lifecycle or provider policy.
 
-Measured controls are recorded in [host.json](../verification/2026-10-22-m1-push-context/host.json):
+Measured controls are recorded in [host.json](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-m1-push-context/host.json):
 
 - The test compiles the exact production task-local and association types with
   Swift 6 and warnings as errors. It covers suspension, child-task inheritance,
@@ -63,7 +63,7 @@ after association, around its actual LCK report call. Push completion remains
 additional cleanup. Unrelated UUIDs, a successor's identifier, and sticky
 ambiguous state remain protected.
 
-[report-scope-host.json](../verification/2026-10-22-m1-push-context/report-scope-host.json)
+[report-scope-host.json](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-m1-push-context/report-scope-host.json)
 binds the extended exact-production controls, including early rejection before
 hook consumption, stale finish after a successor association, and the same push
 identifier associated with another UUID. Independent specification and standards

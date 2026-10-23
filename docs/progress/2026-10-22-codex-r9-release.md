@@ -6,7 +6,7 @@ Both release jobs passed, including the full tagged discovery qualification,
 packaging, attestation, pre-publication verification and prerelease publication.
 The annotated tag points to `cbfcc5373eb5ca4955476bd753038790c87b25bd`.
 
-The [public evidence](../verification/2026-10-22-runtime-r9-release/README.md)
+The [public evidence](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-runtime-r9-release/README.md)
 records successful verification of all three attested downloaded subjects:
 archive, `SHA256SUMS` and `qualification.json`. Signer restrictions match the
 repository's release workflow, `refs/tags/v0.1.1` and that exact source commit,

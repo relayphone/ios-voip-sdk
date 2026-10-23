@@ -1,9 +1,0 @@
-# Local iOS 27 native acceptance at 5808a200
-
-**Measured:** one bounded local simulator attempt passed all six committed cases in 129.57 seconds. The five injection cases retain their strict rules: required and duplicate reports enter before return, missing/deferred delegates remain normal-rule failures with complete expected evidence, and optional omission is valid.
-
-The direct real-owner main-stall case held main for 3.001 seconds. On the runtime clock, stall start was 19 ms, actual provider report entry 48 ms, native return 2025 ms, stall end 3020 ms, and successful settlement plus the one completion 3045 ms. The public SDK snapshot contains the same incoming UUID and canonical payload. The native wait-expiry diagnostic occurred once; it did not fabricate report settlement. This run observes late settlement, while the gate also permits valid early settlement.
-
-The [allowlisted receipt](receipt.json) binds the exact committed source, built/installed/launched products, full capture, six strict results, process/run/session/journal identities, and [original-row trace excerpt](main-stall-excerpt.json). A separate read-only replay of the complete retained capture passed. Inherited launch settings remained unchanged; no launchd mutation, runtime-library injection change, audio action or device operation occurred. The one owned simulator was shut down and deleted with zero exits and independently absent from the subsequent inventory. An additional app terminate returned code 3 because the owned supervisors had already stopped it.
-
-**Limits:** this is simulator acceptance, including a direct callback-body fixture. It does not deliver APNs or qualify an actual physical PushKit cold launch. Corrected-head locked/unlocked launches and lock-screen answer-to-activation remain for the device handoff. Hosted CI on this source is tracked separately.

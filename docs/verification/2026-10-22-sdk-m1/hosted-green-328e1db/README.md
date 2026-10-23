@@ -1,7 +1,0 @@
-# Measured hosted M1 green at 328e1db
-
-[SDK run 39723020434](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39723020434), attempt 1, passed every build and native acceptance step at PR head `328e1dbf4a97da41edde512f1bb2aa2399cbcfe8`. Its captured source is GitHub merge `2a2be15644615eff1ee679bcf586f9aac1410f9c`, SDK input SHA-256 `5b6b073f6297a8799269b4facb1d3c9757f9860744dc4437af919b6243a76aa0`. The measured simulator OS was iOS 26.5 on the selected Xcode 26.6 host.
-
-The downloaded artifact was replayed against a clean, temporary checkout of that exact merge commit. The unchanged M0, M1 and Debug contract gates all passed. This includes nine supervised processes, device-runtime exclusion across 17 SwiftPM device objects, the real pending deadline for default failure, ownership warnings, and no-handler acceptance connected 8 ms after its deadline. [The replay receipt](replay-receipt.json) binds the GitHub run, artifact ID, manifest and three replay outputs. The source checkout was removed after replay; no local simulator was used.
-
-These lean receipts omit executable/object bytes and raw traces; they are not standalone gate inputs. The complete downloaded capture remains in the ignored run directory. This green qualifies the earlier producer. The subsequent single-write producer correction still requires its own hosted qualification; the separately retained console-interleaving red is not repaired or discarded.

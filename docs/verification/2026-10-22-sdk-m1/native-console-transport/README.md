@@ -1,7 +1,0 @@
-# Native console transport comparison
-
-**Measured synthetic transport evidence, not SDK acceptance:** the same native binary on iOS 27.0 / Xcode 27.1 wrote 4,002 fixed 303-byte PROBE frames with one checked stderr write per frame while emitting 8,000 native/stdout diagnostics. With merged launcher output, `--console-pty` produced two malformed frames and 4,000 valid rows; plain `--console` preserved all 4,002 rows in order with no write failures.
-
-[The lean receipt](receipt.json) binds source/harness/build/binary identities, both exact launch commands, run/PID acknowledgements, raw capture hashes and independently confirmed owned simulator cleanup. The complete ignored native capture remains retained; the public receipt alone is not a standalone acceptance input. The fixture deliberately terminates its owned app with `simctl terminate` after done; it does not qualify the SDK supervisor's post-done signal path.
-
-**Proposed candidate:** the M0 and M1 Expo example launches use `--console`; bootstrap, Debug contracts and runtime probes retain their current transport. The existing supervisor still signals its owned launcher after done, drains output, then binds the final app PID. Strict parsers, deadlines, SDK behavior and damaged hosted captures are unchanged. Fresh actual SDK acceptance must qualify this candidate. Direct-file capture remains a measured fallback requiring a separate supervisor protocol; no such protocol is added here.

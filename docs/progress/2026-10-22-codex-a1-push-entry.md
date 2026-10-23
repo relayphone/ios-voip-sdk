@@ -122,7 +122,7 @@ These are host results, not an LCK app or device measurement.
 
 **Measured:** three earlier local native preflights stopped before installation or
 launch. Their exact receipts and cleanup limitations are indexed in
-[`docs/verification/2026-10-22-push-entry/`](../verification/2026-10-22-push-entry/README.md).
+[`docs/verification/2026-10-22-push-entry/`](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-push-entry/README.md).
 All owned simulators were deleted and independently absent; a final additional
 simulator was created but never booted. No native case result is claimed from
 those captures. No global launch environment was changed.
@@ -145,7 +145,7 @@ or real push is part of this change.
 
 The source-bound red/green, 25 integrated host/compiler checks and debug/optimized
 intake controls are indexed in
-[`docs/verification/2026-10-22-push-entry-main-stall/`](../verification/2026-10-22-push-entry-main-stall/README.md).
+[`docs/verification/2026-10-22-push-entry-main-stall/`](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-push-entry-main-stall/README.md).
 The final host candidate entered its report facade at 0.000768 s and returned the
 native callback at 0.000859 s while main was measured blocked for 3.001435 s.
 These values are host fixture timings, not Apple framework latency.
@@ -173,4 +173,4 @@ still belongs to CI on the final published head.
 
 ## Native transaction origin oracle follow-up
 
-**Measured host correction:** the duplicate-wrapper native journal gate expected `app`, while `RuntimeEngine.ActionOrigin.application.rawValue` emits `application`. The SDK handler origin remains `app`. The old gate rejected an otherwise valid synthetic native `application` transaction; the corrected gate and eleven controls pass, including a negative control for native `app`. Production sources are unchanged. [The derivative receipt](../verification/2026-10-22-push-entry-main-stall/native-origin-control.json) binds both changed files and the original/fixed controls. Independent SPEC and STANDARDS are clear; fresh native CI remains required.
+**Measured host correction:** the duplicate-wrapper native journal gate expected `app`, while `RuntimeEngine.ActionOrigin.application.rawValue` emits `application`. The SDK handler origin remains `app`. The old gate rejected an otherwise valid synthetic native `application` transaction; the corrected gate and eleven controls pass, including a negative control for native `app`. Production sources are unchanged. [The derivative receipt](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-push-entry-main-stall/native-origin-control.json) binds both changed files and the original/fixed controls. Independent SPEC and STANDARDS are clear; fresh native CI remains required.

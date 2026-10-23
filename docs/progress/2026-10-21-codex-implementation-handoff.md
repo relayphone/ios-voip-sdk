@@ -54,7 +54,7 @@ No CallX or GetStream mock code was imported.
 
 Replayable normalized traces, process receipts, exact environments, review
 findings and limits are in
-[discovery verification](../verification/2026-10-21-discovery-harness/README.md).
+[discovery verification](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-21-discovery-harness/README.md).
 Historical research traces were kept unchanged.
 
 ### Native/React Native library

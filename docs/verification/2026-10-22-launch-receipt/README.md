@@ -1,9 +1,0 @@
-# Launcher acknowledgement after app termination
-
-**Measured saved output:** all 15 header-bearing traces in the [hosted reference](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39685196685) place the launcher PID header after `done`. [Trace hashes and positions](saved-header-order.json) bind this observation. The console launcher may buffer or emit its own header until the app terminates; its help does not promise earlier availability.
-
-**Measured synthetic red:** a real launcher buffers its own PID header while waiting for a separate app subprocess. The app emits `done`, but f071a5e waits for the header before stopping it and fails its deadline. Cleanup finally releases the launcher. [The recorded receipt](post-stop-red.json) identifies that runner commit. The earlier [red fixture](red.json) combined app and launcher in one process; it did not cover the observed post-stop header ordering and was insufficient to justify that prerequisite.
-
-**Measured synthetic green:** all [57 harness controls](green.json) pass. The eight bound subprocess cases cover headers before `done` and after app termination, missing/mismatched/duplicate PIDs, EOF without a header, termination failure and cleanup failure. The supervisor stops after `done`, drains the launcher and requires exactly one positive PID matching the app before success. Primary errors remain visible when identity validation also fails. [Verification](verification.json) binds outputs to sources. New subprocess controls allow 20 seconds for process startup under host load; existing control budgets are unchanged.
-
-**Proposed hosted acceptance:** rerun the ABI lane on the integrated source. This correction does not claim to fix the separate native termination timeout. No native build or simulator was run for this supervisor change.

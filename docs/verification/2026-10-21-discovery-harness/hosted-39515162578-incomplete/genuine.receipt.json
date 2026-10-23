@@ -1,9 +1,0 @@
-{
-  "completed": false,
-  "success": false,
-  "launcherPID": 7167,
-  "appEntryObserved": true,
-  "error": "launcher exited before terminal done event",
-  "cleanupError": "Command '['xcrun', 'simctl', 'terminate', 'FB914078-C3F5-4DB8-ACEB-46B66F460BBE', 'dev.callkitsim.probe']' timed out after 10 seconds",
-  "elapsedSeconds": 44.454
-}

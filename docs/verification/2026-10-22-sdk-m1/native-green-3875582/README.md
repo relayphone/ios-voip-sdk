@@ -1,9 +1,0 @@
-# Full M1 local native acceptance
-
-**Measured:** clean source `387558275bdd1ff43185a567be646999f69afa69` passed the full Release and Debug acceptance on iOS 27.0 with Xcode 27.1. The Release Expo 58 app passed push → ring → join → connected → hold → end, cold pending before JS with later handler attachment, and no-handler default fail. A synchronous marker binds the native failed answer’s settlement to the actual LCK pending deadline.
-
-The Debug fixture passed both contracts: the sole SDK manager produced no warning; a deliberately created later CXProvider and second LCK manager produced exactly two ownership warnings. Runtime interception stayed functional through the cooperative observer. Without any handler, accept policy fulfilled the real native answer and the client observed connected 25 ms after its recorded pending deadline. No early fallback margin or action-deadline change was introduced.
-
-All nine PID-bound processes completed and used acknowledged owned-launcher signal termination. Healthy/bootstrap refusal checks, full shared-source device exclusion and all 17 SwiftPM device objects passed. The owned simulator was shut down/deleted, then a separate bounded inventory query and device-directory check confirmed absence. Manifest SHA-256: `faf93cf6500118d23132bedb2764d63368a4f46dbb65ac4fdc5da5eb7501b980`. Contract build-info SHA-256: `43b2de46f80af199b93cbc0c86e8b768e2a4e1cc7114cb0f46f383f6e5972336`.
-
-This lean receipt collection cannot independently replay the gates: complete executable, JavaScript, device object, Debug build, runtime journal and native build-log bytes remain in the ignored capture named by receipt-index.json. Replay uses the captured commit, since later documentation changes HEAD. Current-head hosted CI and physical-device PushKit measurements remain separate acceptance. No real APNs, locked launch or media adapter acceptance was performed.

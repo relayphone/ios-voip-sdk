@@ -4,7 +4,7 @@
 `26e2bc88`. The 26.3 compiler job used the iOS 26.5 simulator and failed
 `two-managers` with `LCK managerStates differs from device`; its other three LCK
 cases passed. The 26.6 job passed all four. The compact
-[CI receipt](../verification/2026-10-22-runtime-lck/readiness-ci-red.json) binds
+[CI receipt](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-runtime-lck/readiness-ci-red.json) binds
 the public artifact archives, probe/runtime/profile hashes, supervisor receipt,
 checked-out source blobs and exact offline replay results.
 
@@ -52,7 +52,7 @@ generation and refusal when a historical anchor changes. The actual generated
 probe and its support sources typecheck against the installed iOS SDK in Swift
 5 mode; the immutable-input baseline and prepared copy have the same inherited
 warning inventory. These compiler checks do not build or launch an application.
-The [host receipt](../verification/2026-10-22-runtime-lck/readiness-host.json)
+The [host receipt](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-runtime-lck/readiness-host.json)
 binds final source hashes, checks and compiler-only inputs. No simulator was
 created and no native journey was rerun for this preparation.
 
