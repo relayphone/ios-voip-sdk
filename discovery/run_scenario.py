@@ -137,8 +137,27 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
             # accepted only after done and a successful termination of our app.
             # simctl may flush its PID header only after termination; bind that
             # identity after draining the launcher, before accepting success.
+            reply_terminal = []
             if console_launcher_stop:
                 result["terminationMethod"] = "console-launcher-signal"
+                # Let an in-flight launcher reply arrive, without requiring it
+                # before stop: some launchers emit their header only after exit.
+                reply_deadline = min(deadline, time.monotonic() + 2)
+                have_reply = bool(launcher_header.search(output.read_bytes()))
+                while not have_reply:
+                    remaining = reply_deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    try:
+                        line = messages.get(timeout=remaining)
+                    except queue.Empty:
+                        break
+                    if line is None or isinstance(line, OSError):
+                        reply_terminal.append(line)
+                        break
+                    log.write(line)
+                    log.flush()
+                    have_reply = bool(launcher_header.search(line))
                 if process.poll() is not None:
                     raise RuntimeError("console launcher exited before owned stop signal")
                 # simctl launch --console[-pty] documents forwarding received
@@ -166,7 +185,7 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                 if remaining <= 0:
                     raise RuntimeError("launcher output did not close after stop")
                 try:
-                    line = messages.get(timeout=remaining)
+                    line = reply_terminal.pop() if reply_terminal else messages.get(timeout=remaining)
                 except queue.Empty:
                     raise RuntimeError("launcher output did not close after stop")
                 if isinstance(line, OSError):

@@ -45,11 +45,11 @@ def fixtures(work):
         "   if time.monotonic()>deadline: sys.exit(8)\n"
         "   time.sleep(.01)\n"
         "  os.write(2,data[split:])\n"
-        " else: os.write(2 if mode in ('interleaved-streams','stdout-eof') else 1,data)\n"
+        " else: os.write(2 if mode in ('interleaved-streams','stdout-eof','delayed-handler') else 1,data)\n"
         "if mode=='early-exit':\n"
         " os.close(1); os.close(2)\n"
         "pathlib.Path(str(base)+'.emitted').touch()\n"
-        "if mode=='quiet-orphan': os.close(1); os.close(2)\n"
+        "if mode in ('quiet-orphan','delayed-handler'): os.close(1); os.close(2)\n"
         "if mode=='orphan-output':\n"
         " deadline=time.monotonic()+60\n"
         " while time.monotonic()<deadline:\n"
@@ -69,11 +69,19 @@ def fixtures(work):
         " if mode!='ignored-signal':\n"
         "  try: app.send_signal(signum)\n"
         "  except ProcessLookupError: pass\n"
-        " if mode=='buffered-header': app.wait(); os._exit(0)\n"
-        "signal.signal(signal.SIGTERM,stop)\n"
+        " if mode in ('buffered-header','delayed-handler'): app.wait(); os._exit(0)\n"
+        "if mode!='delayed-handler': signal.signal(signal.SIGTERM,stop)\n"
         "if mode in ('buffered-header','quiet-orphan','stdout-eof'): print('" + BUNDLE + ": '+str(app.pid),flush=mode!='buffered-header')\n"
         "if mode=='stdout-eof': os.close(1)\n"
         "pathlib.Path(str(base)+'.ready').touch()\n"
+        "if mode=='delayed-handler':\n"
+        " deadline=time.monotonic()+20\n"
+        " while not pathlib.Path(str(base)+'.emitted').exists():\n"
+        "  if time.monotonic()>deadline: sys.exit(8)\n"
+        "  time.sleep(.01)\n"
+        " time.sleep(.1)\n"
+        " signal.signal(signal.SIGTERM,stop)\n"
+        " print('" + BUNDLE + ": '+str(app.pid),flush=False)\n"
         "if mode=='interleaved-streams':\n"
         " deadline=time.monotonic()+20\n"
         " while not pathlib.Path(str(base)+'.prefix').exists():\n"
@@ -87,10 +95,10 @@ def fixtures(work):
         "  if time.monotonic()>deadline: sys.exit(8)\n"
         "  time.sleep(.01)\n"
         " sys.exit(7)\n"
-        "if mode=='buffered-header':\n"
+        "if mode in ('buffered-header','delayed-handler'):\n"
         " while True: time.sleep(.1)\n"
         "app.wait()\n"
-        "if mode not in ('missing-pid','buffered-header','quiet-orphan','interleaved-streams','stdout-eof'):\n"
+        "if mode not in ('missing-pid','buffered-header','quiet-orphan','interleaved-streams','stdout-eof','delayed-handler'):\n"
         " header='" + BUNDLE + ": '+str(app.pid+(1 if mode=='wrong-pid' else 0))\n"
         " for _ in range(2 if mode=='duplicate-pid' else 1): print(header,flush=True)\n"
     )
@@ -225,9 +233,9 @@ def run_checks(work):
     work.mkdir(parents=True, exist_ok=True)
     sources = fixtures(work)
     checks = [failed_exec_control(work), traditional_red(work, sources)]
-    for mode in ("complete", "buffered-header", "interleaved-streams", "stdout-eof", "quiet-orphan", "wrong-pid", "missing-pid", "duplicate-pid", "ignored-signal", "early-exit", "orphan-output"):
+    for mode in ("complete", "buffered-header", "interleaved-streams", "stdout-eof", "delayed-handler", "quiet-orphan", "wrong-pid", "missing-pid", "duplicate-pid", "ignored-signal", "early-exit", "orphan-output"):
         result, receipt, base = run_case(work, sources, mode)
-        expected = mode in ("complete", "buffered-header", "interleaved-streams", "stdout-eof")
+        expected = mode in ("complete", "buffered-header", "interleaved-streams", "stdout-eof", "delayed-handler")
         require((result.returncode == 0) is expected and receipt["success"] is expected,
                 f"runner-console-{mode}: {receipt}")
         if expected:
@@ -239,7 +247,7 @@ def run_checks(work):
                     receipt.get("launcherPID") == int(Path(str(base) + ".launcher.pid").read_text()),
                     f"runner-console-{mode}: unbound success: {receipt}")
             lines = Path(str(base) + ".log").read_text().splitlines()
-            if mode == "complete":
+            if mode in ("complete", "delayed-handler"):
                 require(lines[-1] == f"{BUNDLE}: {receipt['appPID']}" and
                         json.loads(lines[-2].split("PROBE ", 1)[1])["event"] == "done",
                         f"runner-console-{mode}: launcher PID did not arrive after done")
