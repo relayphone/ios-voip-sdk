@@ -3,7 +3,21 @@ import { requireNativeModule, type NativeModule } from 'expo';
 type JourneyModule = NativeModule & {
   acceptanceEnabled: boolean;
   m1Case: '' | 'journey' | 'cold-launch' | 'unhandled-expiry';
+  systemCase:
+    | ''
+    | 'answer-end'
+    | 'decline'
+    | 'hold-accept'
+    | 'end-accept'
+    | 'mute-echo'
+    | 'provider-reset'
+    | 'push-launch';
   runID: string;
+  nextSystemCommand(): Promise<{
+    id: string;
+    operation: string;
+    conversationID?: string;
+  }>;
   acceptance(): Promise<void>;
   simulatePush(
     payloadJSON: string,

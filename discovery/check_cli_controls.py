@@ -18,6 +18,7 @@ DEVICE = "00000000-0000-0000-0000-000000000001"
 BUNDLE = "dev.callkitsim.synthetic"
 RUN = "synthetic-cli-control"
 PID = 12345
+CALL = "A7E390AF-6B78-4190-B946-26D9C6438584"
 
 # A notification drives the synthetic runtime responder synchronously. Every
 # xcrun invocation is recorded; any unsupported operation fails closed.
@@ -85,7 +86,8 @@ def controls():
     with tempfile.TemporaryDirectory(prefix="cksim-cli-controls-") as temporary:
         work = Path(temporary).resolve()
 
-        def check(label, expected=None, *, mutate=None, response="positive", invocations=2):
+        def check(label, expected=None, *, mutate=None, response="positive", invocations=2,
+                  command=("status",), fields=None, exit_code=1):
             directory = work / label
             package, root, session = fixture(directory, response)
             if mutate:
@@ -93,18 +95,23 @@ def controls():
             env = dict(os.environ, PATH=str(directory / "bin") + os.pathsep + os.environ.get("PATH", ""),
                        CKSIM_SYNTHETIC_CLI_FIXTURE=str(directory))
             result = subprocess.run([str(CLI), "--simulator", DEVICE, "--bundle", BUNDLE,
-                                     "--runtime-dir", str(package), "--timeout", "0.1", "status"],
+                                     "--runtime-dir", str(package), "--timeout", "0.1",
+                                     "--command-receipt", str(directory / "command-receipt.json"), *command],
                                     env=env, capture_output=True, text=True, timeout=20)
             diagnostic = f"{label}: exit={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}"
             if expected:
-                require(result.returncode == 1 and expected in result.stderr and not result.stdout, diagnostic)
+                require(result.returncode == exit_code and expected in result.stderr and not result.stdout, diagnostic)
             else:
                 require(result.returncode == 0 and not result.stderr, diagnostic)
                 actual = json.loads(result.stdout)
                 require(actual.get("success") is True and actual.get("fixture") == "synthetic", diagnostic)
                 request = json.loads(next((root / RUN / "requests").glob("*.json")).read_text())
                 require(all(actual.get(key) == request[key] for key in ("id", "runID", "pid", "bundleID")), diagnostic)
-                require(request["operation"] == "status", diagnostic)
+                require(request["operation"] == command[0], diagnostic)
+                require(all(request.get(key) == value for key, value in (fields or {}).items()), diagnostic)
+                receipt_path = directory / "command-receipt.json"
+                require(json.loads(receipt_path.read_text()) == dict(schemaVersion=1, session=session, request=request, response=actual) and
+                        receipt_path.stat().st_mode & 0o777 == 0o600, diagnostic)
             log = directory / "xcrun.jsonl"
             calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
             require(len(calls) == invocations, f"{label}: unexpected fake xcrun calls: {calls}")
@@ -129,6 +136,21 @@ def controls():
             return mutate
 
         check("synthetic-positive-status")
+        for muted in (True, False):
+            check("system-mute-" + str(muted).lower(),
+                  command=("mute", CALL, "--muted", str(muted).lower()),
+                  fields={"callUUID": CALL, "muted": muted})
+        check("system-tones", command=("tones", CALL, "--digits", "12#A"),
+              fields={"callUUID": CALL, "digits": "12#A"})
+        check("selected-provider-reset", command=("reset",))
+        check("reused-command-receipt", "Command receipt already exists", invocations=0,
+              mutate=lambda package, root, session: (package.parent / "command-receipt.json").write_text("prior receipt"))
+        check("invalid-tones", "digits must contain 1-64 DTMF characters", invocations=0,
+              command=("tones", CALL, "--digits", "1,2"), exit_code=2)
+        check("invalid-tones-trailing-newline", "digits must contain 1-64 DTMF characters", invocations=0,
+              command=("tones", CALL, "--digits", "1\n"), exit_code=2)
+        check("invalid-mute", "invalid choice", invocations=0,
+              command=("mute", CALL, "--muted", "invalid"), exit_code=2)
         check("package-checksum-corruption", "Runtime package checksum mismatch: CKSimRuntime.dylib",
               mutate=corrupt_package, invocations=0)
         check("package-path-traversal", "Runtime package checksum mismatch: ../outside.dylib",

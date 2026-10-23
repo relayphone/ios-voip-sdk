@@ -4,9 +4,10 @@ import IosVoipSDK
 
 private enum JourneyConfiguration {
   static let environment = ProcessInfo.processInfo.environment
-  static let runID = environment["SDK_M1_RUN_ID"] ?? environment["SDK_M0_RUN_ID"] ?? UUID().uuidString
+  static let runID = environment["SDK_SYSTEM_RUN_ID"] ?? environment["SDK_M1_RUN_ID"] ?? environment["SDK_M0_RUN_ID"] ?? UUID().uuidString
   static let m0 = environment["SDK_M0_ACCEPTANCE"] == "1"
   static let m1Case = environment["SDK_M1_CASE"] ?? ""
+  static let systemCase = environment["SDK_SYSTEM_CASE"] ?? ""
 }
 
 /// Example-only instrumentation. Never records push tokens or arbitrary payloads.
@@ -47,7 +48,9 @@ public final class VoIPExampleAppDelegateSubscriber: ExpoAppDelegateSubscriber {
   public func appDelegateWillBeginInitialization() {
     JourneyTrace.record("app.entry")
     JourneyTrace.record("launch", ["traceVersion": 2,
-      "mode": JourneyTrace.m0 ? "sdk-m0" : "sdk-m1", "case": JourneyTrace.m1Case])
+      "mode": !JourneyConfiguration.systemCase.isEmpty ? "sdk-system" : JourneyTrace.m0 ? "sdk-m0" : "sdk-m1",
+      "case": JourneyConfiguration.systemCase.isEmpty ? JourneyTrace.m1Case : JourneyConfiguration.systemCase])
+    if !JourneyConfiguration.systemCase.isEmpty { ExampleJourney.shared.startSystem() }
     if ["cold-launch", "unhandled-expiry"].contains(JourneyTrace.m1Case) {
       ExampleJourney.shared.startColdLaunch()
     }
@@ -221,20 +224,73 @@ private final class ExampleJourney {
   }
 
   /// Whitelisted test fields prevent accidental payload/token logging.
+  func startSystem() {
+    do { _ = try bindClient() }
+    catch { finish(success: false, errorType: String(reflecting: type(of: error))) }
+  }
+
+  // Example-only backend/handler barriers; external cksim controls actual system actions and pushes.
+  func nextSystemCommand() async throws -> [String: String] {
+    guard ["answer-end", "decline", "hold-accept", "end-accept", "mute-echo", "provider-reset", "push-launch"]
+      .contains(JourneyConfiguration.systemCase) else { throw JourneyError.wrongMode }
+    let path = FileManager.default.temporaryDirectory.appendingPathComponent("sdk-system-control-\(JourneyTrace.runID).json")
+    let deadline = ContinuousClock.now.advanced(by: .seconds(90))
+    while !FileManager.default.fileExists(atPath: path.path) {
+      guard ContinuousClock.now < deadline else { throw JourneyError.stateDeadline }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    let bytes = try Data(contentsOf: path)
+    try FileManager.default.removeItem(at: path)
+    guard bytes.count <= 1024, let value = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+      Set(value.keys).isSubset(of: ["id", "runID", "case", "pid", "operation", "conversationID"]),
+      value["runID"] as? String == JourneyTrace.runID, value["case"] as? String == JourneyConfiguration.systemCase,
+      value["pid"] as? Int == Int(getpid()), let id = value["id"] as? String, UUID(uuidString: id) != nil,
+      let operation = value["operation"] as? String,
+      ["attach-handler", "backend-connected", "app-mute", "release-mute", "finish"].contains(operation) else {
+      throw JourneyError.invalidTrace
+    }
+    var command = ["id": id, "operation": operation]
+    if let conversation = value["conversationID"] as? String {
+      guard UUID(uuidString: conversation) != nil else { throw JourneyError.invalidTrace }
+      command["conversationID"] = conversation
+    }
+    JourneyTrace.record("system.commandReceived", command)
+    return command
+  }
+
   func trace(_ event: String, fieldsJSON: String) throws {
     guard !completed else { return }
     let events: Set<String> = ["m1.jsReady", "m1.subscriptionsStarting", "m1.handlerAttached", "m1.handler", "m1.cancelled",
-      "m1.assertion", "m1.hookConversations", "m1.hookToken", "m1.event", "m1.expiryObserved", "m1.backendConnectedRequested"]
+      "m1.assertion", "m1.hookConversations", "m1.hookToken", "m1.event", "m1.expiryObserved", "m1.backendConnectedRequested",
+      "system.ready", "system.handler", "system.handlerAttached", "system.hook", "system.event",
+      "system.backendConnected", "system.appMuteRequested", "system.appMuteCompleted", "system.commandCompleted"]
     let fields: Set<String> = ["label", "passed", "conversationID", "kind", "origin", "deadline",
       "held", "muted", "attached", "available", "tokenType", "name", "count", "status",
-      "pending", "hasConnectedAt", "reason"]
+      "pending", "hasConnectedAt", "reason", "id", "operation", "digits"]
     guard events.contains(event), let bytes = fieldsJSON.data(using: .utf8),
           let value = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
           Set(value.keys).isSubset(of: fields),
           value.values.allSatisfy({ $0 is String || $0 is NSNumber || $0 is NSNull }) else {
       throw JourneyError.invalidTrace
     }
-    JourneyTrace.record(event, value)
+    if event == "system.ready" {
+      let before = Date()
+      #if targetEnvironment(simulator)
+      CKSimEmit("system.clock", [:])
+      #endif
+      var sample = value
+      sample["clockBeforeMS"] = Int64(before.timeIntervalSince1970 * 1000)
+      JourneyTrace.record(event, sample)
+    } else {
+      #if targetEnvironment(simulator)
+      if event == "system.handler" {
+        var marker = value
+        marker["traceSequence"] = JourneyTrace.sequence + 1
+        CKSimEmit("system.handlerEntered", marker)
+      }
+      #endif
+      JourneyTrace.record(event, value)
+    }
   }
 
   func finish(success: Bool, errorType: String? = nil) {
@@ -265,7 +321,13 @@ public final class VoIPExampleJourneyModule: Module {
   public func definition() -> ModuleDefinition {
     Name("VoIPExampleJourney")
     Constants(["acceptanceEnabled": JourneyConfiguration.m0, "m1Case": JourneyConfiguration.m1Case,
-      "runID": JourneyConfiguration.runID])
+      "systemCase": JourneyConfiguration.systemCase, "runID": JourneyConfiguration.runID])
+    AsyncFunction("nextSystemCommand") { (promise: Promise) in
+      Task { @MainActor in
+        do { promise.resolve(try await ExampleJourney.shared.nextSystemCommand()) }
+        catch { promise.reject("journey", String(reflecting: type(of: error))) }
+      }
+    }
     AsyncFunction("acceptance") { (promise: Promise) in
       Task { @MainActor in
         do { try await ExampleJourney.shared.acceptance(); promise.resolve() }

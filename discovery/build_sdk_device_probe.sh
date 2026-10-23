@@ -23,7 +23,7 @@ cat > "$WORK/SDKDeviceHeaders.h" <<HEADERS
 #import "$PWD/Sources/Interposition/CKRuntimeSeam.h"
 #import "$PWD/Sources/VoIPPlatform/include/VoIPPlatform.h"
 HEADERS
-for source in Sources/Interposition/CKInterposition.m Sources/Interposition/CKPushDelivery.m Sources/VoIPPlatform/*.m; do
+for source in Sources/Interposition/CKInterposition.m Sources/Interposition/CKPushDelivery.m Sources/Interposition/CKPushLaunch.m Sources/VoIPPlatform/*.m; do
   object=$(basename "$source" .m)
   limit 90 xcrun --sdk iphoneos clang -target "$TARGET" -isysroot "$SDK" -fobjc-arc -fmodules \
     -DCKSIM_SDK_SOURCE=1 -DCKSIM_RUNTIME_VERSION=\""$VERSION"\" \

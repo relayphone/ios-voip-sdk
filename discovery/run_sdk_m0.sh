@@ -12,6 +12,9 @@ if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
   : "${SDK_M1_CONTRACT_BUILD:?provide the source-bound Debug M1 contract build}"
   : "${SDK_PUSH_ENTRY_BUILD:?provide the source-bound Debug A0/A1 push-entry build}"
 fi
+if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then
+  : "${SDK_SYSTEM_CONTROL_PACKAGE:?provide a source-bound cksim package for external controls}"
+fi
 if [[ -n "${OUT:-}" ]]; then mkdir "$OUT"; else OUT=$(mktemp -d "${TMPDIR:-/tmp}/sdk-m0.XXXXXX"); fi
 OUT=$(cd "$OUT" && pwd)
 UDID=""
@@ -78,6 +81,9 @@ if os.environ.get('SDK_M1_ACCEPTANCE') == '1':
     from sdk_m1_contracts_conformance import validate_build
     build=pathlib.Path(os.environ['SDK_M1_CONTRACT_BUILD'])
     validate_build(build)
+if os.environ.get('SDK_SYSTEM_ACCEPTANCE') == '1':
+    from sdk_system_conformance import package_check
+    package_check(pathlib.Path(os.environ['SDK_SYSTEM_CONTROL_PACKAGE']),source_identity())
 pathlib.Path(sys.argv[1]).write_text(json.dumps(source_identity(),indent=2)+'\n')
 PY
 # Keep raw runtime inventories, which contain local SDK paths, out of evidence.
@@ -239,6 +245,17 @@ PY
     python3 discovery/run_push_report_entry.py --build "$SDK_PUSH_ENTRY_BUILD" \
       --out "$OUT/push-entry" --simulator "$UDID"
 fi
+if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then
+  if [[ -n "${example_container:-}" ]]; then
+    env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
+      python3 discovery/run_sdk_system.py --simulator "$UDID" --run-id "$RUN_ID" \
+      --package "$SDK_SYSTEM_CONTROL_PACKAGE" --output "$OUT/system" --data-container "$example_container"
+  else
+    env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
+      python3 discovery/run_sdk_system.py --simulator "$UDID" --run-id "$RUN_ID" \
+      --package "$SDK_SYSTEM_CONTROL_PACKAGE" --output "$OUT/system"
+  fi
+fi
 cleanup_simulator
 redact_external_paths
 SDK_M0_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - "$OUT" "$SDK_M0_APP" "$SDK_M0_BOOTSTRAP_APP" \
@@ -249,6 +266,10 @@ from sdk_m0_conformance import record_manifest
 record_manifest(*(pathlib.Path(p) for p in sys.argv[1:7]),*sys.argv[7:],os.environ['SDK_M0_EXTERNAL_DYLD'])
 PY
 python3 discovery/sdk_m0_conformance.py "$OUT" | tee "$OUT/summary.json"
+if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then
+  python3 discovery/sdk_system_conformance.py "$OUT" --record
+  python3 discovery/sdk_system_conformance.py "$OUT" | tee "$OUT/system/summary.json"
+fi
 if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
   python3 discovery/sdk_m1_conformance.py "$OUT" | tee "$OUT/m1/summary.json"
   python3 discovery/sdk_m1_contracts_conformance.py "$OUT/m1/contracts-build" "$OUT/m1/contracts" --parent-manifest "$OUT/manifest.json" | tee "$OUT/m1/contracts/summary.json"
