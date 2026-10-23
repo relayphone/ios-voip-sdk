@@ -43,6 +43,14 @@ Native version updates `[1, 1, 2, 2, 3]` in one JS turn schedule one flush with
 emits nothing, and version 4 emits once. Two scheduler turns drain the flush and
 the asynchronous event without timing sleeps or JS-side event filtering.
 
+## Actor race observation
+
+The hazard probe starts 64 default async calls per variant. After a short await,
+each performs the same counter read / thread capture / counter write. The raw
+`@JavaScriptActor` variant reports off-thread accesses and lost updates without
+gating CI. The `runtime.schedule` variant must report zero off-thread accesses
+and exactly 64 increments. This deliberate race is confined to the spike.
+
 ## Threading and stop
 
 Thread samples record pthread ID, main-thread status, thread name, current queue
@@ -59,8 +67,9 @@ loop/timer overhead. It asserts identity and valid samples without setting a
 host-dependent latency budget. Initial encoding and publication are excluded.
 
 See the [findings and M3.5 recommendation](../../docs/progress/2026-10-23-expo-modules-2-findings.md).
-Stop after threading review. Handler/deadline/AbortSignal and remaining API checks
-wait for orchestration's reply; the shipping SDK is unchanged by this spike.
+The next checks cover handler/deadline/AbortSignal, reload, export drift, shared
+object events and early PushKit registration. The shipping SDK is unchanged by
+this spike; the final findings update follows those checks.
 
 ## Research used for the scaffold
 
