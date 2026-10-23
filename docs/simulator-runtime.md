@@ -170,8 +170,8 @@ The existing macOS CI jobs compile with Xcode 26.6 and 26.3 on macOS 26.
 used the iOS **26.5 (23F77)** simulator against the `ios-27.0` behavior profile.
 That profile names the iPhone measurements being reproduced; it is separate
 from the simulator OS and selected compiler. This CI run does not qualify
-iOS 27.0 or LiveCommunicationKit. [R8 evidence](verification/2026-10-22-runtime-r8/)
-preserves the environment capture and records the new qualification checks.
+iOS 27.0 or LiveCommunicationKit. The [verification index](verification/README.md)
+links current workflows and historical environment captures.
 
 Fresh shipping runs record the selected runtime ID, exact OS version/build and
 selected Xcode version/build in `manifest.json`, bind them to saved runtime

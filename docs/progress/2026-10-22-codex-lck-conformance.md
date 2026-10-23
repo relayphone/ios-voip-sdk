@@ -151,7 +151,7 @@ after the root build load was reduced. Owned simulator
 directory still present. No global simulator service or other simulator was
 changed. Further local native attempts stopped at this infrastructure boundary.
 
-The compact [preparation evidence](../verification/2026-10-22-runtime-lck/README.md)
+The compact [preparation evidence](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-runtime-lck/README.md)
 binds the source, manifest, build metadata, failed phase and unresolved cleanup.
 The branch also merged the later acknowledged-launch supervisor through R4
 (`f5038e3`); that fix was not exercised because this attempt stopped before launch.
@@ -165,7 +165,7 @@ Measured at source `9c52550`: a bounded owned-device query returned in 0.170
 seconds; shutdown and delete returned zero in 3.204 and 0.162 seconds. A final
 query returned zero in 0.134 seconds with no owned-device match. The simulator
 and temporary build directories were absent. The supplemental
-[cleanup receipt](../verification/2026-10-22-runtime-lck/cleanup-confirmed-9c52550.json)
+[cleanup receipt](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-runtime-lck/cleanup-confirmed-9c52550.json)
 preserves this outcome without replacing the earlier failed-preparation record.
 No additional simulator run occurred. The 13 LCK controls, nine device-oracle
 controls and shell syntax check pass again on this integrated head. Native

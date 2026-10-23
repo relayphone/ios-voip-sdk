@@ -1,7 +1,0 @@
-# M1 Release journeys at b17c50b
-
-**Measured:** the complete source-bound local runner passed the Release Expo 58 push/ring/join/connected/hold/end journey (11 assertions, four handled/provider actions), native cold action before JS and later handler attachment (five assertions, two actions), and default no-handler expiry (five assertions, no handler). Incoming reports and completion share the injected push UUID. Actual terminal LCK callbacks publish ended before removal. M0 bootstrap prerequisites and linked device/all 17 SwiftPM device-object exclusion passed. Xcode 27.1 built both SwiftPM destinations and the full shared-source device probe. Execution used iOS 27.0.
-
-All seven owned processes completed with bound successful signal-stop receipts. Shutdown/deletion succeeded; a separate bounded inventory query found no owned simulator and its device directory was absent. The manifest SHA-256 is `ccd7905fcb51af091fc45de2eb63fb4b03c01d635c9c525ec34b7fea56fc09cf`.
-
-This is a lean receipt collection. The complete ignored capture contains the executable/JavaScript/object bytes, runtime journals and build logs required for replay at captured source `b17c50bed95b20be856a99c28b71ec73f65a2a2a`. These results do not qualify real APNs, locked device launch, audio media, Debug provider ownership or unhandledAction.accept. Later captures strengthen native expiry timing with a synchronous clock marker; this earlier gate checked the original pending deadline and expiry observation.

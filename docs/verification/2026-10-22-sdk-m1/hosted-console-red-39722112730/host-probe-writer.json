@@ -1,1 +1,0 @@
-{"success":true,"classification":"host-only probe publication controls","checks":["split-publication-interleaving-red","one-complete-publication-green","above-512-byte-record-preserved","failed-write-no-retry","short-write-no-retry","bounded-line-and-oversize-refusal","actual-default-stderr-frame"]}

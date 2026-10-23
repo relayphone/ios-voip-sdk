@@ -59,10 +59,11 @@ The API is specified in [RFC 0001](https://github.com/ziahamza/expo-callkit-tele
 
 ## 4. Work plan (in order)
 
-> **Steering, October 22:** read [`progress/2026-10-22-claude-steering.md`](progress/2026-10-22-claude-steering.md) first. Its §A0 (release blockers: PushKit report entry and queue, no CallKit linkage in device builds for China, the iOS 27 interruption API) comes first, and §A must be applied to M2/M3 (#17, #19) before they merge.
-> - §A covers: the PushKit report starting inside the callback, the deadline margin, the echo filter, audio work off main and at call time, system-originated acceptance, and keeping simulator code out of device builds.
-> - §B decides the bridge (Expo Modules 2.0) and the threading contract.
-> - §C reserves extension points for the product direction.
+> **Current order (Hamza, October 23):** restore every main CI lane first; remove archived receipt packets and correct the APNs workflow guard; land the §A0 and §A fixes in small PRs; finish M2 and M3; then complete the corrected-source iPhone measurement in [#22](https://github.com/ziahamza/ios-voip-sdk/pull/22), or record its exact blocker.
+>
+> Read [`progress/2026-10-22-claude-steering.md`](progress/2026-10-22-claude-steering.md) for the technical requirements. §A0 covers PushKit report entry and its queue, no CallKit linkage in device builds, and both iOS 27 audio-interruption paths. Apply §A to M2/M3 before merging. §C reserves extension points; it is not a feature list to implement now.
+>
+> **M-Stable is the stopping point:** main is green on every lane, all §A0 and §A fixes are merged, M2 and M3 are merged, and #22 is measured on the corrected source or has an exact blocker recorded. Then **STOP**. Write `docs/progress/<date>-codex-m-stable.md`, at most one page: what landed with PR and CI links, what did not, and open risks or questions. Wait for Claude and Hamza's review. Do not start M3.5 or the Expo Modules 2.0 bridge until they reply; the older §B/§D schedule is deferred, not a design reversal.
 
 
 ### A. Fix the runtime from the v0.1 review
@@ -115,9 +116,9 @@ All of this is under `docs/research/callkit-simulator-probe/` unless noted. The 
 | **LCK:** full action parity; system-maintained state (`idle`, `joined`, `paused`, `left`); the conversation exists before the report returns; 30 s action deadlines; all delegate callbacks on main; the same mute echo; and D13 applies. A later `CXProvider` steals all actions from a manager, and the newer of two managers gets every `perform`. | `livecommunicationkit/` |
 | **CallKit deadlines and rules:** answer 60 s (expiry measured at 59.58 s), start 600 s, others 5 s; ring timeout 60.1 s. An app answering a waiting call gets `invalidAction`. Hold & Accept is `[SetHeld(active), Answer(waiting)]`, End & Accept is `[End(active), Answer(waiting)]`, Decline is `[End(waiting)]`. | `2026-10-20-iphone13-*.jsonl`, `device-system-ui/` |
 | **Simulator:** `callservicesd` tears calls down (reason 55, no call UI host), and `opaqueSessionID` is 0, so `didActivate` never fires. | `2026-10-20-sim-*`, `runtime-spike/` |
-| **Real APNs:** `mustReport` is false in the foreground *and* for a running background app; it does not follow `applicationState`. Not reporting when `mustReport` is true kills the app in-process. A cold launch works with early registration. | `apns-real/`, `../verification/2026-10-21-apns-sandbox/` |
+| **Real APNs:** `mustReport` is false in the foreground *and* for a running background app; it does not follow `applicationState`. Not reporting when `mustReport` is true kills the app in-process. A cold launch works with early registration. | [device APNs research](research/callkit-simulator-probe/apns-real/README.md), [verification history](verification/README.md) |
 | **Mac Catalyst:** CallKit and LCK are unavailable to native macOS apps. Catalyst CallKit works only for a LaunchServices-registered app, needs user intent for outgoing calls, has no mute echo and no audio callbacks. With Xcode 27.1, Catalyst LCK delegate conformances can't link. Re-registering a running app crashed `callservicesd`. | `maccatalyst/` (it also has Feedback Assistant drafts) |
-| **Runtime v0.1:** what it covers and how it was qualified | `../simulator-runtime.md`, `../verification/2026-10-21-discovery-harness/` |
+| **Runtime v0.1:** what it covers and how it was qualified | [runtime guide](simulator-runtime.md), [verification history](verification/README.md) |
 | **Measured iOS 27 ordinary audio diagnostic, full fixture RED:** raw, C-decoded and Swift-consumed modern notifications agree (2 active, 3 inactive); the silent engine stopped after async activation, before the fourth operation. No A0.3/M2 or LCK-interruption acceptance. | [`audio-session-lifecycle/2026-10-22-iphone13-ios27/`](research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/README.md) |
 | **Measured iOS 27 ordinary no-I/O transport, complete separate fixture PASS:** all four sync/async activation/deactivation operations succeeded; raw, C-decoded and Swift-consumed modern notifications agree (2 active, 4 inactive). Same frozen executable; no engine or rendered frames. Earlier silent-engine fixture remains RED; no A0.3/M2 or LCK/system-interruption acceptance. | [`audio-session-lifecycle/2026-10-22-iphone13-ios27-noio/`](research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27-noio/README.md) |
 
@@ -135,10 +136,13 @@ All of this is under `docs/research/callkit-simulator-probe/` unless noted. The 
 
 ## 7. Working rules
 
-- **Evidence first.** Label every claim *measured*, with the run, trace or receipt, or *proposed*.
-  - CI fails on missing, empty or unbound evidence.
-  - Device behavior is the reference; record per-OS differences as profile data.
-- **One observable acceptance target per PR.** Use Conventional Commits. Keep PR descriptions as the source of truth.
+- **Stop feature work when main is red.** Restore all required CI lanes before opening or advancing feature PRs.
+- **Evidence first.** Label claims *measured*, with a CI run or consumed trace, or *proposed*. Device behavior is the reference; record per-OS differences as profile data.
+  - Deliver code and tests with CI links and a short result table in the PR description. Keep the description as the source of truth.
+  - Do not commit JSON receipts, raw run logs, build inventories or proof packets. Fresh acceptance outputs belong in Actions artifacts or ignored `discovery/out/`.
+  - Keep device measurements as test fixtures when automated conformance consumes them. Preserve the existing research until its retention is explicitly reviewed; an archival receipt is not a test fixture.
+- **One observable acceptance target per PR.** Use Conventional Commits and aim for no more than about 800 changed non-test lines. Squash-merge PRs and rebase linearly; do not rewrite main.
+- **Milestone notes are at most one page.** Include what landed with PR and CI links, what did not, and open risks or questions. Observe the M-Stable stop in §4.
 - **Simulators:** create your own throwaway simulators and delete them afterwards. Never use other people's simulators. The Mac's disk has filled up before, so clean DerivedData.
 - **Device:** use only the dedicated test iPhone named in Hamza's private notes, and never Hamza's personal devices.
   - The phone may have a Focus active. A repeat report from the same number within seconds gets through.

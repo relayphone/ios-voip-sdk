@@ -1,9 +1,0 @@
-{
-  "classification": "measured synthetic regression control; no native framework run",
-  "baselineCommit": "a4e25ee725862722dc1882f6da8142fc148aea6a",
-  "fixtureSHA256": "8e4f51590eb101f258b65100c28033a2d6e76e53907325b3caf21a767e58d180",
-  "case": "init-substitution",
-  "expectedFailure": true,
-  "exitCode": 1,
-  "stderr": "2026-10-22 03:16:55.122 control[1660:5109054] [VoIPSDK] Another CXProvider was created. D13 routes actions to the newest provider; keep one ConversationManager in this process.\none owned provider must not warn\n"
-}

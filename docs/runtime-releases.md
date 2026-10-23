@@ -1,6 +1,6 @@
 # Runtime releases
 
-**Measured:** [CallKit Simulator v0.1.1](https://github.com/ziahamza/ios-voip-sdk/releases/tag/v0.1.1) was published as a prerelease on 2026-10-22 by the successful [annotated-tag release run](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39719750680), from `cbfcc5373eb5ca4955476bd753038790c87b25bd`. The downloaded archive, checksums and qualification each pass GitHub attestation verification restricted to that repository, workflow, tag and source commit. All eight extracted files equal the exact CI-qualified distribution. The [public verification receipt](verification/2026-10-22-runtime-r9-release/receipt.json) binds the assets, provenance, commands and comparison.
+**Measured:** [CallKit Simulator v0.1.1](https://github.com/ziahamza/ios-voip-sdk/releases/tag/v0.1.1) was published as a prerelease on 2026-10-22 by the successful [annotated-tag release run](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39719750680), from `cbfcc5373eb5ca4955476bd753038790c87b25bd`. The downloaded archive, checksums and qualification each pass GitHub attestation verification restricted to that repository, workflow, tag and source commit. All eight extracted files equal the exact CI-qualified distribution. The [public verification receipt](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-runtime-r9-release/receipt.json) binds the assets, provenance, commands and comparison.
 
 This is the standalone runtime at that tag, before SDK M0 and the dedicated LCK acceptance target B. CI executed arm64 on iOS 26.5 (23F77), with Xcode 26.6 (17F113); arm64 and x86_64 simulator slices were built. The `ios-27.0` profile is the device reference. This release does not qualify SDK milestones, iOS 27 simulator execution, media transport or new physical-device behavior.
 
@@ -34,7 +34,7 @@ gh attestation verify callkit-simulator-v0.1.1-macos.tar.gz \
 
 Run the same attestation command with `SHA256SUMS` and `qualification.json` as
 the subject as well. All three downloaded subjects were verified for v0.1.1;
-the [saved decoded provenance](verification/2026-10-22-runtime-r9-release/provenance.json)
+the [saved decoded provenance](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-runtime-r9-release/provenance.json)
 records their exact digests and the GitHub-hosted signer/source identity.
 
 **Measured offline controls:** `python3 discovery/check_release_controls.py` exercises annotated/merged tag acceptance, lightweight and unmerged tag refusal, version/source/toolchain/SDK/architecture/checksum mismatch refusal, normalized archive metadata and identical bytes after filesystem timestamps change. `python3 discovery/check_image_identity.py` covers new-version shipping recognition and loaded/package version mismatches. These synthetic checks do not establish native simulator behavior or a live GitHub attestation.

@@ -1,8 +1,0 @@
-{
-  "product": "unified-shared-source-device",
-  "target": "arm64-apple-ios17.4",
-  "sourceCommit": "387558275bdd1ff43185a567be646999f69afa69",
-  "sourceInputsSHA256": "4895d79422f77d4a188603d6caaf00369695784bb334cb66fd468a2ccaaaeac4",
-  "sdkVersion": "27.1",
-  "binarySHA256": "412c4823bab5894134f7a25142a642d2daa016c0b45757ebef39465bf3b64574"
-}

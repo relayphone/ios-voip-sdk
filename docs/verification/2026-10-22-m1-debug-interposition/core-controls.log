@@ -1,1 +1,0 @@
-Core tests passed: dedup/in-flight, two-minute boundary, cold launch, late attachment, replacement, deadline/policy, no resurrection, optional handlers and wire roundtrip

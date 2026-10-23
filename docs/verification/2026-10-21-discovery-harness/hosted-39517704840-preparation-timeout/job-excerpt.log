@@ -1,6 +1,0 @@
-2026-10-20T23:51:44.4094560Z Evidence: /Users/runner/work/_temp/out
-2026-10-20T23:55:20.0030470Z /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T//callkit-build.hBSTal/Probe.app: replacing existing signature
-2026-10-20T23:55:23.1280990Z /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T//callkit-build.hBSTal/CKSimRuntime.dylib: replacing existing signature
-2026-10-20T23:55:23.4040500Z /var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T//callkit-build.hBSTal/CKSimPush.dylib: replacing existing signature
-2026-10-20T23:56:24.0887610Z discovery/run.sh: line 14:  4504 Alarm clock: 14         perl -e 'alarm shift; exec @ARGV' "$@"
-2026-10-20T23:56:47.8507170Z ##[error]Process completed with exit code 142.
