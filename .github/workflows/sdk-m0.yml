@@ -16,6 +16,7 @@ on:
       - "IosVoipSDK.podspec"
       - "discovery/**"
       - ".github/workflows/sdk-m0.yml"
+      - ".github/workflows/simulator-discovery.yml"
   pull_request:
     paths:
       - "Package.swift"
@@ -30,6 +31,7 @@ on:
       - "IosVoipSDK.podspec"
       - "discovery/**"
       - ".github/workflows/sdk-m0.yml"
+      - ".github/workflows/simulator-discovery.yml"
   workflow_dispatch:
 
 permissions:
