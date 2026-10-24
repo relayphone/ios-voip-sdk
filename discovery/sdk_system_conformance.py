@@ -84,6 +84,7 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
     ready = one(rows, 'system.ready')
     require(ready.get('attached') is (case != 'push-launch'), 'wrong cold-handler policy')
     marker = one(engine, 'system.clock')
+    require(type(marker.get('t_ms')) is int, 'invalid handler delivery clock')
     require(type(ready.get('clockBeforeMS')) is int and 0 <= ready['wallTimeMS'] - ready['clockBeforeMS'] <= 25,
             'unbounded journal clock bridge')
     bindings = index.get('bindings')
@@ -213,8 +214,20 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
         action = candidates[0]; remaining.remove(action)
         require(all(handler.get(key) == value for key, value in action['params'].items()), 'handler parameters differ')
         deadline = timestamp_ms(handler.get('deadline'))
-        require(1000 <= action['deadline']['deadlineMS'] - deadline <= 3500 and
-                handler['wallTimeMS'] < deadline, 'handler deadline lacks effective safety margin')
+        require(type(action['delivered'].get('t_ms')) is int and
+                action['delivered']['t_ms'] >= marker['t_ms'], 'invalid handler delivery clock')
+        advertised = action['deadline']['deadlineMS']
+        cap = {NATIVE['hold']: 5300, NATIVE['end']: 5300, NATIVE['join']: 64000}.get(kind)
+        lower = upper = advertised - 1500
+        if cap is not None:
+            relative = action['delivered']['t_ms'] - marker['t_ms']
+            # The synchronous clock bridge brackets the wall offset within 25 ms.
+            # A separate 250 ms cross-layer allowance bounds delegate delivery;
+            # it does not prove the SDK's exact capture instant or extend timeoutDate.
+            lower = min(advertised, ready['clockBeforeMS'] + relative + cap) - 1500
+            upper = min(advertised, ready['wallTimeMS'] + relative + cap + 250) - 1500
+        require(lower - 1 <= deadline <= upper + 1 and handler['wallTimeMS'] < deadline,
+                'handler deadline differs from selected cap and margin')
         entered = one([row for row in engine if row.get('traceSequence') == handler['sequence']], 'system.handlerEntered')
         require(all(entered.get(key) == handler.get(key) for key in ('kind', 'conversationID', 'origin', 'deadline', *action['params'])) and
                 action['delivered']['sequence'] < entered['sequence'] < action['settled']['sequence'], 'handler/native causal order differs')

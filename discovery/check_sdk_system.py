@@ -134,16 +134,18 @@ class Fixture:
 
     def transaction(self, specs, control=None, origin='system', signal=True):
         ids = [self.uuid() for _ in specs]
-        self.native('transaction.delivered', transactionID=self.uuid(), requestID=control['request']['id'] if control else origin,
-                    origin=origin, actionIDs=ids, kinds=[gate.NATIVE[kind] for kind, _, _ in specs],
-                    callUUIDs=[binding['callUUID'] for _, binding, _ in specs], parameters=[params for _, _, params in specs])
+        delivered = self.native('transaction.delivered', transactionID=self.uuid(), requestID=control['request']['id'] if control else origin,
+                                origin=origin, actionIDs=ids, kinds=[gate.NATIVE[kind] for kind, _, _ in specs],
+                                callUUIDs=[binding['callUUID'] for _, binding, _ in specs], parameters=[params for _, _, params in specs])
         if control: control['response']['result'] = dict(actionIDs=ids)
         actions = []
         for identity, (kind, binding, params) in zip(ids, specs):
             deadline = self.native('action.deadline', actionID=identity, apiKind='livecommunicationkit',
                                    deadlineMS=WALL + self.clock + 30000, deadlineSeconds=30, expirySeconds=30)
+            cap = {'hold': 5300, 'end': 5300, 'join': 64000}.get(kind)
+            selected = min(deadline['deadlineMS'], WALL + delivered['t_ms'] + cap) if cap else deadline['deadlineMS']
             action = dict(id=identity, kind=kind, binding=binding, params=params, origin=origin,
-                          deadline=iso(deadline['deadlineMS'] - 1500), handled=False)
+                          deadline=iso(selected - 1500), handled=False)
             actions.append(action)
             if signal: self.handler(action)
         return actions
@@ -270,6 +272,29 @@ def expired_settlement(value):
     elapsed = deadline['deadlineMS'] - ready['wallTimeMS'] + marker['t_ms'] - 1
     difference = elapsed - settled['t_ms']
     for event in value['engine'][value['engine'].index(settled):]: event['t_ms'] += difference
+
+
+def handler_deadline(value, kind, shift_ms=0, earlier_advertised=False, extend_advertised=False, advertised_only=False):
+    """Tamper all deadline projections together, leaving no mismatch shortcut."""
+    handler = next(row for row in value['rows'] if row['event'] == 'system.handler' and row['kind'] == kind)
+    transaction = next(row for row in value['engine'] if row['event'] == 'transaction.delivered' and gate.NATIVE[kind] in row['kinds'])
+    identity = transaction['actionIDs'][transaction['kinds'].index(gate.NATIVE[kind])]
+    advertised = next(row for row in value['engine'] if row['event'] == 'action.deadline' and row['actionID'] == identity)
+    old = handler['deadline']
+    deadline = gate.timestamp_ms(old) + shift_ms
+    if advertised_only: deadline = advertised['deadlineMS'] - 1500
+    if earlier_advertised:
+        advertised['deadlineMS'] -= 27000
+        if not extend_advertised: deadline = advertised['deadlineMS'] - 1500
+    handler['deadline'] = iso(deadline)
+    for row in value['engine']:
+        if row['event'] == 'system.handlerEntered' and row['traceSequence'] == handler['sequence']:
+            row['deadline'] = handler['deadline']
+    for row in value['rows']:
+        for call in row.get('conversations', []):
+            pending = call.get('pending', {})
+            if call['id'] == handler['conversationID'] and pending.get('kind') == kind and pending.get('deadline') == old:
+                pending['deadline'] = handler['deadline']
 
 
 def duplicate_rows(value):
@@ -899,7 +924,33 @@ def controls():
     check('decline-connected', 'decline', lambda value: next(row for row in value['rows'] if row['event'] == 'sdk.snapshot' and row['conversations'])['conversations'][0].update(status='connected'), 'declined call connected')
     check('native-action-id', 'answer-end', lambda value: value['controls'][1]['response']['result'].update(actionIDs=[str(uuid.UUID(int=999)).upper()]), 'system native action binding/origin differs')
     check('settlement-at-expiry', 'answer-end', expired_settlement, 'native settlement reached platform expiry')
-    check('effective-margin-absent', 'answer-end', lambda value: first(value['rows'], 'system.handler').update(deadline=iso(first(value['engine'], 'action.deadline')['deadlineMS'])), 'handler deadline lacks effective safety margin')
+    check('effective-margin-absent', 'answer-end', lambda value: first(value['rows'], 'system.handler').update(deadline=iso(first(value['engine'], 'action.deadline')['deadlineMS'])), 'handler deadline differs from selected cap and margin')
+    for kind, case in (('hold', 'hold-accept'), ('end', 'answer-end')):
+        check('effective-' + kind + '-old-advertised-only', case,
+              lambda value, kind=kind: handler_deadline(value, kind, advertised_only=True),
+              'handler deadline differs from selected cap and margin')
+        for label, shift in (('beyond-delivery-allowance', 253), ('double-margin', -1500), ('no-margin', 1500)):
+            check('effective-' + kind + '-' + label, case,
+                  lambda value, kind=kind, shift=shift: handler_deadline(value, kind, shift),
+                  'handler deadline differs from selected cap and margin')
+        check('effective-' + kind + '-delivery-allowance', case,
+              lambda value, kind=kind: handler_deadline(value, kind, 250))
+        check('effective-' + kind + '-earlier-advertised', case,
+              lambda value, kind=kind: handler_deadline(value, kind, earlier_advertised=True))
+        check('effective-' + kind + '-earlier-advertised-extended', case,
+              lambda value, kind=kind: handler_deadline(value, kind, earlier_advertised=True, extend_advertised=True),
+              'handler deadline differs from selected cap and margin')
+    check('effective-join-advertised-margin-inexact', 'answer-end', lambda value: handler_deadline(value, 'join', 2),
+          'handler deadline differs from selected cap and margin')
+    check('effective-clock-marker-missing', 'answer-end', lambda value: value['engine'].remove(first(value['engine'], 'system.clock')),
+          'require one system.clock')
+    check('effective-clock-marker-invalid', 'answer-end', lambda value: first(value['engine'], 'system.clock').update(t_ms='invalid'),
+          'invalid handler delivery clock')
+    check('effective-clock-bound-missing', 'answer-end', lambda value: first(value['rows'], 'system.ready').pop('clockBeforeMS'),
+          'unbounded journal clock bridge')
+    check('effective-clock-bound-invalid', 'answer-end', lambda value: first(value['rows'], 'system.ready').update(
+        clockBeforeMS=first(value['rows'], 'system.ready')['wallTimeMS'] - 26),
+          'unbounded journal clock bridge')
     check('pending-effective-deadline', 'answer-end', lambda value: next(row for row in value['rows'] if row['event'] == 'sdk.snapshot' and row['conversations'] and row['conversations'][0].get('pending'))['conversations'][0]['pending'].update(deadline=iso(WALL)), 'handler/pending deadline mismatch')
     check('handler-marker-before-delivery', 'answer-end', lambda value: move_before(value, first(value['engine'], 'system.handlerEntered'), first(value['engine'], 'transaction.delivered')), 'handler/native causal order differs')
     check('handler-marker-deadline', 'answer-end', lambda value: first(value['engine'], 'system.handlerEntered').update(deadline=iso(WALL)), 'handler/native causal order differs')
