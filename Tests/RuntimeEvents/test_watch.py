@@ -158,6 +158,106 @@ class ControlTransportTests(unittest.TestCase):
         self.exercise('directory-watch-v1', response=False)
 
 
+class CachedContainerTests(unittest.TestCase):
+    DEVICE = '00000000-0000-0000-0000-000000000001'
+    OTHER_DEVICE = '00000000-0000-0000-0000-000000000003'
+
+    def setUp(self):
+        self.work = tempfile.TemporaryDirectory()
+        self.addCleanup(self.work.cleanup)
+        self.base = Path(self.work.name)
+        self.container = self.base / 'Devices' / self.DEVICE / 'data/Containers/Data/Application/00000000-0000-0000-0000-000000000002'
+        self.root = self.container / 'Documents/.callkit-simulator'
+        self.mailbox = self.root / 'run'
+        for name in ('requests', 'responses'):
+            (self.mailbox / name).mkdir(parents=True)
+        self.session = dict(schemaVersion=1, runID='run', pid=123, bundleID='test.fixture',
+                            notification='test.notify', controlTransport='directory-watch-v1')
+        (self.root / 'session.json').write_text(json.dumps(self.session))
+        self.row = dict(self.session, event='runtime.installed', sequence=1, t_ms=1, wallTimeMS=1000)
+        (self.mailbox / 'events.jsonl').write_text(json.dumps(self.row) + '\n')
+        self.args = SimpleNamespace(app_container=self.container, bundle='test.fixture', operation='status',
+                                    command_receipt=None, runtime_dir=self.base, timeout=1)
+
+    def test_cached_control_needs_no_target_simulator_rpc(self):
+        control = CLI['control']
+        elapsed = [0.0]
+        def respond(_):
+            elapsed[0] += 0.1
+            request = json.loads(next((self.mailbox / 'requests').glob('*.json')).read_text())
+            (self.mailbox / 'responses' / (request['id'] + '.json')).write_text(json.dumps(dict(request, success=True)))
+        rpc = Mock(side_effect=AssertionError('target RPC unavailable'))
+        clock = SimpleNamespace(monotonic=lambda: elapsed[0], sleep=respond)
+        with patch.dict(control.__globals__, simctl=rpc, time=clock):
+            self.assertTrue(control(self.args, self.DEVICE, expected_session=self.session)['success'])
+        rpc.assert_not_called()
+
+    def test_cached_watch_needs_no_target_simulator_rpc(self):
+        watch = CLI['watch']
+        args = SimpleNamespace(**vars(self.args), duration=1, after=0, json=True)
+        rpc = Mock(side_effect=AssertionError('target RPC unavailable'))
+        clock = Mock()
+        clock.monotonic.side_effect = [0, 2]
+        output = StringIO()
+        with patch.dict(watch.__globals__, simctl=rpc, time=clock), redirect_stdout(output):
+            watch(args, self.DEVICE)
+        self.assertEqual(json.loads(output.getvalue()), self.row)
+        rpc.assert_not_called()
+
+    def test_inspector_uses_cached_container_before_any_target_rpc(self):
+        class Located(Exception):
+            pass
+        app = self.base / 'Inspector.app'
+        app.mkdir()
+        args = SimpleNamespace(**vars(self.args), app=app)
+        def bridge(arguments, device, root):
+            self.assertEqual(root, self.root.resolve())
+            raise Located()
+        inspect = CLI['inspect_app']
+        rpc = Mock(side_effect=AssertionError('target RPC unavailable'))
+        with patch.dict(inspect.__globals__, simctl=rpc, InspectorBridge=bridge), redirect_stderr(StringIO()):
+            with self.assertRaises(Located):
+                inspect(args, self.DEVICE)
+        rpc.assert_not_called()
+
+    def test_cached_container_rejects_another_device_without_writing(self):
+        control = CLI['control']
+        rpc = Mock(side_effect=AssertionError('target RPC unavailable'))
+        with patch.dict(control.__globals__, simctl=rpc):
+            with self.assertRaisesRegex(RuntimeError, 'selected simulator'):
+                control(self.args, self.OTHER_DEVICE)
+        self.assertEqual(list((self.mailbox / 'requests').iterdir()), [])
+        rpc.assert_not_called()
+
+    def test_missing_file_and_cross_device_symlink_caches_do_not_fall_back_to_rpc(self):
+        regular_file = self.base / 'not-a-container'
+        regular_file.write_text('file')
+        another = self.base / 'Devices' / self.OTHER_DEVICE / 'data/Containers/Data/Application/00000000-0000-0000-0000-000000000004'
+        another.mkdir(parents=True)
+        linked = self.container.parent / '00000000-0000-0000-0000-000000000005'
+        linked.symlink_to(another, target_is_directory=True)
+        control = CLI['control']
+        rpc = Mock(side_effect=AssertionError('target RPC unavailable'))
+        for cached in (self.base / 'missing', regular_file, linked):
+            with self.subTest(cached=cached), patch.dict(control.__globals__, simctl=rpc):
+                self.args.app_container = cached
+                with self.assertRaisesRegex(RuntimeError, 'selected simulator'):
+                    control(self.args, self.DEVICE)
+        self.assertEqual(list((self.mailbox / 'requests').iterdir()), [])
+        rpc.assert_not_called()
+
+    def test_cached_container_still_rejects_stale_session_and_wrong_bundle(self):
+        control = CLI['control']
+        rpc = Mock(side_effect=AssertionError('target RPC unavailable'))
+        with patch.dict(control.__globals__, simctl=rpc):
+            with self.assertRaisesRegex(RuntimeError, 'session changed'):
+                control(self.args, self.DEVICE, expected_session=dict(self.session, pid=456))
+            self.args.bundle = 'another.fixture'
+            with self.assertRaisesRegex(RuntimeError, 'Invalid runtime session'):
+                control(self.args, self.DEVICE)
+        self.assertEqual(list((self.mailbox / 'requests').iterdir()), [])
+        rpc.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -44,6 +44,23 @@ def simulator(identifier):
     return matches[0]
 
 
+def target_container(args, device):
+    cached = getattr(args, "app_container", None)
+    if cached is None:
+        return Path(simctl("get_app_container", device, args.bundle, "data"))
+    try:
+        container = Path(cached).resolve(strict=True)
+        expected = (str(uuid.UUID(device)), "data", "Containers", "Data", "Application")
+        if (not container.is_dir() or
+                tuple(part.casefold() for part in container.parts[-6:-1]) != tuple(part.casefold() for part in expected)):
+            raise ValueError("wrong simulator data-container path")
+        uuid.UUID(container.name)
+    except (OSError, ValueError) as error:
+        raise RuntimeError("Cached app container must be an existing data container for the selected simulator.") from error
+    # The caller still validates the bundle and runtime session in this path.
+    return container
+
+
 def launch_environment(device, key):
     try:
         result = subprocess.run(["xcrun", "simctl", "spawn", device, "launchctl", "getenv", key], capture_output=True, text=True,
@@ -202,7 +219,7 @@ def repair(device):
 def control(args, device, expected_session=None):
     if args.command_receipt and (args.command_receipt.exists() or args.command_receipt.is_symlink()):
         raise RuntimeError("Command receipt already exists; inspect before retrying.")
-    container = Path(simctl("get_app_container", device, args.bundle, "data"))
+    container = target_container(args, device)
     root = container / "Documents/.callkit-simulator"
     session = json.loads((root / "session.json").read_text())
     if expected_session is not None and session != expected_session:
@@ -313,7 +330,7 @@ def timeline_line(row):
 
 
 def watch(args, device):
-    container = Path(simctl("get_app_container", device, args.bundle, "data"))
+    container = target_container(args, device)
     root = container / "Documents/.callkit-simulator"
     journal = RuntimeJournal(root, args.bundle)
     end = time.monotonic() + args.duration if args.duration else float("inf")
@@ -401,7 +418,7 @@ def inspect_app(args, device):
     if not args.app.is_dir() or args.app.suffix != ".app":
         raise RuntimeError("Build the simulator inspector first and pass inspect --app <CKSimInspector.app>.")
     print("Inspector: locating target runtime.", file=sys.stderr, flush=True)
-    container = Path(simctl("get_app_container", device, args.bundle, "data"))
+    container = target_container(args, device)
     bridge = InspectorBridge(args, device, container / "Documents/.callkit-simulator")
     status = SimpleNamespace(**dict(vars(args), operation="status", command_receipt=None))
     print("Inspector: checking target runtime.", file=sys.stderr, flush=True)
@@ -557,6 +574,7 @@ def main():
     parser.add_argument("--simulator", default="booted")
     parser.add_argument("--bundle")
     parser.add_argument("--runtime-dir", type=Path, default=Path(__file__).resolve().parent)
+    parser.add_argument("--app-container", type=Path, help="Reuse a discovered target data container; simulator and session identity are checked")
     parser.add_argument("--timeout", type=float, default=15)
     parser.add_argument("--command-receipt", type=Path, help="Retain the exact request, response and session in a fresh file")
     commands = parser.add_subparsers(dest="operation", required=True)
@@ -595,6 +613,9 @@ def main():
     faults.add_argument("--report-delay-ms", type=int, default=0)
     faults.add_argument("--invalidate-during-handoff", action="store_true")
     args = parser.parse_args()
+    if args.app_container and (args.operation in ("install", "uninstall", "repair", "launch") or
+                               args.operation == "push" and args.launch):
+        parser.error("--app-container is only supported for running-app controls, watch and inspect")
     if args.operation == "tones" and not re.fullmatch(r"[0-9*#ABCDabcd]{1,64}", args.digits):
         parser.error("digits must contain 1-64 DTMF characters")
     if args.operation == "push" and args.launch and (not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", args.run_id or "") or not args.launch_receipt):

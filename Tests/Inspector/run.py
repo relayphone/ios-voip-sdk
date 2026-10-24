@@ -72,7 +72,7 @@ def main():
         session = fixture_session(channel, run_id)
         assert session.get('controlTransport') == 'directory-watch-v1', 'fixture must support spawn-free mailbox controls'
         common = [str(ROOT/'Tools/cksim'),'--simulator',target,'--bundle',BUNDLE,
-                  '--runtime-dir',str(args.package.resolve())]
+                  '--runtime-dir',str(args.package.resolve()), '--app-container', str(channel.parent.parent)]
         display = device(args.display_simulator, 'M4 Inspector ')
         with (out / 'bridge.log').open('w') as log:
             bridge = subprocess.Popen(common + ['inspect','--app',str(args.inspector.resolve()),
@@ -100,7 +100,7 @@ def main():
         timing['pushCommandFinishedAtMS'] = int(time.time() * 1000)
         (out/'stimulus-timing.json').write_text(json.dumps(timing))
         code = tests.wait(timeout=300)
-        captured = run(ROOT/'Tools/cksim','--simulator',target,'--bundle',BUNDLE,'watch','--json','--duration','0.3')
+        captured = run(*common, 'watch','--json','--duration','0.3')
         (out/'events.jsonl').write_text(captured+'\n')
         rows = [json.loads(line) for line in captured.splitlines()]
         assert code == 0, (out/'ui-test.log').read_text()[-4000:]
