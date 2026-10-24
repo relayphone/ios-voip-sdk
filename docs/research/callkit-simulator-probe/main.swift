@@ -675,14 +675,23 @@ struct ProbeApp: App {
     let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     if FileManager.default.fileExists(atPath: documents.appendingPathComponent("push-mode").path) { ProbeApp.probe.registerPushEarly() }
     LCKPushProbe.startIfConfigured()
+    LCKMultiProbe.startIfConfigured()
   }
   var body: some Scene {
     WindowGroup {
-      Text("CallKit probe").task {
+      VStack {
+        Text("CallKit probe")
+        // MultiCallUITests waits for this status to read DONE before the host fetches the trace.
+        if LCKMultiProbe.shared != nil {
+          TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+            Text(LCKMultiProbe.shared?.currentStatus ?? "").accessibilityIdentifier("multi.status")
+          }
+        }
+      }.task {
         guard !started else { return }
         started = true
-        // The LiveCommunicationKit push probe must stay the only provider in the process (D13).
-        if LCKPushProbe.shared != nil { return }
+        // A LiveCommunicationKit probe must stay the only provider in the process (D13).
+        if LCKPushProbe.shared != nil || LCKMultiProbe.shared != nil { return }
         // Kept apart from Probe, whose initializer registers its own CXProvider.
         if ProcessInfo.processInfo.environment["PROBE_MODE"] == "providers" { await ProvidersProbe().run(); return }
         #if !targetEnvironment(macCatalyst)
