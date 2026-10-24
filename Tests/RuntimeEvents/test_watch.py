@@ -110,9 +110,11 @@ class ControlTransportTests(unittest.TestCase):
                 session['controlTransport'] = transport
             (root / 'session.json').write_text(json.dumps(session))
             args = SimpleNamespace(bundle='test.fixture', operation='status', runtime_dir=container,
-                                   command_receipt=None, timeout=0.01)
+                                   command_receipt=None, timeout=1)
             calls = []
+            elapsed = [0.0]
             def respond(_=None):
+                elapsed[0] += 0.1
                 if response:
                     request = json.loads(next((mailbox / 'requests').glob('*.json')).read_text())
                     if mismatch:
@@ -129,7 +131,8 @@ class ControlTransportTests(unittest.TestCase):
                     return ''
                 raise AssertionError(parts)
             control = CLI['control']
-            with patch.dict(control.__globals__, simctl=simctl), patch.object(CLI['time'], 'sleep', side_effect=respond):
+            clock = SimpleNamespace(monotonic=lambda: elapsed[0], sleep=respond)
+            with patch.dict(control.__globals__, simctl=simctl, time=clock):
                 if mismatch:
                     with self.assertRaisesRegex(RuntimeError, 'response identity mismatch'):
                         control(args, 'device', expected_session=session)
