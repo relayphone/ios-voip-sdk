@@ -9,52 +9,6 @@ struct RuntimeSession: Codable, Equatable {
   let pid: Int
   let profile: String
 }
-struct RuntimeEvent: Codable, Identifiable {
-  let schemaVersion: Int
-  let sequence: Int
-  let runID: String
-  let pid: Int
-  let bundleID: String
-  let event: String
-  let t_ms: Double
-  var uuid: String?
-  var callUUID: String?
-  var actionID: String?
-  var kind: String?
-  var origin: String?
-  var apiKind: String?
-  var deadlineMS: Double?
-  var deadlineSeconds: Double?
-  var latencyMS: Double?
-  var fulfilled: Bool?
-  var connected: Bool?
-  var ringing: Bool?
-  var held: Bool?
-  var ended: Bool?
-  var muted: Bool?
-  var callerName: String?
-  var handle: String?
-  var id: Int { sequence }
-  var caller: String { [callerName, handle].compactMap { $0 }.first { !$0.isEmpty } ?? "Unknown caller" }
-  var status: String {
-    if ended == true { return "Ended" }
-    if held == true { return "On hold" }
-    if connected == true { return "Connected" }
-    return ringing == true ? "Incoming call" : "Connecting"
-  }
-  var title: String {
-    if event == "call.changed" { return "\(caller) · \(status)" }
-    if event == "action.settled" { return "\(kind?.capitalized ?? "Action") \(fulfilled == true ? "fulfilled" : "failed")" }
-    if event == "action.deadline" { return "\(kind?.capitalized ?? "Action") delivered" }
-    return event
-  }
-  var detail: String {
-    var parts = [origin, apiKind].compactMap { $0 }
-    if let latencyMS, event != "action.deadline" { parts.append(String(format: "%.1f ms", latencyMS)) }
-    if let deadlineSeconds { parts.append(String(format: "%.0f s profile budget", deadlineSeconds)) }
-    return parts.joined(separator: " · ")
-  }
-}
 private struct EventBatch: Decodable {
   let session: RuntimeSession
   let events: [RuntimeEvent]
@@ -84,6 +38,7 @@ private struct InspectorProbeSnapshot: Encodable {
   let pending: [RuntimeEvent]
   let timeline: [RuntimeEvent]
   let timelinePresentation: [TimelinePresentation]
+  let timingReferences: [RuntimeTimingReadout]
   let audioActive: Bool
   let online: Bool
   let error: String?
@@ -118,6 +73,7 @@ final class InspectorModel: ObservableObject {
   var incoming: RuntimeEvent? {
     conversations.values.filter { $0.ringing == true && $0.ended != true }.sorted { $0.sequence < $1.sequence }.first
   }
+  var timingReferences: [RuntimeTimingReadout] { RuntimeTimingReferences.project(timeline) }
   func active(excluding id: String?) -> RuntimeEvent? {
     conversations.values.filter { $0.uuid != id && $0.connected == true && $0.held != true && $0.ended != true }
       .sorted { $0.sequence < $1.sequence }.first
@@ -178,6 +134,7 @@ final class InspectorModel: ObservableObject {
       conversations: conversations.values.sorted { $0.sequence < $1.sequence },
       pending: pending.values.sorted { $0.sequence < $1.sequence }, timeline: timeline,
       timelinePresentation: timeline.map { .init(sequence: $0.sequence, title: $0.title, detail: $0.detail) },
+      timingReferences: timingReferences,
       audioActive: audioActive, online: online, error: error)
     do {
       try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
