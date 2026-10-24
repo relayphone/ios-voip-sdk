@@ -15,7 +15,11 @@ private struct EventBatch: Decodable {
   let cursor: Int
 }
 private struct ControlResult: Decodable {
-  struct Result: Decodable { var actionIDs: [String]? }
+  struct Result: Decodable {
+    var actionIDs: [String]?
+    var incomingFilter: InspectorIncomingFilterState?
+  }
+  var id: String?
   let success: Bool
   var error: String?
   var result: Result?
@@ -40,6 +44,7 @@ private struct InspectorProbeSnapshot: Encodable {
   let timelinePresentation: [TimelinePresentation]
   let timingReferences: [RuntimeTimingReadout]
   let audioActive: Bool
+  let incomingFilter: InspectorIncomingFilter
   let online: Bool
   let error: String?
 }
@@ -55,6 +60,7 @@ final class InspectorModel: ObservableObject {
   @Published var busy = false
   @Published var error: String?
   @Published var commandError: String?
+  @Published var incomingFilter: InspectorIncomingFilter = .none
   private var cursor = 0
   private var acknowledgedActions = Set<String>()
   private var actionOrder: [String] = []
@@ -135,7 +141,7 @@ final class InspectorModel: ObservableObject {
       pending: pending.values.sorted { $0.sequence < $1.sequence }, timeline: timeline,
       timelinePresentation: timeline.map { .init(sequence: $0.sequence, title: $0.title, detail: $0.detail) },
       timingReferences: timingReferences,
-      audioActive: audioActive, online: online, error: error)
+      audioActive: audioActive, incomingFilter: incomingFilter, online: online, error: error)
     do {
       try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
       try JSONEncoder().encode(snapshot).write(to: documents.appendingPathComponent("cksim-inspector-results.json"), options: .atomic)
@@ -149,16 +155,47 @@ final class InspectorModel: ObservableObject {
       let ended = conversations.values.filter { $0.ended == true }.sorted { $0.sequence > $1.sequence }
       for old in ended.dropFirst(5) { if let id = old.uuid { conversations.removeValue(forKey: id) } }
     }
+    if let state = InspectorIncomingFilterState(event: row), let id = row.requestID {
+      incomingFilter = state.reason
+      acknowledge(id)
+    }
     if let id = row.actionID {
-      if acknowledgedActions.insert(id).inserted {
-        actionOrder.append(id)
-        if actionOrder.count > 1000 { acknowledgedActions.remove(actionOrder.removeFirst()) }
-      }
+      acknowledge(id)
       if row.event == "action.deadline" { pending[id] = row }
       if ["action.settled", "action.expired", "action.timeout", "action.cancelled"].contains(row.event) { pending.removeValue(forKey: id) }
     }
     if row.event == "audio.activated" { audioActive = true }
     if row.event == "audio.deactivated" { audioActive = false }
+  }
+  private func acknowledge(_ id: String) {
+    if acknowledgedActions.insert(id).inserted {
+      actionOrder.append(id)
+      if actionOrder.count > 1000 { acknowledgedActions.remove(actionOrder.removeFirst()) }
+    }
+  }
+  func configureIncomingFilter(_ reason: InspectorIncomingFilter) {
+    guard !busy, online else { return }
+    busy = true
+    Task {
+      defer { busy = false }
+      do {
+        let response = try JSONDecoder().decode(ControlResult.self, from: await request("/command",
+          body: ["operation": "incoming-filter", "reason": reason.rawValue]))
+        guard response.success, let id = response.id, let state = response.result?.incomingFilter,
+              state.isValid, state.reason == reason else {
+          throw NSError(domain: "Inspector", code: 5, userInfo: [NSLocalizedDescriptionKey:
+            response.error ?? "Runtime rejected the incoming filter configuration."])
+        }
+        let deadline = Date().addingTimeInterval(3)
+        while !acknowledgedActions.contains(id) {
+          guard Date() < deadline else {
+            throw NSError(domain: "Inspector", code: 6, userInfo: [NSLocalizedDescriptionKey:
+              "Filter accepted, but its journal confirmation has not arrived. Check the timeline before retrying."])
+          }
+          try await Task.sleep(for: .milliseconds(25))
+        }
+      } catch { commandError = error.localizedDescription }
+    }
   }
   func send(_ operation: String, call: RuntimeEvent, active: RuntimeEvent? = nil) {
     guard !busy, online, let id = call.uuid else { return }

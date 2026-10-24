@@ -34,6 +34,12 @@ struct RuntimeEvent: Codable, Identifiable {
   var transactionID: String?
   var pushID: String?
   var provider: String?
+  var requestID: String?
+  var reason: String?
+  var code: Int?
+  var domain: String?
+  var filterReason: String?
+  var verification: String?
   var kind: String?
   var origin: String?
   var apiKind: String?
@@ -63,6 +69,8 @@ struct RuntimeEvent: Codable, Identifiable {
     return ringing == true ? "Incoming call" : "Connecting"
   }
   var title: String {
+    if let state = InspectorIncomingFilterState(event: self) { return "Incoming filter · \(state.reason.title)" }
+    if event == "report.completed", let code, code != 0 { return "Incoming report rejected · code \(code)" }
     if event == "call.changed" { return "\(caller) · \(status)" }
     if event == "action.settled" { return "\(kind?.capitalized ?? "Action") \(fulfilled == true ? "fulfilled" : "failed")" }
     if event == "action.deadline" { return "\(kind?.capitalized ?? "Action") delivered" }
@@ -72,6 +80,8 @@ struct RuntimeEvent: Codable, Identifiable {
     var parts = [origin, apiKind].compactMap { $0 }
     if let latencyMS, event != "action.deadline" { parts.append(String(format: "%.1f ms", latencyMS)) }
     if let deadlineSeconds { parts.append(String(format: "%.0f s profile budget", deadlineSeconds)) }
+    if let domain, !domain.isEmpty, let code { parts.append("\(domain) \(code)") }
+    if verification == "unverified" { parts.append("Unverified on device") }
     return parts.joined(separator: " · ")
   }
 }
