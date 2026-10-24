@@ -21,7 +21,6 @@ final class Fixture: NSObject, UIApplicationDelegate, @preconcurrency CXProvider
     registry.delegate = self
     registry.desiredPushTypes = [.voIP]
     background = app.beginBackgroundTask(withName: "Inspector acceptance") {}
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.ring() }
     return true
   }
   func ring() {

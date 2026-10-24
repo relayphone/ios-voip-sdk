@@ -265,5 +265,9 @@ the shared channel through the shipping watcher. Explicitly dispatch the
 XCUITest and publish the banner, full-screen call, answered state and timeline.
 Hosted XCTest startup is unreliable; GUI failures remain visible in dispatched
 runs. A green PR/main check therefore does not assert a completed GUI journey.
-CI uses its installed simulator OS against the measured `ios-27.0` profile;
-the artifact's environment file identifies actual coverage.
+Runtime/inspector CI uses the `xcode-27` runner with Xcode 27.1 and explicitly
+requires the iOS 27.0 simulator runtime; it refuses to substitute another OS.
+Artifacts include the compiler/runtime inventory, build logs, and the original
+runtime journal on success or failure. Failed journeys also attempt bounded
+simulator logs and screenshots before deleting their simulators. GUI acceptance
+remains manual until the automatic journey is qualified.

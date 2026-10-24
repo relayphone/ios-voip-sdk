@@ -2,7 +2,6 @@
 """Tap the separate inspector, then consume its runtime journal and UI screenshots."""
 import argparse
 import json
-import os
 from pathlib import Path
 import signal
 import subprocess
@@ -12,7 +11,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'Tests/RuntimeEvents'))
-from run import latest_runtime, remove_simulators, run, wait
+from run import capture_diagnostics, fixture_session, latest_runtime, launch_fixture, record_environment, remove_simulators, run
 
 BUNDLE = 'dev.callkitsim.eventfixture'
 
@@ -39,6 +38,7 @@ def main():
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--target-simulator')
     parser.add_argument('--display-simulator')
+    parser.add_argument('--runtime', help='Require this exact available simulator runtime identifier')
     args = parser.parse_args()
     out = args.out.resolve()
     out.mkdir(parents=True)
@@ -49,10 +49,13 @@ def main():
                         '-destination','generic/platform=iOS Simulator','-derivedDataPath',str(build),
                         'CODE_SIGNING_ALLOWED=NO'], stdout=log, stderr=subprocess.STDOUT, check=True, timeout=300)
     runtimes = json.loads(run('xcrun','simctl','list','runtimes','-j'))['runtimes']
-    runtime = latest_runtime(runtimes)
+    runtime = latest_runtime(runtimes, args.runtime)
+    record_environment(out, runtime)
     print('Selected simulator runtime: ' + runtime, flush=True)
     owned = []
     bridge = tests = None
+    target = display = None
+    channel = None
     def device(supplied, name):
         if supplied:
             return supplied
@@ -65,21 +68,10 @@ def main():
     try:
         target = device(args.target_simulator, 'M4 Target ')
         print('Installing target fixture before booting the inspector display.', flush=True)
-        run('xcrun','simctl','install',target,args.fixture.resolve())
-        run_id = 'inspector-' + str(uuid.uuid4())
-        run('xcrun','simctl','launch','--terminate-running-process',target,BUNDLE,
-            env=dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=run_id))
-        container = Path(run('xcrun','simctl','get_app_container',target,BUNDLE,'data'))
-        session = container / 'Documents/.callkit-simulator/session.json'
-        wait(lambda: session.exists() and json.loads(session.read_text()).get('runID') == run_id)
+        channel, run_id = launch_fixture(target, args.fixture)
+        session = fixture_session(channel, run_id)
         common = [str(ROOT/'Tools/cksim'),'--simulator',target,'--bundle',BUNDLE,
                   '--runtime-dir',str(args.package.resolve())]
-        # Remove the startup ring before the UI can select it. Only the later
-        # push is the call this test may answer.
-        wait(lambda: json.loads(run(*common,'status'))['result']['calls'])
-        for call in json.loads(run(*common,'status'))['result']['calls']:
-            run(*common,'end',call['uuid'])
-        wait(lambda: not json.loads(run(*common,'status'))['result']['calls'])
         display = device(args.display_simulator, 'M4 Inspector ')
         with (out / 'bridge.log').open('w') as log:
             bridge = subprocess.Popen(common + ['inspect','--app',str(args.inspector.resolve()),
@@ -111,6 +103,7 @@ def main():
         (out/'events.jsonl').write_text(captured+'\n')
         rows = [json.loads(line) for line in captured.splitlines()]
         assert code == 0, (out/'ui-test.log').read_text()[-4000:]
+        assert all(all(row[k] == session[k] for k in ('runID', 'pid', 'bundleID')) for row in rows)
         answers = [r for r in rows if r['event']=='action.settled' and r['kind']=='answer']
         assert len(answers)==1 and answers[0]['origin']=='system' and answers[0]['fulfilled']
         assert any(r['event']=='audio.activated' for r in rows)
@@ -118,6 +111,11 @@ def main():
         (out/'environment.txt').write_text(run('xcodebuild','-version')+'\n'+runtime+'\n')
         print(json.dumps(dict(success=True, answerLatencyMS=answers[0]['latencyMS'], screenshots='screenshots/')))
     finally:
+        failed = sys.exc_info()[0] is not None
+        if target:
+            capture_diagnostics(out, target, channel=channel, failed=failed)
+        if failed and display:
+            capture_diagnostics(out / 'display', display, bundle='dev.callkitsim.inspector', failed=True)
         for process in (tests, bridge):
             if process is not None and process.poll() is None:
                 process.send_signal(signal.SIGINT)

@@ -13,13 +13,18 @@ concurrency:
   cancel-in-progress: true
 jobs:
   runtime-events:
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 30
+    env:
+      CKSIM_TEST_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-0
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Select Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode_26.6.app
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          mkdir -p "$RUNNER_TEMP/m4-build"
+          xcodebuild -version | tee "$RUNNER_TEMP/m4-build/xcode.txt"
+          xcrun simctl list runtimes -j > "$RUNNER_TEMP/m4-build/runtimes.json"
           uname -m
           sysctl -n hw.memsize
       - name: Watcher and existing CLI controls
@@ -31,26 +36,34 @@ jobs:
           python3 discovery/check_lck_provider_policy.py
       - name: Build simulator runtime and event fixture
         run: |
-          CKSIM_BUILD_ARCHS="$(uname -m)" bash scripts/build-runtime.sh "$RUNNER_TEMP/runtime"
-          bash Tests/RuntimeEvents/build.sh "$RUNNER_TEMP/fixture"
-          bash scripts/build-inspector.sh "$RUNNER_TEMP/inspector"
+          set -o pipefail
+          CKSIM_BUILD_ARCHS="$(uname -m)" bash scripts/build-runtime.sh "$RUNNER_TEMP/runtime" 2>&1 | tee "$RUNNER_TEMP/m4-build/runtime.log"
+          bash Tests/RuntimeEvents/build.sh "$RUNNER_TEMP/fixture" 2>&1 | tee "$RUNNER_TEMP/m4-build/fixture.log"
+          bash scripts/build-inspector.sh "$RUNNER_TEMP/inspector" 2>&1 | tee "$RUNNER_TEMP/m4-build/inspector.log"
       - name: Consume the shared channel through watch
         run: |
           python3 Tests/RuntimeEvents/run.py --package "$RUNNER_TEMP/runtime" \
-            --app "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" --out "$RUNNER_TEMP/m4-events"
+            --app "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" --out "$RUNNER_TEMP/m4-events" \
+            --runtime "$CKSIM_TEST_RUNTIME"
       - name: Answer an incoming call through the separate SwiftUI inspector
         # Cold hosted XCTest startup is unstable; builds/bridge/watch remain PR gates.
         if: github.event_name == 'workflow_dispatch'
         run: |
           python3 Tests/Inspector/run.py --package "$RUNNER_TEMP/runtime" \
             --fixture "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" \
-            --inspector "$RUNNER_TEMP/inspector/CKSimInspector.app" --out "$RUNNER_TEMP/m4-inspector"
+            --inspector "$RUNNER_TEMP/inspector/CKSimInspector.app" --out "$RUNNER_TEMP/m4-inspector" \
+            --runtime "$CKSIM_TEST_RUNTIME"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: m4-event-channel
           path: |
+            ${{ runner.temp }}/m4-build
             ${{ runner.temp }}/m4-events
             ${{ runner.temp }}/m4-inspector
             !${{ runner.temp }}/m4-inspector/ui-build
           if-no-files-found: warn
+          retention-days: 7
+      - name: Remove generated builds
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/runtime" "$RUNNER_TEMP/fixture" "$RUNNER_TEMP/inspector" "$RUNNER_TEMP/m4-inspector/ui-build"
