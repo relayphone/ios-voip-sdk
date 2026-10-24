@@ -24,13 +24,14 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_27.1.app
           mkdir -p "$RUNNER_TEMP/m4-build"
           xcodebuild -version | tee "$RUNNER_TEMP/m4-build/xcode.txt"
-          xcrun simctl list runtimes -j > "$RUNNER_TEMP/m4-build/runtimes.json"
+          python3 -c "import subprocess; subprocess.run(['xcrun', 'simctl', 'list', 'runtimes', '-j'], check=True, timeout=60)" > "$RUNNER_TEMP/m4-build/runtimes.json"
           uname -m
           sysctl -n hw.memsize
       - name: Watcher and existing CLI controls
         run: |
           python3 Tests/RuntimeEvents/test_watch.py
           python3 Tests/RuntimeEvents/test_native_runner.py
+          python3 Tests/RuntimeEvents/test_ci_simulator.py
           python3 Tests/Inspector/test_bridge.py
           python3 discovery/check_cli_controls.py
           python3 discovery/check_lck_provider_policy.py
@@ -40,18 +41,26 @@ jobs:
           CKSIM_BUILD_ARCHS="$(uname -m)" bash scripts/build-runtime.sh "$RUNNER_TEMP/runtime" 2>&1 | tee "$RUNNER_TEMP/m4-build/runtime.log"
           bash Tests/RuntimeEvents/build.sh "$RUNNER_TEMP/fixture" 2>&1 | tee "$RUNNER_TEMP/m4-build/fixture.log"
           bash scripts/build-inspector.sh "$RUNNER_TEMP/inspector" 2>&1 | tee "$RUNNER_TEMP/m4-build/inspector.log"
+      - name: Create the single owned simulator
+        run: |
+          python3 Tests/RuntimeEvents/ci_simulator.py create --runtime "$CKSIM_TEST_RUNTIME" \
+            --id-file "$RUNNER_TEMP/m4-simulator-id" --env-file "$GITHUB_ENV"
       - name: Consume the shared channel through watch
         run: |
           python3 Tests/RuntimeEvents/run.py --package "$RUNNER_TEMP/runtime" \
             --app "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" --out "$RUNNER_TEMP/m4-events" \
-            --runtime "$CKSIM_TEST_RUNTIME"
-      - name: Answer an incoming call through the separate SwiftUI inspector
+            --runtime "$CKSIM_TEST_RUNTIME" --simulator "$CKSIM_TEST_SIMULATOR"
+      - name: Follow an incoming call through the live SwiftUI inspector
         if: github.event_name != 'push'
         run: |
           python3 Tests/Inspector/run.py --package "$RUNNER_TEMP/runtime" \
             --fixture "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" \
             --inspector "$RUNNER_TEMP/inspector/CKSimInspector.app" --out "$RUNNER_TEMP/m4-inspector" \
-            --runtime "$CKSIM_TEST_RUNTIME"
+            --runtime "$CKSIM_TEST_RUNTIME" --driver journal \
+            --target-simulator "$CKSIM_TEST_SIMULATOR" --fixture-installed
+      - name: Delete the owned simulator
+        if: always()
+        run: python3 Tests/RuntimeEvents/ci_simulator.py cleanup --id-file "$RUNNER_TEMP/m4-simulator-id"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -60,6 +69,7 @@ jobs:
             ${{ runner.temp }}/m4-build
             ${{ runner.temp }}/m4-events
             ${{ runner.temp }}/m4-inspector
+            ${{ runner.temp }}/m4-simulator-id
             !${{ runner.temp }}/m4-inspector/ui-build
           if-no-files-found: warn
           retention-days: 7

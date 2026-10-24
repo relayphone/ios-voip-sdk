@@ -262,6 +262,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private let epoch = DispatchTime.now().uptimeNanoseconds
   private var notificationToken: Int32 = 0
   private var notificationRegistered = false
+  private var requestWatcher: (any DispatchSourceFileSystemObject)?
   private var stopped = false
   private var commandResults: [UUID: [String: Any]] = [:]
   private var timers: [UUID: any DispatchSourceTimer] = [:]
@@ -303,8 +304,20 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       }
       guard status == NOTIFY_STATUS_OK else { throw BootstrapError.invalid("cannot register simulator mailbox notification") }
       notificationRegistered = true
+      // The host can publish requests even when CoreSimulator's spawn service
+      // stalls. Observe the atomic rename instead of requiring a helper process
+      // in the simulator to wake this queue for every command.
+      let requests = controlRoot.appendingPathComponent("requests")
+      let descriptor = open(requests.path, O_EVTONLY | O_CLOEXEC)
+      guard descriptor >= 0 else { throw BootstrapError.invalid("cannot watch simulator mailbox") }
+      let watcher = DispatchSource.makeFileSystemObjectSource(fileDescriptor: descriptor, eventMask: .write, queue: state)
+      watcher.setEventHandler { [weak self] in self?.processCommands() }
+      watcher.setCancelHandler { close(descriptor) }
+      requestWatcher = watcher
+      watcher.resume()
       let session: [String: Any] = ["schemaVersion": 1, "runID": runID, "pid": Int(getpid()),
-        "bundleID": bundleID, "profile": profile.id, "notification": "dev.callkitsim.control.\(getpid())"]
+        "bundleID": bundleID, "profile": profile.id, "notification": "dev.callkitsim.control.\(getpid())",
+        "controlTransport": "directory-watch-v1"]
       let data = try JSONSerialization.data(withJSONObject: session, options: [.sortedKeys])
       try data.write(to: documents.appendingPathComponent(".callkit-simulator/session.json"), options: .atomic)
     } catch {
@@ -430,6 +443,9 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       pendingActions.removeAll()
       calls.removeAll()
       if notificationRegistered { notify_cancel(notificationToken); notificationRegistered = false }
+      requestWatcher?.setEventHandler(handler: nil)
+      requestWatcher?.cancel()
+      requestWatcher = nil
       try? journal?.close()
       journal = nil
       let session = controlRoot.deletingLastPathComponent().appendingPathComponent("session.json")
@@ -507,6 +523,10 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         record(event: "diagnostic.pushReportingViolation", fields: ["severity": "error", "reason": pushViolation,
           "pushID": fields["pushID"] as? String ?? ""])
       }
+      // Preparation publishes the mailbox before hook installation finishes.
+      // An early directory event may have observed inactive hooks; drain again
+      // once activation commits so that request cannot lose its only wakeup.
+      if event == "runtime.installed" { processCommands() }
     }
   }
   private func registration(_ provider: CXProvider) -> ProviderRegistration {

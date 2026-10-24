@@ -32,6 +32,212 @@ class StartupTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'simctl install timed out'):
             RUNNER['wait_for_inspector'](Mock(poll=exited), log)
 
+    def test_shared_launch_has_a_global_background_budget(self):
+        elapsed = [0]
+        clock = SimpleNamespace(monotonic=lambda: elapsed[0], sleep=lambda _: elapsed.__setitem__(0, elapsed[0] + 5))
+        ready = RUNNER['wait_for_inspector']
+        log = Mock(read_text=Mock(return_value='Inspector: launching app on display simulator.'))
+        with patch.dict(ready.__globals__, time=clock):
+            with self.assertRaisesRegex(RuntimeError, 'background budget'):
+                ready(Mock(poll=Mock(return_value=None)), log, consumer_budget=25)
+        self.assertEqual(elapsed[0], 25)
+
+
+class ProbeTests(unittest.TestCase):
+    def setUp(self):
+        self.work = tempfile.TemporaryDirectory()
+        self.addCleanup(self.work.cleanup)
+        self.path = Path(self.work.name) / 'probe.json'
+        self.elapsed = [0.0]
+        self.clock = SimpleNamespace(monotonic=lambda: self.elapsed[0], time=lambda: 1000 + self.elapsed[0],
+                                     sleep=lambda delay: self.elapsed.__setitem__(0, self.elapsed[0] + delay))
+        self.session = dict(schemaVersion=1, runID='run', pid=123, bundleID='test.fixture', profile='ios-27.0')
+        self.row = dict(self.session, event='runtime.installed', sequence=1, t_ms=1)
+        self.value = dict(nonce='fresh', inspectorPID=42, wallTimeMS=1000000, startedWallTimeMS=1000000,
+                          session=self.session, cursor=1, online=True, audioActive=False,
+                          conversations=[], pending=[], timeline=[self.row])
+
+    def write(self, **changes):
+        self.path.write_text(json.dumps(dict(self.value, **changes)))
+
+    def test_fresh_receipt_is_accepted_and_pins_identity(self):
+        self.write()
+        reader = RUNNER['ProbeReader'](self.path, 'fresh', self.session)
+        with patch.dict(reader.read.__globals__, time=self.clock):
+            self.assertEqual(reader.wait(lambda row: row['online'])['inspectorPID'], 42)
+            self.write(inspectorPID=43)
+            with self.assertRaisesRegex(RuntimeError, 'Inspector process changed'):
+                reader.read()
+
+    def test_old_nonce_cannot_satisfy_readiness(self):
+        self.write(nonce='old')
+        reader = RUNNER['ProbeReader'](self.path, 'fresh', self.session)
+        with patch.dict(reader.read.__globals__, time=self.clock):
+            with self.assertRaisesRegex(RuntimeError, 'nonce'):
+                reader.wait(lambda row: row['online'], timeout=0.3)
+
+    def test_wrong_target_and_cursor_regression_fail(self):
+        self.write(session=dict(self.session, pid=999))
+        reader = RUNNER['ProbeReader'](self.path, 'fresh', self.session)
+        with patch.dict(reader.read.__globals__, time=self.clock):
+            with self.assertRaisesRegex(RuntimeError, 'target session changed'):
+                reader.read()
+            self.write()
+            reader.read()
+            self.write(cursor=0, timeline=[])
+            with self.assertRaisesRegex(RuntimeError, 'cursor regressed'):
+                reader.read()
+
+    def test_frozen_receipt_and_expired_background_budget_fail(self):
+        reader = RUNNER['ProbeReader'](self.path, 'fresh', self.session)
+        with patch.dict(reader.read.__globals__, time=self.clock):
+            self.write(wallTimeMS=994000)
+            with self.assertRaisesRegex(RuntimeError, 'stale'):
+                reader.read()
+            reader = RUNNER['ProbeReader'](self.path, 'fresh', self.session)
+            self.write(startedWallTimeMS=974000)
+            with self.assertRaisesRegex(RuntimeError, 'background budget'):
+                reader.read()
+
+    def test_error_after_readiness_is_not_silently_retried(self):
+        self.write()
+        reader = RUNNER['ProbeReader'](self.path, 'fresh', self.session)
+        with patch.dict(reader.read.__globals__, time=self.clock):
+            reader.wait(lambda row: row['online'])
+            self.write(online=False, error='bridge disconnected')
+            with self.assertRaisesRegex(RuntimeError, 'bridge disconnected'):
+                reader.read()
+
+    def test_failed_receipt_is_preserved_before_validation(self):
+        self.write(session=dict(self.session, pid=999))
+        diagnostic = self.path.with_name('retained.json')
+        reader = RUNNER['ProbeReader'](self.path, 'fresh', self.session, diagnostic_path=diagnostic)
+        with patch.dict(reader.read.__globals__, time=self.clock):
+            with self.assertRaisesRegex(RuntimeError, 'target session changed'):
+                reader.read()
+        self.assertEqual(diagnostic.read_bytes(), self.path.read_bytes())
+
+    def test_inspector_projection_cannot_invent_a_fulfilled_action(self):
+        row = dict(self.row, event='action.settled', actionID='answer', kind='answer', origin='system', fulfilled=True)
+        receipt = dict(self.value, timeline=[row])
+        verify = RUNNER['verify_probe_journal']
+        verify([receipt], [row], self.session)
+        with self.assertRaisesRegex(AssertionError, 'differs from runtime journal'):
+            verify([receipt], [dict(row, fulfilled=False)], self.session)
+
+    def test_global_deadline_caps_a_longer_projection_wait(self):
+        self.write(nonce='old')
+        reader = RUNNER['ProbeReader'](self.path, 'fresh', self.session)
+        with patch.dict(reader.read.__globals__, time=self.clock):
+            with self.assertRaisesRegex(RuntimeError, 'background budget'):
+                reader.wait(lambda row: row['online'], timeout=10, deadline=0.2)
+        self.assertLess(self.elapsed[0], 0.3)
+
+    def test_shared_container_lookup_uses_only_the_remaining_budget(self):
+        class Stopped(Exception):
+            pass
+        journey = RUNNER['journal_journey']
+        rpc = Mock(side_effect=Stopped)
+        with patch.dict(journey.__globals__, time=self.clock, run=rpc):
+            with self.assertRaises(Stopped):
+                journey([], 'target', 'fresh', self.session, self.path.parent, deadline=0.25)
+        self.assertEqual(rpc.call_args.kwargs['timeout'], 0.25)
+
+    def test_explicit_resume_tolerates_pause_but_never_resets_identity(self):
+        self.write()
+        reader = RUNNER['ProbeReader'](self.path, 'fresh', self.session)
+        with patch.dict(reader.read.__globals__, time=self.clock):
+            reader.read()
+            self.elapsed[0] = 6
+            self.assertIsNone(reader.read(resume_after=1006000))
+            self.write(wallTimeMS=1006000, online=False, error='request timed out')
+            self.assertIsNone(reader.read(resume_after=1006000))
+            self.write(wallTimeMS=1006000)
+            self.assertTrue(reader.wait(lambda row: row['online'], resume_after=1006000)['online'])
+            self.write(wallTimeMS=1006000, online=False, error='stable failure')
+            with self.assertRaisesRegex(RuntimeError, 'stable failure'):
+                reader.read()
+            self.write(inspectorPID=99)
+            with self.assertRaisesRegex(RuntimeError, 'Inspector process changed'):
+                reader.read(resume_after=1006000)
+
+    def test_foreground_switch_preserves_pid_without_terminating(self):
+        activate = RUNNER['activate_existing']
+        rpc = Mock(return_value='test.fixture: 123')
+        with patch.dict(activate.__globals__, time=self.clock, run=rpc):
+            activate('device', 'test.fixture', 123, deadline=5)
+            self.assertEqual(rpc.call_args.args, ('xcrun', 'simctl', 'launch', 'device', 'test.fixture'))
+            rpc.return_value = 'test.fixture: 999'
+            with self.assertRaisesRegex(RuntimeError, 'PID changed'):
+                activate('device', 'test.fixture', 123, deadline=5)
+
+    def test_native_journal_ignores_partial_tail_and_checks_session(self):
+        channel = self.path.parent / 'channel'
+        (channel / 'run').mkdir(parents=True)
+        (channel / 'session.json').write_text(json.dumps(self.session))
+        journal = channel / 'run/events.jsonl'
+        journal.write_bytes(json.dumps(self.row).encode() + b'\n{"partial":')
+        read = RUNNER['read_runtime_journal']
+        self.assertEqual(read(channel, self.session), [self.row])
+        (channel / 'session.json').write_text(json.dumps(dict(self.session, pid=999)))
+        with self.assertRaisesRegex(RuntimeError, 'session changed'):
+            read(channel, self.session)
+
+    def test_journey_foregrounds_fixture_for_each_control_then_inspector_for_projection(self):
+        identifier = 'A7E390AF-6B78-4190-B946-26D9C6438584'
+        ring = dict(self.row, sequence=2, event='call.changed', uuid=identifier,
+                    callerName='Alex Morgan', ringing=True, ended=False, connected=False)
+        answer = dict(self.row, sequence=3, event='action.settled', actionID='answer', kind='answer',
+                      origin='system', fulfilled=True, latencyMS=125, deadlineSeconds=60)
+        joined = dict(ring, sequence=4, ringing=False, connected=True)
+        audio = dict(self.row, sequence=5, event='audio.activated')
+        rows = [self.row, ring, answer, joined, audio]
+        incoming = dict(self.value, cursor=2, incoming=ring, conversations=[ring], timeline=rows[:2])
+        connected = dict(self.value, cursor=5, conversations=[joined], timeline=rows, audioActive=True,
+                         timelinePresentation=[dict(sequence=3, title='Answer fulfilled', detail='system · 125 ms · 60 s profile budget')])
+        states = iter([self.value, incoming, connected])
+        actor = ['inspector']
+        observed = []
+        class Reader:
+            pid = 42
+            started = 1000000
+            def __init__(self, *args, **kwargs):
+                pass
+            def wait(inner, predicate, **kwargs):
+                self.assertEqual(actor[0], 'inspector')
+                value = next(states)
+                self.assertTrue(predicate(value))
+                return value
+        def rpc(*parts, **kwargs):
+            if parts[:3] == ('xcrun', 'simctl', 'get_app_container'):
+                return str(self.path.parent)
+            if parts[:3] == ('xcrun', 'simctl', 'launch'):
+                actor[0] = 'fixture' if parts[-1] == self.session['bundleID'] else 'inspector'
+                observed.append(actor[0])
+                return parts[-1] + (': 123' if actor[0] == 'fixture' else ': 42')
+            if 'push' in parts or 'answer' in parts:
+                self.assertEqual(actor[0], 'fixture', 'controls need a foreground target')
+                operation = 'push' if 'push' in parts else 'answer'
+                observed.append(operation)
+                return json.dumps(dict(success=True, result=dict(actionIDs=['answer'])))
+            if 'watch' in parts:
+                return '\n'.join(json.dumps(row) for row in rows)
+            return ''
+        native = [0]
+        def wait_native(predicate, channel, session, deadline, **kwargs):
+            self.assertEqual(actor[0], 'fixture')
+            values = rows[:2] if native[0] == 0 else rows
+            native[0] += 1
+            self.assertTrue(predicate(values))
+            return values
+        channel = self.path.parent / 'channel'
+        channel.mkdir()
+        (channel / 'session.json').write_text(json.dumps(self.session))
+        journey = RUNNER['journal_journey']
+        with patch.dict(journey.__globals__, time=self.clock, run=rpc, ProbeReader=Reader, wait_runtime=wait_native):
+            self.assertTrue(journey(['cksim'], 'device', 'fresh', self.session, self.path.parent, 25, channel)['success'])
+        self.assertEqual(observed, ['fixture', 'push', 'inspector', 'fixture', 'answer', 'inspector'])
+
 
 class BridgeTests(unittest.TestCase):
     def test_display_cold_boot_has_an_explicit_bounded_timeout(self):

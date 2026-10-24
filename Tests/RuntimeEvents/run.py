@@ -63,10 +63,11 @@ def record_environment(out, runtime):
     (out / 'runtimes.json').write_text(run('xcrun', 'simctl', 'list', 'runtimes', '-j') + '\n')
 
 
-def launch_fixture(device, app):
+def launch_fixture(device, app, *, install=True):
     """Start a fresh session; the host sends the first stimulus after readiness."""
     run_id = 'fixture-' + str(uuid.uuid4())
-    run('xcrun', 'simctl', 'install', device, app.resolve())
+    if install:
+        run('xcrun', 'simctl', 'install', device, app.resolve())
     run('xcrun', 'simctl', 'launch', '--terminate-running-process', device, BUNDLE,
         env=dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=run_id))
     container = Path(run('xcrun', 'simctl', 'get_app_container', device, BUNDLE, 'data'))
@@ -151,6 +152,7 @@ def main():
         sim('bootstatus', device, '-b', timeout=300)
         root, run_id = launch_fixture(device, args.app)
         session = fixture_session(root, run_id)
+        assert session.get('controlTransport') == 'directory-watch-v1', 'fixture must support spawn-free mailbox controls'
         journal = root / session['runID'] / 'events.jsonl'
         def rows():
             return [json.loads(line) for line in journal.read_text().splitlines()]
