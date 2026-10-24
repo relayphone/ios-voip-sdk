@@ -106,13 +106,18 @@ enum RuntimeTimingReferences {
     guard let value = muteValue(start, in: timeline) else { return false }
     var outstanding = 0
     var fulfilledIDs = Set<String>()
-    var echoIDs = Set<String>()
+    var deliveredIDs = Set<String>()
     for row in timeline where row.sequence < interval.end.sequence {
       guard row.runID == start.runID, row.pid == start.pid, row.bundleID == start.bundleID,
             row.schemaVersion == start.schemaVersion else { continue }
       if row.event == "action.deadline", row.actionID == interval.end.actionID { return false }
       if row.sequence < start.sequence, row.event == "action.settled", row.fulfilled == true,
          row.actionID == start.actionID { return false }
+      // A delivery ID is consumed even when its value is irrelevant to this pair.
+      let firstDelivery: Bool
+      if row.event == "action.deadline", let id = row.actionID, !id.isEmpty {
+        firstDelivery = deliveredIDs.insert(id).inserted
+      } else { firstDelivery = false }
       guard row.kind == "mute", row.callUUID == start.callUUID,
             row.apiKind == start.apiKind, row.provider == start.provider else { continue }
       let fulfillment = row.event == "action.settled" && row.origin == "application" && row.fulfilled == true
@@ -125,15 +130,14 @@ enum RuntimeTimingReferences {
           guard let id = row.actionID, !id.isEmpty, nonempty(row.transactionID) else { return false }
           guard id != start.actionID else { return false }
           if fulfilledIDs.insert(id).inserted { outstanding += 1 }
-        } else if echo,
-                  let id = row.actionID, !id.isEmpty, nonempty(row.transactionID), echoIDs.insert(id).inserted {
+        } else if echo, firstDelivery, nonempty(row.transactionID) {
           outstanding = max(0, outstanding - 1)
         }
       } else if row.sequence > start.sequence, fulfillment, row.actionID != start.actionID {
         return false
       }
     }
-    return outstanding == 0 && !echoIDs.contains(interval.end.actionID ?? "")
+    return outstanding == 0 && !deliveredIDs.contains(interval.end.actionID ?? "")
   }
 
   // Audio activation is process-wide in the journal. An intervening audio trigger

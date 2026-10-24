@@ -213,6 +213,14 @@ struct TimingReferenceTests {
     oppositeEcho.muted = false
     precondition(metric("muteEcho", [first, duplicate, completedEcho, duplicateEcho, oppositeStart, oppositeEcho]).actualMS == nil,
       "Echo IDs cannot be reused even when their reported value changes")
+    var historicalFalseEcho = try mute(1, 0, "historical-e1", echo: true)
+    historicalFalseEcho.muted = false
+    let outstandingTrue = try mute(2, 10, "historical-m1")
+    let reusedTrueEcho = try mute(3, 15, "historical-e1", echo: true)
+    let latestTrue = try mute(4, 20, "historical-m2")
+    let freshTrueEcho = try mute(5, 35, "historical-e2", echo: true)
+    precondition(metric("muteEcho", [historicalFalseEcho, outstandingTrue, reusedTrueEcho, latestTrue, freshTrueEcho]).actualMS == nil,
+      "A historical echo ID cannot discharge an obligation after being observed for another value")
   }
 
   static func muteValuesComeFromDeliveredTransactions() throws {
@@ -275,5 +283,21 @@ struct TimingReferenceTests {
     unknownOlder.merge(["t_ms": -10.0, "transactionID": "missing", "actionID": "older"]) { _, new in new }
     let unknown = try decode([["event": "runtime.installed", "t_ms": -20.0], unknownOlder] + native)
     precondition(metric("muteEcho", unknown).actualMS == nil, "An unresolved older obligation cannot be silently skipped")
+    let specifications: [(Bool, Bool, String, String, Double)] = [
+      (true, false, "historical-e1", "he1-false", 0), (false, true, "historical-m1", "hm1", 10),
+      (true, true, "historical-e1", "he1-true", 15), (false, true, "historical-m2", "hm2", 20),
+      (true, true, "historical-e2", "he2", 35)
+    ]
+    var historical: [[String: Any]] = []
+    for (isEcho, value, id, transactionID, time) in specifications {
+      var delivered = isEcho ? echoTransaction : application
+      delivered.merge(["t_ms": time, "transactionID": transactionID, "actionIDs": [id], "parameters": [["muted": value]]]) { _, new in new }
+      var action = isEcho ? echo : fulfilled
+      action.merge(["t_ms": time, "transactionID": transactionID, "actionID": id]) { _, new in new }
+      historical += [delivered, action]
+    }
+    let reusedHistoricalID = try decode(historical)
+    precondition(metric("muteEcho", reusedHistoricalID).actualMS == nil,
+      "Native parameter resolution cannot let a cross-value duplicate echo discharge the true obligation")
   }
 }

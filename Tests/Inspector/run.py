@@ -268,13 +268,19 @@ def verify_timing_reference_journal(receipt, rows, required=()):
             assert start.get('provider') and start['provider'] == end.get('provider')
             assert originals[0]['sequence'] == 1, 'Truncated history cannot establish outstanding mute obligations'
             mute_key = ('schemaVersion', 'runID', 'pid', 'bundleID', 'callUUID', 'apiKind', 'provider')
-            matching = [row for row in originals if row.get('kind') == 'mute' and
-                        all(row.get(key) == start.get(key) for key in mute_key)]
-            outstanding, fulfilled_ids, echo_ids = 0, set(), set()
-            for row in matching:
+            outstanding, fulfilled_ids, delivery_ids = 0, set(), set()
+            for row in same_runtime:
+                if row['sequence'] >= end_sequence:
+                    continue
+                first_delivery = False
+                if row['event'] == 'action.deadline' and type(row.get('actionID')) is str and row['actionID']:
+                    first_delivery = row['actionID'] not in delivery_ids
+                    delivery_ids.add(row['actionID'])
+                if row.get('kind') != 'mute' or not all(row.get(key) == start.get(key) for key in mute_key):
+                    continue
                 fulfillment = row['event'] == 'action.settled' and row.get('origin') == 'application' and row.get('fulfilled') is True
                 echo = row['event'] == 'action.deadline' and row.get('origin') == 'muteEcho'
-                if row['sequence'] >= end_sequence or not (fulfillment or echo):
+                if not (fulfillment or echo):
                     continue
                 resolved = journal_mute_value(row, originals)
                 assert type(resolved) is bool, 'Unknown mute value leaves possible older obligations'
@@ -286,10 +292,8 @@ def verify_timing_reference_journal(receipt, rows, required=()):
                         if row['actionID'] not in fulfilled_ids:
                             fulfilled_ids.add(row['actionID'])
                             outstanding += 1
-                    elif echo and row.get('actionID') and row.get('transactionID'):
-                        if row['actionID'] not in echo_ids:
-                            echo_ids.add(row['actionID'])
-                            outstanding = max(0, outstanding - 1)
+                    elif echo and first_delivery and row.get('transactionID'):
+                        outstanding = max(0, outstanding - 1)
                 elif start_sequence < row['sequence'] < end_sequence and fulfillment:
                     assert row.get('actionID') == start.get('actionID'), 'Competing app fulfillment makes mute echo ambiguous'
             assert outstanding == 0, 'Older outstanding app fulfillments make mute echo ambiguous'

@@ -226,6 +226,36 @@ class MuteTransactionReceiptTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self.verify(rows, start=6, end=8)
 
+    def test_historical_cross_value_echo_reuse_cannot_discharge_a_new_obligation(self):
+        native = self.native_rows()
+        for earlier_call, earlier_provider, earlier_api in [('c1', 'p1', 'callkit'), ('c2', 'p1', 'callkit'),
+                                                          ('c1', 'p2', 'livecommunicationkit')]:
+            rows = [dict(native[2], sequence=1, t_ms=0, transactionID='early-e1', parameters=[dict(muted=False)],
+                         provider=earlier_provider, callUUIDs=[earlier_call]),
+                    dict(native[3], sequence=2, t_ms=10, transactionID='early-e1',
+                         provider=earlier_provider, callUUID=earlier_call, apiKind=earlier_api),
+                    dict(native[0], sequence=3, t_ms=20), dict(native[1], sequence=4, t_ms=30),
+                    dict(native[2], sequence=5, t_ms=40, transactionID='reused-e1'),
+                    dict(native[3], sequence=6, t_ms=50, transactionID='reused-e1'),
+                    dict(native[0], sequence=7, t_ms=60, transactionID='t3', actionIDs=['m2']),
+                    dict(native[1], sequence=8, t_ms=70, transactionID='t3', actionID='m2'),
+                    dict(native[2], sequence=9, t_ms=84, transactionID='t4', actionIDs=['e2']),
+                    dict(native[3], sequence=10, t_ms=85, transactionID='t4', actionID='e2')]
+            with self.subTest(call=earlier_call, provider=earlier_provider), self.assertRaises(AssertionError):
+                self.verify(rows, start=8, end=10)
+
+    def test_same_value_historical_duplicate_does_not_block_a_later_isolated_pair(self):
+        rows = self.native_rows()
+        rows.append(dict(rows[3], sequence=5, t_ms=116))
+        subsequent = copy.deepcopy(self.native_rows())
+        for row in subsequent:
+            row['sequence'] += 5
+            row['t_ms'] += 1000
+            row['transactionID'] += '-next'
+            if 'actionID' in row: row['actionID'] += '-next'
+            if 'actionIDs' in row: row['actionIDs'] = [value + '-next' for value in row['actionIDs']]
+        self.verify(rows + subsequent, start=7, end=9)
+
 
 if __name__ == '__main__':
     unittest.main()
