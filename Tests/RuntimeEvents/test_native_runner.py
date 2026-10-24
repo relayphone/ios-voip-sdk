@@ -8,6 +8,16 @@ import run
 
 
 class RunnerTests(unittest.TestCase):
+    def test_runtime_selection_matches_sdk_numeric_latest_available_ios(self):
+        def runtime(version, available=True, platform='iOS'):
+            return dict(identifier=version, version=version, name=platform+' '+version,
+                        isAvailable=available, platform=platform)
+        rows = [runtime('26.2'), runtime('26.5'), runtime('26.10'),
+                runtime('27.0', available=False), runtime('28.0', platform='tvOS')]
+        self.assertEqual(run.latest_runtime(rows), '26.10')
+        with self.assertRaisesRegex(RuntimeError, 'No available iOS'):
+            run.latest_runtime(rows[-2:])
+
     def test_cold_boot_timeout_is_explicit_and_keeps_diagnostics(self):
         failure = subprocess.TimeoutExpired(['simctl'], 300, output=b'Waiting for SpringBoard')
         with patch.object(run.subprocess, 'run', side_effect=failure) as process:

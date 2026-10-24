@@ -18,16 +18,17 @@ SIMCTL_TIMEOUT = 60
 INSTALL_KEYS = ("DYLD_INSERT_LIBRARIES", "CKSIM_RUNTIME", "CKSIM_BUNDLE_IDS", "CKSIM_ENABLED", "CKSIM_PROFILE")
 
 
-def simctl(*args, env=None):
+def simctl(*args, env=None, timeout=None):
+    timeout = SIMCTL_TIMEOUT if timeout is None else timeout
     if len(args) >= 3 and args[0] == "spawn" and args[2] == "launchctl":
         # Recovery must run even when launchd names a loader deleted from disk.
         # This changes only the control process, never the saved global value.
         env = {**(os.environ if env is None else env), "SIMCTL_CHILD_DYLD_INSERT_LIBRARIES": ""}
     try:
         result = subprocess.run(["xcrun", "simctl", *map(str, args)], capture_output=True, text=True,
-                                env=env, timeout=SIMCTL_TIMEOUT)
+                                env=env, timeout=timeout)
     except subprocess.TimeoutExpired as error:
-        raise RuntimeError(f"simctl {args[0]} timed out after {SIMCTL_TIMEOUT}s; inspect state before retrying.") from error
+        raise RuntimeError(f"simctl {args[0]} timed out after {timeout}s; inspect state before retrying.") from error
     if result.returncode:
         raise RuntimeError(f"simctl {args[0]} failed: {result.stderr.strip()}")
     return result.stdout.strip()
@@ -198,12 +199,14 @@ def repair(device):
     return dict(repaired=True, simulator=device)
 
 
-def control(args, device):
+def control(args, device, expected_session=None):
     if args.command_receipt and (args.command_receipt.exists() or args.command_receipt.is_symlink()):
         raise RuntimeError("Command receipt already exists; inspect before retrying.")
     container = Path(simctl("get_app_container", device, args.bundle, "data"))
     root = container / "Documents/.callkit-simulator"
     session = json.loads((root / "session.json").read_text())
+    if expected_session is not None and session != expected_session:
+        raise RuntimeError("Runtime session changed; reconnect before sending controls.")
     if (session.get("schemaVersion") != 1 or session.get("bundleID") != args.bundle or
             not isinstance(session.get("pid"), int) or session["pid"] <= 0 or
             not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", session.get("runID", ""))):
@@ -265,9 +268,12 @@ class RuntimeJournal:
         self.partial = b""
         self.sequence = 0
 
-    def read(self):
+    def read_session_check(self):
         if json.loads((self.root / "session.json").read_text()) != self.session:
             raise RuntimeError("Runtime session changed; reconnect to the new run.")
+
+    def read(self):
+        self.read_session_check()
         if self.path.stat().st_size < self.offset:
             raise RuntimeError("Runtime journal was truncated; reconnect to the run.")
         with self.path.open("rb") as stream:
@@ -345,6 +351,144 @@ def watch(args, device):
         return
 
 
+class InspectorBridge:
+    """One inspector connection, pinned to the target's runtime session."""
+    def __init__(self, args, device, root):
+        import threading
+        self.args, self.device = args, device
+        self.journal = RuntimeJournal(root, args.bundle)
+        self.lock = threading.Lock()
+        self.previous_cursor = -1
+        self.previous_batch = None
+
+    def events(self, after):
+        with self.lock:
+            # A failed HTTP response may be retried without losing its batch.
+            if after == self.previous_cursor:
+                self.journal.read_session_check()
+                return self.previous_batch
+            if after != self.journal.sequence:
+                raise RuntimeError("Timeline cursor changed; relaunch cksim inspect to reconnect.")
+            rows = self.journal.read()
+            batch = dict(session=self.journal.session, events=rows, cursor=self.journal.sequence)
+            if rows:
+                self.previous_cursor, self.previous_batch = after, batch
+            return batch
+
+    def command(self, value):
+        from types import SimpleNamespace
+        if (not isinstance(value, dict) or set(value) - {"operation", "callUUID", "activeCallUUID"} or
+                value.get("operation") not in ("answer", "decline", "end", "hold-and-accept", "end-and-accept")):
+            raise RuntimeError("Unsupported inspector control.")
+        if not isinstance(value.get("callUUID"), str) or value.get("activeCallUUID") is not None and not isinstance(value["activeCallUUID"], str):
+            raise RuntimeError("Inspector call identifiers must be UUID strings.")
+        call = str(uuid.UUID(value.get("callUUID", "")))
+        active = value.get("activeCallUUID")
+        if active is not None:
+            active = str(uuid.UUID(active))
+        arguments = dict(vars(self.args), operation=value["operation"], call=call,
+                         active_call=active, command_receipt=None)
+        return control(SimpleNamespace(**arguments), self.device, expected_session=self.journal.session)
+
+
+def inspect_app(args, device):
+    import http.server
+    import secrets
+    import threading
+    import urllib.parse
+    from types import SimpleNamespace
+    if not args.app.is_dir() or args.app.suffix != ".app":
+        raise RuntimeError("Build the simulator inspector first and pass inspect --app <CKSimInspector.app>.")
+    print("Inspector: locating target runtime.", file=sys.stderr, flush=True)
+    container = Path(simctl("get_app_container", device, args.bundle, "data"))
+    bridge = InspectorBridge(args, device, container / "Documents/.callkit-simulator")
+    status = SimpleNamespace(**dict(vars(args), operation="status", command_receipt=None))
+    print("Inspector: checking target runtime.", file=sys.stderr, flush=True)
+    control(status, device, expected_session=bridge.journal.session)
+    token = secrets.token_urlsafe(32)
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(5)
+
+        def log_message(self, *parts):
+            pass
+
+        def do_GET(self):
+            self.respond(False)
+
+        def do_POST(self):
+            self.respond(True)
+
+        def respond(self, command):
+            if not secrets.compare_digest(self.headers.get("Authorization", "").encode(), ("Bearer " + token).encode()):
+                self.send_error(401)
+                return
+            try:
+                url = urllib.parse.urlsplit(self.path)
+                if not command and url.path == "/events":
+                    after = int(urllib.parse.parse_qs(url.query).get("after", ["0"])[0])
+                    result = bridge.events(after)
+                elif command and url.path == "/command":
+                    size = int(self.headers.get("Content-Length", "0"))
+                    if not 0 < size <= 4096:
+                        raise RuntimeError("Invalid command size.")
+                    result = bridge.command(json.loads(self.rfile.read(size)))
+                else:
+                    self.send_error(404)
+                    return
+                status = 200
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError) as error:
+                result, status = dict(error=str(error)), 409
+            data = json.dumps(result).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    display = None
+    owned_display = not args.inspector_simulator
+    try:
+        if args.inspector_simulator:
+            display = simulator(args.inspector_simulator)
+            if display == device:
+                raise RuntimeError("Use a separate inspector simulator so the target app stays in the foreground.")
+        else:
+            devices = json.loads(simctl("list", "devices", "-j"))["devices"]
+            runtime, target = next((runtime, d) for runtime, group in devices.items() for d in group if d["udid"] == device)
+            display = simctl("create", "CKSim Inspector " + str(uuid.uuid4())[:8], target["deviceTypeIdentifier"], runtime)
+            simctl("boot", display)
+            simctl("bootstatus", display, "-b", timeout=300)
+        print("Inspector: installing app on display simulator.", file=sys.stderr, flush=True)
+        simctl("install", display, args.app.resolve())
+        env = dict(os.environ, SIMCTL_CHILD_CKSIM_INSPECTOR_URL=f"http://127.0.0.1:{server.server_port}",
+                   SIMCTL_CHILD_CKSIM_INSPECTOR_TOKEN=token)
+        print("Inspector: launching app on display simulator.", file=sys.stderr, flush=True)
+        simctl("launch", "--terminate-running-process", display, "dev.callkitsim.inspector", env=env, timeout=180)
+        print(f"Inspector on {display}, connected to {args.bundle} ({bridge.journal.session['runID']}). Ctrl-C to disconnect.", flush=True)
+        thread.join()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.shutdown()
+        server.server_close()
+        if display and owned_display:
+            try:
+                simctl("shutdown", display)
+            finally:
+                simctl("delete", display)
+
+
 def launch_push(args, device):
     """Stage a single simulator-only delivery, then become its real launcher.
 
@@ -419,6 +563,9 @@ def main():
     live.add_argument("--json", action="store_true", help="Emit the original versioned events as JSONL")
     live.add_argument("--after", type=int, default=0, help="Skip this run's events through this sequence")
     live.add_argument("--duration", type=float, help="Stop after this many seconds (for CI captures)")
+    inspector = commands.add_parser("inspect", help="Launch the separate SwiftUI simulator inspector")
+    inspector.add_argument("--app", type=Path, required=True, help="Built CKSimInspector.app")
+    inspector.add_argument("--inspector-simulator", help="Reuse a separate booted simulator instead of creating a disposable display")
     for operation in ("status", "events", "inspect-adapter", "install", "uninstall", "repair", "launch", "reset"):
         commands.add_parser(operation)
     for operation in ("answer", "decline", "end"):
@@ -461,6 +608,9 @@ def main():
     device = simulator(args.simulator)
     if args.operation == "watch":
         watch(args, device)
+        return 0
+    if args.operation == "inspect":
+        inspect_app(args, device)
         return 0
     if args.operation == "install":
         result = install(args, device)
