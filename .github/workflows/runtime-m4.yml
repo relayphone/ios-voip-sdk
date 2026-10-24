@@ -46,8 +46,6 @@ jobs:
             --app "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" --out "$RUNNER_TEMP/m4-events" \
             --runtime "$CKSIM_TEST_RUNTIME"
       - name: Answer an incoming call through the separate SwiftUI inspector
-        # Cold hosted XCTest startup is unstable; builds/bridge/watch remain PR gates.
-        if: github.event_name == 'workflow_dispatch'
         run: |
           python3 Tests/Inspector/run.py --package "$RUNNER_TEMP/runtime" \
             --fixture "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" \
