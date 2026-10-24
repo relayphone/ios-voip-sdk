@@ -3,6 +3,7 @@
 import argparse
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import time
@@ -12,10 +13,12 @@ ROOT = Path(__file__).resolve().parents[2]
 BUNDLE = 'dev.callkitsim.eventfixture'
 
 
-def latest_runtime(runtimes):
+def latest_runtime(runtimes, required=None):
     available = [r for r in runtimes if r.get('isAvailable') and r.get('platform') == 'iOS']
+    if required:
+        available = [r for r in available if r['identifier'] == required]
     if not available:
-        raise RuntimeError('No available iOS simulator runtime')
+        raise RuntimeError('No available iOS simulator runtime' + (': ' + required if required else ''))
     return max(available, key=lambda r: tuple(int(part) for part in r['version'].split('.')))['identifier']
 
 
@@ -53,15 +56,58 @@ def wait(predicate):
     raise RuntimeError('Native event acceptance timed out')
 
 
+def record_environment(out, runtime):
+    out.mkdir(parents=True, exist_ok=True)
+    (out / 'environment.txt').write_text(run('xcodebuild', '-version') + '\n' + runtime + '\n')
+    (out / 'runtimes.json').write_text(run('xcrun', 'simctl', 'list', 'runtimes', '-j') + '\n')
+
+
+def capture_diagnostics(out, device, *, bundle=BUNDLE, channel=None, failed=False):
+    """Copy the original channel before deleting its simulator, even on failure."""
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        print('Cannot create diagnostics directory: ' + str(error), file=sys.stderr)
+        return
+    errors = []
+    def attempt(operation):
+        try:
+            operation()
+        except Exception as error:
+            errors.append(str(error))
+    def journal():
+        source = channel
+        if source is None:
+            container = Path(run('xcrun', 'simctl', 'get_app_container', device, bundle, 'data', timeout=20))
+            source = container / 'Documents/.callkit-simulator'
+        shutil.copytree(source, out / 'runtime-journal', dirs_exist_ok=True)
+    attempt(journal)
+    if failed:
+        attempt(lambda: run('xcrun', 'simctl', 'io', device, 'screenshot', out / 'failure.png', timeout=20))
+        def logs():
+            output = run('xcrun', 'simctl', 'spawn', device, 'log', 'show', '--last', '5m',
+                         '--style', 'compact', '--predicate',
+                         'process == "RuntimeEventFixture" OR process == "CKSimInspector"', timeout=20)
+            (out / 'simulator.log').write_text(output + '\n')
+        attempt(logs)
+    if errors:
+        try:
+            (out / 'diagnostic-errors.txt').write_text('\n'.join(errors) + '\n')
+        except OSError as error:
+            print('Cannot save diagnostic errors: ' + str(error), file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--package', type=Path, required=True)
     parser.add_argument('--app', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--simulator')
+    parser.add_argument('--runtime', help='Require this exact available simulator runtime identifier')
     args = parser.parse_args()
     args.out.mkdir(parents=True)
-    runtime = latest_runtime(json.loads(run('xcrun', 'simctl', 'list', 'runtimes', '-j'))['runtimes'])
+    runtime = latest_runtime(json.loads(run('xcrun', 'simctl', 'list', 'runtimes', '-j'))['runtimes'], args.runtime)
+    record_environment(args.out, runtime)
     print('Selected simulator runtime: ' + runtime, flush=True)
     device = args.simulator or run('xcrun', 'simctl', 'create', 'Codex M4 ' + str(uuid.uuid4())[:8],
                                    'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro', runtime)
@@ -70,6 +116,7 @@ def main():
     def command(*parts):
         return json.loads(run(ROOT / 'Tools/cksim', '--simulator', device, '--bundle', BUNDLE,
                               '--runtime-dir', args.package.resolve(), *parts))
+    root = None
     try:
         # A supplied simulator must also belong to this test run's operator.
         devices = json.loads(sim('list', 'devices', '-j'))['devices']
@@ -145,6 +192,7 @@ def main():
         (args.out / 'environment.txt').write_text(run('xcodebuild', '-version') + '\n' + runtime + '\n')
         print(json.dumps(dict(success=True, events=len(watched), channelMatchesWatch=True)))
     finally:
+        capture_diagnostics(args.out, device, channel=root, failed=sys.exc_info()[0] is not None)
         if not args.simulator:
             remove_simulators([device])
 

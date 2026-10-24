@@ -12,7 +12,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'Tests/RuntimeEvents'))
-from run import latest_runtime, remove_simulators, run, wait
+from run import capture_diagnostics, latest_runtime, record_environment, remove_simulators, run, wait
 
 BUNDLE = 'dev.callkitsim.eventfixture'
 
@@ -39,6 +39,7 @@ def main():
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--target-simulator')
     parser.add_argument('--display-simulator')
+    parser.add_argument('--runtime', help='Require this exact available simulator runtime identifier')
     args = parser.parse_args()
     out = args.out.resolve()
     out.mkdir(parents=True)
@@ -49,10 +50,13 @@ def main():
                         '-destination','generic/platform=iOS Simulator','-derivedDataPath',str(build),
                         'CODE_SIGNING_ALLOWED=NO'], stdout=log, stderr=subprocess.STDOUT, check=True, timeout=300)
     runtimes = json.loads(run('xcrun','simctl','list','runtimes','-j'))['runtimes']
-    runtime = latest_runtime(runtimes)
+    runtime = latest_runtime(runtimes, args.runtime)
+    record_environment(out, runtime)
     print('Selected simulator runtime: ' + runtime, flush=True)
     owned = []
     bridge = tests = None
+    target = display = None
+    channel = None
     def device(supplied, name):
         if supplied:
             return supplied
@@ -70,6 +74,7 @@ def main():
         run('xcrun','simctl','launch','--terminate-running-process',target,BUNDLE,
             env=dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=run_id))
         container = Path(run('xcrun','simctl','get_app_container',target,BUNDLE,'data'))
+        channel = container / 'Documents/.callkit-simulator'
         session = container / 'Documents/.callkit-simulator/session.json'
         wait(lambda: session.exists() and json.loads(session.read_text()).get('runID') == run_id)
         common = [str(ROOT/'Tools/cksim'),'--simulator',target,'--bundle',BUNDLE,
@@ -118,6 +123,11 @@ def main():
         (out/'environment.txt').write_text(run('xcodebuild','-version')+'\n'+runtime+'\n')
         print(json.dumps(dict(success=True, answerLatencyMS=answers[0]['latencyMS'], screenshots='screenshots/')))
     finally:
+        failed = sys.exc_info()[0] is not None
+        if target:
+            capture_diagnostics(out, target, channel=channel, failed=failed)
+        if failed and display:
+            capture_diagnostics(out / 'display', display, bundle='dev.callkitsim.inspector', failed=True)
         for process in (tests, bridge):
             if process is not None and process.poll() is None:
                 process.send_signal(signal.SIGINT)
