@@ -261,6 +261,7 @@ private struct Command: Decodable {
   var activeCallUUID: UUID?
   var heldCallUUID: UUID?
   var groupWithCallUUID: UUID?
+  var applicationRequest: Bool?
   var held: Bool?
   var muted: Bool?
   var digits: String?
@@ -1413,6 +1414,12 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     }
   }
   private func execute(_ command: Command, _ object: [String: Any]) throws -> [String: Any] {
+    if command.applicationRequest == true {
+      guard selected?.apiKind == .livecommunicationkit, ["hold", "merge", "unmerge"].contains(command.operation) else {
+        throw ControlError.invalid("applicationRequest requires an LCK hold, merge or unmerge control")
+      }
+    }
+    let origin: ActionOrigin = command.applicationRequest == true ? .application : .system
     switch command.operation {
     case "status": return ["calls": calls.values.map(callJSON), "pending": pendingActions.values.filter { !$0.settled }.count,
       "audioActive": audioActive, "sequence": sequence, "incomingErrorCode": faults.incomingErrorCode ?? 0,
@@ -1509,7 +1516,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         }
       default: throw ControlError.invalid("unsupported operation")
       }
-      if let error = validate(actions, origin: .system) { throw error }
+      if let error = validate(actions, origin: origin) { throw error }
       if command.operation == "hold-and-accept" || command.operation == "end-and-accept" || command.operation == "end-held-and-accept" {
         // The old call relinquishes audio before the new call acquires it.
         handoffPending = true
@@ -1519,7 +1526,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         let delay = provider.apiKind == .livecommunicationkit ? profile.lckMultiCall.audioDeactivationAfterDeliverySeconds : 0.12
         after(delay) { self.changeAudio(false, provider: provider, revision: revision) }
       }
-      guard let transaction = deliver(actions, provider, origin: .system, requestID: command.id) else { throw ControlError.invalid("provider unavailable") }
+      guard let transaction = deliver(actions, provider, origin: origin, requestID: command.id) else { throw ControlError.invalid("provider unavailable") }
       if actions.count > 1 && faults.invalidateDuringHandoff == true { provider.provider.invalidate() }
       return ["actionIDs": actions.map { $0.uuid.uuidString }, "transactionID": transaction.uuidString]
     }

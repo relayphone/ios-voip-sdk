@@ -43,10 +43,10 @@ import Foundation
       let waiting = model.conversations[waitingID]!
       let prior = states(model)
       switch index {
-      case 1: model.send("hold", call: active, held: true)
-      case 2: model.send("hold", call: active, held: false)
-      case 3: model.send("merge", call: active, groupTarget: waiting)
-      case 4: model.send("unmerge", call: active)
+      case 1: model.send("hold", call: active, held: true, applicationRequest: true)
+      case 2: model.send("hold", call: active, held: false, applicationRequest: true)
+      case 3: model.send("merge", call: active, groupTarget: waiting, applicationRequest: true)
+      case 4: model.send("unmerge", call: active, applicationRequest: true)
       default: model.send("end-held-and-accept", call: waiting, active: active, heldCall: held)
       }
       precondition(model.busy)
@@ -189,10 +189,10 @@ class LCKModelTests(unittest.TestCase):
             serving.join(timeout=2)
         self.assertEqual(process.returncode, 0, ''.join(output))
         self.assertEqual(failures, [])
-        self.assertEqual(commands, [dict(operation='hold', callUUID=ACTIVE, held='true'),
-                                    dict(operation='hold', callUUID=ACTIVE, held='false'),
-                                    dict(operation='merge', callUUID=ACTIVE, groupWithCallUUID=WAITING),
-                                    dict(operation='unmerge', callUUID=ACTIVE),
+        self.assertEqual(commands, [dict(operation='hold', callUUID=ACTIVE, held='true', applicationRequest='true'),
+                                    dict(operation='hold', callUUID=ACTIVE, held='false', applicationRequest='true'),
+                                    dict(operation='merge', callUUID=ACTIVE, groupWithCallUUID=WAITING, applicationRequest='true'),
+                                    dict(operation='unmerge', callUUID=ACTIVE, applicationRequest='true'),
                                     dict(operation='end-held-and-accept', callUUID=WAITING, activeCallUUID=ACTIVE, heldCallUUID=HELD)])
 
 

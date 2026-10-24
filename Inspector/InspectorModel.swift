@@ -247,7 +247,8 @@ final class InspectorModel: ObservableObject {
     }
   }
   func send(_ operation: String, call: RuntimeEvent, active: RuntimeEvent? = nil,
-            heldCall: RuntimeEvent? = nil, held: Bool? = nil, groupTarget: RuntimeEvent? = nil) {
+            heldCall: RuntimeEvent? = nil, held: Bool? = nil, groupTarget: RuntimeEvent? = nil,
+            applicationRequest: Bool = false) {
     guard !busy, online, let id = call.uuid, !isPending(call),
           [active, heldCall, groupTarget].compactMap({ $0 }).allSatisfy({ !isPending($0) }) else { return }
     busy = true
@@ -255,6 +256,7 @@ final class InspectorModel: ObservableObject {
       defer { busy = false }
       do {
         var command = ["operation": operation, "callUUID": id]
+        if applicationRequest { command["applicationRequest"] = "true" }
         if let activeID = active?.uuid { command["activeCallUUID"] = activeID }
         if let heldID = heldCall?.uuid { command["heldCallUUID"] = heldID }
         if let held { command["held"] = held ? "true" : "false" }

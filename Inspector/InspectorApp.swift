@@ -247,15 +247,15 @@ private struct LCKCallButtons: View {
         } else { Text("System choices unavailable").font(.caption).foregroundStyle(.secondary) }
       }
       Text("App requests · capabilities do not gate these requests").font(.caption).foregroundStyle(.secondary)
-      Button(call.held == true ? "App Resume" : "App Pause") { model.send("hold", call: call, held: call.held != true) }
+      Button(call.held == true ? "App Resume" : "App Pause") { model.send("hold", call: call, held: call.held != true, applicationRequest: true) }
         .accessibilityIdentifier(call.held == true ? "resume" : "pause")
       Menu("App Merge with…") {
         ForEach(InspectorLCKProjection.appMergeTargets(for: call, calls: Array(model.conversations.values))) { target in
-          Button("\(target.caller) · \(target.uuid ?? "")") { model.send("merge", call: call, groupTarget: target) }
+          Button("\(target.caller) · \(target.uuid ?? "")") { model.send("merge", call: call, groupTarget: target, applicationRequest: true) }
             .disabled(model.isPending(target))
         }
       }.disabled(model.targets(excluding: call).isEmpty).accessibilityIdentifier("app-merge")
-      Button("App Unmerge") { model.send("unmerge", call: call) }.accessibilityIdentifier("app-unmerge")
+      Button("App Unmerge") { model.send("unmerge", call: call, applicationRequest: true) }.accessibilityIdentifier("app-unmerge")
       Button("End Call", role: .destructive) { model.send("end", call: call) }.accessibilityIdentifier("end")
     }.buttonStyle(.bordered).controlSize(.large)
   }

@@ -10,6 +10,7 @@ from contextlib import contextmanager
 import json
 import os
 import re
+import runpy
 from pathlib import Path
 import shutil
 import sys
@@ -449,10 +450,11 @@ def main():
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--simulator', type=simulator_uuid, help='Borrow this already booted operator-owned simulator; never shut it down or delete it')
     parser.add_argument('--full-timeout', action='store_true', help='Also observe one full ~64s pending Join')
+    parser.add_argument('--all', action='store_true', help='Run filters, full-timeout multicall, focused handoff, and Inspector app controls after one install')
     parser.add_argument('--handoff-only', action='store_true', help='Observe focused Join/Start/Mute/composite/resume audio wiring')
     parser.add_argument('--filter-only', action='store_true', help='Normal report → explicit incoming code4 → cleared normal report')
     args = parser.parse_args()
-    if args.handoff_only and args.filter_only or args.full_timeout and (args.handoff_only or args.filter_only):
+    if args.all and (args.filter_only or args.handoff_only) or args.handoff_only and args.filter_only or args.full_timeout and (args.handoff_only or args.filter_only):
         parser.error('Choose a single acceptance mode; --full-timeout belongs to multicall acceptance')
     args.out.mkdir(parents=True, exist_ok=True)
     runtimes = json.loads(run('xcrun', 'simctl', 'list', 'runtimes', '-j', timeout=30))['runtimes']
@@ -466,7 +468,14 @@ def main():
             applications = simulator_applications(device)
             run('xcrun', 'simctl', 'install', device, args.app.resolve(), timeout=120)
             journey = Journey(device, None, args.out, applications=applications)
-            if args.filter_only:
+            if args.all:
+                from lck_handoff_cases import run_cases as run_handoff_cases
+                run_filter_case(journey)
+                run_cases(journey, full_timeout=True)
+                run_handoff_cases(journey)
+                inspector_controls = runpy.run_path(str(Path(__file__).resolve().parents[1] / 'Inspector/lck_app_controls.py'))
+                inspector_controls['run_case'](journey, args.out / 'inspector-model-controls')
+            elif args.filter_only:
                 run_filter_case(journey)
             elif args.handoff_only:
                 from lck_handoff_cases import run_cases as run_handoff_cases
@@ -474,8 +483,8 @@ def main():
             else:
                 run_cases(journey, full_timeout=args.full_timeout)
             print(json.dumps(dict(success=True, fixture='genuine ConversationManager', runtime=RUNTIME,
-                                  mode='explicit-incoming-fault' if args.filter_only else 'focused-handoff' if args.handoff_only else 'measured-multicall',
-                                  fullJoinTimeout=args.full_timeout, choicesAndTransactionIDs='modeled policy assertions')))
+                                  mode='all' if args.all else 'explicit-incoming-fault' if args.filter_only else 'focused-handoff' if args.handoff_only else 'measured-multicall',
+                                  fullJoinTimeout=args.all or args.full_timeout, choicesAndTransactionIDs='modeled policy assertions')))
         finally:
             failed = sys.exc_info()[0] is not None
             if journey is not None:
