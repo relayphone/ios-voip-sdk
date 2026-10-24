@@ -25,7 +25,7 @@ def require(condition, message):
 def fixtures(work):
     child = work / "console_app.py"
     child.write_text(
-        "import json,os,pathlib,sys,time\n"
+        "import json,os,pathlib,signal,sys,time\n"
         "base=pathlib.Path(sys.argv[1]); mode=sys.argv[2]\n"
         "pathlib.Path(str(base)+'.app.pid').write_text(str(os.getpid()))\n"
         "deadline=time.monotonic()+20\n"
@@ -34,8 +34,15 @@ def fixtures(work):
         " time.sleep(.01)\n"
         f"if mode=='buffered-header': os.write(1,{RAW_OUTPUT!r})\n"
         "if mode=='stdout-eof': os.close(1)\n"
+        "if mode=='timeout-flush':\n"
+        " def late_stop(signum,frame):\n"
+        "  pathlib.Path(str(base)+'.late-signal').write_text(str(signum))\n"
+        "  os.write(1,b'PROBE {\"event\":\"done\",\"t_ms\":2}\\n')\n"
+        "  os.write(2,b'CONSOLE late shutdown error without newline')\n"
+        "  sys.exit(0)\n"
+        " signal.signal(signal.SIGTERM,late_stop)\n"
         "rows=[{'event':'app.entry','t_ms':0},{'event':'launch','t_ms':1,'pid':os.getpid()}]\n"
-        "if mode!='early-exit' and (not mode.startswith('natural-') or mode=='natural-done'): rows.append({'event':'done','t_ms':2})\n"
+        "if mode not in ('early-exit','timeout-flush') and (not mode.startswith('natural-') or mode=='natural-done'): rows.append({'event':'done','t_ms':2})\n"
         "for row in rows:\n"
         " data=('PROBE '+json.dumps(row)+'\\n').encode()\n"
         " if mode=='interleaved-streams' and row['event']=='launch':\n"
@@ -258,6 +265,26 @@ def failed_exec_control(work):
     return "runner-console-failed-exec-closes-pty"
 
 
+def failure_output_control(work, sources):
+    result, receipt, base = run_case(work, sources, "timeout-flush", timeout=1)
+    require(result.returncode != 0 and receipt.get("success") is False and
+            receipt.get("completed") is False and
+            receipt.get("error") == "deadline before terminal done event" and
+            receipt.get("lastProbeEvent") == "launch",
+            f"late terminal output changed the original timeout: {receipt}")
+    data = Path(str(base) + ".log").read_bytes()
+    require(b'PROBE {"event":"done","t_ms":2}\n' in data and
+            b"CONSOLE late shutdown error without newline" in data and
+            data.count(f"{BUNDLE}: {receipt['appPID']}\n".encode()) == 1,
+            f"timeout cleanup lost late console output: {data!r}")
+    require(Path(str(base) + ".late-signal").read_text() == "15" and
+            Path(str(base) + ".fallback").exists() and receipt.get("cleanupExitCode") == 7 and
+            receipt.get("launcherAppPID") == receipt.get("appPID") and
+            receipt["elapsedSeconds"] < 5,
+            f"timeout cleanup or late PID binding changed: {receipt}")
+    return "runner-console-timeout-preserves-late-output-without-success"
+
+
 def expected_exit_controls(work, sources):
     from summarize import successful_stop
 
@@ -327,7 +354,7 @@ def expected_exit_controls(work, sources):
 def run_checks(work):
     work.mkdir(parents=True, exist_ok=True)
     sources = fixtures(work)
-    checks = [failed_exec_control(work), traditional_red(work, sources)]
+    checks = [failed_exec_control(work), traditional_red(work, sources), failure_output_control(work, sources)]
     for mode in ("complete", "buffered-header", "interleaved-streams", "stdout-eof", "delayed-handler", "quiet-orphan", "wrong-pid", "missing-pid", "duplicate-pid", "ignored-signal", "early-exit", "orphan-output"):
         result, receipt, base = run_case(work, sources, mode)
         expected = mode in ("complete", "buffered-header", "interleaved-streams", "stdout-eof", "delayed-handler")
