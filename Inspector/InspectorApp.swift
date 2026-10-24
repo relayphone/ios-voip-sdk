@@ -69,30 +69,6 @@ struct InspectorView: View {
           Label(model.audioActive ? "Audio active" : "Audio inactive", systemImage: model.audioActive ? "waveform" : "speaker.slash")
             .accessibilityIdentifier("audio-state")
         }
-        Section {
-          ForEach(model.timingReferences) { readout in
-            VStack(alignment: .leading, spacing: 8) {
-              Text(readout.title).font(.headline)
-              HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                  Text("Simulator actual").font(.caption).foregroundStyle(.secondary)
-                  Text(readout.actualValue).font(.subheadline.weight(.semibold)).monospacedDigit()
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                VStack(alignment: .leading, spacing: 4) {
-                  Text("Device reference").font(.caption).foregroundStyle(.secondary)
-                  Text(readout.deviceValue).font(.subheadline.weight(.semibold)).monospacedDigit()
-                }.frame(maxWidth: .infinity, alignment: .leading)
-              }
-              Text(readout.actualLabel).font(.caption).foregroundStyle(.secondary)
-              Text(readout.deviceProvenance).font(.caption).foregroundStyle(.secondary)
-            }.padding(.vertical, 4).accessibilityElement(children: .combine)
-              .accessibilityIdentifier("timing-\(readout.id)")
-          }
-        } header: {
-          Text("Timing · actual and device reference")
-        } footer: {
-          Text("Actuals use matching events in the latest 300 journal rows. Unavailable means no complete, unambiguous pair. Device source: livecommunicationkit/push/README.md. These observations are references, not pass/fail limits.")
-        }
         if !model.pending.isEmpty {
           Section("Pending actions") {
             ForEach(model.pending.values.sorted { $0.sequence < $1.sequence }) { action in

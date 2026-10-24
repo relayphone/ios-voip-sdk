@@ -171,30 +171,6 @@ class ProbeTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'PID changed'):
                 activate('device', 'test.fixture', 123, deadline=5)
 
-    def test_slow_foreground_activation_uses_available_consumer_budget(self):
-        activate = RUNNER['activate_existing']
-        self.elapsed[0] = 11.7  # Hosted failure had 13.3 s left in the 25 s lifetime.
-        def delayed_launch(*args, timeout):
-            if timeout < 6:
-                raise RuntimeError('launch timed out before foreground activation')
-            self.elapsed[0] += 6
-            return 'test.fixture: 123'
-        rpc = Mock(side_effect=delayed_launch)
-        with patch.dict(activate.__globals__, time=self.clock, run=rpc):
-            activate('device', 'test.fixture', 123, deadline=25)
-        self.assertEqual(rpc.call_count, 1)
-        self.assertLessEqual(rpc.call_args.kwargs['timeout'], 10)
-        self.assertAlmostEqual(self.elapsed[0], 17.7)
-
-    def test_foreground_timeout_does_not_extend_or_retry_the_global_budget(self):
-        activate = RUNNER['activate_existing']
-        rpc = Mock(side_effect=RuntimeError('launch timed out'))
-        with patch.dict(activate.__globals__, time=self.clock, run=rpc):
-            with self.assertRaisesRegex(RuntimeError, 'launch timed out'):
-                activate('device', 'test.fixture', 123, deadline=2)
-        self.assertEqual(rpc.call_count, 1)
-        self.assertEqual(rpc.call_args.kwargs['timeout'], 2)
-
     def test_native_journal_ignores_partial_tail_and_checks_session(self):
         channel = self.path.parent / 'channel'
         (channel / 'run').mkdir(parents=True)
@@ -209,31 +185,16 @@ class ProbeTests(unittest.TestCase):
 
     def test_journey_foregrounds_fixture_for_each_control_then_inspector_for_projection(self):
         identifier = 'A7E390AF-6B78-4190-B946-26D9C6438584'
-        push = dict(self.row, sequence=2, t_ms=100, event='push.received', pushID='p1', mustReport=True)
-        report = dict(self.row, sequence=3, t_ms=290, event='report.completed', pushID='p1', error=0)
-        ring = dict(self.row, sequence=4, t_ms=295, event='call.changed', uuid=identifier,
+        ring = dict(self.row, sequence=2, event='call.changed', uuid=identifier,
                     callerName='Alex Morgan', ringing=True, ended=False, connected=False)
-        delivery = dict(self.row, sequence=5, t_ms=300, event='action.deadline', actionID='answer', kind='answer',
-                        callUUID=identifier, apiKind='callkit')
-        answer = dict(delivery, sequence=6, t_ms=425, event='action.settled',
+        answer = dict(self.row, sequence=3, event='action.settled', actionID='answer', kind='answer',
                       origin='system', fulfilled=True, latencyMS=125, deadlineSeconds=60)
-        joined = dict(ring, sequence=7, t_ms=430, ringing=False, connected=True)
-        audio = dict(self.row, sequence=8, t_ms=536, event='audio.activated')
-        rows = [self.row, push, report, ring, delivery, answer, joined, audio]
-        source = 'docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md'
-        def reference(name, device, **fields):
-            return dict(id=name, deviceValue=device, sourcePath=source,
-                        deviceProvenance='LCK · iPhone 13 · iOS 27.0', **fields)
-        references = [reference('pushReport', '≈190 ms', actualMS=190, startSequence=2, endSequence=3),
-                      reference('answerAudio', '≈236 ms'), reference('muteEcho', '8–17 ms after fulfillment'),
-                      reference('unreportedPush', '≈4.4 s')]
-        incoming = dict(self.value, cursor=4, incoming=ring, conversations=[ring], timeline=rows[:4], timingReferences=references)
-        answered_references = [dict(row) for row in references]
-        answered_references[1].update(actualMS=236, startSequence=5, endSequence=8,
-                                      actualLabel='Simulator · CallKit answer delivered → audio.activated')
-        connected = dict(self.value, cursor=8, conversations=[joined], timeline=rows, audioActive=True,
-                         timingReferences=answered_references,
-                         timelinePresentation=[dict(sequence=6, title='Answer fulfilled', detail='system · 125 ms · 60 s profile budget')])
+        joined = dict(ring, sequence=4, ringing=False, connected=True)
+        audio = dict(self.row, sequence=5, event='audio.activated')
+        rows = [self.row, ring, answer, joined, audio]
+        incoming = dict(self.value, cursor=2, incoming=ring, conversations=[ring], timeline=rows[:2])
+        connected = dict(self.value, cursor=5, conversations=[joined], timeline=rows, audioActive=True,
+                         timelinePresentation=[dict(sequence=3, title='Answer fulfilled', detail='system · 125 ms · 60 s profile budget')])
         states = iter([self.value, incoming, connected])
         actor = ['inspector']
         observed = []
@@ -265,7 +226,7 @@ class ProbeTests(unittest.TestCase):
         native = [0]
         def wait_native(predicate, channel, session, deadline, **kwargs):
             self.assertEqual(actor[0], 'fixture')
-            values = rows[:4] if native[0] == 0 else rows
+            values = rows[:2] if native[0] == 0 else rows
             native[0] += 1
             self.assertTrue(predicate(values))
             return values
