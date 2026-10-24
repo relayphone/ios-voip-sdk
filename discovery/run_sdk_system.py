@@ -21,6 +21,7 @@ from summarize import require
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = 'dev.iosvoipsdk.example'
 CASES = ('answer-end', 'decline', 'hold-accept', 'end-accept', 'mute-echo', 'provider-reset', 'push-launch')
+SCENARIO_TIMEOUT_SECONDS = 120
 
 
 def write(path, value):
@@ -184,7 +185,7 @@ class Journey:
             launch = [str(self.args.package / 'cksim'), '--simulator', self.args.simulator, '--bundle', BUNDLE,
                 '--runtime-dir', str(self.args.package), 'push', '--payload-file', str(path), '--must-report', 'true',
                 '--launch', '--run-id', self.args.run_id, '--launch-receipt', str(self.root / 'launch-push.json')]
-        command = [sys.executable, str(ROOT / 'discovery/run_scenario.py'), '--console-launcher-stop', '--inherit-launcher-group', '--timeout', '120',
+        command = [sys.executable, str(ROOT / 'discovery/run_scenario.py'), '--console-launcher-stop', '--inherit-launcher-group', '--timeout', str(SCENARIO_TIMEOUT_SECONDS),
             '--output', str(self.trace), '--receipt', str(self.root / (self.name + '.receipt.json')),
             '--run-id', self.args.run_id, '--simulator-id', self.args.simulator, '--scenario', self.name, '--bundle-id', BUNDLE,
             '--terminate-command', 'xcrun', 'simctl', 'terminate', self.args.simulator, BUNDLE, '--launch-command', *launch]
@@ -192,7 +193,9 @@ class Journey:
             self.process = subprocess.Popen(command, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             cleanup_required = False
             try:
-                ready = self.wait(lambda: next((row for row in self.rows() if row['event'] == 'system.ready'), None), 30)
+                # Startup includes launcher preparation and console delivery;
+                # share the existing aggregate supervisor bound.
+                ready = self.wait(lambda: next((row for row in self.rows() if row['event'] == 'system.ready'), None), SCENARIO_TIMEOUT_SECONDS)
                 self.pid = ready['pid']
                 session = json.loads((self.runtime.parent / 'session.json').read_text())
                 require(session['runID'] == self.args.run_id and session['pid'] == self.pid and session['bundleID'] == BUNDLE, 'fresh runtime session differs')

@@ -549,6 +549,86 @@ def supervisor_controls():
     return checks
 
 
+def readiness_controls():
+    """Run real startup waits with delayed console rows; no child or signal is real."""
+    import run_sdk_system as runner
+    checks = []
+    class ReachedReady(Exception): pass
+    cases = (
+        ('push-delayed-ready', 'push-launch', 32, None, 'ready', 32),
+        ('direct-delayed-ready', 'decline', 32, None, 'ready', 32),
+        ('direct-never-ready', 'decline', None, None, 'deadline', 120),
+        ('push-never-ready', 'push-launch', None, None, 'deadline', 120),
+        ('push-ready-beyond-budget', 'push-launch', 121, None, 'deadline', 120),
+        ('push-supervisor-exit', 'push-launch', None, 10, 'exited', 10),
+    )
+    for label, case, ready_at, exit_at, expected, elapsed in cases:
+        with tempfile.TemporaryDirectory(prefix='sdk-system-readiness-pure-') as temporary:
+            root = Path(temporary); clock = [0.0]; owner = 7101
+            class Process:
+                pid = owner
+                reaped = False
+                def poll(self):
+                    return 0 if self.reaped or (exit_at is not None and clock[0] >= exit_at) else None
+                def wait(self, timeout):
+                    assert timeout == 25
+                    self.reaped = True
+                    return 0
+            process = Process()
+            container = root / 'container'; container.mkdir()
+            args = SimpleNamespace(run_id='synthetic-readiness', simulator='synthetic-owned', package=root)
+            journey = runner.Journey(args, root / 'case', case, container)
+            journey.runtime.parent.mkdir(parents=True)
+            runner.write(journey.runtime.parent / 'session.json',
+                         dict(runID=args.run_id, pid=7103, bundleID=runner.BUNDLE))
+            runner.write(journey.root / 'launch-push.json', dict(pushID='synthetic-staged-push'))
+            def tick(seconds):
+                clock[0] = round(clock[0] + seconds, 3)
+                if ready_at is not None and clock[0] >= ready_at and not journey.trace.exists():
+                    journey.trace.write_text('PROBE ' + json.dumps(dict(event='system.ready', pid=7103)) + '\n')
+            def reached(role, push_id):
+                assert role == 'first' and push_id == 'synthetic-staged-push'
+                raise ReachedReady()
+            journey.bind = Mock(side_effect=reached)
+            journey.push = Mock(side_effect=ReachedReady())
+            journey.sim = Mock()
+            def group_absent(group, value):
+                assert (group, value) == (owner, 0)
+                raise ProcessLookupError('synthetic absent group')
+            with patch.object(runner.subprocess, 'Popen', return_value=process) as spawn, \
+                 patch.object(runner.subprocess, 'run', side_effect=AssertionError('unexpected native command')), \
+                 patch.object(runner.time, 'monotonic', side_effect=lambda: clock[0]), \
+                 patch.object(runner.time, 'sleep', side_effect=tick), \
+                 patch.object(runner.signal, 'signal'), \
+                 patch.object(runner.os, 'killpg', side_effect=group_absent):
+                try: journey.run()
+                except ReachedReady:
+                    outcome = 'ready'
+                except RuntimeError as error:
+                    if str(error) == case + ': checkpoint deadline': outcome = 'deadline'
+                    elif str(error) == 'system supervisor exited before checkpoint': outcome = 'exited'
+                    else: raise
+                else: raise AssertionError(label + ': startup unexpectedly completed the native journey')
+            assert outcome == expected, (label, 'expected ' + expected, outcome, clock[0])
+            assert clock[0] == elapsed, (label, 'startup bound changed', clock[0], elapsed)
+            command = spawn.call_args.args[0]
+            assert command[command.index('--timeout') + 1] == '120'
+            assert spawn.call_args.kwargs['start_new_session'] is True
+            if expected == 'ready':
+                if case == 'push-launch':
+                    journey.bind.assert_called_once_with('first', 'synthetic-staged-push')
+                    journey.push.assert_not_called()
+                else:
+                    journey.push.assert_called_once_with('first')
+                    journey.bind.assert_not_called()
+                assert journey.pid == 7103
+            else:
+                journey.bind.assert_not_called(); journey.push.assert_not_called()
+            checks.append(dict(name=label, passed=True,
+                               expected='bounded startup only; real Journey wait and console-row parsing'))
+    return checks
+
+
 def controls():
     expected = gate.d5_compositions([json.loads(line) for line in (gate.ROOT / gate.D5).read_text().splitlines()])
     fixtures = {case: Fixture(case, expected).build() for case in gate.CASES}
@@ -634,6 +714,7 @@ def controls():
     checks.extend(container_cache_controls())
     checks.extend(cleanup_controls())
     checks.extend(supervisor_controls())
+    checks.extend(readiness_controls())
     return checks
 
 
