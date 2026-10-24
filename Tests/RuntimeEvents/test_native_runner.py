@@ -11,6 +11,52 @@ import run
 
 
 class RunnerTests(unittest.TestCase):
+    def test_initial_stimulus_is_sent_after_slow_host_readiness(self):
+        """A launch-time ring may already have expired when transport returns."""
+        class StimulusSent(Exception):
+            pass
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            channel = root / 'Documents/.callkit-simulator'
+            (channel / 'session').mkdir(parents=True)
+            session = dict(runID='session', pid=123, bundleID=run.BUNDLE)
+            (channel / 'session.json').write_text(json.dumps(session))
+            # Exactly the state left when the startup ring expires before the
+            # host's first observation. The next call must be host-triggered.
+            (channel / 'session/events.jsonl').write_text(json.dumps(dict(
+                event='call.changed', uuid='old-ring', ended=True)) + '\n')
+            ready = []
+            def transport(*args, **kwargs):
+                if args[:4] == ('xcrun', 'simctl', 'list', 'runtimes'):
+                    return json.dumps(dict(runtimes=[dict(identifier='ios-27', version='27.0', platform='iOS', isAvailable=True)]))
+                if args[:4] == ('xcrun', 'simctl', 'list', 'devices'):
+                    return json.dumps(dict(devices={'ios-27': [dict(udid='owned', state='Booted')]}))
+                if args[:3] == ('xcrun', 'simctl', 'launch'):
+                    env = kwargs.get('env', {})
+                    if env.get('SIMCTL_CHILD_CKSIM_RUN_ID'):
+                        session['runID'] = env['SIMCTL_CHILD_CKSIM_RUN_ID']
+                        (channel / session['runID']).mkdir()
+                        (channel / session['runID'] / 'events.jsonl').write_text('')
+                        (channel / 'session.json').write_text(json.dumps(session))
+                if args[:3] == ('xcrun', 'simctl', 'get_app_container'):
+                    ready.append(True)
+                    return str(root)
+                if 'push' in args:
+                    self.assertTrue(ready, 'push must follow host readiness')
+                    raise StimulusSent()
+                return ''
+            def immediate_wait(predicate):
+                value = predicate()
+                if not value:
+                    raise RuntimeError('Native event acceptance timed out')
+                return value
+            argv = ['run.py', '--package', str(root), '--app', str(root), '--out', str(root / 'out'),
+                    '--simulator', 'owned', '--runtime', 'ios-27']
+            with patch.object(run.sys, 'argv', argv), patch.object(run, 'run', side_effect=transport):
+                with patch.object(run, 'wait', side_effect=immediate_wait), patch.object(run, 'capture_diagnostics'):
+                    with self.assertRaises(StimulusSent):
+                        run.main()
+
     def test_runtime_selection_matches_sdk_numeric_latest_available_ios(self):
         def runtime(version, available=True, platform='iOS'):
             return dict(identifier=version, version=version, name=platform+' '+version,
@@ -20,6 +66,45 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(run.latest_runtime(rows), '26.10')
         with self.assertRaisesRegex(RuntimeError, 'No available iOS'):
             run.latest_runtime(rows[-2:])
+
+    def test_fixture_readiness_rejects_a_previous_launch_session(self):
+        with tempfile.TemporaryDirectory() as work:
+            channel = Path(work) / 'Documents/.callkit-simulator'
+            channel.mkdir(parents=True)
+            session_file = channel / 'session.json'
+            session_file.write_text(json.dumps(dict(runID='old-launch')))
+            def transport(*args, **kwargs):
+                if args[:3] == ('xcrun', 'simctl', 'launch'):
+                    self.assertEqual(kwargs['env']['SIMCTL_CHILD_CKSIM_RUN_ID'], 'fixture-fresh')
+                return str(Path(work))
+            def observe(predicate):
+                self.assertIsNone(predicate(), 'stale launch must not become ready')
+                session_file.write_text('{')
+                self.assertIsNone(predicate(), 'partial publication must not become ready')
+                session_file.write_text(json.dumps(dict(runID='fixture-fresh', pid=42)))
+                return predicate()
+            with patch.object(run.uuid, 'uuid4', return_value='fresh'), patch.object(run, 'run', side_effect=transport):
+                with patch.object(run, 'wait', side_effect=observe):
+                    actual_channel, run_id = run.launch_fixture('owned', Path(work))
+                    session = run.fixture_session(actual_channel, run_id)
+            self.assertEqual(actual_channel, channel)
+            self.assertEqual(session['pid'], 42)
+
+    def test_readiness_timeout_keeps_the_already_discovered_channel(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            channel = root / 'known-channel'
+            devices = json.dumps(dict(runtimes=[], devices={'ios-27': [dict(udid='owned', state='Booted')]}))
+            argv = ['run.py', '--package', work, '--app', work, '--out', str(root / 'out'), '--simulator', 'owned']
+            with patch.object(run.sys, 'argv', argv), patch.object(run, 'run', return_value=devices):
+                with patch.object(run, 'latest_runtime', return_value='ios-27'), patch.object(run, 'record_environment'):
+                    with patch.object(run, 'launch_fixture', return_value=(channel, 'fresh')):
+                        with patch.object(run, 'fixture_session', side_effect=RuntimeError('startup timeout')):
+                            with patch.object(run, 'capture_diagnostics') as capture:
+                                with self.assertRaisesRegex(RuntimeError, 'startup timeout'):
+                                    run.main()
+            self.assertEqual(capture.call_args.kwargs['channel'], channel)
+            self.assertTrue(capture.call_args.kwargs['failed'])
 
     def test_cold_boot_timeout_is_explicit_and_keeps_diagnostics(self):
         failure = subprocess.TimeoutExpired(['simctl'], 300, output=b'Waiting for SpringBoard')

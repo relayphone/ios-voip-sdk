@@ -2,6 +2,7 @@
 """Native acceptance against a disposable simulator, preserving only ignored/CI output."""
 import argparse
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -62,6 +63,28 @@ def record_environment(out, runtime):
     (out / 'runtimes.json').write_text(run('xcrun', 'simctl', 'list', 'runtimes', '-j') + '\n')
 
 
+def launch_fixture(device, app):
+    """Start a fresh session; the host sends the first stimulus after readiness."""
+    run_id = 'fixture-' + str(uuid.uuid4())
+    run('xcrun', 'simctl', 'install', device, app.resolve())
+    run('xcrun', 'simctl', 'launch', '--terminate-running-process', device, BUNDLE,
+        env=dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=run_id))
+    container = Path(run('xcrun', 'simctl', 'get_app_container', device, BUNDLE, 'data'))
+    channel = container / 'Documents/.callkit-simulator'
+    return channel, run_id
+
+
+def fixture_session(channel, run_id):
+    """Wait separately so the caller retains the channel if startup fails."""
+    def ready():
+        try:
+            session = json.loads((channel / 'session.json').read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
+            return None
+        return session if session.get('runID') == run_id else None
+    return wait(ready)
+
+
 def capture_diagnostics(out, device, *, bundle=BUNDLE, channel=None, failed=False):
     """Copy the original channel before deleting its simulator, even on failure."""
     try:
@@ -114,8 +137,10 @@ def main():
     def sim(*parts, **kwargs):
         return run('xcrun', 'simctl', *parts, **kwargs)
     def command(*parts):
-        return json.loads(run(ROOT / 'Tools/cksim', '--simulator', device, '--bundle', BUNDLE,
-                              '--runtime-dir', args.package.resolve(), *parts))
+        result = json.loads(run(ROOT / 'Tools/cksim', '--simulator', device, '--bundle', BUNDLE,
+                                '--runtime-dir', args.package.resolve(), *parts))
+        assert result.get('success'), result
+        return result
     root = None
     try:
         # A supplied simulator must also belong to this test run's operator.
@@ -124,12 +149,8 @@ def main():
         if state != 'Booted':
             sim('boot', device)
         sim('bootstatus', device, '-b', timeout=300)
-        sim('install', device, args.app.resolve())
-        sim('launch', '--terminate-running-process', device, BUNDLE)
-        container = Path(sim('get_app_container', device, BUNDLE, 'data'))
-        root = container / 'Documents/.callkit-simulator'
-        wait(lambda: (root / 'session.json').exists())
-        session = json.loads((root / 'session.json').read_text())
+        root, run_id = launch_fixture(device, args.app)
+        session = fixture_session(root, run_id)
         journal = root / session['runID'] / 'events.jsonl'
         def rows():
             return [json.loads(line) for line in journal.read_text().splitlines()]
@@ -141,6 +162,11 @@ def main():
             return [r for r in projected.values() if not r['ended']]
         def state(call, **values):
             return wait(lambda: next((c for c in calls() if c['uuid'] == call and all(c[k] == v for k,v in values.items())), None))
+        # A launch timer races slow simctl transport against the ring timeout.
+        # Inject only after the host can observe this exact runtime session.
+        payload = args.out / 'push.json'
+        payload.write_text(json.dumps(dict(operation='incoming')))
+        command('push', '--payload-file', payload, '--must-report', 'false')
         first = wait(lambda: calls())[0]['uuid']
         command('answer', first)
         state(first, connected=True)
@@ -151,7 +177,6 @@ def main():
         wait(lambda: any(r['event'] == 'action.settled' and not r['fulfilled'] for r in rows()))
         for operation in ('decline', 'hold-and-accept', 'end-and-accept'):
             previous = {c['uuid'] for c in calls()}
-            payload = args.out / 'push.json'
             payload.write_text(json.dumps(dict(operation='incoming')))
             command('push', '--payload-file', payload, '--must-report', 'false')
             incoming = wait(lambda: next((c['uuid'] for c in calls() if c['uuid'] not in previous), None))
