@@ -86,6 +86,9 @@ def trace_replays():
 
 def main():
     engine = (ROOT / 'Sources/Engine/RuntimeEngine.swift').read_text()
+    profile = json.loads((ROOT / 'Sources/Engine/Resources/ios-27.0.json').read_text())
+    assert profile['lckMultiCall']['verification'] == 'measured'
+    assert profile['lckMultiCall']['unverified'], 'measured scope must retain its unverified cases'
     policy = re.findall(r'private struct LCKMultiCallPolicy \{\n.*?\n\}', engine, re.S)
     assert len(policy) == 1, 'one measured LCK policy is required'
     profile_types = [re.findall(pattern, engine, re.S)[0] for pattern in (

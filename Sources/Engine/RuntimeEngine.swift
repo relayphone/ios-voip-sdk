@@ -553,6 +553,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     "audioDeactivationAfterDeliverySeconds": 0.12,
     "appResumeEndDelaySeconds": 0.091,
     "apiKind": "livecommunicationkit",
+    "verification": "measured",
     "reference": "#85; iPhone 13 / iOS 27.0 (24A5355q); October 24, 2026",
     "source": "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md",
     "timingInterpretation": "Representative runtime samples and aggregate medians, not minimum delays or guaranteed bounds. Join median 115 ms (9\u2013239 ms); audio gap median 213 ms (151\u2013404 ms without delayed constituents). Pause 110 ms and deactivation 120 ms are representative delivery-relative samples; resume-generated End 91 ms is relative to Resume delivery.",
