@@ -220,6 +220,30 @@ class CachedContainerTests(unittest.TestCase):
                 inspect(args, self.DEVICE)
         rpc.assert_not_called()
 
+    def test_inspector_pins_initial_discovery_for_status_and_button_controls(self):
+        class Ready(Exception):
+            pass
+        app = self.base / 'Inspector.app'
+        app.mkdir()
+        args = SimpleNamespace(**dict(vars(self.args), app_container=None, app=app))
+        captured = []
+        def bridge(arguments, device, root):
+            captured.append(arguments)
+            return SimpleNamespace(journal=SimpleNamespace(session=self.session))
+        def status(arguments, device, expected_session):
+            self.assertEqual(arguments.app_container, self.container.resolve())
+            self.assertEqual(captured[0].app_container, self.container.resolve())
+            self.assertEqual(expected_session, self.session)
+            raise Ready()
+        inspect = CLI['inspect_app']
+        rpc = Mock(return_value=str(self.container))
+        with patch.dict(inspect.__globals__, simctl=rpc, InspectorBridge=bridge, control=status), redirect_stderr(StringIO()):
+            with self.assertRaises(Ready):
+                inspect(args, self.DEVICE)
+        self.assertEqual([call.args for call in rpc.call_args_list],
+                         [('get_app_container', self.DEVICE, self.args.bundle, 'data')])
+        self.assertIsNone(args.app_container, 'connection cache must not mutate caller arguments')
+
     def test_cached_container_rejects_another_device_without_writing(self):
         control = CLI['control']
         rpc = Mock(side_effect=AssertionError('target RPC unavailable'))

@@ -418,9 +418,10 @@ def inspect_app(args, device):
     if not args.app.is_dir() or args.app.suffix != ".app":
         raise RuntimeError("Build the simulator inspector first and pass inspect --app <CKSimInspector.app>.")
     print("Inspector: locating target runtime.", file=sys.stderr, flush=True)
-    container = target_container(args, device)
-    bridge = InspectorBridge(args, device, container / "Documents/.callkit-simulator")
-    status = SimpleNamespace(**dict(vars(args), operation="status", command_receipt=None))
+    container = target_container(args, device).resolve()
+    bridge_args = SimpleNamespace(**dict(vars(args), app_container=container))
+    bridge = InspectorBridge(bridge_args, device, container / "Documents/.callkit-simulator")
+    status = SimpleNamespace(**dict(vars(bridge_args), operation="status", command_receipt=None))
     print("Inspector: checking target runtime.", file=sys.stderr, flush=True)
     control(status, device, expected_session=bridge.journal.session)
     token = secrets.token_urlsafe(32)
