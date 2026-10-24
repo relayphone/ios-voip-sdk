@@ -259,15 +259,21 @@ errors disable controls. A control timeout means its outcome is unknown: inspect
 the timeline before retrying. No inspector transport or app code is linked into
 the SDK or device builds.
 
-On PRs and main, runtime M4 CI builds the inspector, tests the bridge, and checks
-the shared channel through the shipping watcher. Explicitly dispatch the
-"Runtime event stream and inspector" workflow to also tap Answer through
-XCUITest and publish the banner, full-screen call, answered state and timeline.
-Hosted XCTest startup is unreliable; GUI failures remain visible in dispatched
-runs. A green PR/main check therefore does not assert a completed GUI journey.
+On relevant PRs and main, runtime CI builds the inspector, tests the bridge,
+checks the shared channel through the shipping watcher, and automatically runs
+the GUI journey. XCUITest expands the incoming banner, taps Answer, and checks
+the connected call, audio activation and live timeline. The host also requires a
+fulfilled system-origin answer and audio activation in the pinned runtime
+journal. Screenshots are diagnostic attachments; assertions use UI elements and
+runtime events. The workflow can also be dispatched for investigation.
+
+**Measured:** [automatic GUI run on iOS 27.0](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40054387509)
+passed the complete journey on the deterministic fixture. The fixture receives
+its initial stimulus only after host readiness, and the GUI stimulus only after
+the test case starts, so slow launch transport cannot consume the initial ring.
+
 Runtime/inspector CI uses the `xcode-27` runner with Xcode 27.1 and explicitly
 requires the iOS 27.0 simulator runtime; it refuses to substitute another OS.
 Artifacts include the compiler/runtime inventory, build logs, and the original
 runtime journal on success or failure. Failed journeys also attempt bounded
-simulator logs and screenshots before deleting their simulators. GUI acceptance
-remains manual until the automatic journey is qualified.
+simulator logs and screenshots before deleting their simulators.
