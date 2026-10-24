@@ -17,6 +17,7 @@ struct TimingReferenceTests {
     try latestAttemptDoesNotReuseOldMeasurements()
     try answerInvalidation()
     try overlappingMuteEchoesAreAmbiguous()
+    try muteValuesComeFromDeliveredTransactions()
     print("Inspector timing reference tests passed")
   }
 
@@ -200,5 +201,103 @@ struct TimingReferenceTests {
     let duplicateEcho = try mute(4, 16, "e1", echo: true)
     precondition(metric("muteEcho", [first, duplicate, completedEcho, duplicateEcho, subsequent, subsequentEcho]).actualMS == 15,
       "Duplicate action IDs cannot create or consume extra outstanding fulfillments")
+    let repeatedEndpoint = try mute(6, 115, "e1", echo: true)
+    precondition(metric("muteEcho", [first, duplicate, completedEcho, duplicateEcho, subsequent, repeatedEndpoint]).actualMS == nil,
+      "An echo already seen before the latest fulfillment cannot be reused as its endpoint")
+    let repeatedStart = try mute(5, 100, "m1")
+    precondition(metric("muteEcho", [first, duplicate, completedEcho, duplicateEcho, repeatedStart, subsequentEcho]).actualMS == nil,
+      "A duplicate fulfillment cannot become a new measurement start")
+    var oppositeStart = subsequent
+    oppositeStart.muted = false
+    var oppositeEcho = repeatedEndpoint
+    oppositeEcho.muted = false
+    precondition(metric("muteEcho", [first, duplicate, completedEcho, duplicateEcho, oppositeStart, oppositeEcho]).actualMS == nil,
+      "Echo IDs cannot be reused even when their reported value changes")
+    var historicalFalseEcho = try mute(1, 0, "historical-e1", echo: true)
+    historicalFalseEcho.muted = false
+    let outstandingTrue = try mute(2, 10, "historical-m1")
+    let reusedTrueEcho = try mute(3, 15, "historical-e1", echo: true)
+    let latestTrue = try mute(4, 20, "historical-m2")
+    let freshTrueEcho = try mute(5, 35, "historical-e2", echo: true)
+    precondition(metric("muteEcho", [historicalFalseEcho, outstandingTrue, reusedTrueEcho, latestTrue, freshTrueEcho]).actualMS == nil,
+      "A historical echo ID cannot discharge an obligation after being observed for another value")
+  }
+
+  static func muteValuesComeFromDeliveredTransactions() throws {
+    func decode(_ rows: [[String: Any]]) throws -> [RuntimeEvent] {
+      try rows.enumerated().map { offset, row in
+        try event(offset + 1, row["t_ms"] as! Double, row["event"] as! String, row)
+      }
+    }
+    let application: [String: Any] = ["event": "transaction.delivered", "t_ms": 0.0,
+      "transactionID": "t1", "provider": "provider1", "origin": "application",
+      "actionIDs": ["m1"], "callUUIDs": ["c1"], "kinds": ["CXSetMutedCallAction"], "parameters": [["muted": true]]]
+    let fulfilled: [String: Any] = ["event": "action.settled", "t_ms": 100.0, "kind": "mute",
+      "actionID": "m1", "transactionID": "t1", "callUUID": "c1", "provider": "provider1",
+      "origin": "application", "apiKind": "callkit", "fulfilled": true]
+    let echoTransaction: [String: Any] = ["event": "transaction.delivered", "t_ms": 115.0,
+      "transactionID": "t2", "provider": "provider1", "origin": "muteEcho",
+      "actionIDs": ["m2"], "callUUIDs": ["c1"], "kinds": ["CXSetMutedCallAction"], "parameters": [["muted": true]]]
+    let echo: [String: Any] = ["event": "action.deadline", "t_ms": 115.0, "kind": "mute",
+      "actionID": "m2", "transactionID": "t2", "callUUID": "c1", "provider": "provider1",
+      "origin": "muteEcho", "apiKind": "callkit"]
+    let native = [application, fulfilled, echoTransaction, echo]
+    let measured = metric("muteEcho", try decode(native))
+    precondition(measured.actualMS == 15 && measured.startSequence == 2 && measured.endSequence == 4,
+      "Native mute action rows omit muted; delivered transaction parameters provide the value")
+
+    let mutations: [(Int, [String: Any])] = [
+      (0, ["event": "runtime.installed"]), (0, ["provider": "other"]), (0, ["transactionID": "other"]),
+      (0, ["actionIDs": ["other"]]), (0, ["callUUIDs": ["other"]]), (0, ["parameters": [[:]]]),
+      (0, ["kinds": ["CXSetHeldCallAction"]]), (0, ["origin": "system"]), (0, ["t_ms": 101.0]),
+      (0, ["actionIDs": ["m1", "m1"], "callUUIDs": ["c1", "c1"],
+           "kinds": ["CXSetMutedCallAction", "CXSetMutedCallAction"], "parameters": [["muted": true], ["muted": true]]]),
+      (0, ["actionIDs": ["m1", "other"]]), (1, ["muted": false]), (2, ["parameters": [["muted": false]]]),
+      (2, ["provider": "other"]), (2, ["event": "runtime.installed"])
+    ]
+    for (index, fields) in mutations {
+      var rows = native
+      rows[index].merge(fields) { _, new in new }
+      let decoded = try decode(rows)
+      precondition(metric("muteEcho", decoded).actualMS == nil, "Unknown or contradictory transaction metadata is unavailable")
+    }
+    let duplicate = try decode([application, application, fulfilled, echoTransaction, echo])
+    precondition(metric("muteEcho", duplicate).actualMS == nil, "A reused transaction ID is ambiguous")
+    var multiple = native
+    multiple[0].merge(["actionIDs": ["unrelated", "m1"], "callUUIDs": ["other", "c1"],
+      "kinds": ["CXEndCallAction", "CXSetMutedCallAction"], "parameters": [[:], ["muted": true]]]) { _, new in new }
+    let indexed = try decode(multiple)
+    precondition(metric("muteEcho", indexed).actualMS == 15, "Select the parameter by the matching action ID, not array position zero")
+    var unmute = native
+    unmute[0]["parameters"] = [["muted": false]]
+    unmute[2]["parameters"] = [["muted": false]]
+    let unmuted = try decode(unmute)
+    precondition(metric("muteEcho", unmuted).actualMS == 15, "Unmute resolves the false value from both transactions")
+    var overlappingTransaction = application
+    overlappingTransaction.merge(["t_ms": 105.0, "transactionID": "t3", "actionIDs": ["m3"]]) { _, new in new }
+    var overlappingFulfillment = fulfilled
+    overlappingFulfillment.merge(["t_ms": 110.0, "transactionID": "t3", "actionID": "m3"]) { _, new in new }
+    let overlapping = try decode([application, fulfilled, overlappingTransaction, overlappingFulfillment, echoTransaction, echo])
+    precondition(metric("muteEcho", overlapping).actualMS == nil, "Native metadata does not establish which overlapping fulfillment owns an echo")
+    var unknownOlder = fulfilled
+    unknownOlder.merge(["t_ms": -10.0, "transactionID": "missing", "actionID": "older"]) { _, new in new }
+    let unknown = try decode([["event": "runtime.installed", "t_ms": -20.0], unknownOlder] + native)
+    precondition(metric("muteEcho", unknown).actualMS == nil, "An unresolved older obligation cannot be silently skipped")
+    let specifications: [(Bool, Bool, String, String, Double)] = [
+      (true, false, "historical-e1", "he1-false", 0), (false, true, "historical-m1", "hm1", 10),
+      (true, true, "historical-e1", "he1-true", 15), (false, true, "historical-m2", "hm2", 20),
+      (true, true, "historical-e2", "he2", 35)
+    ]
+    var historical: [[String: Any]] = []
+    for (isEcho, value, id, transactionID, time) in specifications {
+      var delivered = isEcho ? echoTransaction : application
+      delivered.merge(["t_ms": time, "transactionID": transactionID, "actionIDs": [id], "parameters": [["muted": value]]]) { _, new in new }
+      var action = isEcho ? echo : fulfilled
+      action.merge(["t_ms": time, "transactionID": transactionID, "actionID": id]) { _, new in new }
+      historical += [delivered, action]
+    }
+    let reusedHistoricalID = try decode(historical)
+    precondition(metric("muteEcho", reusedHistoricalID).actualMS == nil,
+      "Native parameter resolution cannot let a cross-value duplicate echo discharge the true obligation")
   }
 }

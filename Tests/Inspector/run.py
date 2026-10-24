@@ -168,6 +168,42 @@ def verify_probe_journal(receipts, rows, session):
             assert receipt['incomingFilter'] == (configured[-1]['reason'] if configured else 'none')
 
 
+def journal_mute_value(action, rows):
+    """Resolve native mute parameters without trusting the Inspector's projection."""
+    identity = ('schemaVersion', 'runID', 'pid', 'bundleID')
+    if not all(type(action.get(key)) is str and action[key] for key in ('transactionID', 'provider', 'actionID', 'callUUID')):
+        return None
+    transactions = [row for row in rows if row['event'] == 'transaction.delivered' and
+                    all(key in row and key in action and row[key] == action[key] for key in identity) and
+                    row.get('transactionID') == action['transactionID']]
+    direct = action.get('muted')
+    if not transactions:
+        return direct if type(direct) is bool else None
+    if len(transactions) != 1:
+        return None
+    transaction = transactions[0]
+    if transaction.get('provider') != action['provider'] or transaction.get('origin') != action.get('origin'):
+        return None
+    if (type(transaction.get('sequence')) is not int or type(action.get('sequence')) is not int or
+            transaction['sequence'] >= action['sequence'] or
+            any(type(row.get('t_ms')) not in (int, float) or not math.isfinite(row['t_ms']) for row in (transaction, action)) or
+            transaction['t_ms'] > action['t_ms']):
+        return None
+    actions, calls, kinds, parameters = [transaction.get(key) for key in ('actionIDs', 'callUUIDs', 'kinds', 'parameters')]
+    if (not all(type(value) is list for value in (actions, calls, kinds, parameters)) or not actions or
+            not len(actions) == len(calls) == len(kinds) == len(parameters) or
+            not all(type(value) is str and value for value in actions + calls + kinds) or
+            len(set(actions)) != len(actions) or not all(type(value) is dict for value in parameters) or
+            action['actionID'] not in actions):
+        return None
+    index = actions.index(action['actionID'])
+    value = parameters[index].get('muted')
+    if (action.get('kind') != 'mute' or kinds[index] != 'CXSetMutedCallAction' or calls[index] != action['callUUID'] or
+            type(value) is not bool or direct is not None and (type(direct) is not bool or direct != value)):
+        return None
+    return value
+
+
 def verify_timing_reference_journal(receipt, rows, required=()):
     """Require measured values to cite retained, correlated original journal rows."""
     references = {'pushReport': '≈190 ms', 'answerAudio': '≈236 ms',
@@ -224,26 +260,44 @@ def verify_timing_reference_journal(receipt, rows, required=()):
             assert end['event'] == 'action.deadline' and end.get('kind') == 'mute' and end.get('origin') == 'muteEcho'
             assert start.get('callUUID') and start['callUUID'] == end.get('callUUID')
             assert all(row.get(key) for row in (start, end) for key in ('actionID', 'transactionID'))
-            assert type(start.get('muted')) is bool and start['muted'] == end.get('muted')
+            identity = ('schemaVersion', 'runID', 'pid', 'bundleID')
+            same_runtime = [row for row in originals if all(row.get(key) == start.get(key) for key in identity)]
+            assert not any(row['sequence'] < end_sequence and row['event'] == 'action.deadline' and
+                           row.get('actionID') == end['actionID'] for row in same_runtime), 'Echo action ID was already observed'
+            assert not any(row['sequence'] < start_sequence and row['event'] == 'action.settled' and
+                           row.get('fulfilled') is True and row.get('actionID') == start['actionID'] for row in same_runtime), 'Fulfillment action ID was already settled'
+            muted = journal_mute_value(start, originals)
+            assert type(muted) is bool and muted == journal_mute_value(end, originals)
             assert start.get('apiKind') in ('callkit', 'livecommunicationkit') and start['apiKind'] == end.get('apiKind')
             assert start.get('provider') and start['provider'] == end.get('provider')
             assert originals[0]['sequence'] == 1, 'Truncated history cannot establish outstanding mute obligations'
-            mute_key = ('schemaVersion', 'runID', 'pid', 'bundleID', 'callUUID', 'muted', 'apiKind', 'provider')
-            matching = [row for row in originals if row.get('kind') == 'mute' and
-                        all(row.get(key) == start.get(key) for key in mute_key)]
-            outstanding, fulfilled_ids, echo_ids = 0, set(), set()
-            for row in matching:
+            mute_key = ('schemaVersion', 'runID', 'pid', 'bundleID', 'callUUID', 'apiKind', 'provider')
+            outstanding, fulfilled_ids, delivery_ids = 0, set(), set()
+            for row in same_runtime:
+                if row['sequence'] >= end_sequence:
+                    continue
+                first_delivery = False
+                if row['event'] == 'action.deadline' and type(row.get('actionID')) is str and row['actionID']:
+                    first_delivery = row['actionID'] not in delivery_ids
+                    delivery_ids.add(row['actionID'])
+                if row.get('kind') != 'mute' or not all(row.get(key) == start.get(key) for key in mute_key):
+                    continue
                 fulfillment = row['event'] == 'action.settled' and row.get('origin') == 'application' and row.get('fulfilled') is True
+                echo = row['event'] == 'action.deadline' and row.get('origin') == 'muteEcho'
+                if not (fulfillment or echo):
+                    continue
+                resolved = journal_mute_value(row, originals)
+                assert type(resolved) is bool, 'Unknown mute value leaves possible older obligations'
+                if resolved != muted:
+                    continue
                 if row['sequence'] < start_sequence:
                     if fulfillment:
                         assert row.get('actionID') and row.get('transactionID')
                         if row['actionID'] not in fulfilled_ids:
                             fulfilled_ids.add(row['actionID'])
                             outstanding += 1
-                    elif row['event'] == 'action.deadline' and row.get('origin') == 'muteEcho' and row.get('actionID') and row.get('transactionID'):
-                        if row['actionID'] not in echo_ids:
-                            echo_ids.add(row['actionID'])
-                            outstanding = max(0, outstanding - 1)
+                    elif echo and first_delivery and row.get('transactionID'):
+                        outstanding = max(0, outstanding - 1)
                 elif start_sequence < row['sequence'] < end_sequence and fulfillment:
                     assert row.get('actionID') == start.get('actionID'), 'Competing app fulfillment makes mute echo ambiguous'
             assert outstanding == 0, 'Older outstanding app fulfillments make mute echo ambiguous'

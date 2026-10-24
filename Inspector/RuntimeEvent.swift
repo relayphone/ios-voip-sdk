@@ -1,5 +1,12 @@
 import Foundation
 
+struct RuntimeActionParameters: Codable {
+  var held: Bool?
+  var muted: Bool?
+  var digits: String?
+  var groupTargetUUID: String?
+}
+
 // Journal errors and reasons can be numeric codes or text.
 enum RuntimeEventError: Codable {
   case code(Int)
@@ -45,6 +52,10 @@ struct RuntimeEvent: Codable, Identifiable {
   var filterReason: String?
   var verification: String?
   var incomingErrorCode: Int?
+  var actionIDs: [String]?
+  var callUUIDs: [String]?
+  var kinds: [String]?
+  var parameters: [RuntimeActionParameters]?
   var kind: String?
   var origin: String?
   var apiKind: String?

@@ -49,7 +49,8 @@ enum RuntimeTimingReferences {
     let candidateEcho = interval(from: mute, in: timeline) { start, end in
       start.fulfilled == true && end.event == "action.deadline" && end.kind == "mute" && end.origin == "muteEcho" &&
         nonempty(start.actionID) && nonempty(start.transactionID) && nonempty(end.actionID) && nonempty(end.transactionID) &&
-        nonempty(start.callUUID) && start.callUUID == end.callUUID && start.muted != nil && start.muted == end.muted &&
+        nonempty(start.callUUID) && start.callUUID == end.callUUID &&
+        muteValue(start, in: timeline) != nil && muteValue(start, in: timeline) == muteValue(end, in: timeline) &&
         apiLabel(start.apiKind) != nil && start.apiKind == end.apiKind &&
         nonempty(start.provider) && start.provider == end.provider
     }
@@ -74,32 +75,69 @@ enum RuntimeTimingReferences {
     }
   }
 
+  // Native action rows omit the value; the delivered transaction records it once.
+  private static func muteValue(_ action: RuntimeEvent, in timeline: [RuntimeEvent]) -> Bool? {
+    guard nonempty(action.actionID), nonempty(action.transactionID), nonempty(action.provider),
+          nonempty(action.callUUID), nonempty(action.origin), action.t_ms.isFinite else { return nil }
+    let transactions = timeline.filter {
+      $0.event == "transaction.delivered" && $0.transactionID == action.transactionID &&
+        $0.schemaVersion == action.schemaVersion && $0.runID == action.runID &&
+        $0.pid == action.pid && $0.bundleID == action.bundleID
+    }
+    guard !transactions.isEmpty else { return action.muted }
+    guard transactions.count == 1, let transaction = transactions.first,
+          transaction.provider == action.provider, transaction.origin == action.origin,
+          transaction.sequence < action.sequence, transaction.t_ms.isFinite, transaction.t_ms <= action.t_ms,
+          let ids = transaction.actionIDs, !ids.isEmpty, ids.allSatisfy({ !$0.isEmpty }), Set(ids).count == ids.count,
+          let calls = transaction.callUUIDs, calls.count == ids.count, calls.allSatisfy({ !$0.isEmpty }),
+          let kinds = transaction.kinds, kinds.count == ids.count, kinds.allSatisfy({ !$0.isEmpty }),
+          let parameters = transaction.parameters, parameters.count == ids.count,
+          let index = ids.firstIndex(of: action.actionID!), calls[index] == action.callUUID,
+          kinds[index] == "CXSetMutedCallAction", let value = parameters[index].muted,
+          action.muted == nil || action.muted == value else { return nil }
+    return value
+  }
+
   // Echo actions carry fresh IDs rather than their originating action ID.
   // Count obligations without assuming an ordering relationship between echoes.
   private static func muteEchoIsUnambiguous(_ interval: Interval, in timeline: [RuntimeEvent]) -> Bool {
     guard timeline.first?.sequence == 1 else { return false }
     let start = interval.start
+    guard let value = muteValue(start, in: timeline) else { return false }
     var outstanding = 0
     var fulfilledIDs = Set<String>()
-    var echoIDs = Set<String>()
+    var deliveredIDs = Set<String>()
     for row in timeline where row.sequence < interval.end.sequence {
       guard row.runID == start.runID, row.pid == start.pid, row.bundleID == start.bundleID,
-            row.schemaVersion == start.schemaVersion, row.kind == "mute", row.callUUID == start.callUUID,
-            row.muted == start.muted, row.apiKind == start.apiKind, row.provider == start.provider else { continue }
+            row.schemaVersion == start.schemaVersion else { continue }
+      if row.event == "action.deadline", row.actionID == interval.end.actionID { return false }
+      if row.sequence < start.sequence, row.event == "action.settled", row.fulfilled == true,
+         row.actionID == start.actionID { return false }
+      // A delivery ID is consumed even when its value is irrelevant to this pair.
+      let firstDelivery: Bool
+      if row.event == "action.deadline", let id = row.actionID, !id.isEmpty {
+        firstDelivery = deliveredIDs.insert(id).inserted
+      } else { firstDelivery = false }
+      guard row.kind == "mute", row.callUUID == start.callUUID,
+            row.apiKind == start.apiKind, row.provider == start.provider else { continue }
       let fulfillment = row.event == "action.settled" && row.origin == "application" && row.fulfilled == true
+      let echo = row.event == "action.deadline" && row.origin == "muteEcho"
+      guard fulfillment || echo else { continue }
+      guard let rowValue = muteValue(row, in: timeline) else { return false }
+      guard rowValue == value else { continue }
       if row.sequence < start.sequence {
         if fulfillment {
           guard let id = row.actionID, !id.isEmpty, nonempty(row.transactionID) else { return false }
+          guard id != start.actionID else { return false }
           if fulfilledIDs.insert(id).inserted { outstanding += 1 }
-        } else if row.event == "action.deadline", row.origin == "muteEcho",
-                  let id = row.actionID, !id.isEmpty, nonempty(row.transactionID), echoIDs.insert(id).inserted {
+        } else if echo, firstDelivery, nonempty(row.transactionID) {
           outstanding = max(0, outstanding - 1)
         }
       } else if row.sequence > start.sequence, fulfillment, row.actionID != start.actionID {
         return false
       }
     }
-    return outstanding == 0
+    return outstanding == 0 && !deliveredIDs.contains(interval.end.actionID ?? "")
   }
 
   // Audio activation is process-wide in the journal. An intervening audio trigger
