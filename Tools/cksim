@@ -233,8 +233,9 @@ def control(args, device, expected_session=None):
         os.chmod(temporary, 0o600)
         json.dump(command, output)
     temporary.rename(temporary.with_suffix(".json"))
-    notifier = args.runtime_dir.resolve() / "cksim-notify"
-    simctl("spawn", device, notifier, session["notification"])
+    if session.get("controlTransport") != "directory-watch-v1":
+        notifier = args.runtime_dir.resolve() / "cksim-notify"
+        simctl("spawn", device, notifier, session["notification"])
     response_path = mailbox / f"responses/{identifier}.json"
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:

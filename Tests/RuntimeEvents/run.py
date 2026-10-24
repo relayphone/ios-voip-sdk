@@ -151,6 +151,7 @@ def main():
         sim('bootstatus', device, '-b', timeout=300)
         root, run_id = launch_fixture(device, args.app)
         session = fixture_session(root, run_id)
+        assert session.get('controlTransport') == 'directory-watch-v1', 'fixture must support spawn-free mailbox controls'
         journal = root / session['runID'] / 'events.jsonl'
         def rows():
             return [json.loads(line) for line in journal.read_text().splitlines()]

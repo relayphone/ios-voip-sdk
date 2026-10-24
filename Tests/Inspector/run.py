@@ -70,6 +70,7 @@ def main():
         print('Installing target fixture before booting the inspector display.', flush=True)
         channel, run_id = launch_fixture(target, args.fixture)
         session = fixture_session(channel, run_id)
+        assert session.get('controlTransport') == 'directory-watch-v1', 'fixture must support spawn-free mailbox controls'
         common = [str(ROOT/'Tools/cksim'),'--simulator',target,'--bundle',BUNDLE,
                   '--runtime-dir',str(args.package.resolve())]
         display = device(args.display_simulator, 'M4 Inspector ')
