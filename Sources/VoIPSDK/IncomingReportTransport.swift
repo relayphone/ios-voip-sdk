@@ -32,7 +32,7 @@ final class IncomingReportTransport: @unchecked Sendable {
       try await manager.reportNewIncomingConversation(uuid: reservation.id, update: update)
       return .reported
     } catch {
-      return IncomingReportErrors.isAlreadyReported(error) ? .alreadyReported(error) : .failed(error)
+      return ConversationSystemErrors.isAlreadyReported(error) ? .alreadyReported(error) : .failed(error)
     }
   }
 }
