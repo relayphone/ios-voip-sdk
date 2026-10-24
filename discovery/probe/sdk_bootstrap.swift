@@ -8,7 +8,7 @@ import ObjectiveC
 final class SDKBootstrapProbe: NSObject, UIApplicationDelegate {
   private var failures = 0
 
-  private func trace(_ event: String, _ fields: [String: Any] = [:]) {
+  fileprivate static func trace(_ event: String, _ fields: [String: Any] = [:]) {
     var row = fields
     row["event"] = event
     row["t_ms"] = Int(ProcessInfo.processInfo.systemUptime * 1000)
@@ -24,10 +24,11 @@ final class SDKBootstrapProbe: NSObject, UIApplicationDelegate {
 
   private func check(_ condition: Bool, _ label: String) {
     if !condition { failures += 1 }
-    trace("bootstrap.check", ["label": label, "passed": condition])
+    Self.trace("bootstrap.check", ["label": label, "passed": condition])
   }
 
   func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+    Self.trace("bootstrap.didFinishLaunching")
     return true
   }
 
@@ -37,7 +38,7 @@ final class SDKBootstrapProbe: NSObject, UIApplicationDelegate {
     let runtimeInjected = inserted.contains { entry in
       ["CKSimRuntime.dylib", "CKSimLoader.dylib"].contains(URL(fileURLWithPath: String(entry)).lastPathComponent)
     }
-    trace("launch", ["mode": mode, "injected": runtimeInjected])
+    Self.trace("launch", ["mode": mode, "injected": runtimeInjected])
     check(!CKSimRuntimeIsActive(), "explicit-activation-required")
     let provider = CXProvider(configuration: CXProviderConfiguration())
     let controller = CXCallController(queue: .main)
@@ -80,11 +81,11 @@ final class SDKBootstrapProbe: NSObject, UIApplicationDelegate {
       let after = snapshot()
       check(before == after, "all-root-concrete-action-push-imps-restored")
       for (index, entry) in entries.enumerated() where before[index] != after[index] {
-        trace("bootstrap.changedIMP", ["class": NSStringFromClass(entry.0), "selector": entry.1])
+        Self.trace("bootstrap.changedIMP", ["class": NSStringFromClass(entry.0), "selector": entry.1])
       }
       check(!SimulatorSupport.activateIfNeeded() && before == snapshot(), "refusal-idempotent")
     }
-    trace("done", ["success": failures == 0, "checks": mode == "healthy" ? 4 : 5, "snapshots": entries.count])
+    Self.trace("done", ["success": failures == 0, "checks": mode == "healthy" ? 4 : 5, "snapshots": entries.count])
   }
 }
 
@@ -93,6 +94,7 @@ final class SDKBootstrapProbe: NSObject, UIApplicationDelegate {
 final class SDKBootstrapScene: UIResponder, UIWindowSceneDelegate {
   var window: UIWindow?
   func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+    SDKBootstrapProbe.trace("bootstrap.scene-entry")
     guard let scene = scene as? UIWindowScene else { return }
     window = UIWindow(windowScene: scene)
     window?.rootViewController = UIViewController()
@@ -104,6 +106,7 @@ final class SDKBootstrapScene: UIResponder, UIWindowSceneDelegate {
 @main
 struct SDKBootstrapMain {
   @MainActor static func main() {
+    SDKBootstrapProbe.trace("app.entry")
     UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(SDKBootstrapProbe.self))
   }
 }

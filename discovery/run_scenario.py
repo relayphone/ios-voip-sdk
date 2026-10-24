@@ -280,13 +280,29 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
         finally:
             if process is not None:
                 result["launchExitCode"] = process.returncode
-        reader_stop.set()
         reader_started = reader is not None and reader.ident is not None
         if reader_started:
+            # Let closed streams reach EOF within the existing reader budget so
+            # shutdown-flushed bytes are queued before requesting a reader stop.
             reader.join(timeout=1)
             if reader.is_alive():
                 result["success"] = False
                 result["cleanupError"] = "console reader did not stop"
+        reader_stop.set()
+        if reader_started and not result["success"]:
+            # Diagnostic tail only: late protocol rows cannot change the outcome.
+            # Bound retained bytes without waiting for output or touching its FDs.
+            remaining = 65536
+            with output.open("ab") as log:
+                while remaining:
+                    try:
+                        tail = messages.get_nowait()
+                    except queue.Empty:
+                        break
+                    if isinstance(tail, bytes):
+                        tail = tail[:remaining]
+                        log.write(tail)
+                        remaining -= len(tail)
         # A started reader owns its descriptor until exit, including a failed join.
         # Never close/reuse that descriptor underneath a still-running reader.
         if master is not None and not reader_started:
