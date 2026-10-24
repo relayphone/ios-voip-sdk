@@ -86,9 +86,10 @@ final class MultiCallUITests: XCTestCase {
   func element(_ app: XCUIApplication, _ labels: [String], timeout: TimeInterval = 8) -> XCUIElement? {
     let deadline = Date().addingTimeInterval(timeout)
     repeat {
+      // The first hittable match: a confirmation sheet's button shares its label with the cell behind it.
       for l in labels {
-        let el = app.descendants(matching: .any).matching(NSPredicate(format: "label ==[c] %@ OR identifier ==[c] %@", l, l)).firstMatch
-        if el.exists && el.isHittable { return el }
+        let matches = app.descendants(matching: .any).matching(NSPredicate(format: "label ==[c] %@ OR identifier ==[c] %@", l, l))
+        if let el = matches.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable }) { return el }
       }
       Thread.sleep(forTimeInterval: 0.3)
     } while Date() < deadline
@@ -106,6 +107,12 @@ final class MultiCallUITests: XCTestCase {
 
   func openBlockContact() -> Bool {
     contacts.activate()
+    // Contacts reopens on the last card it showed; use it when it is the probe contact.
+    if element(contacts, [blockName], timeout: 3) != nil, contacts.buttons["Edit"].exists { return true }
+    for _ in 0..<3 where !contacts.searchFields.firstMatch.exists {
+      guard let back = element(contacts, ["Back", "BackButton", "Contacts"], timeout: 2) else { break }
+      back.tap()
+    }
     guard let search = element(contacts, ["Search"], timeout: 10) else { dump("contacts-no-search", apps: [("contacts", contacts)]); return false }
     search.tap(); search.typeText(blockName)
     guard let cell = element(contacts, [blockName], timeout: 8) else { dump("contacts-no-result", apps: [("contacts", contacts)]); return false }
@@ -164,6 +171,25 @@ final class MultiCallUITests: XCTestCase {
     return !remaining
   }
 
+  // Read-only: Settings → Apps → Phone → Blocked Contacts, dumped to confirm the probe number is gone.
+  func checkBlockedList() -> Bool {
+    let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
+    settings.terminate(); settings.launch()
+    guard let apps = scrollTo(settings, ["Apps"]) else { dump("settings-no-apps", apps: [("settings", settings)]); return false }
+    apps.tap()
+    guard let phone = scrollTo(settings, ["Phone"]) else { dump("settings-no-phone", apps: [("settings", settings)]); return false }
+    phone.tap()
+    guard let blocked = scrollTo(settings, ["Blocked Contacts"]) else { dump("settings-no-blocked", apps: [("settings", settings)]); return false }
+    blocked.tap()
+    Thread.sleep(forTimeInterval: 1.5)
+    let present = element(settings, ["+1 (555) 555-0199", "LCK Block Probe"], timeout: 2) != nil
+    log("blocked list contains probe number: \(present)")
+    dump("settings-blocked-list", apps: [("settings", settings)])
+    settings.terminate()
+    XCUIDevice.shared.press(.home)
+    return !present
+  }
+
   // MARK: Row driver
 
   func waitDone(_ seconds: TimeInterval) {
@@ -196,6 +222,7 @@ final class MultiCallUITests: XCTestCase {
       case "accept": ok = tap(["Accept", "Answer call"], timeout: Double(arg) ?? 30, as: "accept")
       case "holdAccept": ok = tap(["Hold & Accept"], timeout: Double(arg) ?? 45, as: "hold-accept")
       case "endAccept": ok = tap(["End & Accept"], timeout: Double(arg) ?? 45, as: "end-accept")
+      case "endHeldAccept": ok = tap(["End Held & Accept"], timeout: Double(arg) ?? 45, as: "end-held-accept")
       case "decline": ok = tap(["Decline"], timeout: Double(arg) ?? 30, as: "decline")
       case "swap": ok = tap(["Swap", "Swap calls"], timeout: Double(arg) ?? 10, as: "swap")
       case "merge":
@@ -213,6 +240,7 @@ final class MultiCallUITests: XCTestCase {
       case "home": XCUIDevice.shared.press(.home); ok = true
       case "contactsBlock": ok = contactsBlock()
       case "contactsUnblock": ok = contactsUnblock()
+      case "checkBlockedList": ok = checkBlockedList()
       case "done": waitDone(Double(arg) ?? 90); ok = true
       default: log("unknown step \(step)"); ok = false
       }

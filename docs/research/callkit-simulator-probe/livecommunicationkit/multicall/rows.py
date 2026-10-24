@@ -6,6 +6,7 @@ rows.py NAME ui      -> JSON array for MultiCallUITests (TEST_RUNNER_MULTI_UI)
 rows.py list         -> row names in run order
 """
 import json
+import os
 import sys
 
 
@@ -45,7 +46,11 @@ ROWS = {
     "unmerge-singleton": row(answer() + act("unmerge", "A"), ["accept", "done:40"], per_group=2),
     "grouped-hold-accept-move": row(
         answer() + waiting() + act("merge", "B", "A") + waiting("C") + act("merge", "A", "C") + act("unmerge", "A"),
-        ["accept", "holdAccept", "holdAccept", "done:100"], per_group=2),
+        ["accept", "holdAccept", "choices:45", "done:100"], per_group=2),
+    # With A held and B joined, a third call offers End & Accept, Decline and End Held & Accept (no Hold & Accept).
+    "third-end-held-accept": row(answer() + waiting() + act("merge", "B", "A") + waiting("C"),
+                                 ["accept", "holdAccept", "endHeldAccept", "done:80"], per_group=2),
+    "third-end-accept": row(answer() + waiting() + waiting("C"), ["accept", "holdAccept", "endAccept", "done:80"]),
     "grouped-end-accept": row(answer() + waiting() + act("merge", "B", "A") + waiting("C"),
                               ["accept", "holdAccept", "endAccept", "done:80"], per_group=2),
     "cap-1x1": row(answer() + [{"op": "incoming", "id": "B"}, {"op": "waitState", "id": "B", "state": "joined", "timeout": 30},
@@ -57,10 +62,11 @@ ROWS = {
     "cap-1x2": row(answer() + [{"op": "incoming", "id": "B"}, {"op": "waitState", "id": "B", "state": "joined", "timeout": 30},
                                {"op": "snapshot", "label": "B"}] + act("merge", "B", "A") + act("outgoing", "D"),
                    ["accept", "choices:25", "?holdAccept:5", "?endAccept:5", "done:90"], groups=1, per_group=2),
+    # Two groups of two: after an app merge of B into A, the third call C still has no Hold & Accept.
     "cap-2x2": row(answer() + waiting() + act("merge", "B", "A") + waiting("C")
                    + [{"op": "incoming", "id": "D"}, {"op": "waitState", "id": "D", "state": "joined", "timeout": 20},
                       {"op": "snapshot", "label": "D"}] + act("outgoing", "E"),
-                   ["accept", "holdAccept", "holdAccept", "choices:20", "?decline:5", "done:100"], per_group=2),
+                   ["accept", "holdAccept", "choices:45", "endHeldAccept:5", "choices:20", "?decline:5", "done:100"], per_group=2),
     "caps-none": row(answer() + [{"op": "incoming", "id": "B"}, {"op": "waitState", "id": "B", "state": "joined", "timeout": 30},
                                  {"op": "snapshot", "label": "B"}] + act("pause", "A"),
                      ["accept", "choices:25", "?holdAccept:5", "?endAccept:5", "done:80"], capabilities=[]),
@@ -88,7 +94,13 @@ ROWS = {
         {"op": "incoming", "id": "X", "handle": "+15555550199", "name": "LCK Block Probe"}, {"op": "wait", "s": 62},
         {"op": "incoming", "id": "X2", "handle": "+15555550199", "name": "LCK Block Probe"}, {"op": "wait", "s": 5}]},
         "ui": ["?dismiss:3", "contactsBlock", "launch", "done:150"]},
-    "filter-unblock": {"config": None, "ui": ["contactsUnblock"]},
+    # The number stays blocked from filter-block: records what the screen shows while it reports.
+    "filter-block-check": {"config": {"maxSeconds": 60, "steps": [
+        {"op": "incoming", "id": "X", "handle": "+15555550199", "name": "LCK Block Probe"}, {"op": "wait", "s": 10},
+        {"op": "snapshot", "label": "blocked-after-10s"}]},
+        "ui": ["?dismiss:3", "launch", "wait:4", "dump:blocked-call", "?choices:3", "done:40"]},
+    "filter-unblock": {"config": None, "ui": ["contactsUnblock", "checkBlockedList"]},
+    "filter-blocked-list": {"config": None, "ui": ["checkBlockedList"]},
     # Last: the lock screen shows the full in-call UI (swap and merge); the phone stays locked afterwards.
     "locked-system-ui": row(answer() + [{"op": "wait", "s": 6}] + waiting() + [{"op": "wait", "s": 25}, {"op": "snapshot", "label": "locked-end"}],
                             ["accept", "wait:2", "lock", "holdAccept:45", "wait:3", "dump:locked-two-calls", "?swap:8", "wait:3",
@@ -96,12 +108,17 @@ ROWS = {
 }
 
 
+LOCKED = "locked-system-ui"  # leaves the phone locked, so `run.sh locked` runs it alone, after everything else
+
+
 def main():
     if sys.argv[1] == "list":
-        print("\n".join(ROWS))
+        print("\n".join(r for r in ROWS if r != LOCKED))
         return
     name, part = sys.argv[1], sys.argv[2]
     spec = ROWS[name]
+    if name == LOCKED and os.environ.get("LCK_LOCKED") != "1":
+        spec = {"config": None, "ui": ["?dismiss:3"]}
     if part == "config":
         cfg = spec["config"]
         print(json.dumps({"row": name, **cfg}) if cfg else "{}")
