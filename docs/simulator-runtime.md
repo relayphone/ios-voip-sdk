@@ -261,19 +261,37 @@ the SDK or device builds.
 
 On relevant PRs and main, runtime CI builds the inspector, tests the bridge,
 checks the shared channel through the shipping watcher, and automatically runs
-the GUI journey. XCUITest expands the incoming banner, taps Answer, and checks
-the connected call, audio activation and live timeline. The host also requires a
-fulfilled system-origin answer and audio activation in the pinned runtime
-journal. Screenshots are diagnostic attachments; assertions use UI elements and
-runtime events. The workflow can also be dispatched for investigation.
+live Inspector acceptance. The workflow owns one disposable iPhone 17 Pro for
+both native and Inspector acceptance. It starts a fresh fixture session for each
+stage, without reinstalling the fixture between them, and always deletes that
+simulator.
 
-**Measured:** [automatic GUI run on iOS 27.0](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40054387509)
-passed the complete journey on the deterministic fixture. The fixture receives
-its initial stimulus only after host readiness, and the GUI stimulus only after
-the test case starts, so slow launch transport cannot consume the initial ring.
+The automatic `--driver journal` journey uses `cksim` to inject an incoming call
+and issue one system-origin Answer. It foregrounds the fixture for controls and
+the real SwiftUI Inspector for observations. An opt-in Inspector receipt records
+its actual consumed model and timeline presentation; the host pins the nonce,
+process, target session and cursor, rejects stale data, and matches incoming,
+connected, audio and fulfilled-answer projections against the original runtime
+journal. One 25-second deadline bounds the Inspector journey. Screenshots remain
+diagnostics. Optional `--driver xctest` acceptance checks banner expansion,
+buttons and full-screen navigation on a separate display simulator.
+
+Current runtime sessions watch atomic command-mailbox publication, so controls
+do not need a `simctl spawn` wake helper. The Inspector reuses its validated
+container path for subsequent reads and controls. Older runtime packages retain
+a bounded notifier fallback. Normal Inspector launches do not write acceptance
+receipts; the test enables them with a unique launch nonce.
+
+**Measured:** [automatic native and GUI run](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40067131951)
+passed automatic native and live Inspector acceptance
+on iOS 27.0 after the complete transport and simulator-lifecycle fix. Initial
+fixture stimulus is sent only after the host observes the fresh session, so slow
+launch transport cannot consume the initial ring. The workflow can also be
+dispatched for investigation.
 
 Runtime/inspector CI uses the `xcode-27` runner with Xcode 27.1 and explicitly
 requires the iOS 27.0 simulator runtime; it refuses to substitute another OS.
-Artifacts include the compiler/runtime inventory, build logs, and the original
-runtime journal on success or failure. Failed journeys also attempt bounded
-simulator logs and screenshots before deleting their simulators.
+Artifacts include the compiler/runtime inventory, build logs, original runtime
+journal, Inspector receipts and foreground-phase diagnostics on success or
+failure. Failed journeys also attempt bounded simulator logs and screenshots
+before deleting their simulator.
