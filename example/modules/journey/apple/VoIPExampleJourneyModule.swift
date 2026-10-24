@@ -71,7 +71,7 @@ private final class ExampleJourney {
 
   private func bindClient() throws -> ConversationClient {
     if let client { return client }
-    let application = try VoIPApplication.startFromBundle()
+    let application = try ExpoMediaSupport.startFromBundle()
     let active = SimulatorSupport.activateIfNeeded()
     JourneyTrace.record("sdk.activation", ["active": active])
     let client = application.client

@@ -3,6 +3,8 @@
 import argparse
 import json
 from pathlib import Path
+import plistlib
+import re
 import subprocess
 
 from device_release_exclusion import digest, inspect_app, require
@@ -20,11 +22,36 @@ def require_provider_configuration(ios):
         require(flag in settings.get(name, []), 'generated Release pod configuration is missing ' + flag)
 
 
+def inspect_standard_webrtc(app, inspection, ios_root):
+    """Additional build/link proof; never executes backend methods or the app."""
+    require(plistlib.loads((app / 'Info.plist').read_bytes()).get('VoIPSDK', {}).get('mediaAdapter') == 'webrtc',
+            'standard backend build must select webrtc')
+    properties = json.loads((ios_root / 'Podfile.properties.json').read_text())
+    require(properties.get('ios-voip-sdk.mediaAdapter') == 'webrtc', 'standard backend pod selection differs')
+    lock = ios_root / 'Podfile.lock'
+    contents = lock.read_text()
+    for name in ('react-native-webrtc', 'JitsiWebRTC'):
+        require(re.search(r'^  - ' + name + r' \(155\.0\.1\)(?::)?$', contents, re.MULTILINE),
+                'standard backend must resolve pinned ' + name + ' 155.0.1')
+    require('LiveKitWebRTC' not in contents and 'livekit-react-native-webrtc' not in contents,
+            'standard backend build must not link the LiveKit fork')
+    owners = []
+    for name in inspection['appBinaries']:
+        result = subprocess.run(['xcrun', 'nm', '-jU', str(app / name)], capture_output=True, text=True, timeout=30)
+        require(result.returncode == 0, 'cannot inspect standard backend defined symbols')
+        if '_OBJC_CLASS_$_RTCAudioSession' in result.stdout.splitlines(): owners.append(name)
+    require(len(owners) == 1, 'require exactly one defined standard RTCAudioSession implementation')
+    return dict(qualification='pinned real-backend build/link only; no execution or audio acceptance',
+                npmVersion='155.0.1', podVersion='155.0.1', podfileLockSHA256=digest(lock),
+                definedClassImage=owners[0], imageSHA256=inspection['appBinaries'][owners[0]]['sha256'])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output', type=Path, help='fresh output directory')
     parser.add_argument('--derived-data', type=Path, help='optional existing task-owned build cache')
     parser.add_argument('--provider-diagnostics', action='store_true', help='build and inspect explicitly enabled Release diagnostics')
+    parser.add_argument('--standard-webrtc', action='store_true', help='also require the example pinned standard backend')
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -54,6 +81,8 @@ def main():
     require(len(pod_binaries) == 1, 'expected exactly one built IosVoipSDK pod binary')
     inspection = inspect_app(apps[0], pod_binaries[0], ROOT / 'example/ios/Pods/Headers/Public/IosVoipSDK',
                              args.provider_diagnostics)
+    if args.standard_webrtc:
+        inspection['standardWebRTC'] = inspect_standard_webrtc(apps[0], inspection, ROOT / 'example/ios')
     inspection.update(before, sourceAfter=after, configuration='Release', signingAllowed=False,
                       providerDiagnostics=args.provider_diagnostics,
                       buildExitCode=result.returncode, commandSHA256=digest(output / 'command.json'),
