@@ -22,6 +22,18 @@ class FilteredAcceptanceTests(unittest.TestCase):
         return assert_report_attempt(rows, call_uuid='call-A', push_id='push-A', reason='do-not-disturb',
                                      code=3, verification='verified', expected_delay_ms=2070, **options)
 
+    def test_explicit_fault_is_distinct_from_a_natural_filter(self):
+        rows = self.evidence()
+        for row in rows:
+            row.update(code=4, filterReason='none', verification='injected-fault')
+        rows[3]['error'] = 4
+        options = dict(call_uuid='call-A', push_id='push-A', reason='none', code=4,
+                       verification='injected-fault', expected_delay_ms=2070)
+        self.assertEqual(assert_report_attempt(rows, **options)['verification'], 'injected-fault')
+        rows[0]['verification'] = 'unverified'
+        with self.assertRaises(AssertionError):
+            assert_report_attempt(rows, **options)
+
     def test_observes_actual_nserror_callback(self):
         self.assertEqual(self.check(self.evidence())['code'], 3)
 

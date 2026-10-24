@@ -18,6 +18,7 @@ private struct ControlResult: Decodable {
   struct Result: Decodable {
     var actionIDs: [String]?
     var incomingFilter: InspectorIncomingFilterState?
+    var incomingErrorCode: Int?
   }
   var id: String?
   let success: Bool
@@ -45,6 +46,7 @@ private struct InspectorProbeSnapshot: Encodable {
   let timingReferences: [RuntimeTimingReadout]
   let audioActive: Bool
   let incomingFilter: InspectorIncomingFilter
+  let incomingErrorCode: Int
   let online: Bool
   let error: String?
 }
@@ -61,6 +63,7 @@ final class InspectorModel: ObservableObject {
   @Published var error: String?
   @Published var commandError: String?
   @Published var incomingFilter: InspectorIncomingFilter = .none
+  @Published var incomingErrorCode = 0
   private var cursor = 0
   private var acknowledgedActions = Set<String>()
   private var actionOrder: [String] = []
@@ -141,7 +144,7 @@ final class InspectorModel: ObservableObject {
       pending: pending.values.sorted { $0.sequence < $1.sequence }, timeline: timeline,
       timelinePresentation: timeline.map { .init(sequence: $0.sequence, title: $0.title, detail: $0.detail) },
       timingReferences: timingReferences,
-      audioActive: audioActive, incomingFilter: incomingFilter, online: online, error: error)
+      audioActive: audioActive, incomingFilter: incomingFilter, incomingErrorCode: incomingErrorCode, online: online, error: error)
     do {
       try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
       try JSONEncoder().encode(snapshot).write(to: documents.appendingPathComponent("cksim-inspector-results.json"), options: .atomic)
@@ -159,6 +162,11 @@ final class InspectorModel: ObservableObject {
       incomingFilter = state.reason
       acknowledge(id)
     }
+    if row.event == "faults.configured", let code = row.incomingErrorCode, [0, 4].contains(code),
+       let id = row.requestID, !id.isEmpty {
+      incomingErrorCode = code
+      acknowledge(id)
+    }
     if let id = row.actionID {
       acknowledge(id)
       if row.event == "action.deadline" { pending[id] = row }
@@ -174,23 +182,31 @@ final class InspectorModel: ObservableObject {
     }
   }
   func configureIncomingFilter(_ reason: InspectorIncomingFilter) {
+    submitConfiguration(["operation": "incoming-filter", "reason": reason.rawValue]) {
+      $0.incomingFilter?.isValid == true && $0.incomingFilter?.reason == reason
+    }
+  }
+  func configureIncomingError(_ code: Int) {
+    guard [0, 4].contains(code) else { return }
+    submitConfiguration(["operation": "faults", "incomingErrorCode": String(code)]) { $0.incomingErrorCode == code }
+  }
+  private func submitConfiguration(_ body: [String: String], accepting: @escaping (ControlResult.Result) -> Bool) {
     guard !busy, online else { return }
     busy = true
     Task {
       defer { busy = false }
       do {
         let response = try JSONDecoder().decode(ControlResult.self, from: await request("/command",
-          body: ["operation": "incoming-filter", "reason": reason.rawValue]))
-        guard response.success, let id = response.id, let state = response.result?.incomingFilter,
-              state.isValid, state.reason == reason else {
+          body: body))
+        guard response.success, let id = response.id, !id.isEmpty, let result = response.result, accepting(result) else {
           throw NSError(domain: "Inspector", code: 5, userInfo: [NSLocalizedDescriptionKey:
-            response.error ?? "Runtime rejected the incoming filter configuration."])
+            response.error ?? "Runtime rejected the configuration."])
         }
         let deadline = Date().addingTimeInterval(3)
         while !acknowledgedActions.contains(id) {
           guard Date() < deadline else {
             throw NSError(domain: "Inspector", code: 6, userInfo: [NSLocalizedDescriptionKey:
-              "Filter accepted, but its journal confirmation has not arrived. Check the timeline before retrying."])
+              "Configuration accepted, but its journal confirmation has not arrived. Check the timeline before retrying."])
           }
           try await Task.sleep(for: .milliseconds(25))
         }

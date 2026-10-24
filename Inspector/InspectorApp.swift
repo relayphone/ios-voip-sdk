@@ -82,7 +82,14 @@ struct InspectorView: View {
             }.accessibilityIdentifier("incoming-filter-" + reason.rawValue)
           }
         } header: { Text("Incoming report filter") } footer: {
-          Text("One filter applies to subsequent reports. Do Not Disturb returns an error after about 2.07 s; repeated calls stay filtered. Codes 4–7 and their timings are unverified.")
+          Text("One filter applies to subsequent reports. Do Not Disturb returns an error after about 2.07 s; repeated calls stay filtered. Codes 5–7 and their timings are unverified.")
+        }.disabled(model.busy || !model.online)
+        Section {
+          Toggle("Inject incoming error 4", isOn: Binding(get: { model.incomingErrorCode == 4 }, set: {
+            model.configureIncomingError($0 ? 4 : 0)
+          })).accessibilityIdentifier("inject-incoming-error-4")
+        } header: { Text("Fault injection") } footer: {
+          Text("Not produced by iOS 27.0 for LCK")
         }.disabled(model.busy || !model.online)
         Section {
           ForEach(model.timingReferences) { readout in

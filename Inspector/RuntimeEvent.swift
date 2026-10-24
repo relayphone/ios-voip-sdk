@@ -44,6 +44,7 @@ struct RuntimeEvent: Codable, Identifiable {
   var domain: String?
   var filterReason: String?
   var verification: String?
+  var incomingErrorCode: Int?
   var kind: String?
   var origin: String?
   var apiKind: String?
@@ -74,6 +75,9 @@ struct RuntimeEvent: Codable, Identifiable {
   }
   var title: String {
     if let state = InspectorIncomingFilterState(event: self) { return "Incoming filter · \(state.reason.title)" }
+    if event == "faults.configured", let incomingErrorCode, [0, 4].contains(incomingErrorCode) {
+      return incomingErrorCode == 4 ? "Injected incoming error 4" : "Incoming error injection cleared"
+    }
     if event == "report.completed", let code, code != 0 { return "Incoming report rejected · code \(code)" }
     if event == "call.changed" { return "\(caller) · \(status)" }
     if event == "action.settled" { return "\(kind?.capitalized ?? "Action") \(fulfilled == true ? "fulfilled" : "failed")" }
@@ -86,6 +90,7 @@ struct RuntimeEvent: Codable, Identifiable {
     if let deadlineSeconds { parts.append(String(format: "%.0f s profile budget", deadlineSeconds)) }
     if let domain, !domain.isEmpty, let code { parts.append("\(domain) \(code)") }
     if verification == "unverified" { parts.append("Unverified on device") }
+    if event == "faults.configured", incomingErrorCode == 4 { parts.append("Not produced by iOS 27.0 for LCK") }
     return parts.joined(separator: " · ")
   }
 }

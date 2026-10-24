@@ -19,7 +19,6 @@ private struct FulfilledPostEndUnmutePolicy: Decodable {
 private enum IncomingFilterReason: String, CaseIterable, Sendable {
   case none
   case doNotDisturb = "do-not-disturb"
-  case blockList = "block-list"
   case restrictedSharingMode = "restricted-sharing-mode"
   case callIsProtected = "call-is-protected"
   case sensitiveParticipants = "sensitive-participants"
@@ -27,7 +26,6 @@ private enum IncomingFilterReason: String, CaseIterable, Sendable {
     switch self {
     case .none: 0
     case .doNotDisturb: 3
-    case .blockList: 4
     case .restrictedSharingMode: 5
     case .callIsProtected: 6
     case .sensitiveParticipants: 7
@@ -52,9 +50,12 @@ private struct IncomingReportOutcome: Sendable {
   let verification: String
   let delaySeconds: Double
   var error: NSError? { code == 0 ? nil : NSError(domain: domain, code: code) }
-  init(reason: IncomingFilterReason, duplicate: Bool, policy: IncomingFilterPolicy?, normalDelaySeconds: Double, extraDelaySeconds: Double) {
+  init(reason: IncomingFilterReason, duplicate: Bool, policy: IncomingFilterPolicy?, normalDelaySeconds: Double, extraDelaySeconds: Double, incomingErrorCode: Int = 0) {
     if duplicate {
       code = 2; filterReason = "none"; verification = "not-applicable"
+      delaySeconds = normalDelaySeconds + extraDelaySeconds
+    } else if incomingErrorCode == 4 {
+      code = 4; filterReason = "none"; verification = "injected-fault"
       delaySeconds = normalDelaySeconds + extraDelaySeconds
     } else if reason != .none, let policy {
       code = reason.code; filterReason = reason.rawValue; verification = policy.verification
@@ -155,9 +156,16 @@ private final class ObserverRegistration: @unchecked Sendable {
 }
 
 private struct Faults: Codable {
-  var staleAudio = false
-  var reportCallbackDelayMS = 0
+  var staleAudio: Bool?
+  var reportCallbackDelayMS: Int?
   var invalidateDuringHandoff: Bool?
+  var incomingErrorCode: Int?
+  mutating func apply(_ update: Faults) {
+    if let value = update.staleAudio { staleAudio = value }
+    if let value = update.reportCallbackDelayMS { reportCallbackDelayMS = value }
+    if let value = update.invalidateDuringHandoff { invalidateDuringHandoff = value }
+    if let code = update.incomingErrorCode { incomingErrorCode = code }
+  }
 }
 // Objective-C clients supply blocks without Swift Sendable annotations. The
 // immutable block is transferred once and invoked only on its designated queue.
@@ -471,15 +479,6 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       ],
       "scope": "D3 report errors measured at 2.081 s and 2.070 s. Same-number repeat at 69 s and process survival are documented in the device writeup; the two captures are separate cold launches."
     },
-    "block-list": {
-      "code": 4,
-      "delaySeconds": 2.07,
-      "verification": "unverified",
-      "evidence": [
-        "docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md"
-      ],
-      "scope": "Unverified on device. NSError code follows the public incoming-call error identity; 2.07 s is explicit simulator policy borrowed from measured DND timing, not a measurement for this reason."
-    },
     "restricted-sharing-mode": {
       "code": 5,
       "delaySeconds": 2.07,
@@ -507,6 +506,18 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       ],
       "scope": "Unverified on device. NSError code follows the public incoming-call error identity; 2.07 s is explicit simulator policy borrowed from measured DND timing, not a measurement for this reason."
     }
+  },
+  "lckBlockedNumberEvidence": {
+    "verification": "measured-negative",
+    "sourceIssue": 85,
+    "incomingErrorCode": 0,
+    "repeatAfterSeconds": 66,
+    "ringTimeoutSeconds": 60,
+    "captures": {
+      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/filter-block.jsonl": "c52e5be2086fd2c14ec3ef4ae1d580ebd9594486d08aeba16d28be7d96229719",
+      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/filter-block-check.jsonl": "b41172c83eea3febb80c8d0f1172348fb4ad399aadda09a9342b2c4ed8c91828"
+    },
+    "scope": "The blocked number reported successfully and rang. Code 4 is not produced by iOS 27.0 for LCK in these measurements; runtime code 4 is an explicit injectable fault only."
   }
 }
 """#
@@ -943,7 +954,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       let outcome = IncomingReportOutcome(reason: incomingFilter, duplicate: calls[uuid] != nil,
         policy: profile.incomingFilterPolicies[incomingFilter.rawValue],
         normalDelaySeconds: ProcessInfo.processInfo.environment["CKSIM_LATENCY"] == "device" ? profile.reportLatencySeconds : 0.02,
-        extraDelaySeconds: Double(faults.reportCallbackDelayMS) / 1000)
+        extraDelaySeconds: Double(faults.reportCallbackDelayMS ?? 0) / 1000, incomingErrorCode: faults.incomingErrorCode ?? 0)
       let error = outcome.error
       let fields: [String: Any] = ["reportID": reportID, "callUUID": uuid.uuidString, "pushID": pushID,
         "domain": outcome.domain, "code": outcome.code, "filterReason": outcome.filterReason,
@@ -1049,7 +1060,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       }
       return
     }
-    if desired && faults.staleAudio { record(event: "fault.audioSuppressed", fields: [:]); return }
+    if desired && faults.staleAudio == true { record(event: "fault.audioSuppressed", fields: [:]); return }
     DispatchQueue.main.async {
       guard self.withState({ !self.stopped && self.audioRevision == revision }) else { return }
       do {
@@ -1117,6 +1128,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private func execute(_ command: Command, _ object: [String: Any]) throws -> [String: Any] {
     switch command.operation {
     case "status": return ["calls": calls.values.map(callJSON), "pending": pendingActions.values.filter { !$0.settled }.count, "audioActive": audioActive, "sequence": sequence,
+      "incomingErrorCode": faults.incomingErrorCode ?? 0,
       "incomingFilter": incomingFilter.snapshot(policy: profile.incomingFilterPolicies[incomingFilter.rawValue])]
     case "events": return ["events": (try? String(contentsOf: controlRoot.appendingPathComponent("events.jsonl"), encoding: .utf8)) ?? ""]
     case "inspect-adapter":
@@ -1135,8 +1147,12 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       record(event: "incomingFilter.configured", fields: fields)
       return ["incomingFilter": snapshot]
     case "faults":
-      guard let value = command.faults, (0...120_000).contains(value.reportCallbackDelayMS) else { throw ControlError.invalid("invalid faults") }
-      faults = value; return ["configured": true]
+      guard let value = command.faults, (0...120_000).contains(value.reportCallbackDelayMS ?? 0),
+        [0, 4].contains(value.incomingErrorCode ?? 0) else { throw ControlError.invalid("invalid faults") }
+      faults.apply(value)
+      let code = faults.incomingErrorCode ?? 0
+      record(event: "faults.configured", fields: ["requestID": command.id.uuidString, "incomingErrorCode": code])
+      return ["configured": true, "incomingErrorCode": code]
     case "push":
       guard let payload = object["payload"] as? [String: Any], let mustReport = command.mustReport else { throw ControlError.invalid("payload and explicit mustReport required") }
       let bytes = try JSONSerialization.data(withJSONObject: payload)

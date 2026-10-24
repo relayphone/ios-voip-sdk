@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 CLI = runpy.run_path(str(Path(__file__).resolve().parents[2] / 'Tools/cksim'))
 RUNNER = runpy.run_path(str(Path(__file__).with_name('run.py')))
-REASONS = ('none', 'do-not-disturb', 'block-list', 'restricted-sharing-mode',
+REASONS = ('none', 'do-not-disturb', 'restricted-sharing-mode',
            'call-is-protected', 'sensitive-participants')
 
 
@@ -54,6 +54,35 @@ class IncomingFilterControls(unittest.TestCase):
             with patch('sys.argv', ['cksim', '--bundle', 'test.fixture', 'incoming-filter', '--reason', 'do-not-disturb']):
                 self.assertEqual(main(), 0)
         self.assertEqual(control.call_args.args[0].reason, 'do-not-disturb')
+
+    def test_cli_fault_is_explicit_and_does_not_reset_other_faults(self):
+        main = CLI['main']
+        control = Mock(return_value={'success': True})
+        with patch.dict(main.__globals__, control=control, validate_package=Mock(), simulator=Mock(return_value='device')):
+            with patch('sys.argv', ['cksim', '--bundle', 'test.fixture', 'faults', '--incoming-error-code', '4']):
+                self.assertEqual(main(), 0)
+        args = control.call_args.args[0]
+        self.assertEqual(args.incoming_error_code, 4)
+        self.assertIsNone(args.stale_audio)
+        self.assertIsNone(args.report_delay_ms)
+        self.assertIsNone(args.invalidate_during_handoff)
+
+    def test_bridge_fault_only_updates_the_explicit_code_and_pins_session(self):
+        command = self.bridge.command
+        control = Mock(return_value={'success': True})
+        with patch.dict(command.__globals__, control=control):
+            for code in ('0', '4'):
+                command(dict(operation='faults', incomingErrorCode=code))
+                args = control.call_args.args[0]
+                self.assertEqual(args.incoming_error_code, int(code))
+                self.assertIsNone(args.stale_audio)
+                self.assertIsNone(args.report_delay_ms)
+                self.assertIsNone(args.invalidate_during_handoff)
+                self.assertEqual(control.call_args.kwargs['expected_session'], self.session)
+        for value in ({'operation': 'faults', 'incomingErrorCode': '3'},
+                      {'operation': 'faults', 'incomingErrorCode': '4', 'staleAudio': True}):
+            with self.assertRaises(RuntimeError):
+                command(value)
 
     def test_filter_publication_uses_the_cached_mailbox_without_simulator_rpc(self):
         container = self.root / 'container'
@@ -113,12 +142,12 @@ precondition(encoded["reason"] as? Int == 2, "legacy numeric end reason must sur
         self.assertEqual(tested.returncode, 0, tested.stdout + tested.stderr)
 
     def test_probe_filter_value_must_match_the_latest_visible_configuration(self):
-        rows = [dict(self.session, sequence=1, event='incomingFilter.configured', reason='block-list', requestID='set')]
-        receipt = dict(timeline=rows, conversations=[], cursor=1, incomingFilter='block-list')
+        rows = [dict(self.session, sequence=1, event='incomingFilter.configured', reason='do-not-disturb', requestID='set')]
+        receipt = dict(timeline=rows, conversations=[], cursor=1, incomingFilter='do-not-disturb')
         verify = RUNNER['verify_probe_journal']
         verify((receipt,), rows, self.session)
         with self.assertRaises(AssertionError):
-            verify((dict(receipt, incomingFilter='do-not-disturb'),), rows, self.session)
+            verify((dict(receipt, incomingFilter='none'),), rows, self.session)
         rows.append(dict(self.session, sequence=2, event='incomingFilter.configured', reason='none', requestID='clear'))
         verify((receipt,), rows, self.session)
 

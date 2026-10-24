@@ -11,7 +11,7 @@ import uuid
 
 DOMAIN = 'com.apple.CallKit.error.incomingcall'
 HANDLE = '+12025550123'
-FILTERS = [('do-not-disturb', 3, 'verified'), ('block-list', 4, 'unverified'),
+FILTERS = [('do-not-disturb', 3, 'verified'),
            ('restricted-sharing-mode', 5, 'unverified'), ('call-is-protected', 6, 'unverified'),
            ('sensitive-participants', 7, 'unverified')]
 
@@ -75,7 +75,7 @@ def assert_report_attempt(rows, *, call_uuid, push_id, reason, code, verificatio
 
 
 def run_filtered_acceptance(*, channel, session, command, rows, wait, out):
-    """Prove codes 3–7, 69-second persistence, callback snapshots, and clearing.
+    """Prove filters 3/5–7, explicit fault 4, 69-second persistence, snapshots, and clearing.
 
     ``command`` is the existing CLI control closure, using the fixture's cached
     app-container path. ``rows`` and ``wait`` are the existing journal reader and
@@ -139,7 +139,7 @@ def run_filtered_acceptance(*, channel, session, command, rows, wait, out):
 
     initial = wait(empty)
     assert initial['incomingFilter'] == dict(reason='none', code=0, verification='not-applicable'), initial
-    command('faults', '--report-delay-ms', '0')
+    command('faults')
     history = rows()
     start_cursor = len(history)
     previous_actions = {r['actionID']: r['callUUID'] for r in history
@@ -149,17 +149,26 @@ def run_filtered_acceptance(*, channel, session, command, rows, wait, out):
         cursor = len(rows())
         call_uuid = str(uuid.uuid4()).upper()
         push_id, entry = submit(call_uuid)
-        if code == 4:
-            # Change both selection and fault delay while a report is pending.
-            # A 5 s mutation exceeds the timing tolerance, so the old captured
-            # deadline must be used for this actual callback to pass.
-            changed = configure(*FILTERS[2])
-            command('faults', '--report-delay-ms', '5000')
-            assert entry['t_ms'] <= changed['t_ms'] < entry['t_ms'] + 2070, changed
         finish(cursor, call_uuid, push_id, reason, code, verification, delay_ms=2070)
-        if code == 4:
-            command('faults', '--report-delay-ms', '0')
         assert empty(), 'filtered result admitted a call or activated audio'
+
+    # Code 4 is an explicit fault, not the natural LCK block-list outcome.
+    # Use a configured delay solely to keep this report pending for mutation.
+    configure('none', 0, 'not-applicable')
+    fault_response = command('faults', '--incoming-error-code', '4', '--report-delay-ms', '2070')
+    assert fault_response['result']['incomingErrorCode'] == 4, fault_response
+    fault_ack = wait(lambda: next((r for r in rows() if r['event'] == 'faults.configured'
+                         and r.get('requestID') == fault_response['id']), None))
+    assert fault_ack['incomingErrorCode'] == status()['incomingErrorCode'] == 4
+    cursor = len(rows())
+    fault_uuid = str(uuid.uuid4()).upper()
+    fault_push, entry = submit(fault_uuid)
+    changed = configure(*FILTERS[1])
+    command('faults', '--incoming-error-code', '0', '--report-delay-ms', '5000')
+    assert entry['t_ms'] <= changed['t_ms'] < entry['t_ms'] + 2070, changed
+    finish(cursor, fault_uuid, fault_push, 'none', 4, 'injected-fault', delay_ms=2090)
+    command('faults', '--report-delay-ms', '0')
+    assert empty(), 'injected fault admitted a call or activated audio'
 
     configure(*FILTERS[0])
     dnd_selection = dict(reason='do-not-disturb', code=3, verification='verified')
@@ -210,7 +219,8 @@ def run_filtered_acceptance(*, channel, session, command, rows, wait, out):
     assert empty()
     result = dict(success=True, classification='native filtered NSError callback acceptance',
                   session=original, attempts=attempts, repeatGapMS=repeat['entryMS'] - first['entryMS'],
-                  samePhoneHandle=HANDLE, samePIDSurvived=True, snapshotPreserved=True,
+                  samePhoneHandle=HANDLE, samePIDSurvived=True, snapshotPreserved=True, injectedFaultCode=4,
+                  lckBlockedNumberOutcome='measured success; source #85',
                   clearedFilterAdmittedCall=True, duplicateUUIDCode=2)
     (out / 'filtered-acceptance.json').write_text(json.dumps(result, indent=2) + '\n')
     return result

@@ -22,36 +22,41 @@ import Foundation
   }
   static func main() async throws {
     let mode = CommandLine.arguments[2]
+    let faults = CommandLine.arguments[3] == "faults"
     let model = InspectorModel(environment: ["CKSIM_INSPECTOR_URL": CommandLine.arguments[1],
                                            "CKSIM_INSPECTOR_TOKEN": "test-token"])
     let following = Task { await model.follow() }
     defer { following.cancel() }
     try await wait { model.online }
-    let reasons: [InspectorIncomingFilter] = mode == "success" ? [.doNotDisturb, .none] : [.doNotDisturb]
+    let values = mode == "success" ? [1, 0] : [1]
     var prior = InspectorIncomingFilter.none
-    for (offset, reason) in reasons.enumerated() {
+    var priorCode = 0
+    for (offset, value) in values.enumerated() {
+      let reason = value == 1 ? InspectorIncomingFilter.doNotDisturb : .none
+      let code = value == 1 ? 4 : 0
       let id = "request-\(offset + 1)"
       let started = Date()
-      model.configureIncomingFilter(reason)
+      if faults { model.configureIncomingError(code) } else { model.configureIncomingFilter(reason) }
       precondition(model.busy)
       try await wait { model.timeline.contains { $0.event == "test.commandAccepted" && $0.requestID == id } }
-      precondition(model.busy && model.incomingFilter == prior && model.commandError == nil,
-                   "HTTP acceptance must not optimistically change the selected filter")
+      precondition(model.busy && model.incomingFilter == prior && model.incomingErrorCode == priorCode && model.commandError == nil,
+                   "HTTP acceptance must not optimistically change observed configuration")
       FileHandle.standardOutput.write(Data("release:\(offset + 1)\n".utf8))
       if mode == "wrong" {
-        try await wait { model.timeline.contains { $0.event == "incomingFilter.configured" } }
-        precondition(model.incomingFilter == reason && model.busy,
+        try await wait { model.timeline.contains { $0.event == (faults ? "faults.configured" : "incomingFilter.configured") } }
+        precondition(model.incomingFilter == (faults ? prior : reason) && model.incomingErrorCode == (faults ? code : priorCode) && model.busy,
                      "An external journal event updates observed state without acknowledging this command")
       }
       try await wait { !model.busy }
       if mode == "success" {
-        precondition(model.incomingFilter == reason && model.commandError == nil)
+        precondition(model.incomingFilter == (faults ? prior : reason) && model.incomingErrorCode == (faults ? code : priorCode) && model.commandError == nil)
       } else {
         precondition(Date().timeIntervalSince(started) >= 2.9, "An unrelated or absent journal event cannot acknowledge this request")
         precondition(model.commandError?.contains("journal confirmation has not arrived") == true)
-        precondition(model.incomingFilter == (mode == "wrong" ? reason : prior))
+        precondition(model.incomingFilter == (!faults && mode == "wrong" ? reason : prior))
+        precondition(model.incomingErrorCode == (faults && mode == "wrong" ? code : priorCode))
       }
-      prior = reason
+      if faults { priorCode = code } else { prior = reason }
     }
   }
 }
@@ -72,11 +77,12 @@ class FilterModelTests(unittest.TestCase):
                 *(str(ROOT / 'Inspector' / name) for name in ('RuntimeEvent.swift', 'RuntimeTimingReferences.swift', 'IncomingFilter.swift')),
                 str(harness), '-o', str(binary)], text=True, capture_output=True, timeout=60)
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
-            for mode in ('success', 'wrong', 'missing'):
-                with self.subTest(mode=mode):
-                    self.exercise(binary, mode)
+            for kind in ('filter', 'faults'):
+                for mode in ('success', 'wrong', 'missing') + (('invalid-code', 'missing-id') if kind == 'faults' else ()):
+                    with self.subTest(kind=kind, mode=mode):
+                        self.exercise(binary, mode, kind)
 
-    def exercise(self, binary, mode):
+    def exercise(self, binary, mode, kind):
         session = dict(schemaVersion=1, bundleID='fixture', runID='host-test', pid=123, profile='ios-27.0')
         rows, commands, failures, output = [], [], [], []
         lock = threading.Lock()
@@ -113,11 +119,13 @@ class FilterModelTests(unittest.TestCase):
                     commands.append(body)
                     identifier = 'request-' + str(len(commands))
                     append('test.commandAccepted', requestID=identifier)
-                self.respond(dict(success=True, id=identifier, result=dict(incomingFilter=state(body['reason']))))
+                result = (dict(incomingErrorCode=int(body['incomingErrorCode'])) if kind == 'faults'
+                          else dict(incomingFilter=state(body['reason'])))
+                self.respond(dict(success=True, id=identifier, result=result))
         server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         serving = threading.Thread(target=server.serve_forever, daemon=True)
         serving.start()
-        process = subprocess.Popen([str(binary), f'http://127.0.0.1:{server.server_port}', mode],
+        process = subprocess.Popen([str(binary), f'http://127.0.0.1:{server.server_port}', mode, kind],
                                    text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         def read_output():
             for line in process.stdout:
@@ -126,7 +134,11 @@ class FilterModelTests(unittest.TestCase):
                     index = int(line.split(':')[1])
                     with lock:
                         identifier = 'unrelated-request' if mode == 'wrong' else 'request-' + str(index)
-                        append('incomingFilter.configured', requestID=identifier, **state(commands[index - 1]['reason']))
+                        identity = {} if mode == 'missing-id' else dict(requestID=identifier)
+                        if kind == 'faults':
+                            append('faults.configured', incomingErrorCode=5 if mode == 'invalid-code' else int(commands[index - 1]['incomingErrorCode']), **identity)
+                        else:
+                            append('incomingFilter.configured', **identity, **state(commands[index - 1]['reason']))
         reading = threading.Thread(target=read_output, daemon=True)
         reading.start()
         try:
@@ -142,8 +154,11 @@ class FilterModelTests(unittest.TestCase):
             serving.join(timeout=2)
         self.assertEqual(process.returncode, 0, ''.join(output))
         self.assertEqual(failures, [])
-        reasons = ['do-not-disturb', 'none'] if mode == 'success' else ['do-not-disturb']
-        self.assertEqual(commands, [dict(operation='incoming-filter', reason=reason) for reason in reasons])
+        if kind == 'faults':
+            self.assertEqual(commands, [dict(operation='faults', incomingErrorCode=str(code)) for code in ([4, 0] if mode == 'success' else [4])])
+        else:
+            reasons = ['do-not-disturb', 'none'] if mode == 'success' else ['do-not-disturb']
+            self.assertEqual(commands, [dict(operation='incoming-filter', reason=reason) for reason in reasons])
 
 
 if __name__ == '__main__':

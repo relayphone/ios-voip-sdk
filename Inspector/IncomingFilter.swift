@@ -3,7 +3,6 @@ import Foundation
 enum InspectorIncomingFilter: String, Codable, CaseIterable, Identifiable {
   case none
   case doNotDisturb = "do-not-disturb"
-  case blockList = "block-list"
   case restrictedSharingMode = "restricted-sharing-mode"
   case callIsProtected = "call-is-protected"
   case sensitiveParticipants = "sensitive-participants"
@@ -12,7 +11,6 @@ enum InspectorIncomingFilter: String, Codable, CaseIterable, Identifiable {
     switch self {
     case .none: 0
     case .doNotDisturb: 3
-    case .blockList: 4
     case .restrictedSharingMode: 5
     case .callIsProtected: 6
     case .sensitiveParticipants: 7
@@ -22,7 +20,6 @@ enum InspectorIncomingFilter: String, Codable, CaseIterable, Identifiable {
     switch self {
     case .none: "No filtering"
     case .doNotDisturb: "Do Not Disturb"
-    case .blockList: "Blocked caller"
     case .restrictedSharingMode: "Restricted sharing mode"
     case .callIsProtected: "Protected call"
     case .sensitiveParticipants: "Sensitive participants"
