@@ -118,7 +118,8 @@ def remaining_budget(deadline):
 
 
 def activate_existing(device, bundle, pid, deadline):
-    output = run('xcrun', 'simctl', 'launch', device, bundle, timeout=min(5, remaining_budget(deadline)))
+    # Foregrounding shares the consumer lifetime, including hosted launch latency.
+    output = run('xcrun', 'simctl', 'launch', device, bundle, timeout=min(10, remaining_budget(deadline)))
     identities = [line.split(':', 1)[1].strip() for line in output.splitlines() if line.startswith(bundle + ':')]
     if identities != [str(pid)]:
         raise RuntimeError(f'Foreground activation PID changed for {bundle}: expected {pid}, got {output!r}')
@@ -159,6 +160,139 @@ def verify_probe_journal(receipts, rows, session):
         assert {row['uuid'] for row in receipt['conversations']} == set(projected)
         for call in receipt['conversations']:
             assert all(projected[call['uuid']].get(key) == value for key, value in call.items())
+        if 'timingReferences' in receipt:
+            verify_timing_reference_journal(receipt, rows)
+
+
+def journal_mute_value(action, rows):
+    """Resolve native mute parameters without trusting the Inspector's projection."""
+    identity = ('schemaVersion', 'runID', 'pid', 'bundleID')
+    if not all(type(action.get(key)) is str and action[key] for key in ('transactionID', 'provider', 'actionID', 'callUUID')):
+        return None
+    transactions = [row for row in rows if row['event'] == 'transaction.delivered' and
+                    all(key in row and key in action and row[key] == action[key] for key in identity) and
+                    row.get('transactionID') == action['transactionID']]
+    direct = action.get('muted')
+    if not transactions:
+        return direct if type(direct) is bool else None
+    if len(transactions) != 1:
+        return None
+    transaction = transactions[0]
+    if transaction.get('provider') != action['provider'] or transaction.get('origin') != action.get('origin'):
+        return None
+    if (type(transaction.get('sequence')) is not int or type(action.get('sequence')) is not int or
+            transaction['sequence'] >= action['sequence'] or
+            any(type(row.get('t_ms')) not in (int, float) or not math.isfinite(row['t_ms']) for row in (transaction, action)) or
+            transaction['t_ms'] > action['t_ms']):
+        return None
+    actions, calls, kinds, parameters = [transaction.get(key) for key in ('actionIDs', 'callUUIDs', 'kinds', 'parameters')]
+    if (not all(type(value) is list for value in (actions, calls, kinds, parameters)) or not actions or
+            not len(actions) == len(calls) == len(kinds) == len(parameters) or
+            not all(type(value) is str and value for value in actions + calls + kinds) or
+            len(set(actions)) != len(actions) or not all(type(value) is dict for value in parameters) or
+            action['actionID'] not in actions):
+        return None
+    index = actions.index(action['actionID'])
+    value = parameters[index].get('muted')
+    if (action.get('kind') != 'mute' or kinds[index] != 'CXSetMutedCallAction' or calls[index] != action['callUUID'] or
+            type(value) is not bool or direct is not None and (type(direct) is not bool or direct != value)):
+        return None
+    return value
+
+
+def verify_timing_reference_journal(receipt, rows, required=()):
+    """Require measured values to cite retained, correlated original journal rows."""
+    references = {'pushReport': '≈190 ms', 'answerAudio': '≈236 ms',
+                  'muteEcho': '8–17 ms after fulfillment', 'unreportedPush': '≈4.4 s'}
+    values = receipt['timingReferences']
+    assert len(values) == 4 and {value['id'] for value in values} == set(references)
+    indexed = {row['sequence']: row for row in rows}
+    retained = {row['sequence'] for row in receipt['timeline']}
+    originals = [indexed[sequence] for sequence in sorted(retained)]
+    for value in values:
+        name = value['id']
+        assert value['deviceValue'] == references[name]
+        assert 'LCK · iPhone 13 · iOS 27.0' in value['deviceProvenance']
+        assert value['sourcePath'] == 'docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md'
+        actual = value.get('actualMS')
+        if actual is None:
+            assert name not in required, f'{name} actual is unavailable'
+            assert value.get('startSequence') is None and value.get('endSequence') is None
+            continue
+        assert type(actual) in (int, float) and math.isfinite(actual) and actual >= 0
+        start_sequence, end_sequence = value['startSequence'], value['endSequence']
+        assert start_sequence in retained and end_sequence in retained and start_sequence < end_sequence
+        start, end = indexed[start_sequence], indexed[end_sequence]
+        assert all(start[key] == end[key] for key in ('schemaVersion', 'runID', 'pid', 'bundleID'))
+        elapsed = end['t_ms'] - start['t_ms']
+        assert math.isfinite(elapsed) and elapsed >= 0 and math.isclose(actual, elapsed, rel_tol=0, abs_tol=1e-6)
+        if name in ('pushReport', 'unreportedPush'):
+            candidates = [row for row in originals if row['event'] == 'push.received']
+            assert candidates[-1]['sequence'] == start_sequence
+            assert start.get('pushID') and start['pushID'] == end.get('pushID')
+            expected = 'report.completed' if name == 'pushReport' else 'diagnostic.pushReportExpired'
+            assert end['event'] == expected
+            if name == 'unreportedPush':
+                assert start.get('mustReport') is True
+            else:
+                assert type(end.get('error')) is int and end['error'] == 0
+        elif name == 'answerAudio':
+            candidates = [row for row in originals if row['event'] == 'action.deadline' and row.get('kind') == 'answer']
+            assert candidates[-1]['sequence'] == start_sequence
+            assert start.get('callUUID') and start.get('actionID') and end['event'] == 'audio.activated'
+            label = {'callkit': 'CallKit answer', 'livecommunicationkit': 'LCK join'}.get(start.get('apiKind'))
+            assert label and value['actualLabel'] == f'Simulator · {label} delivered → audio.activated'
+            between = [row for row in originals if start_sequence < row['sequence'] < end_sequence]
+            assert any(row['event'] == 'action.settled' and row.get('kind') == 'answer' and row.get('fulfilled') is True and
+                       all(row.get(key) == start.get(key) for key in ('actionID', 'callUUID', 'apiKind')) for row in between)
+            assert not any(row['event'] in ('action.deadline', 'action.settled') and
+                           row.get('kind') in ('start', 'hold', 'end') for row in between)
+            assert not any(row['event'] in ('action.deadline', 'action.settled') and row.get('kind') == 'answer' and
+                           row.get('actionID') != start.get('actionID') for row in between)
+        else:
+            candidates = [row for row in originals if row['event'] == 'action.settled' and
+                          row.get('kind') == 'mute' and row.get('origin') == 'application']
+            assert candidates[-1]['sequence'] == start_sequence and start.get('fulfilled') is True
+            assert end['event'] == 'action.deadline' and end.get('kind') == 'mute' and end.get('origin') == 'muteEcho'
+            assert start.get('callUUID') and start['callUUID'] == end.get('callUUID')
+            assert all(row.get(key) for row in (start, end) for key in ('actionID', 'transactionID'))
+            identity = ('schemaVersion', 'runID', 'pid', 'bundleID')
+            same_runtime = [row for row in originals if all(row.get(key) == start.get(key) for key in identity)]
+            assert not any(row['sequence'] < end_sequence and row['event'] == 'action.deadline' and
+                           row.get('actionID') == end['actionID'] for row in same_runtime), 'Echo action ID was already observed'
+            assert not any(row['sequence'] < start_sequence and row['event'] == 'action.settled' and
+                           row.get('fulfilled') is True and row.get('actionID') == start['actionID'] for row in same_runtime), 'Fulfillment action ID was already settled'
+            muted = journal_mute_value(start, originals)
+            assert type(muted) is bool and muted == journal_mute_value(end, originals)
+            assert start.get('apiKind') in ('callkit', 'livecommunicationkit') and start['apiKind'] == end.get('apiKind')
+            assert start.get('provider') and start['provider'] == end.get('provider')
+            assert originals[0]['sequence'] == 1, 'Truncated history cannot establish outstanding mute obligations'
+            mute_key = ('schemaVersion', 'runID', 'pid', 'bundleID', 'callUUID', 'apiKind', 'provider')
+            matching = [row for row in originals if row.get('kind') == 'mute' and
+                        all(row.get(key) == start.get(key) for key in mute_key)]
+            outstanding, fulfilled_ids, echo_ids = 0, set(), set()
+            for row in matching:
+                fulfillment = row['event'] == 'action.settled' and row.get('origin') == 'application' and row.get('fulfilled') is True
+                echo = row['event'] == 'action.deadline' and row.get('origin') == 'muteEcho'
+                if row['sequence'] >= end_sequence or not (fulfillment or echo):
+                    continue
+                resolved = journal_mute_value(row, originals)
+                assert type(resolved) is bool, 'Unknown mute value leaves possible older obligations'
+                if resolved != muted:
+                    continue
+                if row['sequence'] < start_sequence:
+                    if fulfillment:
+                        assert row.get('actionID') and row.get('transactionID')
+                        if row['actionID'] not in fulfilled_ids:
+                            fulfilled_ids.add(row['actionID'])
+                            outstanding += 1
+                    elif echo and row.get('actionID') and row.get('transactionID'):
+                        if row['actionID'] not in echo_ids:
+                            echo_ids.add(row['actionID'])
+                            outstanding = max(0, outstanding - 1)
+                elif start_sequence < row['sequence'] < end_sequence and fulfillment:
+                    assert row.get('actionID') == start.get('actionID'), 'Competing app fulfillment makes mute echo ambiguous'
+            assert outstanding == 0, 'Older outstanding app fulfillments make mute echo ambiguous'
 
 
 def journal_journey(common, target, nonce, session, out, deadline, channel=None):
@@ -224,6 +358,7 @@ def journal_journey(common, target, nonce, session, out, deadline, channel=None)
     (out / 'events.jsonl').write_text(captured + '\n')
     rows = [json.loads(line) for line in captured.splitlines()]
     verify_probe_journal((incoming, connected), rows, session)
+    verify_timing_reference_journal(connected, rows, required=('pushReport', 'answerAudio'))
     answers = [row for row in rows if row.get('actionID') in action_ids and row['event'] == 'action.settled']
     assert len(answers) == 1 and answers[0]['kind'] == 'answer' and answers[0]['origin'] == 'system' and answers[0]['fulfilled']
     assert math.isfinite(answers[0]['latencyMS']) and 0 <= answers[0]['latencyMS'] < answers[0]['deadlineSeconds'] * 1000
