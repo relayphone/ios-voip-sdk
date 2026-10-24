@@ -53,6 +53,10 @@ concurrency:
   group: sdk-m0-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Owned CI apps need no injection; local unset values still preserve launchd.
+  SIMCTL_CHILD_DYLD_INSERT_LIBRARIES: ""
+
 jobs:
   plain-simulator:
     runs-on: xcode-27
