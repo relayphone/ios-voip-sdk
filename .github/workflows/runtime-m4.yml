@@ -24,7 +24,7 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_27.1.app
           mkdir -p "$RUNNER_TEMP/m4-build"
           xcodebuild -version | tee "$RUNNER_TEMP/m4-build/xcode.txt"
-          xcrun simctl list runtimes -j > "$RUNNER_TEMP/m4-build/runtimes.json"
+          python3 -c "import subprocess; subprocess.run(['xcrun', 'simctl', 'list', 'runtimes', '-j'], check=True, timeout=60)" > "$RUNNER_TEMP/m4-build/runtimes.json"
           uname -m
           sysctl -n hw.memsize
       - name: Watcher and existing CLI controls

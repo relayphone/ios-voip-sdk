@@ -97,5 +97,64 @@ class WatchTests(unittest.TestCase):
             self.assertIn(expected, line)
 
 
+class ControlTransportTests(unittest.TestCase):
+    def exercise(self, transport, *, mismatch=False, response=True):
+        with tempfile.TemporaryDirectory() as work:
+            container = Path(work)
+            root = container / 'Documents/.callkit-simulator'
+            mailbox = root / 'run'
+            for name in ('requests', 'responses'):
+                (mailbox / name).mkdir(parents=True)
+            session = dict(schemaVersion=1, runID='run', pid=123, bundleID='test.fixture', notification='test.notify')
+            if transport is not None:
+                session['controlTransport'] = transport
+            (root / 'session.json').write_text(json.dumps(session))
+            args = SimpleNamespace(bundle='test.fixture', operation='status', runtime_dir=container,
+                                   command_receipt=None, timeout=0.01)
+            calls = []
+            def respond(_=None):
+                if response:
+                    request = json.loads(next((mailbox / 'requests').glob('*.json')).read_text())
+                    if mismatch:
+                        request['pid'] += 1
+                    (mailbox / 'responses' / (request['id'] + '.json')).write_text(json.dumps(dict(request, success=True)))
+            def simctl(*parts):
+                calls.append(parts)
+                if parts[0] == 'get_app_container':
+                    return str(container)
+                if parts[0] == 'spawn':
+                    if transport == 'directory-watch-v1':
+                        raise RuntimeError('target simctl spawn stalled')
+                    respond()
+                    return ''
+                raise AssertionError(parts)
+            control = CLI['control']
+            with patch.dict(control.__globals__, simctl=simctl), patch.object(CLI['time'], 'sleep', side_effect=respond):
+                if mismatch:
+                    with self.assertRaisesRegex(RuntimeError, 'response identity mismatch'):
+                        control(args, 'device', expected_session=session)
+                elif not response:
+                    with self.assertRaisesRegex(RuntimeError, 'outcome is unknown'):
+                        control(args, 'device', expected_session=session)
+                else:
+                    self.assertTrue(control(args, 'device', expected_session=session)['success'])
+            return calls
+
+    def test_watched_mailbox_does_not_need_a_simulator_spawn(self):
+        calls = self.exercise('directory-watch-v1')
+        self.assertEqual([call[0] for call in calls], ['get_app_container'])
+
+    def test_older_runtime_still_receives_its_darwin_notification(self):
+        calls = self.exercise(None)
+        self.assertEqual([call[0] for call in calls], ['get_app_container', 'spawn'])
+
+    def test_watched_response_must_match_the_pinned_command(self):
+        self.exercise('directory-watch-v1', mismatch=True)
+
+    def test_missing_watched_response_is_still_an_unknown_outcome(self):
+        self.exercise('directory-watch-v1', response=False)
+
+
+
 if __name__ == '__main__':
     unittest.main()
