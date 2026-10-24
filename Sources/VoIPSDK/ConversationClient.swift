@@ -91,11 +91,10 @@ public final class ConversationClient: NSObject {
   }
 
   private static var instance: ConversationClient?
-  static func forApplication(configuration: Configuration, mediaAdapter: (any MediaAdapter)? = nil,
-                             audioPolicy: AudioActivationPolicy = .standard) throws -> ConversationClient {
+  static func forApplication(configuration: Configuration, mediaAdapter: (any MediaAdapter)? = nil) throws -> ConversationClient {
     try ProcessSDKOwnership.claim()
     if let instance {
-      guard instance.configuration == configuration, instance.audioPolicy == audioPolicy,
+      guard instance.configuration == configuration,
             mediaAdapter == nil || instance.mediaAdapter === mediaAdapter else {
         throw ConversationClientError.alreadyConfigured
       }
@@ -104,8 +103,7 @@ public final class ConversationClient: NSObject {
     guard configuration.maximumConversationGroups > 0, configuration.maximumConversationsPerGroup > 0 else {
       throw ConversationClientError.invalidConfiguration
     }
-    let client = ConversationClient(configuration: configuration,
-      mediaAdapter: mediaAdapter ?? NoMediaAdapter(), audioPolicy: audioPolicy)
+    let client = ConversationClient(configuration: configuration, mediaAdapter: mediaAdapter ?? NoMediaAdapter())
     instance = client
     return client
   }
@@ -116,11 +114,7 @@ public final class ConversationClient: NSObject {
   private let configuration: Configuration
   private var launchFinished = false
   private let mediaAdapter: any MediaAdapter
-  private let audioPolicy: AudioActivationPolicy
-  private let audio: AudioActivationCoordinator
-  // Retaining only currently joined objects prevents address reuse while their
-  // value generation authorizes a watchdog end; platform objects stay on main.
-  private var audioDemandObjects: [UUID: (object: Conversation, generation: UUID)] = [:]
+  private let audio = AudioActivationCoordinator()
   private let systemAudio = SystemAudioSession()
   private var audioAuthorityGeneration: UInt64 = 0
   private let audioOperations = AudioAdapterOperations()
@@ -137,10 +131,9 @@ public final class ConversationClient: NSObject {
   public private(set) var state = ConversationStateUpdate(revision: 0, conversations: [])
   public var snapshots: [ConversationSnapshot] { state.conversations }
 
-  private init(configuration: Configuration, mediaAdapter: any MediaAdapter, audioPolicy: AudioActivationPolicy) {
+  private init(configuration: Configuration, mediaAdapter: any MediaAdapter) {
     self.configuration = configuration
-    self.mediaAdapter = mediaAdapter; self.audioPolicy = audioPolicy
-    audio = AudioActivationCoordinator(policy: audioPolicy)
+    self.mediaAdapter = mediaAdapter
     coordinator = ConversationActionCoordinator(policy: configuration.unhandledAction)
     SimulatorSupport.activateIfNeeded()
     #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
@@ -197,14 +190,10 @@ public final class ConversationClient: NSObject {
 
   private func configureAudio() {
     audioOperations.onError = { message in NSLog("VoIPSDK media adapter: %@", message) }
-    audio.onEvent = { [weak self] event, affected in
+    audio.onEvent = { [weak self] event, _ in
       switch event {
       case .activated: self?.emit(.audioActivated)
       case .deactivated: self?.emit(.audioDeactivated)
-      case .missing:
-        for id in affected.sorted(by: { $0.uuidString < $1.uuidString }) { self?.emit(.audioActivationMissing, conversationID: id) }
-      case .failed:
-        for id in affected.sorted(by: { $0.uuidString < $1.uuidString }) { self?.emit(.audioActivationFailed, conversationID: id) }
       }
     }
     coordinator.prepareAction = { [weak self] _, _ in
@@ -225,19 +214,6 @@ public final class ConversationClient: NSObject {
         }
       }
     }
-    audio.recover = { [weak self] in
-      guard let self else { return }
-      do {
-        try await AudioPreparationScope.perform { [audioOperations = self.audioOperations, mediaAdapter = self.mediaAdapter] in
-          try await audioOperations.perform {
-            try AudioSessionQueue.checkCancellation()
-            try await mediaAdapter.prepare()
-          }
-        }
-      }
-      catch { NSLog("VoIPSDK audio recovery configuration failed: %@", String(describing: error)) }
-    }
-    audio.endConversations = { [weak self] ids in self?.endForMissingAudio(ids) }
     systemAudio.onLifecycle = { [weak self] event in
       guard let self else { return }
       switch event {
@@ -253,44 +229,6 @@ public final class ConversationClient: NSObject {
         break
       }
     }
-  }
-
-  private func endForMissingAudio(_ nativeGenerations: [UUID: UUID]) {
-    for id in nativeGenerations.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
-      guard let generation = nativeGenerations[id], audio.shouldEndConversation(id, generation: generation),
-            let tracked = audioDemandObjects[id], tracked.generation == generation else { continue }
-      let conversation = tracked.object
-      guard manager.conversations.first(where: { $0.uuid == id }) === conversation,
-            conversation.state == .joined else { continue }
-      // Cancelling application work may synchronously activate audio, reset the
-      // provider or replace the native object. Commit terminal metadata only if
-      // this same joined conversation still needs the failed-end report.
-      coordinator.cancelConversation(id)
-      guard audio.shouldEndConversation(id, generation: generation),
-            audioDemandObjects[id]?.generation == generation, conversation.state == .joined,
-            manager.conversations.first(where: { $0.uuid == id }) === conversation else { continue }
-      let ended = ConversationEnded(at: Date(), reason: .failed)
-      records[id]?.ended = ended
-      if let incoming = incomingIntake.projection(id) {
-        incomingIntake.terminate(id, generation: incoming.generation, reason: .failed,
-          now: ended.at, requiresReport: false)
-      }
-      manager.reportConversationEvent(.conversationEnded(ended.at, .failed), for: conversation)
-    }
-    refresh()
-  }
-
-  private func refreshAudioDemand() {
-    var joined: [UUID: (object: Conversation, generation: UUID)] = [:]
-    for conversation in manager.conversations where conversation.state == .joined {
-      let generation: UUID
-      if let previous = audioDemandObjects[conversation.uuid], previous.object === conversation {
-        generation = previous.generation
-      } else { generation = UUID() }
-      joined[conversation.uuid] = (conversation, generation)
-    }
-    audioDemandObjects = joined
-    audio.updateDemand(joined.mapValues(\.generation))
   }
 
   @discardableResult
@@ -593,9 +531,6 @@ public final class ConversationClient: NSObject {
                 incomingIntake.projection(id) == nil { records.removeValue(forKey: id) }
     }
     let projected = projectedObjects.keys.compactMap(snapshot).sorted { $0.id.uuidString < $1.id.uuidString }
-    // Pending signaling is not media demand. Only actually joined, unheld LCK
-    // conversations start an absence episode, independently of backend reports.
-    refreshAudioDemand()
     guard projected != state.conversations else { return }
     state = ConversationStateUpdate(revision: state.revision &+ 1, conversations: projected)
     guard !publishingState else { return }
@@ -690,7 +625,6 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
   public func conversationManagerDidReset(_ manager: ConversationManager) {
     audioAuthorityGeneration &+= 1
     systemAudio.setSystemAudioAuthorization(false)
-    audioDemandObjects.removeAll()
     audio.reset()
     mediaAdapter.setSystemAudioAuthorization(false)
     incomingIntake.reset()

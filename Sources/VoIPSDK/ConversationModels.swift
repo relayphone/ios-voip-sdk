@@ -138,7 +138,7 @@ public struct ConversationStateUpdate: Codable, Sendable, Equatable {
 }
 
 public enum ConversationEvent: String, Codable, Sendable {
-  case audioActivated, audioDeactivated, audioActivationMissing, audioActivationFailed, providerReset, providerOwnershipLost
+  case audioActivated, audioDeactivated, providerReset, providerOwnershipLost
 }
 
 public struct ConversationEventContext: Codable, Sendable, Equatable {
