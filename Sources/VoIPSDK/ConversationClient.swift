@@ -91,16 +91,19 @@ public final class ConversationClient: NSObject {
   }
 
   private static var instance: ConversationClient?
-  static func forApplication(configuration: Configuration) throws -> ConversationClient {
+  static func forApplication(configuration: Configuration, mediaAdapter: (any MediaAdapter)? = nil) throws -> ConversationClient {
     try ProcessSDKOwnership.claim()
     if let instance {
-      guard instance.configuration == configuration else { throw ConversationClientError.alreadyConfigured }
+      guard instance.configuration == configuration,
+            mediaAdapter == nil || instance.mediaAdapter === mediaAdapter else {
+        throw ConversationClientError.alreadyConfigured
+      }
       return instance
     }
     guard configuration.maximumConversationGroups > 0, configuration.maximumConversationsPerGroup > 0 else {
       throw ConversationClientError.invalidConfiguration
     }
-    let client = ConversationClient(configuration: configuration)
+    let client = ConversationClient(configuration: configuration, mediaAdapter: mediaAdapter ?? NoMediaAdapter())
     instance = client
     return client
   }
@@ -110,6 +113,11 @@ public final class ConversationClient: NSObject {
   private let coordinator: ConversationActionCoordinator
   private let configuration: Configuration
   private var launchFinished = false
+  private let mediaAdapter: any MediaAdapter
+  private let audio = AudioActivationCoordinator()
+  private let systemAudio = SystemAudioSession()
+  private var audioAuthorityGeneration: UInt64 = 0
+  private let audioOperations = AudioAdapterOperations()
   private var records: [UUID: Record] = [:]
   private var terminalProjection = TerminalConversationProjection<Conversation>()
   private var recordRemovalGenerations: [UUID: UUID] = [:]
@@ -119,12 +127,13 @@ public final class ConversationClient: NSObject {
   private var appActions: [UUID: Date] = [:]
   private var stateObservers: [UUID: @MainActor (ConversationStateUpdate) -> Void] = [:]
   private var publishingState = false
-  private var eventObservers: [UUID: @MainActor (ConversationEvent) -> Void] = [:]
+  private var eventObservers: [UUID: @MainActor (ConversationEventContext) -> Void] = [:]
   public private(set) var state = ConversationStateUpdate(revision: 0, conversations: [])
   public var snapshots: [ConversationSnapshot] { state.conversations }
 
-  private init(configuration: Configuration) {
+  private init(configuration: Configuration, mediaAdapter: any MediaAdapter) {
     self.configuration = configuration
+    self.mediaAdapter = mediaAdapter
     coordinator = ConversationActionCoordinator(policy: configuration.unhandledAction)
     SimulatorSupport.activateIfNeeded()
     #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
@@ -157,6 +166,7 @@ public final class ConversationClient: NSObject {
         }
       }
     }
+    configureAudio()
   }
 
   /// Called only after VoIPApplication has published the complete process owner.
@@ -175,6 +185,50 @@ public final class ConversationClient: NSObject {
       #endif
     }
     trackManager()
+    mediaAdapter.setSystemAudioAuthorization(false)
+  }
+
+  private func configureAudio() {
+    audioOperations.onError = { message in NSLog("VoIPSDK media adapter: %@", message) }
+    audio.onEvent = { [weak self] event, _ in
+      switch event {
+      case .activated: self?.emit(.audioActivated)
+      case .deactivated: self?.emit(.audioDeactivated)
+      }
+    }
+    coordinator.prepareAction = { [weak self] _, _ in
+      guard let self else { throw CancellationError() }
+      try await AudioPreparationScope.perform { [audioOperations = self.audioOperations, mediaAdapter = self.mediaAdapter] in
+        try await audioOperations.perform {
+          try AudioSessionQueue.checkCancellation()
+          try await mediaAdapter.prepare()
+        }
+      }
+    }
+    coordinator.prepareForFulfillment = { [weak self] _, _ in
+      guard let self else { throw CancellationError() }
+      try await AudioPreparationScope.perform { [audioOperations = self.audioOperations, mediaAdapter = self.mediaAdapter] in
+        try await audioOperations.perform {
+          try AudioSessionQueue.checkCancellation()
+          try await mediaAdapter.prepareForFulfillment()
+        }
+      }
+    }
+    systemAudio.onLifecycle = { [weak self] event in
+      guard let self else { return }
+      switch event {
+      case .inactive, .mediaServicesReset:
+        // Revoke before external adapter code can reenter. These are actual AV
+        // observations, never fabricated LCK activation/deactivation callbacks.
+        self.audioAuthorityGeneration &+= 1
+        self.systemAudio.setSystemAudioAuthorization(false)
+        self.audio.systemBecameInactive()
+        self.mediaAdapter.setSystemAudioAuthorization(false)
+      case .active, .resumptionRecommended:
+        // LCK owns activation. A recommendation cannot authorize media.
+        break
+      }
+    }
   }
 
   @discardableResult
@@ -183,7 +237,7 @@ public final class ConversationClient: NSObject {
   }
   public func removeStateObserver(_ token: UUID) { stateObservers.removeValue(forKey: token) }
   @discardableResult
-  public func observeEvents(_ callback: @escaping @MainActor (ConversationEvent) -> Void) -> UUID {
+  public func observeEvents(_ callback: @escaping @MainActor (ConversationEventContext) -> Void) -> UUID {
     let token = UUID(); eventObservers[token] = callback; return token
   }
   public func removeEventObserver(_ token: UUID) { eventObservers.removeValue(forKey: token) }
@@ -554,7 +608,10 @@ public final class ConversationClient: NSObject {
       Task { @MainActor in self?.trackManager() }
     }
   }
-  private func emit(_ event: ConversationEvent) { for callback in Array(eventObservers.values) { callback(event) } }
+  private func emit(_ event: ConversationEvent, conversationID: UUID? = nil) {
+    let context = ConversationEventContext(type: event, conversationID: conversationID)
+    for callback in Array(eventObservers.values) { callback(context) }
+  }
 }
 
 // Device traces prove all LCK delegate callbacks arrive on main. @preconcurrency limits
@@ -566,6 +623,10 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
   }
   public func conversationManagerDidBegin(_ manager: ConversationManager) { refresh() }
   public func conversationManagerDidReset(_ manager: ConversationManager) {
+    audioAuthorityGeneration &+= 1
+    systemAudio.setSystemAudioAuthorization(false)
+    audio.reset()
+    mediaAdapter.setSystemAudioAuthorization(false)
     incomingIntake.reset()
     coordinator.cancelAll(reason: .reset); appActions.removeAll(); refresh(); emit(.providerReset)
   }
@@ -622,7 +683,27 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
   public func conversationManager(_ manager: ConversationManager, timedOutPerforming action: ConversationAction) {
     coordinator.cancel(action.uuid, reason: .platformTimeout)
   }
-  public func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) { emit(.audioActivated) }
-  public func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession) { emit(.audioDeactivated) }
+  public func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) {
+    audioAuthorityGeneration &+= 1
+    let generation = audioAuthorityGeneration
+    systemAudio.setSystemAudioAuthorization(true)
+    mediaAdapter.setSystemAudioAuthorization(true)
+    guard audioAuthorityGeneration == generation else { return }
+    audioOperations.enqueue { [mediaAdapter] in try await mediaAdapter.didActivate(audioSession) }
+    // Publish only after the authorization and ordered native work are installed;
+    // event observers may synchronously reset or deliver an opposite callback.
+    audio.didActivate()
+  }
+  public func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession) {
+    audioAuthorityGeneration &+= 1
+    let generation = audioAuthorityGeneration
+    systemAudio.setSystemAudioAuthorization(false)
+    mediaAdapter.setSystemAudioAuthorization(false)
+    guard audioAuthorityGeneration == generation else { return }
+    audioOperations.enqueue { [mediaAdapter] in try await mediaAdapter.didDeactivate(audioSession) }
+    // Publish only after the authorization and ordered native work are installed;
+    // event observers may synchronously reset or deliver an opposite callback.
+    audio.didDeactivate()
+  }
 }
 #endif

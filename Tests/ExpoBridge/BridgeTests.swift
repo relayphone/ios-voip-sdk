@@ -339,6 +339,7 @@ struct BridgeTests {
     try expect(ownership?["type"] as? String == "providerOwnershipLost" &&
                (ownership?["payload"] as? [String: Any])?.isEmpty == true,
                "Process ownership loss must not invent a conversation identity.")
+
   }
 
   @MainActor private static func action(_ events: Events, id: UUID) throws -> [String: Any] {

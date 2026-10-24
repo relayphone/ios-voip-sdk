@@ -1,4 +1,5 @@
 import CallKit
+import AVFAudio
 import CryptoKit
 import Foundation
 @preconcurrency import LiveCommunicationKit
@@ -23,6 +24,168 @@ private enum ContractTrace {
     if let data = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) {
       FileHandle.standardError.write(Data("PROBE ".utf8) + data + Data("\n".utf8))
     }
+  }
+}
+
+@MainActor
+private final class ReentrantMediaAdapter: MediaAdapter {
+  private(set) var observedClient: ConversationClient?
+  private(set) var authorizationCalls = 0
+  func setSystemAudioAuthorization(_ active: Bool) {
+    authorizationCalls += 1
+    observedClient = try? VoIPApplication.start(mediaAdapter: self).client
+  }
+  func prepare() async throws {}
+  func didActivate(_ session: AVAudioSession) async throws {}
+  func didDeactivate(_ session: AVAudioSession) async throws {}
+}
+
+@MainActor
+private final class LifecycleContractAdapter: MediaAdapter {
+  private(set) var authorized = false
+  private(set) var activations = 0
+  private(set) var deactivations = 0
+  func setSystemAudioAuthorization(_ active: Bool) {
+    authorized = active
+    ContractTrace.log("lifecycle.adapterAuthorization", ["authorized": active,
+      "phase": LifecycleContract.phase])
+  }
+  func prepare() async throws {}
+  func didActivate(_ session: AVAudioSession) async throws {
+    activations += 1
+    ContractTrace.log("lifecycle.lckDelegate", ["active": true, "count": activations,
+      "phase": LifecycleContract.phase])
+  }
+  func didDeactivate(_ session: AVAudioSession) async throws {
+    deactivations += 1
+    ContractTrace.log("lifecycle.lckDelegate", ["active": false, "count": deactivations,
+      "phase": LifecycleContract.phase])
+  }
+}
+
+@MainActor
+private enum LifecycleContract {
+  static var phase = "initial"
+  static var observed: [(String, String)] = []
+  static var consumed = 0
+  static func kind(_ value: VSAudioSessionLifecycleValue) -> String {
+    switch value.kind {
+    case .active: "active"
+    case .inactive: "inactive"
+    case .resumptionRecommended: "recommended"
+    case .mediaServicesReset: "reset"
+    @unknown default: "unknown"
+    }
+  }
+  static func wait(_ condition: () -> Bool) async -> Bool {
+    let stop = Date().addingTimeInterval(5)
+    while !condition(), Date() < stop { try? await Task.sleep(for: .milliseconds(20)) }
+    return condition()
+  }
+  static func run() async throws -> Bool {
+    let modern: Bool
+    if #available(iOS 27.0, *) { modern = true } else { modern = false }
+    let path = modern ? "modern" : "legacy"
+    ContractTrace.log("lifecycle.path", ["path": path,
+      "evidence": modern ? "native-lck-audio-authority-v1" : "native-synthetic-legacy-wiring"])
+    #if DEBUG && targetEnvironment(simulator)
+    VSAudioSessionSetLifecycleDiagnosticHandler { name, contextClass, main, value in
+      MainActor.assumeIsolated {
+        let label = kind(value)
+        observed.append((phase, label))
+        ContractTrace.log("lifecycle.observed", ["notificationName": name, "contextClass": contextClass,
+          "observerMain": main, "kind": label, "hasSource": value.hasSource, "source": value.source,
+          "hasInterruptionReason": value.hasInterruptionReason, "interruptionReason": value.interruptionReason,
+          "shouldResume": value.shouldResume, "phase": phase])
+      }
+    }
+    AudioLifecycleDiagnostics.didConsume = { event, before, after in
+      consumed += 1
+      let label: String
+      var source: Int?
+      var reason: UInt?
+      var shouldResume = false
+      switch event {
+      case .active: label = "active"
+      case .inactive(let value, let interruptionReason):
+        label = "inactive"; source = value; reason = interruptionReason
+      case .resumptionRecommended(let value): label = "recommended"; shouldResume = value
+      case .mediaServicesReset: label = "reset"
+      }
+      ContractTrace.log("lifecycle.consumed", ["kind": label, "authorizedBefore": before,
+        "authorizedAfter": after, "hasSource": source != nil, "source": source ?? 0,
+        "hasInterruptionReason": reason != nil, "interruptionReason": reason ?? 0,
+        "shouldResume": shouldResume, "phase": phase])
+    }
+    defer {
+      VSAudioSessionSetLifecycleDiagnosticHandler(nil)
+      AudioLifecycleDiagnostics.didConsume = nil
+    }
+    #endif
+    let adapter = LifecycleContractAdapter()
+    let application = try VoIPApplication.start(mediaAdapter: adapter)
+    let client = application.client
+    let repeated = try VoIPApplication.start(mediaAdapter: adapter)
+    ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(client)),
+      "sharedIdentity": String(describing: ObjectIdentifier(repeated.client)), "warnings": 0])
+    client.setConversationHandler(.init(
+      join: { _, _ in ContractTrace.log("lifecycle.handler", ["kind": "join", "phase": phase]) },
+      start: { _, _ in ContractTrace.log("lifecycle.handler", ["kind": "start", "phase": phase]) },
+      end: { _, _ in ContractTrace.log("lifecycle.handler", ["kind": "end", "phase": phase]) },
+      hold: { _, _ in ContractTrace.log("lifecycle.handler", ["kind": "hold", "phase": phase]) }))
+    let id = try await client.reportIncomingConversation(.init(eventId: UUID().uuidString,
+      serverCallId: UUID().uuidString, caller: .init(id: "native-lifecycle-fixture")))
+    phase = "answer"
+    try await client.joinConversation(id)
+    guard await wait({ adapter.authorized && adapter.activations == 1 }) else { return false }
+    if modern {
+      guard await wait({
+        guard let call = client.snapshots.first(where: { $0.id == id }) else { return false }
+        return call.status == .connecting && call.pending == nil && call.connectedAt == nil
+      }) else { return false }
+      ContractTrace.log("lifecycle.joinSettled", ["conversationID": id.uuidString,
+        "pendingCleared": true, "connected": false, "phase": phase])
+      ContractTrace.log("lifecycle.backendConnectedRequested", ["conversationID": id.uuidString, "phase": phase])
+      try await client.reportConversation(id, report: .connected)
+      guard await wait({
+        guard let call = client.snapshots.first(where: { $0.id == id }) else { return false }
+        return call.status == .connected && call.connectedAt != nil
+      }), let connectedAt = client.snapshots.first(where: { $0.id == id })?.connectedAt else { return false }
+      ContractTrace.log("lifecycle.backendConnected", ["conversationID": id.uuidString,
+        "accepted": true, "connectedAtMS": Int(connectedAt.timeIntervalSince1970 * 1000), "phase": phase])
+    } else {
+      phase = "legacy-began"
+      ContractTrace.log("lifecycle.syntheticPost", ["kind": "inactive", "phase": phase])
+      NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance(),
+        userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue,
+          AVAudioSessionInterruptionReasonKey: AVAudioSession.InterruptionReason.default.rawValue])
+      guard await wait({ !adapter.authorized }) else { return false }
+      phase = "legacy-ended"
+      ContractTrace.log("lifecycle.syntheticPost", ["kind": "recommended", "phase": phase])
+      NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance(),
+        userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.ended.rawValue,
+          AVAudioSessionInterruptionOptionKey: AVAudioSession.InterruptionOptions.shouldResume.rawValue])
+      guard await wait({ observed.contains { $0 == ("legacy-ended", "recommended") } }),
+        !adapter.authorized else { return false }
+    }
+    phase = "hold"
+    try await client.setHeld(id, true)
+    guard await wait({ !adapter.authorized && adapter.deactivations == 1 }) else { return false }
+    phase = "resume"
+    try await client.setHeld(id, false)
+    guard await wait({ adapter.authorized && adapter.activations == 2 }) else { return false }
+    phase = "end"
+    try await client.endConversation(id)
+    guard await wait({ !adapter.authorized && adapter.deactivations == 2 && client.snapshots.isEmpty }) else { return false }
+    if modern {
+      ContractTrace.log("lifecycle.noConversations", ["count": client.snapshots.count, "phase": phase])
+    }
+    ContractTrace.log("lifecycle.completed", ["authorized": adapter.authorized,
+      "activations": adapter.activations, "deactivations": adapter.deactivations,
+      "observedCount": observed.count, "consumedCount": consumed, "phase": phase])
+    // Authority is measured by genuine LCK callbacks above. Passive AV session
+    // notifications may be absent on this OS; legacy wiring still requires them.
+    return (modern || !observed.isEmpty) && observed.count == consumed
   }
 }
 
@@ -68,6 +231,20 @@ private final class SDKM1ContractsProbe {
       ContractTrace.log("contract.warning", ["message": message, "phase": phase, "count": warnings])
     }
     do {
+      if mode == "audio-lifecycle" { finish(try await LifecycleContract.run()); return }
+      if mode == "media-reentrancy" {
+        let adapter = ReentrantMediaAdapter()
+        let application = try VoIPApplication.start(mediaAdapter: adapter)
+        let client = application.client
+        let repeated = try VoIPApplication.start(mediaAdapter: adapter)
+        let sameOwner = adapter.observedClient === client && application === repeated
+        ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(client)),
+          "sharedIdentity": String(describing: ObjectIdentifier(repeated.client)), "warnings": warnings])
+        ContractTrace.log("contract.mediaReentrancy", ["authorizationCalls": adapter.authorizationCalls,
+          "sameOwner": sameOwner, "warnings": warnings])
+        finish(sameOwner && adapter.authorizationCalls == 1 && warnings == 0)
+        return
+      }
       if mode == "duplicate-wrapper" {
         let configuration = VoIPApplication.Configuration(client: .init(includesConversationInRecents: false))
         let application = try VoIPApplication.start(configuration: configuration)

@@ -30,7 +30,9 @@ final class ConversationBridge {
       self?.emitValue("conversationsChanged", update)
     }
     eventObserver = client.observeEvents { [weak self] event in
-      self?.emit("conversationEvent", ["type": event.rawValue, "payload": [:]])
+      var payload: [String: String] = [:]
+      if let id = event.conversationID { payload["conversationId"] = id.uuidString }
+      self?.emit("conversationEvent", ["type": event.type.rawValue, "payload": payload])
     }
     tokenObserver = pushService.observeToken { [weak self] token in
       self?.emitValue("pushTokenUpdated", token)

@@ -25,6 +25,7 @@ SOURCE_PATHS = ('Sources', 'Expo', 'example', 'Package.swift', 'IosVoipSDK.podsp
                 'discovery/sdk_m1_conformance.py', 'discovery/check_sdk_m1.py',
                 'discovery/check_sdk_m1_container_capture.py',
                 'discovery/build_sdk_m1_contracts.sh', 'discovery/probe/sdk_m1_contracts.swift',
+                'discovery/run_audio_lifecycle_legacy.sh',
                 'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
                 'discovery/check_expo_bridge.py', 'discovery/check_expo_plugin.cjs',
                 'discovery/check_platform_shims.py', 'discovery/check_sdk_ownership.py',
@@ -42,6 +43,9 @@ SOURCE_PATHS = ('Sources', 'Expo', 'example', 'Package.swift', 'IosVoipSDK.podsp
                 'docs/research/callkit-simulator-probe/device-system-ui/2026-10-20-iphone13-ui10-app.jsonl',
                 'discovery/build_sdk_device_release.py', 'discovery/device_release_exclusion.py',
                 'discovery/check_device_release.py',
+                'discovery/sdk_m2_audio_lifecycle.py', 'discovery/check_sdk_m2_audio_lifecycle.py',
+                'docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/device-trace.jsonl',
+                'docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27-noio/device-trace.jsonl',
                 'docs/research/callkit-simulator-probe/livecommunicationkit')
 TARGETS = ('CKSimRuntimeC', 'CKSimRuntime', 'VoIPPlatform', 'VoIPSDK')
 BINARIES = dict(example='binaries/example', bootstrap='binaries/bootstrap',

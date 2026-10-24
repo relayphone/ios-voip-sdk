@@ -7,6 +7,9 @@ on:
       - "Package.swift"
       - "VERSION"
       - "Sources/**"
+      - "Tests/**"
+      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/device-trace.jsonl"
+      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27-noio/device-trace.jsonl"
       - "Expo/**"
       - "example/**"
       - "package.json"
@@ -24,6 +27,9 @@ on:
       - "Package.swift"
       - "VERSION"
       - "Sources/**"
+      - "Tests/**"
+      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/device-trace.jsonl"
+      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27-noio/device-trace.jsonl"
       - "Expo/**"
       - "example/**"
       - "package.json"
@@ -47,7 +53,7 @@ concurrency:
 
 jobs:
   plain-simulator:
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
     defaults:
       run:
@@ -57,12 +63,13 @@ jobs:
       EXPO_NO_TELEMETRY: "1"
       SDK_M1_ACCEPTANCE: "1"
       SDK_SYSTEM_ACCEPTANCE: "1"
+      SDK_M0_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-0
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
       - name: Select the compiler and simulator host
-        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+        run: sudo xcode-select -s /Applications/Xcode_27.1.app
       - name: Check offline evidence controls and shell syntax
         run: |
           set -euo pipefail
@@ -105,11 +112,23 @@ jobs:
           python3 discovery/check_device_release.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/device-release-controls.log"
           python3 discovery/check_lck_provider_policy.py | tee "$SDK_M0_BUILD_LOGS/lck-policy-controls.json"
           bash Tests/VoIPSDK/run.sh | tee "$SDK_M0_BUILD_LOGS/core-controls.log"
+          bash Tests/AudioSessionQueue/run.sh | tee "$SDK_M0_BUILD_LOGS/audio-queue-controls.log"
+          python3 Tests/AudioLifecycle/check_audio_lifecycle.py | tee "$SDK_M0_BUILD_LOGS/audio-lifecycle-controls.log"
+          python3 Tests/AudioLifecycle/check_audio_fixtures.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/audio-raw-fixtures.log"
+          python3 discovery/check_sdk_m2_audio_lifecycle.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/audio-lifecycle-capture-controls.log"
           bash Tests/VoIPSDK/run_push.sh | tee "$SDK_M0_BUILD_LOGS/push-controls.log"
           bash Tests/VoIPSDK/run_projection.sh | tee "$SDK_M0_BUILD_LOGS/projection-controls.log"
           bash Tests/VoIPSDK/run_mute_echo.sh | tee "$SDK_M0_BUILD_LOGS/mute-echo-controls.json"
           bash Tests/ProbeTraceWriter/run.sh | tee "$SDK_M0_BUILD_LOGS/probe-writer-controls.json"
-          bash -n discovery/build_sdk_bootstrap.sh discovery/build_sdk_device_probe.sh discovery/build_sdk_m1_contracts.sh discovery/build_push_report_entry.sh discovery/run_sdk_m0.sh
+          for script in discovery/build_sdk_bootstrap.sh discovery/build_sdk_device_probe.sh discovery/build_sdk_m1_contracts.sh discovery/build_push_report_entry.sh discovery/run_sdk_m0.sh discovery/run_audio_lifecycle_legacy.sh; do
+            bash -n "$script"
+          done
+          for offline_log in "$SDK_M0_BUILD_LOGS"/*; do
+            if [[ -f "$offline_log" && ! -s "$offline_log" ]]; then
+              printf 'Empty offline build log: %s\n' "${offline_log##*/}" >&2
+              exit 1
+            fi
+          done
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "24.22.1"
@@ -234,12 +253,62 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: sdk-m0-macos-26-xcode-26.6
+          name: sdk-m0-xcode-27.1
           path: |
             ${{ runner.temp }}/sdk-m0
             ${{ runner.temp }}/sdk-m0-build-logs
           if-no-files-found: error
           retention-days: 30
+      - name: Hand off the SDK 27 contract app for the older runtime
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sdk-27-m1-contract-app
+          path: |
+            ${{ env.SDK_M1_CONTRACT_BUILD }}/SDKM1Contracts.app
+            ${{ env.SDK_M1_CONTRACT_BUILD }}/build-info.json
+            ${{ env.SDK_M1_CONTRACT_BUILD }}/source-before.json
+            ${{ env.SDK_M1_CONTRACT_BUILD }}/source-after.json
+            ${{ env.SDK_M1_CONTRACT_BUILD }}/build.log
+          if-no-files-found: error
+          retention-days: 7
       - name: Remove native build outputs
         if: always()
         run: rm -rf "$RUNNER_TEMP/sdk-m0-build"
+
+  legacy-audio-lifecycle:
+    needs: plain-simulator
+    runs-on: macos-26
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Select the older runtime host
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sdk-27-m1-contract-app
+          path: ${{ runner.temp }}/sdk-27-contract-build
+      - name: Restore the app executable mode after artifact download
+        run: chmod +x "$RUNNER_TEMP/sdk-27-contract-build/SDKM1Contracts.app/SDKM1Contracts"
+      - name: Check the older SDK decoder branch
+        run: python3 Tests/AudioLifecycle/check_audio_lifecycle.py
+      - name: Run only the audio lifecycle contract on iOS 26.5
+        env:
+          SDK_M1_CONTRACT_BUILD: ${{ runner.temp }}/sdk-27-contract-build
+          OUT: ${{ runner.temp }}/audio-lifecycle-legacy
+        run: bash discovery/run_audio_lifecycle_legacy.sh
+      - name: Preserve the scoped legacy capture
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: audio-lifecycle-ios-26.5-sdk-27
+          path: ${{ runner.temp }}/audio-lifecycle-legacy
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove the downloaded app
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/sdk-27-contract-build"
