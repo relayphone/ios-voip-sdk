@@ -45,13 +45,13 @@ jobs:
           python3 Tests/RuntimeEvents/run.py --package "$RUNNER_TEMP/runtime" \
             --app "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" --out "$RUNNER_TEMP/m4-events" \
             --runtime "$CKSIM_TEST_RUNTIME"
-      - name: Answer an incoming call through the separate SwiftUI inspector
+      - name: Follow an incoming call through the live SwiftUI inspector
         if: github.event_name != 'push'
         run: |
           python3 Tests/Inspector/run.py --package "$RUNNER_TEMP/runtime" \
             --fixture "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" \
             --inspector "$RUNNER_TEMP/inspector/CKSimInspector.app" --out "$RUNNER_TEMP/m4-inspector" \
-            --runtime "$CKSIM_TEST_RUNTIME"
+            --runtime "$CKSIM_TEST_RUNTIME" --driver journal
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
