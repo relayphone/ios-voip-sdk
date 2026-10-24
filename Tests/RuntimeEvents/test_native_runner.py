@@ -11,6 +11,17 @@ import run
 
 
 class RunnerTests(unittest.TestCase):
+    def test_reused_fixture_still_launches_a_fresh_pinned_session_without_reinstall(self):
+        app = Path('/owned/RuntimeEventFixture.app')
+        with patch.object(run.uuid, 'uuid4', return_value='fresh'):
+            with patch.object(run, 'run', side_effect=['fixture: 42', '/owned/container']) as transport:
+                channel, run_id = run.launch_fixture('owned', app, install=False)
+        self.assertEqual(channel, Path('/owned/container/Documents/.callkit-simulator'))
+        self.assertEqual(run_id, 'fixture-fresh')
+        self.assertEqual([call.args[2] for call in transport.call_args_list], ['launch', 'get_app_container'])
+        self.assertIn('--terminate-running-process', transport.call_args_list[0].args)
+        self.assertEqual(transport.call_args_list[0].kwargs['env']['SIMCTL_CHILD_CKSIM_RUN_ID'], run_id)
+
     def test_initial_stimulus_is_sent_after_slow_host_readiness(self):
         """A launch-time ring may already have expired when transport returns."""
         class StimulusSent(Exception):

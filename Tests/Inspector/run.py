@@ -270,10 +270,14 @@ def main():
     parser.add_argument('--inspector', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--target-simulator')
+    parser.add_argument('--fixture-installed', action='store_true',
+                        help='Reuse the fixture installed by native acceptance on the supplied target')
     parser.add_argument('--display-simulator')
     parser.add_argument('--runtime', help='Require this exact available simulator runtime identifier')
     parser.add_argument('--driver', choices=('xctest', 'journal'), default='xctest')
     args = parser.parse_args()
+    if args.fixture_installed and not args.target_simulator:
+        parser.error('--fixture-installed requires an explicit --target-simulator')
     if args.driver == 'journal' and args.display_simulator and args.display_simulator != args.target_simulator:
         parser.error('The journal driver uses its target simulator as the Inspector display')
     out = args.out.resolve()
@@ -304,8 +308,8 @@ def main():
         return value
     try:
         target = device(args.target_simulator, 'M4 Target ')
-        print('Installing target fixture before booting the inspector display.', flush=True)
-        channel, run_id = launch_fixture(target, args.fixture)
+        print('Starting a fresh fixture session on the target simulator.', flush=True)
+        channel, run_id = launch_fixture(target, args.fixture, install=not args.fixture_installed)
         session = fixture_session(channel, run_id)
         assert session.get('controlTransport') == 'directory-watch-v1', 'fixture must support spawn-free mailbox controls'
         common = [str(ROOT/'Tools/cksim'),'--simulator',target,'--bundle',BUNDLE,
