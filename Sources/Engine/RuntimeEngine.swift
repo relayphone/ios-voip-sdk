@@ -601,7 +601,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     case is CXSetGroupCallAction: kind = "group"
     default: kind = NSStringFromClass(type(of: item.action))
     }
-    return ["actionID": item.action.uuid.uuidString, "kind": kind,
+    var fields: [String: Any] = ["actionID": item.action.uuid.uuidString, "kind": kind,
       "callUUID": (item.action as? CXCallAction)?.callUUID.uuidString ?? "",
       "transactionID": item.transaction.uuid.uuidString, "origin": item.origin.rawValue,
       "provider": providerID(item.provider.provider), "apiKind": item.apiKind.rawValue,
@@ -609,6 +609,8 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       "deadlineMS": Int64(item.issuedAt.addingTimeInterval(timing.deadline).timeIntervalSince1970 * 1000),
       "deadlineSeconds": timing.deadline, "expirySeconds": timing.expiry,
       "latencyMS": Double(DispatchTime.now().uptimeNanoseconds - item.issuedUptime) / 1_000_000]
+    if let mute = item.action as? CXSetMutedCallAction { fields["muted"] = mute.isMuted }
+    return fields
   }
   private func requestError(_ code: Int) -> NSError {
     NSError(domain: "com.apple.CallKit.error.requesttransaction", code: code)

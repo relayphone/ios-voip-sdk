@@ -212,6 +212,8 @@ def main():
                 assert row['latencyMS'] >= 0
             if row['event'] == 'action.settled':
                 assert 50 <= row['latencyMS'] < row['deadlineSeconds'] * 1000
+            if row.get('kind') == 'mute':
+                assert type(row['muted']) is bool, 'mute journal must identify the echoed value'
         events = {r['event'] for r in watched}
         assert {'report.incoming','report.completed','report.updated','report.connecting','report.connected',
                 'action.deadline','action.settled','call.changed','audio.activated','push.received','push.completed'} <= events

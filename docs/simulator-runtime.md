@@ -248,6 +248,11 @@ when another call is active. End Call ends a connected call. Buttons dispatch th
 runtime's existing system-origin commands; acceptance is shown only after the
 journal records the resulting state. Conversations, pending deadlines, action
 settlement latency versus the profile budget, and audio activation remain live.
+The device-reference section compares journal-measured simulator intervals with
+the iPhone 13 / iOS 27.0 LCK captures: about 190 ms from push to report done,
+236 ms from join callback to audio activation, 8–17 ms from mute fulfillment to
+its echo, and a 4.4 s unreported-push deadline. It names the simulator API and
+measurement endpoints; missing or ambiguous event pairs remain unmeasured.
 The UI retains the latest 300 events and five ended conversations; the full
 journal remains available to watch and CI.
 
