@@ -398,6 +398,24 @@ def container_cache_controls():
         check('empty-container-query-refused', None, SimpleNamespace(returncode=0, stdout='', stderr=''), 'missing or invalid')
         check('invalid-container-query-refused', None, SimpleNamespace(returncode=0, stdout=str(root / 'missing') + '\n', stderr=''),
               'missing or invalid')
+        # Run the real running-control argument builder; the CLI process is inert.
+        args = SimpleNamespace(package=package, simulator='synthetic-owned-simulator', run_id='synthetic-run')
+        calls = []
+        def control(argv, **kwargs):
+            require(argv[0] == str(package / 'cksim') and argv.count('--app-container') == 1 and
+                    argv[argv.index('--app-container') + 1] == str(container),
+                    'running controls must reuse the exact validated container without a new simctl lookup')
+            require(kwargs == dict(capture_output=True, timeout=75), 'running control process bounds changed')
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, 0, b'{"success":true}', b'')
+        with patch.object(runner.subprocess, 'run', side_effect=control):
+            selected = runner.app_data_container(args.simulator, container)
+            journey = runner.Journey(args, root / 'running-controls', 'end-accept', selected)
+            journey.cli('push', '--payload-file', str(root / 'incoming.payload.json'), '--must-report', 'true')
+            journey.cli('end-and-accept', 'waiting-call', '--active-call', 'active-call')
+        require(len(calls) == 2 and len(journey.controls) == 2, 'running control unexpectedly queried or skipped a process')
+        checks.append(dict(name='running-controls-reuse-validated-container', passed=True,
+                           expected='exact cached path in both CLI commands; no native query'))
         # Execute only the exact parent dispatch block with a fake python3.
         # No simulator command or the full M0 lifecycle is executed.
         parent = (gate.ROOT / 'discovery/run_sdk_m0.sh').read_text()
