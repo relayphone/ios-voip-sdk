@@ -301,6 +301,21 @@ class LifecycleTests(unittest.TestCase):
             self.call(*command, expected=None)
         self.assertEqual(len(self.calls()), 1)
 
+    def test_foreign_or_multiple_simulator_targets_are_refused_before_execution(self):
+        created = self.create()
+        commands = [
+            ('boot', FOREIGN, created), ('bootstatus', FOREIGN, '-b', created),
+            ('install', FOREIGN, created), ('launch', FOREIGN, created, BUNDLE),
+            ('terminate', FOREIGN, created), ('shutdown', FOREIGN, created),
+            ('delete', FOREIGN, created), ('delete', created, FOREIGN),
+            ('io', FOREIGN, 'screenshot', created),
+            ('privacy', FOREIGN, 'grant', 'microphone', created),
+        ]
+        for command in commands:
+            with self.subTest(command=command):
+                self.call(*command, expected=None)
+        self.assertEqual(len(self.calls()), 1, 'a foreign simulator operation reached the native service')
+
     def test_product_classification_never_executes_or_retries_a_command(self):
         self.cli('product', 'sdk-m0-conformance')
         self.assertIn('product:sdk-m0-conformance', self.summary.read_text())

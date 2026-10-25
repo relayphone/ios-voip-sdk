@@ -313,8 +313,19 @@ class Session:
             self.save()
             result = self.create(command[3:], timeout)
         else:
-            if step != 'list' and (not self.current or self.current not in command[3:]):
-                raise ValueError('Operation must name the current owned simulator')
+            if step != 'list':
+                position = 3
+                if step == 'launch':
+                    flags = {'--console', '--console-pty', '--terminate-running-process', '--wait-for-debugger'}
+                    while position < len(command) and command[position] in flags:
+                        position += 1
+                if not self.current or len(command) <= position or command[position] != self.current:
+                    raise ValueError('Operation must target the current owned simulator')
+                lengths = {'boot': 4, 'bootstatus': 5, 'install': 5, 'terminate': 5, 'shutdown': 4, 'delete': 4}
+                if step in lengths and len(command) != lengths[step]:
+                    raise ValueError('Unexpected simulator operation arguments')
+                if step == 'bootstatus' and command[4] != '-b':
+                    raise ValueError('Bootstatus requires its blocking flag')
             result = self.execute(command, timeout)
 
         if step == 'launch' and result.stdout:
