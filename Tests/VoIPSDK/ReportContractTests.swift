@@ -563,6 +563,31 @@ import Foundation
       liveReplacement.state == .idle && snapshot(heldCleanupID)?.ended == nil,
       "Late completion for a retired native object cannot terminate its replacement")
 
+    // Reset discards retained input, not future first observations. A native
+    // object first becoming terminal after reset can supply a new cleanup End.
+    let freshResetPayload = payload("first-terminal-after-reset")
+    let freshResetID = try await client.reportIncomingConversation(freshResetPayload)
+    let freshResetOriginal = manager.conversations.first { $0.uuid == freshResetID }!
+    defer { withExtendedLifetime(freshResetOriginal) {} }
+    let preResetGeneration = client.incomingIntake.projection(freshResetID)!.generation
+    manager.delegate?.conversationManagerDidReset(manager)
+    precondition(client.incomingIntake.projection(freshResetID)!.generation != preResetGeneration &&
+      !client.incomingIntake.projection(freshResetID)!.isLive)
+    freshResetOriginal.state = .left
+    manager.conversations.removeAll { $0 === freshResetOriginal }
+    manager.delegate?.conversationManager(manager, conversationChanged: freshResetOriginal)
+    waitStage = "first terminal observation after reset"
+    try await wait { snapshot(freshResetID) == nil }
+    let freshResetState = client.state
+    let freshResetEnd = systemEnd(freshResetID)
+    waitStage = "new genuine cleanup End after reset"
+    try await wait { freshResetEnd.state == .complete || freshResetEnd.state == .failed }
+    precondition(freshResetEnd.state == .complete && freshResetEnd.settlements == 1 &&
+      endCalls.filter { $0 == freshResetID }.count == 1 &&
+      endSnapshots[freshResetEnd.uuid]?.status == .ended &&
+      endSnapshots[freshResetEnd.uuid]?.payload == freshResetPayload && client.state == freshResetState,
+      "Fresh platform input after reset may deliver cleanup once without restoring public state")
+
     let (resetCleanupID, resetCleanupOriginal) = try await departedOriginal("terminal-reset")
     defer { withExtendedLifetime(resetCleanupOriginal) {} }
     manager.delegate?.conversationManagerDidReset(manager)
@@ -786,7 +811,7 @@ import Foundation
       afterTimeoutEnd.settlements == 1 && endCalls.filter { $0 == timeoutID }.count == 1,
       "A native timeout consumes cleanup input and late handler completion cannot settle again")
     precondition(held.isEmpty)
-    print("{\"success\":true,\"groups\":49,\"actualClientAndCoordinatorAndIntake\":true,\"nativeFrameworkMeasured\":false}")
+    print("{\"success\":true,\"groups\":50,\"actualClientAndCoordinatorAndIntake\":true,\"nativeFrameworkMeasured\":false}")
   }
 }
 
