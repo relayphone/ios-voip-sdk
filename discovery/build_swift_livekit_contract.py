@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = ROOT / 'Tests/SwiftLiveKit'
 ADAPTER = ROOT / 'Integrations/LiveKit/LiveKitMediaAdapter.swift'
 INPUTS = ('Tests/SwiftLiveKit/Package.swift', 'Tests/SwiftLiveKit/Package.resolved',
-          'Tests/SwiftLiveKit/NativeJourney.swift', 'Integrations/LiveKit/LiveKitMediaAdapter.swift',
+          'Tests/SwiftLiveKit/NativeJourney.swift', 'Tests/SwiftLiveKit/StartupTests.swift',
+          'Tests/SwiftLiveKit/run_startup.py', 'Integrations/LiveKit/LiveKitMediaAdapter.swift',
           'discovery/build_swift_livekit_contract.py', 'Package.swift', 'Tools/cksim-notify.c',
           'discovery/run_swift_livekit.py', 'discovery/swift_livekit_conformance.py',
           'discovery/check_swift_livekit.py', '.github/workflows/sdk-m0.yml')

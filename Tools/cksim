@@ -551,9 +551,10 @@ def inspect_app(args, device):
     if not args.app.is_dir() or args.app.suffix != ".app":
         raise RuntimeError("Build the simulator inspector first and pass inspect --app <CKSimInspector.app>.")
     display = None
-    owned_display = not args.inspector_simulator
+    owned_display = False
     try:
         with inspector_bridge(args, device) as connection:
+            owned_display = not args.inspector_simulator
             if args.inspector_simulator:
                 display = simulator(args.inspector_simulator)
                 if display == device and not getattr(args, "allow_shared_simulator", False):

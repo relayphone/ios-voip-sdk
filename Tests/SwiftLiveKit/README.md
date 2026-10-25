@@ -26,6 +26,14 @@ python3 discovery/run_swift_livekit.py /absolute/fresh/build /absolute/fresh/cap
 python3 discovery/swift_livekit_conformance.py /absolute/fresh/build /absolute/fresh/capture
 ```
 
+The fixture starts the SDK before awaiting cold LiveKit initialization. It still
+installs the unchanged observer chain before reporting an incoming conversation;
+backend initialization cannot delay creation of the runtime control session.
+The stale case also completes its control handshake before backend initialization.
+`python3 Tests/SwiftLiveKit/run_startup.py` exercises both ordering boundaries
+against the actual startup source and queue with inert application/audio facades;
+it compiles a host test and never builds or launches an app.
+
 The runner preserves inherited DYLD entries, refuses external SDK runtime
 injection, and grants only microphone privacy permission. Each of the two fresh
 processes publishes its canonical data container in its launch record. The runner
