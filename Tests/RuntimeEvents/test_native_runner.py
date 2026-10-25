@@ -119,7 +119,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_cold_boot_timeout_is_explicit_and_keeps_diagnostics(self):
         failure = subprocess.TimeoutExpired(['simctl'], 300, output=b'Waiting for SpringBoard')
-        with patch.object(run.subprocess, 'run', side_effect=failure) as process:
+        with patch.object(run.simulator_infra, 'bounded', side_effect=failure) as process:
             with self.assertRaisesRegex(RuntimeError, 'Waiting for SpringBoard'):
                 run.run('xcrun', 'simctl', 'bootstatus', 'owned', '-b', timeout=300)
         self.assertEqual(process.call_args.kwargs['timeout'], 300)

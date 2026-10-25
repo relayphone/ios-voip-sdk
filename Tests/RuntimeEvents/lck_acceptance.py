@@ -16,7 +16,7 @@ import sys
 import time
 import uuid
 
-from run import run
+from run import run, simulator_infra
 from ci_simulator import create, cleanup, simulator_uuid
 
 BUNDLE = 'dev.callkitsim.lckfixture'
@@ -303,6 +303,9 @@ def main():
     parser.add_argument('--simulator', type=simulator_uuid, help='Borrow this already booted operator-owned simulator; never shut it down or delete it')
     parser.add_argument('--filter-only', action='store_true', help='Normal report → explicit incoming code4 → cleared normal report')
     args = parser.parse_args()
+    install_bound = simulator_infra.seconds(os.environ.get('CKSIM_FIXTURE_INSTALL_TIMEOUT', 180))
+    if install_bound > 600:
+        raise ValueError('Fixture install bound must not exceed 600 seconds')
     args.out.mkdir(parents=True, exist_ok=True)
     runtimes = json.loads(run('xcrun', 'simctl', 'list', 'runtimes', '-j', timeout=30))['runtimes']
     assert any(r['identifier'] == RUNTIME and r.get('isAvailable') for r in runtimes), 'iOS 27.0 runtime required'
@@ -313,7 +316,7 @@ def main():
                 run('xcrun', 'simctl', 'boot', device, timeout=60)
                 run('xcrun', 'simctl', 'bootstatus', device, '-b', timeout=300)
             applications = simulator_applications(device)
-            run('xcrun', 'simctl', 'install', device, args.app.resolve(), timeout=120)
+            run('xcrun', 'simctl', 'install', device, args.app.resolve(), timeout=install_bound)
             journey = Journey(device, None, args.out, applications=applications)
             run_filter_case(journey)
             print(json.dumps(dict(success=True, fixture='genuine ConversationManager', runtime=RUNTIME,
