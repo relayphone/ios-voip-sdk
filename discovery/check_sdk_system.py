@@ -940,7 +940,9 @@ def controls():
         check('effective-' + kind + '-earlier-advertised-extended', case,
               lambda value, kind=kind: handler_deadline(value, kind, earlier_advertised=True, extend_advertised=True),
               'handler deadline differs from selected cap and margin')
-    check('effective-join-advertised-margin-inexact', 'answer-end', lambda value: handler_deadline(value, 'join', 2),
+    check('effective-join-native-wrapper-offset', 'answer-end', lambda value: handler_deadline(value, 'join', 7))
+    check('effective-tones-native-wrapper-offset', 'mute-echo', lambda value: handler_deadline(value, 'tones', 2))
+    check('effective-join-outside-native-margin', 'answer-end', lambda value: handler_deadline(value, 'join', 502),
           'handler deadline differs from selected cap and margin')
     check('effective-clock-marker-missing', 'answer-end', lambda value: value['engine'].remove(first(value['engine'], 'system.clock')),
           'require one system.clock')

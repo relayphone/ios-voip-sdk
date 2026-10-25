@@ -218,14 +218,17 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
                 action['delivered']['t_ms'] >= marker['t_ms'], 'invalid handler delivery clock')
         advertised = action['deadline']['deadlineMS']
         cap = {NATIVE['hold']: 5300, NATIVE['end']: 5300, NATIVE['join']: 64000}.get(kind)
-        lower = upper = advertised - 1500
+        # The runtime mirror precedes LCK's own action construction. Preserve the
+        # existing native 1–3.5 s margin envelope across that boundary; the actual
+        # coordinator's exact 1.5 s subtraction is covered by host controls.
+        lower, upper = advertised - 3500, advertised - 1000
         if cap is not None:
             relative = action['delivered']['t_ms'] - marker['t_ms']
             # The synchronous clock bridge brackets the wall offset within 25 ms.
             # A separate 250 ms cross-layer allowance bounds delegate delivery;
             # it does not prove the SDK's exact capture instant or extend timeoutDate.
-            lower = min(advertised, ready['clockBeforeMS'] + relative + cap) - 1500
-            upper = min(advertised, ready['wallTimeMS'] + relative + cap + 250) - 1500
+            lower = min(lower, ready['clockBeforeMS'] + relative + cap - 1500)
+            upper = min(upper, ready['wallTimeMS'] + relative + cap + 250 - 1500)
         require(lower - 1 <= deadline <= upper + 1 and handler['wallTimeMS'] < deadline,
                 'handler deadline differs from selected cap and margin')
         entered = one([row for row in engine if row.get('traceSequence') == handler['sequence']], 'system.handlerEntered')
