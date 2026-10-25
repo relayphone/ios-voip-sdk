@@ -2,11 +2,13 @@
 """Focused positive/tamper fixtures, with no simulator or native process use."""
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
 import sdk_m1_contracts_conformance as gate
+import sdk_m0_conformance as m0
 from check_sdk_m2_audio_lifecycle import authority_rows, lifecycle_engine
 
 IDENTITY = dict(sourceCommit='a' * 40, sourceInputsSHA256='b' * 64, sourceDirty=False)
@@ -608,6 +610,33 @@ class Controls(unittest.TestCase):
             path = capture / 'sdk-m1-contract-guard.receipt.json'
             receipt = json.loads(path.read_text()); receipt['launcherAppPID'] = 999; write(path, receipt)
         self.check(file_edit=bad_pid)
+
+
+class DiagnosticInputBindingControls(unittest.TestCase):
+    def test_failure_helper_changes_are_bound_and_dirty_in_both_identities(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            helper = 'scripts/sim/legacy_diagnostics.py'
+            for name in {*gate.OWN_FILES, *gate.REFERENCES, helper, 'Sources/marker.swift'}:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('fixture input\n')
+            def git(*arguments):
+                subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false',
+                                '-c', 'user.name=SDK Fixture', '-c', 'user.email=fixture@example.invalid',
+                                *arguments], cwd=root, check=True, timeout=10,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            git('init'); git('add', '.'); git('commit', '-m', 'fixture')
+            initial = [m0.source_identity(root), gate.source_identity(root)]
+            (root / helper).write_text('changed failure diagnostics\n')
+            with self.assertRaises(m0.EvidenceError): m0.source_identity(root)
+            self.assertTrue(gate.source_identity(root)['sourceDirty'])
+            git('add', helper); git('commit', '-m', 'change fixture helper')
+            for before, identity in zip(initial, (m0.source_identity(root), gate.source_identity(root))):
+                self.assertNotEqual(before['sourceInputsSHA256'], identity['sourceInputsSHA256'])
+            (root / helper).unlink()
+            with self.assertRaises(m0.EvidenceError): m0.source_identity(root)
+            with self.assertRaises(FileNotFoundError): gate.source_identity(root)
 
 
 if __name__ == '__main__': unittest.main()
