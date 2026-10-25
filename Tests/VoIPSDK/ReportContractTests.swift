@@ -65,7 +65,7 @@ import Foundation
         preconditionFailure("A refused request cannot start a conversation")
       } catch let actual {
         if isCapacity {
-          precondition(actual is ConversationClientError && String(describing: actual) == "atCapacity",
+          precondition((actual as? ConversationClientError) == .atCapacity,
             "Only requesttransaction/7 must become the typed capacity error")
         } else { precondition((actual as NSError) === error, "Other platform errors must remain unchanged") }
       }
