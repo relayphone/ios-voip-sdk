@@ -145,7 +145,7 @@ RUNTIME=host-runtime
         self.assertFalse((fixture.root / 'supervisors.jsonl').exists())
         self.assertIn('product:legacy-launch-environment', fixture.summary.read_text())
         self.assertNotIn('infra:spawn', fixture.summary.read_text())
-        self.assertFalse(fixture.state.with_suffix(fixture.state.suffix + '.failure').exists())
+        self.assertTrue(fixture.state.with_suffix(fixture.state.suffix + '.failure').exists())
         self.assertEqual(fixture.inventory(), [])
 
     def test_legacy_replacement_launch_environment_query_failure_cleans_device_without_launch(self):

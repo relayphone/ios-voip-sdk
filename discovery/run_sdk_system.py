@@ -95,6 +95,7 @@ class Journey:
         self.journal = self.runtime / 'events.jsonl'
         self.pid = None
         self.checkpoint_observed = False
+        self.control_transport_error = None
 
     def sim(self, *command, timeout=60):
         result = subprocess.run(['xcrun', 'simctl', *command], capture_output=True, text=True, timeout=timeout)
@@ -156,7 +157,12 @@ class Journey:
                    '--runtime-dir', str(self.args.package), '--app-container', str(self.container),
                    '--timeout', '10', '--command-receipt', str(self.root / name),
                    operation, *arguments]
-        result = subprocess.run(command, capture_output=True, timeout=75)
+        try:
+            result = subprocess.run(command, capture_output=True, timeout=75)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            self.control_transport_error = error
+            _report('infra:control', 'control transport failed; never retried')
+            raise
         (self.root / (name + '.stdout')).write_bytes(result.stdout)
         (self.root / (name + '.stderr')).write_bytes(result.stderr)
         self.controls.append(name)
@@ -210,6 +216,7 @@ class Journey:
 
     def start(self, command, env):
         deadline = time.monotonic() + SCENARIO_TIMEOUT_SECONDS
+        prior_failure = failure_is_classified()
         paths = (self.runtime.parent / 'session.json', self.journal)
         baseline = tuple(path.read_bytes() if path.exists() else None for path in paths)
         receipt_path = self.root / (self.name + '.receipt.json')
@@ -253,7 +260,7 @@ class Journey:
             except RuntimeError as error:
                 # Only a completed, exact pre-app rejection is replayable. Any
                 # assertion, partial stream, or fresh app/runtime evidence fails.
-                if (str(error) != 'system supervisor exited before checkpoint' or attempt or
+                if (str(error) != 'system supervisor exited before checkpoint' or prior_failure or attempt or
                         self.case == 'push-launch' or time.monotonic() >= deadline or
                         self.pid is not None or self.bindings or self.controls or self.commands):
                     if attempt:
@@ -363,11 +370,13 @@ class Journey:
             self.command('finish')
             phase = 'capture'
             require(self.process.wait(timeout=30) == 0, 'system supervisor refused capture')
-        except Exception:
+        except Exception as error:
             # Preserve the primary journey failure before cleanup can classify
             # its own error. A finished journey's capture failure keeps the
             # child's classification or defers to the entry-point fallback.
-            if phase == 'journey' or (phase == 'startup' and not failure_is_classified()):
+            # Only the identical classified control error suppresses product fallback.
+            if (error is not self.control_transport_error and
+                    (phase == 'journey' or (phase == 'startup' and not failure_is_classified()))):
                 _report('product:' + self.name, 'never retried')
             raise
         finally:
@@ -431,10 +440,13 @@ def run(args):
     shutil.copytree(args.package, args.output / 'control-package')
     container = app_data_container(args.simulator, args.data_container)
     for case in CASES:
+        journey = None
         try:
-            Journey(args, args.output / case, case, container).run()
-        except Exception:
-            if not failure_is_classified():
+            journey = Journey(args, args.output / case, case, container)
+            journey.run()
+        except Exception as error:
+            control_failure = journey is not None and error is journey.control_transport_error
+            if not control_failure and not failure_is_classified():
                 _report('product:sdk-system-' + case, 'never retried')
             raise
 

@@ -164,6 +164,16 @@ time.sleep(30)
 
 
 class SystemRunnerMarkerTests(unittest.TestCase):
+    def classify_child_on_receipt(self):
+        original, classified = Path.write_text, set()
+        def write_receipt(path, *arguments, **options):
+            result = original(path, *arguments, **options)
+            if path.name == 'sdk-system-decline.receipt.json' and path not in classified:
+                classified.add(path)
+                sim.report_failure('infra:launch', 'synthetic child rejection')
+            return result
+        return patch.object(Path, 'write_text', new=write_receipt)
+
     def test_primary_journey_failure_survives_cleanup_classification(self):
         sys.path.insert(0, str(ROOT / 'discovery'))
         import run_sdk_system as runner
@@ -308,10 +318,12 @@ class SystemRunnerMarkerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='sim-system-fresh-evidence-') as temporary:
             root = Path(temporary)
             summary, marker = root / 'summary.md', root / 'classified'
-            marker.touch()  # The first child already classified its exact rejection.
-            with patch.dict(os.environ, GITHUB_STEP_SUMMARY=str(summary), SIM_FAILURE_MARKER=str(marker)):
-                controls = startup_recovery_controls(selected=[
-                    'preapp-session-changed', 'preapp-journal-changed'])
+            with patch.dict(os.environ, GITHUB_STEP_SUMMARY=str(summary), SIM_FAILURE_MARKER=str(marker)), \
+                 self.classify_child_on_receipt():
+                controls = []
+                for case in ('preapp-session-changed', 'preapp-journal-changed'):
+                    marker.unlink(missing_ok=True)  # Independent synthetic runner invocations.
+                    controls.extend(startup_recovery_controls(selected=[case]))
             self.assertEqual(len(controls), 2)  # Both controls assert exactly one launch.
             labels = summary.read_text()
             self.assertEqual(labels.count('product:sdk-system-decline'), 2)
@@ -326,8 +338,8 @@ class SystemRunnerMarkerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='sim-system-marker-') as temporary:
             root = Path(temporary)
             summary, marker = root / 'summary.md', root / 'classified'
-            marker.touch()
-            with patch.dict(os.environ, GITHUB_STEP_SUMMARY=str(summary), SIM_FAILURE_MARKER=str(marker)):
+            with patch.dict(os.environ, GITHUB_STEP_SUMMARY=str(summary), SIM_FAILURE_MARKER=str(marker)), \
+                 self.classify_child_on_receipt():
                 startup_recovery_controls(selected=['preapp-rejection-recovered-once'])
             self.assertFalse(marker.exists())
             self.assertIn('scheduled', summary.read_text())

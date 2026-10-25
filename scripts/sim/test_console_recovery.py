@@ -313,9 +313,26 @@ class ConsoleRecoveryTests(unittest.TestCase):
             self.assertEqual((self.archive / name).read_bytes(), original)
         self.assertFalse(self.marker.exists())
 
+    def test_prior_primary_marker_is_preserved_and_refuses_recovery(self):
+        with patch.dict(os.environ, self.env):
+            sim.report_failure('product:earlier-primary', 'never retried')
+        self.marker.write_text('retain earlier primary')
+        status, captures, groups, _ = self.wrapper_capture()
+        self.assertEqual(status, 1)
+        self.assertEqual(len(captures), 1)
+        self.assertEqual(groups, [])
+        self.assertEqual(self.flags(), (False, False))
+        self.assertFalse(self.archive.exists())
+        self.assertEqual(self.marker.read_text(), 'retain earlier primary')
+        self.assertTrue(Path(str(self.state) + '.failure').exists())
+        self.assertIn('product:earlier-primary', self.summary.read_text())
+        self.assertNotIn('recovered', self.summary.read_text())
+
     def test_live_or_unknown_group_absence_prevents_reservation_and_replay(self):
         for fault in ('live-group', 'unknown-group'):
             with self.subTest(fault=fault):
+                with patch.dict(os.environ, self.env):
+                    sim.clear_failure_marker()  # Each subtest is a fresh invocation.
                 status, captures, groups, _ = self.wrapper_capture(fault=fault)
                 self.assertEqual(status, 1)
                 self.assertEqual(len(captures), 1)
@@ -326,6 +343,8 @@ class ConsoleRecoveryTests(unittest.TestCase):
     def test_unbound_receipt_identity_and_launcher_are_never_probed_or_retried(self):
         for fault in ('foreign-identity', 'foreign-launcher'):
             with self.subTest(fault=fault):
+                with patch.dict(os.environ, self.env):
+                    sim.clear_failure_marker()
                 status, captures, groups, _ = self.wrapper_capture(fault=fault)
                 self.assertEqual(status, 1)
                 self.assertEqual(len(captures), 1)

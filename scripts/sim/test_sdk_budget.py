@@ -157,6 +157,25 @@ class SDKSharedBudgetTests(unittest.TestCase):
         self.assert_replay_denied()
         self.assertFalse(sim.Session.attach(self.state, SIMULATOR).state['retry_used'])
 
+    def test_prior_terminal_marker_refuses_replay_without_clearing_or_spending(self):
+        marker, summary = self.root / 'classified', self.root / 'summary.md'
+        with patch.dict(os.environ, SIM_FAILURE_MARKER=str(marker), GITHUB_STEP_SUMMARY=str(summary)):
+            sim.report_failure('product:earlier-check', 'never retried')
+            marker.write_bytes(b'prior terminal outcome\n')
+            launches, ready, error, archive = self.startup(self.journey())
+        self.assertIsNotNone(error)
+        self.assertIsNone(ready)
+        self.assertEqual(len(launches), 1)
+        self.assertEqual(launches[0][0][-1], '120.0')
+        self.assertFalse(archive.exists())
+        self.assertEqual(marker.read_bytes(), b'prior terminal outcome\n')
+        self.assertIn('product:earlier-check', summary.read_text())
+        self.assertNotIn('scheduled', summary.read_text())
+        self.assertNotIn('recovered', summary.read_text())
+        attached = sim.Session.attach(self.state, SIMULATOR)
+        self.assertFalse(attached.state['retry_used'])
+        self.assertFalse(attached.is_checkpointed())
+
     def test_contended_shared_reservation_never_waits_or_starts_a_second_supervisor(self):
         self.args.sim_session = sim.Session.attach(self.state, SIMULATOR)
         journey = self.journey()

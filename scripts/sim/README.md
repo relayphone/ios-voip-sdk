@@ -85,6 +85,16 @@ incremental adoption, `sim.sh` keeps existing product probes on the bounded path
 without lifecycle retries; their replacement requires the owning lane's product
 controls.
 
+Known transport timeouts and signal exits keep infrastructure classifications
+even after a checkpoint; checkpoint state only controls recovery eligibility.
+`Result.failure_classified` identifies the exact in-memory outcome classified by
+`Session.call`, without adding receipt fields. An external `SIM_FAILURE_MARKER`
+is preserved and terminal reports also mark `SIM_STATE.failure` for shell traps.
+Scheduled/recovered retries and cleanup warnings do not mark terminal failure.
+Later successful or accepted calls preserve a primary marker; only an authorized
+replay clears its rejected attempt. Reporter I/O failures do not replace the
+original command result or exception.
+
 A stateless bounded probe can declare one expected nonzero status with
 `sim.py call --accepted-status 1 '' 180 <command>`, or scope
 `SIM_ACCEPTED_STATUS=1 sim_limit 180 <command>` in shell. The native status is

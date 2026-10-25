@@ -2,7 +2,8 @@
 # Source from a runner; SIM_STATE must point into that runner's fresh output.
 SIM_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sim.py"
 if [[ -n "${SIM_STATE:-}" ]]; then
-  export SIM_STATE SIM_FAILURE_MARKER="$SIM_STATE.failure"
+  export SIM_STATE
+  if [[ -z "${SIM_FAILURE_MARKER:-}" ]]; then export SIM_FAILURE_MARKER="$SIM_STATE.failure"; fi
 fi
 
 sim_cli() {
@@ -10,25 +11,23 @@ sim_cli() {
 }
 
 sim_limit() {
-  local seconds=$1 status=0 current state=${SIM_STATE:-} accepted=0
+  local seconds=$1 status=0 current state=${SIM_STATE:-}
   shift
+  if [[ -n "${SIM_STATE:-}" ]]; then
+    export SIM_STATE
+    if [[ -z "${SIM_FAILURE_MARKER:-}" ]]; then export SIM_FAILURE_MARKER="$SIM_STATE.failure"; fi
+  fi
   # These existing product probes are migrated separately with their owners.
   # They remain bounded, but never enter the lifecycle/retry policy.
   if [[ "${1:-}" == xcrun && "${2:-}" == simctl &&
         ( "${3:-}" == spawn || "${3:-}" == get_app_container ) ]]; then state=''; fi
   if [[ -z "$state" && "${SIM_ACCEPTED_STATUS:-}" == 1 ]]; then
     sim_cli call --accepted-status "$SIM_ACCEPTED_STATUS" "$state" "$seconds" "$@" || status=$?
-    if [[ "$status" -eq 1 && "${SIM_ACCEPTED_STATUS:-}" == 1 ]]; then accepted=1; fi
   else
     sim_cli call "$state" "$seconds" "$@" || status=$?
   fi
   if [[ -n "${SIM_STATE:-}" ]]; then
-    if [[ "$status" -ne 0 && "$accepted" -ne 1 ]]; then
-      : > "$SIM_STATE.failure"
-    else
-      rm -f "$SIM_STATE.failure"
-    fi
-    current=$(sim_cli current "$SIM_STATE") || { : > "$SIM_STATE.failure"; return 1; }
+    current=$(sim_cli current "$SIM_STATE") || return 1
     # A boot/install retry replaces the device. Every subsequent command and
     # product identity must use the replacement, including the caller's trap.
     if [[ -n "$current" && "$current" != "${UDID:-}" ]]; then

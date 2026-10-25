@@ -30,6 +30,25 @@ class Result:
     stdout: bytes = b''
     stderr: bytes = b''
     timed_out: bool = False
+    failure_classified: bool = False
+
+
+def transport_failure(result):
+    """Only observed timeout or signal status proves a transport failure."""
+    status = result.returncode
+    return bool(result.timed_out or (type(status) is int and
+                (-status if status < 0 else status - 128) in signal.valid_signals()))
+
+
+_SIMULATOR_OPERATIONS = frozenset(('create', 'boot', 'bootstatus', 'install', 'launch', 'terminate',
+                                  'io', 'shutdown', 'delete', 'list', 'privacy'))
+
+
+def _command_failure_label(command):
+    if command[:2] == ['xcrun', 'simctl']:
+        step = command[2] if len(command) > 2 else None
+        return 'infra:' + step if step in _SIMULATOR_OPERATIONS | {'spawn', 'get_app_container'} else 'infra:helper'
+    return 'infra:host'
 
 
 def seconds(value):
@@ -145,32 +164,64 @@ def summary(label, retry):
     """Write only stable classifications, never commands or environment values."""
     label = re.sub(r'[^A-Za-z0-9_.:-]', '_', label)
     line = f'- `{label}`: {retry}\n'
-    print(line.rstrip(), file=sys.stderr)
+    try:
+        print(line.rstrip(), file=sys.stderr)
+    except OSError:
+        pass
     target = os.environ.get('GITHUB_STEP_SUMMARY')
     if target:
-        with open(target, 'a') as stream:
-            stream.write(line)
+        try:
+            with open(target, 'a') as stream:
+                stream.write(line)
+        except OSError:
+            pass
+
+
+def _failure_markers():
+    paths = [os.environ.get('SIM_FAILURE_MARKER')]
+    state = os.environ.get('SIM_STATE')
+    if state:
+        paths.append(state + '.failure')
+    return tuple(dict.fromkeys(Path(path) for path in paths if path))
 
 
 def failure_is_classified():
     """Whether this runner already reported its terminal failure to its parent."""
-    marker = os.environ.get('SIM_FAILURE_MARKER')
-    return bool(marker and Path(marker).is_file())
+    for marker in _failure_markers():
+        try:
+            if marker.is_file():
+                return True
+        except OSError:
+            pass
+    return False
 
 
 def clear_failure_marker():
     """Clear an earlier rejected attempt before its single authorized replay."""
-    marker = os.environ.get('SIM_FAILURE_MARKER')
-    if marker:
-        Path(marker).unlink(missing_ok=True)
+    for marker in _failure_markers():
+        try:
+            marker.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def report_failure(label, retry='never retried'):
     """Report a terminal outcome; the parent need not invent a second label."""
-    summary(label, retry)
-    marker = os.environ.get('SIM_FAILURE_MARKER')
-    if marker:
-        Path(marker).touch(mode=0o600)
+    try:
+        summary(label, retry)
+    except OSError:
+        pass
+    for marker in _failure_markers():
+        try:
+            marker.touch(mode=0o600)
+        except OSError:
+            pass
+
+
+def _report_result(result, label, retry='never retried'):
+    """Attach classification to this exact outcome, never to receipt evidence."""
+    result.failure_classified = True
+    report_failure(label, retry)
 
 
 def terminate_once(command, timeout, transport):
@@ -481,12 +532,14 @@ class Session:
         timeout = seconds(timeout)
         command = list(command)
         if command[:2] != ['xcrun', 'simctl']:
-            return self.execute(command, timeout)
+            result = self.execute(command, timeout)
+            if result.returncode and transport_failure(result):
+                _report_result(result, 'infra:host', 'transport failed; never retried')
+            return result
         if len(command) < 3:
             raise ValueError('Missing simulator operation')
         step = command[2]
-        if step not in ('create', 'boot', 'bootstatus', 'install', 'launch', 'terminate',
-                        'io', 'shutdown', 'delete', 'list', 'privacy'):
+        if step not in _SIMULATOR_OPERATIONS:
             raise ValueError('Unsupported simulator operation: ' + step)
         if step == 'io' and (len(command) < 5 or command[4] != 'screenshot'):
             raise ValueError('Only screenshot simulator IO is supported')
@@ -518,8 +571,11 @@ class Session:
         if step == 'launch' and result.stdout:
             self.checkpoint()  # Even partial app/PID evidence forbids startup replay.
         if result.returncode:
+            if step == 'launch' and transport_failure(result):
+                _report_result(result, 'infra:launch', 'transport failed; never retried')
+                return result
             if step == 'launch' and self.is_checkpointed():
-                summary('product:launch', 'never retried after checkpoint evidence')
+                _report_result(result, 'product:launch', 'never retried after checkpoint evidence')
                 return result
             eligible = step == 'create' or preparation
             if step == 'launch':
@@ -527,15 +583,15 @@ class Session:
                 bundle = command[position + 1] if position + 1 < len(command) else ''
                 eligible = bool(bundle) and preapp_rejection(result, bundle)
             if not eligible or not self.reserve_retry():
-                summary('infra:' + step, 'exhausted' if self.state['retry_used'] else 'not eligible')
+                _report_result(result, 'infra:' + step, 'exhausted' if self.state['retry_used'] else 'not eligible')
                 return result
             if self.is_checkpointed():
-                summary('infra:' + step, 'never retried after checkpoint evidence')
+                _report_result(result, 'infra:' + step, 'never retried after checkpoint evidence')
                 return result
             summary('infra:' + step, 'scheduled (one pre-app retry)')
             if step == 'create':
                 if self.cleanup(timeout=self.recovery_timeout, final=False).returncode:
-                    summary('infra:create', 'exhausted; cleanup failed')
+                    _report_result(result, 'infra:create', 'exhausted; cleanup failed')
                     return result
                 result = self.create(command[3:], timeout)
             elif preparation:
@@ -545,7 +601,10 @@ class Session:
                     result = self.execute(command, timeout)
             else:
                 result = self.execute(command, timeout)
-            summary('infra:' + step, 'exhausted' if result.returncode else 'recovered')
+            if result.returncode:
+                _report_result(result, 'infra:' + step, 'exhausted')
+            else:
+                summary('infra:' + step, 'recovered')
 
         if result.returncode == 0:
             if preparation:
@@ -593,7 +652,7 @@ def main(argv=None):
         signal.signal(signum, interrupted)
     try:
         if args.action == 'product':
-            summary('product:' + args.check, 'never retried')
+            report_failure('product:' + args.check, 'never retried')
             return 0
         if args.action == 'call':
             if not args.command:
@@ -603,8 +662,9 @@ def main(argv=None):
             session = Session(args.state, recovery_timeout=os.environ.get('SIM_RECOVERY_TIMEOUT', 30)) if args.state else None
             result = session.call(args.command, args.timeout) if session else bounded(args.command, args.timeout)
             accepted = not result.timed_out and result.returncode == args.accepted_status
-            if not session and result.returncode and not accepted and args.command[:2] == ['xcrun', 'simctl']:
-                summary('infra:' + (args.command[2] if len(args.command) > 2 else 'helper'), 'not eligible')
+            if (not session and result.returncode and not accepted and
+                    (args.command[:2] == ['xcrun', 'simctl'] or transport_failure(result))):
+                report_failure(_command_failure_label(args.command), 'not eligible')
             sys.stdout.buffer.write(result.stdout)
             sys.stderr.buffer.write(result.stderr)
             return result.returncode if result.returncode >= 0 else 128 - result.returncode
@@ -621,12 +681,14 @@ def main(argv=None):
     except Interrupted as error:
         for signum in (signal.SIGTERM, signal.SIGINT):
             signal.signal(signum, signal.SIG_IGN)
+        report_failure(_command_failure_label(args.command) if args.action == 'call' else 'infra:helper',
+                       'interrupted; never retried')
         if session:
             session.cleanup(timeout=args.timeout if args.action == 'cleanup' else session.recovery_timeout)
         return 128 + error.signum
     except (OSError, ValueError, KeyError, TypeError) as error:
         print('Simulator helper: ' + str(error), file=sys.stderr)
-        summary('infra:helper', 'not eligible')
+        report_failure('infra:helper', 'not eligible')
         return 125 if args.action == 'call' and args.accepted_status is not None else 1
 
 

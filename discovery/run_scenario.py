@@ -21,7 +21,7 @@ import tty
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts/sim'))
 from sim import (Result, Session, clear_failure_marker, console_launch_rejection,
                  failure_is_classified, not_running_error, preapp_rejection,
-                 report_failure, summary, terminate_once)
+                 report_failure, summary, terminate_once, transport_failure)
 
 
 def report_capture_failure(result, trace, timeout, launch_failure=False, termination_failure=False,
@@ -33,10 +33,18 @@ def report_capture_failure(result, trace, timeout, launch_failure=False, termina
     if bundle and console_launch_rejection(result, trace, bundle, timeout):
         report_failure('infra:launch', 'completed exact pre-app rejection')
         return
-    if launch_failure:
-        report_failure('infra:launch', 'launch transport failed; never retried')
-        return
     entered = any(key in result for key in ('appPID', 'launcherAppPID', 'appEntryObserved', 'lastProbeEvent'))
+    native_status = result.get('launchExitCodeBeforeCleanup')
+    if native_status is None and result.get('launchExitCode') not in (
+            -signal.SIGTERM, 128 + signal.SIGTERM, -signal.SIGKILL, 128 + signal.SIGKILL):
+        # Cleanup can produce TERM/KILL after the pre-cleanup poll. Other native
+        # signal exits remain transport evidence even when EOF won that race.
+        native_status = result.get('launchExitCode')
+    transport = launch_failure or (not entered and (
+        transport_failure(Result([], native_status)) or
+        result.get('error') == 'deadline before terminal done event'))
+    if transport:
+        report_failure('infra:launch', 'launch transport failed; never retried')
     rejected = (bundle and not entered and result['completed'] is False and
         preapp_rejection(Result([], result.get('launchExitCode'), stderr=trace), bundle))
     if rejected:
@@ -46,7 +54,7 @@ def report_capture_failure(result, trace, timeout, launch_failure=False, termina
     termination_failure = (termination_failure or 'cleanupError' in result or
         ('terminateExitCode' in result and result['terminateExitCode'] != 0) or
         ('cleanupExitCode' in result and result['cleanupExitCode'] != 0 and not absent))
-    if not rejected and (capture_failure or not termination_failure or (entered and not result['completed'])):
+    if not (rejected or transport) and (capture_failure or not termination_failure or (entered and not result['completed'])):
         report_failure('product:' + (result.get('scenario') or 'capture'), 'never retried')
     if termination_failure:
         report_failure('infra:terminate', 'never retried')
@@ -430,11 +438,12 @@ def run_with_session(launch, terminate, output, receipt, timeout, identity,
                    console_launcher_stop=console_launcher_stop,
                    inherit_launcher_group=inherit_launcher_group)
     deadline = time.monotonic() + timeout
+    prior_failure = failure_is_classified()
     owners = []
     status = run(launch, terminate, output, receipt, timeout, identity,
                  console_launcher_stop=console_launcher_stop, inherit_launcher_group=inherit_launcher_group,
                  checkpoint=session.checkpoint, launched=owners.append, capture_deadline=deadline)
-    if not status or inherit_launcher_group or not console_launcher_stop:
+    if not status or prior_failure or inherit_launcher_group or not console_launcher_stop:
         return status
     try:
         # Restrict generic recovery to the run-owned direct simctl launch. Push
