@@ -75,7 +75,7 @@ def capture_case(build, out, simulator, inherited, mode, expected_container=None
     argv = [sys.executable, ROOT / 'discovery/run_scenario.py', '--console-launcher-stop', '--inherit-launcher-group', '--timeout', str(SCENARIO_TIMEOUT_SECONDS),
             '--output', trace, '--receipt', receipt, '--run-id', run_id, '--simulator-id', simulator,
             '--scenario', mode, '--bundle-id', BUNDLE, '--terminate-command', 'xcrun', 'simctl', 'terminate', simulator, BUNDLE,
-            '--launch-command', 'xcrun', 'simctl', 'launch', '--console', simulator, BUNDLE]
+            '--launch-command', 'xcrun', 'simctl', 'launch', '--console', '--terminate-running-process', simulator, BUNDLE]
     with HostTiming(trace, 'driver', BUNDLE) as timing, (out / (mode + '.supervisor.log')).open('xb') as log:
         def observed():
             rows = live(trace)
