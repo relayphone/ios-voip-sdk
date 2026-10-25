@@ -141,6 +141,27 @@ class RuntimeInstallAdapterTests(unittest.TestCase):
         self.assertEqual(set(self.native.devices), {original})
         self.assertNotIn('launch', self.native.counts)
 
+    def test_recovery_cleanup_write_errors_preserve_install_error_identity(self):
+        owner = self.owner()
+        self.native.failures['install', 1] = 'timeout'
+        original = OSError('cleanup recording unavailable')
+        opened = Path.open
+        def refuse(path, *args, **kwargs):
+            if path == self.path.with_name('cleanup.log'):
+                raise original
+            return opened(path, *args, **kwargs)
+        with patch.object(Path, 'open', refuse):
+            with self.assertRaises(runtime.CommandError) as caught:
+                runtime.lifecycle(owner, 'install', owner.current, self.app, timeout=120)
+        first = next(result for result in self.native.results if result.args[2] == 'install')
+        self.assertIs(caught.exception, first.transport_error)
+        self.assertIs(caught.exception.__cause__, original)
+        self.assertEqual(self.native.counts['create'], 1)
+        self.assertEqual(self.native.counts['delete'], 1)
+        self.assertTrue(self.state()['owned'])
+        self.assertTrue(self.state()['retry_used'])
+        self.assertNotIn('launch', self.native.counts)
+
     def test_bootstrap_recovery_cannot_give_install_another_retry(self):
         self.native.failures['bootstatus', 1] = 'timeout'
         owner = self.owner()
