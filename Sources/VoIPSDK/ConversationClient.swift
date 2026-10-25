@@ -182,6 +182,7 @@ public final class ConversationClient: NSObject {
       supportedHandleTypes: [.generic, .phoneNumber, .emailAddress]))
     incomingTransport = IncomingReportTransport(manager: manager)
     super.init()
+    systemAudio.routeConfigurationAdapter = mediaAdapter as? any AudioRouteConfigurationAdapter
     #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
     ProviderCreationMonitor.endOwnedManagerCreation()
     #endif
