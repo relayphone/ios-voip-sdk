@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import uuid
 
 
@@ -43,6 +44,15 @@ def bounded(command, timeout):
     def defer(signum, frame):
         pending.append((signum, frame))
 
+    def deliver_pending():
+        while pending:
+            signum, frame = pending.pop(0)
+            handler = handlers[signum]
+            if callable(handler):
+                handler(signum, frame)
+            elif handler == signal.SIG_DFL:
+                raise Interrupted(signum)
+
     def kill():
         if process is None:
             return
@@ -52,9 +62,9 @@ def bounded(command, timeout):
             pass
 
     try:
-        # A handler must not raise after Popen creates its child but before it
-        # returns the handle. Defer callbacks during spawn; temporary masks
-        # guard only the parent's handler transitions, never native creation.
+        # Defer asynchronous callbacks throughout native ownership, including
+        # timeout handlers and cleanup. Deliver them only at controlled points
+        # inside the lifetime guard, or after the native child has been reaped.
         try:
             if threading.current_thread() is threading.main_thread():
                 original_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT})
@@ -73,58 +83,59 @@ def bounded(command, timeout):
                                            stderr=subprocess.PIPE, start_new_session=True)
             except OSError as error:
                 spawn_error = error
-        finally:
-            if handlers:
-                restore_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set(handlers))
+            if spawn_error is not None:
+                return Result(list(command), 127, stderr=str(spawn_error).encode())
+            deadline = time.monotonic() + timeout
+            while True:
+                deliver_pending()
+                remaining = deadline - time.monotonic()
                 try:
-                    # A signal delivered through an unblocked worker can still
-                    # schedule a Python callback on this thread. Finish restoring
-                    # both handlers before re-raising that first interruption.
-                    restoration_error = None
-                    while True:
+                    # Poll the same absolute deadline so cancellation does not
+                    # wait for a long native budget or restart that budget.
+                    stdout, stderr = process.communicate(timeout=max(0, min(remaining, .1)))
+                    return Result(list(command), process.returncode, stdout, stderr)
+                except subprocess.TimeoutExpired as error:
+                    if time.monotonic() < deadline:
+                        continue
+                    kill()
+                    try:
+                        stdout, stderr = process.communicate(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        # An escaped descendant must not keep inherited pipe
+                        # readers alive after the owned group has been killed.
+                        stdout, stderr = error.output or b'', error.stderr or b''
+                    return Result(list(command), 124, stdout, stderr, timed_out=True)
+        finally:
+            # This one guard encloses the entire child lifetime. Signal
+            # callbacks still only queue while kill, pipe closure and reap run.
+            if process is not None:
+                if process.returncode is None:
+                    kill()
+                process.stdout.close()
+                process.stderr.close()
+                process.wait(timeout=2)
+    finally:
+        if handlers:
+            restore_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set(handlers))
+            try:
+                # Worker-delivered signals can schedule Python callbacks even
+                # with this thread masked. Complete restoration before raising.
+                restoration_error = None
+                while True:
+                    try:
                         try:
-                            try:
-                                signal.signal(signal.SIGTERM, handlers[signal.SIGTERM])
-                            finally:
-                                signal.signal(signal.SIGINT, handlers[signal.SIGINT])
-                            break
-                        except BaseException as error:
-                            if restoration_error is None:
-                                restoration_error = error
-                    if restoration_error is not None:
-                        raise restoration_error
-                finally:
-                    signal.pthread_sigmask(signal.SIG_SETMASK, restore_mask)
-        # Ownership is established and the exception cleanup guard is active
-        # before delivering any interruption observed during process creation.
-        for signum, frame in pending:
-            handler = handlers[signum]
-            if callable(handler):
-                handler(signum, frame)
-            elif handler == signal.SIG_DFL:
-                raise Interrupted(signum)
-        if spawn_error is not None:
-            return Result(list(command), 127, stderr=str(spawn_error).encode())
-        stdout, stderr = process.communicate(timeout=timeout)
-        return Result(list(command), process.returncode, stdout, stderr)
-    except subprocess.TimeoutExpired as error:
-        kill()
-        try:
-            stdout, stderr = process.communicate(timeout=2)
-        except subprocess.TimeoutExpired:
-            # An escaped descendant must not keep inherited pipe readers alive.
-            stdout, stderr = error.output or b'', error.stderr or b''
-            process.stdout.close()
-            process.stderr.close()
-            process.wait(timeout=2)
-        return Result(list(command), 124, stdout, stderr, timed_out=True)
-    except BaseException:
-        kill()
-        if process is not None:
-            process.stdout.close()
-            process.stderr.close()
-            process.wait(timeout=2)
-        raise
+                            signal.signal(signal.SIGTERM, handlers[signal.SIGTERM])
+                        finally:
+                            signal.signal(signal.SIGINT, handlers[signal.SIGINT])
+                        break
+                    except BaseException as error:
+                        if restoration_error is None:
+                            restoration_error = error
+                if restoration_error is not None:
+                    raise restoration_error
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, restore_mask)
+        deliver_pending()
 
 
 def summary(label, retry):

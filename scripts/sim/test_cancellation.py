@@ -174,6 +174,69 @@ sys.exit(helper['main'](['call', '', '2', sys.executable, '-c', 'import time;tim
     def test_worker_signal_during_restoration_restores_parent_state(self):
         self.check_interrupted_handler_transition('restoration', with_worker=True)
 
+    def check_timeout_cancellation(self, stage, with_worker=False):
+        helper = runpy.run_path(str(HELPER))
+        children, exercised = [], []
+        stop = threading.Event()
+        worker = threading.Thread(target=stop.wait) if with_worker else None
+
+        def interrupted(signum, _frame):
+            raise helper['Interrupted'](signum)
+
+        previous = signal.signal(signal.SIGTERM, interrupted)
+        previous_int = signal.getsignal(signal.SIGINT)
+        original_mask = signal.pthread_sigmask(signal.SIG_BLOCK, [])
+        if worker:
+            worker.start()
+
+        def trace(frame, event, _argument):
+            if (event == 'line' and frame.f_code.co_name == '_execute_child' and
+                    getattr(frame.f_locals.get('self'), '_child_created', False) and not children):
+                children.append(frame.f_locals['self'].pid)
+            native = frame
+            while native is not None and native.f_code.co_name != 'bounded':
+                native = native.f_back
+            timeout_handler = (native is not None and
+                               isinstance(native.f_locals.get('error'), subprocess.TimeoutExpired))
+            boundary = ((stage == 'handler' and frame is native) or
+                        (stage == 'reaping' and frame.f_code.co_name == 'communicate'))
+            if event == 'line' and timeout_handler and boundary and not exercised:
+                exercised.append(True)
+                os.kill(os.getpid(), signal.SIGTERM)
+                if worker:
+                    time.sleep(.02)
+            return trace
+
+        try:
+            sys.settrace(trace)
+            with self.assertRaises(helper['Interrupted']):
+                helper['bounded']([sys.executable, '-c', 'import time;time.sleep(30)'], .05)
+            sys.settrace(None)
+            self.assertTrue(exercised, 'the timeout cancellation boundary was not exercised')
+            self.assert_absent(children[0])
+            self.assertIs(signal.getsignal(signal.SIGTERM), interrupted)
+            self.assertIs(signal.getsignal(signal.SIGINT), previous_int)
+            self.assertEqual(signal.pthread_sigmask(signal.SIG_BLOCK, []), original_mask)
+        finally:
+            sys.settrace(None)
+            signal.signal(signal.SIGTERM, previous)
+            signal.signal(signal.SIGINT, previous_int)
+            signal.pthread_sigmask(signal.SIG_SETMASK, original_mask)
+            for child in children:
+                self.clean_child(child)
+            stop.set()
+            if worker:
+                worker.join(timeout=2)
+
+    def test_sigterm_on_timeout_handler_entry_kills_and_reaps_native_child(self):
+        self.check_timeout_cancellation('handler')
+
+    def test_sigterm_during_timeout_reaping_finishes_native_cleanup(self):
+        self.check_timeout_cancellation('reaping')
+
+    def test_worker_sigterm_on_timeout_handler_entry_finishes_native_cleanup(self):
+        self.check_timeout_cancellation('handler', with_worker=True)
+
     def test_native_child_preserves_ignored_cancellation_signals(self):
         helper = runpy.run_path(str(HELPER))
         previous = {signum: signal.signal(signum, signal.SIG_IGN)

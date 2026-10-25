@@ -176,7 +176,7 @@ class LifecycleTests(unittest.TestCase):
         for action in ('timeout-no-create', 'signal-no-create', 'invalid-create'):
             with self.subTest(action=action):
                 self.rules(dict(step='create', at=[1], action=action))
-                self.call('create', 'late-owned', DEVICE, RUNTIME, timeout=.2)
+                self.call('create', 'late-owned', DEVICE, RUNTIME, timeout=2)
                 first_name = self.calls('create')[0][1]
                 self.cli('cleanup', self.state, '--timeout', .2, expected=None)
                 state = json.loads(self.state.read_text())
