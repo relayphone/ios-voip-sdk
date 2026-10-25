@@ -634,7 +634,7 @@ public final class ConversationClient: NSObject {
                                        origin: ConversationActionOrigin) -> (@MainActor () -> ConversationSnapshot?)? {
     guard action is EndConversationAction, origin == .system else { return nil }
     // LCK End carries only a UUID, not its native Conversation. With no current
-    // member, use the retained terminal value even after its native object dies.
+    // member, use the latest accepted terminal value even after its native object dies.
     // This cannot identify old A's End separately from B's End after UUID reuse.
     let id = action.conversationUUID, actionID = action.uuid
     let current = manager.conversations.first { $0.uuid == id }

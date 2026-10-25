@@ -60,6 +60,9 @@ action deadline governs handler attachment and completion. Native object
 release alone does not cancel cleanup. Reset or a replacement generation
 invalidates retained cleanup input; a new terminal observation and genuine End
 after reset are fresh platform input.
+End identifies a UUID without its native object identity. If several already-ended
+generations reuse it with no current object, SDK policy uses the latest accepted
+terminal input.
 Other held calls remain held: the application chooses whether to resume or end
 them. These semantics follow the [measured failure cases](../docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md);
 the metadata window is SDK policy, not a measured system deadline.
