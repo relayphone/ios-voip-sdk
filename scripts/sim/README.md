@@ -87,6 +87,9 @@ controls.
 
 Known transport timeouts and signal exits keep infrastructure classifications
 even after a checkpoint; checkpoint state only controls recovery eligibility.
+Console pre-entry transport classification also requires no raw probe or PID
+header evidence. Malformed probe rows and duplicate PID headers retain product
+classification rather than hiding an observed app failure.
 `Result.failure_classified` identifies the exact in-memory outcome classified by
 `Session.call`, without adding receipt fields. An external `SIM_FAILURE_MARKER`
 is preserved and terminal reports also mark `SIM_STATE.failure` for shell traps.
