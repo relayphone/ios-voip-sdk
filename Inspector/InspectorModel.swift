@@ -29,6 +29,9 @@ private struct InspectorProbeSnapshot: Encodable {
   }
   let nonce: String
   let inspectorPID: Int32
+  // CI readiness requires nonempty native identity; unbundled host fixtures have no bundle ID.
+  let inspectorBundleID: String?
+  let inspectorDataContainer: String
   let wallTimeMS: Int64
   let startedWallTimeMS: Int64
   let session: RuntimeSession?
@@ -128,16 +131,22 @@ final class InspectorModel: ObservableObject {
   private func writeProbe() {
     guard let probe else { return }
     guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-    let snapshot = InspectorProbeSnapshot(nonce: probe.nonce, inspectorPID: ProcessInfo.processInfo.processIdentifier,
-      wallTimeMS: Int64(Date().timeIntervalSince1970 * 1000), startedWallTimeMS: probe.startedWallTimeMS,
-      session: session, cursor: cursor, incoming: incoming,
-      conversations: conversations.values.sorted { $0.sequence < $1.sequence },
-      pending: pending.values.sorted { $0.sequence < $1.sequence }, timeline: timeline,
-      timelinePresentation: timeline.map { .init(sequence: $0.sequence, title: $0.title, detail: $0.detail) },
-      timingReferences: timingReferences,
-      audioActive: audioActive, online: online, error: error)
     do {
       try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
+      guard let canonicalDocuments = realpath(documents.path, nil) else {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+      }
+      defer { free(canonicalDocuments) }
+      let snapshot = InspectorProbeSnapshot(nonce: probe.nonce, inspectorPID: ProcessInfo.processInfo.processIdentifier,
+        inspectorBundleID: Bundle.main.bundleIdentifier,
+        inspectorDataContainer: (String(cString: canonicalDocuments) as NSString).deletingLastPathComponent,
+        wallTimeMS: Int64(Date().timeIntervalSince1970 * 1000), startedWallTimeMS: probe.startedWallTimeMS,
+        session: session, cursor: cursor, incoming: incoming,
+        conversations: conversations.values.sorted { $0.sequence < $1.sequence },
+        pending: pending.values.sorted { $0.sequence < $1.sequence }, timeline: timeline,
+        timelinePresentation: timeline.map { .init(sequence: $0.sequence, title: $0.title, detail: $0.detail) },
+        timingReferences: timingReferences,
+        audioActive: audioActive, online: online, error: error)
       try JSONEncoder().encode(snapshot).write(to: documents.appendingPathComponent("cksim-inspector-results.json"), options: .atomic)
     } catch { NSLog("Inspector probe receipt failed: %@", String(describing: error)) }
   }
