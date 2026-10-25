@@ -103,3 +103,7 @@ Runtime fixture discovery binds the launch PID, bundle and fresh run ID to one c
 Legacy failure diagnostics are bounded observations before owned-device deletion;
 they may be unavailable and do not establish a startup cause or fix. The original
 90-second scenario result remains authoritative, and entered apps are never retried.
+
+Legacy adoption covers preparation, cleanup and diagnostic boundaries. Its direct
+scenario supervisor keeps the existing product-failure fallback; bare pre-app
+launch classification and full console-policy adoption remain separate work.
