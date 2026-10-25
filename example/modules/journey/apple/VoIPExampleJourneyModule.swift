@@ -47,9 +47,13 @@ private enum JourneyTrace {
 public final class VoIPExampleAppDelegateSubscriber: ExpoAppDelegateSubscriber {
   public func appDelegateWillBeginInitialization() {
     JourneyTrace.record("app.entry")
-    JourneyTrace.record("launch", ["traceVersion": 2,
+    var launch: [String: Any] = ["traceVersion": 2,
       "mode": !JourneyConfiguration.systemCase.isEmpty ? "sdk-system" : JourneyTrace.m0 ? "sdk-m0" : "sdk-m1",
-      "case": JourneyConfiguration.systemCase.isEmpty ? JourneyTrace.m1Case : JourneyConfiguration.systemCase])
+      "case": JourneyConfiguration.systemCase.isEmpty ? JourneyTrace.m1Case : JourneyConfiguration.systemCase]
+    #if targetEnvironment(simulator)
+    launch["bundlePath"] = Bundle.main.bundleURL.resolvingSymlinksInPath().path
+    #endif
+    JourneyTrace.record("launch", launch)
     if !JourneyConfiguration.systemCase.isEmpty { ExampleJourney.shared.startSystem() }
     if ["cold-launch", "unhandled-expiry"].contains(JourneyTrace.m1Case) {
       ExampleJourney.shared.startColdLaunch()
