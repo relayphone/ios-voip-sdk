@@ -77,7 +77,13 @@ def lifecycle(session, *parts, timeout=120, **kwargs):
     if session is None:
         return run(*command, timeout=timeout, **kwargs)
     previous_runner = session.runner
-    session.runner = lambda argv, bound: session_transport(argv, bound, **kwargs)
+    errors = []
+    def transport(argv, bound):
+        outcome = session_transport(argv, bound, **kwargs)
+        error = getattr(outcome, 'transport_error', None)
+        if error is not None: errors.append(error)
+        return outcome
+    session.runner = transport
     result = None
     try:
         result = session.call(command, timeout)
@@ -91,7 +97,7 @@ def lifecycle(session, *parts, timeout=120, **kwargs):
                 if not failed: raise
                 simulator_infra.summary('infra:ownership-export', 'original preparation failure retained')
     if result.returncode:
-        error = getattr(result, 'transport_error', None)
+        error = getattr(result, 'transport_error', None) or (errors[0] if errors else None)
         raise error if error is not None else CommandError(result, timeout)
     return result.stdout.decode().strip()
 

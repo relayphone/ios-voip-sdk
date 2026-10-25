@@ -127,6 +127,20 @@ class RuntimeInstallAdapterTests(unittest.TestCase):
         self.assertNotIn('launch', self.native.counts)
         self.assertTrue(self.state()['retry_used'])
 
+    def test_failed_recovery_cleanup_preserves_the_original_install_error_and_lease(self):
+        owner = self.owner(); original = owner.current
+        self.native.failures.update({('install', 1): 'timeout', ('delete', 1): 73})
+        with self.assertRaises(runtime.CommandError) as caught:
+            runtime.lifecycle(owner, 'install', original, self.app, timeout=120)
+        first = next(result for result in self.native.results if result.args[2] == 'install')
+        self.assertIs(caught.exception, first.transport_error)
+        self.assertTrue(caught.exception.result.timed_out)
+        self.assertEqual(self.native.counts['create'], 1)
+        self.assertEqual(self.native.counts['install'], 1)
+        self.assertEqual(self.state()['owned'][0]['id'], original)
+        self.assertEqual(set(self.native.devices), {original})
+        self.assertNotIn('launch', self.native.counts)
+
     def test_bootstrap_recovery_cannot_give_install_another_retry(self):
         self.native.failures['bootstatus', 1] = 'timeout'
         owner = self.owner()
