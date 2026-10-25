@@ -397,16 +397,50 @@ class Session:
             self.save()
         return device, True
 
-    def cleanup(self, timeout=30, final=True):
+    def cleanup(self, timeout=30, final=True, *, on_error=None):
         """Try every owned device, retaining unresolved ownership for later cleanup."""
         timeout = seconds(timeout)
         if self._attached or not self.state['owned']:
             return Result([], 0)
         original = self.current
         success, last = True, None
+        errors = []
+
+        def failed(label, error):
+            errors.append(error)
+            if on_error is not None:
+                try:
+                    on_error(error)
+                except BaseException:
+                    pass  # Observation cannot interrupt owned teardown.
+            try:
+                error.failure_classified = True  # Exact in-memory outcome, never receipt data.
+            except (AttributeError, TypeError):
+                pass
+            try:
+                report_failure(label, 'not eligible; owned cleanup continued')
+            except (OSError, ValueError):
+                pass
+
+        def attempt(action, label='infra:evidence-write'):
+            try:
+                return action()
+            except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+                failed(label, error)
+
         log_path = self.path.with_name('cleanup.log')
         for record in list(self.state['owned']):
-            device, known = self.recover(record, min(timeout, self.recovery_timeout))
+            try:
+                device, known = self.recover(record, min(timeout, self.recovery_timeout))
+            except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+                # A successful exact-name lookup can bind the ID before its
+                # state write fails. Keep that native ownership proof for teardown.
+                failed('infra:evidence-write' if record.get('id') else 'infra:cleanup-inventory', error)
+                try:
+                    device = simulator_uuid(record['id']) if record.get('id') else None
+                except ValueError:
+                    device = None
+                known = bool(device)
             if not known:
                 success = False
                 continue
@@ -419,30 +453,38 @@ class Session:
                         success = False
                 else:
                     self.state['owned'].remove(record)
-                    self.save()
+                    attempt(self.save)
                 continue
-            shutdown = self.execute(['xcrun', 'simctl', 'shutdown', device], timeout)
-            delete = self.execute(['xcrun', 'simctl', 'delete', device], timeout)
-            with log_path.open('ab') as stream:
-                for result in (shutdown, delete):
-                    stream.write(result.stdout + result.stderr)
-            last = dict(simulatorID=device, shutdownExitCode=shutdown.returncode,
-                        deleteExitCode=delete.returncode, deleted=delete.returncode == 0)
-            if shutdown.returncode:
+            shutdown = attempt(lambda: self.execute(['xcrun', 'simctl', 'shutdown', device], timeout), 'infra:shutdown')
+            delete = attempt(lambda: self.execute(['xcrun', 'simctl', 'delete', device], timeout), 'infra:delete')
+            stream = attempt(lambda: log_path.open('ab'))
+            if stream is not None:
+                try:
+                    for result in (shutdown, delete):
+                        if result is not None:
+                            attempt(lambda: stream.write(result.stdout + result.stderr))
+                finally:
+                    attempt(stream.close)
+            deleted = delete is not None and delete.returncode == 0
+            last = dict(simulatorID=device, shutdownExitCode=shutdown.returncode if shutdown else None,
+                        deleteExitCode=delete.returncode if delete else None, deleted=deleted)
+            if shutdown is None or shutdown.returncode:
                 summary('infra:shutdown', 'not eligible; delete attempted')
-            if delete.returncode:
+            if not deleted:
                 summary('infra:delete', 'not eligible; ownership retained')
                 success = False
             else:
                 self.state['owned'].remove(record)
                 if self.current == device:
                     self.state['current'] = None
-                self.save()
+                attempt(self.save)
         if last is None:
             last = dict(simulatorID=original, shutdownExitCode=None,
                         deleteExitCode=None, deleted=success)
         last['deleted'] = success and not self.state['owned']
-        self.path.with_name('cleanup.json').write_text(json.dumps(last, indent=2) + '\n')
+        attempt(lambda: self.path.with_name('cleanup.json').write_text(json.dumps(last, indent=2) + '\n'))
+        if errors:
+            raise errors[0]
         return Result([], 0 if success else 1)
 
     def replacement(self):

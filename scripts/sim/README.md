@@ -37,6 +37,11 @@ prefix. Cleanup attempts delete even when shutdown times out, and retains
 unresolved ownership when deletion or inventory fails. Call cleanup again from
 the workflow's always-running step if the runner was forcibly killed.
 
+Cleanup defers transport and evidence-writing errors until every owned teardown
+has been attempted, then raises the first original exception. An optional
+`cleanup(on_error=callback)` observes errors in occurrence order; observer errors
+cannot interrupt teardown. Failed deletion keeps its ownership record.
+
 Python callers can use `Session(path).call(argv, timeout)`, `.checkpoint()`, and
 `.cleanup()`. `bounded(argv, timeout)` provides execution without lifecycle
 recovery. Sessions own their simulators; borrowed-device adapters are a separate

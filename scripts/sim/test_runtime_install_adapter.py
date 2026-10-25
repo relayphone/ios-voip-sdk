@@ -158,7 +158,8 @@ class RuntimeInstallAdapterTests(unittest.TestCase):
         self.assertIs(caught.exception.__cause__, original)
         self.assertEqual(self.native.counts['create'], 1)
         self.assertEqual(self.native.counts['delete'], 1)
-        self.assertTrue(self.state()['owned'])
+        self.assertFalse(self.state()['owned'])
+        self.assertFalse(self.native.devices)
         self.assertTrue(self.state()['retry_used'])
         self.assertNotIn('launch', self.native.counts)
 
