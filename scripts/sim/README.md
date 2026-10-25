@@ -18,6 +18,7 @@ UDID=$(sim_limit 30 xcrun simctl create "$NAME" "$DEVICE_TYPE" "$RUNTIME")
 sim_limit 60 xcrun simctl boot "$UDID"
 sim_limit 300 xcrun simctl bootstatus "$UDID" -b
 sim_limit 180 xcrun simctl install "$UDID" "$APP"
+sim_limit 60 xcrun simctl privacy "$UDID" grant microphone "$BUNDLE"
 # Keep the caller's console supervisor and its existing deadline here.
 # Mark the first observed app checkpoint before any further lifecycle calls.
 sim_checkpoint
@@ -25,10 +26,15 @@ sim_checkpoint
 
 Every bound is in seconds. A timed-out host process and its process group are
 killed and reaped; timeout returns 124. Native stdout and exit status are
-preserved. A boot, bootstatus or install recovery deletes the old device,
-creates a fresh one, and replays successful preparation with the original
-timeouts, including earlier installations. The shell wrapper updates `UDID`;
-an optional `simulator_changed` callback updates the runner's evidence identity.
+preserved. Recovery from boot, bootstatus, install or privacy grant failure
+deletes the old device, creates a fresh one, and replays successful preparation
+with the original timeouts, including earlier installations and privacy grants.
+Create, boot, bootstatus, install, privacy grants and eligible launch share the
+same single pre-app retry budget. Only exact `privacy <device> grant <service> <bundle>`
+commands join recovery and preparation replay; reset, revoke and other privacy
+operations remain bounded without retries or replay. The shell wrapper updates
+`UDID`; an optional `simulator_changed` callback updates the runner's evidence
+identity.
 Write final identity from the current device, never a cached original UUID.
 
 Ownership records persist full unique names before create. A create timeout is

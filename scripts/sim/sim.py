@@ -379,7 +379,8 @@ class Session:
         if result.returncode:
             return result
         for prepared in self.state['prepared']:
-            command = [self.current if part == '{simulator}' else part for part in prepared['command']]
+            command = list(prepared['command'])
+            command[3] = self.current
             result = self.execute(command, prepared['timeout'])
             if result.returncode:
                 summary('infra:' + command[2], 'exhausted during fresh simulator preparation')
@@ -399,6 +400,9 @@ class Session:
             raise ValueError('Unsupported simulator operation: ' + step)
         if step == 'io' and (len(command) < 5 or command[4] != 'screenshot'):
             raise ValueError('Only screenshot simulator IO is supported')
+        privacy_grant = (step == 'privacy' and len(command) == 7 and command[4] == 'grant' and
+                         all(value and not value.startswith('-') for value in command[5:7]))
+        preparation = step in ('boot', 'bootstatus', 'install') or privacy_grant
         if step == 'create':
             if len(command) != 6 or self.current:
                 raise ValueError('Create requires a fresh session, name, device type and runtime')
@@ -427,7 +431,7 @@ class Session:
             if step == 'launch' and self.state['checkpoint']:
                 summary('product:launch', 'never retried after checkpoint evidence')
                 return result
-            eligible = step in ('create', 'boot', 'bootstatus', 'install')
+            eligible = step == 'create' or preparation
             if step == 'launch':
                 position = command.index(self.current)
                 bundle = command[position + 1] if position + 1 < len(command) else ''
@@ -440,26 +444,26 @@ class Session:
             self.state['retry_used'] = True
             self.save()
             summary('infra:' + step, 'scheduled (one pre-app retry)')
-            old = self.current
             if step == 'create':
                 if self.cleanup(timeout=self.recovery_timeout, final=False).returncode:
                     summary('infra:create', 'exhausted; cleanup failed')
                     return result
                 result = self.create(command[3:], timeout)
-            elif step in ('boot', 'bootstatus', 'install'):
+            elif preparation:
                 result = self.replacement()
                 if result.returncode == 0:
-                    command = [self.current if part == old else part for part in command]
+                    command[3] = self.current
                     result = self.execute(command, timeout)
             else:
                 result = self.execute(command, timeout)
             summary('infra:' + step, 'exhausted' if result.returncode else 'recovered')
 
         if result.returncode == 0:
-            if step in ('boot', 'bootstatus', 'install'):
+            if preparation:
+                prepared_command = list(command)
+                prepared_command[3] = '{simulator}'
                 self.state['prepared'].append(dict(
-                    command=['{simulator}' if part == self.current else part for part in command],
-                    timeout=timeout))
+                    command=prepared_command, timeout=timeout))
             elif step == 'launch':
                 self.state['checkpoint'] = True
             elif step == 'delete':
