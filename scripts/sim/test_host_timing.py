@@ -222,5 +222,31 @@ class ExistingDriverControlsTests(unittest.TestCase):
             self.assertIn(label, result['cases'])
 
 
+    def test_driver_observer_fault_preserves_all_140_allowed_and_refused_controls(self):
+        with patch.object(run_scenario.HostTiming, 'observe_row',
+                          side_effect=RuntimeError('diagnostic observer unavailable')):
+            self.test_existing_140_acceptance_controls_keep_their_outcomes_with_native_calls_refused()
+
+    def test_strict_live_parser_error_keeps_its_original_identity(self):
+        import run_swift_livekit as runner
+        class Process:
+            pid = 123456
+            returncode = 0
+            def poll(self): return 0
+        primary = json.JSONDecodeError('original product parse failure', '?', 0)
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            with patch.object(runner, 'live', side_effect=primary), \
+                 patch.object(runner.HostTiming, 'observe_row', side_effect=RuntimeError('observer fault')), \
+                 patch.object(subprocess, 'Popen', return_value=Process()), \
+                 patch.object(subprocess, 'run', side_effect=AssertionError('native run forbidden')), \
+                 patch.object(runner, 'command', side_effect=AssertionError('native cleanup forbidden')), \
+                 patch.object(runner.os, 'killpg', side_effect=ProcessLookupError), \
+                 patch.object(runner.signal, 'signal'):
+                with self.assertRaises(json.JSONDecodeError) as caught:
+                    runner.capture_case(output, output, 'host-only-simulator', '', 'healthy')
+        self.assertIs(caught.exception, primary)
+
+
 if __name__ == '__main__':
     unittest.main()

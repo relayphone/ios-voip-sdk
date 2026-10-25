@@ -79,7 +79,10 @@ def capture_case(build, out, simulator, inherited, mode, expected_container=None
     with HostTiming(trace, 'driver', BUNDLE) as timing, (out / (mode + '.supervisor.log')).open('xb') as log:
         def observed():
             rows = live(trace)
-            for row in rows: timing.observe_row(row, 'poll')
+            try:
+                for row in rows: timing.observe_row(row, 'poll')
+            except Exception:
+                pass  # Diagnostics cannot replace these strictly parsed product rows.
             return rows
         timing.record('supervisor.spawn.start')
         process = subprocess.Popen([str(value) for value in argv], env=env, stdout=log, stderr=subprocess.STDOUT,
