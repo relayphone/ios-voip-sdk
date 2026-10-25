@@ -698,6 +698,8 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
   }
   public func conversationManager(_ manager: ConversationManager, perform action: ConversationAction) {
     switch action.state { case .idle, .running: break; default: return }
+    let deliveredAt = Date()
+    let advertisedDeadline = action.timeoutDate
     let id = action.conversationUUID
     let origin: ConversationActionOrigin = appActions.removeValue(forKey: action.uuid) == nil ? .system : .app
     hydrateIncoming(id)
@@ -740,9 +742,9 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
       action.fulfill(); return
     default: action.fail(); return
     }
-    let pending = PendingAction(id: action.uuid, kind: kind, deadline: action.timeoutDate,
+    let pending = PendingAction(id: action.uuid, kind: kind, deadline: advertisedDeadline,
       origin: origin, held: held, muted: muted, digits: digits)
-    coordinator.enqueue(conversationID: id, action: pending, isPending: {
+    coordinator.enqueue(conversationID: id, action: pending, deliveredAt: deliveredAt, isPending: {
       switch action.state { case .idle, .running: true; default: false }
     }, settle: { accepted in if accepted { action.fulfill() } else { action.fail() } })
   }

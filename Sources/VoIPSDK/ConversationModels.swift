@@ -94,7 +94,7 @@ public enum ConversationActionOrigin: String, Codable, Sendable { case system, a
 public struct PendingAction: Codable, Sendable, Equatable {
   public var id: UUID
   public var kind: ConversationActionKind
-  /// Observed pending actions expose the application's deadline, before platform timeout.
+  /// Application deadline: the earlier advertised timeout or conservative action bound, minus 1.5 seconds.
   public var deadline: Date
   public var origin: ConversationActionOrigin
   public var held: Bool?
