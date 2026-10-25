@@ -72,7 +72,7 @@ class CaptureClassificationTests(unittest.TestCase):
 
     def test_known_launcher_signal_after_valid_entry_is_transport(self):
         trace = ((BUNDLE + ': 7001\n').encode() +
-                 b'PROBE {"event":"app.entry"}\nPROBE {"event":"launch","pid":7001}\n')
+                 b'PROBE {"event":"app.entry","t_ms":0}\nPROBE {"event":"launch","pid":7001,"t_ms":1}\n')
         for status in (-signal.SIGALRM, 128 + signal.SIGALRM):
             with self.subTest(status=status):
                 self.summary.unlink(missing_ok=True)
@@ -85,7 +85,7 @@ class CaptureClassificationTests(unittest.TestCase):
 
     def test_entry_signal_does_not_replace_malformed_identity_or_product_failure(self):
         valid = ((BUNDLE + ': 7001\n').encode() +
-                 b'PROBE {"event":"app.entry"}\nPROBE {"event":"launch","pid":7001}\n')
+                 b'PROBE {"event":"app.entry","t_ms":0}\nPROBE {"event":"launch","pid":7001,"t_ms":1}\n')
         cases = ((valid + b'PROBE malformed-product-json\n', {}),
                  (valid + b'PROBE []\n', {}),
                  (valid + (BUNDLE + ': 7002\n').encode(), {}),
@@ -102,6 +102,42 @@ class CaptureClassificationTests(unittest.TestCase):
                 self.assertIn('product:transport-case', labels)
                 self.assertNotIn('infra:launch', labels)
 
+    def test_entered_signal_preserves_invalid_records_and_overwritten_launch_pid(self):
+        prefix = (BUNDLE + ': 7001\n').encode() + b'PROBE {"event":"app.entry","t_ms":0}\n'
+        launch = b'PROBE {"event":"launch","pid":7001,"t_ms":1}\n'
+        cases = (prefix + launch + b'PROBE {}\n',
+                 prefix + launch + b'PROBE {"event":7,"t_ms":2}\n',
+                 prefix + launch + b'PROBE {"event":"snapshot"}\n',
+                 prefix + launch + b'PROBE {"event":"snapshot","t_ms":true}\n',
+                 prefix + launch + b'PROBE {"event":"snapshot","t_ms":-1}\n',
+                 prefix + b'PROBE {"event":"launch","pid":7002,"t_ms":0}\n' + launch)
+        for trace in cases:
+            with self.subTest(trace=trace):
+                self.summary.unlink(missing_ok=True)
+                labels = self.classify(trace=trace, launchExitCodeBeforeCleanup=142,
+                    launchExitCode=142, appEntryObserved=True, appPID=7001,
+                    launcherAppPID=7001, lastProbeEvent='launch')
+                self.assertIn('product:transport-case', labels)
+                self.assertNotIn('infra:launch', labels)
+
+    def test_provided_raw_identity_must_match_the_bound_capture(self):
+        identity = dict(pid=7001, runID='host-run', simulatorID='owned-simulator', bundleID=BUNDLE)
+        for key, wrong in ((None, None), ('pid', 7002), ('runID', 'foreign-run'),
+                           ('simulatorID', 'foreign-simulator'), ('bundleID', 'foreign-bundle')):
+            with self.subTest(key=key):
+                self.summary.unlink(missing_ok=True)
+                row = dict(event='app.entry', t_ms=0, **identity)
+                if key is not None:
+                    row[key] = wrong
+                trace = ((BUNDLE + ': 7001\nPROBE ' + json.dumps(row) + '\n').encode() +
+                         b'PROBE {"event":"launch","pid":7001,"t_ms":1}\n')
+                labels = self.classify(trace=trace, launchExitCodeBeforeCleanup=142,
+                    launchExitCode=142, appEntryObserved=True, appPID=7001,
+                    launcherAppPID=7001, lastProbeEvent='launch',
+                    runID=identity['runID'], simulatorID=identity['simulatorID'])
+                self.assertIn('infra:launch' if key is None else 'product:transport-case', labels)
+                self.assertNotIn('product:' if key is None else 'infra:launch', labels)
+
     def test_cleanup_signal_is_not_inferred_to_be_the_primary_transport_failure(self):
         labels = self.classify(launchExitCodeBeforeCleanup=None, launchExitCode=-signal.SIGTERM,
                                error='synthetic product assertion', cleanupExitCode=7)
@@ -111,7 +147,7 @@ class CaptureClassificationTests(unittest.TestCase):
 
     def test_cleanup_signal_after_entered_eof_is_not_host_transport_evidence(self):
         trace = ((BUNDLE + ': 7001\n').encode() +
-                 b'PROBE {"event":"app.entry"}\nPROBE {"event":"launch","pid":7001}\n')
+                 b'PROBE {"event":"app.entry","t_ms":0}\nPROBE {"event":"launch","pid":7001,"t_ms":1}\n')
         for status in (-signal.SIGTERM, 128 + signal.SIGTERM,
                        -signal.SIGKILL, 128 + signal.SIGKILL):
             with self.subTest(status=status):
@@ -188,7 +224,7 @@ class CaptureClassificationTests(unittest.TestCase):
                 launch, stop = self.root / ('entered-' + name + '.py'), self.root / 'stop.py'
                 launch.write_text('import json, os, signal, sys\npid = os.getpid()\n' +
                     'print(' + repr(BUNDLE + ': ') + ' + str(pid), flush=True)\n' +
-                    'for row in ({"event":"app.entry"}, {"event":"launch","pid":pid}):\n' +
+                    'for row in ({"event":"app.entry","t_ms":0}, {"event":"launch","pid":pid,"t_ms":1}):\n' +
                     ' print("PROBE " + json.dumps(row), flush=True)\n' + ending + '\n')
                 stop.write_text('import sys\nsys.stderr.write(' + repr(sim.not_running_error(BUNDLE)) + ')\nsys.exit(3)\n')
                 output, receipt = self.root / (name + '.log'), self.root / (name + '.json')

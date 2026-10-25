@@ -38,12 +38,22 @@ def _valid_entry(result, trace, bundle):
         rows = [json.loads(line.split(b'PROBE ', 1)[1]) for line in trace.splitlines() if b'PROBE ' in line]
     except (ValueError, UnicodeDecodeError):
         return False
+    if not all(isinstance(row, dict) and isinstance(row.get('event'), str) and
+               type(row.get('t_ms')) is int and row['t_ms'] >= 0 for row in rows):
+        return False
+    launches = [row for row in rows if row['event'] == 'launch']
     header = _launcher_header(bundle)
     pids = header.findall(trace) if header else []
     app_pid = result.get('appPID')
+    identity = {key: result.get(key) for key in ('runID', 'simulatorID', 'bundleID')}
+    identity['pid'] = app_pid
+    if any(key in row and (bound is None or type(row[key]) is not type(bound) or row[key] != bound)
+           for row in rows for key, bound in identity.items()):
+        return False
     return (result.get('appEntryObserved') is True and 'identityError' not in result and
             type(app_pid) is int and app_pid > 0 and result.get('launcherAppPID') == app_pid and
-            len(pids) == 1 and int(pids[0]) == app_pid and all(isinstance(row, dict) for row in rows) and
+            len(pids) == 1 and int(pids[0]) == app_pid and len(launches) == 1 and
+            type(launches[0].get('pid')) is int and launches[0]['pid'] == app_pid and
             any(row.get('event') == 'app.entry' for row in rows))
 
 
