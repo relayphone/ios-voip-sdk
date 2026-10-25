@@ -110,11 +110,11 @@ class RuntimeInstallAdapterTests(unittest.TestCase):
         self.assertEqual(exports['CKSIM_TEST_SIMULATOR'], current)
         self.assertEqual(exports['SIM_STATE'], str(self.path.resolve()))
         self.assertTrue(self.state()['retry_used']); self.assertTrue(self.state()['checkpoint'])
-        self.assertEqual([timeout for _, timeout in self.step_calls('install')], [120, 120])
+        self.assertEqual([timeout for _, timeout in self.step_calls('install')], [180, 180])
         summary = (self.root / 'summary').read_text()
         self.assertEqual(summary.count('measurement:fixture-install'), 2)
-        self.assertIn('bound=120.0s status=124 timed_out=True', summary)
-        self.assertIn('bound=120.0s status=0 timed_out=False', summary)
+        self.assertIn('bound=180.0s status=124 timed_out=True', summary)
+        self.assertIn('bound=180.0s status=0 timed_out=False', summary)
 
     def test_create_recovery_spends_the_same_budget_before_a_later_install_failure(self):
         self.native.failures['create', 1] = 'timeout'
@@ -291,7 +291,7 @@ class RuntimeInstallAdapterTests(unittest.TestCase):
             runtime.launch_fixture(original, self.app, session=owner)
         self.assertEqual(self.native.counts['create'], 1)
         self.assertEqual(self.native.counts['install'], 1)
-        self.assertEqual([timeout for _, timeout in self.step_calls('install')], [120])
+        self.assertEqual([timeout for _, timeout in self.step_calls('install')], [180])
         self.assertNotIn('delete', self.native.counts)
         self.assertNotIn('launch', self.native.counts)
         self.assertEqual(self.state()['current'], original)

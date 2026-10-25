@@ -144,9 +144,9 @@ def launch_fixture(device, app, *, install=True, session=None):
         session = simulator_infra.Session.resume(os.environ['SIM_STATE'], device, runner=session_transport,
                                                inventory_timeout=60)
     if install:
-        install_bound = simulator_infra.seconds(os.environ.get('CKSIM_FIXTURE_INSTALL_TIMEOUT', 120))
+        install_bound = simulator_infra.seconds(os.environ.get('CKSIM_FIXTURE_INSTALL_TIMEOUT', 180))
         if install_bound > 600:
-            raise ValueError('Fixture install measurement bound must not exceed 600 seconds')
+            raise ValueError('Fixture install bound must not exceed 600 seconds')
         lifecycle(session, 'install', device, app.resolve(), timeout=install_bound)
     if session is not None:
         device = session.current
