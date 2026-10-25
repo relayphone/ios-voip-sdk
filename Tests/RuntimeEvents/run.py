@@ -12,6 +12,21 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 BUNDLE = 'dev.callkitsim.eventfixture'
+sys.path.insert(0, str(ROOT / 'scripts/sim'))
+import sim as simulator_infra
+from ownership import publish
+
+
+class CommandError(RuntimeError):
+    """Preserve the native result while the lifecycle owner decides recovery."""
+    def __init__(self, result, timeout):
+        self.result = result
+        executable = result.args[0] if result.args else 'Simulator preparation'
+        message = (f'{executable} timed out after {timeout}s: {result.stdout!r}\n{result.stderr!r}'
+                   if result.timed_out else
+                   f'{executable} failed: {result.stdout.decode(errors="replace")}\n{result.stderr.decode(errors="replace")}')
+        super().__init__(message)
+        result.transport_error = self
 
 
 def latest_runtime(runtimes, required=None):
@@ -24,6 +39,22 @@ def latest_runtime(runtimes, required=None):
 
 
 def run(*args, timeout=120, **kwargs):
+    command = list(map(str, args))
+    if command[:2] == ['xcrun', 'simctl']:
+        started = time.monotonic() if command[2:3] == ['install'] else None
+        result = None
+        try:
+            try: result = simulator_infra.bounded(command, timeout=timeout, **kwargs)
+            except subprocess.TimeoutExpired as error:
+                result = simulator_infra.Result(command, 124, error.stdout or b'', error.stderr or b'', timed_out=True)
+        finally:
+            if started is not None:
+                simulator_infra.summary('measurement:fixture-install',
+                    f'elapsed={time.monotonic() - started:.3f}s bound={timeout}s '
+                    f'status={result.returncode if result else "unknown"} timed_out={result.timed_out if result else "unknown"}')
+        if result.returncode:
+            raise CommandError(result, timeout)
+        return result.stdout.decode().strip()
     try:
         result = subprocess.run(list(map(str, args)), text=True, capture_output=True, timeout=timeout, **kwargs)
     except subprocess.TimeoutExpired as error:
@@ -31,6 +62,38 @@ def run(*args, timeout=120, **kwargs):
     if result.returncode:
         raise RuntimeError(f'{args[0]} failed: {result.stdout}\n{result.stderr}')
     return result.stdout.strip()
+
+
+def session_transport(command, timeout, **kwargs):
+    try:
+        return simulator_infra.Result(command, 0, run(*command, timeout=timeout, **kwargs).encode())
+    except CommandError as error:
+        return error.result
+
+
+def lifecycle(session, *parts, timeout=120, **kwargs):
+    """Only an authoritative owner may replace a device before app launch."""
+    command = list(map(str, ('xcrun', 'simctl', *parts)))
+    if session is None:
+        return run(*command, timeout=timeout, **kwargs)
+    previous_runner = session.runner
+    session.runner = lambda argv, bound: session_transport(argv, bound, **kwargs)
+    result = None
+    try:
+        result = session.call(command, timeout)
+    finally:
+        session.runner = previous_runner
+        failed = sys.exc_info()[0] is not None or result is not None and result.returncode != 0
+        if session.current:
+            try:
+                publish(session.current, session.path, os.environ.get('CKSIM_SIMULATOR_ID_FILE'), os.environ.get('GITHUB_ENV'))
+            except OSError:
+                if not failed: raise
+                simulator_infra.summary('infra:ownership-export', 'original preparation failure retained')
+    if result.returncode:
+        error = getattr(result, 'transport_error', None)
+        raise error if error is not None else CommandError(result, timeout)
+    return result.stdout.decode().strip()
 
 
 def remove_simulators(devices):
@@ -57,17 +120,28 @@ def wait(predicate):
     raise RuntimeError('Native event acceptance timed out')
 
 
-def record_environment(out, runtime):
+def record_environment(out, runtime, *, session=None):
     out.mkdir(parents=True, exist_ok=True)
     (out / 'environment.txt').write_text(run('xcodebuild', '-version') + '\n' + runtime + '\n')
-    (out / 'runtimes.json').write_text(run('xcrun', 'simctl', 'list', 'runtimes', '-j') + '\n')
+    (out / 'runtimes.json').write_text(lifecycle(session, 'list', 'runtimes', '-j') + '\n')
 
 
-def launch_fixture(device, app, *, install=True):
+def launch_fixture(device, app, *, install=True, session=None):
     """Start a fresh session; the host sends the first stimulus after readiness."""
     run_id = 'fixture-' + str(uuid.uuid4())
+    if session is None and os.environ.get('SIM_STATE'):
+        session = simulator_infra.Session.resume(os.environ['SIM_STATE'], device, runner=session_transport,
+                                               inventory_timeout=60)
     if install:
-        run('xcrun', 'simctl', 'install', device, app.resolve())
+        install_bound = simulator_infra.seconds(os.environ.get('CKSIM_FIXTURE_INSTALL_TIMEOUT', 120))
+        if install_bound > 600:
+            raise ValueError('Fixture install measurement bound must not exceed 600 seconds')
+        lifecycle(session, 'install', device, app.resolve(), timeout=install_bound)
+    if session is not None:
+        device = session.current
+        # This slice retries preparation only. Persist the barrier before the
+        # original launch, including unknown launch outcomes and process death.
+        session.checkpoint()
     run('xcrun', 'simctl', 'launch', '--terminate-running-process', device, BUNDLE,
         env=dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=run_id))
     container = Path(run('xcrun', 'simctl', 'get_app_container', device, BUNDLE, 'data'))
@@ -127,16 +201,24 @@ def main():
     parser.add_argument('--app', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--simulator')
+    parser.add_argument('--simulator-state', type=Path, default=os.environ.get('SIM_STATE'))
     parser.add_argument('--runtime', help='Require this exact available simulator runtime identifier')
     args = parser.parse_args()
     args.out.mkdir(parents=True)
-    runtime = latest_runtime(json.loads(run('xcrun', 'simctl', 'list', 'runtimes', '-j'))['runtimes'], args.runtime)
-    record_environment(args.out, runtime)
+    owner = (simulator_infra.Session.resume(args.simulator_state, args.simulator, runner=session_transport,
+                                           inventory_timeout=60) if args.simulator_state else
+             simulator_infra.Session(args.out / 'simulator-state.json', runner=session_transport)
+             if not args.simulator else None)
+    runtime = latest_runtime(json.loads(lifecycle(owner, 'list', 'runtimes', '-j'))['runtimes'], args.runtime)
+    if owner: record_environment(args.out, runtime, session=owner)
+    else: record_environment(args.out, runtime)
     print('Selected simulator runtime: ' + runtime, flush=True)
-    device = args.simulator or run('xcrun', 'simctl', 'create', 'Codex M4 ' + str(uuid.uuid4())[:8],
-                                   'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro', runtime)
+    device = owner.current if owner else args.simulator
     def sim(*parts, **kwargs):
-        return run('xcrun', 'simctl', *parts, **kwargs)
+        nonlocal device
+        try: return lifecycle(owner, *parts, **kwargs)
+        finally:
+            if owner and owner.current: device = owner.current
     def command(*parts):
         result = json.loads(run(ROOT / 'Tools/cksim', '--simulator', device, '--bundle', BUNDLE,
                                 '--runtime-dir', args.package.resolve(), *parts))
@@ -144,13 +226,18 @@ def main():
         return result
     root = None
     try:
+        if not device:
+            sim('create', 'Codex M4 ' + str(uuid.uuid4())[:8],
+                'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro', runtime)
         # A supplied simulator must also belong to this test run's operator.
         devices = json.loads(sim('list', 'devices', '-j'))['devices']
         state = next(d['state'] for group in devices.values() for d in group if d['udid'] == device)
         if state != 'Booted':
             sim('boot', device)
         sim('bootstatus', device, '-b', timeout=300)
-        root, run_id = launch_fixture(device, args.app)
+        root, run_id = (launch_fixture(device, args.app, session=owner) if owner else
+                        launch_fixture(device, args.app))
+        if owner: device = owner.current
         session = fixture_session(root, run_id)
         assert session.get('controlTransport') == 'directory-watch-v1', 'fixture must support spawn-free mailbox controls'
         journal = root / session['runID'] / 'events.jsonl'
@@ -219,9 +306,15 @@ def main():
         (args.out / 'environment.txt').write_text(run('xcodebuild', '-version') + '\n' + runtime + '\n')
         print(json.dumps(dict(success=True, events=len(watched), channelMatchesWatch=True)))
     finally:
+        primary = sys.exc_info()[1]
         capture_diagnostics(args.out, device, channel=root, failed=sys.exc_info()[0] is not None)
-        if not args.simulator:
-            remove_simulators([device])
+        if owner is not None and not args.simulator_state and not args.simulator:
+            try:
+                result = owner.cleanup(timeout=30)
+                if result.returncode: raise CommandError(result, 30)
+            except BaseException:
+                if primary is None: raise
+                simulator_infra.summary('infra:cleanup', 'original product failure retained; ownership remains recorded')
 
 
 if __name__ == '__main__':
