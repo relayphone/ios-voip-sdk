@@ -16,10 +16,13 @@ enum SystemAudioLifecycleEvent: Sendable {
 
 @MainActor final class SystemAudioSession {
   static var latest: SystemAudioSession?
+  let routes = AudioRoutesStore()
   var onLifecycle: (@MainActor (SystemAudioLifecycleEvent) -> Void)?
   private(set) var authorized = false
   init() { Self.latest = self }
   func setSystemAudioAuthorization(_ active: Bool) { authorized = active }
+  func refreshRoutes() {}
+  func selectRoute(_ id: String, isActive: Bool) async throws { _ = try routes.selection(id, isActive: isActive) }
   func deliver(_ event: SystemAudioLifecycleEvent) {
     switch event {
     case .inactive, .mediaServicesReset: authorized = false
