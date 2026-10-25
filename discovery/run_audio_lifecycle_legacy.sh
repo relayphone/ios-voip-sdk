@@ -7,50 +7,27 @@ if [[ -n "${OUT:-}" ]]; then mkdir "$OUT"; else OUT=$(mktemp -d "${TMPDIR:-/tmp}
 OUT=$(cd "$OUT" && pwd)
 UDID=""
 INHERITED_DYLD=""
-ALL_INHERITED_DYLD=""
-DYLD_SOURCE_SIMULATOR=""
 RUN_ID=$(uuidgen)
 BUNDLE=dev.iosvoipsdk.m1contracts
 RUNTIME=com.apple.CoreSimulator.SimRuntime.iOS-26-5
 NAME=sdk-m1-contract-audio-lifecycle
-SIM_STATE="$OUT/simulator-state.json"
-PRODUCT_CHECK=legacy-build-validation
-source scripts/sim/sim.sh
-limit() { sim_limit "$@"; }
+limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
 cleanup_simulator() {
-  sim_cleanup 30 || { : > "$SIM_STATE.failure"; return 1; }
-  UDID=""
-}
-read_launch_environment() {
-  local query_status=0
-  if [[ -n "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" ]]; then
-    INHERITED_DYLD=$SIMCTL_CHILD_DYLD_INSERT_LIBRARIES
-  else
-    INHERITED_DYLD=$(SIM_ACCEPTED_STATUS=1 SIMCTL_CHILD_DYLD_INSERT_LIBRARIES='' limit 180 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>> "$OUT/launch-environment-query.log") || query_status=$?
-    printf 'Query exit code: %s\n' "$query_status" >> "$OUT/launch-environment-query.log"
-  fi
-  ALL_INHERITED_DYLD="${ALL_INHERITED_DYLD:+$ALL_INHERITED_DYLD:}$INHERITED_DYLD"
-  [[ "$query_status" -le 1 ]] || { echo 'Cannot read inherited launch environment' >&2; return 1; }
-  PRODUCT_CHECK=legacy-launch-environment
-  SDK_AUDIO_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - <<'PY' || return 1
-import os,pathlib
-assert not any(pathlib.Path(p).name in ('CKSimRuntime.dylib','CKSimLoader.dylib')
-    for p in os.environ['SDK_AUDIO_EXTERNAL_DYLD'].split(':') if p),'external SDK runtime injection refused'
+  [[ -n "$UDID" ]] || return 0
+  local shutdown_status=0 delete_status=0
+  limit 30 xcrun simctl shutdown "$UDID" >> "$OUT/cleanup.log" 2>&1 || shutdown_status=$?
+  limit 30 xcrun simctl delete "$UDID" >> "$OUT/cleanup.log" 2>&1 || delete_status=$?
+  python3 - "$OUT/cleanup.json" "$UDID" "$shutdown_status" "$delete_status" <<'PY'
+import json,pathlib,sys
+path,sim,shutdown,delete=sys.argv[1:]
+pathlib.Path(path).write_text(json.dumps(dict(simulatorID=sim,shutdownExitCode=int(shutdown),
+    deleteExitCode=int(delete),deleted=int(delete)==0),indent=2)+'\n')
 PY
-  DYLD_SOURCE_SIMULATOR=$UDID
-}
-simulator_changed() {
-  # Boot recovery precedes preflight; explicit launch overrides span devices.
-  # Exhausted preparation keeps its infrastructure marker without a new query.
-  if [[ ! -f "$SIM_STATE.failure" && -n "${DYLD_SOURCE_SIMULATOR:-}" && "$DYLD_SOURCE_SIMULATOR" != "$UDID" &&
-        -z "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" ]]; then
-    read_launch_environment
-  fi
+  if [[ "$delete_status" -eq 0 ]]; then UDID=""; else return 1; fi
 }
 redact_external_paths() {
-  local libraries=${ALL_INHERITED_DYLD:-$INHERITED_DYLD}
-  [[ -n "$libraries" ]] || return 0
-  SDK_AUDIO_EXTERNAL_DYLD="$libraries" python3 - "$OUT" <<'PYCODE'
+  [[ -n "$INHERITED_DYLD" ]] || return 0
+  SDK_AUDIO_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - "$OUT" <<'PYCODE'
 import hashlib,json,os,pathlib,sys
 paths=[p.encode() for p in os.environ['SDK_AUDIO_EXTERNAL_DYLD'].split(':') if p]
 for log in pathlib.Path(sys.argv[1]).glob('*.log'):
@@ -67,9 +44,6 @@ PYCODE
 cleanup() {
   local status=$?
   trap - EXIT
-  if [[ "$status" -ne 0 && ! -f "$SIM_STATE.failure" ]]; then
-    python3 "$SIM_HELPER" product "$PRODUCT_CHECK" || true
-  fi
   cleanup_simulator || status=1
   redact_external_paths || status=1
   exit "$status"
@@ -86,7 +60,6 @@ info,_=validate_build(pathlib.Path(sys.argv[1]))
 assert int(info['sdkVersion'].split('.')[0]) >= 27,'legacy runtime requires the SDK 27-built app'
 PY
 RUNTIME_JSON=$(limit 60 xcrun simctl list runtimes -j)
-PRODUCT_CHECK=legacy-runtime-selection
 SDK_AUDIO_RUNTIME_JSON="$RUNTIME_JSON" python3 - "$RUNTIME" "$OUT/runtime.json" <<'PY'
 import json,os,pathlib,sys
 rows=[r for r in json.loads(os.environ['SDK_AUDIO_RUNTIME_JSON'])['runtimes']
@@ -98,9 +71,20 @@ PY
 UDID=$(limit 30 xcrun simctl create "sdk-audio-legacy-$RUN_ID" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$RUNTIME")
 limit 60 xcrun simctl boot "$UDID"
 limit 300 xcrun simctl bootstatus "$UDID" -b > "$OUT/boot.log" 2>&1
-read_launch_environment
+if [[ -n "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" ]]; then
+  INHERITED_DYLD=$SIMCTL_CHILD_DYLD_INSERT_LIBRARIES
+else
+  query_status=0
+  INHERITED_DYLD=$(SIMCTL_CHILD_DYLD_INSERT_LIBRARIES='' limit 180 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2> "$OUT/launch-environment-query.log") || query_status=$?
+  printf 'Query exit code: %s\n' "$query_status" >> "$OUT/launch-environment-query.log"
+  [[ "$query_status" -le 1 ]] || { echo 'Cannot read inherited launch environment' >&2; exit 1; }
+fi
+SDK_AUDIO_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - <<'PY'
+import os,pathlib
+assert not any(pathlib.Path(p).name in ('CKSimRuntime.dylib','CKSimLoader.dylib')
+    for p in os.environ['SDK_AUDIO_EXTERNAL_DYLD'].split(':') if p),'external SDK runtime injection refused'
+PY
 limit 180 xcrun simctl install "$UDID" "$SDK_M1_CONTRACT_BUILD/SDKM1Contracts.app" > "$OUT/install.log" 2>&1
-PRODUCT_CHECK="$NAME"
 env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
   SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M0_RUN_ID="$RUN_ID" \
   SIMCTL_CHILD_SDK_M1_CONTRACT_CASE=audio-lifecycle \
@@ -109,9 +93,7 @@ env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
   --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$NAME" --bundle-id "$BUNDLE" \
   --terminate-command xcrun simctl terminate "$UDID" "$BUNDLE" \
   --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" "$BUNDLE"
-sim_checkpoint
-PRODUCT_CHECK=legacy-journal-capture
-container=$(python3 "$SIM_HELPER" call '' 30 env -u SIMCTL_CHILD_DYLD_INSERT_LIBRARIES python3 scripts/sim/paths.py \
+container=$(limit 30 env -u SIMCTL_CHILD_DYLD_INSERT_LIBRARIES python3 scripts/sim/paths.py \
   --receipt "$OUT/$NAME.receipt.json" --trace "$OUT/$NAME.log" \
   --simulator "$UDID" --run-id "$RUN_ID" --bundle "$BUNDLE")
 [[ -n "$container" && -d "$container" ]] || { echo 'Missing owned contract data container' >&2; exit 1; }
@@ -123,11 +105,8 @@ row=json.loads(receipt.read_text()); row['journalSHA256']=hashlib.sha256(journal
 receipt.write_text(json.dumps(row,indent=2)+'\n')
 PY
 cleanup_simulator
-PRODUCT_CHECK=legacy-redaction
 redact_external_paths
-PRODUCT_CHECK=legacy-audio-conformance
 python3 discovery/sdk_m1_contracts_conformance.py "$SDK_M1_CONTRACT_BUILD" "$OUT" --case audio-lifecycle | tee "$OUT/summary.json"
-PRODUCT_CHECK=legacy-runtime-contract
 python3 - "$OUT/summary.json" <<'PYCODE'
 import json,pathlib,sys
 result=json.loads(pathlib.Path(sys.argv[1]).read_text())
