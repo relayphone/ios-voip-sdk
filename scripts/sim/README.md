@@ -57,6 +57,14 @@ incremental adoption, `sim.sh` keeps existing product probes on the bounded path
 without lifecycle retries; their replacement requires the owning lane's product
 controls.
 
+A stateless bounded probe can declare one expected nonzero status with
+`sim.py call --accepted-status 1 '' 180 <command>`, or scope
+`SIM_ACCEPTED_STATUS=1 sim_limit 180 <command>` in shell. The native status is
+preserved without a failure label or marker. Only native status 1 can be
+accepted; usage errors (2), timeouts (124), helper exceptions (125 with this
+option), and signal exits remain failures. Stateful lifecycle calls reject the
+CLI option and ignore the shell scope, retaining their existing retry policy.
+
 Host controls require no Xcode or simulator:
 
 ```bash

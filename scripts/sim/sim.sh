@@ -3,15 +3,20 @@
 SIM_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sim.py"
 
 sim_limit() {
-  local seconds=$1 status=0 current state=${SIM_STATE:-}
+  local seconds=$1 status=0 current state=${SIM_STATE:-} accepted=0
   shift
   # These existing product probes are migrated separately with their owners.
   # They remain bounded, but never enter the lifecycle/retry policy.
   if [[ "${1:-}" == xcrun && "${2:-}" == simctl &&
         ( "${3:-}" == spawn || "${3:-}" == get_app_container ) ]]; then state=''; fi
-  python3 "$SIM_HELPER" call "$state" "$seconds" "$@" || status=$?
+  if [[ -z "$state" && "${SIM_ACCEPTED_STATUS:-}" == 1 ]]; then
+    python3 "$SIM_HELPER" call --accepted-status "$SIM_ACCEPTED_STATUS" "$state" "$seconds" "$@" || status=$?
+    if [[ "$status" -eq 1 && "${SIM_ACCEPTED_STATUS:-}" == 1 ]]; then accepted=1; fi
+  else
+    python3 "$SIM_HELPER" call "$state" "$seconds" "$@" || status=$?
+  fi
   if [[ -n "${SIM_STATE:-}" ]]; then
-    if [[ "$status" -ne 0 ]]; then
+    if [[ "$status" -ne 0 && "$accepted" -ne 1 ]]; then
       : > "$SIM_STATE.failure"
     else
       rm -f "$SIM_STATE.failure"

@@ -407,6 +407,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='action', required=True)
     caller = commands.add_parser('call')
+    caller.add_argument('--accepted-status', type=int, choices=(1,))
     caller.add_argument('state')
     caller.add_argument('timeout', type=seconds)
     caller.add_argument('command', nargs=argparse.REMAINDER)
@@ -432,9 +433,12 @@ def main(argv=None):
         if args.action == 'call':
             if not args.command:
                 raise ValueError('A command is required')
+            if args.accepted_status is not None and args.state:
+                raise ValueError('Accepted statuses are allowed only for stateless bounded calls')
             session = Session(args.state) if args.state else None
             result = session.call(args.command, args.timeout) if session else bounded(args.command, args.timeout)
-            if not session and result.returncode and args.command[:2] == ['xcrun', 'simctl']:
+            accepted = not result.timed_out and result.returncode == args.accepted_status
+            if not session and result.returncode and not accepted and args.command[:2] == ['xcrun', 'simctl']:
                 summary('infra:' + (args.command[2] if len(args.command) > 2 else 'helper'), 'not eligible')
             sys.stdout.buffer.write(result.stdout)
             sys.stderr.buffer.write(result.stderr)
@@ -458,7 +462,7 @@ def main(argv=None):
     except (OSError, ValueError, KeyError, TypeError) as error:
         print('Simulator helper: ' + str(error), file=sys.stderr)
         summary('infra:helper', 'not eligible')
-        return 1
+        return 125 if args.action == 'call' and args.accepted_status is not None else 1
 
 
 if __name__ == '__main__':

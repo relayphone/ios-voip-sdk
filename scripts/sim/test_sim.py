@@ -51,6 +51,8 @@ if action == 'signal-no-create':
 if action == 'invalid-create':
     print('not-a-simulator-uuid')
     sys.exit(0)
+if action == 'unset': sys.exit(1)
+if action == 'reserved-failure': sys.exit(125)
 if action == 'failure': sys.exit(73)
 if action == 'partial-launch':
     print('PROBE {"event":"app.entry"}', flush=True)
@@ -124,6 +126,39 @@ class LifecycleTests(unittest.TestCase):
         result = self.cli('call', '', 2, sys.executable, '-c',
                           'import sys;sys.stdout.write("value");sys.exit(73)', expected=73)
         self.assertEqual(result.stdout, 'value')
+
+    def test_accepted_status_preserves_stateless_native_one_without_failure_label(self):
+        self.rules(dict(step='spawn', action='unset'))
+        self.cli('call', '--accepted-status', 1, '', 2,
+                 'xcrun', 'simctl', 'spawn', FOREIGN, 'launchctl', 'getenv', 'ANYTHING', expected=1)
+        self.assertEqual(len(self.calls('spawn')), 1)
+        self.assertFalse(self.summary.exists())
+
+    def test_accepted_one_does_not_accept_other_stateless_native_failures(self):
+        self.rules(dict(step='shutdown', action='failure'))
+        self.cli('call', '--accepted-status', 1, '', 2, 'xcrun', 'simctl', 'shutdown', FOREIGN, expected=73)
+        self.assertEqual(len(self.calls('shutdown')), 1)
+        self.assertIn('infra:shutdown', self.summary.read_text())
+
+    def test_accepted_status_is_refused_before_stateful_command_or_state_creation(self):
+        self.cli('call', '--accepted-status', 1, self.state, 2,
+                 'xcrun', 'simctl', 'create', 'owned', DEVICE, RUNTIME, expected=125)
+        self.assertFalse(self.state.exists())
+        self.assertFalse((self.root / 'calls.jsonl').exists())
+
+    def test_transport_and_signal_statuses_cannot_be_declared_accepted(self):
+        for status in (0, 2, 73, 124, 125, 143, -1):
+            with self.subTest(status=status):
+                self.cli('call', '--accepted-status', status, '', 2,
+                         'xcrun', 'simctl', 'list', 'devices', '-j', expected=2)
+        self.assertFalse((self.root / 'calls.jsonl').exists())
+
+    def test_accepted_status_cannot_accept_parser_failure_or_missing_executable(self):
+        for option in (('--accepted-status', 1), ('--accepted-status=1',), ('--accepted-status=2',)):
+            self.cli('call', *option, '', 'invalid-timeout',
+                     'xcrun', 'simctl', 'list', 'devices', '-j', expected=2)
+        self.cli('call', '--accepted-status', 1, '', 2, str(self.root / 'missing-command'), expected=127)
+        self.assertFalse((self.root / 'calls.jsonl').exists())
 
     def test_timeout_kills_descendants_that_hold_output_pipes(self):
         sentinel = self.root / 'escaped-child'

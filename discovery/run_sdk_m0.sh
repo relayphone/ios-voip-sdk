@@ -19,6 +19,8 @@ if [[ -n "${OUT:-}" ]]; then mkdir "$OUT"; else OUT=$(mktemp -d "${TMPDIR:-/tmp}
 OUT=$(cd "$OUT" && pwd)
 UDID=""
 INHERITED_DYLD=""
+INHERITED_DYLD_SIMULATOR=""
+INHERITED_DYLD_REDACTIONS=""
 RUN_ID=$(uuidgen)
 SIM_STATE="$OUT/simulator-state.json"
 PRODUCT_CHECK=preflight
@@ -42,20 +44,51 @@ cleanup_simulator() {
   sim_cleanup || { : > "$SIM_STATE.failure"; return 1; }
   UDID=""
 }
+read_launch_environment() {
+  local query_status=0
+  if [[ -n "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" ]]; then
+    INHERITED_DYLD=$SIMCTL_CHILD_DYLD_INSERT_LIBRARIES
+  else
+    SDK_ENV_QUERY_STARTED=$SECONDS
+    printf 'Read inherited DYLD_INSERT_LIBRARIES with a 180-second cold-start infrastructure budget.\n' >> "$OUT/launch-environment-query.log" || return 1
+    printf 'Simulator: %s\n' "$UDID" >> "$OUT/launch-environment-query.log" || return 1
+    INHERITED_DYLD=$(SIM_ACCEPTED_STATUS=1 SIMCTL_CHILD_DYLD_INSERT_LIBRARIES='' limit 180 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>> "$OUT/launch-environment-query.log") || query_status=$?
+    printf 'Query exit code: %s; elapsed seconds: %s\n' "$query_status" "$((SECONDS - SDK_ENV_QUERY_STARTED))" >> "$OUT/launch-environment-query.log" || return 1
+  fi
+  # Keep all observed external paths available to failure cleanup redaction.
+  INHERITED_DYLD_REDACTIONS="${INHERITED_DYLD_REDACTIONS:-}${INHERITED_DYLD_REDACTIONS:+:}$INHERITED_DYLD"
+  [[ "$query_status" -le 1 ]] || {
+    printf 'Cannot read inherited launch environment (exit %s); see %s/launch-environment-query.log\n' "$query_status" "$OUT" >&2
+    return 1
+  }
+  SDK_M0_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - <<'PY' || return 1
+import os,pathlib
+entries=os.environ['SDK_M0_EXTERNAL_DYLD'].split(':')
+assert not any(pathlib.Path(p).name in ('CKSimRuntime.dylib','CKSimLoader.dylib') for p in entries if p), \
+    'Plain M0 acceptance refuses external SDK runtime injection'
+PY
+  INHERITED_DYLD_SIMULATOR=$UDID
+}
 simulator_changed() {
   OWNED_SIMULATOR=$1
   # A fresh-device install retry also changes the final evidence identity.
-  python3 - "$OUT/environment.json" "$1" <<'PY'
+  python3 - "$OUT/environment.json" "$1" <<'PY' || return 1
 import json,pathlib,sys
 path=pathlib.Path(sys.argv[1])
 if path.exists():
     row=json.loads(path.read_text()); row['simulatorID']=sys.argv[2]
     path.write_text(json.dumps(row,indent=2)+'\n')
 PY
+  if [[ ! -f "$SIM_STATE.failure" && -n "${INHERITED_DYLD_SIMULATOR:-}" &&
+        -z "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" &&
+        "$INHERITED_DYLD_SIMULATOR" != "$1" ]]; then
+    read_launch_environment || return 1
+  fi
 }
 redact_external_paths() {
-  [[ -n "$INHERITED_DYLD" ]] || return 0
-  SDK_M0_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - "$OUT" <<'PY'
+  local libraries=${INHERITED_DYLD_REDACTIONS:-$INHERITED_DYLD}
+  [[ -n "$libraries" ]] || return 0
+  SDK_M0_EXTERNAL_DYLD="$libraries" python3 - "$OUT" <<'PY'
 import hashlib,json,os,pathlib,sys
 root=pathlib.Path(sys.argv[1])
 paths=[p.encode() for p in os.environ['SDK_M0_EXTERNAL_DYLD'].split(':') if p]
@@ -137,25 +170,7 @@ UDID=$(limit 30 xcrun simctl create "sdk-m0-$RUN_ID" "$DEVTYPE" "$RUNTIME")
 OWNED_SIMULATOR=$UDID
 limit 60 xcrun simctl boot "$UDID"
 limit 300 xcrun simctl bootstatus "$UDID" -b > "$OUT/boot.log" 2>&1
-if [[ -n "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" ]]; then
-  INHERITED_DYLD=$SIMCTL_CHILD_DYLD_INSERT_LIBRARIES
-else
-  query_status=0
-  SDK_ENV_QUERY_STARTED=$SECONDS
-  printf 'Read inherited DYLD_INSERT_LIBRARIES with a 180-second cold-start infrastructure budget.\n' > "$OUT/launch-environment-query.log"
-  INHERITED_DYLD=$(SIMCTL_CHILD_DYLD_INSERT_LIBRARIES='' limit 180 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>> "$OUT/launch-environment-query.log") || query_status=$?
-  printf 'Query exit code: %s; elapsed seconds: %s\n' "$query_status" "$((SECONDS - SDK_ENV_QUERY_STARTED))" >> "$OUT/launch-environment-query.log"
-  [[ "$query_status" -le 1 ]] || {
-    printf 'Cannot read inherited launch environment (exit %s); see %s/launch-environment-query.log\n' "$query_status" "$OUT" >&2
-    exit 1
-  }
-fi
-SDK_M0_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - <<'PY'
-import os,pathlib
-entries=os.environ['SDK_M0_EXTERNAL_DYLD'].split(':')
-assert not any(pathlib.Path(p).name in ('CKSimRuntime.dylib','CKSimLoader.dylib') for p in entries if p), \
-    'Plain M0 acceptance refuses external SDK runtime injection'
-PY
+read_launch_environment
 python3 - "$OUT" "$UDID" <<'PY'
 import json,pathlib,sys
 root=pathlib.Path(sys.argv[1]); runtime=json.loads((root/'runtime.json').read_text())
