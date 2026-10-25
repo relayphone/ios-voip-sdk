@@ -1,0 +1,200 @@
+name: Temporary cold simulator install measurement
+on:
+  pull_request:
+    paths: [".github/workflows/cold-install-measurement.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: cold-install-measurement-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  cold-install:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        sample: [1, 2]
+    env:
+      CKSIM_TEST_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-0
+      SAMPLE: ${{ matrix.sample }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Prepare bounded measurement
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          cat > "$RUNNER_TEMP/cold-install.py" <<'PY'
+          import datetime, hashlib, json, os, platform, plistlib, signal, subprocess, sys, time, uuid
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          out = root / 'cold-install-measurement'
+          out.mkdir(exist_ok=True)
+          receipt = out / 'measurement.json'
+          report = json.loads(receipt.read_text()) if receipt.exists() else dict(
+              sample=os.environ['SAMPLE'], runtime=os.environ['CKSIM_TEST_RUNTIME'], calls=[])
+          owned = root / 'cold-install-owned-id'
+          def save():
+              temporary = receipt.with_suffix('.tmp')
+              temporary.write_text(json.dumps(report, indent=2) + '\n')
+              temporary.replace(receipt)
+          def call(step, command, timeout, check=True, env=None):
+              row = dict(step=step, timeoutSeconds=timeout,
+                         startedUTC=datetime.datetime.now(datetime.timezone.utc).isoformat())
+              report['calls'].append(row)
+              save()
+              started, process, output = time.monotonic(), None, b''
+              try:
+                  process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                             start_new_session=True, env=env)
+                  try:
+                      output, _ = process.communicate(timeout=timeout)
+                      row['timedOut'] = False
+                  except subprocess.TimeoutExpired:
+                      row['timedOut'] = True
+                      try:
+                          os.killpg(process.pid, signal.SIGKILL)
+                      except ProcessLookupError:
+                          pass
+                      output, _ = process.communicate(timeout=10)
+                  row['exitCode'] = process.returncode
+                  try:
+                      os.killpg(process.pid, 0)
+                  except ProcessLookupError:
+                      row['hostGroupAbsent'] = True
+                  else:
+                      row['unexpectedHostGroup'] = True
+                      os.killpg(process.pid, signal.SIGKILL)
+                      deadline = time.monotonic() + 2
+                      while True:
+                          try:
+                              os.killpg(process.pid, 0)
+                          except ProcessLookupError:
+                              row['hostGroupAbsent'] = True
+                              break
+                          if time.monotonic() >= deadline:
+                              row['hostGroupAbsent'] = False
+                              break
+                          time.sleep(.01)
+                      raise RuntimeError(step + ' left a host process group; cleanup recorded')
+              except BaseException as error:
+                  row['errorType'] = type(error).__name__
+                  if process is not None:
+                      try:
+                          os.killpg(process.pid, signal.SIGKILL)
+                      except ProcessLookupError:
+                          pass
+                      process.wait(timeout=10)
+                  raise
+              finally:
+                  row['elapsedSeconds'] = round(time.monotonic() - started, 3)
+                  row['outputTail'] = output[-4096:].decode(errors='replace')
+                  save()
+              if check and (row['timedOut'] or row['exitCode'] or not row['hostGroupAbsent']):
+                  raise RuntimeError(step + ' failed; see bounded operation receipt')
+              return output.decode(errors='replace')
+          mode = sys.argv[1]
+          try:
+              if mode == 'environment':
+                  report.update(sourceCommit=call('source', ['git', 'rev-parse', 'HEAD'], 15).strip(),
+                                sourceDirty=bool(call('source-status', ['git', 'status', '--porcelain', '--untracked-files=no'], 15)),
+                                architecture=platform.machine(), macOS=platform.mac_ver()[0],
+                                memoryBytes=int(call('memory', ['sysctl', '-n', 'hw.memsize'], 15)),
+                                python=sys.version,
+                                xcode=call('xcode', ['xcodebuild', '-version'], 60).strip())
+                  runtimes = json.loads(call('runtime-inventory', ['xcrun', 'simctl', 'list', 'runtimes', '-j'], 60))['runtimes']
+                  report['runtimeIdentity'] = next(r for r in runtimes if r['identifier'] == report['runtime'] and r.get('isAvailable'))
+              elif mode == 'build':
+                  deadline = time.monotonic() + 180
+                  for name, script, output in (
+                      ('runtime', 'scripts/build-runtime.sh', 'runtime'),
+                      ('fixture', 'Tests/RuntimeEvents/build.sh', 'fixture'),
+                      ('inspector', 'scripts/build-inspector.sh', 'inspector')):
+                      remaining = deadline - time.monotonic()
+                      if remaining <= 0:
+                          raise RuntimeError('Build observation budget exhausted')
+                      call('build-' + name, ['bash', script, str(root / output)], remaining,
+                           env=dict(os.environ, CKSIM_BUILD_ARCHS=platform.machine()))
+              elif mode == 'create':
+                  call('create-controller', ['python3', 'Tests/RuntimeEvents/ci_simulator.py', 'create',
+                       '--runtime', report['runtime'], '--id-file', str(owned)], 180)
+              elif mode == 'measure':
+                  device = str(uuid.UUID(owned.read_text().strip())).upper()
+                  report['ownedSimulator'] = device
+                  app = root / 'fixture/RuntimeEventFixture.app'
+                  info = plistlib.loads((app / 'Info.plist').read_bytes())
+                  binary = app / info['CFBundleExecutable']
+                  report['app'] = dict(bundleID=info['CFBundleIdentifier'],
+                      executable=info['CFBundleExecutable'], binarySHA256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+                      infoSHA256=hashlib.sha256((app / 'Info.plist').read_bytes()).hexdigest(),
+                      minimumOS=info.get('MinimumOSVersion'), bundleVersion=info.get('CFBundleVersion'))
+                  devices = json.loads(call('device-inventory', ['xcrun', 'simctl', 'list', 'devices', '-j'], 60))['devices']
+                  state = next(d['state'] for group in devices.values() for d in group if d['udid'].upper() == device)
+                  if state != 'Booted':
+                      call('boot', ['xcrun', 'simctl', 'boot', device], 120)
+                  call('bootstatus', ['xcrun', 'simctl', 'bootstatus', device, '-b'], 300)
+                  # Observation ceiling only: production's bound is not changed by this workflow.
+                  report['installObservationCeilingSeconds'] = 600
+                  call('first-cold-install', ['xcrun', 'simctl', 'install', device, str(app)], 600)
+                  report['installSucceeded'] = True
+              elif mode == 'cleanup':
+                  if owned.exists():
+                      value = owned.read_text().strip()
+                      if value.startswith('name:'):
+                          name = value[5:]
+                          if not name.startswith('M4 CI ') or str(uuid.UUID(name[6:])) != name[6:]:
+                              raise ValueError('Unexpected owned simulator name')
+                          inventory = json.loads(call('recover-owned-name', ['xcrun', 'simctl', 'list', 'devices', '-j'], 60))['devices']
+                          matches = [d['udid'] for group in inventory.values() for d in group if d.get('name') == name]
+                          if len(matches) != 1:
+                              raise RuntimeError('Owned name cannot be resolved uniquely')
+                          value = matches[0]
+                      device = str(uuid.UUID(value)).upper()
+                      report['ownedSimulator'] = device
+                      report['cleanupErrors'] = []
+                      for operation in ('shutdown', 'delete'):
+                          try:
+                              call('cleanup-' + operation, ['xcrun', 'simctl', operation, device], 30, check=False)
+                          except Exception as error:
+                              report['cleanupErrors'].append(dict(step=operation, errorType=type(error).__name__))
+                      inventory = json.loads(call('verify-absence', ['xcrun', 'simctl', 'list', 'devices', '-j'], 60))['devices']
+                      report['ownedSimulatorAbsent'] = not any(d['udid'].upper() == device for group in inventory.values() for d in group)
+                      if report['ownedSimulatorAbsent']:
+                          owned.unlink()
+                      else:
+                          raise RuntimeError('Owned simulator absence was not established')
+                  else:
+                      report['cleanupOwnershipRecordAbsent'] = True
+              else:
+                  raise ValueError('Unknown measurement mode')
+          finally:
+              save()
+          print(json.dumps(dict(sample=report['sample'], mode=mode,
+                                calls=[{k:r.get(k) for k in ('step','elapsedSeconds','timedOut','exitCode')} for r in report['calls']],
+                                ownedSimulatorAbsent=report.get('ownedSimulatorAbsent'))))
+          PY
+          python3 "$RUNNER_TEMP/cold-install.py" environment
+      - name: Build the exact runtime, fixture and inspector
+        timeout-minutes: 4
+        run: python3 "$RUNNER_TEMP/cold-install.py" build
+      - name: Reserve one run-owned iPhone 17 Pro
+        timeout-minutes: 4
+        run: python3 "$RUNNER_TEMP/cold-install.py" create
+      - name: Measure one cold first install without launch or retry
+        timeout-minutes: 20
+        run: python3 "$RUNNER_TEMP/cold-install.py" measure
+      - name: Delete only the recorded simulator and prove absence
+        if: always()
+        timeout-minutes: 3
+        run: python3 "$RUNNER_TEMP/cold-install.py" cleanup
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: cold-install-measurement-${{ matrix.sample }}
+          path: |
+            ${{ runner.temp }}/cold-install-measurement
+            ${{ runner.temp }}/cold-install-owned-id
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Remove generated build outputs
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/runtime" "$RUNNER_TEMP/fixture" "$RUNNER_TEMP/inspector"
