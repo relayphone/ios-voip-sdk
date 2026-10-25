@@ -87,6 +87,11 @@ def lifecycle(session, *parts, timeout=120, **kwargs):
     result = None
     try:
         result = session.call(command, timeout)
+    except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+        if not errors: raise
+        simulator_infra.report_failure('infra:' + parts[0], 'exhausted; owned recovery failed')
+        simulator_infra.report_failure('infra:cleanup', 'original preparation failure retained; ownership remains recorded')
+        raise errors[0] from error
     finally:
         session.runner = previous_runner
         failed = sys.exc_info()[0] is not None or result is not None and result.returncode != 0
