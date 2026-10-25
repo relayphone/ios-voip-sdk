@@ -32,6 +32,21 @@ def _app_evidence(raw, launcher_header):
     return b"PROBE " in raw or bool(launcher_header and launcher_header.search(raw))
 
 
+def _valid_entry(result, trace, bundle):
+    """Require unambiguous protocol evidence before replacing entered EOF with transport."""
+    try:
+        rows = [json.loads(line.split(b'PROBE ', 1)[1]) for line in trace.splitlines() if b'PROBE ' in line]
+    except (ValueError, UnicodeDecodeError):
+        return False
+    header = _launcher_header(bundle)
+    pids = header.findall(trace) if header else []
+    app_pid = result.get('appPID')
+    return (result.get('appEntryObserved') is True and 'identityError' not in result and
+            type(app_pid) is int and app_pid > 0 and result.get('launcherAppPID') == app_pid and
+            len(pids) == 1 and int(pids[0]) == app_pid and all(isinstance(row, dict) for row in rows) and
+            any(row.get('event') == 'app.entry' for row in rows))
+
+
 def report_capture_failure(result, trace, timeout, launch_failure=False, termination_failure=False,
                            capture_failure=False):
     """Classify the retained outcome without changing its receipt or replaying it."""
@@ -49,9 +64,11 @@ def report_capture_failure(result, trace, timeout, launch_failure=False, termina
         # Cleanup can produce TERM/KILL after the pre-cleanup poll. Other native
         # signal exits remain transport evidence even when EOF won that race.
         native_status = result.get('launchExitCode')
-    transport = launch_failure or (not entered and (
-        transport_failure(Result([], native_status)) or
-        result.get('error') == 'deadline before terminal done event'))
+    signal_eof = (result.get('error') == 'launcher exited before terminal done event' and
+                  _valid_entry(result, trace, bundle))
+    transport = (launch_failure or
+        (transport_failure(Result([], native_status)) and (not entered or signal_eof)) or
+        (not entered and result.get('error') == 'deadline before terminal done event'))
     if transport:
         report_failure('infra:launch', 'launch transport failed; never retried')
     rejected = (bundle and not entered and result['completed'] is False and
@@ -483,6 +500,8 @@ def run_with_session(launch, terminate, output, receipt, timeout, identity,
         else:
             return status
         if not session.reserve_retry():
+            if os.environ.get('SIM_FAILURE_MARKER'):
+                report_failure('infra:launch', 'exhausted (shared pre-app retry unavailable)')
             return status
         # Reservation is permanent, including archive failure or late evidence.
         archived = Path(str(output) + '.preapp-attempt-1')

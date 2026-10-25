@@ -255,6 +255,45 @@ class TransportClassificationTests(unittest.TestCase):
         self.assertIn('infra:launch', self.summary.read_text())
         self.assertFalse(session.state['retry_used'])
 
+    def signal_cli(self, *, close_stderr=False, broken_reporting=False):
+        environment = dict(os.environ)
+        if broken_reporting:
+            environment['GITHUB_STEP_SUMMARY'] = str(self.root)
+            environment['SIM_FAILURE_MARKER'] = str(self.root / 'missing' / 'marker')
+        command = [sys.executable, str(HELPER), 'call', '', '3', sys.executable, '-c',
+                   'import os,signal;print("native-output",flush=True);os.kill(os.getpid(),signal.SIGALRM)']
+        process = subprocess.Popen(command, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            if close_stderr:
+                process.stderr.close()
+                process.stderr = None
+            stdout, stderr = process.communicate(timeout=8)
+            return process.returncode, stdout, stderr
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=3)
+
+    def test_cli_native_signal_status_survives_closed_diagnostic_pipe(self):
+        for closed in (False, True):
+            with self.subTest(closed=closed):
+                status, stdout, stderr = self.signal_cli(close_stderr=closed)
+                self.assertEqual(status, 128 + signal.SIGALRM, stderr)
+                self.assertEqual(stdout, b'native-output\n')
+                self.assertIn('infra:host', self.summary.read_text())
+                self.assertTrue(self.marker.exists())
+
+    def test_cli_native_signal_status_survives_all_reporting_io_failures(self):
+        status, stdout, _ = self.signal_cli(close_stderr=True, broken_reporting=True)
+        self.assertEqual(status, 128 + signal.SIGALRM)
+        self.assertEqual(stdout, b'native-output\n')
+
+    def test_summary_keeps_in_memory_diagnostic_capture(self):
+        capture = io.StringIO()
+        with redirect_stderr(capture):
+            sim.summary('infra:host', 'never retried')
+        self.assertEqual(capture.getvalue(), '- `infra:host`: never retried\n')
+
     def test_classification_flag_belongs_only_to_the_exact_failed_generic_outcome(self):
         session, _ = self.session()
         for status in (0, 1, 7, 127, 128 + signal.SIGALRM):

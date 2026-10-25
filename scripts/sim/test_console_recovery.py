@@ -180,6 +180,11 @@ class ConsoleRecoveryTests(unittest.TestCase):
         self.assertEqual(self.trace.read_bytes(), PREAPP)
         self.assertEqual(self.flags(), (True, False))
         self.assertTrue(self.marker.exists())
+        labels = self.summary.read_text()
+        self.assertIn('infra:launch', labels)
+        self.assertIn('exhausted', labels)
+        self.assertNotIn('scheduled', labels)
+        self.assertNotIn('recovered', labels)
 
     def test_parent_checkpoint_does_not_replay_even_with_unused_budget(self):
         self.session.checkpoint()
@@ -188,6 +193,7 @@ class ConsoleRecoveryTests(unittest.TestCase):
         self.assertEqual(len(self.launches()), 1)
         self.assertFalse(self.archive.exists())
         self.assertEqual(self.flags(), (False, True))
+        self.assertIn('exhausted', self.summary.read_text())
 
     def test_second_exact_rejection_is_terminal(self):
         result = self.capture(mode='always-reject')

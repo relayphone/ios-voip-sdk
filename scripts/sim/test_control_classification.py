@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -39,8 +40,8 @@ class ControlClassificationTests(unittest.TestCase):
     def labels(self):
         return self.summary.read_text() if self.summary.exists() else ''
 
-    def journey(self):
-        return runner.Journey(self.args, self.root / 'case', 'answer-end', self.container)
+    def journey(self, name='case'):
+        return runner.Journey(self.args, self.root / name, 'answer-end', self.container)
 
     def assert_command(self, transport):
         transport.assert_called_once()
@@ -102,11 +103,47 @@ class ControlClassificationTests(unittest.TestCase):
         self.assertEqual(self.labels(), '')
         self.assertFalse(self.marker.exists())
 
-    def invoke(self, primary, *, earlier_control=False, clear_marker=False, cleanup_failure=False):
+    def test_returned_signal_is_classified_before_json_and_retains_status_and_bytes(self):
+        for status in (-signal.SIGALRM, 128 + signal.SIGALRM):
+            with self.subTest(status=status):
+                self.summary.unlink(missing_ok=True)
+                self.marker.unlink(missing_ok=True)
+                journey = self.journey(str(status))
+                completed = subprocess.CompletedProcess(['host-control'], status,
+                    b'private-malformed-json-output', b'private-control-error')
+                with patch.object(runner.subprocess, 'run', return_value=completed) as transport:
+                    with self.assertRaises(subprocess.CalledProcessError) as raised:
+                        journey.cli('push', 'host-argument')
+                self.assertIs(raised.exception, journey.control_transport_error)
+                self.assertEqual(raised.exception.returncode, status)
+                self.assertIs(raised.exception.output, completed.stdout)
+                self.assertIs(raised.exception.stderr, completed.stderr)
+                self.assertIs(raised.exception.cmd, transport.call_args.args[0])
+                self.assert_command(transport)
+                self.assertEqual(journey.controls, ['control-00.json'])
+                self.assertEqual((journey.root / 'control-00.json.stdout').read_bytes(), completed.stdout)
+                self.assertEqual((journey.root / 'control-00.json.stderr').read_bytes(), completed.stderr)
+                self.assertIn('infra:control', self.labels())
+                self.assertNotIn('product:', self.labels())
+                self.assertNotIn('private-', self.labels())
+
+    def test_successful_control_result_is_unchanged(self):
+        journey = self.journey()
+        value = {'success': True, 'id': 'host-control-id'}
+        completed = subprocess.CompletedProcess(['host-control'], 0, json.dumps(value).encode(), b'')
+        with patch.object(runner.subprocess, 'run', return_value=completed) as transport:
+            self.assertEqual(journey.cli('push', 'host-argument'), value)
+        self.assert_command(transport)
+        self.assertIsNone(journey.control_transport_error)
+        self.assertEqual(self.labels(), '')
+        self.assertFalse(self.marker.exists())
+
+    def invoke(self, primary=None, *, earlier_control=False, clear_marker=False,
+               cleanup_failure=False, returned=None):
         self.summary.unlink(missing_ok=True)
         self.marker.unlink(missing_ok=True)
         self.args.output = self.root / ('output-' + str(len(list(self.root.glob('output-*')))))
-        owner, waits, starts = 7001, [], []
+        owner, waits, starts, observed = 7001, [], [], []
         class Process:
             pid = owner
             alive = True
@@ -134,21 +171,43 @@ class ControlClassificationTests(unittest.TestCase):
         def push(journey, _role):
             if earlier_control:
                 raise primary
-            return journey.cli('push', 'host-argument')
+            try:
+                return journey.cli('push', 'host-argument')
+            except Exception as error:
+                observed.append(error)
+                raise
         failure = previous if earlier_control else primary
+        transport_patch = (patch.object(runner.subprocess, 'run', return_value=returned) if returned is not None else
+                           patch.object(runner.subprocess, 'run', side_effect=failure))
+        returned_transport = returned is not None and returned.returncode in (-signal.SIGALRM, 128 + signal.SIGALRM)
+        if returned is not None:
+            expected_type = subprocess.CalledProcessError if returned_transport else gate.EvidenceError
+        else:
+            expected_type = type(primary)
         with patch.object(runner.m0, 'source_identity', return_value={}), \
              patch.object(gate, 'package_check'), patch.object(runner, 'CASES', ('answer-end',)), \
              patch.object(runner.Journey, 'start', new=start), \
              patch.object(runner.Journey, 'push', new=push), \
              patch.object(runner.Journey, 'sim', side_effect=(RuntimeError('independent cleanup failure')
                  if cleanup_failure else None)) as stop, \
-             patch.object(runner.subprocess, 'run', side_effect=failure) as transport, \
+             transport_patch as transport, \
              patch.object(runner.subprocess, 'Popen', side_effect=AssertionError('unexpected native launch')), \
              patch.object(runner.signal, 'signal'), \
              patch.object(runner.os, 'killpg', side_effect=ProcessLookupError) as group:
-            with self.assertRaises(type(primary)) as raised:
+            with self.assertRaises(expected_type) as raised:
                 runner.run(self.args)
-        self.assertIs(raised.exception, primary)
+        if returned is not None:
+            self.assertIs(raised.exception, observed[0])
+            if returned_transport:
+                self.assertIs(raised.exception, starts[0].control_transport_error)
+                self.assertEqual(raised.exception.returncode, returned.returncode)
+                self.assertIs(raised.exception.output, returned.stdout)
+                self.assertIs(raised.exception.stderr, returned.stderr)
+                self.assertIs(raised.exception.cmd, transport.call_args.args[0])
+            else:
+                self.assertIsNone(starts[0].control_transport_error)
+        else:
+            self.assertIs(raised.exception, primary)
         self.assertEqual(len(starts), 1)
         self.assertEqual(waits, [25])
         self.assert_command(transport)
@@ -172,6 +231,29 @@ class ControlClassificationTests(unittest.TestCase):
         self.assertIn('infra:terminate', labels)
         self.assertNotIn('product:', labels)
         self.assertNotIn('private-', labels)
+
+    def test_returned_signals_keep_the_same_exception_through_native_fallback_and_cleanup(self):
+        for status in (-signal.SIGALRM, 128 + signal.SIGALRM):
+            for cleanup in (False, True):
+                with self.subTest(status=status, cleanup=cleanup), \
+                     patch.object(runner, 'failure_is_classified', return_value=False):
+                    completed = subprocess.CompletedProcess(['host-control'], status,
+                        b'private-malformed-json-output', b'private-control-error')
+                    labels = self.invoke(returned=completed, cleanup_failure=cleanup)
+                    self.assertEqual(labels.count('infra:control'), 1)
+                    self.assertNotIn('product:', labels)
+                    self.assertEqual('infra:terminate' in labels, cleanup)
+                    self.assertNotIn('private-', labels)
+
+    def test_ordinary_control_refusal_remains_product_with_independent_cleanup(self):
+        for status in (1, 73):
+            with self.subTest(status=status):
+                completed = subprocess.CompletedProcess(['host-control'], status,
+                    b'{"success":false,"error":"unexpected refusal"}', b'')
+                labels = self.invoke(returned=completed, cleanup_failure=True)
+                self.assertIn('product:sdk-system-answer-end', labels)
+                self.assertIn('infra:terminate', labels)
+                self.assertNotIn('infra:control', labels)
 
     def test_unavailable_marker_cannot_add_product_for_the_same_control_exception(self):
         error = subprocess.TimeoutExpired(['private-control-sentinel'], 75)

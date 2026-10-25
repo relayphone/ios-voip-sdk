@@ -20,8 +20,8 @@ from summarize import require
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts/sim'))
-from sim import (Session, clear_failure_marker, console_preapp_rejection, failure_is_classified,
-                 report_failure, summary)
+from sim import (Result, Session, clear_failure_marker, console_preapp_rejection, failure_is_classified,
+                 report_failure, summary, transport_failure)
 
 BUNDLE = 'dev.iosvoipsdk.example'
 CASES = ('answer-end', 'decline', 'hold-accept', 'end-accept', 'mute-echo', 'provider-reset', 'push-launch')
@@ -166,6 +166,12 @@ class Journey:
         (self.root / (name + '.stdout')).write_bytes(result.stdout)
         (self.root / (name + '.stderr')).write_bytes(result.stderr)
         self.controls.append(name)
+        if transport_failure(Result(command, result.returncode, result.stdout, result.stderr)):
+            error = subprocess.CalledProcessError(result.returncode, command,
+                                                  output=result.stdout, stderr=result.stderr)
+            self.control_transport_error = error
+            _report('infra:control', 'control transport failed; never retried')
+            raise error
         response = json.loads(result.stdout)
         require((result.returncode == 1 and response.get('success') is False and expected_error in response.get('error', '')) if expected_error else
                 result.returncode == 0, 'cksim ' + operation + ' refused: ' + result.stderr.decode(errors='replace'))

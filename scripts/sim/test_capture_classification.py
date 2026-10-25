@@ -70,12 +70,58 @@ class CaptureClassificationTests(unittest.TestCase):
         self.assertIn('infra:terminate', labels)
         self.assertNotIn('product:', labels)
 
+    def test_known_launcher_signal_after_valid_entry_is_transport(self):
+        trace = ((BUNDLE + ': 7001\n').encode() +
+                 b'PROBE {"event":"app.entry"}\nPROBE {"event":"launch","pid":7001}\n')
+        for status in (-signal.SIGALRM, 128 + signal.SIGALRM):
+            with self.subTest(status=status):
+                self.summary.unlink(missing_ok=True)
+                labels = self.classify(trace=trace, launchExitCodeBeforeCleanup=status,
+                    launchExitCode=status, appEntryObserved=True, appPID=7001,
+                    launcherAppPID=7001, lastProbeEvent='launch', cleanupExitCode=7)
+                self.assertIn('infra:launch', labels)
+                self.assertIn('infra:terminate', labels)
+                self.assertNotIn('product:', labels)
+
+    def test_entry_signal_does_not_replace_malformed_identity_or_product_failure(self):
+        valid = ((BUNDLE + ': 7001\n').encode() +
+                 b'PROBE {"event":"app.entry"}\nPROBE {"event":"launch","pid":7001}\n')
+        cases = ((valid + b'PROBE malformed-product-json\n', {}),
+                 (valid + b'PROBE []\n', {}),
+                 (valid + (BUNDLE + ': 7002\n').encode(), {}),
+                 (valid + (BUNDLE + ': 7002\n').encode(),
+                  {'identityError': 'require one launcher app PID acknowledgement; got 2'}),
+                 (valid, {'error': 'synthetic product assertion'}),
+                 (valid, {'error': 'deadline before terminal done event'}))
+        for trace, changes in cases:
+            with self.subTest(trace=trace, changes=changes):
+                self.summary.unlink(missing_ok=True)
+                labels = self.classify(trace=trace, launchExitCodeBeforeCleanup=142,
+                    launchExitCode=142, appEntryObserved=True, appPID=7001,
+                    launcherAppPID=7001, lastProbeEvent='launch', **changes)
+                self.assertIn('product:transport-case', labels)
+                self.assertNotIn('infra:launch', labels)
+
     def test_cleanup_signal_is_not_inferred_to_be_the_primary_transport_failure(self):
         labels = self.classify(launchExitCodeBeforeCleanup=None, launchExitCode=-signal.SIGTERM,
                                error='synthetic product assertion', cleanupExitCode=7)
         self.assertIn('product:transport-case', labels)
         self.assertIn('infra:terminate', labels)
         self.assertNotIn('infra:launch', labels)
+
+    def test_cleanup_signal_after_entered_eof_is_not_host_transport_evidence(self):
+        trace = ((BUNDLE + ': 7001\n').encode() +
+                 b'PROBE {"event":"app.entry"}\nPROBE {"event":"launch","pid":7001}\n')
+        for status in (-signal.SIGTERM, 128 + signal.SIGTERM,
+                       -signal.SIGKILL, 128 + signal.SIGKILL):
+            with self.subTest(status=status):
+                self.summary.unlink(missing_ok=True)
+                labels = self.classify(trace=trace, launchExitCodeBeforeCleanup=None,
+                    launchExitCode=status, appEntryObserved=True, appPID=7001,
+                    launcherAppPID=7001, lastProbeEvent='launch', cleanupExitCode=7)
+                self.assertIn('product:transport-case', labels)
+                self.assertIn('infra:terminate', labels)
+                self.assertNotIn('infra:launch', labels)
 
     def test_app_evidence_preserves_product_failure_even_with_signal_or_deadline(self):
         for evidence in ({'appPID': 7001}, {'launcherAppPID': 7001},
@@ -129,6 +175,36 @@ class CaptureClassificationTests(unittest.TestCase):
                 self.assertEqual(value['traceSHA256'], hashlib.sha256(output.read_bytes()).hexdigest())
                 self.assertFalse(any(field in value for field in
                     ('appPID', 'launcherAppPID', 'appEntryObserved', 'lastProbeEvent')))
+                labels = self.summary.read_text()
+                self.assertIn('infra:launch', labels)
+                self.assertNotIn('product:', labels)
+
+    def test_reconstructed_launcher_signal_after_entry_keeps_receipt_and_does_not_replay(self):
+        for name, ending, expected in (
+                ('wrapped', 'sys.exit(142)', 142),
+                ('signal', 'os.kill(os.getpid(), signal.SIGALRM)', -signal.SIGALRM)):
+            with self.subTest(name=name):
+                self.summary.unlink(missing_ok=True)
+                launch, stop = self.root / ('entered-' + name + '.py'), self.root / 'stop.py'
+                launch.write_text('import json, os, signal, sys\npid = os.getpid()\n' +
+                    'print(' + repr(BUNDLE + ': ') + ' + str(pid), flush=True)\n' +
+                    'for row in ({"event":"app.entry"}, {"event":"launch","pid":pid}):\n' +
+                    ' print("PROBE " + json.dumps(row), flush=True)\n' + ending + '\n')
+                stop.write_text('import sys\nsys.stderr.write(' + repr(sim.not_running_error(BUNDLE)) + ')\nsys.exit(3)\n')
+                output, receipt = self.root / (name + '.log'), self.root / (name + '.json')
+                launched = []
+                status = capture.run([sys.executable, str(launch)], [sys.executable, str(stop)],
+                    output, receipt, 3, dict(bundleID=BUNDLE, scenario='transport-case'),
+                    console_launcher_stop=True, launched=launched.append)
+                self.assertEqual(status, 1)
+                self.assertEqual(len(launched), 1)
+                value = json.loads(receipt.read_text())
+                self.assertEqual(value['error'], 'launcher exited before terminal done event')
+                self.assertEqual(value['launchExitCodeBeforeCleanup'], expected)
+                self.assertEqual(value['launchExitCode'], expected)
+                self.assertTrue(value['appEntryObserved'])
+                self.assertEqual(value['appPID'], value['launcherAppPID'])
+                self.assertEqual(value['traceSHA256'], hashlib.sha256(output.read_bytes()).hexdigest())
                 labels = self.summary.read_text()
                 self.assertIn('infra:launch', labels)
                 self.assertNotIn('product:', labels)

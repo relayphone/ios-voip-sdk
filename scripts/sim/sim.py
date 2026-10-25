@@ -165,7 +165,16 @@ def summary(label, retry):
     label = re.sub(r'[^A-Za-z0-9_.:-]', '_', label)
     line = f'- `{label}`: {retry}\n'
     try:
-        print(line.rstrip(), file=sys.stderr)
+        try:
+            descriptor = sys.stderr.fileno()
+        except (AttributeError, OSError, ValueError):
+            descriptor = None
+        if descriptor is None:
+            print(line.rstrip(), file=sys.stderr)
+        else:
+            # A failed buffered stderr write can replace the native status with
+            # exit 120 when Python retries its flush during interpreter shutdown.
+            os.write(descriptor, (line.rstrip() + '\n').encode('utf-8', errors='backslashreplace'))
     except (OSError, ValueError):
         pass
     target = os.environ.get('GITHUB_STEP_SUMMARY')
