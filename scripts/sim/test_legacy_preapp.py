@@ -23,8 +23,12 @@ if arguments[0] == 'discovery/run_scenario.py':
     with (root / 'supervisors.jsonl').open('a') as stream:
         stream.write(json.dumps(arguments[1:]) + '\n')
     with (root / 'supervisor-environments.jsonl').open('a') as stream:
-        stream.write(json.dumps(dict(dyld=os.environ.get('SIMCTL_CHILD_DYLD_INSERT_LIBRARIES'))) + '\n')
+        stream.write(json.dumps(dict(dyld=os.environ.get('SIMCTL_CHILD_DYLD_INSERT_LIBRARIES'), checkpoint=json.loads((root/'owned.json').read_text())['checkpoint'])) + '\n')
     sys.exit(int(os.environ.get('FAKE_SUPERVISOR_STATUS', '0')))
+if arguments[0] == 'scripts/sim/legacy_diagnostics.py':
+    with (root/'diagnostics.jsonl').open('a') as stream:
+        stream.write(json.dumps(arguments[1:])+'\n')
+    sys.exit(int(os.environ.get('FAKE_DIAGNOSTIC_STATUS','0')))
 if arguments[0].endswith('/sim.py') and arguments[1] == 'call':
     with (root / 'helper-commands.jsonl').open('a') as stream:
         stream.write(json.dumps(arguments[1:]) + '\n')
@@ -90,7 +94,7 @@ PRODUCT_CHECK=host-fixture
         source = (ROOT / 'discovery/run_audio_lifecycle_legacy.sh').read_text()
         functions = source[source.index('limit() {'):source.index('python3 - "$SDK_M1_CONTRACT_BUILD"')]
         start = source.index('RUNTIME_JSON=$(limit 60 ')
-        preparation = source[start:source.index('PRODUCT_CHECK="$NAME"', start)]
+        preparation = source[start:source.index('sim_checkpoint ||', start)]
         script = self.prefix(fixture) + """
 INHERITED_DYLD=''
 RUN_ID=""" + RUN_ID + """
@@ -189,9 +193,9 @@ action = rule.get('action')
         source = (ROOT / 'discovery/run_audio_lifecycle_legacy.sh').read_text()
         functions = source[source.index('limit() {'):source.index('python3 - "$SDK_M1_CONTRACT_BUILD"')]
         start = source.index('UDID=$(limit 30 xcrun simctl create')
-        preparation = source[start:source.index('PRODUCT_CHECK="$NAME"', start)]
-        start = source.index('PRODUCT_CHECK="$NAME"')
-        scenario = source[start:source.index('\nsim_checkpoint', start)]
+        preparation = source[start:source.index('sim_checkpoint ||', start)]
+        start = source.index('sim_checkpoint ||')
+        scenario = source[start:source.index('\nPRODUCT_CHECK=legacy-journal-capture', start)]
         script = self.prefix(fixture) + '''
 INHERITED_DYLD=''
 RUN_ID=''' + RUN_ID + '''
@@ -305,7 +309,7 @@ RUNTIME=host-runtime
         native.write_text(service)
         source = (ROOT / 'discovery/run_audio_lifecycle_legacy.sh').read_text()
         functions = source[source.index('limit() {'):source.index('python3 - "$SDK_M1_CONTRACT_BUILD"')]
-        start = source.index('PRODUCT_CHECK="$NAME"')
+        start = source.index('sim_checkpoint ||')
         capture_block = source[start:source.index('\ncleanup_simulator\n', start)]
         script = self.prefix(fixture) + '''
 INHERITED_DYLD=''
@@ -358,10 +362,11 @@ OUT=''' + shlex.quote(str(capture['trace'].parent)) + '\n' + capture_block
     def test_legacy_supervisor_failure_is_not_replayed_and_cleans_owned_device(self):
         fixture = self.fixture()
         fixture.env['FAKE_SUPERVISOR_STATUS'] = '73'
+        fixture.env['FAKE_DIAGNOSTIC_STATUS'] = '91'
         source = (ROOT / 'discovery/run_audio_lifecycle_legacy.sh').read_text()
         functions = source[source.index('limit() {'):source.index('python3 - "$SDK_M1_CONTRACT_BUILD"')]
-        start = source.index('PRODUCT_CHECK="$NAME"')
-        scenario = source[start:source.index('\nsim_checkpoint', start)]
+        start = source.index('sim_checkpoint ||')
+        scenario = source[start:source.index('\nPRODUCT_CHECK=legacy-journal-capture', start)]
         script = self.prefix(fixture) + '''
 INHERITED_DYLD=''
 RUN_ID=''' + RUN_ID + '''
@@ -372,11 +377,41 @@ UDID=$(limit 2 xcrun simctl create legacy-host device runtime)
 ''' + scenario
         result = self.run_shell(fixture, script)
         self.assertEqual(result.returncode, 73, result.stderr)
+        self.assertTrue(json.loads((fixture.root/'supervisor-environments.jsonl').read_text())['checkpoint'])
+        self.assertEqual(len((fixture.root/'diagnostics.jsonl').read_text().splitlines()), 1)
         calls = [json.loads(line) for line in (fixture.root / 'supervisors.jsonl').read_text().splitlines()]
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][calls[0].index('--timeout') + 1], '90')
         self.assertIn('product:sdk-m1-contract-audio-lifecycle', fixture.summary.read_text())
         self.assertNotIn('infra:', fixture.summary.read_text())
+        self.assertEqual(fixture.inventory(), [])
+
+    def test_scenario_failure_survives_diagnostic_and_cleanup_failure(self):
+        fixture = self.fixture()
+        fixture.env['FAKE_SUPERVISOR_STATUS'] = '73'
+        fixture.env['FAKE_DIAGNOSTIC_STATUS'] = '91'
+        fixture.rules(dict(step='delete', at=[1], action='failure'))
+        source = (ROOT/'discovery/run_audio_lifecycle_legacy.sh').read_text()
+        functions = source[source.index('limit() {'):source.index('python3 - "$SDK_M1_CONTRACT_BUILD"')]
+        start = source.index('sim_checkpoint ||')
+        scenario = source[start:source.index('\nPRODUCT_CHECK=legacy-journal-capture', start)]
+        script = self.prefix(fixture) + """
+INHERITED_DYLD=''
+RUN_ID=""" + RUN_ID + """
+BUNDLE=dev.iosvoipsdk.m1contracts
+NAME=sdk-m1-contract-audio-lifecycle
+""" + functions + """
+UDID=$(limit 2 xcrun simctl create legacy-host device runtime)
+""" + scenario
+        result = self.run_shell(fixture, script)
+        self.assertEqual(result.returncode, 73, result.stderr)
+        self.assertTrue(json.loads((fixture.root/'supervisor-environments.jsonl').read_text())['checkpoint'])
+        self.assertEqual(len((fixture.root/'diagnostics.jsonl').read_text().splitlines()), 1)
+        self.assertIn('product:sdk-m1-contract-audio-lifecycle', fixture.summary.read_text())
+        self.assertIn('infra:delete', fixture.summary.read_text())
+        self.assertTrue(fixture.inventory(), 'failed cleanup must retain owned identity')
+        fixture.rules()
+        fixture.cli('cleanup',fixture.state)
         self.assertEqual(fixture.inventory(), [])
 
     def test_legacy_explicit_cleanup_failure_never_gets_a_product_label(self):

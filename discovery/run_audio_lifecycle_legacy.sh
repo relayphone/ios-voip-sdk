@@ -70,8 +70,8 @@ cleanup() {
   if [[ "$status" -ne 0 && ! -f "$SIM_STATE.failure" && ! -f "${SIM_FAILURE_MARKER:-$SIM_STATE.failure}" ]]; then
     python3 "$SIM_HELPER" product "$PRODUCT_CHECK" || true
   fi
-  cleanup_simulator || status=1
-  redact_external_paths || status=1
+  cleanup_simulator || { [[ "$status" -ne 0 ]] || status=1; }
+  redact_external_paths || { [[ "$status" -ne 0 ]] || status=1; }
   exit "$status"
 }
 trap cleanup EXIT
@@ -100,16 +100,22 @@ limit 60 xcrun simctl boot "$UDID"
 limit 300 xcrun simctl bootstatus "$UDID" -b > "$OUT/boot.log" 2>&1
 read_launch_environment
 limit 180 xcrun simctl install "$UDID" "$SDK_M1_CONTRACT_BUILD/SDKM1Contracts.app" > "$OUT/install.log" 2>&1
+sim_checkpoint || { : > "$SIM_STATE.failure"; exit 1; }
 PRODUCT_CHECK="$NAME"
-env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
+if env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
   SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M0_RUN_ID="$RUN_ID" \
   SIMCTL_CHILD_SDK_M1_CONTRACT_CASE=audio-lifecycle \
   python3 discovery/run_scenario.py --console-launcher-stop --timeout 90 \
   --output "$OUT/$NAME.log" --receipt "$OUT/$NAME.receipt.json" \
   --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$NAME" --bundle-id "$BUNDLE" \
   --terminate-command xcrun simctl terminate "$UDID" "$BUNDLE" \
-  --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" "$BUNDLE"
-sim_checkpoint
+  --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" "$BUNDLE"; then
+  :
+else
+  scenario_status=$?
+  python3 scripts/sim/legacy_diagnostics.py --out "$OUT" --simulator "$UDID" || true
+  exit "$scenario_status"
+fi
 PRODUCT_CHECK=legacy-journal-capture
 container=$(SIM_FAILURE_MARKER="${SIM_FAILURE_MARKER:-$SIM_STATE.failure}" python3 "$SIM_HELPER" call '' 30 env -u SIMCTL_CHILD_DYLD_INSERT_LIBRARIES python3 scripts/sim/paths.py \
   --receipt "$OUT/$NAME.receipt.json" --trace "$OUT/$NAME.log" \
