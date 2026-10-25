@@ -279,16 +279,6 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(len(self.calls('create')), 2)
         self.assertEqual(self.calls('boot'), [['boot', created]])
 
-    def test_replacement_cleanup_keeps_the_callers_original_bound(self):
-        original = self.create()
-        self.call('boot', original)
-        self.env['SIM_RECOVERY_TIMEOUT'] = '.2'
-        self.rules(dict(step='install', action='failure'), dict(step='shutdown', action='timeout'))
-        self.call('install', original, 'fixture.app')
-        self.assertNotEqual(self.current(), original)
-        self.assertEqual(self.calls('shutdown'), [['shutdown', original]])
-        self.assertEqual(self.calls('delete'), [['delete', original]])
-
     def test_failure_during_replay_does_not_start_a_third_attempt(self):
         original = self.create()
         self.call('boot', original, timeout=.2)

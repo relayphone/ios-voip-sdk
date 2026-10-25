@@ -300,7 +300,7 @@ class Session:
         return Result([], 0 if success else 1)
 
     def replacement(self):
-        if self.cleanup(timeout=self.recovery_timeout, final=False).returncode:
+        if self.cleanup(final=False).returncode:
             return Result([], 1, stderr=b'Cannot replace simulator before owned cleanup\n')
         config = self.state['create']
         result = self.create(config['arguments'], config['timeout'])
@@ -370,7 +370,7 @@ class Session:
             summary('infra:' + step, 'scheduled (one pre-app retry)')
             old = self.current
             if step == 'create':
-                if self.cleanup(timeout=self.recovery_timeout, final=False).returncode:
+                if self.cleanup(final=False).returncode:
                     summary('infra:create', 'exhausted; cleanup failed')
                     return result
                 result = self.create(command[3:], timeout)
@@ -435,7 +435,7 @@ def main(argv=None):
                 raise ValueError('A command is required')
             if args.accepted_status is not None and args.state:
                 raise ValueError('Accepted statuses are allowed only for stateless bounded calls')
-            session = Session(args.state, recovery_timeout=os.environ.get('SIM_RECOVERY_TIMEOUT', 30)) if args.state else None
+            session = Session(args.state) if args.state else None
             result = session.call(args.command, args.timeout) if session else bounded(args.command, args.timeout)
             accepted = not result.timed_out and result.returncode == args.accepted_status
             if not session and result.returncode and not accepted and args.command[:2] == ['xcrun', 'simctl']:
@@ -445,7 +445,7 @@ def main(argv=None):
             return result.returncode if result.returncode >= 0 else 128 - result.returncode
         if not args.state.exists():
             return 0
-        session = Session(args.state, recovery_timeout=os.environ.get('SIM_RECOVERY_TIMEOUT', 30))
+        session = Session(args.state)
         if args.action == 'current':
             print(session.current or '')
             return 0
@@ -457,7 +457,7 @@ def main(argv=None):
         for signum in (signal.SIGTERM, signal.SIGINT):
             signal.signal(signum, signal.SIG_IGN)
         if session:
-            session.cleanup(timeout=args.timeout if args.action == 'cleanup' else session.recovery_timeout)
+            session.cleanup()
         return 128 + error.signum
     except (OSError, ValueError, KeyError, TypeError) as error:
         print('Simulator helper: ' + str(error), file=sys.stderr)

@@ -22,7 +22,7 @@ class SourceInputTests(unittest.TestCase):
                                       capture_output=True, timeout=10)
             git('init', '-q')
             for name in (*contracts.OWN_FILES, *contracts.REFERENCES, 'Sources/fixture.swift',
-                         'scripts/sim/sim.py', 'scripts/sim/sim.sh', 'scripts/sim/paths.py'):
+                         'scripts/sim/sim.py', 'scripts/sim/sim.sh'):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(b'host-only source fixture\n')
@@ -31,7 +31,7 @@ class SourceInputTests(unittest.TestCase):
                 git('-c', 'user.name=Simulator controls', '-c', 'user.email=sim@example.invalid',
                     '-c', 'commit.gpgsign=false', 'commit', '-qm', 'Source fixture')
             commit()
-            for name in ('scripts/sim/sim.py', 'scripts/sim/sim.sh', 'scripts/sim/paths.py'):
+            for name in ('scripts/sim/sim.py', 'scripts/sim/sim.sh'):
                 before_m0 = m0.source_identity(root)
                 before_contract = contracts.source_identity(root)
                 self.assertFalse(before_contract['sourceDirty'])

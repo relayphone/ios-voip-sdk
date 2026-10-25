@@ -2,9 +2,9 @@ name: Simulator infrastructure controls
 on:
   push:
     branches: [main]
-    paths: ["scripts/sim/**", "discovery/run_sdk_m0.sh", "discovery/run_abi.sh", "discovery/run_audio_lifecycle_legacy.sh", "discovery/sdk_m0_conformance.py", "discovery/sdk_m1_contracts_conformance.py", ".github/workflows/sim-infrastructure.yml"]
+    paths: ["scripts/sim/**", "discovery/run_sdk_m0.sh", "discovery/sdk_m0_conformance.py", "discovery/sdk_m1_contracts_conformance.py", ".github/workflows/sim-infrastructure.yml"]
   pull_request:
-    paths: ["scripts/sim/**", "discovery/run_sdk_m0.sh", "discovery/run_abi.sh", "discovery/run_audio_lifecycle_legacy.sh", "discovery/sdk_m0_conformance.py", "discovery/sdk_m1_contracts_conformance.py", ".github/workflows/sim-infrastructure.yml"]
+    paths: ["scripts/sim/**", "discovery/run_sdk_m0.sh", "discovery/sdk_m0_conformance.py", "discovery/sdk_m1_contracts_conformance.py", ".github/workflows/sim-infrastructure.yml"]
   workflow_dispatch:
 permissions:
   contents: read
