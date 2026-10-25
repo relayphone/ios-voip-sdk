@@ -166,7 +166,7 @@ def summary(label, retry):
     line = f'- `{label}`: {retry}\n'
     try:
         print(line.rstrip(), file=sys.stderr)
-    except OSError:
+    except (OSError, ValueError):
         pass
     target = os.environ.get('GITHUB_STEP_SUMMARY')
     if target:

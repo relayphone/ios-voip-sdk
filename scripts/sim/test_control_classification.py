@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """SDK control transport failures retain their identity and independent labels."""
+import io
 import json
 import os
 from pathlib import Path
@@ -75,6 +76,20 @@ class ControlClassificationTests(unittest.TestCase):
         self.assertNotIn('product:', self.labels())
         self.assertNotIn('private-', self.labels())
         self.assertTrue(self.marker.exists())
+
+    def test_closed_diagnostic_stream_preserves_the_control_exception(self):
+        journey = self.journey()
+        error = subprocess.TimeoutExpired(['private-control-sentinel'], 75)
+        closed = io.StringIO()
+        closed.close()
+        with patch.object(runner.subprocess, 'run', side_effect=error), \
+             patch.object(sim.sys, 'stderr', closed):
+            with self.assertRaises(subprocess.TimeoutExpired) as raised:
+                journey.cli('push', 'host-argument')
+        self.assertIs(raised.exception, error)
+        self.assertTrue(self.marker.exists())
+        self.assertIn('infra:control', self.labels())
+        self.assertNotIn('product:', self.labels())
 
     def test_expected_control_refusal_is_preserved_without_a_failure_label(self):
         journey = self.journey()

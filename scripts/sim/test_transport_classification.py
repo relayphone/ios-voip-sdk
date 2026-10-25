@@ -241,6 +241,20 @@ class TransportClassificationTests(unittest.TestCase):
         self.assertTrue(response.failure_classified)
         self.assertFalse(session.state['retry_used'])
 
+    def test_closed_diagnostic_stream_preserves_the_original_result(self):
+        session, _ = self.session()
+        session.checkpoint()
+        response = sim.Result([], 124, timed_out=True)
+        session.runner = lambda command, timeout: response
+        closed = io.StringIO()
+        closed.close()
+        with patch.object(sim.sys, 'stderr', closed):
+            self.assertIs(session.call(['xcrun', 'simctl', 'launch', DEVICE, BUNDLE], 8), response)
+        self.assertTrue(response.failure_classified)
+        self.assertTrue(self.marker.exists())
+        self.assertIn('infra:launch', self.summary.read_text())
+        self.assertFalse(session.state['retry_used'])
+
     def test_classification_flag_belongs_only_to_the_exact_failed_generic_outcome(self):
         session, _ = self.session()
         for status in (0, 1, 7, 127, 128 + signal.SIGALRM):
