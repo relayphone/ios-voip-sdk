@@ -93,7 +93,9 @@ env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
   --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$NAME" --bundle-id "$BUNDLE" \
   --terminate-command xcrun simctl terminate "$UDID" "$BUNDLE" \
   --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" "$BUNDLE"
-container=$(limit 30 env -u SIMCTL_CHILD_DYLD_INSERT_LIBRARIES xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
+container=$(limit 30 env -u SIMCTL_CHILD_DYLD_INSERT_LIBRARIES python3 scripts/sim/paths.py \
+  --receipt "$OUT/$NAME.receipt.json" --trace "$OUT/$NAME.log" \
+  --simulator "$UDID" --run-id "$RUN_ID" --bundle "$BUNDLE")
 [[ -n "$container" && -d "$container" ]] || { echo 'Missing owned contract data container' >&2; exit 1; }
 cp "$container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/$NAME.runtime.jsonl"
 python3 - "$OUT/$NAME.receipt.json" "$OUT/$NAME.runtime.jsonl" <<'PY'

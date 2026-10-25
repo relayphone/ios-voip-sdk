@@ -26,7 +26,7 @@ SOURCE_PATHS = ('Sources', 'Integrations', 'Expo', 'ExpoMedia', 'example', 'Pack
                 'discovery/sdk_m1_conformance.py', 'discovery/check_sdk_m1.py',
                 'discovery/check_sdk_m1_container_capture.py',
                 'discovery/build_sdk_m1_contracts.sh', 'discovery/probe/sdk_m1_contracts.swift',
-                'discovery/run_audio_lifecycle_legacy.sh',
+                'discovery/run_audio_lifecycle_legacy.sh', 'scripts/sim/paths.py',
                 'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
                 'discovery/check_expo_bridge.py', 'discovery/check_expo_plugin.cjs',
                 'discovery/check_expo_media.py', 'discovery/check_expo_media_config.py',
