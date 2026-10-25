@@ -57,7 +57,9 @@ cleanup handler after the conversation has disappeared from public state.
 Cleanup does not reinsert it or request another End. Unclaimed cleanup input
 uses the existing 120-second metadata window; once End claims it, the normal
 action deadline governs handler attachment and completion. Native object
-release alone does not cancel cleanup; reset or a replacement generation does.
+release alone does not cancel cleanup. Reset or a replacement generation
+invalidates retained cleanup input; a new terminal observation and genuine End
+after reset are fresh platform input.
 Other held calls remain held: the application chooses whether to resume or end
 them. These semantics follow the [measured failure cases](../docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md);
 the metadata window is SDK policy, not a measured system deadline.
