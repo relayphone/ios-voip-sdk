@@ -13,9 +13,42 @@ from pathlib import Path
 import queue
 import signal
 import subprocess
+import sys
 import threading
 import time
 import tty
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts/sim'))
+from sim import (Result, console_launch_rejection, not_running_error, preapp_rejection,
+                 report_failure, terminate_once)
+
+
+def report_capture_failure(result, trace, timeout, launch_failure=False, termination_failure=False,
+                           capture_failure=False):
+    """Classify the retained outcome without changing its receipt or replaying it."""
+    if not os.environ.get('SIM_FAILURE_MARKER'):
+        return  # Offline refusal controls do not represent native job failures.
+    bundle = result.get('bundleID')
+    if bundle and console_launch_rejection(result, trace, bundle, timeout):
+        report_failure('infra:launch', 'exact pre-app rejection; no local retry')
+        return
+    if launch_failure:
+        report_failure('infra:launch', 'launch transport failed; never retried')
+        return
+    entered = any(key in result for key in ('appPID', 'launcherAppPID', 'appEntryObserved', 'lastProbeEvent'))
+    rejected = (bundle and not entered and result['completed'] is False and
+        preapp_rejection(Result([], result.get('launchExitCode'), stderr=trace), bundle))
+    if rejected:
+        report_failure('infra:launch', 'launch rejected without replay proof; never retried')
+    absent = (bundle and result.get('cleanupExitCode') == 3 and result.get('cleanupStdout') == '' and
+              result.get('cleanupStderr') == not_running_error(bundle) and 'cleanupError' not in result)
+    termination_failure = (termination_failure or 'cleanupError' in result or
+        ('terminateExitCode' in result and result['terminateExitCode'] != 0) or
+        ('cleanupExitCode' in result and result['cleanupExitCode'] != 0 and not absent))
+    if not rejected and (capture_failure or not termination_failure or (entered and not result['completed'])):
+        report_failure('product:' + (result.get('scenario') or 'capture'), 'never retried')
+    if termination_failure:
+        report_failure('infra:terminate', 'never retried')
 
 
 def bind_launcher_pid(result, matches):
@@ -34,10 +67,12 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
     result = {"completed": False, "success": False, "schemaVersion": 2, **(identity or {})}
     process = None
     stopped = False
+    launch_failure = termination_failure = capture_failure = False
     messages = queue.Queue()
     reader = None
     reader_stop = threading.Event()
     master = slave = None
+    data = b''
     bundle = result.get("bundleID")
     launcher_header = re.compile(rb"(?m)^" + re.escape(bundle.encode()) + rb": (\d+)\r?$") if bundle else None
     try:
@@ -60,9 +95,13 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                 tty.setraw(slave)  # Preserve bytes; only the launcher stdout uses this PTY.
                 result["consoleTransport"] = "host-pty"
             try:
-                process = subprocess.Popen(launch, stdout=slave if console_launcher_stop else subprocess.PIPE,
-                                           stderr=subprocess.PIPE if console_launcher_stop else subprocess.STDOUT,
-                                           start_new_session=not inherit_launcher_group)
+                try:
+                    process = subprocess.Popen(launch, stdout=slave if console_launcher_stop else subprocess.PIPE,
+                                               stderr=subprocess.PIPE if console_launcher_stop else subprocess.STDOUT,
+                                               start_new_session=not inherit_launcher_group)
+                except OSError:
+                    launch_failure = True
+                    raise
             finally:
                 if slave is not None:
                     os.close(slave)
@@ -202,17 +241,27 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                     # simctl launch --console[-pty] documents forwarding received
                     # signals to its app. Signal only this invocation's Popen PID.
                     result["terminationSignal"] = signal.SIGTERM
-                    os.kill(process.pid, signal.SIGTERM)
+                    try:
+                        os.kill(process.pid, signal.SIGTERM)
+                    except OSError:
+                        termination_failure = True
+                        raise
                     result["terminationSignalDelivered"] = True
                 else:
-                    stop = subprocess.run(terminate, capture_output=True, timeout=20)
+                    try:
+                        stop = terminate_once(terminate, 20, subprocess.run)
+                    except (OSError, subprocess.TimeoutExpired):
+                        termination_failure = True
+                        raise
                     result["terminateExitCode"] = stop.returncode
                     if stop.returncode:
+                        termination_failure = True
                         raise RuntimeError("failed to terminate completed run-owned app")
                     stopped = True
                 try:
                     result["launchExitCode"] = process.wait(timeout=15)
                 except subprocess.TimeoutExpired:
+                    termination_failure = True
                     if console_launcher_stop:
                         raise RuntimeError("console launcher did not exit after stop signal")
                     raise
@@ -222,12 +271,15 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                 while True:
                     remaining = drain_deadline - time.monotonic() if drain_deadline is not None else 5
                     if remaining <= 0:
+                        termination_failure = True
                         raise RuntimeError("launcher output did not close after stop")
                     try:
                         line = reply_terminal.pop() if reply_terminal else messages.get(timeout=remaining)
                     except queue.Empty:
+                        termination_failure = True
                         raise RuntimeError("launcher output did not close after stop")
                     if isinstance(line, OSError):
+                        termination_failure = True
                         raise line
                     if line is None:
                         break
@@ -247,12 +299,15 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                             result["appAbsentAfterStop"] = True
                             break
                         if time.monotonic() >= absence_deadline:
+                            termination_failure = True
                             raise RuntimeError("run-owned app PID still exists after console stop")
                         time.sleep(.02)
                     stopped = True
                 result["success"] = True
     except (OSError, RuntimeError, subprocess.TimeoutExpired, queue.Empty) as error:
         result["error"] = str(error)
+        if not launch_failure and not termination_failure:
+            capture_failure = True
     finally:
         try:
             if process is not None:
@@ -261,7 +316,7 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                 # The launcher can exit while the app it launched remains alive.
                 if not stopped:
                     try:
-                        stop = subprocess.run(terminate, capture_output=True, timeout=10)
+                        stop = terminate_once(terminate, 10, subprocess.run)
                         result["cleanupExitCode"] = stop.returncode
                         for field in ("stdout", "stderr"):
                             raw = getattr(stop, field, None)
@@ -324,12 +379,16 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                 identity_error = bind_launcher_pid(result, launcher_header.findall(data))
                 if identity_error:
                     result["success"] = False
+                    capture_failure = True
                     if "error" in result:
                         if result["error"] != identity_error:
                             result["identityError"] = identity_error
                     else:
                         result["error"] = identity_error
         receipt.write_text(json.dumps(result, indent=2) + "\n")
+    if not result['success']:
+        report_capture_failure(result, data, timeout,
+                               launch_failure, termination_failure, capture_failure)
     return 0 if result["success"] else 1
 
 

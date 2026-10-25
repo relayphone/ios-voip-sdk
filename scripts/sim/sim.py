@@ -149,6 +149,33 @@ def summary(label, retry):
             stream.write(line)
 
 
+def failure_is_classified():
+    """Whether this runner already reported its terminal failure to its parent."""
+    marker = os.environ.get('SIM_FAILURE_MARKER')
+    return bool(marker and Path(marker).is_file())
+
+
+def clear_failure_marker():
+    """Clear an earlier rejected attempt before its single authorized replay."""
+    marker = os.environ.get('SIM_FAILURE_MARKER')
+    if marker:
+        Path(marker).unlink(missing_ok=True)
+
+
+def report_failure(label, retry='never retried'):
+    """Report a terminal outcome; the parent need not invent a second label."""
+    summary(label, retry)
+    marker = os.environ.get('SIM_FAILURE_MARKER')
+    if marker:
+        Path(marker).touch(mode=0o600)
+
+
+def terminate_once(command, timeout, transport):
+    """Keep the caller's bounded termination transport, with no replay."""
+    seconds(timeout)
+    return transport(command, capture_output=True, timeout=timeout)
+
+
 def simulator_uuid(value):
     value = value.strip()
     if str(uuid.UUID(value)).lower() != value.lower():
@@ -166,6 +193,51 @@ def preapp_rejection(result, bundle):
         '\tNo such process\n').encode()
     return (result.returncode == 3 and not result.timed_out and
             result.stdout == b'' and result.stderr == expected)
+
+
+def not_running_error(bundle):
+    """The exact native termination refusal proving nothing remains to stop."""
+    return (
+        'An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=3):\n'
+        f'Simulator device failed to terminate {bundle}.\nfound nothing to terminate\n'
+        'Underlying error (domain=NSPOSIXErrorDomain, code=3):\n'
+        f'\tThe request to terminate "{bundle}" failed. found nothing to terminate\n'
+        '\tfound nothing to terminate\n')
+
+
+def console_launch_rejection(value, trace_bytes, bundle, timeout):
+    """Classify the exact pre-app rejection; this alone never permits replay.
+
+    A retry owner must additionally prove its expected process/group identity,
+    unchanged runtime evidence, group absence, and remaining aggregate budget.
+    """
+    if not isinstance(value, dict):
+        return False
+    eof = value.get('stdoutEOFSeconds')
+    return (preapp_rejection(Result([], value.get('launchExitCode'), stderr=trace_bytes), bundle) and
+            value.get('completed') is False and value.get('success') is False and
+            value.get('error') == 'launcher exited before terminal done event' and
+            value.get('identityError') == 'require one launcher app PID acknowledgement; got 0' and
+            value.get('launchExitCodeBeforeCleanup') == value.get('launchExitCode') == 3 and
+            type(eof) in (int, float) and math.isfinite(eof) and 0 <= eof < timeout and
+            value.get('cleanupExitCode') == 3 and value.get('cleanupStdout') == '' and
+            value.get('cleanupStderr') == not_running_error(bundle) and 'cleanupError' not in value and
+            not any(key in value for key in ('appPID', 'launcherAppPID', 'appEntryObserved', 'lastProbeEvent')))
+
+
+def console_preapp_rejection(value, trace_bytes, identity, owner_pid, timeout):
+    """Keep the grouped supervisor's static proof separate from retry ownership.
+
+    The caller still checks supervisor exit, journal/session snapshots, live
+    process-group absence, attempt count, and its original aggregate deadline.
+    """
+    return (console_launch_rejection(value, trace_bytes, identity['bundleID'], timeout) and
+            value.get('inheritLauncherGroup') is True and
+            all(value.get(key) == owner_pid for key in
+                ('supervisorPID', 'supervisorPGID', 'supervisorSID', 'launcherPGID')) and
+            type(value.get('launcherPID')) is int and value['launcherPID'] > 0 and
+            value['launcherPID'] != owner_pid and
+            all(value.get(key) == identity[key] for key in ('runID', 'simulatorID', 'scenario', 'bundleID')))
 
 
 class Session:

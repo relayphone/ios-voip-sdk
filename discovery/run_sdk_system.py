@@ -6,7 +6,6 @@ Native acceptance is decided by sdk_system_conformance, never by this driver.
 """
 import argparse
 import json
-import math
 import os
 from pathlib import Path
 import shutil
@@ -20,6 +19,10 @@ import sdk_m0_conformance as m0
 from summarize import require
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts/sim'))
+from sim import (clear_failure_marker, console_preapp_rejection, failure_is_classified,
+                 report_failure, summary)
+
 BUNDLE = 'dev.iosvoipsdk.example'
 CASES = ('answer-end', 'decline', 'hold-accept', 'end-accept', 'mute-echo', 'provider-reset', 'push-launch')
 SCENARIO_TIMEOUT_SECONDS = 120
@@ -32,6 +35,13 @@ NOT_RUNNING = ('An error was encountered processing the command (domain=NSPOSIXE
     f'Simulator device failed to terminate {BUNDLE}.\nfound nothing to terminate\n'
     'Underlying error (domain=NSPOSIXErrorDomain, code=3):\n'
     f'\tThe request to terminate "{BUNDLE}" failed. found nothing to terminate\n\tfound nothing to terminate\n')
+
+
+def _report(label, retry, terminal=True):
+    # Host refusal controls inherit GITHUB_STEP_SUMMARY too; only a native
+    # owner context may classify them as this job's measured failures.
+    if os.environ.get('SIM_FAILURE_MARKER'):
+        (report_failure if terminal else summary)(label, retry)
 
 
 def write(path, value):
@@ -191,50 +201,59 @@ class Journey:
         receipt_path = self.root / (self.name + '.receipt.json')
         for attempt in range(2):
             remaining = deadline - time.monotonic()
+            if attempt and remaining <= 0:
+                _report('infra:launch', 'exhausted (aggregate deadline before retry)', terminal=False)
             require(remaining > 0, self.case + ': checkpoint deadline')
             if attempt:
-                require(self.pid is None and not (self.bindings or self.controls or self.commands) and
+                fresh = (self.pid is None and not (self.bindings or self.controls or self.commands) and
                     tuple(path.read_bytes() if path.exists() else None for path in paths) == baseline and
                     (archived / self.trace.name).read_bytes() == PREAPP_ERROR and
-                    (archived / receipt_path.name).read_bytes() == receipt_bytes,
-                    'fresh evidence before startup recovery')
+                    (archived / receipt_path.name).read_bytes() == receipt_bytes)
+                if not fresh:
+                    _report('product:' + self.name, 'startup evidence changed; never retried')
+                require(fresh, 'fresh evidence before startup recovery')
             launch = list(command)
             with (self.root / 'supervisor.log').open('xb') as log:
                 remaining = deadline - time.monotonic()
+                if attempt and remaining <= 0:
+                    _report('infra:launch', 'exhausted (aggregate deadline before retry)', terminal=False)
                 require(remaining > 0, self.case + ': checkpoint deadline')
                 launch[launch.index('--timeout') + 1] = str(remaining)
-                self.process = subprocess.Popen(launch, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+                if attempt:
+                    clear_failure_marker()
+                try:
+                    self.process = subprocess.Popen(launch, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+                except OSError:
+                    _report('infra:launch', 'supervisor transport failed; never retried')
+                    raise
             try:
-                return self.wait(lambda: next((row for row in self.rows() if row['event'] == 'system.ready'), None),
-                                 max(0, deadline - time.monotonic()))
+                ready = self.wait(lambda: next((row for row in self.rows() if row['event'] == 'system.ready'), None),
+                                  max(0, deadline - time.monotonic()))
+                if attempt:
+                    _report('infra:launch', 'recovered (one pre-app retry)', terminal=False)
+                return ready
             except RuntimeError as error:
                 # Only a completed, exact pre-app rejection is replayable. Any
                 # assertion, partial stream, or fresh app/runtime evidence fails.
                 if (str(error) != 'system supervisor exited before checkpoint' or attempt or
                         self.case == 'push-launch' or time.monotonic() >= deadline or
                         self.pid is not None or self.bindings or self.controls or self.commands):
+                    if attempt:
+                        _report('infra:launch', 'exhausted (no further pre-app retry)', terminal=False)
                     raise
                 try:
                     receipt_bytes = receipt_path.read_bytes()
                     value = json.loads(receipt_bytes)
                     owner = self.process.pid
-                    eof = value.get('stdoutEOFSeconds')
-                    eligible = (self.process.poll() == 1 and self.trace.read_bytes() == PREAPP_ERROR and
-                        value.get('completed') is False and value.get('success') is False and
-                        value.get('error') == 'launcher exited before terminal done event' and
-                        value.get('identityError') == 'require one launcher app PID acknowledgement; got 0' and
-                        value.get('launchExitCodeBeforeCleanup') == value.get('launchExitCode') == 3 and
-                        type(eof) in (int, float) and math.isfinite(eof) and 0 <= eof < SCENARIO_TIMEOUT_SECONDS and
-                        value.get('cleanupExitCode') == 3 and value.get('cleanupStdout') == '' and
-                        value.get('cleanupStderr') == NOT_RUNNING and 'cleanupError' not in value and
-                        not any(key in value for key in ('appPID', 'launcherAppPID', 'appEntryObserved', 'lastProbeEvent')) and
-                        value.get('inheritLauncherGroup') is True and
-                        all(value.get(key) == owner for key in ('supervisorPID', 'supervisorPGID', 'supervisorSID', 'launcherPGID')) and
-                        type(value.get('launcherPID')) is int and value['launcherPID'] > 0 and value['launcherPID'] != owner and
-                        all(value.get(key) == expected for key, expected in
-                            (('runID', self.args.run_id), ('simulatorID', self.args.simulator),
-                             ('scenario', self.name), ('bundleID', BUNDLE))) and
-                        tuple(path.read_bytes() if path.exists() else None for path in paths) == baseline)
+                    eligible = (self.process.poll() == 1 and
+                        console_preapp_rejection(value, self.trace.read_bytes(),
+                            dict(runID=self.args.run_id, simulatorID=self.args.simulator,
+                                 scenario=self.name, bundleID=BUNDLE), owner, SCENARIO_TIMEOUT_SECONDS))
+                    if eligible:
+                        unchanged = tuple(path.read_bytes() if path.exists() else None for path in paths) == baseline
+                        if not unchanged:
+                            _report('product:' + self.name, 'runtime evidence changed; never retried')
+                        eligible = unchanged
                     if eligible:
                         try: os.killpg(owner, 0)
                         except ProcessLookupError: pass
@@ -249,6 +268,7 @@ class Journey:
                 archived.mkdir()
                 for path in (self.trace, receipt_path, self.root / 'supervisor.log'):
                     path.rename(archived / path.name)
+                _report('infra:launch', 'scheduled (one pre-app retry)', terminal=False)
 
     def run(self):
         env = dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=self.args.run_id,
@@ -267,8 +287,10 @@ class Journey:
             '--run-id', self.args.run_id, '--simulator-id', self.args.simulator, '--scenario', self.name, '--bundle-id', BUNDLE,
             '--terminate-command', 'xcrun', 'simctl', 'terminate', self.args.simulator, BUNDLE, '--launch-command', *launch]
         cleanup_required = False
+        phase = 'startup'
         try:
             ready = self.start(command, env)
+            phase = 'journey'
             self.pid = ready['pid']
             session = json.loads((self.runtime.parent / 'session.json').read_text())
             require(session['runID'] == self.args.run_id and session['pid'] == self.pid and session['bundleID'] == BUNDLE, 'fresh runtime session differs')
@@ -312,7 +334,15 @@ class Journey:
             empty = self.wait(lambda: self.snapshot(lambda calls: calls == []))
             self.wait(lambda: any(row['event'] == 'system.hook' and row.get('count') == 0 and row['sequence'] > empty['sequence'] for row in self.rows()))
             self.command('finish')
+            phase = 'capture'
             require(self.process.wait(timeout=30) == 0, 'system supervisor refused capture')
+        except Exception:
+            # Preserve the primary journey failure before cleanup can classify
+            # its own error. A finished journey's capture failure keeps the
+            # child's classification or defers to the entry-point fallback.
+            if phase == 'journey' or (phase == 'startup' and not failure_is_classified()):
+                _report('product:' + self.name, 'never retried')
+            raise
         finally:
             if self.process is not None:
                 handlers = {sig: signal.signal(sig, signal.SIG_IGN) for sig in (signal.SIGTERM, signal.SIGINT)}
@@ -321,7 +351,9 @@ class Journey:
                         cleanup_required = True
                         diagnostic = dict(supervisorPID=self.process.pid, forcedGroupKill=False)
                         try: self.sim('terminate', self.args.simulator, BUNDLE, timeout=10)
-                        except Exception as error: diagnostic['appStopError'] = str(error)
+                        except Exception as error:
+                            diagnostic['appStopError'] = str(error)
+                            _report('infra:terminate', 'never retried')
                         try: self.process.wait(timeout=25)
                         except subprocess.TimeoutExpired:
                             # Never signal a group after its owner has been reaped.
@@ -338,6 +370,8 @@ class Journey:
                     try: os.killpg(self.process.pid, 0)
                     except ProcessLookupError: group_absent = True
                     else: group_absent = False
+                    if not group_absent:
+                        _report('infra:terminate', 'owned group absence was not proven; never retried')
                     require(group_absent, 'supervisor/console group remains or cleanup is unknown')
                     destination = self.root / (self.name + '.runtime.jsonl')
                     if self.journal.exists(): shutil.copyfile(self.journal, destination)
@@ -364,7 +398,12 @@ def run(args):
     shutil.copytree(args.package, args.output / 'control-package')
     container = app_data_container(args.simulator, args.data_container)
     for case in CASES:
-        Journey(args, args.output / case, case, container).run()
+        try:
+            Journey(args, args.output / case, case, container).run()
+        except Exception:
+            if not failure_is_classified():
+                _report('product:sdk-system-' + case, 'never retried')
+            raise
 
 
 if __name__ == '__main__':
@@ -380,4 +419,6 @@ if __name__ == '__main__':
     def interrupted(_signum, _frame):
         raise KeyboardInterrupt('system runner interrupted')
     signal.signal(signal.SIGTERM, interrupted)
+    if not os.environ.get('SIM_FAILURE_MARKER'):
+        os.environ['SIM_FAILURE_MARKER'] = str(args.output / '.failure-classified')
     run(args)

@@ -196,7 +196,7 @@ def compile_run(out, name, text, paths=()):
 def native_source_identity():
     scope=['Sources','VERSION','discovery/probe/push_report_entry.swift','discovery/probe/Info.plist',
            'discovery/build_push_report_entry.sh','discovery/check_push_report_entry.py',
-           'discovery/check_push_delivery.py','discovery/run_scenario.py',
+           'discovery/check_push_delivery.py','discovery/run_scenario.py','scripts/sim/sim.py',
            'discovery/run_push_report_entry.py','discovery/check_push_report_capture.py','discovery/summarize.py',
            'Tests/VoIPSDK/run_incoming_delivery.py','Tests/VoIPSDK/IncomingDeliveryHost.h',
            'Tests/VoIPSDK/IncomingDeliveryHost.m.in','Tests/VoIPSDK/IncomingIntakeTests.swift',
@@ -212,7 +212,7 @@ def native_source_identity():
     if dirty: raise RuntimeError('Commit all A1 source/fixture inputs before a native measurement')
     names=sorted(filter(None,subprocess.check_output(['git','ls-files','-z','--',*scope],cwd=ROOT).decode().split('\0')))
     required=['discovery/probe/push_report_entry.swift','discovery/build_push_report_entry.sh',
-              'discovery/check_push_delivery.py','discovery/run_push_report_entry.py',
+              'discovery/check_push_delivery.py','discovery/run_push_report_entry.py','scripts/sim/sim.py',
               'discovery/probe/Info.plist','discovery/check_push_report_capture.py','discovery/summarize.py',
               'Tests/VoIPSDK/run_incoming_delivery.py','Tests/VoIPSDK/IncomingDeliveryHost.h',
               'Tests/VoIPSDK/IncomingDeliveryHost.m.in','Tests/VoIPSDK/IncomingIntakeTests.swift',
