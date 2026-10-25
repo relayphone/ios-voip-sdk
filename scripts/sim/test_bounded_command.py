@@ -45,9 +45,9 @@ class BoundedTests(unittest.TestCase):
         with patch.object(signal, 'signal', side_effect=install), \
              patch.object(subprocess, 'Popen', return_value=Child()), \
              patch.object(os, 'killpg', side_effect=lambda pid, sig: sent.append((pid, sig))), \
-             patch.object(time, 'sleep'):
+             patch.object(time, 'sleep'), patch.dict(program['execute'].__globals__, GRACE_SECONDS=.001):
             self.assertEqual(program['main'](['1', 'synthetic']), 143)
-        self.assertEqual(sent, [(42, signal.SIGTERM), (42, signal.SIGKILL)])
+        self.assertEqual([row for row in sent if row[1]], [(42, signal.SIGTERM), (42, signal.SIGKILL)])
 
     def test_timeout_sends_term_then_kills_an_ignoring_owned_group(self):
         with tempfile.TemporaryDirectory(prefix='bounded-host-') as temporary:
@@ -70,6 +70,38 @@ class BoundedTests(unittest.TestCase):
                                     capture_output=True, text=True, timeout=2)
             self.assertTrue(not status.stdout.strip() or status.stdout.strip().startswith('Z'),
                             'SIGTERM-ignoring descendant remained running')
+
+    def test_runtime_cancellation_waits_for_its_actual_host_command_cleanup(self):
+        with tempfile.TemporaryDirectory(prefix='runtime-cancel-') as temporary:
+            marker = Path(temporary) / 'child.pid'
+            child_code = ('import os,signal,sys,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); '
+                          'open(sys.argv[1],"w").write(str(os.getpid())); time.sleep(30)')
+            caller = ('import runpy,sys; runner=runpy.run_path(sys.argv[1]); '
+                      'runner["run"](sys.executable,"-c",sys.argv[3],sys.argv[2],timeout=30)')
+            runtime = COMMAND.resolve().parents[2] / 'Tests/RuntimeEvents/run.py'
+            process = subprocess.Popen([sys.executable, '-c', caller, str(runtime), str(marker), child_code],
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+            child = None
+            try:
+                deadline = time.monotonic() + 5
+                while not marker.exists() and time.monotonic() < deadline:
+                    self.assertIsNone(process.poll())
+                    time.sleep(.02)
+                self.assertTrue(marker.exists())
+                child = int(marker.read_text())
+                os.kill(process.pid, signal.SIGTERM)
+                process.communicate(timeout=15)
+                self.assertEqual(process.returncode, 143)
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(child, 0)
+            finally:
+                for group in (child, process.pid if process.poll() is None else None):
+                    if group is not None:
+                        try:
+                            os.killpg(group, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                process.communicate(timeout=2)
 
 
 if __name__ == '__main__':

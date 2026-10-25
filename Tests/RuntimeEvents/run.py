@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,8 @@ BUNDLE = 'dev.callkitsim.eventfixture'
 sys.path.insert(0, str(ROOT / 'scripts/sim'))
 import sim as simulator_infra
 from ownership import publish
+
+execute_host = runpy.run_path(str(ROOT / 'scripts/ci/bounded'))['execute']
 
 
 class CommandError(RuntimeError):
@@ -57,10 +60,13 @@ def run(*args, timeout=120, **kwargs):
             raise CommandError(result, timeout)
         return result.stdout.decode().strip()
     try:
-        result = simulator_infra.bounded([str(ROOT / 'scripts/ci/bounded'), str(timeout), *map(str, args)],
-                                        timeout=timeout + 12, **kwargs)
+        result = execute_host(list(map(str, args)), timeout, capture_output=True, **kwargs)
     except subprocess.TimeoutExpired as error:
         raise RuntimeError(f'{args[0]} timed out after {timeout}s: {error.stdout!r}\n{error.stderr!r}') from error
+    if result.cancelled:
+        raise SystemExit(128 + result.cancelled)
+    if result.timed_out:
+        raise RuntimeError(f'{args[0]} timed out after {timeout}s: {result.stdout!r}\n{result.stderr!r}')
     if result.returncode:
         raise RuntimeError(f'{args[0]} failed: {result.stdout.decode(errors="replace")}\n{result.stderr.decode(errors="replace")}')
     return result.stdout.decode().strip()
