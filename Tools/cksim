@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Control CallKit Simulator in one running simulator app. No third-party dependencies."""
 import argparse
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 import hashlib
 import json
 import os
@@ -11,6 +13,8 @@ import subprocess
 import sys
 import time
 import tempfile
+from types import MappingProxyType
+from typing import Mapping
 import uuid
 
 
@@ -428,21 +432,38 @@ class InspectorBridge:
         return control(SimpleNamespace(**arguments), self.device, expected_session=self.journal.session)
 
 
-def inspect_app(args, device):
+@dataclass(frozen=True)
+class InspectorBridgeConnection:
+    session: Mapping
+    launch_environment: Mapping = field(repr=False)
+    target_container: Path
+    _thread: object = field(repr=False)
+
+    def is_alive(self):
+        return self._thread.is_alive()
+
+    def wait(self, timeout=None):
+        self._thread.join(timeout)
+
+
+@contextmanager
+def inspector_bridge(args, device):
+    """Serve one pinned target without creating, installing or launching apps."""
     import http.server
     import secrets
     import threading
     import urllib.parse
     from types import SimpleNamespace
-    if not args.app.is_dir() or args.app.suffix != ".app":
-        raise RuntimeError("Build the simulator inspector first and pass inspect --app <CKSimInspector.app>.")
     print("Inspector: locating target runtime.", file=sys.stderr, flush=True)
     container = target_container(args, device).resolve()
     bridge_args = SimpleNamespace(**dict(vars(args), app_container=container))
     bridge = InspectorBridge(bridge_args, device, container / "Documents/.callkit-simulator")
     status = SimpleNamespace(**dict(vars(bridge_args), operation="status", command_receipt=None))
     print("Inspector: checking target runtime.", file=sys.stderr, flush=True)
-    control(status, device, expected_session=bridge.journal.session)
+    response = control(status, device, expected_session=bridge.journal.session)
+    if response.get("success") is not True:
+        raise RuntimeError("Target runtime rejected inspector status.")
+    bridge.journal.read_session_check()
     token = secrets.token_urlsafe(32)
 
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -493,34 +514,67 @@ def inspect_app(args, device):
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    try:
+        thread.start()
+        connection = InspectorBridgeConnection(
+            session=MappingProxyType(dict(bridge.journal.session)),
+            launch_environment=MappingProxyType(dict(
+                SIMCTL_CHILD_CKSIM_INSPECTOR_URL=f"http://127.0.0.1:{server.server_port}",
+                SIMCTL_CHILD_CKSIM_INSPECTOR_TOKEN=token)),
+            target_container=container, _thread=thread)
+        yield connection
+    finally:
+        original = sys.exc_info()[1]
+        failures = []
+        def cleanup(stage, operation):
+            try:
+                return operation()
+            except Exception:
+                # Exception text may contain launch secrets. Retain safe stages only.
+                failures.append(stage)
+        if thread.ident is not None:
+            cleanup("server shutdown", server.shutdown)
+        cleanup("socket close", server.server_close)
+        if thread.ident is not None:
+            cleanup("thread join", lambda: thread.join(timeout=5))
+        if cleanup("thread health", thread.is_alive):
+            failures.append("thread stop within 5 seconds")
+        if failures:
+            message = "Inspector bridge cleanup failed during " + ", ".join(failures) + "."
+            if original is not None:
+                print(message, file=sys.stderr, flush=True)
+            else:
+                raise RuntimeError(message) from None
+
+
+def inspect_app(args, device):
+    if not args.app.is_dir() or args.app.suffix != ".app":
+        raise RuntimeError("Build the simulator inspector first and pass inspect --app <CKSimInspector.app>.")
     display = None
     owned_display = not args.inspector_simulator
     try:
-        if args.inspector_simulator:
-            display = simulator(args.inspector_simulator)
-            if display == device and not getattr(args, "allow_shared_simulator", False):
-                raise RuntimeError("Use a separate inspector simulator so the target app stays in the foreground.")
-        else:
-            devices = json.loads(simctl("list", "devices", "-j"))["devices"]
-            runtime, target = next((runtime, d) for runtime, group in devices.items() for d in group if d["udid"] == device)
-            display = simctl("create", "CKSim Inspector " + str(uuid.uuid4())[:8], target["deviceTypeIdentifier"], runtime)
-            simctl("boot", display)
-            simctl("bootstatus", display, "-b", timeout=300)
-        print("Inspector: installing app on display simulator.", file=sys.stderr, flush=True)
-        simctl("install", display, args.app.resolve())
-        env = dict(os.environ, SIMCTL_CHILD_CKSIM_INSPECTOR_URL=f"http://127.0.0.1:{server.server_port}",
-                   SIMCTL_CHILD_CKSIM_INSPECTOR_TOKEN=token)
-        print("Inspector: launching app on display simulator.", file=sys.stderr, flush=True)
-        launch_timeout = 20 if display == device else 180
-        simctl("launch", "--terminate-running-process", display, "dev.callkitsim.inspector", env=env, timeout=launch_timeout)
-        print(f"Inspector on {display}, connected to {args.bundle} ({bridge.journal.session['runID']}). Ctrl-C to disconnect.", flush=True)
-        thread.join()
+        with inspector_bridge(args, device) as connection:
+            if args.inspector_simulator:
+                display = simulator(args.inspector_simulator)
+                if display == device and not getattr(args, "allow_shared_simulator", False):
+                    raise RuntimeError("Use a separate inspector simulator so the target app stays in the foreground.")
+            else:
+                devices = json.loads(simctl("list", "devices", "-j"))["devices"]
+                runtime, target = next((runtime, d) for runtime, group in devices.items() for d in group if d["udid"] == device)
+                display = simctl("create", "CKSim Inspector " + str(uuid.uuid4())[:8], target["deviceTypeIdentifier"], runtime)
+                simctl("boot", display)
+                simctl("bootstatus", display, "-b", timeout=300)
+            print("Inspector: installing app on display simulator.", file=sys.stderr, flush=True)
+            simctl("install", display, args.app.resolve())
+            env = dict(os.environ, **connection.launch_environment)
+            print("Inspector: launching app on display simulator.", file=sys.stderr, flush=True)
+            launch_timeout = 20 if display == device else 180
+            simctl("launch", "--terminate-running-process", display, "dev.callkitsim.inspector", env=env, timeout=launch_timeout)
+            print(f"Inspector on {display}, connected to {args.bundle} ({connection.session['runID']}). Ctrl-C to disconnect.", flush=True)
+            connection.wait()
     except KeyboardInterrupt:
         pass
     finally:
-        server.shutdown()
-        server.server_close()
         if display and owned_display:
             try:
                 simctl("shutdown", display)
