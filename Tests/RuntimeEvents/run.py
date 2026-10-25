@@ -139,7 +139,8 @@ def main():
         return run('xcrun', 'simctl', *parts, **kwargs)
     def command(*parts):
         result = json.loads(run(ROOT / 'Tools/cksim', '--simulator', device, '--bundle', BUNDLE,
-                                '--runtime-dir', args.package.resolve(), *parts))
+                                '--runtime-dir', args.package.resolve(),
+                                '--app-container', root.parent.parent, *parts))
         assert result.get('success'), result
         return result
     root = None
@@ -199,8 +200,10 @@ def main():
         for call in list(calls()):
             command('end', call['uuid'])
         wait(lambda: not calls())
+        from filtered_acceptance import run_filtered_acceptance
+        run_filtered_acceptance(channel=root, session=session, command=command, rows=rows, wait=wait, out=args.out)
         captured = run(ROOT / 'Tools/cksim', '--simulator', device, '--bundle', BUNDLE,
-                       'watch', '--json', '--duration', '0.3')
+                       '--app-container', root.parent.parent, 'watch', '--json', '--duration', '0.3')
         watched = [json.loads(line) for line in captured.splitlines()]
         assert watched and watched == rows()[:len(watched)], 'watch differs from runtime journal'
         for index, row in enumerate(watched, 1):
