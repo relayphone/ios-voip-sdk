@@ -415,7 +415,9 @@ jobs:
       - name: Select Xcode 27.1
         run: sudo xcode-select -s /Applications/Xcode_27.1.app
       - name: Check the focused engine acceptance gates
-        run: python3 discovery/check_swift_livekit.py
+        run: |
+          python3 discovery/check_swift_livekit.py
+          python3 Tests/SwiftLiveKit/run_startup.py
       - name: Build a fresh pinned Swift consumer and notifier
         run: python3 discovery/build_swift_livekit_contract.py "$RUNNER_TEMP/swift-livekit-build"
       - name: Measure both real Swift engine modes on one owned simulator

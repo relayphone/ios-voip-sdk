@@ -180,11 +180,6 @@ private struct EngineState: Sendable {
 
   private func journey(_ mode: String) async throws {
     let stale = mode == "stale-audio"
-    await AudioSessionQueue.shared.perform {
-      let manager = AudioManager.shared
-      // Preserve the exact default session/mixer objects and their order.
-      manager.set(engineObservers: [manager.audioSession, manager.mixer, ManualEngineObservation.shared])
-    }
     let adapter = ObservedAdapter()
     let policy: AudioActivationPolicy
     if stale { policy = try AudioActivationPolicy(activationTimeout: 1, recoveryTimeout: 1) }
@@ -193,6 +188,14 @@ private struct EngineState: Sendable {
     let client = application.client
     Trace.log("livekit.owner", ["identity": String(describing: ObjectIdentifier(client)),
       "activationTimeout": policy.activationTimeout, "recoveryTimeout": policy.recoveryTimeout])
+    if stale { try await waitForFault() }
+    // Establish the SDK/runtime before cold backend initialization can suspend.
+    // Complete observer setup before any incoming report or action is possible.
+    await AudioSessionQueue.shared.perform {
+      let manager = AudioManager.shared
+      // Preserve the exact default session/mixer objects and their order.
+      manager.set(engineObservers: [manager.audioSession, manager.mixer, ManualEngineObservation.shared])
+    }
     let eventToken = client.observeEvents { [self] event in
       events.append(event)
       Trace.log("livekit.event", ["type": event.type.rawValue, "conversationID": event.conversationID?.uuidString ?? ""])
@@ -201,7 +204,6 @@ private struct EngineState: Sendable {
     client.setConversationHandler(.init(join: { [self] _, context in try await startDemand(context) },
       start: { _, _ in throw JourneyError.failed("Unexpected start action") },
       end: { [self] _, context in try context.signal.throwIfCancelled(); try await stopDemand() }, hold: { _, _ in }))
-    if stale { try await waitForFault() }
     let id = try await client.reportIncomingConversation(.init(eventId: UUID().uuidString,
       serverCallId: UUID().uuidString, caller: .init(id: "swift-livekit-fixture")))
     Trace.log("livekit.incoming", ["conversationID": id.uuidString])
