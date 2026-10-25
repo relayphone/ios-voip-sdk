@@ -527,6 +527,9 @@ class Session:
             raise ValueError('Unsupported simulator operation: ' + step)
         if step == 'io' and (len(command) < 5 or command[4] != 'screenshot'):
             raise ValueError('Only screenshot simulator IO is supported')
+        privacy_grant = (step == 'privacy' and len(command) == 7 and command[4] == 'grant' and
+                         all(value and not value.startswith('-') for value in command[5:7]))
+        preparation = step in ('boot', 'bootstatus', 'install') or privacy_grant
         if step == 'create':
             if len(command) != 6 or self.current:
                 raise ValueError('Create requires a fresh session, name, device type and runtime')
@@ -561,7 +564,7 @@ class Session:
             runtime_timeout = (command == ['xcrun', 'simctl', 'list', 'runtimes', '-j'] and result.timed_out)
             # An owned query recovery needs its recorded create configuration.
             runtime_timeout = runtime_timeout and (not self.state['owned'] or bool(self.state['create']))
-            eligible = step in ('create', 'boot', 'bootstatus', 'install') or runtime_timeout
+            eligible = step == 'create' or preparation or runtime_timeout
             if step == 'launch':
                 position = command.index(self.current)
                 bundle = command[position + 1] if position + 1 < len(command) else ''
@@ -578,7 +581,7 @@ class Session:
                     _report_result(result, 'infra:create', 'exhausted; cleanup failed')
                     return result
                 result = self.create(command[3:], timeout)
-            elif step in ('boot', 'bootstatus', 'install') or (runtime_timeout and self.state['create']):
+            elif preparation or (runtime_timeout and self.state['create']):
                 result = self.replacement()
                 if result.returncode == 0:
                     if step != 'list':
@@ -592,7 +595,7 @@ class Session:
                 summary('infra:' + step, 'recovered')
 
         if result.returncode == 0:
-            if step in ('boot', 'bootstatus', 'install'):
+            if preparation:
                 prepared_command = list(command)
                 prepared_command[3] = '{simulator}'
                 self.state['prepared'].append(dict(command=prepared_command, timeout=timeout))

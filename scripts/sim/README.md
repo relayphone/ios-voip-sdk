@@ -89,3 +89,11 @@ Host controls require no Xcode or simulator:
 ```bash
 python3 -m unittest discover -s scripts/sim -p 'test_*.py' -v
 ```
+
+Swift LiveKit setup uses one owned Session for create, boot, install and exact
+privacy grants. A setup recovery deletes the old simulator and replays preparation
+on one fresh device; microphone permission retains its 60-second bound. Repeated
+command evidence is archived under `infrastructure-attempts/`, launch environment
+is refreshed after replacement, and the checkpoint is persisted before the
+unchanged case supervisor starts. This slice adds no console or case retry.
+Cleanup preserves the primary failure and still performs independent inventory.
