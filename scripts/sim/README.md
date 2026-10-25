@@ -43,6 +43,20 @@ recovery. Sessions own their simulators; borrowed-device adapters are a separate
 runner migration. Do not wrap a console launch with the CLI when its supervisor
 binds native launcher PIDs or process groups.
 
+`Session.resume(path, simulator)` transfers an existing lifecycle record between
+sequential CI steps; it never creates a new budget. Runtime fixture preparation
+publishes any replacement UUID to the owner file and later workflow steps.
+The exact runtimes-list timeout shares that budget with create/boot/install;
+an initial query with no owned device retries only the query. Borrowed sessions
+and checkpointed sessions never recover. Runtime latches the checkpoint before
+its existing direct launch, so this slice adds no app-launch replay.
+Fixture installs log each attempt's elapsed time and use a 180-second default.
+[Two independent hosted cold installs](https://github.com/ziahamza/ios-voip-sdk/pull/111#issuecomment-6398285146)
+took 124.051 and 112.653 seconds. Rounding a 25% margin over the observed maximum
+to the next 30 seconds gives 180 seconds; two samples are not a percentile estimate.
+`CKSIM_FIXTURE_INSTALL_TIMEOUT` permits an explicit positive bound up to 600
+seconds for controlled observation. This is not full runner adoption.
+
 The direct launch API retries only the exact NSPOSIX 3/no-process-handle
 rejection with empty stdout. Timeouts, partial output, PID acknowledgements and
 checkpoints forbid replay. Evidence supervisors that also inspect runtime
