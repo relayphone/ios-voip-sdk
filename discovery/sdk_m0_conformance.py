@@ -21,7 +21,7 @@ SOURCE_PATHS = ('Sources', 'Integrations', 'Expo', 'ExpoMedia', 'example', 'Pack
                 'discovery/sdk_m0_conformance.py', 'discovery/check_sdk_m0.py',
                 'discovery/run_scenario.py', 'discovery/sdk_bootstrap_conformance.py',
                 'discovery/sdk_installed_paths.py', 'discovery/check_sdk_installed_paths.py',
-                'discovery/check_console_stop.py', 'scripts/sim/sim.py', 'scripts/sim/sim.sh',
+                'discovery/check_console_stop.py',
                 'discovery/summarize.py', '.github/workflows/sdk-m0.yml', 'app.plugin.js', 'Tests',
                 'discovery/sdk_m1_conformance.py', 'discovery/check_sdk_m1.py',
                 'discovery/check_sdk_m1_container_capture.py',

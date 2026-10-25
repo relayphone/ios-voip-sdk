@@ -19,76 +19,33 @@ if [[ -n "${OUT:-}" ]]; then mkdir "$OUT"; else OUT=$(mktemp -d "${TMPDIR:-/tmp}
 OUT=$(cd "$OUT" && pwd)
 UDID=""
 INHERITED_DYLD=""
-INHERITED_DYLD_SIMULATOR=""
-INHERITED_DYLD_REDACTIONS=""
 RUN_ID=$(uuidgen)
-SIM_STATE="$OUT/simulator-state.json"
-PRODUCT_CHECK=preflight
-source scripts/sim/sim.sh
 limit() {
   local seconds=$1 status=0
   shift
   printf 'SDK infrastructure start (%ss):' "$seconds" >&2
   printf ' %q' "$@" >&2
   printf '\n' >&2
-  if declare -F sim_limit >/dev/null; then
-    sim_limit "$seconds" "$@" || status=$?
-  else
-    python3 scripts/sim/sim.py call '' "$seconds" "$@" || status=$?
-  fi
+  perl -e 'alarm shift; exec @ARGV' "$seconds" "$@" || status=$?
   printf 'SDK infrastructure exit: %s\n' "$status" >&2
   return "$status"
 }
 cleanup_simulator() {
-  # The persisted name also owns a device whose create call never returned.
-  sim_cleanup || { : > "$SIM_STATE.failure"; return 1; }
-  UDID=""
-}
-read_launch_environment() {
-  local query_status=0
-  if [[ -n "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" ]]; then
-    INHERITED_DYLD=$SIMCTL_CHILD_DYLD_INSERT_LIBRARIES
-  else
-    SDK_ENV_QUERY_STARTED=$SECONDS
-    printf 'Read inherited DYLD_INSERT_LIBRARIES with a 180-second cold-start infrastructure budget.\n' >> "$OUT/launch-environment-query.log" || return 1
-    printf 'Simulator: %s\n' "$UDID" >> "$OUT/launch-environment-query.log" || return 1
-    INHERITED_DYLD=$(SIM_ACCEPTED_STATUS=1 SIMCTL_CHILD_DYLD_INSERT_LIBRARIES='' limit 180 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>> "$OUT/launch-environment-query.log") || query_status=$?
-    printf 'Query exit code: %s; elapsed seconds: %s\n' "$query_status" "$((SECONDS - SDK_ENV_QUERY_STARTED))" >> "$OUT/launch-environment-query.log" || return 1
-  fi
-  # Keep all observed external paths available to failure cleanup redaction.
-  INHERITED_DYLD_REDACTIONS="${INHERITED_DYLD_REDACTIONS:-}${INHERITED_DYLD_REDACTIONS:+:}$INHERITED_DYLD"
-  [[ "$query_status" -le 1 ]] || {
-    printf 'Cannot read inherited launch environment (exit %s); see %s/launch-environment-query.log\n' "$query_status" "$OUT" >&2
-    return 1
-  }
-  SDK_M0_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - <<'PY' || return 1
-import os,pathlib
-entries=os.environ['SDK_M0_EXTERNAL_DYLD'].split(':')
-assert not any(pathlib.Path(p).name in ('CKSimRuntime.dylib','CKSimLoader.dylib') for p in entries if p), \
-    'Plain M0 acceptance refuses external SDK runtime injection'
-PY
-  INHERITED_DYLD_SIMULATOR=$UDID
-}
-simulator_changed() {
-  OWNED_SIMULATOR=$1
-  # A fresh-device install retry also changes the final evidence identity.
-  python3 - "$OUT/environment.json" "$1" <<'PY' || return 1
+  [[ -n "$UDID" ]] || return 0
+  local shutdown_status=0 delete_status=0
+  limit 30 xcrun simctl shutdown "$UDID" >> "$OUT/cleanup.log" 2>&1 || shutdown_status=$?
+  limit 30 xcrun simctl delete "$UDID" >> "$OUT/cleanup.log" 2>&1 || delete_status=$?
+  python3 - "$OUT/cleanup.json" "$UDID" "$shutdown_status" "$delete_status" <<'PY'
 import json,pathlib,sys
-path=pathlib.Path(sys.argv[1])
-if path.exists():
-    row=json.loads(path.read_text()); row['simulatorID']=sys.argv[2]
-    path.write_text(json.dumps(row,indent=2)+'\n')
+path,sim,shutdown,delete=sys.argv[1:]
+pathlib.Path(path).write_text(json.dumps(dict(simulatorID=sim,shutdownExitCode=int(shutdown),
+    deleteExitCode=int(delete),deleted=int(delete)==0),indent=2)+'\n')
 PY
-  if [[ ! -f "$SIM_STATE.failure" && -n "${INHERITED_DYLD_SIMULATOR:-}" &&
-        -z "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" &&
-        "$INHERITED_DYLD_SIMULATOR" != "$1" ]]; then
-    read_launch_environment || return 1
-  fi
+  if [[ "$delete_status" -eq 0 ]]; then UDID=""; else return 1; fi
 }
 redact_external_paths() {
-  local libraries=${INHERITED_DYLD_REDACTIONS:-$INHERITED_DYLD}
-  [[ -n "$libraries" ]] || return 0
-  SDK_M0_EXTERNAL_DYLD="$libraries" python3 - "$OUT" <<'PY'
+  [[ -n "$INHERITED_DYLD" ]] || return 0
+  SDK_M0_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - "$OUT" <<'PY'
 import hashlib,json,os,pathlib,sys
 root=pathlib.Path(sys.argv[1])
 paths=[p.encode() for p in os.environ['SDK_M0_EXTERNAL_DYLD'].split(':') if p]
@@ -110,9 +67,6 @@ PY
 cleanup() {
   local status=$?
   trap - EXIT
-  if [[ "$status" -ne 0 && ! -f "$SIM_STATE.failure" ]]; then
-    python3 "$SIM_HELPER" product "$PRODUCT_CHECK" || true
-  fi
   cleanup_simulator || status=1
   redact_external_paths || status=1
   exit "$status"
@@ -170,7 +124,25 @@ UDID=$(limit 30 xcrun simctl create "sdk-m0-$RUN_ID" "$DEVTYPE" "$RUNTIME")
 OWNED_SIMULATOR=$UDID
 limit 60 xcrun simctl boot "$UDID"
 limit 300 xcrun simctl bootstatus "$UDID" -b > "$OUT/boot.log" 2>&1
-read_launch_environment
+if [[ -n "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" ]]; then
+  INHERITED_DYLD=$SIMCTL_CHILD_DYLD_INSERT_LIBRARIES
+else
+  query_status=0
+  SDK_ENV_QUERY_STARTED=$SECONDS
+  printf 'Read inherited DYLD_INSERT_LIBRARIES with a 180-second cold-start infrastructure budget.\n' > "$OUT/launch-environment-query.log"
+  INHERITED_DYLD=$(SIMCTL_CHILD_DYLD_INSERT_LIBRARIES='' limit 180 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>> "$OUT/launch-environment-query.log") || query_status=$?
+  printf 'Query exit code: %s; elapsed seconds: %s\n' "$query_status" "$((SECONDS - SDK_ENV_QUERY_STARTED))" >> "$OUT/launch-environment-query.log"
+  [[ "$query_status" -le 1 ]] || {
+    printf 'Cannot read inherited launch environment (exit %s); see %s/launch-environment-query.log\n' "$query_status" "$OUT" >&2
+    exit 1
+  }
+fi
+SDK_M0_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - <<'PY'
+import os,pathlib
+entries=os.environ['SDK_M0_EXTERNAL_DYLD'].split(':')
+assert not any(pathlib.Path(p).name in ('CKSimRuntime.dylib','CKSimLoader.dylib') for p in entries if p), \
+    'Plain M0 acceptance refuses external SDK runtime injection'
+PY
 python3 - "$OUT" "$UDID" <<'PY'
 import json,pathlib,sys
 root=pathlib.Path(sys.argv[1]); runtime=json.loads((root/'runtime.json').read_text())
@@ -192,7 +164,6 @@ PY
 fi
 limit 180 xcrun simctl install "$UDID" "$SDK_M0_APP" > "$OUT/example-install.log" 2>&1
 limit 180 xcrun simctl install "$UDID" "$SDK_M0_BOOTSTRAP_APP" > "$OUT/bootstrap-install.log" 2>&1
-PRODUCT_CHECK=sdk-m0
 # Plain --console preserves the app streams. The raw host PTY only flushes
 # the launcher's stdio; --console-pty interleaved its PID header into PROBE JSON.
 env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_SDK_M0_ACCEPTANCE=1 \
@@ -201,9 +172,7 @@ env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_SDK_M0_ACC
   --run-id "$RUN_ID" --simulator-id "$UDID" --scenario sdk-m0 --bundle-id dev.iosvoipsdk.example \
   --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.example \
   --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.iosvoipsdk.example
-if declare -F sim_checkpoint >/dev/null; then sim_checkpoint; fi
 for case in healthy profile push-after-install; do
-  PRODUCT_CHECK="bootstrap-$case"
   env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" \
     SIMCTL_CHILD_CKSIM_BOOTSTRAP_CASE="$case" \
     python3 discovery/run_scenario.py --console-launcher-stop --timeout 90 --output "$OUT/bootstrap-$case.log" --receipt "$OUT/bootstrap-$case.receipt.json" \
@@ -211,7 +180,6 @@ for case in healthy profile push-after-install; do
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.sdkbootstrap \
     --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.callkitsim.sdkbootstrap
 done
-PRODUCT_CHECK=installed-bytes
 # Each app publishes its canonical bundle URL. Bind it to the completed launch
 # before reading installed bytes; avoid the two pre-launch CoreSimulator RPCs.
 python3 discovery/sdk_installed_paths.py "$OUT" "$RUN_ID" "$UDID"
@@ -221,7 +189,6 @@ if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
   example_container=""
   for case in journey cold-launch unhandled-expiry; do
     name="sdk-m1-$case"
-    PRODUCT_CHECK="$name"
     budget=90
     [[ "$case" != journey ]] || budget=120
     env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
@@ -253,7 +220,6 @@ PY
   contract_container=""
   for case in guard unhandled-accept unhandled-fail duplicate-wrapper media-reentrancy audio-lifecycle; do
     name="sdk-m1-contract-$case"
-    PRODUCT_CHECK="$name"
     env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
       SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M1_CONTRACT_CASE="$case" \
       python3 discovery/run_scenario.py --console-launcher-stop --timeout 90 \
@@ -277,12 +243,10 @@ PY
   # Reuse this fresh owned simulator and its preserved launch environment. The
   # focused fixture runs three conforming deliveries and two required refusals;
   # these in-app injections do not stand in for a push-initiated cold launch.
-  PRODUCT_CHECK=push-report-entry
   SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
     python3 discovery/run_push_report_entry.py --build "$SDK_PUSH_ENTRY_BUILD" \
       --out "$OUT/push-entry" --simulator "$UDID"
 fi
-PRODUCT_CHECK=sdk-system
 if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then
   if [[ -n "${example_container:-}" ]]; then
     env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
@@ -296,7 +260,6 @@ if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then
 fi
 cleanup_simulator
 redact_external_paths
-PRODUCT_CHECK=manifest
 SDK_M0_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - "$OUT" "$SDK_M0_APP" "$SDK_M0_BOOTSTRAP_APP" \
   "$SDK_M0_DEVICE_PROBE" "$SDK_M0_SPM_DEVICE_DIR" "$SDK_M0_BUILD_RECEIPT" "$RUN_ID" "$OWNED_SIMULATOR" <<'PY'
 import os,pathlib,sys
@@ -304,16 +267,12 @@ sys.path.insert(0,'discovery')
 from sdk_m0_conformance import record_manifest
 record_manifest(*(pathlib.Path(p) for p in sys.argv[1:7]),*sys.argv[7:],os.environ['SDK_M0_EXTERNAL_DYLD'])
 PY
-PRODUCT_CHECK=sdk-m0-conformance
 python3 discovery/sdk_m0_conformance.py "$OUT" | tee "$OUT/summary.json"
 if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then
-  PRODUCT_CHECK=sdk-system-conformance
   python3 discovery/sdk_system_conformance.py "$OUT" --record
   python3 discovery/sdk_system_conformance.py "$OUT" | tee "$OUT/system/summary.json"
 fi
 if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
-  PRODUCT_CHECK=sdk-m1-conformance
   python3 discovery/sdk_m1_conformance.py "$OUT" | tee "$OUT/m1/summary.json"
-  PRODUCT_CHECK=sdk-m1-contracts-conformance
   python3 discovery/sdk_m1_contracts_conformance.py "$OUT/m1/contracts-build" "$OUT/m1/contracts" --parent-manifest "$OUT/manifest.json" | tee "$OUT/m1/contracts/summary.json"
 fi
