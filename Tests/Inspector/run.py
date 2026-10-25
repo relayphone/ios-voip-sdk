@@ -5,10 +5,12 @@ import json
 import math
 import os
 from pathlib import Path
+import runpy
 import signal
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -303,6 +305,36 @@ def verify_timing_reference_journal(receipt, rows, required=()):
             assert outstanding == 0, 'Older outstanding app fulfillments make mute echo ambiguous'
 
 
+def consumer_control(channel, session, target, deadline):
+    """Load shipping mailbox controls once within the unchanged consumer budget."""
+    assert session.get('controlTransport') == 'directory-watch-v1', 'spawn-free transport required'
+    shipping = runpy.run_path(str(ROOT / 'Tools/cksim'))['control']
+
+    def send(operation, *, command_receipt=None, **fields):
+        budget = remaining_budget(deadline)
+        args = SimpleNamespace(bundle=session['bundleID'], app_container=channel.parent.parent,
+            runtime_dir=ROOT, timeout=min(5, budget),
+            command_receipt=command_receipt, operation=operation, **fields)
+        # Match the old subprocess bound, including shipping preflight/publication.
+        def expired(*_):
+            raise RuntimeError('Inspector control timed out; outcome is unknown; never retried')
+        started = time.monotonic()
+        previous_handler = signal.getsignal(signal.SIGALRM)
+        previous_timer = signal.getitimer(signal.ITIMER_REAL)
+        bound = min(8, budget, previous_timer[0] or float('inf'))
+        signal.signal(signal.SIGALRM, expired)
+        try:
+            signal.setitimer(signal.ITIMER_REAL, bound)
+            return json.dumps(shipping(args, target, expected_session=session))
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous_handler)
+            if previous_timer[0]:
+                signal.setitimer(signal.ITIMER_REAL,
+                    max(0.000001, previous_timer[0] - (time.monotonic() - started)), previous_timer[1])
+    return send
+
+
 def journal_journey(common, target, nonce, session, out, deadline, channel=None, verify_filters=False):
     """Drive controls and require the foreground Inspector's consumed projections."""
     container = Path(run('xcrun', 'simctl', 'get_app_container', target, INSPECTOR, 'data',
@@ -314,9 +346,7 @@ def journal_journey(common, target, nonce, session, out, deadline, channel=None,
     remaining_budget(deadline)
     assert not ready.get('incoming') and not ready['conversations'], 'fixture must start without a call'
     (out / 'inspector-online.json').write_text(json.dumps(ready))
-    def command(*parts):
-        budget = remaining_budget(deadline)
-        return run(*common, '--timeout', str(min(5, budget)), *parts, timeout=min(8, budget))
+    command = consumer_control(channel, session, target, deadline)
     phases = []
     def foreground(bundle, pid):
         started = time.time() * 1000
@@ -329,7 +359,7 @@ def journal_journey(common, target, nonce, session, out, deadline, channel=None,
     payload = out / 'incoming.json'
     payload.write_text(json.dumps(dict(operation='incoming')))
     foreground(session['bundleID'], session['pid'])
-    assert json.loads(command('push', '--payload-file', payload, '--must-report', 'true'))['success']
+    assert json.loads(command('push', payload_file=payload, must_report='true'))['success']
     ringing = wait_runtime(lambda rows: any(row['event'] == 'call.changed' and row.get('ringing') for row in rows),
                            channel, session, deadline)
     native_call = next(row for row in reversed(ringing) if row['event'] == 'call.changed' and row.get('ringing'))
@@ -341,7 +371,7 @@ def journal_journey(common, target, nonce, session, out, deadline, channel=None,
     assert call.get('ringing') and not call.get('ended') and call.get('callerName') == 'Alex Morgan'
     (out / 'inspector-incoming.json').write_text(json.dumps(incoming))
     foreground(session['bundleID'], session['pid'])
-    response = json.loads(command('--command-receipt', out / 'answer-control.json', 'answer', identifier))
+    response = json.loads(command('answer', call=identifier, command_receipt=out / 'answer-control.json'))
     assert response['success']
     action_ids = set(response['result']['actionIDs'])
     assert action_ids
@@ -366,7 +396,7 @@ def journal_journey(common, target, nonce, session, out, deadline, channel=None,
     if verify_filters:
         for reason, code, verification in (('do-not-disturb', 3, 'verified'), ('none', 0, 'not-applicable')):
             foreground(session['bundleID'], session['pid'])
-            response = json.loads(command('incoming-filter', '--reason', reason))
+            response = json.loads(command('incoming-filter', reason=reason))
             assert response['success'] and response['result']['incomingFilter'] == dict(
                 reason=reason, code=code, verification=verification)
             request_id = response['id']

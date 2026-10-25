@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
 import runpy
+import signal
 import subprocess
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -208,6 +210,14 @@ class ProbeTests(unittest.TestCase):
             read(channel, self.session)
 
     def test_journey_foregrounds_fixture_for_each_control_then_inspector_for_projection(self):
+        self.journey_transport()
+
+    def test_loaded_controls_avoid_the_exhausted_final_foreground_frontier(self):
+        self.journey_transport(verify_filters=True, startup_cost=2.961383)
+
+    def journey_transport(self, verify_filters=False, startup_cost=0):
+        self.session['controlTransport'] = 'directory-watch-v1'
+        self.row['controlTransport'] = 'directory-watch-v1'
         identifier = 'A7E390AF-6B78-4190-B946-26D9C6438584'
         push = dict(self.row, sequence=2, t_ms=100, event='push.received', pushID='p1', mustReport=True)
         report = dict(self.row, sequence=3, t_ms=290, event='report.completed', pushID='p1', error=0)
@@ -234,7 +244,14 @@ class ProbeTests(unittest.TestCase):
         connected = dict(self.value, cursor=8, conversations=[joined], timeline=rows, audioActive=True,
                          timingReferences=answered_references,
                          timelinePresentation=[dict(sequence=6, title='Answer fulfilled', detail='system · 125 ms · 60 s profile budget')])
-        states = iter([self.value, incoming, connected])
+        selected = dict(self.row, sequence=9, t_ms=600, event='incomingFilter.configured',
+                        requestID='filter-dnd', reason='do-not-disturb', code=3, verification='verified')
+        cleared = dict(self.row, sequence=10, t_ms=650, event='incomingFilter.configured',
+                       requestID='filter-none', reason='none', code=0, verification='not-applicable')
+        filtered = dict(connected, cursor=9, timeline=rows + [selected], incomingFilter='do-not-disturb')
+        unfiltered = dict(connected, cursor=10, timeline=rows + [selected, cleared], incomingFilter='none')
+        states = iter([self.value, incoming, connected, filtered, unfiltered])
+        all_rows = rows + [selected, cleared] if verify_filters else rows
         actor = ['inspector']
         observed = []
         class Reader:
@@ -245,27 +262,35 @@ class ProbeTests(unittest.TestCase):
             def wait(inner, predicate, **kwargs):
                 self.assertEqual(actor[0], 'inspector')
                 value = next(states)
+                if value is self.value and startup_cost:
+                    self.elapsed[0] = 5.205
                 self.assertTrue(predicate(value))
                 return value
         def rpc(*parts, **kwargs):
             if parts[:3] == ('xcrun', 'simctl', 'get_app_container'):
                 return str(self.path.parent)
             if parts[:3] == ('xcrun', 'simctl', 'launch'):
+                if startup_cost:
+                    if kwargs['timeout'] < 1:
+                        self.assertAlmostEqual(kwargs['timeout'], 0.749468)
+                        raise RuntimeError('modeled final foreground exhausted at 0.749468 seconds')
+                    self.elapsed[0] += 1
                 actor[0] = 'fixture' if parts[-1] == self.session['bundleID'] else 'inspector'
                 observed.append(actor[0])
                 return parts[-1] + (': 123' if actor[0] == 'fixture' else ': 42')
-            if 'push' in parts or 'answer' in parts:
+            if 'push' in parts or 'answer' in parts or 'incoming-filter' in parts:
+                self.elapsed[0] += startup_cost
                 self.assertEqual(actor[0], 'fixture', 'controls need a foreground target')
-                operation = 'push' if 'push' in parts else 'answer'
-                observed.append(operation)
-                return json.dumps(dict(success=True, result=dict(actionIDs=['answer'])))
+                operation = next(value for value in ('push', 'answer', 'incoming-filter') if value in parts)
+                fields = dict(reason=parts[-1]) if operation == 'incoming-filter' else {}
+                return json.dumps(control(SimpleNamespace(operation=operation, **fields), 'device', expected_session=self.session))
             if 'watch' in parts:
-                return '\n'.join(json.dumps(row) for row in rows)
+                return '\n'.join(json.dumps(row) for row in all_rows)
             return ''
         native = [0]
         def wait_native(predicate, channel, session, deadline, **kwargs):
             self.assertEqual(actor[0], 'fixture')
-            values = rows[:4] if native[0] == 0 else rows
+            values = [rows[:4], rows, rows + [selected], all_rows][native[0]]
             native[0] += 1
             self.assertTrue(predicate(values))
             return values
@@ -273,9 +298,135 @@ class ProbeTests(unittest.TestCase):
         channel.mkdir()
         (channel / 'session.json').write_text(json.dumps(self.session))
         journey = RUNNER['journal_journey']
-        with patch.dict(journey.__globals__, time=self.clock, run=rpc, ProbeReader=Reader, wait_runtime=wait_native):
-            self.assertTrue(journey(['cksim'], 'device', 'fresh', self.session, self.path.parent, 25, channel)['success'])
-        self.assertEqual(observed, ['fixture', 'push', 'inspector', 'fixture', 'answer', 'inspector'])
+        calls = []
+        def control(args, device, expected_session):
+            self.assertEqual(actor[0], 'fixture', 'controls need a foreground target')
+            self.assertEqual(expected_session, self.session)
+            calls.append(args.operation)
+            observed.append(args.operation)
+            self.elapsed[0] += 0.05 if startup_cost else 0
+            result = dict(actionIDs=['answer'])
+            identifier = 'control'
+            if args.operation == 'incoming-filter':
+                row = selected if args.reason == 'do-not-disturb' else cleared
+                result = dict(incomingFilter={key: row[key] for key in ('reason', 'code', 'verification')})
+                identifier = row['requestID']
+            return dict(success=True, id=identifier, result=result)
+        loader = Mock(return_value={'control': control})
+        with patch.object(runpy, 'run_path', loader), patch.dict(journey.__globals__, time=self.clock,
+                run=rpc, ProbeReader=Reader, wait_runtime=wait_native):
+            self.assertTrue(journey(['cksim'], 'device', 'fresh', self.session, self.path.parent,
+                                    25, channel, verify_filters=verify_filters)['success'])
+        expected = ['fixture', 'push', 'inspector', 'fixture', 'answer', 'inspector']
+        if verify_filters:
+            expected += ['fixture', 'incoming-filter', 'inspector'] * 2
+        self.assertEqual(observed, expected)
+        self.assertEqual(calls, ['push', 'answer'] + ['incoming-filter'] * (2 if verify_filters else 0))
+        self.assertLess(self.elapsed[0], 25)
+
+
+class ConsumerControlTests(unittest.TestCase):
+    def setUp(self):
+        self.work = tempfile.TemporaryDirectory()
+        self.addCleanup(self.work.cleanup)
+        self.device = '0D0079D0-4B7B-4C60-87D1-B53A06C0E965'
+        self.container = (Path(self.work.name) / self.device / 'data/Containers/Data/Application' /
+                          'CA92C9E3-557D-4B61-A306-111F6D0B568D')
+        self.channel = self.container / 'Documents/.callkit-simulator'
+        self.mailbox = self.channel / 'run'
+        for name in ('requests', 'responses'):
+            (self.mailbox / name).mkdir(parents=True)
+        self.session = dict(schemaVersion=1, runID='run', pid=123, bundleID='test.fixture',
+                            controlTransport='directory-watch-v1')
+        (self.channel / 'session.json').write_text(json.dumps(self.session))
+        self.elapsed = [20.181]
+        self.requests = []
+        self.clock = SimpleNamespace(monotonic=lambda: self.elapsed[0], sleep=self.respond)
+
+    def respond(self, _):
+        self.elapsed[0] += 0.05
+        for path in (self.mailbox / 'requests').glob('*.json'):
+            response = self.mailbox / 'responses' / path.name
+            if not response.exists():
+                request = json.loads(path.read_text())
+                self.requests.append(request)
+                response.write_text(json.dumps(dict(request, success=True, result={})))
+
+    def test_loaded_shipping_control_preserves_mailbox_receipts_and_remaining_cap(self):
+        factory = RUNNER['consumer_control']
+        shipping = CLI['control']
+        receipt = Path(self.work.name) / 'answer.json'
+        rpc = Mock(side_effect=AssertionError('control must not invoke simctl'))
+        transport = Mock(wraps=shipping)
+        loader = Mock(return_value=dict(CLI, control=transport))
+        with patch.object(runpy, 'run_path', loader), patch.dict(factory.__globals__, time=self.clock):
+            send = factory(self.channel, self.session, self.device, deadline=25)
+            with patch.dict(shipping.__globals__, time=self.clock, simctl=rpc):
+                response = json.loads(send('answer', call='A7E390AF-6B78-4190-B946-26D9C6438584',
+                                           command_receipt=receipt))
+                self.assertTrue(response['success'])
+                self.assertTrue(json.loads(send('incoming-filter', reason='none'))['success'])
+        self.assertEqual(loader.call_count, 1)
+        self.assertAlmostEqual(transport.call_args_list[0].args[0].timeout, 4.819)
+        self.assertAlmostEqual(transport.call_args_list[1].args[0].timeout, 4.769)
+        rpc.assert_not_called()
+        saved = json.loads(receipt.read_text())
+        self.assertEqual(saved['session'], self.session)
+        self.assertEqual(saved['request']['id'], response['id'])
+        self.assertEqual(saved['response'], response)
+        self.assertEqual([row['operation'] for row in self.requests], ['answer', 'incoming-filter'])
+        self.assertEqual(len({row['id'] for row in self.requests}), 2)
+        self.assertAlmostEqual(self.elapsed[0], 20.281)
+        with patch.dict(factory.__globals__, time=self.clock):
+            self.elapsed[0] = 25
+            with self.assertRaisesRegex(RuntimeError, 'background budget'):
+                send('incoming-filter', reason='none')
+        self.assertEqual(len(list((self.mailbox / 'requests').glob('*.json'))), 2)
+
+    def test_slow_control_preflight_cannot_publish_after_the_absolute_deadline(self):
+        factory = RUNNER['consumer_control']
+        shipping = CLI['control']
+        original = shipping.__globals__['target_container']
+        def slow_preflight(*args):
+            time.sleep(0.1)
+            return original(*args)
+        previous = signal.getsignal(signal.SIGALRM)
+        with patch.object(runpy, 'run_path', return_value=CLI):
+            send = factory(self.channel, self.session, self.device, deadline=time.monotonic() + 0.02)
+            with patch.dict(shipping.__globals__, target_container=slow_preflight):
+                with self.assertRaisesRegex(RuntimeError, 'Inspector control timed out'):
+                    send('incoming-filter', reason='none')
+        self.assertEqual(list((self.mailbox / 'requests').glob('*.json')), [])
+        self.assertEqual(signal.getsignal(signal.SIGALRM), previous)
+        self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0, 0))
+
+    def test_changed_session_refuses_publication_without_replay(self):
+        factory = RUNNER['consumer_control']
+        with patch.object(runpy, 'run_path', return_value=CLI), patch.dict(factory.__globals__, time=self.clock):
+            send = factory(self.channel, self.session, self.device, deadline=25)
+            (self.channel / 'session.json').write_text(json.dumps(dict(self.session, pid=999)))
+            with self.assertRaisesRegex(RuntimeError, 'Runtime session changed'):
+                send('incoming-filter', reason='none')
+        self.assertEqual(list((self.mailbox / 'requests').glob('*.json')), [])
+
+    def test_wrong_cached_device_and_response_identity_are_terminal(self):
+        factory = RUNNER['consumer_control']
+        shipping = CLI['control']
+        with patch.object(runpy, 'run_path', return_value=CLI), patch.dict(factory.__globals__, time=self.clock):
+            send = factory(self.channel, self.session, 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF', deadline=25)
+            with self.assertRaisesRegex(RuntimeError, 'Cached app container'):
+                send('incoming-filter', reason='none')
+            self.assertEqual(list((self.mailbox / 'requests').glob('*.json')), [])
+            send = factory(self.channel, self.session, self.device, deadline=25)
+            def wrong_ack(delay):
+                self.respond(delay)
+                path = next((self.mailbox / 'responses').glob('*.json'))
+                path.write_text(json.dumps(dict(json.loads(path.read_text()), pid=999)))
+            clock = SimpleNamespace(monotonic=self.clock.monotonic, sleep=wrong_ack)
+            with patch.dict(shipping.__globals__, time=clock):
+                with self.assertRaisesRegex(RuntimeError, 'response identity mismatch'):
+                    send('incoming-filter', reason='none')
+        self.assertEqual(len(list((self.mailbox / 'requests').glob('*.json'))), 1)
 
 
 class BridgeTests(unittest.TestCase):
