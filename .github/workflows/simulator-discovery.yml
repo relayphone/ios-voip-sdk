@@ -43,6 +43,9 @@ jobs:
         env:
           COMPILER_DEVELOPER_DIR: /Applications/Xcode_${{ matrix.compiler }}.app/Contents/Developer
         run: OUT="$RUNNER_TEMP/out" discovery/run.sh
+      - name: Delete any remaining run-owned ABI simulator
+        if: always()
+        run: python3 scripts/sim/sim.py cleanup "$RUNNER_TEMP/abi/simulator-state.json" --timeout 20
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
