@@ -26,7 +26,7 @@ public final class ConversationCancellationSignal {
 @MainActor
 public struct ConversationActionContext {
   public let actionID: UUID
-  /// Application policy deadline, initially 1.5 seconds before the platform timeout.
+  /// Application policy deadline, 1.5 seconds before the earlier advertised timeout or conservative action bound.
   public let deadline: Date
   public let origin: ConversationActionOrigin
   public let signal: ConversationCancellationSignal
@@ -85,6 +85,7 @@ final class ConversationActionCoordinator {
     let conversationID: UUID
     let action: PendingAction
     let platformDeadline: Date
+    let settlementDeadline: Date
     let isPending: @MainActor () -> Bool
     let settle: @MainActor (Bool) -> Void
     var cancelTimer: (@MainActor () -> Void)?
@@ -96,10 +97,12 @@ final class ConversationActionCoordinator {
     var prepared = false
     var fulfillment: UUID?
     var fulfillmentTask: Task<Void, Never>?
-    init(conversationID: UUID, action: PendingAction, platformDeadline: Date, isPending: @escaping @MainActor () -> Bool,
+    init(conversationID: UUID, action: PendingAction, platformDeadline: Date, settlementDeadline: Date,
+         isPending: @escaping @MainActor () -> Bool,
          settle: @escaping @MainActor (Bool) -> Void) {
       self.conversationID = conversationID; self.action = action
       self.platformDeadline = platformDeadline
+      self.settlementDeadline = settlementDeadline
       self.isPending = isPending; self.settle = settle
     }
   }
@@ -148,13 +151,25 @@ final class ConversationActionCoordinator {
     }.first
   }
 
-  func enqueue(conversationID: UUID, action: PendingAction,
+  func enqueue(conversationID: UUID, action: PendingAction, deliveredAt: Date? = nil,
                isPending: @escaping @MainActor () -> Bool, settle: @escaping @MainActor (Bool) -> Void) {
     guard entries[action.id] == nil else { return }
     let platformDeadline = action.deadline
+    let deliveredAt = deliveredAt ?? now()
+    // #85 measured LCK expiry on iPhone 13 / iOS 27.0 despite advertised 30-second
+    // dates. These conservative SDK work limits only shorten advertised deadlines;
+    // they do not claim the same platform expiry on every supported OS release.
+    let bound: TimeInterval?
+    switch action.kind {
+    case .hold, .end: bound = 5.3
+    case .join: bound = 64
+    default: bound = nil
+    }
+    let settlementDeadline = bound.map { min(platformDeadline, deliveredAt.addingTimeInterval($0)) } ?? platformDeadline
     var action = action
-    action.deadline = platformDeadline.addingTimeInterval(-Self.deadlineMargin)
+    action.deadline = settlementDeadline.addingTimeInterval(-Self.deadlineMargin)
     let entry = Entry(conversationID: conversationID, action: action, platformDeadline: platformDeadline,
+      settlementDeadline: settlementDeadline,
       isPending: isPending, settle: settle)
     let preparation = [.join, .start].contains(action.kind) ? prepareAction : nil
     entry.prepared = preparation == nil
@@ -277,14 +292,14 @@ final class ConversationActionCoordinator {
       commit(entry, accepted: accepted, cancellation: cancellation); return
     }
     guard entry.fulfillment == nil else { return }
-    guard entry.prepared, entry.isPending(), now() < entry.platformDeadline else {
+    guard entry.prepared, entry.isPending(), now() < entry.settlementDeadline else {
       commit(entry, accepted: false, cancellation: cancellation); return
     }
     let id = entry.action.id, token = UUID(), conversationID = entry.conversationID, action = entry.action
     entry.fulfillment = token
     entry.cancelTimer?()
     guard entries[id] === entry else { return }
-    let cancelTimer = schedule(entry.platformDeadline) { [weak self] in
+    let cancelTimer = schedule(entry.settlementDeadline) { [weak self] in
       guard let self, let current = self.entries[id], current.fulfillment == token else { return }
       self.commit(current, accepted: false, cancellation: .deadline)
     }
@@ -304,7 +319,7 @@ final class ConversationActionCoordinator {
   private func canFinalize(_ id: UUID, token: UUID) -> Bool {
     guard let entry = entries[id], entry.fulfillment == token else { return false }
     guard entry.isPending() else { cancel(id, reason: .cancelled); return false }
-    guard now() < entry.platformDeadline else { commit(entry, accepted: false, cancellation: .deadline); return false }
+    guard now() < entry.settlementDeadline else { commit(entry, accepted: false, cancellation: .deadline); return false }
     return true
   }
 
@@ -319,7 +334,7 @@ final class ConversationActionCoordinator {
     entry.task?.cancel()
     // A platform timeout/state change wins; fulfillment cannot resurrect a settled action.
     if entry.isPending() {
-      let accepted = accepted && now() < entry.platformDeadline
+      let accepted = accepted && now() < entry.settlementDeadline
       // Install accepted mute/end metadata before fulfillment can synchronously
       // emit conversationChanged or a system echo.
       willSettle?(entry.conversationID, entry.action, accepted)
