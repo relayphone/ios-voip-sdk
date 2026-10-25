@@ -59,9 +59,9 @@ on `AudioSessionQueue`; no session activation, Room, server, playback or physica
 microphone/audio-quality claim is involved. Failure to observe the engine is RED.
 
 The `stale-audio` process waits at `livekit.readyForFault`. The runner sends the
-existing runtime mailbox `faults` request using its freshly built cksim-notify;
-this test-only transport reuses the actual request/response grammar without
-another CLI container query. Both original request and ACK are retained and bound
+existing runtime mailbox `faults` request after requiring `directory-watch-v1`.
+The runtime watches that request; its request/response grammar needs no wake RPC
+or additional container query. Both original request and ACK are retained and bound
 to the same command/run/PID/bundle. The fixture must consume that ACK before join,
 and the native journal must record `fault.audioSuppressed` for this sole call.
 A generic configuration ACK cannot qualify the fault.
