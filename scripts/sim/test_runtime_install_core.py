@@ -1,6 +1,7 @@
 """Runtime install recovery uses one persistent owned budget; all transports are fake."""
 import copy
 import fcntl
+import io
 import json
 import os
 from pathlib import Path
@@ -292,16 +293,16 @@ class RuntimeInstallCoreTests(unittest.TestCase):
         self.assertNotIn('product:', summary)
 
     def stateless_cli(self, result, command, accepted=False):
-        stdout, stderr = Mock(), Mock()
-        stderr.fileno.side_effect = OSError('host-only stream has no descriptor')
         arguments = ['call', *(['--accepted-status', '1'] if accepted else []), '', '3', *command]
-        with patch.object(sim, 'bounded', return_value=result) as execute, \
-             patch.object(sim.signal, 'signal'), patch.object(sim.sys, 'stdout', stdout), \
-             patch.object(sim.sys, 'stderr', stderr):
-            status = sim.main(arguments)
-        execute.assert_called_once_with(command, 3)
-        stdout.buffer.write.assert_called_once_with(result.stdout)
-        stderr.buffer.write.assert_called_once_with(result.stderr)
+        with io.TextIOWrapper(io.BytesIO(), encoding='utf-8') as stdout, \
+                io.TextIOWrapper(io.BytesIO(), encoding='utf-8') as stderr:
+            with patch.object(sim, 'bounded', return_value=result) as execute, \
+                 patch.object(sim.signal, 'signal'), patch.object(sim.sys, 'stdout', stdout), \
+                 patch.object(sim.sys, 'stderr', stderr):
+                status = sim.main(arguments)
+            execute.assert_called_once_with(command, 3)
+            self.assertEqual(stdout.buffer.getvalue(), result.stdout)
+            self.assertEqual(stderr.buffer.getvalue(), result.stderr)
         return status
 
     def test_stateless_known_transport_marks_terminal_host_failure_without_retry(self):
