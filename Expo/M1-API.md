@@ -35,12 +35,18 @@ termination states still take precedence over that transport progress.
 aborts the old handler's signals with `handlerReplaced` and ignores its late
 promise results. Native retains unexpired actions, may redeliver them to the new
 generation, and owns the deadline and unhandled-action policy. `deadline` in both
-the pending snapshot and handler context is the effective application deadline:
-initially 1.5 seconds before the native `timeoutDate`. The margin is an application
-safety policy, not a measured platform interval. Native applies the policy there,
-cancels running work, and refuses an accept if execution resumes after platform
-expiry. Handler attachment does not subtract the margin again. JS never
-uses a timer to extend or fulfill an expired action. Optional hold, mute and tones
+the pending snapshot and handler context is the effective application deadline.
+Native captures the delivery time once, selects the earlier of the advertised
+`timeoutDate` and delivery plus 5.3 seconds for hold (Pause) and end, or 64 seconds
+for join, then subtracts a 1.5-second safety margin once. Other action kinds use
+the advertised deadline minus that margin. These conservative application caps
+come from the [iOS 27 multi-call observations](../docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md);
+they do not extend an earlier advertised deadline or claim measured bounds on
+every supported OS. The raw advertised deadline remains diagnostic data. Native
+applies the policy at the effective deadline, cancels running work, and refuses
+an accept if execution resumes after selected expiry. Handler attachment
+does not recapture delivery time or subtract the margin again. JS never uses a
+timer to extend or fulfill an expired action. Optional hold, mute and tones
 callbacks accept when omitted. Handler callbacks may return `void` or a promise,
 matching the RFC's synchronous mute example. Native filters system echoes.
 

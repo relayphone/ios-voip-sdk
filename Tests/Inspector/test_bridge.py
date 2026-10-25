@@ -47,6 +47,8 @@ class StartupTests(unittest.TestCase):
 
 class ProbeTests(unittest.TestCase):
     def setUp(self):
+        RUNNER['_shipping_tools'].cache_clear()
+        self.addCleanup(RUNNER['_shipping_tools'].cache_clear)
         self.work = tempfile.TemporaryDirectory()
         self.addCleanup(self.work.cleanup)
         self.path = Path(self.work.name) / 'probe.json'
@@ -135,15 +137,15 @@ class ProbeTests(unittest.TestCase):
                 reader.wait(lambda row: row['online'], timeout=10, deadline=0.2)
         self.assertLess(self.elapsed[0], 0.3)
 
-    def test_shared_container_lookup_uses_only_the_remaining_budget(self):
+    def test_shared_probe_wait_uses_the_original_remaining_deadline(self):
         class Stopped(Exception):
             pass
         journey = RUNNER['journal_journey']
-        rpc = Mock(side_effect=Stopped)
-        with patch.dict(journey.__globals__, time=self.clock, run=rpc):
+        probe = Mock(wait=Mock(side_effect=Stopped))
+        with patch.dict(journey.__globals__, time=self.clock):
             with self.assertRaises(Stopped):
-                journey([], 'target', 'fresh', self.session, self.path.parent, deadline=0.25)
-        self.assertEqual(rpc.call_args.kwargs['timeout'], 0.25)
+                journey([], 'target', 'fresh', self.session, self.path.parent, deadline=0.25, probe=probe)
+        self.assertEqual(probe.wait.call_args.kwargs['deadline'], 0.25)
 
     def test_explicit_resume_tolerates_pause_but_never_resets_identity(self):
         self.write()
@@ -313,10 +315,10 @@ class ProbeTests(unittest.TestCase):
                 identifier = row['requestID']
             return dict(success=True, id=identifier, result=result)
         loader = Mock(return_value={'control': control})
-        with patch.object(runpy, 'run_path', loader), patch.dict(journey.__globals__, time=self.clock,
-                run=rpc, ProbeReader=Reader, wait_runtime=wait_native):
+        with patch.dict(journey.__globals__, time=self.clock,
+                run=rpc, ProbeReader=Reader, wait_runtime=wait_native, _shipping_tools=loader):
             self.assertTrue(journey(['cksim'], 'device', 'fresh', self.session, self.path.parent,
-                                    25, channel, verify_filters=verify_filters)['success'])
+                                    25, channel, verify_filters=verify_filters, probe=Reader())['success'])
         expected = ['fixture', 'push', 'inspector', 'fixture', 'answer', 'inspector']
         if verify_filters:
             expected += ['fixture', 'incoming-filter', 'inspector'] * 2
@@ -325,8 +327,11 @@ class ProbeTests(unittest.TestCase):
         self.assertLess(self.elapsed[0], 25)
 
 
+
 class ConsumerControlTests(unittest.TestCase):
     def setUp(self):
+        RUNNER['_shipping_tools'].cache_clear()
+        self.addCleanup(RUNNER['_shipping_tools'].cache_clear)
         self.work = tempfile.TemporaryDirectory()
         self.addCleanup(self.work.cleanup)
         self.device = '0D0079D0-4B7B-4C60-87D1-B53A06C0E965'
@@ -365,6 +370,90 @@ class ConsumerControlTests(unittest.TestCase):
                 response = json.loads(send('answer', call='A7E390AF-6B78-4190-B946-26D9C6438584',
                                            command_receipt=receipt))
                 self.assertTrue(response['success'])
+                self.assertTrue(json.loads(send('answer', call='A7E390AF-6B78-4190-B946-26D9C6438584'))['success'])
+        self.assertEqual(loader.call_count, 1)
+        self.assertAlmostEqual(transport.call_args_list[0].args[0].timeout, 4.819)
+        self.assertAlmostEqual(transport.call_args_list[1].args[0].timeout, 4.769)
+        rpc.assert_not_called()
+        saved = json.loads(receipt.read_text())
+        self.assertEqual(saved['session'], self.session)
+        self.assertEqual(saved['request']['id'], response['id'])
+        self.assertEqual(saved['response'], response)
+        self.assertEqual([row['operation'] for row in self.requests], ['answer', 'answer'])
+        self.assertEqual(len({row['id'] for row in self.requests}), 2)
+        self.assertAlmostEqual(self.elapsed[0], 20.281)
+        with patch.dict(factory.__globals__, time=self.clock):
+            self.elapsed[0] = 25
+            with self.assertRaisesRegex(RuntimeError, 'background budget'):
+                send('answer', call='A7E390AF-6B78-4190-B946-26D9C6438584')
+        self.assertEqual(len(list((self.mailbox / 'requests').glob('*.json'))), 2)
+
+    def test_alarm_interrupts_control_preflight_before_publication(self):
+        factory = RUNNER['consumer_control']
+        shipping = CLI['control']
+        def interrupt_preflight(*args):
+            self.elapsed[0] += 1
+            handler = signal.getsignal(signal.SIGALRM)
+            self.assertTrue(callable(handler))
+            handler(signal.SIGALRM, None)
+            self.fail('The installed alarm must interrupt preflight')
+        previous = signal.getsignal(signal.SIGALRM)
+        # Test interrupt wiring without assuming 20 ms OS signal delivery.
+        with patch.object(runpy, 'run_path', return_value=CLI), \
+                patch.dict(factory.__globals__, time=self.clock), \
+                patch.object(signal, 'setitimer') as timer:
+            send = factory(self.channel, self.session, self.device, deadline=self.elapsed[0] + 0.02)
+            with patch.dict(shipping.__globals__, target_container=interrupt_preflight):
+                with self.assertRaisesRegex(RuntimeError, 'Inspector control timed out'):
+                    send('answer', call='A7E390AF-6B78-4190-B946-26D9C6438584')
+        self.assertAlmostEqual(timer.call_args_list[0].args[1], 0.02)
+        self.assertEqual(timer.call_args_list[-1].args, (signal.ITIMER_REAL, 0))
+        self.assertEqual(list((self.mailbox / 'requests').glob('*.json')), [])
+        self.assertEqual(signal.getsignal(signal.SIGALRM), previous)
+        self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0, 0))
+
+    def test_changed_session_refuses_publication_without_replay(self):
+        factory = RUNNER['consumer_control']
+        with patch.object(runpy, 'run_path', return_value=CLI), patch.dict(factory.__globals__, time=self.clock):
+            send = factory(self.channel, self.session, self.device, deadline=25)
+            (self.channel / 'session.json').write_text(json.dumps(dict(self.session, pid=999)))
+            with self.assertRaisesRegex(RuntimeError, 'Runtime session changed'):
+                send('answer', call='A7E390AF-6B78-4190-B946-26D9C6438584')
+        self.assertEqual(list((self.mailbox / 'requests').glob('*.json')), [])
+
+    def test_wrong_cached_device_and_response_identity_are_terminal(self):
+        factory = RUNNER['consumer_control']
+        shipping = CLI['control']
+        with patch.object(runpy, 'run_path', return_value=CLI), patch.dict(factory.__globals__, time=self.clock):
+            send = factory(self.channel, self.session, 'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF', deadline=25)
+            with self.assertRaisesRegex(RuntimeError, 'Cached app container'):
+                send('answer', call='A7E390AF-6B78-4190-B946-26D9C6438584')
+            self.assertEqual(list((self.mailbox / 'requests').glob('*.json')), [])
+            send = factory(self.channel, self.session, self.device, deadline=25)
+            def wrong_ack(delay):
+                self.respond(delay)
+                path = next((self.mailbox / 'responses').glob('*.json'))
+                path.write_text(json.dumps(dict(json.loads(path.read_text()), pid=999)))
+            clock = SimpleNamespace(monotonic=self.clock.monotonic, sleep=wrong_ack)
+            with patch.dict(shipping.__globals__, time=clock):
+                with self.assertRaisesRegex(RuntimeError, 'response identity mismatch'):
+                    send('answer', call='A7E390AF-6B78-4190-B946-26D9C6438584')
+        self.assertEqual(len(list((self.mailbox / 'requests').glob('*.json'))), 1)
+
+
+    def test_filter_loaded_shipping_control_preserves_mailbox_receipts_and_remaining_cap(self):
+        factory = RUNNER['consumer_control']
+        shipping = CLI['control']
+        receipt = Path(self.work.name) / 'answer.json'
+        rpc = Mock(side_effect=AssertionError('control must not invoke simctl'))
+        transport = Mock(wraps=shipping)
+        loader = Mock(return_value=dict(CLI, control=transport))
+        with patch.object(runpy, 'run_path', loader), patch.dict(factory.__globals__, time=self.clock):
+            send = factory(self.channel, self.session, self.device, deadline=25)
+            with patch.dict(shipping.__globals__, time=self.clock, simctl=rpc):
+                response = json.loads(send('answer', call='A7E390AF-6B78-4190-B946-26D9C6438584',
+                                           command_receipt=receipt))
+                self.assertTrue(response['success'])
                 self.assertTrue(json.loads(send('incoming-filter', reason='none'))['success'])
         self.assertEqual(loader.call_count, 1)
         self.assertAlmostEqual(transport.call_args_list[0].args[0].timeout, 4.819)
@@ -386,21 +475,28 @@ class ConsumerControlTests(unittest.TestCase):
     def test_slow_control_preflight_cannot_publish_after_the_absolute_deadline(self):
         factory = RUNNER['consumer_control']
         shipping = CLI['control']
-        original = shipping.__globals__['target_container']
-        def slow_preflight(*args):
-            time.sleep(0.1)
-            return original(*args)
+        def interrupt_preflight(*args):
+            self.elapsed[0] += 1
+            handler = signal.getsignal(signal.SIGALRM)
+            self.assertTrue(callable(handler))
+            handler(signal.SIGALRM, None)
+            self.fail('The installed alarm must interrupt preflight')
         previous = signal.getsignal(signal.SIGALRM)
-        with patch.object(runpy, 'run_path', return_value=CLI):
-            send = factory(self.channel, self.session, self.device, deadline=time.monotonic() + 0.02)
-            with patch.dict(shipping.__globals__, target_container=slow_preflight):
+        # Test interrupt wiring without assuming 20 ms OS signal delivery.
+        with patch.object(runpy, 'run_path', return_value=CLI), \
+                patch.dict(factory.__globals__, time=self.clock), \
+                patch.object(signal, 'setitimer') as timer:
+            send = factory(self.channel, self.session, self.device, deadline=self.elapsed[0] + 0.02)
+            with patch.dict(shipping.__globals__, target_container=interrupt_preflight):
                 with self.assertRaisesRegex(RuntimeError, 'Inspector control timed out'):
                     send('incoming-filter', reason='none')
+        self.assertAlmostEqual(timer.call_args_list[0].args[1], 0.02)
+        self.assertEqual(timer.call_args_list[-1].args, (signal.ITIMER_REAL, 0))
         self.assertEqual(list((self.mailbox / 'requests').glob('*.json')), [])
         self.assertEqual(signal.getsignal(signal.SIGALRM), previous)
         self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0, 0))
 
-    def test_changed_session_refuses_publication_without_replay(self):
+    def test_filter_changed_session_refuses_publication_without_replay(self):
         factory = RUNNER['consumer_control']
         with patch.object(runpy, 'run_path', return_value=CLI), patch.dict(factory.__globals__, time=self.clock):
             send = factory(self.channel, self.session, self.device, deadline=25)
@@ -409,7 +505,7 @@ class ConsumerControlTests(unittest.TestCase):
                 send('incoming-filter', reason='none')
         self.assertEqual(list((self.mailbox / 'requests').glob('*.json')), [])
 
-    def test_wrong_cached_device_and_response_identity_are_terminal(self):
+    def test_filter_wrong_cached_device_and_response_identity_are_terminal(self):
         factory = RUNNER['consumer_control']
         shipping = CLI['control']
         with patch.object(runpy, 'run_path', return_value=CLI), patch.dict(factory.__globals__, time=self.clock):

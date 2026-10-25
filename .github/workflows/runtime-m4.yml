@@ -2,9 +2,9 @@ name: Runtime event stream and inspector
 on:
   push:
     branches: [main]
-    paths: ["Sources/Engine/**", "Sources/Interposition/**", "Tools/**", "Inspector/**", "Tests/RuntimeEvents/**", "Tests/Inspector/**", "scripts/build-runtime.sh", "scripts/build-inspector.sh", ".github/workflows/runtime-m4.yml", "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/**"]
+    paths: ["Sources/Engine/**", "Sources/Interposition/**", "Tools/**", "Inspector/**", "Tests/RuntimeEvents/**", "Tests/Inspector/**", "scripts/sim/**", "scripts/build-runtime.sh", "scripts/build-inspector.sh", ".github/workflows/runtime-m4.yml", "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/**"]
   pull_request:
-    paths: ["Sources/Engine/**", "Sources/Interposition/**", "Tools/**", "Inspector/**", "Tests/RuntimeEvents/**", "Tests/Inspector/**", "scripts/build-runtime.sh", "scripts/build-inspector.sh", ".github/workflows/runtime-m4.yml", "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/**"]
+    paths: ["Sources/Engine/**", "Sources/Interposition/**", "Tools/**", "Inspector/**", "Tests/RuntimeEvents/**", "Tests/Inspector/**", "scripts/sim/**", "scripts/build-runtime.sh", "scripts/build-inspector.sh", ".github/workflows/runtime-m4.yml", "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/**"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -36,6 +36,7 @@ jobs:
           python3 Tests/RuntimeEvents/test_filtered_acceptance.py
           python3 Tests/RuntimeEvents/test_lck_acceptance.py
           python3 Tests/Inspector/test_bridge.py
+          python3 -m unittest discover -s scripts/sim -p 'test_inspector_*.py'
           python3 Tests/Inspector/test_timing_references.py
           python3 Tests/Inspector/test_timing_receipts.py
           python3 Tests/Inspector/test_incoming_filter.py

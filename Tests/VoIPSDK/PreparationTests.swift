@@ -3,6 +3,7 @@ import Foundation
 @main
 struct PreparationTests {
   @MainActor static func main() async {
+    await boundedPreparationControls()
     let start = Date(timeIntervalSince1970: 100)
     let conversationID = UUID()
     func snapshot() -> ConversationSnapshot {
@@ -79,7 +80,73 @@ struct PreparationTests {
       isPending: { true }, settle: { held.append($0) })
     precondition(held == [true] && preparations == 0, "Only real start/join actions begin preparation")
     await fulfillmentControls()
-    print("Call-time preparation controls passed: eight prelude and fourteen fulfillment groups; ordering, policy margin, physical timeout and uncooperative completion races")
+    print("Call-time preparation controls passed: eight prelude, fourteen fulfillment and five conservative-bound groups; ordering, policy margin, physical timeout and uncooperative completion races")
+  }
+
+  @MainActor private static func boundedPreparationControls() async {
+    let delivered = Date(timeIntervalSince1970: 100)
+    let effective = Date(timeIntervalSince1970: 162.5)
+    let cutoff = Date(timeIntervalSince1970: 164)
+    let id = UUID()
+    for scenario in ["prelude-late", "final-hung", "final-late", "final-ready", "policy-final-hung"] {
+      let clock = PreparationClock(delivered)
+      let coordinator = ConversationActionCoordinator(policy: .accept, now: { clock.now }, schedule: clock.schedule)
+      coordinator.snapshot = { _ in
+        .init(id: id, direction: .incoming, status: .ringing, members: [], capabilities: .init(), isMuted: false, isVideo: false)
+      }
+      let preparation = PreparationGate(cooperative: false)
+      let final = PreparationGate(cooperative: false)
+      var handlerCalls = 0
+      var settlements: [Bool] = []
+      var changes = 0
+      coordinator.didChange = { changes += 1 }
+      coordinator.prepareAction = { _, action in
+        precondition(action.deadline == effective,
+          "Preparation must receive the bounded Join deadline even when timeoutDate advertises more time")
+        if scenario == "prelude-late" { try await preparation.run() }
+      }
+      coordinator.prepareForFulfillment = { _, action in
+        precondition(action.deadline == effective)
+        try await final.run()
+      }
+      if scenario != "policy-final-hung" {
+        coordinator.setHandler(.init(join: { _, context in
+          precondition(context.deadline == effective)
+          handlerCalls += 1
+        }, start: { _, _ in }, end: { _, _ in }))
+      }
+      coordinator.enqueue(conversationID: id,
+        action: .init(id: UUID(), kind: .join, deadline: Date(timeIntervalSince1970: 200), origin: .system),
+        isPending: { true }, settle: { settlements.append($0) })
+      if scenario == "prelude-late" {
+        await eventually("Bounded prelude must begin") { preparation.entered }
+        clock.advance(effective)
+        precondition(settlements == [false] && handlerCalls == 0 && !final.entered)
+        preparation.finish(failing: false)
+        await eventually("Late prelude must return") { preparation.returned }
+      } else {
+        if scenario == "policy-final-hung" {
+          await eventually("No-handler prelude must become ready") {
+            changes >= 2 && coordinator.pending(for: id) != nil
+          }
+          clock.advance(effective)
+        }
+        await eventually("Bounded final preparation must begin") { final.entered }
+        if scenario == "final-ready" { clock.advance(Date(timeIntervalSince1970: 163.9)) }
+        else if scenario == "final-late" { clock.now = cutoff }
+        else {
+          clock.advance(cutoff)
+          precondition(settlements == [false], "A hung final hook must fail at the 64-second bound, before advertised expiry")
+        }
+        final.finish(failing: false)
+        await eventually("Final preparation cannot outlive its selected cutoff") { final.returned && coordinator.pending(for: id) == nil }
+        precondition(handlerCalls == (scenario == "policy-final-hung" ? 0 : 1))
+      }
+      precondition(settlements == [scenario == "final-ready"] && coordinator.pending(for: id) == nil,
+        "Only final preparation completed within the selected cutoff may fulfill")
+      clock.advance(Date(timeIntervalSince1970: 200))
+      precondition(settlements.count == 1, "An advertised-date timer or late preparation cannot settle twice")
+    }
   }
 
   @MainActor private static func fulfillmentControls() async {

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tap the separate inspector, then consume its runtime journal and UI screenshots."""
 import argparse
+from functools import lru_cache
 import json
 import math
 import os
@@ -17,15 +18,19 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'Tests/RuntimeEvents'))
 from run import capture_diagnostics, fixture_session, latest_runtime, launch_fixture, record_environment, remove_simulators, run
 
+sys.path.insert(0, str(ROOT / 'scripts/sim'))
+from inspector_startup import cleanup_operations, locate_probe, supervise_launch
+
 BUNDLE = 'dev.callkitsim.eventfixture'
 INSPECTOR = 'dev.callkitsim.inspector'
 
 
 class ProbeReader:
     """Accept only fresh, process-pinned projections written by the Inspector."""
-    def __init__(self, path, nonce, session, diagnostic_path=None, resume_log=None):
+    def __init__(self, path, nonce, session, diagnostic_path=None, resume_log=None, container=None):
         self.path, self.nonce, self.session = path, nonce, session
         self.diagnostic_path = diagnostic_path
+        self.container = container
         self.resume_log, self.resume_raw = resume_log, None
         self.pid = self.started = None
         self.cursor = 0
@@ -52,6 +57,10 @@ class ProbeReader:
                 raise RuntimeError('Inspector nonce changed')
             self.reason = 'receipt nonce does not match this launch'
             return None
+        if self.container is not None and (self.path.resolve(strict=True) != self.path or
+                value.get('inspectorBundleID') != INSPECTOR or
+                value.get('inspectorDataContainer') != str(self.container)):
+            raise RuntimeError('Inspector native bundle/container identity changed')
         now = time.time() * 1000
         pid = value['inspectorPID']
         if type(pid) is not int or pid <= 0 or self.pid not in (None, pid):
@@ -164,6 +173,7 @@ def verify_probe_journal(receipts, rows, session):
             assert all(projected[call['uuid']].get(key) == value for key, value in call.items())
         if 'timingReferences' in receipt:
             verify_timing_reference_journal(receipt, rows)
+
         if 'incomingFilter' in receipt:
             configured = [row for row in rows if row['sequence'] <= receipt['cursor']
                           and row['event'] == 'incomingFilter.configured']
@@ -305,10 +315,15 @@ def verify_timing_reference_journal(receipt, rows, required=()):
             assert outstanding == 0, 'Older outstanding app fulfillments make mute echo ambiguous'
 
 
+@lru_cache(maxsize=1)
+def _shipping_tools():
+    return runpy.run_path(str(ROOT / 'Tools/cksim'))
+
+
 def consumer_control(channel, session, target, deadline):
     """Load shipping mailbox controls once within the unchanged consumer budget."""
     assert session.get('controlTransport') == 'directory-watch-v1', 'spawn-free transport required'
-    shipping = runpy.run_path(str(ROOT / 'Tools/cksim'))['control']
+    shipping = _shipping_tools()['control']
 
     def send(operation, *, command_receipt=None, **fields):
         budget = remaining_budget(deadline)
@@ -335,12 +350,14 @@ def consumer_control(channel, session, target, deadline):
     return send
 
 
-def journal_journey(common, target, nonce, session, out, deadline, channel=None, verify_filters=False):
+def journal_journey(common, target, nonce, session, out, deadline, channel=None, verify_filters=False, probe=None):
     """Drive controls and require the foreground Inspector's consumed projections."""
-    container = Path(run('xcrun', 'simctl', 'get_app_container', target, INSPECTOR, 'data',
-                         timeout=min(10, remaining_budget(deadline))))
-    probe = ProbeReader(container / 'Documents/cksim-inspector-results.json', nonce, session,
-                        diagnostic_path=out / 'inspector-latest.json', resume_log=out / 'inspector-resumes.jsonl')
+    if probe is None:
+        path = locate_probe(target, nonce, INSPECTOR)
+        if path is None:
+            raise RuntimeError('Validated Inspector receipt is unavailable')
+        probe = ProbeReader(path, nonce, session, diagnostic_path=out / 'inspector-latest.json',
+                            resume_log=out / 'inspector-resumes.jsonl', container=path.parent.parent)
     ready = probe.wait(lambda row: row['online'], timeout=10, deadline=deadline)
     deadline = min(deadline, time.monotonic() + 25 - (time.time() * 1000 - probe.started) / 1000)
     remaining_budget(deadline)
@@ -452,6 +469,36 @@ def wait_for_inspector(process, log, timeout=480, consumer_budget=None):
         time.sleep(0.1)
 
 
+def launch_inspector(connection, display, nonce, session, channel, out, shared):
+    probe = None
+    def observe(resume_after=None):
+        nonlocal probe
+        path = locate_probe(display, nonce, INSPECTOR)
+        if path is None:
+            if probe is not None:
+                raise RuntimeError('Inspector receipt disappeared during startup')
+            return None
+        if probe is None:
+            probe = ProbeReader(path, nonce, session, diagnostic_path=out / 'inspector-latest.json',
+                                resume_log=out / 'inspector-resumes.jsonl', container=path.parent.parent)
+        elif path != probe.path:
+            raise RuntimeError('Inspector data container changed during startup')
+        value = probe.read(resume_after=resume_after)
+        if value is not None and value['online']:
+            verify_probe_journal((value,), read_runtime_journal(channel, session), session)
+        return value
+    _, deadline = supervise_launch(
+        ['xcrun', 'simctl', 'launch', '--terminate-running-process', display, INSPECTOR],
+        env=dict(os.environ, **connection.launch_environment, SIMCTL_CHILD_CKSIM_INSPECTOR_PROBE_NONCE=nonce),
+        log=out / 'inspector-launch.log', observe=observe, bridge_alive=connection.is_alive,
+        host_timeout=20 if shared else 180, consumer_timeout=25 if shared else None,
+        redactions=tuple(connection.launch_environment.values()), bundle=INSPECTOR)
+    if deadline is not None:
+        deadline = min(deadline, time.monotonic() + 25 - (time.time() * 1000 - probe.started) / 1000)
+        remaining_budget(deadline)
+    return probe, deadline
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--package', type=Path, required=True)
@@ -486,7 +533,7 @@ def main():
     record_environment(out, runtime)
     print('Selected simulator runtime: ' + runtime, flush=True)
     owned = []
-    bridge = tests = None
+    bridge_context = tests = probe = None
     target = display = None
     channel = None
     def device(supplied, name):
@@ -507,18 +554,24 @@ def main():
         common = [str(ROOT/'Tools/cksim'),'--simulator',target,'--bundle',BUNDLE,
                   '--runtime-dir',str(args.package.resolve()), '--app-container', str(channel.parent.parent)]
         journal = args.driver == 'journal'
-        nonce = str(uuid.uuid4()) if journal else None
+        nonce = str(uuid.uuid4())
         display = target if journal else device(args.display_simulator, 'M4 Inspector ')
-        bridge_command = common + ['inspect','--app',str(args.inspector.resolve()), '--inspector-simulator',display]
-        if journal:
-            bridge_command.append('--allow-shared-simulator')
-        with (out / 'bridge.log').open('w') as log:
-            bridge = subprocess.Popen(bridge_command, stdout=log, stderr=subprocess.STDOUT,
-                                      env=dict(os.environ, SIMCTL_CHILD_CKSIM_INSPECTOR_PROBE_NONCE=nonce) if journal else None)
-        consumer_deadline = wait_for_inspector(bridge, out/'bridge.log', consumer_budget=25 if journal else None)
+        # Load shipping functions before the shared consumer lifetime starts.
+        factory = _shipping_tools()['inspector_bridge']
+        bridge_args = SimpleNamespace(bundle=BUNDLE, app_container=channel.parent.parent,
+                                      runtime_dir=args.package.resolve(), timeout=15)
+        context = factory(bridge_args, target)
+        connection = context.__enter__()
+        bridge_context = context
+        if dict(connection.session) != session or connection.target_container != channel.parent.parent:
+            raise RuntimeError('Inspector bridge target changed before native launch')
+        if not journal and uuid.UUID(display) == uuid.UUID(target):
+            raise RuntimeError('Use a separate inspector simulator so the target app stays in the foreground.')
+        run('xcrun', 'simctl', 'install', display, args.inspector.resolve(), timeout=60)
+        probe, consumer_deadline = launch_inspector(connection, display, nonce, session, channel, out, journal)
         if journal:
             print(json.dumps(journal_journey(common, target, nonce, session, out, consumer_deadline, channel,
-                                             verify_filters=args.verify_filter_controls)))
+                                             verify_filters=args.verify_filter_controls, probe=probe)))
             return
         with (out / 'ui-test.log').open('w') as log:
             tests = subprocess.Popen(['xcodebuild','test-without-building','-project',str(project),'-scheme','InspectorUITests',
@@ -554,12 +607,15 @@ def main():
         (out/'environment.txt').write_text(run('xcodebuild','-version')+'\n'+runtime+'\n')
         print(json.dumps(dict(success=True, answerLatencyMS=answers[0]['latencyMS'], screenshots='screenshots/')))
     finally:
-        failed = sys.exc_info()[0] is not None
+        failure = sys.exc_info()
+        failed = failure[0] is not None
+        operations = []
         if target:
-            capture_diagnostics(out, target, channel=channel, failed=failed)
+            operations.append(lambda: capture_diagnostics(out, target, channel=channel, failed=failed))
         if failed and display:
-            capture_diagnostics(out / 'display', display, bundle='dev.callkitsim.inspector', failed=True)
-        for process in (tests, bridge):
+            evidence = probe.path.parent if probe else out / 'unpublished-inspector-channel'
+            operations.append(lambda: capture_diagnostics(out / 'display', display, bundle=INSPECTOR, channel=evidence, failed=True))
+        def stop(process):
             if process is not None and process.poll() is None:
                 process.send_signal(signal.SIGINT)
                 try:
@@ -567,7 +623,11 @@ def main():
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
-        remove_simulators(owned)
+        operations.append(lambda: stop(tests))
+        if bridge_context is not None:
+            operations.append(lambda: bridge_context.__exit__(*failure))
+        operations.append(lambda: remove_simulators(owned))
+        cleanup_operations(failure[1], operations)
 
 
 if __name__ == '__main__':

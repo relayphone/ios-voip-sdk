@@ -3,6 +3,7 @@ import Foundation
 @main
 struct DeadlineTests {
   @MainActor static func main() async {
+    await boundedDeadlineControls()
     let coordinator = ConversationActionCoordinator(policy: .fail)
     let conversation = UUID()
     let platformDeadline = Date().addingTimeInterval(30)
@@ -97,7 +98,89 @@ struct DeadlineTests {
     await wait { !delayedResults.isEmpty }
     precondition(delayedResults == [false],
       "A blocked actor cannot be preempted, but resuming after platform expiry must never accept")
-    print("Deadline controls passed: seven real-clock boundary, policy, context, late-handler, cancellation and blocked-actor groups")
+    print("Deadline controls passed: conservative action bounds, original delivery/reload deadlines, and seven real-clock boundary/policy/cancellation groups")
+  }
+
+  @MainActor private static func boundedDeadlineControls() async {
+    let delivered = Date(timeIntervalSince1970: 100)
+    let id = UUID()
+    // Literal outcomes bind the policy to measured bounds independently of its selector.
+    for (kind, advertised, expected) in [
+      (ConversationActionKind.hold, 130.0, 103.8), (.end, 130, 103.8),
+      (.join, 200, 162.5), (.join, 130, 128.5),
+      (.hold, 102, 100.5), (.end, 102, 100.5), (.join, 102, 100.5),
+      (.start, 700, 698.5), (.mute, 130, 128.5), (.tones, 130, 128.5),
+    ] {
+      let coordinator = ConversationActionCoordinator(policy: .fail, now: { delivered }, schedule: { _, _ in {} })
+      let action = PendingAction(id: UUID(), kind: kind, deadline: Date(timeIntervalSince1970: advertised), origin: .system)
+      coordinator.enqueue(conversationID: id, action: action, isPending: { true }, settle: { _ in })
+      precondition(coordinator.pending(for: id)?.deadline == Date(timeIntervalSince1970: expected),
+        "Measured bounds shorten Pause/End/Join work without extending an earlier advertised timeout or changing other kinds")
+      precondition(action.deadline == Date(timeIntervalSince1970: advertised), "The input advertised date remains unchanged")
+    }
+    for policy in [UnhandledActionPolicy.accept, .fail] {
+      let clock = DeadlineClock(delivered)
+      let coordinator = ConversationActionCoordinator(policy: policy, now: { clock.now }, schedule: clock.schedule)
+      var results: [Bool] = []
+      let action = PendingAction(id: UUID(), kind: .end, deadline: Date(timeIntervalSince1970: 130), origin: .system)
+      coordinator.enqueue(conversationID: id, action: action, isPending: { true }, settle: { results.append($0) })
+      clock.advance(Date(timeIntervalSince1970: 103.7))
+      coordinator.setHandler(nil)
+      coordinator.enqueue(conversationID: id, action: action, isPending: { true }, settle: { _ in
+        preconditionFailure("Duplicate delivery cannot replace the original action")
+      })
+      precondition(results.isEmpty && coordinator.pending(for: id)?.deadline == Date(timeIntervalSince1970: 103.8),
+        "Reload and duplicate delivery preserve the original effective deadline")
+      clock.advance(Date(timeIntervalSince1970: 103.8))
+      precondition(results == [policy == .accept] && coordinator.pending(for: id) == nil,
+        "No-handler policy applies once at the bounded deadline")
+      clock.advance(Date(timeIntervalSince1970: 130))
+      precondition(results.count == 1)
+    }
+    for (now, expected) in [(104.0, true), (106.0, false)] {
+      let coordinator = ConversationActionCoordinator(policy: .accept,
+        now: { Date(timeIntervalSince1970: now) }, schedule: { _, _ in {} })
+      var results: [Bool] = []
+      coordinator.enqueue(conversationID: id,
+        action: .init(id: UUID(), kind: .end, deadline: Date(timeIntervalSince1970: 130), origin: .system),
+        deliveredAt: delivered, isPending: { true }, settle: { results.append($0) })
+      precondition(results == [expected],
+        "Delayed enqueue uses callback delivery time; expiry cannot be extended by intervening work")
+    }
+    let clock = DeadlineClock(delivered)
+    let coordinator = ConversationActionCoordinator(policy: .accept, now: { clock.now }, schedule: clock.schedule)
+    coordinator.snapshot = { _ in snapshot(id) }
+    var first: CheckedContinuation<Void, Never>?
+    var replacement: CheckedContinuation<Void, Never>?
+    var firstSignal: ConversationCancellationSignal?
+    var replacementSignal: ConversationCancellationSignal?
+    var results: [Bool] = []
+    coordinator.setHandler(.init(join: { _, _ in }, start: { _, _ in }, end: { _, context in
+      firstSignal = context.signal
+      await withCheckedContinuation { first = $0 }
+    }))
+    coordinator.enqueue(conversationID: id,
+      action: .init(id: UUID(), kind: .end, deadline: Date(timeIntervalSince1970: 130), origin: .system),
+      isPending: { true }, settle: { results.append($0) })
+    await wait { first != nil }
+    clock.advance(Date(timeIntervalSince1970: 101))
+    coordinator.setHandler(nil)
+    first?.resume()
+    await turns()
+    precondition(firstSignal?.reason == .replaced && results.isEmpty)
+    clock.advance(Date(timeIntervalSince1970: 102))
+    coordinator.setHandler(.init(join: { _, _ in }, start: { _, _ in }, end: { _, context in
+      precondition(context.deadline == Date(timeIntervalSince1970: 103.8),
+        "A redelivered handler sees the original bound, with the margin subtracted once")
+      replacementSignal = context.signal
+      await withCheckedContinuation { replacement = $0 }
+    }))
+    await wait { replacement != nil }
+    clock.advance(Date(timeIntervalSince1970: 103.8))
+    precondition(replacementSignal?.reason == .deadline && results == [false])
+    replacement?.resume()
+    await turns()
+    precondition(results == [false], "Late handlers cannot revive a bounded action")
   }
 
   @MainActor private static func wait(until predicate: @MainActor () -> Bool) async {
@@ -112,5 +195,19 @@ struct DeadlineTests {
   private static func snapshot(_ id: UUID) -> ConversationSnapshot {
     ConversationSnapshot(id: id, direction: .incoming, status: .ringing, members: [],
       capabilities: .init(), isMuted: false, isVideo: false)
+  }
+}
+
+@MainActor private final class DeadlineClock {
+  var now: Date
+  private var jobs: [UUID: (Date, @MainActor () -> Void)] = [:]
+  init(_ now: Date) { self.now = now }
+  func schedule(_ deadline: Date, _ fire: @escaping @MainActor () -> Void) -> @MainActor () -> Void {
+    let id = UUID(); jobs[id] = (deadline, fire)
+    return { self.jobs.removeValue(forKey: id) }
+  }
+  func advance(_ date: Date) {
+    now = date
+    for (id, job) in jobs.filter({ $0.value.0 <= date }) { jobs.removeValue(forKey: id); job.1() }
   }
 }
