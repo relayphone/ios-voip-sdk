@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Focused positive/tamper fixtures, with no simulator or native process use."""
+"""Host producer and contract controls; no simulator or iOS app is launched."""
 import json
 from pathlib import Path
 import subprocess
@@ -610,6 +610,69 @@ class Controls(unittest.TestCase):
             path = capture / 'sdk-m1-contract-guard.receipt.json'
             receipt = json.loads(path.read_text()); receipt['launcherAppPID'] = 999; write(path, receipt)
         self.check(file_edit=bad_pid)
+
+
+class ProducerStartupControls(unittest.TestCase):
+    def test_actual_launch_delegate_runs_once_without_a_view_or_caller_lifetime(self):
+        source = (gate.ROOT / 'discovery/probe/sdk_m1_contracts.swift').read_text()
+        start = source.index('@MainActor\nprivate final class SDKM1ContractsLaunch:')
+        opening = source.index('{', start)
+        depth = 1
+        end = opening + 1
+        while depth:
+            depth += (source[end] == '{') - (source[end] == '}')
+            end += 1
+        delegate = source[start:end]
+        support = '''import Foundation
+@MainActor private protocol UIApplicationDelegate {}
+@MainActor private final class UIApplication {
+  struct LaunchOptionsKey: Hashable {}
+}
+@MainActor private enum ContractTrace {
+  static var phases: [String] = []
+  static func phase(_ value: String) { phases.append(value) }
+}
+@MainActor private final class SDKM1ContractsProbe {
+  static var calls = 0
+  static var cancelled = false
+  static var finished = false
+  func run() async {
+    Self.calls += 1; Self.cancelled = Task.isCancelled
+    await Task.yield(); Self.finished = true
+  }
+}
+'''
+        controls = '''
+@main private struct StartupControls {
+  @MainActor static func main() async throws {
+    let first = SDKM1ContractsLaunch()
+    let caller = Task { @MainActor in
+      precondition(first.application(UIApplication(), didFinishLaunchingWithOptions: nil))
+      precondition(first.application(UIApplication(), didFinishLaunchingWithOptions: nil))
+    }
+    caller.cancel(); await caller.value
+    let deadline = ContinuousClock.now + .seconds(2)
+    while !SDKM1ContractsProbe.finished && ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(1))
+    }
+    precondition(SDKM1ContractsProbe.finished && SDKM1ContractsProbe.calls == 1 && !SDKM1ContractsProbe.cancelled)
+    let another = SDKM1ContractsLaunch()
+    precondition(another.application(UIApplication(), didFinishLaunchingWithOptions: nil))
+    for _ in 0..<3 { await Task.yield() }
+    precondition(SDKM1ContractsProbe.calls == 1)
+    precondition(ContractTrace.phases == ["app.didFinishLaunching", "task.enter"])
+    print("Process-owned probe startup passed without a view or caller lifetime")
+  }
+}
+'''
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+            (path / 'Startup.swift').write_text(support + delegate + controls)
+            subprocess.run(['xcrun', 'swiftc', '-swift-version', '6', '-warnings-as-errors',
+                            '-parse-as-library', str(path / 'Startup.swift'), '-o', str(path / 'startup')],
+                           check=True, timeout=60, capture_output=True, text=True)
+            subprocess.run([str(path / 'startup')], check=True, timeout=5,
+                           capture_output=True, text=True)
 
 
 class DiagnosticInputBindingControls(unittest.TestCase):

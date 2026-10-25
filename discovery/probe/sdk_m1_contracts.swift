@@ -4,6 +4,7 @@ import CryptoKit
 import Foundation
 @preconcurrency import LiveCommunicationKit
 import SwiftUI
+import UIKit
 
 @MainActor
 private enum ContractTrace {
@@ -472,15 +473,27 @@ private final class SDKM1ContractsProbe {
   private func finish(_ success: Bool) { ContractTrace.log("contract.result", ["success": success]); ContractTrace.log("done") }
 }
 
+@MainActor
+private final class SDKM1ContractsLaunch: NSObject, UIApplicationDelegate {
+  private static var started = false
+  func application(_ application: UIApplication,
+                   didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+    guard !Self.started else { return true }
+    Self.started = true
+    ContractTrace.phase("app.didFinishLaunching")
+    // Process-owned work must survive view removal and must not await a view's
+    // task. Set the once guard before enqueueing the unstructured main task.
+    Task { @MainActor in
+      ContractTrace.phase("task.enter")
+      await SDKM1ContractsProbe().run()
+    }
+    return true
+  }
+}
+
 @main
 private struct SDKM1ContractsApp: App {
-  @State private var started = false
+  @UIApplicationDelegateAdaptor(SDKM1ContractsLaunch.self) private var launchDelegate
   init() { ContractTrace.log("app.entry") }
-  var body: some Scene {
-    WindowGroup { Text("M1 native contracts").task {
-      ContractTrace.phase("task.enter")
-      guard !started else { return }; started = true
-      await SDKM1ContractsProbe().run()
-    } }
-  }
+  var body: some Scene { WindowGroup { Text("M1 native contracts") } }
 }
