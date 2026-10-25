@@ -14,6 +14,7 @@ import uuid
 
 from build_swift_livekit_contract import ROOT, digest, save, source
 from summarize import one, require, selected_runtime
+from run_scenario import HostTiming
 from swift_livekit_conformance import BUNDLE, CASES, CLASSIFICATION, validate, validate_build, published_container
 
 SCENARIO_TIMEOUT_SECONDS = 90
@@ -75,13 +76,19 @@ def capture_case(build, out, simulator, inherited, mode, expected_container=None
             '--output', trace, '--receipt', receipt, '--run-id', run_id, '--simulator-id', simulator,
             '--scenario', mode, '--bundle-id', BUNDLE, '--terminate-command', 'xcrun', 'simctl', 'terminate', simulator, BUNDLE,
             '--launch-command', 'xcrun', 'simctl', 'launch', '--console', simulator, BUNDLE]
-    with (out / (mode + '.supervisor.log')).open('xb') as log:
+    with HostTiming(trace, 'driver', BUNDLE) as timing, (out / (mode + '.supervisor.log')).open('xb') as log:
+        def observed():
+            rows = live(trace)
+            for row in rows: timing.observe_row(row, 'poll')
+            return rows
+        timing.record('supervisor.spawn.start')
         process = subprocess.Popen([str(value) for value in argv], env=env, stdout=log, stderr=subprocess.STDOUT,
                                    start_new_session=True)
+        timing.record('supervisor.spawn.end', pid=process.pid)
         cleanup_required = False
         try:
-            launch = wait(process, lambda: next((row for row in live(trace) if row['event'] == 'launch'), None), SCENARIO_TIMEOUT_SECONDS)
-            entry = one(live(trace), 'app.entry')
+            launch = timing.checkpoint('launch', lambda: wait(process, lambda: next((row for row in observed() if row['event'] == 'launch'), None), SCENARIO_TIMEOUT_SECONDS), SCENARIO_TIMEOUT_SECONDS)
+            entry = one(observed(), 'app.entry')
             require(all(entry.get(key) == launch.get(key) for key in ('runID', 'pid', 'bundleID', 'simulatorID')),
                     'fresh entry/launch identity differs')
             container = published_container(launch, simulator, run_id, entry.get('pid'), mode,
@@ -94,8 +101,8 @@ def capture_case(build, out, simulator, inherited, mode, expected_container=None
             except OSError:
                 require(False, 'published container is missing or symlinked')
             root = container / 'Documents/.callkit-simulator'
-            session = wait(process, lambda: json.loads((root / 'session.json').read_text())
-                if (root / 'session.json').exists() and json.loads((root / 'session.json').read_text()).get('runID') == run_id else None, 15)
+            session = timing.checkpoint('runtime.session', lambda: wait(process, lambda: json.loads((root / 'session.json').read_text())
+                if (root / 'session.json').exists() and json.loads((root / 'session.json').read_text()).get('runID') == run_id else None, 15), 15)
             require(session.get('runID') == run_id and session.get('pid') == launch['pid'] and session.get('bundleID') == BUNDLE and
                     session.get('notification') == 'dev.callkitsim.control.' + str(launch['pid']) and
                     session.get('controlTransport') == 'directory-watch-v1' and
@@ -103,12 +110,13 @@ def capture_case(build, out, simulator, inherited, mode, expected_container=None
             runtime = root / run_id
             save(out / (mode + '.session.json'), session)
             if mode == 'stale-audio':
-                wait(process, lambda: any(row['event'] == 'livekit.readyForFault' for row in live(trace)), 15)
+                timing.checkpoint('readyForFault', lambda: wait(process, lambda: any(row['event'] == 'livekit.readyForFault' for row in observed()), 15), 15)
                 response = fault(out, build, simulator, runtime, session)
-                wait(process, response.exists, 10)
+                timing.checkpoint('fault.response', lambda: wait(process, response.exists, 10), 10)
                 shutil.copyfile(response, out / 'fault-response.json')
             require(process.wait(timeout=100) == 0, 'supervisor refused native capture')
         finally:
+            timing.record('cleanup.start')
             handlers = {sig: signal.signal(sig, signal.SIG_IGN) for sig in (signal.SIGTERM, signal.SIGINT)}
             try:
                 if process.poll() is None:
@@ -154,6 +162,7 @@ def capture_case(build, out, simulator, inherited, mode, expected_container=None
                         save(receipt, value)
             finally:
                 for sig, handler in handlers.items(): signal.signal(sig, handler)
+                timing.record('cleanup.end', returncode=getattr(process, 'returncode', None))
         require(not cleanup_required, 'failure cleanup cannot qualify a native journey')
     return dict(runID=run_id, pid=launch['pid'], supervisorPID=process.pid, dataContainer=str(container))
 
