@@ -35,7 +35,8 @@ def _app_evidence(raw, launcher_header):
 def _valid_entry(result, trace, bundle):
     """Require unambiguous protocol evidence before replacing entered EOF with transport."""
     try:
-        rows = [json.loads(line.split(b'PROBE ', 1)[1]) for line in trace.splitlines() if b'PROBE ' in line]
+        text = trace.decode('utf-8')
+        rows = [json.loads(line.split('PROBE ', 1)[1]) for line in text.splitlines() if 'PROBE ' in line]
     except (ValueError, UnicodeDecodeError):
         return False
     if not all(isinstance(row, dict) and isinstance(row.get('event'), str) and

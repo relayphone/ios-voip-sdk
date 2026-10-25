@@ -138,6 +138,19 @@ class CaptureClassificationTests(unittest.TestCase):
                 self.assertIn('infra:launch' if key is None else 'product:transport-case', labels)
                 self.assertNotIn('product:' if key is None else 'infra:launch', labels)
 
+    def test_probe_payload_encoding_must_match_utf8_text_conformance(self):
+        valid = ((BUNDLE + ': 7001\n').encode() +
+                 b'PROBE {"event":"app.entry","t_ms":0}\nPROBE {"event":"launch","pid":7001,"t_ms":1}\n')
+        for encoding in ('utf-8-sig', 'utf-16', 'utf-16-le', 'utf-32', 'utf-32-le'):
+            with self.subTest(encoding=encoding):
+                self.summary.unlink(missing_ok=True)
+                trace = valid + b'PROBE ' + '{"event":"snapshot","t_ms":2}'.encode(encoding) + b'\n'
+                labels = self.classify(trace=trace, launchExitCodeBeforeCleanup=142,
+                    launchExitCode=142, appEntryObserved=True, appPID=7001,
+                    launcherAppPID=7001, lastProbeEvent='launch')
+                self.assertIn('product:transport-case', labels)
+                self.assertNotIn('infra:launch', labels)
+
     def test_cleanup_signal_is_not_inferred_to_be_the_primary_transport_failure(self):
         labels = self.classify(launchExitCodeBeforeCleanup=None, launchExitCode=-signal.SIGTERM,
                                error='synthetic product assertion', cleanupExitCode=7)
