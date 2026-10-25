@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import Mock, patch
@@ -136,18 +137,31 @@ class InspectorStartupTests(unittest.TestCase):
 
     def test_blocked_probe_observation_does_not_extend_the_native_host_lifetime(self):
         real_spawn = subprocess.Popen
+        real_killpg = os.killpg
         processes = []
+        watchdog_killed = threading.Event()
+        killed_groups = []
         def spawn(*args, **kwargs):
             process = real_spawn(*args, **kwargs)
             processes.append(process)
             return process
+        def killpg(group, signum):
+            result = real_killpg(group, signum)
+            if signum == signal.SIGKILL and threading.current_thread() is not threading.main_thread():
+                killed_groups.append(group)
+                watchdog_killed.set()
+            return result
         def observe(**kwargs):
-            time.sleep(.35)
-            self.assertIsNotNone(processes[0].poll(), 'hard host deadline must hold while observation blocks')
+            self.assertTrue(watchdog_killed.wait(2), 'watchdog must kill while observation is blocked')
+            self.assertEqual(killed_groups, [processes[0].pid])
+            processes[0].wait(timeout=2)
             return None
-        with patch('inspector_startup.subprocess.Popen', side_effect=spawn):
+        with patch('inspector_startup.subprocess.Popen', side_effect=spawn), \
+                patch('inspector_startup.os.killpg', side_effect=killpg), \
+                patch('inspector_startup.threading.Timer', wraps=threading.Timer) as timer:
             with self.assertRaisesRegex(RuntimeError, 'timed out'):
                 self.launch(observe)
+        self.assertLessEqual(timer.call_args.args[0], .3)
 
     def test_all_cleanup_stages_run_without_replacing_the_original_body_error(self):
         primary = ValueError('original product failure')
