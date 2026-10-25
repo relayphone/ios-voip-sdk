@@ -37,12 +37,20 @@ rule = next((rule for rule in json.loads((root / 'rules.json').read_text())
              and (not rule.get('match') or rule['match'] in command)), {})
 if step == 'create':
     device = str(uuid.uuid5(uuid.NAMESPACE_URL, 'helper-fixture-' + str(occurrence)))
-    native['devices'].append(dict(name=command[1], udid=device))
+    if rule.get('action') not in ('timeout-no-create', 'signal-no-create', 'invalid-create'):
+        native['devices'].append(dict(name=command[1], udid=device))
 elif step == 'delete' and rule.get('action') != 'failure':
     native['devices'] = [device for device in native['devices'] if device['udid'] != command[1]]
 path.write_text(json.dumps(native))
 action = rule.get('action')
 if action == 'timeout': time.sleep(30)
+if action == 'timeout-no-create': time.sleep(30)
+if action == 'signal-no-create':
+    import signal
+    os.kill(os.getpid(), signal.SIGTERM)
+if action == 'invalid-create':
+    print('not-a-simulator-uuid')
+    sys.exit(0)
 if action == 'failure': sys.exit(73)
 if action == 'partial-launch':
     print('PROBE {"event":"app.entry"}', flush=True)
@@ -163,6 +171,33 @@ class LifecycleTests(unittest.TestCase):
         summary = self.summary.read_text()
         self.assertIn('infra:create', summary)
         self.assertIn('exhausted', summary)
+
+    def test_unresolved_create_name_is_retained_until_late_registration_can_be_deleted(self):
+        for action in ('timeout-no-create', 'signal-no-create', 'invalid-create'):
+            with self.subTest(action=action):
+                self.rules(dict(step='create', at=[1], action=action))
+                self.call('create', 'late-owned', DEVICE, RUNTIME, timeout=.2)
+                first_name = self.calls('create')[0][1]
+                self.cli('cleanup', self.state, '--timeout', .2, expected=None)
+                state = json.loads(self.state.read_text())
+                self.assertEqual([record['name'] for record in state['owned']], [first_name])
+                self.assertTrue(state['owned'][0]['uncertain'])
+                self.assertFalse(json.loads((self.root / 'cleanup.json').read_text())['deleted'])
+                late = '22222222-2222-4222-8222-222222222222'
+                native = json.loads((self.root / 'native.json').read_text())
+                native['devices'] += [dict(name=first_name, udid=late),
+                                      dict(name=first_name + '-neighbor', udid=FOREIGN)]
+                (self.root / 'native.json').write_text(json.dumps(native))
+                self.cli('cleanup', self.state, '--timeout', .2)
+                self.assertIn(['delete', late], self.calls('delete'))
+                self.assertNotIn(['delete', FOREIGN], self.calls('delete'))
+                self.assertEqual([device['udid'] for device in self.inventory()], [FOREIGN])
+                self.assertTrue(json.loads((self.root / 'cleanup.json').read_text())['deleted'])
+                self.assertEqual(json.loads(self.state.read_text())['owned'], [])
+                # Each injected failure starts at a fresh service/session seam.
+                self.state.unlink()
+                (self.root / 'calls.jsonl').unlink()
+                (self.root / 'native.json').write_text(json.dumps(dict(counts={}, devices=[])))
 
     def test_boot_timeout_replaces_device_and_replays_boot_once(self):
         original = self.create()

@@ -200,7 +200,7 @@ class Session:
 
     def create(self, arguments, timeout):
         name = arguments[0] + '-' + str(uuid.uuid4())
-        record = dict(name=name, id=None)
+        record = dict(name=name, id=None, uncertain=True)
         self.state['owned'].append(record)
         self.save()  # Persist the full unique name before contacting CoreSimulator.
         result = self.execute(['xcrun', 'simctl', 'create', name, *arguments[1:]], timeout)
@@ -210,6 +210,10 @@ class Session:
             except (ValueError, UnicodeDecodeError):
                 return Result(result.args, 1, stderr=b'Invalid simulator UUID from create\n')
             record['id'] = self.state['current'] = device
+            record['uncertain'] = False
+            self.save()
+        else:
+            record['uncertain'] = result.timed_out or result.returncode < 0 or result.returncode >= 128
             self.save()
         return result
 
@@ -232,6 +236,7 @@ class Session:
             return None, False
         if device:
             record['id'] = device
+            record['uncertain'] = False
             self.save()
         return device, True
 
@@ -249,8 +254,13 @@ class Session:
                 success = False
                 continue
             if not device:
-                # Keep uncertain create names until the final cleanup inventory.
-                if final:
+                # A daemon may finish a timed-out request after this inventory.
+                # Retain its exact name so an always-step can reconcile it later.
+                if record.get('uncertain', True):
+                    if final:
+                        summary('infra:cleanup-inventory', 'not eligible; create outcome unresolved, ownership retained')
+                        success = False
+                else:
                     self.state['owned'].remove(record)
                     self.save()
                 continue
@@ -274,7 +284,7 @@ class Session:
         if last is None:
             last = dict(simulatorID=original, shutdownExitCode=None,
                         deleteExitCode=None, deleted=success)
-        last['deleted'] = success and not any(record['id'] for record in self.state['owned'])
+        last['deleted'] = success and not self.state['owned']
         self.path.with_name('cleanup.json').write_text(json.dumps(last, indent=2) + '\n')
         return Result([], 0 if success else 1)
 
