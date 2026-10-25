@@ -5,7 +5,10 @@ Console evidence supervisors must keep launching their native child directly;
 this module never changes their PID/group topology or product deadlines.
 """
 import argparse
+import copy
+from contextlib import contextmanager
 from dataclasses import dataclass
+import fcntl
 import json
 import math
 import os
@@ -241,18 +244,48 @@ def console_preapp_rejection(value, trace_bytes, identity, owner_pid, timeout):
 
 
 class Session:
-    def __init__(self, path, runner=bounded, recovery_timeout=30):
+    def __init__(self, path, runner=bounded, recovery_timeout=30, *, create=True, simulator=None):
         self.path, self.runner = Path(path), runner
+        self._attached = not create
+        self._expected_simulator = simulator_uuid(simulator).lower() if simulator else None
         self.recovery_timeout = seconds(recovery_timeout)
+        with self._locked():
+            self.state = self._read_state()
+            if self.state is None:
+                if not create:
+                    raise ValueError('Cannot attach to a missing simulator session')
+                self.state = dict(current=None, owned=[], retry_used=False,
+                                  checkpoint=False, create=None, prepared=[])
+                self._write_state()
+            self._validate_current(self.state)
+            self._remember_ownership()
+
+    @classmethod
+    def attach(cls, path, simulator):
+        """Join the parent's existing budget; never initialize a child budget."""
+        if not simulator:
+            raise ValueError('An expected simulator is required to attach')
+        return cls(path, create=False, simulator=simulator)
+
+    @contextmanager
+    def _locked(self):
+        # Lock a stable sibling, not the JSON inode replaced by _write_state.
+        fd = os.open(str(self.path) + '.lock',
+                     os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        try:
+            # Contention is an unknown infrastructure outcome, never permission
+            # to wait past a caller's product deadline or start another budget.
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            yield
+        finally:
+            os.close(fd)
+
+    def _read_state(self):
         if self.path.is_symlink():
             raise ValueError('Simulator state must not be a symlink')
         if self.path.exists():
-            self.state = json.loads(self.path.read_text())
-        else:
-            self.state = dict(current=None, owned=[], retry_used=False,
-                              checkpoint=False, create=None, prepared=[])
-            with os.fdopen(os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as stream:
-                json.dump(self.state, stream)
+            return json.loads(self.path.read_text())
+        return None
 
     @property
     def current(self):
@@ -260,6 +293,33 @@ class Session:
         return simulator_uuid(value) if value else None
 
     def save(self):
+        with self._locked():
+            latest = self._read_state()
+            if latest is None:
+                raise ValueError('Simulator session disappeared')
+            flags = {key: self.state[key] or latest[key] for key in ('retry_used', 'checkpoint')}
+            if self._attached:
+                # An attached console child never writes cached device records.
+                self.state = latest
+            elif self._ownership(latest) != self._saved_ownership:
+                raise ValueError('Simulator ownership changed; refusing a stale save')
+            self.state.update(flags)
+            self._write_state()
+
+    @staticmethod
+    def _ownership(state):
+        return {key: copy.deepcopy(state[key]) for key in ('current', 'owned', 'create', 'prepared')}
+
+    def _remember_ownership(self):
+        self._saved_ownership = self._ownership(self.state)
+
+    def _validate_current(self, state):
+        current = state['current']
+        if self._expected_simulator and (not current or
+                simulator_uuid(current).lower() != self._expected_simulator):
+            raise ValueError('Simulator session does not own the expected current simulator')
+
+    def _write_state(self):
         if self.path.is_symlink():
             raise ValueError('Simulator state must not be a symlink')
         fd, temporary = tempfile.mkstemp(prefix=self.path.name + '.', dir=self.path.parent)
@@ -270,13 +330,43 @@ class Session:
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temporary, self.path)
+            self._remember_ownership()
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
 
     def checkpoint(self):
-        self.state['checkpoint'] = True
-        self.save()
+        with self._locked():
+            self.state = self._read_state()
+            if self.state is None:
+                raise ValueError('Simulator session disappeared')
+            if self.state['checkpoint']:
+                self._remember_ownership()
+                return
+            self.state['checkpoint'] = True
+            self._write_state()
+
+    def is_checkpointed(self):
+        with self._locked():
+            latest = self._read_state()
+            if latest is None:
+                raise ValueError('Simulator session disappeared')
+            self._validate_current(latest)
+            return latest['checkpoint']
+
+    def reserve_retry(self):
+        """Spend the invocation's sole pre-app retry before attempting recovery."""
+        with self._locked():
+            self.state = self._read_state()
+            if self.state is None:
+                raise ValueError('Simulator session disappeared')
+            self._validate_current(self.state)
+            if self.state['retry_used'] or self.state['checkpoint']:
+                self._remember_ownership()
+                return False
+            self.state['retry_used'] = True
+            self._write_state()
+            return True
 
     def execute(self, command, timeout):
         return self.runner(list(command), seconds(timeout))
@@ -428,7 +518,7 @@ class Session:
         if step == 'launch' and result.stdout:
             self.checkpoint()  # Even partial app/PID evidence forbids startup replay.
         if result.returncode:
-            if step == 'launch' and self.state['checkpoint']:
+            if step == 'launch' and self.is_checkpointed():
                 summary('product:launch', 'never retried after checkpoint evidence')
                 return result
             eligible = step == 'create' or preparation
@@ -436,13 +526,12 @@ class Session:
                 position = command.index(self.current)
                 bundle = command[position + 1] if position + 1 < len(command) else ''
                 eligible = bool(bundle) and preapp_rejection(result, bundle)
-            eligible = (eligible and not self.state['checkpoint'] and
-                        not self.state['retry_used'])
-            if not eligible:
+            if not eligible or not self.reserve_retry():
                 summary('infra:' + step, 'exhausted' if self.state['retry_used'] else 'not eligible')
                 return result
-            self.state['retry_used'] = True
-            self.save()
+            if self.is_checkpointed():
+                summary('infra:' + step, 'never retried after checkpoint evidence')
+                return result
             summary('infra:' + step, 'scheduled (one pre-app retry)')
             if step == 'create':
                 if self.cleanup(timeout=self.recovery_timeout, final=False).returncode:

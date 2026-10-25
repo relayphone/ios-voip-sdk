@@ -20,7 +20,7 @@ from summarize import require
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts/sim'))
-from sim import (clear_failure_marker, console_preapp_rejection, failure_is_classified,
+from sim import (Session, clear_failure_marker, console_preapp_rejection, failure_is_classified,
                  report_failure, summary)
 
 BUNDLE = 'dev.iosvoipsdk.example'
@@ -94,6 +94,7 @@ class Journey:
         self.runtime = self.container / 'Documents/.callkit-simulator' / args.run_id
         self.journal = self.runtime / 'events.jsonl'
         self.pid = None
+        self.checkpoint_observed = False
 
     def sim(self, *command, timeout=60):
         result = subprocess.run(['xcrun', 'simctl', *command], capture_output=True, text=True, timeout=timeout)
@@ -112,7 +113,20 @@ class Journey:
         raise RuntimeError(self.case + ': checkpoint deadline')
 
     def rows(self):
-        return live(self.trace, True)
+        rows = live(self.trace, True)
+        if rows:
+            self.checkpoint()
+        return rows
+
+    def checkpoint(self):
+        session = getattr(self.args, 'sim_session', None)
+        if session is not None and not self.checkpoint_observed:
+            try:
+                session.checkpoint()
+            except (OSError, ValueError, KeyError, TypeError):
+                _report('infra:helper', 'checkpoint state unavailable; never retried')
+                raise
+            self.checkpoint_observed = True
 
     def engine(self):
         return live(self.journal)
@@ -213,6 +227,9 @@ class Journey:
                     _report('product:' + self.name, 'startup evidence changed; never retried')
                 require(fresh, 'fresh evidence before startup recovery')
             launch = list(command)
+            session = getattr(self.args, 'sim_session', None)
+            if attempt and session is not None:
+                require(not session.is_checkpointed(), 'app checkpoint before startup recovery')
             with (self.root / 'supervisor.log').open('xb') as log:
                 remaining = deadline - time.monotonic()
                 if attempt and remaining <= 0:
@@ -229,6 +246,7 @@ class Journey:
             try:
                 ready = self.wait(lambda: next((row for row in self.rows() if row['event'] == 'system.ready'), None),
                                   max(0, deadline - time.monotonic()))
+                self.checkpoint()
                 if attempt:
                     _report('infra:launch', 'recovered (one pre-app retry)', terminal=False)
                 return ready
@@ -262,6 +280,12 @@ class Journey:
                     eligible = False
                 if not eligible:
                     raise
+                # The native entry point installs one shared lifecycle budget.
+                # Direct startup controls retain their existing unowned seam.
+                if hasattr(self.args, 'sim_session') and (
+                        self.args.sim_session is None or not self.args.sim_session.reserve_retry()):
+                    _report('infra:launch', 'exhausted (shared pre-app budget unavailable)', terminal=False)
+                    raise
                 # Keep the complete first attempt; the winning attempt retains
                 # the existing filenames and unchanged conformance contract.
                 archived = self.root / 'preapp-attempt-1'
@@ -274,6 +298,9 @@ class Journey:
         env = dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=self.args.run_id,
             SIMCTL_CHILD_SDK_SYSTEM_RUN_ID=self.args.run_id, SIMCTL_CHILD_SDK_SYSTEM_CASE=self.case,
             SIMCTL_CHILD_SDK_M0_ACCEPTANCE='0', SIMCTL_CHILD_SDK_M1_CASE='')
+        session = getattr(self.args, 'sim_session', None)
+        if session is not None:
+            env['SIM_STATE'] = str(session.path)
         launch = ['xcrun', 'simctl', 'launch', '--console', self.args.simulator, BUNDLE]
         if self.case == 'push-launch':
             path = self.root / 'first.payload.json'
@@ -389,6 +416,12 @@ class Journey:
 
 
 def run(args):
+    state = getattr(args, 'sim_state', None) or os.environ.get('SIM_STATE')
+    try:
+        args.sim_session = Session.attach(state, args.simulator) if state else None
+    except (OSError, ValueError, KeyError, TypeError):
+        _report('infra:helper', 'cannot attach to the owned simulator session; never retried')
+        raise
     args.package = args.package.resolve()
     from sdk_system_conformance import package_check
     identity = m0.source_identity()
@@ -413,6 +446,7 @@ if __name__ == '__main__':
     parser.add_argument('--package', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--data-container', type=Path, help='Reuse the installed example container already validated by M0')
+    parser.add_argument('--sim-state', type=Path, help='Use the parent runner\'s existing simulator session')
     args = parser.parse_args()
     require(str(uuid.UUID(args.simulator)).upper() == args.simulator and
             __import__('re').fullmatch(r'[A-Za-z0-9_-]{1,64}', args.run_id), 'invalid owned simulator/run identity')

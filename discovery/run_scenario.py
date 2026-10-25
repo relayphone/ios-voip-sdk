@@ -19,8 +19,9 @@ import time
 import tty
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts/sim'))
-from sim import (Result, console_launch_rejection, not_running_error, preapp_rejection,
-                 report_failure, terminate_once)
+from sim import (Result, Session, clear_failure_marker, console_launch_rejection,
+                 failure_is_classified, not_running_error, preapp_rejection,
+                 report_failure, summary, terminate_once)
 
 
 def report_capture_failure(result, trace, timeout, launch_failure=False, termination_failure=False,
@@ -30,7 +31,7 @@ def report_capture_failure(result, trace, timeout, launch_failure=False, termina
         return  # Offline refusal controls do not represent native job failures.
     bundle = result.get('bundleID')
     if bundle and console_launch_rejection(result, trace, bundle, timeout):
-        report_failure('infra:launch', 'exact pre-app rejection; no local retry')
+        report_failure('infra:launch', 'completed exact pre-app rejection')
         return
     if launch_failure:
         report_failure('infra:launch', 'launch transport failed; never retried')
@@ -62,7 +63,8 @@ def bind_launcher_pid(result, matches):
 
 
 def run(launch, terminate, output, receipt, timeout, identity=None, console_launcher_stop=False,
-        inherit_launcher_group=False, expected_app_exit=False):
+        inherit_launcher_group=False, expected_app_exit=False, checkpoint=None, launched=None,
+        capture_deadline=None):
     started = time.monotonic()
     result = {"completed": False, "success": False, "schemaVersion": 2, **(identity or {})}
     process = None
@@ -73,8 +75,22 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
     reader_stop = threading.Event()
     master = slave = None
     data = b''
+    checkpoint_recorded = False
+    checkpoint_failure = False
     bundle = result.get("bundleID")
     launcher_header = re.compile(rb"(?m)^" + re.escape(bundle.encode()) + rb": (\d+)\r?$") if bundle else None
+
+    def observe_evidence(raw):
+        nonlocal checkpoint_recorded, checkpoint_failure
+        if (checkpoint and not checkpoint_recorded and
+                (b"PROBE " in raw or (launcher_header and launcher_header.search(raw)))):
+            checkpoint_recorded = True
+            try:
+                checkpoint()
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                checkpoint_failure = True
+                raise RuntimeError("could not record shared app checkpoint") from error
+
     try:
         if expected_app_exit and not console_launcher_stop:
             raise RuntimeError("natural app exit requires the bound console launcher")
@@ -96,6 +112,8 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                 result["consoleTransport"] = "host-pty"
             try:
                 try:
+                    if capture_deadline is not None and time.monotonic() >= capture_deadline:
+                        raise RuntimeError("deadline before terminal done event")
                     process = subprocess.Popen(launch, stdout=slave if console_launcher_stop else subprocess.PIPE,
                                                stderr=subprocess.PIPE if console_launcher_stop else subprocess.STDOUT,
                                                start_new_session=not inherit_launcher_group)
@@ -107,6 +125,8 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                     os.close(slave)
                     slave = None
             result["launcherPID"] = process.pid
+            if launched:
+                launched(process)
             if inherit_launcher_group:
                 result["launcherPGID"] = os.getpgid(process.pid)
                 if result["launcherPGID"] != result["supervisorPGID"]:
@@ -157,7 +177,7 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
 
             reader = threading.Thread(target=read, daemon=True)
             reader.start()
-            deadline = started + timeout
+            deadline = capture_deadline if capture_deadline is not None else started + timeout
             while not result["completed"]:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -174,6 +194,7 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                     raise RuntimeError("launcher exited before terminal done event")
                 log.write(line)
                 log.flush()
+                observe_evidence(line)
                 if b"PROBE " in line:
                     try:
                         row = json.loads(line.split(b"PROBE ", 1)[1])
@@ -374,6 +395,11 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
         result["elapsedSeconds"] = round(time.monotonic() - started, 3)
         if output.exists():
             data = output.read_bytes()
+            try:
+                observe_evidence(data)
+            except RuntimeError as error:
+                result["success"] = False
+                result.setdefault("error", str(error))
             result["traceSHA256"] = hashlib.sha256(data).hexdigest()
             if bundle:
                 identity_error = bind_launcher_pid(result, launcher_header.findall(data))
@@ -387,9 +413,90 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                         result["error"] = identity_error
         receipt.write_text(json.dumps(result, indent=2) + "\n")
     if not result['success']:
-        report_capture_failure(result, data, timeout,
-                               launch_failure, termination_failure, capture_failure)
+        if checkpoint_failure:
+            if os.environ.get('SIM_FAILURE_MARKER'):
+                report_failure('infra:helper', 'checkpoint state unavailable; never retried')
+        else:
+            report_capture_failure(result, data, timeout,
+                                   launch_failure, termination_failure, capture_failure)
     return 0 if result["success"] else 1
+
+
+def run_with_session(launch, terminate, output, receipt, timeout, identity,
+                     console_launcher_stop=False, inherit_launcher_group=False, session=None):
+    """Keep direct native capture, sharing only the parent's pre-app budget."""
+    if session is None:
+        return run(launch, terminate, output, receipt, timeout, identity,
+                   console_launcher_stop=console_launcher_stop,
+                   inherit_launcher_group=inherit_launcher_group)
+    deadline = time.monotonic() + timeout
+    owners = []
+    status = run(launch, terminate, output, receipt, timeout, identity,
+                 console_launcher_stop=console_launcher_stop, inherit_launcher_group=inherit_launcher_group,
+                 checkpoint=session.checkpoint, launched=owners.append, capture_deadline=deadline)
+    if not status or inherit_launcher_group or not console_launcher_stop:
+        return status
+    try:
+        # Restrict generic recovery to the run-owned direct simctl launch. Push
+        # launchers and inherited SDK supervisors retain their stricter owner.
+        position = 3
+        flags = {'--console', '--terminate-running-process'}
+        while position < len(launch) and launch[position] in flags:
+            position += 1
+        bundle = identity.get('bundleID')
+        direct = (launch[:3] == ['xcrun', 'simctl', 'launch'] and '--console' in launch[3:position] and
+                  launch[position:position + 2] == [session.current, bundle] and
+                  terminate == ['xcrun', 'simctl', 'terminate', session.current, bundle])
+        if not direct or not all(identity.get(key) for key in ('runID', 'simulatorID', 'scenario', 'bundleID')):
+            return status
+        receipt_bytes, trace_bytes = receipt.read_bytes(), output.read_bytes()
+        value = json.loads(receipt_bytes)
+        process = owners[0] if len(owners) == 1 else None
+        eligible = (process is not None and process.poll() == 3 and
+                    value.get('launcherPID') == process.pid and type(value.get('launcherPID')) is int and
+                    process.pid > 0 and process.pid != os.getpid() and
+                    console_launch_rejection(value, trace_bytes, bundle, timeout) and
+                    all(value.get(key) == identity[key] for key in ('runID', 'simulatorID', 'scenario', 'bundleID')))
+        if not eligible or time.monotonic() >= deadline:
+            return status
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            pass
+        else:
+            return status
+        if not session.reserve_retry():
+            return status
+        # Reservation is permanent, including archive failure or late evidence.
+        archived = Path(str(output) + '.preapp-attempt-1')
+        archived.mkdir()
+        for path in (output, receipt):
+            path.rename(archived / path.name)
+        fresh = ((archived / output.name).read_bytes() == trace_bytes and
+                 (archived / receipt.name).read_bytes() == receipt_bytes and
+                 not output.exists() and not receipt.exists() and
+                 session.current == identity['simulatorID'] and not session.is_checkpointed())
+        remaining = deadline - time.monotonic()
+        if not fresh or remaining <= 0:
+            return status
+        summary('infra:launch', 'scheduled (one shared pre-app retry)')
+        clear_failure_marker()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or session.is_checkpointed():
+            report_failure('infra:launch', 'exhausted before shared pre-app replay')
+            return status
+        status = run(launch, terminate, output, receipt, remaining, identity,
+                     console_launcher_stop=console_launcher_stop, inherit_launcher_group=inherit_launcher_group,
+                     checkpoint=session.checkpoint,
+                     capture_deadline=deadline)
+        summary('infra:launch', 'exhausted' if status else 'recovered (one shared pre-app retry)')
+        return status
+    except (OSError, ValueError, TypeError, KeyError):
+        # The first attempt remains authoritative when any recovery proof or
+        # archive operation is unknown. Never convert that uncertainty to replay.
+        if os.environ.get('SIM_FAILURE_MARKER') and not failure_is_classified():
+            report_failure('infra:helper', 'shared recovery unavailable; never retried')
+        return status
 
 
 def main():
@@ -401,6 +508,8 @@ def main():
     parser.add_argument("--simulator-id")
     parser.add_argument("--scenario")
     parser.add_argument("--bundle-id")
+    parser.add_argument("--sim-state", type=Path, default=os.environ.get('SIM_STATE'),
+                        help="attach to the parent runner's existing simulator session")
     parser.add_argument("--console-launcher-stop", action="store_true",
                         help="use a raw host PTY; after done, signal this launcher PID and require its sole app PID acknowledgement and absence")
     parser.add_argument("--inherit-launcher-group", action="store_true",
@@ -414,9 +523,17 @@ def main():
         parser.error("--console-launcher-stop requires --bundle-id")
     if args.inherit_launcher_group and not args.console_launcher_stop:
         parser.error("--inherit-launcher-group requires --console-launcher-stop")
-    return run(args.launch_command, args.terminate_command, args.output, args.receipt, args.timeout,
+    try:
+        session = Session.attach(args.sim_state, args.simulator_id) if args.sim_state else None
+    except (OSError, ValueError, KeyError, TypeError):
+        if os.environ.get('SIM_FAILURE_MARKER'):
+            report_failure('infra:helper', 'cannot attach to the owned simulator session; never retried')
+        print('Cannot attach to the owned simulator session', file=sys.stderr)
+        return 1
+    return run_with_session(args.launch_command, args.terminate_command, args.output, args.receipt, args.timeout,
                dict(runID=args.run_id, simulatorID=args.simulator_id, scenario=args.scenario, bundleID=args.bundle_id),
-               console_launcher_stop=args.console_launcher_stop, inherit_launcher_group=args.inherit_launcher_group)
+               console_launcher_stop=args.console_launcher_stop, inherit_launcher_group=args.inherit_launcher_group,
+               session=session)
 
 
 if __name__ == "__main__":

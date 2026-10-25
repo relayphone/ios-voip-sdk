@@ -8,8 +8,8 @@ For shell runners, source `sim.sh`, set `SIM_STATE` inside a fresh output
 directory, and install an EXIT/INT/TERM cleanup trap before creating a device:
 
 ```bash
-source scripts/sim/sim.sh
 SIM_STATE="$OUT/simulator-state.json"
+source scripts/sim/sim.sh
 UDID=''
 trap 'sim_cleanup' EXIT
 trap 'exit 130' INT
@@ -48,6 +48,28 @@ Python callers can use `Session(path).call(argv, timeout)`, `.checkpoint()`, and
 recovery. Sessions own their simulators; borrowed-device adapters are a separate
 runner migration. Do not wrap a console launch with the CLI when its supervisor
 binds native launcher PIDs or process groups.
+
+`sim.sh` exports `SIM_STATE` to console children. `Session.attach(path, simulator)`
+joins that existing owned session and verifies its current simulator; it never
+creates a child budget. `reserve_retry()` atomically spends the single budget
+shared by create, boot, installation, privacy grants and launch. Checkpoints and
+spent reservations are permanent across processes and later scenarios.
+The stable session lock fails closed on contention instead of extending a
+startup deadline. Attached children update only those flags; stale ownership
+writes are refused, preserving the authoritative cleanup records.
+
+`discovery/run_scenario.py` keeps its direct native launcher and stream handling.
+With an attached session, an exact completed pre-app rejection may recover once
+after proving its own launcher group is absent. It retains the first trace and
+receipt under `<trace>.preapp-attempt-1/` and gives replay only the time remaining
+in the original startup deadline. Any app/PID/probe evidence latches the shared
+checkpoint, including evidence from a failed capture. Missing session context
+allows one capture without recovery; invalid supplied context fails closed.
+
+An inherited-group SDK capture only latches checkpoints and classifies failures.
+Its SDK driver remains the recovery owner, consumes the same reservation, and
+retains all session/journal, group-absence and late-evidence checks. M0's first
+app checkpoint disables recovery in its later bootstrap, M1 and SDK journeys.
 
 The direct launch API retries only the exact NSPOSIX 3/no-process-handle
 rejection with empty stdout. Timeouts, partial output, PID acknowledgements and

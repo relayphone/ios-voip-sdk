@@ -1,7 +1,9 @@
 #!/bin/bash
 # Source from a runner; SIM_STATE must point into that runner's fresh output.
 SIM_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sim.py"
-if [[ -n "${SIM_STATE:-}" ]]; then export SIM_FAILURE_MARKER="$SIM_STATE.failure"; fi
+if [[ -n "${SIM_STATE:-}" ]]; then
+  export SIM_STATE SIM_FAILURE_MARKER="$SIM_STATE.failure"
+fi
 
 sim_cli() {
   SIM_RECOVERY_TIMEOUT=${SIM_CLEANUP_TIMEOUT:-30} python3 "$SIM_HELPER" "$@"
