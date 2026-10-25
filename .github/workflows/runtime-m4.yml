@@ -2,9 +2,9 @@ name: Runtime event stream and inspector
 on:
   push:
     branches: [main]
-    paths: ["Sources/Engine/**", "Sources/Interposition/**", "Tools/**", "Inspector/**", "Tests/RuntimeEvents/**", "Tests/Inspector/**", "scripts/build-runtime.sh", "scripts/build-inspector.sh", ".github/workflows/runtime-m4.yml"]
+    paths: ["Sources/Engine/**", "Sources/Interposition/**", "Tools/**", "Inspector/**", "Tests/RuntimeEvents/**", "Tests/Inspector/**", "scripts/sim/**", "scripts/build-runtime.sh", "scripts/build-inspector.sh", ".github/workflows/runtime-m4.yml"]
   pull_request:
-    paths: ["Sources/Engine/**", "Sources/Interposition/**", "Tools/**", "Inspector/**", "Tests/RuntimeEvents/**", "Tests/Inspector/**", "scripts/build-runtime.sh", "scripts/build-inspector.sh", ".github/workflows/runtime-m4.yml"]
+    paths: ["Sources/Engine/**", "Sources/Interposition/**", "Tools/**", "Inspector/**", "Tests/RuntimeEvents/**", "Tests/Inspector/**", "scripts/sim/**", "scripts/build-runtime.sh", "scripts/build-inspector.sh", ".github/workflows/runtime-m4.yml"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -33,6 +33,7 @@ jobs:
           python3 Tests/RuntimeEvents/test_native_runner.py
           python3 Tests/RuntimeEvents/test_ci_simulator.py
           python3 Tests/Inspector/test_bridge.py
+          python3 -m unittest discover -s scripts/sim -p 'test_inspector_*.py'
           python3 Tests/Inspector/test_timing_references.py
           python3 Tests/Inspector/test_timing_receipts.py
           python3 discovery/check_cli_controls.py
