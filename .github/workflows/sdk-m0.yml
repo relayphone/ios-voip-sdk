@@ -148,6 +148,7 @@ jobs:
             printf 'SDK_PUSH_ENTRY_BUILD=%s/push-entry\n' "$SDK_M0_BUILD_ROOT"
           } >> "$GITHUB_ENV"
           mkdir -p "$SDK_M0_BUILD_ROOT" "$SDK_M0_BUILD_LOGS"
+          python3 -m unittest discover -s scripts/sim -p 'test_*.py'
           python3 discovery/check_sdk_m0.py | tee "$SDK_M0_BUILD_LOGS/offline-controls.json"
           python3 discovery/check_sdk_installed_paths.py
           python3 discovery/check_sdk_m1.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-offline-controls.log"
