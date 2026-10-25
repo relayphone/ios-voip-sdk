@@ -24,6 +24,14 @@ from sim import (Result, Session, clear_failure_marker, console_launch_rejection
                  report_failure, summary, terminate_once, transport_failure)
 
 
+def _launcher_header(bundle):
+    return re.compile(rb"(?m)^" + re.escape(bundle.encode()) + rb": (\d+)\r?$") if bundle else None
+
+
+def _app_evidence(raw, launcher_header):
+    return b"PROBE " in raw or bool(launcher_header and launcher_header.search(raw))
+
+
 def report_capture_failure(result, trace, timeout, launch_failure=False, termination_failure=False,
                            capture_failure=False):
     """Classify the retained outcome without changing its receipt or replaying it."""
@@ -33,7 +41,8 @@ def report_capture_failure(result, trace, timeout, launch_failure=False, termina
     if bundle and console_launch_rejection(result, trace, bundle, timeout):
         report_failure('infra:launch', 'completed exact pre-app rejection')
         return
-    entered = any(key in result for key in ('appPID', 'launcherAppPID', 'appEntryObserved', 'lastProbeEvent'))
+    entered = (_app_evidence(trace, _launcher_header(bundle)) or
+               any(key in result for key in ('appPID', 'launcherAppPID', 'appEntryObserved', 'lastProbeEvent')))
     native_status = result.get('launchExitCodeBeforeCleanup')
     if native_status is None and result.get('launchExitCode') not in (
             -signal.SIGTERM, 128 + signal.SIGTERM, -signal.SIGKILL, 128 + signal.SIGKILL):
@@ -86,12 +95,11 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
     checkpoint_recorded = False
     checkpoint_failure = False
     bundle = result.get("bundleID")
-    launcher_header = re.compile(rb"(?m)^" + re.escape(bundle.encode()) + rb": (\d+)\r?$") if bundle else None
+    launcher_header = _launcher_header(bundle)
 
     def observe_evidence(raw):
         nonlocal checkpoint_recorded, checkpoint_failure
-        if (checkpoint and not checkpoint_recorded and
-                (b"PROBE " in raw or (launcher_header and launcher_header.search(raw)))):
+        if checkpoint and not checkpoint_recorded and _app_evidence(raw, launcher_header):
             checkpoint_recorded = True
             try:
                 checkpoint()

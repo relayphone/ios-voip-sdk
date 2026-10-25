@@ -33,13 +33,13 @@ class CaptureClassificationTests(unittest.TestCase):
         self.addCleanup(self.environment.stop)
         os.environ.pop('SIM_STATE', None)
 
-    def classify(self, **changes):
+    def classify(self, trace=b'', **changes):
         value = dict(completed=False, success=False, scenario='transport-case', bundleID=BUNDLE,
                      launchExitCodeBeforeCleanup=0, launchExitCode=0,
                      error='launcher exited before terminal done event',
                      cleanupExitCode=3, cleanupStdout='', cleanupStderr=sim.not_running_error(BUNDLE))
         value.update(changes)
-        capture.report_capture_failure(value, b'', 3, capture_failure=True)
+        capture.report_capture_failure(value, trace, 3, capture_failure=True)
         self.assertTrue(self.marker.is_file())
         return self.summary.read_text()
 
@@ -84,6 +84,17 @@ class CaptureClassificationTests(unittest.TestCase):
                 self.summary.unlink(missing_ok=True)
                 labels = self.classify(launchExitCodeBeforeCleanup=142, launchExitCode=142,
                     error='deadline before terminal done event', cleanupExitCode=7, **evidence)
+                self.assertIn('product:transport-case', labels)
+                self.assertIn('infra:terminate', labels)
+                self.assertNotIn('infra:launch', labels)
+
+    def test_raw_probe_or_pid_evidence_preserves_product_failure_without_receipt_fields(self):
+        for trace in (b'PROBE malformed-product-json\n', (BUNDLE + ': 7001\n').encode(),
+                      (BUNDLE + ': 7001\n' + BUNDLE + ': 7002\n').encode()):
+            with self.subTest(trace=trace):
+                self.summary.unlink(missing_ok=True)
+                labels = self.classify(trace=trace, launchExitCodeBeforeCleanup=142,
+                                       launchExitCode=142, cleanupExitCode=7)
                 self.assertIn('product:transport-case', labels)
                 self.assertIn('infra:terminate', labels)
                 self.assertNotIn('infra:launch', labels)
