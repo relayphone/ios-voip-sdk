@@ -17,6 +17,7 @@ jobs:
     timeout-minutes: 30
     env:
       CKSIM_TEST_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-0
+      CKSIM_FIXTURE_INSTALL_TIMEOUT: 180
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Select Xcode
@@ -50,9 +51,11 @@ jobs:
             --id-file "$RUNNER_TEMP/m4-simulator-id" --env-file "$GITHUB_ENV"
       - name: Consume the shared channel through watch
         run: |
+          set -o pipefail
           python3 Tests/RuntimeEvents/run.py --package "$RUNNER_TEMP/runtime" \
             --app "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" --out "$RUNNER_TEMP/m4-events" \
-            --runtime "$CKSIM_TEST_RUNTIME" --simulator "$CKSIM_TEST_SIMULATOR"
+            --runtime "$CKSIM_TEST_RUNTIME" --simulator "$CKSIM_TEST_SIMULATOR" \
+            2>&1 | tee "$RUNNER_TEMP/m4-build/runtime-acceptance.log"
       - name: Follow an incoming call through the live SwiftUI inspector
         run: |
           python3 Tests/Inspector/run.py --package "$RUNNER_TEMP/runtime" \
@@ -72,6 +75,9 @@ jobs:
             ${{ runner.temp }}/m4-events
             ${{ runner.temp }}/m4-inspector
             ${{ runner.temp }}/m4-simulator-id
+            ${{ runner.temp }}/m4-simulator-id.state.json
+            ${{ runner.temp }}/cleanup.log
+            ${{ runner.temp }}/cleanup.json
             !${{ runner.temp }}/m4-inspector/ui-build
           if-no-files-found: warn
           retention-days: 7
