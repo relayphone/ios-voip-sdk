@@ -250,6 +250,20 @@ def controls():
         check('wrong-fault-ACK', lambda b, c: alter_json(c / 'fault-response.json', lambda r: r.update(id=CALL)))
         check('fault-not-requested', lambda b, c: alter_json(c / 'fault-request.json', lambda r: r['faults'].update(staleAudio=False)))
         check('wrong-fault-process', lambda b, c: alter_json(c / 'fault-request.json', lambda r: r.update(pid=999)))
+        for label, result, accepted in (
+            ('fault-ACK-zero-incoming-code', dict(configured=True, incomingErrorCode=0), True),
+            ('fault-ACK-additive-metadata', dict(configured=True, incomingErrorCode=0, protocolVersion=2), True),
+            ('fault-ACK-not-configured', dict(configured=False), False),
+            ('fault-ACK-typed-configured', dict(configured=1), False),
+            ('fault-ACK-active-incoming-filter', dict(configured=True, incomingErrorCode=3), False),
+            ('fault-ACK-boolean-incoming-code', dict(configured=True, incomingErrorCode=False), False),
+            ('fault-ACK-text-incoming-code', dict(configured=True, incomingErrorCode='0'), False),
+            ('fault-ACK-null-incoming-code', dict(configured=True, incomingErrorCode=None), False),
+            ('fault-ACK-result-list', [], False),
+            ('fault-ACK-result-null', None, False),
+        ):
+            check(label, lambda b, c, result=result: alter_json(c / 'fault-response.json',
+                lambda r: r.update(result=result)), accepted=accepted)
         check('still-installed-simulator', lambda b, c: alter_json(c / 'devices-after.json', lambda r: r.update(devices=dict(runtime=[dict(udid=SIM)]))))
         check('delete-failed', lambda b, c: alter_json(c / 'cleanup.json', lambda r: r.update(deleteExitCode=1)))
         check('install-failed', lambda b, c: alter_json(c / 'install.status.json', lambda r: r.update(exitCode=1)))
