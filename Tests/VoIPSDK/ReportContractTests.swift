@@ -6,6 +6,8 @@ import Foundation
 @MainActor private final class ReportControls {
   var endCalls: [UUID] = []
   var startCalls: [UUID] = []
+  var endSnapshots: [UUID: ConversationSnapshot] = [:]
+  var endContexts: [UUID: [ConversationActionContext]] = [:]
   var held: [UUID: CheckedContinuation<Void, any Error>] = [:]
   var hold: Set<UUID> = []
   var reject: Set<UUID> = []
@@ -24,15 +26,18 @@ import Foundation
       }
     }
     defer { client.removeStateObserver(observer) }
-    client.setConversationHandler(.init(join: { _, _ in }, start: { call, _ in self.startCalls.append(call.id) }, end: { call, context in
+    let handler = ConversationHandler(join: { _, _ in }, start: { call, _ in self.startCalls.append(call.id) }, end: { call, context in
       precondition(context.origin == (self.systemEndActions.contains(context.actionID) ? .system : .app))
       self.endCalls.append(call.id)
+      self.endSnapshots[context.actionID] = call
+      self.endContexts[context.actionID, default: []].append(context)
       if self.reject.contains(call.id) { throw PlatformFailure.rejected }
       if self.hold.contains(call.id) {
         try await withCheckedThrowingContinuation { self.held[call.id] = $0 }
         if self.reject.contains(call.id) { throw PlatformFailure.rejected }
       }
-    }))
+    })
+    client.setConversationHandler(handler)
     func payload(_ value: String) -> IncomingCallPayload {
       .init(eventId: "report-event-" + value, serverCallId: "report-server-" + value,
         caller: .init(id: "report-fixture"))
@@ -370,7 +375,418 @@ import Foundation
       client.incomingIntake.projection(heldReset)?.terminal == newProjection.terminal,
       "A real reset cancels delivered old-generation End before late completion can mutate its replacement")
     precondition(held.isEmpty)
-    print("{\"success\":true,\"groups\":26,\"actualClientAndCoordinatorAndIntake\":true,\"nativeFrameworkMeasured\":false}")
+
+    // A queued terminal cleanup and a later stale .left callback must leave a
+    // current same-UUID replacement authoritative, including its pending End.
+    let reused = try await client.reportIncomingConversation(payload("terminal-replacement"))
+    let retired = manager.conversations.first { $0.uuid == reused }!
+    retired.state = .left
+    manager.conversations.removeAll { $0 === retired }
+    manager.delegate?.conversationManager(manager, conversationChanged: retired)
+    precondition(snapshot(reused)?.status == .ended)
+    let replacementAfterLeft = Conversation(reused, state: .idle)
+    manager.conversations.append(replacementAfterLeft)
+    client.incomingIntakeDidChange()
+    hold.insert(reused)
+    let replacementEnd = EndConversationAction(conversationUUID: reused)
+    systemEndActions.insert(replacementEnd.uuid)
+    manager.deliver(replacementEnd)
+    waitStage = "replacement End after old terminal delegate"
+    try await wait { self.held[reused] != nil }
+    let replacementState = client.state
+    manager.delegate?.conversationManager(manager, conversationChanged: retired)
+    for _ in 0..<3 { await Task.yield() }
+    precondition(manager.conversations.first { $0.uuid == reused } === replacementAfterLeft &&
+      replacementAfterLeft.state == .idle && client.state == replacementState &&
+      snapshot(reused)?.pending?.id == replacementEnd.uuid && replacementEnd.state == .running &&
+      replacementEnd.settlements == 0 && endSnapshots[replacementEnd.uuid]?.status == .ringing,
+      "Old terminal projection cleanup cannot replace the current object's handler input or cancel its pending End")
+    hold.remove(reused); held.removeValue(forKey: reused)?.resume()
+    waitStage = "replacement End settlement"
+    try await wait { replacementEnd.state == .complete }
+    precondition(replacementEnd.settlements == 1 && endCalls.filter { $0 == reused }.count == 1)
+    remove(reused)
+    waitStage = "replacement public state removal"
+    try await wait { snapshot(reused) == nil }
+
+    // ha-fail-join and ha-fail-pause publish .left before the genuine cleanup
+    // End (5 and 16 ms later). Keep the SAME native object alive but absent from
+    // manager membership, and let the next-turn public projection cleanup run.
+    // LCK's End callback carries its UUID only; no replacement is introduced.
+    let cleanupPayload = payload("system-end-after-left")
+    let cleanupID = try await client.reportIncomingConversation(cleanupPayload)
+    let terminalOriginal = manager.conversations.first { $0.uuid == cleanupID }!
+    defer { withExtendedLifetime(terminalOriginal) {} }
+    terminalOriginal.state = .left
+    manager.conversations.removeAll { $0 === terminalOriginal }
+    manager.delegate?.conversationManager(manager, conversationChanged: terminalOriginal)
+    precondition(snapshot(cleanupID)?.status == .ended && snapshot(cleanupID)?.payload == cleanupPayload,
+      "The original native terminal callback must first publish its actual terminal snapshot")
+    waitStage = "original terminal public projection cleanup before system End"
+    try await wait { snapshot(cleanupID) == nil }
+    let stateAfterLeft = client.state
+    let attemptsAfterLeft = manager.performAttempts
+    let reportsAfterLeft = manager.reports.count
+    let cleanupEnd = EndConversationAction(conversationUUID: terminalOriginal.uuid)
+    systemEndActions.insert(cleanupEnd.uuid)
+    precondition(manager.conversations.allSatisfy { $0.uuid != cleanupID } && terminalOriginal.state == .left)
+    manager.deliver(cleanupEnd)
+    waitStage = "genuine system End after original terminal projection cleanup"
+    try await wait { cleanupEnd.state == .complete || cleanupEnd.state == .failed }
+    for _ in 0..<3 { await Task.yield() }
+    precondition(client.state == stateAfterLeft && snapshot(cleanupID) == nil &&
+      manager.performAttempts == attemptsAfterLeft && manager.reports.count == reportsAfterLeft &&
+      manager.conversations.allSatisfy { $0.uuid != cleanupID } && terminalOriginal.state == .left,
+      "A late cleanup End cannot recreate public state, request another End, or report a fabricated transition")
+    let cleanupHandlerCalls = endCalls.filter { $0 == cleanupID }.count
+    precondition(cleanupHandlerCalls == 1 && endSnapshots[cleanupEnd.uuid]?.status == .ended &&
+      endSnapshots[cleanupEnd.uuid]?.payload == cleanupPayload,
+      "A genuine system End after .left must invoke application cleanup once with the original terminal input; calls=\(cleanupHandlerCalls), settlements=\(cleanupEnd.settlements), complete=\(cleanupEnd.state == .complete)")
+    precondition(cleanupEnd.state == .complete && cleanupEnd.settlements == 1,
+      "Application cleanup success must fulfill the genuine platform End exactly once")
+
+    func departedOriginal(_ value: String) async throws -> (UUID, Conversation) {
+      let id = try await client.reportIncomingConversation(payload(value))
+      let original = manager.conversations.first { $0.uuid == id }!
+      original.state = .left
+      manager.conversations.removeAll { $0 === original }
+      manager.delegate?.conversationManager(manager, conversationChanged: original)
+      waitStage = value + " terminal public cleanup"
+      try await wait { snapshot(id) == nil }
+      return (id, original)
+    }
+    func systemEnd(_ id: UUID) -> EndConversationAction {
+      let action = EndConversationAction(conversationUUID: id)
+      systemEndActions.insert(action.uuid)
+      manager.deliver(action)
+      return action
+    }
+
+    // Handler installation and reload retain action-local terminal input and
+    // the same effective deadline, without publishing the pending action.
+    let (attachID, attachOriginal) = try await departedOriginal("terminal-handler-reload")
+    defer { withExtendedLifetime(attachOriginal) {} }
+    hold.insert(attachID)
+    client.setConversationHandler(nil)
+    let attachState = client.state
+    let attachEnd = systemEnd(attachID)
+    for _ in 0..<3 { await Task.yield() }
+    precondition(attachEnd.state == .running && attachEnd.settlements == 0 &&
+      endContexts[attachEnd.uuid] == nil && client.state == attachState,
+      "A real terminal cleanup End remains pending until a handler attaches")
+    client.setConversationHandler(handler)
+    waitStage = "late terminal handler attachment"
+    try await wait { self.held[attachID] != nil }
+    let firstContext = endContexts[attachEnd.uuid]!.first!
+    let oldContinuation = held.removeValue(forKey: attachID)!
+    client.setConversationHandler(handler)
+    waitStage = "terminal handler reload redelivery"
+    try await wait { self.held[attachID] != nil && self.endContexts[attachEnd.uuid]?.count == 2 }
+    let nextContext = endContexts[attachEnd.uuid]!.last!
+    precondition(firstContext.signal.reason == .replaced && !nextContext.signal.isCancelled &&
+      nextContext.actionID == firstContext.actionID && nextContext.origin == .system &&
+      nextContext.deadline == firstContext.deadline &&
+      endSnapshots[attachEnd.uuid]?.pending?.id == attachEnd.uuid &&
+      endSnapshots[attachEnd.uuid]?.pending?.deadline == nextContext.deadline && client.state == attachState)
+    oldContinuation.resume()
+    for _ in 0..<3 { await Task.yield() }
+    precondition(attachEnd.state == .running && attachEnd.settlements == 0,
+      "A cancelled handler delivery cannot settle the reloaded cleanup action")
+    hold.remove(attachID); held.removeValue(forKey: attachID)?.resume()
+    waitStage = "reloaded terminal handler settlement"
+    try await wait { attachEnd.state == .complete }
+    precondition(attachEnd.settlements == 1 && client.state == attachState)
+
+    // A spent original cannot rearm on duplicate .left. A confirmed live new
+    // incoming generation may reuse that SAME object and UUID for new cleanup.
+    manager.delegate?.conversationManager(manager, conversationChanged: attachOriginal)
+    waitStage = "duplicate terminal public cleanup"
+    try await wait { snapshot(attachID) == nil }
+    let duplicateEnd = systemEnd(attachID)
+    precondition(duplicateEnd.state == .failed && duplicateEnd.settlements == 1 &&
+      endCalls.filter { $0 == attachID }.count == 2,
+      "A duplicate terminal delegate cannot rearm the consumed cleanup input")
+    let previousGeneration = client.incomingIntake.projection(attachID)!.generation
+    client.incomingIntake.reset()
+    precondition(client.incomingIntake.projection(attachID)!.generation != previousGeneration &&
+      !client.incomingIntake.projection(attachID)!.isLive)
+    attachOriginal.state = .idle
+    manager.conversations.append(attachOriginal)
+    client.incomingIntakeDidChange()
+    attachOriginal.state = .left
+    manager.conversations.removeAll { $0 === attachOriginal }
+    manager.delegate?.conversationManager(manager, conversationChanged: attachOriginal)
+    waitStage = "invalidated generation cannot rearm via residual live object"
+    try await wait { snapshot(attachID) == nil }
+    let invalidatedGenerationEnd = systemEnd(attachID)
+    precondition(invalidatedGenerationEnd.state == .failed && invalidatedGenerationEnd.settlements == 1 &&
+      endCalls.filter { $0 == attachID }.count == 2 && !client.incomingIntake.projection(attachID)!.isLive,
+      "A reset tombstone plus a residual nonleft object is not confirmed new incoming ownership")
+    // Drive the actual intake's successful report seam before observing the
+    // same original native object live in this new incoming generation.
+    let newInvitation = try client.incomingIntake.reserve(payload("terminal-handler-reload"), source: .pushKit)
+    guard case .report(let newAttempt) = newInvitation.disposition else { preconditionFailure() }
+    precondition(newInvitation.id == attachID)
+    client.incomingIntake.complete(newAttempt, outcome: .reported)
+    precondition(client.incomingIntake.projection(attachID)!.isLive)
+    attachOriginal.state = .idle
+    manager.conversations.append(attachOriginal)
+    client.incomingIntakeDidChange()
+    attachOriginal.state = .left
+    manager.conversations.removeAll { $0 === attachOriginal }
+    manager.delegate?.conversationManager(manager, conversationChanged: attachOriginal)
+    waitStage = "new generation same native terminal cleanup"
+    try await wait { snapshot(attachID) == nil }
+    let newGenerationEnd = systemEnd(attachID)
+    try await wait { newGenerationEnd.state == .complete }
+    precondition(newGenerationEnd.settlements == 1 && endCalls.filter { $0 == attachID }.count == 3 &&
+      client.incomingIntake.projection(attachID)?.terminal?.ended.reason == .failed,
+      "A new live incoming generation can rearm the same native object; cleanup cannot relabel its prior terminal reason")
+
+    // Replacement while late cleanup is held cancels only that old action and
+    // cannot stamp local termination onto the replacement or request its End.
+    let (heldCleanupID, heldCleanupOriginal) = try await departedOriginal("held-terminal-replacement")
+    defer { withExtendedLifetime(heldCleanupOriginal) {} }
+    hold.insert(heldCleanupID)
+    let heldCleanupEnd = systemEnd(heldCleanupID)
+    waitStage = "held late cleanup before replacement"
+    try await wait { self.held[heldCleanupID] != nil }
+    let heldCleanupAttempts = manager.performAttempts
+    let liveReplacement = Conversation(heldCleanupID, state: .idle)
+    manager.conversations.append(liveReplacement)
+    client.incomingIntakeDidChange()
+    precondition(heldCleanupEnd.state == .failed && heldCleanupEnd.settlements == 1 &&
+      snapshot(heldCleanupID)?.status == .ringing && snapshot(heldCleanupID)?.ended == nil)
+    hold.remove(heldCleanupID); held.removeValue(forKey: heldCleanupID)?.resume()
+    for _ in 0..<3 { await Task.yield() }
+    precondition(manager.performAttempts == heldCleanupAttempts && heldCleanupEnd.settlements == 1 &&
+      liveReplacement.state == .idle && snapshot(heldCleanupID)?.ended == nil,
+      "Late completion for a retired native object cannot terminate its replacement")
+
+    let (resetCleanupID, resetCleanupOriginal) = try await departedOriginal("terminal-reset")
+    defer { withExtendedLifetime(resetCleanupOriginal) {} }
+    manager.delegate?.conversationManagerDidReset(manager)
+    manager.delegate?.conversationManager(manager, conversationChanged: resetCleanupOriginal)
+    waitStage = "old native terminal callback after reset"
+    try await wait { snapshot(resetCleanupID) == nil }
+    let resetCleanupEnd = systemEnd(resetCleanupID)
+    precondition(resetCleanupEnd.state == .failed && resetCleanupEnd.settlements == 1 &&
+      endCalls.allSatisfy { $0 != resetCleanupID },
+      "Reset invalidates old cleanup input; a duplicate old .left cannot rearm it")
+
+    // With two retained native objects for a UUID, an old spent key cannot
+    // shadow the newer terminal input or invalidate it via another stale .left.
+    let (chainID, chainOld) = try await departedOriginal("terminal-object-chain")
+    defer { withExtendedLifetime(chainOld) {} }
+    let chainNew = Conversation(chainID, state: .idle)
+    manager.conversations.append(chainNew)
+    client.incomingIntakeDidChange()
+    chainNew.state = .left
+    manager.conversations.removeAll { $0 === chainNew }
+    manager.delegate?.conversationManager(manager, conversationChanged: chainNew)
+    manager.delegate?.conversationManager(manager, conversationChanged: chainOld)
+    waitStage = "new native terminal input after stale old callback"
+    try await wait { snapshot(chainID) == nil }
+    let chainEnd = systemEnd(chainID)
+    try await wait { chainEnd.state == .complete }
+    precondition(chainEnd.settlements == 1 && endCalls.filter { $0 == chainID }.count == 1)
+    withExtendedLifetime(chainNew) {}
+
+    // The genuine End may arrive before the queued public projection removal.
+    let earlyID = try await client.reportIncomingConversation(payload("early-terminal-cleanup"))
+    let earlyOriginal = manager.conversations.first { $0.uuid == earlyID }!
+    defer { withExtendedLifetime(earlyOriginal) {} }
+    earlyOriginal.state = .left
+    manager.conversations.removeAll { $0 === earlyOriginal }
+    manager.delegate?.conversationManager(manager, conversationChanged: earlyOriginal)
+    hold.insert(earlyID)
+    let earlyEnd = systemEnd(earlyID)
+    waitStage = "early cleanup survives queued public state removal"
+    try await wait { self.held[earlyID] != nil && snapshot(earlyID) == nil }
+    precondition(earlyEnd.state == .running && earlyEnd.settlements == 0,
+      "Public projection cleanup cannot cancel an already-delivered genuine cleanup End")
+    hold.remove(earlyID); held.removeValue(forKey: earlyID)?.resume()
+    try await wait { earlyEnd.state == .complete }
+    precondition(earlyEnd.settlements == 1)
+
+    let deathID = try await client.reportIncomingConversation(payload("terminal-native-death"))
+    var deathOriginal = manager.conversations.first { $0.uuid == deathID }
+    weak let weakDeathOriginal = deathOriginal
+    deathOriginal!.state = .left
+    manager.conversations.removeAll { $0.uuid == deathID }
+    manager.delegate?.conversationManager(manager, conversationChanged: deathOriginal!)
+    waitStage = "terminal native death public cleanup"
+    try await wait { snapshot(deathID) == nil }
+    client.setConversationHandler(nil)
+    let deathEnd = systemEnd(deathID)
+    deathOriginal = nil
+    waitStage = "weak terminal input must not retain original native object"
+    try await wait { weakDeathOriginal == nil }
+    client.setConversationHandler(handler)
+    waitStage = "terminal cleanup after native death while handler detached"
+    try await wait { deathEnd.state == .complete || deathEnd.state == .failed }
+    precondition(deathEnd.state == .complete && deathEnd.settlements == 1 &&
+      endCalls.filter { $0 == deathID }.count == 1 && snapshot(deathID) == nil,
+      "Native release cannot discard a genuine cleanup End waiting for its handler")
+
+    // The snapshot value outlives its native object for both incoming and
+    // outgoing calls, before End, while detached and during handler work.
+    enum NativeReleaseStage: String, CaseIterable { case beforeEnd, detached, running }
+    for outgoing in [false, true] {
+      for stage in NativeReleaseStage.allCases {
+        let value = "native-release-\(outgoing)-\(stage.rawValue)"
+        let releasePayload = payload(value)
+        let releaseID: UUID
+        if outgoing {
+          releaseID = try await client.startConversation(to: .init(id: value))
+          let startAction = manager.appActions.last!
+          waitStage = "outgoing start before terminal native release"
+          try await wait { startAction.state == .complete }
+        } else { releaseID = try await client.reportIncomingConversation(releasePayload) }
+        var original = manager.conversations.first { $0.uuid == releaseID }
+        weak let weakOriginal = original
+        original!.state = .left
+        manager.conversations.removeAll { $0.uuid == releaseID }
+        manager.delegate?.conversationManager(manager, conversationChanged: original!)
+        waitStage = value + " public cleanup"
+        try await wait { snapshot(releaseID) == nil }
+        let releaseState = client.state
+        let releaseAttempts = manager.performAttempts, releaseReports = manager.reports.count
+        let releaseEnd = EndConversationAction(conversationUUID: releaseID)
+        systemEndActions.insert(releaseEnd.uuid)
+        if stage == .detached { client.setConversationHandler(nil) }
+        if stage == .running {
+          hold.insert(releaseID)
+        }
+        if stage != .beforeEnd {
+          manager.deliver(releaseEnd)
+          if stage == .running {
+            waitStage = value + " handler started"
+            try await wait { self.held[releaseID] != nil }
+          }
+        }
+        original = nil
+        waitStage = value + " native release"
+        try await wait { weakOriginal == nil }
+        // Long calls can lose their inactive intake tombstone before cleanup.
+        // That absence is not new-generation or native replacement evidence.
+        let afterRetention = Date().addingTimeInterval(IncomingInvitationGate.metadataRetention + 1)
+        client.incomingIntake.removeConversation(releaseID, now: afterRetention)
+        precondition(client.incomingIntake.projection(releaseID) == nil)
+        if stage != .beforeEnd { client.pruneTerminalCleanup(now: afterRetention) }
+        if stage == .running {
+          hold.remove(releaseID); held.removeValue(forKey: releaseID)?.resume()
+        } else if stage == .detached { client.setConversationHandler(handler) }
+        else { manager.deliver(releaseEnd) }
+        waitStage = value + " cleanup settlement"
+        try await wait { releaseEnd.state == .complete || releaseEnd.state == .failed }
+        precondition(releaseEnd.state == .complete && releaseEnd.settlements == 1 &&
+          endCalls.filter { $0 == releaseID }.count == 1 &&
+          endSnapshots[releaseEnd.uuid]?.status == .ended &&
+          endSnapshots[releaseEnd.uuid]?.direction == (outgoing ? .outgoing : .incoming) &&
+          endSnapshots[releaseEnd.uuid]?.payload == (outgoing ? nil : releasePayload) &&
+          client.state == releaseState && manager.performAttempts == releaseAttempts &&
+          manager.reports.count == releaseReports,
+          "Native release cannot drop cleanup, change its original input, or recreate public state")
+      }
+    }
+
+    // Unclaimed values have the shared bounded metadata lifetime. Duplicate
+    // terminal delegates cannot extend it while the weak native marker survives.
+    let (expiredID, expiredOriginal) = try await departedOriginal("terminal-input-retention")
+    defer { withExtendedLifetime(expiredOriginal) {} }
+    client.pruneTerminalCleanup(now: Date().addingTimeInterval(IncomingInvitationGate.metadataRetention + 1))
+    manager.delegate?.conversationManager(manager, conversationChanged: expiredOriginal)
+    waitStage = "expired terminal duplicate public cleanup"
+    try await wait { snapshot(expiredID) == nil }
+    let expiredEnd = systemEnd(expiredID)
+    precondition(expiredEnd.state == .failed && expiredEnd.settlements == 1 &&
+      endCalls.allSatisfy { $0 != expiredID }, "Expired terminal metadata cannot be rearmed by duplicate callbacks")
+
+    // With no native key remaining, a live replacement must still cancel the
+    // retained cleanup and its late continuation must never target that object.
+    for running in [false, true] {
+      let value = "dead-terminal-replacement-\(running)"
+      let id = try await client.reportIncomingConversation(payload(value))
+      var original = manager.conversations.first { $0.uuid == id }
+      weak let weakOriginal = original
+      original!.state = .left
+      manager.conversations.removeAll { $0.uuid == id }
+      manager.delegate?.conversationManager(manager, conversationChanged: original!)
+      waitStage = value + " public cleanup"
+      try await wait { snapshot(id) == nil }
+      if running { hold.insert(id) } else { client.setConversationHandler(nil) }
+      let action = systemEnd(id)
+      if running {
+        waitStage = value + " handler started"
+        try await wait { self.held[id] != nil }
+      }
+      original = nil
+      waitStage = value + " native release"
+      try await wait { weakOriginal == nil }
+      let replacement = Conversation(id, state: .idle)
+      manager.conversations.append(replacement)
+      client.incomingIntakeDidChange()
+      precondition(action.state == .failed && action.settlements == 1 &&
+        snapshot(id)?.status == .ringing && snapshot(id)?.ended == nil)
+      if running { hold.remove(id); held.removeValue(forKey: id)?.resume() }
+      else { client.setConversationHandler(handler) }
+      for _ in 0..<3 { await Task.yield() }
+      precondition(action.settlements == 1 && replacement.state == .idle && snapshot(id)?.ended == nil &&
+        endCalls.filter { $0 == id }.count == (running ? 1 : 0),
+        "Dead original cleanup cannot invoke or end a live replacement")
+    }
+
+    // The actual action cutoff bounds claimed values even after native death.
+    for running in [false, true] {
+      let value = "dead-terminal-expiry-\(running)"
+      let id = try await client.reportIncomingConversation(payload(value))
+      var original = manager.conversations.first { $0.uuid == id }
+      weak let weakOriginal = original
+      original!.state = .left
+      manager.conversations.removeAll { $0.uuid == id }
+      manager.delegate?.conversationManager(manager, conversationChanged: original!)
+      waitStage = value + " public cleanup"
+      try await wait { snapshot(id) == nil }
+      if running { hold.insert(id) } else { client.setConversationHandler(nil) }
+      let action = EndConversationAction(conversationUUID: id)
+      action.timeoutDate = Date().addingTimeInterval(2)
+      systemEndActions.insert(action.uuid)
+      manager.deliver(action)
+      if running {
+        waitStage = value + " handler started"
+        try await wait { self.held[id] != nil }
+      }
+      original = nil
+      waitStage = value + " native release"
+      try await wait { weakOriginal == nil }
+      waitStage = value + " action cutoff"
+      try await wait { action.state == .failed }
+      if running { hold.remove(id); held.removeValue(forKey: id)?.resume() }
+      else { client.setConversationHandler(handler) }
+      for _ in 0..<3 { await Task.yield() }
+      let duplicate = systemEnd(id)
+      precondition(action.settlements == 1 && duplicate.state == .failed && duplicate.settlements == 1 &&
+        endCalls.filter { $0 == id }.count == (running ? 1 : 0),
+        "Expired cleanup cannot invoke a late handler or settle twice after native release")
+    }
+
+    let (timeoutID, timeoutOriginal) = try await departedOriginal("terminal-native-timeout")
+    defer { withExtendedLifetime(timeoutOriginal) {} }
+    hold.insert(timeoutID)
+    let timeoutEnd = systemEnd(timeoutID)
+    waitStage = "terminal native timeout held handler"
+    try await wait { self.held[timeoutID] != nil }
+    timeoutEnd.fail()
+    manager.delegate?.conversationManager(manager, timedOutPerforming: timeoutEnd)
+    hold.remove(timeoutID); held.removeValue(forKey: timeoutID)?.resume()
+    for _ in 0..<3 { await Task.yield() }
+    let afterTimeoutEnd = systemEnd(timeoutID)
+    precondition(timeoutEnd.settlements == 1 && afterTimeoutEnd.state == .failed &&
+      afterTimeoutEnd.settlements == 1 && endCalls.filter { $0 == timeoutID }.count == 1,
+      "A native timeout consumes cleanup input and late handler completion cannot settle again")
+    precondition(held.isEmpty)
+    print("{\"success\":true,\"groups\":49,\"actualClientAndCoordinatorAndIntake\":true,\"nativeFrameworkMeasured\":false}")
   }
 }
 
