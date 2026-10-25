@@ -7,6 +7,8 @@ if [[ -n "${OUT:-}" ]]; then mkdir "$OUT"; else OUT=$(mktemp -d "${TMPDIR:-/tmp}
 OUT=$(cd "$OUT" && pwd)
 UDID=""
 INHERITED_DYLD=""
+ALL_INHERITED_DYLD=""
+DYLD_SOURCE_SIMULATOR=""
 RUN_ID=$(uuidgen)
 BUNDLE=dev.iosvoipsdk.m1contracts
 RUNTIME=com.apple.CoreSimulator.SimRuntime.iOS-26-5
@@ -19,9 +21,36 @@ cleanup_simulator() {
   sim_cleanup 30 || { : > "$SIM_STATE.failure"; return 1; }
   UDID=""
 }
+read_launch_environment() {
+  local query_status=0
+  if [[ -n "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" ]]; then
+    INHERITED_DYLD=$SIMCTL_CHILD_DYLD_INSERT_LIBRARIES
+  else
+    INHERITED_DYLD=$(SIM_ACCEPTED_STATUS=1 SIMCTL_CHILD_DYLD_INSERT_LIBRARIES='' limit 180 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2>> "$OUT/launch-environment-query.log") || query_status=$?
+    printf 'Query exit code: %s\n' "$query_status" >> "$OUT/launch-environment-query.log"
+  fi
+  ALL_INHERITED_DYLD="${ALL_INHERITED_DYLD:+$ALL_INHERITED_DYLD:}$INHERITED_DYLD"
+  [[ "$query_status" -le 1 ]] || { echo 'Cannot read inherited launch environment' >&2; return 1; }
+  PRODUCT_CHECK=legacy-launch-environment
+  SDK_AUDIO_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - <<'PY' || return 1
+import os,pathlib
+assert not any(pathlib.Path(p).name in ('CKSimRuntime.dylib','CKSimLoader.dylib')
+    for p in os.environ['SDK_AUDIO_EXTERNAL_DYLD'].split(':') if p),'external SDK runtime injection refused'
+PY
+  DYLD_SOURCE_SIMULATOR=$UDID
+}
+simulator_changed() {
+  # Boot recovery precedes preflight; explicit launch overrides span devices.
+  # Exhausted preparation keeps its infrastructure marker without a new query.
+  if [[ ! -f "$SIM_STATE.failure" && -n "${DYLD_SOURCE_SIMULATOR:-}" && "$DYLD_SOURCE_SIMULATOR" != "$UDID" &&
+        -z "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" ]]; then
+    read_launch_environment
+  fi
+}
 redact_external_paths() {
-  [[ -n "$INHERITED_DYLD" ]] || return 0
-  SDK_AUDIO_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - "$OUT" <<'PYCODE'
+  local libraries=${ALL_INHERITED_DYLD:-$INHERITED_DYLD}
+  [[ -n "$libraries" ]] || return 0
+  SDK_AUDIO_EXTERNAL_DYLD="$libraries" python3 - "$OUT" <<'PYCODE'
 import hashlib,json,os,pathlib,sys
 paths=[p.encode() for p in os.environ['SDK_AUDIO_EXTERNAL_DYLD'].split(':') if p]
 for log in pathlib.Path(sys.argv[1]).glob('*.log'):
@@ -69,20 +98,7 @@ PY
 UDID=$(limit 30 xcrun simctl create "sdk-audio-legacy-$RUN_ID" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$RUNTIME")
 limit 60 xcrun simctl boot "$UDID"
 limit 300 xcrun simctl bootstatus "$UDID" -b > "$OUT/boot.log" 2>&1
-if [[ -n "${SIMCTL_CHILD_DYLD_INSERT_LIBRARIES+x}" ]]; then
-  INHERITED_DYLD=$SIMCTL_CHILD_DYLD_INSERT_LIBRARIES
-else
-  query_status=0
-  INHERITED_DYLD=$(SIMCTL_CHILD_DYLD_INSERT_LIBRARIES='' limit 180 xcrun simctl spawn "$UDID" launchctl getenv DYLD_INSERT_LIBRARIES 2> "$OUT/launch-environment-query.log") || query_status=$?
-  printf 'Query exit code: %s\n' "$query_status" >> "$OUT/launch-environment-query.log"
-  [[ "$query_status" -le 1 ]] || { echo 'Cannot read inherited launch environment' >&2; exit 1; }
-fi
-PRODUCT_CHECK=legacy-launch-environment
-SDK_AUDIO_EXTERNAL_DYLD="$INHERITED_DYLD" python3 - <<'PY'
-import os,pathlib
-assert not any(pathlib.Path(p).name in ('CKSimRuntime.dylib','CKSimLoader.dylib')
-    for p in os.environ['SDK_AUDIO_EXTERNAL_DYLD'].split(':') if p),'external SDK runtime injection refused'
-PY
+read_launch_environment
 limit 180 xcrun simctl install "$UDID" "$SDK_M1_CONTRACT_BUILD/SDKM1Contracts.app" > "$OUT/install.log" 2>&1
 PRODUCT_CHECK="$NAME"
 env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
