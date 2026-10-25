@@ -110,7 +110,7 @@ def materialize(root):
     save(capture / 'runtime.json', dict(identifier='com.apple.CoreSimulator.SimRuntime.iOS-27-0', version='27.0', buildversion='synthetic'))
     save(capture / 'cleanup.json', dict(simulatorID=SIM, deleteExitCode=0, deleted=True))
     save(capture / 'devices-after.json', dict(devices={}))
-    for label in ('install', 'microphone', 'boot', 'bootstatus', 'create', 'delete', 'devices-after', 'fault-notify'):
+    for label in ('install', 'microphone', 'boot', 'bootstatus', 'create', 'delete', 'devices-after'):
         save(capture / (label + '.status.json'), dict(exitCode=0))
     request = dict(id=COMMAND, **{key: cases['stale-audio'][key] for key in ('pid', 'runID')}, bundleID=gate.BUNDLE, operation='faults',
                    faults=dict(staleAudio=True, reportCallbackDelayMS=0, invalidateDuringHandoff=False))
@@ -150,6 +150,34 @@ def controls():
     checks = []
     with tempfile.TemporaryDirectory(prefix='swift-livekit-controls-') as temporary, patch.object(gate, 'source', return_value=IDENTITY):
         root = Path(temporary).resolve()
+        # Exercise the actual producer with no simulator/helper process boundary.
+        for label, transport in (('directory-watch-mailbox', 'directory-watch-v1'),
+                                 ('missing-fault-transport', None), ('unsupported-fault-transport', 'notify-v1'),
+                                 ('typed-fault-transport', True)):
+            directory = root / label; directory.mkdir()
+            runtime = directory / 'runtime'; (runtime / 'requests').mkdir(parents=True)
+            (runtime / 'responses').mkdir()
+            session = dict(runID=CALL, pid=100, bundleID=gate.BUNDLE, notification='dev.callkitsim.control.100')
+            if transport is not None: session['controlTransport'] = transport
+            with patch.object(runner, 'command', side_effect=AssertionError('fault transport attempted a wake RPC')) as wake, \
+                 patch.object(runner.subprocess, 'run', side_effect=AssertionError('fault transport spawned a process')), \
+                 patch.object(runner.uuid, 'uuid4', return_value=__import__('uuid').UUID(COMMAND)):
+                try: response = runner.fault(directory, directory / 'unbuilt', SIM, runtime, session)
+                except EvidenceError as error:
+                    assert transport != 'directory-watch-v1' and 'transport' in str(error), label
+                else:
+                    assert transport == 'directory-watch-v1', label
+                    request = json.loads((runtime / 'requests' / (COMMAND + '.json')).read_text())
+                    assert request == dict(id=COMMAND, runID=CALL, pid=100, bundleID=gate.BUNDLE, operation='faults',
+                        faults=dict(staleAudio=True, reportCallbackDelayMS=0, invalidateDuringHandoff=False))
+                    assert json.loads((directory / 'fault-request.json').read_text()) == request
+                    assert (runtime / 'requests' / (COMMAND + '.json')).stat().st_mode & 0o777 == 0o600
+                    assert list((runtime / 'requests').iterdir()) == [runtime / 'requests' / (COMMAND + '.json')]
+                    assert response == runtime / 'responses' / (COMMAND + '.json') and not response.exists()
+                wake.assert_not_called()
+            if transport != 'directory-watch-v1':
+                assert not (directory / 'fault-request.json').exists() and not list((runtime / 'requests').iterdir())
+            checks.append(label)
         def check(label, change=None, accepted=False):
             directory = root / label; directory.mkdir(); build, capture = materialize(directory)
             if change: change(build, capture)
@@ -209,10 +237,9 @@ def controls():
         check('missing-owned-stop', lambda b, c: alter_json(c / 'healthy.receipt.json', lambda r: r.pop('terminationSignalDelivered')))
         check('missing-PID-ACK', lambda b, c: alter_json(c / 'healthy.receipt.json', lambda r: r.pop('launcherAppPID')))
         check('missing-owned-process-absence', lambda b, c: alter_json(c / 'healthy.receipt.json', lambda r: r.pop('appAbsentAfterStop')))
-        check('runtime-session-without-additive-transport', lambda b, c:
-            alter_json(c / 'healthy.session.json', lambda r: r.pop('controlTransport')), accepted=True)
         for field, expected in dict(schemaVersion=1, runID='00000000-0000-0000-0000-000000000005',
-                pid=100, bundleID=gate.BUNDLE, profile='ios-27.0', notification='dev.callkitsim.control.100').items():
+                pid=100, bundleID=gate.BUNDLE, profile='ios-27.0', notification='dev.callkitsim.control.100',
+                controlTransport='directory-watch-v1').items():
             check('missing-runtime-session-' + field, lambda b, c, field=field:
                 alter_json(c / 'healthy.session.json', lambda r: r.pop(field)))
             check('wrong-runtime-session-' + field, lambda b, c, field=field, expected=expected:
@@ -223,7 +250,6 @@ def controls():
         check('wrong-fault-ACK', lambda b, c: alter_json(c / 'fault-response.json', lambda r: r.update(id=CALL)))
         check('fault-not-requested', lambda b, c: alter_json(c / 'fault-request.json', lambda r: r['faults'].update(staleAudio=False)))
         check('wrong-fault-process', lambda b, c: alter_json(c / 'fault-request.json', lambda r: r.update(pid=999)))
-        check('notifier-failed', lambda b, c: alter_json(c / 'fault-notify.status.json', lambda r: r.update(exitCode=1)))
         check('still-installed-simulator', lambda b, c: alter_json(c / 'devices-after.json', lambda r: r.update(devices=dict(runtime=[dict(udid=SIM)]))))
         check('delete-failed', lambda b, c: alter_json(c / 'cleanup.json', lambda r: r.update(deleteExitCode=1)))
         check('install-failed', lambda b, c: alter_json(c / 'install.status.json', lambda r: r.update(exitCode=1)))
@@ -254,13 +280,14 @@ def controls():
         for label in ('healthy-published-home', 'healthy-buffered-header', 'stale-published-home', 'wrong-run', 'wrong-pid', 'wrong-bundle',
                       'wrong-simulator', 'wrong-case', 'wrong-mode', 'wrong-image', 'missing-path', 'relative-path',
                       'wrong-device-path', 'dotdot-path', 'malformed-path', 'absent-path', 'symlink-path', 'wrong-installation',
-                      'boolean-pid', 'zero-pid', 'wrong-session-pid', 'wrong-session-profile', 'changed-session-run', *startup):
+                      'boolean-pid', 'zero-pid', 'wrong-session-pid', 'wrong-session-profile', 'wrong-session-transport',
+                      'missing-session-transport', 'changed-session-run', *startup):
             directory = root / label; directory.mkdir()
             executable = directory / 'SDKSwiftLiveKit.app/SDKSwiftLiveKit'
             executable.parent.mkdir(); executable.write_text('synthetic executable')
             container = directory / 'Devices' / SIM / 'data/Containers/Data/Application' / CALL
             container.mkdir(parents=True)
-            mode = 'stale-audio' if label in ('stale-published-home', 'changed-session-run') else 'healthy'
+            mode = 'stale-audio' if label in ('stale-published-home', 'changed-session-run', 'wrong-session-transport', 'missing-session-transport') else 'healthy'
             launch = dict(event='launch', runID=fixed_run, pid=100, bundleID=gate.BUNDLE, simulatorID=SIM,
                           case=mode, mode='sdk-swift-livekit', executableSHA256=digest(executable), dataContainer=str(container))
             for suffix, field, value in (('run', 'runID', CALL), ('pid', 'pid', 999), ('bundle', 'bundleID', 'other.bundle'),
@@ -279,9 +306,11 @@ def controls():
                 launch['dataContainer'] = str(alias)
             runtime = container / 'Documents/.callkit-simulator' / fixed_run; runtime.mkdir(parents=True)
             session = dict(runID=fixed_run, pid=100, bundleID=gate.BUNDLE,
-                profile='ios-27.0', notification='dev.callkitsim.control.100')
+                profile='ios-27.0', notification='dev.callkitsim.control.100', controlTransport='directory-watch-v1')
             if label == 'wrong-session-pid': session['pid'] = 999
             if label == 'wrong-session-profile': session['profile'] = 'other'
+            if label == 'wrong-session-transport': session['controlTransport'] = 'notify-v1'
+            if label == 'missing-session-transport': session.pop('controlTransport')
             save(runtime.parent / 'session.json', session)
             (runtime / 'events.jsonl').write_text('{}\n')
             entry = dict(event='app.entry', runID=fixed_run, pid=100, bundleID=gate.BUNDLE, simulatorID=SIM)
@@ -305,7 +334,7 @@ def controls():
                 (label in startup and delay is not None and delay < 90)
             original_read = Path.read_text; session_reads = [0]
             def read(path, *args, **kwargs):
-                assert allowed or (path.name == 'session.json' and (label.startswith('wrong-session-') or label == 'changed-session-run')) or \
+                assert allowed or (path.name == 'session.json' and (label.startswith(('wrong-session-', 'missing-session-')) or label == 'changed-session-run')) or \
                     path.name not in ('session.json', 'events.jsonl'), 'unbound sandbox read'
                 if path.name == 'session.json' and label == 'changed-session-run':
                     session_reads[0] += 1
@@ -391,7 +420,8 @@ def controls():
                     raise RuntimeError('synthetic checkpoint failure')
                 return dict(event='launch', runID=fixed_run, pid=100, simulatorID=SIM, bundleID=gate.BUNDLE,
                     case='healthy', mode='sdk-swift-livekit', executableSHA256=digest(executable), dataContainer=str(container)) if not hasattr(checkpoint, 'seen') else dict(
-                    runID=fixed_run, pid=100, bundleID=gate.BUNDLE, profile='ios-27.0', notification='dev.callkitsim.control.100')
+                    runID=fixed_run, pid=100, bundleID=gate.BUNDLE, profile='ios-27.0', notification='dev.callkitsim.control.100',
+                    controlTransport='directory-watch-v1')
             def checkpoints(*args):
                 value = checkpoint(*args); checkpoint.seen = True; return value
             with patch.object(runner.subprocess, 'Popen', return_value=process) as spawn, \

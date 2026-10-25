@@ -233,12 +233,12 @@ def validate(build, capture):
         require(one(native, 'runtime.installed').get('version') == (ROOT / 'VERSION').read_text().strip(), 'runtime version differs')
         session = json.loads((capture / (mode + '.session.json')).read_text())
         expected_session = dict(schemaVersion=1, runID=identity['runID'], pid=receipt['appPID'], bundleID=BUNDLE,
-                    profile='ios-27.0', notification='dev.callkitsim.control.' + str(receipt['appPID']))
+                    profile='ios-27.0', notification='dev.callkitsim.control.' + str(receipt['appPID']),
+                    controlTransport='directory-watch-v1')
         require(type(session) is dict and all(type(session.get(key)) is type(value) and session[key] == value
                     for key, value in expected_session.items()), 'runtime session differs')
         fault = [json.loads((capture / name).read_text()) for name in ('fault-request.json', 'fault-response.json')] if mode == 'stale-audio' else [None, None]
         if mode == 'stale-audio':
-            require(json.loads((capture / 'fault-notify.status.json').read_text()).get('exitCode') == 0, 'notifier failed')
             require(all(fault[0].get(key) == value for key, value in dict(runID=identity['runID'], pid=receipt['appPID'], bundleID=BUNDLE).items()),
                     'fault belongs to another process/run')
         results[mode] = contract(rows, native, mode, *fault)

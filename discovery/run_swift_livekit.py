@@ -52,8 +52,8 @@ def wait(process, condition, seconds):
 
 
 def fault(out, build, simulator, runtime, session):
-    # The existing mailbox protocol, with the source-built notifier. No CLI
-    # container query or alternate runtime is needed for this test-only transport.
+    require(session.get('controlTransport') == 'directory-watch-v1', 'unsupported runtime control transport')
+    # The runtime watches this atomic rename; no simulator wake RPC is needed.
     request = {key: session[key] for key in ('runID', 'pid', 'bundleID')}
     request.update(id=str(uuid.uuid4()).upper(), operation='faults',
                    faults=dict(staleAudio=True, reportCallbackDelayMS=0, invalidateDuringHandoff=False))
@@ -62,7 +62,6 @@ def fault(out, build, simulator, runtime, session):
     with temporary.open('x') as stream:
         os.chmod(temporary, 0o600); json.dump(request, stream)
     temporary.rename(temporary.with_suffix('.json'))
-    command(out, 'fault-notify', ['xcrun', 'simctl', 'spawn', simulator, build / 'cksim-notify', session['notification']])
     return runtime / 'responses' / (request['id'] + '.json')
 
 
@@ -99,6 +98,7 @@ def capture_case(build, out, simulator, inherited, mode, expected_container=None
                 if (root / 'session.json').exists() and json.loads((root / 'session.json').read_text()).get('runID') == run_id else None, 15)
             require(session.get('runID') == run_id and session.get('pid') == launch['pid'] and session.get('bundleID') == BUNDLE and
                     session.get('notification') == 'dev.callkitsim.control.' + str(launch['pid']) and
+                    session.get('controlTransport') == 'directory-watch-v1' and
                     session.get('profile') == 'ios-27.0', 'fresh runtime session differs')
             runtime = root / run_id
             save(out / (mode + '.session.json'), session)
