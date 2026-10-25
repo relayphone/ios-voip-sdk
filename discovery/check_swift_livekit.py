@@ -474,7 +474,8 @@ def controls():
             original_outer = outer_handlers.copy()
             def outer_mask(sig, handler):
                 previous = outer_handlers[sig]; outer_handlers[sig] = handler; return previous
-            def fake_run(argv, **options):
+            def fake_bounded(argv, timeout, *, env=None):
+                options = dict(timeout=timeout, env=env)
                 args = list(map(str, argv)); invocations.append((args, options['timeout']))
                 if args[2] in ('shutdown', 'delete') or args[2:4] == ['list', 'devices']:
                     assert all(value == signal.SIG_IGN for value in outer_handlers.values())
@@ -488,16 +489,16 @@ def controls():
                     assert options['env'] == {**environment, 'SIMCTL_CHILD_DYLD_INSERT_LIBRARIES': ''}
                     if label == 'launchd-timeout-stops-and-cleans':
                         raise subprocess.TimeoutExpired(args, options['timeout'], output=b'/private/partial-injector.dylib', stderr=b'partial-error')
-                    if label == 'unknown-launchd-status-refused': return subprocess.CompletedProcess(args, 2, b'', b'')
-                    if label == 'launchd-stderr-refused': return subprocess.CompletedProcess(args, 0, b'', b'unknown-query-error')
-                    if label == 'launchd-unset-with-value-refused': return subprocess.CompletedProcess(args, 1, b'/private/unexpected-injector.dylib', b'')
+                    if label == 'unknown-launchd-status-refused': return runner.simulator_infra.Result(args, 2, b'', b'')
+                    if label == 'launchd-stderr-refused': return runner.simulator_infra.Result(args, 0, b'', b'unknown-query-error')
+                    if label == 'launchd-unset-with-value-refused': return runner.simulator_infra.Result(args, 1, b'/private/unexpected-injector.dylib', b'')
                     value = b'' if label == 'empty-launchd-value' else (inherited + '\n').encode()
                 elif args[2] == 'get_app_container': raise AssertionError('redundant prelaunch container IPC')
                 elif args[2:4] == ['list', 'devices']: value = b'{"devices":{}}'
                 elif args[2] == 'shutdown' and shutdown_timeout:
                     raise subprocess.TimeoutExpired(args, options['timeout'], output=b'partial-cleanup-output', stderr=b'cleanup-error')
                 else: value = b''
-                return subprocess.CompletedProcess(args, 0, value, b'')
+                return runner.simulator_infra.Result(args, 0, value, b'')
             def fake_case(build, out, simulator, inherited, mode, expected_container):
                 assert expected_container == (str(container) if shared else None)
                 shared.append(inherited); return dict(runID='synthetic-' + mode, pid=len(shared),
@@ -505,7 +506,7 @@ def controls():
             with patch.object(runner, 'validate_build'), patch.object(runner, 'source', return_value=IDENTITY), \
                  patch.object(runner, 'validate', return_value=dict(success=True)), \
                  patch.object(runner, 'capture_case', side_effect=fake_case), \
-                 patch.object(runner.subprocess, 'run', side_effect=fake_run), \
+                 patch.object(runner.simulator_infra, 'bounded', side_effect=fake_bounded), \
                  patch.object(runner.signal, 'signal', side_effect=outer_mask), \
                  patch.object(runner, 'redact', wraps=runner.redact) as redaction, \
                  patch.dict(runner.os.environ, environment, clear=True):
