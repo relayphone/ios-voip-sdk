@@ -94,6 +94,12 @@ struct BridgeTests {
       precondition(BridgeJSON.rejection(error).code == code,
         "The module's production rejection projection must preserve typed codes and generic fallbacks")
     }
+    let routeFailure = BridgeJSON.rejection(BridgeError.unavailable,
+      fallbackCode: "audio_route", fallbackMessage: "The route request failed.")
+    precondition(routeFailure.code == "audio_route" && routeFailure.message == "The route request failed.")
+    precondition(BridgeJSON.rejection(ConversationClientError.atCapacity,
+      fallbackCode: "audio_route").code == "at_capacity",
+      "Operation-specific fallbacks must not replace known typed errors")
     do { try await run() }
     catch {
       FileHandle.standardError.write(Data("Expo relay check failed: \(error)\n".utf8))
@@ -111,7 +117,7 @@ struct BridgeTests {
     try await ownership(); checks.append("overlapping-lifetimes-reload-and-stale-owner")
     try await destruction(); checks.append("destroyed-bridge-observers-continuations-and-release")
     try await invalidDelivery(); checks.append("invalid-model-encoding-rejects-handler-delivery")
-    try observation(); checks.append("production-state-event-and-null-token-encoding")
+    try observation(); checks.append("production-state-event-null-token-and-route-encoding")
     let result = try JSONSerialization.data(withJSONObject: ["success": true, "checks": checks], options: [.sortedKeys])
     print(String(decoding: result, as: UTF8.self))
   }
@@ -278,14 +284,14 @@ struct BridgeTests {
     ConversationBridges.remove(a)
     try expect(replacement.outcome == nil && application.client.handler != nil,
                "A stale module must neither reclaim, settle nor detach B's handler.")
-    try expect(application.client.stateObserverCount == 1 && application.client.eventObserverCount == 1 && application.pushService.observerCount == 1,
+    try expect(application.client.stateObserverCount == 1 && application.client.eventObserverCount == 1 && application.client.audioRoutesObserverCount == 1 && application.pushService.observerCount == 1,
                "Retiring A must remove its subscriptions while retaining B's.")
     ConversationBridges.settle(b, id: newContext.actionID, generation: 0, success: true)
     try await eventually("The owning module must settle its continuation.") { replacement.outcome != nil }
     try expect(replacement.outcome == .accepted && replacement.completions == 1, "Current-owner success must complete once.")
     ConversationBridges.remove(b)
     ConversationBridges.remove(b)
-    try expect(application.client.handler == nil && application.client.stateObserverCount == 0 && application.pushService.observerCount == 0,
+    try expect(application.client.handler == nil && application.client.stateObserverCount == 0 && application.client.audioRoutesObserverCount == 0 && application.pushService.observerCount == 0,
                "The last module's removal must detach its handler and observers.")
   }
 
@@ -308,8 +314,9 @@ struct BridgeTests {
     application.client.publish(.providerReset)
     application.client.publish(.init(revision: 2, conversations: [snapshot()]))
     application.pushService.publish(Data([0x12, 0x34]))
+    application.client.publish(AudioRoutesSnapshot(revision: 1, routes: [], current: nil))
     actionContext.signal.cancel(.deadline)
-    try expect(events.rows.count == count && application.client.handler == nil && application.client.stateObserverCount == 0 && application.client.eventObserverCount == 0 && application.pushService.observerCount == 0,
+    try expect(events.rows.count == count && application.client.handler == nil && application.client.stateObserverCount == 0 && application.client.eventObserverCount == 0 && application.client.audioRoutesObserverCount == 0 && application.pushService.observerCount == 0,
                "A destroyed bridge must not receive later callbacks or retain subscriptions.")
   }
 
@@ -358,6 +365,16 @@ struct BridgeTests {
     try expect(scoped?["type"] as? String == "audioActivationMissing" &&
                (scoped?["payload"] as? [String: Any])?["conversationId"] as? String == conversation.id.uuidString,
                "A watchdog event must preserve its affected conversation identity.")
+    let initialRoutes = events.named("audioRoutesChanged")
+    try expect(initialRoutes.count == 1 && initialRoutes[0]["current"] is NSNull && (initialRoutes[0]["routes"] as? [Any])?.isEmpty == true,
+               "Route hydration must encode an explicit null before system audio exists.")
+    let output = AudioRoute(id: "output:speaker-uid", name: "Speaker", type: "Speaker")
+    application.client.publish(AudioRoutesSnapshot(revision: 9, routes: [output], current: output))
+    let routes = events.named("audioRoutesChanged").last
+    try expect(routes?["revision"] as? Int == 9 && (routes?["routes"] as? [[String: Any]])?.first?["id"] as? String == "output:speaker-uid" && (routes?["current"] as? [String: Any])?["id"] as? String == "output:speaker-uid" && (routes?["current"] as? [String: Any])?["type"] as? String == "Speaker",
+               "Actual route snapshots must retain native revision, output identity and raw port type.")
+    application.client.publish(AudioRoutesSnapshot(revision: 10, routes: [], current: nil))
+    try expect(events.named("audioRoutesChanged").last?["current"] is NSNull, "Route loss must emit explicit null.")
   }
 
   @MainActor private static func action(_ events: Events, id: UUID) throws -> [String: Any] {

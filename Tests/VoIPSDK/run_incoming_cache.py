@@ -24,6 +24,7 @@ INPUTS = [
     'Sources/VoIPSDK/SimulatorSupport.swift',
     'Sources/VoIPSDK/ProcessSDKOwnership.swift',
     'Sources/VoIPSDK/AudioActivation.swift',
+    'Sources/VoIPSDK/AudioRoutes.swift',
     'Sources/VoIPSDK/AudioAdapterOperations.swift',
     'Sources/VoIPSDK/AudioSessionQueue.swift',
     'Sources/VoIPSDK/MediaAdapter.swift',

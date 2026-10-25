@@ -207,6 +207,91 @@ private enum LifecycleContract {
 }
 
 @MainActor
+private final class RouteContractAdapter: MediaAdapter {
+  private(set) var authorized = false
+  private(set) var activations = 0
+  private(set) var deactivations = 0
+  func setSystemAudioAuthorization(_ active: Bool) { authorized = active }
+  func prepare() async throws {}
+  func didActivate(_ session: AVAudioSession) async throws {
+    activations += 1; ContractTrace.log("routes.lckDelegate", ["active": true])
+  }
+  func didDeactivate(_ session: AVAudioSession) async throws {
+    deactivations += 1; ContractTrace.log("routes.lckDelegate", ["active": false])
+  }
+}
+
+@MainActor
+private enum RouteContract {
+  static func capture(_ client: ConversationClient, phase: String) async throws -> Bool {
+    let stop = Date().addingTimeInterval(5)
+    repeat {
+      let native = await AudioSessionQueue.shared.perform { () -> [[AudioRoute]] in
+        let session = AVAudioSession.sharedInstance()
+        func route(_ port: AVAudioSessionPortDescription) -> AudioRoute {
+          AudioRoute(id: port.uid, name: port.portName, type: port.portType.rawValue)
+        }
+        return [(session.availableInputs ?? []).map(route), session.currentRoute.outputs.map(route)]
+      }
+      var expected: [AudioRoute] = []
+      for port in native[0] where !expected.contains(where: { $0.id == "input:" + port.id }) {
+        expected.append(.init(id: "input:" + port.id, name: port.name, type: port.type))
+      }
+      expected.append(.init(id: "speaker", name: "Speaker", type: "Speaker"))
+      let current = native[1].first.map { AudioRoute(id: "output:" + $0.id, name: $0.name, type: $0.type) }
+      if let current { expected.append(current) }
+      let observed = client.audioRoutes
+      // Notifications use a debounce. Wait for a coherent OS/cache checkpoint
+      // rather than fail on two independently valid reads during a route change.
+      if observed.routes == expected && observed.current == current {
+        let snapshot = try JSONSerialization.jsonObject(with: JSONEncoder().encode(observed))
+        func values(_ ports: [AudioRoute]) -> [[String: String]] {
+          ports.map { ["uid": $0.id, "name": $0.name, "type": $0.type] }
+        }
+        ContractTrace.log("routes.observed", ["phase": phase, "snapshot": snapshot,
+          "inputs": values(native[0]), "outputs": values(native[1])])
+        return true
+      }
+      try await Task.sleep(for: .milliseconds(20))
+    } while Date() < stop
+    return false
+  }
+  static func run() async throws -> Bool {
+    let adapter = RouteContractAdapter()
+    let application = try VoIPApplication.start(mediaAdapter: adapter)
+    let client = application.client
+    let repeated = try VoIPApplication.start(mediaAdapter: adapter)
+    ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(client)),
+      "sharedIdentity": String(describing: ObjectIdentifier(repeated.client)), "warnings": 0])
+    client.setConversationHandler(.init(join: { _, _ in }, start: { _, _ in }, end: { _, _ in }))
+    let id = try await client.reportIncomingConversation(.init(eventId: UUID().uuidString,
+      serverCallId: UUID().uuidString, caller: .init(id: "native-route-fixture")))
+    try await client.joinConversation(id)
+    guard await LifecycleContract.wait({ adapter.authorized && adapter.activations == 1 && client.audioRoutes.revision > 0 }) else { return false }
+    ContractTrace.log("routes.authority", ["conversationID": id.uuidString, "authorized": true])
+    do {
+      try await client.selectAudioRoute("speaker")
+      ContractTrace.log("routes.command", ["id": "speaker", "succeeded": true])
+    } catch let error as AudioRouteError { throw error }
+    catch {
+      let native = error as NSError
+      ContractTrace.log("routes.command", ["id": "speaker", "succeeded": false,
+        "errorDomain": native.domain, "errorCode": native.code])
+    }
+    guard try await capture(client, phase: "after") else { return false }
+    let before = client.audioRoutes
+    if let current = before.current { try await client.selectAudioRoute(current.id) }
+    ContractTrace.log("routes.currentNoOp", ["available": before.current != nil,
+      "unchanged": client.audioRoutes == before])
+    guard try await capture(client, phase: "unchanged") else { return false }
+    try await client.endConversation(id)
+    guard await LifecycleContract.wait({ !adapter.authorized && adapter.deactivations == 1 && client.snapshots.isEmpty }) else { return false }
+    ContractTrace.log("routes.ended", ["conversationID": id.uuidString, "empty": true, "authorized": false])
+    return true
+  }
+}
+
+@MainActor
 private final class SDKM1ContractsProbe {
   private var warnings = 0
   private var phase = "owned"
@@ -255,6 +340,7 @@ private final class SDKM1ContractsProbe {
     }
     do {
       if mode == "audio-lifecycle" { finish(try await LifecycleContract.run()); return }
+      if mode == "audio-routes" { finish(try await RouteContract.run()); return }
       if mode == "media-reentrancy" {
         let adapter = ReentrantMediaAdapter()
         let application = try VoIPApplication.start(mediaAdapter: adapter)
