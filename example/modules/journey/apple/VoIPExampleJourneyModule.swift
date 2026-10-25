@@ -1,4 +1,3 @@
-import AVFoundation
 import ExpoModulesCore
 import IosVoipSDK
 
@@ -133,7 +132,6 @@ private final class ExampleJourney {
       guard client.snapshots.isEmpty else { throw JourneyError.alreadyCalling }
       client.setConversationHandler(.init(join: { conversation, _ in
         JourneyTrace.record("sdk.action", ["kind": "JoinConversationAction", "conversationID": conversation.id.uuidString])
-        try AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .voiceChat)
       }, start: { _, _ in throw JourneyError.wrongMode }, end: { conversation, _ in
         JourneyTrace.record("sdk.action", ["kind": "EndConversationAction", "conversationID": conversation.id.uuidString])
       }))
