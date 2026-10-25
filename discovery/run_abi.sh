@@ -6,17 +6,21 @@ if [[ -n "${OUT:-}" ]]; then mkdir "$OUT"; else OUT=$(mktemp -d "${TMPDIR:-/tmp}
 OUT=$(cd "$OUT" && pwd)
 BUILD=$(mktemp -d "${TMPDIR:-/tmp}/callkit-abi-build.XXXXXX")
 UDID=""
+SIM_STATE="$OUT/simulator-state.json"
+SIM_CLEANUP_TIMEOUT=20
+PRODUCT_CHECK=abi-build
+source scripts/sim/sim.sh
 compiler() {
   env DEVELOPER_DIR="${COMPILER_DEVELOPER_DIR:-${DEVELOPER_DIR:-$(xcode-select -p)}}" xcrun --sdk iphonesimulator "$@"
 }
-limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
+limit() { sim_limit "$@"; }
 cleanup() {
   local status=$?
   trap - EXIT
-  if [[ -n "$UDID" ]]; then
-    limit 20 xcrun simctl shutdown "$UDID" >> "$OUT/cleanup.log" 2>&1 || true
-    if ! limit 20 xcrun simctl delete "$UDID" >> "$OUT/cleanup.log" 2>&1; then status=1; fi
+  if [[ "$status" -ne 0 && ! -f "$SIM_STATE.failure" ]]; then
+    python3 "$SIM_HELPER" product "$PRODUCT_CHECK" || true
   fi
+  sim_cleanup 20 || status=1
   rm -rf "$BUILD"
   exit "$status"
 }
@@ -44,13 +48,15 @@ env DEVELOPER_DIR="${COMPILER_DEVELOPER_DIR:-${DEVELOPER_DIR:-$(xcode-select -p)
 cp "$BUILD/runtime/build-info.json" "$OUT/build-info.json"
 printf 'ABI setup: list simulator runtimes (60-second limit).\n' >&2
 limit 60 xcrun simctl list runtimes -j > "$BUILD/runtimes.json"
+PRODUCT_CHECK=abi-runtime-selection
 RUNTIME=$(python3 -c 'import json,sys; r=[x for x in json.load(open(sys.argv[1]))["runtimes"] if x.get("platform")=="iOS" and x["isAvailable"]]; print(sorted(r,key=lambda x:[int(p) for p in x["version"].split(".")])[-1]["identifier"])' "$BUILD/runtimes.json")
 printf 'ABI setup: create owned simulator (30-second limit).\n' >&2
 UDID=$(limit 30 xcrun simctl create "callkit-abi-$$" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$RUNTIME")
-echo "runOwnedSimulator=$UDID runtime=$RUNTIME" >> "$OUT/environment.txt"
 limit 60 xcrun simctl boot "$UDID"
 limit 180 xcrun simctl bootstatus "$UDID" -b > "$OUT/boot.log" 2>&1
 limit 120 xcrun simctl install "$UDID" "$BUILD/Probe.app"
+echo "runOwnedSimulator=$UDID runtime=$RUNTIME" >> "$OUT/environment.txt"
+PRODUCT_CHECK=abi-manifest
 RUN_ID=$(uuidgen)
 python3 - "$OUT/manifest.json" "$BUILD/runtime/CKSimRuntime.dylib" "$BUILD/Probe.app/Probe" "$RUN_ID" "$UDID" "$RUNTIME" <<'PY'
 import hashlib,json,pathlib,subprocess,sys
@@ -69,6 +75,7 @@ for scenario in refused-queues missing-provider-init missing-controller-init pus
   pushclass=
   if [[ "$scenario" == push-delegate-override ]]; then pushclass=ABIPushDelegateRegistry; fi
   if [[ "$scenario" == push-types-override ]]; then pushclass=ABIPushTypesRegistry; fi
+  PRODUCT_CHECK="abi-$scenario"
   env SIMCTL_CHILD_CKSIM_ENABLED=1 SIMCTL_CHILD_CKSIM_SHADOW="$shadow" SIMCTL_CHILD_CKSIM_PROFILE=ios-27.0 \
     SIMCTL_CHILD_CKSIM_RUNTIME_PATH="$BUILD/runtime/CKSimRuntime.dylib" \
     SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_CKSIM_ABI_CASE="$scenario" \
@@ -78,7 +85,9 @@ for scenario in refused-queues missing-provider-init missing-controller-init pus
     --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$scenario" --bundle-id dev.callkitsim.abi \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.abi \
     --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.callkitsim.abi
+  sim_checkpoint
 done
+PRODUCT_CHECK=abi-conformance
 CHECK_ARGS=("$OUT" --runtime "$BUILD/runtime/CKSimRuntime.dylib" --probe "$BUILD/Probe.app/Probe")
 if [[ -n "${CKSIM_ABI_ONLY:-}" ]]; then CHECK_ARGS+=(--case "$CKSIM_ABI_ONLY"); fi
 python3 discovery/abi_conformance.py "${CHECK_ARGS[@]}" | tee "$OUT/summary.json"

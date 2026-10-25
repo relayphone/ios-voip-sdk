@@ -33,6 +33,7 @@ class LegacyCaptureTests(unittest.TestCase):
         python = binary / 'python3'
         python.write_text('#!' + sys.executable + '\n' + '''import os,pathlib,runpy,sys
 if sys.argv[1] == 'scripts/sim/paths.py':
+    assert 'SIMCTL_CHILD_DYLD_INSERT_LIBRARIES' not in os.environ
     from unittest.mock import patch
     with patch('pathlib.Path.home', return_value=pathlib.Path(os.environ['FIXTURE_HOME'])):
         sys.argv = sys.argv[1:]
@@ -47,17 +48,18 @@ sys.exit(142)
 ''')
         xcrun.chmod(0o755)
         source = (ROOT / 'discovery/run_audio_lifecycle_legacy.sh').read_text()
-        limit = source[source.index('limit() {'):source.index('\ncleanup_simulator()')]
-        start = source.index('container=$(limit 30 ')
+        start = source.index('container=$(python3 "$SIM_HELPER" call \'\' 30 ')
         block = source[start:source.index('\ncleanup_simulator\n', start)]
-        script = 'set -euo pipefail\n' + limit + '\n' + '\n'.join(
+        script = 'set -euo pipefail\n' + '\n'.join(
             name + '=' + shlex.quote(str(value)) for name, value in dict(
                 OUT=capture['trace'].parent, NAME=capture['trace'].stem, UDID=capture['simulator'],
-                RUN_ID=capture['run_id'], BUNDLE=capture['bundle']).items()) + '\n' + block
+                RUN_ID=capture['run_id'], BUNDLE=capture['bundle'],
+                SIM_HELPER=ROOT / 'scripts/sim/sim.py').items()) + '\n' + block
         rpc = root / 'native-rpc-attempt'
         result = subprocess.run(['/bin/bash', '-c', script], cwd=ROOT, capture_output=True, text=True,
             timeout=10, env={**os.environ, 'PATH': str(binary) + os.pathsep + os.environ.get('PATH', ''),
-                             'FIXTURE_HOME': str(capture['home']), 'FIXTURE_RPC': str(rpc)})
+                             'FIXTURE_HOME': str(capture['home']), 'FIXTURE_RPC': str(rpc),
+                             'SIMCTL_CHILD_DYLD_INSERT_LIBRARIES': '/fixture/external-library'})
         return result, capture, rpc
 
     def test_completed_capture_copies_original_journal_and_binds_hash_without_native_rpc(self):

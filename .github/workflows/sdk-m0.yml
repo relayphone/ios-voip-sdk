@@ -385,6 +385,9 @@ jobs:
           SDK_M1_CONTRACT_BUILD: ${{ runner.temp }}/sdk-27-contract-build
           OUT: ${{ runner.temp }}/audio-lifecycle-legacy
         run: bash discovery/run_audio_lifecycle_legacy.sh
+      - name: Delete any remaining run-owned legacy simulator
+        if: always()
+        run: python3 scripts/sim/sim.py cleanup "$RUNNER_TEMP/audio-lifecycle-legacy/simulator-state.json"
       - name: Preserve the scoped legacy capture
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

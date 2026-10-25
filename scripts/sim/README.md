@@ -65,6 +65,16 @@ accepted; usage errors (2), timeouts (124), helper exceptions (125 with this
 option), and signal exits remain failures. Stateful lifecycle calls reject the
 CLI option and ignore the shell scope, retaining their existing retry policy.
 
+Set `SIM_CLEANUP_TIMEOUT` before shell lifecycle calls when a runner uses a
+different cleanup bound. Recovery uses that same bound; final cleanup accepts
+it explicitly as `sim_cleanup <seconds>`.
+
+`paths.py` replaces completed-app container queries with host filesystem
+discovery. It first binds the original trace/hash/PID/stop receipt, then requires
+one canonical session under the exact owned simulator and its original journal.
+It refuses ambiguous or stale sessions and symlink paths. The runner still copies
+the journal and runs its unchanged product conformance checks.
+
 Host controls require no Xcode or simulator:
 
 ```bash
