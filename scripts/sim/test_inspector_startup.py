@@ -140,6 +140,7 @@ class InspectorStartupTests(unittest.TestCase):
         real_killpg = os.killpg
         processes = []
         watchdog_killed = threading.Event()
+        observer_active = threading.Event()
         killed_groups = []
         def spawn(*args, **kwargs):
             process = real_spawn(*args, **kwargs)
@@ -147,14 +148,19 @@ class InspectorStartupTests(unittest.TestCase):
             return process
         def killpg(group, signum):
             result = real_killpg(group, signum)
-            if signum == signal.SIGKILL and threading.current_thread() is not threading.main_thread():
+            if (signum == signal.SIGKILL and threading.current_thread() is not threading.main_thread()
+                    and observer_active.is_set()):
                 killed_groups.append(group)
                 watchdog_killed.set()
             return result
         def observe(**kwargs):
-            self.assertTrue(watchdog_killed.wait(2), 'watchdog must kill while observation is blocked')
-            self.assertEqual(killed_groups, [processes[0].pid])
-            processes[0].wait(timeout=2)
+            observer_active.set()
+            try:
+                self.assertTrue(watchdog_killed.wait(2), 'watchdog must kill while observation is blocked')
+                self.assertEqual(killed_groups, [processes[0].pid])
+                self.assertEqual(processes[0].wait(timeout=2), -signal.SIGKILL)
+            finally:
+                observer_active.clear()
             return None
         with patch('inspector_startup.subprocess.Popen', side_effect=spawn), \
                 patch('inspector_startup.os.killpg', side_effect=killpg), \
@@ -162,6 +168,10 @@ class InspectorStartupTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'timed out'):
                 self.launch(observe)
         self.assertLessEqual(timer.call_args.args[0], .3)
+        self.assertTrue(watchdog_killed.is_set())
+        outcome = json.loads((self.root / 'launch.json').read_text())
+        self.assertTrue(outcome['timedOut'])
+        self.assertFalse(outcome['qualifiedNativeAcknowledgement'])
 
     def test_all_cleanup_stages_run_without_replacing_the_original_body_error(self):
         primary = ValueError('original product failure')

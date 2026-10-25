@@ -348,19 +348,26 @@ class ConsumerControlTests(unittest.TestCase):
                 send('answer', call='A7E390AF-6B78-4190-B946-26D9C6438584')
         self.assertEqual(len(list((self.mailbox / 'requests').glob('*.json'))), 2)
 
-    def test_slow_control_preflight_cannot_publish_after_the_absolute_deadline(self):
+    def test_alarm_interrupts_control_preflight_before_publication(self):
         factory = RUNNER['consumer_control']
         shipping = CLI['control']
-        original = shipping.__globals__['target_container']
-        def slow_preflight(*args):
-            time.sleep(0.1)
-            return original(*args)
+        def interrupt_preflight(*args):
+            self.elapsed[0] += 1
+            handler = signal.getsignal(signal.SIGALRM)
+            self.assertTrue(callable(handler))
+            handler(signal.SIGALRM, None)
+            self.fail('The installed alarm must interrupt preflight')
         previous = signal.getsignal(signal.SIGALRM)
-        with patch.object(runpy, 'run_path', return_value=CLI):
-            send = factory(self.channel, self.session, self.device, deadline=time.monotonic() + 0.02)
-            with patch.dict(shipping.__globals__, target_container=slow_preflight):
+        # Test interrupt wiring without assuming 20 ms OS signal delivery.
+        with patch.object(runpy, 'run_path', return_value=CLI), \
+                patch.dict(factory.__globals__, time=self.clock), \
+                patch.object(signal, 'setitimer') as timer:
+            send = factory(self.channel, self.session, self.device, deadline=self.elapsed[0] + 0.02)
+            with patch.dict(shipping.__globals__, target_container=interrupt_preflight):
                 with self.assertRaisesRegex(RuntimeError, 'Inspector control timed out'):
                     send('answer', call='A7E390AF-6B78-4190-B946-26D9C6438584')
+        self.assertAlmostEqual(timer.call_args_list[0].args[1], 0.02)
+        self.assertEqual(timer.call_args_list[-1].args, (signal.ITIMER_REAL, 0))
         self.assertEqual(list((self.mailbox / 'requests').glob('*.json')), [])
         self.assertEqual(signal.getsignal(signal.SIGALRM), previous)
         self.assertEqual(signal.getitimer(signal.ITIMER_REAL), (0, 0))
