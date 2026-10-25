@@ -43,6 +43,7 @@ private final class RouteNotificationTokens: @unchecked Sendable {
 @MainActor
 final class SystemAudioSession {
   let routes = AudioRoutesStore()
+  var routeConfigurationAdapter: (any AudioRouteConfigurationAdapter)?
   var onLifecycle: (@MainActor (SystemAudioLifecycleEvent) -> Void)?
   private var routeObservers: RouteNotificationTokens?
   private var probeTask: Task<Void, Never>?
@@ -128,8 +129,21 @@ final class SystemAudioSession {
       guard state.active else { throw AudioRouteError.audioSessionInactive }
       return state.generation
     }
+    // Native callback blocks are not Swift Tasks. Carry cancellation explicitly
+    // so a request cancelled while queued cannot reach a route setter.
+    let permit = AudioPreparationPermit()
+    let authorization = authorization
+    let operation: @Sendable () throws -> Void = {
+      try configureAudioRoute(selection, authorization: authorization, generation: generation, permit: permit)
+    }
     do {
-      try await AudioSessionQueue.shared.selectRoute(selection, authorization: authorization, generation: generation)
+      try await withTaskCancellationHandler {
+        if let routeConfigurationAdapter {
+          try await routeConfigurationAdapter.configureAudioRoute(operation)
+        } else {
+          try await AudioSessionQueue.shared.perform(operation)
+        }
+      } onCancel: { permit.cancel() }
       await refreshAfterCommand()
     } catch {
       await refreshAfterCommand()
@@ -151,36 +165,39 @@ private extension AudioSessionQueue {
     return ObservedAudioRoutes(inputs: [], outputs: [])
     #endif
   }
+}
 
-  func selectRoute(_ selection: AudioRouteSelection,
-                   authorization: OSAllocatedUnfairLock<AudioRouteAuthorization>, generation: UInt64) throws {
-    #if os(iOS)
-    func checkAuthorization() throws {
-      guard authorization.withLock({ $0.active && $0.generation == generation }) else {
-        throw AudioRouteError.audioSessionInactive
-      }
-      try Task.checkCancellation()
+/// Runs synchronously on the common audio worker, optionally inside the selected
+/// backend's configuration lock. Framework objects never leave this operation.
+private func configureAudioRoute(_ selection: AudioRouteSelection,
+                                authorization: OSAllocatedUnfairLock<AudioRouteAuthorization>,
+                                generation: UInt64, permit: AudioPreparationPermit) throws {
+  #if os(iOS)
+  func checkAuthorization() throws {
+    guard authorization.withLock({ $0.active && $0.generation == generation }) else {
+      throw AudioRouteError.audioSessionInactive
     }
-    try checkAuthorization()
-    let session = AVAudioSession.sharedInstance()
-    switch selection {
-    case .currentOutput(let uid):
-      let currentUID = session.currentRoute.outputs.first?.uid
-      try checkAuthorization()
-      guard currentUID == uid else { throw AudioRouteError.unknownRoute }
-    case .speaker:
-      try checkAuthorization()
-      try session.overrideOutputAudioPort(.speaker)
-    case .input(let uid):
-      guard let input = session.availableInputs?.first(where: { $0.uid == uid }) else { throw AudioRouteError.unknownRoute }
-      try checkAuthorization()
-      try session.overrideOutputAudioPort(.none)
-      try checkAuthorization()
-      try session.setPreferredInput(input)
-    }
-    #else
-    throw AudioRouteError.unsupported
-    #endif
+    try permit.check()
   }
+  try checkAuthorization()
+  let session = AVAudioSession.sharedInstance()
+  switch selection {
+  case .currentOutput(let uid):
+    let currentUID = session.currentRoute.outputs.first?.uid
+    try checkAuthorization()
+    guard currentUID == uid else { throw AudioRouteError.unknownRoute }
+  case .speaker:
+    try checkAuthorization()
+    try session.overrideOutputAudioPort(.speaker)
+  case .input(let uid):
+    guard let input = session.availableInputs?.first(where: { $0.uid == uid }) else { throw AudioRouteError.unknownRoute }
+    try checkAuthorization()
+    try session.overrideOutputAudioPort(.none)
+    try checkAuthorization()
+    try session.setPreferredInput(input)
+  }
+  #else
+  throw AudioRouteError.unsupported
+  #endif
 }
 #endif

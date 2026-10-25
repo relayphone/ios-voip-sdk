@@ -206,6 +206,22 @@ int main(void) { @autoreleasepool {
   CHECK([first.events isEqual:@[@NO, @YES]]);
   completeOperation(^(VSMediaCompletion completion) { [binding prepareWithCheck:^NSError * { return nil; } configuration:configure completion:completion]; }, 0);
   CHECK(configurations == 2 && firstModule.testObserver.policyWrites == earlierPolicyWrites + 2 && [first.events isEqual:@[@NO, @YES]]);
+  // The route hook reuses the worker but never reapplies ownership policy or
+  // availability on an existing authorized engine.
+  NSUInteger routePolicyWrites = firstModule.testObserver.policyWrites;
+  NSArray *routeAvailability = first.events;
+  completeOperation(^(VSMediaCompletion completion) { [binding configureAudioRoute:^NSError * {
+    CHECK(!NSThread.isMainThread && VSAudioSessionIsOnQueue());
+    return nil;
+  } completion:completion]; }, 0);
+  CHECK(firstModule.testObserver.policyWrites == routePolicyWrites && [first.events isEqual:routeAvailability]);
+  CHECK(!firstModule.testObserver.automaticAudioSessionConfig &&
+    !firstModule.testObserver.isWillEnableEngineActive && !firstModule.testObserver.isDidDisableEngineActive);
+  completeOperationWithDomain(^(VSMediaCompletion completion) { [binding configureAudioRoute:^NSError * {
+    CHECK(VSAudioSessionIsOnQueue());
+    return [NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil];
+  } completion:completion]; }, NSUserCancelledError, NSCocoaErrorDomain);
+  CHECK(firstModule.testObserver.policyWrites == routePolicyWrites && [first.events isEqual:routeAvailability]);
   // A failed new preparation must not erase an earlier valid held call's readiness.
   [binding setSystemAudioAuthorization:NO]; flushAudioQueue();
   completeOperation(^(VSMediaCompletion completion) { [binding deactivate:audio completion:completion]; }, 0);

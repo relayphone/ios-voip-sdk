@@ -17,6 +17,7 @@ enum SystemAudioLifecycleEvent: Sendable {
 @MainActor final class SystemAudioSession {
   static var latest: SystemAudioSession?
   let routes = AudioRoutesStore()
+  var routeConfigurationAdapter: (any AudioRouteConfigurationAdapter)?
   var onLifecycle: (@MainActor (SystemAudioLifecycleEvent) -> Void)?
   private(set) var authorized = false
   init() { Self.latest = self }
