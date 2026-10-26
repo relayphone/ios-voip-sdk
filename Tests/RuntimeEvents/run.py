@@ -378,4 +378,5 @@ def main(acceptance=None):
 
 
 if __name__ == '__main__':
-    main()
+    from filtered_acceptance import run_filtered_acceptance
+    main(acceptance=run_filtered_acceptance)
