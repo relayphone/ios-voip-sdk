@@ -44,8 +44,6 @@ class AdapterNative(Native):
                 dataPath=str(self.devices_root / device / 'data')) for device, name in self.devices.items()]})).encode()
         elif command[2] == 'boot' and result.returncode == 0:
             self.booted.add(command[3])
-        elif command[2] == 'install' and result.returncode == 0:
-            (self.devices_root / command[3] / 'data/Containers/Data/Application').mkdir(parents=True, exist_ok=True)
         elif command[2] == 'launch' and result.returncode == 0:
             result.stdout = (runtime.BUNDLE + ': 42\n').encode()
         elif command[2] == 'get_app_container' and result.returncode == 0:
