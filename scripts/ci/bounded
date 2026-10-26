@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""Run argv with one owned group, a deadline and ten seconds of TERM grace."""
+import math
+import os
+import signal
+import subprocess
+import sys
+import time
+
+GRACE_SECONDS = 10
+
+
+def execute(command, seconds, *, capture_output=False, **options):
+    seconds = float(seconds)
+    if not math.isfinite(seconds) or seconds <= 0 or not command:
+        raise ValueError('A positive finite deadline and command are required')
+    pending, previous = [], {}
+    child, status, output, errors = None, None, b'', b''
+    timed_out, cleanup_unknown = False, False
+    def interrupted(signum, _frame):
+        if not pending:
+            pending.append(signum)
+    def group_alive():
+        try:
+            os.killpg(child.pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+    def collect(bound):
+        nonlocal status, output, errors
+        try:
+            if capture_output:
+                output, errors = child.communicate(timeout=bound)
+                status = child.returncode
+            else:
+                status = child.wait(timeout=bound)
+        except subprocess.TimeoutExpired as error:
+            if capture_output:
+                output, errors = error.output or b'', error.stderr or b''
+    def send(sig):
+        nonlocal cleanup_unknown
+        try:
+            os.killpg(child.pid, sig)
+        except ProcessLookupError:
+            pass
+        except OSError as error:
+            cleanup_unknown = True
+            print('bounded: owned-group signal failed (' + type(error).__name__ + ')', file=sys.stderr)
+    def stop():
+        nonlocal cleanup_unknown
+        send(signal.SIGTERM)
+        grace = time.monotonic() + GRACE_SECONDS
+        while time.monotonic() < grace:
+            try:
+                if not group_alive():
+                    break
+            except OSError:
+                cleanup_unknown = True
+            collect(min(.1, max(0, grace - time.monotonic())))
+            if status is not None:
+                time.sleep(min(.05, max(0, grace - time.monotonic())))
+        try:
+            if group_alive():
+                send(signal.SIGKILL)
+        except OSError:
+            send(signal.SIGKILL)
+        collect(2)
+        if status is None:
+            cleanup_unknown = True
+            for stream in (child.stdout, child.stderr):
+                if stream is not None:
+                    stream.close()
+            child.poll()
+        if cleanup_unknown:
+            print('bounded: owned command cleanup remains unknown', file=sys.stderr)
+    try:
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            previous[sig] = signal.signal(sig, interrupted)
+        deadline = time.monotonic() + seconds
+        try:
+            child = subprocess.Popen(command, start_new_session=True,
+                stdout=subprocess.PIPE if capture_output else None,
+                stderr=subprocess.PIPE if capture_output else None, **options)
+        except OSError as error:
+            print('bounded: cannot start command (' + type(error).__name__ + ')', file=sys.stderr)
+            status = 127 if isinstance(error, FileNotFoundError) else 126
+        if child is not None:
+            try:
+                while not pending:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        timed_out = True
+                        break
+                    collect(min(remaining, .1))
+                    if pending:
+                        break
+                    if status is not None:
+                        if not group_alive():
+                            break
+                        time.sleep(min(remaining, .05))
+                if timed_out or pending:
+                    stop()
+                    status = 128 + pending[0] if pending else 124
+            except BaseException:
+                try:
+                    stop()
+                except Exception:
+                    pass
+                raise
+        result = subprocess.CompletedProcess(command, status, output, errors)
+        result.cancelled = pending[0] if pending else None
+        result.timed_out = timed_out
+        result.cleanup_unknown = cleanup_unknown
+        return result
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    try:
+        result = execute(argv[1:], argv[0])
+    except (IndexError, ValueError):
+        print('usage: bounded <positive-seconds> <command> [args...]', file=sys.stderr)
+        return 2
+    return result.returncode if result.returncode >= 0 else 128 - result.returncode
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -18,6 +18,81 @@ import time
 import tty
 
 
+
+class HostTiming:
+    """Bounded observational clocks, flushed only after capture/cleanup finishes."""
+    FIELDS = frozenset(('pid', 'appWallTimeMS', 'appElapsedMS', 'timeoutSeconds',
+                        'deadlineMonotonicNS', 'returncode', 'byteCount'))
+
+    def __init__(self, output, source, bundle=None):
+        self.path = Path(str(output) + '.host-timing.jsonl')
+        self.source, self.events, self.seen = source, [], set()
+        self.header = re.compile(rb'(?m)^' + re.escape(bundle.encode()) + rb': (\d+)\r?$') if bundle else None
+
+    def record(self, event, **fields):
+        try:
+            if len(self.events) >= 128: return
+            row = dict(schemaVersion=1, source=self.source, event=event,
+                       monotonicNS=time.monotonic_ns(), wallTimeNS=time.time_ns(), hostPID=os.getpid())
+            row.update({key: value for key, value in fields.items() if key in self.FIELDS and
+                        type(value) in (int, float) and math.isfinite(value)})
+            self.events.append(row)
+        except Exception:
+            pass  # Diagnostic clock failure cannot change capture or cleanup.
+
+    def first(self, event, **fields):
+        if event not in self.seen:
+            self.seen.add(event)
+            self.record(event, **fields)
+
+    def observe_row(self, row, stage):
+        if isinstance(row, dict) and row.get('event') in ('app.entry', 'launch', 'livekit.readyForFault'):
+            self.first(stage + '.' + row['event'], pid=row.get('pid'),
+                       appWallTimeMS=row.get('wallTimeMS'), appElapsedMS=row.get('t_ms'))
+
+    def observe_line(self, line, stage):
+        try:
+            if self.header:
+                match = self.header.search(line)
+                if match: self.first(stage + '.pid', pid=int(match[1]))
+            if b'PROBE ' in line:
+                self.observe_row(json.loads(line.split(b'PROBE ', 1)[1].decode('utf-8')), stage)
+        except Exception:
+            pass  # These observations never qualify app identity or receipt success.
+
+    def checkpoint(self, label, action, timeout):
+        self.record(label + '.checkpoint.start', timeoutSeconds=timeout)
+        try:
+            result = action()
+        except BaseException as error:
+            self.record(label + ('.checkpoint.timeout' if isinstance(error, RuntimeError) and
+                        str(error) == 'fixture checkpoint deadline' else '.checkpoint.failure'))
+            raise
+        self.record(label + '.checkpoint.observed')
+        return result
+
+    def flush(self):
+        descriptor = None
+        try:
+            data = b''.join((json.dumps(row, separators=(',', ':'), allow_nan=False) + '\n').encode()
+                            for row in tuple(self.events))
+            descriptor = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
+            os.write(descriptor, data)
+        except Exception:
+            pass  # Missing diagnostic evidence is not a different product outcome.
+        finally:
+            if descriptor is not None:
+                try: os.close(descriptor)
+                except OSError: pass
+
+    def __enter__(self):
+        self.record('start')
+        return self
+
+    def __exit__(self, *_):
+        self.flush()
+
+
 def bind_launcher_pid(result, matches):
     if len(matches) != 1:
         result.pop("launcherAppPID", None)
@@ -31,6 +106,8 @@ def bind_launcher_pid(result, matches):
 def run(launch, terminate, output, receipt, timeout, identity=None, console_launcher_stop=False,
         inherit_launcher_group=False, expected_app_exit=False):
     started = time.monotonic()
+    timing = HostTiming(output, 'supervisor', (identity or {}).get('bundleID'))
+    timing.record('start', timeoutSeconds=timeout, deadlineMonotonicNS=int((started + timeout) * 1e9))
     result = {"completed": False, "success": False, "schemaVersion": 2, **(identity or {})}
     process = None
     stopped = False
@@ -60,6 +137,7 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                 tty.setraw(slave)  # Preserve bytes; only the launcher stdout uses this PTY.
                 result["consoleTransport"] = "host-pty"
             try:
+                timing.record('launch.spawn.start')
                 process = subprocess.Popen(launch, stdout=slave if console_launcher_stop else subprocess.PIPE,
                                            stderr=subprocess.PIPE if console_launcher_stop else subprocess.STDOUT,
                                            start_new_session=not inherit_launcher_group)
@@ -67,6 +145,7 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                 if slave is not None:
                     os.close(slave)
                     slave = None
+            timing.record('launch.spawn.end', pid=process.pid)
             result["launcherPID"] = process.pid
             if inherit_launcher_group:
                 result["launcherPGID"] = os.getpgid(process.pid)
@@ -89,16 +168,20 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                                 chunk = b""  # A closed PTY can report EIO instead of EOF.
                             if not chunk:
                                 if pending[fd]:
+                                    timing.observe_line(pending[fd], 'read')
                                     messages.put(pending[fd])
                                     pending[fd] = b""
                                 active.remove(fd)
                                 continue
+                            timing.first('read.first.bytes', byteCount=len(chunk))
                             pending[fd] += chunk
                             while b"\n" in pending[fd]:
                                 line, pending[fd] = pending[fd].split(b"\n", 1)
+                                timing.observe_line(line, 'read')
                                 messages.put(line + b"\n")
                     for tail in pending.values():
                         if tail:
+                            timing.observe_line(tail, 'read')
                             messages.put(tail)
                 except OSError as error:
                     messages.put(error)
@@ -122,6 +205,7 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
             while not result["completed"]:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
+                    timing.record('capture.deadline')
                     raise RuntimeError("deadline before terminal done event")
                 try:
                     line = messages.get(timeout=min(remaining, 0.2))
@@ -133,6 +217,7 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                     result["stdoutEOFSeconds"] = round(time.monotonic() - started, 3)
                     if expected_app_exit: break
                     raise RuntimeError("launcher exited before terminal done event")
+                timing.observe_line(line, 'consume')
                 log.write(line)
                 log.flush()
                 if b"PROBE " in line:
@@ -254,6 +339,7 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
     except (OSError, RuntimeError, subprocess.TimeoutExpired, queue.Empty) as error:
         result["error"] = str(error)
     finally:
+        timing.record('cleanup.start')
         try:
             if process is not None:
                 # Preserve the observed launcher state before cleanup can signal it.
@@ -304,6 +390,8 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                         break
                     if isinstance(tail, bytes):
                         tail = tail[:remaining]
+                        timing.first('diagnostic_tail.first.bytes', byteCount=len(tail))
+                        timing.observe_line(tail, 'diagnostic_tail')
                         log.write(tail)
                         remaining -= len(tail)
         # A started reader owns its descriptor until exit, including a failed join.
@@ -329,7 +417,11 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                             result["identityError"] = identity_error
                     else:
                         result["error"] = identity_error
-        receipt.write_text(json.dumps(result, indent=2) + "\n")
+        timing.record('cleanup.end', returncode=process.returncode if process is not None else None)
+        try:
+            receipt.write_text(json.dumps(result, indent=2) + "\n")
+        finally:
+            timing.flush()
     return 0 if result["success"] else 1
 
 

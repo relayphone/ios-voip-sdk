@@ -23,9 +23,18 @@ sim_limit 180 xcrun simctl install "$UDID" "$APP"
 sim_checkpoint
 ```
 
-Every bound is in seconds. A timed-out host process and its process group are
-killed and reaped; timeout returns 124. Native stdout and exit status are
-preserved. A boot, bootstatus or install recovery deletes the old device,
+Every bound is in seconds. Timeout returns 124 after bounded attempts to kill
+the owned host process group, close both pipes, and reap the child. Cleanup
+faults preserve the original timeout, nonzero status, or raised exception; a
+would-be success becomes failure. `cleanup_uncertain`, sanitized `cleanup_errors`,
+and `reaped` describe the result. Reaping the child alone does not prove its
+process group is gone after a denied signal. Cleanup uncertainty is reported
+without claiming successful termination. Session marks its existing conservative
+checkpoint before returning this infrastructure failure, so no lifecycle retry
+or replacement can overlap an unresolved host command. This checkpoint is a
+no-replay barrier, not evidence that an app started. Failed barrier persistence
+is reported as unknown, preserves the original failure, and blocks local retry.
+Native stdout and exit status are otherwise preserved. A boot, bootstatus or install recovery deletes the old device,
 creates a fresh one, and replays successful preparation with the original
 timeouts, including earlier installations. The shell wrapper updates `UDID`;
 an optional `simulator_changed` callback updates the runner's evidence identity.
@@ -36,6 +45,11 @@ reconciled through exact-name inventory; other devices are never selected by
 prefix. Cleanup attempts delete even when shutdown times out, and retains
 unresolved ownership when deletion or inventory fails. Call cleanup again from
 the workflow's always-running step if the runner was forcibly killed.
+
+Cleanup defers transport and evidence-writing errors until every owned teardown
+has been attempted, then raises the first original exception. An optional
+`cleanup(on_error=callback)` observes errors in occurrence order; observer errors
+cannot interrupt teardown. Failed deletion keeps its ownership record.
 
 Python callers can use `Session(path).call(argv, timeout)`, `.checkpoint()`, and
 `.cleanup()`. `bounded(argv, timeout)` provides execution without lifecycle
@@ -84,3 +98,13 @@ Host controls require no Xcode or simulator:
 ```bash
 python3 -m unittest discover -s scripts/sim -p 'test_*.py' -v
 ```
+
+Swift LiveKit setup uses one owned Session for create, boot, install and exact
+privacy grants. A setup recovery deletes the old simulator and replays preparation
+on one fresh device; microphone permission retains its 60-second bound. Repeated
+command evidence is archived under `infrastructure-attempts/`, launch environment
+is refreshed after replacement, and the checkpoint is persisted before the
+unchanged case supervisor starts. This slice adds no console or case retry.
+Cleanup preserves the primary failure and still performs independent inventory.
+
+Runtime fixture discovery binds the launch PID, bundle and fresh run ID to one canonical host journal. Controls and watch reuse that validated container; diagnostics use the retained channel. None of those paths queries a data container through simctl. Shared simulator preparation retains its existing one pre-app budget and no-replay barrier. Generic host commands use `scripts/ci/bounded`, with a ten-second termination grace outside the command deadline.

@@ -85,7 +85,7 @@ struct PreparationTests {
 
   @MainActor private static func boundedPreparationControls() async {
     let delivered = Date(timeIntervalSince1970: 100)
-    let effective = Date(timeIntervalSince1970: 162.5)
+    let effective = Date(timeIntervalSince1970: 161)
     let cutoff = Date(timeIntervalSince1970: 164)
     let id = UUID()
     for scenario in ["prelude-late", "final-hung", "final-late", "final-ready", "policy-final-hung"] {
@@ -151,7 +151,7 @@ struct PreparationTests {
 
   @MainActor private static func fulfillmentControls() async {
     let start = Date(timeIntervalSince1970: 100)
-    let effective = Date(timeIntervalSince1970: 108.5)
+    let effective = Date(timeIntervalSince1970: 107)
     let physical = Date(timeIntervalSince1970: 110)
     let id = UUID()
     func snapshot() -> ConversationSnapshot {

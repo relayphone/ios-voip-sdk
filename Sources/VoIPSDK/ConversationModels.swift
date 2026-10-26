@@ -94,7 +94,8 @@ public enum ConversationActionOrigin: String, Codable, Sendable { case system, a
 public struct PendingAction: Codable, Sendable, Equatable {
   public var id: UUID
   public var kind: ConversationActionKind
-  /// Application deadline: the earlier advertised timeout or conservative action bound, minus 1.5 seconds.
+  /// Application deadline: the earlier advertised timeout or conservative action bound,
+  /// minus 3 seconds for start/join audio fulfillment, otherwise 1.5 seconds.
   public var deadline: Date
   public var origin: ConversationActionOrigin
   public var held: Bool?

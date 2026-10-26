@@ -145,7 +145,7 @@ class Fixture:
             cap = {'hold': 5300, 'end': 5300, 'join': 64000}.get(kind)
             selected = min(deadline['deadlineMS'], WALL + delivered['t_ms'] + cap) if cap else deadline['deadlineMS']
             action = dict(id=identity, kind=kind, binding=binding, params=params, origin=origin,
-                          deadline=iso(selected - 1500), handled=False)
+                          deadline=iso(selected - (3000 if kind in ('start', 'join') else 1500)), handled=False)
             actions.append(action)
             if signal: self.handler(action)
         return actions
@@ -282,10 +282,11 @@ def handler_deadline(value, kind, shift_ms=0, earlier_advertised=False, extend_a
     advertised = next(row for row in value['engine'] if row['event'] == 'action.deadline' and row['actionID'] == identity)
     old = handler['deadline']
     deadline = gate.timestamp_ms(old) + shift_ms
-    if advertised_only: deadline = advertised['deadlineMS'] - 1500
+    margin = 3000 if kind in ('start', 'join') else 1500
+    if advertised_only: deadline = advertised['deadlineMS'] - margin
     if earlier_advertised:
         advertised['deadlineMS'] -= 27000
-        if not extend_advertised: deadline = advertised['deadlineMS'] - 1500
+        if not extend_advertised: deadline = advertised['deadlineMS'] - margin
     handler['deadline'] = iso(deadline)
     for row in value['engine']:
         if row['event'] == 'system.handlerEntered' and row['traceSequence'] == handler['sequence']:

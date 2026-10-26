@@ -37,6 +37,8 @@ def queued_adapter_controls(out, sdk):
         ['xcrun', 'swiftc', '-target', target, '-swift-version', '6', '-warnings-as-errors', '-parse-as-library',
          '-I', str(out), *[flag for path in headers for flag in ('-Xcc', '-I' + path)],
          *adapted, str(ROOT / 'Sources/VoIPSDK/AudioSessionQueue.swift'),
+         str(ROOT / 'Sources/VoIPSDK/ConversationModels.swift'),
+         str(ROOT / 'Sources/VoIPSDK/ConversationHandler.swift'),
          str(ROOT / 'ExpoMedia/Shared/QueuedMediaAdapter.swift'), str(TEST / 'QueuedAdapterTests.swift'),
          str(out / 'AVFAudio.o'), str(out / 'Queue.o'), str(out / 'Callback.o'),
          '-framework', 'Foundation', '-o', str(out / 'queued-adapter')],
@@ -45,7 +47,7 @@ def queued_adapter_controls(out, sdk):
         built = subprocess.run(command, capture_output=True, text=True, timeout=90)
         if built.returncode: raise RuntimeError('Swift queued adapter compile failed:\n' + built.stdout + built.stderr)
     results = []
-    for name in ('phase-order', 'configuration-failure', 'queued-cancellation'):
+    for name in ('phase-order', 'configuration-failure', 'queued-cancellation', 'no-media-slow-configuration'):
         result = subprocess.run([str(out / 'queued-adapter'), name], capture_output=True, text=True, timeout=10)
         if result.returncode or not result.stdout.startswith('passed:') or 'SWIFT TASK CONTINUATION MISUSE' in result.stderr:
             raise RuntimeError(f'Swift queued adapter {name} controls failed (exit {result.returncode}):\n' + result.stdout + result.stderr)

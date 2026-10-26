@@ -27,6 +27,11 @@ private enum Failure: Error { case assertion(String) }
   }
   @MainActor static func main() async throws {
     guard CommandLine.arguments.count == 2 else { throw Failure.assertion("Expected one scenario") }
+    if CommandLine.arguments[1] == "no-media-slow-configuration" {
+      try await noMediaSlowConfiguration()
+      print("passed: no-media-slow-configuration; actual no-handler coordinator and default adapter with delayed inert category configuration")
+      return
+    }
     let adapter = QueuedMediaAdapter()
     let audio = AVFAudio.AVAudioSession.fixture, binding = VSSelectedMediaBinding.fixture
     try expect(audio.configurationCalls == 0 && binding.prepareCalls == 0, "Construction must not prepare audio")
@@ -75,5 +80,33 @@ private enum Failure: Error { case assertion(String) }
     default: throw Failure.assertion("Unknown scenario")
     }
     print("passed: \(CommandLine.arguments[1]); actual Swift QueuedMediaAdapter with inert binding/AV boundaries")
+  }
+
+  @MainActor private static func noMediaSlowConfiguration() async throws {
+    let adapter = NoMediaAdapter()
+    let audio = AVFAudio.AVAudioSession.fixture
+    // Model category configuration exceeding the old 1.5-second final-settlement
+    // reserve. No native session, capture, activation or playback exists here.
+    audio.delayFirstConfiguration(by: 1.8)
+    let owner = ConversationActionCoordinator(policy: .accept)
+    let conversation = UUID()
+    let timeout = Date().addingTimeInterval(4.5)
+    var results: [(Bool, Date)] = []
+    owner.prepareAction = { _, _ in
+      try await AudioPreparationScope.perform { try await adapter.prepare() }
+      try expect(audio.configurationCalls == 0, "Prelude must not configure the session before acceptance")
+    }
+    owner.prepareForFulfillment = { _, _ in
+      try await AudioPreparationScope.perform { try await adapter.prepareForFulfillment() }
+    }
+    owner.enqueue(conversationID: conversation,
+      action: .init(id: UUID(), kind: .join, deadline: timeout, origin: .system),
+      isPending: { true }, settle: { results.append(($0, Date())) })
+    let stop = ContinuousClock.now + .seconds(7)
+    while results.isEmpty && ContinuousClock.now < stop { try await Task.sleep(for: .milliseconds(10)) }
+    try expect(results.count == 1 && results[0].0 && results[0].1 < timeout,
+      "Slow category configuration must finish within the policy reserve without expiring an accepted no-handler Join")
+    try expect(audio.configurationCalls == 1 && owner.pending(for: conversation) == nil,
+      "Accept once with one final category configuration and no pending action")
   }
 }

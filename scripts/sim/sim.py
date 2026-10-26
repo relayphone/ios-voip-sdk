@@ -31,6 +31,9 @@ class Result:
     stderr: bytes = b''
     timed_out: bool = False
     failure_classified: bool = False
+    cleanup_uncertain: bool = False
+    cleanup_errors: tuple = ()
+    reaped: bool = True
 
 
 def transport_failure(result):
@@ -47,9 +50,11 @@ def seconds(value):
 
 
 def bounded(command, timeout, *, env=None):
-    """Kill the complete owned host process group at the hard deadline."""
+    """Bound execution and owned cleanup without replacing the primary failure."""
     timeout = seconds(timeout)
-    process, pending, handlers, spawn_error = None, [], {}, None
+    process, pending, handlers = None, [], {}
+    result, primary, original_mask = None, None, None
+    faults, reaped = [], True
 
     def defer(signum, frame):
         pending.append((signum, frame))
@@ -63,89 +68,134 @@ def bounded(command, timeout, *, env=None):
             elif handler == signal.SIG_DFL:
                 raise Interrupted(signum)
 
+    def attempt(stage, action):
+        nonlocal primary
+        try:
+            return action()
+        except Exception as error:
+            faults.append((stage, error))
+            if isinstance(error, Interrupted) and primary is None:
+                primary = error
+        except BaseException as error:
+            # Defer control exceptions only until remaining cleanup/restoration.
+            faults.append((stage, error))
+            if primary is None:
+                primary = error
+
     def kill():
-        if process is None:
-            return
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
 
     try:
-        # Defer asynchronous callbacks throughout native ownership, including
-        # timeout handlers and cleanup. Deliver them only at controlled points
-        # inside the lifetime guard, or after the native child has been reaped.
-        try:
-            if threading.current_thread() is threading.main_thread():
-                original_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT})
-                try:
-                    handlers = {signum: signal.getsignal(signum)
-                                for signum in (signal.SIGTERM, signal.SIGINT)}
-                    for signum, handler in handlers.items():
-                        if handler != signal.SIG_IGN:
-                            signal.signal(signum, defer)
-                finally:
-                    # Unblock before spawning: native children inherit only the
-                    # caller's original mask, never this temporary parent mask.
-                    signal.pthread_sigmask(signal.SIG_SETMASK, original_mask)
+        if threading.current_thread() is threading.main_thread():
+            original_mask = signal.pthread_sigmask(signal.SIG_BLOCK, [])
+            signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT})
+            handlers = {signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGINT)}
+            initial_faults = len(faults)
             try:
-                process = subprocess.Popen(command, stdout=subprocess.PIPE,
-                                           stderr=subprocess.PIPE, start_new_session=True, env=env)
-            except OSError as error:
-                spawn_error = error
-            if spawn_error is not None:
-                return Result(list(command), 127, stderr=str(spawn_error).encode())
+                for signum, handler in handlers.items():
+                    if handler != signal.SIG_IGN:
+                        signal.signal(signum, defer)
+            except BaseException as error:
+                primary = error
+                raise
+            finally:
+                attempt('spawn-mask', lambda: signal.pthread_sigmask(signal.SIG_SETMASK, original_mask))
+            if primary is not None:
+                raise primary
+            if len(faults) != initial_faults:
+                raise faults[initial_faults][1]
+        try:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                       start_new_session=True, env=env)
+        except OSError as error:
+            result = Result(list(command), 127, stderr=str(error).encode())
+        if process is not None:
+            reaped = False
             deadline = time.monotonic() + timeout
-            while True:
+            while result is None:
                 deliver_pending()
                 remaining = deadline - time.monotonic()
                 try:
-                    # Poll the same absolute deadline so cancellation does not
-                    # wait for a long native budget or restart that budget.
                     stdout, stderr = process.communicate(timeout=max(0, min(remaining, .1)))
-                    return Result(list(command), process.returncode, stdout, stderr)
+                    result = Result(list(command), process.returncode, stdout, stderr)
                 except subprocess.TimeoutExpired as error:
                     if time.monotonic() < deadline:
                         continue
-                    kill()
-                    try:
-                        stdout, stderr = process.communicate(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        # An escaped descendant must not keep inherited pipe
-                        # readers alive after the owned group has been killed.
-                        stdout, stderr = error.output or b'', error.stderr or b''
-                    return Result(list(command), 124, stdout, stderr, timed_out=True)
-        finally:
-            # This one guard encloses the entire child lifetime. Signal
-            # callbacks still only queue while kill, pipe closure and reap run.
-            if process is not None:
-                if process.returncode is None:
-                    kill()
-                process.stdout.close()
-                process.stderr.close()
-                process.wait(timeout=2)
+                    # Record the timeout before any fallible teardown operation.
+                    result = Result(list(command), 124, error.output or b'', error.stderr or b'', timed_out=True)
+                    attempt('killpg', kill)
+                    drained = attempt('drain', lambda: process.communicate(timeout=2))
+                    if drained is not None:
+                        result.stdout, result.stderr = drained
+    except BaseException as error:
+        if primary is None:
+            primary = error
     finally:
-        if handlers:
-            restore_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set(handlers))
+        try:
             try:
-                # Worker-delivered signals can schedule Python callbacks even
-                # with this thread masked. Complete restoration before raising.
-                restoration_error = None
-                while True:
-                    try:
+                if process is not None:
+                    if process.returncode is None:
+                        attempt('killpg', kill)
+                    for stream in (process.stdout, process.stderr):
+                        if stream is not None:
+                            attempt('close', stream.close)
+                    waited = attempt('reap', lambda: process.wait(timeout=2))
+                    reaped = type(waited) is int
+                # A worker may dispatch a pending Python handler between restorations.
+                # Retry the complete pair finitely, preserving that exception's identity.
+                if handlers:
+                    for _ in range(2):
+                        count = len(faults)
                         try:
-                            signal.signal(signal.SIGTERM, handlers[signal.SIGTERM])
-                        finally:
-                            signal.signal(signal.SIGINT, handlers[signal.SIGINT])
-                        break
-                    except BaseException as error:
-                        if restoration_error is None:
-                            restoration_error = error
-                if restoration_error is not None:
-                    raise restoration_error
+                            attempt('restore-mask-block', lambda: signal.pthread_sigmask(signal.SIG_BLOCK, set(handlers)))
+                            for signum, handler in handlers.items():
+                                attempt('restore-handler', lambda: signal.signal(signum, handler))
+                        except BaseException as error:
+                            faults.append(('restore-handlers', error))
+                            if primary is None:
+                                primary = error
+                        if len(faults) == count:
+                            break
             finally:
-                signal.pthread_sigmask(signal.SIG_SETMASK, restore_mask)
-        deliver_pending()
+                if original_mask is not None:
+                    for _ in range(2):
+                        try:
+                            signal.pthread_sigmask(signal.SIG_SETMASK, original_mask)
+                            break
+                        except BaseException as error:
+                            faults.append(('restore-mask', error))
+                            if primary is None and (not isinstance(error, Exception) or isinstance(error, Interrupted)):
+                                primary = error
+        except BaseException as error:
+            faults.append(('teardown', error))
+            if primary is None:
+                primary = error
+        if primary is None:
+            try:
+                deliver_pending()
+            except BaseException as error:
+                primary = error
+
+    uncertain = bool(faults) or not reaped
+    if uncertain:
+        detail = ', '.join(stage + ':' + type(error).__name__ for stage, error in faults)
+        attempt('report', lambda: summary('infra:host-cleanup',
+                'uncertain; child reaped=' + str(reaped).lower() + ('; ' + detail if detail else '')))
+    details = tuple(stage + ':' + type(error).__name__ for stage, error in faults)
+    if result is not None:
+        result.cleanup_uncertain, result.cleanup_errors, result.reaped = uncertain, details, reaped
+        if uncertain and result.returncode == 0:
+            result.returncode = 125
+    if primary is not None:
+        try:
+            primary.cleanup_uncertain, primary.cleanup_errors, primary.reaped = uncertain, details, reaped
+        except BaseException:
+            pass  # Metadata cannot replace the original exception identity.
+        raise primary
+    return result
 
 
 def summary(label, retry):
@@ -204,6 +254,7 @@ class Session:
     def __init__(self, path, runner=bounded, recovery_timeout=30, *, create=True, simulator=None,
                  inventory_timeout=None):
         self.path, self.runner = Path(path), runner
+        self._host_cleanup_failure = None
         self._attached = not create
         self._expected_simulator = simulator_uuid(simulator).lower() if simulator else None
         self.recovery_timeout = seconds(recovery_timeout)
@@ -335,7 +386,7 @@ class Session:
 
     def reserve_retry(self):
         """Spend the invocation's sole pre-app retry before attempting recovery."""
-        if self._attached:
+        if self._attached or self._host_cleanup_failure is not None:
             return False
         with self._locked():
             latest = self._read_state()
@@ -352,8 +403,49 @@ class Session:
             self._write_state()
             return True
 
+    def _uncertain_host(self, command, outcome):
+        if self._host_cleanup_failure is None:
+            self._host_cleanup_failure = outcome
+        prior = self._host_cleanup_failure
+        if not getattr(outcome, 'cleanup_uncertain', False):
+            outcome.cleanup_errors = getattr(prior, 'cleanup_errors', ())
+            outcome.reaped = getattr(prior, 'reaped', False)
+        outcome.cleanup_uncertain = True
+        if isinstance(outcome, Result) and outcome.returncode == 0:
+            outcome.returncode = 125
+        try:
+            self.checkpoint()  # Conservative no-replay barrier, not app evidence.
+            outcome.cleanup_barrier_saved = True
+        except Interrupted:
+            raise
+        except Exception:
+            # Structural state and persistence faults leave the durable barrier unknown.
+            if isinstance(self.state, dict):
+                self.state['checkpoint'] = True
+            outcome.cleanup_barrier_saved = False
+            try:
+                summary('infra:checkpoint', 'not eligible; host cleanup barrier persistence unknown')
+            except (OSError, ValueError):
+                pass
+        step = command[2] if command[:2] == ['xcrun', 'simctl'] else 'host'
+        try:
+            _report_result(outcome, 'infra:' + step, 'not eligible; owned host cleanup uncertain')
+        except (OSError, ValueError):
+            pass  # Reporter I/O cannot replace the command's primary failure.
+
     def execute(self, command, timeout):
-        return self.runner(list(command), seconds(timeout))
+        try:
+            result = self.runner(list(command), seconds(timeout))
+        except BaseException as error:
+            if getattr(error, 'cleanup_uncertain', False):
+                try:
+                    self._uncertain_host(command, error)
+                except BaseException:
+                    pass  # Never replace the original command/cancellation error.
+            raise
+        if getattr(result, 'cleanup_uncertain', False):
+            self._uncertain_host(command, result)
+        return result
 
     def create(self, arguments, timeout):
         name = arguments[0] + ('' if arguments[0].endswith(' ') else '-') + str(uuid.uuid4())
@@ -361,6 +453,8 @@ class Session:
         self.state['owned'].append(record)
         self.save()  # Persist the full unique name before contacting CoreSimulator.
         result = self.execute(['xcrun', 'simctl', 'create', name, *arguments[1:]], timeout)
+        if result.cleanup_uncertain:
+            return result  # The reserved name stays uncertain; no new attempt.
         if result.returncode == 0:
             try:
                 device = simulator_uuid(result.stdout.decode())
@@ -397,16 +491,50 @@ class Session:
             self.save()
         return device, True
 
-    def cleanup(self, timeout=30, final=True):
+    def cleanup(self, timeout=30, final=True, *, on_error=None):
         """Try every owned device, retaining unresolved ownership for later cleanup."""
         timeout = seconds(timeout)
         if self._attached or not self.state['owned']:
             return Result([], 0)
         original = self.current
         success, last = True, None
+        errors = []
+
+        def failed(label, error):
+            errors.append(error)
+            if on_error is not None:
+                try:
+                    on_error(error)
+                except BaseException:
+                    pass  # Observation cannot interrupt owned teardown.
+            try:
+                error.failure_classified = True  # Exact in-memory outcome, never receipt data.
+            except (AttributeError, TypeError):
+                pass
+            try:
+                report_failure(label, 'not eligible; owned cleanup continued')
+            except (OSError, ValueError):
+                pass
+
+        def attempt(action, label='infra:evidence-write'):
+            try:
+                return action()
+            except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+                failed(label, error)
+
         log_path = self.path.with_name('cleanup.log')
         for record in list(self.state['owned']):
-            device, known = self.recover(record, min(timeout, self.recovery_timeout))
+            try:
+                device, known = self.recover(record, min(timeout, self.recovery_timeout))
+            except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+                # A successful exact-name lookup can bind the ID before its
+                # state write fails. Keep that native ownership proof for teardown.
+                failed('infra:evidence-write' if record.get('id') else 'infra:cleanup-inventory', error)
+                try:
+                    device = simulator_uuid(record['id']) if record.get('id') else None
+                except ValueError:
+                    device = None
+                known = bool(device)
             if not known:
                 success = False
                 continue
@@ -419,34 +547,45 @@ class Session:
                         success = False
                 else:
                     self.state['owned'].remove(record)
-                    self.save()
+                    attempt(self.save)
                 continue
-            shutdown = self.execute(['xcrun', 'simctl', 'shutdown', device], timeout)
-            delete = self.execute(['xcrun', 'simctl', 'delete', device], timeout)
-            with log_path.open('ab') as stream:
-                for result in (shutdown, delete):
-                    stream.write(result.stdout + result.stderr)
-            last = dict(simulatorID=device, shutdownExitCode=shutdown.returncode,
-                        deleteExitCode=delete.returncode, deleted=delete.returncode == 0)
-            if shutdown.returncode:
+            shutdown = attempt(lambda: self.execute(['xcrun', 'simctl', 'shutdown', device], timeout), 'infra:shutdown')
+            delete = attempt(lambda: self.execute(['xcrun', 'simctl', 'delete', device], timeout), 'infra:delete')
+            stream = attempt(lambda: log_path.open('ab'))
+            if stream is not None:
+                try:
+                    for result in (shutdown, delete):
+                        if result is not None:
+                            attempt(lambda: stream.write(result.stdout + result.stderr))
+                finally:
+                    attempt(stream.close)
+            deleted = delete is not None and delete.returncode == 0
+            last = dict(simulatorID=device, shutdownExitCode=shutdown.returncode if shutdown else None,
+                        deleteExitCode=delete.returncode if delete else None, deleted=deleted)
+            if shutdown is None or shutdown.returncode:
                 summary('infra:shutdown', 'not eligible; delete attempted')
-            if delete.returncode:
+            if not deleted:
                 summary('infra:delete', 'not eligible; ownership retained')
                 success = False
             else:
                 self.state['owned'].remove(record)
                 if self.current == device:
                     self.state['current'] = None
-                self.save()
+                attempt(self.save)
         if last is None:
             last = dict(simulatorID=original, shutdownExitCode=None,
                         deleteExitCode=None, deleted=success)
         last['deleted'] = success and not self.state['owned']
-        self.path.with_name('cleanup.json').write_text(json.dumps(last, indent=2) + '\n')
+        attempt(lambda: self.path.with_name('cleanup.json').write_text(json.dumps(last, indent=2) + '\n'))
+        if errors:
+            raise errors[0]
         return Result([], 0 if success else 1)
 
     def replacement(self):
-        if self.cleanup(timeout=self.recovery_timeout, final=False).returncode:
+        cleanup = self.cleanup(timeout=self.recovery_timeout, final=False)
+        if self._host_cleanup_failure is not None:
+            return self._host_cleanup_failure
+        if cleanup.returncode:
             return Result([], 1, stderr=b'Cannot replace simulator before owned cleanup\n')
         config = self.state['create']
         result = self.create(config['arguments'], config['timeout'])
@@ -485,6 +624,9 @@ class Session:
             raise ValueError('Unsupported simulator operation: ' + step)
         if step == 'io' and (len(command) < 5 or command[4] != 'screenshot'):
             raise ValueError('Only screenshot simulator IO is supported')
+        privacy_grant = (step == 'privacy' and len(command) == 7 and command[4] == 'grant' and
+                         all(value and not value.startswith('-') for value in command[5:7]))
+        preparation = step in ('boot', 'bootstatus', 'install') or privacy_grant
         if step == 'create':
             if len(command) != 6 or self.current:
                 raise ValueError('Create requires a fresh session, name, device type and runtime')
@@ -507,6 +649,8 @@ class Session:
                     raise ValueError('Bootstatus requires its blocking flag')
             result = self.execute(command, timeout)
 
+        if result.cleanup_uncertain:
+            return result
         if step == 'launch' and result.stdout:
             self.checkpoint()  # Even partial app/PID evidence forbids startup replay.
         if result.returncode:
@@ -519,7 +663,7 @@ class Session:
             runtime_timeout = (command == ['xcrun', 'simctl', 'list', 'runtimes', '-j'] and result.timed_out)
             # An owned query recovery needs its recorded create configuration.
             runtime_timeout = runtime_timeout and (not self.state['owned'] or bool(self.state['create']))
-            eligible = step in ('create', 'boot', 'bootstatus', 'install') or runtime_timeout
+            eligible = step == 'create' or preparation or runtime_timeout
             if step == 'launch':
                 position = command.index(self.current)
                 bundle = command[position + 1] if position + 1 < len(command) else ''
@@ -532,25 +676,35 @@ class Session:
                 return result
             summary('infra:' + step, 'scheduled (one pre-app retry)')
             if step == 'create':
-                if self.cleanup(timeout=self.recovery_timeout, final=False).returncode:
+                cleanup = self.cleanup(timeout=self.recovery_timeout, final=False)
+                if self._host_cleanup_failure is not None:
+                    self._uncertain_host(command, result)
+                    return result
+                if cleanup.returncode:
                     _report_result(result, 'infra:create', 'exhausted; cleanup failed')
                     return result
                 result = self.create(command[3:], timeout)
-            elif step in ('boot', 'bootstatus', 'install') or (runtime_timeout and self.state['create']):
+            elif preparation or (runtime_timeout and self.state['create']):
+                original = result
                 result = self.replacement()
+                if result.cleanup_uncertain:
+                    self._uncertain_host(command, original)
+                    return original
                 if result.returncode == 0:
                     if step != 'list':
                         command[3] = self.current
                     result = self.execute(command, timeout)
             else:
                 result = self.execute(command, timeout)
+            if result.cleanup_uncertain:
+                return result
             if result.returncode:
                 _report_result(result, 'infra:' + step, 'exhausted')
             else:
                 summary('infra:' + step, 'recovered')
 
         if result.returncode == 0:
-            if step in ('boot', 'bootstatus', 'install'):
+            if preparation:
                 prepared_command = list(command)
                 prepared_command[3] = '{simulator}'
                 self.state['prepared'].append(dict(command=prepared_command, timeout=timeout))
@@ -623,7 +777,13 @@ def main(argv=None):
         for signum in (signal.SIGTERM, signal.SIGINT):
             signal.signal(signum, signal.SIG_IGN)
         if session:
-            session.cleanup()
+            try:
+                session.cleanup()
+            except Exception:
+                try:
+                    summary('infra:cleanup', 'not eligible; cancellation cleanup uncertain')
+                except (OSError, ValueError):
+                    pass
         return 128 + error.signum
     except (OSError, ValueError, KeyError, TypeError) as error:
         print('Simulator helper: ' + str(error), file=sys.stderr)

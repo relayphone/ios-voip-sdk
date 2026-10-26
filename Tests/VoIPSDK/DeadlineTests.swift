@@ -104,6 +104,20 @@ struct DeadlineTests {
   @MainActor private static func boundedDeadlineControls() async {
     let delivered = Date(timeIntervalSince1970: 100)
     let id = UUID()
+    for (kind, advertised, expected) in [
+      (ConversationActionKind.join, 200.0, 161.0), (.join, 130, 127), (.join, 104, 101),
+      (.start, 700, 697), (.hold, 130, 103.8), (.end, 130, 103.8),
+      (.mute, 130, 128.5), (.tones, 130, 128.5),
+    ] {
+      let owner = ConversationActionCoordinator(policy: .fail, now: { delivered }, schedule: { _, _ in {} })
+      owner.prepareForFulfillment = { _, _ in }
+      owner.enqueue(conversationID: id,
+        action: .init(id: UUID(), kind: kind, deadline: Date(timeIntervalSince1970: advertised), origin: .system),
+        isPending: { true }, settle: { _ in })
+      precondition(owner.pending(for: id)?.deadline == Date(timeIntervalSince1970: expected),
+        "Only start/join reserves three seconds for final audio work; other margins and earlier expiry stay intact")
+      owner.cancelAll(reason: .reset)
+    }
     // Literal outcomes bind the policy to measured bounds independently of its selector.
     for (kind, advertised, expected) in [
       (ConversationActionKind.hold, 130.0, 103.8), (.end, 130, 103.8),

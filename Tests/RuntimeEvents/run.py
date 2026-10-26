@@ -4,6 +4,8 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
+import runpy
 import shutil
 import subprocess
 import sys
@@ -15,6 +17,8 @@ BUNDLE = 'dev.callkitsim.eventfixture'
 sys.path.insert(0, str(ROOT / 'scripts/sim'))
 import sim as simulator_infra
 from ownership import publish
+
+execute_host = runpy.run_path(str(ROOT / 'scripts/ci/bounded'))['execute']
 
 
 class CommandError(RuntimeError):
@@ -56,12 +60,16 @@ def run(*args, timeout=120, **kwargs):
             raise CommandError(result, timeout)
         return result.stdout.decode().strip()
     try:
-        result = subprocess.run(list(map(str, args)), text=True, capture_output=True, timeout=timeout, **kwargs)
+        result = execute_host(list(map(str, args)), timeout, capture_output=True, **kwargs)
     except subprocess.TimeoutExpired as error:
         raise RuntimeError(f'{args[0]} timed out after {timeout}s: {error.stdout!r}\n{error.stderr!r}') from error
+    if result.cancelled:
+        raise SystemExit(128 + result.cancelled)
+    if result.timed_out:
+        raise RuntimeError(f'{args[0]} timed out after {timeout}s: {result.stdout!r}\n{result.stderr!r}')
     if result.returncode:
-        raise RuntimeError(f'{args[0]} failed: {result.stdout}\n{result.stderr}')
-    return result.stdout.strip()
+        raise RuntimeError(f'{args[0]} failed: {result.stdout.decode(errors="replace")}\n{result.stderr.decode(errors="replace")}')
+    return result.stdout.decode().strip()
 
 
 def session_transport(command, timeout, **kwargs):
@@ -153,11 +161,51 @@ def launch_fixture(device, app, *, install=True, session=None):
         # This slice retries preparation only. Persist the barrier before the
         # original launch, including unknown launch outcomes and process death.
         session.checkpoint()
-    run('xcrun', 'simctl', 'launch', '--terminate-running-process', device, BUNDLE,
-        env=dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=run_id))
-    container = Path(run('xcrun', 'simctl', 'get_app_container', device, BUNDLE, 'data'))
-    channel = container / 'Documents/.callkit-simulator'
-    return channel, run_id
+    launched = run('xcrun', 'simctl', 'launch', '--terminate-running-process', device, BUNDLE,
+                   env=dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=run_id))
+    match = re.fullmatch(re.escape(BUNDLE) + r': ([1-9][0-9]*)', launched)
+    if match is None:
+        raise RuntimeError('Missing fixture launch PID acknowledgement')
+    return discover_fixture_channel(device, run_id, int(match[1]), session=session), run_id
+
+
+def discover_fixture_channel(device, run_id, pid, *, session=None):
+    """Bind the new process to one canonical host journal, without a container RPC."""
+    device = simulator_infra.simulator_uuid(device)
+    inventory = json.loads(lifecycle(session, 'list', 'devices', '-j', timeout=60))['devices']
+    matches = [row for group in inventory.values() for row in group
+               if row.get('udid', '').lower() == device.lower()]
+    if len(matches) != 1 or matches[0].get('state') != 'Booted':
+        raise RuntimeError('Expected one booted fixture simulator')
+    data = Path(matches[0]['dataPath'])
+    if not data.is_absolute() or data.name != 'data' or data.parent.name.lower() != device.lower():
+        raise RuntimeError('Fixture data path does not match its simulator')
+    applications = data / 'Containers/Data/Application'
+    if not applications.is_dir() or applications.resolve(strict=True) != applications:
+        raise RuntimeError('Fixture application directory is missing or noncanonical')
+    def discovered():
+        found = []
+        for container in applications.iterdir():
+            try:
+                simulator_infra.simulator_uuid(container.name)
+                if not container.is_dir() or container.resolve(strict=True) != container:
+                    continue
+                channel = container / 'Documents/.callkit-simulator'
+                published = channel / 'session.json'
+                journal = channel / run_id / 'events.jsonl'
+                if any(not path.is_file() or path.resolve(strict=True) != path for path in (published, journal)):
+                    continue
+                row = json.loads(published.read_text())
+                if (isinstance(row, dict) and type(row.get('schemaVersion')) is int and row['schemaVersion'] == 1
+                        and row.get('runID') == run_id and row.get('bundleID') == BUNDLE
+                        and type(row.get('pid')) is int and row['pid'] == pid):
+                    found.append(channel)
+            except (OSError, ValueError):
+                continue
+        if len(found) > 1:
+            raise RuntimeError('Ambiguous fixture journal identity')
+        return found[0] if found else None
+    return wait(discovered)
 
 
 def fixture_session(channel, run_id):
@@ -187,8 +235,7 @@ def capture_diagnostics(out, device, *, bundle=BUNDLE, channel=None, failed=Fals
     def journal():
         source = channel
         if source is None:
-            container = Path(run('xcrun', 'simctl', 'get_app_container', device, bundle, 'data', timeout=20))
-            source = container / 'Documents/.callkit-simulator'
+            raise RuntimeError('No validated fixture channel available for diagnostics')
         shutil.copytree(source, out / 'runtime-journal', dirs_exist_ok=True)
     attempt(journal)
     if failed:
@@ -232,8 +279,7 @@ def main():
             if owner and owner.current: device = owner.current
     def command(*parts):
         result = json.loads(run(ROOT / 'Tools/cksim', '--simulator', device, '--bundle', BUNDLE,
-                                '--runtime-dir', args.package.resolve(),
-                                '--app-container', root.parent.parent, *parts))
+                                '--runtime-dir', args.package.resolve(), '--app-container', str(root.parent.parent), *parts))
         assert result.get('success'), result
         return result
     root = None
@@ -301,7 +347,7 @@ def main():
         from filtered_acceptance import run_filtered_acceptance
         run_filtered_acceptance(channel=root, session=session, command=command, rows=rows, wait=wait, out=args.out)
         captured = run(ROOT / 'Tools/cksim', '--simulator', device, '--bundle', BUNDLE,
-                       '--app-container', root.parent.parent, 'watch', '--json', '--duration', '0.3')
+                       '--app-container', str(root.parent.parent), 'watch', '--json', '--duration', '0.3')
         watched = [json.loads(line) for line in captured.splitlines()]
         assert watched and watched == rows()[:len(watched)], 'watch differs from runtime journal'
         for index, row in enumerate(watched, 1):
