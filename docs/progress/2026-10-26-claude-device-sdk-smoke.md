@@ -56,4 +56,29 @@ This is the first end-to-end run of the **SDK example app**, not a probe, on a r
 
 All calls ended. The QA build and the UI-test apps were uninstalled, the private token copy was deleted, and DerivedData was removed. No settings were changed.
 
+## Cold-launch race (delayed handler)
+
+This was a rerun on main `47324e0` with the same local QA patch, never committed, plus one change: a delay before the JS call handler attaches, read from `Documents/qa-config.json` after React mounts. Each run was a cold background launch from a real VoIP push, with the app terminated and the phone unlocked. XCUITest tapped Accept as soon as it appeared, after confirming SpringBoard or InCallService was in front.
+
+All times are in milliseconds. "After entry" means after process start; "after Join" means after the system Join reached the SDK.
+
+| Run | Handler delay | Ringing after entry | JS ready / handler attached after entry | Join pending until handler | Connected / capture / audio activated after Join | Outcome |
+| --- | --- | --- | --- | --- | --- | --- |
+| Race 1 | 5,000 | 269 | 371 / 5,781 | **3,237** | 3,264 / 3,303 / 3,462 | Connected; clean End |
+| Race 2 | 5,000 | 291 | 705 / 5,901 | **3,356** | 3,379 / 3,416 / 3,543 | Connected; clean End |
+| Race 3 | 5,000 | 201 | 245 / 5,292 | **2,925** | 2,950 / 2,983 / 3,102 | Connected; clean End |
+| Control | 0 | 192 | 239 / 562 | 6 (handler already attached) | 81 / 128 / 343 | Connected; clean End |
+| Past the deadline | 40,000 | 227 | 270 / 40,352 | Never: **pending cleared 27,028 after Join (29 after the SDK deadline)** | — | **Call ended by the default `fail` policy**; no audio activation; handler attached later, too late |
+
+**Findings:**
+
+- **Join waits for the handler.** A system Join that arrives before the JS handler stays pending in the SDK, shown as `ringing` with a pending `join` from the `system` origin. It completes within about 10 ms of the handler attaching. Connection, LiveKit capture and audio activation then follow normally, with audio about 185 ms after the handler runs. There was no `audioActivated` before fulfillment.
+- **Deadline and policy.** The SDK's Join deadline was 26.99 to 27.00 s after Join in every run. That's the reported 30 s minus its reserve, well inside iOS's own Join timeout of about 64 s measured on the device. When the handler misses it, the configured `unhandledAction: fail` ends the call 29 ms after the deadline.
+- **What the user sees.** While Join is pending, the iOS UI already treats the call as answered (green call indicator and timer), but there is no media. Past the deadline the call disappears. **So a cold launch whose handler attaches late gives the user up to 27 s of silent "answered" call.** This isn't an SDK defect, but it's worth a product decision in M3.5: start the handler natively, or let apps choose a shorter Join budget for cold launches.
+- **Natural race window.** Without a delay, the handler attached 562 ms after process start, about 370 ms after ringing. Neither XCUITest nor a person reliably answers inside that window.
+
+**Locked lock-screen answering is still not covered.** During XCUITest sessions on this setup, `pressLockButton` didn't lock the phone even face-down, so calls arrived as Home Screen banners. This needs an attended run with the phone locked by its side button.
+
+**No SDK bugs filed.** Cleanup: the QA build and the UI-test apps were uninstalled, the token copy was deleted, the build outputs were removed, and the device lock was released.
+
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
