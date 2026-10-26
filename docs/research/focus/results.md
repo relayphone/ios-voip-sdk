@@ -1,6 +1,6 @@
 # Focus device results: first iPhone 13 pass
 
-These are the measured results for the [device plan](device-plan.md) from [#124](https://github.com/ziahamza/ios-voip-sdk/issues/124). Claude ran them on 26 October 2026 with the [`spikes/focus`](../../../spikes/focus/README.md) probe. The probe uses only LiveCommunicationKit (LCK); CallKit was not tested. The run was cut short twice to return the shared phone, so this pass is partial; this page is updated as rows complete.
+These are the measured results for the [device plan](device-plan.md) from [#124](https://github.com/ziahamza/ios-voip-sdk/issues/124). Claude ran them on 26–27 October 2026 with the [`spikes/focus`](../../../spikes/focus/README.md) probe. The probe uses only LiveCommunicationKit (LCK); CallKit was not tested. Two sessions were cut short to return the shared phone. All 16 F rows except F06–F08 are now measured, along with C02 and the locked Auto-Answer run. The Live Activity rows are still open.
 
 The rows were automated: XCUITest changed the settings and observed the screen, and pushes went through the sandbox. There is **one sample per row**; the plan asks for three. Traces, receipts and tokens stay in a private working folder and are not committed.
 
@@ -9,7 +9,7 @@ The rows were automated: XCUITest changed the settings and observed the screen, 
 | Item | Value |
 | --- | --- |
 | Device | iPhone 13, iOS 27.0 (24A5355q), unlocked, an XCUITest session observing. |
-| Build | Xcode 27.1 (27A9275); probe from `main` plus this PR's harness fixes. Signed with a development certificate. |
+| Build | Xcode 27.1 (27A9275); probe from `main` with the harness fixes from #143 and #146. Signed with a development certificate. |
 | Signing | The App Group was removed locally, because command-line automatic signing cannot add that capability. |
 | Delivery | Sandbox VoIP push to `dev.callkitsim.focus.voip`. Each push launched the probe cold. |
 | Test Focus | Owned custom Focus "Focus Probe 124", in Allow Notifications From mode for both People and Apps. |
@@ -41,9 +41,9 @@ The two allowlists also kept the defaults that iOS suggested for a new Focus: th
 | F13 | **On** | No | Yes | Off | **filtered**: code 3, after 2197 ms | 2 ms | none |
 | F14 | **On** | No | Yes | On | **filtered**: code 3, after 2205 ms | 4 ms | none; CN scheduled |
 | F15 | **On** | Yes | Yes | Off | **reported, 101 ms** | 4 ms | **banner and full-screen call UI** |
-| F16 | On | Yes | Yes | On | pending | | |
+| F16 | **On** | Yes | Yes | On | **reported, 100 ms** | 1 ms | **banner and full-screen call UI**; CN scheduled |
 
-Every unanswered reported call ended itself after the probe's 25 s ring timeout. After F13, the step that turns the Focus back off failed once because Contacts reopened in an unexpected state; the Focus was turned off a few minutes later and the harness now relaunches Contacts once to recover.
+Every unanswered reported call ended itself after the probe's 25 s ring timeout. The CN's own banner was not observed separately in any CN row. After F13, the step that turns the Focus back off failed once because Contacts reopened in an unexpected state; the Focus was turned off a few minutes later and the harness now relaunches Contacts once to recover.
 
 ### Repeated calls (C02)
 
@@ -60,7 +60,7 @@ Both runs: Focus on, app and caller not allowed, CN off. The same caller called 
 | --- | --- | --- | --- |
 | F01, locked | Focus off; Auto-Answer Calls on with a 3 s delay; phone locked with the lock button, then 45 s with no UI session; cold push | reported, 120 ms (entry 2 ms) | **`JoinConversationAction` arrived 3.4 s after the push** while the phone was locked; the conversation joined. The probe ended it after 23 s. |
 
-Auto-Lock could not be changed under XCUITest. Selecting 30 seconds showed a checkmark, then read back as the previous value (Never). The run locked the phone with the lock button instead, so Auto-Lock played no part. The CN's own banner was not observed separately in F02, F04 or F10.
+Auto-Lock could not be changed under XCUITest. Selecting 30 seconds showed a checkmark, then read back as the previous value (Never). The run locked the phone with the lock button instead, so Auto-Lock played no part.
 
 ### Live Activity (L01, unqualified)
 
@@ -95,7 +95,7 @@ The Live Activity rows ran into probe and consent problems before measuring Focu
    - A genuine Communication Notification for the same caller does not change this (F10).
    - This repeats the earlier [push probe](../callkit-simulator-probe/livecommunicationkit/push/README.md#results) result (2.07 s, code 3), now with the allowances controlled.
 3. **Allowing the app lets every call from it through.**
-   - With the Focus on and the app in the Focus Apps allowlist, the report succeeded and the call rang (banner and full-screen call UI). This held with the caller allowed (F15, 101 ms) and with the caller **not** allowed (F11, 89 ms; F12 with a CN, 114 ms), even though Allow Calls From was Allowed People Only.
+   - With the Focus on and the app in the Focus Apps allowlist, the report succeeded and the call rang (banner and full-screen call UI). This held with the caller allowed (F15, 101 ms; F16 with a CN, 100 ms) and with the caller **not** allowed (F11, 89 ms; F12 with a CN, 114 ms), even though Allow Calls From was Allowed People Only.
    - So for LCK, app allowance overrides the People and Allow Calls From rules. A user who allows the Phone app in a Focus gets every Phone call ringing.
 4. **Allowing only the caller does not let the call through.**
    - With the Focus on, the caller in the People allowlist, Allow Calls From set to Allowed People Only and the app not allowed, the report still failed with code 3 after 2197 ms, and nothing appeared (F13).
@@ -121,13 +121,21 @@ The Live Activity rows ran into probe and consent problems before measuring Focu
 - **Allowlist editing.** The very first People setup is a two-step sheet (Next, then Done). Later edits happen on a page that saves live.
 - **Live Activity consent.** Live Activities need the inline consent above before a transcript surface can be relied on.
 
+## What this means for Phone
+
+- **Silent AI screening works by default.** While a Focus is on and Phone is not in its allowed apps, every LCK call is filtered with code 3, which the SDK can hand to AI screening. This held even for allowed people, repeated callers and a person-aware CN.
+- **Allowing Phone in a Focus lets every call ring.** There is no per-caller middle ground through iOS settings: People and Allow Calls From do not apply to LCK calls here.
+  - A "let my important callers ring" feature therefore has to be decided by Phone itself, not by the Focus People list.
+  - One option is a server-side VIP list: ask the user to allow Phone in the Focus, then screen everyone else on the backend.
+- **Auto-Answer hands an incoming call to the app while the phone stays locked.** The system answered on its own, so a hands-free locked answer can rely on the normal Join path.
+
 ## Typed-outcome mapping
 
 This applies the [proposed `IncomingPresentationResult`](sdk-api.md#typed-incoming-result-and-native-policy) to what the device produced.
 
 | Device outcome | Domain / code | Measured latency | SDK result | Default policy | Evidence |
 | --- | --- | --- | --- | --- | --- |
-| Report succeeds | – | 63–119 ms | `.reported(conversationID:)` | normal ringing and actions | C00, F01–F05, F11, F12, F15 |
+| Report succeeds | – | 63–119 ms | `.reported(conversationID:)` | normal ringing and actions | C00, F01–F05, F11, F12, F15, F16 |
 | Filtered by Focus | `com.apple.CallKit.error.incomingcall` / 3 | 2.19–2.21 s | `.filtered(reason: .focus)` | `screenWithAI`, or `decline` per the user's policy | F09, F10, F13, F14, C02 |
 | Codes 4–7 | same domain, 4–7 | not produced | `.filtered(reason: .blockList / .restrictedSharing / .protectedCall / .sensitiveParticipants)` | conservative: no AI for code 4; decline or no screening for 5–7 | none yet (C07, C10) |
 | Anything else | unknown pair | – | `.failed(IncomingFailure)` | no screening | – |
@@ -140,6 +148,6 @@ What this means for the SDK:
 
 ## Next steps
 
-1. Run F16. Then fix the probe's activity continuity and rerun the L rows. Use `--keep-setup` and one `restore-all` at the end. The resume steps live in the operator's private run folder.
+1. Fix the probe's activity continuity, then rerun L01–L04 and L09 (the Live Activity under Focus). Use `--keep-setup` and one `restore-all` at the end. The resume steps live in the operator's private run folder.
 2. Repeat any row whose outcome differs from its neighbours before turning it into a rule.
 3. Re-run C00 with the Mac microphone once it is granted, to qualify audible and haptic silence.
