@@ -6,7 +6,7 @@ Implements the native/platform portions of [the device plan](../../docs/research
 spikes/focus/build.sh
 ```
 
-Requires local Xcode 27.1 and XcodeGen. This runs `build-for-testing` for **generic iOS**, `CODE_SIGNING_ALLOWED=NO`, without installing or selecting any device. `FOCUS_BUILD_DIR` overrides its temporary DerivedData directory. Generated project/plists/entitlements come from `project.yml`; signing identities and profiles are not embedded. A later device build needs the operator's approved team, development APNs, Communication Notifications and the declared App Group on **both** targets. Use a dedicated sandbox identifier, never the production Phone app. The unsigned product cannot be installed as-is.
+Requires local Xcode 27.1 and XcodeGen. This runs `build-for-testing` for **generic iOS**, `CODE_SIGNING_ALLOWED=NO`, without installing or selecting any device. `FOCUS_BUILD_DIR` overrides its temporary DerivedData directory. Generated project/plists/entitlements come from `project.yml`; signing identities and profiles are not embedded. A later device build needs the operator's approved team, development APNs, Communication Notifications and the declared App Group on all three app/extension targets. Use a dedicated sandbox identifier, never the production Phone app. The unsigned product cannot be installed as-is.
 
 ## Configuration and exports
 
@@ -31,7 +31,7 @@ The app registers PushKit at launch. Every genuine incoming push is reported, ev
 
 CN-on donates a genuine incoming `INStartCallIntent` with `INPerson`, then posts updated **local** notification content at active interruption level. Authorize notifications once through the app; status/authorization has a separate trace. Do not treat its banner/sound as call ringing. Contact matching uses the caller's E.164 handle; People allowance behavior still needs measurement. The notification is deliberately alert-capable for the matrix; it is not part of silent transcript mode.
 
-`SetFocusFilterIntent` **AI call policy** stores the selected value in the App Group. Native `focus.sample` and `push.received` events read it, without JS. Configure/remove this filter through Settings; the probe does not claim it knows which Focus owns the stored value. `focus.sample` records shared status/authorization on activation and button sampling; unknown stays null. Authorization is explicit via the button or config, not triggered by an incoming call.
+A dedicated ExtensionKit `AppIntentsExtension` owns `SetFocusFilterIntent` **AI call policy** and stores the selected value in the App Group. Native `focus.sample` and `push.received` events read it, without JS. Configure/remove this filter through Settings; the probe does not claim it knows which Focus owns the stored value. `focus.sample` records shared status/authorization on activation and button sampling; unknown stays null. Authorization is explicit via the button or config, not triggered by an incoming call.
 
 Exports are private app-container files:
 

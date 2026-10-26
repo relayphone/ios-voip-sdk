@@ -14,6 +14,7 @@ targets:
     sources: [App, Shared]
     dependencies:
       - target: FocusWidget
+      - target: FocusFilter
     info:
       path: App/Info.plist
       properties:
@@ -55,6 +56,23 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.callkitsim.focus.widget
+        APPLICATION_EXTENSION_API_ONLY: YES
+  FocusFilter:
+    type: extensionkit-extension
+    platform: iOS
+    sources: [Filter]
+    info:
+      path: Filter/Info.plist
+      properties:
+        EXAppExtensionAttributes:
+          EXExtensionPointIdentifier: com.apple.appintents-extension
+    entitlements:
+      path: Filter/Focus.entitlements
+      properties:
+        com.apple.security.application-groups: [group.dev.callkitsim.focus]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.callkitsim.focus.filter
         APPLICATION_EXTENSION_API_ONLY: YES
 schemes:
   FocusProbe:
