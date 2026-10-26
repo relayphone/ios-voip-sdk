@@ -7,7 +7,7 @@ from pathlib import Path
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from changes import select, gate, changed_paths
+from changes import select, gate, changed_paths, workflow_optional_changes
 
 
 class SelectionTests(unittest.TestCase):
@@ -76,6 +76,7 @@ class SelectionTests(unittest.TestCase):
         self.assertTrue(plan['sdk_plan']['device-release'])
         self.assertTrue(plan['sdk_plan']['expo-livekit-native'])
         self.assertFalse(plan['sdk_plan']['legacy-audio-lifecycle'])
+        self.assertTrue(select(['IosVoipSDK.podspec'])['sdk_plan']['expo-livekit-native'])
 
     def test_audio_contract_changes_select_the_legacy_decoder(self):
         self.assertTrue(select(['Tests/AudioLifecycle/Controls.m'])['sdk_plan']['legacy-audio-lifecycle'])
@@ -122,6 +123,84 @@ class GateTests(unittest.TestCase):
     def test_selected_success_passes(self):
         gate({'changes': {'result': 'success'}, 'journeys': {'result': 'success'}},
              {'journeys': True})
+
+
+class WorkflowChangeTests(unittest.TestCase):
+    BEFORE = '''name: SDK
+env:
+  PLAIN: ""
+jobs:
+  device-release:
+    runs-on: xcode-27
+    steps:
+      - run: echo device
+  swift-livekit-native:
+    runs-on: xcode-27
+    steps:
+      - run: echo swift
+  expo-livekit-native:
+    runs-on: xcode-27
+    steps:
+      - run: echo expo
+  legacy-audio-lifecycle:
+    needs: sdk-fixtures
+    runs-on: macos-26
+    steps:
+      - run: echo legacy
+'''
+    AFTER = '''name: SDK
+env:
+  PLAIN: ""
+jobs:
+  changes:
+    uses: ./.github/workflows/ci-changes.yml
+  device-release:
+    needs: [changes, sdk-core]
+    if: needs.changes.outputs.device == 'true'
+    runs-on: xcode-27
+    steps:
+      - run: echo device
+  swift-livekit-native:
+    needs: [changes, sdk-core]
+    if: needs.changes.outputs.swift == 'true'
+    runs-on: xcode-27
+    steps:
+      - run: echo swift
+  expo-livekit-native:
+    needs: [changes, sdk-core]
+    if: needs.changes.outputs.expo == 'true'
+    runs-on: xcode-27
+    steps:
+      - run: echo expo
+  legacy-audio-lifecycle:
+    needs: [changes, sdk-fixtures]
+    if: needs.changes.outputs.legacy == 'true'
+    runs-on: macos-26
+    steps:
+      - run: echo legacy
+'''
+
+    def test_execution_edit_selects_only_affected_optional_job(self):
+        changed = self.AFTER.replace('echo device', 'echo changed-device')
+        self.assertEqual(workflow_optional_changes(self.BEFORE, changed), {'device-release'})
+
+    def test_canonical_migration_keeps_critical_pr_policy(self):
+        self.assertEqual(workflow_optional_changes(self.BEFORE, self.AFTER), set())
+
+    def test_changed_guard_cannot_hide_its_job(self):
+        changed = self.AFTER.replace("needs.changes.outputs.swift == 'true'", 'false')
+        self.assertEqual(workflow_optional_changes(self.AFTER, changed), {'swift-livekit-native'})
+
+    def test_inherited_execution_environment_selects_all_optional_jobs(self):
+        changed = self.AFTER.replace('PLAIN: ""', 'PLAIN: custom')
+        self.assertEqual(workflow_optional_changes(self.AFTER, changed),
+                         {'device-release', 'swift-livekit-native', 'expo-livekit-native', 'legacy-audio-lifecycle'})
+
+    def test_missing_job_or_unreadable_format_fails_closed(self):
+        for changed in ('jobs: {}', self.AFTER.replace('  device-release:', '  renamed:'),
+                        self.AFTER + 'defaults:\n  run:\n    working-directory: example\n'):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                workflow_optional_changes(self.AFTER, changed)
 
 
 class GitChangesTests(unittest.TestCase):
@@ -199,6 +278,25 @@ class GitChangesTests(unittest.TestCase):
             'CI_NEEDS_JSON': json.dumps({'changes': {'result': 'success'}, 'journeys': {'result': 'skipped'}}),
             'CI_EXPECTED_JSON': json.dumps({'journeys': True})})
         self.assertNotEqual(result.returncode, 0)
+
+    def test_workflow_job_edit_is_selected_through_the_real_git_cli(self):
+        workflow = self.root / '.github/workflows/sdk-m0.yml'
+        workflow.parent.mkdir(parents=True)
+        workflow.write_text(WorkflowChangeTests.BEFORE)
+        self.git('add', '.')
+        self.git('commit', '-m', 'workflow base')
+        base = self.git('rev-parse', 'HEAD').strip()
+        workflow.write_text(WorkflowChangeTests.AFTER.replace('echo expo', 'echo new-expo'))
+        self.git('add', '.')
+        self.git('commit', '-m', 'workflow edit')
+        head = self.git('rev-parse', 'HEAD').strip()
+        result, output = self.invoke('pull_request', {'pull_request': {
+            'base': {'sha': base}, 'head': {'sha': head}}})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = dict(line.split('=', 1) for line in output.read_text().splitlines())
+        jobs = json.loads(values['sdk_plan'])
+        self.assertTrue(jobs['expo-livekit-native'])
+        self.assertFalse(jobs['device-release'])
 
 
 if __name__ == '__main__':

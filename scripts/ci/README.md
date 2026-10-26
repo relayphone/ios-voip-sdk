@@ -13,7 +13,7 @@ scripts/ci/bounded 20 du -sh /tmp/one-owned-output
 scripts/ci/bounded 20 find /tmp/one-owned-output -maxdepth 2 -type f
 scripts/ci/bounded 30 xcrun simctl list devices -j
 scripts/ci/bounded 40 curl --fail --output /tmp/owned-download.zip URL
-scripts/ci/bounded 2700 gh pr checks 116 --watch --fail-fast --interval 180
+scripts/ci/bounded 2700 gh pr checks 116 --watch --fail-fast --interval 60
 ```
 
 Capture lengthy output in a file and inspect only the needed lines. Simulator

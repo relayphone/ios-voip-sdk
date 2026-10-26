@@ -62,7 +62,7 @@ def select(paths, full=False):
         groups.add('system')
     jobs = {job: sdk and job in CRITICAL for job in SDK_JOBS}
     jobs['device-release'] = sdk and any(p in NATIVE_INPUTS or p in DEVICE_BUILDERS or p.startswith(('ExpoMedia/', 'Sources/VoIPPlatform/', 'Tests/ExpoMedia/')) for p in paths)
-    jobs['expo-livekit-native'] = sdk and any(p in ('package.json', 'package-lock.json', 'app.plugin.js') or p in DEVICE_BUILDERS or p.startswith(('ExpoMedia/', 'Tests/ExpoMedia/')) for p in paths)
+    jobs['expo-livekit-native'] = sdk and any(p in ('package.json', 'package-lock.json', 'app.plugin.js', 'IosVoipSDK.podspec', 'expo-module.config.json') or p in DEVICE_BUILDERS or p.startswith(('ExpoMedia/', 'Tests/ExpoMedia/')) for p in paths)
     jobs['swift-livekit-native'] = sdk and any('swift_livekit' in p or p.startswith(('Sources/VoIPSDK/', 'Sources/VoIPPlatform/', 'Integrations/LiveKit/', 'Tests/SwiftLiveKit/')) or p in ('Package.swift', 'Tools/cksim-notify.c') for p in paths)
     jobs['legacy-audio-lifecycle'] = sdk and (shared or any('m1_contract' in p or 'run_audio_lifecycle_legacy' in p or audio_contract(p) for p in paths))
     return dict(sdk=sdk, runtime=runtime, helper=helper,
@@ -109,6 +109,61 @@ def changed_paths(base, head, root):
     return diff.stdout.decode('utf-8', errors='surrogateescape').rstrip('\0').split('\0') if diff.stdout else []
 
 
+OPTIONAL = {'device-release': 'device', 'swift-livekit-native': 'swift',
+            'expo-livekit-native': 'expo', 'legacy-audio-lifecycle': 'legacy'}
+
+
+def workflow_parts(text):
+    if text.count('\njobs:\n') != 1:
+        raise ValueError('Expected block-style workflow jobs')
+    header, jobs = text.split('\njobs:\n')
+    blocks = {}
+    current = None
+    for line in jobs.splitlines(keepends=True):
+        if line.strip() and not line[0].isspace() and not line.startswith('#'):
+            raise ValueError('Unsupported top-level field after workflow jobs')
+        match = re.fullmatch(r'  ([A-Za-z_][\w-]*):\s*(?:#[^\n]*)?\n?', line)
+        if match:
+            current = match[1]
+            if current in blocks: raise ValueError('Duplicate workflow job')
+            blocks[current] = line
+        elif current is None and line.strip():
+            raise ValueError('Cannot parse workflow job boundaries')
+        elif current:
+            blocks[current] += line
+    if not set(OPTIONAL) <= blocks.keys():
+        raise ValueError('Expected optional SDK jobs are missing')
+    inherited = []
+    field = None
+    for line in header.splitlines(keepends=True):
+        if line and not line[0].isspace() and not line.startswith('#'):
+            field = line.split(':', 1)[0]
+        if field in ('env', 'defaults'): inherited.append(line)
+    return blocks, ''.join(inherited)
+
+
+def workflow_optional_changes(before, after):
+    old, old_env = workflow_parts(before)
+    new, new_env = workflow_parts(after)
+    if old_env != new_env:
+        return set(OPTIONAL)
+    if 'changes' not in old and 'changes' in new:
+        # One-time migration of the exact guards introduced by this policy.
+        # Every other command/env/condition/dependency edit remains observable.
+        for job, flag in OPTIONAL.items():
+            condition = "    if: needs.changes.outputs." + flag + " == 'true'\n"
+            if job == 'legacy-audio-lifecycle':
+                line = '    needs: sdk-fixtures\n'
+                if old[job].count(line) != 1: raise ValueError('Unknown legacy dependency')
+                old[job] = old[job].replace(line, '    needs: [changes, sdk-fixtures]\n' + condition)
+            else:
+                if re.search(r'^    (needs|if):', old[job], re.M):
+                    raise ValueError('Unknown pre-selection job guard')
+                first, rest = old[job].split('\n', 1)
+                old[job] = first + '\n    needs: [changes, sdk-core]\n' + condition + rest
+    return {job for job in OPTIONAL if old[job].strip() != new[job].strip()}
+
+
 def event_selection(name, event, root):
     if name in ('push', 'schedule', 'workflow_dispatch'):
         return select([], full=True)
@@ -118,7 +173,19 @@ def event_selection(name, event, root):
         base, head = event['merge_group']['base_sha'], event['merge_group']['head_sha']
     else:
         raise ValueError('Unsupported CI event: ' + name)
-    return select(changed_paths(base, head, root))
+    paths = changed_paths(base, head, root)
+    plan = select(paths)
+    workflow = '.github/workflows/sdk-m0.yml'
+    if workflow in paths:
+        def content(sha):
+            found = subprocess.run(['git', 'ls-tree', '--name-only', sha, '--', workflow],
+                cwd=root, check=True, capture_output=True, timeout=20)
+            if not found.stdout: raise ValueError('Cannot compare missing SDK workflow')
+            return subprocess.run(['git', 'show', sha + ':' + workflow], cwd=root,
+                check=True, capture_output=True, text=True, timeout=20).stdout
+        for job in workflow_optional_changes(content(base), content(head)):
+            plan['sdk_plan'][job] = True
+    return plan
 
 
 def main():
