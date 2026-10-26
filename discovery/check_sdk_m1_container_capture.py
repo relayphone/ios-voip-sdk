@@ -59,18 +59,21 @@ if os.environ['FIXTURE_MODE'] != 'missing-journal':
 '''
 
 
-XCRUN_STUB = r'''
+PATH_STUB = r'''
 import json, os, pathlib, sys
-expected = ['simctl', 'get_app_container', os.environ['UDID'], 'dev.iosvoipsdk.example', 'data']
+expected = ['--receipt', str(pathlib.Path(os.environ['OUT']) / 'm1/sdk-m1-journey.receipt.json'),
+    '--trace', str(pathlib.Path(os.environ['OUT']) / 'm1/sdk-m1-journey.log'),
+    '--simulator', os.environ['UDID'], '--run-id', os.environ['RUN_ID'], '--bundle', 'dev.iosvoipsdk.example']
 with open(os.environ['FIXTURE_QUERIES'], 'a') as stream: stream.write(json.dumps(sys.argv[1:]) + '\n')
-assert sys.argv[1:] == expected, 'only the owned example data-container query is allowed'
-assert pathlib.Path(os.environ['FIXTURE_QUERIES']).read_text().count('\n') == 1, 'repeated container query'
+assert sys.argv[1:] == expected, 'only the completed owned capture can resolve a container'
+assert pathlib.Path(os.environ['FIXTURE_QUERIES']).read_text().count('\n') == 1, 'repeated container resolution'
 mode = os.environ['FIXTURE_MODE']
-if mode == 'query-fails': sys.exit(73)
+if mode == 'lookup-fails': sys.exit(73)
 if mode == 'empty': print('')
 elif mode == 'not-directory': print(os.environ['FIXTURE_NON_DIRECTORY'])
 else: print(os.environ['FIXTURE_CONTAINER'])
 '''
+
 
 
 class ContainerCaptureControls(unittest.TestCase):
@@ -81,11 +84,11 @@ class ContainerCaptureControls(unittest.TestCase):
             (root / 'discovery/run_scenario.py').write_text(textwrap.dedent(SCENARIO_STUB))
             binary = root / 'bin'
             binary.mkdir()
-            # Keep the real interpreter, cp and hash snippet; replace only xcrun.
+            # Keep real copy/hash operations; the helper has its own binding controls.
             (binary / 'python3').symlink_to(sys.executable)
-            xcrun = binary / 'xcrun'
-            xcrun.write_text('#!' + sys.executable + '\n' + textwrap.dedent(XCRUN_STUB))
-            xcrun.chmod(0o755)
+            helper = root / 'scripts/sim/paths.py'
+            helper.parent.mkdir(parents=True)
+            helper.write_text(textwrap.dedent(PATH_STUB))
             container = root / 'mock data container'
             container.mkdir()
             non_directory = root / 'not a data container'
@@ -108,11 +111,10 @@ class ContainerCaptureControls(unittest.TestCase):
                 capture_output=True, text=True, timeout=15)
             observed_cases = cases.read_text().splitlines() if cases.exists() else []
             observed_queries = [json.loads(line) for line in queries.read_text().splitlines()] if queries.exists() else []
-            self.assertEqual(observed_queries, [['simctl', 'get_app_container', SIMULATOR,
-                'dev.iosvoipsdk.example', 'data']], result.stderr)
+            self.assertEqual(len(observed_queries), 1, result.stderr)
             check(result, output / 'm1', observed_cases)
 
-    def test_one_query_captures_three_distinct_journals_and_receipt_hashes(self):
+    def test_one_bound_lookup_captures_three_distinct_journals_and_receipt_hashes(self):
         def check(result, output, observed_cases):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(observed_cases, list(CASES))
@@ -130,7 +132,7 @@ class ContainerCaptureControls(unittest.TestCase):
         self.run_capture('success', check)
 
     def test_invalid_initial_container_refuses_before_copy_or_later_cases(self):
-        for mode in ('query-fails', 'empty', 'not-directory'):
+        for mode in ('lookup-fails', 'empty', 'not-directory'):
             with self.subTest(mode=mode):
                 def check(result, output, observed_cases):
                     self.assertNotEqual(result.returncode, 0, result.stderr)

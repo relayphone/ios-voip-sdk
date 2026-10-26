@@ -233,7 +233,8 @@ if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
       --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.example \
       --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.iosvoipsdk.example
     if [[ -z "$example_container" ]]; then
-      example_container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.example data)
+      example_container=$(python3 scripts/sim/paths.py --receipt "$OUT/m1/$name.receipt.json" --trace "$OUT/m1/$name.log" \
+        --simulator "$UDID" --run-id "$RUN_ID" --bundle dev.iosvoipsdk.example)
       [[ -n "$example_container" && -d "$example_container" ]] || { echo "Missing owned example data container" >&2; exit 1; }
     fi
     cp "$example_container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m1/$name.runtime.jsonl"
@@ -251,7 +252,7 @@ PY
   # The app is installed once and only relaunched below. Reuse its first
   # observed data container instead of making another IPC query after each case.
   contract_container=""
-  for case in guard unhandled-accept unhandled-fail duplicate-wrapper media-reentrancy audio-lifecycle; do
+  for case in guard unhandled-accept unhandled-fail duplicate-wrapper media-reentrancy audio-lifecycle audio-routes; do
     name="sdk-m1-contract-$case"
     PRODUCT_CHECK="$name"
     env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
@@ -262,7 +263,8 @@ PY
       --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.m1contracts \
       --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.iosvoipsdk.m1contracts
     if [[ -z "$contract_container" ]]; then
-      contract_container=$(limit 30 xcrun simctl get_app_container "$UDID" dev.iosvoipsdk.m1contracts data)
+      contract_container=$(python3 scripts/sim/paths.py --receipt "$OUT/m1/contracts/$name.receipt.json" --trace "$OUT/m1/contracts/$name.log" \
+        --simulator "$UDID" --run-id "$RUN_ID" --bundle dev.iosvoipsdk.m1contracts)
       [[ -n "$contract_container" && -d "$contract_container" ]] || { echo "Missing owned contract data container" >&2; exit 1; }
     fi
     cp "$contract_container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m1/contracts/$name.runtime.jsonl"
