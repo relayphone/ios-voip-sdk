@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import re
 import subprocess
 import time
 import uuid
@@ -26,9 +27,27 @@ def audio_control_eligible(result):
     return result.get("status") == "recorded" and result.get("visualNegativeQualified") is True and len(reports) == 1 and reports[0].get("outcome") == "reported"
 
 
-def plan(row, locked=False, listen=False):
+def repeat_cooldown(last_attempt, now):
+    return max(0, 181 - (now - last_attempt))
+
+
+def plan(row, locked=False, listen=False, provider=None, caller_format="e164", repeated_calls="off", caller_value=None):
+    aliases = {"CK-F13": ("F13", "callkit"), "CK-C02": ("C02", "callkit"), "LCK-C02b": ("C02", "lck")}
+    original = row
+    if row in aliases:
+        row, expected = aliases[row]
+        if provider and provider != expected:
+            raise ValueError("Provider conflicts with row alias")
+        provider = expected
+    provider = provider or "lck"
+    caller = caller_value or ("+15555550199" if caller_format != "national" else "5555550199")
+    pattern = {"e164": r"\+[1-9][0-9]{7,14}", "national": r"[0-9]{7,15}", "generic": r"[A-Za-z0-9+._@-]{1,128}"}[caller_format]
+    if not re.fullmatch(pattern, caller):
+        raise ValueError("Caller value does not match its declared format")
+    kind = "generic" if caller_format == "generic" else "phoneNumber"
     p = dict(row=row, focus=True, app=False, person=False, cn=False, sendVoIP=True,
-             activity=False, blocked=None, locked=locked, listen=listen)
+             activity=False, blocked=None, locked=locked, listen=listen, provider=provider,
+             callerFormat=caller_format, callerValue=caller, handleType=kind, repeatedCalls=repeated_calls)
     if row.startswith("F") and row[1:].isdigit() and 1 <= int(row[1:]) <= 16:
         n = int(row[1:]) - 1
         p.update(focus=bool(n & 8), app=bool(n & 2), person=bool(n & 4), cn=bool(n & 1))
@@ -51,6 +70,8 @@ def plan(row, locked=False, listen=False):
         p["blocked"] = "Special policy/identity/fault or unsupported hardware control requires an additional adapter"
     else:
         raise ValueError("Unknown row; use F01..F16, C00..C11, L01..L16, T01..T06 or restore-all")
+    p["baseRow"] = row
+    p["row"] = original
     if p["blocked"]:
         p["sendVoIP"] = False
         p["steps"] = ["automatic skip; no device or push: " + p["blocked"]]
@@ -72,6 +93,13 @@ def plan(row, locked=False, listen=False):
         p["steps"] = ["restore owned journal; restore Auto-Answer/delay + Auto-Lock; delete test Focus/contact; restore prior active Focus",
                       "uninstall disposable probe only if required to restore undetermined permissions; no push"]
     return p
+
+
+def matching_activity(registration, token):
+    fields = ["activityID", "surfaceID", "tokenGeneration"]
+    return (all(isinstance(registration.get(k), str) and registration[k] and registration[k] == token.get(k) for k in fields)
+            and registration.get("state") in ["active", "stale"]
+            and isinstance(token.get("token"), str) and re.fullmatch(r"(?:[a-fA-F0-9]{2}){32,256}", token["token"]) is not None)
 
 
 def write(path, value):
@@ -97,7 +125,9 @@ class Run:
         self.counter = 0
         self.journal_fresh = True
         self.invitations = [self.invitation]
-        self.binding = {"device": self.device, "build": hashlib.sha256(self.source.read_bytes()).hexdigest()}
+        self.run_id = str(uuid.uuid4())
+        self.binding = {"device": self.device, "build": hashlib.sha256(self.source.read_bytes()).hexdigest(),
+                        "provider": p["provider"], "callerFormat": p["callerFormat"]}
 
     def qualified(self, path):
         if not path.exists():
@@ -191,7 +221,9 @@ class Run:
 
     def send(self, suffix=""):
         payload = self.folder / ("push" + suffix + ".json")
-        write(payload, {"aps": {}, "from": "+15555550199", "invitationID": self.invitation})
+        write(payload, {"aps": {}, "from": self.p["callerValue"], "invitationID": self.invitation})
+        # Fence subsequent repeat trials even when APNs delivery outcome is uncertain.
+        write(self.work / "last-voip-attempt.json", {"attemptedAt": time.time()})
         self.command(["node", str(REPO / "discovery/send-apns.mjs"), "--token-file", str(self.folder / "voip-token.txt"),
                       "--payload-file", str(payload), "--topic", BUNDLE + ".voip",
                       "--receipt-file", str(self.folder / ("apns" + suffix + ".json"))], timeout=30)
@@ -202,7 +234,7 @@ class Run:
         binary = self.work / "listen"
         if not binary.exists():
             self.command(["swiftc", str(HERE / "listen.swift"), "-o", str(binary)], timeout=90)
-        argv = [str(binary), "--output", str(self.folder / "audio.json"), "--seconds", "110" if self.p["row"] == "C02" else "40"]
+        argv = [str(binary), "--output", str(self.folder / "audio.json"), "--seconds", "110" if self.p["baseRow"] == "C02" else "40"]
         if self.p["row"] == "C00":
             argv += ["--positive"]
         elif self.qualified(self.work / "audio-calibration.json"):
@@ -215,6 +247,25 @@ class Run:
         if audio_result.exists() and json.loads(audio_result.read_text()).get("reason") == "mic permission pending":
             print("mic permission pending; continuing with visual evidence only")
         return process
+
+    def current_activity(self, suffix):
+        registration = self.folder / ("activity-registration-" + suffix + ".json")
+        token = self.folder / "activity-token.json"
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            try:
+                self.copy("activity-registration.json", registration)
+                self.copy("activity-update-token.json", token)
+                before = json.loads(registration.read_text())
+                value = json.loads(token.read_text())
+                self.copy("activity-registration.json", registration)
+                after = json.loads(registration.read_text())
+                if before == after and matching_activity(after, value):
+                    return after
+            except (RuntimeError, OSError, ValueError):
+                pass
+            time.sleep(1)
+        raise RuntimeError("No matching current activity/token; APNs update not sent")
 
     def execute(self):
         p = self.p
@@ -229,19 +280,35 @@ class Run:
             # The Focus app picker lists only apps that have notification permission (iOS 27).
             actions = ["setup", "launch", "notifications:allow", "app:" + ("include" if p["app"] else "exclude"),
                        "person:" + ("include" if p["person"] else "exclude"), "calls:Allowed People Only"]
-            if p["row"] == "C01":
+            if p["baseRow"] == "C01":
                 actions[-1] = "calls:" + self.args.calls
-            actions += ["repeated-calls:" + (self.args.repeated_calls if p["row"] == "C02" else "off")]
+            actions += ["repeated-calls:" + (self.args.repeated_calls if p["baseRow"] == "C02" else "off")]
             if p["row"] == "C06":
                 actions += ["policy:screenWithAI"]
             actions += ["focus:" + ("on" if p["focus"] else "off")]
             self.ui(actions)
-            self.arm({"rowID": p["row"], "armed": True, "communicationNotification": p["cn"],
+            self.arm({"rowID": p["row"], "runID": self.run_id, "provider": p["provider"], "handleType": p["handleType"],
+                      "armed": True, "communicationNotification": p["cn"],
                       "activityAction": "start" if p["activity"] else None})
             self.ui(["launch", "notifications:allow"] + (["focus-authorization:allow"] if p["row"] == "C05" else []))
+            if p["activity"]:
+                self.ui(["activity-consent"])
+                first = self.current_activity("before-relaunch")
+                self.ui(["launch", "notifications:allow"])
+                self.ui(["activity-consent"])
+                second = self.current_activity("after-relaunch")
+                if (first["activityID"], first["surfaceID"]) != (second["activityID"], second["surfaceID"]):
+                    raise RuntimeError("Activity changed across relaunch; APNs update not sent")
+                result["activityContinuity"] = {"activityID": second["activityID"], "surfaceID": second["surfaceID"]}
             self.copy("voip-token.txt", self.folder / "voip-token.txt")
             if p["row"] in ["L03", "L04"]:
                 self.ui(["home"])
+            if p["baseRow"] == "C02":
+                history = self.work / "last-voip-attempt.json"
+                if history.exists():
+                    last = json.loads(history.read_text())["attemptedAt"]
+                    while repeat_cooldown(last, time.time()) > 0:
+                        time.sleep(min(30, repeat_cooldown(last, time.time())))
             if p["locked"]:
                 if self.args.allow_system_settings or p["locked"]: # Hamza approved this setting change; persist once.
                     (self.work / "system-settings-approved").write_text("approved for disposable probe measurements\n")
@@ -250,7 +317,7 @@ class Run:
                 result["systemSettings"] = json.loads((self.folder / "ui-settings.json").read_text())["events"]
                 time.sleep(45)  # No XCUITest session remains to keep the phone awake.
             elif p["sendVoIP"]:
-                observer = self.ui(["observe:90" if p["row"] == "C02" else "observe:60"], background=True)
+                observer = self.ui(["observe:90" if p["baseRow"] == "C02" else "observe:60"], background=True)
                 ready = self.folder / "ready.json"; deadline = time.monotonic() + 120
                 while time.monotonic() < deadline:
                     if observer.poll() is not None:
@@ -269,10 +336,12 @@ class Run:
                 time.sleep(5)  # Quiet baseline before the controlled signal.
             if p["sendVoIP"]:
                 self.send()
-                if p["row"] == "C02":
+                if p["baseRow"] == "C02":
                     time.sleep(69); self.invitation = str(uuid.uuid4()); self.invitations.append(self.invitation); self.send("-repeat")
             if p["activity"]:
-                self.copy("activity-update-token.json", self.folder / "activity-token.json")
+                current = self.current_activity("before-send")
+                if current["activityID"] != result["activityContinuity"]["activityID"]:
+                    raise RuntimeError("Activity changed before send; APNs update not sent")
                 self.command(["node", str(HERE / "send-activity.mjs"), "--token-file", str(self.folder / "activity-token.json"),
                               "--receipt-file", str(self.folder / "activity-apns.json")], timeout=30)
                 time.sleep(40 if p["row"] == "L09" else 8)
@@ -289,12 +358,18 @@ class Run:
             self.copy("focus.jsonl", self.folder / "trace.jsonl")
             traces = [json.loads(line) for line in (self.folder / "trace.jsonl").read_text().splitlines() if line]
             matching = correlate(traces, self.invitations)
+            received = [e for e in matching if e.get("event") == "push.received"]
+            if (p["sendVoIP"] and len(received) != len(self.invitations)) or any(e.get("provider") != p["provider"] or e.get("handleType") != p["handleType"] or e.get("handleValue") != p["callerValue"] for e in received):
+                raise RuntimeError("Provider or handle mismatch in device trace")
             result["invitationIDs"] = self.invitations
             result["reports"] = [e for e in matching if e["event"] == "report.result"]
             if p["row"] == "C00" and len(result["reports"]) == 1 and result["reports"][0].get("outcome") == "reported" and any(e["banner"] or e["callScreen"] for e in result.get("visual", [])):
                 write(self.work / "visual-calibration.json", {"positive": True, "binding": self.binding, "createdAt": time.time()})
                 result["visualNegativeQualified"] = True
-            result["autoAnswerLCKJoinObserved"] = any(e["event"] == "call.action" and e.get("kind") == "JoinConversationAction" for e in matching) if p["locked"] else None
+            if p["locked"]:
+                expected_action = "CXAnswerCallAction" if p["provider"] == "callkit" else "JoinConversationAction"
+                result["autoAnswerAction"] = expected_action
+                result["autoAnswerObserved"] = any(e["event"] == "call.action" and e.get("kind") == expected_action for e in matching)
             result["lockCondition"] = "lock button pressed, then 45s without a UI session; Auto-Lock readback in systemSettings" if p["locked"] else "unlocked UI session"
             if p["activity"]:
                 text = "Updates delayed" if p["row"] == "L09" else "Synthetic caller: APNs update"
@@ -303,7 +378,7 @@ class Run:
                 self.copy("focus.jsonl", self.folder / "trace.jsonl")
                 traces = [json.loads(line) for line in (self.folder / "trace.jsonl").read_text().splitlines() if line]
                 activity_id = json.loads((self.folder / "activity-token.json").read_text())["activityID"]
-                result["activityContentEvents"] = [e for e in traces if e["event"].startswith("activity.") and e.get("rowID") == p["row"] and e.get("activityID") == activity_id]
+                result["activityContentEvents"] = [e for e in traces if e["event"].startswith("activity.") and e.get("runID") == self.run_id and e.get("activityID") == activity_id]
                 result["coverage"] = "Single transport/presentation subcase, not full cadence/lock/privacy qualification"
             result["status"] = "recorded" if not p["sendVoIP"] or len(result["reports"]) == len(self.invitations) else "incomplete-report-evidence"
             return result
@@ -326,7 +401,7 @@ class Run:
                     self.recover()
                     if self.args.keep_setup:
                         # Matrix runs keep the owned Focus/contact between rows; only the Focus-on window ends here.
-                        self.arm({"armed": False, "activityAction": "end"}); self.ui(["focus:off"])
+                        self.arm({"armed": False, "activityAction": None if p["activity"] else "end"}); self.ui(["focus:off"])
                         result["restored"] = "focus-off"
                     else:
                         self.restore(); result["restored"] = True
@@ -350,10 +425,13 @@ def main():
     parser.add_argument("--allow-system-settings", action="store_true")
     parser.add_argument("--listen", action="store_true")
     parser.add_argument("--repeated-calls", choices=["on", "off"], default="off")
+    parser.add_argument("--provider", choices=["lck", "callkit"])
+    parser.add_argument("--caller-format", choices=["e164", "national", "generic"], default="e164")
+    parser.add_argument("--caller-value", help="synthetic handle in the chosen format; default matches the test contact")
     parser.add_argument("--calls", default="Everyone", choices=["Everyone", "All Contacts", "Contacts Only", "Favorites", "Allowed People Only"])
     parser.add_argument("--keep-setup", action="store_true", help="matrix mode: turn Focus off after the row; run restore-all at the end")
     args = parser.parse_args()
-    p = plan(args.row, args.locked_auto_answer, args.listen)
+    p = plan(args.row, args.locked_auto_answer, args.listen, args.provider, args.caller_format, args.repeated_calls, args.caller_value)
     if args.dry_run or p["blocked"]:
         if p["blocked"]:
             p["status"] = "skipped-dependency-or-unsupported"

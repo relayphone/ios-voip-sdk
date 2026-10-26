@@ -5,12 +5,41 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-from runner import Run, audio_control_eligible, correlate
+from runner import Run, audio_control_eligible, correlate, matching_activity, repeat_cooldown
 
 HERE = Path(__file__).resolve().parent
 
 
 class DryRunTests(unittest.TestCase):
+    def test_repeat_pair_waits_until_prior_attempt_is_outside_three_minutes(self):
+        self.assertEqual(repeat_cooldown(1000, 1000), 181)
+        self.assertEqual(repeat_cooldown(1000, 1179), 2)
+        self.assertEqual(repeat_cooldown(1000, 1181), 0)
+        self.assertEqual(repeat_cooldown(1000, 1300), 0)
+
+    def test_activity_registration_requires_current_matching_token_generation(self):
+        registration = {"activityID": "activity-a", "surfaceID": "surface-a", "tokenGeneration": "generation-a", "state": "active"}
+        token = {**registration, "token": "ab" * 32}
+        self.assertTrue(matching_activity(registration, token))
+        self.assertFalse(matching_activity(registration, {**token, "activityID": "old-activity"}))
+        self.assertFalse(matching_activity(registration, {**token, "tokenGeneration": "old-generation"}))
+        self.assertFalse(matching_activity({**registration, "state": "ended"}, token))
+        self.assertFalse(matching_activity(registration, {**token, "token": "bad"}))
+
+    def test_callkit_comparison_rows_and_handle_controls(self):
+        person = json.loads(self.run_plan("CK-F13").stdout)
+        self.assertEqual((person["provider"], person["focus"], person["app"], person["person"]),
+                         ("callkit", True, False, True))
+        for row, provider in [("CK-C02", "callkit"), ("LCK-C02b", "lck")]:
+            result = self.run_plan(row, "--repeated-calls", "on", "--caller-format", "generic")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            data = json.loads(result.stdout)
+            self.assertEqual((data["provider"], data["repeatedCalls"], data["handleType"]),
+                             (provider, "on", "generic"))
+        national = json.loads(self.run_plan("C01", "--provider", "callkit", "--caller-format", "national").stdout)
+        self.assertEqual((national["provider"], national["handleType"], national["callerValue"]),
+                         ("callkit", "phoneNumber", "5555550199"))
+
     def test_failed_positive_control_cannot_qualify_audio(self):
         valid = {"status": "recorded", "visualNegativeQualified": True, "reports": [{"outcome": "reported"}]}
         self.assertTrue(audio_control_eligible(valid))

@@ -470,6 +470,20 @@ final class FocusUITests: XCTestCase {
       journal.autoLock = nil; try save()
     }
   }
+  func activityConsent() throws {
+    home(); try front(board)
+    board.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.01)).press(forDuration: 0.1,
+      thenDragTo: board.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.8)))
+    _ = try element(board, ["Focus Probe · synthetic transcript"], timeout: 10)
+    for _ in 0..<3 {
+      let prompt = board.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Live Activities from Focus Probe")).firstMatch
+      if !prompt.exists { home(); return }
+      let allow = board.buttons.matching(NSPredicate(format: "identifier == %@ AND label IN %@", "swipe-action-button-identifier", ["Always Allow", "Allow"])).firstMatch
+      guard allow.exists else { throw failure("Live Activity consent prompt without Allow") }
+      try tap(board, allow); Thread.sleep(forTimeInterval: 1)
+    }
+    throw failure("Live Activity consent did not clear")
+  }
   func checkActivity() throws {
     home(); try front(board)
     board.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.01)).press(forDuration: 0.1,
@@ -483,7 +497,7 @@ final class FocusUITests: XCTestCase {
     if board.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Live Activities from Focus Probe")).firstMatch.exists {
       let allow = board.buttons.matching(NSPredicate(format: "identifier == %@ AND label IN %@", "swipe-action-button-identifier", ["Always Allow", "Allow"])).firstMatch
       guard allow.exists else { throw failure("Live Activity consent prompt without Allow") }
-      allow.tap(); Thread.sleep(forTimeInterval: 1)
+      try tap(board, allow); Thread.sleep(forTimeInterval: 1)
       throw failure("Live Activity consent was pending; granted it, rerun the row")
     }
     let card = try element(board, [wanted], timeout: 10)
@@ -585,7 +599,7 @@ final class FocusUITests: XCTestCase {
       } else if p[0] == "observe" {
         guard p.count == 2, let n = Double(p[1]), n.isFinite, (1...90).contains(n) else { throw failure("Invalid observation duration") }
       } else {
-        guard p.count == 1 && ["setup", "restore-all", "sample", "launch", "home", "terminate", "activity-check", "lock"].contains(p[0]) else { throw failure("Unknown action") }
+        guard p.count == 1 && ["setup", "restore-all", "sample", "launch", "home", "terminate", "activity-consent", "activity-check", "lock"].contains(p[0]) else { throw failure("Unknown action") }
       }
     }
     do {
@@ -607,6 +621,7 @@ final class FocusUITests: XCTestCase {
         case "restore-all": try restore()
         case "system-settings": try value == "enable" ? enableSystemSettings() : restoreSystemSettings()
         case "activity-check": try checkActivity()
+        case "activity-consent": try activityConsent()
         case "notifications": try authorize(false, allow: value == "allow")
         case "focus-authorization": try authorize(true, allow: value == "allow")
         case "sample": probe.activate(); try tap(probe, ["focus.sample"])

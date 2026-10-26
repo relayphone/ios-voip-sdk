@@ -43,6 +43,28 @@ Run each row three times with a fresh invitation ID and caller lifecycle reset, 
 
 Qualify LCK first. Replay the matrix with a separate CallKit control app when available; if unavailable, mark all cross-provider conclusions unverified. A successful report alone does not establish audible breakthrough, and a silenced ordinary notification does not establish code 3.
 
+### Contact and repeat follow-up after #146
+
+The [first device pass](results.md) contains one sample per row: LCK F13/F14 and repeat-on C02 were filtered, while app-allowed F11/F12/F15/F16 presented call UI. Audio was not measured. These do not establish CallKit behavior or a general iOS rule. Run the following as **three independent samples per configuration**, and report each outcome even if it contradicts the earlier result. Record provider, raw handle value/type, the contact's exact saved number, settings, CN delivery, report domain/code/timing and the qualified system surface. The probe's CallKit and LCK modes are different app processes with one provider each, under the same test bundle; neither mode is the production SDK.
+
+Use the existing E.164 test contact. For an unknown-caller variant, use a different owned test number absent from Contacts. For Favorites, explicitly add/remove the test contact from Favorites before the relevant variant and verify that state; app and caller allowance stay excluded unless stated. Restore the contact and Focus afterwards. A configuration passes **measurement** only when three attributed samples with confirmed settings and traces are captured; neither a successful report nor a filtered report alone is a prescribed platform outcome.
+
+| Row | Controlled configuration | Record / pass criteria |
+| --- | --- | --- |
+| CK-F13 | CallKit; Focus on, app excluded, E.164 caller in Allowed People, Calls From Allowed People Only, repeat off, CN off | Three independent reports/surface observations; compare to LCK F13. Use `CK-F13` and a CallKit C00 visual positive control. |
+| CK-C02 | CallKit; Focus on, app/person excluded, CN off; repeat switch **off**, then **on** | Three two-call pairs for **each** switch position. Compare both reports and the second call's surface; do not assume a breakthrough. |
+| LCK-C02b | Same as CK-C02, but LCK | Three two-call pairs for each switch position; compare to CallKit and the single-sample [C02](results.md#repeated-calls-c02). |
+| CK-CONTACTS / LCK-CONTACTS | Each provider; Focus on, app excluded, Calls From **Contacts Only**, repeat off; test saved contact and a distinct unknown number | Three samples **for each** provider/caller variant; record matching contact identity and any UI. |
+| CK-EVERYONE / LCK-EVERYONE | Each provider; same controls, Calls From **Everybody/Everyone**; saved and unknown callers | Three samples per provider/caller variant; record the actual Settings label and UI, not merely report success. |
+| CK-FAVORITES / LCK-FAVORITES | Each provider; same controls, Calls From **Favorites**; test contact favorited, then not favorited | Three samples per provider/favorite-state variant; record a verified Favorites state before every sample. |
+| CK-HANDLE / LCK-HANDLE | Each provider; Focus on, app excluded, test contact in Allowed People, repeat off; same caller as `.phoneNumber` E.164, `.phoneNumber` national digits, then `.generic` | Three samples per provider/format. Record the **raw supplied handle**, kind and CN `INPersonHandle` type/value if CN is on; no normalization inside the probe. Compare E.164 with F13 and include the CN-on/off condition in the record. |
+
+For every repeat pair, send the second call about **69 seconds** after the first (strictly inside three minutes). Before the first call of the next pair or control row, wait **at least 181 seconds after the previous attempted call**, including an APNs attempt with an unknown outcome; use a fresh invitation UUID for every attempt. The probe runner fences repeat pairs against the last recorded attempt; the device operator's separate runner must enforce the same fence. Do not generate synthetic retries to manufacture a breakthrough.
+
+The probe accepts `CK-F13`, `CK-C02`, `LCK-C02b`, or `C01 --provider callkit|lck --calls 'Contacts Only'|'Everyone'|'Favorites'`. Use `--repeated-calls on|off`, `--caller-format e164|national|generic`, and optionally `--caller-value` for an owned unknown number. A successful report is not a confirmed audible ring. For Live Activity rows, record activity and surface IDs before and after relaunch, the **matching current** token registration, and rendered revision/text separately from APNs acceptance; if the same activity is unavailable, stop as unqualified rather than creating a replacement.
+
+**Onboarding/status controls:** request notification permission before guiding the user to the Focus Apps picker: the iOS 27 device pass found that picker lists only apps with notification permission. For C05, request and record Focus-status authorization separately; the same pass observed `isFocused == false` while authorization was not determined and Focus was on. Treat unauthorized/restricted/denied or nil status as **unknown**, not not-focused. Even authorized `false` is app-relative when this app is allowed, per [Apple's sample](https://developer.apple.com/documentation/usernotifications/handling-communication-notifications-and-focus-status-updates). Measure the Intents-extension delivery and cold/killed-app cases before using it as a server policy signal.
+
 ## Controls and failure paths
 
 | ID | Change from controlled baseline | What to record | Pass / interpretation |
