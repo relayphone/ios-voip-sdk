@@ -209,7 +209,7 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
         require(pending.get('handlerAttached') is False and pending.get('conversationID') == conversation and
                 type(pending.get('remainingMS')) in (int, float),
                 case + ': missing native pending deadline')
-        check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000 + 1.5), deadlines)
+        check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000 + 3), deadlines)
         original_deadline = timestamp_ms(pending.get('deadline'))
         require(abs(original_deadline - pending['wallTimeMS'] - pending['remainingMS']) <= 5,
                 case + ': pending absolute deadline and remaining interval differ')
@@ -231,7 +231,7 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
                 advertised.get('provider') == native_answer['provider'] and
                 advertised.get('apiKind') == 'livecommunicationkit' and type(platform_deadline) is int and
                 advertised.get('deadlineSeconds') == advertised.get('expirySeconds') == 30 and
-                1000 <= platform_deadline - original_deadline <= 3500 and
+                2500 <= platform_deadline - original_deadline <= 3500 and
                 engine.index(native_answer) < engine.index(advertised) < engine.index(marker) < engine.index(native_settlement),
                 case + ': effective deadline lacks the bound native LCK safety margin')
         require(isinstance(pending.get('actionID'), str) and

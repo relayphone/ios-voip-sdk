@@ -14,11 +14,11 @@ class RunnerTests(unittest.TestCase):
     def test_reused_fixture_still_launches_a_fresh_pinned_session_without_reinstall(self):
         app = Path('/owned/RuntimeEventFixture.app')
         with patch.object(run.uuid, 'uuid4', return_value='fresh'):
-            with patch.object(run, 'run', side_effect=['fixture: 42', '/owned/container']) as transport:
+            with patch.object(run, 'run', return_value=run.BUNDLE + ': 42') as transport, patch.object(run, 'discover_fixture_channel', return_value=Path('/owned/container/Documents/.callkit-simulator')):
                 channel, run_id = run.launch_fixture('owned', app, install=False)
         self.assertEqual(channel, Path('/owned/container/Documents/.callkit-simulator'))
         self.assertEqual(run_id, 'fixture-fresh')
-        self.assertEqual([call.args[2] for call in transport.call_args_list], ['launch', 'get_app_container'])
+        self.assertEqual([call.args[2] for call in transport.call_args_list], ['launch'])
         self.assertIn('--terminate-running-process', transport.call_args_list[0].args)
         self.assertEqual(transport.call_args_list[0].kwargs['env']['SIMCTL_CHILD_CKSIM_RUN_ID'], run_id)
 
@@ -49,9 +49,9 @@ class RunnerTests(unittest.TestCase):
                         (channel / session['runID']).mkdir()
                         (channel / session['runID'] / 'events.jsonl').write_text('')
                         (channel / 'session.json').write_text(json.dumps(session))
-                if args[:3] == ('xcrun', 'simctl', 'get_app_container'):
+                if args[:3] == ('xcrun', 'simctl', 'launch'):
                     ready.append(True)
-                    return str(root)
+                    return run.BUNDLE + ': 123'
                 if 'push' in args:
                     self.assertTrue(ready, 'push must follow host readiness')
                     raise StimulusSent()
@@ -63,7 +63,7 @@ class RunnerTests(unittest.TestCase):
                 return value
             argv = ['run.py', '--package', str(root), '--app', str(root), '--out', str(root / 'out'),
                     '--simulator', 'owned', '--runtime', 'ios-27']
-            with patch.object(run.sys, 'argv', argv), patch.object(run, 'run', side_effect=transport):
+            with patch.object(run.sys, 'argv', argv), patch.object(run, 'run', side_effect=transport), patch.object(run, 'discover_fixture_channel', return_value=channel):
                 with patch.object(run, 'wait', side_effect=immediate_wait), patch.object(run, 'capture_diagnostics'):
                     with self.assertRaises(StimulusSent):
                         run.main()
@@ -87,14 +87,14 @@ class RunnerTests(unittest.TestCase):
             def transport(*args, **kwargs):
                 if args[:3] == ('xcrun', 'simctl', 'launch'):
                     self.assertEqual(kwargs['env']['SIMCTL_CHILD_CKSIM_RUN_ID'], 'fixture-fresh')
-                return str(Path(work))
+                return run.BUNDLE + ': 42'
             def observe(predicate):
                 self.assertIsNone(predicate(), 'stale launch must not become ready')
                 session_file.write_text('{')
                 self.assertIsNone(predicate(), 'partial publication must not become ready')
                 session_file.write_text(json.dumps(dict(runID='fixture-fresh', pid=42)))
                 return predicate()
-            with patch.object(run.uuid, 'uuid4', return_value='fresh'), patch.object(run, 'run', side_effect=transport):
+            with patch.object(run.uuid, 'uuid4', return_value='fresh'), patch.object(run, 'run', side_effect=transport), patch.object(run, 'discover_fixture_channel', return_value=channel):
                 with patch.object(run, 'wait', side_effect=observe):
                     actual_channel, run_id = run.launch_fixture('owned', Path(work))
                     session = run.fixture_session(actual_channel, run_id)
@@ -143,8 +143,8 @@ class RunnerTests(unittest.TestCase):
             raw = b'{"sequence":1}\n{"partial":'
             (channel / 'run/events.jsonl').write_bytes(raw)
             out = Path(work) / 'diagnostics'
-            with patch.object(run, 'run', side_effect=[str(container), '', RuntimeError('log timeout')]) as process:
-                run.capture_diagnostics(out, 'owned', failed=True)
+            with patch.object(run, 'run', side_effect=['', RuntimeError('log timeout')]) as process:
+                run.capture_diagnostics(out, 'owned', channel=channel, failed=True)
             self.assertEqual((out / 'runtime-journal/run/events.jsonl').read_bytes(), raw)
             self.assertEqual(json.loads((out / 'runtime-journal/session.json').read_text())['runID'], 'run')
             self.assertIn('log timeout', (out / 'diagnostic-errors.txt').read_text())
@@ -153,10 +153,10 @@ class RunnerTests(unittest.TestCase):
     def test_missing_container_does_not_hide_failure_or_skip_other_diagnostics(self):
         with tempfile.TemporaryDirectory() as work:
             out = Path(work)
-            with patch.object(run, 'run', side_effect=[RuntimeError('app never installed'), '', 'fixture log']) as process:
+            with patch.object(run, 'run', side_effect=['', 'fixture log']) as process:
                 run.capture_diagnostics(out, 'owned', failed=True)
-            self.assertEqual(process.call_count, 3)
-            self.assertIn('app never installed', (out / 'diagnostic-errors.txt').read_text())
+            self.assertEqual(process.call_count, 2)
+            self.assertIn('No validated fixture channel', (out / 'diagnostic-errors.txt').read_text())
             self.assertEqual((out / 'simulator.log').read_text(), 'fixture log\n')
 
     def test_known_channel_is_copied_without_contacting_a_stuck_simulator(self):

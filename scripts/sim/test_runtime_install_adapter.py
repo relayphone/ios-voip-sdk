@@ -27,6 +27,7 @@ class AdapterNative(Native):
     def __init__(self, container):
         super().__init__()
         self.container, self.environments, self.results, self.booted = container, [], [], set()
+        self.devices_root = container.parent.resolve() / 'Devices'
 
     def __call__(self, command, timeout, *, env=None):
         command = list(map(str, command))
@@ -39,11 +40,12 @@ class AdapterNative(Native):
                 isAvailable=True, version='27.0')])).encode()
         elif command[2:4] == ['list', 'devices']:
             result.stdout = json.dumps(dict(devices={'ios-27': [dict(udid=device, name=name,
-                state='Booted' if device in self.booted else 'Shutdown') for device, name in self.devices.items()]})).encode()
+                state='Booted' if device in self.booted else 'Shutdown',
+                dataPath=str(self.devices_root / device / 'data')) for device, name in self.devices.items()]})).encode()
         elif command[2] == 'boot' and result.returncode == 0:
             self.booted.add(command[3])
         elif command[2] == 'launch' and result.returncode == 0:
-            result.stdout = b'fixture: 42\n'
+            result.stdout = (runtime.BUNDLE + ': 42\n').encode()
         elif command[2] == 'get_app_container' and result.returncode == 0:
             result.stdout = (str(self.container) + '\n').encode()
         self.results.append(result)
@@ -65,6 +67,9 @@ class RuntimeInstallAdapterTests(unittest.TestCase):
                       patch.object(subprocess, 'run', side_effect=AssertionError('unbounded native run forbidden')),
                       patch.object(subprocess, 'Popen', side_effect=AssertionError('native Popen forbidden'))):
             guard.start(); self.addCleanup(guard.stop)
+        discover = patch.object(runtime, 'discover_fixture_channel',
+            side_effect=lambda *args, **kwargs: self.native.container / 'Documents/.callkit-simulator')
+        discover.start(); self.addCleanup(discover.stop)
 
     def owner(self):
         owner = sim.Session(self.path, runner=runtime.session_transport)
@@ -101,7 +106,7 @@ class RuntimeInstallAdapterTests(unittest.TestCase):
         self.assertEqual(set(self.native.devices), {current})
         self.assertEqual([call[0][3] for call in self.step_calls('install')], [original, current])
         self.assertEqual(self.step_calls('launch')[0][0][4], current)
-        self.assertEqual(self.step_calls('get_app_container')[0][0][3], current)
+        self.assertNotIn('get_app_container', self.native.counts)
         self.assertEqual(channel, self.native.container / 'Documents/.callkit-simulator')
         launch_index = next(index for index, (command, _) in enumerate(self.native.calls) if command[2] == 'launch')
         self.assertEqual(self.native.environments[launch_index]['SIMCTL_CHILD_CKSIM_RUN_ID'], run_id)
@@ -158,7 +163,8 @@ class RuntimeInstallAdapterTests(unittest.TestCase):
         self.assertIs(caught.exception.__cause__, original)
         self.assertEqual(self.native.counts['create'], 1)
         self.assertEqual(self.native.counts['delete'], 1)
-        self.assertTrue(self.state()['owned'])
+        self.assertFalse(self.state()['owned'])
+        self.assertFalse(self.native.devices)
         self.assertTrue(self.state()['retry_used'])
         self.assertNotIn('launch', self.native.counts)
 
@@ -314,7 +320,7 @@ class RuntimeInstallAdapterTests(unittest.TestCase):
         self.assertEqual(exports['CKSIM_TEST_SIMULATOR'], current)
         self.assertEqual(set(self.native.devices), {current})
         self.assertEqual(self.step_calls('launch')[0][0][4], current)
-        self.assertEqual(self.step_calls('get_app_container')[0][0][3], current)
+        self.assertNotIn('get_app_container', self.native.counts)
         with patch.object(ci, 'run', side_effect=runtime.run):
             ci.cleanup(self.id_file)
         self.assertEqual([command[3] for command, _ in self.step_calls('delete')], [original, current])

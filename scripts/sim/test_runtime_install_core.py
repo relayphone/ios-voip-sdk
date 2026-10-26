@@ -272,15 +272,27 @@ class RuntimeInstallCoreTests(unittest.TestCase):
         self.assertEqual(self.native.devices, {})
         self.assertEqual(json.loads(self.path.read_text())['owned'], [])
 
-    def test_privacy_keeps_main_nonretrying_nonprepared_behavior(self):
+    def test_non_grant_privacy_remains_nonretrying_and_nonprepared(self):
         owner = self.resume()
         prepared = copy.deepcopy(owner.state['prepared'])
         self.native.failures['privacy', 1] = 'timeout'
         self.assertTrue(owner.call(['xcrun', 'simctl', 'privacy', owner.current,
-                                   'grant', 'microphone', 'fixture.bundle'], 60).timed_out)
+                                   'reset', 'microphone', 'fixture.bundle'], 60).timed_out)
         self.assertEqual(owner.state['prepared'], prepared)
         self.assertFalse(owner.state['retry_used'])
         self.assertEqual(self.native.counts['create'], 1)
+
+    def test_borrowed_privacy_grant_never_spends_parent_recovery_budget(self):
+        before = self.path.read_bytes()
+        borrowed = sim.Session.attach(self.path, self.original, runner=self.native)
+        self.native.failures['privacy', 1] = 'timeout'
+        result = borrowed.call(['xcrun', 'simctl', 'privacy', borrowed.current,
+                                'grant', 'microphone', 'fixture.bundle'], 60)
+        self.assertTrue(result.timed_out)
+        self.assertEqual(self.native.counts['privacy'], 1)
+        self.assertEqual(self.native.counts['create'], 1)
+        self.assertNotIn('delete', self.native.counts)
+        self.assertEqual(self.path.read_bytes(), before)
 
     def test_known_transport_signal_is_infrastructure_even_after_checkpoint(self):
         owner = self.resume()

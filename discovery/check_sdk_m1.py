@@ -36,7 +36,7 @@ def fixture_case(root, case, pid):
         calls = [] if status is None else [dict(id=CONVERSATION, direction='incoming', status=status,
             isMuted=False, isVideo=False, hasConnectedAt=connected)]
         if pending:
-            calls[0]['pending'] = dict(id=PENDING, kind='join', deadline=iso(WALL + 28_500), origin='app')
+            calls[0]['pending'] = dict(id=PENDING, kind='join', deadline=iso(WALL + 27_000), origin='app')
         add('sdk.snapshot', dict(revision=revision, conversations=calls))
         revision += 1
 
@@ -89,7 +89,7 @@ def fixture_case(root, case, pid):
         add('m1.coldJoinRequested', dict(conversationID=CONVERSATION))
         snapshot('connecting', pending=True)
         add('m1.coldPending', dict(conversationID=CONVERSATION, actionID=PENDING,
-            deadline=iso(WALL + 28_500), remainingMS=28_500 - clock - 1, handlerAttached=False,
+            deadline=iso(WALL + 27_000), remainingMS=27_000 - clock - 1, handlerAttached=False,
             clockBeforeMS=WALL + clock + 1))
         add('m1.jsReady')
         add('m1.subscriptionsStarting')
@@ -99,7 +99,7 @@ def fixture_case(root, case, pid):
         if case == 'cold-launch':
             clock = 5_000
             add('m1.handlerAttached', dict(attached=True))
-            handler('join', deadline=iso(WALL + 28_500))
+            handler('join', deadline=iso(WALL + 27_000))
             snapshot('connecting')
             assertion('cold-redelivered')
             add('m1.backendConnectedRequested', dict(conversationID=CONVERSATION))
@@ -194,11 +194,12 @@ def mutate_journal(root, case, edit):
     write_journal(root, name, rows)
 
 
-def restore_public_platform_deadline(rows):
-    public = iso(WALL + 30_000)
+def restore_public_platform_deadline(rows, margin_ms=0):
+    public_ms = WALL + 30_000 - margin_ms
+    public = iso(public_ms)
     for row in rows:
         if row['event'] == 'm1.coldPending':
-            row.update(deadline=public, remainingMS=WALL + 30_000 - row['wallTimeMS'])
+            row.update(deadline=public, remainingMS=public_ms - row['wallTimeMS'])
         if row['event'] == 'sdk.snapshot':
             for call in row['conversations']:
                 if call.get('pending', {}).get('id') == PENDING: call['pending']['deadline'] = public
@@ -425,8 +426,10 @@ class Controls(unittest.TestCase):
 
     def test_cold_effective_deadline_requires_native_margin(self):
         for case in ('cold-launch', 'unhandled-expiry'):
-            with self.subTest(case=case):
-                self.check(lambda root, case=case: mutate_rows(root / 'm1', case, restore_public_platform_deadline))
+            for margin in (0, 1500):
+                with self.subTest(case=case, marginMS=margin):
+                    self.check(lambda root, case=case, margin=margin: mutate_rows(root / 'm1', case,
+                        lambda rows: restore_public_platform_deadline(rows, margin)))
 
     def test_cold_native_deadline_binding(self):
         for case in ('cold-launch', 'unhandled-expiry'):
@@ -442,7 +445,7 @@ class Controls(unittest.TestCase):
                 with self.subTest(case=case, mutation=name):
                     self.check(lambda root, case=case, edit=edit: mutate_journal(root / 'm1', case, edit))
             for field, value in (('actionID', PENDING), ('provider', 'different-provider'), ('apiKind', 'callkit'),
-                                 ('deadlineMS', WALL + 28_500), ('deadlineSeconds', 60), ('expirySeconds', 60)):
+                                 ('deadlineMS', WALL + 27_000), ('deadlineSeconds', 60), ('expirySeconds', 60)):
                 with self.subTest(case=case, field=field):
                     self.check(lambda root, case=case, field=field, value=value: mutate_journal(root / 'm1', case,
                         lambda rows: next(row for row in rows if row['event'] == 'action.deadline').update({field: value})))

@@ -37,6 +37,11 @@ prefix. Cleanup attempts delete even when shutdown times out, and retains
 unresolved ownership when deletion or inventory fails. Call cleanup again from
 the workflow's always-running step if the runner was forcibly killed.
 
+Cleanup defers transport and evidence-writing errors until every owned teardown
+has been attempted, then raises the first original exception. An optional
+`cleanup(on_error=callback)` observes errors in occurrence order; observer errors
+cannot interrupt teardown. Failed deletion keeps its ownership record.
+
 Python callers can use `Session(path).call(argv, timeout)`, `.checkpoint()`, and
 `.cleanup()`. `bounded(argv, timeout)` provides execution without lifecycle
 recovery. Sessions own their simulators; borrowed-device adapters are a separate
@@ -84,3 +89,13 @@ Host controls require no Xcode or simulator:
 ```bash
 python3 -m unittest discover -s scripts/sim -p 'test_*.py' -v
 ```
+
+Swift LiveKit setup uses one owned Session for create, boot, install and exact
+privacy grants. A setup recovery deletes the old simulator and replays preparation
+on one fresh device; microphone permission retains its 60-second bound. Repeated
+command evidence is archived under `infrastructure-attempts/`, launch environment
+is refreshed after replacement, and the checkpoint is persisted before the
+unchanged case supervisor starts. This slice adds no console or case retry.
+Cleanup preserves the primary failure and still performs independent inventory.
+
+Runtime fixture discovery binds the launch PID, bundle and fresh run ID to one canonical host journal. Controls and watch reuse that validated container; diagnostics use the retained channel. None of those paths queries a data container through simctl. Shared simulator preparation retains its existing one pre-app budget and no-replay barrier. Generic host commands use `scripts/ci/bounded`, with a ten-second termination grace outside the command deadline.
