@@ -30,7 +30,14 @@ func write(_ value: [String: Any]) {
   }
 }
 guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
-  write(["mode": "visual evidence only", "reason": "microphone permission unavailable"]); exit(0)
+  if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+    AVCaptureDevice.requestAccess(for: .audio) { _ in } // prompt once, never wait for a person
+    print("mic permission pending")
+    write(["mode": "visual evidence only", "reason": "mic permission pending"])
+  } else {
+    write(["mode": "visual evidence only", "reason": "microphone permission unavailable"])
+  }
+  exit(0)
 }
 final class Envelope: @unchecked Sendable {
   let lock = NSLock()
@@ -67,17 +74,20 @@ envelope.lock.lock(); let samples = envelope.samples; envelope.lock.unlock()
 func percentile(_ values: [Double]) -> Double {
   let sorted = values.sorted(); return sorted.isEmpty ? 0 : sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.95))]
 }
-let quiet = percentile(samples.filter { $0["wallTime"]! - started < 3 }.map { $0["rms"]! })
+let quietSamples = samples.filter { $0["wallTime"]! - started < 3 }
+let signalSamples = samples.filter { $0["wallTime"]! - started >= 5 }
+let acquired = quietSamples.count >= 15 && signalSamples.count >= 15 && (samples.last?["wallTime"] ?? started) - started >= seconds - 2
+let quiet = percentile(quietSamples.map { $0["rms"]! })
 let signal = percentile(samples.filter { $0["wallTime"]! - started >= 5 }.map { $0["rms"]! })
 var result: [String: Any] = ["mode": "acoustic energy proxy", "startedAt": started, "samples": samples,
   "quietP95": quiet, "signalP95": signal, "ringtoneConfirmed": false,
   "limitations": "Ambient noise and microphone placement can cause false positives/negatives; no recording or speech recognition"]
 if CommandLine.arguments.contains("--positive") {
-  result["calibrationValid"] = samples.count >= 50 && signal > max(quiet * 3, 0.001)
+  result["calibrationValid"] = acquired && signal > max(quiet * 3, 0.001)
   result["threshold"] = max(quiet * 3, signal * 0.25, 0.001)
 } else if let path = option("--calibration"), let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
   let calibration = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-  calibration["calibrationValid"] as? Bool == true, let threshold = calibration["threshold"] as? Double {
+  acquired, calibration["calibrationValid"] as? Bool == true, let threshold = calibration["threshold"] as? Double {
   result["calibrationValid"] = true
   result["energyAboveBaseline"] = signal > max(threshold, quiet * 3)
 } else {

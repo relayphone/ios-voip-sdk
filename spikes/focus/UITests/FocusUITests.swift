@@ -13,6 +13,7 @@ final class FocusUITests: XCTestCase {
     var captured = false
     var initialFocus: String?
     var ownsFocus = false
+    var caller = "+15555550199"
     var ownsContact = false
     var requiresProbeUninstall = false
     var autoLock: String?
@@ -162,7 +163,7 @@ final class FocusUITests: XCTestCase {
     try tap(contacts, ["Add", "Add Contact", "New Contact"])
     try type(contacts, element(contacts, ["First name", "First Name"]), journal.contactName)
     try tap(contacts, scrollTo(contacts, ["add phone", "Add phone"]))
-    try front(contacts); contacts.typeText(ProcessInfo.processInfo.environment["FOCUS_CALLER"] ?? "+15555550199")
+    try front(contacts); contacts.typeText(journal.caller)
     journal.ownsContact = true; try save()
     try tap(contacts, ["Done"])
     guard try openContact() else { throw failure("Created contact could not be verified") }
@@ -332,6 +333,8 @@ final class FocusUITests: XCTestCase {
     board.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.01)).press(forDuration: 0.1,
       thenDragTo: board.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.8)))
     let wanted = ProcessInfo.processInfo.environment["FOCUS_EXPECTED_ACTIVITY_TEXT"] ?? "Synthetic AI call status"
+    guard !wanted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, wanted.utf8.count <= 512 else { throw failure("Invalid transcript expectation") }
+    _ = try element(board, ["Focus Probe · synthetic transcript"], timeout: 10)
     let card = try element(board, [wanted], timeout: 10)
     guard card.exists else { throw failure("Latest transcript card missing") }
     let screenshot = XCUIScreen.main.screenshot()
@@ -363,9 +366,15 @@ final class FocusUITests: XCTestCase {
     continueAfterFailure = false
     let env = ProcessInfo.processInfo.environment
     let state = documents.appendingPathComponent("focus-ui-state.json")
-    if let recovery = env["FOCUS_RESTORE_STATE"], let data = Data(base64Encoded: recovery) {
+    if let recovery = env["FOCUS_RESTORE_STATE"] {
+      guard let data = Data(base64Encoded: recovery) else { throw failure("Invalid recovery encoding") }
       journal = try JSONDecoder().decode(Journal.self, from: data)
     } else if let data = try? Data(contentsOf: state) { journal = try JSONDecoder().decode(Journal.self, from: data) }
+    if let caller = env["FOCUS_CALLER"] {
+      guard caller.range(of: "^[+][1-9][0-9]{7,14}$", options: .regularExpression) != nil,
+        !journal.captured || caller == journal.caller else { throw failure("Caller must match the journaled E.164 identity") }
+      journal.caller = caller
+    }
     if let name = env["FOCUS_NAME"] {
       guard name.hasPrefix("Focus Probe"), !journal.captured || name == journal.focusName else { throw failure("Use a dedicated Focus Probe profile and matching recovery journal") }
       journal.focusName = name
