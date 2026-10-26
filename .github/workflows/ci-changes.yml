@@ -18,6 +18,8 @@ on:
         value: ${{ jobs.detect.outputs.expo }}
       legacy:
         value: ${{ jobs.detect.outputs.legacy }}
+      routes:
+        value: ${{ jobs.detect.outputs.routes }}
 permissions:
   contents: read
 jobs:
@@ -33,6 +35,7 @@ jobs:
       swift: ${{ steps.select.outputs.swift }}
       expo: ${{ steps.select.outputs.expo }}
       legacy: ${{ steps.select.outputs.legacy }}
+      routes: ${{ steps.select.outputs.routes }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
