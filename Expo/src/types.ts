@@ -68,7 +68,7 @@ export type ConversationActionKind =
 export interface PendingAction {
   id: string;
   kind: ConversationActionKind;
-  /** Native deadline: earlier of advertised timeout and delivery-based cap, minus 1.5 seconds once. */
+  /** Native deadline: earlier of advertised timeout and delivery-based cap, minus 3 seconds for start/join audio fulfillment, otherwise 1.5 seconds. */
   deadline: string;
   origin: ActionOrigin;
   held?: boolean;
@@ -96,7 +96,7 @@ export interface Conversation {
 }
 
 export interface ActionContext {
-  /** Native deadline: earlier of advertised timeout and delivery-based cap, minus 1.5 seconds once. */
+  /** Native deadline: earlier of advertised timeout and delivery-based cap, minus 3 seconds for start/join audio fulfillment, otherwise 1.5 seconds. */
   deadline: string;
   signal: AbortSignal;
   origin: ActionOrigin;

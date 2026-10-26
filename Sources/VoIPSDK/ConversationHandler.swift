@@ -26,7 +26,8 @@ public final class ConversationCancellationSignal {
 @MainActor
 public struct ConversationActionContext {
   public let actionID: UUID
-  /// Application policy deadline, 1.5 seconds before the earlier advertised timeout or conservative action bound.
+  /// Application policy deadline before the selected expiry: 3 seconds for start/join
+  /// audio fulfillment, otherwise 1.5 seconds.
   public let deadline: Date
   public let origin: ConversationActionOrigin
   public let signal: ConversationCancellationSignal
@@ -69,6 +70,7 @@ public struct ConversationHandler {
 final class ConversationActionCoordinator {
   typealias Schedule = @MainActor (Date, @escaping @MainActor () -> Void) -> @MainActor () -> Void
   private static let deadlineMargin: TimeInterval = 1.5
+  private static let audioFulfillmentMargin: TimeInterval = 3
   #if DEBUG && targetEnvironment(simulator)
   struct Diagnostic {
     let phase: String
@@ -167,7 +169,12 @@ final class ConversationActionCoordinator {
     }
     let settlementDeadline = bound.map { min(platformDeadline, deliveredAt.addingTimeInterval($0)) } ?? platformDeadline
     var action = action
-    action.deadline = settlementDeadline.addingTimeInterval(-Self.deadlineMargin)
+    // Accepted start/join still needs blocking audio configuration after policy
+    // fires. Keep that work inside the selected expiry, rather than spending the
+    // whole reserve on application work before beginning native fulfillment.
+    let margin = [.join, .start].contains(action.kind) && prepareForFulfillment != nil
+      ? Self.audioFulfillmentMargin : Self.deadlineMargin
+    action.deadline = settlementDeadline.addingTimeInterval(-margin)
     let entry = Entry(conversationID: conversationID, action: action, platformDeadline: platformDeadline,
       settlementDeadline: settlementDeadline,
       isPending: isPending, settle: settle)
