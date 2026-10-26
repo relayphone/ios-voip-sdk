@@ -105,7 +105,10 @@ def simulator_applications(device, *, session):
     data = Path(matches[0][1]['dataPath'])
     if not data.is_absolute() or data.name != 'data' or data.parent.name.lower() != device.lower():
         raise RuntimeError('Simulator data path does not match its owned UUID')
-    return data / 'Containers/Data/Application'
+    applications = data / 'Containers/Data/Application'
+    if not applications.is_dir() or applications.resolve(strict=True) != applications:
+        raise RuntimeError('Fixture application directory is missing or noncanonical')
+    return applications
 
 
 @contextmanager
@@ -158,17 +161,16 @@ class Journey:
     def begin(self, name, *, groups=2, per_group=1, caps='all'):
         if self.native_session is None:
             raise ValueError('Native journey requires its existing simulator Session')
+        if self.device != self.native_session.current:
+            raise ValueError('The cached simulator must match its existing Session')
         self.save()
         self.name, self.ids, self.session = name, {}, None
         run_id = self.run_id = 'lck-' + str(uuid.uuid4())
+        self.native_session.checkpoint()
         launched = lifecycle(self.native_session, 'launch', '--terminate-running-process', self.native_session.current, BUNDLE,
             env=dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=run_id,
                      SIMCTL_CHILD_LCK_FIXTURE_GROUPS=str(groups), SIMCTL_CHILD_LCK_FIXTURE_PER_GROUP=str(per_group),
                      SIMCTL_CHILD_LCK_FIXTURE_CAPABILITIES=caps), timeout=120)
-        if self.device != self.native_session.current:
-            self.device = self.native_session.current
-            self.container = self.channel = None
-            self.applications = simulator_applications(self.device, session=self.native_session)
         launch = re.fullmatch(re.escape(BUNDLE) + r': ([1-9][0-9]*)', launched)
         if launch is None:
             raise RuntimeError('Cannot establish PID from simctl launch output')

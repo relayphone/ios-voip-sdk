@@ -121,6 +121,20 @@ class ContainerDiscoveryTests(unittest.TestCase):
                 acceptance.simulator_applications(identifier, session=session)
         self.assertIs(native.call_args.args[0], session)
 
+    def test_inventory_cannot_cache_a_symlinked_application_directory(self):
+        identifier = str(uuid.uuid4()).upper()
+        data = self.root.resolve() / identifier / 'data'
+        applications = data / 'Containers/Data/Application'
+        applications.parent.mkdir(parents=True)
+        outside = self.root.resolve() / 'elsewhere'
+        outside.mkdir()
+        applications.symlink_to(outside, target_is_directory=True)
+        inventory = dict(devices={acceptance.RUNTIME: [
+            dict(udid=identifier, state='Booted', dataPath=str(data))]})
+        with patch.object(acceptance, 'lifecycle', return_value=json.dumps(inventory)):
+            with self.assertRaisesRegex(RuntimeError, 'noncanonical'):
+                acceptance.simulator_applications(identifier, session=Mock(current=identifier))
+
     def test_borrowed_simulator_is_never_created_or_cleaned_even_on_failure(self):
         identifier = str(uuid.uuid4()).upper()
         session = self.native_session(identifier)
@@ -154,6 +168,7 @@ class ContainerDiscoveryTests(unittest.TestCase):
         session = self.native_session(identifier)
         journey = acceptance.Journey(identifier, self.root, self.root / 'out', native_session=session)
         def launched(command, timeout, **kwargs):
+            self.assertTrue(session.is_checkpointed(), 'checkpoint must precede native launch')
             return acceptance.simulator_infra.Result(command, 0, stdout=(acceptance.BUNDLE + ': 123').encode())
         with patch.object(acceptance.simulator_infra, 'bounded', side_effect=launched) as native, \
              patch.object(acceptance, 'container_session', return_value=self.session), \
@@ -183,6 +198,18 @@ class ContainerDiscoveryTests(unittest.TestCase):
         self.assertEqual(session.current, identifier)
         self.assertTrue(json.loads(session.path.read_text())['checkpoint'])
         self.assertFalse(session.state['retry_used'])
+
+    def test_stale_cached_simulator_cannot_launch_or_refresh_inventory(self):
+        identifier = str(uuid.uuid4()).upper()
+        session = self.native_session(identifier)
+        journey = acceptance.Journey(str(uuid.uuid4()).upper(), None, self.root / 'out',
+                                     applications=self.root, native_session=session)
+        with patch.object(acceptance, 'lifecycle', side_effect=AssertionError('native work before cache validation')) as native, \
+             patch.object(acceptance, 'simulator_applications', side_effect=AssertionError('inventory refresh')) as inventory:
+            with self.assertRaisesRegex(ValueError, 'cached simulator'):
+                journey.begin('stale-cached-device')
+        native.assert_not_called()
+        inventory.assert_not_called()
 
 
 if __name__ == '__main__':

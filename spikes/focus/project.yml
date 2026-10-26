@@ -1,0 +1,95 @@
+name: FocusProbe
+options:
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Automatic
+    TARGETED_DEVICE_FAMILY: "1"
+targets:
+  FocusProbe:
+    type: application
+    platform: iOS
+    sources: [App, Shared]
+    dependencies:
+      - target: FocusWidget
+      - target: FocusFilter
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Focus Probe
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        UIBackgroundModes: [voip, audio]
+        NSFocusStatusUsageDescription: Measure shared Focus status for test calls.
+        NSMicrophoneUsageDescription: Measure test call audio activation.
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
+        NSUserActivityTypes: [INStartCallIntent]
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    entitlements:
+      path: App/Focus.entitlements
+      properties:
+        aps-environment: development
+        com.apple.developer.usernotifications.communication: true
+        com.apple.security.application-groups: [group.dev.callkitsim.focus]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.callkitsim.focus
+        OTHER_SWIFT_FLAGS: "-parse-as-library"
+  FocusWidget:
+    type: app-extension
+    platform: iOS
+    sources: [Widget, Shared]
+    info:
+      path: Widget/Info.plist
+      properties:
+        CFBundleDisplayName: Focus Transcript
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Widget/Focus.entitlements
+      properties:
+        com.apple.security.application-groups: [group.dev.callkitsim.focus]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.callkitsim.focus.widget
+        APPLICATION_EXTENSION_API_ONLY: YES
+  FocusFilter:
+    type: extensionkit-extension
+    platform: iOS
+    sources: [Filter]
+    info:
+      path: Filter/Info.plist
+      properties:
+        EXAppExtensionAttributes:
+          EXExtensionPointIdentifier: com.apple.appintents-extension
+    entitlements:
+      path: Filter/Focus.entitlements
+      properties:
+        com.apple.security.application-groups: [group.dev.callkitsim.focus]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.callkitsim.focus.filter
+        APPLICATION_EXTENSION_API_ONLY: YES
+  FocusUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: FocusProbe
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.callkitsim.focus.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: FocusProbe
+schemes:
+  FocusProbe:
+    build:
+      targets:
+        FocusProbe: all
+        FocusUITests: [test]
+    test:
+      targets: [FocusUITests]
