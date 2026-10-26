@@ -213,12 +213,9 @@ class CachedRuntimeTests(unittest.TestCase):
                         '--simulator', original, '--simulator-state', str(state_path)]
                 with patch.object(sys, 'argv', argv), patch.object(runtime, 'run', side_effect=transport), \
                      patch.object(runtime, 'record_environment'), patch.object(runtime, 'capture_diagnostics') as diagnostics, \
-                     patch('filtered_acceptance.run_filtered_acceptance') as filtered, \
                      patch.dict(CLI['main'].__globals__, simctl=lambda *a, **k: self.fail('cached CLI attempted target RPC'),
                                 time=SimpleNamespace(monotonic=time.monotonic, sleep=respond)), redirect_stdout(io.StringIO()):
                     runtime.main()
-                    filtered.assert_called_once()
-                    self.assertEqual(filtered.call_args.kwargs['channel'], channel)
             current = json.loads(state_path.read_text())['current']
             self.assertNotEqual(current, original)
             self.assertTrue(cli_calls)

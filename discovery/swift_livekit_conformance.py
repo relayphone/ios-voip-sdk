@@ -124,12 +124,10 @@ def contract(rows, native, mode, request=None, response=None):
     else:
         require(mode == 'stale-audio' and owner.get('activationTimeout') == 1 and owner.get('recoveryTimeout') == 1,
                 'stale test policy differs (not default watchdog qualification)')
-        result = response.get('result') if isinstance(response, dict) else None
         require(request is not None and response is not None and
                 request.get('operation') == 'faults' and request.get('faults') ==
                 dict(staleAudio=True, reportCallbackDelayMS=0, invalidateDuringHandoff=False) and
-                response.get('success') is True and isinstance(result, dict) and result.get('configured') is True and
-                type(result.get('incomingErrorCode', 0)) is int and result.get('incomingErrorCode', 0) == 0 and
+                response.get('success') is True and response.get('result') == dict(configured=True) and
                 all(response.get(key) == request.get(key) for key in ('id', 'runID', 'pid', 'bundleID')),
                 'missing or mismatched actual stale fault request/ACK')
         configured = one(rows, 'livekit.faultConfigured')

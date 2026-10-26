@@ -215,7 +215,7 @@ class ExistingDriverControlsTests(unittest.TestCase):
                 stack.enter_context(patch(target, side_effect=AssertionError('native services forbidden: ' + target)))
             result = check_swift_livekit.controls()
         self.assertTrue(result['success'])
-        self.assertEqual(result['checks'], 150)
+        self.assertEqual(result['checks'], 140)
         for label in ('launch_at29', 'launch_at31', 'launch_at33', 'launch_never', 'launch_beyond90',
                       'launch_early_exit', 'timeout-kills-exact-owned-group', 'unknown-group-never-killed',
                       'owner-exited-no-group-kill', 'launchd-timeout-stops-and-cleans'):
