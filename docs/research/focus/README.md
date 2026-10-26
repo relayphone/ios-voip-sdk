@@ -1,6 +1,6 @@
 # Focus-aware calling: platform findings
 
-Research for [SDK lane #124](https://github.com/ziahamza/ios-voip-sdk/issues/124), checked 26 October 2026. This is a design input, not an implemented SDK feature. Device work belongs to Claude; this lane used no device. The proposed API, measurement plan and Phone integration will follow as separate documents here.
+Research for [SDK lane #124](https://github.com/ziahamza/ios-voip-sdk/issues/124), checked 26 October 2026. This is a design input, not an implemented SDK feature. Device work belongs to Claude; this lane used no device. Companion deliverables: [proposed SDK API](sdk-api.md), [device measurement plan](device-plan.md), and [Phone app integration contract](phone-app.md).
 
 **Recommendation:** report legitimate incoming VoIP calls immediately, accept the system's filtering decision, and let the backend decline or screen a filtered call. Offer an opt-in, silent transcript Live Activity and a user-initiated join into the existing AI call. No public API found here turns Focus off or guarantees that a call, notification or Live Activity will break through.
 
