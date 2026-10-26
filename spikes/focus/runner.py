@@ -113,12 +113,17 @@ def plan(row, locked=False, listen=False, provider=None, caller_format="e164", r
                   "arm Documents/focus.json; launch probe; fetch fresh token privately"]
     if locked:
         p["steps"] += ["approved Auto-Answer=on/3s and Auto-Lock=30s; terminate probe; end UI session",
-                       "wait 45s for auto-lock; send cold VoIP push without UI session; inspect Join action"]
+                       "wait 45s for auto-lock; inspect Join action after cold push without UI session"]
     else:
         p["steps"] += ["start timestamped SpringBoard/InCallService observation; qualify negative results against C00"]
     if listen:
         p["steps"] += ["optional host RMS capture; C00 calibration; no microphone permission => visual evidence only"]
-    p["steps"] += ["send once with discovery/send-apns.mjs topic dev.callkitsim.focus.voip" if p["sendVoIP"] else "no VoIP push",
+    if p["sendVoIP"] and row == "C02":
+        p["steps"] += ["wait until at least 181s since the previous VoIP attempt",
+                       "send first VoIP push with discovery/send-apns.mjs topic dev.callkitsim.focus.voip; wait 69s; send second distinct call"]
+    else:
+        p["steps"] += ["send once with discovery/send-apns.mjs topic dev.callkitsim.focus.voip" if p["sendVoIP"] else "no VoIP push"]
+    p["steps"] += [
                    "fetch JSONL/report result; inspect ActivityKit inventory/state/content + Notification Center card when applicable",
                    "write private row result; end activity; disarm; restore settings/contact/Focus and original permission state"]
     if row == "restore-all":

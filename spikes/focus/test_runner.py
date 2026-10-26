@@ -67,6 +67,8 @@ class DryRunTests(unittest.TestCase):
             data = json.loads(result.stdout)
             self.assertEqual((data["provider"], data["repeatedCalls"], data["handleType"]),
                              (provider, "on", "generic"))
+            self.assertTrue(any("181s" in step for step in data["steps"]))
+            self.assertTrue(any("69s" in step and "second distinct call" in step for step in data["steps"]))
         national = json.loads(self.run_plan("C01", "--provider", "callkit", "--caller-format", "national").stdout)
         self.assertEqual((national["provider"], national["handleType"], national["callerValue"]),
                          ("callkit", "phoneNumber", "5555550199"))
