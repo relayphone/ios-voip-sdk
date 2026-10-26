@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "algorithm": "UUIDv5",
+  "namespace": "d460ee4a-efbc-5b0d-8035-0b915bf9551a",
+  "inputEncoding": "UTF-8",
+  "normalization": "none",
+  "notes": [
+    "Hash the namespace UUID bytes in network byte order followed by the exact UTF-8 bytes of serverCallId.",
+    "No trimming, case folding, Unicode normalization, or trailing NUL is applied.",
+    "Empty and control-character cases test the identity primitive; invitation validation may reject those IDs separately."
+  ],
+  "vectors": [
+    {
+      "name": "empty",
+      "serverCallId": "",
+      "uuid": "e8280341-d86c-5bee-95b2-6620419b96ec"
+    },
+    {
+      "name": "ascii",
+      "serverCallId": "call_123",
+      "uuid": "0bc4352c-25ce-530f-b907-6526434d35d2"
+    },
+    {
+      "name": "uppercase",
+      "serverCallId": "CALL_123",
+      "uuid": "0bf3c05e-6e12-5d90-810e-0dee5d95287c"
+    },
+    {
+      "name": "spaces",
+      "serverCallId": " call_123 ",
+      "uuid": "5f6d2827-9821-534b-ad43-71faf1d6674c"
+    },
+    {
+      "name": "unicode-precomposed",
+      "serverCallId": "café",
+      "uuid": "468b96be-e83b-5726-98c6-1c51ce7abd2a"
+    },
+    {
+      "name": "unicode-decomposed",
+      "serverCallId": "café",
+      "uuid": "e8ea8af5-f874-51e6-8b41-a4ad514fae30"
+    },
+    {
+      "name": "non-latin",
+      "serverCallId": "東京/مكالمة",
+      "uuid": "88482e18-c2da-50d7-afb6-7835ea762c87"
+    },
+    {
+      "name": "emoji",
+      "serverCallId": "call-📞-👩‍💻",
+      "uuid": "a7af0fdc-f551-5362-87fa-2ae2f3d5adcd"
+    },
+    {
+      "name": "control-characters",
+      "serverCallId": "call\n\t\u0000id",
+      "uuid": "fc7df4ff-7e9f-50f4-9e65-5691972f7e23"
+    },
+    {
+      "name": "long-ascii",
+      "serverCallId": "call_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "uuid": "c4ac653b-f662-59ee-8dbf-672609b6f2a6"
+    },
+    {
+      "name": "long-unicode",
+      "serverCallId": "呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞呼び出し📞",
+      "uuid": "b530c963-d81c-5fbd-9125-da3542e6da46"
+    }
+  ]
+}
