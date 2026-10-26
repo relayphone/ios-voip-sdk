@@ -25,6 +25,8 @@ on:
       - "discovery/**"
       - "Tools/**"
       - "scripts/build-runtime.sh"
+      - "scripts/ci/sdk_paths.sh"
+      - "scripts/ci/sdk_artifacts.py"
       - "scripts/sim/**"
       - ".github/workflows/sdk-m0.yml"
       - ".github/workflows/simulator-discovery.yml"
@@ -51,6 +53,8 @@ on:
       - "discovery/**"
       - "Tools/**"
       - "scripts/build-runtime.sh"
+      - "scripts/ci/sdk_paths.sh"
+      - "scripts/ci/sdk_artifacts.py"
       - "scripts/sim/**"
       - ".github/workflows/sdk-m0.yml"
       - ".github/workflows/simulator-discovery.yml"
@@ -496,7 +500,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {group: m0, m1: "0", part: all, system: "0"}
           - {group: m1, m1: "1", part: journeys, system: "0"}
           - {group: contracts, m1: "1", part: contracts, system: "0"}
           - {group: push-entry, m1: "1", part: push-entry, system: "0"}

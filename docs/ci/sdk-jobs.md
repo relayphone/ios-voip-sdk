@@ -5,7 +5,9 @@ core-probe and fixture producers. Portable evidence, shell and JavaScript checks
 run on Ubuntu. Checks that compile Apple Foundation or SDK headers run in a
 parallel Xcode job. Device-only inspections are independent of simulator journeys.
 
-The journey matrix contains M0, M1, contracts, PushKit entry and system controls.
+The journey matrix contains M1, contracts, PushKit entry and system controls.
+Every group runs the complete M0 prerequisites and oracle; a separate M0-only
+worker would duplicate those checks and occupy another macOS slot.
 Each worker invokes the existing owned-simulator runner once, with a fresh run ID,
 simulator and persisted preparation budget. Each retains its M0 prerequisites so
 the existing source, binary, installed-byte and cleanup oracles stay intact.
