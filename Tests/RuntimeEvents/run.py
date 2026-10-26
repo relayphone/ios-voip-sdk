@@ -158,6 +158,8 @@ def launch_fixture(device, app, *, install=True, session=None):
         lifecycle(session, 'install', device, app.resolve(), timeout=install_bound)
     if session is not None:
         device = session.current
+    applications = fixture_applications(device, session=session)
+    if session is not None:
         # This slice retries preparation only. Persist the barrier before the
         # original launch, including unknown launch outcomes and process death.
         session.checkpoint()
@@ -166,11 +168,11 @@ def launch_fixture(device, app, *, install=True, session=None):
     match = re.fullmatch(re.escape(BUNDLE) + r': ([1-9][0-9]*)', launched)
     if match is None:
         raise RuntimeError('Missing fixture launch PID acknowledgement')
-    return discover_fixture_channel(device, run_id, int(match[1]), session=session), run_id
+    return discover_fixture_channel(applications, run_id, int(match[1])), run_id
 
 
-def discover_fixture_channel(device, run_id, pid, *, session=None):
-    """Bind the new process to one canonical host journal, without a container RPC."""
+def fixture_applications(device, *, session=None):
+    """Cache the validated device directory during preparation, before launch."""
     device = simulator_infra.simulator_uuid(device)
     inventory = json.loads(lifecycle(session, 'list', 'devices', '-j', timeout=60))['devices']
     matches = [row for group in inventory.values() for row in group
@@ -181,6 +183,13 @@ def discover_fixture_channel(device, run_id, pid, *, session=None):
     if not data.is_absolute() or data.name != 'data' or data.parent.name.lower() != device.lower():
         raise RuntimeError('Fixture data path does not match its simulator')
     applications = data / 'Containers/Data/Application'
+    if not applications.is_dir() or applications.resolve(strict=True) != applications:
+        raise RuntimeError('Fixture application directory is missing or noncanonical')
+    return applications
+
+
+def discover_fixture_channel(applications, run_id, pid):
+    """Bind the launched process through cached host paths, with no native RPC."""
     if not applications.is_dir() or applications.resolve(strict=True) != applications:
         raise RuntimeError('Fixture application directory is missing or noncanonical')
     def discovered():
