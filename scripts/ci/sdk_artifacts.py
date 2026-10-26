@@ -30,7 +30,7 @@ def source():
     value = source_identity()
     dirty = subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=all', '--',
         'scripts/ci/sdk_paths.sh', 'scripts/ci/sdk_artifacts.py'], cwd=REPO, timeout=10)
-    if value['sourceDirty'] or dirty:
+    if dirty:
         raise ValueError('Component source must be committed')
     return value
 

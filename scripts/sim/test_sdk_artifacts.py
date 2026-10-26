@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -12,7 +13,23 @@ HELPER = Path(__file__).resolve().parents[1] / 'ci/sdk_artifacts.py'
 spec = importlib.util.spec_from_file_location('sdk_artifacts', HELPER)
 artifacts = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(artifacts)
-IDENTITY = dict(sourceCommit='a' * 40, sourceInputsSHA256='b' * 64, sourceDirty=False)
+IDENTITY = dict(sourceCommit='a' * 40, sourceInputsSHA256='b' * 64)
+
+
+class IdentityInterfaceTests(unittest.TestCase):
+    def test_real_sdk_identity_interface_needs_no_dirty_flag(self):
+        with tempfile.TemporaryDirectory(prefix='sdk-source-contract-') as temporary:
+            root = Path(temporary)
+            (root / 'Sources').mkdir(); (root / 'Sources/marker.swift').write_text('fixture input\n')
+            for args in (('init',), ('add', '.'), ('commit', '-m', 'fixture')):
+                subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false',
+                    '-c', 'user.name=SDK Fixture', '-c', 'user.email=fixture@example.invalid', *args],
+                    cwd=root, check=True, timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            sdk_identity = artifacts.source_identity
+            expected = sdk_identity(root)
+            with patch.object(artifacts, 'REPO', root), \
+                 patch.object(artifacts, 'source_identity', side_effect=lambda: sdk_identity(root)):
+                self.assertEqual(artifacts.source(), expected)
 
 
 class TransferTests(unittest.TestCase):

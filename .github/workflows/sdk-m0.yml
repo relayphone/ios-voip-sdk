@@ -149,7 +149,6 @@ jobs:
           python3 discovery/check_push_report_capture.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/push-entry-capture-controls.log"
           python3 discovery/check_console_stop.py --output "$SDK_M0_BUILD_LOGS/console-stop" | tee "$SDK_M0_BUILD_LOGS/console-stop-controls.json"
           python3 Tests/AudioLifecycle/check_audio_fixtures.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/audio-raw-fixtures.log"
-          python3 discovery/check_expo_media_config.py | tee "$SDK_M0_BUILD_LOGS/media-selection-controls.log"
           python3 Tests/ExpoMedia/check_standard_backend.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/standard-backend-gate-controls.log"
           python3 discovery/check_sdk_m2_audio_lifecycle.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/audio-lifecycle-capture-controls.log"
           for script in discovery/build_sdk_bootstrap.sh discovery/build_sdk_device_probe.sh discovery/build_sdk_m1_contracts.sh discovery/build_push_report_entry.sh discovery/run_sdk_m0.sh discovery/run_audio_lifecycle_legacy.sh; do
@@ -213,6 +212,7 @@ jobs:
           bash Tests/AudioCore/run.sh | tee "$SDK_M0_BUILD_LOGS/audio-watchdog-controls.log"
           python3 Tests/AudioLifecycle/check_audio_lifecycle.py | tee "$SDK_M0_BUILD_LOGS/audio-lifecycle-controls.log"
           python3 discovery/check_expo_media.py | tee "$SDK_M0_BUILD_LOGS/webrtc-facade-controls.log"
+          python3 discovery/check_expo_media_config.py | tee "$SDK_M0_BUILD_LOGS/media-selection-controls.log"
           bash Tests/VoIPSDK/run_push.sh | tee "$SDK_M0_BUILD_LOGS/push-controls.log"
           bash Tests/VoIPSDK/run_projection.sh | tee "$SDK_M0_BUILD_LOGS/projection-controls.log"
           bash Tests/VoIPSDK/run_mute_echo.sh | tee "$SDK_M0_BUILD_LOGS/mute-echo-controls.json"
