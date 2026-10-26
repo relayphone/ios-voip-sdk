@@ -79,7 +79,7 @@ jobs:
           BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
         run: |
           cp "$BUNDLE_PATH" "$RUNNER_TEMP/release/attestation.sigstore.json"
-          gh attestation verify "$RUNNER_TEMP/release/callkit-simulator-$RELEASE_TAG-macos.tar.gz" \
+          scripts/ci/bounded 180 gh attestation verify "$RUNNER_TEMP/release/callkit-simulator-$RELEASE_TAG-macos.tar.gz" \
             --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/runtime-release.yml" \
             --source-ref "$GITHUB_REF" --source-digest "$GITHUB_SHA" \
@@ -93,7 +93,7 @@ jobs:
           text=f"Measured: the CI-built runtime passed the full discovery acceptance before packaging. Source: `{os.environ['GITHUB_SHA']}`. [Run and evidence]({url}).\n\nThe `ios-27.0` profile's device reference and the measured simulator/compiler coverage are recorded in the run manifest. See docs/runtime-releases.md for attestation verification.\n"
           (pathlib.Path(os.environ['RUNNER_TEMP'])/'release-notes.md').write_text(text)
           PY
-          gh release create "$RELEASE_TAG" "$RUNNER_TEMP/release/"* --verify-tag --prerelease \
+          scripts/ci/bounded 180 gh release create "$RELEASE_TAG" "$RUNNER_TEMP/release/"* --verify-tag --prerelease \
             --title "CallKit Simulator $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
       - name: Preserve measured release evidence
         if: always()

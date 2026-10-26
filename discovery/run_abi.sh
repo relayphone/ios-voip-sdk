@@ -9,7 +9,7 @@ UDID=""
 compiler() {
   env DEVELOPER_DIR="${COMPILER_DEVELOPER_DIR:-${DEVELOPER_DIR:-$(xcode-select -p)}}" xcrun --sdk iphonesimulator "$@"
 }
-limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
+limit() { scripts/ci/bounded "$@"; }
 cleanup() {
   local status=$?
   trap - EXIT

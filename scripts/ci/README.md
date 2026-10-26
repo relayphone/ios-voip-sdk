@@ -19,3 +19,8 @@ scripts/ci/bounded 2700 gh pr checks 116 --watch --fail-fast --interval 180
 Capture lengthy output in a file and inspect only the needed lines. Simulator
 lifecycle runners retain `scripts/sim` ownership, retry and checkpoint policy;
 the generic command wrapper grants no simulator retry or app replay.
+
+Discovery and ABI shell tool calls use this entry point with their existing
+deadlines. The direct scenario supervisors keep their process topology and
+product clocks. Release attestation and publication each have a 180-second
+command bound; publication is not retried after an unknown network outcome.

@@ -21,7 +21,7 @@ LOGGER=""
 RUN_ID=$(uuidgen)
 ONLY=${CKSIM_ONLY:-}
 case "$ONLY" in ""|report-threading|generations|providers-single|providers-ab|providers-ba|providers-handles|providers-late|providers-drop|providers-inv|providers-recreate|lck|lck-basic|lck-cx-after|lck-lck-after|lck-two-managers) ;; *) echo "Unsupported diagnostic selection" >&2; exit 1;; esac
-limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
+limit() { ../scripts/ci/bounded "$@"; }
 prepare_stage() {
   local phase=$1 budget=$2 started status
   shift 2
