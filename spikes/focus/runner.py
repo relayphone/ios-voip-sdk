@@ -1,6 +1,7 @@
 """Private, bounded row execution. --dry-run returns before any device/credential/microphone access."""
 import argparse
 import base64
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,11 @@ BUNDLE = "dev.callkitsim.focus"
 TEST_BUNDLE = BUNDLE + ".uitests.xctrunner"
 
 
+def correlate(traces, invitations):
+    ids = {value.lower() for value in invitations}
+    return [event for event in traces if str(event.get("invitationID", "")).lower() in ids]
+
+
 def plan(row, locked=False, listen=False):
     p = dict(row=row, focus=True, app=False, person=False, cn=False, sendVoIP=True,
              activity=False, blocked=None, locked=locked, listen=listen)
@@ -25,8 +31,8 @@ def plan(row, locked=False, listen=False):
         if row in ["C00", "C01"]:
             p["focus"] = row != "C00"
     elif row.startswith("L") and row[1:].isdigit() and 1 <= int(row[1:]) <= 16:
-        n = int(row[1:]); p.update(activity=True, sendVoIP=n in [3, 4], focus=n % 2 == 0)
-        if n in [5, 6, 8, 10, 11, 12]:
+        n = int(row[1:]); p.update(activity=True, sendVoIP=False, focus=n % 2 == 0)
+        if n in [5, 6, 7, 8, 10, 11, 12, 13, 14]:
             p["blocked"] = "Requires authorization/rotation/budget fault-injection adapter; not fabricated by this probe"
         if n == 15:
             p["blocked"] = "Alerting push-to-start excluded from silent mode"
@@ -82,6 +88,14 @@ class Run:
         self.counter = 0
         self.journal_fresh = True
         self.invitations = [self.invitation]
+        self.binding = {"device": self.device, "build": hashlib.sha256(self.source.read_bytes()).hexdigest()}
+
+    def qualified(self, path):
+        if not path.exists():
+            return False
+        value = json.loads(path.read_text())
+        age = time.time() - value.get("createdAt", 0)
+        return value.get("binding") == self.binding and 0 <= age < 3600 and value.get("positive", value.get("calibrationValid")) is True
 
     def command(self, argv, timeout=60, background=False):
         self.counter += 1
@@ -180,7 +194,10 @@ class Run:
         if not binary.exists():
             self.command(["swiftc", str(HERE / "listen.swift"), "-o", str(binary)], timeout=90)
         argv = [str(binary), "--output", str(self.folder / "audio.json"), "--seconds", "110" if self.p["row"] == "C02" else "40"]
-        argv += ["--positive"] if self.p["row"] == "C00" else ["--calibration", str(self.work / "audio-calibration.json")]
+        if self.p["row"] == "C00":
+            argv += ["--positive"]
+        elif self.qualified(self.work / "audio-calibration.json"):
+            argv += ["--calibration", str(self.work / "audio-calibration.json")]
         process = self.command(argv, background=True)
         deadline = time.monotonic() + 10
         while process.poll() is None and not (self.folder / "audio.json.ready").exists() and time.monotonic() < deadline:
@@ -195,12 +212,16 @@ class Run:
         result = {"row": p["row"], "invitationID": self.invitation, "status": "unqualified", "humanQA": False}
         observer = audio = None
         try:
+            if p["row"] == "C00":
+                (self.work / "visual-calibration.json").unlink(missing_ok=True)
+                (self.work / "audio-calibration.json").unlink(missing_ok=True)
             if p["row"] == "restore-all":
                 self.restore(); result["status"] = "restored"; return result
             actions = ["setup", "app:" + ("include" if p["app"] else "exclude"),
                        "person:" + ("include" if p["person"] else "exclude"), "calls:Allowed People Only"]
             if p["row"] == "C01":
                 actions[-1] = "calls:" + self.args.calls
+            actions += ["repeated-calls:" + (self.args.repeated_calls if p["row"] == "C02" else "off")]
             if p["row"] == "C06":
                 actions += ["policy:screenWithAI"]
             actions += ["focus:" + ("on" if p["focus"] else "off")]
@@ -209,6 +230,8 @@ class Run:
                       "activityAction": "start" if p["activity"] else None})
             self.ui(["launch", "notifications:allow"] + (["focus-authorization:allow"] if p["row"] == "C05" else []))
             self.copy("voip-token.txt", self.folder / "voip-token.txt")
+            if p["row"] in ["L03", "L04"]:
+                self.ui(["home"])
             if p["locked"]:
                 if self.args.allow_system_settings or p["locked"]: # Hamza approved this setting change; persist once.
                     (self.work / "system-settings-approved").write_text("approved for disposable probe measurements\n")
@@ -250,21 +273,26 @@ class Run:
                 ui = json.loads((self.folder / "ui.json").read_text())
                 evidence = [e for e in ui["events"] if e.get("event") == "call.observed"]
                 result["visual"] = evidence
-                if p["row"] == "C00" and any(e["banner"] or e["callScreen"] for e in evidence):
-                    write(self.work / "visual-calibration.json", {"positive": True})
-                result["visualNegativeQualified"] = (self.work / "visual-calibration.json").exists()
+                result["visualNegativeQualified"] = self.qualified(self.work / "visual-calibration.json")
             self.copy("focus.jsonl", self.folder / "trace.jsonl")
             traces = [json.loads(line) for line in (self.folder / "trace.jsonl").read_text().splitlines() if line]
-            matching = [e for e in traces if e.get("invitationID") in self.invitations]
+            matching = correlate(traces, self.invitations)
             result["invitationIDs"] = self.invitations
             result["reports"] = [e for e in matching if e["event"] == "report.result"]
+            if p["row"] == "C00" and len(result["reports"]) == 1 and result["reports"][0].get("outcome") == "reported" and any(e["banner"] or e["callScreen"] for e in result.get("visual", [])):
+                write(self.work / "visual-calibration.json", {"positive": True, "binding": self.binding, "createdAt": time.time()})
+                result["visualNegativeQualified"] = True
             result["autoAnswerLCKJoinObserved"] = any(e["event"] == "call.action" and e.get("kind") == "JoinConversationAction" for e in matching) if p["locked"] else None
             result["lockCondition"] = "Auto-Lock configured; 45s elapsed without UI session; actual lock state unverified" if p["locked"] else "unlocked UI session"
             if p["activity"]:
                 text = "Updates delayed" if p["row"] == "L09" else "Synthetic caller: APNs update"
                 self.ui(["sample", "activity-check"], text=text)
                 self.copy("focus-activity.png", self.folder / "activity.png", test=True)
-                result["activityContentEvents"] = [e for e in traces if e["event"].startswith("activity.")]
+                self.copy("focus.jsonl", self.folder / "trace.jsonl")
+                traces = [json.loads(line) for line in (self.folder / "trace.jsonl").read_text().splitlines() if line]
+                activity_id = json.loads((self.folder / "activity-token.json").read_text())["activityID"]
+                result["activityContentEvents"] = [e for e in traces if e["event"].startswith("activity.") and e.get("rowID") == p["row"] and e.get("activityID") == activity_id]
+                result["coverage"] = "Single transport/presentation subcase, not full cadence/lock/privacy qualification"
             result["status"] = "recorded" if not p["sendVoIP"] or len(result["reports"]) == len(self.invitations) else "incomplete-report-evidence"
             return result
         finally:
@@ -277,6 +305,7 @@ class Run:
             if (self.folder / "audio.json").exists():
                 data = json.loads((self.folder / "audio.json").read_text()); result["audio"] = data
                 if p["row"] == "C00":
+                    data.update(binding=self.binding, createdAt=time.time())
                     write(self.work / "audio-calibration.json", data)
             if p["row"] != "restore-all":
                 try:
@@ -294,6 +323,7 @@ def main():
     parser.add_argument("--locked-auto-answer", action="store_true")
     parser.add_argument("--allow-system-settings", action="store_true")
     parser.add_argument("--listen", action="store_true")
+    parser.add_argument("--repeated-calls", choices=["on", "off"], default="off")
     parser.add_argument("--calls", default="Everyone", choices=["Everyone", "All Contacts", "Favorites", "Allowed People Only"])
     args = parser.parse_args()
     p = plan(args.row, args.locked_auto_answer, args.listen)

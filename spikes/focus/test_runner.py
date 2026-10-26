@@ -4,11 +4,32 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
+from runner import Run, correlate
 
 HERE = Path(__file__).resolve().parent
 
 
 class DryRunTests(unittest.TestCase):
+    def test_calibration_must_be_positive_recent_and_from_same_device_build(self):
+        run = Run.__new__(Run)
+        run.binding = {"device": "fixture-phone", "build": "fixture-build"}
+        with tempfile.TemporaryDirectory() as folder, patch("runner.time.time", return_value=10000):
+            path = Path(folder) / "calibration.json"
+            for value, expected in [
+                ({"positive": True, "createdAt": 9990, "binding": run.binding}, True),
+                ({"positive": False, "createdAt": 9990, "binding": run.binding}, False),
+                ({"positive": True, "createdAt": 5000, "binding": run.binding}, False),
+                ({"positive": True, "createdAt": 9990, "binding": {"device": "other", "build": "fixture-build"}}, False),
+            ]:
+                path.write_text(json.dumps(value))
+                self.assertEqual(run.qualified(path), expected)
+
+    def test_native_uppercase_uuid_correlates_with_host_invitation(self):
+        native = {"event": "report.result", "invitationID": "A8EDAA66-EF01-4E4F-8B31-8F31B9FA998A"}
+        unrelated = {"event": "report.result", "invitationID": "00000000-0000-0000-0000-000000000000"}
+        self.assertEqual(correlate([native, unrelated], ["a8edaa66-ef01-4e4f-8b31-8f31b9fa998a"]), [native])
+
     def run_plan(self, row, *args):
         return subprocess.run(["/bin/bash", str(HERE / "run.sh"), row, "--dry-run", *args],
                               capture_output=True, text=True, timeout=10)
