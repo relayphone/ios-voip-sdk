@@ -51,6 +51,22 @@ timer to extend or fulfill an expired action. Optional hold, mute and tones
 callbacks accept when omitted. Handler callbacks may return `void` or a promise,
 matching the RFC's synchronous mute example. Native filters system echoes.
 
+On iOS 27, a failed Pause or Join can make the conversation leave before a
+system End arrives. That End can deliver the original `ended` snapshot to the
+cleanup handler after the conversation has disappeared from public state.
+Cleanup does not reinsert it or request another End. Unclaimed cleanup input
+uses the existing 120-second metadata window; once End claims it, the normal
+action deadline governs handler attachment and completion. Native object
+release alone does not cancel cleanup. Reset or a replacement generation
+invalidates retained cleanup input; a new terminal observation and genuine End
+after reset are fresh platform input.
+End identifies a UUID without its native object identity. If several already-ended
+generations reuse it with no current object, SDK policy uses the latest accepted
+terminal input.
+Other held calls remain held: the application chooses whether to resume or end
+them. These semantics follow the [measured failure cases](../docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md);
+the metadata window is SDK policy, not a measured system deadline.
+
 `useConversation(id)` returns `undefined` when the system has no matching live
 conversation. `usePushToken()` returns `null` before registration or after token
 invalidation. The shared RFC token type includes `fcm`; this iOS module produces
