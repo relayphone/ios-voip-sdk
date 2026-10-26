@@ -245,7 +245,9 @@ class Run:
             if p["locked"]:
                 if self.args.allow_system_settings or p["locked"]: # Hamza approved this setting change; persist once.
                     (self.work / "system-settings-approved").write_text("approved for disposable probe measurements\n")
-                self.ui(["system-settings:enable", "terminate"])
+                self.ui(["system-settings:enable", "terminate", "lock"])
+                self.copy("focus-ui-result.json", self.folder / "ui-settings.json", test=True)
+                result["systemSettings"] = json.loads((self.folder / "ui-settings.json").read_text())["events"]
                 time.sleep(45)  # No XCUITest session remains to keep the phone awake.
             elif p["sendVoIP"]:
                 observer = self.ui(["observe:90" if p["row"] == "C02" else "observe:60"], background=True)
@@ -293,7 +295,7 @@ class Run:
                 write(self.work / "visual-calibration.json", {"positive": True, "binding": self.binding, "createdAt": time.time()})
                 result["visualNegativeQualified"] = True
             result["autoAnswerLCKJoinObserved"] = any(e["event"] == "call.action" and e.get("kind") == "JoinConversationAction" for e in matching) if p["locked"] else None
-            result["lockCondition"] = "Auto-Lock configured; 45s elapsed without UI session; actual lock state unverified" if p["locked"] else "unlocked UI session"
+            result["lockCondition"] = "lock button pressed, then 45s without a UI session; Auto-Lock readback in systemSettings" if p["locked"] else "unlocked UI session"
             if p["activity"]:
                 text = "Updates delayed" if p["row"] == "L09" else "Synthetic caller: APNs update"
                 self.ui(["sample", "activity-check"], text=text)
