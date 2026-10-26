@@ -25,6 +25,6 @@ Claude owns device execution. This lane compiled generic iOS and dry-ran the hos
 | Transcript | Native current/applied content observations and exact Notification Center assertion/PNG; suspension can defer native stream logging until foreground |
 | Unsupported/dependent row | Automatic `skipped-dependency-or-unsupported`, with reason; no human reassignment or false pass |
 
-Original C03/C04/C07–C11, some L05/L06/L08/L10–L12/L15/L16 and T01–T06 need additional policy/fault/backend adapters or unavailable hardware. The CLI enumerates these limits automatically. It does not invent an AI/SIP backend or fabricate device security-policy outcomes. Automation and device qualification are separate milestones.
+Original C03/C04/C07–C11, L05–L08/L10–L16 and T01–T06 need additional policy/fault/backend adapters or unavailable hardware. The CLI enumerates these limits automatically. It does not invent an AI/SIP backend or fabricate device security-policy outcomes. Automation and device qualification are separate milestones.
 
 If device security prevents reopening Settings after auto-lock, preserve recovery state and report restoration failure. Do not ask Hamza to drive test steps or count the row as passed. Keep screenshots, receipts, tokens and RMS envelopes private and out of git; no raw audio is saved.

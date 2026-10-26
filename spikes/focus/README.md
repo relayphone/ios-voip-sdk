@@ -7,7 +7,7 @@ Real runs require `FOCUS_DEVICE`, a signed `FOCUS_XCTESTRUN` and the documented 
 or private `FOCUS_WORK`; it must not be committed. Every command has a bounded timeout; unknown APNs
 outcomes are never automatically retried. The approved system-setting changes need no new confirmation.
 Additional row flags: `--calls Everyone` for C01, `--listen` for optional calibrated Mac RMS capture.
-Special hardware/backend/fault rows return explicit automatic skips rather than human QA tasks.
+Scenarios with missing adapters or unsupported hardware/backend/fault controls return explicit automatic skips rather than human QA tasks.
 
 Local CLI verification: `python3 -m unittest discover -s spikes/focus -p test_runner.py`.
 
