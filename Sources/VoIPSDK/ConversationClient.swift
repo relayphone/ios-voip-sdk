@@ -132,6 +132,26 @@ public final class ConversationClient: NSObject {
   private let audioOperations = AudioAdapterOperations()
   private var records: [UUID: Record] = [:]
   private var terminalProjection = TerminalConversationProjection<Conversation>()
+  private final class TerminalCleanupInput {
+    let id: UUID
+    weak var object: Conversation?
+    let incomingGeneration: UUID?
+    let retainedUntil: Date
+    var snapshot: ConversationSnapshot?
+    var actionID: UUID?
+    init(_ snapshot: ConversationSnapshot, object: Conversation, incomingGeneration: UUID?) {
+      id = snapshot.id; self.object = object
+      self.snapshot = snapshot; self.incomingGeneration = incomingGeneration
+      retainedUntil = Date().addingTimeInterval(IncomingInvitationGate.metadataRetention)
+    }
+  }
+  // Values never retain their native keys. A spent marker prevents duplicate
+  // terminal callbacks from rearming cleanup during the same native lifetime.
+  private let terminalCleanupInputs = NSMapTable<Conversation, TerminalCleanupInput>(
+    keyOptions: [.weakMemory, .objectPointerPersonality], valueOptions: .strongMemory)
+  // Terminal handler values survive native release, using the existing metadata
+  // retention window until a real End claims them under its action deadline.
+  private var retainedTerminalCleanup: [UUID: TerminalCleanupInput] = [:]
   private var recordRemovalGenerations: [UUID: UUID] = [:]
   private var refreshSuspensionDepth = 0
   nonisolated let incomingIntake = IncomingIntake()
@@ -171,6 +191,7 @@ public final class ConversationClient: NSObject {
       guard let self, accepted else { return }
       if action.kind == .mute, let muted = action.muted { self.records[id]?.muted = muted }
       if action.kind == .end {
+        guard !self.terminalCleanupValues.contains(where: { $0.actionID == action.id }) else { return }
         let now = Date()
         self.records[id]?.ended = .init(at: now, reason: .local)
         if let incoming = self.incomingIntake.projection(id) {
@@ -556,10 +577,91 @@ public final class ConversationClient: NSObject {
       connectedAt: record.connectedAt, ended: record.ended, payload: record.payload,
       pending: coordinator.pending(for: id))
   }
+  private var terminalCleanupObjects: [Conversation] {
+    terminalCleanupInputs.keyEnumerator().allObjects.compactMap { $0 as? Conversation }
+  }
+  private var terminalCleanupValues: [TerminalCleanupInput] {
+    Array(retainedTerminalCleanup.values)
+  }
+  private func invalidateTerminalCleanup(_ input: TerminalCleanupInput) {
+    let actionID = input.actionID
+    input.snapshot = nil; input.actionID = nil
+    if retainedTerminalCleanup[input.id] === input { retainedTerminalCleanup.removeValue(forKey: input.id) }
+    if let actionID { coordinator.cancel(actionID, reason: .cancelled, settle: true) }
+  }
+  /// Sweep lazily like incoming metadata. A claimed End is owned by the
+  /// coordinator until settlement or its existing deadline, not this cache.
+  func pruneTerminalCleanup(now: Date = Date()) {
+    for input in terminalCleanupValues {
+      if let actionID = input.actionID {
+        if !coordinator.hasPendingAction(actionID) { invalidateTerminalCleanup(input) }
+      } else if input.retainedUntil < now { invalidateTerminalCleanup(input) }
+    }
+  }
+  private func reconcileTerminalCleanup(_ current: [Conversation]) {
+    refreshSuspensionDepth += 1
+    defer { refreshSuspensionDepth -= 1 }
+    pruneTerminalCleanup()
+    for input in terminalCleanupValues {
+      if let incoming = incomingIntake.projection(input.id), incoming.generation != input.incomingGeneration {
+        invalidateTerminalCleanup(input)
+      } else if let object = current.first(where: { $0.uuid == input.id }), object !== input.object {
+        invalidateTerminalCleanup(input)
+      }
+    }
+    for original in terminalCleanupObjects {
+      guard let input = terminalCleanupInputs.object(forKey: original),
+            let object = current.first(where: { $0.uuid == original.uuid }) else { continue }
+      if object !== original { invalidateTerminalCleanup(input) }
+      else if object.state != .left,
+              let incoming = incomingIntake.projection(object.uuid), incoming.isLive,
+              input.incomingGeneration != incoming.generation {
+        // Only a confirmed live new incoming generation can reuse this key.
+        invalidateTerminalCleanup(input); terminalCleanupInputs.removeObject(forKey: original)
+      }
+    }
+  }
+  private func terminalCleanupActionID(_ id: UUID) -> UUID? {
+    terminalCleanupValues.first { $0.snapshot?.id == id && $0.actionID != nil }?.actionID
+  }
+  private func consumeTerminalCleanup(_ actionID: UUID) {
+    for input in terminalCleanupValues where input.actionID == actionID {
+      input.snapshot = nil; input.actionID = nil
+      if retainedTerminalCleanup[input.id] === input { retainedTerminalCleanup.removeValue(forKey: input.id) }
+    }
+  }
+  private func terminalCleanupOverride(_ action: ConversationAction,
+                                       origin: ConversationActionOrigin) -> (@MainActor () -> ConversationSnapshot?)? {
+    guard action is EndConversationAction, origin == .system else { return nil }
+    // LCK End carries only a UUID, not its native Conversation. With no current
+    // member, use the latest accepted terminal value even after its native object dies.
+    // This cannot identify old A's End separately from B's End after UUID reuse.
+    let id = action.conversationUUID, actionID = action.uuid
+    let current = manager.conversations.first { $0.uuid == id }
+    guard let input = retainedTerminalCleanup[id] else {
+      let knownTerminal = terminalCleanupObjects.contains { original in
+        original.uuid == id && original.state == .left &&
+          (current == nil || current === original)
+      }
+      if knownTerminal { return { nil } }
+      return nil
+    }
+    guard input.actionID == nil || input.actionID == actionID else { return { nil } }
+    input.actionID = actionID
+    return { [weak self, input] in
+      guard let self, input.actionID == actionID, self.retainedTerminalCleanup[id] === input else { return nil }
+      if let original = input.object, original.state != .left { return nil }
+      if let incoming = self.incomingIntake.projection(id), incoming.generation != input.incomingGeneration { return nil }
+      let current = self.manager.conversations.first { $0.uuid == id }
+      guard current == nil || current === input.object else { return nil }
+      return input.snapshot
+    }
+  }
   private func refresh() {
     guard refreshSuspensionDepth == 0 else { return }
     pruneIncomingLocalEndClaims()
     let current = manager.conversations
+    reconcileTerminalCleanup(current)
     let projectedObjects = terminalProjection.project(current: Dictionary(uniqueKeysWithValues: current.map { ($0.uuid, $0) }))
     let ids = Set(projectedObjects.keys)
     for conversation in current {
@@ -638,7 +740,7 @@ public final class ConversationClient: NSObject {
     // A failed/cancelled platform action may synchronously deliver its terminal
     // delegate. Keep metadata until that callback has buffered and published it.
     refreshSuspensionDepth += 1
-    coordinator.cancelConversation(id)
+    coordinator.cancelConversation(id, except: terminalCleanupActionID(id))
     refreshSuspensionDepth -= 1
     guard terminalProjection.object(for: id) == nil else { return }
     records.removeValue(forKey: id); outgoingMetadata.removeValue(forKey: id)
@@ -663,8 +765,17 @@ public final class ConversationClient: NSObject {
       // Cancel only after accepting this object identity and buffering it. A
       // stale terminal delegate must not cancel a reused UUID's pending actions.
       refreshSuspensionDepth += 1
-      coordinator.cancelConversation(id)
+      if terminalCleanupInputs.object(forKey: conversation) == nil {
+        if let input = retainedTerminalCleanup[id] { invalidateTerminalCleanup(input) }
+      }
+      coordinator.cancelConversation(id, except: terminalCleanupActionID(id))
       refreshSuspensionDepth -= 1
+      if terminalCleanupInputs.object(forKey: conversation) == nil, let input = snapshot(id) {
+        let input = TerminalCleanupInput(input, object: conversation,
+          incomingGeneration: incomingIntake.projection(id)?.generation)
+        terminalCleanupInputs.setObject(input, forKey: conversation)
+        retainedTerminalCleanup[id] = input
+      }
       return generation
     }
     guard let generation else { refresh(); return }
@@ -704,6 +815,8 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
     audio.reset()
     mediaAdapter.setSystemAudioAuthorization(false)
     incomingIntake.reset()
+    for input in terminalCleanupValues { input.snapshot = nil; input.actionID = nil }
+    retainedTerminalCleanup.removeAll()
     coordinator.cancelAll(reason: .reset); appActions.removeAll(); refresh(); emit(.providerReset)
   }
   public func conversationManager(_ manager: ConversationManager, perform action: ConversationAction) {
@@ -754,11 +867,16 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
     }
     let pending = PendingAction(id: action.uuid, kind: kind, deadline: advertisedDeadline,
       origin: origin, held: held, muted: muted, digits: digits)
-    coordinator.enqueue(conversationID: id, action: pending, deliveredAt: deliveredAt, isPending: {
+    let cleanupOverride = terminalCleanupOverride(action, origin: origin)
+    coordinator.enqueue(conversationID: id, action: pending, deliveredAt: deliveredAt, snapshotOverride: cleanupOverride, isPending: {
       switch action.state { case .idle, .running: true; default: false }
-    }, settle: { accepted in if accepted { action.fulfill() } else { action.fail() } })
+    }, settle: { [weak self] accepted in
+      self?.consumeTerminalCleanup(action.uuid)
+      if accepted { action.fulfill() } else { action.fail() }
+    })
   }
   public func conversationManager(_ manager: ConversationManager, timedOutPerforming action: ConversationAction) {
+    consumeTerminalCleanup(action.uuid)
     coordinator.cancel(action.uuid, reason: .platformTimeout)
   }
   public func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) {
