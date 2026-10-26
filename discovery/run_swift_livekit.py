@@ -107,6 +107,7 @@ def record_command(out, label, stdout, stderr, status, errors):
 def command(out, label, arguments, timeout=60, check=True, env=None, *, evidence_errors=None):
     arguments = [str(value) for value in arguments]
     transport = {'runtimes': 'runtime-inventory', 'devices-after': 'post-delete-inventory'}.get(label, arguments[2])
+    started = time.monotonic()
     try:
         try: result = simulator_infra.bounded(arguments, timeout, env=env)
         except OSError as error: raise NativeCommandError(str(error)) from error
@@ -116,7 +117,8 @@ def command(out, label, arguments, timeout=60, check=True, env=None, *, evidence
         if check and evidence_errors is not None: evidence_errors.append(error)
         if check and REPORTER.get() is not None: REPORTER.get().report('infra:' + transport, error)
         record_command(out, label, getattr(error, 'stdout', None) or b'', getattr(error, 'stderr', None) or b'',
-                       dict(exitCode=None, error=str(error)),
+                       dict(exitCode=None, error=str(error), timeoutSeconds=timeout,
+                            elapsedSeconds=round(time.monotonic() - started, 6)),
                        [] if check and evidence_errors is None else evidence_errors)
         raise
     status_error = None
@@ -128,7 +130,9 @@ def command(out, label, arguments, timeout=60, check=True, env=None, *, evidence
             status_error = error
             if evidence_errors is not None: evidence_errors.append(error)
     # The current launchd value is passed to app launches only in memory.
-    record_command(out, label, result.stdout, result.stderr, dict(exitCode=result.returncode),
+    record_command(out, label, result.stdout, result.stderr,
+                   dict(exitCode=result.returncode, timeoutSeconds=timeout,
+                        elapsedSeconds=round(time.monotonic() - started, 6)),
                    [] if status_error is not None and evidence_errors is None else evidence_errors)
     if status_error is not None: raise status_error
     return result

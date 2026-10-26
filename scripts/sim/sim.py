@@ -362,7 +362,30 @@ class Session:
             return True
 
     def execute(self, command, timeout):
-        return self.runner(list(command), seconds(timeout))
+        timeout = seconds(timeout)
+        started = time.monotonic()
+        result, error = None, None
+        try:
+            result = self.runner(list(command), timeout)
+            return result
+        except BaseException as failure:
+            error = type(failure).__name__
+            raise
+        finally:
+            row = dict(step=_command_failure_label(command).removeprefix('infra:'),
+                       timeoutSeconds=timeout, elapsedSeconds=round(time.monotonic() - started, 6),
+                       exitCode=result.returncode if result is not None else None,
+                       timedOut=result.timed_out if result is not None else False)
+            if error is not None:
+                row['error'] = error
+            try:
+                with self.path.with_name('commands.status.jsonl').open('a') as stream:
+                    stream.write(json.dumps(row) + '\n')
+            except OSError:
+                # Timing is observational: losing it must not discard a create
+                # acknowledgement or interrupt the remaining owned teardown.
+                try: summary('infra:evidence-write', 'setup duration unavailable; native outcome preserved')
+                except OSError: pass
 
     def create(self, arguments, timeout):
         name = arguments[0] + ('' if arguments[0].endswith(' ') else '-') + str(uuid.uuid4())

@@ -37,5 +37,5 @@ sim_checkpoint() {
 }
 
 sim_cleanup() {
-  python3 "$SIM_HELPER" cleanup "$SIM_STATE"
+  python3 "$SIM_HELPER" cleanup "$SIM_STATE" "$@"
 }
