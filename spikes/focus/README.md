@@ -1,5 +1,16 @@
 # Focus device probe
 
+Runner: `./run.sh F09 --dry-run`, `./run.sh C00 --listen`, and `./run.sh F01 --locked-auto-answer --listen`.
+See [execution and the single microphone permission click](../../docs/research/focus/human-session.md).
+Real runs require `FOCUS_DEVICE`, a signed `FOCUS_XCTESTRUN` and the documented APNs environment.
+`./run.sh restore-all` recovers the persistent host journal. Runtime evidence goes to ignored `out/`
+or private `FOCUS_WORK`; it must not be committed. Every command has a bounded timeout; unknown APNs
+outcomes are never automatically retried. The approved system-setting changes need no new confirmation.
+Additional row flags: `--calls Everyone` for C01, `--listen` for optional calibrated Mac RMS capture.
+Special hardware/backend/fault rows return explicit automatic skips rather than human QA tasks.
+
+Local CLI verification: `python3 -m unittest discover -s spikes/focus -p test_runner.py`.
+
 Implements the native/platform portions of [the device plan](../../docs/research/focus/device-plan.md). This isolated spike uses LiveCommunicationKit only. It has no SDK dependency, `CXProvider`, real media, backend AI or owner-join implementation. Build and dry-run qualification do **not** qualify device behavior. Claude operates the device; this lane does not.
 
 ```sh

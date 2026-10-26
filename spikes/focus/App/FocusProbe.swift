@@ -91,8 +91,9 @@ final class Calls: NSObject, PKPushRegistryDelegate, ConversationManagerDelegate
         Trace.shared.log("report.result", ["invitationID": id.uuidString, "outcome": "reported", "elapsedMs": Int((ProcessInfo.processInfo.systemUptime - start) * 1000)])
         DispatchQueue.main.asyncAfter(deadline: .now() + min(max(config.ringTimeout ?? 25, 3), 60)) {
           if let call = self.manager.conversations.first(where: { $0.uuid == id }) {
-            self.manager.reportConversationEvent(.conversationEnded(Date(), .unanswered), for: call)
-            Trace.shared.log("call.autoEnd", ["invitationID": id.uuidString])
+            let answered = call.state == .joined
+            self.manager.reportConversationEvent(.conversationEnded(Date(), answered ? .remoteEnded : .unanswered), for: call)
+            Trace.shared.log("call.autoEnd", ["invitationID": id.uuidString, "answered": answered])
           }
         }
       } catch {
