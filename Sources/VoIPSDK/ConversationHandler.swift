@@ -90,6 +90,8 @@ final class ConversationActionCoordinator {
     let settlementDeadline: Date
     let isPending: @MainActor () -> Bool
     let settle: @MainActor (Bool) -> Void
+    /// Action-local input; returning nil invalidates this delivery permanently.
+    let snapshotOverride: (@MainActor () -> ConversationSnapshot?)?
     var cancelTimer: (@MainActor () -> Void)?
     var task: Task<Void, Never>?
     var signal: ConversationCancellationSignal?
@@ -100,12 +102,13 @@ final class ConversationActionCoordinator {
     var fulfillment: UUID?
     var fulfillmentTask: Task<Void, Never>?
     init(conversationID: UUID, action: PendingAction, platformDeadline: Date, settlementDeadline: Date,
-         isPending: @escaping @MainActor () -> Bool,
+         isPending: @escaping @MainActor () -> Bool, snapshotOverride: (@MainActor () -> ConversationSnapshot?)?,
          settle: @escaping @MainActor (Bool) -> Void) {
       self.conversationID = conversationID; self.action = action
       self.platformDeadline = platformDeadline
       self.settlementDeadline = settlementDeadline
       self.isPending = isPending; self.settle = settle
+      self.snapshotOverride = snapshotOverride
     }
   }
   private let policy: UnhandledActionPolicy
@@ -139,6 +142,8 @@ final class ConversationActionCoordinator {
     entries.values.contains { $0.conversationID == id && $0.action.kind == kind }
   }
 
+  func hasPendingAction(_ actionID: UUID) -> Bool { entries[actionID] != nil }
+
   func hasPendingAppMute(for id: UUID, value: Bool) -> Bool {
     entries.values.contains {
       $0.conversationID == id && $0.action.kind == .mute && $0.action.origin == .app &&
@@ -154,6 +159,7 @@ final class ConversationActionCoordinator {
   }
 
   func enqueue(conversationID: UUID, action: PendingAction, deliveredAt: Date? = nil,
+               snapshotOverride: (@MainActor () -> ConversationSnapshot?)? = nil,
                isPending: @escaping @MainActor () -> Bool, settle: @escaping @MainActor (Bool) -> Void) {
     guard entries[action.id] == nil else { return }
     let platformDeadline = action.deadline
@@ -177,7 +183,7 @@ final class ConversationActionCoordinator {
     action.deadline = settlementDeadline.addingTimeInterval(-margin)
     let entry = Entry(conversationID: conversationID, action: action, platformDeadline: platformDeadline,
       settlementDeadline: settlementDeadline,
-      isPending: isPending, settle: settle)
+      isPending: isPending, snapshotOverride: snapshotOverride, settle: settle)
     let preparation = [.join, .start].contains(action.kind) ? prepareAction : nil
     entry.prepared = preparation == nil
     entries[action.id] = entry
@@ -245,9 +251,14 @@ final class ConversationActionCoordinator {
   private func deliver(_ entry: Entry) {
     guard let handler, entries[entry.action.id] === entry, entry.delivery == nil, entry.prepared, entry.fulfillment == nil else { return }
     guard entry.isPending() else { cancel(entry.action.id, reason: .cancelled); return }
-    guard let conversation = snapshot?(entry.conversationID) else {
+    // A supplied but invalid override must never fall back to a reused UUID.
+    let input: ConversationSnapshot?
+    if let override = entry.snapshotOverride { input = override() }
+    else { input = snapshot?(entry.conversationID) }
+    guard var conversation = input else {
       finish(entry, accepted: false); return
     }
+    if entry.snapshotOverride != nil { conversation.pending = entry.action }
     guard let implementation = handler.implementation(for: entry.action.kind) else {
       // Only join/start/end require application work. Optional operations accept by default.
       finish(entry, accepted: ![.join, .start, .end].contains(entry.action.kind)); return
@@ -271,6 +282,7 @@ final class ConversationActionCoordinator {
 
   private func canInvoke(_ id: UUID, delivery: UUID) -> Bool {
     guard let entry = entries[id], entry.delivery == delivery else { return false }
+    if let override = entry.snapshotOverride, override() == nil { finish(entry, accepted: false); return false }
     guard entry.isPending() else { cancel(id, reason: .cancelled); return false }
     guard entry.action.deadline > now() else { expire(id); return false }
     return true
@@ -341,7 +353,8 @@ final class ConversationActionCoordinator {
     entry.task?.cancel()
     // A platform timeout/state change wins; fulfillment cannot resurrect a settled action.
     if entry.isPending() {
-      let accepted = accepted && now() < entry.settlementDeadline
+      let accepted = accepted && now() < entry.settlementDeadline &&
+        (entry.snapshotOverride.map { $0() != nil } ?? true)
       // Install accepted mute/end metadata before fulfillment can synchronously
       // emit conversationChanged or a system echo.
       willSettle?(entry.conversationID, entry.action, accepted)

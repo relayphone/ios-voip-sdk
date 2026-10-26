@@ -72,6 +72,8 @@ final class IncomingIntake: @unchecked Sendable {
     let generation: UUID
     let payload: IncomingCallPayload
     let terminal: Terminal?
+    /// Reset-retained ownership is not a successful report in this generation.
+    let isLive: Bool
   }
 
   private struct SettledFailure {
@@ -98,7 +100,7 @@ final class IncomingIntake: @unchecked Sendable {
     var terminalPending = false
     init(payload: IncomingCallPayload, now: Date) {
       self.payload = payload
-      retainedUntil = now.addingTimeInterval(120)
+      retainedUntil = now.addingTimeInterval(IncomingInvitationGate.metadataRetention)
     }
     var hasPending: Bool { !attempts.isEmpty || !invalidatedAttempts.isEmpty || !settledFailures.isEmpty }
     var ownershipKnown: Bool { everReported || everObserved }
@@ -126,7 +128,7 @@ final class IncomingIntake: @unchecked Sendable {
     let existing = entries[registration.id]
     let entry = existing ?? Entry(payload: payload, now: now)
     entries[registration.id] = entry
-    entry.retainedUntil = max(entry.retainedUntil, now.addingTimeInterval(120))
+    entry.retainedUntil = max(entry.retainedUntil, now.addingTimeInterval(IncomingInvitationGate.metadataRetention))
 
     let disposition: Disposition
     if source == .foreground, existing != nil {
@@ -155,7 +157,7 @@ final class IncomingIntake: @unchecked Sendable {
       // Late manager publication may follow this settlement. Keep its incoming
       // payload and failed terminal available for bounded reconciliation; this
       // old result grants no live ownership to the replacement generation.
-      entry.retainedUntil = max(entry.retainedUntil, now.addingTimeInterval(120))
+      entry.retainedUntil = max(entry.retainedUntil, now.addingTimeInterval(IncomingInvitationGate.metadataRetention))
     } else if let entry = entries[attempt.id], entry.generation == attempt.generation,
               entry.attempts.removeValue(forKey: attempt.attemptID) != nil {
       switch outcome {
@@ -202,7 +204,7 @@ final class IncomingIntake: @unchecked Sendable {
     defer { lock.unlock() }
     guard let entry = entries[id] else { return nil }
     return Projection(id: id, generation: entry.generation, payload: entry.payload,
-      terminal: entry.terminal)
+      terminal: entry.terminal, isLive: !entry.resetInvalidated && entry.everReported && entry.active)
   }
 
   func hasPending(_ id: UUID) -> Bool {
