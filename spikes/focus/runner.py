@@ -226,7 +226,8 @@ class Run:
                 (self.work / "audio-calibration.json").unlink(missing_ok=True)
             if p["row"] == "restore-all":
                 self.restore(); result["status"] = "restored"; return result
-            actions = ["setup", "app:" + ("include" if p["app"] else "exclude"),
+            # The Focus app picker lists only apps that have notification permission (iOS 27).
+            actions = ["setup", "launch", "notifications:allow", "app:" + ("include" if p["app"] else "exclude"),
                        "person:" + ("include" if p["person"] else "exclude"), "calls:Allowed People Only"]
             if p["row"] == "C01":
                 actions[-1] = "calls:" + self.args.calls
@@ -320,7 +321,13 @@ class Run:
                         write(self.work / "audio-calibration.json", data)
             if p["row"] != "restore-all":
                 try:
-                    self.recover(); self.restore(); result["restored"] = True
+                    self.recover()
+                    if self.args.keep_setup:
+                        # Matrix runs keep the owned Focus/contact between rows; only the Focus-on window ends here.
+                        self.arm({"armed": False, "activityAction": "end"}); self.ui(["focus:off"])
+                        result["restored"] = "focus-off"
+                    else:
+                        self.restore(); result["restored"] = True
                 except Exception:
                     result["restored"] = False; result["status"] = "restore-failed-use-restore-all"
                     if p["row"] == "C00":
@@ -341,7 +348,8 @@ def main():
     parser.add_argument("--allow-system-settings", action="store_true")
     parser.add_argument("--listen", action="store_true")
     parser.add_argument("--repeated-calls", choices=["on", "off"], default="off")
-    parser.add_argument("--calls", default="Everyone", choices=["Everyone", "All Contacts", "Favorites", "Allowed People Only"])
+    parser.add_argument("--calls", default="Everyone", choices=["Everyone", "All Contacts", "Contacts Only", "Favorites", "Allowed People Only"])
+    parser.add_argument("--keep-setup", action="store_true", help="matrix mode: turn Focus off after the row; run restore-all at the end")
     args = parser.parse_args()
     p = plan(args.row, args.locked_auto_answer, args.listen)
     if args.dry_run or p["blocked"]:
