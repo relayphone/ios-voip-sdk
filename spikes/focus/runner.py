@@ -185,6 +185,9 @@ class Run:
         deadline = time.monotonic() + 10
         while process.poll() is None and not (self.folder / "audio.json.ready").exists() and time.monotonic() < deadline:
             time.sleep(0.2)
+        audio_result = self.folder / "audio.json"
+        if audio_result.exists() and json.loads(audio_result.read_text()).get("reason") == "mic permission pending":
+            print("mic permission pending; continuing with visual evidence only")
         return process
 
     def execute(self):
