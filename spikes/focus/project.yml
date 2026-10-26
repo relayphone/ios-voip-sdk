@@ -74,8 +74,22 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.callkitsim.focus.filter
         APPLICATION_EXTENSION_API_ONLY: YES
+  FocusUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: FocusProbe
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.callkitsim.focus.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: FocusProbe
 schemes:
   FocusProbe:
     build:
       targets:
         FocusProbe: all
+        FocusUITests: [test]
+    test:
+      targets: [FocusUITests]
