@@ -476,6 +476,15 @@ final class FocusUITests: XCTestCase {
     let wanted = ProcessInfo.processInfo.environment["FOCUS_EXPECTED_ACTIVITY_TEXT"] ?? "Synthetic AI call status"
     guard !wanted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, wanted.utf8.count <= 512 else { throw failure("Invalid transcript expectation") }
     _ = try element(board, ["Focus Probe · synthetic transcript"], timeout: 10)
+    // iOS 27 asks inline on the probe's first card before it shows its Live Activities. A push sent before
+    // consent cannot qualify the row: grant it for this disposable probe and fail so the row is rerun.
+    // Two stages were seen: "Allow Live Activities from …?" then "… continue to allow …?" (Always Allow).
+    if board.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Live Activities from Focus Probe")).firstMatch.exists {
+      let allow = board.buttons.matching(NSPredicate(format: "identifier == %@ AND label IN %@", "swipe-action-button-identifier", ["Always Allow", "Allow"])).firstMatch
+      guard allow.exists else { throw failure("Live Activity consent prompt without Allow") }
+      allow.tap(); Thread.sleep(forTimeInterval: 1)
+      throw failure("Live Activity consent was pending; granted it, rerun the row")
+    }
     let card = try element(board, [wanted], timeout: 10)
     guard card.exists else { throw failure("Latest transcript card missing") }
     let screenshot = XCUIScreen.main.screenshot()

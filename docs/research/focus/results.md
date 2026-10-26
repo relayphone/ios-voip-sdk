@@ -53,11 +53,26 @@ Every unanswered reported call ended itself after the probe's 25 s ring timeout.
 
 Auto-Lock could not be changed under XCUITest. Selecting 30 seconds showed a checkmark, then read back as the previous value (Never). The run locked the phone with the lock button instead, so Auto-Lock played no part. The CN's own banner was not observed separately in F02, F04 or F10.
 
+### Live Activity (L01, unqualified)
+
+The Live Activity rows ran into probe and consent problems before measuring Focus. What was observed, Focus off, phone unlocked:
+
+- **Two-stage consent.** iOS 27 asked for consent inline, on the probe's own Lock Screen card in Notification Center.
+  - The first card asked "Allow Live Activities from Focus Probe?" (Don't Allow / Allow).
+  - The next card asked "Do you want to continue to allow Live Activities from Focus Probe?" (Don't Allow / Always Allow).
+  - The harness grants both for the disposable probe and reruns the row, because pushes sent before consent cannot qualify it.
+- **Remote updates did not render, even after Always Allow.**
+  - A priority-5 ActivityKit update was accepted by APNs (HTTP 200) but was not rendered after 2 minutes.
+  - The card kept revision 0 and switched to "Updates delayed" once its 30 s stale date passed. Stale rendering itself works.
+  - One diagnostic priority-10 update (HTTP 200) also did not render within 25 s.
+- **Suspected cause: activities churn across relaunches.** Each probe launch reported an empty activity inventory and started a new activity with a new token. Until the probe keeps one activity across relaunches and the update reaches the current token, L01–L04 and L09 stay pending.
+
 ### Other rows
 
 | Rows | Status |
 | --- | --- |
-| C02 (repeated calls off, then on), L01–L04, L09 | Pending. Run next. |
+| C02 (repeated calls off, then on) | Pending. Run next. |
+| L01–L04, L09 | Pending a probe fix; see above. |
 | C01, C05 | Pending, low priority. |
 | C06 (Focus filter policy) | **Unqualified**: built without the App Group. |
 | C03, C04, C07–C11, L05–L08, L10–L16, T01–T06 | Skipped automatically, per the plan: they need adapters, a backend or hardware this probe lacks. |
@@ -94,6 +109,7 @@ Auto-Lock could not be changed under XCUITest. Selecting 30 seconds showed a che
   - Under those defaults, any saved contact may get through a fresh custom Focus. This is not measured for LCK here; the matrix uses Allowed People Only.
 - **App picker needs notification permission.** The Focus Apps picker offers only apps that already have notification permission. Phone must request notification permission before users can allow it in a Focus.
 - **Allowlist editing.** The very first People setup is a two-step sheet (Next, then Done). Later edits happen on a page that saves live.
+- **Live Activity consent.** Live Activities need the inline consent above before a transcript surface can be relied on.
 
 ## Typed-outcome mapping
 
@@ -114,6 +130,6 @@ What this means for the SDK:
 
 ## Next steps
 
-1. In priority order: the L rows, C02, then F12, F14 and F16. Use `--keep-setup` and one `restore-all` at the end. The resume steps live in the operator's private run folder.
+1. In priority order: C02, then F12, F14 and F16. Then fix the probe's activity continuity and rerun the L rows. Use `--keep-setup` and one `restore-all` at the end. The resume steps live in the operator's private run folder.
 2. Repeat any row whose outcome differs from its neighbours before turning it into a rule.
 3. Re-run C00 with the Mac microphone once it is granted, to qualify audible and haptic silence.
