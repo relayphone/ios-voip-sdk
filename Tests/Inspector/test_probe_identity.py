@@ -90,7 +90,7 @@ class ProbeIdentityTests(unittest.TestCase):
                 compiled = subprocess.run(['swiftc', '-swift-version', '6', '-parse-as-library',
                     '-module-cache-path', str(work / 'module-cache'), str(model),
                     *(str(ROOT / 'Inspector' / name) for name in
-                      ('RuntimeEvent.swift', 'RuntimeTimingReferences.swift', 'IncomingFilter.swift')),
+                      ('RuntimeEvent.swift', 'RuntimeTimingReferences.swift')),
                     str(harness), '-o', str(executable)], text=True, capture_output=True, timeout=60)
                 self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
                 unbundled = work / 'unbundled-probe'
