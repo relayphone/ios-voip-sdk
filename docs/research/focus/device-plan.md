@@ -4,7 +4,7 @@ Execution handoff for [#124](https://github.com/ziahamza/ios-voip-sdk/issues/124
 
 ## Setup and recording contract
 
-Use the iPhone 13 with its current iOS/build recorded, plus Xcode/build/probe commit. Preserve the user's existing settings before changing them. Use a dedicated test Focus in **Allow Notifications From** mode for both Apps and People, with no schedule or cross-device activation. Record Focus sharing, notification authorization/preview/sound settings, locked/unlocked state, network and Low Power Mode. Set Allow Calls From to **Allowed People Only**, repeated calls off, Time Sensitive off and Emergency Bypass off for the main matrix. Record the exact UI labels if this OS uses different wording.
+Use the iPhone 13 with its current iOS/build recorded, plus Xcode/build/probe commit. Preserve the user's existing settings before changing them. Use a dedicated test Focus in **Allow Notifications From** mode for both Apps and People, with no schedule or cross-device activation. Record Focus sharing, notification authorization/preview/sound settings, locked/unlocked state, network and Low Power Mode. Record the physical Ring/Silent switch, ringer-volume slider, haptics setting and connected audio accessories. For the main matrix, hold these constant in Ring mode with an audible ringer level and enabled haptics, using the phone itself as the observation route. Run the Focus-off positive control below before and after each session. If it fails, audible/haptic-silence conclusions are **unqualified**, even if reports succeed. Set Allow Calls From to **Allowed People Only**, repeated calls off, Time Sensitive off and Emergency Bypass off for the main matrix. Record the exact UI labels if this OS uses different wording.
 
 Use one caller contact with normalized E.164 number and stable `INPerson` / LCK phone-number handle; ensure no duplicate/mismatched contacts. “App included” means the app is explicitly in the Focus Apps allowlist; “person included” means that contact is explicitly in the People allowlist. Do not switch to a Silence list mid-matrix. Control the ordinary Communication Notification independently from the VoIP push: CN-on sends one genuine call-related `INStartCallIntent`-updated notification; CN-off sends none. Keep its interruption level active, with identical notification permissions and no Critical/Time Sensitive capability in the probe. Timestamp its send/delivery separately so its banner/sound cannot be mistaken for call ringing.
 
@@ -24,7 +24,7 @@ Run each row three times with a fresh invitation ID and caller lifecycle reset, 
 
 | ID | Focus | App in allowed Apps | Caller in allowed People | Communication Notification | Record / pass criteria |
 | --- | --- | --- | --- | --- | --- |
-| F01 | Off | Excluded | Excluded | Off | Full trace; baseline legitimate incoming report succeeds and can be answered; no CN. |
+| F01 | Off | Excluded | Excluded | Off | Full trace; report succeeds, call visibly rings with confirmed audible/haptic alert and can be answered; no CN. This qualifies the alert-observation baseline. |
 | F02 | Off | Excluded | Excluded | On | Full trace; baseline call succeeds; attribute any second alert to CN, one call only. |
 | F03 | Off | Included | Excluded | Off | Full trace; inactive Focus app selection does not change baseline success. |
 | F04 | Off | Included | Excluded | On | Full trace; call succeeds; separate CN observation. |
@@ -47,6 +47,7 @@ Qualify LCK first. Replay the matrix with a separate CallKit control app when av
 
 | ID | Change from controlled baseline | What to record | Pass / interpretation |
 | --- | --- | --- | --- |
+| C00 | Focus off, fixed Ring/volume/haptics/accessory settings; legitimate test call, then separate CN test | Observed audible/haptic alerts attributed to call and CN, plus settings before/after session | Known positive alert control succeeds before silence/breakthrough conclusions qualify. Otherwise fix the observation setup and rerun affected rows; report success alone is insufficient. |
 | C01 | Focus on, app/person excluded; Allow Calls From: Nobody / Allowed People / Contacts / Everyone, as available | Exact offered values, contact match, full trace per value | Publish observed call behavior per option; no unsupported LCK claims. |
 | C02 | Same caller twice, 69 s apart; repeated calls explicitly off, then on; CN off | Both full traces, setting screenshot, interval | Reproduce or revise the earlier negative result. Breakthrough is a user/system rule; no SDK auto-retry behavior. |
 | C03 | Silence Notifications From instead of Allow; caller in/out; “Allow Calls From Silenced People” off/on if offered | List mode, toggle, full traces | Document inverse semantics; do not merge these results into the Allow matrix. |
@@ -99,4 +100,4 @@ Use Phone's existing owner-join test flow against the **same LiveKit room/SIP ca
 | T05 | Caller hangs up during take-over; late join success | End wins server-side, pending UI resolves terminal, late media is disconnected, no resurrected call or contradictory history. |
 | T06 | Complete call, foreground later | Single server call history links filtering, AI handling and owner participation; captions reconcile from existing SSE/history, state age is truthful, no unexpected Focus setting change. |
 
-Publish a short table with row IDs, build/settings, sample count, actual result, pass/fail/skip, and evidence links on #124 / the executing lane. Unexpected platform behavior is evidence to revise a claim, not an instruction to bypass it. Restore Focus, contacts/block entries and app/privacy settings; end all test calls/activities, revoke sandbox registrations and delete throwaway build/simulator artifacts. Keep secrets and bulk receipts out of git.
+Publish a short table with row IDs, build/settings, sample count, actual result, pass/fail/skip, and evidence links on #124 / the executing lane. Unexpected platform behavior is evidence to revise a claim, not an instruction to bypass it. Restore Focus, Ring/Silent, ringer volume/haptics, audio accessories, contacts/block entries and app/privacy settings; end all test calls/activities, revoke sandbox registrations and delete throwaway build/simulator artifacts. Keep secrets and bulk receipts out of git.
