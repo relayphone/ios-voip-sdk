@@ -156,7 +156,8 @@ enum CommunicationNotification {
   }
 }
 
-final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+final class AppDelegate: NSObject, ObservableObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+  @Published var authorizationSnapshot = "{}"
   var calls: Calls!
   var timer: Timer?
   func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
@@ -168,6 +169,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
   func activate() {
     Task { @MainActor in
       let config = ProbeConfig.load()
+      FocusActivities.record = { Trace.shared.log($0, $1) }
       FocusActivities.discover()
       sampleFocus()
       if config.requestFocusAuthorization == true {
@@ -193,6 +195,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
       "isFocused": center.focusStatus.isFocused.map { $0 as Any } ?? NSNull(),
       "aiPolicy": UserDefaults(suiteName: ProbeFiles.group)?.string(forKey: "focus.aiPolicy") ?? "unset",
       "frequentPushesEnabled": ActivityAuthorizationInfo().frequentPushesEnabled])
+    let focus = center.authorizationStatus.rawValue
+    UNUserNotificationCenter.current().getNotificationSettings { value in
+      DispatchQueue.main.async {
+        let snapshot = ["focus": focus, "notifications": value.authorizationStatus.rawValue]
+        if let data = try? JSONSerialization.data(withJSONObject: snapshot), let text = String(data: data, encoding: .utf8) {
+          self.authorizationSnapshot = text
+          Trace.shared.log("authorization.sample", snapshot)
+        }
+      }
+    }
   }
   func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
@@ -208,6 +220,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
       VStack(spacing: 20) {
         Text("Focus Probe").font(.title)
         Text("Synthetic call and transcript measurements. No AI or media connection.")
+        Text(delegate.authorizationSnapshot).accessibilityIdentifier("focus.authorization.snapshot").font(.caption)
         Button("Authorize notifications") {
           Task { let granted = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]); Trace.shared.log("cn.authorization", ["granted": granted ?? false]) }
         }.accessibilityIdentifier("focus.notifications")
