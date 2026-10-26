@@ -75,7 +75,7 @@ def unpack(component, root, incoming):
     receipt = json.loads((incoming / (component + '.json')).read_text())
     archive = incoming / (component + '.tgz')
     identity = source()
-    if (receipt.get('schemaVersion') != 1 or receipt.get('component') != component or
+    if (type(receipt.get('schemaVersion')) is not int or receipt['schemaVersion'] != 1 or receipt.get('component') != component or
             receipt.get('hostArchitecture') != platform.machine() or
             receipt.get('sourceStart') != identity or receipt.get('sourceEnd') != identity or
             receipt.get('archiveSHA256') != digest(archive)):
