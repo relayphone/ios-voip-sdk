@@ -100,6 +100,16 @@ Cleanup preserves the primary failure and still performs independent inventory.
 
 Runtime fixture discovery binds the launch PID, bundle and fresh run ID to one canonical host journal. Controls and watch reuse that validated container; diagnostics use the retained channel. None of those paths queries a data container through simctl. Shared simulator preparation retains its existing one pre-app budget and no-replay barrier. Generic host commands use `scripts/ci/bounded`, with a ten-second termination grace outside the command deadline.
 
+Each Session native attempt appends its operation, configured `timeoutSeconds`,
+monotonic `elapsedSeconds`, exit code and timeout flag to `commands.status.jsonl`
+beside the ownership state. Recovery attempts have separate rows, including
+cleanup. Arguments and environment values are excluded. Missing timing evidence
+is reported without discarding the native outcome or ownership proof. Swift
+LiveKit's existing per-command status files also carry the bound and elapsed time.
+These observations do not change deadlines, retry eligibility or acceptance.
+Elapsed time includes executor teardown and recording overhead; it is not a
+product checkpoint clock or a successful completion time for a timed-out call.
+
 Legacy failure diagnostics are bounded observations before owned-device deletion;
 they may be unavailable and do not establish a startup cause or fix. The original
 90-second scenario result remains authoritative, and entered apps are never retried.
