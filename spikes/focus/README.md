@@ -11,6 +11,13 @@ Scenarios with missing adapters or unsupported hardware/backend/fault controls r
 
 Local CLI verification: `python3 -m unittest discover -s spikes/focus -p test_runner.py`.
 
+Matrix runs: `--keep-setup` keeps the owned Focus and contact between rows and only turns the Focus off after each
+row; run `restore-all` once at the end. Selectors are qualified on iOS 27.0 (iPhone 13); see
+[results](../../docs/research/focus/results.md). For selector work, the `dump:<controlcenter|focusmenu|settings-focus|settings-root|screen>`
+UI action writes a read-only accessibility tree to the runner's Documents, and any failed action leaves the front
+app's tree in `focus-dump-failure.txt`. Command-line automatic signing cannot add the App Group capability; without
+it the Focus filter (C06) is unqualified.
+
 Implements the native/platform portions of [the device plan](../../docs/research/focus/device-plan.md). This isolated spike uses LiveCommunicationKit only. It has no SDK dependency, `CXProvider`, real media, backend AI or owner-join implementation. Build and dry-run qualification do **not** qualify device behavior. Claude operates the device; this lane does not.
 
 ```sh

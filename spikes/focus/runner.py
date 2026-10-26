@@ -226,7 +226,8 @@ class Run:
                 (self.work / "audio-calibration.json").unlink(missing_ok=True)
             if p["row"] == "restore-all":
                 self.restore(); result["status"] = "restored"; return result
-            actions = ["setup", "app:" + ("include" if p["app"] else "exclude"),
+            # The Focus app picker lists only apps that have notification permission (iOS 27).
+            actions = ["setup", "launch", "notifications:allow", "app:" + ("include" if p["app"] else "exclude"),
                        "person:" + ("include" if p["person"] else "exclude"), "calls:Allowed People Only"]
             if p["row"] == "C01":
                 actions[-1] = "calls:" + self.args.calls
@@ -244,7 +245,9 @@ class Run:
             if p["locked"]:
                 if self.args.allow_system_settings or p["locked"]: # Hamza approved this setting change; persist once.
                     (self.work / "system-settings-approved").write_text("approved for disposable probe measurements\n")
-                self.ui(["system-settings:enable", "terminate"])
+                self.ui(["system-settings:enable", "terminate", "lock"])
+                self.copy("focus-ui-result.json", self.folder / "ui-settings.json", test=True)
+                result["systemSettings"] = json.loads((self.folder / "ui-settings.json").read_text())["events"]
                 time.sleep(45)  # No XCUITest session remains to keep the phone awake.
             elif p["sendVoIP"]:
                 observer = self.ui(["observe:90" if p["row"] == "C02" else "observe:60"], background=True)
@@ -292,7 +295,7 @@ class Run:
                 write(self.work / "visual-calibration.json", {"positive": True, "binding": self.binding, "createdAt": time.time()})
                 result["visualNegativeQualified"] = True
             result["autoAnswerLCKJoinObserved"] = any(e["event"] == "call.action" and e.get("kind") == "JoinConversationAction" for e in matching) if p["locked"] else None
-            result["lockCondition"] = "Auto-Lock configured; 45s elapsed without UI session; actual lock state unverified" if p["locked"] else "unlocked UI session"
+            result["lockCondition"] = "lock button pressed, then 45s without a UI session; Auto-Lock readback in systemSettings" if p["locked"] else "unlocked UI session"
             if p["activity"]:
                 text = "Updates delayed" if p["row"] == "L09" else "Synthetic caller: APNs update"
                 self.ui(["sample", "activity-check"], text=text)
@@ -320,7 +323,13 @@ class Run:
                         write(self.work / "audio-calibration.json", data)
             if p["row"] != "restore-all":
                 try:
-                    self.recover(); self.restore(); result["restored"] = True
+                    self.recover()
+                    if self.args.keep_setup:
+                        # Matrix runs keep the owned Focus/contact between rows; only the Focus-on window ends here.
+                        self.arm({"armed": False, "activityAction": "end"}); self.ui(["focus:off"])
+                        result["restored"] = "focus-off"
+                    else:
+                        self.restore(); result["restored"] = True
                 except Exception:
                     result["restored"] = False; result["status"] = "restore-failed-use-restore-all"
                     if p["row"] == "C00":
@@ -341,7 +350,8 @@ def main():
     parser.add_argument("--allow-system-settings", action="store_true")
     parser.add_argument("--listen", action="store_true")
     parser.add_argument("--repeated-calls", choices=["on", "off"], default="off")
-    parser.add_argument("--calls", default="Everyone", choices=["Everyone", "All Contacts", "Favorites", "Allowed People Only"])
+    parser.add_argument("--calls", default="Everyone", choices=["Everyone", "All Contacts", "Contacts Only", "Favorites", "Allowed People Only"])
+    parser.add_argument("--keep-setup", action="store_true", help="matrix mode: turn Focus off after the row; run restore-all at the end")
     args = parser.parse_args()
     p = plan(args.row, args.locked_auto_answer, args.listen)
     if args.dry_run or p["blocked"]:

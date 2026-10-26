@@ -3,68 +3,16 @@ name: SDK M0 and M1 plain simulator acceptance
 on:
   push:
     branches: [main]
-    paths:
-      - "Package.swift"
-      - "VERSION"
-      - "Sources/**"
-      - "Integrations/**"
-      - "Tests/**"
-      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/device-trace.jsonl"
-      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27-noio/device-trace.jsonl"
-      - "docs/research/callkit-simulator-probe/livecommunicationkit/**"
-      - "docs/research/callkit-simulator-probe/device-system-ui/2026-10-20-iphone13-ui10-app.jsonl"
-      - "Expo/**"
-      - "ExpoMedia/**"
-      - "example/**"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.json"
-      - "expo-module.config.json"
-      - "app.plugin.js"
-      - "IosVoipSDK.podspec"
-      - "discovery/**"
-      - "Tools/**"
-      - "scripts/build-runtime.sh"
-      - "scripts/ci/sdk_paths.sh"
-      - "scripts/ci/sdk_artifacts.py"
-      - "scripts/sim/**"
-      - ".github/workflows/sdk-m0.yml"
-      - ".github/workflows/simulator-discovery.yml"
   pull_request:
-    paths:
-      - "Package.swift"
-      - "VERSION"
-      - "Sources/**"
-      - "Integrations/**"
-      - "Tests/**"
-      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/device-trace.jsonl"
-      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27-noio/device-trace.jsonl"
-      - "docs/research/callkit-simulator-probe/livecommunicationkit/**"
-      - "docs/research/callkit-simulator-probe/device-system-ui/2026-10-20-iphone13-ui10-app.jsonl"
-      - "Expo/**"
-      - "ExpoMedia/**"
-      - "example/**"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.json"
-      - "expo-module.config.json"
-      - "app.plugin.js"
-      - "IosVoipSDK.podspec"
-      - "discovery/**"
-      - "Tools/**"
-      - "scripts/build-runtime.sh"
-      - "scripts/ci/sdk_paths.sh"
-      - "scripts/ci/sdk_artifacts.py"
-      - "scripts/sim/**"
-      - ".github/workflows/sdk-m0.yml"
-      - ".github/workflows/simulator-discovery.yml"
+  schedule:
+    - cron: "20 3 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: sdk-m0-${{ github.ref }}
+  group: sdk-m0-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -72,7 +20,12 @@ env:
   SIMCTL_CHILD_DYLD_INSERT_LIBRARIES: ""
 
 jobs:
+  changes:
+    uses: ./.github/workflows/ci-changes.yml
+
   expo-livekit-native:
+    needs: changes
+    if: needs.changes.outputs.expo == 'true'
     name: Pinned Expo LiveKit selected Release device build
     runs-on: xcode-27
     timeout-minutes: 60
@@ -119,9 +72,15 @@ jobs:
       - name: Remove this job's native build cache
         if: always()
         run: rm -rf "$RUNNER_TEMP/expo-livekit-build/DerivedData"
-  offline-controls:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  sdk-native:
+    name: SDK native and device acceptance
+    needs: changes
+    if: needs.changes.outputs.sdk == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
     env:
       CI: "1"
       EXPO_NO_TELEMETRY: "1"
@@ -132,72 +91,35 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version: "24.22.1"
-          package-manager-cache: false
-      - name: Portable evidence, syntax and JavaScript controls
+      - name: Select the compiler and simulator host
+        run: sudo xcode-select -s /Applications/Xcode_27.1.app
+      - name: Check offline evidence controls and shell syntax
         run: |
           set -euo pipefail
-          source scripts/ci/sdk_paths.sh
+          SDK_M0_BUILD_ROOT="$RUNNER_TEMP/sdk-m0-build"
+          SDK_M0_BUILD_LOGS="$RUNNER_TEMP/sdk-m0-build-logs"
+          {
+            printf 'SDK_M0_BUILD_ROOT=%s\n' "$SDK_M0_BUILD_ROOT"
+            printf 'SDK_M0_BUILD_LOGS=%s\n' "$SDK_M0_BUILD_LOGS"
+            printf 'SDK_M0_BOOTSTRAP_APP=%s/bootstrap/SDKBootstrap.app\n' "$SDK_M0_BUILD_ROOT"
+            printf 'SDK_M0_DEVICE_PROBE=%s/device/SDKDeviceProbe\n' "$SDK_M0_BUILD_ROOT"
+            printf 'SDK_M0_SPM_DEVICE_DIR=%s/spm-device\n' "$SDK_M0_BUILD_ROOT"
+            printf 'SDK_M0_BUILD_RECEIPT=%s/build-receipt.json\n' "$SDK_M0_BUILD_ROOT"
+            printf 'SDK_M1_CONTRACT_BUILD=%s/m1-contracts\n' "$SDK_M0_BUILD_ROOT"
+            printf 'SDK_SYSTEM_CONTROL_PACKAGE=%s/system-control\n' "$SDK_M0_BUILD_ROOT"
+            printf 'SDK_PUSH_ENTRY_BUILD=%s/push-entry\n' "$SDK_M0_BUILD_ROOT"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$SDK_M0_BUILD_ROOT" "$SDK_M0_BUILD_LOGS"
           python3 -m unittest discover -s scripts/sim -p 'test_*.py'
           python3 discovery/check_sdk_m0.py | tee "$SDK_M0_BUILD_LOGS/offline-controls.json"
           python3 discovery/check_sdk_installed_paths.py
           python3 discovery/check_sdk_m1.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-offline-controls.log"
+          python3 discovery/check_sdk_m1_contracts.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-contract-controls.log"
           python3 discovery/check_sdk_m1_container_capture.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-container-controls.log"
           python3 discovery/check_sdk_system.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/system-controls.log"
           python3 discovery/check_inherited_launcher_group.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/supervisor-group-controls.log"
           python3 discovery/check_cli_controls.py | tee "$SDK_M0_BUILD_LOGS/cli-controls.json"
           python3 discovery/check_cli_push_launch.py | tee "$SDK_M0_BUILD_LOGS/cli-push-launch-controls.json"
-          python3 discovery/check_push_main_stall.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/push-native-main-stall-controls.log"
-          python3 discovery/check_push_report_capture.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/push-entry-capture-controls.log"
-          python3 discovery/check_console_stop.py --output "$SDK_M0_BUILD_LOGS/console-stop" | tee "$SDK_M0_BUILD_LOGS/console-stop-controls.json"
-          python3 Tests/AudioLifecycle/check_audio_fixtures.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/audio-raw-fixtures.log"
-          python3 Tests/ExpoMedia/check_standard_backend.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/standard-backend-gate-controls.log"
-          python3 discovery/check_sdk_m2_audio_lifecycle.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/audio-lifecycle-capture-controls.log"
-          for script in discovery/build_sdk_bootstrap.sh discovery/build_sdk_device_probe.sh discovery/build_sdk_m1_contracts.sh discovery/build_push_report_entry.sh discovery/run_sdk_m0.sh discovery/run_audio_lifecycle_legacy.sh; do
-            bash -n "$script"
-          done
-          set -euo pipefail
-          npm ci --ignore-scripts --no-audit --no-fund 2>&1 | tee "$SDK_M0_BUILD_LOGS/npm-ci.log"
-          npm run build 2>&1 | tee "$SDK_M0_BUILD_LOGS/typescript-build.log"
-          npm run typecheck 2>&1 | tee "$SDK_M0_BUILD_LOGS/typescript-typecheck.log"
-          node --test Expo/tests/m1-runtime.test.cjs 2>&1 | tee "$SDK_M0_BUILD_LOGS/typescript-runtime-controls.log"
-          node --test Tests/ExpoMedia/selection.test.cjs 2>&1 | tee "$SDK_M0_BUILD_LOGS/media-plugin-selection-controls.log"
-          node discovery/check_expo_plugin.cjs 2>&1 | tee "$SDK_M0_BUILD_LOGS/plugin-controls.json"
-          for offline_log in "$SDK_M0_BUILD_LOGS"/*; do
-            if [[ -f "$offline_log" && ! -s "$offline_log" ]]; then
-              printf 'Empty offline build log: %s\n' "${offline_log##*/}" >&2
-              exit 1
-            fi
-          done
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
-        with:
-          name: sdk-offline-controls
-          path: ${{ runner.temp }}/sdk-m0-build/build-logs
-          if-no-files-found: warn
-          retention-days: 7
-
-  apple-host-controls:
-    runs-on: xcode-27
-    timeout-minutes: 20
-    env:
-      CI: "1"
-      EXPO_NO_TELEMETRY: "1"
-      SDK_M1_ACCEPTANCE: "1"
-      SDK_SYSTEM_ACCEPTANCE: "1"
-      SDK_M0_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-0
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - run: sudo xcode-select -s /Applications/Xcode_27.1.app
-      - name: Apple compiler and framework controls
-        run: |
-          set -euo pipefail
-          source scripts/ci/sdk_paths.sh
-          python3 discovery/check_sdk_m1_contracts.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-contract-controls.log"
           bash Tests/PushLaunch/run.sh | tee "$SDK_M0_BUILD_LOGS/push-launch-filesystem-controls.json"
           python3 Tests/VoIPSDK/run_push_context.py | tee "$SDK_M0_BUILD_LOGS/push-context-controls.json"
           python3 discovery/check_expo_bridge.py | tee "$SDK_M0_BUILD_LOGS/expo-relay-controls.json"
@@ -205,64 +127,75 @@ jobs:
           python3 discovery/check_sdk_ownership.py | tee "$SDK_M0_BUILD_LOGS/ownership-controls.json"
           python3 discovery/check_push_delivery.py | tee "$SDK_M0_BUILD_LOGS/push-delivery-controls.json"
           python3 discovery/check_push_report_entry.py | tee "$SDK_M0_BUILD_LOGS/push-entry-controls.json"
+          python3 discovery/check_push_main_stall.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/push-native-main-stall-controls.log"
           python3 Tests/VoIPSDK/run_incoming_delivery.py | tee "$SDK_M0_BUILD_LOGS/push-main-stall-controls.json"
           python3 Tests/VoIPSDK/run_incoming_cache.py | tee "$SDK_M0_BUILD_LOGS/incoming-cache-controls.json"
           bash Tests/VoIPSDK/run_incoming_intake.sh | tee "$SDK_M0_BUILD_LOGS/incoming-intake-controls.log"
           bash Tests/VoIPSDK/run_report_contracts.sh | tee "$SDK_M0_BUILD_LOGS/report-contract-controls.log"
+          python3 discovery/check_push_report_capture.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/push-entry-capture-controls.log"
+          python3 discovery/check_console_stop.py --output "$SDK_M0_BUILD_LOGS/console-stop" | tee "$SDK_M0_BUILD_LOGS/console-stop-controls.json"
           python3 discovery/check_device_release.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/device-release-controls.log"
           python3 discovery/check_lck_provider_policy.py | tee "$SDK_M0_BUILD_LOGS/lck-policy-controls.json"
           bash Tests/VoIPSDK/run.sh | tee "$SDK_M0_BUILD_LOGS/core-controls.log"
           bash Tests/AudioSessionQueue/run.sh | tee "$SDK_M0_BUILD_LOGS/audio-queue-controls.log"
           bash Tests/AudioCore/run.sh | tee "$SDK_M0_BUILD_LOGS/audio-watchdog-controls.log"
           python3 Tests/AudioLifecycle/check_audio_lifecycle.py | tee "$SDK_M0_BUILD_LOGS/audio-lifecycle-controls.log"
+          python3 Tests/AudioLifecycle/check_audio_fixtures.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/audio-raw-fixtures.log"
           python3 discovery/check_expo_media.py | tee "$SDK_M0_BUILD_LOGS/webrtc-facade-controls.log"
           python3 discovery/check_expo_media_config.py | tee "$SDK_M0_BUILD_LOGS/media-selection-controls.log"
+          python3 Tests/ExpoMedia/check_standard_backend.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/standard-backend-gate-controls.log"
+          python3 discovery/check_sdk_m2_audio_lifecycle.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/audio-lifecycle-capture-controls.log"
           bash Tests/VoIPSDK/run_push.sh | tee "$SDK_M0_BUILD_LOGS/push-controls.log"
           bash Tests/VoIPSDK/run_projection.sh | tee "$SDK_M0_BUILD_LOGS/projection-controls.log"
           bash Tests/VoIPSDK/run_mute_echo.sh | tee "$SDK_M0_BUILD_LOGS/mute-echo-controls.json"
           bash Tests/ProbeTraceWriter/run.sh | tee "$SDK_M0_BUILD_LOGS/probe-writer-controls.json"
+          for script in discovery/build_sdk_bootstrap.sh discovery/build_sdk_device_probe.sh discovery/build_sdk_m1_contracts.sh discovery/build_push_report_entry.sh discovery/run_sdk_m0.sh discovery/run_audio_lifecycle_legacy.sh; do
+            bash -n "$script"
+          done
           for offline_log in "$SDK_M0_BUILD_LOGS"/*; do
             if [[ -f "$offline_log" && ! -s "$offline_log" ]]; then
               printf 'Empty offline build log: %s\n' "${offline_log##*/}" >&2
               exit 1
             fi
           done
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
-        with:
-          name: sdk-apple-host-controls
-          path: ${{ runner.temp }}/sdk-m0-build/build-logs
-          if-no-files-found: warn
-          retention-days: 7
-
-  sdk-example:
-    runs-on: xcode-27
-    timeout-minutes: 30
-    env:
-      CI: "1"
-      EXPO_NO_TELEMETRY: "1"
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - run: sudo xcode-select -s /Applications/Xcode_27.1.app
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: "24.22.1"
           package-manager-cache: false
-      - name: Build source-bound example products
+      - name: Record the build environment
         run: |
           set -euo pipefail
-          source scripts/ci/sdk_paths.sh
-          python3 scripts/ci/sdk_artifacts.py begin example "$SDK_M0_BUILD_ROOT"
-          xcodebuild -version > "$SDK_M0_BUILD_LOGS/example-environment.txt"
+          {
+            sw_vers
+            xcodebuild -version
+            xcrun swift --version
+            xcrun --sdk iphonesimulator --show-sdk-version
+            xcrun --sdk iphoneos --show-sdk-version
+            uname -m
+            node --version
+            npm --version
+            pod --version
+            git rev-parse HEAD
+          } > "$SDK_M0_BUILD_LOGS/environment.txt" 2>&1
+      - name: Bind the source before building M0
+        run: python3 discovery/sdk_m0_conformance.py --begin-build "$SDK_M0_BUILD_ROOT/source-build-start.json"
+      - name: Install and typecheck the locked JavaScript workspace
+        run: |
+          set -euo pipefail
           npm ci --ignore-scripts --no-audit --no-fund 2>&1 | tee "$SDK_M0_BUILD_LOGS/npm-ci.log"
           npm run build 2>&1 | tee "$SDK_M0_BUILD_LOGS/typescript-build.log"
+          npm run typecheck 2>&1 | tee "$SDK_M0_BUILD_LOGS/typescript-typecheck.log"
+          node --test Expo/tests/m1-runtime.test.cjs 2>&1 | tee "$SDK_M0_BUILD_LOGS/typescript-runtime-controls.log"
+          node --test Tests/ExpoMedia/selection.test.cjs 2>&1 | tee "$SDK_M0_BUILD_LOGS/media-plugin-selection-controls.log"
+          node discovery/check_expo_plugin.cjs 2>&1 | tee "$SDK_M0_BUILD_LOGS/plugin-controls.json"
+      - name: Generate the iOS example and install its pods
+        run: |
           set -euo pipefail
           npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install 2>&1 | tee "$SDK_M0_BUILD_LOGS/expo-prebuild.log"
           cd example/ios
           pod install 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-install.log"
-          cd "$GITHUB_WORKSPACE"
+      - name: Build the Release example with bundled JavaScript
+        run: |
           set -euo pipefail
           workspaces=(example/ios/*.xcworkspace)
           test "${#workspaces[@]}" -eq 1
@@ -276,44 +209,15 @@ jobs:
           test "${#apps[@]}" -eq 1
           test -d "${apps[0]}"
           test -s "${apps[0]}/main.jsbundle"
-          mkdir -p "$(dirname "$SDK_M0_APP")"
-          ditto "${apps[0]}" "$SDK_M0_APP"
-          scripts/ci/bounded 120 python3 scripts/ci/sdk_artifacts.py pack example "$SDK_M0_BUILD_ROOT" "$RUNNER_TEMP/sdk-transfer"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: sdk-native-example
-          compression-level: 0
-          path: ${{ runner.temp }}/sdk-transfer/*
-          if-no-files-found: error
-          retention-days: 7
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
-        with:
-          name: sdk-example-build-logs
-          path: ${{ runner.temp }}/sdk-m0-build/build-logs
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Remove this job's native outputs
-        if: always()
-        run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
-
-  sdk-core:
-    runs-on: xcode-27
-    timeout-minutes: 30
-    env:
-      CI: "1"
-      EXPO_NO_TELEMETRY: "1"
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - run: sudo xcode-select -s /Applications/Xcode_27.1.app
-      - name: Build source-bound core products
+          printf 'SDK_M0_APP=%s\n' "${apps[0]}" >> "$GITHUB_ENV"
+      - name: Verify the pod-built Release device app excludes CallKit and the runtime
         run: |
           set -euo pipefail
-          source scripts/ci/sdk_paths.sh
-          python3 scripts/ci/sdk_artifacts.py begin core "$SDK_M0_BUILD_ROOT"
-          xcodebuild -version > "$SDK_M0_BUILD_LOGS/core-environment.txt"
+          python3 discovery/build_sdk_device_release.py "$SDK_M0_BUILD_ROOT/pod-device" \
+            > "$SDK_M0_BUILD_LOGS/pod-device-inspection.log" 2>&1
+          cp "$SDK_M0_BUILD_ROOT/pod-device/receipt.json" "$SDK_M0_BUILD_LOGS/pod-device-receipt.json"
+      - name: Build the Swift package for simulator and device
+        run: |
           set -euo pipefail
           xcodebuild -scheme VoIPSDK -configuration Release -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$SDK_M0_BUILD_ROOT/spm-simulator" ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES \
@@ -321,118 +225,32 @@ jobs:
           xcodebuild -scheme VoIPSDK -configuration Release -destination 'generic/platform=iOS' \
             -derivedDataPath "$SDK_M0_SPM_DEVICE_DIR" ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build 2>&1 | tee "$SDK_M0_BUILD_LOGS/swiftpm-device.log"
+      - name: Build the source bootstrap and linked device probes
+        run: |
+          set -euo pipefail
           {
             bash discovery/build_sdk_bootstrap.sh "$SDK_M0_BUILD_ROOT/bootstrap"
             printf 'Source bootstrap build completed.\n'
           } 2>&1 | tee "$SDK_M0_BUILD_LOGS/bootstrap-build.log"
           bash discovery/build_sdk_device_probe.sh "$SDK_M0_BUILD_ROOT/device" 2>&1 | tee "$SDK_M0_BUILD_LOGS/device-probe-build.log"
-          scripts/ci/bounded 60 python3 scripts/ci/sdk_artifacts.py compact-spm core "$SDK_M0_BUILD_ROOT"
-          scripts/ci/bounded 120 python3 scripts/ci/sdk_artifacts.py pack core "$SDK_M0_BUILD_ROOT" "$RUNNER_TEMP/sdk-transfer"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: sdk-native-core
-          compression-level: 0
-          path: ${{ runner.temp }}/sdk-transfer/*
-          if-no-files-found: error
-          retention-days: 7
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
-        with:
-          name: sdk-core-build-logs
-          path: ${{ runner.temp }}/sdk-m0-build/build-logs
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Remove this job's native outputs
-        if: always()
-        run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
-
-  sdk-fixtures:
-    runs-on: xcode-27
-    timeout-minutes: 30
-    env:
-      CI: "1"
-      EXPO_NO_TELEMETRY: "1"
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - run: sudo xcode-select -s /Applications/Xcode_27.1.app
-      - name: Build source-bound fixtures products
-        run: |
-          set -euo pipefail
-          source scripts/ci/sdk_paths.sh
-          python3 scripts/ci/sdk_artifacts.py begin fixtures "$SDK_M0_BUILD_ROOT"
-          xcodebuild -version > "$SDK_M0_BUILD_LOGS/fixtures-environment.txt"
           bash discovery/build_sdk_m1_contracts.sh "$SDK_M1_CONTRACT_BUILD" 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-contracts-build.log"
           CKSIM_BUILD_ARCHS="$(uname -m)" bash scripts/build-runtime.sh "$SDK_SYSTEM_CONTROL_PACKAGE" 2>&1 | tee "$SDK_M0_BUILD_LOGS/system-control-build.log"
           {
             bash discovery/build_push_report_entry.sh "$SDK_PUSH_ENTRY_BUILD"
             printf 'Source PushKit report-entry build completed.\n'
           } 2>&1 | tee "$SDK_M0_BUILD_LOGS/push-entry-build.log"
-          scripts/ci/bounded 120 python3 scripts/ci/sdk_artifacts.py pack fixtures "$SDK_M0_BUILD_ROOT" "$RUNNER_TEMP/sdk-transfer"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: sdk-native-fixtures
-          compression-level: 0
-          path: ${{ runner.temp }}/sdk-transfer/*
-          if-no-files-found: error
-          retention-days: 7
-      - name: Hand off the SDK 27 contract app for the older runtime
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: sdk-27-m1-contract-app
-          path: |
-            ${{ runner.temp }}/sdk-m0-build/m1-contracts/SDKM1Contracts.app
-            ${{ runner.temp }}/sdk-m0-build/m1-contracts/build-info.json
-            ${{ runner.temp }}/sdk-m0-build/m1-contracts/source-before.json
-            ${{ runner.temp }}/sdk-m0-build/m1-contracts/source-after.json
-            ${{ runner.temp }}/sdk-m0-build/m1-contracts/build.log
-          if-no-files-found: error
-          retention-days: 7
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
-        with:
-          name: sdk-fixtures-build-logs
-          path: ${{ runner.temp }}/sdk-m0-build/build-logs
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Remove this job's native outputs
-        if: always()
-        run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
-
-  device-release:
-    runs-on: xcode-27
-    timeout-minutes: 45
-    env:
-      CI: "1"
-      EXPO_NO_TELEMETRY: "1"
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - run: sudo xcode-select -s /Applications/Xcode_27.1.app
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version: "24.22.1"
-          package-manager-cache: false
-      - name: Prepare the device build workspace
+      - name: Record the source and exact built artifacts
         run: |
-          set -euo pipefail
-          source scripts/ci/sdk_paths.sh
-          npm ci --ignore-scripts --no-audit --no-fund
-          npm run build
-          set -euo pipefail
-          npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install 2>&1 | tee "$SDK_M0_BUILD_LOGS/expo-prebuild.log"
-          cd example/ios
-          pod install 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-install.log"
-      - name: Inspect default and opted-in Release device products
+          python3 discovery/sdk_m0_conformance.py --record-build "$SDK_M0_BUILD_RECEIPT" \
+            --build-start "$SDK_M0_BUILD_ROOT/source-build-start.json" --app "$SDK_M0_APP" \
+            --bootstrap "$SDK_M0_BOOTSTRAP_APP" --device-probe "$SDK_M0_DEVICE_PROBE" \
+            --spm-device-dir "$SDK_M0_SPM_DEVICE_DIR"
+      - name: Measure M0 bootstrap and M1 push, handler and cold-launch journeys
+        env:
+          OUT: ${{ runner.temp }}/sdk-m0
+        run: bash discovery/run_sdk_m0.sh
+      - name: Build and inspect explicitly opted-in Release provider diagnostics
         run: |
-          set -euo pipefail
-          source scripts/ci/sdk_paths.sh
-          set -euo pipefail
-          python3 discovery/build_sdk_device_release.py "$SDK_M0_BUILD_ROOT/pod-device" \
-            > "$SDK_M0_BUILD_LOGS/pod-device-inspection.log" 2>&1
-          cp "$SDK_M0_BUILD_ROOT/pod-device/receipt.json" "$SDK_M0_BUILD_LOGS/pod-device-receipt.json"
           set -euo pipefail
           test -s example/ios/Podfile.lock
           test -d example/ios/Pods
@@ -451,21 +269,9 @@ jobs:
             --derived-data "$SDK_M0_BUILD_ROOT/pod-device/DerivedData" --provider-diagnostics \
             > "$SDK_M0_BUILD_LOGS/pod-device-diagnostics-inspection.log" 2>&1
           cp "$SDK_M0_BUILD_ROOT/pod-device-diagnostics/receipt.json" "$SDK_M0_BUILD_LOGS/pod-device-diagnostics-receipt.json"
-      - name: Inspect the pinned standard WebRTC device product
-        run: |
-          set -euo pipefail
-          source scripts/ci/sdk_paths.sh
-          export SDK_EXAMPLE_MEDIA_ADAPTER=webrtc
-          set -euo pipefail
-          npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install 2>&1 | tee "$SDK_M0_BUILD_LOGS/webrtc-prebuild.log"
-          (cd example/ios && pod install) 2>&1 | tee "$SDK_M0_BUILD_LOGS/webrtc-pod-install.log"
-          python3 discovery/build_sdk_device_release.py "$SDK_M0_BUILD_ROOT/pod-standard-webrtc" --standard-webrtc \
-            --derived-data "$SDK_M0_BUILD_ROOT/pod-device/DerivedData" > "$SDK_M0_BUILD_LOGS/webrtc-device-inspection.log" 2>&1
-      - name: Retain device diagnostics
+      - name: Preserve Release device build diagnostics
         if: always()
         run: |
-          set -euo pipefail
-          source scripts/ci/sdk_paths.sh
           for variant in pod-device pod-device-diagnostics; do
             for name in build.log build-status.json source-before.json command.json; do
               if test -f "$SDK_M0_BUILD_ROOT/$variant/$name"; then
@@ -473,107 +279,64 @@ jobs:
               fi
             done
           done
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Build the pinned standard WebRTC example for Release iphoneos
+        env:
+          SDK_EXAMPLE_MEDIA_ADAPTER: webrtc
+        run: |
+          set -euo pipefail
+          npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install 2>&1 | tee "$SDK_M0_BUILD_LOGS/webrtc-prebuild.log"
+          (cd example/ios && pod install) 2>&1 | tee "$SDK_M0_BUILD_LOGS/webrtc-pod-install.log"
+          python3 discovery/build_sdk_device_release.py "$SDK_M0_BUILD_ROOT/pod-standard-webrtc" --standard-webrtc \
+            --derived-data "$SDK_M0_BUILD_ROOT/pod-device/DerivedData" > "$SDK_M0_BUILD_LOGS/webrtc-device-inspection.log" 2>&1
+      - name: Delete any remaining run-owned simulator
         if: always()
+        run: python3 scripts/sim/sim.py cleanup "$RUNNER_TEMP/sdk-m0/simulator-state.json"
+      - name: Preserve M0 evidence and build logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: sdk-device-release-inspection
-          path: ${{ runner.temp }}/sdk-m0-build/build-logs
-          if-no-files-found: warn
-          retention-days: 7
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
+          name: sdk-m0-xcode-27.1
+          path: |
+            ${{ runner.temp }}/sdk-m0
+            ${{ runner.temp }}/sdk-m0-build-logs
+            ${{ runner.temp }}/sdk-m0-build/pod-standard-webrtc/*.json
+            ${{ runner.temp }}/sdk-m0-build/pod-standard-webrtc/*.log
+          if-no-files-found: error
+          retention-days: 30
+      - name: Hand off the SDK 27 contract app for the older runtime
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: sdk-standard-webrtc-inspection
-          path: ${{ runner.temp }}/sdk-m0-build/pod-standard-webrtc
-          if-no-files-found: warn
+          name: sdk-27-m1-contract-app
+          path: |
+            ${{ env.SDK_M1_CONTRACT_BUILD }}/SDKM1Contracts.app
+            ${{ env.SDK_M1_CONTRACT_BUILD }}/build-info.json
+            ${{ env.SDK_M1_CONTRACT_BUILD }}/source-before.json
+            ${{ env.SDK_M1_CONTRACT_BUILD }}/source-after.json
+            ${{ env.SDK_M1_CONTRACT_BUILD }}/build.log
+          if-no-files-found: error
           retention-days: 7
-      - name: Remove this job's native outputs
+      - name: Remove native build outputs
         if: always()
-        run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
+        run: rm -rf "$RUNNER_TEMP/sdk-m0-build"
 
-  journeys:
-    name: SDK journey (${{ matrix.group }})
-    needs: [sdk-example, sdk-core, sdk-fixtures]
-    runs-on: xcode-27
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {group: m1, m1: "1", part: journeys, system: "0"}
-          - {group: contracts, m1: "1", part: contracts, system: "0"}
-          - {group: push-entry, m1: "1", part: push-entry, system: "0"}
-          - {group: system, m1: "0", part: all, system: "1"}
-    env:
-      SDK_M0_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-0
-      SDK_M1_ACCEPTANCE: ${{ matrix.m1 }}
-      SDK_M1_PART: ${{ matrix.part }}
-      SDK_SYSTEM_ACCEPTANCE: ${{ matrix.system }}
+  plain-simulator:
+    if: always()
+    needs: [changes, sdk-native, legacy-audio-lifecycle, swift-livekit-native, expo-livekit-native]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - run: sudo xcode-select -s /Applications/Xcode_27.1.app
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
-        with:
-          node-version: "24.22.1"
-          package-manager-cache: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          pattern: sdk-native-*
-          merge-multiple: true
-          path: ${{ runner.temp }}/sdk-transfer
-      - name: Verify source-bound products and record their composite receipt
-        run: |
-          set -euo pipefail
-          source scripts/ci/sdk_paths.sh
-          for component in example core fixtures; do
-            scripts/ci/bounded 120 python3 scripts/ci/sdk_artifacts.py unpack "$component" "$SDK_M0_BUILD_ROOT" "$RUNNER_TEMP/sdk-transfer"
-          done
-          python3 discovery/sdk_m0_conformance.py --record-build "$SDK_M0_BUILD_RECEIPT" \
-            --build-start "$SDK_M0_BUILD_ROOT/example-start.json" --app "$SDK_M0_APP" \
-            --bootstrap "$SDK_M0_BOOTSTRAP_APP" --device-probe "$SDK_M0_DEVICE_PROBE" \
-            --spm-device-dir "$SDK_M0_SPM_DEVICE_DIR"
-      - name: Measure the complete selected journey group
-        run: |
-          set -euo pipefail
-          source scripts/ci/sdk_paths.sh
-          export OUT="$RUNNER_TEMP/sdk-m0"
-          bash discovery/run_sdk_m0.sh
-      - name: Delete any remaining run-owned simulator
-        if: always()
-        run: python3 scripts/sim/sim.py cleanup "$RUNNER_TEMP/sdk-m0/simulator-state.json" --timeout 60
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
-        with:
-          name: sdk-m0-${{ matrix.group }}-xcode-27.1
-          path: ${{ runner.temp }}/sdk-m0
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Remove this job's native outputs
-        if: always()
-        run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
-
-  plain-simulator:
-    name: plain-simulator
-    if: always()
-    needs: [offline-controls, apple-host-controls, sdk-example, sdk-core, sdk-fixtures, device-release, journeys, legacy-audio-lifecycle]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Require every original acceptance group
+      - name: Require every selected acceptance group
         env:
-          RESULTS: ${{ toJSON(needs) }}
-        run: |
-          python3 - <<'PYGATE'
-          import json,os
-          results=json.loads(os.environ['RESULTS'])
-          failed={name:row['result'] for name,row in results.items() if row['result']!='success'}
-          assert not failed, failed
-          PYGATE
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+          CI_EXPECTED_JSON: ${{ needs.changes.outputs.sdk_plan }}
+        run: scripts/ci/bounded 30 python3 scripts/ci/changes.py gate
 
   legacy-audio-lifecycle:
-    needs: sdk-fixtures
+    needs: [changes, sdk-native]
+    if: needs.changes.outputs.legacy == 'true'
     runs-on: macos-26
     timeout-minutes: 15
     defaults:
@@ -614,6 +377,8 @@ jobs:
         run: rm -rf "$RUNNER_TEMP/sdk-27-contract-build"
 
   swift-livekit-native:
+    needs: changes
+    if: needs.changes.outputs.swift == 'true'
     runs-on: xcode-27
     timeout-minutes: 45
     env:

@@ -215,25 +215,31 @@ final class AppDelegate: NSObject, ObservableObject, UIApplicationDelegate, UNUs
 
 @main struct FocusProbeApp: App {
   @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
-  @Environment(\.scenePhase) var phase
   var body: some Scene {
-    WindowGroup {
-      VStack(spacing: 20) {
-        Text("Focus Probe").font(.title)
-        Text("Synthetic call and transcript measurements. No AI or media connection.")
-        Text(delegate.authorizationSnapshot).accessibilityIdentifier("focus.authorization.snapshot").font(.caption)
-        Button("Authorize notifications") {
-          Task { let granted = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]); Trace.shared.log("cn.authorization", ["granted": granted ?? false]) }
-        }.accessibilityIdentifier("focus.notifications")
-        Button("Sample Focus") { delegate.sampleFocus() }.accessibilityIdentifier("focus.sample")
-        Button("Authorize Focus status") {
-          INFocusStatusCenter.default.requestAuthorization { _ in DispatchQueue.main.async { delegate.sampleFocus() } }
-        }.accessibilityIdentifier("focus.authorize")
-        Button("Start silent transcript") {
-          do { try FocusActivities.start(); Trace.shared.log("activity.start") } catch { Trace.shared.log("activity.startFailed", ["code": (error as NSError).code]) }
-        }.accessibilityIdentifier("focus.activity.start")
-        Button("End transcript") { Task { await FocusActivities.end() } }.accessibilityIdentifier("focus.activity.end")
-      }.padding().onChange(of: phase) { _, value in if value == .active { delegate.activate() } }
-    }
+    WindowGroup { ProbeView(delegate: delegate) }
+  }
+}
+
+// An App body does not reliably re-render for its delegate's @Published changes; a View observes it.
+struct ProbeView: View {
+  @ObservedObject var delegate: AppDelegate
+  @Environment(\.scenePhase) var phase
+  var body: some View {
+    VStack(spacing: 20) {
+      Text("Focus Probe").font(.title)
+      Text("Synthetic call and transcript measurements. No AI or media connection.")
+      Text(delegate.authorizationSnapshot).accessibilityIdentifier("focus.authorization.snapshot").font(.caption)
+      Button("Authorize notifications") {
+        Task { let granted = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]); Trace.shared.log("cn.authorization", ["granted": granted ?? false]) }
+      }.accessibilityIdentifier("focus.notifications")
+      Button("Sample Focus") { delegate.sampleFocus() }.accessibilityIdentifier("focus.sample")
+      Button("Authorize Focus status") {
+        INFocusStatusCenter.default.requestAuthorization { _ in DispatchQueue.main.async { delegate.sampleFocus() } }
+      }.accessibilityIdentifier("focus.authorize")
+      Button("Start silent transcript") {
+        do { try FocusActivities.start(); Trace.shared.log("activity.start") } catch { Trace.shared.log("activity.startFailed", ["code": (error as NSError).code]) }
+      }.accessibilityIdentifier("focus.activity.start")
+      Button("End transcript") { Task { await FocusActivities.end() } }.accessibilityIdentifier("focus.activity.end")
+    }.padding().onChange(of: phase) { _, value in if value == .active { delegate.activate() } }
   }
 }
