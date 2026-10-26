@@ -23,9 +23,18 @@ sim_limit 180 xcrun simctl install "$UDID" "$APP"
 sim_checkpoint
 ```
 
-Every bound is in seconds. A timed-out host process and its process group are
-killed and reaped; timeout returns 124. Native stdout and exit status are
-preserved. A boot, bootstatus or install recovery deletes the old device,
+Every bound is in seconds. Timeout returns 124 after bounded attempts to kill
+the owned host process group, close both pipes, and reap the child. Cleanup
+faults preserve the original timeout, nonzero status, or raised exception; a
+would-be success becomes failure. `cleanup_uncertain`, sanitized `cleanup_errors`,
+and `reaped` describe the result. Reaping the child alone does not prove its
+process group is gone after a denied signal. Cleanup uncertainty is reported
+without claiming successful termination. Session marks its existing conservative
+checkpoint before returning this infrastructure failure, so no lifecycle retry
+or replacement can overlap an unresolved host command. This checkpoint is a
+no-replay barrier, not evidence that an app started. Failed barrier persistence
+is reported as unknown, preserves the original failure, and blocks local retry.
+Native stdout and exit status are otherwise preserved. A boot, bootstatus or install recovery deletes the old device,
 creates a fresh one, and replays successful preparation with the original
 timeouts, including earlier installations. The shell wrapper updates `UDID`;
 an optional `simulator_changed` callback updates the runner's evidence identity.

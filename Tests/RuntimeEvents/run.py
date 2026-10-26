@@ -344,6 +344,8 @@ def main():
         for call in list(calls()):
             command('end', call['uuid'])
         wait(lambda: not calls())
+        from filtered_acceptance import run_filtered_acceptance
+        run_filtered_acceptance(channel=root, session=session, command=command, rows=rows, wait=wait, out=args.out)
         captured = run(ROOT / 'Tools/cksim', '--simulator', device, '--bundle', BUNDLE,
                        '--app-container', str(root.parent.parent), 'watch', '--json', '--duration', '0.3')
         watched = [json.loads(line) for line in captured.splitlines()]
