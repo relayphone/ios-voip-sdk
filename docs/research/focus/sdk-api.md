@@ -101,7 +101,7 @@ public struct FocusTranscriptAttributes: ActivityAttributes {
   public struct ContentState: Codable, Hashable {
     public let schemaVersion: Int    // 1
     public let sessionID: String?    // nil while user-armed monitoring is idle
-    public let revision: Int         // safe integer, monotonic per session
+    public let revision: Int         // safe integer, monotonic per surface (across calls)
     public let phase: String         // monitoring, screening, takeoverPending, ownerConnected, ended
     public let speaker: String?      // caller, agent
     public let excerpt: String?      // opt-in redacted tail, bounded UTF-8
@@ -143,13 +143,13 @@ Server contract (proposed endpoint names; APNs credentials stay server-side):
 | ActivityKit APNs request | Per-activity token; `apns-push-type: liveactivity`, `apns-topic: <bundle-id>.push-type.liveactivity`; set `apns-priority: 5` explicitly for transcript updates. |
 | Payload | `aps.timestamp` (increasing Unix seconds), `event: update`, complete `content-state`, `stale-date`; **no `alert` or sound**. Coalesce within a second rather than sending ambiguous equal timestamps. |
 | Size | Reject an encoded APNs body over **4096 bytes**; separately keep attributes plus dynamic state within **4 KB**. Count UTF-8 JSON bytes and escaping, not characters; cap excerpt to 240 UTF-8 bytes initially and prune optional fields. |
-| End / revocation | Send `event: end` with final state and dismissal date; revoke registration on terminal activity/session, logout, consent removal or APNs invalid-token response. Reconcile delayed terminal updates on next foreground. |
+| End / revocation | For a call-specific surface, send `event: end` with final state/dismissal date and retire registration. For an armed monitor, unbind the ended session and push a cleared `monitoring` snapshot; preserve its token for later calls within the original lifetime. Revoke registration only when the activity ends/is dismissed, on logout/consent removal or APNs invalid-token response. Reconcile delayed terminal updates on next foreground. |
 
 Size limits are from [Live Activity data constraints](https://developer.apple.com/documentation/activitykit/displaying-live-data-with-live-activities) and [APNs requests](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns), not the 5 KB VoIP-push limit.
 
 **Proposed cadence:** priority-5 snapshots at most once per five seconds when visible text changes, phase/terminal changes at the next send opportunity, and a 30-second stale date. These are initial product budgets to measure, not Apple delivery guarantees. Priority 5 can be delayed, grouped or lost. Priority 10 uses a system-managed hourly budget and is not the default; no priority change or alert is allowed solely to defeat throttling. Enable `NSSupportsLiveActivities` and optionally `NSSupportsLiveActivitiesFrequentUpdates` in Info.plist, plus Push Notifications capability. There is no special frequent-updates entitlement. Observe `frequentPushesEnabled` / `frequentPushEnablementUpdates`, send changes to the server, and reduce cadence when disabled.
 
-There is no reliable SDK “remaining ActivityKit budget” counter or per-render acknowledgment. APNs acceptance is not evidence that the screen updated. If throttled, disconnected or budget-limited, retain/coalesce the newest server snapshot, back off rather than loop retries, let the widget go stale, and resync from authoritative history on foreground. Never keep background SSE/audio alive to maintain the surface. AI handling continues; UI freshness and call ownership are separate.
+There is no reliable SDK “remaining ActivityKit budget” counter or per-render acknowledgment. APNs acceptance is not evidence that the screen updated. If throttled, disconnected or budget-limited, retain/coalesce the newest server snapshot, back off rather than loop retries, let the widget go stale, and resync from authoritative history on foreground. Serialize pushes per surface and keep its revision increasing across session bindings; an old call's delayed update must not overwrite a new call. Never keep background SSE/audio alive to maintain the surface. AI handling continues; UI freshness and call ownership are separate.
 
 ### React Native / Expo proposal
 
