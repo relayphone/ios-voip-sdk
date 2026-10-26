@@ -1,10 +1,13 @@
 """Runtime install recovery uses one persistent owned budget; all transports are fake."""
 import copy
 import fcntl
+import io
 import json
 import os
 from pathlib import Path
 import signal
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -300,6 +303,63 @@ class RuntimeInstallCoreTests(unittest.TestCase):
         summary = (self.root / 'summary').read_text()
         self.assertIn('infra:launch', summary)
         self.assertNotIn('product:', summary)
+
+    def stateless_cli(self, result, command, accepted=False):
+        arguments = ['call', *(['--accepted-status', '1'] if accepted else []), '', '3', *command]
+        with io.TextIOWrapper(io.BytesIO(), encoding='utf-8') as stdout, \
+                io.TextIOWrapper(io.BytesIO(), encoding='utf-8') as stderr:
+            with patch.object(sim, 'bounded', return_value=result) as execute, \
+                 patch.object(sim.signal, 'signal'), patch.object(sim.sys, 'stdout', stdout), \
+                 patch.object(sim.sys, 'stderr', stderr):
+                status = sim.main(arguments)
+            execute.assert_called_once_with(command, 3)
+            self.assertEqual(stdout.buffer.getvalue(), result.stdout)
+            self.assertEqual(stderr.buffer.getvalue(), result.stderr)
+        return status
+
+    def test_stateless_known_transport_marks_terminal_host_failure_without_retry(self):
+        for status, timed_out in ((124, True), (-signal.SIGALRM, False), (142, False)):
+            with self.subTest(status=status):
+                result = sim.Result(['private-host-sentinel'], status, b'original-output', b'', timed_out)
+                self.assertEqual(self.stateless_cli(result, ['private-host-sentinel']), abs(status) if status >= 0 else 128 - status)
+                self.assertTrue(result.failure_classified)
+                self.assertTrue((self.root / 'failure').is_file())
+                summary = (self.root / 'summary').read_text()
+                self.assertIn('infra:host', summary)
+                self.assertNotIn('private-host-sentinel', summary)
+
+    def test_stateless_native_failure_marks_its_exact_operation(self):
+        result = sim.Result([], 73, b'native-output', b'native-error')
+        self.assertEqual(self.stateless_cli(result, ['xcrun', 'simctl', 'install', 'private-uuid', 'private-app']), 73)
+        self.assertTrue(result.failure_classified)
+        self.assertTrue((self.root / 'failure').is_file())
+        summary = (self.root / 'summary').read_text()
+        self.assertIn('infra:install', summary)
+        self.assertNotIn('private-', summary)
+
+    def test_stateless_ordinary_generic_statuses_and_accepted_one_remain_unclassified(self):
+        for command, status, accepted in ((['host-only-fixture'], 73, False),
+                (['host-only-fixture'], 124, False), (['host-only-fixture'], 127, False),
+                (['host-only-fixture'], 1, True), (['xcrun', 'simctl', 'spawn', 'private-uuid'], 1, True)):
+            with self.subTest(command=command, status=status):
+                result = sim.Result(command, status)
+                self.assertEqual(self.stateless_cli(result, command, accepted), status)
+                self.assertFalse(result.failure_classified)
+                self.assertFalse((self.root / 'failure').exists())
+                self.assertFalse((self.root / 'summary').exists())
+
+    def test_actual_host_signal_and_timeout_keep_status_and_terminal_marker(self):
+        helper = Path(sim.__file__).resolve()
+        for name, body, timeout, expected in (
+                ('signal', 'import os,signal;os.kill(os.getpid(),signal.SIGALRM)', '3', 142),
+                ('timeout', 'import time;time.sleep(5)', '.15', 124)):
+            with self.subTest(name=name):
+                (self.root / 'failure').unlink(missing_ok=True)
+                result = subprocess.run([sys.executable, str(helper), 'call', '', timeout,
+                                         sys.executable, '-c', body], capture_output=True, timeout=6)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertTrue((self.root / 'failure').is_file())
+                self.assertIn('infra:host', (self.root / 'summary').read_text())
 
 
 if __name__ == '__main__':

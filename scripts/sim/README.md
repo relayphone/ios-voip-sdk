@@ -99,3 +99,11 @@ unchanged case supervisor starts. This slice adds no console or case retry.
 Cleanup preserves the primary failure and still performs independent inventory.
 
 Runtime fixture discovery binds the launch PID, bundle and fresh run ID to one canonical host journal. Controls and watch reuse that validated container; diagnostics use the retained channel. None of those paths queries a data container through simctl. Shared simulator preparation retains its existing one pre-app budget and no-replay barrier. Generic host commands use `scripts/ci/bounded`, with a ten-second termination grace outside the command deadline.
+
+Legacy failure diagnostics are bounded observations before owned-device deletion;
+they may be unavailable and do not establish a startup cause or fix. The original
+90-second scenario result remains authoritative, and entered apps are never retried.
+
+Legacy adoption covers preparation, cleanup and diagnostic boundaries. Its direct
+scenario supervisor keeps the existing product-failure fallback; bare pre-app
+launch classification and full console-policy adoption remain separate work.

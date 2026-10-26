@@ -39,6 +39,15 @@ def transport_failure(result):
                 (-status if status < 0 else status - 128) in signal.valid_signals()))
 
 
+def _command_failure_label(command):
+    if command[:2] != ['xcrun', 'simctl']:
+        return 'infra:host'
+    step = command[2] if len(command) > 2 else None
+    operations = ('create', 'boot', 'bootstatus', 'install', 'launch', 'terminate', 'io',
+                  'shutdown', 'delete', 'list', 'privacy', 'spawn', 'get_app_container')
+    return 'infra:' + step if step in operations else 'infra:helper'
+
+
 def seconds(value):
     value = float(value)
     if not math.isfinite(value) or value <= 0:
@@ -649,8 +658,9 @@ def main(argv=None):
             session = Session(args.state) if args.state else None
             result = session.call(args.command, args.timeout) if session else bounded(args.command, args.timeout)
             accepted = not result.timed_out and result.returncode == args.accepted_status
-            if not session and result.returncode and not accepted and args.command[:2] == ['xcrun', 'simctl']:
-                summary('infra:' + (args.command[2] if len(args.command) > 2 else 'helper'), 'not eligible')
+            if (not session and result.returncode and not accepted and
+                    (args.command[:2] == ['xcrun', 'simctl'] or transport_failure(result))):
+                _report_result(result, _command_failure_label(args.command), 'not eligible')
             sys.stdout.buffer.write(result.stdout)
             sys.stderr.buffer.write(result.stderr)
             return result.returncode if result.returncode >= 0 else 128 - result.returncode
