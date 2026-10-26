@@ -88,3 +88,12 @@ Only one active JS context may own the process's native handler bridge.
 These API details resolve gaps in the draft RFC and need review with the combined
 M1 implementation. They do not claim device qualification, media integration or
 default-calling entry-point support.
+
+## Capacity rejection
+
+A system request rejected with `com.apple.CallKit.error.requesttransaction` code 7
+becomes Swift `ConversationClientError.atCapacity` and Expo `at_capacity`.
+The platform domain/code was measured in the [iPhone 13/iOS 27.0 capacity trace](../docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x1.jsonl).
+Unrelated errors, including incoming-call filtering errors, retain their existing behavior.
+Use `isConversationCommandError` to narrow the rejection. The SDK does not infer
+available system call groups from its local conversation count.

@@ -80,6 +80,20 @@ private func invoke(_ application: VoIPApplication, kind: ConversationActionKind
 @main
 struct BridgeTests {
   @MainActor static func main() async {
+    let rejections: [(any Error, String)] = [
+      (ConversationClientError.atCapacity, "at_capacity"),
+      (ConversationClientError.unknownConversation, "unknown_conversation"),
+      (ConversationClientError.unsupported, "unsupported"),
+      (ConversationClientError.duplicateSDKLinkage, "duplicate_sdk_linkage"),
+      (ConversationClientError.invalidPayload, "invalid_arguments"),
+      (ConversationClientError.invalidDigits, "invalid_arguments"),
+      (BridgeError.invalidArguments, "invalid_arguments"),
+      (BridgeError.unavailable, "conversation"),
+      (NSError(domain: "com.apple.CallKit.error.requesttransaction", code: 7), "conversation")]
+    for (error, code) in rejections {
+      precondition(BridgeJSON.rejection(error).code == code,
+        "The module's production rejection projection must preserve typed codes and generic fallbacks")
+    }
     do { try await run() }
     catch {
       FileHandle.standardError.write(Data("Expo relay check failed: \(error)\n".utf8))

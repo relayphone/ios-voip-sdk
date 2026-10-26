@@ -139,6 +139,23 @@ struct HandlerRejection: Error, Equatable, Sendable {
 }
 
 enum BridgeJSON {
+  static func rejection(_ error: any Error) -> (code: String, message: String) {
+    switch error {
+    case BridgeError.invalidArguments, ConversationClientError.invalidPayload, ConversationClientError.invalidDigits:
+      return ("invalid_arguments", "The conversation command has invalid arguments.")
+    case ConversationClientError.unknownConversation:
+      return ("unknown_conversation", "The conversation is no longer active.")
+    case ConversationClientError.unsupported:
+      return ("unsupported", "This conversation operation is unsupported.")
+    case ConversationClientError.duplicateSDKLinkage:
+      return ("duplicate_sdk_linkage", "Link one VoIP SDK product in this process; both SwiftPM and the Expo pod were loaded.")
+    case ConversationClientError.atCapacity:
+      return ("at_capacity", "The system has reached its conversation capacity.")
+    default:
+      return ("conversation", "The system could not complete the conversation operation.")
+    }
+  }
+
   static func date(_ value: Date) -> String {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

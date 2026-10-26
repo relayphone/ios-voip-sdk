@@ -1,12 +1,18 @@
 import Foundation
 
-enum IncomingReportErrors {
+enum ConversationSystemErrors {
   static func isAlreadyReported(_ error: any Error) -> Bool {
+    matches(error, domain: "com.apple.CallKit.error.incomingcall", code: 2)
+  }
+  static func isAtCapacity(_ error: any Error) -> Bool {
+    matches(error, domain: "com.apple.CallKit.error.requesttransaction", code: 7)
+  }
+  private static func matches(_ error: any Error, domain: String, code: Int) -> Bool {
     var candidate = error as NSError
     for _ in 0..<4 {
       // Measured CallKit error wrapping remains meaningful through LCK without
       // importing or linking CallKit into the device SDK.
-      if candidate.domain == "com.apple.CallKit.error.incomingcall" && candidate.code == 2 { return true }
+      if candidate.domain == domain && candidate.code == code { return true }
       guard let underlying = candidate.userInfo[NSUnderlyingErrorKey] as? NSError else { return false }
       candidate = underlying
     }
@@ -492,7 +498,11 @@ public final class ConversationClient: NSObject {
     appActions = appActions.filter { $0.value > Date() }
     appActions[id] = action.timeoutDate
     do { try await manager.perform([action]) }
-    catch { appActions.removeValue(forKey: id); throw error }
+    catch {
+      appActions.removeValue(forKey: id)
+      if ConversationSystemErrors.isAtCapacity(error) { throw ConversationClientError.atCapacity }
+      throw error
+    }
   }
   private func requireConversation(_ id: UUID) throws {
     guard manager.conversations.contains(where: { $0.uuid == id && $0.state != .left }) else {
