@@ -20,8 +20,11 @@ Matrix runs: `--keep-setup` keeps the owned Focus and contact between rows and o
 row; run `restore-all` once at the end. Selectors are qualified on iOS 27.0 (iPhone 13); see
 [results](../../docs/research/focus/results.md). For selector work, the `dump:<controlcenter|focusmenu|settings-focus|settings-root|screen>`
 UI action writes a read-only accessibility tree to the runner's Documents, and any failed action leaves the front
-app's tree in `focus-dump-failure.txt`. Command-line automatic signing cannot add the App Group capability; without
-it the Focus filter (C06) is unqualified.
+app's tree in `focus-dump-failure.txt`. The device operator has registered `group.dev.callkitsim.focus` for the
+app, widget and filter under team `85A9MS6428`. Keep the App Group entitlements for C06; the earlier run built
+without them and therefore did not qualify that row. For a signed device build, use Xcode's signed-in account and
+`xcodebuild -allowProvisioningUpdates` with `DEVELOPMENT_TEAM=85A9MS6428`; do not pass ASC `-authenticationKey*`
+arguments. The App Store Connect key cannot register groups.
 
 Implements the native/platform portions of [the device plan](../../docs/research/focus/device-plan.md). This isolated spike chooses **one** provider at process launch: LiveCommunicationKit (default) or the CallKit `CXProvider` control. It never creates both in the same process, and has no SDK dependency, real media, backend AI or owner-join implementation. The two modes share one test bundle, so explicitly record the mode and all user settings. Build/dry-run qualification does **not** qualify device behavior. Claude operates the device; this lane does not.
 
