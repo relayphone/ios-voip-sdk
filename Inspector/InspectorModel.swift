@@ -56,6 +56,10 @@ private struct InspectorProbeSnapshot: Encodable {
 
 @MainActor
 final class InspectorModel: ObservableObject {
+  private enum ConfigurationAcknowledgement: Hashable {
+    case incomingFilter(String, InspectorIncomingFilter)
+    case incomingError(String, Int)
+  }
   @Published var session: RuntimeSession?
   @Published var conversations: [String: RuntimeEvent] = [:]
   @Published var pending: [String: RuntimeEvent] = [:]
@@ -70,6 +74,8 @@ final class InspectorModel: ObservableObject {
   private var cursor = 0
   private var acknowledgedActions = Set<String>()
   private var actionOrder: [String] = []
+  private var configurationAcknowledgements = Set<ConfigurationAcknowledgement>()
+  private var configurationOrder: [ConfigurationAcknowledgement] = []
   private let endpoint: URL?
   private let token: String
   private let client = URLSession(configuration: .ephemeral)
@@ -169,12 +175,12 @@ final class InspectorModel: ObservableObject {
     }
     if let state = InspectorIncomingFilterState(event: row), let id = row.requestID {
       incomingFilter = state.reason
-      acknowledge(id)
+      acknowledgeConfiguration(.incomingFilter(id, state.reason))
     }
     if row.event == "faults.configured", let code = row.incomingErrorCode, [0, 4].contains(code),
        let id = row.requestID, !id.isEmpty {
       incomingErrorCode = code
-      acknowledge(id)
+      acknowledgeConfiguration(.incomingError(id, code))
     }
     if let id = row.actionID {
       acknowledge(id)
@@ -190,16 +196,26 @@ final class InspectorModel: ObservableObject {
       if actionOrder.count > 1000 { acknowledgedActions.remove(actionOrder.removeFirst()) }
     }
   }
+  private func acknowledgeConfiguration(_ value: ConfigurationAcknowledgement) {
+    if configurationAcknowledgements.insert(value).inserted {
+      configurationOrder.append(value)
+      if configurationOrder.count > 1000 { configurationAcknowledgements.remove(configurationOrder.removeFirst()) }
+    }
+  }
   func configureIncomingFilter(_ reason: InspectorIncomingFilter) {
-    submitConfiguration(["operation": "incoming-filter", "reason": reason.rawValue]) {
+    submitConfiguration(["operation": "incoming-filter", "reason": reason.rawValue],
+                        acknowledgement: { .incomingFilter($0, reason) }) {
       $0.incomingFilter?.isValid == true && $0.incomingFilter?.reason == reason
     }
   }
   func configureIncomingError(_ code: Int) {
     guard [0, 4].contains(code) else { return }
-    submitConfiguration(["operation": "faults", "incomingErrorCode": String(code)]) { $0.incomingErrorCode == code }
+    submitConfiguration(["operation": "faults", "incomingErrorCode": String(code)],
+                        acknowledgement: { .incomingError($0, code) }) { $0.incomingErrorCode == code }
   }
-  private func submitConfiguration(_ body: [String: String], accepting: @escaping (ControlResult.Result) -> Bool) {
+  private func submitConfiguration(_ body: [String: String],
+                                   acknowledgement: @escaping (String) -> ConfigurationAcknowledgement,
+                                   accepting: @escaping (ControlResult.Result) -> Bool) {
     guard !busy, online else { return }
     busy = true
     Task {
@@ -212,7 +228,7 @@ final class InspectorModel: ObservableObject {
             response.error ?? "Runtime rejected the configuration."])
         }
         let deadline = Date().addingTimeInterval(3)
-        while !acknowledgedActions.contains(id) {
+        while !configurationAcknowledgements.contains(acknowledgement(id)) {
           guard Date() < deadline else {
             throw NSError(domain: "Inspector", code: 6, userInfo: [NSLocalizedDescriptionKey:
               "Configuration accepted, but its journal confirmation has not arrived. Check the timeline before retrying."])

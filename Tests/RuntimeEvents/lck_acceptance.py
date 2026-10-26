@@ -16,8 +16,8 @@ import sys
 import time
 import uuid
 
-from run import run, simulator_infra
-from ci_simulator import create, cleanup, simulator_uuid
+from run import lifecycle, session_transport, simulator_infra
+from ci_simulator import create, cleanup, simulator_uuid, state_path
 
 BUNDLE = 'dev.callkitsim.lckfixture'
 RUNTIME = 'com.apple.CoreSimulator.SimRuntime.iOS-27-0'
@@ -92,8 +92,10 @@ def resolve_container(applications, run_id, bundle, pid):
     return matches[0] if matches else None
 
 
-def simulator_applications(device):
-    inventory = json.loads(run('xcrun', 'simctl', 'list', 'devices', '-j', timeout=30))['devices']
+def simulator_applications(device, *, session):
+    if device != session.current:
+        raise ValueError('Simulator does not match its existing Session')
+    inventory = json.loads(lifecycle(session, 'list', 'devices', '-j', timeout=30))['devices']
     matches = [(runtime, row) for runtime, group in inventory.items() for row in group
                if row.get('udid', '').lower() == device.lower()]
     if len(matches) != 1 or matches[0][1].get('state') != 'Booted':
@@ -109,18 +111,26 @@ def simulator_applications(device):
 @contextmanager
 def simulator_scope(supplied, out):
     ownership = None if supplied else out / 'simulator-id'
-    device = simulator_uuid(supplied) if supplied else create(RUNTIME, ownership)
+    if supplied:
+        device, ledger = simulator_uuid(supplied), os.environ.get('SIM_STATE')
+        if not ledger:
+            raise ValueError('Borrowed simulator requires its existing SIM_STATE')
+    else:
+        device = create(RUNTIME, ownership)
+        ledger = state_path(ownership)
     try:
-        yield device, ownership is not None
+        session = simulator_infra.Session.resume(ledger, device, runner=session_transport, inventory_timeout=60)
+        yield session, ownership is not None
     finally:
         if ownership is not None:
             cleanup(ownership)
 
 
 class Journey:
-    def __init__(self, device, container, out, *, applications=None):
+    def __init__(self, device, container, out, *, applications=None, native_session=None):
         self.device, self.container, self.out = device, container, out
         self.applications = applications
+        self.native_session = native_session
         self.channel = container / 'Documents/.callkit-simulator' if container is not None else None
         self.run_id = None
         self.session = None
@@ -146,13 +156,19 @@ class Journey:
         raise AssertionError(f'{self.name}: timed out waiting for native LCK evidence')
 
     def begin(self, name, *, groups=2, per_group=1, caps='all'):
+        if self.native_session is None:
+            raise ValueError('Native journey requires its existing simulator Session')
         self.save()
         self.name, self.ids, self.session = name, {}, None
         run_id = self.run_id = 'lck-' + str(uuid.uuid4())
-        launched = run('xcrun', 'simctl', 'launch', '--terminate-running-process', self.device, BUNDLE,
+        launched = lifecycle(self.native_session, 'launch', '--terminate-running-process', self.native_session.current, BUNDLE,
             env=dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=run_id,
                      SIMCTL_CHILD_LCK_FIXTURE_GROUPS=str(groups), SIMCTL_CHILD_LCK_FIXTURE_PER_GROUP=str(per_group),
                      SIMCTL_CHILD_LCK_FIXTURE_CAPABILITIES=caps), timeout=120)
+        if self.device != self.native_session.current:
+            self.device = self.native_session.current
+            self.container = self.channel = None
+            self.applications = simulator_applications(self.device, session=self.native_session)
         launch = re.fullmatch(re.escape(BUNDLE) + r': ([1-9][0-9]*)', launched)
         if launch is None:
             raise RuntimeError('Cannot establish PID from simctl launch output')
@@ -300,24 +316,24 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--app', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
-    parser.add_argument('--simulator', type=simulator_uuid, help='Borrow this already booted operator-owned simulator; never shut it down or delete it')
+    parser.add_argument('--simulator', type=simulator_uuid, help='Borrow this booted simulator through its existing SIM_STATE; never shut it down or delete it')
     parser.add_argument('--filter-only', action='store_true', help='Normal report → explicit incoming code4 → cleared normal report')
     args = parser.parse_args()
     install_bound = simulator_infra.seconds(os.environ.get('CKSIM_FIXTURE_INSTALL_TIMEOUT', 180))
     if install_bound > 600:
         raise ValueError('Fixture install bound must not exceed 600 seconds')
     args.out.mkdir(parents=True, exist_ok=True)
-    runtimes = json.loads(run('xcrun', 'simctl', 'list', 'runtimes', '-j', timeout=30))['runtimes']
-    assert any(r['identifier'] == RUNTIME and r.get('isAvailable') for r in runtimes), 'iOS 27.0 runtime required'
-    with simulator_scope(args.simulator, args.out) as (device, owned):
+    with simulator_scope(args.simulator, args.out) as (session, owned):
         journey = None
         try:
+            runtimes = json.loads(lifecycle(session, 'list', 'runtimes', '-j', timeout=30))['runtimes']
+            assert any(r['identifier'] == RUNTIME and r.get('isAvailable') for r in runtimes), 'iOS 27.0 runtime required'
             if owned:
-                run('xcrun', 'simctl', 'boot', device, timeout=60)
-                run('xcrun', 'simctl', 'bootstatus', device, '-b', timeout=300)
-            applications = simulator_applications(device)
-            run('xcrun', 'simctl', 'install', device, args.app.resolve(), timeout=install_bound)
-            journey = Journey(device, None, args.out, applications=applications)
+                lifecycle(session, 'boot', session.current, timeout=60)
+                lifecycle(session, 'bootstatus', session.current, '-b', timeout=300)
+            lifecycle(session, 'install', session.current, args.app.resolve(), timeout=install_bound)
+            applications = simulator_applications(session.current, session=session)
+            journey = Journey(session.current, None, args.out, applications=applications, native_session=session)
             run_filter_case(journey)
             print(json.dumps(dict(success=True, fixture='genuine ConversationManager', runtime=RUNTIME,
                                   mode='explicit-incoming-fault')))

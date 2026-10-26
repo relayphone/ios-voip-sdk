@@ -78,7 +78,7 @@ class FilterModelTests(unittest.TestCase):
                 str(harness), '-o', str(binary)], text=True, capture_output=True, timeout=60)
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
             for kind in ('filter', 'faults'):
-                for mode in ('success', 'wrong', 'missing') + (('invalid-code', 'missing-id') if kind == 'faults' else ()):
+                for mode in ('success', 'wrong', 'missing', 'wrong-value', 'wrong-kind', 'action-id') + (('invalid-code', 'missing-id') if kind == 'faults' else ()):
                     with self.subTest(kind=kind, mode=mode):
                         self.exercise(binary, mode, kind)
 
@@ -135,10 +135,19 @@ class FilterModelTests(unittest.TestCase):
                     with lock:
                         identifier = 'unrelated-request' if mode == 'wrong' else 'request-' + str(index)
                         identity = {} if mode == 'missing-id' else dict(requestID=identifier)
-                        if kind == 'faults':
-                            append('faults.configured', incomingErrorCode=5 if mode == 'invalid-code' else int(commands[index - 1]['incomingErrorCode']), **identity)
+                        if mode == 'action-id':
+                            append('action.deadline', actionID=identifier)
+                        elif mode == 'wrong-kind':
+                            if kind == 'faults':
+                                append('incomingFilter.configured', **identity, **state('none'))
+                            else:
+                                append('faults.configured', incomingErrorCode=0, **identity)
+                        elif kind == 'faults':
+                            code = 5 if mode == 'invalid-code' else 0 if mode == 'wrong-value' else int(commands[index - 1]['incomingErrorCode'])
+                            append('faults.configured', incomingErrorCode=code, **identity)
                         else:
-                            append('incomingFilter.configured', **identity, **state(commands[index - 1]['reason']))
+                            reason = 'none' if mode == 'wrong-value' else commands[index - 1]['reason']
+                            append('incomingFilter.configured', **identity, **state(reason))
         reading = threading.Thread(target=read_output, daemon=True)
         reading.start()
         try:

@@ -1,10 +1,11 @@
 """Independent journal-oracle controls; native callbacks supply the real acceptance data."""
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
 import uuid
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import lck_acceptance as acceptance
 
@@ -51,6 +52,13 @@ class ContainerDiscoveryTests(unittest.TestCase):
 
     def resolve(self):
         return acceptance.resolve_container(self.root, 'fresh-run', acceptance.BUNDLE, 123)
+
+    def native_session(self, identifier):
+        session = acceptance.simulator_infra.Session(self.root / 'shared-session.json',
+            runner=lambda command, timeout: acceptance.simulator_infra.Result(command, 0,
+                stdout=(identifier + '\n').encode()))
+        session.call(['xcrun', 'simctl', 'create', 'fixture', 'device-type', acceptance.RUNTIME], 5)
+        return session
 
     def test_stale_session_does_not_resolve_the_initial_container(self):
         self.candidate(runID='stale-run')
@@ -107,20 +115,74 @@ class ContainerDiscoveryTests(unittest.TestCase):
         identifier = str(uuid.uuid4()).upper()
         inventory = dict(devices={'com.apple.CoreSimulator.SimRuntime.iOS-26-5': [
             dict(udid=identifier, state='Booted', dataPath=str(self.root / identifier / 'data'))]})
-        with patch.object(acceptance, 'run', return_value=json.dumps(inventory)):
+        session = Mock(current=identifier)
+        with patch.object(acceptance, 'lifecycle', return_value=json.dumps(inventory)) as native:
             with self.assertRaisesRegex(RuntimeError, 'iOS 27.0'):
-                acceptance.simulator_applications(identifier)
+                acceptance.simulator_applications(identifier, session=session)
+        self.assertIs(native.call_args.args[0], session)
 
     def test_borrowed_simulator_is_never_created_or_cleaned_even_on_failure(self):
         identifier = str(uuid.uuid4()).upper()
-        with patch.object(acceptance, 'create') as create, patch.object(acceptance, 'cleanup') as cleanup:
+        session = self.native_session(identifier)
+        ledger = session.path
+        session.reserve_retry()
+        session.checkpoint()
+        before = ledger.read_bytes()
+        with patch.dict(os.environ, SIM_STATE=str(ledger)), \
+             patch.object(acceptance, 'create') as create, patch.object(acceptance, 'cleanup') as cleanup:
             with self.assertRaisesRegex(ValueError, 'journey failed'):
-                with acceptance.simulator_scope(identifier, self.root) as (device, owned):
-                    self.assertEqual(device, identifier)
+                with acceptance.simulator_scope(identifier, self.root) as (resumed, owned):
+                    self.assertEqual(resumed.current, identifier)
+                    self.assertTrue(resumed.state['retry_used'])
+                    self.assertTrue(resumed.is_checkpointed())
                     self.assertFalse(owned)
                     raise ValueError('journey failed')
         create.assert_not_called()
         cleanup.assert_not_called()
+        self.assertEqual(ledger.read_bytes(), before)
+
+    def test_borrowed_simulator_requires_the_existing_session_before_native_work(self):
+        identifier = str(uuid.uuid4()).upper()
+        with patch.dict(os.environ, {}, clear=True), patch.object(acceptance, 'lifecycle') as native:
+            with self.assertRaisesRegex(ValueError, 'SIM_STATE'):
+                with acceptance.simulator_scope(identifier, self.root):
+                    self.fail('Borrowed simulator without its session was accepted')
+        native.assert_not_called()
+
+    def test_launch_records_the_checkpoint_in_the_existing_session(self):
+        identifier = str(uuid.uuid4()).upper()
+        session = self.native_session(identifier)
+        journey = acceptance.Journey(identifier, self.root, self.root / 'out', native_session=session)
+        def launched(command, timeout, **kwargs):
+            return acceptance.simulator_infra.Result(command, 0, stdout=(acceptance.BUNDLE + ': 123').encode())
+        with patch.object(acceptance.simulator_infra, 'bounded', side_effect=launched) as native, \
+             patch.object(acceptance, 'container_session', return_value=self.session), \
+             patch.object(journey, 'save'), patch.object(journey, 'wait'), \
+             patch.object(journey, 'rows', return_value=[dict(event='provider.created')]):
+            journey.begin('launch-checkpoint')
+        native.assert_called_once()
+        self.assertEqual(native.call_args.args[0], ['xcrun', 'simctl', 'launch',
+            '--terminate-running-process', identifier, acceptance.BUNDLE])
+        self.assertEqual(native.call_args.kwargs['env']['SIMCTL_CHILD_CKSIM_RUN_ID'], journey.run_id)
+        self.assertTrue(json.loads(session.path.read_text())['checkpoint'])
+        self.assertFalse(session.state['retry_used'])
+
+    def test_launch_timeout_cannot_replace_or_replay_the_existing_session(self):
+        identifier = str(uuid.uuid4()).upper()
+        session = self.native_session(identifier)
+        session.checkpoint()
+        journey = acceptance.Journey(identifier, self.root, self.root / 'out', native_session=session)
+        def timed_out(command, timeout, **kwargs):
+            return acceptance.simulator_infra.Result(command, 124, timed_out=True)
+        with patch.object(acceptance.simulator_infra, 'bounded', side_effect=timed_out) as native, \
+             patch.object(session, 'replacement') as replacement, patch.object(journey, 'save'):
+            with self.assertRaisesRegex(RuntimeError, 'timed out'):
+                journey.begin('unknown-launch')
+        native.assert_called_once()
+        replacement.assert_not_called()
+        self.assertEqual(session.current, identifier)
+        self.assertTrue(json.loads(session.path.read_text())['checkpoint'])
+        self.assertFalse(session.state['retry_used'])
 
 
 if __name__ == '__main__':
