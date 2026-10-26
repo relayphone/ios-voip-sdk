@@ -14,7 +14,9 @@ class RunnerTests(unittest.TestCase):
     def test_reused_fixture_still_launches_a_fresh_pinned_session_without_reinstall(self):
         app = Path('/owned/RuntimeEventFixture.app')
         with patch.object(run.uuid, 'uuid4', return_value='fresh'):
-            with patch.object(run, 'run', return_value=run.BUNDLE + ': 42') as transport, patch.object(run, 'discover_fixture_channel', return_value=Path('/owned/container/Documents/.callkit-simulator')):
+            with patch.object(run, 'run', return_value=run.BUNDLE + ': 42') as transport, \
+                 patch.object(run, 'fixture_applications', return_value=Path('/owned/applications')), \
+                 patch.object(run, 'discover_fixture_channel', return_value=Path('/owned/container/Documents/.callkit-simulator')):
                 channel, run_id = run.launch_fixture('owned', app, install=False)
         self.assertEqual(channel, Path('/owned/container/Documents/.callkit-simulator'))
         self.assertEqual(run_id, 'fixture-fresh')
@@ -63,7 +65,9 @@ class RunnerTests(unittest.TestCase):
                 return value
             argv = ['run.py', '--package', str(root), '--app', str(root), '--out', str(root / 'out'),
                     '--simulator', 'owned', '--runtime', 'ios-27']
-            with patch.object(run.sys, 'argv', argv), patch.object(run, 'run', side_effect=transport), patch.object(run, 'discover_fixture_channel', return_value=channel):
+            with patch.object(run.sys, 'argv', argv), patch.object(run, 'run', side_effect=transport), \
+                 patch.object(run, 'fixture_applications', return_value=root), \
+                 patch.object(run, 'discover_fixture_channel', return_value=channel):
                 with patch.object(run, 'wait', side_effect=immediate_wait), patch.object(run, 'capture_diagnostics'):
                     with self.assertRaises(StimulusSent):
                         run.main()
@@ -94,7 +98,9 @@ class RunnerTests(unittest.TestCase):
                 self.assertIsNone(predicate(), 'partial publication must not become ready')
                 session_file.write_text(json.dumps(dict(runID='fixture-fresh', pid=42)))
                 return predicate()
-            with patch.object(run.uuid, 'uuid4', return_value='fresh'), patch.object(run, 'run', side_effect=transport), patch.object(run, 'discover_fixture_channel', return_value=channel):
+            with patch.object(run.uuid, 'uuid4', return_value='fresh'), patch.object(run, 'run', side_effect=transport), \
+                 patch.object(run, 'fixture_applications', return_value=Path(work)), \
+                 patch.object(run, 'discover_fixture_channel', return_value=channel):
                 with patch.object(run, 'wait', side_effect=observe):
                     actual_channel, run_id = run.launch_fixture('owned', Path(work))
                     session = run.fixture_session(actual_channel, run_id)
@@ -203,4 +209,6 @@ class RunnerTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    # Keep the inventory regression in this existing automatic CI entry point.
+    from test_fixture_inventory import FixtureInventoryTests
     unittest.main()
