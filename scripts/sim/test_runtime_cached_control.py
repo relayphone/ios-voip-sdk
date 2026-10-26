@@ -55,7 +55,8 @@ class ChannelDiscoveryTests(unittest.TestCase):
         return channel
 
     def discover(self):
-        return runtime.discover_fixture_channel(self.device, 'fixture-fresh', 42)
+        applications = runtime.fixture_applications(self.device)
+        return runtime.discover_fixture_channel(applications, 'fixture-fresh', 42)
 
     def test_new_process_identity_retains_the_original_partial_journal(self):
         channel = self.channel()
