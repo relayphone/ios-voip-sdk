@@ -1,6 +1,6 @@
 # Focus device results: first iPhone 13 pass
 
-These are the measured results for the [device plan](device-plan.md) from [#124](https://github.com/ziahamza/ios-voip-sdk/issues/124). Claude ran them on 26 October 2026 with the [`spikes/focus`](../../../spikes/focus/README.md) probe. The probe uses only LiveCommunicationKit (LCK); CallKit was not tested. The run was cut short twice to return the shared phone, so this pass is partial.
+These are the measured results for the [device plan](device-plan.md) from [#124](https://github.com/ziahamza/ios-voip-sdk/issues/124). Claude ran them on 26 October 2026 with the [`spikes/focus`](../../../spikes/focus/README.md) probe. The probe uses only LiveCommunicationKit (LCK); CallKit was not tested. The run was cut short twice to return the shared phone, so this pass is partial; this page is updated as rows complete.
 
 The rows were automated: XCUITest changed the settings and observed the screen, and pushes went through the sandbox. There is **one sample per row**; the plan asks for three. Traces, receipts and tokens stay in a private working folder and are not committed.
 
@@ -36,7 +36,12 @@ The two allowlists also kept the defaults that iOS suggested for a new Focus: th
 | F06–F08 | Off | | | | **skipped**: F01–F04 already establish the Focus-off baseline | | |
 | F09 | **On** | No | No | Off | **filtered**: `com.apple.CallKit.error.incomingcall` code 3, after 2189 ms | 7 ms | none |
 | F10 | **On** | No | No | On | **filtered**: code 3, after 2205 ms | 9 ms | none; CN scheduled |
-| F11–F16 | On | | | | **pending**. F11 was aborted mid-row to return the phone and has no result. | | |
+| F11 | On | Yes | No | Off | pending | | |
+| F12 | On | Yes | No | On | pending | | |
+| F13 | On | No | Yes | Off | pending | | |
+| F14 | On | No | Yes | On | pending | | |
+| F15 | **On** | Yes | Yes | Off | **reported, 101 ms** | 4 ms | **banner and full-screen call UI** |
+| F16 | On | Yes | Yes | On | pending | | |
 
 Every unanswered reported call ended itself after the probe's 25 s ring timeout. The CN's own banner was not observed separately in F02, F04 or F10.
 
@@ -58,7 +63,10 @@ Every unanswered reported call ended itself after the probe's 25 s ring timeout.
    - No banner and no call UI appear.
    - A genuine Communication Notification for the same caller does not change this (F10).
    - This repeats the earlier [push probe](../callkit-simulator-probe/livecommunicationkit/push/README.md#results) result (2.07 s, code 3), now with the allowances controlled.
-3. **No breakthrough rule is established yet.** Do not claim that allowing the app, the person, or both lets a call through until F11–F16 are measured.
+3. **Allowing both the app and the caller lets the call through.**
+   - With the Focus on and both the app and the caller allowed, the report succeeded in 101 ms and showed the banner and the full-screen call UI, just as with the Focus off (F15).
+   - The call then ended itself unanswered after the ring timeout.
+   - Which allowance is enough on its own (app only, F11, or caller only, F13) is still pending.
 4. **Report entry is immediate, and the filtered result is slow.**
    - Report entry came 1–9 ms after push receipt, even on a cold launch.
    - The filtered result arrived about 2.2 s after entry, and PushKit completion followed straight away.
@@ -81,7 +89,7 @@ This applies the [proposed `IncomingPresentationResult`](sdk-api.md#typed-incomi
 
 | Device outcome | Domain / code | Measured latency | SDK result | Default policy | Evidence |
 | --- | --- | --- | --- | --- | --- |
-| Report succeeds | – | 63–119 ms | `.reported(conversationID:)` | normal ringing and actions | C00, F01–F05 |
+| Report succeeds | – | 63–119 ms | `.reported(conversationID:)` | normal ringing and actions | C00, F01–F05, F15 |
 | Filtered by Focus | `com.apple.CallKit.error.incomingcall` / 3 | 2.19–2.21 s | `.filtered(reason: .focus)` | `screenWithAI`, or `decline` per the user's policy | F09, F10 |
 | Codes 4–7 | same domain, 4–7 | not produced | `.filtered(reason: .blockList / .restrictedSharing / .protectedCall / .sensitiveParticipants)` | conservative: no AI for code 4; decline or no screening for 5–7 | none yet (C07, C10) |
 | Anything else | unknown pair | – | `.failed(IncomingFailure)` | no screening | – |
@@ -94,6 +102,6 @@ What this means for the SDK:
 
 ## Next steps
 
-1. Run F11–F16, then C02, the L rows and the locked Auto-Answer run, using `--keep-setup` and one `restore-all` at the end. The resume steps live in the operator's private run folder.
+1. In priority order: F11 and F13, the locked Auto-Answer run, the L rows, C02, then F12, F14 and F16. Use `--keep-setup` and one `restore-all` at the end. The resume steps live in the operator's private run folder.
 2. Repeat any row whose outcome differs from its neighbours before turning it into a rule.
 3. Re-run C00 with the Mac microphone once it is granted, to qualify audible and haptic silence.

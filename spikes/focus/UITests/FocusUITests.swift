@@ -222,8 +222,10 @@ final class FocusUITests: XCTestCase {
         // The People picker keeps the full contact list (same names, unhittable) behind its search results.
         let results = settings.collectionViews["Search results"]
         let hit = results.cells.matching(NSPredicate(format: "label == %@", name)).firstMatch
+        let settled = Date().addingTimeInterval(4)
+        while hit.exists && !hit.isHittable && Date() < settled { Thread.sleep(forTimeInterval: 0.2) }
         try tap(settings, hit.waitForExistence(timeout: 3) ? hit : element(settings, [name], timeout: 5))
-        // The contact picker closes itself on selection; the app picker needs Done.
+        // Both pickers confirm with Done once their search closes (the People picker is multi-select).
         if let done = try? element(settings, ["Done"], timeout: 2) { try tap(settings, done) }
       } else {
         // Exact accessibility names only; no unverified coordinate deletion. The tile itself ignores taps on
@@ -249,9 +251,11 @@ final class FocusUITests: XCTestCase {
   // The first People sheet is two steps (Next, then Done); a pushed page has neither and needs no commit.
   func commitSheet() throws {
     for _ in 0..<3 {
-      if let done = try? element(settings, ["Done"], timeout: 1) { try tap(settings, done); Thread.sleep(forTimeInterval: 1); return }
-      guard let next = try? element(settings, ["Next"], timeout: 1) else { return }
-      try tap(settings, next); Thread.sleep(forTimeInterval: 1)
+      if let done = try? element(settings, ["Done"], timeout: 2) { try tap(settings, done); Thread.sleep(forTimeInterval: 1); return }
+      if let next = try? element(settings, ["Next"], timeout: 2) { try tap(settings, next); Thread.sleep(forTimeInterval: 1); continue }
+      // Only the modal sheet has Cancel; leaving it uncommitted would silently drop the edit.
+      guard (try? element(settings, ["Cancel"], timeout: 1)) == nil else { throw failure("Focus sheet shows neither Next nor Done") }
+      return
     }
     throw failure("Focus sheet did not commit")
   }
