@@ -18,7 +18,7 @@ PRODUCT_CHECK=legacy-build-validation
 source scripts/sim/sim.sh
 limit() { sim_limit "$@"; }
 cleanup_simulator() {
-  sim_cleanup || { : > "$SIM_STATE.failure"; return 1; }
+  sim_cleanup --timeout 60 || { : > "$SIM_STATE.failure"; return 1; }
   UDID=""
 }
 read_launch_environment() {

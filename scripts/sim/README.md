@@ -109,6 +109,8 @@ LiveKit's existing per-command status files also carry the bound and elapsed tim
 These observations do not change deadlines, retry eligibility or acceptance.
 Elapsed time includes executor teardown and recording overhead; it is not a
 product checkpoint clock or a successful completion time for a timed-out call.
+Legacy cleanup uses an explicit 60-second bound for shutdown and delete, including
+its always-step reconciliation; other callers retain the 30-second default.
 
 Legacy failure diagnostics are bounded observations before owned-device deletion;
 they may be unavailable and do not establish a startup cause or fix. The original

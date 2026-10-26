@@ -434,6 +434,37 @@ cleanup_simulator
         fixture.cli('cleanup', fixture.state)
         self.assertEqual(fixture.inventory(), [])
 
+    def test_legacy_cleanup_allows_slow_teardown_without_replaying_a_journey(self):
+        fixture = self.fixture()
+        # Scale the real CLI deadline and native delay down for a host-only
+        # regression: the old 30s default expires, the explicit 60s bound fits.
+        python = fixture.root / 'bin/python3'
+        shim = python.read_text().replace(
+            "if arguments[0] == 'scripts/sim/paths.py':",
+            """if arguments[0].endswith('/sim.py') and arguments[1] == 'cleanup':
+    if '--timeout' in arguments:
+        index = arguments.index('--timeout') + 1
+        assert arguments[index] == '60', arguments
+        arguments[index] = '.6'
+    else:
+        arguments += ['--timeout', '.1']
+if arguments[0] == 'scripts/sim/paths.py':""")
+        python.write_text(shim)
+        native = fixture.root / 'bin/xcrun'
+        native.write_text(native.read_text().replace(
+            "if action == 'timeout': time.sleep(30)",
+            "if step in ('shutdown', 'delete'): time.sleep(.3)\nif action == 'timeout': time.sleep(30)"))
+        source = (ROOT / 'discovery/run_audio_lifecycle_legacy.sh').read_text()
+        functions = source[source.index('limit() {'):source.index('python3 - "$SDK_M1_CONTRACT_BUILD"')]
+        result = self.run_shell(fixture, self.prefix(fixture) + "\nINHERITED_DYLD=''\n" + functions + '''
+UDID=$(limit 2 xcrun simctl create legacy-host device runtime)
+cleanup_simulator
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([row[0] for row in fixture.calls()], ['create', 'shutdown', 'delete'])
+        self.assertFalse(json.loads(fixture.state.read_text())['owned'])
+        self.assertFalse((fixture.root / 'supervisors.jsonl').exists())
+
 
 if __name__ == '__main__':
     unittest.main()
