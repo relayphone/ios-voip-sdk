@@ -18,6 +18,7 @@ BUNDLE = 'dev.iosvoipsdk.m1contracts'
 CASES = ('guard', 'unhandled-accept', 'unhandled-fail', 'duplicate-wrapper', 'media-reentrancy', 'audio-lifecycle')
 OWN_FILES = ('discovery/probe/sdk_m1_contracts.swift', 'discovery/build_sdk_m1_contracts.sh',
              'discovery/run_audio_lifecycle_legacy.sh', 'scripts/sim/sim.py', 'scripts/sim/sim.sh', 'scripts/sim/paths.py',
+             'scripts/sim/legacy_diagnostics.py',
              'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
              'discovery/probe/Info.plist', 'discovery/run_scenario.py', 'discovery/sdk_m0_conformance.py',
              'discovery/sdk_m2_audio_lifecycle.py', 'discovery/check_sdk_m2_audio_lifecycle.py',

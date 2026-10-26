@@ -4,11 +4,13 @@ import CryptoKit
 import Foundation
 @preconcurrency import LiveCommunicationKit
 import SwiftUI
+import UIKit
 
 @MainActor
 private enum ContractTrace {
   static let start = ProcessInfo.processInfo.systemUptime
   static var sequence = 0
+  private static var phaseSequence = 0
   #if DEBUG && targetEnvironment(simulator)
   static var platformDeadlines: [String: Int] = [:]
   #endif
@@ -23,6 +25,21 @@ private enum ContractTrace {
       "bundleID": Bundle.main.bundleIdentifier ?? ""]) { _, actual in actual }
     if let data = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) {
       FileHandle.standardError.write(Data("PROBE ".utf8) + data + Data("\n".utf8))
+    }
+  }
+  // Diagnostic-only prefix and sequence: these rows cannot replace a PROBE
+  // launch/result or change the acceptance stream's app.entry -> launch prefix.
+  static func phase(_ phase: String, byteCount: Int? = nil) {
+    phaseSequence += 1
+    let env = ProcessInfo.processInfo.environment
+    var row: [String: Any] = ["phase": phase, "sequence": phaseSequence,
+      "main": Thread.isMainThread, "t_ms": Int((ProcessInfo.processInfo.systemUptime - start) * 1000),
+      "wallTimeMS": Int(Date().timeIntervalSince1970 * 1000), "pid": Int(getpid()),
+      "runID": env["CKSIM_RUN_ID"] ?? "", "simulatorID": env["SIMULATOR_UDID"] ?? "",
+      "bundleID": Bundle.main.bundleIdentifier ?? ""]
+    if let byteCount { row["byteCount"] = byteCount }
+    if let data = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) {
+      FileHandle.standardError.write(Data("PROBE_PHASE ".utf8) + data + Data("\n".utf8))
     }
   }
 }
@@ -203,6 +220,7 @@ private final class SDKM1ContractsProbe {
   }
 
   func run() async {
+    ContractTrace.phase("run.enter")
     #if DEBUG && targetEnvironment(simulator)
     // This fixture owns synchronous trace I/O; its overhead is part of the
     // measured Debug timeline. The SDK sink only passes scalar observations.
@@ -217,11 +235,16 @@ private final class SDKM1ContractsProbe {
     defer { ConversationActionCoordinator.diagnosticSink = nil }
     #endif
     let mode = ProcessInfo.processInfo.environment["SDK_M1_CONTRACT_CASE"] ?? ""
+    ContractTrace.phase("executable.read.begin")
     let executable = (try? Data(contentsOf: Bundle.main.executableURL!)) ?? Data()
+    ContractTrace.phase("executable.read.end", byteCount: executable.count)
     let inserted = (ProcessInfo.processInfo.environment["DYLD_INSERT_LIBRARIES"] ?? "").split(separator: ":")
     let injected = inserted.contains { ["CKSimRuntime.dylib", "CKSimLoader.dylib"].contains(URL(fileURLWithPath: String($0)).lastPathComponent) }
+    ContractTrace.phase("executable.hash.begin")
+    let executableSHA256 = SHA256.hash(data: executable).map { String(format: "%02x", $0) }.joined()
+    ContractTrace.phase("executable.hash.end")
     ContractTrace.log("launch", ["traceVersion": 2, "mode": "sdk-m1-contracts", "case": mode,
-      "executableSHA256": SHA256.hash(data: executable).map { String(format: "%02x", $0) }.joined(),
+      "executableSHA256": executableSHA256,
       "runtimeInjectionPresent": injected, "simulatorOS": UIDevice.current.systemVersion])
     let active = SimulatorSupport.activateIfNeeded()
     ContractTrace.log("contract.activation", ["active": active])
@@ -450,14 +473,27 @@ private final class SDKM1ContractsProbe {
   private func finish(_ success: Bool) { ContractTrace.log("contract.result", ["success": success]); ContractTrace.log("done") }
 }
 
+@MainActor
+private final class SDKM1ContractsLaunch: NSObject, UIApplicationDelegate {
+  private static var started = false
+  func application(_ application: UIApplication,
+                   didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+    guard !Self.started else { return true }
+    Self.started = true
+    ContractTrace.phase("app.didFinishLaunching")
+    // Process-owned work must survive view removal and must not await a view's
+    // task. Set the once guard before enqueueing the unstructured main task.
+    Task { @MainActor in
+      ContractTrace.phase("task.enter")
+      await SDKM1ContractsProbe().run()
+    }
+    return true
+  }
+}
+
 @main
 private struct SDKM1ContractsApp: App {
-  @State private var started = false
+  @UIApplicationDelegateAdaptor(SDKM1ContractsLaunch.self) private var launchDelegate
   init() { ContractTrace.log("app.entry") }
-  var body: some Scene {
-    WindowGroup { Text("M1 native contracts").task {
-      guard !started else { return }; started = true
-      await SDKM1ContractsProbe().run()
-    } }
-  }
+  var body: some Scene { WindowGroup { Text("M1 native contracts") } }
 }

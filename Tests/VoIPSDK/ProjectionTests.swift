@@ -4,15 +4,15 @@ import Foundation
 struct ProjectionTests {
   @MainActor static func main() async throws {
     let duplicate = NSError(domain: "com.apple.CallKit.error.incomingcall", code: 2)
-    precondition(IncomingReportErrors.isAlreadyReported(duplicate))
+    precondition(ConversationSystemErrors.isAlreadyReported(duplicate))
     let wrapped = NSError(domain: "com.apple.LiveCommunicationKit", code: 0,
       userInfo: [NSUnderlyingErrorKey: duplicate])
-    precondition(IncomingReportErrors.isAlreadyReported(wrapped), "LCK may wrap the measured incoming error")
-    precondition(!IncomingReportErrors.isAlreadyReported(NSError(domain: duplicate.domain, code: 3)))
-    precondition(!IncomingReportErrors.isAlreadyReported(NSError(domain: "lookalike." + duplicate.domain, code: 2)))
+    precondition(ConversationSystemErrors.isAlreadyReported(wrapped), "LCK may wrap the measured incoming error")
+    precondition(!ConversationSystemErrors.isAlreadyReported(NSError(domain: duplicate.domain, code: 3)))
+    precondition(!ConversationSystemErrors.isAlreadyReported(NSError(domain: "lookalike." + duplicate.domain, code: 2)))
     var deep = duplicate
     for _ in 0..<4 { deep = NSError(domain: "wrapper", code: 0, userInfo: [NSUnderlyingErrorKey: deep]) }
-    precondition(!IncomingReportErrors.isAlreadyReported(deep), "Error traversal remains bounded")
+    precondition(!ConversationSystemErrors.isAlreadyReported(deep), "Error traversal remains bounded")
     let id = UUID()
     let terminal = SystemConversation()
     var buffer = TerminalConversationProjection<SystemConversation>()

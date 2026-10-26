@@ -5,6 +5,7 @@ import Foundation
 /// deliberately separate; this does not measure LCK scheduling or device use.
 @MainActor private final class ReportControls {
   var endCalls: [UUID] = []
+  var startCalls: [UUID] = []
   var held: [UUID: CheckedContinuation<Void, any Error>] = [:]
   var hold: Set<UUID> = []
   var reject: Set<UUID> = []
@@ -23,7 +24,7 @@ import Foundation
       }
     }
     defer { client.removeStateObserver(observer) }
-    client.setConversationHandler(.init(join: { _, _ in }, start: { _, _ in }, end: { call, context in
+    client.setConversationHandler(.init(join: { _, _ in }, start: { call, _ in self.startCalls.append(call.id) }, end: { call, context in
       precondition(context.origin == (self.systemEndActions.contains(context.actionID) ? .system : .app))
       self.endCalls.append(call.id)
       if self.reject.contains(call.id) { throw PlatformFailure.rejected }
@@ -47,6 +48,30 @@ import Foundation
     func remove(_ id: UUID) {
       manager.conversations.removeAll { $0.uuid == id }
       client.incomingIntakeDidChange()
+    }
+
+    let capacity = NSError(domain: "com.apple.CallKit.error.requesttransaction", code: 7)
+    let wrappedCapacity = NSError(domain: "LCK-wrapper", code: 0, userInfo: [NSUnderlyingErrorKey: capacity])
+    var tooDeep = capacity
+    for _ in 0..<4 { tooDeep = NSError(domain: "wrapper", code: 0, userInfo: [NSUnderlyingErrorKey: tooDeep]) }
+    for (error, isCapacity) in [(capacity, true), (wrappedCapacity, true),
+      (NSError(domain: "com.apple.CallKit.error.incomingcall", code: 7), false),
+      (NSError(domain: "com.apple.CallKit.error.requesttransaction", code: 6), false),
+      (NSError(domain: "foreign", code: 7), false), (tooDeep, false)] {
+      let before = client.snapshots.map(\.id)
+      manager.performError = error
+      do {
+        _ = try await client.startConversation(to: .init(id: "capacity-control"))
+        preconditionFailure("A refused request cannot start a conversation")
+      } catch let actual {
+        if isCapacity {
+          precondition((actual as? ConversationClientError) == .atCapacity,
+            "Only requesttransaction/7 must become the typed capacity error")
+        } else { precondition((actual as NSError) === error, "Other platform errors must remain unchanged") }
+      }
+      await Task.yield()
+      precondition(client.snapshots.map(\.id) == before && startCalls.isEmpty,
+        "Rejected requests must roll back provisional state without invoking a handler")
     }
 
     let localPayload = payload("local")

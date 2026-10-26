@@ -220,7 +220,7 @@ def prepare(out, sources):
     schedule = braced(push, '  private nonisolated func scheduleProjection(')
     transport = sources['Sources/VoIPSDK/IncomingReportTransport.swift'].decode()
     report_errors = braced(sources['Sources/VoIPSDK/ConversationClient.swift'].decode(),
-                          'enum IncomingReportErrors')
+                          'enum ConversationSystemErrors')
     lines = transport.splitlines(keepends=True)
     require(lines[0].strip() == '#if canImport(LiveCommunicationKit) && (os(iOS) || os(watchOS))' and
             lines[-1].strip() == '#endif', 'unexpected transport platform wrapper')

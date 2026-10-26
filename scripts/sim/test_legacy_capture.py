@@ -48,12 +48,12 @@ sys.exit(142)
         xcrun.chmod(0o755)
         source = (ROOT / 'discovery/run_audio_lifecycle_legacy.sh').read_text()
         limit = source[source.index('limit() {'):source.index('\ncleanup_simulator()')]
-        start = source.index('container=$(limit 30 ')
+        start = source.index('container=$(')
         block = source[start:source.index('\ncleanup_simulator\n', start)]
-        script = 'set -euo pipefail\n' + limit + '\n' + '\n'.join(
+        script = 'set -euo pipefail\nsource scripts/sim/sim.sh\n' + limit + '\n' + '\n'.join(
             name + '=' + shlex.quote(str(value)) for name, value in dict(
                 OUT=capture['trace'].parent, NAME=capture['trace'].stem, UDID=capture['simulator'],
-                RUN_ID=capture['run_id'], BUNDLE=capture['bundle']).items()) + '\n' + block
+                RUN_ID=capture['run_id'], BUNDLE=capture['bundle'], SIM_STATE=root/'owned.json').items()) + '\n' + block
         rpc = root / 'native-rpc-attempt'
         result = subprocess.run(['/bin/bash', '-c', script], cwd=ROOT, capture_output=True, text=True,
             timeout=10, env={**os.environ, 'PATH': str(binary) + os.pathsep + os.environ.get('PATH', ''),

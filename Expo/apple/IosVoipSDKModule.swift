@@ -122,22 +122,18 @@ public final class IosVoipSDKModule: Module {
   }
 
   private static func rejectArguments(_ promise: Promise) {
-    promise.reject("invalid_arguments", "The conversation command has invalid arguments.")
+    let rejection = BridgeJSON.rejection(BridgeError.invalidArguments)
+    promise.reject(rejection.code, rejection.message)
   }
 
   private static func respond(_ promise: Promise,
                               _ operation: @escaping @MainActor @Sendable () async throws -> Any?) {
     Task { @MainActor in
       do { promise.resolve(try await operation()) }
-      catch BridgeError.invalidArguments { rejectArguments(promise) }
-      catch ConversationClientError.unknownConversation { promise.reject("unknown_conversation", "The conversation is no longer active.") }
-      catch ConversationClientError.unsupported { promise.reject("unsupported", "This conversation operation is unsupported.") }
-      catch ConversationClientError.invalidPayload { rejectArguments(promise) }
-      catch ConversationClientError.invalidDigits { rejectArguments(promise) }
-      catch ConversationClientError.duplicateSDKLinkage {
-        promise.reject("duplicate_sdk_linkage", "Link one VoIP SDK product in this process; both SwiftPM and the Expo pod were loaded.")
+      catch {
+        let rejection = BridgeJSON.rejection(error)
+        promise.reject(rejection.code, rejection.message)
       }
-      catch { promise.reject("conversation", "The system could not complete the conversation operation.") }
     }
   }
 }

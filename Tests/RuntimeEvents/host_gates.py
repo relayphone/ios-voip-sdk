@@ -34,10 +34,21 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--multicall', action='store_true')
+    parser.add_argument('--accepted-main', required=True, help='Exact main commit included in this composition')
     parser.add_argument('--timeout', type=float, default=240)
     args = parser.parse_args()
     if not math.isfinite(args.timeout) or not 0 < args.timeout <= 600:
         parser.error('--timeout must be positive, finite and at most 600 seconds')
+    accepted = subprocess.check_output(['git', 'rev-parse', '--verify', args.accepted_main + '^{commit}'],
+                                       cwd=ROOT, text=True, timeout=10).strip()
+    anchors = ['HEAD']
+    pending = subprocess.run(['git', 'rev-parse', '--verify', 'MERGE_HEAD'], cwd=ROOT,
+                             capture_output=True, text=True, timeout=10)
+    if pending.returncode == 0:
+        anchors.append(pending.stdout.strip())
+    if not any(subprocess.run(['git', 'merge-base', '--is-ancestor', accepted, anchor],
+                              cwd=ROOT, timeout=10).returncode == 0 for anchor in anchors):
+        parser.error('--accepted-main must be included in HEAD or the pending merge')
     args.out.mkdir(parents=True, exist_ok=False)
     commands = [(name, [sys.executable, *parts]) for name, parts in GATES]
     commands += [('sdk-core', ['bash', 'Tests/VoIPSDK/run.sh']),
@@ -70,7 +81,7 @@ def main():
     unchanged = source_digest() == before
     success = unchanged and len(results) == len(commands) and all(row['success'] for row in results)
     summary = args.out / 'summary.json'
-    summary.write_text(json.dumps(dict(success=success, head=head, sourceUnchanged=unchanged,
+    summary.write_text(json.dumps(dict(success=success, head=head, acceptedMainSHA=accepted, sourceUnchanged=unchanged,
                                       sourceDiffSHA256=before, gates=results), indent=2) + '\n')
     print(json.dumps(dict(success=success, summary=str(summary))))
     return 0 if success else 1
