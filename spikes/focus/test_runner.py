@@ -5,12 +5,19 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-from runner import Run, audio_control_eligible, correlate, matching_activity, needs_repeat_fence, repeat_cooldown, surface_windows
+from runner import Run, audio_control_eligible, correlate, matching_activity, needs_repeat_fence, repeat_cooldown, reports_complete, surface_windows
 
 HERE = Path(__file__).resolve().parent
 
 
 class DryRunTests(unittest.TestCase):
+    def test_each_repeat_invitation_requires_one_matching_report(self):
+        first = {"invitationID": "A", "outcome": "filtered"}
+        second = {"invitationID": "B", "outcome": "reported"}
+        self.assertTrue(reports_complete([first, second], ["a", "b"]))
+        self.assertFalse(reports_complete([first, first], ["a", "b"]))
+        self.assertFalse(reports_complete([first], ["a", "b"]))
+
     def test_repeat_fence_applies_before_pairs_and_after_prior_pairs(self):
         self.assertTrue(needs_repeat_fence("C02", {"repeatPair": False}))
         self.assertTrue(needs_repeat_fence("F13", {"repeatPair": True}))
@@ -19,17 +26,21 @@ class DryRunTests(unittest.TestCase):
 
     def test_repeat_visual_windows_distinguish_second_presentation(self):
         events = [
-            {"event": "surface.transition", "surface": "banner", "visible": True, "observedAt": 105.0},
-            {"event": "surface.transition", "surface": "banner", "visible": False, "observedAt": 130.0},
-            {"event": "surface.transition", "surface": "banner", "visible": True, "observedAt": 171.0},
+            {"event": "surface.transition", "surface": "banner", "visible": True, "uptimeMs": 105000},
+            {"event": "surface.transition", "surface": "banner", "visible": False, "uptimeMs": 130000},
+            {"event": "surface.transition", "surface": "banner", "visible": True, "uptimeMs": 171000},
         ]
-        windows = surface_windows(events, [("first", 100.0), ("second", 169.0)])
-        self.assertEqual(windows[0]["bannerFirstNewPresentationAt"], 105.0)
-        self.assertEqual(windows[1]["bannerFirstNewPresentationAt"], 171.0)
+        observation = {"startUptimeMs": 90000, "endUptimeMs": 190000}
+        windows = surface_windows(events, [("first", 100000), ("second", 169000)], observation)
+        self.assertEqual(windows[0]["bannerFirstNewPresentationUptimeMs"], 105000)
+        self.assertEqual(windows[1]["bannerFirstNewPresentationUptimeMs"], 171000)
+        self.assertTrue(windows[1]["observationQualified"])
         self.assertFalse(windows[1]["bannerVisibleAtStart"])
-        carry = surface_windows(events[:1], [("first", 100.0), ("second", 169.0)])
+        carry = surface_windows(events[:1], [("first", 100000), ("second", 169000)], observation)
         self.assertTrue(carry[1]["bannerVisibleAtStart"])
-        self.assertIsNone(carry[1]["bannerFirstNewPresentationAt"])
+        self.assertIsNone(carry[1]["bannerFirstNewPresentationUptimeMs"])
+        short = surface_windows(events, [("first", 100000), ("second", 169000)], {"startUptimeMs": 90000, "endUptimeMs": 180000})
+        self.assertFalse(short[1]["observationQualified"])
 
     def test_repeat_pair_waits_until_prior_attempt_is_outside_three_minutes(self):
         self.assertEqual(repeat_cooldown(1000, 1000), 181)

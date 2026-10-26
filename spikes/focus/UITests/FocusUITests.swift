@@ -511,7 +511,8 @@ final class FocusUITests: XCTestCase {
     home()
     try JSONSerialization.data(withJSONObject: ["id": ProcessInfo.processInfo.environment["FOCUS_OBSERVATION_ID"] ?? "none"])
       .write(to: documents.appendingPathComponent("focus-ui-ready.json"), options: .atomic)
-    let end = Date().addingTimeInterval(min(max(duration, 1), 90))
+    let startedUptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
+    let end = Date().addingTimeInterval(min(max(duration, 1), 240))
     var banner = false, fullScreen = false
     var bannerAt: Double?, screenAt: Double?
     var previousBanner = false, previousScreen = false
@@ -522,8 +523,9 @@ final class FocusUITests: XCTestCase {
       }
       let currentScreen = callUI.state == .runningForeground && callUI.otherElements["InCallRootView"].exists
       let now = Date().timeIntervalSince1970
-      if currentBanner != previousBanner { events.append(["event": "surface.transition", "surface": "banner", "visible": currentBanner, "observedAt": now]) }
-      if currentScreen != previousScreen { events.append(["event": "surface.transition", "surface": "callScreen", "visible": currentScreen, "observedAt": now]) }
+      let uptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
+      if currentBanner != previousBanner { events.append(["event": "surface.transition", "surface": "banner", "visible": currentBanner, "observedAt": now, "uptimeMs": uptimeMs]) }
+      if currentScreen != previousScreen { events.append(["event": "surface.transition", "surface": "callScreen", "visible": currentScreen, "observedAt": now, "uptimeMs": uptimeMs]) }
       previousBanner = currentBanner; previousScreen = currentScreen
       banner = banner || currentBanner; fullScreen = fullScreen || currentScreen
       if banner && bannerAt == nil { bannerAt = Date().timeIntervalSince1970 }
@@ -532,7 +534,8 @@ final class FocusUITests: XCTestCase {
     } while Date() < end
     events.append(["event": "call.observed", "banner": banner, "callScreen": fullScreen,
       "bannerAt": bannerAt.map { $0 as Any } ?? NSNull(), "callScreenAt": screenAt.map { $0 as Any } ?? NSNull(),
-      "qualification": "requires-C00", "observedAt": Date().timeIntervalSince1970])
+      "qualification": "requires-C00", "observedAt": Date().timeIntervalSince1970,
+      "startUptimeMs": startedUptimeMs, "endUptimeMs": Int(ProcessInfo.processInfo.systemUptime * 1000)])
   }
   // Read-only accessibility trees for selector work, written to the runner's Documents.
   func dump(_ name: String) throws {
@@ -604,7 +607,7 @@ final class FocusUITests: XCTestCase {
       } else if p[0] == "dump" {
         guard p.count == 2 else { throw failure("Invalid dump") }
       } else if p[0] == "observe" {
-        guard p.count == 2, let n = Double(p[1]), n.isFinite, (1...90).contains(n) else { throw failure("Invalid observation duration") }
+        guard p.count == 2, let n = Double(p[1]), n.isFinite, (1...240).contains(n) else { throw failure("Invalid observation duration") }
       } else {
         guard p.count == 1 && ["setup", "restore-all", "sample", "launch", "home", "terminate", "activity-consent", "activity-check", "lock"].contains(p[0]) else { throw failure("Unknown action") }
       }

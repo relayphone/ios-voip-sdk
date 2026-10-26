@@ -22,6 +22,16 @@ def correlate(traces, invitations):
     return [event for event in traces if str(event.get("invitationID", "")).lower() in ids]
 
 
+def reports_complete(reports, invitations):
+    counts = {value.lower(): 0 for value in invitations}
+    for event in reports:
+        key = str(event.get("invitationID", "")).lower()
+        if key not in counts:
+            return False
+        counts[key] += 1
+    return all(value == 1 for value in counts.values())
+
+
 def audio_control_eligible(result):
     reports = result.get("reports", [])
     return result.get("status") == "recorded" and result.get("visualNegativeQualified") is True and len(reports) == 1 and reports[0].get("outcome") == "reported"
@@ -36,18 +46,19 @@ def needs_repeat_fence(base_row, previous):
     return base_row == "C02" or previous.get("repeatPair") is not False
 
 
-def surface_windows(events, sent):
+def surface_windows(events, received, observation):
     transitions = [e for e in events if e.get("event") == "surface.transition"]
     windows = []
-    for index, (invitation, start) in enumerate(sent):
-        end = sent[index + 1][1] if index + 1 < len(sent) else float("inf")
-        item = {"invitationID": invitation, "sendAt": start}
+    for index, (invitation, start) in enumerate(received):
+        end = min(received[index + 1][1], observation["endUptimeMs"]) if index + 1 < len(received) else observation["endUptimeMs"]
+        item = {"invitationID": invitation, "pushReceivedUptimeMs": start,
+                "observationQualified": observation["startUptimeMs"] <= start and end - start >= 15000}
         for surface in ["banner", "callScreen"]:
-            prior = [e for e in transitions if e.get("surface") == surface and e["observedAt"] < start]
-            rises = [e["observedAt"] for e in transitions if e.get("surface") == surface
-                     and e.get("visible") is True and start <= e["observedAt"] < end]
+            prior = [e for e in transitions if e.get("surface") == surface and e["uptimeMs"] < start]
+            rises = [e["uptimeMs"] for e in transitions if e.get("surface") == surface
+                     and e.get("visible") is True and start <= e["uptimeMs"] < end]
             item[surface + "VisibleAtStart"] = bool(prior and prior[-1].get("visible"))
-            item[surface + "FirstNewPresentationAt"] = min(rises) if rises else None
+            item[surface + "FirstNewPresentationUptimeMs"] = min(rises) if rises else None
         windows.append(item)
     return windows
 
@@ -343,7 +354,7 @@ class Run:
                 result["systemSettings"] = json.loads((self.folder / "ui-settings.json").read_text())["events"]
                 time.sleep(45)  # No XCUITest session remains to keep the phone awake.
             elif p["sendVoIP"]:
-                observer = self.ui(["observe:90" if p["baseRow"] == "C02" else "observe:60"], background=True)
+                observer = self.ui(["observe:240" if p["baseRow"] == "C02" else "observe:60"], background=True)
                 ready = self.folder / "ready.json"; deadline = time.monotonic() + 120
                 while time.monotonic() < deadline:
                     if observer.poll() is not None:
@@ -374,13 +385,12 @@ class Run:
             elif not observer:
                 time.sleep(35)
             if observer:
-                if observer.wait(timeout=180):
+                if observer.wait(timeout=300):
                     raise RuntimeError("UI observer failed")
                 self.recover(); self.copy("focus-ui-result.json", self.folder / "ui.json", test=True)
                 ui = json.loads((self.folder / "ui.json").read_text())
                 evidence = [e for e in ui["events"] if e.get("event") == "call.observed"]
                 result["visual"] = evidence
-                result["visualByInvitation"] = surface_windows(ui["events"], self.sent_times)
                 result["visualNegativeQualified"] = self.qualified(self.work / "visual-calibration.json")
             self.copy("focus.jsonl", self.folder / "trace.jsonl")
             traces = [json.loads(line) for line in (self.folder / "trace.jsonl").read_text().splitlines() if line]
@@ -388,9 +398,18 @@ class Run:
             received = [e for e in matching if e.get("event") == "push.received"]
             if (p["sendVoIP"] and len(received) != len(self.invitations)) or any(e.get("provider") != p["provider"] or e.get("handleType") != p["handleType"] or e.get("handleValue") != p["callerValue"] for e in received):
                 raise RuntimeError("Provider or handle mismatch in device trace")
+            if observer:
+                by_id = {str(e["invitationID"]).lower(): e["monoMs"] for e in received}
+                if len(result["visual"]) != 1 or any(value.lower() not in by_id for value in self.invitations):
+                    raise RuntimeError("Missing per-invitation observation boundary")
+                device_receipts = [(value, by_id[value.lower()]) for value in self.invitations]
+                result["visualByInvitation"] = surface_windows(ui["events"], device_receipts, result["visual"][0])
+                if p["baseRow"] == "C02":
+                    result["repeatIntervalMs"] = device_receipts[1][1] - device_receipts[0][1]
             result["invitationIDs"] = self.invitations
             result["reports"] = [e for e in matching if e["event"] == "report.result"]
-            if p["row"] == "C00" and len(result["reports"]) == 1 and result["reports"][0].get("outcome") == "reported" and any(e["banner"] or e["callScreen"] for e in result.get("visual", [])):
+            first_window = result.get("visualByInvitation", [{}])[0]
+            if p["row"] == "C00" and len(result["reports"]) == 1 and result["reports"][0].get("outcome") == "reported" and first_window.get("observationQualified") and (first_window.get("bannerFirstNewPresentationUptimeMs") is not None or first_window.get("callScreenFirstNewPresentationUptimeMs") is not None):
                 write(self.work / "visual-calibration.json", {"positive": True, "binding": self.binding, "createdAt": time.time()})
                 result["visualNegativeQualified"] = True
             if p["locked"]:
@@ -407,7 +426,11 @@ class Run:
                 activity_id = json.loads((self.folder / "activity-token.json").read_text())["activityID"]
                 result["activityContentEvents"] = [e for e in traces if e["event"].startswith("activity.") and e.get("runID") == self.run_id and e.get("activityID") == activity_id]
                 result["coverage"] = "Single transport/presentation subcase, not full cadence/lock/privacy qualification"
-            result["status"] = "recorded" if not p["sendVoIP"] or len(result["reports"]) == len(self.invitations) else "incomplete-report-evidence"
+            result["status"] = "recorded" if not p["sendVoIP"] or reports_complete(result["reports"], self.invitations) else "incomplete-report-evidence"
+            if observer and any(not window["observationQualified"] for window in result["visualByInvitation"]):
+                result["status"] = "incomplete-observation-window"
+            if p["baseRow"] == "C02" and (not observer or not 0 < result["repeatIntervalMs"] <= 180000):
+                result["status"] = "invalid-or-unmeasured-repeat-interval"
             return result
         finally:
             for process in [observer, audio]:
