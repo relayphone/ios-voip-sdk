@@ -21,6 +21,11 @@ def correlate(traces, invitations):
     return [event for event in traces if str(event.get("invitationID", "")).lower() in ids]
 
 
+def audio_control_eligible(result):
+    reports = result.get("reports", [])
+    return result.get("status") == "recorded" and result.get("visualNegativeQualified") is True and len(reports) == 1 and reports[0].get("outcome") == "reported"
+
+
 def plan(row, locked=False, listen=False):
     p = dict(row=row, focus=True, app=False, person=False, cn=False, sendVoIP=True,
              activity=False, blocked=None, locked=locked, listen=listen)
@@ -46,6 +51,10 @@ def plan(row, locked=False, listen=False):
         p["blocked"] = "Special policy/identity/fault or unsupported hardware control requires an additional adapter"
     else:
         raise ValueError("Unknown row; use F01..F16, C00..C11, L01..L16, T01..T06 or restore-all")
+    if p["blocked"]:
+        p["sendVoIP"] = False
+        p["steps"] = ["automatic skip; no device or push: " + p["blocked"]]
+        return p
     p["steps"] = ["verify signed test products + explicit FOCUS_DEVICE; recover journal",
                   "apply owned Focus/App/People/Calls settings through guarded XCUITest",
                   "arm Documents/focus.json; launch probe; fetch fresh token privately"]
@@ -305,13 +314,21 @@ class Run:
             if (self.folder / "audio.json").exists():
                 data = json.loads((self.folder / "audio.json").read_text()); result["audio"] = data
                 if p["row"] == "C00":
-                    data.update(binding=self.binding, createdAt=time.time())
-                    write(self.work / "audio-calibration.json", data)
+                    data["calibrationValid"] = data.get("calibrationValid") is True and audio_control_eligible(result)
+                    if data["calibrationValid"]:
+                        data.update(binding=self.binding, createdAt=time.time())
+                        write(self.work / "audio-calibration.json", data)
             if p["row"] != "restore-all":
                 try:
                     self.recover(); self.restore(); result["restored"] = True
                 except Exception:
                     result["restored"] = False; result["status"] = "restore-failed-use-restore-all"
+                    if p["row"] == "C00":
+                        (self.work / "visual-calibration.json").unlink(missing_ok=True)
+                        (self.work / "audio-calibration.json").unlink(missing_ok=True)
+                        result["visualNegativeQualified"] = False
+                        if "audio" in result:
+                            result["audio"]["calibrationValid"] = False
             write(self.folder / "result.json", result)
             print(json.dumps({"row": p["row"], "status": result["status"], "result": str(self.folder / "result.json")}))
 

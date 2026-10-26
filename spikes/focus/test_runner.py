@@ -5,12 +5,19 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-from runner import Run, correlate
+from runner import Run, audio_control_eligible, correlate
 
 HERE = Path(__file__).resolve().parent
 
 
 class DryRunTests(unittest.TestCase):
+    def test_failed_positive_control_cannot_qualify_audio(self):
+        valid = {"status": "recorded", "visualNegativeQualified": True, "reports": [{"outcome": "reported"}]}
+        self.assertTrue(audio_control_eligible(valid))
+        self.assertFalse(audio_control_eligible({**valid, "status": "unqualified"}))
+        self.assertFalse(audio_control_eligible({**valid, "visualNegativeQualified": False}))
+        self.assertFalse(audio_control_eligible({**valid, "reports": []}))
+
     def test_calibration_must_be_positive_recent_and_from_same_device_build(self):
         run = Run.__new__(Run)
         run.binding = {"device": "fixture-phone", "build": "fixture-build"}
