@@ -40,6 +40,7 @@ class SelectionTests(unittest.TestCase):
             ('Inspector/App.swift', False, True, False),
             ('Sources/Engine/RuntimeEngine.swift', True, True, False),
             ('Sources/VoIPSDK/ConversationClient.swift', True, False, False),
+            ('docs/research/callkit-simulator-probe/livecommunicationkit/multicall/Probe.swift', True, True, False),
             ('.github/workflows/sdk-m0.yml', True, False, False),
             ('.github/workflows/runtime-m4.yml', False, True, False),
             ('scripts/sim/sim.py', True, True, True),

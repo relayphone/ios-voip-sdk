@@ -49,6 +49,7 @@ def select(paths, full=False):
             sdk = True
         elif path.startswith('docs/research/'):
             sdk = True
+            runtime |= path.startswith('docs/research/callkit-simulator-probe/livecommunicationkit/multicall/')
         else:
             # New executable/configuration inputs get conservative critical checks.
             sdk = runtime = helper = True

@@ -33,3 +33,5 @@ full policy selects every dependency, so main cannot pass through PR skips.
 Only standard `ubuntu-latest`, `xcode-27` and `macos-26` runners are used. The journey
 matrix permits five parallel workers; producer dependencies give shared builds
 priority over longer independent consumers. Larger runners are not used.
+
+Main concurrency groups use the immutable commit SHA, preserving every pending main run. Pull requests retain a group per PR ref and cancel superseded runs.
