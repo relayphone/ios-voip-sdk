@@ -175,18 +175,21 @@ class ProbeTests(unittest.TestCase):
 
     def test_slow_foreground_activation_uses_available_consumer_budget(self):
         activate = RUNNER['activate_existing']
-        self.elapsed[0] = 11.7  # Hosted failure had 13.3 s left in the 25 s lifetime.
-        def delayed_launch(*args, timeout):
-            if timeout < 6:
-                raise RuntimeError('launch timed out before foreground activation')
-            self.elapsed[0] += 6
-            return 'test.fixture: 123'
-        rpc = Mock(side_effect=delayed_launch)
-        with patch.dict(activate.__globals__, time=self.clock, run=rpc):
-            activate('device', 'test.fixture', 123, deadline=25)
-        self.assertEqual(rpc.call_count, 1)
-        self.assertLessEqual(rpc.call_args.kwargs['timeout'], 10)
-        self.assertAlmostEqual(self.elapsed[0], 17.7)
+        for latency in (6, 12):
+            with self.subTest(latency=latency):
+                self.elapsed[0] = 11.7  # 13.3 s remain inside the same 25 s lifetime.
+                def delayed_launch(*args, timeout):
+                    if timeout < latency:
+                        raise RuntimeError('launch timed out before foreground activation')
+                    self.elapsed[0] += latency
+                    return 'test.fixture: 123'
+                rpc = Mock(side_effect=delayed_launch)
+                with patch.dict(activate.__globals__, time=self.clock, run=rpc):
+                    activate('device', 'test.fixture', 123, deadline=25)
+                self.assertEqual(rpc.call_count, 1)
+                self.assertAlmostEqual(rpc.call_args.kwargs['timeout'], 13.3)
+                self.assertAlmostEqual(self.elapsed[0], 11.7 + latency)
+                self.assertLess(self.elapsed[0], 25)
 
     def test_foreground_timeout_does_not_extend_or_retry_the_global_budget(self):
         activate = RUNNER['activate_existing']
@@ -194,6 +197,19 @@ class ProbeTests(unittest.TestCase):
         with patch.dict(activate.__globals__, time=self.clock, run=rpc):
             with self.assertRaisesRegex(RuntimeError, 'launch timed out'):
                 activate('device', 'test.fixture', 123, deadline=2)
+        self.assertEqual(rpc.call_count, 1)
+        self.assertEqual(rpc.call_args.kwargs['timeout'], 2)
+
+    def test_foreground_activation_never_accepts_a_reply_after_the_shared_deadline(self):
+        activate = RUNNER['activate_existing']
+        self.elapsed[0] = 23
+        def late_reply(*args, **kwargs):
+            self.elapsed[0] = 26
+            return 'test.fixture: 123'
+        rpc = Mock(side_effect=late_reply)
+        with patch.dict(activate.__globals__, time=self.clock, run=rpc):
+            with self.assertRaisesRegex(RuntimeError, 'background budget expired'):
+                activate('device', 'test.fixture', 123, deadline=25)
         self.assertEqual(rpc.call_count, 1)
         self.assertEqual(rpc.call_args.kwargs['timeout'], 2)
 
