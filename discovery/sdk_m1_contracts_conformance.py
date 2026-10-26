@@ -218,13 +218,14 @@ def accept_contract(rows, engine, source_root):
     require(abs(deadline - pending['wallTimeMS'] - pending['remainingMS']) <= 2, 'pending deadline sample differs')
     reference = [row for name in REFERENCES for row in load(source_root / Path(name).parent, Path(name).stem)]
     # Device samples measure the platform deadline. The public deadline is the
-    # application policy boundary, 1.5 seconds earlier, including for JS.
-    check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000 + 1.5), deadline_bands(reference))
+    # application policy boundary, 3 seconds earlier to reserve final audio
+    # preparation, including for JS.
+    check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000 + 3), deadline_bands(reference))
     advertised = one(engine, 'action.deadline')
     platform_deadline = advertised.get('deadlineMS')
     require(advertised.get('apiKind') == 'livecommunicationkit' and type(platform_deadline) is int and
             advertised.get('deadlineSeconds') == advertised.get('expirySeconds') == 30 and
-            1000 <= platform_deadline - deadline <= 3500,
+            2500 <= platform_deadline - deadline <= 3500,
             'effective deadline lacks the LCK safety margin or uses provider timing')
     snapshots = [r for r in rows if r['event'] == 'contract.snapshot']
     require(snapshots and all(type(r.get('revision')) is int for r in snapshots) and
@@ -317,7 +318,7 @@ def fail_contract(rows, engine, source_root):
             abs(deadline - pending['wallTimeMS'] - pending['remainingMS']) <= 2 and
             rows.index(owner) < rows.index(incoming) < rows.index(pending), 'invalid fail pending join')
     reference = [row for name in REFERENCES for row in load(source_root / Path(name).parent, Path(name).stem)]
-    check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000 + 1.5), deadline_bands(reference))
+    check_deadline(dict(kind='JoinConversationAction', timeoutIn=pending['remainingMS'] / 1000 + 3), deadline_bands(reference))
     marker = one(engine, 'contract.pendingClock')
     require(marker.get('actionID') == action_id and type(pending.get('clockBeforeMS')) is int and
             0 <= pending['wallTimeMS'] - pending['clockBeforeMS'] <= 25, 'unbound or imprecise fail clock sample')
@@ -337,7 +338,7 @@ def fail_contract(rows, engine, source_root):
             advertised.get('apiKind') == 'livecommunicationkit' and type(platform_deadline) is int and
             advertised.get('provider') == answer['provider'] and
             advertised.get('deadlineSeconds') == advertised.get('expirySeconds') == 30 and
-            1000 <= platform_deadline - deadline <= 3500 and
+            2500 <= platform_deadline - deadline <= 3500 and
             engine.index(answer) < engine.index(advertised) < engine.index(marker) < engine.index(settled) and
             native_wall(settled)[0] >= deadline - 25 and native_wall(settled)[1] < platform_deadline,
             'native failed answer must settle at the effective boundary before platform expiry')
@@ -374,7 +375,7 @@ def fail_contract(rows, engine, source_root):
     phases = ('policy-fire', 'platform-settle-enter', 'platform-settle-return', 'pending-state-published')
     require([r.get('phase') for r in diagnostics] == list(phases), 'missing/reordered fail diagnostics')
     sdk_platform = diagnostics[0].get('platformDeadlineMS')
-    require(type(sdk_platform) is int and abs(sdk_platform - deadline - 1500) <= 1,
+    require(type(sdk_platform) is int and abs(sdk_platform - deadline - 3000) <= 1,
             'fail diagnostic safety margin differs')
     for index, diagnostic in enumerate(diagnostics):
         sample = diagnostic.get('sdkWallTimeMS')

@@ -85,7 +85,7 @@ def fixture(build, capture):
             add('contract.duplicateSnapshot', revision=4, conversations=[])
             add('contract.duplicateObservation', conversationID=CALL, empty=True)
         else:
-            pending = dict(id=ACTION, kind='join', origin='app', deadlineMS=WALL + 28_500)
+            pending = dict(id=ACTION, kind='join', origin='app', deadlineMS=WALL + 27_000)
             def snapshot(status=None, pending=None, at=None, connected=False):
                 calls = [] if status is None else [dict(id=CALL, status=status, hasConnectedAt=connected)]
                 if pending: calls[0]['pending'] = pending
@@ -94,11 +94,11 @@ def fixture(build, capture):
             add('contract.incoming', conversationID=CALL)
             snapshot('ringing', pending=pending)
             sample = add('contract.pending', conversationID=CALL, actionID=ACTION, kind='join', origin='app',
-                         deadlineMS=WALL + 28_500, remainingMS=0, handlerAttached=False, clockBeforeMS=WALL + clock + 1)
+                         deadlineMS=WALL + 27_000, remainingMS=0, handlerAttached=False, clockBeforeMS=WALL + clock + 1)
             sample['remainingMS'] = sample['deadlineMS'] - sample['wallTimeMS']
             add('contract.joinResult', accepted=True)
             if case == 'unhandled-accept':
-                snapshot('connecting', at=28_501)
+                snapshot('connecting', at=27_001)
                 add('contract.joinSettled', joined=True, conversationID=CALL)
                 add('contract.backendConnectedRequested', conversationID=CALL)
                 snapshot('connected', connected=True)
@@ -113,11 +113,11 @@ def fixture(build, capture):
                               sdkWallTimeMS=WALL + at, effectiveDeadlineMS=pending['deadlineMS'],
                               platformDeadlineMS=WALL + 30_000, entryPending=entry, platformPending=platform)
                     return row
-                diagnostic('policy-fire', 28_500, True, True)
-                diagnostic('platform-settle-enter', 28_501, False, True)
-                diagnostic('platform-settle-return', 28_502, False, False)
-                snapshot('ringing', at=28_503)
-                diagnostic('pending-state-published', 28_504, False, False)
+                diagnostic('policy-fire', 27_000, True, True)
+                diagnostic('platform-settle-enter', 27_001, False, True)
+                diagnostic('platform-settle-return', 27_002, False, False)
+                snapshot('ringing', at=27_003)
+                diagnostic('pending-state-published', 27_004, False, False)
                 add('contract.failureObservation', at=30_001, conversationID=CALL, pendingCleared=True,
                     conversationPresent=True, status='ringing')
                 add('contract.fixtureCleanupRequested', conversationID=CALL, reason='failed')
@@ -138,12 +138,12 @@ def fixture(build, capture):
                     provider='provider-1', deadlineMS=WALL + 30_000, deadlineSeconds=30, expirySeconds=30)
             runtime('contract.pendingClock', at=sample['t_ms'], actionID=ACTION)
             if case == 'unhandled-accept':
-                runtime('action.settled', at=28_500, actionID='native-cx-action', fulfilled=True)
-                runtime('call.changed', at=28_501, uuid=CALL, connected=True, ended=False)
-                runtime('report.ended', at=28_510, callUUID=CALL)
-                runtime('call.changed', at=28_511, uuid=CALL, connected=True, ended=True)
+                runtime('action.settled', at=27_000, actionID='native-cx-action', fulfilled=True)
+                runtime('call.changed', at=27_001, uuid=CALL, connected=True, ended=False)
+                runtime('report.ended', at=27_010, callUUID=CALL)
+                runtime('call.changed', at=27_011, uuid=CALL, connected=True, ended=True)
             else:
-                runtime('action.settled', at=28_501, actionID='native-cx-action', fulfilled=False, origin='application')
+                runtime('action.settled', at=27_001, actionID='native-cx-action', fulfilled=False, origin='application')
                 runtime('report.ended', at=30_002, callUUID=CALL, reason=1)
                 runtime('call.changed', at=30_003, uuid=CALL, connected=False, ended=True)
         elif case == 'audio-lifecycle':
@@ -192,12 +192,12 @@ def later_system_end(rows, engine, settle=False):
         return {**template, 'event': name, 't_ms': at, **fields}
     index = next(i for i, r in enumerate(engine) if r['event'] == 'action.settled') + 1
     engine[index:index] = [
-        event('transaction.delivered', 28_502, kinds=['CXEndCallAction'], actionIDs=['native-system-end'],
+        event('transaction.delivered', 27_002, kinds=['CXEndCallAction'], actionIDs=['native-system-end'],
               provider='provider-1', origin='system', requestID='system'),
-        event('action.deadline', 28_503, actionID='native-system-end', apiKind='livecommunicationkit',
-              provider='provider-1', deadlineMS=WALL + 58_502, deadlineSeconds=30, expirySeconds=30)]
+        event('action.deadline', 27_003, actionID='native-system-end', apiKind='livecommunicationkit',
+              provider='provider-1', deadlineMS=WALL + 57_002, deadlineSeconds=30, expirySeconds=30)]
     if settle:
-        engine.insert(index + 2, event('action.settled', 28_504, actionID='native-system-end', fulfilled=False, origin='system'))
+        engine.insert(index + 2, event('action.settled', 27_004, actionID='native-system-end', fulfilled=False, origin='system'))
     renumber(engine)
 
 
@@ -230,7 +230,29 @@ class Controls(unittest.TestCase):
 
     def test_accept_cannot_race_the_platform_deadline(self):
         self.check('unhandled-accept', lambda rows, engine:
-            next(row for row in engine if row['event'] == 'action.deadline').update(deadlineMS=WALL + 28_500))
+            next(row for row in engine if row['event'] == 'action.deadline').update(deadlineMS=WALL + 27_000))
+
+    def test_accept_requires_one_native_deadline(self):
+        for action_id in ('native-cx-action', 'unrelated-native-action'):
+            def extra_deadline(rows, engine, action_id=action_id):
+                original = next(row for row in engine if row['event'] == 'action.deadline')
+                engine.append({**original, 'actionID': action_id, 't_ms': engine[-1]['t_ms']})
+                renumber(engine)
+            with self.subTest(actionID=action_id):
+                self.check('unhandled-accept', extra_deadline)
+
+    def test_join_requires_final_preparation_reserve(self):
+        for case in ('unhandled-accept', 'unhandled-fail'):
+            def former_margin(rows, engine):
+                pending = next(row for row in rows if row['event'] == 'contract.pending')
+                pending.update(deadlineMS=WALL + 28_500, remainingMS=WALL + 28_500 - pending['wallTimeMS'])
+                for row in rows:
+                    if row['event'] == 'contract.snapshot':
+                        for call in row['conversations']:
+                            if call.get('pending', {}).get('id') == ACTION:
+                                call['pending']['deadlineMS'] = pending['deadlineMS']
+            with self.subTest(case=case):
+                self.check(case, former_margin)
 
     def test_duplicate_command_return_is_not_settlement(self):
         def returned_later(rows, engine):
@@ -450,7 +472,7 @@ class Controls(unittest.TestCase):
                 elif row['event'] == 'contract.fixtureCleanupReported' or (row['event'] == 'contract.snapshot' and rows.index(row) > rows.index(observation)):
                     rows.remove(row)
             engine[:] = [r for r in engine if r['event'] != 'report.ended']
-            next(r for r in engine if r['event'] == 'call.changed')['t_ms'] = 28_502
+            next(r for r in engine if r['event'] == 'call.changed')['t_ms'] = 27_002
             renumber(rows, engine)
         self.check('unhandled-fail', absent, succeeds=True)
 
@@ -458,8 +480,8 @@ class Controls(unittest.TestCase):
         self.check('unhandled-fail', later_system_end, succeeds=True)
         def end_pending(rows, engine):
             later_system_end(rows, engine, settle=True)
-            snapshot = next(r for r in rows if r['event'] == 'contract.snapshot' and r['wallTimeMS'] == WALL + 28_503)
-            snapshot['conversations'][0]['pending'] = dict(id='lck-system-end', kind='end', origin='system', deadlineMS=WALL + 57_002)
+            snapshot = next(r for r in rows if r['event'] == 'contract.snapshot' and r['wallTimeMS'] == WALL + 27_003)
+            snapshot['conversations'][0]['pending'] = dict(id='lck-system-end', kind='end', origin='system', deadlineMS=WALL + 55_502)
         self.check('unhandled-fail', end_pending, succeeds=True)
         for field, value in (('origin', 'application'), ('kinds', ['CXStartCallAction']), ('provider', 'unrelated'), ('requestID', 'app-request')):
             def unrelated(rows, engine, field=field, value=value):
@@ -477,7 +499,7 @@ class Controls(unittest.TestCase):
                 rows.remove(next(r for r in rows if r.get('phase') == phase)); renumber(rows)
             with self.subTest(missing=phase): self.check('unhandled-fail', missing)
         for field, value in (('actionID', 'wrong-lck-action'), ('phase', 'policy-fire'),
-                             ('effectiveDeadlineMS', WALL + 28_499), ('platformDeadlineMS', WALL + 31_000),
+                             ('effectiveDeadlineMS', WALL + 26_999), ('platformDeadlineMS', WALL + 31_000),
                              ('sdkWallTimeMS', WALL + 1_000), ('entryPending', True), ('platformPending', None)):
             with self.subTest(field=field):
                 self.check('unhandled-fail', lambda rows, engine, field=field, value=value:
@@ -495,29 +517,29 @@ class Controls(unittest.TestCase):
                 row['wallTimeMS'] += delta; row['t_ms'] += delta
                 if 'sdkWallTimeMS' in row: row['sdkWallTimeMS'] += delta
             for row in engine:
-                if row['t_ms'] >= 28_500: row['t_ms'] += delta
-        for delta in (-5, 1500):
+                if row['t_ms'] >= 27_000: row['t_ms'] += delta
+        for delta in (-5, 3000):
             with self.subTest(delta=delta):
                 self.check('unhandled-fail', lambda rows, engine, delta=delta: shift_policy(rows, engine, delta))
         def late_native(rows, engine):
             for row in engine:
-                if row['t_ms'] >= 28_500: row['t_ms'] += 1499
+                if row['t_ms'] >= 27_000: row['t_ms'] += 2999
         self.check('unhandled-fail', late_native)
         self.check('unhandled-fail', lambda rows, engine:
-            next(r for r in rows if r.get('phase') == 'policy-fire').update(sdkWallTimeMS=WALL + 28_499))
+            next(r for r in rows if r.get('phase') == 'policy-fire').update(sdkWallTimeMS=WALL + 26_999))
         self.check('unhandled-fail', lambda rows, engine:
-            next(r for r in engine if r['event'] == 'action.deadline').update(deadlineMS=WALL + 28_500))
+            next(r for r in engine if r['event'] == 'action.deadline').update(deadlineMS=WALL + 27_000))
 
     def test_fail_diagnostics_need_real_observer_clearing(self):
         def retained(rows, engine):
             pending = next(r for r in rows if r['event'] == 'contract.snapshot' and r['conversations'] and 'pending' in r['conversations'][0])['conversations'][0]['pending']
             for row in rows:
-                if row['event'] == 'contract.snapshot' and row['wallTimeMS'] == WALL + 28_503:
+                if row['event'] == 'contract.snapshot' and row['wallTimeMS'] == WALL + 27_003:
                     row['conversations'][0]['pending'] = pending
         self.check('unhandled-fail', retained)
         def resurrected(rows, engine):
             retained(rows, engine)
-            snapshot = next(r for r in rows if r['event'] == 'contract.snapshot' and r['wallTimeMS'] == WALL + 28_503)
+            snapshot = next(r for r in rows if r['event'] == 'contract.snapshot' and r['wallTimeMS'] == WALL + 27_003)
             rows.remove(snapshot)
             index = next(i for i, r in enumerate(rows) if r['event'] == 'contract.failureObservation')
             snapshot.update(wallTimeMS=rows[index]['wallTimeMS'], t_ms=rows[index]['t_ms'])
@@ -544,7 +566,7 @@ class Controls(unittest.TestCase):
             next(r for r in engine if r['event'] == 'call.changed').update(connected=True))
         for field, value in (('status', 'connected'), ('hasConnectedAt', True)):
             self.check('unhandled-fail', lambda rows, engine, field=field, value=value:
-                next(r for r in rows if r['event'] == 'contract.snapshot' and r['wallTimeMS'] == WALL + 28_503)['conversations'][0].update({field: value}))
+                next(r for r in rows if r['event'] == 'contract.snapshot' and r['wallTimeMS'] == WALL + 27_003)['conversations'][0].update({field: value}))
 
     def test_fail_refuses_fabricated_cleanup(self):
         for event, field, value in (('contract.fixtureCleanupRequested', 'reason', 'remoteEnded'),

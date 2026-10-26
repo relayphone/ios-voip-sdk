@@ -38,8 +38,9 @@ generation, and owns the deadline and unhandled-action policy. `deadline` in bot
 the pending snapshot and handler context is the effective application deadline.
 Native captures the delivery time once, selects the earlier of the advertised
 `timeoutDate` and delivery plus 5.3 seconds for hold (Pause) and end, or 64 seconds
-for join, then subtracts a 1.5-second safety margin once. Other action kinds use
-the advertised deadline minus that margin. These conservative application caps
+for join. It reserves 3 seconds for final audio configuration on start/join,
+and 1.5 seconds for other action kinds. Other kinds use the advertised deadline
+minus their margin. These conservative application caps
 come from the [iOS 27 multi-call observations](../docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md);
 they do not extend an earlier advertised deadline or claim measured bounds on
 every supported OS. The raw advertised deadline remains diagnostic data. Native
