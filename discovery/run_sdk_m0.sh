@@ -43,7 +43,7 @@ limit() {
 }
 cleanup_simulator() {
   # The persisted name also owns a device whose create call never returned.
-  sim_cleanup || { : > "$SIM_STATE.failure"; return 1; }
+  sim_cleanup --timeout 60 || { : > "$SIM_STATE.failure"; return 1; }
   UDID=""
 }
 read_launch_environment() {

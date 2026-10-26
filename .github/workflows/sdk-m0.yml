@@ -542,7 +542,7 @@ jobs:
           bash discovery/run_sdk_m0.sh
       - name: Delete any remaining run-owned simulator
         if: always()
-        run: python3 scripts/sim/sim.py cleanup "$RUNNER_TEMP/sdk-m0/simulator-state.json"
+        run: python3 scripts/sim/sim.py cleanup "$RUNNER_TEMP/sdk-m0/simulator-state.json" --timeout 60
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
