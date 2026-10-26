@@ -3,64 +3,16 @@ name: SDK M0 and M1 plain simulator acceptance
 on:
   push:
     branches: [main]
-    paths:
-      - "Package.swift"
-      - "VERSION"
-      - "Sources/**"
-      - "Integrations/**"
-      - "Tests/**"
-      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/device-trace.jsonl"
-      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27-noio/device-trace.jsonl"
-      - "docs/research/callkit-simulator-probe/livecommunicationkit/**"
-      - "docs/research/callkit-simulator-probe/device-system-ui/2026-10-20-iphone13-ui10-app.jsonl"
-      - "Expo/**"
-      - "ExpoMedia/**"
-      - "example/**"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.json"
-      - "expo-module.config.json"
-      - "app.plugin.js"
-      - "IosVoipSDK.podspec"
-      - "discovery/**"
-      - "Tools/**"
-      - "scripts/build-runtime.sh"
-      - "scripts/sim/**"
-      - ".github/workflows/sdk-m0.yml"
-      - ".github/workflows/simulator-discovery.yml"
   pull_request:
-    paths:
-      - "Package.swift"
-      - "VERSION"
-      - "Sources/**"
-      - "Integrations/**"
-      - "Tests/**"
-      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/device-trace.jsonl"
-      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27-noio/device-trace.jsonl"
-      - "docs/research/callkit-simulator-probe/livecommunicationkit/**"
-      - "docs/research/callkit-simulator-probe/device-system-ui/2026-10-20-iphone13-ui10-app.jsonl"
-      - "Expo/**"
-      - "ExpoMedia/**"
-      - "example/**"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.json"
-      - "expo-module.config.json"
-      - "app.plugin.js"
-      - "IosVoipSDK.podspec"
-      - "discovery/**"
-      - "Tools/**"
-      - "scripts/build-runtime.sh"
-      - "scripts/sim/**"
-      - ".github/workflows/sdk-m0.yml"
-      - ".github/workflows/simulator-discovery.yml"
+  schedule:
+    - cron: "20 3 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: sdk-m0-${{ github.ref }}
+  group: sdk-m0-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -68,7 +20,12 @@ env:
   SIMCTL_CHILD_DYLD_INSERT_LIBRARIES: ""
 
 jobs:
+  changes:
+    uses: ./.github/workflows/ci-changes.yml
+
   expo-livekit-native:
+    needs: changes
+    if: needs.changes.outputs.expo == 'true'
     name: Pinned Expo LiveKit selected Release device build
     runs-on: xcode-27
     timeout-minutes: 60
@@ -115,7 +72,10 @@ jobs:
       - name: Remove this job's native build cache
         if: always()
         run: rm -rf "$RUNNER_TEMP/expo-livekit-build/DerivedData"
-  plain-simulator:
+  sdk-native:
+    name: SDK native and device acceptance
+    needs: changes
+    if: needs.changes.outputs.sdk == 'true'
     runs-on: xcode-27
     timeout-minutes: 60
     defaults:
@@ -359,8 +319,24 @@ jobs:
         if: always()
         run: rm -rf "$RUNNER_TEMP/sdk-m0-build"
 
+  plain-simulator:
+    if: always()
+    needs: [changes, sdk-native, legacy-audio-lifecycle, swift-livekit-native, expo-livekit-native]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Require every selected acceptance group
+        env:
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+          CI_EXPECTED_JSON: ${{ needs.changes.outputs.sdk_plan }}
+        run: scripts/ci/bounded 30 python3 scripts/ci/changes.py gate
+
   legacy-audio-lifecycle:
-    needs: plain-simulator
+    needs: [changes, sdk-native]
+    if: needs.changes.outputs.legacy == 'true'
     runs-on: macos-26
     timeout-minutes: 15
     defaults:
@@ -401,6 +377,8 @@ jobs:
         run: rm -rf "$RUNNER_TEMP/sdk-27-contract-build"
 
   swift-livekit-native:
+    needs: changes
+    if: needs.changes.outputs.swift == 'true'
     runs-on: xcode-27
     timeout-minutes: 45
     env:
