@@ -176,7 +176,7 @@ class SwiftLiveKitSetupTests(unittest.TestCase):
         self.assert_manifest_bound()
 
     def assert_bounds(self, native):
-        bounds = dict(create=30, boot=60, bootstatus=300, install=180, privacy=60,
+        bounds = dict(create=30, boot=60, bootstatus=300, install=180, privacy=180,
                       shutdown=60, delete=60, list=60, spawn=180)
         for call in native.calls:
             self.assertEqual(call['timeout'], bounds[call['arguments'][2]], call)
@@ -216,6 +216,24 @@ class SwiftLiveKitSetupTests(unittest.TestCase):
         self.assert_final_identity(native)
         self.assert_bounds(native)
 
+    def test_slow_privacy_grant_can_complete_on_the_one_fresh_retry(self):
+        class SlowPrivacy(NativeService):
+            def __call__(self, arguments, timeout, *, env=None):
+                result = super().__call__(arguments, timeout, env=env)
+                # Model a cold TCC grant needing more than the old60s cap.
+                # The first attempt independently fails; the second must fit
+                # without granting another retry or replaying an app case.
+                if arguments[2] == 'privacy' and timeout < 90:
+                    return infrastructure.Result(list(arguments), 124, timed_out=True)
+                return result
+        native = SlowPrivacy([dict(step='privacy', timeout=True)])
+        self.assertIsNone(self.capture(native, override=''))
+        self.assertEqual(len(native.created), 2)
+        self.assertEqual(native.counts['privacy'], 2)
+        self.assertTrue(all(case['state']['retry_used'] for case in self.case_calls))
+        self.assertEqual(len(self.case_calls), len(runner.CASES))
+        self.assert_final_identity(native)
+
     def test_privacy_timeout_replaces_device_replays_preparation_and_preserves_failed_bytes(self):
         stdout, stderr = b'partial grant\x00\xff\n', b'privacy transport deadline\x00\xfe\n'
         native = NativeService([dict(step='privacy', timeout=True, stdout=stdout, stderr=stderr)])
@@ -238,7 +256,7 @@ class SwiftLiveKitSetupTests(unittest.TestCase):
         self.assertEqual((archives[0] / 'microphone.stderr').read_bytes(), stderr)
         failed = json.loads((archives[0] / 'microphone.status.json').read_text())
         self.assertIsNone(failed['exitCode'])
-        self.assertIn('60', failed['error'])
+        self.assertIn('180', failed['error'])
         self.assertEqual((self.out / 'microphone.stdout').read_bytes(), b'')
         self.assertEqual((self.out / 'microphone.stderr').read_bytes(), b'')
         self.assertEqual(self.failure_labels(), ['infra:privacy', 'infra:privacy'])

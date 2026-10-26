@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / 'scripts/sim'))
 import sim as simulator_infra
 
 SCENARIO_TIMEOUT_SECONDS = 90
+PRIVACY_TIMEOUT_SECONDS = 180
 REPORTER = ContextVar('swift_livekit_failure_reporter', default=None)
 
 
@@ -494,7 +495,7 @@ def capture_owned(build, out):
         setup.call(['xcrun', 'simctl', 'install', setup.current, build / 'SDKSwiftLiveKit.app'], 180)
         if setup.current != environment_simulator:
             inherited = setup.environment(); environment_simulator = setup.current
-        setup.call(['xcrun', 'simctl', 'privacy', setup.current, 'grant', 'microphone', BUNDLE], 60)
+        setup.call(['xcrun', 'simctl', 'privacy', setup.current, 'grant', 'microphone', BUNDLE], PRIVACY_TIMEOUT_SECONDS)
         if setup.current != environment_simulator:
             inherited = setup.environment()
         simulator = str(uuid.UUID(setup.current)).upper()
