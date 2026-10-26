@@ -6,6 +6,7 @@ export type ConversationErrorCode =
   | 'invalid_arguments'
   | 'unknown_conversation'
   | 'unsupported'
+  | 'at_capacity'
   | 'conversation'
   | 'duplicate_sdk_linkage';
 
@@ -22,6 +23,7 @@ export function isConversationCommandError(
     value.code === 'invalid_arguments' ||
     value.code === 'unknown_conversation' ||
     value.code === 'unsupported' ||
+    value.code === 'at_capacity' ||
     value.code === 'duplicate_sdk_linkage' ||
     value.code === 'conversation'
   );

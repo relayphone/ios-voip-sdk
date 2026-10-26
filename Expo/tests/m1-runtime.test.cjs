@@ -35,7 +35,7 @@ const { ConversationRuntime } = require(
 const { isConversationCommandError } = require(path.join(output, 'types.js'));
 
 test('native command rejection guard retains only declared codes', () => {
-  for (const code of ['invalid_arguments', 'unknown_conversation', 'unsupported', 'conversation', 'duplicate_sdk_linkage']) {
+  for (const code of ['invalid_arguments', 'unknown_conversation', 'unsupported', 'conversation', 'duplicate_sdk_linkage', 'at_capacity']) {
     const error = Object.assign(new Error('native rejection'), { code });
     assert.equal(isConversationCommandError(error), true);
   }
