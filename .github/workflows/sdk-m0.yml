@@ -3,68 +3,16 @@ name: SDK M0 and M1 plain simulator acceptance
 on:
   push:
     branches: [main]
-    paths:
-      - "Package.swift"
-      - "VERSION"
-      - "Sources/**"
-      - "Integrations/**"
-      - "Tests/**"
-      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/device-trace.jsonl"
-      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27-noio/device-trace.jsonl"
-      - "docs/research/callkit-simulator-probe/livecommunicationkit/**"
-      - "docs/research/callkit-simulator-probe/device-system-ui/2026-10-20-iphone13-ui10-app.jsonl"
-      - "Expo/**"
-      - "ExpoMedia/**"
-      - "example/**"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.json"
-      - "expo-module.config.json"
-      - "app.plugin.js"
-      - "IosVoipSDK.podspec"
-      - "discovery/**"
-      - "Tools/**"
-      - "scripts/build-runtime.sh"
-      - "scripts/ci/sdk_paths.sh"
-      - "scripts/ci/sdk_artifacts.py"
-      - "scripts/sim/**"
-      - ".github/workflows/sdk-m0.yml"
-      - ".github/workflows/simulator-discovery.yml"
   pull_request:
-    paths:
-      - "Package.swift"
-      - "VERSION"
-      - "Sources/**"
-      - "Integrations/**"
-      - "Tests/**"
-      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/device-trace.jsonl"
-      - "docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27-noio/device-trace.jsonl"
-      - "docs/research/callkit-simulator-probe/livecommunicationkit/**"
-      - "docs/research/callkit-simulator-probe/device-system-ui/2026-10-20-iphone13-ui10-app.jsonl"
-      - "Expo/**"
-      - "ExpoMedia/**"
-      - "example/**"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.json"
-      - "expo-module.config.json"
-      - "app.plugin.js"
-      - "IosVoipSDK.podspec"
-      - "discovery/**"
-      - "Tools/**"
-      - "scripts/build-runtime.sh"
-      - "scripts/ci/sdk_paths.sh"
-      - "scripts/ci/sdk_artifacts.py"
-      - "scripts/sim/**"
-      - ".github/workflows/sdk-m0.yml"
-      - ".github/workflows/simulator-discovery.yml"
+  schedule:
+    - cron: "20 3 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: sdk-m0-${{ github.ref }}
+  group: sdk-m0-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -72,7 +20,12 @@ env:
   SIMCTL_CHILD_DYLD_INSERT_LIBRARIES: ""
 
 jobs:
+  changes:
+    uses: ./.github/workflows/ci-changes.yml
+
   expo-livekit-native:
+    needs: changes
+    if: needs.changes.outputs.expo == 'true'
     name: Pinned Expo LiveKit selected Release device build
     runs-on: xcode-27
     timeout-minutes: 60
@@ -122,6 +75,8 @@ jobs:
         if: always()
         run: rm -rf "$RUNNER_TEMP/expo-livekit-build/DerivedData"
   offline-controls:
+    needs: changes
+    if: needs.changes.outputs.sdk == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -185,6 +140,8 @@ jobs:
           compression-level: 6
 
   apple-host-controls:
+    needs: changes
+    if: needs.changes.outputs.sdk == 'true'
     runs-on: xcode-27
     timeout-minutes: 20
     env:
@@ -243,6 +200,8 @@ jobs:
           compression-level: 6
 
   sdk-example:
+    needs: changes
+    if: needs.changes.outputs.sdk == 'true'
     runs-on: xcode-27
     timeout-minutes: 30
     env:
@@ -305,6 +264,8 @@ jobs:
         run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
 
   sdk-core:
+    needs: changes
+    if: needs.changes.outputs.sdk == 'true'
     runs-on: xcode-27
     timeout-minutes: 30
     env:
@@ -354,6 +315,8 @@ jobs:
         run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
 
   sdk-fixtures:
+    needs: changes
+    if: needs.changes.outputs.sdk == 'true'
     runs-on: xcode-27
     timeout-minutes: 30
     env:
@@ -407,6 +370,8 @@ jobs:
         run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
 
   device-release:
+    needs: changes
+    if: needs.changes.outputs.sdk == 'true'
     runs-on: xcode-27
     timeout-minutes: 45
     env:
@@ -503,17 +468,13 @@ jobs:
 
   journeys:
     name: SDK journey (${{ matrix.group }})
-    needs: [sdk-example, sdk-core, sdk-fixtures]
+    needs: [changes, sdk-example, sdk-core, sdk-fixtures]
+    if: needs.changes.outputs.sdk == 'true'
     runs-on: xcode-27
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - {group: m1, m1: "1", part: journeys, system: "0"}
-          - {group: contracts, m1: "1", part: contracts, system: "0"}
-          - {group: push-entry, m1: "1", part: push-entry, system: "0"}
-          - {group: system, m1: "0", part: all, system: "1"}
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
     env:
       SDK_M0_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-27-0
       SDK_M1_ACCEPTANCE: ${{ matrix.m1 }}
@@ -569,23 +530,22 @@ jobs:
   plain-simulator:
     name: plain-simulator
     if: always()
-    needs: [offline-controls, apple-host-controls, sdk-example, sdk-core, sdk-fixtures, device-release, journeys, legacy-audio-lifecycle]
+    needs: [changes, offline-controls, apple-host-controls, sdk-example, sdk-core, sdk-fixtures, device-release, journeys, legacy-audio-lifecycle, swift-livekit-native, expo-livekit-native]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require every original acceptance group
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Require every selected acceptance group
         env:
-          RESULTS: ${{ toJSON(needs) }}
-        run: |
-          python3 - <<'PYGATE'
-          import json,os
-          results=json.loads(os.environ['RESULTS'])
-          failed={name:row['result'] for name,row in results.items() if row['result']!='success'}
-          assert not failed, failed
-          PYGATE
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+          CI_EXPECTED_JSON: ${{ needs.changes.outputs.sdk_plan }}
+        run: scripts/ci/bounded 30 python3 scripts/ci/changes.py gate
 
   legacy-audio-lifecycle:
-    needs: sdk-fixtures
+    needs: [changes, sdk-fixtures]
+    if: needs.changes.outputs.legacy == 'true'
     runs-on: macos-26
     timeout-minutes: 15
     defaults:
@@ -628,6 +588,8 @@ jobs:
         run: rm -rf "$RUNNER_TEMP/sdk-27-contract-build"
 
   swift-livekit-native:
+    needs: changes
+    if: needs.changes.outputs.swift == 'true'
     runs-on: xcode-27
     timeout-minutes: 45
     env:

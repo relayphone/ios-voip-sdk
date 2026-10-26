@@ -2,17 +2,22 @@ name: Runtime event stream and inspector
 on:
   push:
     branches: [main]
-    paths: ["Sources/Engine/**", "Sources/Interposition/**", "Tools/**", "Inspector/**", "Tests/RuntimeEvents/**", "Tests/Inspector/**", "scripts/sim/**", "scripts/build-runtime.sh", "scripts/build-inspector.sh", ".github/workflows/runtime-m4.yml"]
   pull_request:
-    paths: ["Sources/Engine/**", "Sources/Interposition/**", "Tools/**", "Inspector/**", "Tests/RuntimeEvents/**", "Tests/Inspector/**", "scripts/sim/**", "scripts/build-runtime.sh", "scripts/build-inspector.sh", ".github/workflows/runtime-m4.yml"]
+  schedule:
+    - cron: "20 3 * * *"
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: runtime-m4-${{ github.ref }}
-  cancel-in-progress: true
+  group: runtime-m4-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  runtime-events:
+  changes:
+    uses: ./.github/workflows/ci-changes.yml
+  runtime-native:
+    name: Runtime native and Inspector
+    needs: changes
+    if: needs.changes.outputs.runtime == 'true'
     runs-on: xcode-27
     timeout-minutes: 30
     env:
@@ -84,3 +89,18 @@ jobs:
       - name: Remove generated builds
         if: always()
         run: rm -rf "$RUNNER_TEMP/runtime" "$RUNNER_TEMP/fixture" "$RUNNER_TEMP/inspector" "$RUNNER_TEMP/m4-inspector/ui-build"
+
+  runtime-events:
+    if: always()
+    needs: [changes, runtime-native]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Require the selected Runtime and Inspector check
+        env:
+          CI_NEEDS_JSON: ${{ toJSON(needs) }}
+          CI_EXPECTED_JSON: ${{ needs.changes.outputs.runtime_plan }}
+        run: scripts/ci/bounded 30 python3 scripts/ci/changes.py gate
