@@ -155,7 +155,11 @@ final class FocusUITests: XCTestCase {
       try tap(contacts, back)
     }
     let search = contacts.searchFields.firstMatch
-    guard search.waitForExistence(timeout: 4) else { throw failure("Contacts search unavailable") }
+    if !search.waitForExistence(timeout: 4) {
+      // After a call Contacts can reopen deep in a card stack; one clean relaunch recovers the list.
+      contacts.terminate(); contacts.launch(); try discardDraft()
+      guard search.waitForExistence(timeout: 4) else { throw failure("Contacts search unavailable") }
+    }
     try type(contacts, search, journal.contactName)
     Thread.sleep(forTimeInterval: 1)
     // The full list behind the search results holds a same-named, unhittable cell: match inside the results only.
@@ -374,6 +378,22 @@ final class FocusUITests: XCTestCase {
     guard unique.count == 1 else { throw failure("Auto-Lock selection cannot be verified") }
     return unique.first!
   }
+  // Settings saves the choice asynchronously; wait for the checkmark and give it time before any relaunch.
+  func chooseLock(_ labels: [String]) throws {
+    let cell = try element(settings, labels)
+    try tap(settings, cell)
+    let end = Date().addingTimeInterval(3)
+    while !cell.isSelected && Date() < end { Thread.sleep(forTimeInterval: 0.2) }
+    Thread.sleep(forTimeInterval: 1.5)
+  }
+  // XCUIDevice has no public lock button; this test-only private selector is checked before use.
+  func lockDevice() throws {
+    let selector = NSSelectorFromString("pressLockButton")
+    guard XCUIDevice.shared.responds(to: selector) else { throw failure("Lock button unavailable") }
+    XCUIDevice.shared.perform(selector)
+    Thread.sleep(forTimeInterval: 1)
+    events.append(["event": "device.lockPressed", "observedAt": Date().timeIntervalSince1970])
+  }
   func autoAnswerPage() throws {
     settings.terminate(); settings.launch()
     try tap(settings, scrollTo(settings, ["Accessibility"]))
@@ -387,8 +407,21 @@ final class FocusUITests: XCTestCase {
     guard item.waitForExistence(timeout: 4), ["0", "1"].contains(item.value as? String ?? "") else { throw failure("Auto-Answer state unavailable") }
     return item
   }
+  // The Auto-Answer row's centre is its label, which does not toggle; tap the switch itself at the trailing edge.
+  func flip(_ item: XCUIElement) throws {
+    try front(settings)
+    let before = item.value as? String
+    item.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+    let end = Date().addingTimeInterval(3)
+    while (item.value as? String) == before && Date() < end { Thread.sleep(forTimeInterval: 0.2) }
+    guard (item.value as? String) != before else { throw failure("Switch did not toggle") }
+    Thread.sleep(forTimeInterval: 1)
+  }
   func delayText() throws -> String {
     try front(settings)
+    // iOS 27 shows the delay as an editable "Seconds" field (value "3.00") between steppers.
+    let field = settings.textFields["Seconds"]
+    if field.waitForExistence(timeout: 2), let value = field.value as? String, Double(value) != nil { return value + " seconds" }
     let items = settings.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[0-9]+([.][0-9]+)? [sS]econds?"))
     guard items.count == 1 else { throw failure("Auto-Answer delay unavailable") }
     return items.firstMatch.label
@@ -406,12 +439,15 @@ final class FocusUITests: XCTestCase {
     guard ProcessInfo.processInfo.environment["FOCUS_ALLOW_SYSTEM_SETTINGS"] == "1" else { throw failure("One-time Auto-Answer/Auto-Lock approval flag required") }
     try setup(); try autoLockPage()
     if journal.autoLock == nil { journal.autoLock = try selectedLock(); try save() }
-    try tap(settings, ["30 Seconds", "30 seconds"])
+    try chooseLock(["30 Seconds", "30 seconds"])
     try autoLockPage()
-    guard try selectedLock().lowercased() == "30 seconds" else { throw failure("Auto-Lock not 30 seconds") }
+    // Measured on iOS 27 under an XCUITest session: the choice shows as selected, then reads back as the
+    // previous value. Record it and rely on the explicit "lock" action instead of failing the row.
+    let lock = try selectedLock()
+    events.append(["event": "autoLock.readback", "value": lock, "observedAt": Date().timeIntervalSince1970])
     try autoAnswerPage()
     if journal.autoAnswer == nil { journal.autoAnswer = (try answerSwitch().value as? String) == "1"; try save() }
-    if (try answerSwitch().value as? String) != "1" { try tap(settings, answerSwitch()) }
+    if (try answerSwitch().value as? String) != "1" { try flip(answerSwitch()) }
     if journal.autoAnswerDelay == nil { journal.autoAnswerDelay = try delayText(); try save() }
     try setDelay("3.0 seconds")
     guard (try answerSwitch().value as? String) == "1" else { throw failure("Auto-Answer not enabled") }
@@ -420,15 +456,15 @@ final class FocusUITests: XCTestCase {
     if let enabled = journal.autoAnswer {
       try autoAnswerPage()
       if let delay = journal.autoAnswerDelay {
-        if (try answerSwitch().value as? String) != "1" { try tap(settings, answerSwitch()) }
+        if (try answerSwitch().value as? String) != "1" { try flip(answerSwitch()) }
         try setDelay(delay)
       }
-      if ((try answerSwitch().value as? String) == "1") != enabled { try tap(settings, answerSwitch()) }
+      if ((try answerSwitch().value as? String) == "1") != enabled { try flip(answerSwitch()) }
       guard ((try answerSwitch().value as? String) == "1") == enabled else { throw failure("Auto-Answer restore failed") }
       journal.autoAnswer = nil; journal.autoAnswerDelay = nil; try save()
     }
     if let value = journal.autoLock {
-      try autoLockPage(); try tap(settings, [value]); try autoLockPage()
+      try autoLockPage(); try chooseLock([value]); try autoLockPage()
       guard try selectedLock() == value else { throw failure("Auto-Lock restore failed") }
       journal.autoLock = nil; try save()
     }
@@ -531,7 +567,7 @@ final class FocusUITests: XCTestCase {
       let p = action.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
       let values: [String: [String]] = ["focus": ["on", "off"], "app": ["include", "exclude"],
         "person": ["include", "exclude"], "repeated-calls": ["on", "off"], "calls": ["Allowed People Only", "Everyone", "All Contacts", "Contacts Only", "Favorites", "No One", "Nobody"],
-        "policy": ["screenWithAI"], "system-settings": ["enable"], "notifications": ["allow", "deny"], "focus-authorization": ["allow", "deny"]]
+        "policy": ["screenWithAI"], "system-settings": ["enable", "restore"], "notifications": ["allow", "deny"], "focus-authorization": ["allow", "deny"]]
       if let allowed = values[p[0]] {
         guard p.count == 2 && allowed.contains(p[1]) else { throw failure("Invalid action value") }
       } else if p[0] == "dump" {
@@ -539,7 +575,7 @@ final class FocusUITests: XCTestCase {
       } else if p[0] == "observe" {
         guard p.count == 2, let n = Double(p[1]), n.isFinite, (1...90).contains(n) else { throw failure("Invalid observation duration") }
       } else {
-        guard p.count == 1 && ["setup", "restore-all", "sample", "launch", "home", "terminate", "activity-check"].contains(p[0]) else { throw failure("Unknown action") }
+        guard p.count == 1 && ["setup", "restore-all", "sample", "launch", "home", "terminate", "activity-check", "lock"].contains(p[0]) else { throw failure("Unknown action") }
       }
     }
     do {
@@ -559,7 +595,7 @@ final class FocusUITests: XCTestCase {
         case "repeated-calls": try setRepeatedCalls(value == "on")
         case "policy": try setPolicy()
         case "restore-all": try restore()
-        case "system-settings": try enableSystemSettings()
+        case "system-settings": try value == "enable" ? enableSystemSettings() : restoreSystemSettings()
         case "activity-check": try checkActivity()
         case "notifications": try authorize(false, allow: value == "allow")
         case "focus-authorization": try authorize(true, allow: value == "allow")
@@ -567,6 +603,7 @@ final class FocusUITests: XCTestCase {
         case "launch": probe.terminate(); probe.launch()
         case "terminate": probe.terminate(); home()
         case "home": home()
+        case "lock": try lockDevice()
         case "observe": try observe(Double(value) ?? 35)
         case "dump": try dump(value)
         default: throw failure("Unknown action \(action)")

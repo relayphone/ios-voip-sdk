@@ -38,18 +38,26 @@ The two allowlists also kept the defaults that iOS suggested for a new Focus: th
 | F10 | **On** | No | No | On | **filtered**: code 3, after 2205 ms | 9 ms | none; CN scheduled |
 | F11 | **On** | Yes | No | Off | **reported, 89 ms** | 1 ms | **banner and full-screen call UI** |
 | F12 | On | Yes | No | On | pending | | |
-| F13 | On | No | Yes | Off | pending | | |
+| F13 | **On** | No | Yes | Off | **filtered**: code 3, after 2197 ms | 2 ms | none |
 | F14 | On | No | Yes | On | pending | | |
 | F15 | **On** | Yes | Yes | Off | **reported, 101 ms** | 4 ms | **banner and full-screen call UI** |
 | F16 | On | Yes | Yes | On | pending | | |
 
-Every unanswered reported call ended itself after the probe's 25 s ring timeout. The CN's own banner was not observed separately in F02, F04 or F10.
+Every unanswered reported call ended itself after the probe's 25 s ring timeout. After F13, the step that turns the Focus back off failed once because Contacts reopened in an unexpected state; the Focus was turned off a few minutes later and the harness now relaunches Contacts once to recover.
+
+### Locked answer with Auto-Answer
+
+| Run | Setup | Report | Answer |
+| --- | --- | --- | --- |
+| F01, locked | Focus off; Auto-Answer Calls on with a 3 s delay; phone locked with the lock button, then 45 s with no UI session; cold push | reported, 120 ms (entry 2 ms) | **`JoinConversationAction` arrived 3.4 s after the push** while the phone was locked; the conversation joined. The probe ended it after 23 s. |
+
+Auto-Lock could not be changed under XCUITest. Selecting 30 seconds showed a checkmark, then read back as the previous value (Never). The run locked the phone with the lock button instead, so Auto-Lock played no part. The CN's own banner was not observed separately in F02, F04 or F10.
 
 ### Other rows
 
 | Rows | Status |
 | --- | --- |
-| C02 (repeated calls off, then on), L01–L04, L09, locked Auto-Answer (`F01 --locked-auto-answer`) | Pending. Run next. |
+| C02 (repeated calls off, then on), L01–L04, L09 | Pending. Run next. |
 | C01, C05 | Pending, low priority. |
 | C06 (Focus filter policy) | **Unqualified**: built without the App Group. |
 | C03, C04, C07–C11, L05–L08, L10–L16, T01–T06 | Skipped automatically, per the plan: they need adapters, a backend or hardware this probe lacks. |
@@ -66,13 +74,17 @@ Every unanswered reported call ended itself after the probe's 25 s ring timeout.
 3. **Allowing the app lets every call from it through.**
    - With the Focus on and the app in the Focus Apps allowlist, the report succeeded and the call rang (banner and full-screen call UI). This held with the caller allowed (F15, 101 ms) and with the caller **not** allowed (F11, 89 ms), even though Allow Calls From was Allowed People Only.
    - So for LCK, app allowance overrides the People and Allow Calls From rules. A user who allows the Phone app in a Focus gets every Phone call ringing.
-   - Whether allowing only the caller is enough (F13) is still pending.
-4. **Report entry is immediate, and the filtered result is slow.**
+4. **Allowing only the caller does not let the call through.**
+   - With the Focus on, the caller in the People allowlist, Allow Calls From set to Allowed People Only and the app not allowed, the report still failed with code 3 after 2197 ms, and nothing appeared (F13).
+   - The caller was the owned contact, matched by E.164 phone number.
+   - For LCK, the People allowlist and Allow Calls From did not apply in this setup; only the Apps allowlist did.
+5. **Auto-Answer answers an LCK call on a locked phone.** With Auto-Answer Calls on, a cold VoIP push to a locked phone produced a system `JoinConversationAction` after the configured 3 s. No UI was involved.
+6. **Report entry is immediate, and the filtered result is slow.**
    - Report entry came 1–9 ms after push receipt, even on a cold launch.
    - The filtered result arrived about 2.2 s after entry, and PushKit completion followed straight away.
    - After a filter, the process was last observed 1 s after the push; the 3 s survival sample never logged.
    - Reported calls kept the process alive for at least 10.6 s.
-5. **Unauthorized Focus status reads as "not focused".**
+7. **Unauthorized Focus status reads as "not focused".**
    - With `INFocusStatusCenter` authorization not determined (`0`), `focusStatus.isFocused` read `false` while the test Focus was on (F09, F10).
    - Treat a status that is not authorized as unknown, never as "not focused".
 
@@ -90,7 +102,7 @@ This applies the [proposed `IncomingPresentationResult`](sdk-api.md#typed-incomi
 | Device outcome | Domain / code | Measured latency | SDK result | Default policy | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | Report succeeds | – | 63–119 ms | `.reported(conversationID:)` | normal ringing and actions | C00, F01–F05, F11, F15 |
-| Filtered by Focus | `com.apple.CallKit.error.incomingcall` / 3 | 2.19–2.21 s | `.filtered(reason: .focus)` | `screenWithAI`, or `decline` per the user's policy | F09, F10 |
+| Filtered by Focus | `com.apple.CallKit.error.incomingcall` / 3 | 2.19–2.21 s | `.filtered(reason: .focus)` | `screenWithAI`, or `decline` per the user's policy | F09, F10, F13 |
 | Codes 4–7 | same domain, 4–7 | not produced | `.filtered(reason: .blockList / .restrictedSharing / .protectedCall / .sensitiveParticipants)` | conservative: no AI for code 4; decline or no screening for 5–7 | none yet (C07, C10) |
 | Anything else | unknown pair | – | `.failed(IncomingFailure)` | no screening | – |
 
@@ -102,6 +114,6 @@ What this means for the SDK:
 
 ## Next steps
 
-1. In priority order: F13, the locked Auto-Answer run, the L rows, C02, then F12, F14 and F16. Use `--keep-setup` and one `restore-all` at the end. The resume steps live in the operator's private run folder.
+1. In priority order: the L rows, C02, then F12, F14 and F16. Use `--keep-setup` and one `restore-all` at the end. The resume steps live in the operator's private run folder.
 2. Repeat any row whose outcome differs from its neighbours before turning it into a rule.
 3. Re-run C00 with the Mac microphone once it is granted, to qualify audible and haptic silence.
