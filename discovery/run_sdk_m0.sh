@@ -8,6 +8,8 @@ cd "$(dirname "$0")/.."
 : "${SDK_M0_SPM_DEVICE_DIR:?provide SwiftPM device DerivedData}"
 : "${SDK_M0_BUILD_RECEIPT:?provide the source-bound native build receipt}"
 : "${SDK_M0_BUILD_LOGS:?provide the nonempty native build logs directory}"
+SDK_M1_PART=${SDK_M1_PART:-all}
+case "$SDK_M1_PART" in all|journeys|contracts|push-entry) ;; *) echo 'Unknown M1 journey part' >&2; exit 2;; esac
 if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
   : "${SDK_M1_CONTRACT_BUILD:?provide the source-bound Debug M1 contract build}"
   : "${SDK_PUSH_ENTRY_BUILD:?provide the source-bound Debug A0/A1 push-entry build}"
@@ -41,7 +43,7 @@ limit() {
 }
 cleanup_simulator() {
   # The persisted name also owns a device whose create call never returned.
-  sim_cleanup || { : > "$SIM_STATE.failure"; return 1; }
+  sim_cleanup --timeout 60 || { : > "$SIM_STATE.failure"; return 1; }
   UDID=""
 }
 read_launch_environment() {
@@ -220,6 +222,7 @@ if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
   # Reuse the first observed data container across relaunches of this installation.
   example_container=""
   for case in journey cold-launch unhandled-expiry; do
+    if [[ "${SDK_M1_PART:-all}" != all && "${SDK_M1_PART:-all}" != journeys ]]; then break; fi
     name="sdk-m1-$case"
     PRODUCT_CHECK="$name"
     budget=90
@@ -246,6 +249,7 @@ receipt.write_text(json.dumps(row,indent=2)+'\n')
 PY
   done
   mkdir "$OUT/m1/contracts"
+  if [[ "$SDK_M1_PART" == all || "$SDK_M1_PART" == contracts ]]; then
   cp -R "$SDK_M1_CONTRACT_BUILD" "$OUT/m1/contracts-build"
   limit 180 xcrun simctl install "$UDID" "$OUT/m1/contracts-build/SDKM1Contracts.app" > "$OUT/m1/contracts-install.log" 2>&1
   # The app is installed once and only relaunched below. Reuse its first
@@ -274,6 +278,8 @@ row['journalSHA256']=hashlib.sha256(journal.read_bytes()).hexdigest()
 receipt.write_text(json.dumps(row,indent=2)+'\n')
 PY
   done
+  fi
+  if [[ "$SDK_M1_PART" == all || "$SDK_M1_PART" == push-entry ]]; then
   # Reuse this fresh owned simulator and its preserved launch environment. The
   # focused fixture runs three conforming deliveries and two required refusals;
   # these in-app injections do not stand in for a push-initiated cold launch.
@@ -281,6 +287,7 @@ PY
   SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
     python3 discovery/run_push_report_entry.py --build "$SDK_PUSH_ENTRY_BUILD" \
       --out "$OUT/push-entry" --simulator "$UDID"
+  fi
 fi
 PRODUCT_CHECK=sdk-system
 if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then
@@ -312,8 +319,12 @@ if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then
   python3 discovery/sdk_system_conformance.py "$OUT" | tee "$OUT/system/summary.json"
 fi
 if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
+  if [[ "$SDK_M1_PART" == all || "$SDK_M1_PART" == journeys ]]; then
   PRODUCT_CHECK=sdk-m1-conformance
   python3 discovery/sdk_m1_conformance.py "$OUT" | tee "$OUT/m1/summary.json"
+  fi
+  if [[ "$SDK_M1_PART" == all || "$SDK_M1_PART" == contracts ]]; then
   PRODUCT_CHECK=sdk-m1-contracts-conformance
   python3 discovery/sdk_m1_contracts_conformance.py "$OUT/m1/contracts-build" "$OUT/m1/contracts" --parent-manifest "$OUT/manifest.json" | tee "$OUT/m1/contracts/summary.json"
+  fi
 fi
