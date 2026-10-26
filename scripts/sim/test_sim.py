@@ -98,10 +98,17 @@ class LifecycleTests(unittest.TestCase):
     def cli(self, *arguments, expected=0):
         result = subprocess.run([sys.executable, str(HELPER), *map(str, arguments)],
                                 env=self.env, capture_output=True, text=True, timeout=12)
+        diagnostic = result.stdout + result.stderr
+        failed = result.returncode != expected if expected is not None else result.returncode == 0
+        if failed and arguments and str(arguments[0]) == 'cleanup':
+            try:
+                diagnostic += '\nCleanup receipt: ' + (self.root / 'cleanup.json').read_text()
+            except OSError as error:
+                diagnostic += '\nCleanup receipt unavailable: ' + str(error)
         if expected is not None:
-            self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+            self.assertEqual(result.returncode, expected, diagnostic)
         else:
-            self.assertNotEqual(result.returncode, 0, 'failed operation was accepted: ' + result.stdout + result.stderr)
+            self.assertNotEqual(result.returncode, 0, 'failed operation was accepted: ' + diagnostic)
         return result
 
     def call(self, *command, timeout=2, expected=0):
@@ -210,6 +217,11 @@ class LifecycleTests(unittest.TestCase):
     def test_unresolved_create_name_is_retained_until_late_registration_can_be_deleted(self):
         for action in ('timeout-no-create', 'signal-no-create', 'invalid-create'):
             with self.subTest(action=action):
+                # Reset before assertions so a prior subtest cannot contaminate
+                # this action's occurrence counters or ownership state.
+                self.state.unlink(missing_ok=True)
+                (self.root / 'calls.jsonl').unlink(missing_ok=True)
+                (self.root / 'native.json').write_text(json.dumps(dict(counts={}, devices=[])))
                 self.rules(dict(step='create', at=[1], action=action))
                 self.call('create', 'late-owned', DEVICE, RUNTIME, timeout=2)
                 first_name = self.calls('create')[0][1]
@@ -223,16 +235,14 @@ class LifecycleTests(unittest.TestCase):
                 native['devices'] += [dict(name=first_name, udid=late),
                                       dict(name=first_name + '-neighbor', udid=FOREIGN)]
                 (self.root / 'native.json').write_text(json.dumps(native))
-                self.cli('cleanup', self.state, '--timeout', .2)
+                # This is healthy late-registration teardown, not a timeout
+                # control. Allow the same normal fake startup budget as create.
+                self.cli('cleanup', self.state, '--timeout', 2)
                 self.assertIn(['delete', late], self.calls('delete'))
                 self.assertNotIn(['delete', FOREIGN], self.calls('delete'))
                 self.assertEqual([device['udid'] for device in self.inventory()], [FOREIGN])
                 self.assertTrue(json.loads((self.root / 'cleanup.json').read_text())['deleted'])
                 self.assertEqual(json.loads(self.state.read_text())['owned'], [])
-                # Each injected failure starts at a fresh service/session seam.
-                self.state.unlink()
-                (self.root / 'calls.jsonl').unlink()
-                (self.root / 'native.json').write_text(json.dumps(dict(counts={}, devices=[])))
 
     def test_boot_timeout_replaces_device_and_replays_boot_once(self):
         original = self.create()
