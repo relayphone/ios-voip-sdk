@@ -39,7 +39,7 @@ The two allowlists also kept the defaults that iOS suggested for a new Focus: th
 | F11 | **On** | Yes | No | Off | **reported, 89 ms** | 1 ms | **banner and full-screen call UI** |
 | F12 | **On** | Yes | No | On | **reported, 114 ms** | 2 ms | **banner and full-screen call UI**; CN scheduled |
 | F13 | **On** | No | Yes | Off | **filtered**: code 3, after 2197 ms | 2 ms | none |
-| F14 | On | No | Yes | On | pending | | |
+| F14 | **On** | No | Yes | On | **filtered**: code 3, after 2205 ms | 4 ms | none; CN scheduled |
 | F15 | **On** | Yes | Yes | Off | **reported, 101 ms** | 4 ms | **banner and full-screen call UI** |
 | F16 | On | Yes | Yes | On | pending | | |
 
@@ -99,6 +99,7 @@ The Live Activity rows ran into probe and consent problems before measuring Focu
    - So for LCK, app allowance overrides the People and Allow Calls From rules. A user who allows the Phone app in a Focus gets every Phone call ringing.
 4. **Allowing only the caller does not let the call through.**
    - With the Focus on, the caller in the People allowlist, Allow Calls From set to Allowed People Only and the app not allowed, the report still failed with code 3 after 2197 ms, and nothing appeared (F13).
+   - Adding a genuine person-aware CN for that allowed caller did not change it (F14, 2205 ms).
    - The caller was the owned contact, matched by E.164 phone number.
    - For LCK, the People allowlist and Allow Calls From did not apply in this setup; only the Apps allowlist did.
 5. **Allow Repeated Calls does not let a second LCK call through.** With the setting on, a second call from the same caller 69 s later was still filtered with code 3 (C02). This repeats the earlier negative result with the setting explicitly controlled.
@@ -127,7 +128,7 @@ This applies the [proposed `IncomingPresentationResult`](sdk-api.md#typed-incomi
 | Device outcome | Domain / code | Measured latency | SDK result | Default policy | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | Report succeeds | – | 63–119 ms | `.reported(conversationID:)` | normal ringing and actions | C00, F01–F05, F11, F12, F15 |
-| Filtered by Focus | `com.apple.CallKit.error.incomingcall` / 3 | 2.19–2.21 s | `.filtered(reason: .focus)` | `screenWithAI`, or `decline` per the user's policy | F09, F10, F13, C02 |
+| Filtered by Focus | `com.apple.CallKit.error.incomingcall` / 3 | 2.19–2.21 s | `.filtered(reason: .focus)` | `screenWithAI`, or `decline` per the user's policy | F09, F10, F13, F14, C02 |
 | Codes 4–7 | same domain, 4–7 | not produced | `.filtered(reason: .blockList / .restrictedSharing / .protectedCall / .sensitiveParticipants)` | conservative: no AI for code 4; decline or no screening for 5–7 | none yet (C07, C10) |
 | Anything else | unknown pair | – | `.failed(IncomingFailure)` | no screening | – |
 
@@ -139,6 +140,6 @@ What this means for the SDK:
 
 ## Next steps
 
-1. Run F14 and F16. Then fix the probe's activity continuity and rerun the L rows. Use `--keep-setup` and one `restore-all` at the end. The resume steps live in the operator's private run folder.
+1. Run F16. Then fix the probe's activity continuity and rerun the L rows. Use `--keep-setup` and one `restore-all` at the end. The resume steps live in the operator's private run folder.
 2. Repeat any row whose outcome differs from its neighbours before turning it into a rule.
 3. Re-run C00 with the Mac microphone once it is granted, to qualify audible and haptic silence.
