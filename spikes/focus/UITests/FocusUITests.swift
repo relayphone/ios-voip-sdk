@@ -117,12 +117,14 @@ final class FocusUITests: XCTestCase {
   func setFocus(_ name: String, enabled: Bool) throws {
     try focusMenu()
     let current = try selectedFocus()
-    if (current == name) != enabled {
-      let button = board.buttons.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", name, name + ",")).firstMatch
+    if (enabled && current != name) || (!enabled && current != nil) {
+      let target = enabled ? name : current!
+      let button = board.buttons.matching(NSPredicate(format: "label == %@ OR label BEGINSWITH %@", target, target + ",")).firstMatch
       try tap(board, button)
     }
     home(); try focusMenu()
-    guard ((try selectedFocus()) == name) == enabled else { throw failure("Focus toggle did not converge") }
+    let actual = try selectedFocus()
+    guard enabled ? actual == name : actual == nil else { throw failure("Focus toggle did not converge") }
     home()
   }
   func openFocusList() throws {
@@ -207,6 +209,14 @@ final class FocusUITests: XCTestCase {
     try tap(settings, ["Focus Probe", "AI call policy"])
     try tap(settings, ["Policy", "Decline"]); try tap(settings, ["AI screens calls"])
     try tap(settings, ["Add", "Done"])
+  }
+  func setRepeatedCalls(_ enabled: Bool) throws {
+    try openProfile(); try tap(settings, ["People"])
+    _ = try scrollTo(settings, ["Allow Repeated Calls"])
+    let item = settings.switches["Allow Repeated Calls"]
+    guard ["0", "1"].contains(item.value as? String ?? "") else { throw failure("Repeated-calls state unavailable") }
+    if ((item.value as? String) == "1") != enabled { try tap(settings, item) }
+    guard ((item.value as? String) == "1") == enabled else { throw failure("Repeated-calls toggle failed") }
   }
   func restore() throws {
     guard journal.captured else { return }
@@ -394,7 +404,7 @@ final class FocusUITests: XCTestCase {
     for action in actions {
       let p = action.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
       let values: [String: [String]] = ["focus": ["on", "off"], "app": ["include", "exclude"],
-        "person": ["include", "exclude"], "calls": ["Allowed People Only", "Everyone", "All Contacts", "Favorites", "No One", "Nobody"],
+        "person": ["include", "exclude"], "repeated-calls": ["on", "off"], "calls": ["Allowed People Only", "Everyone", "All Contacts", "Favorites", "No One", "Nobody"],
         "policy": ["screenWithAI"], "system-settings": ["enable"], "notifications": ["allow", "deny"], "focus-authorization": ["allow", "deny"]]
       if let allowed = values[p[0]] {
         guard p.count == 2 && allowed.contains(p[1]) else { throw failure("Invalid action value") }
@@ -408,7 +418,7 @@ final class FocusUITests: XCTestCase {
       for action in actions {
         let parts = action.split(separator: ":", maxSplits: 1).map(String.init)
         let value = parts.count > 1 ? parts[1] : ""
-        if ["focus", "app", "person", "calls", "policy"].contains(parts[0]) {
+        if ["focus", "app", "person", "calls", "policy", "repeated-calls"].contains(parts[0]) {
           try setup()
           guard journal.captured && journal.ownsFocus else { throw failure("Missing Focus ownership journal") }
         }
@@ -418,6 +428,7 @@ final class FocusUITests: XCTestCase {
         case "app": try setMember("Apps", include: value == "include")
         case "person": try setMember("People", include: value == "include")
         case "calls": try setCalls(value)
+        case "repeated-calls": try setRepeatedCalls(value == "on")
         case "policy": try setPolicy()
         case "restore-all": try restore()
         case "system-settings": try enableSystemSettings()

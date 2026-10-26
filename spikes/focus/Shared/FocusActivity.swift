@@ -30,7 +30,11 @@ enum FocusActivities {
   @MainActor static var discovery: Task<Void, Never>?
   @MainActor static func discover() {
     record?("activity.inventory", ["ids": Activity<FocusAttributes>.activities.map(\.id)])
-    for activity in Activity<FocusAttributes>.activities { observe(activity) }
+    for activity in Activity<FocusAttributes>.activities {
+      record?("activity.current", ["activityID": activity.id, "state": String(describing: activity.activityState),
+        "revision": activity.content.state.revision, "excerpt": activity.content.state.excerpt])
+      observe(activity)
+    }
     guard discovery == nil else { return }
     discovery = Task { @MainActor in
       for await activity in Activity<FocusAttributes>.activityUpdates { observe(activity) }
