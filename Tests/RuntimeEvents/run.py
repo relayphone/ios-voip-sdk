@@ -253,7 +253,7 @@ def capture_diagnostics(out, device, *, bundle=BUNDLE, channel=None, failed=Fals
             print('Cannot save diagnostic errors: ' + str(error), file=sys.stderr)
 
 
-def main():
+def main(acceptance=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--package', type=Path, required=True)
     parser.add_argument('--app', type=Path, required=True)
@@ -344,6 +344,8 @@ def main():
         for call in list(calls()):
             command('end', call['uuid'])
         wait(lambda: not calls())
+        if acceptance is not None:
+            acceptance(channel=root, session=session, command=command, rows=rows, wait=wait, out=args.out)
         captured = run(ROOT / 'Tools/cksim', '--simulator', device, '--bundle', BUNDLE,
                        '--app-container', str(root.parent.parent), 'watch', '--json', '--duration', '0.3')
         watched = [json.loads(line) for line in captured.splitlines()]
