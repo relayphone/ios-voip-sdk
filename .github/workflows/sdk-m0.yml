@@ -108,14 +108,16 @@ jobs:
           --derived-data "$RUNNER_TEMP/expo-livekit-build/DerivedData" --livekit
       - name: Preserve selected Release build inputs and inspection
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         with:
-          name: expo-livekit-ios-27.1
+          name: expo-livekit-ios-27.1-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/expo-livekit-device/*.json
             ${{ runner.temp }}/expo-livekit-device/*.log
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 3
+          compression-level: 6
       - name: Remove this job's native build cache
         if: always()
         run: rm -rf "$RUNNER_TEMP/expo-livekit-build/DerivedData"
@@ -141,6 +143,7 @@ jobs:
           set -euo pipefail
           source scripts/ci/sdk_paths.sh
           python3 -m unittest discover -s scripts/sim -p 'test_*.py'
+          python3 -m unittest discover -s scripts/ci/tests -p 'test_*.py'
           python3 discovery/check_sdk_m0.py | tee "$SDK_M0_BUILD_LOGS/offline-controls.json"
           python3 discovery/check_sdk_installed_paths.py
           python3 discovery/check_sdk_m1.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-offline-controls.log"
@@ -171,13 +174,15 @@ jobs:
               exit 1
             fi
           done
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         if: always()
         with:
-          name: sdk-offline-controls
+          name: sdk-offline-controls-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/sdk-m0-build/build-logs
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
+          compression-level: 6
 
   apple-host-controls:
     runs-on: xcode-27
@@ -227,13 +232,15 @@ jobs:
               exit 1
             fi
           done
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         if: always()
         with:
-          name: sdk-apple-host-controls
+          name: sdk-apple-host-controls-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/sdk-m0-build/build-logs
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
+          compression-level: 6
 
   sdk-example:
     runs-on: xcode-27
@@ -279,20 +286,20 @@ jobs:
           mkdir -p "$(dirname "$SDK_M0_APP")"
           ditto "${apps[0]}" "$SDK_M0_APP"
           scripts/ci/bounded 120 python3 scripts/ci/sdk_artifacts.py pack example "$SDK_M0_BUILD_ROOT" "$RUNNER_TEMP/sdk-transfer"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         with:
-          name: sdk-native-example
-          compression-level: 0
+          name: sdk-native-example-${{ github.run_id }}
           path: ${{ runner.temp }}/sdk-transfer/*
-          if-no-files-found: error
-          retention-days: 7
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         if: always()
         with:
-          name: sdk-example-build-logs
+          name: sdk-example-build-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/sdk-m0-build/build-logs
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
+          compression-level: 6
       - name: Remove this job's native outputs
         if: always()
         run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
@@ -328,20 +335,20 @@ jobs:
           bash discovery/build_sdk_device_probe.sh "$SDK_M0_BUILD_ROOT/device" 2>&1 | tee "$SDK_M0_BUILD_LOGS/device-probe-build.log"
           scripts/ci/bounded 60 python3 scripts/ci/sdk_artifacts.py compact-spm core "$SDK_M0_BUILD_ROOT"
           scripts/ci/bounded 120 python3 scripts/ci/sdk_artifacts.py pack core "$SDK_M0_BUILD_ROOT" "$RUNNER_TEMP/sdk-transfer"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         with:
-          name: sdk-native-core
-          compression-level: 0
+          name: sdk-native-core-${{ github.run_id }}
           path: ${{ runner.temp }}/sdk-transfer/*
-          if-no-files-found: error
-          retention-days: 7
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         if: always()
         with:
-          name: sdk-core-build-logs
+          name: sdk-core-build-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/sdk-m0-build/build-logs
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
+          compression-level: 6
       - name: Remove this job's native outputs
         if: always()
         run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
@@ -370,32 +377,31 @@ jobs:
             printf 'Source PushKit report-entry build completed.\n'
           } 2>&1 | tee "$SDK_M0_BUILD_LOGS/push-entry-build.log"
           scripts/ci/bounded 120 python3 scripts/ci/sdk_artifacts.py pack fixtures "$SDK_M0_BUILD_ROOT" "$RUNNER_TEMP/sdk-transfer"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         with:
-          name: sdk-native-fixtures
-          compression-level: 0
+          name: sdk-native-fixtures-${{ github.run_id }}
           path: ${{ runner.temp }}/sdk-transfer/*
-          if-no-files-found: error
-          retention-days: 7
       - name: Hand off the SDK 27 contract app for the older runtime
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         with:
-          name: sdk-27-m1-contract-app
+          name: sdk-27-m1-contract-app-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/sdk-m0-build/m1-contracts/SDKM1Contracts.app
             ${{ runner.temp }}/sdk-m0-build/m1-contracts/build-info.json
             ${{ runner.temp }}/sdk-m0-build/m1-contracts/source-before.json
             ${{ runner.temp }}/sdk-m0-build/m1-contracts/source-after.json
             ${{ runner.temp }}/sdk-m0-build/m1-contracts/build.log
-          if-no-files-found: error
-          retention-days: 7
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         if: always()
         with:
-          name: sdk-fixtures-build-logs
+          name: sdk-fixtures-build-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/sdk-m0-build/build-logs
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
+          compression-level: 6
       - name: Remove this job's native outputs
         if: always()
         run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
@@ -473,20 +479,24 @@ jobs:
               fi
             done
           done
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         if: always()
         with:
-          name: sdk-device-release-inspection
+          name: sdk-device-release-inspection-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/sdk-m0-build/build-logs
           if-no-files-found: warn
-          retention-days: 7
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+          retention-days: 3
+          compression-level: 6
+      - uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         if: always()
         with:
-          name: sdk-standard-webrtc-inspection
+          name: sdk-standard-webrtc-inspection-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/sdk-m0-build/pod-standard-webrtc
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
+          compression-level: 6
       - name: Remove this job's native outputs
         if: always()
         run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
@@ -520,7 +530,7 @@ jobs:
           package-manager-cache: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          pattern: sdk-native-*
+          pattern: sdk-native-*-${{ github.run_id }}
           merge-multiple: true
           path: ${{ runner.temp }}/sdk-transfer
       - name: Verify source-bound products and record their composite receipt
@@ -543,13 +553,15 @@ jobs:
       - name: Delete any remaining run-owned simulator
         if: always()
         run: python3 scripts/sim/sim.py cleanup "$RUNNER_TEMP/sdk-m0/simulator-state.json" --timeout 60
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         if: always()
         with:
-          name: sdk-m0-${{ matrix.group }}-xcode-27.1
+          name: sdk-m0-${{ matrix.group }}-xcode-27.1-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/sdk-m0
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
+          compression-level: 6
       - name: Remove this job's native outputs
         if: always()
         run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
@@ -587,7 +599,7 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode_26.6.app
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: sdk-27-m1-contract-app
+          name: sdk-27-m1-contract-app-${{ github.run_id }}
           path: ${{ runner.temp }}/sdk-27-contract-build
       - name: Restore the app executable mode after artifact download
         run: chmod +x "$RUNNER_TEMP/sdk-27-contract-build/SDKM1Contracts.app/SDKM1Contracts"
@@ -603,12 +615,14 @@ jobs:
         run: python3 scripts/sim/sim.py cleanup "$RUNNER_TEMP/audio-lifecycle-legacy/simulator-state.json" --timeout 60
       - name: Preserve the scoped legacy capture
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         with:
-          name: audio-lifecycle-ios-26.5-sdk-27
+          name: audio-lifecycle-ios-26.5-sdk-27-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/audio-lifecycle-legacy
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
+          compression-level: 6
       - name: Remove the downloaded app
         if: always()
         run: rm -rf "$RUNNER_TEMP/sdk-27-contract-build"
@@ -640,9 +654,10 @@ jobs:
         run: python3 scripts/sim/sim.py cleanup "$RUNNER_TEMP/swift-livekit-native/simulator-state/owner.json" --timeout 60
       - name: Preserve small Swift setup and cleanup statuses
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         with:
-          name: swift-livekit-setup-status-xcode-27.1
+          name: swift-livekit-setup-status-xcode-27.1-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/swift-livekit-native/*.status.json
             ${{ runner.temp }}/swift-livekit-native/cleanup.json
@@ -652,17 +667,20 @@ jobs:
             ${{ runner.temp }}/swift-livekit-native/simulator-state/*.json
             ${{ runner.temp }}/swift-livekit-native/simulator-state/commands.status.jsonl
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 3
+          compression-level: 6
       - name: Preserve the source, pinned build and native captures
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
         with:
-          name: swift-livekit-native-xcode-27.1
+          name: swift-livekit-native-xcode-27.1-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/swift-livekit-build
             ${{ runner.temp }}/swift-livekit-native
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
+          compression-level: 6
       - name: Remove the owned build products
         if: always()
         run: rm -rf "$RUNNER_TEMP/swift-livekit-build"

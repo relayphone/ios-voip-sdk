@@ -30,3 +30,5 @@ first job start through final legacy completion. PR descriptions and lane STATUS
 reports record measured candidate/main timings. Targets are PR critical path
 under15minutes and main full run under20. Path selection, caching and merge-group
 support follow in separate changes after this graph qualifies on main.
+
+Transfer artifacts include their producer role and workflow run ID and expire after one day. Their names stay stable across job reruns so a consumer can reuse successful producers from an earlier attempt; overwrite affects only that producer's artifact in the same run. Diagnostic artifacts also include the attempt and expire after three days. A transfer step has an eight-minute total bound and one upload retry; exhaustion fails the producer and strict aggregate. This recovery never launches or replays an app. Consumers still validate the original source/architecture/hash manifest.
