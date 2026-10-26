@@ -12,10 +12,6 @@ on:
         value: ${{ jobs.detect.outputs.sdk_plan }}
       runtime_plan:
         value: ${{ jobs.detect.outputs.runtime_plan }}
-      matrix:
-        value: ${{ jobs.detect.outputs.matrix }}
-      device:
-        value: ${{ jobs.detect.outputs.device }}
       swift:
         value: ${{ jobs.detect.outputs.swift }}
       expo:
@@ -34,8 +30,6 @@ jobs:
       helper: ${{ steps.select.outputs.helper }}
       sdk_plan: ${{ steps.select.outputs.sdk_plan }}
       runtime_plan: ${{ steps.select.outputs.runtime_plan }}
-      matrix: ${{ steps.select.outputs.matrix }}
-      device: ${{ steps.select.outputs.device }}
       swift: ${{ steps.select.outputs.swift }}
       expo: ${{ steps.select.outputs.expo }}
       legacy: ${{ steps.select.outputs.legacy }}

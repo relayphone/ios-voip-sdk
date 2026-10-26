@@ -1,37 +1,11 @@
 # CI selection policy
 
-Main pushes and the daily 03:20 UTC SDK/Runtime runs execute the complete suite.
-Explicit manual dispatch retains full qualification. Pull requests use critical
-journeys plus affected checks; the selector also understands merge-group events
-for the later trigger rollout.
+Main pushes and daily SDK/Runtime runs execute every original check. Explicit manual dispatch retains full qualification. Pull requests select the serial SDK job and affected Swift, Expo, legacy, Runtime and helper checks. Documentation-only changes run lightweight selection and aggregate gates.
 
-| Change | Automatic PR work |
-| --- | --- |
-| Documentation only | Selection tests and lightweight acceptance gates |
-| SDK JavaScript | Host checks, shared producers, complete M0 and M1 critical journeys |
-| Runtime/Inspector runner | Runtime and Inspector acceptance, helper controls |
-| Shared compiled SDK inputs | Critical journeys plus affected contract, PushKit and legacy checks |
-| Native dependency or fixture | Its device/Swift/Expo consumer as well as critical journeys |
+The current SDK native job retains the complete M0, M1, contracts, PushKit, system and device acceptance on one simulator. This interim split selects whole jobs; it does not shorten an SDK-native run or promise the 15-minute target. The separately qualified parallel split will restore per-journey selection after its native capture budget is resolved.
 
-The critical M1 worker retains the complete M0 prerequisites and all three M1
-cases with their existing oracles. Other journey groups retain their complete
-case sets when selected. Every worker owns its simulator and shared pre-app
-budget. No product deadline or assertion is changed by selection.
+SDK workflow body or guard changes select the affected optional consumer. Inherited environment/default changes select all optional consumers. Comparison migrates only the exact guards introduced by this policy; unknown boundaries or missing jobs fail closed. New executable inputs conservatively select SDK, Runtime and helper checks.
 
-SDK workflow execution edits select the changed optional jobs. Inherited
-environment/default changes select all optional consumers. Comparison migrates
-only the exact guards introduced by this policy; altered guards remain visible.
-Missing workflow versions, unrecognized job boundaries and missing jobs fail
-selection rather than silently skipping work. New source inputs conservatively
-select critical SDK/Runtime checks.
+The stable `plain-simulator` and `runtime-events` gates require every selected dependency to succeed and every unselected dependency to be skipped. A cancelled, failed or unexpectedly skipped selected job fails the aggregate. Main selects every dependency. Main concurrency groups use the commit SHA, preserving pending runs across newer pushes; PR groups use the PR ref and cancel superseded runs.
 
-The `plain-simulator` and `runtime-events` gates require every selected dependency
-to succeed and every unselected dependency to be skipped. Selection must itself
-succeed. A cancelled or unexpectedly skipped selected job is a failure. Main's
-full policy selects every dependency, so main cannot pass through PR skips.
-
-Only standard `ubuntu-latest`, `xcode-27` and `macos-26` runners are used. The journey
-matrix permits five parallel workers; producer dependencies give shared builds
-priority over longer independent consumers. Larger runners are not used.
-
-Main concurrency groups use the immutable commit SHA, preserving every pending main run. Pull requests retain a group per PR ref and cancel superseded runs.
+Only standard `ubuntu-latest`, `xcode-27` and `macos-26` runners are used.

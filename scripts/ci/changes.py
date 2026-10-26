@@ -7,21 +7,13 @@ import json
 import os
 import sys
 
-SDK_JOBS = ('offline-controls', 'apple-host-controls', 'sdk-example', 'sdk-core',
-            'sdk-fixtures', 'device-release', 'journeys', 'legacy-audio-lifecycle',
-            'swift-livekit-native', 'expo-livekit-native')
-GROUPS = {'m1': dict(group='m1', m1='1', part='journeys', system='0'),
-          'contracts': dict(group='contracts', m1='1', part='contracts', system='0'),
-          'push-entry': dict(group='push-entry', m1='1', part='push-entry', system='0'),
-          'system': dict(group='system', m1='0', part='all', system='1')}
-CRITICAL = {'offline-controls', 'apple-host-controls', 'sdk-example', 'sdk-core',
-            'sdk-fixtures', 'journeys'}
+SDK_JOBS = ('sdk-native', 'legacy-audio-lifecycle', 'swift-livekit-native',
+            'expo-livekit-native')
 
 
 def select(paths, full=False):
     if full:
-        return dict(sdk=True, runtime=True, helper=True, matrix=dict(include=list(GROUPS.values())),
-                    sdk_plan=dict.fromkeys(SDK_JOBS, True))
+        return dict(sdk=True, runtime=True, helper=True, sdk_plan=dict.fromkeys(SDK_JOBS, True))
     paths = [p for p in paths if not documentation(p)]
     sdk = runtime = helper = False
     for path in paths:
@@ -53,21 +45,19 @@ def select(paths, full=False):
         else:
             # New executable/configuration inputs get conservative critical checks.
             sdk = runtime = helper = True
-    groups = {'m1'}
     shared = any(p.startswith(COMPILED_SDK) for p in paths)
-    if shared or any('m1_contract' in p or audio_contract(p) for p in paths):
-        groups.add('contracts')
-    if shared or any('push_report_entry' in p or 'push_entry_' in p or p.startswith('Tests/PushLaunch/') for p in paths):
-        groups.add('push-entry')
-    if any('sdk_system' in p or p.startswith(('Sources/Engine/', 'Sources/Interposition/', 'Tools/')) or p == 'scripts/build-runtime.sh' for p in paths):
-        groups.add('system')
-    jobs = {job: sdk and job in CRITICAL for job in SDK_JOBS}
-    jobs['device-release'] = sdk and any(p in NATIVE_INPUTS or p in DEVICE_BUILDERS or p.startswith(('ExpoMedia/', 'Sources/VoIPPlatform/', 'Tests/ExpoMedia/')) for p in paths)
-    jobs['expo-livekit-native'] = sdk and any(p in ('package.json', 'package-lock.json', 'app.plugin.js', 'IosVoipSDK.podspec', 'expo-module.config.json') or p in DEVICE_BUILDERS or p.startswith(('ExpoMedia/', 'Tests/ExpoMedia/')) for p in paths)
-    jobs['swift-livekit-native'] = sdk and any('swift_livekit' in p or p.startswith(('Sources/VoIPSDK/', 'Sources/VoIPPlatform/', 'Integrations/LiveKit/', 'Tests/SwiftLiveKit/')) or p in ('Package.swift', 'Tools/cksim-notify.c') for p in paths)
-    jobs['legacy-audio-lifecycle'] = sdk and (shared or any('m1_contract' in p or 'run_audio_lifecycle_legacy' in p or audio_contract(p) for p in paths))
-    return dict(sdk=sdk, runtime=runtime, helper=helper,
-                matrix=dict(include=[v for k, v in GROUPS.items() if k in groups]), sdk_plan=jobs)
+    jobs = dict.fromkeys(SDK_JOBS, False)
+    jobs['sdk-native'] = sdk
+    jobs['expo-livekit-native'] = sdk and (shared or any(p in NATIVE_INPUTS or p in DEVICE_BUILDERS
+        or p.startswith(('Expo/', 'ExpoMedia/', 'example/', 'Tests/ExpoMedia/')) for p in paths))
+    jobs['swift-livekit-native'] = sdk and any('swift_livekit' in p or p.startswith(
+        ('Sources/VoIPSDK/', 'Sources/VoIPPlatform/', 'Integrations/LiveKit/',
+         'Tests/SwiftLiveKit/', 'scripts/sim/')) or p in ('Package.swift', 'Tools/cksim-notify.c',
+         'discovery/run_scenario.py') for p in paths)
+    jobs['legacy-audio-lifecycle'] = sdk and (shared or any('m1_contract' in p
+        or 'run_audio_lifecycle_legacy' in p or audio_contract(p)
+        or p.startswith('scripts/sim/') or p == 'discovery/run_scenario.py' for p in paths))
+    return dict(sdk=sdk, runtime=runtime, helper=helper, sdk_plan=jobs)
 
 
 SDK_INPUTS = {'Package.swift', 'VERSION', 'IosVoipSDK.podspec', 'expo-module.config.json',
@@ -110,8 +100,8 @@ def changed_paths(base, head, root):
     return diff.stdout.decode('utf-8', errors='surrogateescape').rstrip('\0').split('\0') if diff.stdout else []
 
 
-OPTIONAL = {'device-release': 'device', 'swift-livekit-native': 'swift',
-            'expo-livekit-native': 'expo', 'legacy-audio-lifecycle': 'legacy'}
+OPTIONAL = {'swift-livekit-native': 'swift', 'expo-livekit-native': 'expo',
+            'legacy-audio-lifecycle': 'legacy'}
 
 
 def workflow_parts(text):
@@ -154,14 +144,14 @@ def workflow_optional_changes(before, after):
         for job, flag in OPTIONAL.items():
             condition = "    if: needs.changes.outputs." + flag + " == 'true'\n"
             if job == 'legacy-audio-lifecycle':
-                line = '    needs: sdk-fixtures\n'
+                line = '    needs: plain-simulator\n'
                 if old[job].count(line) != 1: raise ValueError('Unknown legacy dependency')
-                old[job] = old[job].replace(line, '    needs: [changes, sdk-fixtures]\n' + condition)
+                old[job] = old[job].replace(line, '    needs: [changes, sdk-native]\n' + condition)
             else:
                 if re.search(r'^    (needs|if):', old[job], re.M):
                     raise ValueError('Unknown pre-selection job guard')
                 first, rest = old[job].split('\n', 1)
-                old[job] = first + '\n    needs: [changes, sdk-core]\n' + condition + rest
+                old[job] = first + '\n    needs: changes\n' + condition + rest
     return {job for job in OPTIONAL if old[job].strip() != new[job].strip()}
 
 
@@ -200,13 +190,12 @@ def main():
             plan = event_selection(os.environ['GITHUB_EVENT_NAME'], event, os.environ['GITHUB_WORKSPACE'])
             values = {k: json.dumps(v, separators=(',', ':')) for k, v in plan.items()}
             values['runtime_plan'] = json.dumps({'runtime-native': plan['runtime']})
-            for key, job in (('device', 'device-release'), ('swift', 'swift-livekit-native'),
+            for key, job in (('swift', 'swift-livekit-native'),
                              ('expo', 'expo-livekit-native'), ('legacy', 'legacy-audio-lifecycle')):
                 values[key] = json.dumps(plan['sdk_plan'][job])
             with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
                 for key, value in values.items(): output.write(key + '=' + value + '\n')
-            print('Selected SDK groups: ' + ', '.join(row['group'] for row in plan['matrix']['include'])
-                  if plan['sdk'] else 'SDK native checks unselected.')
+            print('SDK native: ' + str(plan['sdk']))
             print('Runtime native: ' + str(plan['runtime']) + '; helper controls: ' + str(plan['helper']))
         else:
             raise ValueError('Expected select or gate')

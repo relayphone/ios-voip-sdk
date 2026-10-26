@@ -1,0 +1,99 @@
+# Focus device results: first iPhone 13 pass
+
+These are the measured results for the [device plan](device-plan.md) from [#124](https://github.com/ziahamza/ios-voip-sdk/issues/124). Claude ran them on 26 October 2026 with the [`spikes/focus`](../../../spikes/focus/README.md) probe. The probe uses only LiveCommunicationKit (LCK); CallKit was not tested. The run was cut short twice to return the shared phone, so this pass is partial.
+
+The rows were automated: XCUITest changed the settings and observed the screen, and pushes went through the sandbox. There is **one sample per row**; the plan asks for three. Traces, receipts and tokens stay in a private working folder and are not committed.
+
+## Setup
+
+| Item | Value |
+| --- | --- |
+| Device | iPhone 13, iOS 27.0 (24A5355q), unlocked, an XCUITest session observing. |
+| Build | Xcode 27.1 (27A9275); probe from `main` plus this PR's harness fixes. Signed with a development certificate. |
+| Signing | The App Group was removed locally, because command-line automatic signing cannot add that capability. |
+| Delivery | Sandbox VoIP push to `dev.callkitsim.focus.voip`. Each push launched the probe cold. |
+| Test Focus | Owned custom Focus "Focus Probe 124", in Allow Notifications From mode for both People and Apps. |
+| Focus settings | Allow Calls From **Allowed People Only**, Allow Repeated Calls **off**, Time Sensitive Notifications off, Share Across Devices off. |
+| Caller | One owned test contact with a single E.164 mobile number. The push identifies the caller by the same handle. |
+| Communication Notification (CN) | When on: one local notification built from a genuine incoming `INStartCallIntent` at the active interruption level. |
+| Observation | The call surface counts as observed when SpringBoard shows its Accept/Decline buttons (banner) or InCallService shows its root view (full screen). |
+| Qualification | The visual observation is qualified by C00. Audio and haptics were **not measured**: the Mac microphone prompt was still pending. The Ring/Silent switch position was not recorded. |
+
+The two allowlists also kept the defaults that iOS suggested for a new Focus: three Apple and messaging apps, and one personal contact. None of them took part in a call.
+
+## Rows
+
+"Report" is the LCK `reportNewIncomingConversation` result, measured from report entry. "Entry" is the time from push receipt to report entry.
+
+| ID | Focus | App allowed | Caller allowed | CN | Report | Entry | Call surface |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| C00 | Off | – | – | Off | reported, 81 ms | 2 ms | banner and full-screen call UI |
+| F01 | Off | No | No | Off | reported, 63 ms | 1 ms | banner and full-screen call UI |
+| F02 | Off | No | No | On | reported, 104 ms | 7 ms | banner and full-screen call UI; CN scheduled 74 ms after the report |
+| F03 | Off | Yes | No | Off | reported, 73 ms | 2 ms | banner and full-screen call UI |
+| F04 | Off | Yes | No | On | reported, 119 ms | 2 ms | banner and full-screen call UI; CN scheduled |
+| F05 | Off | No | Yes | Off | reported, 82 ms | 2 ms | banner and full-screen call UI |
+| F06–F08 | Off | | | | **skipped**: F01–F04 already establish the Focus-off baseline | | |
+| F09 | **On** | No | No | Off | **filtered**: `com.apple.CallKit.error.incomingcall` code 3, after 2189 ms | 7 ms | none |
+| F10 | **On** | No | No | On | **filtered**: code 3, after 2205 ms | 9 ms | none; CN scheduled |
+| F11–F16 | On | | | | **pending**. F11 was aborted mid-row to return the phone and has no result. | | |
+
+Every unanswered reported call ended itself after the probe's 25 s ring timeout. The CN's own banner was not observed separately in F02, F04 or F10.
+
+### Other rows
+
+| Rows | Status |
+| --- | --- |
+| C02 (repeated calls off, then on), L01–L04, L09, locked Auto-Answer (`F01 --locked-auto-answer`) | Pending. Run next. |
+| C01, C05 | Pending, low priority. |
+| C06 (Focus filter policy) | **Unqualified**: built without the App Group. |
+| C03, C04, C07–C11, L05–L08, L10–L16, T01–T06 | Skipped automatically, per the plan: they need adapters, a backend or hardware this probe lacks. |
+
+## Measured rules
+
+1. **Focus off: every call rings.** Each report succeeded in 63–119 ms and showed both the banner and the full-screen call UI (F01–F05). Focus app membership, caller membership and a CN made no difference.
+2. **Focus on, with neither the app nor the caller allowed: the call is filtered.**
+   - Setup: Allow Calls From is Allowed People Only and repeated calls are off.
+   - LCK fails the report with `com.apple.CallKit.error.incomingcall` code 3, about 2.2 s after entry (F09).
+   - No banner and no call UI appear.
+   - A genuine Communication Notification for the same caller does not change this (F10).
+   - This repeats the earlier [push probe](../callkit-simulator-probe/livecommunicationkit/push/README.md#results) result (2.07 s, code 3), now with the allowances controlled.
+3. **No breakthrough rule is established yet.** Do not claim that allowing the app, the person, or both lets a call through until F11–F16 are measured.
+4. **Report entry is immediate, and the filtered result is slow.**
+   - Report entry came 1–9 ms after push receipt, even on a cold launch.
+   - The filtered result arrived about 2.2 s after entry, and PushKit completion followed straight away.
+   - After a filter, the process was last observed 1 s after the push; the 3 s survival sample never logged.
+   - Reported calls kept the process alive for at least 10.6 s.
+5. **Unauthorized Focus status reads as "not focused".**
+   - With `INFocusStatusCenter` authorization not determined (`0`), `focusStatus.isFocused` read `false` while the test Focus was on (F09, F10).
+   - Treat a status that is not authorized as unknown, never as "not focused".
+
+### iOS 27 Settings facts that affect the product
+
+- **New custom Focus defaults.** A new custom Focus starts with Allow Calls From set to **Contacts Only** and Allow Repeated Calls **on**, plus suggested apps and people.
+  - Under those defaults, any saved contact may get through a fresh custom Focus. This is not measured for LCK here; the matrix uses Allowed People Only.
+- **App picker needs notification permission.** The Focus Apps picker offers only apps that already have notification permission. Phone must request notification permission before users can allow it in a Focus.
+- **Allowlist editing.** The very first People setup is a two-step sheet (Next, then Done). Later edits happen on a page that saves live.
+
+## Typed-outcome mapping
+
+This applies the [proposed `IncomingPresentationResult`](sdk-api.md#typed-incoming-result-and-native-policy) to what the device produced.
+
+| Device outcome | Domain / code | Measured latency | SDK result | Default policy | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| Report succeeds | – | 63–119 ms | `.reported(conversationID:)` | normal ringing and actions | C00, F01–F05 |
+| Filtered by Focus | `com.apple.CallKit.error.incomingcall` / 3 | 2.19–2.21 s | `.filtered(reason: .focus)` | `screenWithAI`, or `decline` per the user's policy | F09, F10 |
+| Codes 4–7 | same domain, 4–7 | not produced | `.filtered(reason: .blockList / .restrictedSharing / .protectedCall / .sensitiveParticipants)` | conservative: no AI for code 4; decline or no screening for 5–7 | none yet (C07, C10) |
+| Anything else | unknown pair | – | `.failed(IncomingFailure)` | no screening | – |
+
+What this means for the SDK:
+
+- The report waiter must allow well over 2.2 s before treating a filtered report as a timeout.
+- The filtered hook must enqueue its outbox record within the about 1 s that the process was observed to survive the push.
+- The SDK must keep the domain and code together; the probe trace already records `reason: "focus"` for code 3.
+
+## Next steps
+
+1. Run F11–F16, then C02, the L rows and the locked Auto-Answer run, using `--keep-setup` and one `restore-all` at the end. The resume steps live in the operator's private run folder.
+2. Repeat any row whose outcome differs from its neighbours before turning it into a rule.
+3. Re-run C00 with the Mac microphone once it is granted, to qualify audible and haptic silence.
