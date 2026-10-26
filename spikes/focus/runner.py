@@ -487,6 +487,11 @@ def main():
     parser.add_argument("--keep-setup", action="store_true", help="matrix mode: turn Focus off after the row; run restore-all at the end")
     args = parser.parse_args()
     p = plan(args.row, args.locked_auto_answer, args.listen, args.provider, args.caller_format, args.repeated_calls, args.caller_value)
+    if not p["blocked"] and p["baseRow"] != "restore-all":
+        p["callsFrom"] = args.calls if p["baseRow"] == "C01" else "Allowed People Only"
+        p["keepSetup"] = args.keep_setup
+        if args.keep_setup:
+            p["steps"][-1] = "write private row result; disarm and turn Focus off; keep owned setup (run restore-all after matrix)"
     if args.dry_run or p["blocked"]:
         if p["blocked"]:
             p["status"] = "skipped-dependency-or-unsupported"

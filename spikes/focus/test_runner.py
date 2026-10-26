@@ -69,9 +69,12 @@ class DryRunTests(unittest.TestCase):
                              (provider, "on", "generic"))
             self.assertTrue(any("181s" in step for step in data["steps"]))
             self.assertTrue(any("69s" in step and "second distinct call" in step for step in data["steps"]))
-        national = json.loads(self.run_plan("C01", "--provider", "callkit", "--caller-format", "national").stdout)
+        national = json.loads(self.run_plan("C01", "--provider", "callkit", "--caller-format", "national", "--calls", "Contacts Only", "--keep-setup").stdout)
         self.assertEqual((national["provider"], national["handleType"], national["callerValue"]),
                          ("callkit", "phoneNumber", "5555550199"))
+        self.assertEqual(national["callsFrom"], "Contacts Only")
+        self.assertTrue(national["keepSetup"])
+        self.assertIn("restore-all after matrix", national["steps"][-1])
 
     def test_failed_positive_control_cannot_qualify_audio(self):
         valid = {"status": "recorded", "visualNegativeQualified": True, "reports": [{"outcome": "reported"}]}
