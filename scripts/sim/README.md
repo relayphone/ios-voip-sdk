@@ -97,3 +97,5 @@ command evidence is archived under `infrastructure-attempts/`, launch environmen
 is refreshed after replacement, and the checkpoint is persisted before the
 unchanged case supervisor starts. This slice adds no console or case retry.
 Cleanup preserves the primary failure and still performs independent inventory.
+
+Runtime fixture discovery binds the launch PID, bundle and fresh run ID to one canonical host journal. Controls and watch reuse that validated container; diagnostics use the retained channel. None of those paths queries a data container through simctl. Shared simulator preparation retains its existing one pre-app budget and no-replay barrier. Generic host commands use `scripts/ci/bounded`, with a ten-second termination grace outside the command deadline.
