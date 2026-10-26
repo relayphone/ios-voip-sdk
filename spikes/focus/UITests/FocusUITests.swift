@@ -226,9 +226,10 @@ final class FocusUITests: XCTestCase {
         // The People picker keeps the full contact list (same names, unhittable) behind its search results.
         let results = settings.collectionViews["Search results"]
         let hit = results.cells.matching(NSPredicate(format: "label == %@", name)).firstMatch
+        let found = hit.waitForExistence(timeout: 4)
         let settled = Date().addingTimeInterval(4)
-        while hit.exists && !hit.isHittable && Date() < settled { Thread.sleep(forTimeInterval: 0.2) }
-        try tap(settings, hit.waitForExistence(timeout: 3) ? hit : element(settings, [name], timeout: 5))
+        while found && !hit.isHittable && Date() < settled { Thread.sleep(forTimeInterval: 0.2) }
+        try tap(settings, found ? hit : element(settings, [name], timeout: 5))
         // Both pickers confirm with Done once their search closes (the People picker is multi-select).
         if let done = try? element(settings, ["Done"], timeout: 2) { try tap(settings, done) }
       } else {
