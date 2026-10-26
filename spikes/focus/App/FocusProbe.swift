@@ -173,6 +173,9 @@ final class Calls: NSObject, PKPushRegistryDelegate, ConversationManagerDelegate
 
 enum CommunicationNotification {
   static func send(caller: String, id: UUID, kind: String) async {
+    let intentKind = kind == "generic" ? "unknown" : "phoneNumber"
+    Trace.shared.log("cn.intent", ["invitationID": id.uuidString, "callHandleType": kind,
+      "intentHandleType": intentKind, "handleValue": caller])
     let person = INPerson(personHandle: INPersonHandle(value: caller, type: kind == "generic" ? .unknown : .phoneNumber), nameComponents: nil,
       displayName: "Focus Test Caller", image: nil, contactIdentifier: nil, customIdentifier: caller, aliases: nil, suggestionType: .none)
     let intent = INStartCallIntent(callRecordFilter: nil, callRecordToCallBack: nil, audioRoute: .unknown,
@@ -185,7 +188,8 @@ enum CommunicationNotification {
       content.interruptionLevel = .active; content.sound = .default
       let updated = try content.updating(from: intent)
       try await UNUserNotificationCenter.current().add(.init(identifier: "focus.cn.\(id)", content: updated, trigger: nil))
-      Trace.shared.log("cn.scheduled", ["invitationID": id.uuidString, "handleType": kind, "handleValue": caller])
+      Trace.shared.log("cn.scheduled", ["invitationID": id.uuidString, "callHandleType": kind,
+        "intentHandleType": intentKind, "handleValue": caller])
     } catch { Trace.shared.log("cn.failed", ["domain": (error as NSError).domain, "code": (error as NSError).code]) }
   }
 }

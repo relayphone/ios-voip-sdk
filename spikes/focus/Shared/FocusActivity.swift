@@ -53,8 +53,18 @@ enum FocusActivities {
       try? FileManager.default.removeItem(at: ProbeFiles.documents.appendingPathComponent(name))
     }
   }
+  @MainActor static func cancelObservations() {
+    for task in observations.values { task.cancel() }
+    for task in stateTasks.values { task.cancel() }
+    for task in contentTasks.values { task.cancel() }
+    observations.removeAll(); stateTasks.removeAll(); contentTasks.removeAll()
+  }
+  @MainActor static func isUniqueCurrent(_ activity: Activity<FocusAttributes>) -> Bool {
+    let current = Activity<FocusAttributes>.activities.filter { $0.activityState == .active || $0.activityState == .stale }
+    return selection(current) == .reuse(0) && current.first?.id == activity.id
+  }
   @MainActor static func export(_ token: Data, for activity: Activity<FocusAttributes>) {
-    guard !ending, marker()?["activityID"] == activity.id,
+    guard !ending, isUniqueCurrent(activity), marker()?["activityID"] == activity.id,
       activity.activityState == .active || activity.activityState == .stale else { return }
     let generation = UUID().uuidString
     let registration = ["activityID": activity.id, "surfaceID": activity.attributes.surfaceID,
@@ -64,7 +74,9 @@ enum FocusActivities {
     do {
       // Publish token first, registration last; the runner validates both generations twice.
       try ProbeFiles.write("activity-update-token.json", data: JSONEncoder().encode(tokenFile))
+      guard isUniqueCurrent(activity) else { clearRegistration(); return }
       try ProbeFiles.write("activity-registration.json", data: JSONEncoder().encode(registration))
+      guard isUniqueCurrent(activity) else { clearRegistration(); return }
       record?("activity.tokenExported", ["activityID": activity.id, "tokenGeneration": generation])
     } catch {
       clearRegistration()
@@ -90,9 +102,9 @@ enum FocusActivities {
       record?("activity.current", ["activityID": activity.id, "state": String(describing: activity.activityState),
         "revision": activity.content.state.revision, "excerpt": activity.content.state.excerpt])
       observe(activity)
-    case .create: clearRegistration()
-    case .missing: clearRegistration(); record?("activity.missing", [:])
-    case .ambiguous: clearRegistration(); record?("activity.ambiguous", ["count": current.count])
+    case .create: clearRegistration(); cancelObservations()
+    case .missing: clearRegistration(); cancelObservations(); record?("activity.missing", [:])
+    case .ambiguous: clearRegistration(); cancelObservations(); record?("activity.ambiguous", ["count": current.count])
     }
   }
   @MainActor static func start() throws {
@@ -154,10 +166,7 @@ enum FocusActivities {
     guard !ending else { return }
     ending = true
     defer { ending = false }
-    for task in observations.values { task.cancel() }
-    for task in stateTasks.values { task.cancel() }
-    for task in contentTasks.values { task.cancel() }
-    observations.removeAll(); stateTasks.removeAll(); contentTasks.removeAll()
+    cancelObservations()
     for activity in Activity<FocusAttributes>.activities {
       await activity.end(nil, dismissalPolicy: .immediate)
     }

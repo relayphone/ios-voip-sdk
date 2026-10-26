@@ -514,11 +514,18 @@ final class FocusUITests: XCTestCase {
     let end = Date().addingTimeInterval(min(max(duration, 1), 90))
     var banner = false, fullScreen = false
     var bannerAt: Double?, screenAt: Double?
+    var previousBanner = false, previousScreen = false
     repeat {
+      var currentBanner = false
       if board.state == .runningForeground {
-        banner = banner || board.buttons.matching(NSPredicate(format: "label IN %@", ["Accept", "Answer call", "Decline"])).firstMatch.exists
+        currentBanner = board.buttons.matching(NSPredicate(format: "label IN %@", ["Accept", "Answer call", "Decline"])).firstMatch.exists
       }
-      fullScreen = fullScreen || (callUI.state == .runningForeground && callUI.otherElements["InCallRootView"].exists)
+      let currentScreen = callUI.state == .runningForeground && callUI.otherElements["InCallRootView"].exists
+      let now = Date().timeIntervalSince1970
+      if currentBanner != previousBanner { events.append(["event": "surface.transition", "surface": "banner", "visible": currentBanner, "observedAt": now]) }
+      if currentScreen != previousScreen { events.append(["event": "surface.transition", "surface": "callScreen", "visible": currentScreen, "observedAt": now]) }
+      previousBanner = currentBanner; previousScreen = currentScreen
+      banner = banner || currentBanner; fullScreen = fullScreen || currentScreen
       if banner && bannerAt == nil { bannerAt = Date().timeIntervalSince1970 }
       if fullScreen && screenAt == nil { screenAt = Date().timeIntervalSince1970 }
       Thread.sleep(forTimeInterval: 0.25)

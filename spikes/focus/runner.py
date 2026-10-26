@@ -31,6 +31,27 @@ def repeat_cooldown(last_attempt, now):
     return max(0, 181 - (now - last_attempt))
 
 
+def needs_repeat_fence(base_row, previous):
+    # Old journal entries have no pair marker; conservatively treat them as a pair.
+    return base_row == "C02" or previous.get("repeatPair") is not False
+
+
+def surface_windows(events, sent):
+    transitions = [e for e in events if e.get("event") == "surface.transition"]
+    windows = []
+    for index, (invitation, start) in enumerate(sent):
+        end = sent[index + 1][1] if index + 1 < len(sent) else float("inf")
+        item = {"invitationID": invitation, "sendAt": start}
+        for surface in ["banner", "callScreen"]:
+            prior = [e for e in transitions if e.get("surface") == surface and e["observedAt"] < start]
+            rises = [e["observedAt"] for e in transitions if e.get("surface") == surface
+                     and e.get("visible") is True and start <= e["observedAt"] < end]
+            item[surface + "VisibleAtStart"] = bool(prior and prior[-1].get("visible"))
+            item[surface + "FirstNewPresentationAt"] = min(rises) if rises else None
+        windows.append(item)
+    return windows
+
+
 def plan(row, locked=False, listen=False, provider=None, caller_format="e164", repeated_calls="off", caller_value=None):
     aliases = {"CK-F13": ("F13", "callkit"), "CK-C02": ("C02", "callkit"), "LCK-C02b": ("C02", "lck")}
     original = row
@@ -125,6 +146,7 @@ class Run:
         self.counter = 0
         self.journal_fresh = True
         self.invitations = [self.invitation]
+        self.sent_times = []
         self.run_id = str(uuid.uuid4())
         self.binding = {"device": self.device, "build": hashlib.sha256(self.source.read_bytes()).hexdigest(),
                         "provider": p["provider"], "callerFormat": p["callerFormat"]}
@@ -223,7 +245,9 @@ class Run:
         payload = self.folder / ("push" + suffix + ".json")
         write(payload, {"aps": {}, "from": self.p["callerValue"], "invitationID": self.invitation})
         # Fence subsequent repeat trials even when APNs delivery outcome is uncertain.
-        write(self.work / "last-voip-attempt.json", {"attemptedAt": time.time()})
+        attempted = time.time()
+        self.sent_times.append((self.invitation, attempted))
+        write(self.work / "last-voip-attempt.json", {"attemptedAt": attempted, "repeatPair": self.p["baseRow"] == "C02"})
         self.command(["node", str(REPO / "discovery/send-apns.mjs"), "--token-file", str(self.folder / "voip-token.txt"),
                       "--payload-file", str(payload), "--topic", BUNDLE + ".voip",
                       "--receipt-file", str(self.folder / ("apns" + suffix + ".json"))], timeout=30)
@@ -303,12 +327,14 @@ class Run:
             self.copy("voip-token.txt", self.folder / "voip-token.txt")
             if p["row"] in ["L03", "L04"]:
                 self.ui(["home"])
-            if p["baseRow"] == "C02":
+            if p["sendVoIP"]:
                 history = self.work / "last-voip-attempt.json"
                 if history.exists():
-                    last = json.loads(history.read_text())["attemptedAt"]
-                    while repeat_cooldown(last, time.time()) > 0:
-                        time.sleep(min(30, repeat_cooldown(last, time.time())))
+                    previous = json.loads(history.read_text())
+                    if needs_repeat_fence(p["baseRow"], previous):
+                        last = previous["attemptedAt"]
+                        while repeat_cooldown(last, time.time()) > 0:
+                            time.sleep(min(30, repeat_cooldown(last, time.time())))
             if p["locked"]:
                 if self.args.allow_system_settings or p["locked"]: # Hamza approved this setting change; persist once.
                     (self.work / "system-settings-approved").write_text("approved for disposable probe measurements\n")
@@ -354,6 +380,7 @@ class Run:
                 ui = json.loads((self.folder / "ui.json").read_text())
                 evidence = [e for e in ui["events"] if e.get("event") == "call.observed"]
                 result["visual"] = evidence
+                result["visualByInvitation"] = surface_windows(ui["events"], self.sent_times)
                 result["visualNegativeQualified"] = self.qualified(self.work / "visual-calibration.json")
             self.copy("focus.jsonl", self.folder / "trace.jsonl")
             traces = [json.loads(line) for line in (self.folder / "trace.jsonl").read_text().splitlines() if line]
