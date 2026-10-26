@@ -21,6 +21,7 @@ final class FocusUITests: XCTestCase {
     var autoAnswerDelay: String?
   }
   var journal = Journal()
+  var verifiedFocusOff = false
   var events: [[String: Any]] = []
   var documents: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
   func save() throws {
@@ -92,7 +93,11 @@ final class FocusUITests: XCTestCase {
     start.press(forDuration: 0.1, thenDragTo: board.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.65)))
     let tile = board.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR identifier == %@", "Focus", "Focus")).firstMatch
     // An active Focus may replace the tile's accessible name.
-    if tile.waitForExistence(timeout: 3) { try tap(board, tile) }
+    verifiedFocusOff = false
+    if tile.waitForExistence(timeout: 3) {
+      verifiedFocusOff = ["Off", "0"].contains(tile.value as? String ?? "") || tile.label == "Focus, Off"
+      try tap(board, tile)
+    }
     else {
       let candidates = board.buttons.matching(NSPredicate(format: "label IN %@", ["Do Not Disturb", "Sleep", "Work", "Personal", "Driving", "Fitness"])).allElementsBoundByIndex.filter(\.isHittable)
       guard candidates.count == 1 else { throw failure("Control Center Focus tile unavailable/ambiguous") }
@@ -106,6 +111,7 @@ final class FocusUITests: XCTestCase {
       $0.isHittable && ($0.isSelected || ($0.value as? String) == "On")
     }
     guard selected.count <= 1 else { throw failure("Ambiguous active Focus") }
+    guard !selected.isEmpty || verifiedFocusOff else { throw failure("Unknown Focus state; no verified Off marker") }
     return selected.first?.label.components(separatedBy: ",").first
   }
   func setFocus(_ name: String, enabled: Bool) throws {
