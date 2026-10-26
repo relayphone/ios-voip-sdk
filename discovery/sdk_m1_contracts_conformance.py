@@ -16,7 +16,7 @@ from summarize import EvidenceError, load, one, require
 ROOT = Path(__file__).resolve().parent.parent
 BUNDLE = 'dev.iosvoipsdk.m1contracts'
 CASES = ('guard', 'unhandled-accept', 'unhandled-fail', 'duplicate-wrapper', 'media-reentrancy', 'audio-lifecycle', 'audio-routes')
-OWN_FILES = ('discovery/probe/sdk_m1_contracts.swift', 'discovery/build_sdk_m1_contracts.sh',
+OWN_FILES = ('discovery/run_sdk_routes.py', 'discovery/probe/sdk_m1_contracts.swift', 'discovery/build_sdk_m1_contracts.sh',
              'discovery/run_audio_lifecycle_legacy.sh', 'scripts/sim/sim.py', 'scripts/sim/sim.sh', 'scripts/sim/paths.py',
              'scripts/sim/legacy_diagnostics.py',
              'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
