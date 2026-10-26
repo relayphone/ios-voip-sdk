@@ -45,6 +45,15 @@ The two allowlists also kept the defaults that iOS suggested for a new Focus: th
 
 Every unanswered reported call ended itself after the probe's 25 s ring timeout. After F13, the step that turns the Focus back off failed once because Contacts reopened in an unexpected state; the Focus was turned off a few minutes later and the harness now relaunches Contacts once to recover.
 
+### Repeated calls (C02)
+
+Both runs: Focus on, app and caller not allowed, CN off. The same caller called twice, 69.4 s apart.
+
+| Allow Repeated Calls | First call | Second call | Call surface |
+| --- | --- | --- | --- |
+| Off | filtered, code 3, 2205 ms | filtered, code 3, 2140 ms | none |
+| **On** | filtered, code 3, 2177 ms | **filtered**, code 3, 2140 ms | none |
+
 ### Locked answer with Auto-Answer
 
 | Run | Setup | Report | Answer |
@@ -71,7 +80,6 @@ The Live Activity rows ran into probe and consent problems before measuring Focu
 
 | Rows | Status |
 | --- | --- |
-| C02 (repeated calls off, then on) | Pending. Run next. |
 | L01–L04, L09 | Pending a probe fix; see above. |
 | C01, C05 | Pending, low priority. |
 | C06 (Focus filter policy) | **Unqualified**: built without the App Group. |
@@ -93,13 +101,14 @@ The Live Activity rows ran into probe and consent problems before measuring Focu
    - With the Focus on, the caller in the People allowlist, Allow Calls From set to Allowed People Only and the app not allowed, the report still failed with code 3 after 2197 ms, and nothing appeared (F13).
    - The caller was the owned contact, matched by E.164 phone number.
    - For LCK, the People allowlist and Allow Calls From did not apply in this setup; only the Apps allowlist did.
-5. **Auto-Answer answers an LCK call on a locked phone.** With Auto-Answer Calls on, a cold VoIP push to a locked phone produced a system `JoinConversationAction` after the configured 3 s. No UI was involved.
-6. **Report entry is immediate, and the filtered result is slow.**
+5. **Allow Repeated Calls does not let a second LCK call through.** With the setting on, a second call from the same caller 69 s later was still filtered with code 3 (C02). This repeats the earlier negative result with the setting explicitly controlled.
+6. **Auto-Answer answers an LCK call on a locked phone.** With Auto-Answer Calls on, a cold VoIP push to a locked phone produced a system `JoinConversationAction` after the configured 3 s. No UI was involved.
+7. **Report entry is immediate, and the filtered result is slow.**
    - Report entry came 1–9 ms after push receipt, even on a cold launch.
    - The filtered result arrived about 2.2 s after entry, and PushKit completion followed straight away.
    - After a filter, the process was last observed 1 s after the push; the 3 s survival sample never logged.
    - Reported calls kept the process alive for at least 10.6 s.
-7. **Unauthorized Focus status reads as "not focused".**
+8. **Unauthorized Focus status reads as "not focused".**
    - With `INFocusStatusCenter` authorization not determined (`0`), `focusStatus.isFocused` read `false` while the test Focus was on (F09, F10).
    - Treat a status that is not authorized as unknown, never as "not focused".
 
@@ -118,7 +127,7 @@ This applies the [proposed `IncomingPresentationResult`](sdk-api.md#typed-incomi
 | Device outcome | Domain / code | Measured latency | SDK result | Default policy | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | Report succeeds | – | 63–119 ms | `.reported(conversationID:)` | normal ringing and actions | C00, F01–F05, F11, F15 |
-| Filtered by Focus | `com.apple.CallKit.error.incomingcall` / 3 | 2.19–2.21 s | `.filtered(reason: .focus)` | `screenWithAI`, or `decline` per the user's policy | F09, F10, F13 |
+| Filtered by Focus | `com.apple.CallKit.error.incomingcall` / 3 | 2.19–2.21 s | `.filtered(reason: .focus)` | `screenWithAI`, or `decline` per the user's policy | F09, F10, F13, C02 |
 | Codes 4–7 | same domain, 4–7 | not produced | `.filtered(reason: .blockList / .restrictedSharing / .protectedCall / .sensitiveParticipants)` | conservative: no AI for code 4; decline or no screening for 5–7 | none yet (C07, C10) |
 | Anything else | unknown pair | – | `.failed(IncomingFailure)` | no screening | – |
 
@@ -130,6 +139,6 @@ What this means for the SDK:
 
 ## Next steps
 
-1. In priority order: C02, then F12, F14 and F16. Then fix the probe's activity continuity and rerun the L rows. Use `--keep-setup` and one `restore-all` at the end. The resume steps live in the operator's private run folder.
+1. Run F12, F14 and F16. Then fix the probe's activity continuity and rerun the L rows. Use `--keep-setup` and one `restore-all` at the end. The resume steps live in the operator's private run folder.
 2. Repeat any row whose outcome differs from its neighbours before turning it into a rule.
 3. Re-run C00 with the Mac microphone once it is granted, to qualify audible and haptic silence.
