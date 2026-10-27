@@ -7,9 +7,12 @@ final class ConversationClient {
   private(set) var handler: ConversationHandler?
   private var states: [UUID: @MainActor (ConversationStateUpdate) -> Void] = [:]
   private var events: [UUID: @MainActor (ConversationEventContext) -> Void] = [:]
+  private var routes: [UUID: @MainActor (AudioRoutesSnapshot) -> Void] = [:]
   var state = ConversationStateUpdate(revision: 0, conversations: [])
+  var audioRoutes = AudioRoutesSnapshot(revision: 0, routes: [], current: nil)
   var stateObserverCount: Int { states.count }
   var eventObserverCount: Int { events.count }
+  var audioRoutesObserverCount: Int { routes.count }
 
   func setConversationHandler(_ handler: ConversationHandler?) { self.handler = handler }
   func observeState(_ callback: @escaping @MainActor (ConversationStateUpdate) -> Void) -> UUID {
@@ -20,6 +23,14 @@ final class ConversationClient {
     let id = UUID(); events[id] = callback; return id
   }
   func removeEventObserver(_ id: UUID) { events.removeValue(forKey: id) }
+  func observeAudioRoutes(_ callback: @escaping @MainActor (AudioRoutesSnapshot) -> Void) -> UUID {
+    let id = UUID(); routes[id] = callback; callback(audioRoutes); return id
+  }
+  func removeAudioRoutesObserver(_ id: UUID) { routes.removeValue(forKey: id) }
+  func publish(_ update: AudioRoutesSnapshot) {
+    audioRoutes = update
+    for callback in Array(routes.values) { callback(update) }
+  }
   func publish(_ update: ConversationStateUpdate) {
     state = update
     for callback in Array(states.values) { callback(update) }

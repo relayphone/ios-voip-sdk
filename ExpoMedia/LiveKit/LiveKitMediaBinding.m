@@ -193,6 +193,14 @@ static NSError *mediaError(NSInteger code) {
     completion(error);
   });
 }
+- (void)configureAudioRoute:(VSMediaConfiguration)configuration completion:(VSMediaCompletion)completion {
+  dispatch_async(_worker, ^{
+    NSError *error = nil;
+    @try { error = configuration(); }
+    @catch (NSException *exception) { error = mediaError(2); }
+    completion(error);
+  });
+}
 - (void)activate:(AVAudioSession *)session completion:(VSMediaCompletion)completion {
   [self performAvailability:YES completion:completion];
 }
