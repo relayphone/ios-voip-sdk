@@ -190,6 +190,81 @@ class MorningPlanTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     batch.run_batch(plan, None)
 
+    def test_final_c00_postclassifies_private_activity_envelope(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            work = root / "work"
+            product = root / "device.xctestrun"
+            product.write_bytes(b"signed-product")
+            full = batch.make_plan(batch.DEFAULT_UNKNOWN)
+            plan = [next(item for item in full if item["id"] == name)
+                    for name in ["activity-01-off-01", "microphone-positive-01"]]
+            binding = {"device": "00008110-0011223344556677", "build": hashlib.sha256(product.read_bytes()).hexdigest(),
+                       "provider": "lck", "callerFormat": "e164"}
+            samples = [{"wallTime": 1000 + index / 10, "rms": 0.0001 if index < 30 else 0.01}
+                       for index in range(200)]
+            calibration = {"calibrationValid": True, "threshold": 0.0025, "quietP95": 0.0001,
+                           "signalP95": 0.01, "createdAt": 1030.0, "binding": binding}
+
+            def fake_command(argv, env, log, timeout, should_pause=None):
+                if argv[1] not in ["L01", "C00"]:
+                    return
+                row_dir = work / ("row-" + argv[1])
+                row_dir.mkdir()
+                row_path = row_dir / "result.json"
+                if argv[1] == "L01":
+                    audio_path = row_dir / "activity-audio.json"
+                    audio_path.write_text(json.dumps({"startedAt": 1000.0, "binding": binding, "samples": samples}))
+                    row = {"row": "L01", "status": "unqualified", "restored": "focus-off",
+                           "activityAudio": str(audio_path), "activityAudioWindow": {"start": 1005.0, "end": 1010.0}}
+                else:
+                    (work / "audio-calibration.json").write_text(json.dumps(calibration))
+                    row = {"row": "C00", "status": "recorded", "restored": "focus-off", "audio": calibration}
+                row_path.write_text(json.dumps(row))
+                log.write_text(json.dumps({"row": argv[1], "status": row["status"], "result": str(row_path)}) + "\n")
+
+            with mock.patch.dict(os.environ, {"FOCUS_DEVICE": binding["device"], "FOCUS_WORK": str(work)}), \
+                 mock.patch.object(Path, "home", return_value=root), \
+                 mock.patch.object(batch, "identify_iphone13", side_effect=lambda device, workdir: device), \
+                 mock.patch.object(batch, "authorize_microphone", return_value="authorized"), \
+                 mock.patch.object(batch, "signed_build", return_value=product), \
+                 mock.patch.object(batch, "command", side_effect=fake_command), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(batch.run_batch(plan, None), 0)
+            state = json.loads((work / "morning-checkpoint.json").read_text())
+            self.assertEqual(state["completed"][plan[0]["id"]]["status"], "unqualified")
+            self.assertEqual(state["completed"][plan[0]["id"]]["activityAcoustic"]["status"], "qualified-energy-proxy")
+            row = json.loads((work / "row-L01" / "result.json").read_text())
+            self.assertTrue(row["activityAcoustic"]["energyAboveThreshold"])
+            self.assertIn("cannot prove or rule out", row["activityAcoustic"]["limitation"])
+
+    def test_stale_or_unmatched_control_does_not_classify_prior_audio(self):
+        with tempfile.TemporaryDirectory() as root:
+            work = Path(root)
+            row_dir = work / "activity"
+            row_dir.mkdir()
+            row_path = row_dir / "result.json"
+            audio_path = row_dir / "activity-audio.json"
+            binding = {"device": "00008110-0011223344556677", "build": "a" * 64,
+                       "provider": "lck", "callerFormat": "e164"}
+            audio_path.write_text(json.dumps({"startedAt": 1000, "binding": binding, "samples": []}))
+            row_path.write_text(json.dumps({"row": "L02", "restored": "focus-off", "activityAudio": str(audio_path),
+                                            "activityAudioWindow": {"start": 1005, "end": 1010}}))
+            c00_path = work / "c00.json"
+            c00_path.write_text(json.dumps({"row": "C00", "status": "recorded", "restored": True,
+                                           "audio": {"calibrationValid": False}}))
+            (work / "audio-calibration.json").write_text(json.dumps({"calibrationValid": True, "binding": binding,
+                                                                      "createdAt": 1030, "threshold": 0.0025,
+                                                                      "quietP95": 0.0001, "signalP95": 0.01}))
+            item = {"id": "activity-02-on-01", "row": "L02", "args": []}
+            state = {"device": binding["device"], "buildHash": binding["build"], "completed": {
+                item["id"]: {"status": "unqualified", "result": str(row_path)},
+                "microphone-positive-01": {"status": "recorded", "result": str(c00_path)}}}
+            batch.postclassify_activity_audio(work, state, [item])
+            evidence = json.loads(row_path.read_text())["activityAcoustic"]
+            self.assertEqual(evidence["status"], "unqualified")
+            self.assertIsNone(evidence["energyAboveThreshold"])
+
     def test_pause_restores_and_resume_does_not_repeat_completed_rows(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)

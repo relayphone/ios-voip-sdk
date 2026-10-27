@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from activity_rows import ActivityScenario, activity_plan, execute_activity, run_activity_case
+from activity_rows import ActivityScenario, accepted, activity_plan, execute_activity, run_activity_case, summarize_render
 
 HERE = Path(__file__).resolve().parent
 
@@ -53,10 +53,70 @@ class ActivityRowsTests(unittest.TestCase):
             scenario = ActivityScenario(fake, {})
             with self.assertRaises(ValueError):
                 scenario.cadence(61, 1)
-            with patch.object(scenario, "send", return_value={"status": 200}) as send, patch("activity_rows.time.sleep"):
+            with patch.object(scenario, "send", return_value={"status": 200, "transportAcknowledged": True}) as send, patch("activity_rows.time.sleep"):
                 self.assertTrue(scenario.cadence(3, 1))
                 self.assertEqual(send.call_count, 3)
             self.assertNotIn("presentation", scenario.coverage)
+            self.assertFalse(accepted({"status": 200, "transportAcknowledged": False}))
+
+    def test_sender_failure_with_http_200_is_not_promoted_to_acknowledged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Mock()
+            fake.p = {"row": "L12"}
+            fake.folder = Path(directory)
+            fake.current_activity.return_value = {"activityID": "a", "surfaceID": "s"}
+            def rejected(argv, timeout):
+                receipt = Path(argv[argv.index("--receipt-file") + 1])
+                receipt.write_text(json.dumps({"status": 200, "revision": 1}))
+                raise RuntimeError("mismatched APNs request ID")
+            fake.command.side_effect = rejected
+            result = {}
+            scenario = ActivityScenario(fake, result)
+            value = scenario.send()
+            self.assertEqual(value["status"], 200)
+            self.assertFalse(accepted(value))
+            self.assertFalse(value["transportAcknowledged"])
+
+    def test_offline_failure_restores_network_before_propagating(self):
+        scenario = Mock()
+        scenario.row = "L09"
+        scenario.read_file.return_value = {"lastPathUpdateAtMs": 1}
+        scenario.send.return_value = {"status": 200, "transportAcknowledged": True}
+        scenario.network_offline_snapshot.side_effect = RuntimeError("no verified route")
+        with patch("activity_rows.time.sleep"), self.assertRaises(RuntimeError):
+            run_activity_case(scenario)
+        actions = [call.args[0] for call in scenario.run.ui.call_args_list]
+        self.assertIn(["activity-network:offline"], actions)
+        self.assertIn(["activity-network:restore"], actions)
+
+    def test_remote_start_is_explicitly_alerting_and_uses_separate_update(self):
+        scenario = Mock()
+        scenario.row = "L15"
+        scenario.send.side_effect = [{"status": 200, "transportAcknowledged": True, "surfaceID": "surface"},
+                                     {"status": 200, "transportAcknowledged": True}]
+        scenario.run.current_activity.return_value = {"activityID": "activity", "surfaceID": "surface"}
+        scenario.result = {}
+        run_activity_case(scenario)
+        self.assertEqual(scenario.send.call_args_list[0].kwargs["event"], "start")
+        self.assertEqual(scenario.send.call_args_list[0].kwargs["priority"], 10)
+        self.assertEqual(scenario.send.call_args_list[1].kwargs["priority"], 5)
+        scenario.ui_card.assert_called_once()
+
+    def test_render_latency_requires_actual_revision_and_bounded_stable_clocks(self):
+        receipt = {"status": 200, "transportAcknowledged": True, "revision": 7,
+                   "hostSendStart": 1000.1, "hostSendEnd": 1000.12,
+                   "hostMonotonicStart": 100.1, "hostMonotonicEnd": 100.12}
+        sample = {"revision": 7, "wallTimeMs": 1000300, "uptimeMs": 5000, "sampleStartUptimeMs": 4990}
+        events = [{**sample, "event": "activity.sample"}, {**sample, "event": "activity.renderSample"}]
+        bounds = {"deviceMinusHostMin": -50, "deviceMinusHostMax": 50,
+                  "hostWallAnchorMs": 1000000, "hostMonotonicAnchorMs": 100000}
+        result = summarize_render([receipt], events, bounds)
+        self.assertEqual(result["latencyStatus"], "bounded-observations")
+        self.assertEqual(result["latencyBounds"][0]["lowerMs"], 120)
+        self.assertEqual(result["latencyBounds"][0]["upperMs"], 250)
+        self.assertEqual(summarize_render([receipt], [], bounds)["missingRevisions"], [7])
+        self.assertEqual(summarize_render([receipt], events, {**bounds, "deviceMinusHostMax": 5000})["latencyStatus"], "unqualified")
+        self.assertEqual(summarize_render([{**receipt, "hostMonotonicEnd": 101}], events, bounds)["latencyStatus"], "unqualified")
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from activity_contract import simulate_row
 
 def activity_plan(row):
     cases = {
-        "L01": "foreground start, 24 silent priority-5 updates at five-second cadence, observe rendered revisions",
+        "L01": "foreground start, 25 silent priority-5 updates across two minutes, observe rendered revisions",
         "L02": "same cadence with Focus enabled and app/person excluded",
         "L03": "pre-arm an activity, background app and project a synthetic session without SSE",
         "L04": "pre-arm, terminate the app and project a synthetic session under Focus",
@@ -31,6 +31,53 @@ def activity_plan(row):
     return ["verify device and Share Across Devices; journal reversible settings", cases[row],
             "record device evidence separately from simulations and unobserved lock/audio conditions",
             "restore settings and stop or preserve activity according to batch policy"]
+
+
+def summarize_render(receipts, events, bounds):
+    """Report observed revisions and conservative latency intervals, never APNs-as-render."""
+    expected = {r["revision"]: r for r in receipts if accepted(r) and isinstance(r.get("revision"), int)}
+    samples = [e for e in events if e.get("event") == "activity.renderSample" and e.get("revision") in expected]
+    observed = {}
+    for event in samples:
+        observed.setdefault(event["revision"], event)
+    value = {"acceptedCount": len(expected), "observedRevisions": sorted(observed),
+             "missingRevisions": sorted(set(expected) - set(observed)), "latencyStatus": "unqualified"}
+    if not isinstance(bounds, dict):
+        return value
+    low, high = bounds.get("deviceMinusHostMin"), bounds.get("deviceMinusHostMax")
+    wall_anchor, mono_anchor = bounds.get("hostWallAnchorMs"), bounds.get("hostMonotonicAnchorMs")
+    if (not all(isinstance(v, (int, float)) for v in (low, high, wall_anchor, mono_anchor))
+            or high < low or high - low > 2000):
+        return value
+    clocks = [e.get("wallTimeMs") - e.get("uptimeMs") for e in events
+              if e.get("event") == "activity.sample" and isinstance(e.get("wallTimeMs"), int) and isinstance(e.get("uptimeMs"), int)]
+    if not clocks or max(clocks) - min(clocks) > 250:
+        return value
+    intervals = []
+    for revision, event in observed.items():
+        receipt = expected[revision]
+        values = [event.get("wallTimeMs"), event.get("uptimeMs"), event.get("sampleStartUptimeMs"),
+                  receipt.get("hostSendStart"), receipt.get("hostSendEnd"),
+                  receipt.get("hostMonotonicStart"), receipt.get("hostMonotonicEnd")]
+        if not all(isinstance(v, (int, float)) for v in values):
+            return value
+        wall, uptime, sample_start, sent, response, mono_start, mono_end = values
+        if (sample_start > uptime or response < sent or mono_end < mono_start or
+                abs(sent * 1000 - (wall_anchor + mono_start * 1000 - mono_anchor)) > 250 or
+                abs(response * 1000 - (wall_anchor + mono_end * 1000 - mono_anchor)) > 250):
+            return value
+        earliest = wall - (uptime - sample_start) - high - response * 1000
+        latest = wall - low - sent * 1000
+        if latest < 0 or earliest > latest:
+            return value
+        intervals.append({"revision": revision, "lowerMs": max(0, earliest), "upperMs": latest})
+    value["latencyBounds"] = intervals
+    value["latencyStatus"] = "bounded-observations"
+    if len(intervals) >= 20 and not value["missingRevisions"]:
+        for name, key, fraction in (("median", "lowerMs", .5), ("p95", "lowerMs", .95)):
+            index = min(len(intervals) - 1, max(0, int((len(intervals) - 1) * fraction)))
+            value[name + "BoundsMs"] = [sorted(x["lowerMs"] for x in intervals)[index], sorted(x["upperMs"] for x in intervals)[index]]
+    return value
 
 
 class ActivityScenario:
@@ -94,6 +141,17 @@ class ActivityScenario:
         self.run.ui([action], text=text)
         self.run.copy("focus-activity.png", self.run.folder / ("activity-" + suffix + ".png"), test=True)
 
+    def ui_visibility(self, text, suffix):
+        # Both branches require an identified probe card; an inaccessible card
+        # must not be reinterpreted as hidden content.
+        for action, visible in (("activity-contains", True), ("activity-hidden", False)):
+            try:
+                self.ui_card(text, suffix, action)
+                return visible
+            except RuntimeError:
+                pass
+        raise RuntimeError("synthetic activity text visibility unqualified")
+
     def send(self, event="update", text="Synthetic caller: APNs update", priority=5, timestamp=None,
              revision=None, stale_after=30, surface=None, session=None, fit=False, invalid=False):
         self.sequence += 1
@@ -139,9 +197,12 @@ class ActivityScenario:
         if invalid:
             argv += ["--test-invalid-token"]
         started = time.time()
+        started_mono = time.monotonic()
+        sender_ok = True
         try:
             self.run.command(argv, timeout=30)
         except RuntimeError:
+            sender_ok = False
             if not receipt.exists():
                 raise
         if not receipt.exists():
@@ -149,6 +210,11 @@ class ActivityScenario:
         value = json.loads(receipt.read_text())
         value["hostSendStart"] = started
         value["hostSendEnd"] = time.time()
+        value["hostMonotonicStart"] = started_mono
+        value["hostMonotonicEnd"] = time.monotonic()
+        # A 200 status alone is insufficient if the sender rejected its APNs ID
+        # or otherwise could not validate the response.
+        value["transportAcknowledged"] = sender_ok
         self.result["activityReceipts"].append(value)
         return value
 
@@ -167,6 +233,7 @@ class ActivityScenario:
         # Each concurrent UI session gets a fresh marker; a prior session's ready file is not valid.
         self.run.invitation = str(uuid.uuid4())
         host_start = time.time() * 1000
+        host_mono_start = time.monotonic() * 1000
         process = self.run.ui(["activity-observe:" + str(duration)], background=True)
         ready = self.run.folder / "activity-ready.json"
         deadline = time.monotonic() + 90
@@ -179,10 +246,13 @@ class ActivityScenario:
                     value = json.loads(ready.read_text())
                     if value.get("id") == self.run.invitation:
                         host_end = time.time() * 1000
-                        if isinstance(value.get("wallTimeMs"), int):
+                        host_mono_end = time.monotonic() * 1000
+                        if (isinstance(value.get("wallTimeMs"), int) and
+                                abs((host_end - host_start) - (host_mono_end - host_mono_start)) <= 250):
                             self.result.setdefault("clockOffsetBoundsMs", []).append({
                                 "deviceMinusHostMin": value["wallTimeMs"] - host_end,
                                 "deviceMinusHostMax": value["wallTimeMs"] - host_start,
+                                "hostWallAnchorMs": host_end, "hostMonotonicAnchorMs": host_mono_end,
                                 "qualification": "ready event bracket only; clocks may change"})
                         return process
                 except (OSError, ValueError, RuntimeError):
@@ -267,7 +337,7 @@ class ActivityScenario:
             previous = time.monotonic()
             receipt = self.send(text=f"{text_prefix} {index + 1}", priority=priority,
                                 revision=self.sequence + 1, session=session)
-            if receipt.get("status") != 200:
+            if not accepted(receipt):
                 self.note("transport", "unqualified", "APNs did not accept an update; no automatic retry")
                 return False
         return True
@@ -300,7 +370,7 @@ class ActivityScenario:
         deadline = time.monotonic() + 40
         while time.monotonic() < deadline:
             try:
-                value = self.read_file("activity-network.json", "network-offline")
+                value = self.read_file("activity-network-update.json", "network-offline")
                 if (value.get("runID") == self.run.run_id and value.get("source") == "pathUpdate" and
                         value.get("pathReady") is True and value.get("status") == "unsatisfied" and
                         isinstance(value.get("lastPathUpdateAtMs"), int) and value["lastPathUpdateAtMs"] > newer_than):
@@ -322,6 +392,10 @@ def execute_activity(run, result):
     except (OSError, ValueError, RuntimeError, TimeoutError) as error:
         scenario.note("execution", "unqualified", type(error).__name__)
         result["status"] = "unqualified"
+
+
+def accepted(receipt):
+    return receipt.get("status") == 200 and receipt.get("transportAcknowledged") is True
 
 
 def run_activity_case(s):
@@ -376,8 +450,8 @@ def run_activity_case(s):
             receipt = s.send(event="start", priority=10, text="Synthetic push-to-start")
         finally:
             s.finish_audio(audio)
-        s.note("startTransport", "observed" if receipt.get("status") == 200 else "unqualified", "alerting mode; APNs acceptance does not prove presentation")
-        if receipt.get("status") != 200:
+        s.note("startTransport", "observed" if accepted(receipt) else "unqualified", "alerting mode; APNs acceptance does not prove presentation")
+        if not accepted(receipt):
             raise RuntimeError("push-to-start not accepted")
         s.config("snapshot", start_token=True)
         s.run.ui(["launch", "activity-consent"])
@@ -386,7 +460,7 @@ def run_activity_case(s):
         if current["surfaceID"] != receipt.get("surfaceID"):
             raise RuntimeError("remote-start surface mismatch")
         update = s.send(text="Synthetic started activity update", priority=5)
-        if update.get("status") == 200:
+        if accepted(update):
             s.ui_card("Synthetic started activity update", "remote-start-update")
             s.note("perActivityUpdateToken", "observed", "separate activity token used and synthetic content rendered")
         else:
@@ -404,13 +478,15 @@ def run_activity_case(s):
         audio = None
         try:
             audio = s.begin_audio(150) if row in ("L01", "L02") else None
-            accepted = s.cadence(25 if row in ("L01", "L02") else 4, 5,
-                                 text_prefix="Synthetic cadence", session=session, observer=observer)
+            cadence_ok = s.cadence(25 if row in ("L01", "L02") else 4, 5,
+                                   text_prefix="Synthetic cadence", session=session, observer=observer)
             observation = s.finish_observer(observer)
             samples = [e for e in s.result["activityObservation"] if e.get("event") == "activity.renderSample"]
-            s.note("renderCadence", "observed" if accepted and samples else "unqualified",
-                   {"apnsAccepted": sum(r.get("status") == 200 for r in s.result["activityReceipts"]),
-                    "observedRevisions": [e.get("revision") for e in samples], "observer": observation})
+            offsets = s.result.get("clockOffsetBoundsMs", [])
+            summary = summarize_render(s.result["activityReceipts"], s.result["activityObservation"], offsets[-1] if offsets else None)
+            s.note("renderCadence", "observed" if cadence_ok and samples else "unqualified",
+                   {"apnsAccepted": sum(accepted(r) for r in s.result["activityReceipts"]),
+                    "renderSummary": summary, "observer": observation})
         finally:
             if observer.poll() is None:
                 observer.terminate()
@@ -418,10 +494,21 @@ def run_activity_case(s):
                 except Exception: observer.kill(); observer.wait(timeout=10)
             if audio:
                 s.finish_audio(audio)
-        s.note("lockScreenAndWake", "unqualified", "secure iPhone cannot be locked and automatically unlocked without an authorized unlock path")
-        s.note("soundAndHaptics", "unqualified", "RMS is an energy proxy and cannot prove no acoustic or haptic alert")
+        if row in ("L01", "L02", "L04"):
+            s.note("lockScreenAndWake", "unqualified", "secure iPhone cannot be locked and automatically unlocked without an authorized unlock path")
+        if row in ("L01", "L02"):
+            s.note("soundAndHaptics", "unqualified", "RMS is an energy proxy and cannot prove no acoustic or haptic alert")
         if session:
+            s.run.ui(["launch"])
+            traces = s.trace()
+            matching = [e for e in traces if e.get("event") in ("activity.current", "activity.content") and e.get("sessionID") == session]
+            s.note("syntheticSessionState", "observed" if matching else "unqualified", "applied ActivityKit session snapshot after resume")
+            call_events = [e.get("event") for e in traces if e.get("event") in ("push.received", "call.action", "call.audioActivated")]
+            s.note("localCallAudioTrace", "observed" if not call_events else "unqualified", {"events": call_events, "scope": "recorded process trace only"})
             s.note("sessionBackend", "simulated", "synthetic ActivityKit session; no Phone AI/SIP backend")
+            s.note("realBackend", "unqualified", "production AI/SIP binding is not available in this probe")
+            if row == "L04":
+                s.note("coldProcess", "unqualified", "termination was requested, but system wake/cold state was not independently established")
         return
 
     if row == "L09":
@@ -429,7 +516,7 @@ def run_activity_case(s):
         s.run.ui(["launch"])
         prior = s.read_file("activity-network.json", "network-before")
         sent = s.send(text="Synthetic before offline")
-        if sent.get("status") != 200:
+        if not accepted(sent):
             raise RuntimeError("initial update not accepted")
         time.sleep(8)
         s.ui_card("Synthetic before offline", "before-offline")
@@ -446,7 +533,7 @@ def run_activity_case(s):
             s.run.ui(["activity-network:restore"])
         s.run.ui(["launch"])
         resumed = s.send(text="Synthetic resumed update")
-        if resumed.get("status") != 200:
+        if not accepted(resumed):
             raise RuntimeError("resumed update not accepted")
         time.sleep(8)
         s.ui_card("Synthetic resumed update", "resumed")
@@ -463,7 +550,7 @@ def run_activity_case(s):
             raise RuntimeError("activity changed on relaunch")
         s.note("continuity", "observed", "same activity and current paired registration after relaunch")
         rejection = s.send(invalid=True)
-        s.note("invalidToken", "observed" if rejection.get("expectedRejection") is True else "unqualified", rejection.get("reason"))
+        s.note("invalidToken", "observed" if rejection.get("expectedRejection") is True and rejection.get("transportAcknowledged") is True else "unqualified", rejection.get("reason"))
         s.note("actualTokenRotation", "unqualified", "rotation is system controlled; generation ordering tested in simulation")
         return
 
@@ -473,18 +560,25 @@ def run_activity_case(s):
         for frequent in (False, True):
             s.run.ui(["activity-setting:frequent-" + ("on" if frequent else "off"), "launch"])
             s.capabilities("budget-" + str(frequent).lower(), {"frequentPushesEnabled": frequent})
+            first_receipt = len(s.result["activityReceipts"])
             observer = s.observer(90)
             try:
                 for priority in (5, 10):
                     for interval in (5, 1):
                         if total + 3 > 60:
                             raise RuntimeError("activity send cap exceeded")
-                        accepted = s.cadence(3, interval, priority, text_prefix=f"Synthetic p{priority} i{interval}", observer=observer)
-                        total += 3
-                        s.note(f"frequent-{frequent}-p{priority}-i{interval}", "observed" if accepted else "unqualified",
-                               {"sent": 3, "intervalSeconds": interval, "APNsAcceptanceOnly": True})
+                        before = len(s.result["activityReceipts"])
+                        cadence_ok = s.cadence(3, interval, priority, text_prefix=f"Synthetic p{priority} i{interval}", observer=observer)
+                        attempted = len(s.result["activityReceipts"]) - before
+                        total += attempted
+                        s.note(f"frequent-{frequent}-p{priority}-i{interval}", "observed" if cadence_ok else "unqualified",
+                               {"requested": 3, "attempted": attempted, "intervalSeconds": interval, "APNsAcceptanceOnly": True})
                 observation = s.finish_observer(observer, "budget-" + str(frequent).lower())
-                s.note("renderSamples-" + str(frequent).lower(), "observed", {"samples": observation.get("samples")})
+                offsets = s.result.get("clockOffsetBoundsMs", [])
+                receipts = s.result["activityReceipts"][first_receipt:]
+                s.note("renderSamples-" + str(frequent).lower(), "observed", {"samples": observation.get("samples"),
+                       "byPriority": {str(priority): summarize_render([r for r in receipts if r.get("priority") == priority],
+                           s.result["activityObservation"], offsets[-1] if offsets else None) for priority in (5, 10)}})
             finally:
                 if observer.poll() is None:
                     observer.terminate()
@@ -498,7 +592,7 @@ def run_activity_case(s):
         now = int(time.time())
         newer = s.send(text="Synthetic ordering newest", timestamp=now, revision=20)
         older = s.send(text="Synthetic ordering old", timestamp=now - 10, revision=19)
-        s.note("transportOrdering", "observed", {"newStatus": newer.get("status"), "oldStatus": older.get("status")})
+        s.note("transportOrdering", "observed" if accepted(newer) and accepted(older) else "unqualified", {"newStatus": newer.get("status"), "oldStatus": older.get("status")})
         time.sleep(8)
         s.ui_card("Synthetic ordering newest", "ordering")
         s.note("latestPresentation", "observed", "newer synthetic content visible after older send")
@@ -506,22 +600,23 @@ def run_activity_case(s):
 
     if row == "L13":
         s.fixture()
-        marker = "Synthetic unicode 🧪 \\\""
-        long_text = marker + ("é😀\\\"\\n" * 900)
+        marker = 'Synthetic unicode 🧪 "'
+        long_text = marker + ('é😀 "\\\n' * 900)
         receipt = s.send(text=long_text, fit=True)
-        if receipt.get("status") != 200 or receipt.get("bytes", 4097) > 4096:
+        if not accepted(receipt) or receipt.get("bytes", 4097) > 4096:
             raise RuntimeError("Unicode update not accepted within byte limit")
+        previews = {}
         for value in ("always", "never"):
             s.run.ui(["activity-preview:" + value])
-            s.ui_card(marker, "preview-" + value)
-        s.note("unicodePayloadAndSettings", "observed", {"bytes": receipt["bytes"], "truncated": receipt.get("truncated")})
+            previews[value] = s.ui_visibility(marker, "preview-" + value)
+        s.note("unicodePayloadAndSettings", "observed", {"bytes": receipt["bytes"], "truncated": receipt.get("truncated"), "visibleInNotificationCenter": previews})
         s.note("lockedPrivacy", "unqualified", "unlocked Notification Center preview is not Lock Screen redaction evidence")
         return
 
     if row == "L14":
         s.fixture()
         receipt = s.send(event="end", text="Synthetic activity ended")
-        if receipt.get("status") != 200:
+        if not accepted(receipt):
             raise RuntimeError("end push not accepted")
         time.sleep(8)
         s.config("snapshot")

@@ -384,7 +384,11 @@ final class AppDelegate: NSObject, ObservableObject, UIApplicationDelegate, UNUs
       "lastPathUpdateAtMs": lastNetworkUpdateAtMs.map { $0 as Any } ?? NSNull(),
       "runID": ProbeConfig.load().runID ?? "idle"]
     do {
-      try ProbeFiles.write("activity-network.json", data: JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys]))
+      let data = try JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys])
+      // Preserve the last actual callback separately: an activation sample can
+      // replace the general snapshot before the host has read the callback.
+      if source == "pathUpdate" { try ProbeFiles.write("activity-network-update.json", data: data) }
+      try ProbeFiles.write("activity-network.json", data: data)
       Trace.shared.log("activity.network", snapshot)
     } catch { Trace.shared.log("activity.networkExportFailed") }
   }

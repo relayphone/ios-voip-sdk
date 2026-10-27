@@ -232,8 +232,13 @@ def postclassify_activity_audio(work, state, plan):
     """Use only this batch's final positive C00; never infer alert or silence."""
     from activity_acoustics import classify_activity_audio
 
+    work = Path(work).resolve()
     completed = state.get("completed", {})
+    if not isinstance(completed, dict):
+        raise ValueError("invalid batch checkpoint")
     positive = completed.get("microphone-positive-01", {})
+    if not isinstance(positive, dict):
+        positive = {}
     _, c00 = _read_private_json(positive.get("result"), work)
     _, calibration = _read_private_json(str(work / "audio-calibration.json"), work)
     c00_audio = c00.get("audio") if isinstance(c00, dict) else None
@@ -249,6 +254,8 @@ def postclassify_activity_audio(work, state, plan):
         if item.get("row") not in ["L01", "L02", "L15"] or item.get("id") not in completed:
             continue
         entry = completed[item["id"]]
+        if not isinstance(entry, dict):
+            raise ValueError("invalid completed row checkpoint")
         result_path, result = _read_private_json(entry.get("result"), work)
         window = result.get("activityAudioWindow") if isinstance(result, dict) else None
         audio_path = result.get("activityAudio") if isinstance(result, dict) else None
@@ -543,6 +550,10 @@ def run_batch(plan, args):
             else:
                 raise RuntimeError("row did not finish with a recorded result or explicit skip")
             state["inFlight"] = None
+            atomic_json(checkpoint, state)
+        if "microphone-positive-01" in state["completed"]:
+            # C00 is deliberately last; only now can earlier RMS envelopes be compared.
+            postclassify_activity_audio(work, state, plan)
             atomic_json(checkpoint, state)
         return 75 if pause_requested() else 0
     except BatchPaused:

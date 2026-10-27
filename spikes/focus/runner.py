@@ -574,7 +574,9 @@ class Run:
                     if self.args.keep_setup:
                         # Matrix runs keep the owned Focus/contact between rows; only the Focus-on window ends here.
                         self.arm({"armed": False, "activityAction": None if p["activity"] else "end"})
-                        self.ui(["dnd:off" if p["focusMode"] == "dnd" else "focus:off"])
+                        cleanup = (["activity-network:restore"] if p["activity"] else [])
+                        cleanup += ["dnd:off" if p["focusMode"] == "dnd" else "focus:off"]
+                        self.ui(cleanup)
                         result["restored"] = "focus-off"
                     else:
                         self.restore(); result["restored"] = True
@@ -611,9 +613,12 @@ def main():
     args = parser.parse_args()
     p = plan(args.row, args.locked_auto_answer, args.listen, args.provider, args.caller_format, args.repeated_calls, args.caller_value)
     if args.activity_focus is not None:
-        if p["row"] not in [f"L{n:02}" for n in range(7, 16)]:
-            raise ValueError("Activity Focus override is only valid for L07–L15")
-        p["focus"] = args.activity_focus == "on"
+        value = args.activity_focus == "on"
+        if p["row"] in [f"L{n:02}" for n in range(1, 7)] and value != p["focus"]:
+            raise ValueError("L01–L06 have a prescribed Focus state")
+        if p["row"] not in [f"L{n:02}" for n in range(1, 16)]:
+            raise ValueError("Activity Focus override is only valid for L01–L15")
+        p["focus"] = value
     if args.focus_mode == "dnd" and (not p["focus"] or p["app"] or p["person"] or not p["sendVoIP"]):
         raise ValueError("Built-in DND rows require a focused incoming call with app and person excluded")
     if args.unknown_caller and (not args.caller_value or args.caller_format != "e164" or args.caller_value == "+15555550199" or p["person"]):
