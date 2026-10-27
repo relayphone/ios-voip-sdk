@@ -8,4 +8,6 @@ SDK workflow body or guard changes select the affected optional consumer. Inheri
 
 The stable `plain-simulator` and `runtime-events` gates require every selected dependency to succeed and every unselected dependency to be skipped. The SDK gate checks every native shard before combining it into the selector's `sdk-native` group. A cancelled, failed or unexpectedly skipped selected job fails the aggregate. Main selects every dependency unless the entire push is known non-native. Main concurrency groups use the commit SHA, preserving pending runs across newer pushes; PR groups use the PR ref and cancel superseded runs.
 
+The SDK aggregate summary reports elapsed workflow time to the summary, current-attempt job execution and created-to-started queue proxies. Skipped or unavailable times are marked unknown, and report failures do not alter the acceptance gate.
+
 Only standard `ubuntu-latest`, `xcode-27` and `macos-26` runners are used.
