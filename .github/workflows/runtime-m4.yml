@@ -26,6 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Select Xcode
+        id: select
         run: |
           sudo xcode-select -s /Applications/Xcode_27.1.app
           mkdir -p "$RUNNER_TEMP/m4-build"
@@ -34,6 +35,7 @@ jobs:
           uname -m
           sysctl -n hw.memsize
       - name: Watcher and existing CLI controls
+        id: controls
         run: |
           python3 Tests/RuntimeEvents/test_watch.py
           python3 Tests/RuntimeEvents/test_native_runner.py
@@ -55,6 +57,7 @@ jobs:
           python3 discovery/check_cli_controls.py
           python3 discovery/check_lck_provider_policy.py
       - name: Build simulator runtime and event fixture
+        id: build
         run: |
           set -o pipefail
           CKSIM_BUILD_ARCHS="$(uname -m)" bash scripts/build-runtime.sh "$RUNNER_TEMP/runtime" 2>&1 | tee "$RUNNER_TEMP/m4-build/runtime.log"
@@ -62,30 +65,66 @@ jobs:
           bash Tests/RuntimeEvents/build-lck.sh "$RUNNER_TEMP/lck-fixture" 2>&1 | tee "$RUNNER_TEMP/m4-build/lck-fixture.log"
           bash scripts/build-inspector.sh "$RUNNER_TEMP/inspector" 2>&1 | tee "$RUNNER_TEMP/m4-build/inspector.log"
       - name: Create the single owned simulator
+        id: create
         run: |
+          runtime_original_summary="$GITHUB_STEP_SUMMARY"
+          export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/runtime-phase-create.md"
+          trap 'if [ -f "$GITHUB_STEP_SUMMARY" ]; then cat "$GITHUB_STEP_SUMMARY" >> "$runtime_original_summary" || :; fi' EXIT
           python3 Tests/RuntimeEvents/ci_simulator.py create --runtime "$CKSIM_TEST_RUNTIME" \
             --id-file "$RUNNER_TEMP/m4-simulator-id" --env-file "$GITHUB_ENV"
       - name: Consume the shared channel through watch
+        id: watch
         run: |
+          runtime_original_summary="$GITHUB_STEP_SUMMARY"
+          export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/runtime-phase-watch.md"
+          trap 'if [ -f "$GITHUB_STEP_SUMMARY" ]; then cat "$GITHUB_STEP_SUMMARY" >> "$runtime_original_summary" || :; fi' EXIT
           set -o pipefail
           python3 Tests/RuntimeEvents/run.py --package "$RUNNER_TEMP/runtime" \
             --app "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" --out "$RUNNER_TEMP/m4-events" \
             --runtime "$CKSIM_TEST_RUNTIME" --simulator "$CKSIM_TEST_SIMULATOR" \
             2>&1 | tee "$RUNNER_TEMP/m4-build/runtime-acceptance.log"
-      - name: Verify genuine LCK filters, measured lifecycle and audio wiring
+      - name: Verify genuine LCK report and explicit code-4 fault
+        id: lck
         run: |
+          runtime_original_summary="$GITHUB_STEP_SUMMARY"
+          export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/runtime-phase-lck.md"
+          trap 'if [ -f "$GITHUB_STEP_SUMMARY" ]; then cat "$GITHUB_STEP_SUMMARY" >> "$runtime_original_summary" || :; fi' EXIT
           python3 Tests/RuntimeEvents/lck_acceptance.py --app "$RUNNER_TEMP/lck-fixture/LCKRuntimeFixture.app" \
             --out "$RUNNER_TEMP/m4-lck" --all --simulator "$CKSIM_TEST_SIMULATOR"
       - name: Follow an incoming call through the live SwiftUI inspector
+        id: inspector
         run: |
+          runtime_original_summary="$GITHUB_STEP_SUMMARY"
+          export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/runtime-phase-inspector.md"
+          trap 'if [ -f "$GITHUB_STEP_SUMMARY" ]; then cat "$GITHUB_STEP_SUMMARY" >> "$runtime_original_summary" || :; fi' EXIT
           python3 Tests/Inspector/run.py --package "$RUNNER_TEMP/runtime" \
             --fixture "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" \
             --inspector "$RUNNER_TEMP/inspector/CKSimInspector.app" --out "$RUNNER_TEMP/m4-inspector" \
             --runtime "$CKSIM_TEST_RUNTIME" --driver journal \
             --target-simulator "$CKSIM_TEST_SIMULATOR" --fixture-installed --verify-filter-controls
       - name: Delete the owned simulator
+        id: cleanup
         if: always()
-        run: python3 Tests/RuntimeEvents/ci_simulator.py cleanup --id-file "$RUNNER_TEMP/m4-simulator-id"
+        run: |
+          runtime_original_summary="$GITHUB_STEP_SUMMARY"
+          export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/runtime-phase-cleanup.md"
+          trap 'if [ -f "$GITHUB_STEP_SUMMARY" ]; then cat "$GITHUB_STEP_SUMMARY" >> "$runtime_original_summary" || :; fi' EXIT
+          python3 Tests/RuntimeEvents/ci_simulator.py cleanup --id-file "$RUNNER_TEMP/m4-simulator-id"
+      - name: Summarize Runtime failures
+        if: always()
+        env:
+          RUNTIME_PHASE_OUTCOMES: >-
+            {"select":"${{ steps.select.outcome }}","controls":"${{ steps.controls.outcome }}","build":"${{ steps.build.outcome }}","create":"${{ steps.create.outcome }}","watch":"${{ steps.watch.outcome }}","lck":"${{ steps.lck.outcome }}","inspector":"${{ steps.inspector.outcome }}","cleanup":"${{ steps.cleanup.outcome }}"}
+        run: python3 scripts/ci/runtime_failure_summary.py || true
+      - name: Upload Runtime failure summary
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: runtime-failure-summary
+          path: ${{ runner.temp }}/runtime-failure-summary.md
+          if-no-files-found: warn
+          retention-days: 7
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
