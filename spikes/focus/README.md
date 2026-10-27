@@ -21,6 +21,11 @@ Scenarios with missing adapters or unsupported hardware/backend/fault controls r
 
 Local CLI verification: `python3 -m unittest discover -s spikes/focus -p 'test_*.py'` and
 `node --test spikes/focus/test_activity_payloads.mjs`.
+For an optional read-only GitHub Actions failure summary, run
+`spikes/focus/morning-batch --ci-summary <run-id> --repo <owner>/<repo>`. It does not access a device.
+It queries failed jobs and their check annotations through `gh`, reports aggregate counts without remote text, and
+identifies a billing lock only when an annotation confirms that a job was not started for that reason. The summary covers
+the latest attempt; inspect earlier attempts separately when comparing retry evidence.
 
 ## Morning batch
 

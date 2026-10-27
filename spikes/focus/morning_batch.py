@@ -909,14 +909,27 @@ def run_batch(plan, args):
             raise RuntimeError("restore-all failed or could not be safely attempted; recover settings before releasing lock") from failure
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Run the Focus morning matrix with durable checkpoints")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--quiet", action="store_true", help="minimize ringtone volume and skip acoustic/vibration tests")
     parser.add_argument("--archive-legacy", action="store_true", help="archive restored checkout-local state and enable the persistent default")
-    parser.add_argument("--unknown-caller", default=DEFAULT_UNKNOWN,
+    parser.add_argument("--ci-summary", metavar="RUN_ID", help="summarize Actions checks without a device")
+    parser.add_argument("--repo", help="GitHub repository in owner/name form for --ci-summary")
+    parser.add_argument("--unknown-caller", default=None,
                         help="synthetic owned E.164 test caller absent from the iPhone contacts")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.ci_summary is not None:
+        if not args.repo:
+            parser.error("--ci-summary requires --repo")
+        if args.quiet or args.dry_run or args.archive_legacy or args.unknown_caller is not None:
+            parser.error("--ci-summary cannot be combined with device options")
+        import ci_summary
+        return ci_summary.main([args.ci_summary, "--repo", args.repo])
+    if args.repo is not None:
+        parser.error("--repo requires --ci-summary")
+    if args.unknown_caller is None:
+        args.unknown_caller = DEFAULT_UNKNOWN
     if args.archive_legacy:
         if args.quiet or args.dry_run:
             raise ValueError("--archive-legacy cannot be combined with --quiet or --dry-run")
