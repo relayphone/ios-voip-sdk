@@ -294,6 +294,8 @@ class RuntimeInstallAdapterTests(unittest.TestCase):
         self.assertEqual(len(inventory), 2)
         self.assertEqual([timeout for _, timeout in inventory], [60, 60])
         owner = sim.Session.resume(exports['SIM_STATE'], original, runner=runtime.session_transport)
+        runtime.lifecycle(owner, 'boot', original, timeout=60)
+        runtime.lifecycle(owner, 'bootstatus', original, '-b', timeout=300)
         self.native.failures['install', 1] = 'timeout'
         with self.assertRaises(runtime.CommandError):
             runtime.launch_fixture(original, self.app, session=owner)
