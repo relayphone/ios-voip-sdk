@@ -248,6 +248,44 @@ class LifecycleTests(unittest.TestCase):
                 self.assertTrue(json.loads((self.root / 'cleanup.json').read_text())['deleted'])
                 self.assertEqual(json.loads(self.state.read_text())['owned'], [])
 
+    def test_list_failure_summary_reports_checkpoint_retry_and_owned_count(self):
+        device = self.create()
+        self.rules(dict(step='list', action='failure'))
+        result = self.call('list', 'devices', '-j', expected=73)
+        expected = 'checkpoint=false; retry_used=false; owned_count=1'
+        self.assertIn(expected, result.stderr)
+        self.assertIn(expected, self.summary.read_text())
+        self.assertNotIn(device, self.summary.read_text())
+        state = json.loads(self.state.read_text())
+        self.assertFalse(state['checkpoint'])
+        self.assertFalse(state['retry_used'])
+        self.assertEqual(len(self.calls('list')), 1)
+
+    def test_failure_summary_after_checkpoint(self):
+        self.create()
+        self.cli('checkpoint', self.state)
+        self.rules(dict(step='list', action='failure'))
+        self.call('list', 'devices', '-j', expected=73)
+        self.assertIn('checkpoint=true; retry_used=false; owned_count=1', self.summary.read_text())
+
+    def test_failure_summary_after_exhausted_retry(self):
+        self.rules(dict(step='create', at=[1, 2], action='failure'))
+        self.call('create', 'host-owned', DEVICE, RUNTIME, expected=None)
+        self.assertIn('checkpoint=false; retry_used=true;', self.summary.read_text())
+        self.assertEqual(len(self.calls('create')), 2)
+
+    def test_failure_summary_ignores_malformed_flags_without_exposing_them(self):
+        device = self.create()
+        state = json.loads(self.state.read_text())
+        state.pop('checkpoint')
+        state['retry_used'] = device
+        self.state.write_text(json.dumps(state))
+        self.rules(dict(step='list', action='failure'))
+        result = self.call('list', 'devices', '-j', expected=73)
+        self.assertIn('checkpoint=unknown; retry_used=unknown; owned_count=1', result.stderr)
+        self.assertNotIn(device, self.summary.read_text())
+        self.assertEqual(len(self.calls('list')), 1)
+
     def test_boot_timeout_replaces_device_and_replays_boot_once(self):
         original = self.create()
         self.rules(dict(step='boot', action='timeout'))

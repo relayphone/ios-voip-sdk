@@ -680,11 +680,28 @@ class Session:
                     raise ValueError('Bootstatus requires its blocking flag')
             result = self.execute(command, timeout)
 
+        def failure_state():
+            # Failure-time snapshot; final cleanup is reported separately.
+            # Never expose simulator identifiers or command/environment values.
+            try:
+                def flag(name):
+                    value = self.state.get(name)
+                    return 'true' if value is True else 'false' if value is False else 'unknown'
+                owned = self.state.get('owned')
+                count = str(len(owned)) if isinstance(owned, list) else 'unknown'
+                summary('simulator-state', 'at failure; checkpoint=' + flag('checkpoint') +
+                        '; retry_used=' + flag('retry_used') + '; owned_count=' + count)
+            except Interrupted:
+                raise  # Cancellation must not continue into recovery.
+            except Exception:
+                pass  # Observability must never replace the original result.
+
         if result.cleanup_uncertain:
             return result
         if step == 'launch' and result.stdout:
             self.checkpoint()  # Even partial app/PID evidence forbids startup replay.
         if result.returncode:
+            failure_state()
             if step == 'launch' and transport_failure(result):
                 _report_result(result, 'infra:launch', 'transport failed; never retried')
                 return result
@@ -730,6 +747,7 @@ class Session:
             if result.cleanup_uncertain:
                 return result
             if result.returncode:
+                failure_state()
                 _report_result(result, 'infra:' + step, 'exhausted')
             else:
                 summary('infra:' + step, 'recovered')
