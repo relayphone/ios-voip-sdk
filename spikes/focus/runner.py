@@ -83,15 +83,20 @@ def answer_evidence(events, trace, observation, signal_id):
             visible.add(surface)
     if not visible:
         return {"status": "unqualified", "reason": "no-observed-ui-before-signal", "signalUptimeMs": start}
-    for event in sorted((e for e in transitions if start < e["uptimeMs"] <= observation["endUptimeMs"]), key=lambda e: e["uptimeMs"]):
-        surface = event.get("surface")
-        if event.get("visible") is True:
-            visible.add(surface)
-        else:
-            visible.discard(surface)
-        if not visible and event["uptimeMs"] >= report:
+    later = sorted((e for e in transitions if start < e["uptimeMs"] <= observation["endUptimeMs"]), key=lambda e: e["uptimeMs"])
+    # Banner and full-screen state are sampled together. Apply the whole sample
+    # before deciding that both surfaces vanished.
+    from itertools import groupby
+    for timestamp, sample in groupby(later, key=lambda e: e["uptimeMs"]):
+        for event in sample:
+            surface = event.get("surface")
+            if event.get("visible") is True:
+                visible.add(surface)
+            else:
+                visible.discard(surface)
+        if not visible and timestamp >= report:
             return {"status": "observed", "signalUptimeMs": start, "reportUptimeMs": report,
-                    "dismissalUptimeMs": event["uptimeMs"], "signalToDismissalMs": event["uptimeMs"] - start,
+                    "dismissalUptimeMs": timestamp, "signalToDismissalMs": timestamp - start,
                     "source": "local mailbox; not network delivery"}
     return {"status": "unqualified", "reason": "dismissal-not-observed", "signalUptimeMs": start, "reportUptimeMs": report}
 
@@ -230,6 +235,10 @@ class Run:
                       "--destination", "Documents/" + name if to else str(destination)])
 
     def ui(self, actions, background=False, text=None):
+        # A killed UI session may have journaled a mutation after the last host
+        # backup. Refresh from the test container before passing recovery state
+        # back to XCUITest; never overwrite a newer device journal with a stale one.
+        self.recover(required=self.journal.exists() or os.environ.get("FOCUS_REQUIRE_DEVICE_JOURNAL") == "1")
         data = plistlib.loads(self.source.read_bytes())
         env = {"FOCUS_ACTIONS": json.dumps(actions), "FOCUS_NAME": os.environ.get("FOCUS_NAME", "Focus Probe 124"),
                "FOCUS_CALLER": "+15555550199", "FOCUS_OBSERVATION_ID": self.invitation}
@@ -275,14 +284,19 @@ class Run:
                 self.recover(required=True)
 
     def recover(self, required=False):
+        candidate = self.folder / ("journal-" + uuid.uuid4().hex + ".json")
         try:
-            self.copy("focus-ui-state.json", self.journal, test=True)
-            json.loads(self.journal.read_text())
+            self.copy("focus-ui-state.json", candidate, test=True)
+            json.loads(candidate.read_text())
+            os.replace(candidate, self.journal)
+            self.journal.chmod(0o600)
             self.journal_fresh = True
-        except (RuntimeError, subprocess.TimeoutExpired):
+        except (RuntimeError, subprocess.TimeoutExpired, OSError, ValueError):
             self.journal_fresh = False
             if required:
                 raise RuntimeError("Restoration journal could not be backed up; no push allowed")
+        finally:
+            candidate.unlink(missing_ok=True)
 
     def arm(self, config):
         path = self.folder / "config.json"; write(path, config); self.copy("focus.json", path, to=True)

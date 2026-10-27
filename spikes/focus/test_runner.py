@@ -11,6 +11,20 @@ HERE = Path(__file__).resolve().parent
 
 
 class DryRunTests(unittest.TestCase):
+    def test_device_journal_recovery_replaces_stale_host_atomically(self):
+        with tempfile.TemporaryDirectory() as folder:
+            run = Run.__new__(Run)
+            run.folder = Path(folder)
+            run.journal = run.folder / "restore-state.json"
+            run.journal.write_text('{"dndCalls": null}')
+            run.copy = lambda name, path, test=False: path.write_text('{"dndCalls": "Everyone"}')
+            run.recover(required=True)
+            self.assertEqual(json.loads(run.journal.read_text())["dndCalls"], "Everyone")
+            run.copy = lambda name, path, test=False: path.write_text('{broken')
+            with self.assertRaises(RuntimeError):
+                run.recover(required=True)
+            self.assertEqual(json.loads(run.journal.read_text())["dndCalls"], "Everyone")
+
     def test_each_repeat_invitation_requires_one_matching_report(self):
         first = {"invitationID": "A", "outcome": "filtered"}
         second = {"invitationID": "B", "outcome": "reported"}
@@ -99,6 +113,12 @@ class DryRunTests(unittest.TestCase):
         self.assertEqual(answer_evidence(events[1:], signal, observation, "abc")["status"], "unqualified")
         self.assertEqual(answer_evidence(events[:1], signal, observation, "abc")["status"], "unqualified")
         self.assertEqual(answer_evidence(events, signal[:1], observation, "abc")["status"], "unqualified")
+        handoff = [{"event": "surface.transition", "surface": "banner", "visible": True, "uptimeMs": 1000},
+                   {"event": "surface.transition", "surface": "banner", "visible": False, "uptimeMs": 1200},
+                   {"event": "surface.transition", "surface": "callScreen", "visible": True, "uptimeMs": 1200},
+                   {"event": "surface.transition", "surface": "callScreen", "visible": False, "uptimeMs": 1400}]
+        self.assertEqual(answer_evidence(handoff, signal, observation, "abc")["signalToDismissalMs"], 300)
+        self.assertEqual(answer_evidence(handoff[:-1], signal, observation, "abc")["status"], "unqualified")
 
     def test_failed_positive_control_cannot_qualify_audio(self):
         valid = {"status": "recorded", "visualNegativeQualified": True, "reports": [{"outcome": "reported"}]}
