@@ -83,21 +83,28 @@ def answer_evidence(events, trace, observation, signal_id, push_ms):
             return {"status": "unqualified", "reason": "surface-visible-before-push", "signalUptimeMs": start}
         after = [e for e in transitions if e.get("surface") == surface and push_ms < e["uptimeMs"] <= start]
         if after:
+            if any(e.get("visible") is True and e.get("sampleStartUptimeMs", -1) <= push_ms for e in after):
+                return {"status": "unqualified", "reason": "presentation-spans-push", "signalUptimeMs": start}
             last = max(after, key=lambda e: e["uptimeMs"])
             if last.get("visible") is True:
                 visible[surface] = last.get("callerMatched") is True
     if not visible or not all(visible.values()):
         return {"status": "unqualified", "reason": "no-identified-ui-after-push", "signalUptimeMs": start}
-    samples = sorted({e["uptimeMs"] for e in events if e.get("event") == "surface.sample" and isinstance(e.get("uptimeMs"), int)})
-    before_signal = [value for value in samples if value <= start]
-    if not before_signal or start - before_signal[-1] > 2000:
+    samples = sorted({(e["uptimeMs"], e["sampleStartUptimeMs"]) for e in events
+                      if e.get("event") == "surface.sample" and isinstance(e.get("uptimeMs"), int)
+                      and isinstance(e.get("sampleStartUptimeMs"), int) and e["sampleStartUptimeMs"] <= e["uptimeMs"]})
+    before_signal = [value for value in samples if value[0] <= start]
+    if not before_signal or start - before_signal[-1][0] > 2000 or before_signal[-1][1] <= push_ms:
         return {"status": "unqualified", "reason": "stale-ui-sample-at-signal", "signalUptimeMs": start}
     later = sorted((e for e in transitions if start < e["uptimeMs"] <= observation["endUptimeMs"]), key=lambda e: e["uptimeMs"])
     # Banner and full-screen state are sampled together. Apply the whole sample
     # before deciding that both surfaces vanished.
     from itertools import groupby
     for timestamp, sample in groupby(later, key=lambda e: e["uptimeMs"]):
-        for event in sample:
+        group = list(sample)
+        if any(not isinstance(e.get("sampleStartUptimeMs"), int) or e["sampleStartUptimeMs"] < report for e in group):
+            return {"status": "unqualified", "reason": "ui-sample-spans-end-report", "signalUptimeMs": start}
+        for event in group:
             surface = event.get("surface")
             if event.get("visible") is True:
                 visible[surface] = event.get("callerMatched") is True
@@ -106,14 +113,15 @@ def answer_evidence(events, trace, observation, signal_id, push_ms):
         if visible and not all(visible.values()):
             return {"status": "unqualified", "reason": "ambiguous-ui-identity", "signalUptimeMs": start}
         if not visible and timestamp >= report:
-            coverage = [before_signal[-1]] + [value for value in samples if before_signal[-1] < value <= timestamp]
-            if not coverage or coverage[-1] != timestamp or any(b - a > 2000 for a, b in zip(coverage, coverage[1:])):
+            coverage = [before_signal[-1]] + [value for value in samples if before_signal[-1][0] < value[0] <= timestamp]
+            if (not coverage or coverage[-1][0] != timestamp or any(end - begin > 2000 for end, begin in coverage)
+                    or any(b[1] - a[0] > 2000 for a, b in zip(coverage, coverage[1:]))):
                 return {"status": "unqualified", "reason": "ui-observation-gap", "signalUptimeMs": start}
-            last_sample = coverage[-2] if len(coverage) > 1 else coverage[-1]
+            last_sample_start = coverage[-2][1] if len(coverage) > 1 else coverage[-1][1]
             return {"status": "observed", "signalUptimeMs": start, "reportUptimeMs": report,
                     "dismissalUptimeMs": timestamp, "signalToDismissalMs": timestamp - start,
-                    "dismissalLowerBoundMs": max(0, last_sample - start),
-                    "samplingUncertaintyMs": timestamp - last_sample,
+                    "dismissalLowerBoundMs": max(0, last_sample_start - start),
+                    "samplingUncertaintyMs": timestamp - last_sample_start,
                     "source": "local mailbox; not network delivery"}
     return {"status": "unqualified", "reason": "dismissal-not-observed", "signalUptimeMs": start, "reportUptimeMs": report}
 

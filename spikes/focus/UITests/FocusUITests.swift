@@ -707,6 +707,7 @@ final class FocusUITests: XCTestCase {
     let expected = ProcessInfo.processInfo.environment["FOCUS_EXPECTED_CALLER"] ?? ""
     guard expected.utf8.count <= 128 else { throw failure("Invalid expected caller") }
     repeat {
+      let sampleStartUptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
       var currentBanner = false
       if board.state == .runningForeground {
         currentBanner = board.buttons.matching(NSPredicate(format: "label IN %@", ["Accept", "Answer call", "Decline"])).firstMatch.exists
@@ -716,13 +717,13 @@ final class FocusUITests: XCTestCase {
       let screenCaller = currentScreen && callerMatches(callUI.otherElements["InCallRootView"], app: callUI, expected: expected)
       let now = Date().timeIntervalSince1970
       let uptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
-      events.append(["event": "surface.sample", "surface": "banner", "visible": currentBanner, "callerMatched": bannerCaller, "observedAt": now, "uptimeMs": uptimeMs])
-      events.append(["event": "surface.sample", "surface": "callScreen", "visible": currentScreen, "callerMatched": screenCaller, "observedAt": now, "uptimeMs": uptimeMs])
+      events.append(["event": "surface.sample", "surface": "banner", "visible": currentBanner, "callerMatched": bannerCaller, "observedAt": now, "uptimeMs": uptimeMs, "sampleStartUptimeMs": sampleStartUptimeMs])
+      events.append(["event": "surface.sample", "surface": "callScreen", "visible": currentScreen, "callerMatched": screenCaller, "observedAt": now, "uptimeMs": uptimeMs, "sampleStartUptimeMs": sampleStartUptimeMs])
       if currentBanner != previousBanner || bannerCaller != previousBannerCaller {
-        events.append(["event": "surface.transition", "surface": "banner", "visible": currentBanner, "callerMatched": bannerCaller, "observedAt": now, "uptimeMs": uptimeMs])
+        events.append(["event": "surface.transition", "surface": "banner", "visible": currentBanner, "callerMatched": bannerCaller, "observedAt": now, "uptimeMs": uptimeMs, "sampleStartUptimeMs": sampleStartUptimeMs])
       }
       if currentScreen != previousScreen || screenCaller != previousScreenCaller {
-        events.append(["event": "surface.transition", "surface": "callScreen", "visible": currentScreen, "callerMatched": screenCaller, "observedAt": now, "uptimeMs": uptimeMs])
+        events.append(["event": "surface.transition", "surface": "callScreen", "visible": currentScreen, "callerMatched": screenCaller, "observedAt": now, "uptimeMs": uptimeMs, "sampleStartUptimeMs": sampleStartUptimeMs])
       }
       previousBanner = currentBanner; previousScreen = currentScreen
       previousBannerCaller = bannerCaller; previousScreenCaller = screenCaller
