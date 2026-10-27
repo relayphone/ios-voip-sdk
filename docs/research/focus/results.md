@@ -1,6 +1,6 @@
 # Focus device results: first iPhone 13 pass
 
-These are the measured results for the [device plan](device-plan.md) from [#124](https://github.com/ziahamza/ios-voip-sdk/issues/124). Claude ran them on 26–27 October 2026 with the [`spikes/focus`](../../../spikes/focus/README.md) probe. The probe uses only LiveCommunicationKit (LCK); CallKit was not tested. Two sessions were cut short to return the shared phone. All 16 F rows except F06–F08 are now measured, along with C02 and the locked Auto-Answer run. The Live Activity rows are still open.
+These are the measured results for the [device plan](device-plan.md) from [#124](https://github.com/ziahamza/ios-voip-sdk/issues/124). They were run on 26–27 October 2026 with the [`spikes/focus`](../../../spikes/focus/README.md) probe. The probe uses only LiveCommunicationKit (LCK); CallKit was not tested. Two sessions were cut short to return the shared phone. All 16 F rows except F06–F08 are now measured, along with C02 and the locked Auto-Answer run. The Live Activity rows are still open.
 
 The rows were automated: XCUITest changed the settings and observed the screen, and pushes went through the sandbox. There is **one sample per row**; the plan asks for three. Traces, receipts and tokens stay in a private working folder and are not committed.
 
