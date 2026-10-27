@@ -63,8 +63,41 @@ def surface_windows(events, received, observation):
     return windows
 
 
+def answer_evidence(events, trace, observation, signal_id):
+    """Qualify a local signal-to-disappearance interval only with continuous visible evidence."""
+    matching = [item for item in trace if str(item.get("signalID", "")).lower() == signal_id.lower()]
+    signals = [item for item in matching if item.get("event") == "answer.signal"]
+    reports = [item for item in matching if item.get("event") == "answer.report"]
+    if len(signals) != 1 or len(reports) != 1:
+        return {"status": "unqualified", "reason": "missing-or-duplicate-signal-or-report"}
+    start, report = signals[0].get("monoMs"), reports[0].get("monoMs")
+    if not isinstance(start, int) or not isinstance(report, int) or report < start:
+        return {"status": "unqualified", "reason": "invalid-device-timestamps"}
+    if not observation.get("startUptimeMs", start + 1) <= start <= report <= observation.get("endUptimeMs", -1):
+        return {"status": "unqualified", "reason": "outside-observation-window"}
+    transitions = [e for e in events if e.get("event") == "surface.transition" and isinstance(e.get("uptimeMs"), int)]
+    visible = set()
+    for surface in ("banner", "callScreen"):
+        prior = [e for e in transitions if e.get("surface") == surface and e["uptimeMs"] <= start]
+        if prior and max(prior, key=lambda e: e["uptimeMs"]).get("visible") is True:
+            visible.add(surface)
+    if not visible:
+        return {"status": "unqualified", "reason": "no-observed-ui-before-signal", "signalUptimeMs": start}
+    for event in sorted((e for e in transitions if start < e["uptimeMs"] <= observation["endUptimeMs"]), key=lambda e: e["uptimeMs"]):
+        surface = event.get("surface")
+        if event.get("visible") is True:
+            visible.add(surface)
+        else:
+            visible.discard(surface)
+        if not visible and event["uptimeMs"] >= report:
+            return {"status": "observed", "signalUptimeMs": start, "reportUptimeMs": report,
+                    "dismissalUptimeMs": event["uptimeMs"], "signalToDismissalMs": event["uptimeMs"] - start,
+                    "source": "local mailbox; not network delivery"}
+    return {"status": "unqualified", "reason": "dismissal-not-observed", "signalUptimeMs": start, "reportUptimeMs": report}
+
+
 def plan(row, locked=False, listen=False, provider=None, caller_format="e164", repeated_calls="off", caller_value=None):
-    aliases = {"CK-F13": ("F13", "callkit"), "CK-C02": ("C02", "callkit"), "LCK-C02b": ("C02", "lck")}
+    aliases = {"CK-F09": ("F09", "callkit"), "CK-F13": ("F13", "callkit"), "CK-C02": ("C02", "callkit"), "LCK-C02b": ("C02", "lck")}
     original = row
     if row in aliases:
         row, expected = aliases[row]
@@ -94,7 +127,7 @@ def plan(row, locked=False, listen=False, provider=None, caller_format="e164", r
             p["blocked"] = "Alerting push-to-start excluded from silent mode"
         if n == 16:
             p["blocked"] = "iPhone 13 has no Dynamic Island"
-    elif row == "restore-all":
+    elif row in ["restore-all", "preflight"]:
         p["sendVoIP"] = False
     elif row.startswith("T") and row[1:].isdigit() and 1 <= int(row[1:]) <= 6:
         p["blocked"] = "Requires Phone LiveKit owner-join/backend; probe has no AI/media"
@@ -129,6 +162,8 @@ def plan(row, locked=False, listen=False, provider=None, caller_format="e164", r
     if row == "restore-all":
         p["steps"] = ["restore owned journal; restore Auto-Answer/delay + Auto-Lock; delete test Focus/contact; restore prior active Focus",
                       "uninstall disposable probe only if required to restore undetermined permissions; no push"]
+    elif row == "preflight":
+        p["steps"] = ["check Share Across Devices is OFF in Settings without changing Focus or sending a push"]
     return p
 
 
@@ -198,6 +233,8 @@ class Run:
         data = plistlib.loads(self.source.read_bytes())
         env = {"FOCUS_ACTIONS": json.dumps(actions), "FOCUS_NAME": os.environ.get("FOCUS_NAME", "Focus Probe 124"),
                "FOCUS_CALLER": "+15555550199", "FOCUS_OBSERVATION_ID": self.invitation}
+        if self.p.get("unknownCaller"):
+            env["FOCUS_UNKNOWN_CALLER"] = self.p["callerValue"]
         if self.journal.exists() and self.journal_fresh:
             env["FOCUS_RESTORE_STATE"] = base64.b64encode(self.journal.read_bytes()).decode()
         if (self.work / "system-settings-approved").exists():
@@ -318,18 +355,27 @@ class Run:
             if p["row"] == "restore-all":
                 self.restore(); result["status"] = "restored"; return result
             # The Focus app picker lists only apps that have notification permission (iOS 27).
-            actions = ["setup", "launch", "notifications:allow", "app:" + ("include" if p["app"] else "exclude"),
+            actions = ["share-across-devices:check", "setup", "launch", "notifications:allow",
+                       "app:" + ("include" if p["app"] else "exclude"),
                        "person:" + ("include" if p["person"] else "exclude"), "calls:Allowed People Only"]
             if p["baseRow"] == "C01":
                 actions[-1] = "calls:" + self.args.calls
             actions += ["repeated-calls:" + (self.args.repeated_calls if p["baseRow"] == "C02" else "off")]
+            if p["unknownCaller"]:
+                actions += ["unknown:verify"]
+            if p["favorite"] is not None:
+                actions += ["favorite:" + ("on" if p["favorite"] == "yes" else "off")]
             if p["row"] == "C06":
                 actions += ["policy:screenWithAI"]
-            actions += ["focus:" + ("on" if p["focus"] else "off")]
+            if p["focusMode"] == "dnd":
+                actions += ["dnd:configure", "dnd:on"]
+            else:
+                actions += ["focus:" + ("on" if p["focus"] else "off")]
             self.ui(actions)
             self.arm({"rowID": p["row"], "runID": self.run_id, "provider": p["provider"], "handleType": p["handleType"],
                       "armed": True, "communicationNotification": p["cn"],
-                      "activityAction": "start" if p["activity"] else None})
+                      "activityAction": "start" if p["activity"] else None,
+                      "ringTimeout": 60 if p["serverAnswer"] else 25})
             self.ui(["launch", "notifications:allow"] + (["focus-authorization:allow"] if p["row"] == "C05" else []))
             if p["activity"]:
                 self.ui(["activity-consent"])
@@ -347,7 +393,7 @@ class Run:
                 history = self.work / "last-voip-attempt.json"
                 if history.exists():
                     previous = json.loads(history.read_text())
-                    if needs_repeat_fence(p["baseRow"], previous):
+                    if p["focusMode"] == "dnd" or needs_repeat_fence(p["baseRow"], previous):
                         last = previous["attemptedAt"]
                         while repeat_cooldown(last, time.time()) > 0:
                             time.sleep(min(30, repeat_cooldown(last, time.time())))
@@ -378,6 +424,14 @@ class Run:
                 time.sleep(5)  # Quiet baseline before the controlled signal.
             if p["sendVoIP"]:
                 self.send()
+                if p["serverAnswer"]:
+                    # Simulate a server answer through a local mailbox, never a cancellation-only VoIP push.
+                    # The app must be runnable; absence of its trace is recorded as unqualified.
+                    time.sleep(5)
+                    self.signal_id = str(uuid.uuid4())
+                    path = self.folder / "answer-signal.json"
+                    write(path, {"runID": self.run_id, "invitationID": self.invitation, "signalID": self.signal_id})
+                    self.copy("answer-signal.json", path, to=True)
                 if p["baseRow"] == "C02":
                     time.sleep(69); self.invitation = str(uuid.uuid4()); self.invitations.append(self.invitation); self.send("-repeat")
             if p["activity"]:
@@ -413,6 +467,8 @@ class Run:
                     result["repeatIntervalMs"] = device_receipts[1][1] - device_receipts[0][1]
             result["invitationIDs"] = self.invitations
             result["reports"] = [e for e in matching if e["event"] == "report.result"]
+            if p["serverAnswer"] and observer:
+                result["answeredElsewhere"] = answer_evidence(ui["events"], matching, result["visual"][0], self.signal_id)
             first_window = result.get("visualByInvitation", [{}])[0]
             if p["row"] == "C00" and len(result["reports"]) == 1 and result["reports"][0].get("outcome") == "reported" and first_window.get("observationQualified") and (first_window.get("bannerFirstNewPresentationUptimeMs") is not None or first_window.get("callScreenFirstNewPresentationUptimeMs") is not None):
                 write(self.work / "visual-calibration.json", {"positive": True, "binding": self.binding, "createdAt": time.time()})
@@ -456,7 +512,8 @@ class Run:
                     self.recover()
                     if self.args.keep_setup:
                         # Matrix runs keep the owned Focus/contact between rows; only the Focus-on window ends here.
-                        self.arm({"armed": False, "activityAction": None if p["activity"] else "end"}); self.ui(["focus:off"])
+                        self.arm({"armed": False, "activityAction": None if p["activity"] else "end"})
+                        self.ui(["dnd:off" if p["focusMode"] == "dnd" else "focus:off"])
                         result["restored"] = "focus-off"
                     else:
                         self.restore(); result["restored"] = True
@@ -485,11 +542,28 @@ def main():
     parser.add_argument("--caller-value", help="synthetic handle in the chosen format; default matches the test contact")
     parser.add_argument("--calls", default="Everyone", choices=["Everyone", "All Contacts", "Contacts Only", "Favorites", "Allowed People Only"])
     parser.add_argument("--keep-setup", action="store_true", help="matrix mode: turn Focus off after the row; run restore-all at the end")
+    parser.add_argument("--focus-mode", choices=["custom", "dnd"], default="custom")
+    parser.add_argument("--unknown-caller", action="store_true", help="verify the supplied E.164 caller is absent from Contacts")
+    parser.add_argument("--favorite", choices=["yes", "no"], help="set the owned test contact's Favorites state")
+    parser.add_argument("--server-answer", action="store_true", help="simulate an answer through a local mailbox, not APNs")
     args = parser.parse_args()
     p = plan(args.row, args.locked_auto_answer, args.listen, args.provider, args.caller_format, args.repeated_calls, args.caller_value)
-    if not p["blocked"] and p["baseRow"] != "restore-all":
+    if args.focus_mode == "dnd" and (not p["focus"] or p["app"] or p["person"] or not p["sendVoIP"]):
+        raise ValueError("Built-in DND rows require a focused incoming call with app and person excluded")
+    if args.unknown_caller and (not args.caller_value or args.caller_format != "e164" or args.caller_value == "+15555550199" or p["person"]):
+        raise ValueError("Unknown caller needs a different E.164 number and no allowed test contact")
+    if args.server_answer and (not p["sendVoIP"] or p["baseRow"] == "C02" or args.locked_auto_answer):
+        raise ValueError("Local answer signaling requires one unlocked incoming-call observation")
+    p.update(focusMode=args.focus_mode, unknownCaller=args.unknown_caller, favorite=args.favorite, serverAnswer=args.server_answer)
+    if not p["blocked"] and p["baseRow"] not in ["restore-all", "preflight"]:
         p["callsFrom"] = args.calls if p["baseRow"] == "C01" else "Allowed People Only"
         p["keepSetup"] = args.keep_setup
+        if args.focus_mode == "dnd":
+            p["steps"].insert(1, "snapshot built-in DND settings, verify app exclusion and selected controls, then enable DND")
+        if args.unknown_caller:
+            p["steps"].insert(1, "verify the caller is absent from Contacts before the call")
+        if args.server_answer:
+            p["steps"].insert(-2, "write a matched local answer signal; trace receipt/report and UI disappearance")
         if args.keep_setup:
             p["steps"][-1] = "write private row result; disarm and turn Focus off; keep owned setup (run restore-all after matrix)"
     if args.dry_run or p["blocked"]:
@@ -497,6 +571,9 @@ def main():
             p["status"] = "skipped-dependency-or-unsupported"
             p["humanQA"] = False
         print(json.dumps(p, indent=2)); return
+    if p["baseRow"] == "preflight":
+        Run(p, args).ui(["share-across-devices:check"])
+        print(json.dumps({"row": "preflight", "status": "recorded"})); return
     result = Run(p, args).execute()
     if result["status"] not in ["recorded", "restored"]:
         raise RuntimeError("Row or restoration incomplete")

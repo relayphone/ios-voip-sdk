@@ -76,6 +76,30 @@ class DryRunTests(unittest.TestCase):
         self.assertTrue(national["keepSetup"])
         self.assertIn("restore-all after matrix", national["steps"][-1])
 
+    def test_builtin_dnd_unknown_and_local_answer_plan(self):
+        result = self.run_plan("CK-F09", "--focus-mode", "dnd", "--caller-value", "+15555550200", "--unknown-caller", "--server-answer")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual((data["provider"], data["focusMode"], data["unknownCaller"], data["serverAnswer"]), ("callkit", "dnd", True, True))
+        self.assertIn("local answer signal", " ".join(data["steps"]))
+        self.assertNotEqual(self.run_plan("F13", "--focus-mode", "dnd").returncode, 0)
+        self.assertNotEqual(self.run_plan("CK-F09", "--unknown-caller", "--caller-value", "+15555550199").returncode, 0)
+        self.assertNotEqual(self.run_plan("CK-C02", "--server-answer").returncode, 0)
+        self.assertFalse(json.loads(self.run_plan("preflight").stdout)["sendVoIP"])
+
+    def test_answer_signal_requires_visible_ui_and_observed_disappearance(self):
+        from runner import answer_evidence
+        observation = {"startUptimeMs": 900, "endUptimeMs": 1500}
+        signal = [{"event": "answer.signal", "signalID": "abc", "monoMs": 1100},
+                  {"event": "answer.report", "signalID": "abc", "monoMs": 1120}]
+        events = [{"event": "surface.transition", "surface": "callScreen", "visible": True, "uptimeMs": 1000},
+                  {"event": "surface.transition", "surface": "callScreen", "visible": False, "uptimeMs": 1200}]
+        evidence = answer_evidence(events, signal, observation, "abc")
+        self.assertEqual((evidence["status"], evidence["signalToDismissalMs"]), ("observed", 100))
+        self.assertEqual(answer_evidence(events[1:], signal, observation, "abc")["status"], "unqualified")
+        self.assertEqual(answer_evidence(events[:1], signal, observation, "abc")["status"], "unqualified")
+        self.assertEqual(answer_evidence(events, signal[:1], observation, "abc")["status"], "unqualified")
+
     def test_failed_positive_control_cannot_qualify_audio(self):
         valid = {"status": "recorded", "visualNegativeQualified": True, "reports": [{"outcome": "reported"}]}
         self.assertTrue(audio_control_eligible(valid))

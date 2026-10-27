@@ -50,11 +50,26 @@ final class Trace: @unchecked Sendable {
 }
 
 final class Calls: NSObject, PKPushRegistryDelegate, ConversationManagerDelegate, @unchecked Sendable {
+  private struct AnswerSignal: Decodable {
+    let runID: String
+    let invitationID: UUID
+    let signalID: UUID
+  }
+  private enum ReportPhase { case pending, active, ended }
+  private struct TrackedReport {
+    let runID: String
+    var phase: ReportPhase
+    var pendingSignal: AnswerSignal?
+  }
   let manager: ConversationManager?
   let callKit: CallKitControl?
   let mode: String
   let queue = DispatchQueue(label: "focus.pushkit")
   var registry: PKPushRegistry!
+  private var signalTimer: DispatchSourceTimer?
+  // Accessed only on queue, including callbacks dispatched from other threads.
+  private var reports: [UUID: TrackedReport] = [:]
+  private var seenSignals: Set<UUID> = []
   override init() {
     mode = ProbeConfig.load().provider == "callkit" ? "callkit" : "lck"
     if mode == "callkit" {
@@ -70,6 +85,11 @@ final class Calls: NSObject, PKPushRegistryDelegate, ConversationManagerDelegate
     manager?.delegate = self
     Trace.shared.log("provider.selected", ["provider": mode])
     registry = PKPushRegistry(queue: queue); registry.delegate = self; registry.desiredPushTypes = [.voIP]
+    let timer = DispatchSource.makeTimerSource(queue: queue)
+    timer.schedule(deadline: .now(), repeating: .milliseconds(200), leeway: .milliseconds(50))
+    timer.setEventHandler { [weak self] in self?.pollAnswerSignal() }
+    signalTimer = timer
+    timer.resume()
   }
   func pushRegistry(_ registry: PKPushRegistry, didUpdate credentials: PKPushCredentials, for type: PKPushType) {
     try? ProbeFiles.write("voip-token.txt", data: Data(credentials.token.map { String(format: "%02x", $0) }.joined().utf8))
@@ -94,13 +114,27 @@ final class Calls: NSObject, PKPushRegistryDelegate, ConversationManagerDelegate
     let id = (payload.dictionaryPayload["invitationID"] as? String).flatMap(UUID.init(uuidString:)) ?? UUID()
     let caller = payload.dictionaryPayload["from"] as? String ?? "+15555550199"
     let kind = config.handleType == "generic" ? "generic" : "phoneNumber"
+    // Each genuine call is reported even if an unrelated mailbox signal exists.
+    reports[id] = TrackedReport(runID: config.runID ?? "idle", phase: .pending)
     Trace.shared.log("push.received", ["invitationID": id.uuidString, "mustReport": mustReport, "provider": mode,
       "handleType": kind, "handleValue": caller,
       "aiPolicy": UserDefaults(suiteName: ProbeFiles.group)?.string(forKey: "focus.aiPolicy") ?? "unset"])
     // Real incoming pushes are always reported, even if unarmed. Arming controls only auxiliary work.
     let finished: (Error?) -> Void = { error in
-      self.reportFinished(id, start: start, error: error)
-      completion(); Trace.shared.log("push.completion", ["invitationID": id.uuidString, "provider": self.mode])
+      self.queue.async {
+        self.reportFinished(id, start: start, error: error)
+        if var report = self.reports[id], report.phase == .pending {
+          let signal = report.pendingSignal
+          report.phase = error == nil ? .active : .ended
+          report.pendingSignal = nil
+          self.reports[id] = report
+          if let signal {
+            if error == nil { self.applyAnswerSignal(signal) }
+            else { self.logSignal("answer.ignored", signal, reason: "reportFailed") }
+          }
+        }
+        completion(); Trace.shared.log("push.completion", ["invitationID": id.uuidString, "provider": self.mode])
+      }
     }
     let ringTimeout = min(max(config.ringTimeout ?? 25, 3), 60)
     if let callKit {
@@ -118,10 +152,15 @@ final class Calls: NSObject, PKPushRegistryDelegate, ConversationManagerDelegate
           try await manager.reportNewIncomingConversation(uuid: id, update: update)
           finished(nil)
           DispatchQueue.main.asyncAfter(deadline: .now() + ringTimeout) {
-            if let manager = self.manager, let call = manager.conversations.first(where: { $0.uuid == id }) {
-              let answered = call.state == .joined
-              manager.reportConversationEvent(.conversationEnded(Date(), answered ? .remoteEnded : .unanswered), for: call)
-              Trace.shared.log("call.autoEnd", ["invitationID": id.uuidString, "answered": answered, "provider": self.mode])
+            self.queue.async {
+              guard var report = self.reports[id], report.phase == .active else { return }
+              report.phase = .ended
+              self.reports[id] = report
+              if let manager = self.manager, let call = manager.conversations.first(where: { $0.uuid == id }) {
+                let answered = call.state == .joined
+                manager.reportConversationEvent(.conversationEnded(Date(), answered ? .remoteEnded : .unanswered), for: call)
+                Trace.shared.log("call.autoEnd", ["invitationID": id.uuidString, "answered": answered, "provider": self.mode])
+              }
             }
           }
         } catch { finished(error) }
@@ -136,6 +175,57 @@ final class Calls: NSObject, PKPushRegistryDelegate, ConversationManagerDelegate
       queue.asyncAfter(deadline: .now() + delay) {
         Trace.shared.log("push.survival", ["invitationID": id.uuidString, "elapsedMs": Int((ProcessInfo.processInfo.systemUptime - start) * 1000)])
       }
+    }
+  }
+  private func logSignal(_ event: String, _ signal: AnswerSignal, reason: String? = nil) {
+    var fields: [String: Any] = ["invitationID": signal.invitationID.uuidString,
+                                 "signalID": signal.signalID.uuidString, "provider": mode]
+    if let reason { fields["reason"] = reason }
+    Trace.shared.log(event, fields)
+  }
+  // A local mailbox lets the device operator simulate a server answer without a
+  // cancellation-only VoIP push. Polling has no execution guarantee in suspension.
+  private func pollAnswerSignal() {
+    let url = ProbeFiles.documents.appendingPathComponent("answer-signal.json")
+    guard let data = try? Data(contentsOf: url),
+          let signal = try? JSONDecoder().decode(AnswerSignal.self, from: data),
+          seenSignals.insert(signal.signalID).inserted else { return }
+    logSignal("answer.signal", signal)
+    let config = ProbeConfig.load()
+    guard config.armed == true, config.runID == signal.runID else {
+      logSignal("answer.ignored", signal, reason: "runMismatchOrDisarmed"); return
+    }
+    guard var report = reports[signal.invitationID], report.runID == signal.runID else {
+      logSignal("answer.ignored", signal, reason: "unknownInvitation"); return
+    }
+    switch report.phase {
+    case .pending:
+      guard report.pendingSignal == nil else { logSignal("answer.ignored", signal, reason: "alreadyPending"); return }
+      report.pendingSignal = signal
+      reports[signal.invitationID] = report
+      logSignal("answer.deferred", signal, reason: "incomingReportPending")
+    case .active: applyAnswerSignal(signal)
+    case .ended: logSignal("answer.ignored", signal, reason: "alreadyEnded")
+    }
+  }
+  private func applyAnswerSignal(_ signal: AnswerSignal) {
+    guard var report = reports[signal.invitationID], report.phase == .active else {
+      logSignal("answer.ignored", signal, reason: "notActive"); return
+    }
+    // Mark terminal before reporting to prevent a duplicate or local timeout racing it.
+    report.phase = .ended
+    reports[signal.invitationID] = report
+    if let callKit {
+      guard callKit.answeredElsewhere(id: signal.invitationID) else {
+        logSignal("answer.ignored", signal, reason: "notRinging"); return
+      }
+      logSignal("answer.report", signal, reason: "answeredElsewhere")
+    } else if let manager, let conversation = manager.conversations.first(where: { $0.uuid == signal.invitationID }),
+              conversation.state == .idle {
+      manager.reportConversationEvent(.conversationEnded(Date(), .joinedElsewhere), for: conversation)
+      logSignal("answer.report", signal, reason: "joinedElsewhere")
+    } else {
+      logSignal("answer.ignored", signal, reason: "notRinging")
     }
   }
   private func reportFinished(_ id: UUID, start: TimeInterval, error: Error?) {
