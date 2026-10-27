@@ -107,12 +107,14 @@ Favorites and unknown-contact selectors are unqualified until tested on the oper
 Matrix runs: `--keep-setup` keeps the owned Focus and contact between rows and only turns the Focus off after each
 row; run `restore-all` once at the end. The iOS 27.0 device pass exercised some selectors; see
 [results](../../docs/research/focus/results.md). For selector work, the `dump:<controlcenter|focusmenu|settings-focus|settings-calls|settings-root|screen>`
-UI action writes a read-only accessibility tree to the runner's Documents, and any failed action leaves the front
-app's tree in `focus-dump-failure.txt`. To inspect Allow Calls From without changing its selection, run the signed
+UI action captures read-only accessibility evidence. A failed UI action saves a privacy-filtered picker snapshot in
+the row evidence, or marks it unavailable when the picker was not reached. Only general picker words are retained;
+names, numbers, identifiers and unrelated UI text are excluded. Blank labels are redacted, so an unfamiliar option
+may need a separately privacy-reviewed inspection before its selector can be determined. To inspect Allow Calls From without changing its selection, run the signed
 `FocusUITests/testActions` with `FOCUS_ACTIONS` set to `["dump:settings-calls"]` in the UI-test environment and an
 existing custom probe Focus named by `FOCUS_NAME` (default `Focus Probe 124`). Copy
-`Documents/focus-dump-settings-calls.txt` from the `dev.callkitsim.focus.uitests.xctrunner` app-data container with
-`xcrun devicectl device copy from`. The tree may contain private contact names; keep it private. Use the observed
+`Documents/focus-dump-settings-calls.json` from the `dev.callkitsim.focus.uitests.xctrunner` app-data container with
+`xcrun devicectl device copy from`. The filtered snapshot contains only general picker terms. Use the observed
 picker text and a verified selected-value readback to update C01; the current Everyone selector is unqualified.
 The device operator has registered `group.dev.callkitsim.focus` for the
 app, widget and filter under team `85A9MS6428`. Keep the App Group entitlements for C06; the earlier run built

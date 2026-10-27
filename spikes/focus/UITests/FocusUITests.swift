@@ -37,6 +37,8 @@ final class FocusUITests: XCTestCase {
   var journal = Journal()
   var verifiedFocusOff = false
   var events: [[String: Any]] = []
+  var pickerEvidence: [[String: Any]]?
+  var pickerTruncated = false
   var documents: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
   func save() throws {
     try JSONEncoder().encode(journal).write(to: documents.appendingPathComponent("focus-ui-state.json"), options: .atomic)
@@ -339,14 +341,64 @@ final class FocusUITests: XCTestCase {
     if profile != nil { try requireAllowListMode() }
     if (try? element(settings, ["Cancel"], timeout: 1)) != nil { try commitSheet(); try openProfile(profile); try tap(settings, exceptions("People")); if profile != nil { try requireAllowListMode() } }
   }
+  // Only picker controls with a closed vocabulary are retained; names, numbers and identifiers are never exported.
+  func captureCallsPicker() throws {
+    try front(settings)
+    let allowed: Set<String> = ["allow", "allowed", "calls", "from", "people", "only", "everyone", "everybody", "anyone", "anybody", "all", "contacts", "contact", "favorite", "favorites", "favourite", "favourites", "no", "one", "nobody", "none", "back", "done"]
+    var nodes: [[String: Any]] = []
+    pickerTruncated = false
+    func visit(_ item: XCUIElement, parent: Int, depth: Int) {
+      guard nodes.count < 200, depth < 20 else { pickerTruncated = true; return }
+      guard item.exists else { return }
+      let words = item.label.lowercased().split(separator: " ").map(String.init)
+      let label = !words.isEmpty && words.count <= 5 && words.allSatisfy({ allowed.contains($0) }) ? item.label : ""
+      let kind: String
+      switch item.elementType {
+      case .window: kind = "window"
+      case .navigationBar: kind = "navigation"
+      case .table: kind = "table"
+      case .collectionView: kind = "collection"
+      case .button: kind = "button"
+      case .cell: kind = "cell"
+      case .staticText: kind = "text"
+      default: kind = "other"
+      }
+      let index = nodes.count
+      nodes.append(["type": kind, "label": label, "selected": item.isSelected, "parent": parent])
+      for child in item.children(matching: .any).allElementsBoundByIndex {
+        if nodes.count >= 200 { pickerTruncated = true; break }
+        visit(child, parent: index, depth: depth + 1)
+      }
+    }
+    for child in settings.children(matching: .any).allElementsBoundByIndex {
+      if nodes.count >= 200 { pickerTruncated = true; break }
+      visit(child, parent: -1, depth: 0)
+    }
+    pickerEvidence = nodes
+  }
+  func attachPickerEvidence() {
+    let requested = ProcessInfo.processInfo.environment["FOCUS_EVIDENCE_ID"] ?? ""
+    let id = UUID(uuidString: requested)?.uuidString ?? UUID().uuidString
+    let data: [String: Any] = ["runID": id.lowercased(), "available": pickerEvidence != nil,
+      "truncated": pickerEvidence != nil && pickerTruncated, "nodes": pickerEvidence ?? []]
+    guard let bytes = try? JSONSerialization.data(withJSONObject: data, options: [.sortedKeys]) else { return }
+    try? bytes.write(to: documents.appendingPathComponent("focus-dump-settings-calls.json"), options: .atomic)
+    XCTContext.runActivity(named: "Picker evidence") { activity in
+      let attachment = XCTAttachment(data: bytes, uniformTypeIdentifier: "public.json")
+      attachment.name = "focus-picker-evidence.json"
+      attachment.lifetime = .keepAlways
+      activity.add(attachment)
+    }
+  }
   func setCalls(_ value: String, profile: String? = nil) throws {
     try openPeople(profile)
     try tap(settings, scrollTo(settings, ["also-allow-calls-from-group-picker", "Allow Calls From", "Calls From"]))
+    try captureCallsPicker()
     try tap(settings, [value]); try settle()
     // Reopen the profile: seeing a menu option is not evidence of its selected value.
     try openPeople(profile)
     let picker = try scrollTo(settings, ["also-allow-calls-from-group-picker"])
-    guard picker.label == value else { throw failure("Allow Calls From stayed \(picker.label)") }
+    guard picker.label == value else { throw failure("Allow Calls From did not match the requested setting") }
   }
   func setPolicy() throws {
     try openProfile()
@@ -458,7 +510,15 @@ final class FocusUITests: XCTestCase {
     for _ in 0..<16 {
       try front(phone)
       let cells = phone.cells.allElementsBoundByIndex
-      let matches = cells.filter { $0.exists && $0.label.contains(journal.contactName) }
+      let candidates = cells.filter { cell in
+        cell.exists && (cell.label.contains(journal.contactName) || cell.staticTexts.matching(
+          NSPredicate(format: "label == %@", journal.contactName)).allElementsBoundByIndex.contains { $0.exists })
+      }
+      let matches = candidates.filter { cell in
+        cell.label == journal.contactName || cell.staticTexts.matching(
+          NSPredicate(format: "label == %@", journal.contactName)).allElementsBoundByIndex.contains { $0.exists }
+      }
+      guard candidates.count == matches.count else { throw failure("Favorite name cannot be verified exactly") }
       guard matches.count <= 1 else { throw failure("Ambiguous owned favorite rows") }
       if let match = matches.first { return match }
       let visible = cells.filter(\.isHittable).map(\.label).joined(separator: "|")
@@ -474,6 +534,9 @@ final class FocusUITests: XCTestCase {
   }
   func setFavorite(_ enabled: Bool) throws {
     guard journal.ownsContact else { throw failure("Favorite operations require the owned test contact") }
+    guard try inspectContacts(journal.caller, ownedName: journal.contactName) == "present" else {
+      throw failure("Owned contact cannot be verified for favorite operation")
+    }
     let existing = try favoriteRow()
     if (existing != nil) == enabled {
       if enabled && journal.ownsFavorite != true { throw failure("Will not claim an unowned favorite") }
@@ -482,6 +545,7 @@ final class FocusUITests: XCTestCase {
     }
     if enabled {
       guard try openContact() else { throw failure("Owned test contact unavailable") }
+      try verifyOwnedContactCard()
       journal.ownsFavorite = true; try save() // Recovery may remove only this owned contact's favorite.
       try tap(contacts, scrollTo(contacts, ["Add to Favorites", "Add to Favourites"]))
       if let choice = try? element(contacts, ["Call"], timeout: 2) { try tap(contacts, choice) }
@@ -1297,7 +1361,7 @@ final class FocusUITests: XCTestCase {
     case "settings-calls":
       try openProfile(); try tap(settings, exceptions("People"))
       try tap(settings, scrollTo(settings, ["also-allow-calls-from-group-picker", "Allow Calls From", "Calls From"]))
-      Thread.sleep(forTimeInterval: 1); try front(settings); text = settings.debugDescription
+      Thread.sleep(forTimeInterval: 1); try captureCallsPicker(); attachPickerEvidence(); home(); return
     case "screen":
       try XCUIScreen.main.screenshot().pngRepresentation.write(to: documents.appendingPathComponent("focus-dump-screen.png"), options: .atomic)
       text = board.debugDescription
@@ -1370,6 +1434,7 @@ final class FocusUITests: XCTestCase {
     }
     do {
       for action in actions {
+        pickerEvidence = nil
         let parts = action.split(separator: ":", maxSplits: 1).map(String.init)
         let value = parts.count > 1 ? parts[1] : ""
         if ["focus", "app", "person", "calls", "policy", "repeated-calls"].contains(parts[0]) {
@@ -1429,9 +1494,7 @@ final class FocusUITests: XCTestCase {
       }
       try writeResult("ok")
     } catch {
-      // Exploration aid: keep the front app's tree for selector fixes.
-      let app = [settings, contacts, probe, callUI].first(where: { $0.state == .runningForeground }) ?? board
-      try? (error.localizedDescription + "\n" + app.debugDescription).write(to: documents.appendingPathComponent("focus-dump-failure.txt"), atomically: true, encoding: .utf8)
+      attachPickerEvidence()
       try? writeResult("failed"); throw error
     }
   }

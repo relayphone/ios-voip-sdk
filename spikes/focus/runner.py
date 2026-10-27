@@ -8,6 +8,7 @@ from pathlib import Path
 import plistlib
 import re
 import subprocess
+import tempfile
 import time
 import uuid
 from work_path import default_work
@@ -16,6 +17,62 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 BUNDLE = "dev.callkitsim.focus"
 TEST_BUNDLE = BUNDLE + ".uitests.xctrunner"
+
+
+PICKER_WORDS = frozenset("allow allowed calls from people only everyone everybody anyone anybody all contacts contact favorite favorites favourite favourites no one nobody none back done".split())
+
+
+def validate_picker_evidence(value, run_id):
+    if (not isinstance(value, dict) or set(value) != {"runID", "available", "truncated", "nodes"}
+            or value.get("runID") != run_id or type(value.get("available")) is not bool
+            or type(value.get("truncated")) is not bool):
+        return None
+    try:
+        uuid.UUID(run_id)
+    except (ValueError, TypeError, AttributeError):
+        return None
+    nodes = value["nodes"]
+    if not isinstance(nodes, list) or len(nodes) > 200 or (not value["available"] and (nodes or value["truncated"])):
+        return None
+    for index, node in enumerate(nodes):
+        if not isinstance(node, dict) or set(node) != {"type", "label", "selected", "parent"}:
+            return None
+        label = node["label"]
+        if (not isinstance(node["type"], str)
+                or node["type"] not in {"window", "navigation", "table", "collection", "button", "cell", "text", "other"}
+                or type(node["selected"]) is not bool or type(node["parent"]) is not int
+                or not -1 <= node["parent"] < index or not isinstance(label, str) or len(label) > 100):
+            return None
+        words = label.lower().split(" ") if label else []
+        if len(words) > 5 or any(word not in PICKER_WORDS for word in words):
+            return None
+    return value
+
+
+def extract_picker_evidence(bundle, run_id, destination):
+    # This is host-only even if the failed UI test left a device process behind.
+    result = {"runID": run_id, "available": False, "truncated": False, "nodes": []}
+    try:
+        with tempfile.TemporaryDirectory(prefix="focus-picker-export-") as directory:
+            exported = Path(directory) / "attachments"
+            subprocess.run(["xcrun", "xcresulttool", "export", "attachments", "--path", str(bundle),
+                            "--output-path", str(exported), "--filter", "focus-picker-evidence*"],
+                           check=True, timeout=30, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            matches = []
+            for item in exported.iterdir():
+                if item.name == "manifest.json" or not item.is_file() or item.stat().st_size > 65536:
+                    continue
+                try:
+                    valid = validate_picker_evidence(json.loads(item.read_text()), run_id)
+                except (OSError, UnicodeError, ValueError):
+                    valid = None
+                if valid is not None:
+                    matches.append(valid)
+            if len(matches) == 1:
+                result = matches[0]
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+    write(destination, result)
 
 
 def correlate(traces, invitations):
@@ -275,7 +332,12 @@ class Run:
         self.journal_fresh = True
         self.invitations = [self.invitation]
         self.sent_times = []
-        self.run_id = str(uuid.uuid4())
+        self.run_id = os.environ.get("FOCUS_EVIDENCE_RUN_ID", str(uuid.uuid4()))
+        try:
+            if str(uuid.UUID(self.run_id)) != self.run_id:
+                raise ValueError()
+        except (ValueError, AttributeError):
+            raise ValueError("Invalid evidence identifier")
         self.unsafe_observer = False
         self.binding = {"device": self.device, "build": hashlib.sha256(self.source.read_bytes()).hexdigest(),
                         "provider": p["provider"], "callerFormat": p["callerFormat"]}
@@ -325,7 +387,8 @@ class Run:
         # back to XCUITest; never overwrite a newer device journal with a stale one.
         self.recover(required=self.journal.exists() or os.environ.get("FOCUS_REQUIRE_DEVICE_JOURNAL") == "1")
         data = plistlib.loads(self.source.read_bytes())
-        env = {"FOCUS_ACTIONS": json.dumps(actions), "FOCUS_NAME": os.environ.get("FOCUS_NAME", "Focus Probe 124"),
+        env = {"FOCUS_ACTIONS": json.dumps(actions), "FOCUS_EVIDENCE_ID": getattr(self, "run_id", ""),
+               "FOCUS_NAME": os.environ.get("FOCUS_NAME", "Focus Probe 124"),
                "FOCUS_CALLER": "+15555550199", "FOCUS_OBSERVATION_ID": self.invitation,
                "FOCUS_EXPECTED_CALLER": self.p["callerValue"]}
         if self.p.get("unknownCaller"):
@@ -368,10 +431,26 @@ class Run:
         target = self.folder / f"tests-{self.counter}.xctestrun"
         target.write_bytes(plistlib.dumps(absolute(data)))
         self.journal_fresh = False
+        if not hasattr(self, "run_id"):
+            self.run_id = str(uuid.uuid4())
+        raw = self.work / ".picker-results" / self.run_id
+        raw.mkdir(mode=0o700, parents=True, exist_ok=True)
+        raw.chmod(0o700)
+        (raw / "row").write_text(self.folder.name)
+        session = uuid.uuid4().hex
+        bundle = raw / (session + ".xcresult")
+        failed = raw / (session + ".failed")
+        self.journal_fresh = False
         try:
-            return self.command(["xcodebuild", "test-without-building", "-xctestrun", str(target),
-                                 "-destination", "id=" + self.device,
-                                 "-only-testing:FocusUITests/FocusUITests/testActions"], timeout=600, background=background)
+            if background:
+                self.observer_picker_marker = failed
+            try:
+                return self.command(["xcodebuild", "test-without-building", "-xctestrun", str(target),
+                                     "-destination", "id=" + self.device, "-resultBundlePath", str(bundle),
+                                     "-only-testing:FocusUITests/FocusUITests/testActions"], timeout=600, background=background)
+            except (RuntimeError, subprocess.TimeoutExpired, OSError):
+                failed.touch(mode=0o600)
+                raise
         finally:
             if not background and not self.unsafe_observer:
                 self.recover(required=True)
@@ -510,6 +589,14 @@ class Run:
             time.sleep(1)
         raise RuntimeError("No matching current activity/token; APNs update not sent")
 
+    def picker_unavailable(self):
+        marker = getattr(self, "observer_picker_marker", None)
+        if marker is not None:
+            marker.touch(mode=0o600)
+        else:
+            write(self.folder / f"picker-evidence-observer-{uuid.uuid4().hex}.json",
+                  {"runID": self.run_id, "available": False, "truncated": False, "nodes": []})
+
     def execute(self):
         p = self.p
         result = {"row": p["row"], "invitationID": self.invitation, "status": "unqualified", "humanQA": False}
@@ -586,6 +673,8 @@ class Run:
                 ready = self.folder / "ready.json"; deadline = time.monotonic() + 120
                 while time.monotonic() < deadline:
                     if observer.poll() is not None:
+                        self.picker_unavailable()
+                        self.unsafe_observer = True
                         raise RuntimeError("Observation session ended before readiness")
                     try:
                         self.copy("focus-ui-ready.json", ready, test=True)
@@ -624,9 +713,11 @@ class Run:
                 try:
                     observation_code = observer.wait(timeout=300)
                 except subprocess.TimeoutExpired:
+                    self.picker_unavailable()
                     self.unsafe_observer = True
                     raise
                 if observation_code:
+                    self.picker_unavailable()
                     self.unsafe_observer = True
                     raise RuntimeError("UI observer failed")
                 self.recover(); self.copy("focus-ui-result.json", self.folder / "ui.json", test=True)
@@ -681,16 +772,23 @@ class Run:
             return result
         finally:
             for process in [observer, audio]:
-                if process and process.poll() is None:
+                if not process:
+                    continue
+                code = process.poll()
+                if code is None:
                     if process is observer and self.unsafe_observer:
                         continue
                     try:
-                        process.wait(timeout=90)
+                        code = process.wait(timeout=90)
                     except subprocess.TimeoutExpired:
                         if process is observer:
+                            self.picker_unavailable()
                             self.unsafe_observer = True
                         else:
                             process.kill(); process.wait(timeout=10)
+                if process is observer and code is not None and code != 0:
+                    self.picker_unavailable()
+                    self.unsafe_observer = True
             if (self.folder / "audio.json").exists():
                 data = json.loads((self.folder / "audio.json").read_text()); result["audio"] = data
                 if p["row"] == "C00":

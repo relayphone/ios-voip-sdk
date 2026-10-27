@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -407,11 +408,102 @@ def stop_process_group(process):
         time.sleep(0.05)
 
 
+def finalize_picker_results(work, run_id, interrupted=False):
+    """Consume private test bundles only after the supervised process group is gone."""
+    from runner import extract_picker_evidence
+    base = work / ".picker-results"
+    if base.is_symlink():
+        raise ProcessGroupCleanupError("Invalid private test evidence root")
+    root = base.resolve()
+    if root.parent != work.resolve():
+        raise ProcessGroupCleanupError("Invalid private test evidence root")
+    raw = root / run_id
+    if not raw.exists():
+        return
+    if raw.is_symlink() or raw.resolve().parent != root or str(uuid.UUID(run_id)) != run_id:
+        raise ProcessGroupCleanupError("Invalid private test evidence directory")
+    try:
+        sessions = set()
+        for entry in raw.iterdir():
+            if entry.name in {"row", "group.json"}:
+                continue
+            if entry.is_symlink() or not re.fullmatch(r"[a-f0-9]{32}\.(failed|xcresult)", entry.name):
+                raise ProcessGroupCleanupError("Invalid private test evidence entry")
+            if entry.name.endswith(".failed") or interrupted:
+                sessions.add(entry.name.split(".")[0])
+        row_file = raw / "row"
+        destination = work.resolve()
+        if row_file.exists():
+            if row_file.is_symlink() or not row_file.is_file() or row_file.stat().st_size > 256:
+                raise ProcessGroupCleanupError("Invalid private row evidence identity")
+            row = row_file.read_text().strip()
+            destination = (work / row).resolve()
+            if not row or destination.parent != work.resolve() or not destination.is_dir():
+                raise ProcessGroupCleanupError("Private row evidence destination unavailable")
+        for session in sorted(sessions):
+            extract_picker_evidence(raw / (session + ".xcresult"), run_id,
+                                    destination / ("picker-evidence-" + session + ".json"))
+        shutil.rmtree(raw)
+    except (OSError, ValueError) as error:
+        raise ProcessGroupCleanupError("Private test evidence cleanup failed") from error
+
+
+def reconcile_picker_orphans(work):
+    """Called only while holding the device lock, before any device operation."""
+    base = work / ".picker-results"
+    if base.is_symlink():
+        raise ProcessGroupCleanupError("Invalid private test evidence root")
+    if not base.exists():
+        return
+    if not base.is_dir():
+        raise ProcessGroupCleanupError("Invalid private test evidence root")
+    for raw in base.iterdir():
+        try:
+            if raw.is_symlink() or not raw.is_dir() or str(uuid.UUID(raw.name)) != raw.name:
+                raise ProcessGroupCleanupError("Invalid private test evidence directory")
+            metadata = raw / "group.json"
+            if metadata.is_symlink() or not metadata.is_file() or metadata.stat().st_size > 256:
+                raise ProcessGroupCleanupError("Previous process group cannot be verified")
+            value = json.loads(metadata.read_text())
+            if not isinstance(value, dict) or set(value) != {"pgid"} or type(value["pgid"]) is not int or value["pgid"] <= 1:
+                raise ProcessGroupCleanupError("Previous process group cannot be verified")
+            try:
+                os.killpg(value["pgid"], 0)
+            except ProcessLookupError:
+                finalize_picker_results(work, raw.name, interrupted=True)
+            except OSError as error:
+                raise ProcessGroupCleanupError("Previous process group cannot be verified") from error
+            else:
+                raise ProcessGroupCleanupError("Previous process group may still be running")
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            raise ProcessGroupCleanupError("Previous process group cannot be verified") from error
+
+
 def command(argv, env, log, timeout, should_pause=None):
+    child_env = env.copy()
+    run_id = str(uuid.uuid4()) if argv and argv[0] == str(RUNNER) else None
+    raw = None
+    if run_id:
+        child_env["FOCUS_EVIDENCE_RUN_ID"] = run_id
+        root = Path(child_env["FOCUS_WORK"]).resolve() / ".picker-results"
+        if root.is_symlink():
+            raise ProcessGroupCleanupError("Invalid private test evidence root")
+        raw = root / run_id
+        raw.mkdir(mode=0o700, parents=True)
+    def finish(interrupted=False):
+        if run_id:
+            finalize_picker_results(Path(child_env["FOCUS_WORK"]).resolve(), run_id, interrupted=interrupted)
     with log.open("ab") as stream:
-        process = subprocess.Popen(argv, stdout=stream, stderr=subprocess.STDOUT, env=env, start_new_session=True)
+        try:
+            process = subprocess.Popen(argv, stdout=stream, stderr=subprocess.STDOUT, env=child_env, start_new_session=True)
+        except BaseException:
+            if raw is not None:
+                shutil.rmtree(raw)
+            raise
         deadline = time.monotonic() + timeout
         try:
+            if raw is not None:
+                atomic_json(raw / "group.json", {"pgid": process.pid})
             while process.poll() is None:
                 if should_pause is not None and should_pause():
                     raise BatchPaused("Phone priority or PAUSE requested")
@@ -420,12 +512,12 @@ def command(argv, env, log, timeout, should_pause=None):
                 time.sleep(0.1)
         except BaseException:
             stop_process_group(process)
+            finish(interrupted=True)
             raise
         result = process
-        # A parent can exit successfully or unsuccessfully while descendants
-        # remain. Never restore or release the device lock until the entire
-        # command group is gone.
+        # Never inspect or remove a test bundle until the entire command group is gone.
         stop_process_group(process)
+        finish(interrupted=result.returncode != 0)
     if result.returncode:
         raise RuntimeError("command failed; inspect the private batch log; uncertain attempts are not retried")
 
@@ -481,12 +573,19 @@ def supervised_restore():
         raise ValueError("Use ignored spikes/focus/out or a private path outside the repository")
     work.mkdir(mode=0o700, parents=True, exist_ok=True)
     work.chmod(0o700)
-    device = identify_iphone13(device, work)
+    if not DEVICE_ID_PATTERN.fullmatch(device):
+        raise ValueError("FOCUS_DEVICE must be the canonical uppercase iPhone hardware UDID")
     lock_dir = Path.home() / ".device-locks"
     if phone_wants_device(work, lock_dir, device):
         raise RuntimeError("Phone priority or PAUSE marker exists; no recovery action taken")
     lock = DeviceLock(lock_dir, device)
     lock.acquire()
+    reconcile_picker_orphans(work)  # Failure intentionally retains the lock.
+    try:
+        device = identify_iphone13(device, work)
+    except BaseException:
+        lock.release()
+        raise
     env = os.environ.copy()
     env["FOCUS_DEVICE"], env["FOCUS_WORK"], env["FOCUS_XCTESTRUN"] = device, str(work), str(source)
     env["FOCUS_REQUIRE_DEVICE_JOURNAL"] = "1"
@@ -552,13 +651,19 @@ def run_batch(plan, args):
         raise ValueError("Use ignored spikes/focus/out or a private path outside the repository")
     work.mkdir(mode=0o700, parents=True, exist_ok=True)
     work.chmod(0o700)
-    # Inventory is read-only and happens before signing, UI tests, or any Focus change.
-    device = identify_iphone13(device, work)
+    if not DEVICE_ID_PATTERN.fullmatch(device):
+        raise ValueError("FOCUS_DEVICE must be the canonical uppercase iPhone hardware UDID")
     lock_dir = Path.home() / ".device-locks"
     if phone_wants_device(work, lock_dir, device):
         raise BatchPaused("PAUSE or Phone priority marker exists; no device action taken")
     lock = DeviceLock(lock_dir, device)
     lock.acquire()
+    reconcile_picker_orphans(work)  # Failure intentionally retains the lock.
+    try:
+        device = identify_iphone13(device, work)
+    except BaseException:
+        lock.release()
+        raise
     checkpoint = work / "morning-checkpoint.json"
     # Row execution needs APNs credentials. The runner only forwards them to the sender.
     env = os.environ.copy()
