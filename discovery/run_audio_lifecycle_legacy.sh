@@ -102,10 +102,11 @@ read_launch_environment
 limit 180 xcrun simctl install "$UDID" "$SDK_M1_CONTRACT_BUILD/SDKM1Contracts.app" > "$OUT/install.log" 2>&1
 sim_checkpoint || { : > "$SIM_STATE.failure"; exit 1; }
 PRODUCT_CHECK="$NAME"
-if env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
+if env SIM_FAILURE_MARKER="${SIM_FAILURE_MARKER:-$SIM_STATE.failure}" \
+  SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
   SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M0_RUN_ID="$RUN_ID" \
   SIMCTL_CHILD_SDK_M1_CONTRACT_CASE=audio-lifecycle \
-  python3 discovery/run_scenario.py --console-launcher-stop --timeout 90 \
+  python3 discovery/run_scenario.py --console-launcher-stop --timeout 90 --startup-timeout 180 \
   --output "$OUT/$NAME.log" --receipt "$OUT/$NAME.receipt.json" \
   --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$NAME" --bundle-id "$BUNDLE" \
   --terminate-command xcrun simctl terminate "$UDID" "$BUNDLE" \
