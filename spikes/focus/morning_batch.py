@@ -199,7 +199,7 @@ def result_summary(item, result):
             summary["microphone"] = "positive calibration recorded"
         else:
             summary["microphone"] = "visual evidence only"
-    if item["row"].startswith("L"):
+    if re.fullmatch(r"L[0-9]{2}", item["row"]):
         summary["activityCoverage"] = "single transport/presentation subcase" if result.get("coverage") else "unqualified"
     return summary
 

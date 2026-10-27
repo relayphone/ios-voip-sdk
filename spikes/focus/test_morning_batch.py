@@ -100,6 +100,7 @@ class MorningPlanTests(unittest.TestCase):
         audio = batch.result_summary({"row": "C00", "args": ["--listen"]},
                                      {"audio": {"reason": "mic permission pending", "token": "private"}})
         self.assertEqual(audio["microphone"], "mic permission pending; visual evidence only")
+        self.assertNotIn("activityCoverage", batch.result_summary({"row": "LCK-C02b", "args": []}, {}))
 
     def test_pause_restores_and_resume_does_not_repeat_completed_rows(self):
         with tempfile.TemporaryDirectory() as root:
