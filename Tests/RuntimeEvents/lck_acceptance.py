@@ -16,7 +16,7 @@ import sys
 import time
 import uuid
 
-from run import install_fixture, lifecycle, session_transport, simulator_infra
+from run import install_fixture, inventory_reader, lifecycle, session_transport, simulator_infra
 from ci_simulator import create, cleanup, simulator_uuid, state_path
 
 BUNDLE = 'dev.callkitsim.lckfixture'
@@ -92,10 +92,12 @@ def resolve_container(applications, run_id, bundle, pid):
     return matches[0] if matches else None
 
 
-def simulator_applications(device, *, session, prepare=False):
+def simulator_applications(device, *, session, prepare=False, read_devices=None):
     if device != session.current:
         raise ValueError('Simulator does not match its existing Session')
-    inventory = json.loads(lifecycle(session, 'list', 'devices', '-j', timeout=30))['devices']
+    raw = ((read_devices or inventory_reader(session))() if prepare else
+           lifecycle(session, 'list', 'devices', '-j', timeout=30))
+    inventory = json.loads(raw)['devices']
     matches = [(runtime, row) for runtime, group in inventory.items() for row in group
                if row.get('udid', '').lower() == device.lower()]
     if len(matches) != 1 or matches[0][1].get('state') != 'Booted':

@@ -311,7 +311,13 @@ Its owner repeats that preparation for a replacement device before replaying
 installs, collecting inventory once per device. After installation it validates
 the final device's cached application directory locally, then checkpoints and
 launches once. Journal discovery uses that directory without another inventory
-RPC; shared retry budgets and command deadlines remain unchanged.
+RPC. Pre-install inventory has its own 180-second bound per query and one
+timeout-only re-attempt across the entire install preparation, including
+replacement callbacks. `infra:inventory` distinguishes a timeout, recovery or
+exhaustion. Non-timeout failures, uncertain host cleanup, stale ownership and
+checkpoint evidence prevent re-attempt; cancellation propagates. The shared
+installation recovery budget, product deadlines and native acceptance checks
+remain unchanged. Other inventory lookups retain their existing bounds.
 
 The automatic `--driver journal` journey uses `cksim` to inject an incoming call
 and issue one system-origin Answer. It foregrounds the fixture for controls and

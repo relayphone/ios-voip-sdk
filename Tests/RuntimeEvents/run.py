@@ -79,19 +79,24 @@ def session_transport(command, timeout, **kwargs):
         return error.result
 
 
-def lifecycle(session, *parts, timeout=120, before_install=None, **kwargs):
+def lifecycle(session, *parts, timeout=120, before_install=None, executor=None, **kwargs):
     """Only an authoritative owner may replace a device before app launch."""
     command = list(map(str, ('xcrun', 'simctl', *parts)))
     if session is None:
         if before_install is not None and command[2] == 'install':
             before_install(command[3])
-        return run(*command, timeout=timeout, **kwargs)
+        if executor is None:
+            return run(*command, timeout=timeout, **kwargs)
+        result = executor(command, timeout, **kwargs)
+        if result.returncode:
+            raise getattr(result, 'transport_error', None) or CommandError(result, timeout)
+        return result.stdout.decode().strip()
     previous_runner = session.runner
     errors = []
     def transport(argv, bound):
         if before_install is not None and argv[2] == 'install':
             before_install(argv[3])
-        outcome = session_transport(argv, bound, **kwargs)
+        outcome = (executor or session_transport)(argv, bound, **kwargs)
         error = getattr(outcome, 'transport_error', None)
         if error is not None: errors.append(error)
         return outcome
@@ -180,11 +185,48 @@ def launch_fixture(device, app, *, install=True, session=None):
     return discover_fixture_channel(applications, run_id, int(match[1])), run_id
 
 
-def fixture_applications(device, *, session=None, cached=None, prepare=False):
+def inventory_reader(session):
+    """One 180s query plus one timeout-only re-attempt per install preparation."""
+    retried = False
+    def transport(command, timeout, **kwargs):
+        nonlocal retried
+        recovering = False
+        while True:
+            result = session_transport(command, timeout, **kwargs)
+            if not result.returncode:
+                if recovering:
+                    simulator_infra.summary('infra:inventory', 'recovered within 180s inventory bound')
+                return result
+            reason = 'timeout after 180s' if result.timed_out else 'non-timeout failure; never retried'
+            eligible = result.timed_out and not retried and result.reaped and not result.cleanup_uncertain
+            if eligible and session is not None:
+                eligible = not session.is_checkpointed()
+                if not eligible:
+                    reason += '; never retried after checkpoint evidence'
+            if not eligible:
+                if result.cleanup_uncertain or not result.reaped:
+                    reason += '; owned host cleanup uncertain'
+                elif result.timed_out and retried:
+                    reason += '; inventory re-attempt exhausted'
+                simulator_infra.report_failure('infra:inventory', reason)
+                result.failure_classified = True
+                return result
+            # Spend before a second command; replacement callbacks share this closure.
+            retried = True
+            recovering = True
+            simulator_infra.summary('infra:inventory', reason + '; scheduled one bounded re-attempt')
+    def read_devices():
+        return lifecycle(session, 'list', 'devices', '-j', timeout=180, executor=transport)
+    return read_devices
+
+
+def fixture_applications(device, *, session=None, cached=None, prepare=False, read_devices=None):
     """Collect metadata before install, then validate the final path locally."""
     device = simulator_infra.simulator_uuid(device)
     if cached is None:
-        inventory = json.loads(lifecycle(session, 'list', 'devices', '-j', timeout=60))['devices']
+        raw = ((read_devices or inventory_reader(session))() if prepare else
+               lifecycle(session, 'list', 'devices', '-j', timeout=60))
+        inventory = json.loads(raw)['devices']
         matches = [row for group in inventory.values() for row in group
                    if row.get('udid', '').lower() == device.lower()]
         if len(matches) != 1 or matches[0].get('state') != 'Booted':
@@ -207,10 +249,11 @@ def install_fixture(device, app, *, session, timeout, inventory=None):
     """Prepare each actual install, including shared-owner replacement replay."""
     inventory = fixture_applications if inventory is None else inventory
     prepared = {}
+    read_devices = inventory_reader(session)
     def before_install(target):
         key = str(target).lower()
         if key not in prepared:
-            prepared[key] = inventory(target, session=session, prepare=True)
+            prepared[key] = inventory(target, session=session, prepare=True, read_devices=read_devices)
     lifecycle(session, 'install', device, app.resolve(), timeout=timeout,
               before_install=before_install)
     if session is not None:

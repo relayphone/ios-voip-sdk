@@ -685,9 +685,6 @@ class Session:
         if step == 'launch' and result.stdout:
             self.checkpoint()  # Even partial app/PID evidence forbids startup replay.
         if result.returncode:
-            # A capture supervisor already reported a specific terminal failure.
-            if result.failure_classified:
-                return result
             if step == 'launch' and transport_failure(result):
                 _report_result(result, 'infra:launch', 'transport failed; never retried')
                 return result
