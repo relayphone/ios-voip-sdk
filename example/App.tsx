@@ -29,6 +29,7 @@ import {
   runAcceptance,
   trace,
 } from './acceptance';
+import { callerFixture } from './callerFixture';
 import { journey } from './journey';
 import {
   observeSystem,
@@ -109,12 +110,7 @@ function CallingJourney() {
     return reportIncomingConversation({
       eventId: 'sdk-example-event-' + unique,
       serverCallId: 'sdk-example-server-' + unique,
-      caller: {
-        handleType: 'phone',
-        value: '+15555550142',
-        displayName: 'SDK example',
-        hostContactID: 'sdk-example-caller',
-      },
+      caller: callerFixture(),
       hasVideo: false,
     });
   };
