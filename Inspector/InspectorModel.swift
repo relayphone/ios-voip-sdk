@@ -80,13 +80,25 @@ final class InspectorModel: ObservableObject {
   private let token: String
   private let client = URLSession(configuration: .ephemeral)
   private let probe: (nonce: String, startedWallTimeMS: Int64)?
+  #if canImport(UIKit)
+  private let phaseProbe: ForegroundPhaseProbe?
+  #endif
 
   init(environment: [String: String] = ProcessInfo.processInfo.environment) {
     endpoint = environment["CKSIM_INSPECTOR_URL"].flatMap(URL.init(string:))
     token = environment["CKSIM_INSPECTOR_TOKEN"] ?? ""
     if let nonce = environment["CKSIM_INSPECTOR_PROBE_NONCE"], UUID(uuidString: nonce) != nil {
-      probe = (nonce, Int64(Date().timeIntervalSince1970 * 1000))
-    } else { probe = nil }
+      let started = Int64(Date().timeIntervalSince1970 * 1000)
+      probe = (nonce, started)
+      #if canImport(UIKit)
+      phaseProbe = ForegroundPhaseProbe(nonce: nonce, startedWallTimeMS: started)
+      #endif
+    } else {
+      probe = nil
+      #if canImport(UIKit)
+      phaseProbe = nil
+      #endif
+    }
   }
   var incoming: RuntimeEvent? {
     conversations.values.filter { $0.ringing == true && $0.ended != true }.sorted { $0.sequence < $1.sequence }.first
@@ -163,6 +175,12 @@ final class InspectorModel: ObservableObject {
         timingReferences: timingReferences,
         audioActive: audioActive, incomingFilter: incomingFilter, incomingErrorCode: incomingErrorCode, online: online, error: error)
       try JSONEncoder().encode(snapshot).write(to: documents.appendingPathComponent("cksim-inspector-results.json"), options: .atomic)
+      #if canImport(UIKit)
+      if let session {
+        phaseProbe?.sample(session: .init(schemaVersion: session.schemaVersion, bundleID: session.bundleID,
+          runID: session.runID, pid: session.pid, profile: session.profile))
+      }
+      #endif
     } catch { NSLog("Inspector probe receipt failed: %@", String(describing: error)) }
   }
   private func consume(_ row: RuntimeEvent) {

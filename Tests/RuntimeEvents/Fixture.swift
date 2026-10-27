@@ -21,6 +21,9 @@ final class Fixture: NSObject, UIApplicationDelegate, @preconcurrency CXProvider
   var background: UIBackgroundTaskIdentifier = .invalid
   let controller = CXCallController(queue: .main)
   var registry: PKPushRegistry!
+  private let startedWallTimeMS = Int64(Date().timeIntervalSince1970 * 1000)
+  private var phaseProbe: ForegroundPhaseProbe?
+  private var phaseProbeTimer: Timer?
   func application(_ app: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
     guard RuntimeBootstrap.activate() else { fatalError("Fixture runtime refused") }
     let config = CXProviderConfiguration()
@@ -32,7 +35,24 @@ final class Fixture: NSObject, UIApplicationDelegate, @preconcurrency CXProvider
     registry.delegate = self
     registry.desiredPushTypes = [.voIP]
     background = app.beginBackgroundTask(withName: "Inspector acceptance") {}
+    if let runID = ProcessInfo.processInfo.environment["CKSIM_RUN_ID"] {
+      phaseProbe = ForegroundPhaseProbe(nonce: runID, startedWallTimeMS: startedWallTimeMS)
+      samplePhaseProbe()
+      phaseProbeTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+        Task { @MainActor [weak self] in self?.samplePhaseProbe() }
+      }
+    }
     return true
+  }
+  private func samplePhaseProbe() {
+    guard let phaseProbe,
+          let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+          let data = try? Data(contentsOf: documents.appendingPathComponent(".callkit-simulator/session.json")),
+          let session = try? JSONDecoder().decode(ForegroundPhaseSession.self, from: data),
+          session.schemaVersion == 1, session.bundleID == Bundle.main.bundleIdentifier,
+          session.pid == Int(ProcessInfo.processInfo.processIdentifier),
+          session.runID == ProcessInfo.processInfo.environment["CKSIM_RUN_ID"] else { return }
+    phaseProbe.sample(session: session)
   }
   func ring(uuid: UUID = UUID()) {
     let enteredAt = DispatchTime.now().uptimeNanoseconds

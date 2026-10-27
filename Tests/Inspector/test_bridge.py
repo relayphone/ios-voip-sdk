@@ -587,4 +587,5 @@ class BridgeTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    from test_foreground_phase_probe import ForegroundPhaseProbeTests
     unittest.main()
