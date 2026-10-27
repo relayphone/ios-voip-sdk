@@ -10,6 +10,7 @@ import re
 import subprocess
 import time
 import uuid
+from work_path import default_work
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
@@ -248,7 +249,7 @@ class Run:
         if not self.device or not self.source.is_file():
             raise ValueError("Real runs require FOCUS_DEVICE and signed device FOCUS_XCTESTRUN; unsigned products cannot run")
         os.umask(0o077)
-        self.work = Path(os.environ.get("FOCUS_WORK", str(HERE / "out"))).resolve()
+        self.work = (Path(os.environ["FOCUS_WORK"]) if "FOCUS_WORK" in os.environ else default_work()).resolve()
         if self.work.is_relative_to(REPO) and self.work != HERE / "out":
             raise ValueError("Use ignored spikes/focus/out or a private path outside the repository")
         self.work.mkdir(parents=True, exist_ok=True); self.work.chmod(0o700)
@@ -317,7 +318,12 @@ class Run:
         if self.usb_verified:
             env["FOCUS_USB_VERIFIED"] = "1"
         if self.journal.exists() and self.journal_fresh:
-            env["FOCUS_RESTORE_STATE"] = base64.b64encode(self.journal.read_bytes()).decode()
+            journal_data = self.journal.read_bytes()
+            env["FOCUS_RESTORE_STATE"] = base64.b64encode(journal_data).decode()
+            journal_value = json.loads(journal_data)
+            volume = journal_value.get("ringerVolumePercent") if isinstance(journal_value, dict) else None
+            if isinstance(journal_value, dict) and journal_value.get("captured") is True and type(volume) is int and 0 <= volume <= 100:
+                env["FOCUS_RINGER_BACKED_UP"] = "1"
         if (self.work / "system-settings-approved").exists():
             env["FOCUS_ALLOW_SYSTEM_SETTINGS"] = "1"
         if text:
@@ -360,8 +366,16 @@ class Run:
         try:
             self.copy("focus-ui-state.json", candidate, test=True)
             json.loads(candidate.read_text())
+            # Recovery after a host reboot must not depend on buffered writes.
+            with candidate.open("rb") as stream:
+                os.fsync(stream.fileno())
             os.replace(candidate, self.journal)
             self.journal.chmod(0o600)
+            directory_fd = os.open(self.journal.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
             self.journal_fresh = True
         except (RuntimeError, subprocess.TimeoutExpired, OSError, ValueError):
             self.journal_fresh = False
@@ -373,7 +387,58 @@ class Run:
     def arm(self, config):
         path = self.folder / "config.json"; write(path, config); self.copy("focus.json", path, to=True)
 
+    def probe_installed(self):
+        inventory = self.folder / ("probe-inventory-" + uuid.uuid4().hex + ".json")
+        self.command(["xcrun", "devicectl", "device", "info", "apps", "--device", self.device,
+                      "--bundle-id", BUNDLE, "--json-output", str(inventory), "--quiet"], timeout=60)
+        value = json.loads(inventory.read_text())
+        info = value.get("info") if isinstance(value, dict) else None
+        result = value.get("result") if isinstance(value, dict) else None
+        apps = result.get("apps") if isinstance(result, dict) else None
+        if (not isinstance(info, dict) or info.get("outcome") != "success" or not isinstance(apps, list)
+                or any(not isinstance(app, dict) or app.get("bundleIdentifier") != BUNDLE for app in apps)
+                or len(apps) > 1):
+            raise RuntimeError("Probe app inventory is ambiguous; refuse installation")
+        return len(apps) == 1
+
+    def signed_probe(self):
+        data = plistlib.loads(self.source.read_bytes())
+        targets = []
+        def visit(value):
+            if isinstance(value, dict):
+                if value.get("IsUITestBundle"):
+                    targets.append(value.get("UITargetAppPath"))
+                for child in value.values(): visit(child)
+            elif isinstance(value, list):
+                for child in value: visit(child)
+        visit(data)
+        if len(targets) != 1 or not isinstance(targets[0], str) or not targets[0].startswith("__TESTROOT__/"):
+            raise RuntimeError("Signed probe target is ambiguous")
+        root = self.source.parent.resolve()
+        app = Path(targets[0].replace("__TESTROOT__", str(root), 1)).resolve()
+        if (not app.is_relative_to(root) or app.name != "FocusProbe.app" or not app.is_dir()
+                or not (app / "embedded.mobileprovision").is_file()):
+            raise RuntimeError("Signed probe product unavailable")
+        with (app / "Info.plist").open("rb") as stream:
+            info = plistlib.load(stream)
+        if info.get("CFBundleIdentifier") != BUNDLE:
+            raise RuntimeError("Signed probe bundle identity mismatch")
+        self.command(["codesign", "--verify", "--deep", "--strict", str(app)], timeout=60)
+        return app
+
+    def ensure_probe_installed(self):
+        if self.probe_installed():
+            return
+        app = self.signed_probe()
+        self.command(["xcrun", "devicectl", "device", "install", "app", "--device", self.device, str(app)], timeout=120)
+        if not self.probe_installed():
+            raise RuntimeError("Probe installation was not verified")
+
     def restore(self):
+        # The separate UI-test journal contains ownership and original system
+        # settings. Never infer them from names or overwrite an unavailable journal.
+        self.recover(required=True)
+        self.ensure_probe_installed()
         self.arm({"armed": False, "activityAction": "end"})
         self.ui(["share-across-devices:check", "launch", "restore-all"])
         if self.journal.exists() and json.loads(self.journal.read_text()).get("requiresProbeUninstall"):
@@ -433,6 +498,8 @@ class Run:
     def execute(self):
         p = self.p
         result = {"row": p["row"], "invitationID": self.invitation, "status": "unqualified", "humanQA": False}
+        if p.get("quiet"):
+            result.update(audioEvidence="skipped: quiet", vibrationEvidence="skipped: quiet")
         observer = audio = None
         try:
             if p["row"] == "C00":
@@ -650,6 +717,7 @@ def main():
     parser.add_argument("--locked-auto-answer", action="store_true")
     parser.add_argument("--allow-system-settings", action="store_true")
     parser.add_argument("--listen", action="store_true")
+    parser.add_argument("--quiet", action="store_true", help="journal and minimize ringtone volume; no microphone")
     parser.add_argument("--repeated-calls", choices=["on", "off"], default="off")
     parser.add_argument("--provider", choices=["lck", "callkit"])
     parser.add_argument("--caller-format", choices=["e164", "national", "generic"], default="e164")
@@ -662,6 +730,8 @@ def main():
     parser.add_argument("--server-answer", action="store_true", help="simulate an answer through a local mailbox, not APNs")
     parser.add_argument("--activity-focus", choices=["on", "off"], help="choose Focus for L07–L15")
     args = parser.parse_args()
+    if args.quiet and args.listen:
+        raise ValueError("Quiet mode cannot listen")
     p = plan(args.row, args.locked_auto_answer, args.listen, args.provider, args.caller_format, args.repeated_calls, args.caller_value)
     if args.activity_focus is not None:
         value = args.activity_focus == "on"
@@ -676,7 +746,9 @@ def main():
         raise ValueError("Unknown caller needs a different E.164 number and no allowed test contact")
     if args.server_answer and (not p["sendVoIP"] or p["baseRow"] == "C02" or args.locked_auto_answer):
         raise ValueError("Local answer signaling requires one unlocked incoming-call observation")
-    p.update(focusMode=args.focus_mode, unknownCaller=args.unknown_caller, favorite=args.favorite, serverAnswer=args.server_answer)
+    p.update(focusMode=args.focus_mode, unknownCaller=args.unknown_caller, favorite=args.favorite, serverAnswer=args.server_answer, quiet=args.quiet)
+    if args.quiet and p["baseRow"] == "preflight":
+        p["steps"] += ["capture ringer volume and durably back up its journal", "set ringer volume to minimum in a separate UI session"]
     if not p["blocked"] and p["baseRow"] not in ["restore-all", "preflight"]:
         p["callsFrom"] = args.calls if p["baseRow"] == "C01" else "Allowed People Only"
         p["keepSetup"] = args.keep_setup
@@ -688,6 +760,8 @@ def main():
             p["steps"].insert(-2, "write a matched local answer signal; trace receipt/report and UI disappearance")
         if args.keep_setup:
             p["steps"][-1] = "write private row result; disarm and turn Focus off; keep owned setup (run restore-all after matrix)"
+    if args.quiet and (p["sendVoIP"] or p["row"] in ("L01", "L02")):
+        p["steps"].append("audio and vibration evidence: skipped: quiet")
     if args.dry_run or p["blocked"]:
         if p["blocked"]:
             p["status"] = "skipped-dependency-or-unsupported"
@@ -702,7 +776,12 @@ def main():
         return
     require_device_supervisor()
     if p["baseRow"] == "preflight":
-        Run(p, args).ui(["share-across-devices:check"])
+        run = Run(p, args)
+        if args.quiet:
+            run.ui(["share-across-devices:check", "ringer-volume:capture"])
+            run.ui(["ringer-volume:minimum"])
+        else:
+            run.ui(["share-across-devices:check"])
         print(json.dumps({"row": "preflight", "status": "recorded"})); return
     result = Run(p, args).execute()
     if result["status"] not in ["recorded", "restored", "not-applicable-hardware"]:

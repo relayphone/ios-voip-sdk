@@ -4,8 +4,12 @@ Runner dry-runs: `./run.sh F09 --dry-run`, `./run.sh C00 --listen --dry-run`, an
 See [execution and the single microphone permission click](../../docs/research/focus/human-session.md).
 Real rows run only through the lock-owning `morning-batch` supervisor; invoking a real standalone row is rejected.
 Direct `./run.sh restore-all` remains available: it starts a separate lock-owning recovery supervisor and needs
-`FOCUS_DEVICE`, the original signed `FOCUS_XCTESTRUN`, and the persistent `FOCUS_WORK`. Runtime evidence goes to ignored `out/`
-or private `FOCUS_WORK`; it must not be committed. Every command has a bounded timeout; unknown APNs
+`FOCUS_DEVICE`, the original signed `FOCUS_XCTESTRUN`, and the same persistent `FOCUS_WORK` as the run. If the
+probe app is missing, recovery verifies the app inventory and reinstalls the signed disposable probe
+from the original test-run product path before restoring the separate UI-test journal; ambiguous inventory,
+missing build or journal fails closed. For older checkpoints, the app bundle has no independent historical
+digest, so the original bytes cannot be confirmed even though the bundle ID, path and signature are checked.
+Runtime evidence is private and must not be committed. Every command has a bounded timeout; unknown APNs
 outcomes are never automatically retried. The approved system-setting changes need no new confirmation.
 Additional row flags: `--provider callkit|lck`, `--calls Everyone` for C01, `--repeated-calls on|off`,
 `--caller-format e164|national|generic`, and `--listen` for optional calibrated Mac RMS capture.
@@ -21,7 +25,25 @@ Local CLI verification: `python3 -m unittest discover -s spikes/focus -p 'test_*
 ## Morning batch
 
 `spikes/focus/morning-batch --dry-run` executes every underlying row dry-run without a device or credentials.
-For a real run, the operator supplies the iPhone 13's canonical uppercase hardware UDID in `FOCUS_DEVICE`, a private persistent `FOCUS_WORK`, and the
+Use `spikes/focus/morning-batch --quiet --dry-run` to inspect the quiet plan. In quiet mode the UI runner captures
+the current Settings ringer-volume percentage, backs up the journal to the host, then sets the slider to minimum
+in a separate session. Restoration verifies the recorded percentage. Microphone collection and audio/vibration
+rows are marked `skipped: quiet`; L15's alerting push-to-start is skipped, while visual call and silent activity
+observations continue. Settings selectors and percentage precision still require device qualification.
+
+The default private work directory is `~/Library/Application Support/FocusProbe124`, outside temporary build
+folders; generated signed builds and the journal persist there. `FOCUS_WORK` can override it and must itself be
+persistent across reboot. If an old `spikes/focus/out` contains an interrupted journal or checkpoint, select that
+directory explicitly and recover it before using the new default; it is not silently discarded. With
+`FOCUS_DEVICE` and the original signed `FOCUS_XCTESTRUN` set, run
+`FOCUS_WORK="$PWD/spikes/focus/out" spikes/focus/run.sh restore-all` from the repository root. Resume that
+checkpoint with the same `FOCUS_WORK`; after restoration, run `spikes/focus/morning-batch --archive-legacy`
+to preserve the clean legacy state and enable the new default for a fresh batch. Archiving refuses dirty or
+ambiguous state and never removes the original files; it reports a no-op if restoration already removed the
+only legacy journal. A journal without a checkpoint has no recorded device identity: use the original iPhone 13
+and the same work directory for its supervised restore. An explicit temporary-directory override does not
+survive its removal.
+For a real run, the operator supplies the iPhone 13's canonical uppercase hardware UDID in `FOCUS_DEVICE` and the
 [sandbox APNs environment](../../discovery/device/README.md). The batch generates a signed test build with Xcode's
 signed-in account and `-allowProvisioningUpdates`; it does not print the APNs key. A read-only inventory check
 requires a uniquely identified iPhone 13 before signing or UI tests. It checks Share Across Devices is off before

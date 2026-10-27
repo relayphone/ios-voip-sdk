@@ -31,6 +31,8 @@ final class FocusUITests: XCTestCase {
     var activityPreview: String?
     var activityWiFi: Bool?
     var activityCellularData: Bool?
+    // The accessible percentage is captured before changing the ringer slider.
+    var ringerVolumePercent: Int?
   }
   var journal = Journal()
   var verifiedFocusOff = false
@@ -466,6 +468,7 @@ final class FocusUITests: XCTestCase {
   }
   func restore() throws {
     guard journal.captured else { return }
+    try restoreRingerVolume()
     try restoreActivitySettings()
     try restoreSystemSettings()
     try restoreDND()
@@ -492,6 +495,58 @@ final class FocusUITests: XCTestCase {
     if let initial = journal.initialFocus { try setFocus(initial, enabled: true) }
     else { try setFocus(journal.focusName, enabled: false) }
     journal.captured = false; try save(); home()
+  }
+  func ringerVolumeSlider() throws -> XCUIElement {
+    settings.terminate(); settings.launch()
+    try tap(settings, scrollTo(settings, ["Sounds & Haptics"]))
+    _ = try scrollTo(settings, ["Ringtone and Alerts", "Ringtone and Alert Volume", "Ringtone and Alerts Volume"])
+    try front(settings)
+    let candidates = settings.sliders.allElementsBoundByIndex.filter { $0.exists && $0.isHittable }
+    guard candidates.count == 1, let slider = candidates.first else {
+      throw failure("Ringer volume slider missing or ambiguous")
+    }
+    return slider
+  }
+  func ringerVolumeValue(_ slider: XCUIElement) throws -> Int {
+    try front(settings)
+    guard slider.exists && slider.isHittable, let value = slider.value as? String,
+      value.range(of: "^(100|[0-9]{1,2})%$", options: .regularExpression) != nil,
+      let percent = Int(value.dropLast()), (0...100).contains(percent) else {
+      throw failure("Ringer volume percentage unavailable")
+    }
+    return percent
+  }
+  func setRingerVolume(_ slider: XCUIElement, percent: Int) throws {
+    guard (0...100).contains(percent) else { throw failure("Invalid ringer volume") }
+    try front(settings)
+    guard slider.exists && slider.isHittable else { throw failure("Ringer volume slider unavailable") }
+    slider.adjust(toNormalizedSliderPosition: CGFloat(percent) / 100)
+    guard try ringerVolumeValue(slider) == percent else { throw failure("Ringer volume did not converge") }
+  }
+  func captureRingerVolume() throws {
+    try captureInitialFocus()
+    let slider = try ringerVolumeSlider()
+    let original = try ringerVolumeValue(slider)
+    if journal.ringerVolumePercent == nil {
+      journal.ringerVolumePercent = original; try save()
+    }
+    events.append(["event": "ringerVolume.captured", "percent": journal.ringerVolumePercent!, "qualification": "Settings accessibility readback"])
+  }
+  func quietRingerVolume() throws {
+    guard ProcessInfo.processInfo.environment["FOCUS_RINGER_BACKED_UP"] == "1",
+      journal.captured && journal.ringerVolumePercent != nil else {
+      throw failure("Capture and back up the original ringer volume before changing it")
+    }
+    let slider = try ringerVolumeSlider()
+    try setRingerVolume(slider, percent: 0)
+    events.append(["event": "ringerVolume.verified", "percent": 0, "qualification": "Settings accessibility readback"])
+  }
+  func restoreRingerVolume() throws {
+    guard let original = journal.ringerVolumePercent else { return }
+    let slider = try ringerVolumeSlider()
+    try setRingerVolume(slider, percent: original)
+    journal.ringerVolumePercent = nil; try save()
+    events.append(["event": "ringerVolume.restored", "percent": original, "qualification": "Settings accessibility readback"])
   }
   func authorizations() throws -> [String: Int] {
     probe.activate()
@@ -1210,6 +1265,9 @@ final class FocusUITests: XCTestCase {
       journal.captured || (!journal.ownsFocus && !journal.ownsContact) else { throw failure("Invalid restoration identity/invariants") }
     let actions = try JSONDecoder().decode([String].self, from: Data((env["FOCUS_ACTIONS"] ?? "[]").utf8))
     guard !actions.isEmpty else { throw failure("No actions supplied") }
+    guard !(actions.contains("ringer-volume:capture") && actions.contains("ringer-volume:minimum")) else {
+      throw failure("Ringer capture and mutation require separate sessions and a durable host backup")
+    }
     // Validate the entire request before any UI changes. Typos must not mean off/exclude/deny.
     for action in actions {
       let p = action.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
@@ -1218,7 +1276,7 @@ final class FocusUITests: XCTestCase {
         "policy": ["screenWithAI"], "system-settings": ["enable", "restore"], "notifications": ["allow", "deny"], "focus-authorization": ["allow", "deny"],
         "share-across-devices": ["check"], "dnd": ["on", "off", "configure"], "unknown": ["verify"], "favorite": ["on", "off"],
         "activity-setting": ["enable", "disable", "frequent-on", "frequent-off"], "activity-preview": ["always", "unlocked", "never"],
-        "activity-network": ["offline", "restore"]]
+        "activity-network": ["offline", "restore"], "ringer-volume": ["capture", "minimum", "restore"]]
       if let allowed = values[p[0]] {
         guard p.count == 2 && allowed.contains(p[1]) else { throw failure("Invalid action value") }
       } else if p[0] == "dump" {
@@ -1255,6 +1313,10 @@ final class FocusUITests: XCTestCase {
         case "policy": try setPolicy()
         case "restore-all": try restore()
         case "system-settings": try value == "enable" ? enableSystemSettings() : restoreSystemSettings()
+        case "ringer-volume":
+          if value == "capture" { try captureRingerVolume() }
+          else if value == "minimum" { try quietRingerVolume() }
+          else { try restoreRingerVolume() }
         case "activity-check": try checkActivity()
         case "activity-observe": try observeActivity(Double(value) ?? 0)
         case "activity-consent": try activityConsent()
