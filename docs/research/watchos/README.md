@@ -41,7 +41,7 @@ xcodebuild -scheme VoIPSDK -sdk watchsimulator \
   CODE_SIGNING_ALLOWED=NO build
 ```
 
-Keep the full dependency graph in that check so a newly introduced iOS-only dependency is caught. Add watch-specific unit tests once a supported watch adapter exists; a green build must not be presented as end-to-end calling support.
+Build the full watchOS dependency graph so the check catches unavailable dependencies in code compiled for watchOS. It does not compile iOS-only conditional branches, so retain separate iOS checks. Add watch-specific unit tests once a supported watch adapter exists; a green build must not be presented as end-to-end calling support.
 
 ## What the simulator can establish
 
