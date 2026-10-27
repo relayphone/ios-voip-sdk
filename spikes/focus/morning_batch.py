@@ -66,8 +66,14 @@ def make_plan(unknown):
     add("callkit-dnd-answer", "F09", ["--provider", "callkit", "--focus-mode", "dnd",
                                        "--unknown-caller", "--caller-value", unknown, "--server-answer"], 3)
     add("callkit-dnd-answer-positive-after", "C00", ["--provider", "callkit", "--unknown-caller", "--caller-value", unknown])
-    for index in range(1, 17):
-        add(f"activity-{index:02}", f"L{index:02}")
+    for index in range(1, 7):
+        focus = "on" if index % 2 == 0 else "off"
+        add(f"activity-{index:02}-{focus}", f"L{index:02}", ["--activity-focus", focus])
+    for index in range(7, 16):
+        for focus in ["off", "on"]:
+            add(f"activity-{index:02}-{focus}", f"L{index:02}", ["--activity-focus", focus])
+    # The iPhone 13 has no Dynamic Island; record a hardware N/A once.
+    add("activity-16", "L16")
     # Mac permission is requested only here; C00 --listen is the last measurement.
     add("microphone-positive", "C00", ["--listen"])
     return out
@@ -168,16 +174,18 @@ def identify_iphone13(selected, work):
         inventory.unlink(missing_ok=True)
 
 
-def private_row_result(work, item, payload):
+def private_row_result(work, item, payload, *, require_restored=True, prior_entries=None):
     result_name = payload.get("result")
     if not isinstance(result_name, str):
         raise RuntimeError("row has no verifiable private result")
     result_path = Path(result_name).resolve()
     if not result_path.is_relative_to(work):
         raise RuntimeError("row result is outside the private work directory")
+    if prior_entries is not None and result_path.relative_to(work).parts[0] in prior_entries:
+        raise RuntimeError("row result does not belong to the current attempt")
     result = json.loads(result_path.read_text())
     if (result.get("row") != item["row"] or result.get("status") != payload.get("status")
-            or result.get("restored") not in [True, "focus-off"]):
+            or (require_restored and result.get("restored") not in [True, "focus-off"])):
         raise RuntimeError("row result or restoration is not verified")
     return result_name, result
 
@@ -200,8 +208,77 @@ def result_summary(item, result):
         else:
             summary["microphone"] = "visual evidence only"
     if re.fullmatch(r"L[0-9]{2}", item["row"]):
-        summary["activityCoverage"] = "single transport/presentation subcase" if result.get("coverage") else "unqualified"
+        coverage = result.get("coverage")
+        summary["activityCoverage"] = "structured" if isinstance(coverage, dict) else (
+            "single transport/presentation subcase" if coverage else "unqualified")
     return summary
+
+
+def _read_private_json(path, work, parent=None):
+    """Do not follow row-provided paths outside the private work tree."""
+    if not isinstance(path, str) or not Path(path).is_absolute():
+        return None, None
+    try:
+        target = Path(path).resolve()
+        if not target.is_relative_to(work) or (parent is not None and target.parent != parent):
+            return None, None
+        if target.stat().st_size > 2_000_000:
+            return None, None
+        value = json.loads(target.read_text())
+        return (target, value) if isinstance(value, dict) else (None, None)
+    except (OSError, ValueError, RuntimeError):
+        return None, None
+
+
+def postclassify_activity_audio(work, state, plan):
+    """Use only this batch's final positive C00; never infer alert or silence."""
+    from activity_acoustics import classify_activity_audio
+
+    work = Path(work).resolve()
+    completed = state.get("completed", {})
+    if not isinstance(completed, dict):
+        raise ValueError("invalid batch checkpoint")
+    positive = completed.get("microphone-positive-01", {})
+    if not isinstance(positive, dict):
+        positive = {}
+    _, c00 = _read_private_json(positive.get("result"), work)
+    _, calibration = _read_private_json(str(work / "audio-calibration.json"), work)
+    c00_audio = c00.get("audio") if isinstance(c00, dict) else None
+    keys = ("calibrationValid", "binding", "threshold", "quietP95", "signalP95", "createdAt")
+    # A stale file from another C00 must not be used when this final control failed.
+    if (positive.get("status") != "recorded" or not isinstance(c00, dict) or c00.get("row") != "C00"
+            or c00.get("status") != "recorded" or c00.get("restored") not in [True, "focus-off"]
+            or not isinstance(c00_audio, dict) or not isinstance(calibration, dict)
+            or any(key not in c00_audio or c00_audio.get(key) != calibration.get(key) for key in keys)):
+        calibration = {}
+
+    for item in plan:
+        if item.get("row") not in ["L01", "L02", "L15"] or item.get("id") not in completed:
+            continue
+        entry = completed[item["id"]]
+        if not isinstance(entry, dict):
+            raise ValueError("invalid completed row checkpoint")
+        result_path, result = _read_private_json(entry.get("result"), work)
+        window = result.get("activityAudioWindow") if isinstance(result, dict) else None
+        audio_path = result.get("activityAudio") if isinstance(result, dict) else None
+        _, envelope = _read_private_json(audio_path, work, parent=result_path.parent if result_path else None)
+        args = item.get("args", [])
+        def option(name, default):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        expected = {"device": state.get("device"), "build": state.get("buildHash"),
+                    "provider": option("--provider", "lck"), "callerFormat": option("--caller-format", "e164")}
+        valid_binding = (isinstance(expected["device"], str) and DEVICE_ID_PATTERN.fullmatch(expected["device"])
+                         and isinstance(expected["build"], str) and re.fullmatch(r"[0-9a-f]{64}", expected["build"]))
+        if (not valid_binding or not isinstance(result, dict) or result.get("row") != item["row"]
+                or result.get("restored") not in [True, "focus-off"]):
+            envelope = None
+        acoustic = classify_activity_audio(envelope, calibration, expected_binding=expected,
+                                           window_start=window.get("start") if isinstance(window, dict) else None,
+                                           window_end=window.get("end") if isinstance(window, dict) else None)
+        if result_path is not None and isinstance(result, dict) and result.get("row") == item["row"]:
+            result["activityAcoustic"] = acoustic
+            atomic_json(result_path, result)
+        entry["activityAcoustic"] = {key: acoustic[key] for key in ("status", "energyAboveThreshold", "reason") if key in acoustic}
 
 
 class DeviceLock:
@@ -286,9 +363,10 @@ def command(argv, env, log, timeout, should_pause=None):
             stop_process_group(process)
             raise
         result = process
-        if result.returncode:
-            # A failed parent can leave its observer alive even after it has exited.
-            stop_process_group(process)
+        # A parent can exit successfully or unsuccessfully while descendants
+        # remain. Never restore or release the device lock until the entire
+        # command group is gone.
+        stop_process_group(process)
     if result.returncode:
         raise RuntimeError("command failed; inspect the private batch log; uncertain attempts are not retried")
 
@@ -325,6 +403,63 @@ def authorize_microphone(work, should_pause):
         return "pending-or-denied"
 
 
+def set_supervisor_env(env, lock):
+    """Bind a child row to this batch's live lock and process-group supervisor."""
+    env["FOCUS_BATCH_OWNER_PID"] = str(os.getpid())
+    env["FOCUS_BATCH_LOCK_NONCE"] = lock.nonce
+
+
+def supervised_restore():
+    """Run direct restore-all under a lock-owning, bounded group supervisor."""
+    device = os.environ.get("FOCUS_DEVICE")
+    source = Path(os.environ.get("FOCUS_XCTESTRUN", "/nonexistent"))
+    if not device or not source.is_file():
+        raise ValueError("Recovery needs the iPhone 13 UDID and original signed FOCUS_XCTESTRUN")
+    os.umask(0o077)
+    work = Path(os.environ.get("FOCUS_WORK", str(HERE / "out"))).resolve()
+    repo = HERE.parents[1]
+    if work.is_relative_to(repo) and work != HERE / "out":
+        raise ValueError("Use ignored spikes/focus/out or a private path outside the repository")
+    work.mkdir(mode=0o700, parents=True, exist_ok=True)
+    work.chmod(0o700)
+    device = identify_iphone13(device, work)
+    lock_dir = Path.home() / ".device-locks"
+    if phone_wants_device(work, lock_dir, device):
+        raise RuntimeError("Phone priority or PAUSE marker exists; no recovery action taken")
+    lock = DeviceLock(lock_dir, device)
+    lock.acquire()
+    env = os.environ.copy()
+    env["FOCUS_DEVICE"], env["FOCUS_WORK"], env["FOCUS_XCTESTRUN"] = device, str(work), str(source)
+    env["FOCUS_REQUIRE_DEVICE_JOURNAL"] = "1"
+    set_supervisor_env(env, lock)
+    restored = False
+    try:
+        checkpoint = work / "morning-checkpoint.json"
+        state = None
+        if checkpoint.exists():
+            state = json.loads(checkpoint.read_text())
+            if (not isinstance(state, dict) or state.get("device") != device
+                    or not isinstance(state.get("completed"), dict)
+                    or state.get("buildHash") != hashlib.sha256(source.read_bytes()).hexdigest()):
+                raise RuntimeError("checkpoint device or signed build mismatch; retain lock for review")
+        command([str(RUNNER), "preflight"], env, work / "recovery-preflight.log", 660)
+        command([str(RUNNER), "restore-all"], env, work / "recovery-restore.log", 660)
+        if state is not None:
+            interrupted = state.get("inFlight")
+            if interrupted:
+                state["completed"][interrupted] = {"status": "unqualified-interrupted", "result": None}
+            state["inFlight"] = None
+            state.pop("inFlightAttempt", None)
+            state["dirty"] = False
+            atomic_json(checkpoint, state)
+        restored = True
+    finally:
+        if restored:
+            lock.release()
+        else:
+            print("Recovery incomplete; device lock retained", file=sys.stderr)
+
+
 def run_batch(plan, args):
     device = os.environ.get("FOCUS_DEVICE")
     if not device:
@@ -348,11 +483,13 @@ def run_batch(plan, args):
     env = os.environ.copy()
     env.pop("FOCUS_REQUIRE_DEVICE_JOURNAL", None)
     env["FOCUS_DEVICE"], env["FOCUS_WORK"] = device, str(work)
+    set_supervisor_env(env, lock)
     state = None
     dirty = checkpoint.exists()  # Unknown state is unsafe until a valid checkpoint proves it clean.
     verified = False
     stopped = False
     unsafe_processes = False
+    recovery_failed = False
     old_handlers = {}
 
     def pause_handler(_signum, _frame):
@@ -370,6 +507,7 @@ def run_batch(plan, args):
             # Its outcome may include a delivered push: never replay it on resume.
             state["completed"][interrupted] = {"status": "unqualified-interrupted", "result": None}
             state["inFlight"] = None
+        state.pop("inFlightAttempt", None)
         atomic_json(checkpoint, state)
         dirty = False
 
@@ -428,10 +566,16 @@ def run_batch(plan, args):
             # Persist the attempt before a push can occur. Never replay an interrupted attempt.
             state["dirty"] = True
             state["inFlight"] = item["id"]
+            attempt = uuid.uuid4().hex
+            state["inFlightAttempt"] = attempt
             atomic_json(checkpoint, state)
             dirty = True
             print("Running", item["id"], flush=True)
-            log = work / ("batch-" + item["id"] + ".log")
+            log = work / ("batch-" + item["id"] + "-" + attempt + ".log")
+            # Each process gets an exclusive log and must create a new result
+            # directory. Neither stale output nor an old result can certify this attempt.
+            log.touch(mode=0o600, exist_ok=False)
+            prior_entries = {entry.name for entry in work.iterdir()}
             row_failed = False
             try:
                 command([str(RUNNER), item["row"], *item["args"]], env, log, 900)
@@ -459,19 +603,52 @@ def run_batch(plan, args):
                     raise RuntimeError("row produced no machine-readable result")
             status = payload.get("status")
             if row_failed:
-                result_name, row_result = private_row_result(work, item, payload)
-                if status in ["recorded", "restored", "restore-failed-use-restore-all"]:
+                if status == "restore-failed-use-restore-all":
+                    # command() has already terminated and verified the entire failed
+                    # row process group. Recover the newer device journal before
+                    # continuing; never replay a possibly delivered invitation.
+                    result_name, row_result = private_row_result(work, item, payload, require_restored=False, prior_entries=prior_entries)
+                    if row_result.get("restored") is not False:
+                        raise RuntimeError("failed row did not report a pending restoration")
+                    env["FOCUS_REQUIRE_DEVICE_JOURNAL"] = "1"
+                    try:
+                        command([str(RUNNER), "restore-all"], env, work / "batch-restore.log", 660)
+                    except (RuntimeError, subprocess.TimeoutExpired, OSError) as error:
+                        # Do not try a second recovery in finally; retain the lock.
+                        recovery_failed = True
+                        raise RuntimeError("interrupted row restoration failed") from error
+                    state["completed"][item["id"]] = {"status": "unqualified", "reason": status, "result": result_name,
+                                                       **result_summary(item, row_result)}
+                    state["completed"][item["id"]]["attempt"] = attempt
+                    state["completed"][item["id"]]["log"] = str(log)
+                    state["inFlight"] = None
+                    state.pop("inFlightAttempt", None)
+                    mark_restored()
+                    env.pop("FOCUS_REQUIRE_DEVICE_JOURNAL", None)
+                    continue
+                result_name, row_result = private_row_result(work, item, payload, prior_entries=prior_entries)
+                if status in ["recorded", "restored"]:
                     raise RuntimeError("failed row restoration is not verified")
                 state["completed"][item["id"]] = {"status": "unqualified", "reason": status, "result": result_name,
                                                     **result_summary(item, row_result)}
-            elif status == "recorded":
-                result_name, row_result = private_row_result(work, item, payload)
+            elif status in ["recorded", "unqualified"]:
+                result_name, row_result = private_row_result(work, item, payload, prior_entries=prior_entries)
                 state["completed"][item["id"]] = {"status": status, "result": result_name, **result_summary(item, row_result)}
-            elif status == "skipped-dependency-or-unsupported":
+            elif status == "not-applicable-hardware" and item["row"] == "L16":
+                result_name, row_result = private_row_result(work, item, payload, prior_entries=prior_entries)
+                state["completed"][item["id"]] = {"status": status, "result": result_name, **result_summary(item, row_result)}
+            elif status == "skipped-dependency-or-unsupported" and not re.fullmatch(r"L[0-9]{2}", item["row"]):
                 state["completed"][item["id"]] = {"status": status, "result": None}
             else:
                 raise RuntimeError("row did not finish with a recorded result or explicit skip")
+            state["completed"][item["id"]]["attempt"] = attempt
+            state["completed"][item["id"]]["log"] = str(log)
             state["inFlight"] = None
+            state.pop("inFlightAttempt", None)
+            atomic_json(checkpoint, state)
+        if "microphone-positive-01" in state["completed"]:
+            # C00 is deliberately last; only now can earlier RMS envelopes be compared.
+            postclassify_activity_audio(work, state, plan)
             atomic_json(checkpoint, state)
         return 75 if pause_requested() else 0
     except BatchPaused:
@@ -483,6 +660,8 @@ def run_batch(plan, args):
         failure = None
         if unsafe_processes:
             failure = RuntimeError("a subprocess group may still be running")
+        elif recovery_failed:
+            failure = RuntimeError("interrupted row restoration failed")
         elif dirty:
             if verified and state is not None and env.get("FOCUS_XCTESTRUN"):
                 try:
