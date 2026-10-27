@@ -72,8 +72,21 @@ def capture(build, out, session_factory=Session, supervisor=supervise, locate=co
                          'xcrun', 'simctl', 'terminate', session.current, BUNDLE]
             status = supervisor(command, terminate, trace, receipt, timeout,
                 dict(runID=run_id, simulatorID=session.current, scenario=NAME, bundleID=BUNDLE),
-                console_launcher_stop=True)
-        return Result(command, status)
+                console_launcher_stop=True, startup_timeout=180)
+        # The supervisor has already reported these exact timeout reasons; do
+        # not let Session relabel them as a generic post-checkpoint product error.
+        classified = False
+        if status:
+            try:
+                evidence = json.loads(receipt.read_text())
+                label = {'startup': 'infra:startup', 'capture': 'timeout:capture'}
+                reason = evidence.get('timeoutReason')
+                classified = (type(reason) is str and reason in label and
+                              evidence.get('failureReported') is True and
+                              label[reason] == evidence.get('failureClass'))
+            except (OSError, ValueError, AttributeError):
+                pass
+        return Result(command, status, failure_classified=classified)
 
     session = session_factory(out / 'simulator-state.json', runner=execute, recovery_timeout=60)
     primary = None
@@ -92,7 +105,7 @@ def capture(build, out, session_factory=Session, supervisor=supervise, locate=co
         call(['bootstatus', session.current, '-b'], 300)
         call(['install', session.current, str(build / 'SDKM1Contracts.app')], 180)
         # The shared helper owns preparation recovery. The existing supervisor
-        # owns the sole console launch, native PID binding and 90-second budget.
+        # owns the sole console launch, native PID binding and separate startup/capture budgets.
         session.checkpoint()
         simulator = session.current
         call(['launch', '--console', '--terminate-running-process', simulator, BUNDLE], 90)
