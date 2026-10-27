@@ -113,3 +113,5 @@ The platform domain/code was measured in the [iPhone 13/iOS 27.0 capacity trace]
 Unrelated errors, including incoming-call filtering errors, retain their existing behavior.
 Use `isConversationCommandError` to narrow the rejection. The SDK does not infer
 available system call groups from its local conversation count.
+
+Incoming callers use the validated [Caller contract](CALLER.md), shared by Swift, pushes and Expo reports.

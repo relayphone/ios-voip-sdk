@@ -34,11 +34,10 @@ public enum PushWire {
   public static func decodeIncomingInvitation(_ body: [String: Any]) -> IncomingCallPayload? {
     guard let eventID = nonemptyString(body["eventId"]),
           let serverID = nonemptyString(body["serverCallId"]),
-          let caller = body["caller"] as? [String: Any],
-          let callerID = nonemptyString(caller["id"]) else { return nil }
-    let participant = Participant(id: callerID, displayName: caller["displayName"] as? String,
-      avatarUrl: caller["avatarUrl"] as? String, phoneNumber: caller["phoneNumber"] as? String,
-      email: caller["email"] as? String)
+          let callerObject = body["caller"] as? [String: Any],
+          JSONSerialization.isValidJSONObject(callerObject),
+          let callerData = try? JSONSerialization.data(withJSONObject: callerObject),
+          let caller = try? JSONDecoder().decode(Caller.self, from: callerData) else { return nil }
     let video = strictBoolean(body["hasVideo"]) ?? false
     let started = (body["startedAt"] as? String).flatMap(validRFC3339)
     var metadata: [String: JSONValue]?
@@ -46,7 +45,7 @@ public enum PushWire {
        let data = try? JSONSerialization.data(withJSONObject: value) {
       metadata = try? JSONDecoder().decode([String: JSONValue].self, from: data)
     }
-    return IncomingCallPayload(eventId: eventID, serverCallId: serverID, caller: participant,
+    return IncomingCallPayload(eventId: eventID, serverCallId: serverID, caller: caller,
       hasVideo: video, startedAt: started, metadata: metadata)
   }
 
@@ -121,7 +120,7 @@ enum IncomingPushPolicy {
     }
     let fallback = IncomingCallPayload(eventId: fallbackIdentity.uuidString,
       serverCallId: "unrecognized-\(fallbackIdentity.uuidString)",
-      caller: Participant(id: "unknown", displayName: "Unknown caller"), hasVideo: false)
+      caller: .unknown, hasVideo: false)
     if case .callEnded(let ended) = message { return .fallback(fallback, ended: ended) }
     return .fallback(fallback, ended: nil)
   }

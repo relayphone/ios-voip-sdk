@@ -28,7 +28,7 @@ struct IncomingIntakeTests {
   static func payload(_ event: String = "incoming", server: String = "server",
                       name: String = "First caller") -> IncomingCallPayload {
     IncomingCallPayload(eventId: event, serverCallId: server,
-      caller: Participant(id: "caller", displayName: name),
+      caller: try! Caller(handleType: .generic, value: "caller", displayName: name),
       metadata: ["first": .string(name)])
   }
 

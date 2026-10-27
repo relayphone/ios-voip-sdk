@@ -110,9 +110,10 @@ function CallingJourney() {
       eventId: 'sdk-example-event-' + unique,
       serverCallId: 'sdk-example-server-' + unique,
       caller: {
-        id: 'sdk-example-caller',
+        handleType: 'phone',
+        value: '+15555550142',
         displayName: 'SDK example',
-        phoneNumber: '+15555550142',
+        hostContactID: 'sdk-example-caller',
       },
       hasVideo: false,
     });

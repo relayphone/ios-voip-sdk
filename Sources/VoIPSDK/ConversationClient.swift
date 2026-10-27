@@ -432,7 +432,7 @@ public final class ConversationClient: NSObject {
   private func hydrateIncoming(_ id: UUID) -> IncomingIntake.Projection? {
     guard let projection = incomingIntake.projection(id) else { return nil }
     if records[id] == nil || records[id]?.metadataIsPlaceholder == true {
-      var record = makeRecord(direction: .incoming, members: [projection.payload.caller],
+      var record = makeRecord(direction: .incoming, members: [projection.payload.caller.participant],
         video: projection.payload.hasVideo)
       record.payload = projection.payload
       records[id] = record

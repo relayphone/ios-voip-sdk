@@ -10,7 +10,7 @@ import Foundation
     let manager = ConversationManager.latest!
     client.setConversationHandler(.init(join: { _, _ in }, start: { _, _ in }, end: { _, _ in }))
     let payload = IncomingCallPayload(eventId: "watchdog-intake-event", serverCallId: "watchdog-intake-server",
-      caller: .init(id: "host-watchdog-caller"))
+      caller: try! Caller(handleType: .generic, value: "host-watchdog-caller", displayName: "host-watchdog-caller"))
     let id = try await client.reportIncomingConversation(payload)
     var endedReasons: [ConversationEndedReason] = []
     var watchdogEvents: [ConversationEventContext] = []

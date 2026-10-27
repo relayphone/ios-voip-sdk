@@ -113,14 +113,14 @@ private actor IncomingReportTransport {
       let client = FixtureClient(), ticket = PushDelivery()
       let actual = PushService(client)
       await Task.detached {
-        let caller = NSMutableDictionary(dictionary: ["id":"original"])
+        let caller = NSMutableDictionary(dictionary: ["handleType":"generic", "value":"original", "displayName":"Original caller"])
         actual.receiveVoIPPush(["incomingCall":["eventId":"e","serverCallId":"s","caller":caller]],
                               mustReport:true, delivery:ticket)
-        caller["id"] = "mutated-after-callback"
+        caller["value"] = "mutated-after-callback"
       }.value
       await wait { await client.incomingTransport.count == 1 }
       let reservation = await client.incomingTransport.reservation()
-      precondition(reservation.payload.caller.id == "original")
+      precondition(reservation.payload.caller.value == "original")
       precondition(client.incomingIntake.projection(reservation.id)?.payload == reservation.payload)
       precondition(ticket.finishCount == 0 && client.projections == 0)
       await client.incomingTransport.settle(.reported)
@@ -140,7 +140,7 @@ private actor IncomingReportTransport {
       await Task.detached { service.receiveVoIPPush([:], mustReport:true, delivery:ticket) }.value
       await wait { await client.incomingTransport.count == 1 }
       let reservation = await client.incomingTransport.reservation()
-      precondition(reservation.payload.caller.id == "unknown" && ticket.finishCount == 0)
+      precondition(reservation.payload.caller.value == "unknown" && ticket.finishCount == 0)
       precondition(client.incomingIntake.projection(reservation.id)?.terminal?.ended.reason == .failed)
       await client.incomingTransport.settle(failed ? .failed(FixtureFailure.failed) : .reported)
       await wait { ticket.finishCount == 1 && client.projections == 1 }
@@ -153,7 +153,7 @@ private actor IncomingReportTransport {
     for required in [false, true] {
       let client = FixtureClient(), ticket = PushDelivery()
       let actual = PushService(client)
-      let known = try! client.incomingIntake.reserve(.init(eventId:"known", serverCallId:"s", caller:.init(id:"caller")), source:.foreground)
+      let known = try! client.incomingIntake.reserve(.init(eventId:"known", serverCallId:"s", caller:try! Caller(handleType:.generic, value:"caller", displayName:"caller")), source:.foreground)
       guard case .report(let first) = known.disposition else { preconditionFailure() }
       client.incomingIntake.complete(first, outcome:.reported)
       await Task.detached {
@@ -167,7 +167,7 @@ private actor IncomingReportTransport {
         precondition(ticket.finishCount == 0,
           "Target termination projects without waiting for the unrelated required fallback report")
         let fallback = await client.incomingTransport.reservation()
-        precondition(fallback.id != known.id && fallback.payload.caller.id == "unknown")
+        precondition(fallback.id != known.id && fallback.payload.caller.value == "unknown")
         precondition(ticket.finishCount == 0)
         await client.incomingTransport.settle(.reported)
       }

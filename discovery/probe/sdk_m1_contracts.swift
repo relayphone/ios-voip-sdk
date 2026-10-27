@@ -151,7 +151,7 @@ private enum LifecycleContract {
       end: { _, _ in ContractTrace.log("lifecycle.handler", ["kind": "end", "phase": phase]) },
       hold: { _, _ in ContractTrace.log("lifecycle.handler", ["kind": "hold", "phase": phase]) }))
     let id = try await client.reportIncomingConversation(.init(eventId: UUID().uuidString,
-      serverCallId: UUID().uuidString, caller: .init(id: "native-lifecycle-fixture")))
+      serverCallId: UUID().uuidString, caller: try! Caller(handleType: .generic, value: "native-lifecycle-fixture", displayName: "native-lifecycle-fixture")))
     phase = "answer"
     try await client.joinConversation(id)
     guard await wait({ adapter.authorized && adapter.activations == 1 }) else { return false }
@@ -321,7 +321,7 @@ private final class SDKM1ContractsProbe {
   /// or physical-device behavior. The source tag is not an actual PushKit delivery.
   private func duplicateContract(_ client: ConversationClient) async throws {
     let payload = IncomingCallPayload(eventId: UUID().uuidString, serverCallId: UUID().uuidString,
-      caller: .init(id: "native-duplicate-wrapper-fixture"))
+      caller: try! Caller(handleType: .generic, value: "native-duplicate-wrapper-fixture", displayName: "native-duplicate-wrapper-fixture"))
     let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
     let payloadHash = SHA256.hash(data: try encoder.encode(payload)).map { String(format: "%02x", $0) }.joined()
     let observer = client.observeState { update in
@@ -398,7 +398,7 @@ private final class SDKM1ContractsProbe {
     }
     defer { client.removeStateObserver(token) }
     let id = try await client.reportIncomingConversation(.init(eventId: UUID().uuidString,
-      serverCallId: UUID().uuidString, caller: .init(id: "native-policy-fixture")))
+      serverCallId: UUID().uuidString, caller: try! Caller(handleType: .generic, value: "native-policy-fixture", displayName: "native-policy-fixture")))
     ContractTrace.log("contract.incoming", ["conversationID": id.uuidString])
     let request = Task { @MainActor in
       do { try await client.joinConversation(id); ContractTrace.log("contract.joinResult", ["accepted": true]) }

@@ -113,9 +113,9 @@ def qualify_main_stall_journal(rows, probe_rows, run_id, pid):
             payload.get('hasVideo') is False and payload.get('startedAt') is None and payload.get('metadata') is None,
             'public main-stall payload differs')
     caller = payload.get('caller')
-    require(isinstance(caller, dict) and set(caller) <= {'id', 'displayName', 'avatarUrl', 'phoneNumber', 'email'} and
-            caller.get('id') == 'main-stall-caller' and caller.get('displayName') == 'Main stall fixture' and
-            all(caller.get(key) is None for key in ('avatarUrl', 'phoneNumber', 'email')),
+    require(isinstance(caller, dict) and set(caller) <= {'handleType', 'value', 'displayName', 'hostContactID'} and
+            caller.get('handleType') == 'generic' and caller.get('value') == 'main-stall-caller' and caller.get('displayName') == 'Main stall fixture' and
+            caller.get('hostContactID') is None,
             'public main-stall caller differs')
     return dict(success=True, mode='sdk-main-stall',
         classification='simulator direct real native-owner method with stalled main; not PushKit delivery, CKSimInjectPush, APNs or cold launch',

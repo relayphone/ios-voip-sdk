@@ -93,7 +93,7 @@ function conversation(id = 'call') {
     payload: {
       eventId: 'event',
       serverCallId: 'server',
-      caller: { id: 'caller' },
+      caller: { handleType: 'generic', value: 'caller', displayName: 'Caller' },
       hasVideo: false,
       metadata: { nested: [{ value: 'original' }] },
     },
