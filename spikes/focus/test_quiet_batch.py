@@ -101,7 +101,7 @@ class QuietBatchTests(unittest.TestCase):
                     default_work()
                 archive = batch.archive_legacy()
                 self.assertEqual(default_work(), root / "Library" / "Application Support" / "FocusProbe124")
-                # A resumed or modified legacy run invalidates the receipt.
+                # A continued or modified legacy run invalidates the receipt.
                 checkpoint["dirty"] = True; save()
                 with self.assertRaisesRegex(ValueError, "Prior Focus work"):
                     default_work()
@@ -215,7 +215,7 @@ class QuietBatchTests(unittest.TestCase):
                      "build": str(product), "buildHash": hashlib.sha256(product.read_bytes()).hexdigest(),
                      "inFlight": plan[0]["id"], "dirty": True}
             batch.atomic_json(work / "morning-checkpoint.json", state)
-            # End after one resumed sample; this exercises actual checkpoint migration.
+            # End after one continued sample; this exercises actual checkpoint migration.
             calls = []
             def command(argv, env, log, timeout, should_pause=None):
                 calls.append(list(argv[1:]))

@@ -120,7 +120,7 @@ def dry_run(plan, unknown, quiet=False):
         return value.replace(unknown, "<unknown-test-handle>") if isinstance(value, str) else value
     preflight = redact(run_json([str(RUNNER), "preflight", "--dry-run"], env=clean))
     print(json.dumps({"deviceGate": "require unique iPhone 13 from devicectl device inventory before build/UI",
-                      "preflight": preflight, "signing": "xcodegen; xcodebuild build-for-testing -allowProvisioningUpdates with signed-in Xcode account and team " + TEAM,
+                      "preflight": preflight, "signing": "xcodegen; xcodebuild build-for-testing -allowProvisioningUpdates with configured Xcode signing credentials and team " + TEAM,
                       "microphonePreflight": "skipped: quiet" if quiet else "compile listener and request authorization once (bounded 30 seconds, no recording)",
                       "quiet": "capture and durably back up ringtone volume before setting minimum; restore on exit" if quiet else False,
                       "deviceLock": "~/.device-locks/<FOCUS_DEVICE>.lock; no stealing; Phone priority"}))
@@ -627,7 +627,7 @@ def run_batch(plan, args):
         command([str(RUNNER), "preflight"], env, work / "preflight.log", 660, pause_requested)
         verified = True
         if dirty:
-            # Previous crash: restore first, then account for the ambiguous attempt without retry.
+            # Previous crash: restore first, then record the ambiguous attempt without retry.
             command([str(RUNNER), "restore-all"], env, work / "batch-restore.log", 660)
             mark_restored()
             env.pop("FOCUS_REQUIRE_DEVICE_JOURNAL", None)

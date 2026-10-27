@@ -45,7 +45,7 @@ and the same work directory for its supervised restore. An explicit temporary-di
 survive its removal.
 For a real run, the operator supplies the iPhone 13's canonical uppercase hardware UDID in `FOCUS_DEVICE` and the
 [sandbox APNs environment](../../discovery/device/README.md). The batch generates a signed test build with Xcode's
-signed-in account and `-allowProvisioningUpdates`; it does not print the APNs key. A read-only inventory check
+configured signing credentials and `-allowProvisioningUpdates`; it does not print the APNs key. A read-only inventory check
 requires a uniquely identified iPhone 13 before signing or UI tests. It checks Share Across Devices is off before
 any Focus change, then runs C06, C01 and C05 first, the calling controls and three-sample comparisons, the Live
 Activity rows, and C00 `--listen` last. A bounded early microphone authorization request needs one Allow click;
@@ -91,7 +91,7 @@ row; run `restore-all` once at the end. Selectors are qualified on iOS 27.0 (iPh
 UI action writes a read-only accessibility tree to the runner's Documents, and any failed action leaves the front
 app's tree in `focus-dump-failure.txt`. The device operator has registered `group.dev.callkitsim.focus` for the
 app, widget and filter under team `85A9MS6428`. Keep the App Group entitlements for C06; the earlier run built
-without them and therefore did not qualify that row. For a signed device build, use Xcode's signed-in account and
+without them and therefore did not qualify that row. For a signed device build, use Xcode's configured signing credentials and
 `xcodebuild -allowProvisioningUpdates` with `DEVELOPMENT_TEAM=85A9MS6428`; do not pass ASC `-authenticationKey*`
 arguments. The App Store Connect key cannot register groups.
 
