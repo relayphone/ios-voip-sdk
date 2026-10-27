@@ -36,7 +36,7 @@ folders; generated signed builds and the journal persist there. `FOCUS_WORK` can
 persistent across reboot. If an old `spikes/focus/out` contains an interrupted journal or checkpoint, select that
 directory explicitly and recover it before using the new default; it is not silently discarded. With
 `FOCUS_DEVICE` and the original signed `FOCUS_XCTESTRUN` set, run
-`FOCUS_WORK="$PWD/spikes/focus/out" spikes/focus/run.sh restore-all` from the repository root. Resume that
+`FOCUS_WORK="$PWD/spikes/focus/out" spikes/focus/run.sh restore-all` from the repository root. Continue that
 checkpoint with the same `FOCUS_WORK`; after restoration, run `spikes/focus/morning-batch --archive-legacy`
 to preserve the clean legacy state and enable the new default for a fresh batch. Archiving refuses dirty or
 ambiguous state and never removes the original files; it reports a no-op if restoration already removed the
@@ -69,7 +69,7 @@ and Lock Screen privacy remain unqualified when unavailable.
 The batch atomically holds `~/.device-locks/<FOCUS_DEVICE>.lock` as a directory throughout mutation and restoration;
 Phone's runner must honor the same convention for mutual exclusion. A pre-existing lock is never stolen. To yield
 to Phone, create `FOCUS_WORK/PAUSE`, `~/.device-locks/PAUSE`, or `~/.device-locks/<FOCUS_DEVICE>.priority`;
-the batch finishes the active row, restores settings and releases its lock. Remove the marker and rerun to resume
+the batch finishes the active row, restores settings and releases its lock. Remove the marker and rerun to continue
 from the private checkpoint. An interrupted attempt is not repeated: after safe restoration it is recorded
 unqualified. Failed restoration retains the lock and journal for recovery. A hard-killed batch can leave its own
 lock behind: the batch will not automatically take it over because a device subprocess may still be alive. The
@@ -95,7 +95,7 @@ without them and therefore did not qualify that row. For a signed device build, 
 `xcodebuild -allowProvisioningUpdates` with `DEVELOPMENT_TEAM=85A9MS6428`; do not pass ASC `-authenticationKey*`
 arguments. The App Store Connect key cannot register groups.
 
-Implements the native/platform portions of [the device plan](../../docs/research/focus/device-plan.md). This isolated spike chooses **one** provider at process launch: LiveCommunicationKit (default) or the CallKit `CXProvider` control. It never creates both in the same process, and has no SDK dependency, real media, backend AI or owner-join implementation. The two modes share one test bundle, so explicitly record the mode and all user settings. Build/dry-run qualification does **not** qualify device behavior. Claude operates the device; this lane does not.
+Implements the native/platform portions of [the device plan](../../docs/research/focus/device-plan.md). This isolated spike chooses **one** provider at process launch: LiveCommunicationKit (default) or the CallKit `CXProvider` control. It never creates both in the same process, and has no SDK dependency, real media, backend AI or owner-join implementation. The two modes share one test bundle, so explicitly record the mode and all user settings. Build/dry-run qualification does **not** qualify device behavior.
 
 ```sh
 spikes/focus/build.sh
@@ -126,9 +126,9 @@ Write `Documents/focus.json` before launch. Unspecified fields are safe defaults
 
 The app registers PushKit at launch. Choose `provider` before launch (`lck` or `callkit`); changing it requires a process restart. Every genuine incoming push is reported, even when unarmed; `armed` controls the optional Communication Notification only. `mustReport` is recorded, not used to hide incoming reports in this probe. The LCK reporting task is scheduled from a private PushKit queue before delegate return; `reportTaskEntered` is a scheduling marker, not proof of private system-function entry. CallKit enters its synchronous completion-handler report from that queue. Focus sampling, donation and notification scheduling never gate report entry. Late report, completion, action/state and survival events use monotonic and wall timestamps. Missing survival events mean **unobserved/suspended**, not proof of termination.
 
-CN-on donates a genuine incoming `INStartCallIntent` with `INPerson`, then posts updated **local** notification content at active interruption level. Authorize notifications once through the app; status/authorization has a separate trace. Do not treat its banner/sound as call ringing. Contact matching uses the caller's E.164 handle; People allowance behavior still needs measurement. The notification is deliberately alert-capable for the matrix; it is not part of silent transcript mode.
+CN-on donates a genuine incoming `INStartCallIntent` with `INPerson`, then posts updated **local** notification content at active interruption level. Authorize notifications once through the app; authorization has a separate trace. Do not treat its banner/sound as call ringing. Contact matching uses the caller's E.164 handle; People allowance behavior still needs measurement. The notification is deliberately alert-capable for the matrix; it is not part of silent transcript mode.
 
-A dedicated ExtensionKit `AppIntentsExtension` owns `SetFocusFilterIntent` **AI call policy** and stores the selected value in the App Group. Native `focus.sample` and `push.received` events read it, without JS. Configure/remove this filter through Settings; the probe does not claim it knows which Focus owns the stored value. `focus.sample` records the **raw** status and authorization independently: the device pass observed raw `false` without authorization, so consumers must treat unauthorized/restricted/denied values as unknown. Authorization is explicit via the button or config, not triggered by an incoming call.
+A dedicated ExtensionKit `AppIntentsExtension` owns `SetFocusFilterIntent` **AI call policy** and stores the selected value in the App Group. Native `focus.sample` and `push.received` events read it, without JS. Configure/remove this filter through Settings; the probe does not claim it knows which Focus owns the stored value. `focus.sample` records the **raw** Focus value and authorization independently: the device pass observed raw `false` without authorization, so consumers must treat unauthorized/restricted/denied values as unknown. Authorization is explicit via the button or config, not triggered by an incoming call.
 
 Exports are private app-container files:
 

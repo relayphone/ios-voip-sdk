@@ -112,5 +112,5 @@ def default_work():
                     raise ValueError("Legacy archive contents do not match")
         except (OSError, ValueError, TypeError, UnicodeDecodeError) as error:
             raise ValueError("Prior Focus work detected; set FOCUS_WORK to " + str(legacy) +
-                             " to resume or restore, then run morning-batch --archive-legacy") from error
+                             " to continue or restore, then run morning-batch --archive-legacy") from error
     return Path.home() / "Library" / "Application Support" / "FocusProbe124"

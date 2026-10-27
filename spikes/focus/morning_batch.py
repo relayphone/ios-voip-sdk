@@ -133,7 +133,7 @@ def dry_run(plan, unknown, quiet=False):
         value = redact(value)
         print(json.dumps({"id": item["id"], "sample": item["sample"], "plan": value}, separators=(",", ":")))
     print(json.dumps({"cleanup": redact(run_json([str(RUNNER), "restore-all", "--dry-run"], env=clean)),
-                      "pause": "Create FOCUS_WORK/PAUSE; finish current row, restore, release lock, resume after removing marker"}))
+                      "pause": "Create FOCUS_WORK/PAUSE; finish current row, restore, release lock, continue after removing marker"}))
 
 
 def checkpoint_id(plan):
@@ -316,7 +316,7 @@ class DeviceLock:
 
 
 def archive_legacy():
-    """Explicit host-only handoff after restoration; leave original paths intact."""
+    """Archive restored host state while leaving original paths intact."""
     legacy = legacy_dir()
     # A successful restore may uninstall the disposable probe and remove its
     # journal. With no legacy state left, the persistent default is already usable.
@@ -586,7 +586,7 @@ def run_batch(plan, args):
         state["dirty"] = False
         interrupted = state.get("inFlight")
         if interrupted:
-            # Its outcome may include a delivered push: never replay it on resume.
+            # Its outcome may include a delivered push: never replay it on continuation.
             state["completed"][interrupted] = {"status": "unqualified-interrupted", "result": None}
             state["inFlight"] = None
         state.pop("inFlightAttempt", None)
@@ -632,7 +632,7 @@ def run_batch(plan, args):
             mark_restored()
             env.pop("FOCUS_REQUIRE_DEVICE_JOURNAL", None)
         if state.get("planHash") != checkpoint_id(plan):
-            # A mode change may resume the same fixed matrix after recovering
+            # A mode change may continue the same fixed matrix after recovering
             # the old journal; completed and interrupted attempts are never replayed.
             unknown = getattr(args, "unknown_caller", DEFAULT_UNKNOWN)
             old_mode = not quiet
