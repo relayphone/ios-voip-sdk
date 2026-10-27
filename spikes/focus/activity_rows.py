@@ -96,6 +96,65 @@ def summarize_render(receipts, events, bounds):
     return value
 
 
+def cadence_excerpt(observation_id, revision):
+    """Only synthetic, run-bound text may enter the exact-match channel."""
+    if (not isinstance(observation_id, str) or str(uuid.UUID(observation_id)) != observation_id
+            or type(revision) is not int or not 1 <= revision <= 1_000_000):
+        raise ValueError("invalid synthetic cadence identity")
+    return f"Synthetic cadence {observation_id} revision {revision}"
+
+
+def exact_cadence_summary(receipts, events, bounds, observation_id, continuity, requested):
+    """Join exact UI booleans to accepted, same-activity, run-bound receipts."""
+    result = {"scope": "accessibility-tree label equality; pixel visibility and clipping are not verified",
+              "requested": requested, "acceptedRevisions": [], "exactRevisions": [],
+              "latestAcceptedExact": False, "allRequestedExact": False}
+    try:
+        cadence_excerpt(observation_id, 1)
+    except (TypeError, ValueError, AttributeError):
+        return result
+    if not isinstance(continuity, dict) or not continuity.get("activityID") or not continuity.get("surfaceID"):
+        return result
+    eligible = []
+    for receipt in receipts:
+        snapshot = receipt.get("checkedTokenSnapshot", {})
+        revision = receipt.get("revision")
+        if (accepted(receipt) and receipt.get("event") == "update" and
+                receipt.get("cadenceObservationID") == observation_id and
+                type(revision) is int and 1 <= revision <= 1_000_000 and
+                isinstance(snapshot, dict) and snapshot.get("kind") == "per-activity" and
+                snapshot.get("activityID") == continuity["activityID"] and
+                snapshot.get("surfaceID") == continuity["surfaceID"]):
+            eligible.append(receipt)
+    revisions = [r["revision"] for r in eligible]
+    if len(set(revisions)) != len(revisions):
+        return result
+    result["acceptedRevisions"] = sorted(revisions)
+    if summarize_render(eligible, events, bounds)["latencyStatus"] != "bounded-observations":
+        return result
+    by_revision = {r["revision"]: r for r in eligible}
+    for event in events:
+        revision = event.get("revision")
+        if type(revision) is not int:
+            continue
+        receipt = by_revision.get(revision)
+        if (receipt is None or event.get("event") != "activity.renderSample" or
+                event.get("observationID") != observation_id or event.get("syntheticExactMatch") is not True or
+                event.get("stale") is not False):
+            continue
+        values = [event.get("wallTimeMs"), event.get("uptimeMs"), event.get("sampleStartUptimeMs"), receipt.get("hostSendStart")]
+        if not all(isinstance(v, (int, float)) for v in values):
+            continue
+        wall, uptime, start, sent = values
+        # The whole UI sample must begin after the send began, allowing clock skew.
+        if wall - (uptime - start) - bounds["deviceMinusHostMax"] - 250 >= sent * 1000:
+            result["exactRevisions"].append(revision)
+    result["exactRevisions"] = sorted(set(result["exactRevisions"]))
+    result["latestAcceptedExact"] = bool(revisions and max(revisions) in result["exactRevisions"])
+    result["allRequestedExact"] = (len(revisions) == requested and len(result["exactRevisions"]) == requested)
+    return result
+
+
 def offline_callback_after_settings(value, run_id, settings_uptime_ms):
     """An old/cached path cannot establish disconnection after Settings changed."""
     return (isinstance(value, dict) and type(settings_uptime_ms) is int and settings_uptime_ms >= 0
@@ -391,7 +450,7 @@ class ActivityScenario:
             raise RuntimeError("activity observer lacks a complete interval")
         return observations[0]
 
-    def cadence(self, count, interval, priority=5, text_prefix="Synthetic cadence", session=None, observer=None):
+    def cadence(self, count, interval, priority=5, session=None, observer=None):
         if not 1 <= count <= 60 or interval < 1:
             raise ValueError("activity cadence exceeds safe bounds")
         previous = None
@@ -404,8 +463,11 @@ class ActivityScenario:
                 if delay > 0:
                     time.sleep(delay)
             previous = time.monotonic()
-            receipt = self.send(text=f"{text_prefix} {index + 1}", priority=priority,
-                                revision=self.sequence + 1, session=session)
+            revision = self.sequence + 1
+            observation_id = self.run.invitation
+            receipt = self.send(text=cadence_excerpt(observation_id, revision), priority=priority,
+                                revision=revision, session=session)
+            receipt["cadenceObservationID"] = observation_id
             if not accepted(receipt):
                 self.note("transport", "unqualified", "APNs did not accept an update; no automatic retry")
                 return False
@@ -599,8 +661,8 @@ def run_activity_case(s):
         audio = None
         try:
             audio = s.begin_audio(150) if row in ("L01", "L02") else None
-            cadence_ok = s.cadence(25 if row in ("L01", "L02") else 4, 5,
-                                   text_prefix="Synthetic cadence", session=session, observer=observer)
+            requested = 25 if row in ("L01", "L02") else 4
+            cadence_ok = s.cadence(requested, 5, session=session, observer=observer)
             observation = s.finish_observer(observer)
             samples = [e for e in s.result["activityObservation"] if e.get("event") == "activity.renderSample"]
             offsets = s.result.get("clockOffsetBoundsMs", [])
@@ -615,7 +677,12 @@ def run_activity_case(s):
             s.note("latestOrStale", "observed" if latest or stale else "unqualified",
                    {"latestRevisionAndSyntheticText": latest, "staleLabel": stale,
                     "qualification": "generic synthetic text is not an exact excerpt match"})
-            s.note("exactTranscriptContent", "unqualified", "revision and generic text do not verify the exact expected excerpt")
+            exact = exact_cadence_summary(s.result["activityReceipts"], s.result["activityObservation"],
+                                          offsets[-1] if offsets else None, s.run.invitation,
+                                          s.result.get("activityContinuity"), requested)
+            exact["cadenceCompleted"] = cadence_ok
+            s.note("exactTranscriptContent", "observed" if cadence_ok and exact["latestAcceptedExact"] else "unqualified", exact)
+            s.note("pixelVisibleExactText", "unqualified", "accessibility labels do not prove unclipped or unoccluded pixels")
         finally:
             s.settle_observer(observer)
             if audio:
@@ -778,7 +845,7 @@ def run_activity_case(s):
                         if total + 3 > 60:
                             raise RuntimeError("activity send cap exceeded")
                         before = len(s.result["activityReceipts"])
-                        cadence_ok = s.cadence(3, interval, priority, text_prefix=f"Synthetic p{priority} i{interval}", observer=observer)
+                        cadence_ok = s.cadence(3, interval, priority, observer=observer)
                         attempted = len(s.result["activityReceipts"]) - before
                         total += attempted
                         s.note(f"frequent-{frequent}-p{priority}-i{interval}", "observed" if cadence_ok else "unqualified",
@@ -788,12 +855,17 @@ def run_activity_case(s):
                 receipts = s.result["activityReceipts"][first_receipt:]
                 summaries = {str(priority): summarize_render([r for r in receipts if r.get("priority") == priority],
                              s.result["activityObservation"], offsets[-1] if offsets else None) for priority in (5, 10)}
+                exact = exact_cadence_summary(receipts, s.result["activityObservation"], offsets[-1] if offsets else None,
+                                              s.run.invitation, s.result.get("activityContinuity"), 12)
+                s.note("exactCadence-" + str(frequent).lower(),
+                       "observed" if exact["allRequestedExact"] else "unqualified", exact)
                 s.note("renderSamples-" + str(frequent).lower(),
                        "observed" if any(value["syntheticTextRevisions"] for value in summaries.values()) else "unqualified",
-                       {"samples": observation.get("samples"), "byPriority": summaries})
+                       {"samples": observation.get("samples"), "byPriority": summaries, "exactCadence": exact})
             finally:
                 s.settle_observer(observer)
         s.note("actualBudgetLimit", "unqualified", "bounded test never infers an Apple budget or exhaustion")
+        s.note("pixelVisibleExactText", "unqualified", "accessibility labels do not prove unclipped or unoccluded pixels")
         return
 
     if row == "L12":
