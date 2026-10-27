@@ -93,6 +93,7 @@ private final class ExampleJourney {
         "status": conversation.status.rawValue, "direction": conversation.direction.rawValue,
         "isMuted": conversation.isMuted, "isVideo": conversation.isVideo,
         "hasConnectedAt": conversation.connectedAt != nil]
+      if let ended = conversation.ended { row["endedReason"] = ended.reason.rawValue }
       if let pending = conversation.pending {
         row["pending"] = ["id": pending.id.uuidString, "kind": pending.kind.rawValue,
           "deadline": JourneyTrace.iso(pending.deadline), "origin": pending.origin.rawValue]
@@ -233,7 +234,7 @@ private final class ExampleJourney {
 
   // Example-only backend/handler barriers; external cksim controls actual system actions and pushes.
   func nextSystemCommand() async throws -> [String: String] {
-    guard ["answer-end", "decline", "hold-accept", "end-accept", "mute-echo", "provider-reset", "push-launch"]
+    guard ["answer-end", "decline", "hold-accept", "end-accept", "mute-echo", "provider-reset", "push-launch", "answered-elsewhere"]
       .contains(JourneyConfiguration.systemCase) else { throw JourneyError.wrongMode }
     let path = FileManager.default.temporaryDirectory.appendingPathComponent("sdk-system-control-\(JourneyTrace.runID).json")
     let deadline = ContinuousClock.now.advanced(by: .seconds(90))
@@ -244,11 +245,11 @@ private final class ExampleJourney {
     let bytes = try Data(contentsOf: path)
     try FileManager.default.removeItem(at: path)
     guard bytes.count <= 1024, let value = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
-      Set(value.keys).isSubset(of: ["id", "runID", "case", "pid", "operation", "conversationID"]),
+      Set(value.keys).isSubset(of: ["id", "runID", "case", "pid", "operation", "conversationID", "serverCallId"]),
       value["runID"] as? String == JourneyTrace.runID, value["case"] as? String == JourneyConfiguration.systemCase,
       value["pid"] as? Int == Int(getpid()), let id = value["id"] as? String, UUID(uuidString: id) != nil,
       let operation = value["operation"] as? String,
-      ["attach-handler", "backend-connected", "app-mute", "release-mute", "finish"].contains(operation) else {
+      ["attach-handler", "backend-connected", "answered-elsewhere", "app-mute", "release-mute", "finish"].contains(operation) else {
       throw JourneyError.invalidTrace
     }
     var command = ["id": id, "operation": operation]
@@ -256,6 +257,8 @@ private final class ExampleJourney {
       guard UUID(uuidString: conversation) != nil else { throw JourneyError.invalidTrace }
       command["conversationID"] = conversation
     }
+    if let server = value["serverCallId"] as? String, !server.isEmpty { command["serverCallId"] = server }
+    if operation == "answered-elsewhere", command["serverCallId"] == nil { throw JourneyError.invalidTrace }
     JourneyTrace.record("system.commandReceived", command)
     return command
   }
@@ -265,20 +268,26 @@ private final class ExampleJourney {
     let events: Set<String> = ["m1.jsReady", "m1.subscriptionsStarting", "m1.handlerAttached", "m1.handler", "m1.cancelled",
       "m1.assertion", "m1.hookConversations", "m1.hookToken", "m1.event", "m1.expiryObserved", "m1.backendConnectedRequested",
       "system.ready", "system.handler", "system.handlerAttached", "system.hook", "system.event",
-      "system.backendConnected", "system.appMuteRequested", "system.appMuteCompleted", "system.commandCompleted"]
+      "system.backendConnected", "system.answeredElsewhereRequested", "system.answeredElsewhereAccepted",
+      "system.appMuteRequested", "system.appMuteCompleted", "system.commandCompleted"]
     let fields: Set<String> = ["label", "passed", "conversationID", "kind", "origin", "deadline",
       "held", "muted", "attached", "available", "tokenType", "name", "count", "status",
-      "pending", "hasConnectedAt", "reason", "id", "operation", "digits"]
+      "pending", "hasConnectedAt", "reason", "id", "operation", "digits", "serverCallId", "eventId", "accepted"]
     guard events.contains(event), let bytes = fieldsJSON.data(using: .utf8),
           let value = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
           Set(value.keys).isSubset(of: fields),
           value.values.allSatisfy({ $0 is String || $0 is NSNumber || $0 is NSNull }) else {
       throw JourneyError.invalidTrace
     }
-    if event == "system.ready" {
+    if event == "system.ready" || event == "system.answeredElsewhereRequested" {
       let before = Date()
       #if targetEnvironment(simulator)
-      CKSimEmit("system.clock", [:])
+      if event == "system.ready" { CKSimEmit("system.clock", [:]) }
+      else {
+        var marker = value
+        marker["traceSequence"] = JourneyTrace.sequence + 1
+        CKSimEmit("system.answeredElsewhereSignal", marker)
+      }
       #endif
       var sample = value
       sample["clockBeforeMS"] = Int64(before.timeIntervalSince1970 * 1000)

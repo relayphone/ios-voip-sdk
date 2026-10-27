@@ -11,12 +11,14 @@ type JourneyModule = NativeModule & {
     | 'end-accept'
     | 'mute-echo'
     | 'provider-reset'
+    | 'answered-elsewhere'
     | 'push-launch';
   runID: string;
   nextSystemCommand(): Promise<{
     id: string;
     operation: string;
     conversationID?: string;
+    serverCallId?: string;
   }>;
   acceptance(): Promise<void>;
   simulatePush(

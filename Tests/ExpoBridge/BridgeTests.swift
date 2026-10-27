@@ -365,6 +365,13 @@ struct BridgeTests {
     try expect(scoped?["type"] as? String == "audioActivationMissing" &&
                (scoped?["payload"] as? [String: Any])?["conversationId"] as? String == conversation.id.uuidString,
                "A watchdog event must preserve its affected conversation identity.")
+    application.client.publish(.answeredElsewhere, conversationID: conversation.id,
+      serverCallID: "server-answered", eventID: "event-answered")
+    let answered = events.named("conversationEvent").last
+    try expect(answered?["type"] as? String == "answeredElsewhere" &&
+      (answered?["payload"] as? [String: String]) == ["conversationId": conversation.id.uuidString,
+        "serverCallId": "server-answered", "eventId": "event-answered"],
+      "The ownership event must retain its backend and conversation identities.")
   }
 
   @MainActor private static func action(_ events: Events, id: UUID) throws -> [String: Any] {

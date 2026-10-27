@@ -56,6 +56,13 @@ export interface IncomingCallPayload {
   metadata?: { [key: string]: JSONValue };
 }
 
+/** A backend/host ownership signal; local hangs up through endConversation instead. */
+export interface CallEndedPayload {
+  eventId: string;
+  serverCallId: string;
+  reason: Exclude<EndedReason, 'local'>;
+}
+
 export type ConversationStatus =
   | 'ringing'
   | 'dialing'
@@ -154,6 +161,11 @@ export interface ConversationEventMap {
   audioActivationFailed: { conversationId: string };
   pushTokenUpdated: PushToken | null;
   dialRequest: { handle: string; video: boolean };
+  answeredElsewhere: {
+    conversationId: string;
+    serverCallId: string;
+    eventId: string;
+  };
   providerReset: Record<string, never>;
   providerOwnershipLost: Record<string, never>;
 }

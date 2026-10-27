@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seven external cksim journeys on the simulator already owned by M0.
+"""External cksim journeys on the simulator already owned by M0.
 
 No simulator creation, installation, DYLD mutation or device access lives here.
 Native acceptance is decided by sdk_system_conformance, never by this driver.
@@ -21,7 +21,7 @@ from summarize import require
 
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = 'dev.iosvoipsdk.example'
-CASES = ('answer-end', 'decline', 'hold-accept', 'end-accept', 'mute-echo', 'provider-reset', 'push-launch')
+CASES = ('answer-end', 'decline', 'hold-accept', 'end-accept', 'mute-echo', 'provider-reset', 'push-launch', 'answered-elsewhere')
 SCENARIO_TIMEOUT_SECONDS = 120
 PREAPP_ERROR = (f'An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=3):\n'
     f'Simulator device failed to launch {BUNDLE}.\nNo such process\n'
@@ -111,10 +111,12 @@ class Journey:
         rows = [row for row in self.rows() if row['event'] == 'sdk.snapshot']
         return rows and predicate(rows[-1]['conversations']) and rows[-1]
 
-    def command(self, operation, conversation=None):
+    def command(self, operation, conversation=None, server_call=None):
         value = dict(id=str(uuid.uuid4()).upper(), runID=self.args.run_id, case=self.case, pid=self.pid, operation=operation)
         if conversation:
             value['conversationID'] = conversation
+        if server_call:
+            value['serverCallId'] = server_call
         name = f'fixture-{len(self.commands):02}.json'
         write(self.root / name, value)
         target = self.container / ('tmp/sdk-system-control-' + self.args.run_id + '.json')
@@ -285,6 +287,9 @@ class Journey:
                 first = self.push('first')
                 if self.case == 'decline':
                     self.end(first, True)
+                elif self.case == 'answered-elsewhere':
+                    self.command('answered-elsewhere', first['conversationID'],
+                                 'system-server-' + self.args.run_id + '-first')
                 else:
                     self.answer(first)
                     if self.case in ('hold-accept', 'end-accept'):

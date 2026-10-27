@@ -386,3 +386,15 @@ test('non-state signals are routed by name and unsubscribe removes the listener'
   bridge.emit('conversationEvent', { type: 'providerReset', payload: {} });
   assert.deepEqual(events, [{}]);
 });
+
+
+test('answered elsewhere events preserve the correlated server ownership signal', () => {
+  const bridge = native();
+  const runtime = new ConversationRuntime(bridge);
+  const events = [];
+  const unsubscribe = runtime.subscribeEvent('answeredElsewhere', (value) => events.push(value));
+  const payload = { conversationId: 'conversation-1', serverCallId: 'server-1', eventId: 'event-1' };
+  bridge.emit('conversationEvent', { type: 'answeredElsewhere', payload });
+  assert.deepEqual(events, [payload]);
+  unsubscribe();
+});

@@ -1,5 +1,6 @@
 import { getRuntime } from './internal/native';
 import type {
+  CallEndedPayload,
   Conversation,
   ConversationHandler,
   ConversationReport,
@@ -73,4 +74,9 @@ export function reportIncomingConversation(
   payload: IncomingCallPayload,
 ): Promise<string> {
   return getRuntime().bridge.reportIncomingConversation(payload);
+}
+
+/** End a reported incoming system call from a backend signal, without an action handler. */
+export function receiveCallEnded(payload: CallEndedPayload): Promise<boolean> {
+  return getRuntime().bridge.receiveCallEnded(payload);
 }

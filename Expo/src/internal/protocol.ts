@@ -1,5 +1,6 @@
 import type {
   ActionOrigin,
+  CallEndedPayload,
   Conversation,
   ConversationEventMap,
   ConversationReport,
@@ -79,4 +80,5 @@ export interface NativeBridge {
   mergeConversations(first: string, second: string): Promise<void>;
   reportConversation(id: string, report: ConversationReport): Promise<void>;
   reportIncomingConversation(payload: IncomingCallPayload): Promise<string>;
+  receiveCallEnded(payload: CallEndedPayload): Promise<boolean>;
 }

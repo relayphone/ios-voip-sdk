@@ -69,6 +69,14 @@ public final class IosVoipSDKModule: Module {
         return try await ExpoMediaSupport.startFromBundle().client.reportIncomingConversation(payload).uuidString
       }
     }
+    AsyncFunction("receiveCallEnded") { (payload: [String: Any], promise: Promise) in
+      guard let data = try? BridgeJSON.data(payload) else { Self.rejectArguments(promise); return }
+      Self.respond(promise) {
+        let ended = try BridgeJSON.decode(CallEndedPayload.self, from: data)
+        guard ended.reason != .local else { throw BridgeError.invalidArguments }
+        return try ExpoMediaSupport.startFromBundle().client.receiveCallEnded(ended)
+      }
+    }
     AsyncFunction("joinConversation") { (id: String, promise: Promise) in
       Self.respond(promise) { try await ExpoMediaSupport.startFromBundle().client.joinConversation(Self.uuid(id)); return nil }
     }
