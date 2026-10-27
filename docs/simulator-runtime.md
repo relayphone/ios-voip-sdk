@@ -306,6 +306,13 @@ both native and Inspector acceptance. It starts a fresh fixture session for each
 stage, without reinstalling the fixture between them, and always deletes that
 simulator.
 
+The event fixture captures its canonical simulator path before installation.
+Its owner repeats that preparation for a replacement device before replaying
+installs, collecting inventory once per device. After installation it validates
+the final device's cached application directory locally, then checkpoints and
+launches once. Journal discovery uses that directory without another inventory
+RPC; shared retry budgets and command deadlines remain unchanged.
+
 The automatic `--driver journal` journey uses `cksim` to inject an incoming call
 and issue one system-origin Answer. It foregrounds the fixture for controls and
 the real SwiftUI Inspector for observations. An opt-in Inspector receipt records
