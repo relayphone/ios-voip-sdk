@@ -116,7 +116,7 @@ class MorningPlanTests(unittest.TestCase):
             device = "00008110-0011223344556677"
             batch.atomic_json(work / "morning-checkpoint.json", {"device": device, "completed": {},
                               "buildHash": hashlib.sha256(product.read_bytes()).hexdigest(),
-                              "inFlight": "activity-01-off-01", "dirty": True})
+                              "inFlight": "activity-01-off-01", "inFlightAttempt": "old-attempt", "dirty": True})
             calls = []
             def fake_command(argv, env, log, timeout, should_pause=None):
                 calls.append(argv[1])
@@ -134,6 +134,7 @@ class MorningPlanTests(unittest.TestCase):
             state = json.loads((work / "morning-checkpoint.json").read_text())
             self.assertFalse(state["dirty"])
             self.assertIsNone(state["inFlight"])
+            self.assertNotIn("inFlightAttempt", state)
             self.assertEqual(state["completed"]["activity-01-off-01"]["status"], "unqualified-interrupted")
 
     def test_standalone_restore_failure_retains_owned_lock(self):
@@ -407,6 +408,46 @@ class MorningPlanTests(unittest.TestCase):
                     batch.run_batch(plan, None)
             self.assertTrue((root / ".device-locks" / "00008110-0011223344556677.lock").is_dir())
             self.assertEqual(json.loads((work / "morning-checkpoint.json").read_text())["inFlight"], plan[0]["id"])
+
+    def test_old_log_and_result_cannot_certify_new_attempt(self):
+        for emit_old_result in [False, True]:
+            with self.subTest(emit_old_result=emit_old_result), tempfile.TemporaryDirectory() as root:
+                root = Path(root)
+                work = root / "work"
+                work.mkdir()
+                product = root / "device.xctestrun"
+                product.write_bytes(b"signed-product")
+                plan = batch.make_plan(batch.DEFAULT_UNKNOWN)[:1]
+                old_dir = work / "C06-old"
+                old_dir.mkdir()
+                old_result = old_dir / "result.json"
+                old_result.write_text(json.dumps({"row": "C06", "status": "unqualified", "restored": True}))
+                old_payload = json.dumps({"row": "C06", "status": "unqualified", "result": str(old_result)})
+                (work / ("batch-" + plan[0]["id"] + ".log")).write_text(old_payload + "\n")
+                row_logs = []
+                def fake_command(argv, env, log, timeout, should_pause=None):
+                    if argv[1] == "C06":
+                        row_logs.append(log)
+                        if emit_old_result:
+                            log.write_text(old_payload + "\n")
+                        raise RuntimeError("row crashed")
+                with mock.patch.dict(os.environ, {"FOCUS_DEVICE": "00008110-0011223344556677", "FOCUS_WORK": str(work)}), \
+                     mock.patch.object(Path, "home", return_value=root), \
+                     mock.patch.object(batch, "identify_iphone13", side_effect=lambda device, workdir: device), \
+                     mock.patch.object(batch, "authorize_microphone", return_value="authorized"), \
+                     mock.patch.object(batch, "signed_build", return_value=product), \
+                     mock.patch.object(batch, "command", side_effect=fake_command), \
+                     contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaisesRegex(RuntimeError, "current attempt" if emit_old_result else "no machine-readable result"):
+                        batch.run_batch(plan, None)
+                state = json.loads((work / "morning-checkpoint.json").read_text())
+                self.assertEqual(state["completed"][plan[0]["id"]],
+                                 {"status": "unqualified-interrupted", "result": None})
+                self.assertIsNone(state["inFlight"])
+                self.assertNotIn("inFlightAttempt", state)
+                self.assertEqual(len(row_logs), 1)
+                self.assertRegex(row_logs[0].name, r"-[a-f0-9]{32}\.log$")
+                self.assertNotEqual(row_logs[0].name, "batch-" + plan[0]["id"] + ".log")
 
     def test_crash_recovery_restores_then_marks_ambiguous_attempt_unqualified(self):
         with tempfile.TemporaryDirectory() as root:

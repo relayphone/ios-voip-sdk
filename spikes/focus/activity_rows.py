@@ -52,12 +52,14 @@ def summarize_render(receipts, events, bounds):
         return value
     low, high = bounds.get("deviceMinusHostMin"), bounds.get("deviceMinusHostMax")
     wall_anchor, mono_anchor = bounds.get("hostWallAnchorMs"), bounds.get("hostMonotonicAnchorMs")
-    if (not all(isinstance(v, (int, float)) for v in (low, high, wall_anchor, mono_anchor))
+    device_wall, device_uptime = bounds.get("deviceWallAnchorMs"), bounds.get("deviceUptimeAnchorMs")
+    if (not all(isinstance(v, (int, float)) for v in (low, high, wall_anchor, mono_anchor, device_wall, device_uptime))
             or high < low or high - low > 2000):
         return value
+    device_epoch = device_wall - device_uptime
     clocks = [e.get("wallTimeMs") - e.get("uptimeMs") for e in events
-              if e.get("event") == "activity.sample" and isinstance(e.get("wallTimeMs"), int) and isinstance(e.get("uptimeMs"), int)]
-    if not clocks or max(clocks) - min(clocks) > 250:
+              if e.get("event") in ("activity.sample", "activity.renderSample") and isinstance(e.get("wallTimeMs"), int) and isinstance(e.get("uptimeMs"), int)]
+    if not clocks or any(abs(clock - device_epoch) > 250 for clock in clocks):
         return value
     intervals = []
     for revision, event in observed.items():
@@ -72,7 +74,9 @@ def summarize_render(receipts, events, bounds):
                 abs(sent * 1000 - (wall_anchor + mono_start * 1000 - mono_anchor)) > 250 or
                 abs(response * 1000 - (wall_anchor + mono_end * 1000 - mono_anchor)) > 250):
             return value
-        latest = wall - low - sent * 1000
+        # Allow for up to 250 ms of device wall/uptime sampling skew and
+        # residual clock drift between the handshake and this observation.
+        latest = wall - low - sent * 1000 + 250
         if latest < 0:
             return value
         # Sparse screenshots prove the revision is visible by this sample, but
@@ -304,12 +308,13 @@ class ActivityScenario:
                     if value.get("id") == self.run.invitation and value.get("nonce") == nonce:
                         host_end = time.time() * 1000
                         mono_end = time.monotonic() * 1000
-                        if (isinstance(value.get("wallTimeMs"), int) and
+                        if (isinstance(value.get("wallTimeMs"), int) and isinstance(value.get("uptimeMs"), int) and
                                 abs((host_end - host_start) - (mono_end - mono_start)) <= 250):
                             self.result.setdefault("clockOffsetBoundsMs", []).append({
                                 "deviceMinusHostMin": value["wallTimeMs"] - host_end,
                                 "deviceMinusHostMax": value["wallTimeMs"] - host_start,
                                 "hostWallAnchorMs": host_end, "hostMonotonicAnchorMs": mono_end,
+                                "deviceWallAnchorMs": value["wallTimeMs"], "deviceUptimeAnchorMs": value["uptimeMs"],
                                 "qualification": "nonce ping bracket; later wall-clock jumps remain unqualified"})
                         return
                 except (OSError, ValueError, RuntimeError):
@@ -633,6 +638,68 @@ def run_activity_case(s):
         return
 
     if row == "L09":
+        def trace_before_launch():
+            try:
+                return s.trace()
+            except (OSError, ValueError, RuntimeError, TypeError, subprocess.TimeoutExpired):
+                return None
+
+        def fresh_connected_path(before):
+            # A same-run, post-launch NWPathMonitor callback establishes the
+            # sampled route; an APNs host receipt does not establish device connectivity.
+            if not isinstance(before, list):
+                return False
+            try:
+                deadline = time.monotonic() + 20
+                while time.monotonic() < deadline:
+                    try:
+                        trace = s.trace()
+                        if trace[:len(before)] != before:
+                            return False
+                        launches = [e.get("monoMs") for e in trace[len(before):]
+                                    if e.get("event") == "app.launch" and type(e.get("monoMs")) is int]
+                        if not launches:
+                            time.sleep(1); continue
+                        path = s.read_file("activity-network-update.json", "network-connected")
+                        if (path.get("runID") == s.run.run_id and path.get("source") == "pathUpdate"
+                                and path.get("pathReady") is True and path.get("status") == "satisfied"
+                                and type(path.get("lastPathUpdateUptimeMs")) is int
+                                and path["lastPathUpdateUptimeMs"] >= launches[-1]):
+                            return True
+                    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+                        pass
+                    time.sleep(1)
+            except (OSError, ValueError, RuntimeError, TypeError, subprocess.TimeoutExpired):
+                pass
+            return False
+
+        s.run.ui(["terminate"])
+        before_launch = trace_before_launch()
+        s.run.ui(["launch"])
+        if fresh_connected_path(before_launch):
+            connected = s.send(text="Synthetic connected before stale")
+            if not accepted(connected):
+                raise RuntimeError("connected stale baseline update not accepted")
+            time.sleep(8)
+            s.ui_card("Synthetic connected before stale", "connected-before")
+            time.sleep(38)  # No updates for longer than the configured stale date.
+            s.run.ui(["terminate"])
+            before_launch = trace_before_launch()
+            s.run.ui(["launch"])
+            connected_after = fresh_connected_path(before_launch)
+            s.ui_card("Updates delayed", "connected-stale")
+            s.note("connectedStale", "observed" if connected_after else "unqualified",
+                   "stale card after sampled connected-path callbacks; continuous connection not established")
+            connected_resume = s.send(text="Synthetic connected resumed")
+            if not accepted(connected_resume):
+                raise RuntimeError("connected resume update not accepted")
+            time.sleep(8)
+            s.ui_card("Synthetic connected resumed", "connected-resumed")
+            s.note("connectedResume", "observed" if connected_after else "unqualified", "rendered after sampled connected path")
+            s.note("connectedContinuity", "unqualified", "callbacks at two points cannot prove an uninterrupted route while suspended")
+        else:
+            s.note("connectedStale", "unqualified", "no fresh same-run connected-path callback")
+            s.note("connectedResume", "unqualified", "connected stale baseline was not established")
         s.verify_usb()
         s.run.ui(["launch"])
         sent = s.send(text="Synthetic before offline")
@@ -668,12 +735,30 @@ def run_activity_case(s):
 
     if row == "L10":
         s.fixture()
+        try:
+            before_trace = s.trace()
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+            before_trace = None
+        # Do not mistake two reads in one process for rediscovery after relaunch.
+        s.run.ui(["terminate"])
         s.config("snapshot")
         s.run.ui(["launch", "activity-consent"])
         reloaded = s.run.current_activity("reloaded")
         if (reloaded["activityID"], reloaded["surfaceID"]) != (initial["activityID"], initial["surfaceID"]):
             raise RuntimeError("activity changed on relaunch")
-        s.note("continuity", "observed", "same activity and current paired registration after relaunch")
+        s.note("continuity", "observed", "same activity and paired registration after explicit terminate/launch actions")
+        try:
+            after_trace = s.trace()
+            tail = after_trace[len(before_trace):] if before_trace is not None and after_trace[:len(before_trace)] == before_trace else []
+            old_pids = [e.get("pid") for e in before_trace or [] if e.get("event") == "app.launch" and type(e.get("pid")) is int]
+            launches = [e for e in tail if e.get("event") == "app.launch" and type(e.get("pid")) is int and type(e.get("monoMs")) is int]
+            rediscovered = bool(old_pids and launches and launches[-1]["pid"] != old_pids[-1] and
+                any(e.get("event") == "activity.current" and e.get("activityID") == initial["activityID"]
+                    and type(e.get("monoMs")) is int and e["monoMs"] >= launches[-1]["monoMs"] for e in tail))
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
+            rediscovered = False
+        s.note("processRediscovery", "observed" if rediscovered else "unqualified",
+               "fresh different process launch and same-activity discovery trace required")
         rejection = s.send(invalid=True)
         s.note("invalidToken", "observed" if rejection.get("expectedRejection") is True and rejection.get("transportAcknowledged") is True else "unqualified", rejection.get("reason"))
         s.note("actualTokenRotation", "unqualified", "rotation is system controlled; generation ordering tested in simulation")

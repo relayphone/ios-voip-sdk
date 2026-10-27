@@ -137,34 +137,40 @@ class ActivityRowsTests(unittest.TestCase):
         sample = {"revision": 7, "wallTimeMs": 1000300, "uptimeMs": 5000, "sampleStartUptimeMs": 4990}
         events = [{**sample, "event": "activity.sample"}, {**sample, "event": "activity.renderSample"}]
         bounds = {"deviceMinusHostMin": -50, "deviceMinusHostMax": 50,
-                  "hostWallAnchorMs": 1000000, "hostMonotonicAnchorMs": 100000}
+                  "hostWallAnchorMs": 1000000, "hostMonotonicAnchorMs": 100000,
+                  "deviceWallAnchorMs": 1000000, "deviceUptimeAnchorMs": 4700}
         result = summarize_render([receipt], events, bounds)
         self.assertEqual(result["latencyStatus"], "bounded-observations")
         self.assertEqual(result["latencyBounds"][0]["lowerMs"], 0)
-        self.assertEqual(result["latencyBounds"][0]["upperMs"], 250)
+        self.assertEqual(result["latencyBounds"][0]["upperMs"], 500)
         self.assertEqual(summarize_render([receipt], [], bounds)["missingRevisions"], [7])
         self.assertEqual(summarize_render([receipt], [events[0]], bounds)["latencyStatus"], "unqualified")
         self.assertEqual(summarize_render([receipt], events, {**bounds, "deviceMinusHostMax": 5000})["latencyStatus"], "unqualified")
         self.assertEqual(summarize_render([{**receipt, "hostMonotonicEnd": 101}], events, bounds)["latencyStatus"], "unqualified")
+        # A clock jump between ping and the very first sample is not detectable
+        # by comparing only the samples with each other.
+        self.assertEqual(summarize_render([receipt], events, {**bounds, "deviceWallAnchorMs": 999000})["latencyStatus"], "unqualified")
+        self.assertEqual(summarize_render([receipt], events, {k: v for k, v in bounds.items() if k != "deviceUptimeAnchorMs"})["latencyStatus"], "unqualified")
 
     def test_render_latency_quantiles_use_nearest_rank_and_lower_even_median(self):
         receipts, events = [], []
         bounds = {"deviceMinusHostMin": 0, "deviceMinusHostMax": 0,
-                  "hostWallAnchorMs": 1000000, "hostMonotonicAnchorMs": 100000}
+                  "hostWallAnchorMs": 1000000, "hostMonotonicAnchorMs": 100000,
+                  "deviceWallAnchorMs": 1000000, "deviceUptimeAnchorMs": 5000}
         for index in range(25):
             start = 1000 + index
             receipts.append({"status": 200, "transportAcknowledged": True, "revision": index,
                              "hostSendStart": start, "hostSendEnd": start + .1,
                              "hostMonotonicStart": 100 + index, "hostMonotonicEnd": 100 + index + .1})
             sample = {"revision": index, "wallTimeMs": start * 1000 + 100 + index * 10,
-                      "uptimeMs": 5000 + index * 1000, "sampleStartUptimeMs": 4990 + index * 1000}
+                      "uptimeMs": 5000 + index * 1010, "sampleStartUptimeMs": 4990 + index * 1010}
             events.extend([{**sample, "event": "activity.sample"}, {**sample, "event": "activity.renderSample"}])
         result = summarize_render(receipts, events, bounds)
         self.assertEqual(result["quantileMethod"], "nearest-rank; lower median for even sample counts")
-        self.assertAlmostEqual(result["p95BoundsMs"][1], 330)  # ceil(.95 * 25) - 1 = 23
-        self.assertAlmostEqual(result["medianBoundsMs"][1], 220)
+        self.assertAlmostEqual(result["p95BoundsMs"][1], 580)  # ceil(.95 * 25) - 1 = 23
+        self.assertAlmostEqual(result["medianBoundsMs"][1], 470)
         even = summarize_render(receipts[:20], events[:40], bounds)
-        self.assertAlmostEqual(even["medianBoundsMs"][1], 190)  # lower middle, index 9
+        self.assertAlmostEqual(even["medianBoundsMs"][1], 440)  # lower middle, index 9
 
     def test_failed_observer_marks_restoration_unsafe(self):
         fake = Mock()

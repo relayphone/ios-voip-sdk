@@ -174,13 +174,15 @@ def identify_iphone13(selected, work):
         inventory.unlink(missing_ok=True)
 
 
-def private_row_result(work, item, payload, *, require_restored=True):
+def private_row_result(work, item, payload, *, require_restored=True, prior_entries=None):
     result_name = payload.get("result")
     if not isinstance(result_name, str):
         raise RuntimeError("row has no verifiable private result")
     result_path = Path(result_name).resolve()
     if not result_path.is_relative_to(work):
         raise RuntimeError("row result is outside the private work directory")
+    if prior_entries is not None and result_path.relative_to(work).parts[0] in prior_entries:
+        raise RuntimeError("row result does not belong to the current attempt")
     result = json.loads(result_path.read_text())
     if (result.get("row") != item["row"] or result.get("status") != payload.get("status")
             or (require_restored and result.get("restored") not in [True, "focus-off"])):
@@ -447,6 +449,7 @@ def supervised_restore():
             if interrupted:
                 state["completed"][interrupted] = {"status": "unqualified-interrupted", "result": None}
             state["inFlight"] = None
+            state.pop("inFlightAttempt", None)
             state["dirty"] = False
             atomic_json(checkpoint, state)
         restored = True
@@ -504,6 +507,7 @@ def run_batch(plan, args):
             # Its outcome may include a delivered push: never replay it on resume.
             state["completed"][interrupted] = {"status": "unqualified-interrupted", "result": None}
             state["inFlight"] = None
+        state.pop("inFlightAttempt", None)
         atomic_json(checkpoint, state)
         dirty = False
 
@@ -562,10 +566,16 @@ def run_batch(plan, args):
             # Persist the attempt before a push can occur. Never replay an interrupted attempt.
             state["dirty"] = True
             state["inFlight"] = item["id"]
+            attempt = uuid.uuid4().hex
+            state["inFlightAttempt"] = attempt
             atomic_json(checkpoint, state)
             dirty = True
             print("Running", item["id"], flush=True)
-            log = work / ("batch-" + item["id"] + ".log")
+            log = work / ("batch-" + item["id"] + "-" + attempt + ".log")
+            # Each process gets an exclusive log and must create a new result
+            # directory. Neither stale output nor an old result can certify this attempt.
+            log.touch(mode=0o600, exist_ok=False)
+            prior_entries = {entry.name for entry in work.iterdir()}
             row_failed = False
             try:
                 command([str(RUNNER), item["row"], *item["args"]], env, log, 900)
@@ -597,7 +607,7 @@ def run_batch(plan, args):
                     # command() has already terminated and verified the entire failed
                     # row process group. Recover the newer device journal before
                     # continuing; never replay a possibly delivered invitation.
-                    result_name, row_result = private_row_result(work, item, payload, require_restored=False)
+                    result_name, row_result = private_row_result(work, item, payload, require_restored=False, prior_entries=prior_entries)
                     if row_result.get("restored") is not False:
                         raise RuntimeError("failed row did not report a pending restoration")
                     env["FOCUS_REQUIRE_DEVICE_JOURNAL"] = "1"
@@ -609,26 +619,32 @@ def run_batch(plan, args):
                         raise RuntimeError("interrupted row restoration failed") from error
                     state["completed"][item["id"]] = {"status": "unqualified", "reason": status, "result": result_name,
                                                        **result_summary(item, row_result)}
+                    state["completed"][item["id"]]["attempt"] = attempt
+                    state["completed"][item["id"]]["log"] = str(log)
                     state["inFlight"] = None
+                    state.pop("inFlightAttempt", None)
                     mark_restored()
                     env.pop("FOCUS_REQUIRE_DEVICE_JOURNAL", None)
                     continue
-                result_name, row_result = private_row_result(work, item, payload)
+                result_name, row_result = private_row_result(work, item, payload, prior_entries=prior_entries)
                 if status in ["recorded", "restored"]:
                     raise RuntimeError("failed row restoration is not verified")
                 state["completed"][item["id"]] = {"status": "unqualified", "reason": status, "result": result_name,
                                                     **result_summary(item, row_result)}
             elif status in ["recorded", "unqualified"]:
-                result_name, row_result = private_row_result(work, item, payload)
+                result_name, row_result = private_row_result(work, item, payload, prior_entries=prior_entries)
                 state["completed"][item["id"]] = {"status": status, "result": result_name, **result_summary(item, row_result)}
             elif status == "not-applicable-hardware" and item["row"] == "L16":
-                result_name, row_result = private_row_result(work, item, payload)
+                result_name, row_result = private_row_result(work, item, payload, prior_entries=prior_entries)
                 state["completed"][item["id"]] = {"status": status, "result": result_name, **result_summary(item, row_result)}
             elif status == "skipped-dependency-or-unsupported" and not re.fullmatch(r"L[0-9]{2}", item["row"]):
                 state["completed"][item["id"]] = {"status": status, "result": None}
             else:
                 raise RuntimeError("row did not finish with a recorded result or explicit skip")
+            state["completed"][item["id"]]["attempt"] = attempt
+            state["completed"][item["id"]]["log"] = str(log)
             state["inFlight"] = None
+            state.pop("inFlightAttempt", None)
             atomic_json(checkpoint, state)
         if "microphone-positive-01" in state["completed"]:
             # C00 is deliberately last; only now can earlier RMS envelopes be compared.
