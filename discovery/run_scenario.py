@@ -13,7 +13,6 @@ from pathlib import Path
 import queue
 import signal
 import subprocess
-import sys
 import threading
 import time
 import tty
@@ -104,26 +103,11 @@ def bind_launcher_pid(result, matches):
     return None
 
 
-def report_timeout(label):
-    # Classification is observational; it must never replace the capture result.
-    try:
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts/sim'))
-        from sim import report_failure
-        report_failure(label, 'never retried')
-        return True
-    except Exception:
-        return False
-
-
 def run(launch, terminate, output, receipt, timeout, identity=None, console_launcher_stop=False,
-        inherit_launcher_group=False, expected_app_exit=False, startup_timeout=None):
-    if startup_timeout is not None and (type(startup_timeout) not in (int, float) or
-                                        not math.isfinite(startup_timeout) or startup_timeout <= 0):
-        raise ValueError('startup timeout must be positive and finite')
+        inherit_launcher_group=False, expected_app_exit=False):
     started = time.monotonic()
     timing = HostTiming(output, 'supervisor', (identity or {}).get('bundleID'))
-    initial_budget = startup_timeout if startup_timeout is not None else timeout
-    timing.record('start', timeoutSeconds=initial_budget, deadlineMonotonicNS=int((started + initial_budget) * 1e9))
+    timing.record('start', timeoutSeconds=timeout, deadlineMonotonicNS=int((started + timeout) * 1e9))
     result = {"completed": False, "success": False, "schemaVersion": 2, **(identity or {})}
     process = None
     stopped = False
@@ -133,12 +117,6 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
     master = slave = None
     bundle = result.get("bundleID")
     launcher_header = re.compile(rb"(?m)^" + re.escape(bundle.encode()) + rb": (\d+)\r?$") if bundle else None
-
-    def unpack(value):
-        if isinstance(value, tuple):
-            return value
-        return value, time.monotonic()
-
     try:
         if expected_app_exit and not console_launcher_stop:
             raise RuntimeError("natural app exit requires the bound console launcher")
@@ -191,7 +169,7 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                             if not chunk:
                                 if pending[fd]:
                                     timing.observe_line(pending[fd], 'read')
-                                    messages.put((pending[fd], time.monotonic()))
+                                    messages.put(pending[fd])
                                     pending[fd] = b""
                                 active.remove(fd)
                                 continue
@@ -200,11 +178,11 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                             while b"\n" in pending[fd]:
                                 line, pending[fd] = pending[fd].split(b"\n", 1)
                                 timing.observe_line(line, 'read')
-                                messages.put((line + b"\n", time.monotonic()))
+                                messages.put(line + b"\n")
                     for tail in pending.values():
                         if tail:
                             timing.observe_line(tail, 'read')
-                            messages.put((tail, time.monotonic()))
+                            messages.put(tail)
                 except OSError as error:
                     messages.put(error)
                 finally:
@@ -223,28 +201,16 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
 
             reader = threading.Thread(target=read, daemon=True)
             reader.start()
-            deadline = started + initial_budget
-            entry_observed = False
-            entry_timestamp = None
-
-            def timed_out(phase):
-                timing.record(phase + '.deadline')
-                if startup_timeout is not None:
-                    result['timeoutReason'] = phase
-                    result['failureClass'] = 'infra:startup' if phase == 'startup' else 'timeout:capture'
-                raise RuntimeError("deadline before " + ('app entry' if phase == 'startup' else 'terminal done event'))
-
+            deadline = started + timeout
             while not result["completed"]:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    timed_out('startup' if startup_timeout is not None and not entry_observed else 'capture')
+                    timing.record('capture.deadline')
+                    raise RuntimeError("deadline before terminal done event")
                 try:
                     line = messages.get(timeout=min(remaining, 0.2))
                 except queue.Empty:
                     continue
-                line, observed = unpack(line)
-                if startup_timeout is not None and observed >= deadline:
-                    timed_out('startup' if not entry_observed else 'capture')
                 if isinstance(line, OSError):
                     raise line
                 if line is None:
@@ -259,28 +225,7 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                         row = json.loads(line.split(b"PROBE ", 1)[1])
                     except (ValueError, UnicodeDecodeError):
                         continue  # The conformance parser rejects malformed evidence.
-                    if isinstance(row, dict) and row.get("event") == "app.entry" and startup_timeout is not None:
-                        if any(not result.get(key) or row.get(key) != result[key]
-                               for key in ('runID', 'simulatorID', 'bundleID')) or type(row.get('pid')) is not int or row['pid'] <= 0:
-                            raise RuntimeError("invalid app.entry identity")
-                        if not entry_observed:
-                            entry_timestamp = row.get('t_ms')
-                            if type(entry_timestamp) not in (int, float) or not math.isfinite(entry_timestamp):
-                                raise RuntimeError("invalid app.entry timestamp")
-                            entry_observed = True
-                            deadline = observed + timeout
-                            result['captureStart'] = 'observed-app-entry'
-                            timing.record('capture.start', timeoutSeconds=timeout,
-                                          deadlineMonotonicNS=int(deadline * 1e9))
                     if isinstance(row, dict) and row.get("event") == "done":
-                        if startup_timeout is not None:
-                            if not entry_observed:
-                                raise RuntimeError("terminal done event before app entry")
-                            native_done = row.get('t_ms')
-                            if type(native_done) not in (int, float) or not math.isfinite(native_done) or native_done < entry_timestamp:
-                                raise RuntimeError("invalid terminal timestamp")
-                            if native_done - entry_timestamp >= timeout * 1000:
-                                timed_out('capture')
                         if expected_app_exit: raise RuntimeError("expected app exit received terminal done event")
                         result["completed"] = True
                     if isinstance(row, dict):
@@ -331,7 +276,6 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                             line = messages.get(timeout=remaining)
                         except queue.Empty:
                             break
-                        line, _ = unpack(line)
                         if line is None or isinstance(line, OSError):
                             reply_terminal.append(line)
                             break
@@ -368,7 +312,6 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                         line = reply_terminal.pop() if reply_terminal else messages.get(timeout=remaining)
                     except queue.Empty:
                         raise RuntimeError("launcher output did not close after stop")
-                    line, _ = unpack(line)
                     if isinstance(line, OSError):
                         raise line
                     if line is None:
@@ -395,8 +338,6 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                 result["success"] = True
     except (OSError, RuntimeError, subprocess.TimeoutExpired, queue.Empty) as error:
         result["error"] = str(error)
-        if result.get('failureClass'):
-            result['failureReported'] = report_timeout(result['failureClass'])
     finally:
         timing.record('cleanup.start')
         try:
@@ -447,7 +388,6 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                         tail = messages.get_nowait()
                     except queue.Empty:
                         break
-                    tail, _ = unpack(tail)
                     if isinstance(tail, bytes):
                         tail = tail[:remaining]
                         timing.first('diagnostic_tail.first.bytes', byteCount=len(tail))
@@ -490,7 +430,6 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=200)
-    parser.add_argument("--startup-timeout", type=float, help="separate launch-to-observed-entry bound; --timeout begins at entry")
     parser.add_argument("--run-id")
     parser.add_argument("--simulator-id")
     parser.add_argument("--scenario")
@@ -504,16 +443,13 @@ def main():
     args = parser.parse_args()
     if not args.launch_command or not math.isfinite(args.timeout) or args.timeout <= 0 or args.receipt.exists():
         parser.error("require a launch command, positive timeout, and fresh receipt path")
-    if args.startup_timeout is not None and (not math.isfinite(args.startup_timeout) or args.startup_timeout <= 0):
-        parser.error("startup timeout must be positive and finite")
     if args.console_launcher_stop and not args.bundle_id:
         parser.error("--console-launcher-stop requires --bundle-id")
     if args.inherit_launcher_group and not args.console_launcher_stop:
         parser.error("--inherit-launcher-group requires --console-launcher-stop")
     return run(args.launch_command, args.terminate_command, args.output, args.receipt, args.timeout,
                dict(runID=args.run_id, simulatorID=args.simulator_id, scenario=args.scenario, bundleID=args.bundle_id),
-               console_launcher_stop=args.console_launcher_stop, inherit_launcher_group=args.inherit_launcher_group,
-               startup_timeout=args.startup_timeout)
+               console_launcher_stop=args.console_launcher_stop, inherit_launcher_group=args.inherit_launcher_group)
 
 
 if __name__ == "__main__":
