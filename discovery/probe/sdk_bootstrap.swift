@@ -12,6 +12,7 @@ final class SDKBootstrapProbe: NSObject, UIApplicationDelegate {
     var row = fields
     row["event"] = event
     row["t_ms"] = Int(ProcessInfo.processInfo.systemUptime * 1000)
+    row["wallTimeMS"] = Int(Date().timeIntervalSince1970 * 1000)
     row["pid"] = Int(getpid())
     row["runID"] = ProcessInfo.processInfo.environment["CKSIM_RUN_ID"] ?? ""
     row["simulatorID"] = ProcessInfo.processInfo.environment["SIMULATOR_UDID"] ?? ""

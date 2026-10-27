@@ -157,5 +157,50 @@ class ContainerCaptureControls(unittest.TestCase):
         self.run_capture('bad-receipt', check)
 
 
+class ContractCaptureBudgetControls(unittest.TestCase):
+    def capture(self, refuse=''):
+        source = RUNNER.read_text()
+        start = source.index('  for case in guard ')
+        end = source.index('    if [[ -z "$contract_container" ]]', start)
+        # Execute the actual contract-loop launch call site. The inert supervisor
+        # records arguments; no app, simulator, journal or conformance is faked.
+        block = source[start:end] + '  done\n'
+        with tempfile.TemporaryDirectory(prefix='sdk-contract-budget-') as temporary:
+            root = Path(temporary)
+            (root / 'discovery').mkdir()
+            (root / 'discovery/run_scenario.py').write_text(
+                'import json,os,pathlib,sys\n'
+                'case=os.environ["SIMCTL_CHILD_SDK_M1_CONTRACT_CASE"]\n'
+                'args=sys.argv[1:]\n'
+                'with pathlib.Path(os.environ["BUDGET_CALLS"]).open("a") as stream:\n'
+                ' stream.write(json.dumps(dict(case=case,args=args))+"\\n")\n'
+                'if case==os.environ["REFUSE_CASE"]: sys.exit(73)\n')
+            calls = root / 'calls.jsonl'
+            environment = dict(os.environ, OUT=str(root), INHERITED_DYLD='',
+                RUN_ID=RUN_ID, UDID=SIMULATOR, BUDGET_CALLS=str(calls), REFUSE_CASE=refuse)
+            result = subprocess.run(['/bin/bash', '-c', 'set -euo pipefail\n' + block],
+                cwd=root, env=environment, capture_output=True, text=True, timeout=10)
+            return result, [json.loads(line) for line in calls.read_text().splitlines()]
+
+    def test_policy_capture_covers_delayed_entry_and_keeps_other_bounds(self):
+        result, calls = self.capture()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(calls), len({call['case'] for call in calls}))
+        self.assertTrue({'guard', 'unhandled-accept', 'unhandled-fail'} <= {call['case'] for call in calls})
+        for call in calls:
+            args = call['args']; budget = int(args[args.index('--timeout') + 1])
+            self.assertEqual(budget, 90)
+            self.assertEqual(int(args[args.index('--startup-timeout') + 1]), 180)
+            # The unchanged 90-second post-entry capture exceeds the native
+            # 30-second policy window plus observation headroom.
+            self.assertGreater(budget * 1000, 30_000 + 3_000 + 10_000)
+
+    def test_failed_policy_capture_is_not_replayed_or_followed(self):
+        result, calls = self.capture(refuse='unhandled-fail')
+        self.assertEqual(result.returncode, 73, result.stderr)
+        self.assertEqual([call['case'] for call in calls],
+                         ['guard', 'unhandled-accept', 'unhandled-fail'])
+
+
 if __name__ == '__main__':
     unittest.main()
