@@ -28,41 +28,123 @@ enum FocusActivities {
   // Set by the containing app; the widget never writes app-container traces.
   @MainActor static var record: ((String, [String: Any]) -> Void)?
   @MainActor static var discovery: Task<Void, Never>?
+  @MainActor static var ending = false
+  enum ContinuityError: Error { case missing, ambiguous, ending }
+
+  @MainActor static func marker() -> [String: String]? {
+    let url = ProbeFiles.documents.appendingPathComponent("activity-identity.json")
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    guard let data = try? Data(contentsOf: url), let value = try? JSONDecoder().decode([String: String].self, from: data),
+      let id = value["activityID"], !id.isEmpty, let surface = value["surfaceID"], !surface.isEmpty else {
+      return ["activityID": "<invalid>", "surfaceID": "<invalid>"] // fail closed, do not create a replacement
+    }
+    return value
+  }
+  @MainActor static func selection(_ current: [Activity<FocusAttributes>]) -> FocusActivityChoice {
+    let saved = marker().map { FocusActivityIdentity(activityID: $0["activityID"]!, surfaceID: $0["surfaceID"]!) }
+    return chooseFocusActivity(expected: saved, available: current.map { FocusActivityIdentity(activityID: $0.id, surfaceID: $0.attributes.surfaceID) })
+  }
+  @MainActor static func setMarker(_ activity: Activity<FocusAttributes>) throws {
+    try ProbeFiles.write("activity-identity.json", data: JSONEncoder().encode(
+      ["activityID": activity.id, "surfaceID": activity.attributes.surfaceID]))
+  }
+  @MainActor static func clearRegistration() {
+    for name in ["activity-registration.json", "activity-update-token.json"] {
+      try? FileManager.default.removeItem(at: ProbeFiles.documents.appendingPathComponent(name))
+    }
+  }
+  @MainActor static func cancelObservations() {
+    for task in observations.values { task.cancel() }
+    for task in stateTasks.values { task.cancel() }
+    for task in contentTasks.values { task.cancel() }
+    observations.removeAll(); stateTasks.removeAll(); contentTasks.removeAll()
+  }
+  @MainActor static func isUniqueCurrent(_ activity: Activity<FocusAttributes>) -> Bool {
+    let current = Activity<FocusAttributes>.activities.filter { $0.activityState == .active || $0.activityState == .stale }
+    return selection(current) == .reuse(0) && current.first?.id == activity.id
+  }
+  @MainActor static func export(_ token: Data, for activity: Activity<FocusAttributes>) {
+    guard !ending, isUniqueCurrent(activity), marker()?["activityID"] == activity.id,
+      activity.activityState == .active || activity.activityState == .stale else { return }
+    let generation = UUID().uuidString
+    let registration = ["activityID": activity.id, "surfaceID": activity.attributes.surfaceID,
+      "tokenGeneration": generation, "state": String(describing: activity.activityState)]
+    var tokenFile = registration
+    tokenFile["token"] = token.map { String(format: "%02x", $0) }.joined()
+    do {
+      // Publish token first, registration last; the runner validates both generations twice.
+      try ProbeFiles.write("activity-update-token.json", data: JSONEncoder().encode(tokenFile))
+      guard isUniqueCurrent(activity) else { clearRegistration(); return }
+      try ProbeFiles.write("activity-registration.json", data: JSONEncoder().encode(registration))
+      guard isUniqueCurrent(activity) else { clearRegistration(); return }
+      record?("activity.tokenExported", ["activityID": activity.id, "tokenGeneration": generation])
+    } catch {
+      clearRegistration()
+      record?("activity.tokenExportFailed", ["activityID": activity.id])
+    }
+  }
   @MainActor static func discover() {
+    guard !ending else { return }
+    reconcile()
+    guard discovery == nil else { return }
+    discovery = Task { @MainActor in
+      for await _ in Activity<FocusAttributes>.activityUpdates { reconcile() }
+    }
+  }
+  @MainActor static func reconcile() {
+    guard !ending else { return }
     record?("activity.inventory", ["ids": Activity<FocusAttributes>.activities.map(\.id)])
-    for activity in Activity<FocusAttributes>.activities {
+    let current = Activity<FocusAttributes>.activities.filter { $0.activityState == .active || $0.activityState == .stale }
+    switch selection(current) {
+    case .reuse(let index):
+      let activity = current[index]
+      if marker() == nil { try? setMarker(activity) }
       record?("activity.current", ["activityID": activity.id, "state": String(describing: activity.activityState),
         "revision": activity.content.state.revision, "excerpt": activity.content.state.excerpt])
       observe(activity)
-    }
-    guard discovery == nil else { return }
-    discovery = Task { @MainActor in
-      for await activity in Activity<FocusAttributes>.activityUpdates { observe(activity) }
+    case .create: clearRegistration(); cancelObservations()
+    case .missing: clearRegistration(); cancelObservations(); record?("activity.missing", [:])
+    case .ambiguous: clearRegistration(); cancelObservations(); record?("activity.ambiguous", ["count": current.count])
     }
   }
   @MainActor static func start() throws {
+    guard !ending else { throw ContinuityError.ending }
     guard ActivityAuthorizationInfo().areActivitiesEnabled else { throw ActivityAuthorizationError.denied }
-    // Idempotent: the user may invoke the foreground button or LiveActivityIntent twice.
-    guard Activity<FocusAttributes>.activities.isEmpty else { return }
+    let current = Activity<FocusAttributes>.activities.filter { $0.activityState == .active || $0.activityState == .stale }
+    switch selection(current) {
+    case .reuse(let index):
+      let existing = current[index]
+      try setMarker(existing); observe(existing)
+      record?("activity.reused", ["activityID": existing.id, "surfaceID": existing.attributes.surfaceID])
+      return
+    case .missing: clearRegistration(); throw ContinuityError.missing
+    case .ambiguous: clearRegistration(); throw ContinuityError.ambiguous
+    case .create: break
+    }
     let content = FocusAttributes.ContentState(revision: 0, excerpt: "Synthetic AI call status", updatedAt: Int64(Date().timeIntervalSince1970))
     let activity = try Activity.request(attributes: FocusAttributes(surfaceID: UUID().uuidString),
       content: ActivityContent(state: content, staleDate: Date().addingTimeInterval(30)), pushType: .token)
+    try setMarker(activity)
     observe(activity)
+    record?("activity.created", ["activityID": activity.id, "surfaceID": activity.attributes.surfaceID])
   }
   @MainActor static func observe(_ activity: Activity<FocusAttributes>) {
+    if let token = activity.pushToken { export(token, for: activity) }
+    else { clearRegistration() }
     guard observations[activity.id] == nil else { return }
     observations[activity.id] = Task { @MainActor in
       for await token in activity.pushTokenUpdates {
-        // Export only to the private container; never print or trace the token.
-        let value = ["activityID": activity.id, "surfaceID": activity.attributes.surfaceID,
-          "token": token.map { String(format: "%02x", $0) }.joined(), "attributesType": "FocusAttributes"]
-        try? ProbeFiles.write("activity-update-token.json", data: JSONSerialization.data(withJSONObject: value))
+        export(token, for: activity)
       }
     }
     record?("activity.state", ["activityID": activity.id, "state": String(describing: activity.activityState)])
     stateTasks[activity.id] = Task { @MainActor in
       for await state in activity.activityStateUpdates {
         record?("activity.state", ["activityID": activity.id, "state": String(describing: state)])
+        if (state == .ended || state == .dismissed) && marker()?["activityID"] == activity.id { clearRegistration() }
+        if (state == .active || state == .stale) && marker()?["activityID"] == activity.id {
+          if let token = activity.pushToken { export(token, for: activity) } else { clearRegistration() }
+        }
       }
     }
     contentTasks[activity.id] = Task { @MainActor in
@@ -81,13 +163,15 @@ enum FocusActivities {
     }
   }
   @MainActor static func end() async {
+    guard !ending else { return }
+    ending = true
+    defer { ending = false }
+    cancelObservations()
     for activity in Activity<FocusAttributes>.activities {
       await activity.end(nil, dismissalPolicy: .immediate)
-      observations.removeValue(forKey: activity.id)?.cancel()
-      stateTasks.removeValue(forKey: activity.id)?.cancel()
-      contentTasks.removeValue(forKey: activity.id)?.cancel()
     }
-    try? FileManager.default.removeItem(at: ProbeFiles.documents.appendingPathComponent("activity-update-token.json"))
+    clearRegistration()
+    try? FileManager.default.removeItem(at: ProbeFiles.documents.appendingPathComponent("activity-identity.json"))
   }
 }
 

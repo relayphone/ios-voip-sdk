@@ -155,7 +155,11 @@ final class FocusUITests: XCTestCase {
       try tap(contacts, back)
     }
     let search = contacts.searchFields.firstMatch
-    guard search.waitForExistence(timeout: 4) else { throw failure("Contacts search unavailable") }
+    if !search.waitForExistence(timeout: 4) {
+      // After a call Contacts can reopen deep in a card stack; one clean relaunch recovers the list.
+      contacts.terminate(); contacts.launch(); try discardDraft()
+      guard search.waitForExistence(timeout: 4) else { throw failure("Contacts search unavailable") }
+    }
     try type(contacts, search, journal.contactName)
     Thread.sleep(forTimeInterval: 1)
     // The full list behind the search results holds a same-named, unhittable cell: match inside the results only.
@@ -222,8 +226,11 @@ final class FocusUITests: XCTestCase {
         // The People picker keeps the full contact list (same names, unhittable) behind its search results.
         let results = settings.collectionViews["Search results"]
         let hit = results.cells.matching(NSPredicate(format: "label == %@", name)).firstMatch
-        try tap(settings, hit.waitForExistence(timeout: 3) ? hit : element(settings, [name], timeout: 5))
-        // The contact picker closes itself on selection; the app picker needs Done.
+        let found = hit.waitForExistence(timeout: 4)
+        let settled = Date().addingTimeInterval(4)
+        while found && !hit.isHittable && Date() < settled { Thread.sleep(forTimeInterval: 0.2) }
+        try tap(settings, found ? hit : element(settings, [name], timeout: 5))
+        // Both pickers confirm with Done once their search closes (the People picker is multi-select).
         if let done = try? element(settings, ["Done"], timeout: 2) { try tap(settings, done) }
       } else {
         // Exact accessibility names only; no unverified coordinate deletion. The tile itself ignores taps on
@@ -249,9 +256,11 @@ final class FocusUITests: XCTestCase {
   // The first People sheet is two steps (Next, then Done); a pushed page has neither and needs no commit.
   func commitSheet() throws {
     for _ in 0..<3 {
-      if let done = try? element(settings, ["Done"], timeout: 1) { try tap(settings, done); Thread.sleep(forTimeInterval: 1); return }
-      guard let next = try? element(settings, ["Next"], timeout: 1) else { return }
-      try tap(settings, next); Thread.sleep(forTimeInterval: 1)
+      if let done = try? element(settings, ["Done"], timeout: 2) { try tap(settings, done); Thread.sleep(forTimeInterval: 1); return }
+      if let next = try? element(settings, ["Next"], timeout: 2) { try tap(settings, next); Thread.sleep(forTimeInterval: 1); continue }
+      // Only the modal sheet has Cancel; leaving it uncommitted would silently drop the edit.
+      guard (try? element(settings, ["Cancel"], timeout: 1)) == nil else { throw failure("Focus sheet shows neither Next nor Done") }
+      return
     }
     throw failure("Focus sheet did not commit")
   }
@@ -370,6 +379,22 @@ final class FocusUITests: XCTestCase {
     guard unique.count == 1 else { throw failure("Auto-Lock selection cannot be verified") }
     return unique.first!
   }
+  // Settings saves the choice asynchronously; wait for the checkmark and give it time before any relaunch.
+  func chooseLock(_ labels: [String]) throws {
+    let cell = try element(settings, labels)
+    try tap(settings, cell)
+    let end = Date().addingTimeInterval(3)
+    while !cell.isSelected && Date() < end { Thread.sleep(forTimeInterval: 0.2) }
+    Thread.sleep(forTimeInterval: 1.5)
+  }
+  // XCUIDevice has no public lock button; this test-only private selector is checked before use.
+  func lockDevice() throws {
+    let selector = NSSelectorFromString("pressLockButton")
+    guard XCUIDevice.shared.responds(to: selector) else { throw failure("Lock button unavailable") }
+    XCUIDevice.shared.perform(selector)
+    Thread.sleep(forTimeInterval: 1)
+    events.append(["event": "device.lockPressed", "observedAt": Date().timeIntervalSince1970])
+  }
   func autoAnswerPage() throws {
     settings.terminate(); settings.launch()
     try tap(settings, scrollTo(settings, ["Accessibility"]))
@@ -383,8 +408,21 @@ final class FocusUITests: XCTestCase {
     guard item.waitForExistence(timeout: 4), ["0", "1"].contains(item.value as? String ?? "") else { throw failure("Auto-Answer state unavailable") }
     return item
   }
+  // The Auto-Answer row's centre is its label, which does not toggle; tap the switch itself at the trailing edge.
+  func flip(_ item: XCUIElement) throws {
+    try front(settings)
+    let before = item.value as? String
+    item.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+    let end = Date().addingTimeInterval(3)
+    while (item.value as? String) == before && Date() < end { Thread.sleep(forTimeInterval: 0.2) }
+    guard (item.value as? String) != before else { throw failure("Switch did not toggle") }
+    Thread.sleep(forTimeInterval: 1)
+  }
   func delayText() throws -> String {
     try front(settings)
+    // iOS 27 shows the delay as an editable "Seconds" field (value "3.00") between steppers.
+    let field = settings.textFields["Seconds"]
+    if field.waitForExistence(timeout: 2), let value = field.value as? String, Double(value) != nil { return value + " seconds" }
     let items = settings.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[0-9]+([.][0-9]+)? [sS]econds?"))
     guard items.count == 1 else { throw failure("Auto-Answer delay unavailable") }
     return items.firstMatch.label
@@ -402,12 +440,15 @@ final class FocusUITests: XCTestCase {
     guard ProcessInfo.processInfo.environment["FOCUS_ALLOW_SYSTEM_SETTINGS"] == "1" else { throw failure("One-time Auto-Answer/Auto-Lock approval flag required") }
     try setup(); try autoLockPage()
     if journal.autoLock == nil { journal.autoLock = try selectedLock(); try save() }
-    try tap(settings, ["30 Seconds", "30 seconds"])
+    try chooseLock(["30 Seconds", "30 seconds"])
     try autoLockPage()
-    guard try selectedLock().lowercased() == "30 seconds" else { throw failure("Auto-Lock not 30 seconds") }
+    // Measured on iOS 27 under an XCUITest session: the choice shows as selected, then reads back as the
+    // previous value. Record it and rely on the explicit "lock" action instead of failing the row.
+    let lock = try selectedLock()
+    events.append(["event": "autoLock.readback", "value": lock, "observedAt": Date().timeIntervalSince1970])
     try autoAnswerPage()
     if journal.autoAnswer == nil { journal.autoAnswer = (try answerSwitch().value as? String) == "1"; try save() }
-    if (try answerSwitch().value as? String) != "1" { try tap(settings, answerSwitch()) }
+    if (try answerSwitch().value as? String) != "1" { try flip(answerSwitch()) }
     if journal.autoAnswerDelay == nil { journal.autoAnswerDelay = try delayText(); try save() }
     try setDelay("3.0 seconds")
     guard (try answerSwitch().value as? String) == "1" else { throw failure("Auto-Answer not enabled") }
@@ -416,18 +457,32 @@ final class FocusUITests: XCTestCase {
     if let enabled = journal.autoAnswer {
       try autoAnswerPage()
       if let delay = journal.autoAnswerDelay {
-        if (try answerSwitch().value as? String) != "1" { try tap(settings, answerSwitch()) }
+        if (try answerSwitch().value as? String) != "1" { try flip(answerSwitch()) }
         try setDelay(delay)
       }
-      if ((try answerSwitch().value as? String) == "1") != enabled { try tap(settings, answerSwitch()) }
+      if ((try answerSwitch().value as? String) == "1") != enabled { try flip(answerSwitch()) }
       guard ((try answerSwitch().value as? String) == "1") == enabled else { throw failure("Auto-Answer restore failed") }
       journal.autoAnswer = nil; journal.autoAnswerDelay = nil; try save()
     }
     if let value = journal.autoLock {
-      try autoLockPage(); try tap(settings, [value]); try autoLockPage()
+      try autoLockPage(); try chooseLock([value]); try autoLockPage()
       guard try selectedLock() == value else { throw failure("Auto-Lock restore failed") }
       journal.autoLock = nil; try save()
     }
+  }
+  func activityConsent() throws {
+    home(); try front(board)
+    board.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.01)).press(forDuration: 0.1,
+      thenDragTo: board.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.8)))
+    _ = try element(board, ["Focus Probe · synthetic transcript"], timeout: 10)
+    for _ in 0..<3 {
+      let prompt = board.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Live Activities from Focus Probe")).firstMatch
+      if !prompt.exists { home(); return }
+      let allow = board.buttons.matching(NSPredicate(format: "identifier == %@ AND label IN %@", "swipe-action-button-identifier", ["Always Allow", "Allow"])).firstMatch
+      guard allow.exists else { throw failure("Live Activity consent prompt without Allow") }
+      try tap(board, allow); Thread.sleep(forTimeInterval: 1)
+    }
+    throw failure("Live Activity consent did not clear")
   }
   func checkActivity() throws {
     home(); try front(board)
@@ -436,6 +491,15 @@ final class FocusUITests: XCTestCase {
     let wanted = ProcessInfo.processInfo.environment["FOCUS_EXPECTED_ACTIVITY_TEXT"] ?? "Synthetic AI call status"
     guard !wanted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, wanted.utf8.count <= 512 else { throw failure("Invalid transcript expectation") }
     _ = try element(board, ["Focus Probe · synthetic transcript"], timeout: 10)
+    // iOS 27 asks inline on the probe's first card before it shows its Live Activities. A push sent before
+    // consent cannot qualify the row: grant it for this disposable probe and fail so the row is rerun.
+    // Two stages were seen: "Allow Live Activities from …?" then "… continue to allow …?" (Always Allow).
+    if board.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Live Activities from Focus Probe")).firstMatch.exists {
+      let allow = board.buttons.matching(NSPredicate(format: "identifier == %@ AND label IN %@", "swipe-action-button-identifier", ["Always Allow", "Allow"])).firstMatch
+      guard allow.exists else { throw failure("Live Activity consent prompt without Allow") }
+      try tap(board, allow); Thread.sleep(forTimeInterval: 1)
+      throw failure("Live Activity consent was pending; granted it, rerun the row")
+    }
     let card = try element(board, [wanted], timeout: 10)
     guard card.exists else { throw failure("Latest transcript card missing") }
     let screenshot = XCUIScreen.main.screenshot()
@@ -447,21 +511,31 @@ final class FocusUITests: XCTestCase {
     home()
     try JSONSerialization.data(withJSONObject: ["id": ProcessInfo.processInfo.environment["FOCUS_OBSERVATION_ID"] ?? "none"])
       .write(to: documents.appendingPathComponent("focus-ui-ready.json"), options: .atomic)
-    let end = Date().addingTimeInterval(min(max(duration, 1), 90))
+    let startedUptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
+    let end = Date().addingTimeInterval(min(max(duration, 1), 240))
     var banner = false, fullScreen = false
     var bannerAt: Double?, screenAt: Double?
+    var previousBanner = false, previousScreen = false
     repeat {
+      var currentBanner = false
       if board.state == .runningForeground {
-        banner = banner || board.buttons.matching(NSPredicate(format: "label IN %@", ["Accept", "Answer call", "Decline"])).firstMatch.exists
+        currentBanner = board.buttons.matching(NSPredicate(format: "label IN %@", ["Accept", "Answer call", "Decline"])).firstMatch.exists
       }
-      fullScreen = fullScreen || (callUI.state == .runningForeground && callUI.otherElements["InCallRootView"].exists)
+      let currentScreen = callUI.state == .runningForeground && callUI.otherElements["InCallRootView"].exists
+      let now = Date().timeIntervalSince1970
+      let uptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
+      if currentBanner != previousBanner { events.append(["event": "surface.transition", "surface": "banner", "visible": currentBanner, "observedAt": now, "uptimeMs": uptimeMs]) }
+      if currentScreen != previousScreen { events.append(["event": "surface.transition", "surface": "callScreen", "visible": currentScreen, "observedAt": now, "uptimeMs": uptimeMs]) }
+      previousBanner = currentBanner; previousScreen = currentScreen
+      banner = banner || currentBanner; fullScreen = fullScreen || currentScreen
       if banner && bannerAt == nil { bannerAt = Date().timeIntervalSince1970 }
       if fullScreen && screenAt == nil { screenAt = Date().timeIntervalSince1970 }
       Thread.sleep(forTimeInterval: 0.25)
     } while Date() < end
     events.append(["event": "call.observed", "banner": banner, "callScreen": fullScreen,
       "bannerAt": bannerAt.map { $0 as Any } ?? NSNull(), "callScreenAt": screenAt.map { $0 as Any } ?? NSNull(),
-      "qualification": "requires-C00", "observedAt": Date().timeIntervalSince1970])
+      "qualification": "requires-C00", "observedAt": Date().timeIntervalSince1970,
+      "startUptimeMs": startedUptimeMs, "endUptimeMs": Int(ProcessInfo.processInfo.systemUptime * 1000)])
   }
   // Read-only accessibility trees for selector work, written to the runner's Documents.
   func dump(_ name: String) throws {
@@ -527,15 +601,15 @@ final class FocusUITests: XCTestCase {
       let p = action.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
       let values: [String: [String]] = ["focus": ["on", "off"], "app": ["include", "exclude"],
         "person": ["include", "exclude"], "repeated-calls": ["on", "off"], "calls": ["Allowed People Only", "Everyone", "All Contacts", "Contacts Only", "Favorites", "No One", "Nobody"],
-        "policy": ["screenWithAI"], "system-settings": ["enable"], "notifications": ["allow", "deny"], "focus-authorization": ["allow", "deny"]]
+        "policy": ["screenWithAI"], "system-settings": ["enable", "restore"], "notifications": ["allow", "deny"], "focus-authorization": ["allow", "deny"]]
       if let allowed = values[p[0]] {
         guard p.count == 2 && allowed.contains(p[1]) else { throw failure("Invalid action value") }
       } else if p[0] == "dump" {
         guard p.count == 2 else { throw failure("Invalid dump") }
       } else if p[0] == "observe" {
-        guard p.count == 2, let n = Double(p[1]), n.isFinite, (1...90).contains(n) else { throw failure("Invalid observation duration") }
+        guard p.count == 2, let n = Double(p[1]), n.isFinite, (1...240).contains(n) else { throw failure("Invalid observation duration") }
       } else {
-        guard p.count == 1 && ["setup", "restore-all", "sample", "launch", "home", "terminate", "activity-check"].contains(p[0]) else { throw failure("Unknown action") }
+        guard p.count == 1 && ["setup", "restore-all", "sample", "launch", "home", "terminate", "activity-consent", "activity-check", "lock"].contains(p[0]) else { throw failure("Unknown action") }
       }
     }
     do {
@@ -555,14 +629,16 @@ final class FocusUITests: XCTestCase {
         case "repeated-calls": try setRepeatedCalls(value == "on")
         case "policy": try setPolicy()
         case "restore-all": try restore()
-        case "system-settings": try enableSystemSettings()
+        case "system-settings": try value == "enable" ? enableSystemSettings() : restoreSystemSettings()
         case "activity-check": try checkActivity()
+        case "activity-consent": try activityConsent()
         case "notifications": try authorize(false, allow: value == "allow")
         case "focus-authorization": try authorize(true, allow: value == "allow")
         case "sample": probe.activate(); try tap(probe, ["focus.sample"])
         case "launch": probe.terminate(); probe.launch()
         case "terminate": probe.terminate(); home()
         case "home": home()
+        case "lock": try lockDevice()
         case "observe": try observe(Double(value) ?? 35)
         case "dump": try dump(value)
         default: throw failure("Unknown action \(action)")

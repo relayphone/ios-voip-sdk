@@ -6,7 +6,12 @@ Real runs require `FOCUS_DEVICE`, a signed `FOCUS_XCTESTRUN` and the documented 
 `./run.sh restore-all` recovers the persistent host journal. Runtime evidence goes to ignored `out/`
 or private `FOCUS_WORK`; it must not be committed. Every command has a bounded timeout; unknown APNs
 outcomes are never automatically retried. The approved system-setting changes need no new confirmation.
-Additional row flags: `--calls Everyone` for C01, `--listen` for optional calibrated Mac RMS capture.
+Additional row flags: `--provider callkit|lck`, `--calls Everyone` for C01, `--repeated-calls on|off`,
+`--caller-format e164|national|generic`, and `--listen` for optional calibrated Mac RMS capture.
+The aliases `CK-F13`, `CK-C02` and `LCK-C02b` select the requested comparison provider. `--caller-value`
+can select an owned synthetic unknown number while the UI test contact keeps its E.164 value. Repeat pairs
+wait at least 181 seconds after the last attempted VoIP push before their first call, then send the second
+about 69 seconds later. An uncertain attempt is never automatically retried.
 Scenarios with missing adapters or unsupported hardware/backend/fault controls return explicit automatic skips rather than human QA tasks.
 
 Local CLI verification: `python3 -m unittest discover -s spikes/focus -p test_runner.py`.
@@ -15,10 +20,13 @@ Matrix runs: `--keep-setup` keeps the owned Focus and contact between rows and o
 row; run `restore-all` once at the end. Selectors are qualified on iOS 27.0 (iPhone 13); see
 [results](../../docs/research/focus/results.md). For selector work, the `dump:<controlcenter|focusmenu|settings-focus|settings-root|screen>`
 UI action writes a read-only accessibility tree to the runner's Documents, and any failed action leaves the front
-app's tree in `focus-dump-failure.txt`. Command-line automatic signing cannot add the App Group capability; without
-it the Focus filter (C06) is unqualified.
+app's tree in `focus-dump-failure.txt`. The device operator has registered `group.dev.callkitsim.focus` for the
+app, widget and filter under team `85A9MS6428`. Keep the App Group entitlements for C06; the earlier run built
+without them and therefore did not qualify that row. For a signed device build, use Xcode's signed-in account and
+`xcodebuild -allowProvisioningUpdates` with `DEVELOPMENT_TEAM=85A9MS6428`; do not pass ASC `-authenticationKey*`
+arguments. The App Store Connect key cannot register groups.
 
-Implements the native/platform portions of [the device plan](../../docs/research/focus/device-plan.md). This isolated spike uses LiveCommunicationKit only. It has no SDK dependency, `CXProvider`, real media, backend AI or owner-join implementation. Build and dry-run qualification do **not** qualify device behavior. Claude operates the device; this lane does not.
+Implements the native/platform portions of [the device plan](../../docs/research/focus/device-plan.md). This isolated spike chooses **one** provider at process launch: LiveCommunicationKit (default) or the CallKit `CXProvider` control. It never creates both in the same process, and has no SDK dependency, real media, backend AI or owner-join implementation. The two modes share one test bundle, so explicitly record the mode and all user settings. Build/dry-run qualification does **not** qualify device behavior. Claude operates the device; this lane does not.
 
 ```sh
 spikes/focus/build.sh
@@ -33,6 +41,8 @@ Write `Documents/focus.json` before launch. Unspecified fields are safe defaults
 ```json
 {
   "rowID": "F09",
+  "provider": "lck",
+  "handleType": "phoneNumber",
   "armed": true,
   "communicationNotification": false,
   "requestFocusAuthorization": false,
@@ -45,11 +55,11 @@ Write `Documents/focus.json` before launch. Unspecified fields are safe defaults
 
 `activityAction` is `start` (foreground only), `end`, or absent. Local updates are bounded, silent and **foreground-runtime only**: suspension may stop the timer; use ActivityKit push-to-update to measure background cadence. Leave the interval absent for stale-date tests or server-only updates. A user can also invoke the **Start transcript** App Shortcut (`LiveActivityIntent`). Starts reuse an existing activity. There is no automatic push-to-start path requiring an alert.
 
-The app registers PushKit at launch. Every genuine incoming push is reported, even when unarmed; `armed` controls the optional Communication Notification only. `mustReport` is recorded, not used to hide incoming reports in this probe. The reporting task is scheduled from a private PushKit queue before delegate return; `reportTaskEntered` is a scheduling marker, not proof of private system-function entry. Focus sampling, donation and notification scheduling never gate report entry. Late report, completion, action/state and survival events use monotonic and wall timestamps. Missing survival events mean **unobserved/suspended**, not proof of termination.
+The app registers PushKit at launch. Choose `provider` before launch (`lck` or `callkit`); changing it requires a process restart. Every genuine incoming push is reported, even when unarmed; `armed` controls the optional Communication Notification only. `mustReport` is recorded, not used to hide incoming reports in this probe. The LCK reporting task is scheduled from a private PushKit queue before delegate return; `reportTaskEntered` is a scheduling marker, not proof of private system-function entry. CallKit enters its synchronous completion-handler report from that queue. Focus sampling, donation and notification scheduling never gate report entry. Late report, completion, action/state and survival events use monotonic and wall timestamps. Missing survival events mean **unobserved/suspended**, not proof of termination.
 
 CN-on donates a genuine incoming `INStartCallIntent` with `INPerson`, then posts updated **local** notification content at active interruption level. Authorize notifications once through the app; status/authorization has a separate trace. Do not treat its banner/sound as call ringing. Contact matching uses the caller's E.164 handle; People allowance behavior still needs measurement. The notification is deliberately alert-capable for the matrix; it is not part of silent transcript mode.
 
-A dedicated ExtensionKit `AppIntentsExtension` owns `SetFocusFilterIntent` **AI call policy** and stores the selected value in the App Group. Native `focus.sample` and `push.received` events read it, without JS. Configure/remove this filter through Settings; the probe does not claim it knows which Focus owns the stored value. `focus.sample` records shared status/authorization on activation and button sampling; unknown stays null. Authorization is explicit via the button or config, not triggered by an incoming call.
+A dedicated ExtensionKit `AppIntentsExtension` owns `SetFocusFilterIntent` **AI call policy** and stores the selected value in the App Group. Native `focus.sample` and `push.received` events read it, without JS. Configure/remove this filter through Settings; the probe does not claim it knows which Focus owns the stored value. `focus.sample` records the **raw** status and authorization independently: the device pass observed raw `false` without authorization, so consumers must treat unauthorized/restricted/denied values as unknown. Authorization is explicit via the button or config, not triggered by an incoming call.
 
 Exports are private app-container files:
 
@@ -58,8 +68,9 @@ Exports are private app-container files:
 | `focus.jsonl` | Row/event, monotonic/wall timestamps, domain/code chains, outcomes 3–7, call states/actions, native policy and survival samples; no token or arbitrary error descriptions |
 | `voip-token.txt` | Current PushKit token; never print, commit or upload as an artifact |
 | `activity-update-token.json` | Current activity ID/surface ID/type and **per-activity** token; replaced on rotation, removed by End transcript; never print or commit |
+| `activity-identity.json`, `activity-registration.json` | Non-secret persisted activity/surface identity and current registration generation; paired with the token before any ActivityKit push |
 
-One activity is supported at a time. After dismissal or process loss, a token file alone does not prove an activity is still alive. Rediscover on foreground and confirm activity state; fetch the latest registration before sending. Disable local timer updates while testing server push ordering.
+One activity is supported at a time. The persisted identity prevents a relaunch from silently creating a replacement; missing or ambiguous activity stops as unqualified until explicit `end`/reset. Rediscovery exports the existing `pushToken` and observes rotations. Before a push, the runner checks matching activity/surface IDs and token generation across relaunch and again immediately before sending. `--keep-setup` retains the activity for subsequent L rows; `restore-all` ends it. APNs HTTP 200 still does not prove rendering. Disable local timer updates while testing server push ordering.
 
 ## ActivityKit APNs payload
 
