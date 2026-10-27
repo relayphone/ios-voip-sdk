@@ -27,12 +27,14 @@ def runtime(version='27.1', **updates):
 
 class Fixture:
     def __init__(self, root, *, replace=False, runtimes=None, devices=None, status=0,
-                 cancel=False, cleanup_status=0, native_os='27.1', locate_error=False):
+                 cancel=False, cleanup_status=0, native_os='27.1', locate_error=False, receipt_meta=None):
         self.root, self.replace, self.status = root, replace, status
         self.runtimes = [runtime()] if runtimes is None else runtimes
         self.devices = [dict(identifier=runner.DEVICE)] if devices is None else devices
         self.cancel, self.cleanup_status, self.native_os = cancel, cleanup_status, native_os
         self.locate_error = locate_error
+        self.receipt_meta = receipt_meta or {}
+        self.launch_result = None
         self.events, self.launches, self.locates, self.sessions = [], [], [], []
         self.build, self.out = root / 'build', root / 'out'
         self.build.mkdir()
@@ -60,7 +62,8 @@ class Fixture:
                     if fixture.replace:
                         self.current = REPLACEMENT
                 elif operation == 'launch':
-                    return runner(command, timeout)
+                    fixture.launch_result = runner(command, timeout)
+                    return fixture.launch_result
                 else:
                     assert command[3] == self.current, 'stale simulator after preparation replacement'
                 return Result(command, 0)
@@ -81,7 +84,7 @@ class Fixture:
         if self.cancel:
             raise KeyboardInterrupt('host-only cancellation')
         trace.write_text('host-only supervisor output\n')
-        receipt.write_text(json.dumps(dict(fixture='host-only route-runner receipt')))
+        receipt.write_text(json.dumps(dict(fixture='host-only route-runner receipt', **self.receipt_meta)))
         return self.status
 
     def locate(self, receipt, trace, simulator, run_id, bundle):
@@ -144,7 +147,7 @@ class RouteRunnerControls(unittest.TestCase):
             'call', str(fixture.out / 'simulator-state.json'), '5',
             'xcrun', 'simctl', 'terminate', REPLACEMENT, runner.BUNDLE])
         self.assertEqual(launch['timeout'], 90)
-        self.assertEqual(launch['options'], dict(console_launcher_stop=True))
+        self.assertEqual(launch['options'], dict(console_launcher_stop=True, startup_timeout=180))
         identity = launch['identity']
         self.assertEqual(identity['simulatorID'], REPLACEMENT)
         self.assertEqual(identity['bundleID'], runner.BUNDLE)
@@ -187,6 +190,26 @@ class RouteRunnerControls(unittest.TestCase):
             fixture.capture()
         self.assertEqual(len(fixture.launches), 1)
         self.assertFalse(fixture.locates)
+        self.assert_cleanup(fixture)
+
+    def test_timeout_classification_survives_session_without_retry(self):
+        for reason, label in (('startup', 'infra:startup'), ('capture', 'timeout:capture')):
+            with self.subTest(reason=reason), tempfile.TemporaryDirectory(dir=self.root) as temporary:
+                fixture = Fixture(Path(temporary), status=1, receipt_meta=dict(
+                    timeoutReason=reason, failureClass=label, failureReported=True))
+                with self.assertRaisesRegex(EvidenceError, 'launch'):
+                    fixture.capture()
+                self.assertTrue(fixture.launch_result.failure_classified)
+                self.assertEqual(len(fixture.launches), 1)
+                self.assertFalse(fixture.locates)
+                self.assert_cleanup(fixture)
+
+    def test_malformed_timeout_reason_cannot_mask_the_launch_failure(self):
+        fixture = Fixture(self.root, status=1, receipt_meta=dict(
+            timeoutReason=['startup'], failureClass='infra:startup', failureReported=True))
+        with self.assertRaisesRegex(EvidenceError, 'launch'):
+            fixture.capture()
+        self.assertFalse(fixture.launch_result.failure_classified)
         self.assert_cleanup(fixture)
 
     def test_cancellation_restores_environment_and_cleans_owned_device(self):
