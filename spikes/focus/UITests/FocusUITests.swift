@@ -696,25 +696,30 @@ final class FocusUITests: XCTestCase {
   }
   func observe(_ duration: Double) throws {
     home()
-    try JSONSerialization.data(withJSONObject: ["id": ProcessInfo.processInfo.environment["FOCUS_OBSERVATION_ID"] ?? "none"])
-      .write(to: documents.appendingPathComponent("focus-ui-ready.json"), options: .atomic)
     let startedUptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
     let end = Date().addingTimeInterval(min(max(duration, 1), 240))
     var banner = false, fullScreen = false
     var bannerAt: Double?, screenAt: Double?
     var previousBanner = false, previousScreen = false
     var previousBannerCaller = false, previousScreenCaller = false
+    var readyPublished = false
     let expected = ProcessInfo.processInfo.environment["FOCUS_EXPECTED_CALLER"] ?? ""
     guard expected.utf8.count <= 128 else { throw failure("Invalid expected caller") }
     repeat {
       let sampleStartUptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
+      let boardIsFront = board.state == .runningForeground
+      let callIsFront = callUI.state == .runningForeground
+      guard boardIsFront || callIsFront else { throw failure("Call surfaces cannot be sampled without a recognized foreground app") }
       var currentBanner = false
-      if board.state == .runningForeground {
+      if boardIsFront {
         currentBanner = board.buttons.matching(NSPredicate(format: "label IN %@", ["Accept", "Answer call", "Decline"])).firstMatch.exists
       }
-      let currentScreen = callUI.state == .runningForeground && callUI.otherElements["InCallRootView"].exists
+      let currentScreen = callIsFront && callUI.otherElements["InCallRootView"].exists
       let bannerCaller = currentBanner && bannerCallerMatches(expected: expected)
       let screenCaller = currentScreen && callerMatches(callUI.otherElements["InCallRootView"], app: callUI, expected: expected)
+      guard (boardIsFront && board.state == .runningForeground) || (callIsFront && callUI.state == .runningForeground) else {
+        throw failure("Foreground app changed while sampling call surfaces")
+      }
       let now = Date().timeIntervalSince1970
       let uptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
       events.append(["event": "surface.sample", "surface": "banner", "visible": currentBanner, "callerMatched": bannerCaller, "observedAt": now, "uptimeMs": uptimeMs, "sampleStartUptimeMs": sampleStartUptimeMs])
@@ -727,6 +732,12 @@ final class FocusUITests: XCTestCase {
       }
       previousBanner = currentBanner; previousScreen = currentScreen
       previousBannerCaller = bannerCaller; previousScreenCaller = screenCaller
+      if !readyPublished {
+        // No push may be sent until the observer has captured both baseline surfaces.
+        try JSONSerialization.data(withJSONObject: ["id": ProcessInfo.processInfo.environment["FOCUS_OBSERVATION_ID"] ?? "none"])
+          .write(to: documents.appendingPathComponent("focus-ui-ready.json"), options: .atomic)
+        readyPublished = true
+      }
       banner = banner || currentBanner; fullScreen = fullScreen || currentScreen
       if banner && bannerAt == nil { bannerAt = Date().timeIntervalSince1970 }
       if fullScreen && screenAt == nil { screenAt = Date().timeIntervalSince1970 }

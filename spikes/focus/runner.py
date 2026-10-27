@@ -75,6 +75,15 @@ def answer_evidence(events, trace, observation, signal_id, push_ms):
         return {"status": "unqualified", "reason": "invalid-device-timestamps"}
     if not isinstance(push_ms, int) or not observation.get("startUptimeMs", start + 1) <= push_ms <= start <= report <= observation.get("endUptimeMs", -1):
         return {"status": "unqualified", "reason": "outside-observation-window"}
+    for surface in ("banner", "callScreen"):
+        prior_samples = [e for e in events if e.get("event") == "surface.sample" and e.get("surface") == surface
+                         and isinstance(e.get("uptimeMs"), int) and isinstance(e.get("sampleStartUptimeMs"), int)
+                         and e["sampleStartUptimeMs"] <= e["uptimeMs"] <= push_ms]
+        if not prior_samples:
+            return {"status": "unqualified", "reason": "missing-pre-push-surface-sample"}
+        last_sample = max(prior_samples, key=lambda e: e["uptimeMs"])
+        if last_sample.get("visible") is not False or push_ms - last_sample["uptimeMs"] > 2000:
+            return {"status": "unqualified", "reason": "pre-push-surface-not-clear"}
     transitions = [e for e in events if e.get("event") == "surface.transition" and isinstance(e.get("uptimeMs"), int)]
     visible = {}
     for surface in ("banner", "callScreen"):

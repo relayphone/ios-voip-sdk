@@ -110,6 +110,9 @@ class DryRunTests(unittest.TestCase):
                   {"event": "surface.transition", "surface": "callScreen", "visible": False, "uptimeMs": 1200},
                   {"event": "surface.sample", "uptimeMs": 1000}, {"event": "surface.sample", "uptimeMs": 1200}]
         events = [{**event, "sampleStartUptimeMs": event["uptimeMs"] - 20} for event in events]
+        baseline = [{"event": "surface.sample", "surface": surface, "visible": False,
+                     "sampleStartUptimeMs": 905, "uptimeMs": 925} for surface in ("banner", "callScreen")]
+        events += baseline
         evidence = answer_evidence(events, signal, observation, "abc", 950)
         self.assertEqual((evidence["status"], evidence["signalToDismissalMs"]), ("observed", 100))
         self.assertEqual(answer_evidence(events[1:], signal, observation, "abc", 950)["status"], "unqualified")
@@ -118,6 +121,9 @@ class DryRunTests(unittest.TestCase):
         self.assertEqual(answer_evidence(events, signal, observation, "abc", 1050)["status"], "unqualified")
         self.assertEqual(answer_evidence([{**events[0], "callerMatched": False}, *events[1:]], signal, observation, "abc", 950)["status"], "unqualified")
         self.assertEqual(answer_evidence(events[:2], signal, observation, "abc", 950)["status"], "unqualified")
+        self.assertEqual(answer_evidence([e for e in events if e.get("uptimeMs") != 925], signal, observation, "abc", 950)["reason"], "missing-pre-push-surface-sample")
+        preexisting = [{**e, "visible": True} if e.get("uptimeMs") == 925 and e.get("surface") == "callScreen" else e for e in events]
+        self.assertEqual(answer_evidence(preexisting, signal, observation, "abc", 950)["reason"], "pre-push-surface-not-clear")
         handoff = [{"event": "surface.transition", "surface": "banner", "visible": True, "callerMatched": True, "uptimeMs": 1000},
                    {"event": "surface.transition", "surface": "banner", "visible": False, "uptimeMs": 1200},
                    {"event": "surface.transition", "surface": "callScreen", "visible": True, "callerMatched": True, "uptimeMs": 1200},
@@ -125,6 +131,7 @@ class DryRunTests(unittest.TestCase):
                    {"event": "surface.sample", "uptimeMs": 1000}, {"event": "surface.sample", "uptimeMs": 1200},
                    {"event": "surface.sample", "uptimeMs": 1400}]
         handoff = [{**event, "sampleStartUptimeMs": event["uptimeMs"] - 20} for event in handoff]
+        handoff += baseline
         self.assertEqual(answer_evidence(handoff, signal, observation, "abc", 950)["signalToDismissalMs"], 300)
         self.assertEqual(answer_evidence([e for e in handoff if e.get("uptimeMs") != 1400], signal, observation, "abc", 950)["status"], "unqualified")
         crossing = [{**e, "sampleStartUptimeMs": 940} if e["uptimeMs"] == 1000 else e for e in events]
