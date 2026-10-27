@@ -79,14 +79,18 @@ def session_transport(command, timeout, **kwargs):
         return error.result
 
 
-def lifecycle(session, *parts, timeout=120, **kwargs):
+def lifecycle(session, *parts, timeout=120, before_install=None, **kwargs):
     """Only an authoritative owner may replace a device before app launch."""
     command = list(map(str, ('xcrun', 'simctl', *parts)))
     if session is None:
+        if before_install is not None and command[2] == 'install':
+            before_install(command[3])
         return run(*command, timeout=timeout, **kwargs)
     previous_runner = session.runner
     errors = []
     def transport(argv, bound):
+        if before_install is not None and argv[2] == 'install':
+            before_install(argv[3])
         outcome = session_transport(argv, bound, **kwargs)
         error = getattr(outcome, 'transport_error', None)
         if error is not None: errors.append(error)
@@ -95,7 +99,11 @@ def lifecycle(session, *parts, timeout=120, **kwargs):
     result = None
     try:
         result = session.call(command, timeout)
-    except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+    except simulator_infra.Interrupted:
+        raise
+    except Exception as error:
+        # A secondary metadata/state failure during replacement must retain
+        # the original typed transport result. Cancellation still propagates.
         if not errors: raise
         simulator_infra.report_failure('infra:' + parts[0], 'exhausted; owned recovery failed')
         simulator_infra.report_failure('infra:cleanup', 'original preparation failure retained; ownership remains recorded')
@@ -155,10 +163,11 @@ def launch_fixture(device, app, *, install=True, session=None):
         install_bound = simulator_infra.seconds(os.environ.get('CKSIM_FIXTURE_INSTALL_TIMEOUT', 180))
         if install_bound > 600:
             raise ValueError('Fixture install bound must not exceed 600 seconds')
-        lifecycle(session, 'install', device, app.resolve(), timeout=install_bound)
-    if session is not None:
-        device = session.current
-    applications = fixture_applications(device, session=session)
+        device, applications = install_fixture(device, app, session=session, timeout=install_bound)
+    else:
+        if session is not None:
+            device = session.current
+        applications = fixture_applications(device, session=session)
     if session is not None:
         # This slice retries preparation only. Persist the barrier before the
         # original launch, including unknown launch outcomes and process death.
@@ -171,21 +180,45 @@ def launch_fixture(device, app, *, install=True, session=None):
     return discover_fixture_channel(applications, run_id, int(match[1])), run_id
 
 
-def fixture_applications(device, *, session=None):
-    """Cache the validated device directory during preparation, before launch."""
+def fixture_applications(device, *, session=None, cached=None, prepare=False):
+    """Collect metadata before install, then validate the final path locally."""
     device = simulator_infra.simulator_uuid(device)
-    inventory = json.loads(lifecycle(session, 'list', 'devices', '-j', timeout=60))['devices']
-    matches = [row for group in inventory.values() for row in group
-               if row.get('udid', '').lower() == device.lower()]
-    if len(matches) != 1 or matches[0].get('state') != 'Booted':
-        raise RuntimeError('Expected one booted fixture simulator')
-    data = Path(matches[0]['dataPath'])
+    if cached is None:
+        inventory = json.loads(lifecycle(session, 'list', 'devices', '-j', timeout=60))['devices']
+        matches = [row for group in inventory.values() for row in group
+                   if row.get('udid', '').lower() == device.lower()]
+        if len(matches) != 1 or matches[0].get('state') != 'Booted':
+            raise RuntimeError('Expected one booted fixture simulator')
+        data = Path(matches[0]['dataPath'])
+        applications = data / 'Containers/Data/Application'
+    else:
+        applications = Path(cached)
+        if len(applications.parents) < 3 or applications.parts[-3:] != ('Containers', 'Data', 'Application'):
+            raise RuntimeError('Invalid cached fixture application directory')
+        data = applications.parents[2]
     if not data.is_absolute() or data.name != 'data' or data.parent.name.lower() != device.lower():
         raise RuntimeError('Fixture data path does not match its simulator')
-    applications = data / 'Containers/Data/Application'
-    if not applications.is_dir() or applications.resolve(strict=True) != applications:
+    if not prepare and (not applications.is_dir() or applications.resolve(strict=True) != applications):
         raise RuntimeError('Fixture application directory is missing or noncanonical')
     return applications
+
+
+def install_fixture(device, app, *, session, timeout, inventory=None):
+    """Prepare each actual install, including shared-owner replacement replay."""
+    inventory = fixture_applications if inventory is None else inventory
+    prepared = {}
+    def before_install(target):
+        key = str(target).lower()
+        if key not in prepared:
+            prepared[key] = inventory(target, session=session, prepare=True)
+    lifecycle(session, 'install', device, app.resolve(), timeout=timeout,
+              before_install=before_install)
+    if session is not None:
+        device = session.current
+    cached = prepared.get(str(device).lower())
+    if cached is None:
+        raise RuntimeError('Missing pre-install inventory for the final fixture simulator')
+    return device, fixture_applications(device, session=session, cached=cached)
 
 
 def discover_fixture_channel(applications, run_id, pid):

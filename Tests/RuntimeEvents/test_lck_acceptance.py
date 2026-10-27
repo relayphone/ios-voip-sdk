@@ -8,6 +8,7 @@ import uuid
 from unittest.mock import Mock, patch
 
 import lck_acceptance as acceptance
+from test_runtime_install_adapter import AdapterNative
 
 
 class JournalOracleTests(unittest.TestCase):
@@ -237,6 +238,87 @@ class ContainerDiscoveryTests(unittest.TestCase):
                 journey.begin('stale-cached-device')
         native.assert_not_called()
         inventory.assert_not_called()
+
+
+class PreinstallRunnerTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='lck-preinstall-owner-')
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.native = AdapterNative(self.root / 'container')
+        self.installed = set()
+        self.inventoried = []
+        self.runtime = acceptance.RUNTIME
+        self.app = self.root / 'LCKFixture.app'; self.app.mkdir()
+        for guard in (patch.dict(os.environ, {}, clear=True),
+                      patch.object(acceptance.simulator_infra, 'bounded', side_effect=self.transport)):
+            guard.start(); self.addCleanup(guard.stop)
+        self.owner = acceptance.simulator_infra.Session(self.root / 'owner.json', runner=acceptance.session_transport)
+        acceptance.lifecycle(self.owner, 'create', 'LCK preinstall ', 'device', acceptance.RUNTIME, timeout=30)
+        acceptance.lifecycle(self.owner, 'boot', self.owner.current, timeout=60)
+        acceptance.lifecycle(self.owner, 'bootstatus', self.owner.current, '-b', timeout=300)
+
+    def transport(self, command, timeout, **kwargs):
+        if command[2:5] == ['list', 'devices', '-j']:
+            self.assertFalse(self.installed.intersection(self.native.devices), 'LCK inventory after install')
+            self.inventoried.append(next(iter(self.native.devices)))
+            self.assertEqual(timeout, 30)
+        result = self.native(command, timeout, **kwargs)
+        if command[2:4] == ['list', 'runtimes']:
+            result.stdout = json.dumps(dict(runtimes=[dict(identifier=acceptance.RUNTIME, isAvailable=True)])).encode()
+        elif command[2:4] == ['list', 'devices']:
+            rows = json.loads(result.stdout)['devices']['ios-27']
+            result.stdout = json.dumps(dict(devices={self.runtime: rows})).encode()
+        elif command[2] == 'install' and result.returncode == 0:
+            self.installed.add(command[3])
+        return result
+
+    def run_to_consumer(self, *, wrong_runtime=False):
+        class ConsumerReached(Exception):
+            pass
+        argv = ['lck_acceptance.py', '--app', str(self.app), '--out', str(self.root / 'out'),
+                '--simulator', self.owner.current, '--filter-only']
+        expected = RuntimeError if wrong_runtime else ConsumerReached
+        with patch.dict(os.environ, SIM_STATE=str(self.owner.path)), \
+             patch.object(acceptance.sys, 'argv', argv), patch.object(acceptance, 'Journey') as journey, \
+             patch.object(acceptance, 'run_filter_case', side_effect=ConsumerReached()) as consumer:
+            with self.assertRaises(expected):
+                acceptance.main()
+        if wrong_runtime:
+            journey.assert_not_called(); consumer.assert_not_called()
+            self.assertFalse(any(c[2] == 'install' for c, _ in self.native.calls))
+            self.assertFalse(json.loads(self.owner.path.read_text())['retry_used'])
+        else:
+            final = json.loads(self.owner.path.read_text())['current']
+            self.assertEqual(journey.call_args.args[0], final)
+            self.assertEqual(journey.call_args.kwargs['applications'],
+                             self.native.devices_root / final / 'data/Containers/Data/Application')
+            consumer.assert_called_once()
+            return final
+
+    def test_owning_main_collects_inventory_before_first_install(self):
+        original = self.owner.current
+        self.assertEqual(self.run_to_consumer(), original)
+        self.assertEqual(self.inventoried, [original])
+
+    def test_owning_main_passes_replacement_path_to_the_first_consumer(self):
+        original = self.owner.current
+        self.native.failures['install', 1] = 'timeout'
+        final = self.run_to_consumer()
+        self.assertNotEqual(final, original)
+        self.assertEqual(self.inventoried, [original, final])
+
+    def test_prepared_replay_and_retried_install_share_the_replacement_cache(self):
+        original = self.owner.current
+        acceptance.lifecycle(self.owner, 'install', original, self.app, timeout=180)
+        self.installed.clear()
+        self.native.failures['install', 2] = 'timeout'
+        final = self.run_to_consumer()
+        self.assertEqual(self.inventoried, [original, final])
+
+    def test_wrong_os_metadata_cannot_install_or_start_a_consumer(self):
+        self.runtime = 'com.apple.CoreSimulator.SimRuntime.iOS-26-5'
+        self.run_to_consumer(wrong_runtime=True)
 
 
 if __name__ == '__main__':
