@@ -4,8 +4,12 @@ Runner dry-runs: `./run.sh F09 --dry-run`, `./run.sh C00 --listen --dry-run`, an
 See [execution and the single microphone permission click](../../docs/research/focus/human-session.md).
 Real rows run only through the lock-owning `morning-batch` supervisor; invoking a real standalone row is rejected.
 Direct `./run.sh restore-all` remains available: it starts a separate lock-owning recovery supervisor and needs
-`FOCUS_DEVICE`, the original signed `FOCUS_XCTESTRUN`, and the persistent `FOCUS_WORK`. Runtime evidence goes to ignored `out/`
-or private `FOCUS_WORK`; it must not be committed. Every command has a bounded timeout; unknown APNs
+`FOCUS_DEVICE`, the original signed `FOCUS_XCTESTRUN`, and the same persistent `FOCUS_WORK` as the run. If the
+probe app is missing, recovery verifies the app inventory and reinstalls the signed disposable probe
+from the original test-run product path before restoring the separate UI-test journal; ambiguous inventory,
+missing build or journal fails closed. For older checkpoints, the app bundle has no independent historical
+digest, so the original bytes cannot be confirmed even though the bundle ID, path and signature are checked.
+Runtime evidence is private and must not be committed. Every command has a bounded timeout; unknown APNs
 outcomes are never automatically retried. The approved system-setting changes need no new confirmation.
 Additional row flags: `--provider callkit|lck`, `--calls Everyone` for C01, `--repeated-calls on|off`,
 `--caller-format e164|national|generic`, and `--listen` for optional calibrated Mac RMS capture.
@@ -21,14 +25,33 @@ Local CLI verification: `python3 -m unittest discover -s spikes/focus -p 'test_*
 ## Morning batch
 
 `spikes/focus/morning-batch --dry-run` executes every underlying row dry-run without a device or credentials.
-For a real run, the operator supplies the iPhone 13's canonical uppercase hardware UDID in `FOCUS_DEVICE`, a private persistent `FOCUS_WORK`, and the
+Use `spikes/focus/morning-batch --quiet --dry-run` to inspect the quiet plan. In quiet mode the UI runner captures
+the current Settings ringer-volume percentage, backs up the journal to the host, then sets the slider to minimum
+in a separate session. Restoration verifies the recorded percentage. Microphone collection and audio/vibration
+rows are marked `skipped: quiet`; L15's alerting push-to-start is skipped, while visual call and silent activity
+observations continue. Settings selectors and percentage precision still require device qualification.
+
+The default private work directory is `~/Library/Application Support/FocusProbe124`, outside temporary build
+folders; generated signed builds and the journal persist there. `FOCUS_WORK` can override it and must itself be
+persistent across reboot. If an old `spikes/focus/out` contains an interrupted journal or checkpoint, select that
+directory explicitly and recover it before using the new default; it is not silently discarded. With
+`FOCUS_DEVICE` and the original signed `FOCUS_XCTESTRUN` set, run
+`FOCUS_WORK="$PWD/spikes/focus/out" spikes/focus/run.sh restore-all` from the repository root. Continue that
+checkpoint with the same `FOCUS_WORK`; after restoration, run `spikes/focus/morning-batch --archive-legacy`
+to preserve the clean legacy state and enable the new default for a fresh batch. Archiving refuses dirty or
+ambiguous state and never removes the original files; it reports a no-op if restoration already removed the
+only legacy journal. A journal without a checkpoint has no recorded device identity: use the original iPhone 13
+and the same work directory for its supervised restore. An explicit temporary-directory override does not
+survive its removal.
+For a real run, the operator supplies the iPhone 13's canonical uppercase hardware UDID in `FOCUS_DEVICE` and the
 [sandbox APNs environment](../../discovery/device/README.md). The batch generates a signed test build with Xcode's
-signed-in account and `-allowProvisioningUpdates`; it does not print the APNs key. A read-only inventory check
+configured signing credentials and `-allowProvisioningUpdates`; it does not print the APNs key. A read-only inventory check
 requires a uniquely identified iPhone 13 before signing or UI tests. It checks Share Across Devices is off before
 any Focus change, then runs C06, C01 and C05 first, the calling controls and three-sample comparisons, the Live
-Activity rows, and C00 `--listen` last. A bounded early microphone authorization request needs one Allow click;
-without permission the batch proceeds with visual-only evidence. L01–L15 now run their applicable activity
-scenarios, with both Focus states for L07–L15; L16 records a hardware N/A because iPhone 13 has no Dynamic Island.
+Activity rows. In nonquiet mode, C00 `--listen` runs last and a bounded early microphone authorization request
+needs one Allow click; without permission the batch proceeds with visual-only evidence. L01–L15 run their
+applicable activity scenarios, with both Focus states for L07–L15; quiet mode skips L15. L16 records a hardware
+N/A because iPhone 13 has no Dynamic Island.
 Each case reports actual observations, simulations and unqualified subcases separately. APNs acceptance is not
 rendering, and Notification Center on an unlocked phone is not a Lock Screen or wake observation.
 Cadence updates use a run-specific synthetic excerpt. The UI observer compares the accessibility label for
@@ -37,8 +60,8 @@ partial and complete sampled series. Accessibility equality cannot prove that ev
 in pixels. Missing or ambiguous text and unqualified clock synchronization remain unqualified.
 
 The batch exercises L09 network interruption only after verifying a wired connection; it journals and restores
-Wi-Fi and Cellular Data, and requires a fresh `NWPathMonitor` callback before claiming an offline path. L15 sends
-an **alerting** synthetic push-to-start as a separate, explicitly requested test, then obtains the activity's
+Wi-Fi and Cellular Data, and requires a fresh `NWPathMonitor` callback before claiming an offline path. In nonquiet
+mode, L15 sends an **alerting** synthetic push-to-start as a separate, explicitly requested test, then obtains the activity's
 different update token. All other activity updates omit alerts. L10–L14 include labeled offline fixtures for
 system-controlled rotation, budgets, ordering, privacy and lifecycle behavior; those fixtures are not device or
 production-backend results. A secure lock/unlock path, real AI/SIP backend, actual token rotation, eight-hour expiry
@@ -47,7 +70,7 @@ and Lock Screen privacy remain unqualified when unavailable.
 The batch atomically holds `~/.device-locks/<FOCUS_DEVICE>.lock` as a directory throughout mutation and restoration;
 Phone's runner must honor the same convention for mutual exclusion. A pre-existing lock is never stolen. To yield
 to Phone, create `FOCUS_WORK/PAUSE`, `~/.device-locks/PAUSE`, or `~/.device-locks/<FOCUS_DEVICE>.priority`;
-the batch finishes the active row, restores settings and releases its lock. Remove the marker and rerun to resume
+the batch finishes the active row, restores settings and releases its lock. Remove the marker and rerun to continue
 from the private checkpoint. An interrupted attempt is not repeated: after safe restoration it is recorded
 unqualified. Failed restoration retains the lock and journal for recovery. A hard-killed batch can leave its own
 lock behind: the batch will not automatically take it over because a device subprocess may still be alive. The
@@ -55,6 +78,18 @@ operator must establish that the old batch and its device subprocesses have stop
 Share Across Devices is off, remove only that verified stale owned lock, and immediately run `./run.sh restore-all`.
 Recovery reacquires the same lock and refuses any competing owner; if recovery fails, it retains the lock. The ringer switch is physical and its
 position is not read by this harness, so an unattended session cannot claim either switch variant without independent evidence.
+
+## Staged-push test failures
+
+Keep the failed job's logs, simulator receipt, staged envelope and cleanup evidence. A staged push must not be
+replayed on the same simulator after a launch failure: the app may have started without producing a complete
+trace. Check whether the envelope expired, whether an app-entry event or process identifier was observed, and
+whether the simulator and its subprocesses were cleaned up. Treat missing evidence as inconclusive.
+
+When a retry is appropriate, wait for the original workflow to finish, then start a single new CI attempt with a
+fresh simulator, run identifier and synthetic envelope. Retain the original failed artifacts and assess the new
+result separately; do not extend the envelope lifetime or treat a later pass as proof of the earlier failure's
+cause. Product behavior failures need investigation rather than repeated attempts.
 
 For individual rows, `--focus-mode dnd` snapshots/restores the built-in profile and refuses unknown or Silence list
 modes; `--unknown-caller --caller-value <E.164>` verifies absence from Contacts; `--favorite yes|no` changes only the
@@ -69,7 +104,7 @@ row; run `restore-all` once at the end. Selectors are qualified on iOS 27.0 (iPh
 UI action writes a read-only accessibility tree to the runner's Documents, and any failed action leaves the front
 app's tree in `focus-dump-failure.txt`. The device operator has registered `group.dev.callkitsim.focus` for the
 app, widget and filter under team `85A9MS6428`. Keep the App Group entitlements for C06; the earlier run built
-without them and therefore did not qualify that row. For a signed device build, use Xcode's signed-in account and
+without them and therefore did not qualify that row. For a signed device build, use Xcode's configured signing credentials and
 `xcodebuild -allowProvisioningUpdates` with `DEVELOPMENT_TEAM=85A9MS6428`; do not pass ASC `-authenticationKey*`
 arguments. The App Store Connect key cannot register groups.
 
@@ -104,9 +139,9 @@ Write `Documents/focus.json` before launch. Unspecified fields are safe defaults
 
 The app registers PushKit at launch. Choose `provider` before launch (`lck` or `callkit`); changing it requires a process restart. Every genuine incoming push is reported, even when unarmed; `armed` controls the optional Communication Notification only. `mustReport` is recorded, not used to hide incoming reports in this probe. The LCK reporting task is scheduled from a private PushKit queue before delegate return; `reportTaskEntered` is a scheduling marker, not proof of private system-function entry. CallKit enters its synchronous completion-handler report from that queue. Focus sampling, donation and notification scheduling never gate report entry. Late report, completion, action/state and survival events use monotonic and wall timestamps. Missing survival events mean **unobserved/suspended**, not proof of termination.
 
-CN-on donates a genuine incoming `INStartCallIntent` with `INPerson`, then posts updated **local** notification content at active interruption level. Authorize notifications once through the app; status/authorization has a separate trace. Do not treat its banner/sound as call ringing. Contact matching uses the caller's E.164 handle; People allowance behavior still needs measurement. The notification is deliberately alert-capable for the matrix; it is not part of silent transcript mode.
+CN-on donates a genuine incoming `INStartCallIntent` with `INPerson`, then posts updated **local** notification content at active interruption level. Authorize notifications once through the app; authorization has a separate trace. Do not treat its banner/sound as call ringing. Contact matching uses the caller's E.164 handle; People allowance behavior still needs measurement. The notification is deliberately alert-capable for the matrix; it is not part of silent transcript mode.
 
-A dedicated ExtensionKit `AppIntentsExtension` owns `SetFocusFilterIntent` **AI call policy** and stores the selected value in the App Group. Native `focus.sample` and `push.received` events read it, without JS. Configure/remove this filter through Settings; the probe does not claim it knows which Focus owns the stored value. `focus.sample` records the **raw** status and authorization independently: the device pass observed raw `false` without authorization, so consumers must treat unauthorized/restricted/denied values as unknown. Authorization is explicit via the button or config, not triggered by an incoming call.
+A dedicated ExtensionKit `AppIntentsExtension` owns `SetFocusFilterIntent` **AI call policy** and stores the selected value in the App Group. Native `focus.sample` and `push.received` events read it, without JS. Configure/remove this filter through Settings; the probe does not claim it knows which Focus owns the stored value. `focus.sample` records the **raw** Focus value and authorization independently: the device pass observed raw `false` without authorization, so consumers must treat unauthorized/restricted/denied values as unknown. Authorization is explicit via the button or config, not triggered by an incoming call.
 
 Exports are private app-container files:
 
