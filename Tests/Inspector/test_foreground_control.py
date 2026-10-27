@@ -1,4 +1,5 @@
 """Host foreground transport tests; fake publications do not prove UIKit state."""
+import errno
 import json
 import os
 from pathlib import Path
@@ -188,6 +189,33 @@ class ForegroundControlTests(unittest.TestCase):
         result = self.activate()
         self.assertEqual(result['startedWallTimeMS'], self.started - 60000)
         self.assertEqual(result['pid'], self.session['pid'])
+
+    def test_first_atomic_ack_publication_can_follow_a_missing_metadata_read(self):
+        import foreground_control
+        path = self.documents / 'cksim-foreground-phase-ack.json'
+        publication = dict(self.identity, challenge=str(uuid.uuid4()))
+        original_stat = Path.stat
+        published = False
+
+        def publish_after_missing_stat(candidate, *args, **kwargs):
+            nonlocal published
+            if candidate == path and not published:
+                published = True
+                self.write('ack', publication)
+                raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), path)
+            return original_stat(candidate, *args, **kwargs)
+
+        with patch.object(Path, 'stat', publish_after_missing_stat):
+            self.assertIsNone(foreground_control._read(path))
+        self.assertTrue(published)
+        self.assertEqual(foreground_control._read(path), publication)
+
+    def test_non_regular_foreground_evidence_is_terminal(self):
+        import foreground_control
+        path = self.documents / 'cksim-foreground-phase-ack.json'
+        path.mkdir()
+        with self.assertRaisesRegex(RuntimeError, 'not a regular file'):
+            foreground_control._read(path)
 
     def test_real_caller_keeps_older_fixture_identity_and_original_consumer_budget(self):
         inspector_identity = self.identity
