@@ -20,6 +20,8 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Verify that a synthetic test caller is not in Contacts.</string>
 	<key>NSFocusStatusUsageDescription</key>
 	<string>Measure shared Focus status for test calls.</string>
 	<key>NSMicrophoneUsageDescription</key>

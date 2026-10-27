@@ -47,13 +47,26 @@ def needs_repeat_fence(base_row, previous):
     return base_row == "C02" or previous.get("repeatPair") is not False
 
 
+def surface_gap_intersects(events, start, end):
+    for event in events:
+        if event.get("event") != "surface.gap":
+            continue
+        left, right = event.get("startUptimeMs"), event.get("endUptimeMs")
+        if not isinstance(left, int) or not isinstance(right, int) or left > right:
+            return True
+        if left <= end and right >= start:
+            return True
+    return False
+
+
 def surface_windows(events, received, observation):
     transitions = [e for e in events if e.get("event") == "surface.transition"]
     windows = []
     for index, (invitation, start) in enumerate(received):
         end = min(received[index + 1][1], observation["endUptimeMs"]) if index + 1 < len(received) else observation["endUptimeMs"]
         item = {"invitationID": invitation, "pushReceivedUptimeMs": start,
-                "observationQualified": observation["startUptimeMs"] <= start and end - start >= 15000}
+                "observationQualified": observation["startUptimeMs"] <= start and end - start >= 15000,
+                "continuityQualified": not surface_gap_intersects(events, start, end)}
         for surface in ["banner", "callScreen"]:
             prior = [e for e in transitions if e.get("surface") == surface and e["uptimeMs"] < start]
             rises = [e["uptimeMs"] for e in transitions if e.get("surface") == surface
@@ -76,6 +89,8 @@ def answer_evidence(events, trace, observation, signal_id, push_ms):
         return {"status": "unqualified", "reason": "invalid-device-timestamps"}
     if not isinstance(push_ms, int) or not observation.get("startUptimeMs", start + 1) <= push_ms <= start <= report <= observation.get("endUptimeMs", -1):
         return {"status": "unqualified", "reason": "outside-observation-window"}
+    if surface_gap_intersects(events, push_ms, observation["endUptimeMs"]):
+        return {"status": "unqualified", "reason": "surface-observation-gap"}
     for surface in ("banner", "callScreen"):
         prior_samples = [e for e in events if e.get("event") == "surface.sample" and e.get("surface") == surface
                          and isinstance(e.get("uptimeMs"), int) and isinstance(e.get("sampleStartUptimeMs"), int)
@@ -638,7 +653,9 @@ class Run:
             if p["serverAnswer"] and observer:
                 result["answeredElsewhere"] = answer_evidence(ui["events"], matching, result["visual"][0], self.signal_id, device_receipts[0][1])
             first_window = result.get("visualByInvitation", [{}])[0]
-            if p["row"] == "C00" and len(result["reports"]) == 1 and result["reports"][0].get("outcome") == "reported" and first_window.get("observationQualified") and (first_window.get("bannerFirstNewPresentationUptimeMs") is not None or first_window.get("callScreenFirstNewPresentationUptimeMs") is not None):
+            if observer and any(not window["continuityQualified"] for window in result["visualByInvitation"]):
+                result["visualNegativeQualified"] = False
+            if p["row"] == "C00" and len(result["reports"]) == 1 and result["reports"][0].get("outcome") == "reported" and first_window.get("observationQualified") and first_window.get("continuityQualified") and (first_window.get("bannerFirstNewPresentationUptimeMs") is not None or first_window.get("callScreenFirstNewPresentationUptimeMs") is not None):
                 write(self.work / "visual-calibration.json", {"positive": True, "binding": self.binding, "createdAt": time.time()})
                 result["visualNegativeQualified"] = True
             if p["locked"]:
@@ -656,7 +673,8 @@ class Run:
                 result["activityContentEvents"] = [e for e in traces if e["event"].startswith("activity.") and e.get("runID") == self.run_id and e.get("activityID") == activity_id]
                 result["coverage"] = "Single transport/presentation subcase, not full cadence/lock/privacy qualification"
             result["status"] = "recorded" if not p["sendVoIP"] or reports_complete(result["reports"], self.invitations) else "incomplete-report-evidence"
-            if observer and any(not window["observationQualified"] for window in result["visualByInvitation"]):
+            if observer and any(not window["observationQualified"] or not window["continuityQualified"]
+                    for window in result["visualByInvitation"]):
                 result["status"] = "incomplete-observation-window"
             if p["baseRow"] == "C02" and (not observer or not 0 < result["repeatIntervalMs"] <= 180000):
                 result["status"] = "invalid-or-unmeasured-repeat-interval"

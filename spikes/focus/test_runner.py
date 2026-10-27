@@ -168,6 +168,25 @@ class DryRunTests(unittest.TestCase):
         short = surface_windows(events, [("first", 100000), ("second", 169000)], {"startUptimeMs": 90000, "endUptimeMs": 180000})
         self.assertFalse(short[1]["observationQualified"])
 
+    def test_surface_foreground_gap_is_recorded_and_disqualifies_absence(self):
+        events = [{"event": "surface.gap", "reason": "foreground-transition",
+                   "startUptimeMs": 100010, "endUptimeMs": 100500},
+                  {"event": "surface.transition", "surface": "callScreen", "visible": True, "uptimeMs": 100600}]
+        windows = surface_windows(events, [("first", 100000)], {"startUptimeMs": 90000, "endUptimeMs": 120000})
+        self.assertTrue(windows[0]["observationQualified"])
+        self.assertFalse(windows[0]["continuityQualified"])
+        self.assertEqual(windows[0]["callScreenFirstNewPresentationUptimeMs"], 100600)
+        # A surface first seen after a gap is raw evidence, not a qualified presentation.
+        self.assertFalse(windows[0]["observationQualified"] and windows[0]["continuityQualified"])
+        crossing = [{**events[0], "startUptimeMs": 99900}, events[1]]
+        crossing_window = surface_windows(crossing, [("first", 100000)], {"startUptimeMs": 90000, "endUptimeMs": 120000})[0]
+        self.assertEqual(crossing_window["callScreenFirstNewPresentationUptimeMs"], 100600)
+        self.assertFalse(crossing_window["continuityQualified"])
+        windows = surface_windows(events, [("first", 101000)], {"startUptimeMs": 90000, "endUptimeMs": 120000})
+        self.assertTrue(windows[0]["continuityQualified"])
+        malformed = [{"event": "surface.gap", "startUptimeMs": None}]
+        self.assertFalse(surface_windows(malformed, [("first", 100000)], {"startUptimeMs": 90000, "endUptimeMs": 120000})[0]["continuityQualified"])
+
     def test_repeat_pair_waits_until_prior_attempt_is_outside_three_minutes(self):
         self.assertEqual(repeat_cooldown(1000, 1000), 181)
         self.assertEqual(repeat_cooldown(1000, 1179), 2)
@@ -225,6 +244,8 @@ class DryRunTests(unittest.TestCase):
         baseline = [{"event": "surface.sample", "surface": surface, "visible": False,
                      "sampleStartUptimeMs": 905, "uptimeMs": 925} for surface in ("banner", "callScreen")]
         events += baseline
+        gap = {"event": "surface.gap", "startUptimeMs": 1100, "endUptimeMs": 1150}
+        self.assertEqual(answer_evidence(events + [gap], signal, observation, "abc", 950)["reason"], "surface-observation-gap")
         evidence = answer_evidence(events, signal, observation, "abc", 950)
         self.assertEqual((evidence["status"], evidence["signalToDismissalMs"]), ("observed", 100))
         self.assertEqual(answer_evidence(events[1:], signal, observation, "abc", 950)["status"], "unqualified")

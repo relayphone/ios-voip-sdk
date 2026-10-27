@@ -1,6 +1,7 @@
 import ActivityKit
 import AVFoundation
 import CallKit
+import Contacts
 import Intents
 @preconcurrency import LiveCommunicationKit
 import Network
@@ -429,11 +430,63 @@ final class AppDelegate: NSObject, ObservableObject, UIApplicationDelegate, UNUs
 struct ProbeView: View {
   @ObservedObject var delegate: AppDelegate
   @Environment(\.scenePhase) var phase
+  @State private var contactCheck = "ready"
+  @State private var contactAuthorization = CNContactStore.authorizationStatus(for: .contacts).rawValue
+
+  private func verifyUnknownContact() async {
+    contactCheck = "checking"
+    let store = CNContactStore()
+    do {
+      if CNContactStore.authorizationStatus(for: .contacts) == .notDetermined {
+        _ = try await store.requestAccess(for: .contacts)
+      }
+      contactAuthorization = CNContactStore.authorizationStatus(for: .contacts).rawValue
+      guard CNContactStore.authorizationStatus(for: .contacts) == .authorized,
+        let value = ProcessInfo.processInfo.environment["FOCUS_UNKNOWN_CALLER"] ?? ProcessInfo.processInfo.environment["FOCUS_OWNED_CALLER"],
+        value.range(of: "^[+][1-9][0-9]{7,14}$", options: .regularExpression) != nil else {
+        contactCheck = "unavailable"; return
+      }
+      let candidate = value.filter { $0.isASCII && $0.isNumber }
+      let ownedName = ProcessInfo.processInfo.environment["FOCUS_OWNED_NAME"]
+      var ownedCount = 0, ownedNumberValid = false
+      var matched = false, ambiguous = false
+      let request = CNContactFetchRequest(keysToFetch: [CNContactPhoneNumbersKey as CNKeyDescriptor,
+        CNContactFormatter.descriptorForRequiredKeys(for: .fullName)])
+      request.unifyResults = false
+      try store.enumerateContacts(with: request) { contact, _ in
+        if let ownedName {
+          guard contact.givenName == ownedName || CNContactFormatter.string(from: contact, style: .fullName) == ownedName else { return }
+          ownedCount += 1
+          guard contact.phoneNumbers.count == 1 else { return }
+          let raw = contact.phoneNumbers[0].value.stringValue
+          let digits = raw.filter { $0.isASCII && $0.isNumber }
+          let isFormatted = raw.allSatisfy { $0.isASCII && ($0.isNumber || $0.isWhitespace || "+-()".contains($0)) }
+          ownedNumberValid = isFormatted && (digits == candidate || (candidate.count >= 10 && digits == String(candidate.suffix(10))))
+          return
+        }
+        for phone in contact.phoneNumbers {
+          guard let same = contactPhoneMatch(candidate: candidate, raw: phone.value.stringValue) else {
+            ambiguous = true; continue
+          }
+          if same { matched = true }
+        }
+      }
+      if ownedName != nil {
+        contactCheck = ownedCount == 0 ? "absent" : (ownedCount == 1 && ownedNumberValid ? "present" : "unavailable")
+      } else {
+        contactCheck = ambiguous ? "unavailable" : (matched ? "match" : "absent")
+      }
+    } catch { contactCheck = "unavailable" }
+  }
+
   var body: some View {
     VStack(spacing: 20) {
       Text("Focus Probe").font(.title)
       Text("Synthetic call and transcript measurements. No AI or media connection.")
       Text(delegate.authorizationSnapshot).accessibilityIdentifier("focus.authorization.snapshot").font(.caption)
+      Text(String(contactAuthorization)).accessibilityIdentifier("focus.contacts.authorization").font(.caption)
+      Text(contactCheck).accessibilityIdentifier("focus.contacts.result").font(.caption)
+      Button("Verify test caller") { Task { await verifyUnknownContact() } }.accessibilityIdentifier("focus.contacts.check")
       Button("Authorize notifications") {
         Task { let granted = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]); Trace.shared.log("cn.authorization", ["granted": granted ?? false]) }
       }.accessibilityIdentifier("focus.notifications")
