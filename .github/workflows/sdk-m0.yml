@@ -103,6 +103,7 @@ jobs:
           python3 discovery/check_sdk_installed_paths.py
           python3 discovery/check_sdk_m1.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-offline-controls.log"
           python3 discovery/check_sdk_m1_container_capture.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-container-controls.log"
+          python3 discovery/check_sdk_routes_runner.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/routes-runner-controls.log"
           python3 discovery/check_sdk_system.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/system-controls.log"
           python3 discovery/check_inherited_launcher_group.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/supervisor-group-controls.log"
           python3 discovery/check_cli_controls.py | tee "$SDK_M0_BUILD_LOGS/cli-controls.json"
@@ -176,6 +177,7 @@ jobs:
           bash Tests/VoIPSDK/run.sh | tee "$SDK_M0_BUILD_LOGS/core-controls.log"
           bash Tests/AudioSessionQueue/run.sh | tee "$SDK_M0_BUILD_LOGS/audio-queue-controls.log"
           bash Tests/AudioCore/run.sh | tee "$SDK_M0_BUILD_LOGS/audio-watchdog-controls.log"
+          python3 Tests/AudioRoutes/run.py | tee "$SDK_M0_BUILD_LOGS/audio-route-controls.log"
           python3 Tests/AudioLifecycle/check_audio_lifecycle.py | tee "$SDK_M0_BUILD_LOGS/audio-lifecycle-controls.log"
           python3 discovery/check_expo_media.py | tee "$SDK_M0_BUILD_LOGS/webrtc-facade-controls.log"
           python3 discovery/check_expo_media_config.py | tee "$SDK_M0_BUILD_LOGS/media-selection-controls.log"
@@ -530,7 +532,7 @@ jobs:
   plain-simulator:
     name: plain-simulator
     if: always()
-    needs: [changes, offline-controls, apple-host-controls, sdk-example, sdk-core, sdk-fixtures, device-release, journeys, legacy-audio-lifecycle, swift-livekit-native, expo-livekit-native]
+    needs: [changes, offline-controls, apple-host-controls, sdk-example, sdk-core, sdk-fixtures, device-release, journeys, legacy-audio-lifecycle, swift-livekit-native, expo-livekit-native, routes-duo]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -542,6 +544,44 @@ jobs:
           CI_NEEDS_JSON: ${{ toJSON(needs) }}
           CI_EXPECTED_JSON: ${{ needs.changes.outputs.sdk_plan }}
         run: scripts/ci/bounded 30 python3 scripts/ci/changes.py gate
+
+  routes-duo:
+    name: SDK audio routes on iPhone Duo
+    needs: [changes, sdk-fixtures]
+    if: needs.changes.outputs.routes == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: sudo xcode-select -s /Applications/Xcode_27.1.app
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sdk-native-fixtures-${{ github.run_id }}
+          path: ${{ runner.temp }}/sdk-transfer
+      - name: Verify source-bound fixtures and measure routes on the selected Duo simulator
+        run: |
+          set -euo pipefail
+          source scripts/ci/sdk_paths.sh
+          scripts/ci/bounded 120 python3 scripts/ci/sdk_artifacts.py unpack fixtures "$SDK_M0_BUILD_ROOT" "$RUNNER_TEMP/sdk-transfer"
+          python3 discovery/run_sdk_routes.py --build "$SDK_M1_CONTRACT_BUILD" --out "$RUNNER_TEMP/sdk-routes-duo"
+      - name: Delete any remaining owned Duo simulator
+        if: always()
+        run: python3 scripts/sim/sim.py cleanup "$RUNNER_TEMP/sdk-routes-duo/simulator-state.json" --timeout 60
+      - name: Preserve Duo route evidence
+        if: always()
+        uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
+        with:
+          name: sdk-routes-duo-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sdk-routes-duo
+          if-no-files-found: warn
+          retention-days: 3
+          compression-level: 6
+      - name: Remove this job's native outputs
+        if: always()
+        run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
 
   legacy-audio-lifecycle:
     needs: [changes, sdk-fixtures]

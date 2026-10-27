@@ -34,7 +34,7 @@ for TEST_CASE in MuteEchoTests WatchdogIntakeTests AudioAuthorityTests; do
   Sources/VoIPSDK/ProcessSDKOwnership.swift \
   Sources/VoIPSDK/IncomingIntake.swift Sources/VoIPSDK/PushWire.swift \
   Sources/VoIPSDK/SimulatorSupport.swift "$TEST_OUTPUT/ConversationClient.swift" \
-  Sources/VoIPSDK/AudioActivation.swift Sources/VoIPSDK/AudioAdapterOperations.swift Sources/VoIPSDK/AudioSessionQueue.swift \
+  Sources/VoIPSDK/AudioActivation.swift Sources/VoIPSDK/AudioAdapterOperations.swift Sources/VoIPSDK/AudioSessionQueue.swift Sources/VoIPSDK/AudioRoutes.swift \
   "$TEST_OUTPUT/MediaAdapter.swift" \
   "$TEST_OUTPUT/IncomingReportTransport.swift" \
   Tests/VoIPSDK/IncomingCachePlatform.swift "Tests/VoIPSDK/$TEST_CASE.swift" \

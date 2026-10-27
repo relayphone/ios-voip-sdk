@@ -5,6 +5,13 @@ import os
 import VoIPPlatform
 #endif
 
+/// Optional selected integrations serialize synchronous route setters with their
+/// native backend configuration lock. This is separate from media preparation.
+@MainActor
+protocol AudioRouteConfigurationAdapter: AnyObject {
+  func configureAudioRoute(_ operation: @escaping @Sendable () throws -> Void) async throws
+}
+
 /// The SDK's audio executor uses a serial dispatch queue rather than the Swift
 /// cooperative pool. Optional native integrations use this same executor; only
 /// Sendable values and errors should leave an operation.

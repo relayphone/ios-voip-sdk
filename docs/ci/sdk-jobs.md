@@ -20,8 +20,10 @@ executable modes and symlinks before creating a simulator. Only required SwiftPM
 device objects are transferred; the DerivedData tree is discarded. Archive upload
 does not recompress the already compressed tar payload.
 
-Legacy audio waits only for its SDK27 fixture. The compatibility `plain-simulator`
-gate requires every host/build/journey/legacy result to succeed, including every
+Legacy audio and Duo routes wait only for the SDK27 fixture producer. Duo routes
+unpacks the source-bound fixture archive before running the dedicated iPhone Duo
+contract on an available iOS 27.1+ runtime; it refuses a substitute device or OS. The compatibility `plain-simulator`
+gate requires every selected host/build/journey/legacy/Duo result to succeed, including every
 matrix member; skipped or cancelled dependencies fail the gate.
 
 Baseline [main5419149](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40296800038):

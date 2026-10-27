@@ -47,14 +47,14 @@ class SerialSelectionTests(unittest.TestCase):
     def test_sdk_input_runs_serial_critical_and_affected_expo_only(self):
         plan = select(['Expo/src/client.ts'])
         self.assertEqual(plan['sdk_plan'], {'sdk-native': True, 'legacy-audio-lifecycle': False,
-            'swift-livekit-native': False, 'expo-livekit-native': True})
+            'swift-livekit-native': False, 'expo-livekit-native': True, 'routes-duo': False})
         self.assertFalse(plan['runtime'])
 
     def test_docs_only_skips_natives_but_main_requires_all_original_jobs(self):
         self.assertFalse(any(select(['README.md'])['sdk_plan'].values()))
         full = select([], full=True)
         self.assertEqual(set(full['sdk_plan']), {'sdk-native', 'legacy-audio-lifecycle',
-                         'swift-livekit-native', 'expo-livekit-native'})
+                         'swift-livekit-native', 'expo-livekit-native', 'routes-duo'})
         self.assertTrue(all(full['sdk_plan'].values()))
 
     def test_legacy_dependency_migration_does_not_mask_real_edits(self):
