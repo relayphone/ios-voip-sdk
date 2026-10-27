@@ -121,6 +121,44 @@ The Live Activity rows ran into probe and consent problems before measuring Focu
 - **Allowlist editing.** The very first People setup is a two-step sheet (Next, then Done). Later edits happen on a page that saves live.
 - **Live Activity consent.** Live Activities need the inline consent above before a transcript surface can be relied on.
 
+## Second pass: CallKit and the Focus filter (27 Oct, quiet mode)
+
+This was a single-sample pass on the same iPhone 13 (iOS 27). It ran in quiet mode, with the ringer at 0% and no microphone or audio rows, from the automated morning batch (#153, #156). A Mac reboot cut short an earlier attempt, so this pass ran from a persistent folder. Priority rows ran first; everything else was deferred for time.
+
+| Row | Provider | Setup | Report outcome | Visible UI |
+| --- | --- | --- | --- | --- |
+| C06 | LCK | Focus on, app not allowed, Focus filter policy `screenWithAI` | filtered, code 3, 2214 ms | none |
+| C05 | LCK | Focus on, Focus status not authorized | filtered, code 3, 2200 ms | none |
+| C00 (positive) | CallKit | Focus off | reported, 1213 ms | banner (unlocked) |
+| F09 | CallKit | Focus on, nothing allowed | filtered, code 3, 3223 ms | none |
+| F11 | CallKit | Focus on, app allowed, caller not allowed | reported, 1490 ms | banner |
+| **F13** | **CallKit** | **Focus on, caller allowed (People), app not allowed, Allowed People Only, repeated calls off** | **reported, 1209 ms** | **banner** |
+| F01 + server answer | CallKit | Focus off, local "answered elsewhere" signal while ringing | reported 1393 ms; `answeredElsewhere` end 4 ms after the signal | dismissal not qualified (banner only) |
+
+New rules (one sample each; repeat before relying on them):
+
+1. **The Focus filter is how an app learns that a Focus is on.**
+   - With a Focus filter set on the test Focus, the app read `aiPolicy: screenWithAI` from its App Group once the Focus turned on.
+   - That held in foreground samples and natively at `push.received`, with no JS, while `INFocusStatusCenter.isFocused` stayed `false`.
+   - Before the Focus turned on, the value was `unset`.
+   - This is the recommended signal for host-controlled screening (RFC #149).
+2. **CallKit honours the People allowlist, and LCK does not.**
+   - With only the caller allowed (F13), the CallKit report succeeded and the banner appeared.
+   - The same setup on LCK was filtered with code 3 (first pass, F13 and F14).
+   - The caller was the owned contact, matched by exact E.164 `.phoneNumber` handle.
+   - So exposing the exact caller handle through CallKit lets Focus-allowed people ring.
+3. **CallKit app allowance behaves like LCK.** With the app allowed and the caller not (F11), the call rang. With nothing allowed (F09), the call was filtered, with code 3 after about 3.2 s (LCK: about 2.2 s).
+4. **Ending a ringing call is fast.** After a local answered-elsewhere signal, the app reported the CallKit end with reason `answeredElsewhere` 4 ms later. A ring that lingers for 20–40 s (Phone's DND incident) is delivery of the signal, not the end-call step.
+
+Unqualified or deferred in this pass:
+
+- **F15 (CallKit, app and caller allowed):** the UI sampler stopped with "Foreground app changed while sampling call surfaces". That's likely the call taking over the screen, but it's unproven.
+- **F09 under built-in DND with an unknown caller:** the harness's unknown-caller check matched the owned test contact in Contacts search, a harness bug.
+- **C01 (Allow Calls From: Everyone):** iOS 27's picker has no "Everyone" label, a selector bug.
+- **Flaky restore step:** after a failed row, `restore-all` missed the Contacts "Edit" control twice. A direct retry passed both times.
+- **Deferred for the 2 h budget:** the remaining CallKit matrix samples, repeat calls, Allow Calls From, Favorites, handle formats, DND with answered-elsewhere, and the Live Activity rows (159 rows).
+- **Skipped (quiet mode):** the microphone row (C00 `--listen`).
+
 ## What this means for Phone
 
 - **Silent AI screening works by default.** While a Focus is on and Phone is not in its allowed apps, every LCK call is filtered with code 3, which the SDK can hand to AI screening. This held even for allowed people, repeated callers and a person-aware CN.

@@ -398,6 +398,9 @@ class ActivityScenario:
     def begin_audio(self, seconds):
         binary = self.run.work / "listen"
         output = self.run.folder / "activity-audio.json"
+        if self.run.p.get("quiet") is True:
+            self.note("acousticEnvelope", "skipped: quiet", "microphone and vibration measurements are disabled")
+            return None, output
         try:
             if not binary.exists():
                 self.run.command(["swiftc", str(Path(__file__).with_name("listen.swift")), "-o", str(binary)], timeout=90)
@@ -626,6 +629,9 @@ def run_activity_case(s):
         return
 
     if row == "L15":
+        if s.run.p.get("quiet") is True:
+            s.note("alertSoundAndWake", "skipped: quiet", "alerting push-to-start is disabled in quiet mode")
+            return
         s.config("snapshot", start_token=True)
         s.run.ui(["launch"])
         audio = s.begin_audio(90)
@@ -690,7 +696,10 @@ def run_activity_case(s):
         if row in ("L01", "L02", "L04"):
             s.note("lockScreenAndWake", "unqualified", "secure iPhone cannot be locked and automatically unlocked without an authorized unlock path")
         if row in ("L01", "L02"):
-            s.note("soundAndHaptics", "unqualified", "RMS is an energy proxy and cannot prove no acoustic or haptic alert")
+            if s.run.p.get("quiet") is True:
+                s.note("soundAndHaptics", "skipped: quiet", "microphone and vibration measurements are disabled")
+            else:
+                s.note("soundAndHaptics", "unqualified", "RMS is an energy proxy and cannot prove no acoustic or haptic alert")
         if session:
             s.run.ui(["launch"])
             traces = s.trace()
