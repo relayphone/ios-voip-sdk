@@ -717,7 +717,7 @@ final class FocusUITests: XCTestCase {
       let currentScreen = callIsFront && callUI.otherElements["InCallRootView"].exists
       let bannerCaller = currentBanner && bannerCallerMatches(expected: expected)
       let screenCaller = currentScreen && callerMatches(callUI.otherElements["InCallRootView"], app: callUI, expected: expected)
-      guard (boardIsFront && board.state == .runningForeground) || (callIsFront && callUI.state == .runningForeground) else {
+      guard boardIsFront == (board.state == .runningForeground), callIsFront == (callUI.state == .runningForeground) else {
         throw failure("Foreground app changed while sampling call surfaces")
       }
       let now = Date().timeIntervalSince1970
