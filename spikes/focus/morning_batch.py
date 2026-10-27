@@ -32,7 +32,10 @@ def make_plan(unknown):
     add("calls-baseline", "C01")
     add("focus-status", "C05")
     add("callkit-positive", "C00", ["--provider", "callkit"])
-    add("ck-person", "CK-F13", samples=3)
+    for index in range(1, 17):
+        if index in [5, 9, 13]:
+            add(f"callkit-refresh-f{index:02}", "C00", ["--provider", "callkit"])
+        add(f"ck-matrix-f{index:02}", f"F{index:02}", ["--provider", "callkit"], samples=3)
     add("ck-dnd-unknown", "F09", ["--provider", "callkit", "--focus-mode", "dnd",
                                     "--unknown-caller", "--caller-value", unknown], samples=3)
     for row, provider in [("CK-C02", "callkit"), ("LCK-C02b", "lck")]:
@@ -98,7 +101,9 @@ def dry_run(plan, unknown):
             return [redact(child) for child in value]
         return value.replace(unknown, "<unknown-test-handle>") if isinstance(value, str) else value
     preflight = redact(run_json([str(RUNNER), "preflight", "--dry-run"], env=clean))
-    print(json.dumps({"preflight": preflight, "signing": "xcodegen; xcodebuild build-for-testing -allowProvisioningUpdates with signed-in Xcode account and team " + TEAM,
+    print(json.dumps({"deviceGate": "require unique iPhone 13 from devicectl device inventory before build/UI",
+                      "preflight": preflight, "signing": "xcodegen; xcodebuild build-for-testing -allowProvisioningUpdates with signed-in Xcode account and team " + TEAM,
+                      "microphonePreflight": "compile listener and request authorization once (bounded 30 seconds, no recording)",
                       "deviceLock": "~/.device-locks/<FOCUS_DEVICE>.lock; no stealing; Phone priority"}))
     for item in plan:
         value = run_json([str(RUNNER), item["row"], *item["args"], "--dry-run"], env=clean)
@@ -116,6 +121,87 @@ def checkpoint_id(plan):
 
 def phone_wants_device(work, lock_dir, device):
     return (work / "PAUSE").exists() or (lock_dir / "PAUSE").exists() or (lock_dir / (device + ".priority")).exists()
+
+
+DEVICE_ID_PATTERN = re.compile(r"(?:[A-Fa-f0-9]{8}-[A-Fa-f0-9]{16}|[A-Fa-f0-9]{8}(?:-[A-Fa-f0-9]{4}){3}-[A-Fa-f0-9]{12})")
+
+
+def iphone13_identity(inventory, selected):
+    """Accept one canonical CoreDevice UUID or UDID only, never a device name."""
+    if not DEVICE_ID_PATTERN.fullmatch(selected):
+        raise ValueError("FOCUS_DEVICE must be a canonical CoreDevice UUID or iPhone UDID")
+    devices = inventory.get("result", {}).get("devices", [])
+    if not isinstance(devices, list):
+        raise ValueError("device inventory is unavailable")
+    matches = []
+    for item in devices:
+        if not isinstance(item, dict):
+            continue
+        hardware = item.get("hardwareProperties") or {}
+        if not isinstance(hardware, dict):
+            continue
+        identifiers = [item.get("identifier"), hardware.get("udid")]
+        if any(isinstance(value, str) and value.lower() == selected.lower() for value in identifiers):
+            matches.append((item, hardware))
+    if len(matches) != 1:
+        raise ValueError("device identity is missing or ambiguous")
+    item, hardware = matches[0]
+    model, kind = hardware.get("marketingName"), hardware.get("productType")
+    if model not in [None, "iPhone 13"] or kind not in [None, "iPhone14,5"] or (model is None and kind is None):
+        raise ValueError("only iPhone 13 is authorized; model missing, conflicting or different")
+    # Use one canonical UDID for locking even if the caller supplied CoreDevice UUID.
+    canonical = hardware.get("udid") or item.get("identifier")
+    if not isinstance(canonical, str) or not DEVICE_ID_PATTERN.fullmatch(canonical):
+        raise ValueError("canonical device identity is unavailable")
+    return canonical.upper()
+
+
+def identify_iphone13(selected, work):
+    if not DEVICE_ID_PATTERN.fullmatch(selected):
+        raise ValueError("FOCUS_DEVICE must be a canonical CoreDevice UUID or iPhone UDID")
+    inventory = work / ("device-inventory-" + uuid.uuid4().hex + ".json")
+    try:
+        command(["xcrun", "devicectl", "list", "devices", "--json-output", str(inventory), "--quiet"],
+                safe_env(), work / "device-inventory.log", 30)
+        return iphone13_identity(json.loads(inventory.read_text()), selected)
+    finally:
+        inventory.unlink(missing_ok=True)
+
+
+def private_row_result(work, item, payload):
+    result_name = payload.get("result")
+    if not isinstance(result_name, str):
+        raise RuntimeError("row has no verifiable private result")
+    result_path = Path(result_name).resolve()
+    if not result_path.is_relative_to(work):
+        raise RuntimeError("row result is outside the private work directory")
+    result = json.loads(result_path.read_text())
+    if (result.get("row") != item["row"] or result.get("status") != payload.get("status")
+            or result.get("restored") not in [True, "focus-off"]):
+        raise RuntimeError("row result or restoration is not verified")
+    return result_name, result
+
+
+def result_summary(item, result):
+    """Only non-sensitive qualification flags, never caller, token or transcript."""
+    summary = {}
+    if isinstance(result.get("visualNegativeQualified"), bool):
+        summary["visualNegativeQualified"] = result["visualNegativeQualified"]
+    if "--server-answer" in item["args"]:
+        evidence = result.get("answeredElsewhere") or {}
+        status = evidence.get("status")
+        summary["answerEvidence"] = status if status in ["observed", "unqualified"] else "unqualified"
+    if "--listen" in item["args"]:
+        audio = result.get("audio") or {}
+        if audio.get("reason") == "mic permission pending":
+            summary["microphone"] = "mic permission pending; visual evidence only"
+        elif audio.get("calibrationValid") is True:
+            summary["microphone"] = "positive calibration recorded"
+        else:
+            summary["microphone"] = "visual evidence only"
+    if item["row"].startswith("L"):
+        summary["activityCoverage"] = "single transport/presentation subcase" if result.get("coverage") else "unqualified"
+    return summary
 
 
 class DeviceLock:
@@ -186,6 +272,21 @@ def signed_build(work, device, env, should_pause):
     return choices[0]
 
 
+def authorize_microphone(work, should_pause):
+    """Ask once early; a missing answer never blocks the rest of the batch."""
+    binary = work / "listen"
+    log = work / "microphone-authorization.log"
+    log.write_text("")
+    try:
+        command(["swiftc", str(HERE / "listen.swift"), "-o", str(binary)], safe_env(), log, 90, should_pause)
+        command([str(binary), "--authorize"], safe_env(), log, 30, should_pause)
+        return "authorized" if "Microphone authorized" in log.read_text() else "pending-or-denied"
+    except BatchPaused:
+        raise
+    except (RuntimeError, subprocess.TimeoutExpired, OSError):
+        return "pending-or-denied"
+
+
 def run_batch(plan, args):
     device = os.environ.get("FOCUS_DEVICE")
     if not device:
@@ -197,6 +298,8 @@ def run_batch(plan, args):
         raise ValueError("Use ignored spikes/focus/out or a private path outside the repository")
     work.mkdir(mode=0o700, parents=True, exist_ok=True)
     work.chmod(0o700)
+    # Inventory is read-only and happens before signing, UI tests, or any Focus change.
+    device = identify_iphone13(device, work)
     lock_dir = Path.home() / ".device-locks"
     if phone_wants_device(work, lock_dir, device):
         raise BatchPaused("PAUSE or Phone priority marker exists; no device action taken")
@@ -267,6 +370,12 @@ def run_batch(plan, args):
             # Previous crash: restore first, then account for the ambiguous attempt without retry.
             command([str(RUNNER), "restore-all"], env, work / "batch-restore.log", 660)
             mark_restored()
+        if pause_requested():
+            raise BatchPaused("Phone priority or PAUSE requested")
+        state["microphoneAuthorization"] = authorize_microphone(work, pause_requested)
+        atomic_json(checkpoint, state)
+        if state["microphoneAuthorization"] != "authorized":
+            print("mic permission pending or unavailable; continuing with visual evidence only", flush=True)
         for item in plan:
             if item["id"] in state["completed"]:
                 continue
@@ -305,20 +414,16 @@ def run_batch(plan, args):
                     raise RuntimeError("row produced no machine-readable result")
             status = payload.get("status")
             if row_failed:
-                result_name = payload.get("result")
-                if not isinstance(result_name, str):
-                    raise RuntimeError("failed row has no verifiable restoration result")
-                result_path = Path(result_name).resolve()
-                if not result_path.is_relative_to(work):
-                    raise RuntimeError("failed row result is outside the private work directory")
-                row_result = json.loads(result_path.read_text())
-                if (row_result.get("row") != item["row"] or row_result.get("status") != status
-                        or row_result.get("restored") not in [True, "focus-off"]
-                        or status in ["recorded", "restored", "restore-failed-use-restore-all"]):
+                result_name, row_result = private_row_result(work, item, payload)
+                if status in ["recorded", "restored", "restore-failed-use-restore-all"]:
                     raise RuntimeError("failed row restoration is not verified")
-                state["completed"][item["id"]] = {"status": "unqualified", "reason": status, "result": result_name}
-            elif status in ["recorded", "skipped-dependency-or-unsupported"]:
-                state["completed"][item["id"]] = {"status": status, "result": payload.get("result")}
+                state["completed"][item["id"]] = {"status": "unqualified", "reason": status, "result": result_name,
+                                                    **result_summary(item, row_result)}
+            elif status == "recorded":
+                result_name, row_result = private_row_result(work, item, payload)
+                state["completed"][item["id"]] = {"status": status, "result": result_name, **result_summary(item, row_result)}
+            elif status == "skipped-dependency-or-unsupported":
+                state["completed"][item["id"]] = {"status": status, "result": None}
             else:
                 raise RuntimeError("row did not finish with a recorded result or explicit skip")
             state["inFlight"] = None
