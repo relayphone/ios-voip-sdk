@@ -306,7 +306,7 @@ both native and Inspector acceptance. It starts a fresh fixture session for each
 stage, without reinstalling the fixture between them, and always deletes that
 simulator.
 
-The event fixture captures its canonical simulator path before installation.
+The event and LCK fixtures capture their canonical simulator paths before installation.
 Its owner repeats that preparation for a replacement device before replaying
 installs, collecting inventory once per device. After installation it validates
 the final device's cached application directory locally, then checkpoints and

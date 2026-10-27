@@ -160,27 +160,13 @@ def launch_fixture(device, app, *, install=True, session=None):
         session = simulator_infra.Session.resume(os.environ['SIM_STATE'], device, runner=session_transport,
                                                inventory_timeout=60)
     if install:
-        prepared = {}
-        def before_install(target):
-            key = str(target).lower()
-            if key not in prepared:
-                # The scoped owner transport also calls this before installs
-                # replayed on a replacement device. Never collect after one
-                # of that device's installs has succeeded.
-                prepared[key] = fixture_applications(target, session=session, prepare=True)
         install_bound = simulator_infra.seconds(os.environ.get('CKSIM_FIXTURE_INSTALL_TIMEOUT', 180))
         if install_bound > 600:
             raise ValueError('Fixture install bound must not exceed 600 seconds')
-        lifecycle(session, 'install', device, app.resolve(), timeout=install_bound,
-                  before_install=before_install)
-    if session is not None:
-        device = session.current
-    if install:
-        cached = prepared.get(str(device).lower())
-        if cached is None:
-            raise RuntimeError('Missing pre-install inventory for the final fixture simulator')
-        applications = fixture_applications(device, session=session, cached=cached)
+        device, applications = install_fixture(device, app, session=session, timeout=install_bound)
     else:
+        if session is not None:
+            device = session.current
         applications = fixture_applications(device, session=session)
     if session is not None:
         # This slice retries preparation only. Persist the barrier before the
@@ -215,6 +201,24 @@ def fixture_applications(device, *, session=None, cached=None, prepare=False):
     if not prepare and (not applications.is_dir() or applications.resolve(strict=True) != applications):
         raise RuntimeError('Fixture application directory is missing or noncanonical')
     return applications
+
+
+def install_fixture(device, app, *, session, timeout, inventory=None):
+    """Prepare each actual install, including shared-owner replacement replay."""
+    inventory = fixture_applications if inventory is None else inventory
+    prepared = {}
+    def before_install(target):
+        key = str(target).lower()
+        if key not in prepared:
+            prepared[key] = inventory(target, session=session, prepare=True)
+    lifecycle(session, 'install', device, app.resolve(), timeout=timeout,
+              before_install=before_install)
+    if session is not None:
+        device = session.current
+    cached = prepared.get(str(device).lower())
+    if cached is None:
+        raise RuntimeError('Missing pre-install inventory for the final fixture simulator')
+    return device, fixture_applications(device, session=session, cached=cached)
 
 
 def discover_fixture_channel(applications, run_id, pid):
