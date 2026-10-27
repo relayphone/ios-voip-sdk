@@ -16,6 +16,32 @@ Scenarios with missing adapters or unsupported hardware/backend/fault controls r
 
 Local CLI verification: `python3 -m unittest discover -s spikes/focus -p test_runner.py`.
 
+## Morning batch
+
+`spikes/focus/morning-batch --dry-run` executes every underlying row dry-run without a device or credentials.
+For a real run, the operator supplies `FOCUS_DEVICE` for the iPhone 13, a private persistent `FOCUS_WORK`, and the
+[sandbox APNs environment](../../discovery/device/README.md). The batch generates a signed test build with Xcode's
+signed-in account and `-allowProvisioningUpdates`; it does not print the APNs key. It checks Share Across Devices is
+off before any Focus change, then runs C06, C01 and C05 first, the calling controls and three-sample comparisons,
+the Live Activity rows, and C00 `--listen` last. The Mac microphone prompt needs one Allow click. Existing
+Live Activity rows that lack an adapter or require unsupported hardware are explicit skips; an APNs acceptance
+or a partial update subcase is not full row qualification.
+
+The batch atomically holds `~/.device-locks/<FOCUS_DEVICE>.lock` as a directory throughout mutation and restoration;
+Phone's runner must honor the same convention for mutual exclusion. A pre-existing lock is never stolen. To yield
+to Phone, create `FOCUS_WORK/PAUSE`, `~/.device-locks/PAUSE`, or `~/.device-locks/<FOCUS_DEVICE>.priority`;
+the batch finishes the active row, restores settings and releases its lock. Remove the marker and rerun to resume
+from the private checkpoint. An interrupted attempt is not repeated: after safe restoration it is recorded
+unqualified. Failed restoration retains the lock and journal for recovery. The ringer switch is physical and its
+position is not read by this harness, so an unattended session cannot claim either switch variant without independent evidence.
+
+For individual rows, `--focus-mode dnd` snapshots/restores the built-in profile and refuses unknown or Silence list
+modes; `--unknown-caller --caller-value <E.164>` verifies absence from Contacts; `--favorite yes|no` changes only the
+owned contact. `--server-answer` writes a matched local test signal, never a cancellation-only VoIP push. The app
+must be runnable to receive it; signal-to-UI-disappearance uses device uptime and is unqualified if the signal,
+visible call or dismissal is missing. This is not a server-to-device network-latency measurement. The new DND,
+Favorites and unknown-contact selectors are unqualified until tested on the operator's iPhone 13.
+
 Matrix runs: `--keep-setup` keeps the owned Focus and contact between rows and only turns the Focus off after each
 row; run `restore-all` once at the end. Selectors are qualified on iOS 27.0 (iPhone 13); see
 [results](../../docs/research/focus/results.md). For selector work, the `dump:<controlcenter|focusmenu|settings-focus|settings-root|screen>`
