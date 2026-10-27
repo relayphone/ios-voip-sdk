@@ -14,7 +14,7 @@ DEVICE = 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA'
 
 
 class RuntimeWatchSetupTests(unittest.TestCase):
-    def test_inventory_timeout_never_launches_and_retries_at_most_once(self):
+    def reproduce(self, timed_out):
         with tempfile.TemporaryDirectory(prefix='runtime-watch-setup-') as temporary:
             root = Path(temporary)
             commands = []
@@ -28,23 +28,32 @@ class RuntimeWatchSetupTests(unittest.TestCase):
                 if command[2] == 'install':
                     return sim.Result(command, 0)
                 if command[2:5] == ['list', 'devices', '-j']:
-                    return sim.Result(command, 124, timed_out=True)
+                    return sim.Result(command, 124 if timed_out else 73, timed_out=timed_out)
                 raise AssertionError('Unexpected native operation: ' + repr(command))
             with patch.object(runtime, 'session_transport', side_effect=transport), \
-                 patch.object(runtime, 'run', side_effect=AssertionError('launch after inventory timeout')), \
+                 patch.object(runtime, 'run', side_effect=AssertionError('launch after inventory failure')), \
                  patch.object(runtime, 'publish'), patch.object(sim, 'summary') as summary:
                 with self.assertRaises(runtime.CommandError) as raised:
                     runtime.launch_fixture(DEVICE, root / 'fixture.app', session=owner)
-            self.assertTrue(raised.exception.result.timed_out)
+            self.assertEqual(raised.exception.result.timed_out, timed_out)
             self.assertTrue(raised.exception.result.failure_classified)
-            operations = [item[0][0] for item in commands]
-            self.assertIn(operations, (['install', 'list'], ['list', 'list']))
-            self.assertLessEqual(operations.count('list'), 2)
-            self.assertNotIn('launch', operations)
             self.assertFalse(owner.is_checkpointed())
             self.assertFalse(owner.state['retry_used'])
             self.assertTrue(any(call.args[0] in ('infra:list', 'infra:inventory')
                                 for call in summary.call_args_list))
+            return [item[0][0] for item in commands]
+
+    def test_inventory_timeout_never_launches_and_retries_at_most_once(self):
+        operations = self.reproduce(timed_out=True)
+        self.assertIn(operations, (['install', 'list'], ['list', 'list']))
+        self.assertLessEqual(operations.count('list'), 2)
+        self.assertNotIn('launch', operations)
+
+    def test_non_timeout_inventory_failure_never_retries_or_launches(self):
+        operations = self.reproduce(timed_out=False)
+        self.assertIn(operations, (['install', 'list'], ['list']))
+        self.assertEqual(operations.count('list'), 1)
+        self.assertNotIn('launch', operations)
 
 
 if __name__ == '__main__': unittest.main()
