@@ -265,7 +265,8 @@ private enum RouteContract {
       "sharedIdentity": String(describing: ObjectIdentifier(repeated.client)), "warnings": 0])
     client.setConversationHandler(.init(join: { _, _ in }, start: { _, _ in }, end: { _, _ in }))
     let id = try await client.reportIncomingConversation(.init(eventId: UUID().uuidString,
-      serverCallId: UUID().uuidString, caller: .init(id: "native-route-fixture")))
+      serverCallId: UUID().uuidString, caller: try Caller(handleType: .generic,
+        value: "native-route-fixture", displayName: "native-route-fixture")))
     try await client.joinConversation(id)
     guard await LifecycleContract.wait({ adapter.authorized && adapter.activations == 1 && client.audioRoutes.revision > 0 }) else { return false }
     ContractTrace.log("routes.authority", ["conversationID": id.uuidString, "authorized": true])
