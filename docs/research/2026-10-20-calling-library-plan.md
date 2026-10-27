@@ -1,6 +1,6 @@
 # Calling library plan: CallKit done right, for Swift and React Native (v2)
 
-October 20, 2026. Companion to the [simulator plan](2026-10-20-callkit-simulator-runtime-plan.md). Revised after the user asked "why not fork or contribute back to `expo-callkit-telecom`?" and after the Codex review `callkit-simulator@a5c93ce:docs/research/2026-10-20-calling-library-plan-review.md`. Proposal; no code yet.
+October 20, 2026. Companion to the [simulator plan](2026-10-20-callkit-simulator-runtime-plan.md). Revised after the user asked "why not fork or contribute back to `expo-callkit-telecom`?" and after an external review. Proposal; no code yet.
 
 ## Decision: upstream-first on `expo-callkit-telecom`, fork-ready
 
@@ -34,7 +34,7 @@ So the plan is **upstream-first, fork-ready**:
 
 This changes two v1 recommendations:
 
-- **React Native module technology becomes the Expo Modules API**, which is upstream's choice; it runs in bare React Native through `install-expo-modules`. Codex endorsed a Codegen TurboModule; I'm reversing that because compatibility with upstream matters more than avoiding the `expo-modules-core` dependency.
+- **React Native module technology becomes the Expo Modules API**, which is upstream's choice; it runs in bare React Native through `install-expo-modules`. An earlier review endorsed a Codegen TurboModule; I'm reversing that because compatibility with upstream matters more than avoiding the `expo-modules-core` dependency.
 - **The Swift core** should be an Expo-independent Swift package inside the upstream repository, wrapped by the Expo module. That serves native Swift apps without React Native. If upstream declines, the core lives in our repository and our fork wraps it.
 
 ## Upstream contribution roadmap
@@ -140,4 +140,4 @@ The first deliverable is **one incoming and one outgoing journey** on plain WebR
 1. **Upstream contact:** posted as [mfairley/expo-callkit-telecom#47](https://github.com/mfairley/expo-callkit-telecom/issues/47).
 2. **Fork:** [`ziahamza/expo-callkit-telecom`](https://github.com/ziahamza/expo-callkit-telecom). Its `main` mirrors upstream; each upstreamable change is a branch off `main`; an `integration` branch brings everything together for our apps.
 3. **Simulator:** stays in this separate repository and is consumed by the fork's CI through pinned release artifacts.
-4. **Implementation:** led by the Codex agent through draft PRs. *Superseded on October 21, 2026: see [`docs/START-HERE.md`](../START-HERE.md).*
+4. **Implementation:** through small draft PRs. *Superseded on October 21, 2026: see [`docs/START-HERE.md`](../START-HERE.md).*

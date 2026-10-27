@@ -74,7 +74,7 @@ Other test tools should likewise set the environment only on the app they launch
 
 **Measured:** Phone's app-hosted XCTest integration uses a generated `.xctestrun`
 and an allowlist without global simulator environment changes ([Phone #374](https://github.com/ziahamza/phone-app/pull/374),
-reviewed in [the v0.1 review](progress/2026-10-21-claude-v01-review.md)).
+reviewed in [the v0.1 review](design/2026-10-21-v01-review.md)).
 **Proposed:** apply this procedure to each new host's test configuration; that
 host still needs its own ring/join acceptance run.
 
@@ -280,7 +280,7 @@ never deleted by the command. The inspector is iPhone-only for this MVP.
 The incoming banner expands to a full call screen. Answer and Decline handle a
 single incoming call; Call waiting options offers Hold & Accept and End & Accept
 when another call is active. End Call ends a connected call. Buttons dispatch the
-runtime's system controls; LCK App Pause/Resume/Merge/Unmerge explicitly request
+runtime's system controls; application pause, unpause, merge, and unmerge controls request
 application origin. Acceptance follows the resulting journal state. Conversations, pending deadlines, action
 settlement latency versus the profile budget, and audio activation remain live.
 The device-reference section compares journal-measured simulator intervals with

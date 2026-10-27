@@ -210,7 +210,7 @@ ACTION_FIELDS
       precondition(fields["deadlineMS"] as? Int64 == 1792940030008)
     }
     _ = a
-    print("passed: delayed/reversed settlement, failed Pause/Join/End, no capability/group gate, measured choices, reserved outgoing capacity, 2x1 app-resume effect")
+    print("passed: delayed/reversed settlement, failed Pause/Join/End, no capability/group gate, measured choices, reserved outgoing capacity, 2x1 app unpause effect")
   }
 }
 '''

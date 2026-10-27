@@ -1,6 +1,6 @@
 """Native LCK audio/dataflow regressions, with device and injected evidence kept distinct.
 
-The delayed-resume rule is an injected scheduler regression, not a newly measured
+The delayed-unpause rule is an injected scheduler regression, not a newly measured
 Apple timing guarantee. It preserves the device-observed End-active composition.
 """
 import time
@@ -128,7 +128,7 @@ def run_cases(j):
     observed_b = [r['kind'] for r in j.rows()[resume_start:] if r['event'] == PREFIX + 'perform' and r['callUUID'] == j.ids['B']]
     assert observed_b == ['End'], 'resuming A must end active B, without a Pause B'
     j.state(A='joined', B='left')
-    print(f'LCK delayed Resume fulfillment: {fulfillment_delay} ms; End B after settlement: {after_settlement} ms', flush=True)
+    print(f'LCK delayed unpause fulfillment: {fulfillment_delay} ms; End B after settlement: {after_settlement} ms', flush=True)
     j.save()
     return dict(singleJoinAudioMS=join_audio_delay, singleStartAudioMS=start_audio_delay,
                 mutePreservedJoinAudioMS=mute_timings['joinToAudioMS'], muteTimings=mute_timings, delayedPauseCompositeAudioMS=hold_audio_delay,

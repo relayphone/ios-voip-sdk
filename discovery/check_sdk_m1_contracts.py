@@ -67,6 +67,21 @@ def fixture(build, capture):
         elif case == 'audio-lifecycle':
             for row in authority_rows():
                 add(row['event'], **{key: value for key, value in row.items() if key != 'event'})
+        elif case == 'audio-routes':
+            add('routes.lckDelegate', active=True)
+            add('routes.authority', conversationID=CALL, authorized=True)
+            add('routes.command', id='speaker', succeeded=True)
+            snapshot = dict(revision=2, routes=[dict(id='input:mic', name='Microphone', type='MicrophoneBuiltIn'),
+                dict(id='speaker', name='Speaker', type='Speaker'),
+                dict(id='output:receiver', name='Actual receiver', type='Receiver')],
+                current=dict(id='output:receiver', name='Actual receiver', type='Receiver'))
+            fields = dict(snapshot=snapshot, inputs=[dict(uid='mic', name='Microphone', type='MicrophoneBuiltIn')],
+                          outputs=[dict(uid='receiver', name='Actual receiver', type='Receiver')])
+            add('routes.observed', phase='after', **fields)
+            add('routes.currentNoOp', available=True, unchanged=True)
+            add('routes.observed', phase='unchanged', **fields)
+            add('routes.lckDelegate', active=False)
+            add('routes.ended', conversationID=CALL, empty=True, authorized=False)
         elif case == 'duplicate-wrapper':
             payload_hash = 'd' * 64
             add('contract.duplicateSnapshot', revision=0, conversations=[])
@@ -151,6 +166,13 @@ def fixture(build, capture):
         elif case == 'audio-lifecycle':
             for row in lifecycle_engine():
                 runtime(row['event'], **{key: value for key, value in row.items() if key != 'event'})
+        elif case == 'audio-routes':
+            for kind, action, ended, audio in [('CXAnswerCallAction', 'join', False, 'activated'),
+                                                ('CXEndCallAction', 'end', True, 'deactivated')]:
+                runtime('transaction.delivered', kinds=[kind], actionIDs=[action])
+                runtime('action.settled', actionID=action, fulfilled=True)
+                runtime('call.changed', uuid=CALL, connected=False, ended=ended)
+                runtime('audio.' + audio)
         elif case == 'duplicate-wrapper':
             runtime('provider.apiKind', provider='provider-1', apiKind='livecommunicationkit', delegatePresent=True)
             for ordinal, source in ((1, 'foreground'), (2, 'pushKit')):
@@ -214,6 +236,31 @@ class Controls(unittest.TestCase):
                 with self.assertRaises(gate.EvidenceError): gate.validate(build, capture, cases=())
                 with self.assertRaises(gate.EvidenceError): gate.validate(build, capture, cases=('absent',))
                 with self.assertRaises(gate.EvidenceError): gate.validate(build, capture, cases=('guard', 'guard'))
+
+    def test_route_observations_preserve_actual_output_and_reject_optimistic_state(self):
+        for mutate in (
+            lambda rows, engine: next(r for r in rows if r['event'] == 'routes.observed')['snapshot']['current'].update(id='input:mic'),
+            lambda rows, engine: next(r for r in rows if r['event'] == 'routes.observed')['snapshot']['current'].update(type='MicrophoneBuiltIn'),
+            lambda rows, engine: next(r for r in rows if r['event'] == 'routes.observed')['snapshot']['routes'].append(
+                dict(id='output:invented', name='Receiver', type='Receiver')),
+            lambda rows, engine: next(r for r in rows if r['event'] == 'routes.observed')['snapshot'].pop('current'),
+            lambda rows, engine: next(r for r in rows if r['event'] == 'routes.currentNoOp').update(unchanged=False),
+            lambda rows, engine: next(r for r in rows if r['event'] == 'routes.ended').update(authorized=True),
+            lambda rows, engine: next(r for r in engine if r['event'] == 'call.changed').update(uuid=ACTION),
+            lambda rows, engine: engine.remove(next(r for r in engine if r['event'] == 'audio.activated')),
+        ):
+            self.check('audio-routes', mutate)
+        def setter_error(rows, engine):
+            next(r for r in rows if r['event'] == 'routes.command').update(
+                succeeded=False, errorDomain='NSOSStatusErrorDomain', errorCode=-50)
+        self.check('audio-routes', setter_error, succeeds=True)
+        def no_output(rows, engine):
+            for row in rows:
+                if row['event'] == 'routes.observed':
+                    row.update(inputs=[], outputs=[], snapshot=dict(revision=1,
+                        routes=[dict(id='speaker', name='Speaker', type='Speaker')], current=None))
+                elif row['event'] == 'routes.currentNoOp': row['available'] = False
+        self.check('audio-routes', no_output, succeeds=True)
 
     def test_lifecycle_capture_cannot_relabel_the_runtime_path(self):
         self.check('audio-lifecycle', lambda rows, engine:

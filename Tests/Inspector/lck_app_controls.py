@@ -74,7 +74,7 @@ import Foundation
     try await submit(model, "App Resume B") { model.send("hold", call: model.conversations[b]!, held: false, applicationRequest: true) }
     try await wait(model, "B active again") { model.conversations[b]?.held == false }
     try await submit(model, "App Resume A") { model.send("hold", call: model.conversations[a]!, held: false, applicationRequest: true) }
-    try await wait(model, "App Resume ends B") {
+    try await wait(model, "App unpause ends B") {
       model.conversations[a]?.connected == true && model.conversations[a]?.held == false && model.conversations[b]?.ended == true
     }
     print("Inspector observed A joined / B left")

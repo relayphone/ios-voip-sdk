@@ -1,7 +1,0 @@
-# Capture host metadata before simulator creation
-
-**Measured original failure:** [SDK run 39772309614](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39772309614), attempt 1 at `dfc81fc`, timed out collecting `xcodebuild -version` after the owned simulator had booted. Its 30-second deadline expired before installation or any app journey. Artifact `12423722501`, ZIP SHA-256 `2368a9cc95300d4b5c3811750f7d4562ef5180f86e5271600feb3986d8b63996`, preserves the incomplete run. The tested merge `13ed8dc17202ef5b7ec51903d912284e4b0fbe75` has the same tree as that head. The host cause remains unproven; this run does not qualify the deadline correction.
-
-**Proposed correction:** collect the same five required host fields once per run, after compiler selection and before creating the simulator. Keep each command's 30-second budget. After boot, add the actual simulator identity and selected runtime to the same environment record. The existing manifest and native gates still require the complete, bound record. A metadata failure remains fatal and occurs before an owned simulator exists.
-
-**Measured preparation:** shell syntax and whitespace checks pass, bound by [the small receipt](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-22-host-metadata/host-checks.json). No local simulator, app or device was operated. Native qualification of this runner ordering is pending; moving the commands does not establish why the earlier command hung or guarantee it cannot hang before boot.

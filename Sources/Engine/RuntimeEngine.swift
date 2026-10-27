@@ -557,7 +557,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     "verification": "measured",
     "reference": "#85; iPhone 13 / iOS 27.0 (24A5355q); October 24, 2026",
     "source": "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md",
-    "timingInterpretation": "Representative runtime samples and aggregate medians, not minimum delays or guaranteed bounds. Join median 115 ms (9\u2013239 ms); audio gap median 213 ms (151\u2013404 ms without delayed constituents). Pause 110 ms and deactivation 120 ms are representative delivery-relative samples; resume-generated End 91 ms is relative to Resume delivery.",
+    "timingInterpretation": "Representative runtime samples and aggregate medians, not minimum delays or guaranteed bounds. Join median 115 ms (9\u2013239 ms); audio gap median 213 ms (151\u2013404 ms without delayed constituents). Pause 110 ms and deactivation 120 ms are representative delivery-relative samples; generated End 91 ms is relative to unpause delivery.",
     "evidence": {
       "systemComposite": "Constituents of 28 system waiting-call composites arrived within 0\u20133 ms. Accepted Join followed every constituent terminal settlement; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-delay-pause.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-reverse.jsonl.",
       "pauseBeforeFulfillment": "Pause state appeared about 110 ms after delivery while Pause remained unfulfilled for 2 s; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-delay-pause.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-pending-pause.jsonl.",
@@ -571,16 +571,16 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       "outgoingCapacity": "Outgoing Start at capacity returned com.apple.CallKit.error.requesttransaction 7 after 11\u2013206 ms; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x1.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x2.jsonl.",
       "capabilities": "No capabilities, or removing pausing mid-call, gated neither waiting choices nor app Pause; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/caps-none.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/caps-toggle.jsonl.",
       "mergeAndUnmerge": "App Merge/Unmerge were accepted and delivered without conversation state changes, including singleton Unmerge and Merge into a ringing target. LCK exposes no group membership; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/merge-b-into-a.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/merge-a-into-b.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/unmerge-singleton.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-2x1.jsonl.",
-      "appResume": "With 2x1, app Resume A joined A, then a distinct generated End B arrived 91 ms after Resume delivery. Shared transaction composition was not observable; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/swap-app.jsonl.",
+      "appResume": "With 2x1, the app unpaused A into joined state, then a distinct generated End B arrived 91 ms after unpause delivery. Shared transaction composition was not observable; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/swap-app.jsonl.",
       "audioAndQueue": "Callbacks arrived on main; normal composites deactivated then activated audio with aggregate median 213 ms. The 120 ms deactivation sample is representative, not an aggregate median; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-delay-pause.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/hold-accept.jsonl."
     },
     "unverified": [
       "Genuine CallKit multi-call state, choices, capability gating, failures and capacity behavior; these LCK measurements must not replace CallKit policy.",
       "Concrete CXTransaction identifiers and action grouping; LCK exposes neither transaction identifiers nor group membership.",
-      "Application-authored composite pause/resume transactions and system UI Swap.",
+      "Application-authored composite pause/unpause transactions and system UI Swap.",
       "Per-group application-owned media/group membership effects, and capacity admission errors beyond the measured outgoing Start code 7.",
       "Expiry of LCK actions other than Pause, End and Join; 30 s remains a proposed expiry for those kinds.",
-      "Delayed or failed app Resume ordering and generated-End timing beyond the immediately fulfilled 2x1 swap-app capture; runtime scheduling remains gated on successful settlement."
+      "Delayed or failed app unpause ordering and generated-End timing beyond the immediately fulfilled 2x1 swap-app capture; runtime scheduling remains gated on successful settlement."
     ],
     "captureSHA256": {
       "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/hold-accept.jsonl": "4699c4f9140d9956bcaef84cb2f6075e4af7c6e643bc971f3a25551ecf01c802",

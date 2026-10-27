@@ -135,18 +135,23 @@ class Controls(unittest.TestCase):
             journal = container / 'Documents/.callkit-simulator/host-fixture/events.jsonl'
             journal.parent.mkdir(parents=True)
             services = {
-                'xcrun': """import os,pathlib,sys,time
-assert sys.argv[1:] == ['simctl','get_app_container','owned-fixture','dev.iosvoipsdk.example','data']
-count=pathlib.Path(os.environ['FIXTURE_COUNT'])
-n=int(count.read_text())+1 if count.exists() else 1
-count.write_text(str(n)); mode=os.environ['FIXTURE_MODE']
-if mode=='first-timeout' or (mode=='repeat-timeout' and n==3): time.sleep(3)
-if mode=='failed-query': sys.exit(7)
-if mode=='empty': print('')
-elif mode=='missing-directory': print(os.environ['FIXTURE_CONTAINER']+'/absent')
-else: print(os.environ['FIXTURE_CONTAINER'])
+                'xcrun': """raise AssertionError('container RPCs are forbidden')
 """,
-                'python3': """import json,os,pathlib,sys
+                'python3': """import json,os,pathlib,sys,time
+if sys.argv[1]=='scripts/sim/paths.py':
+ expected=['--receipt',str(pathlib.Path(os.environ['OUT'])/'m1/sdk-m1-journey.receipt.json'),
+  '--trace',str(pathlib.Path(os.environ['OUT'])/'m1/sdk-m1-journey.log'),
+  '--simulator','owned-fixture','--run-id','host-fixture','--bundle','dev.iosvoipsdk.example']
+ assert sys.argv[2:]==expected
+ count=pathlib.Path(os.environ['FIXTURE_COUNT'])
+ n=int(count.read_text())+1 if count.exists() else 1
+ count.write_text(str(n)); mode=os.environ['FIXTURE_MODE']
+ if mode=='first-timeout' or (mode=='repeat-timeout' and n==3): time.sleep(3)
+ if mode=='failed-query': sys.exit(7)
+ if mode=='empty': print('')
+ elif mode=='missing-directory': print(os.environ['FIXTURE_CONTAINER']+'/absent')
+ else: print(os.environ['FIXTURE_CONTAINER'])
+ sys.exit(0)
 if sys.argv[1]=='discovery/run_scenario.py':
  args=sys.argv[2:]
  pathlib.Path(args[args.index('--output')+1]).write_text('fixture supervisor completed\\n')
@@ -162,8 +167,8 @@ os.execv(sys.executable,[sys.executable,*sys.argv[1:]])
                 executable.chmod(0o755)
             driver = root / 'driver.sh'
             driver.write_text('set -euo pipefail\nOUT=' + shlex.quote(str(output)) +
-                '\nRUN_ID=host-fixture\nUDID=owned-fixture\nINHERITED_DYLD=""\n' +
-                # Keep asserting the production query asks for its original 30s.
+                '\nexport OUT\nRUN_ID=host-fixture\nUDID=owned-fixture\nINHERITED_DYLD=""\n' +
+                # Keep the original 30-second resolver boundary.
                 # Only the host fixture's alarm is shortened to one second.
                 "limit() { test \"$1\" = 30; shift; perl -e 'alarm 1; exec @ARGV' \"$@\"; }\n" +
                 source[start:end])
@@ -178,14 +183,14 @@ os.execv(sys.executable,[sys.executable,*sys.argv[1:]])
                 captured[path.stem] = json.loads(path.read_text())['case']
             return result, int((root / 'queries').read_text()), captured
 
-    def test_relaunch_journals_do_not_repeat_container_service_queries(self):
+    def test_relaunch_journals_reuse_one_bound_container_resolution(self):
         result, queries, captured = self.capture_journals('repeat-timeout')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(queries, 1)
         self.assertEqual(captured, {f'sdk-m1-{case}.runtime': case
                                    for case in ('journey', 'cold-launch', 'unhandled-expiry')})
 
-    def test_initial_container_query_failure_is_preserved(self):
+    def test_initial_container_resolution_failure_is_preserved(self):
         for mode, status in (('first-timeout', 142), ('failed-query', 7)):
             with self.subTest(mode=mode):
                 result, queries, captured = self.capture_journals(mode)
