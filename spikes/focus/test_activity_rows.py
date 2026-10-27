@@ -5,12 +5,39 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from activity_rows import ActivityScenario, accepted, activity_plan, execute_activity, run_activity_case, summarize_render
+from activity_rows import ActivityScenario, accepted, activity_plan, execute_activity, offline_callback_after_settings, run_activity_case, summarize_render
 
 HERE = Path(__file__).resolve().parent
 
 
 class ActivityRowsTests(unittest.TestCase):
+    def test_offline_path_requires_fresh_device_callback_after_settings_readback(self):
+        snapshot = {"runID": "test-run", "source": "pathUpdate", "pathReady": True,
+                    "status": "unsatisfied", "lastPathUpdateUptimeMs": 2001}
+        self.assertTrue(offline_callback_after_settings(snapshot, "test-run", 2000))
+        self.assertFalse(offline_callback_after_settings({**snapshot, "lastPathUpdateUptimeMs": 2000}, "test-run", 2000))
+        self.assertFalse(offline_callback_after_settings({**snapshot, "lastPathUpdateUptimeMs": 1999}, "test-run", 2000))
+        self.assertFalse(offline_callback_after_settings({**snapshot, "lastPathUpdateUptimeMs": True}, "test-run", 2000))
+        self.assertFalse(offline_callback_after_settings({**snapshot, "source": "activation"}, "test-run", 2000))
+        self.assertFalse(offline_callback_after_settings({**snapshot, "status": "satisfied"}, "test-run", 2000))
+        self.assertFalse(offline_callback_after_settings(snapshot, "different-run", 2000))
+
+    def test_settings_marker_requires_one_successful_offline_readback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Mock()
+            fake.p = {"row": "L09"}
+            fake.folder = Path(directory)
+            event = {"event": "activity.networkSettings", "wifi": False, "cellularData": False, "uptimeMs": 12345}
+            result = {"status": "ok", "events": [event]}
+            fake.copy.side_effect = lambda name, target, **kwargs: target.write_text(json.dumps(result))
+            scenario = ActivityScenario(fake, {})
+            self.assertEqual(scenario.offline_settings_uptime(), 12345)
+            result["events"] = [event, event]
+            with self.assertRaises(RuntimeError):
+                scenario.offline_settings_uptime()
+            result["events"] = [{**event, "uptimeMs": True}]
+            with self.assertRaises(RuntimeError):
+                scenario.offline_settings_uptime()
     def test_all_rows_have_device_free_plans_and_hardware_na_is_not_a_skip(self):
         for index in range(1, 17):
             row = f"L{index:02}"
@@ -27,6 +54,7 @@ class ActivityRowsTests(unittest.TestCase):
         scenario = Mock()
         scenario.row = "L05"
         scenario.capabilities.side_effect = [{"activeActivityCount": 0, "observedAtMs": 5}, {"activeActivityCount": 0}]
+        scenario.trace.return_value = []
         with patch("activity_rows.time.sleep"):
             run_activity_case(scenario)
         scenario.send.assert_not_called()
@@ -112,11 +140,55 @@ class ActivityRowsTests(unittest.TestCase):
                   "hostWallAnchorMs": 1000000, "hostMonotonicAnchorMs": 100000}
         result = summarize_render([receipt], events, bounds)
         self.assertEqual(result["latencyStatus"], "bounded-observations")
-        self.assertEqual(result["latencyBounds"][0]["lowerMs"], 120)
+        self.assertEqual(result["latencyBounds"][0]["lowerMs"], 0)
         self.assertEqual(result["latencyBounds"][0]["upperMs"], 250)
         self.assertEqual(summarize_render([receipt], [], bounds)["missingRevisions"], [7])
+        self.assertEqual(summarize_render([receipt], [events[0]], bounds)["latencyStatus"], "unqualified")
         self.assertEqual(summarize_render([receipt], events, {**bounds, "deviceMinusHostMax": 5000})["latencyStatus"], "unqualified")
         self.assertEqual(summarize_render([{**receipt, "hostMonotonicEnd": 101}], events, bounds)["latencyStatus"], "unqualified")
+
+    def test_render_latency_quantiles_use_nearest_rank_and_lower_even_median(self):
+        receipts, events = [], []
+        bounds = {"deviceMinusHostMin": 0, "deviceMinusHostMax": 0,
+                  "hostWallAnchorMs": 1000000, "hostMonotonicAnchorMs": 100000}
+        for index in range(25):
+            start = 1000 + index
+            receipts.append({"status": 200, "transportAcknowledged": True, "revision": index,
+                             "hostSendStart": start, "hostSendEnd": start + .1,
+                             "hostMonotonicStart": 100 + index, "hostMonotonicEnd": 100 + index + .1})
+            sample = {"revision": index, "wallTimeMs": start * 1000 + 100 + index * 10,
+                      "uptimeMs": 5000 + index * 1000, "sampleStartUptimeMs": 4990 + index * 1000}
+            events.extend([{**sample, "event": "activity.sample"}, {**sample, "event": "activity.renderSample"}])
+        result = summarize_render(receipts, events, bounds)
+        self.assertEqual(result["quantileMethod"], "nearest-rank; lower median for even sample counts")
+        self.assertAlmostEqual(result["p95BoundsMs"][1], 330)  # ceil(.95 * 25) - 1 = 23
+        self.assertAlmostEqual(result["medianBoundsMs"][1], 220)
+        even = summarize_render(receipts[:20], events[:40], bounds)
+        self.assertAlmostEqual(even["medianBoundsMs"][1], 190)  # lower middle, index 9
+
+    def test_failed_observer_marks_restoration_unsafe(self):
+        fake = Mock()
+        fake.p = {"row": "L01"}
+        fake.unsafe_observer = False
+        scenario = ActivityScenario(fake, {})
+        observer = Mock()
+        observer.wait.return_value = 1
+        with self.assertRaises(RuntimeError):
+            scenario.settle_observer(observer)
+        self.assertTrue(fake.unsafe_observer)
+
+    def test_visibility_uses_one_nonasserting_ui_action(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Mock()
+            fake.p = {"row": "L13"}
+            fake.folder = Path(directory)
+            def copy(name, target, **kwargs):
+                if name == "focus-ui-result.json":
+                    target.write_text(json.dumps({"events": [{"event": "activity.textVisibility", "visible": False}]}))
+            fake.copy.side_effect = copy
+            scenario = ActivityScenario(fake, {})
+            self.assertFalse(scenario.ui_visibility("synthetic", "hidden"))
+            fake.ui.assert_called_once_with(["activity-probe-text"], text="synthetic")
 
 
 if __name__ == "__main__":

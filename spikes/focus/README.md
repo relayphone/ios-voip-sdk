@@ -1,9 +1,10 @@
 # Focus device probe
 
-Runner: `./run.sh F09 --dry-run`, `./run.sh C00 --listen`, and `./run.sh F01 --locked-auto-answer --listen`.
+Runner dry-runs: `./run.sh F09 --dry-run`, `./run.sh C00 --listen --dry-run`, and `./run.sh F01 --locked-auto-answer --listen --dry-run`.
 See [execution and the single microphone permission click](../../docs/research/focus/human-session.md).
-Real runs require `FOCUS_DEVICE`, a signed `FOCUS_XCTESTRUN` and the documented APNs environment.
-`./run.sh restore-all` recovers the persistent host journal. Runtime evidence goes to ignored `out/`
+Real rows run only through the lock-owning `morning-batch` supervisor; invoking a real standalone row is rejected.
+Direct `./run.sh restore-all` remains available: it starts a separate lock-owning recovery supervisor and needs
+`FOCUS_DEVICE`, the original signed `FOCUS_XCTESTRUN`, and the persistent `FOCUS_WORK`. Runtime evidence goes to ignored `out/`
 or private `FOCUS_WORK`; it must not be committed. Every command has a bounded timeout; unknown APNs
 outcomes are never automatically retried. The approved system-setting changes need no new confirmation.
 Additional row flags: `--provider callkit|lck`, `--calls Everyone` for C01, `--repeated-calls on|off`,
@@ -47,7 +48,8 @@ from the private checkpoint. An interrupted attempt is not repeated: after safe 
 unqualified. Failed restoration retains the lock and journal for recovery. A hard-killed batch can leave its own
 lock behind: the batch will not automatically take it over because a device subprocess may still be alive. The
 operator must establish that the old batch and its device subprocesses have stopped, coordinate with Phone, verify
-Share Across Devices is off, and restore the journal before releasing that specific owned lock. The ringer switch is physical and its
+Share Across Devices is off, remove only that verified stale owned lock, and immediately run `./run.sh restore-all`.
+Recovery reacquires the same lock and refuses any competing owner; if recovery fails, it retains the lock. The ringer switch is physical and its
 position is not read by this harness, so an unattended session cannot claim either switch variant without independent evidence.
 
 For individual rows, `--focus-mode dnd` snapshots/restores the built-in profile and refuses unknown or Silence list
@@ -123,4 +125,4 @@ Use the per-activity exported token, `apns-push-type: liveactivity`, topic `dev.
 {"aps":{"timestamp":1900000000,"event":"update","content-state":{"revision":1,"excerpt":"Synthetic caller: test update","updatedAt":1900000000},"stale-date":1900000030}}
 ```
 
-Replace times with current increasing Unix seconds. Match Swift field names/types exactly, keep total JSON <=4096 bytes, and omit `alert`/sound. `stale-date` renders **Updates delayed** even if no app code is running. ActivityKit transport acceptance does not prove rendering; Claude/Hamza record Lock Screen observations. iPhone 13 has no Dynamic Island. Real captions/SIP take-over, unsupported security-policy triggers and Apple Intelligence remain separately qualified dependencies in the plan.
+Replace times with current increasing Unix seconds. Match Swift field names/types exactly, keep total JSON <=4096 bytes, and omit `alert`/sound. The widget is configured to show **Updates delayed** after `stale-date`; the device run must observe it. ActivityKit transport acceptance does not prove rendering, and unlocked Notification Center observations do not establish secure Lock Screen behavior. iPhone 13 has no Dynamic Island. Real captions/SIP take-over, unsupported security-policy triggers and Apple Intelligence remain separately qualified dependencies in the plan.

@@ -25,6 +25,18 @@ export function validateStartToken(token) {
     typeof token.tokenGeneration === 'string' && token.tokenGeneration.length > 0);
 }
 
+/** Non-secret snapshot of the host files checked immediately before sending. */
+export function checkedTokenSnapshot(token, event) {
+  if (event === 'start') {
+    if (!validateStartToken(token)) throw new Error('Invalid push-to-start token');
+    return { kind: 'push-to-start', tokenGeneration: token.tokenGeneration,
+      qualification: 'host file snapshot before send; later device rotation is not excluded' };
+  }
+  return { kind: 'per-activity', activityID: token.activityID, surfaceID: token.surfaceID,
+    tokenGeneration: token.tokenGeneration, state: token.state,
+    qualification: 'host file snapshot before send; later device rotation is not excluded' };
+}
+
 /** Synthetic L10 negative control. It cannot be an exported activity token. */
 export function validateInvalidTokenFixture(token, registration) {
   return validateRegistration(token, registration) && token.token === '00'.repeat(32) &&
@@ -252,7 +264,8 @@ async function main() {
   const requestID = randomUUID();
   const receipt = options['--receipt-file'];
   const base = { status: 'unknown', requestID, event, priority, bytes: result.bytes, surfaceID,
-    timestamp, revision, truncated: result.truncated, deliveryConfirmed: false, invalidTokenControl: invalidControl };
+    timestamp, revision, truncated: result.truncated, deliveryConfirmed: false, invalidTokenControl: invalidControl,
+    checkedTokenSnapshot: checkedTokenSnapshot(latest, event) };
   // Reserve before transport; a crash or ambiguous response must not be retried blindly.
   writeFileSync(receipt, JSON.stringify(base), { flag: 'wx', mode: 0o600 });
   const response = await send(result.payload, tokenData.token, priority, requestID, auth);

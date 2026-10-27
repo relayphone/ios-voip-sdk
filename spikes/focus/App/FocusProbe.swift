@@ -294,6 +294,7 @@ final class AppDelegate: NSObject, ObservableObject, UIApplicationDelegate, UNUs
   private var networkMonitor: NWPathMonitor?
   // Read and written only on networkQueue after the monitor has started.
   private var lastNetworkUpdateAtMs: Int?
+  private var lastNetworkUpdateUptimeMs: Int?
   func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
     Trace.shared.log("app.launch", ["pid": Int(getpid()), "os": UIDevice.current.systemVersion])
     calls = Calls() // register before any authorization UI or scene work
@@ -343,6 +344,7 @@ final class AppDelegate: NSObject, ObservableObject, UIApplicationDelegate, UNUs
     monitor.pathUpdateHandler = { [weak self] path in
       guard let self else { return }
       self.lastNetworkUpdateAtMs = Int(Date().timeIntervalSince1970 * 1000)
+      self.lastNetworkUpdateUptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
       self.writeNetworkSnapshot(path, source: "pathUpdate")
     }
     monitor.start(queue: networkQueue)
@@ -382,6 +384,7 @@ final class AppDelegate: NSObject, ObservableObject, UIApplicationDelegate, UNUs
       "usesCellular": path.map { $0.usesInterfaceType(.cellular) as Any } ?? NSNull(),
       "source": source, "pathReady": path != nil, "observedAtMs": Int(Date().timeIntervalSince1970 * 1000),
       "lastPathUpdateAtMs": lastNetworkUpdateAtMs.map { $0 as Any } ?? NSNull(),
+      "lastPathUpdateUptimeMs": lastNetworkUpdateUptimeMs.map { $0 as Any } ?? NSNull(),
       "runID": ProbeConfig.load().runID ?? "idle"]
     do {
       let data = try JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys])

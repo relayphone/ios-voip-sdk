@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
-import { buildPayload, buildCadence, expectedInvalidTokenRejection, simulateBackoff, simulateProjection, validateInvalidTokenFixture, validateRegistration, validateStartToken } from './activity-payloads.mjs';
+import { buildPayload, buildCadence, checkedTokenSnapshot, expectedInvalidTokenRejection, simulateBackoff, simulateProjection, validateInvalidTokenFixture, validateRegistration, validateStartToken } from './activity-payloads.mjs';
 
 test('updates are silent and an end carries final state', () => {
   const value = buildPayload({ timestamp: 1700000000, revision: 4, excerpt: 'Synthetic turn' });
@@ -51,6 +51,20 @@ test('per-activity sends require the same active registration and token generati
   assert.equal(validateRegistration({ ...token, token: 'bad' }, registration), false);
   assert.equal(validateStartToken({ token: token.token, tokenGeneration: 'start-generation' }), true);
   assert.equal(validateStartToken({ token: token.token }), false);
+});
+
+test('private receipt snapshot identifies checked token without exposing token bytes', () => {
+  const token = { activityID: 'activity-a', surfaceID: 'surface-a', tokenGeneration: 'generation-a',
+    state: 'active', token: 'ab'.repeat(32) };
+  const update = checkedTokenSnapshot(token, 'update');
+  assert.deepEqual(Object.keys(update).sort(), ['activityID', 'kind', 'qualification', 'state', 'surfaceID', 'tokenGeneration'].sort());
+  assert.equal(update.tokenGeneration, 'generation-a');
+  assert.match(update.qualification, /later device rotation is not excluded/);
+  assert.equal(JSON.stringify(update).includes(token.token), false);
+  const start = checkedTokenSnapshot(token, 'start');
+  assert.equal(start.kind, 'push-to-start');
+  assert.equal(start.tokenGeneration, 'generation-a');
+  assert.equal(JSON.stringify(start).includes(token.token), false);
 });
 
 test('invalid-token negative control is isolated and never equals a real token', () => {

@@ -65,6 +65,7 @@ enum FocusActivities {
   // Shared with the widget target, so do not depend on the app-only ProbeConfig.
   // Only a test run UUID is eligible for export; malformed or missing config is nil.
   private struct RunContext: Decodable { let runID: String? }
+  private struct RegistrationIdentity: Decodable { let activityID: String }
   static func currentRunID() -> String? {
     let url = ProbeFiles.documents.appendingPathComponent("focus.json")
     guard let data = try? Data(contentsOf: url),
@@ -124,13 +125,28 @@ enum FocusActivities {
   // A sampled capability is an observation, not a guarantee of future push
   // delivery or a server-side registration acknowledgement.
   @MainActor static func snapshotCapabilities() {
-    let active = Activity<FocusAttributes>.activities.filter { $0.activityState == .active || $0.activityState == .stale }
-    let value: [String: Any] = ["activitiesEnabled": authorization.areActivitiesEnabled,
-      "frequentPushesEnabled": authorization.frequentPushesEnabled, "activeActivityCount": active.count,
-      "allActivityCount": Activity<FocusAttributes>.activities.count,
-      "observedAtMs": Int(Date().timeIntervalSince1970 * 1000),
-      "runID": currentRunID().map { $0 as Any } ?? NSNull()]
     do {
+      let all = Activity<FocusAttributes>.activities
+      let active = all.filter { $0.activityState == .active || $0.activityState == .stale }
+      // Enumeration must succeed before absence is asserted. A corrupt or
+      // unreadable registration still counts as present; its ID is unknown.
+      let names = Set(try FileManager.default.contentsOfDirectory(atPath: ProbeFiles.documents.path))
+      let registrationPresent = names.contains("activity-registration.json")
+      let tokenPresent = names.contains("activity-update-token.json")
+      var registeredID: String?
+      if registrationPresent,
+         let data = try? Data(contentsOf: ProbeFiles.documents.appendingPathComponent("activity-registration.json")),
+         let registration = try? JSONDecoder().decode(RegistrationIdentity.self, from: data),
+         all.contains(where: { $0.id == registration.activityID }) {
+        // Only an ID supplied by ActivityKit is exposed; update-token contents are never read or logged.
+        registeredID = registration.activityID
+      }
+      let value: [String: Any] = ["activitiesEnabled": authorization.areActivitiesEnabled,
+        "frequentPushesEnabled": authorization.frequentPushesEnabled, "activeActivityCount": active.count,
+        "allActivityCount": all.count, "registrationPresent": registrationPresent,
+        "registeredActivityID": registeredID.map { $0 as Any } ?? NSNull(), "updateTokenPresent": tokenPresent,
+        "observedAtMs": Int(Date().timeIntervalSince1970 * 1000),
+        "runID": currentRunID().map { $0 as Any } ?? NSNull()]
       try ProbeFiles.write("activity-capabilities.json", data: JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]))
       record?("activity.capabilities", value)
     } catch { record?("activity.capabilitiesExportFailed", [:]) }

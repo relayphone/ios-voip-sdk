@@ -174,7 +174,7 @@ def identify_iphone13(selected, work):
         inventory.unlink(missing_ok=True)
 
 
-def private_row_result(work, item, payload):
+def private_row_result(work, item, payload, *, require_restored=True):
     result_name = payload.get("result")
     if not isinstance(result_name, str):
         raise RuntimeError("row has no verifiable private result")
@@ -183,7 +183,7 @@ def private_row_result(work, item, payload):
         raise RuntimeError("row result is outside the private work directory")
     result = json.loads(result_path.read_text())
     if (result.get("row") != item["row"] or result.get("status") != payload.get("status")
-            or result.get("restored") not in [True, "focus-off"]):
+            or (require_restored and result.get("restored") not in [True, "focus-off"])):
         raise RuntimeError("row result or restoration is not verified")
     return result_name, result
 
@@ -361,9 +361,10 @@ def command(argv, env, log, timeout, should_pause=None):
             stop_process_group(process)
             raise
         result = process
-        if result.returncode:
-            # A failed parent can leave its observer alive even after it has exited.
-            stop_process_group(process)
+        # A parent can exit successfully or unsuccessfully while descendants
+        # remain. Never restore or release the device lock until the entire
+        # command group is gone.
+        stop_process_group(process)
     if result.returncode:
         raise RuntimeError("command failed; inspect the private batch log; uncertain attempts are not retried")
 
@@ -400,6 +401,62 @@ def authorize_microphone(work, should_pause):
         return "pending-or-denied"
 
 
+def set_supervisor_env(env, lock):
+    """Bind a child row to this batch's live lock and process-group supervisor."""
+    env["FOCUS_BATCH_OWNER_PID"] = str(os.getpid())
+    env["FOCUS_BATCH_LOCK_NONCE"] = lock.nonce
+
+
+def supervised_restore():
+    """Run direct restore-all under a lock-owning, bounded group supervisor."""
+    device = os.environ.get("FOCUS_DEVICE")
+    source = Path(os.environ.get("FOCUS_XCTESTRUN", "/nonexistent"))
+    if not device or not source.is_file():
+        raise ValueError("Recovery needs the iPhone 13 UDID and original signed FOCUS_XCTESTRUN")
+    os.umask(0o077)
+    work = Path(os.environ.get("FOCUS_WORK", str(HERE / "out"))).resolve()
+    repo = HERE.parents[1]
+    if work.is_relative_to(repo) and work != HERE / "out":
+        raise ValueError("Use ignored spikes/focus/out or a private path outside the repository")
+    work.mkdir(mode=0o700, parents=True, exist_ok=True)
+    work.chmod(0o700)
+    device = identify_iphone13(device, work)
+    lock_dir = Path.home() / ".device-locks"
+    if phone_wants_device(work, lock_dir, device):
+        raise RuntimeError("Phone priority or PAUSE marker exists; no recovery action taken")
+    lock = DeviceLock(lock_dir, device)
+    lock.acquire()
+    env = os.environ.copy()
+    env["FOCUS_DEVICE"], env["FOCUS_WORK"], env["FOCUS_XCTESTRUN"] = device, str(work), str(source)
+    env["FOCUS_REQUIRE_DEVICE_JOURNAL"] = "1"
+    set_supervisor_env(env, lock)
+    restored = False
+    try:
+        checkpoint = work / "morning-checkpoint.json"
+        state = None
+        if checkpoint.exists():
+            state = json.loads(checkpoint.read_text())
+            if (not isinstance(state, dict) or state.get("device") != device
+                    or not isinstance(state.get("completed"), dict)
+                    or state.get("buildHash") != hashlib.sha256(source.read_bytes()).hexdigest()):
+                raise RuntimeError("checkpoint device or signed build mismatch; retain lock for review")
+        command([str(RUNNER), "preflight"], env, work / "recovery-preflight.log", 660)
+        command([str(RUNNER), "restore-all"], env, work / "recovery-restore.log", 660)
+        if state is not None:
+            interrupted = state.get("inFlight")
+            if interrupted:
+                state["completed"][interrupted] = {"status": "unqualified-interrupted", "result": None}
+            state["inFlight"] = None
+            state["dirty"] = False
+            atomic_json(checkpoint, state)
+        restored = True
+    finally:
+        if restored:
+            lock.release()
+        else:
+            print("Recovery incomplete; device lock retained", file=sys.stderr)
+
+
 def run_batch(plan, args):
     device = os.environ.get("FOCUS_DEVICE")
     if not device:
@@ -423,11 +480,13 @@ def run_batch(plan, args):
     env = os.environ.copy()
     env.pop("FOCUS_REQUIRE_DEVICE_JOURNAL", None)
     env["FOCUS_DEVICE"], env["FOCUS_WORK"] = device, str(work)
+    set_supervisor_env(env, lock)
     state = None
     dirty = checkpoint.exists()  # Unknown state is unsafe until a valid checkpoint proves it clean.
     verified = False
     stopped = False
     unsafe_processes = False
+    recovery_failed = False
     old_handlers = {}
 
     def pause_handler(_signum, _frame):
@@ -534,8 +593,28 @@ def run_batch(plan, args):
                     raise RuntimeError("row produced no machine-readable result")
             status = payload.get("status")
             if row_failed:
+                if status == "restore-failed-use-restore-all":
+                    # command() has already terminated and verified the entire failed
+                    # row process group. Recover the newer device journal before
+                    # continuing; never replay a possibly delivered invitation.
+                    result_name, row_result = private_row_result(work, item, payload, require_restored=False)
+                    if row_result.get("restored") is not False:
+                        raise RuntimeError("failed row did not report a pending restoration")
+                    env["FOCUS_REQUIRE_DEVICE_JOURNAL"] = "1"
+                    try:
+                        command([str(RUNNER), "restore-all"], env, work / "batch-restore.log", 660)
+                    except (RuntimeError, subprocess.TimeoutExpired, OSError) as error:
+                        # Do not try a second recovery in finally; retain the lock.
+                        recovery_failed = True
+                        raise RuntimeError("interrupted row restoration failed") from error
+                    state["completed"][item["id"]] = {"status": "unqualified", "reason": status, "result": result_name,
+                                                       **result_summary(item, row_result)}
+                    state["inFlight"] = None
+                    mark_restored()
+                    env.pop("FOCUS_REQUIRE_DEVICE_JOURNAL", None)
+                    continue
                 result_name, row_result = private_row_result(work, item, payload)
-                if status in ["recorded", "restored", "restore-failed-use-restore-all"]:
+                if status in ["recorded", "restored"]:
                     raise RuntimeError("failed row restoration is not verified")
                 state["completed"][item["id"]] = {"status": "unqualified", "reason": status, "result": result_name,
                                                     **result_summary(item, row_result)}
@@ -565,6 +644,8 @@ def run_batch(plan, args):
         failure = None
         if unsafe_processes:
             failure = RuntimeError("a subprocess group may still be running")
+        elif recovery_failed:
+            failure = RuntimeError("interrupted row restoration failed")
         elif dirty:
             if verified and state is not None and env.get("FOCUS_XCTESTRUN"):
                 try:

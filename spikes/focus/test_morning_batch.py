@@ -91,6 +91,90 @@ class MorningPlanTests(unittest.TestCase):
             time.sleep(3)
             self.assertFalse(escaped.exists())
 
+    def test_successful_parent_does_not_leave_observer_process_group_alive(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            ready, escaped = root / "observer-ready", root / "observer-escaped"
+            child = ("import signal,time,pathlib; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+                     f"pathlib.Path({str(ready)!r}).touch(); time.sleep(3); "
+                     f"pathlib.Path({str(escaped)!r}).touch()")
+            parent = (f"import subprocess,sys,time,pathlib; subprocess.Popen([sys.executable,'-c',{child!r}]); "
+                      f"p=pathlib.Path({str(ready)!r}); "
+                      "exec('while not p.exists():\\n time.sleep(0.01)')")
+            batch.command([sys.executable, "-c", parent], os.environ.copy(), root / "command.log", 10)
+            self.assertTrue(ready.exists())
+            time.sleep(3)
+            self.assertFalse(escaped.exists())
+
+    def test_standalone_restore_owns_lock_and_preserves_dirty_checkpoint(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            work = root / "work"
+            work.mkdir()
+            product = root / "device.xctestrun"
+            product.write_bytes(b"signed-product")
+            device = "00008110-0011223344556677"
+            batch.atomic_json(work / "morning-checkpoint.json", {"device": device, "completed": {},
+                              "buildHash": hashlib.sha256(product.read_bytes()).hexdigest(),
+                              "inFlight": "activity-01-off-01", "dirty": True})
+            calls = []
+            def fake_command(argv, env, log, timeout, should_pause=None):
+                calls.append(argv[1])
+                owner = json.loads((root / ".device-locks" / (device + ".lock") / "owner.json").read_text())
+                self.assertEqual(env["FOCUS_BATCH_OWNER_PID"], str(os.getpid()))
+                self.assertEqual(env["FOCUS_BATCH_LOCK_NONCE"], owner["nonce"])
+                self.assertEqual(env["FOCUS_REQUIRE_DEVICE_JOURNAL"], "1")
+            with mock.patch.dict(os.environ, {"FOCUS_DEVICE": device, "FOCUS_WORK": str(work), "FOCUS_XCTESTRUN": str(product)}), \
+                 mock.patch.object(Path, "home", return_value=root), \
+                 mock.patch.object(batch, "identify_iphone13", side_effect=lambda value, workdir: value), \
+                 mock.patch.object(batch, "command", side_effect=fake_command):
+                batch.supervised_restore()
+            self.assertEqual(calls, ["preflight", "restore-all"])
+            self.assertFalse((root / ".device-locks" / (device + ".lock")).exists())
+            state = json.loads((work / "morning-checkpoint.json").read_text())
+            self.assertFalse(state["dirty"])
+            self.assertIsNone(state["inFlight"])
+            self.assertEqual(state["completed"]["activity-01-off-01"]["status"], "unqualified-interrupted")
+
+    def test_standalone_restore_failure_retains_owned_lock(self):
+        for fail_at in ["preflight", "restore-all"]:
+            with self.subTest(fail_at=fail_at), tempfile.TemporaryDirectory() as root:
+                root = Path(root)
+                work = root / "work"
+                product = root / "device.xctestrun"
+                product.write_bytes(b"signed-product")
+                device = "00008110-0011223344556677"
+                def fake_command(argv, env, log, timeout, should_pause=None):
+                    if argv[1] == fail_at:
+                        raise batch.ProcessGroupCleanupError("fixture group cleanup failed")
+                with mock.patch.dict(os.environ, {"FOCUS_DEVICE": device, "FOCUS_WORK": str(work), "FOCUS_XCTESTRUN": str(product)}), \
+                     mock.patch.object(Path, "home", return_value=root), \
+                     mock.patch.object(batch, "identify_iphone13", side_effect=lambda value, workdir: value), \
+                     mock.patch.object(batch, "command", side_effect=fake_command), \
+                     contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaises(batch.ProcessGroupCleanupError):
+                        batch.supervised_restore()
+                self.assertTrue((root / ".device-locks" / (device + ".lock")).is_dir())
+
+    def test_standalone_restore_never_steals_an_existing_lock(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            work = root / "work"
+            product = root / "device.xctestrun"
+            product.write_bytes(b"signed-product")
+            device = "00008110-0011223344556677"
+            occupied = batch.DeviceLock(root / ".device-locks", device)
+            occupied.acquire()
+            with mock.patch.dict(os.environ, {"FOCUS_DEVICE": device, "FOCUS_WORK": str(work), "FOCUS_XCTESTRUN": str(product)}), \
+                 mock.patch.object(Path, "home", return_value=root), \
+                 mock.patch.object(batch, "identify_iphone13", side_effect=lambda value, workdir: value), \
+                 mock.patch.object(batch, "command") as command:
+                with self.assertRaises(RuntimeError):
+                    batch.supervised_restore()
+            command.assert_not_called()
+            self.assertTrue(occupied.path.is_dir())
+            occupied.release()
+
     def test_device_gate_requires_unique_iphone_13_with_canonical_id(self):
         udid = "00008110-0011223344556677"
         core = "01234567-1234-5678-ABCD-1234567890AB"
@@ -389,6 +473,86 @@ class MorningPlanTests(unittest.TestCase):
             result = json.loads((work / "morning-checkpoint.json").read_text())
             self.assertEqual(result["completed"][plan[0]["id"]]["status"], "unqualified")
             self.assertFalse(result["dirty"])
+
+    def test_failed_row_recovers_device_journal_before_next_sample(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            work = root / "work"
+            product = root / "device.xctestrun"
+            product.write_bytes(b"signed-product")
+            plan = batch.make_plan(batch.DEFAULT_UNKNOWN)[:2]
+            calls = []
+            device = "00008110-0011223344556677"
+
+            def fake_command(argv, env, log, timeout, should_pause=None):
+                calls.append(argv[1])
+                if argv[1] == "C06":
+                    result_path = work / "failed-row.json"
+                    result_path.write_text(json.dumps({"row": "C06", "status": "restore-failed-use-restore-all", "restored": False}))
+                    log.write_text(json.dumps({"row": "C06", "status": "restore-failed-use-restore-all", "result": str(result_path)}) + "\n")
+                    # command() returns this error only after successful process-group cleanup.
+                    raise RuntimeError("row process stopped")
+                if argv[1] == "restore-all":
+                    self.assertEqual(env.get("FOCUS_REQUIRE_DEVICE_JOURNAL"), "1")
+                    self.assertTrue((root / ".device-locks" / (device + ".lock")).is_dir())
+                if argv[1] == "C01":
+                    self.assertNotIn("FOCUS_REQUIRE_DEVICE_JOURNAL", env)
+                    checkpoint = json.loads((work / "morning-checkpoint.json").read_text())
+                    self.assertEqual(checkpoint["completed"][plan[0]["id"]]["status"], "unqualified")
+                    result_path = work / "next-row.json"
+                    result_path.write_text(json.dumps({"row": "C01", "status": "recorded", "restored": "focus-off"}))
+                    log.write_text(json.dumps({"row": "C01", "status": "recorded", "result": str(result_path)}) + "\n")
+
+            with mock.patch.dict(os.environ, {"FOCUS_DEVICE": device, "FOCUS_WORK": str(work)}), \
+                 mock.patch.object(Path, "home", return_value=root), \
+                 mock.patch.object(batch, "identify_iphone13", side_effect=lambda value, workdir: value), \
+                 mock.patch.object(batch, "authorize_microphone", return_value="authorized"), \
+                 mock.patch.object(batch, "signed_build", return_value=product), \
+                 mock.patch.object(batch, "command", side_effect=fake_command), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(batch.run_batch(plan, None), 0)
+            self.assertEqual(calls, ["preflight", "C06", "restore-all", "C01", "restore-all"])
+            state = json.loads((work / "morning-checkpoint.json").read_text())
+            self.assertEqual(state["completed"][plan[0]["id"]]["reason"], "restore-failed-use-restore-all")
+            self.assertEqual(state["completed"][plan[0]["id"]]["result"], str(work / "failed-row.json"))
+            self.assertFalse(state["dirty"])
+            self.assertIsNone(state["inFlight"])
+
+    def test_failed_row_recovery_is_not_retried_and_keeps_lock(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            work = root / "work"
+            product = root / "device.xctestrun"
+            product.write_bytes(b"signed-product")
+            plan = batch.make_plan(batch.DEFAULT_UNKNOWN)[:2]
+            calls = []
+            device = "00008110-0011223344556677"
+
+            def fake_command(argv, env, log, timeout, should_pause=None):
+                calls.append(argv[1])
+                if argv[1] == "C06":
+                    result_path = work / "failed-row.json"
+                    result_path.write_text(json.dumps({"row": "C06", "status": "restore-failed-use-restore-all", "restored": False}))
+                    log.write_text(json.dumps({"row": "C06", "status": "restore-failed-use-restore-all", "result": str(result_path)}) + "\n")
+                    raise RuntimeError("row process stopped")
+                if argv[1] == "restore-all":
+                    self.assertEqual(env.get("FOCUS_REQUIRE_DEVICE_JOURNAL"), "1")
+                    raise RuntimeError("cannot restore")
+
+            with mock.patch.dict(os.environ, {"FOCUS_DEVICE": device, "FOCUS_WORK": str(work)}), \
+                 mock.patch.object(Path, "home", return_value=root), \
+                 mock.patch.object(batch, "identify_iphone13", side_effect=lambda value, workdir: value), \
+                 mock.patch.object(batch, "authorize_microphone", return_value="authorized"), \
+                 mock.patch.object(batch, "signed_build", return_value=product), \
+                 mock.patch.object(batch, "command", side_effect=fake_command), \
+                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(RuntimeError):
+                    batch.run_batch(plan, None)
+            self.assertEqual(calls, ["preflight", "C06", "restore-all"])
+            self.assertTrue((root / ".device-locks" / (device + ".lock")).is_dir())
+            state = json.loads((work / "morning-checkpoint.json").read_text())
+            self.assertTrue(state["dirty"])
+            self.assertEqual(state["inFlight"], plan[0]["id"])
 
     def test_dirty_checkpoint_without_preflight_never_releases_lock(self):
         with tempfile.TemporaryDirectory() as root:

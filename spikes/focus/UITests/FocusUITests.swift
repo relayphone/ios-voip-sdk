@@ -642,10 +642,25 @@ final class FocusUITests: XCTestCase {
   }
   // New ActivityKit Settings selectors have not yet been qualified on a device.
   // Each mutation saves the original value first and fails if it cannot be read back.
+  func openUniqueProbeSettingsRow() throws {
+    let search = settings.searchFields.firstMatch
+    for _ in 0..<4 where !search.exists { try front(settings); settings.swipeDown() }
+    guard search.waitForExistence(timeout: 4) else { throw failure("App settings search unavailable; cannot verify unique target") }
+    try type(settings, search, "Focus Probe")
+    Thread.sleep(forTimeInterval: 1)
+    try front(settings)
+    let exact = NSPredicate(format: "label == %@ OR identifier == %@", "Focus Probe", "Focus Probe")
+    let cells = settings.cells.allElementsBoundByIndex.filter {
+      $0.exists && $0.isHittable && ($0.label == "Focus Probe" ||
+        $0.descendants(matching: .any).matching(exact).allElementsBoundByIndex.contains { $0.exists })
+    }
+    guard cells.count == 1 else { throw failure("Probe settings row missing or ambiguous") }
+    try tap(settings, cells[0])
+  }
   func liveActivitiesPage() throws {
     settings.terminate(); settings.launch()
     try tap(settings, scrollTo(settings, ["Apps"]))
-    try tap(settings, scrollTo(settings, ["Focus Probe"]))
+    try openUniqueProbeSettingsRow()
     try tap(settings, scrollTo(settings, ["Live Activities"]))
   }
   func liveSwitch(_ names: [String]) throws -> XCUIElement {
@@ -696,7 +711,7 @@ final class FocusUITests: XCTestCase {
   func activityPreviewPage() throws {
     settings.terminate(); settings.launch()
     try tap(settings, scrollTo(settings, ["Notifications"]))
-    try tap(settings, scrollTo(settings, ["Focus Probe"]))
+    try openUniqueProbeSettingsRow()
     try tap(settings, scrollTo(settings, ["Show Previews"]))
   }
   func selectedActivityPreview() throws -> String {
@@ -745,7 +760,12 @@ final class FocusUITests: XCTestCase {
     if journal.activityCellularData == nil { journal.activityCellularData = try activitySwitchValue(networkSwitchNames("cellular")); try save() }
     try setNetworkSwitch("cellular", enabled: false)
     try setNetworkSwitch("wifi", enabled: false)
+    try networkSettingsPage("cellular")
+    guard try !activitySwitchValue(networkSwitchNames("cellular")) else { throw failure("Cellular Data did not remain off") }
+    try networkSettingsPage("wifi")
+    guard try !activitySwitchValue(networkSwitchNames("wifi")) else { throw failure("Wi-Fi did not remain off") }
     events.append(["event": "activity.networkSettings", "wifi": false, "cellularData": false,
+                   "uptimeMs": Int(ProcessInfo.processInfo.systemUptime * 1000),
                    "qualification": "Settings readback only; Ethernet and actual reachability not established"])
   }
   func restoreActivityNetwork() throws {
@@ -795,11 +815,41 @@ final class FocusUITests: XCTestCase {
     guard probe.state != .runningForeground else { throw failure("Probe must be outside foreground before shortcut invocation") }
     try tap(shortcuts, scrollTo(shortcuts, ["App Shortcuts"]))
     try tap(shortcuts, scrollTo(shortcuts, ["Focus Probe"]))
-    guard probe.state != .runningForeground else { throw failure("Probe entered foreground before shortcut invocation") }
-    try tap(shortcuts, scrollTo(shortcuts, ["Start transcript", "Start Focus transcript probe"]))
+    let shortcut = try scrollTo(shortcuts, ["Start transcript", "Start Focus transcript probe"])
+    let before = probe.state
+    guard before == .notRunning || before == .runningBackground || before == .runningBackgroundSuspended else {
+      throw failure("Probe is foreground or its state is unknown before shortcut invocation")
+    }
+    let tapStart = Int(ProcessInfo.processInfo.systemUptime * 1000)
+    try tap(shortcuts, shortcut)
     // Tapping the system shortcut is not proof of activity creation. The host
     // must verify the token, activity identity and the subsequent trace separately.
-    events.append(["event": "activity.shortcutInvoked", "source": "Shortcuts UI", "observedAt": Date().timeIntervalSince1970])
+    let tapEnd = Int(ProcessInfo.processInfo.systemUptime * 1000)
+    events.append(["event": "activity.shortcutInvoked", "source": "Shortcuts UI", "tapStartUptimeMs": tapStart, "uptimeMs": tapEnd,
+                   "observedAt": Date().timeIntervalSince1970])
+    let deadline = ProcessInfo.processInfo.systemUptime + 2
+    var samples = 0, firstSample = 0
+    repeat {
+      let state: String
+      switch probe.state {
+      case .notRunning: state = "notRunning"
+      case .runningBackground: state = "background"
+      case .runningBackgroundSuspended: state = "backgroundSuspended"
+      case .runningForeground: state = "foreground"
+      case .unknown: state = "unknown"
+      @unknown default: state = "unknown"
+      }
+      let sampledAt = Int(ProcessInfo.processInfo.systemUptime * 1000)
+      if samples == 0 { firstSample = sampledAt }
+      events.append(["event": "activity.shortcutProbeState", "state": state, "uptimeMs": sampledAt])
+      samples += 1
+      guard state != "foreground" && state != "unknown" else { throw failure("Probe entered foreground or could not be sampled during shortcut") }
+      Thread.sleep(forTimeInterval: 0.2)
+    } while ProcessInfo.processInfo.systemUptime < deadline
+    events.append(["event": "activity.shortcutObservation", "startUptimeMs": tapStart, "tapEndUptimeMs": tapEnd,
+                   "firstSampleUptimeMs": firstSample,
+                   "endUptimeMs": Int(ProcessInfo.processInfo.systemUptime * 1000),
+                   "samples": samples, "allNonForeground": true, "qualification": "sampled; foreground between samples cannot be excluded"])
   }
   func activityConsent() throws {
     home(); try front(board)
@@ -837,17 +887,32 @@ final class FocusUITests: XCTestCase {
     let title = "Focus Probe · synthetic transcript"
     _ = try element(board, [title], timeout: 3)
     let screen = board.frame
-    let candidates = board.descendants(matching: .any)
-      .containing(NSPredicate(format: "label == %@ OR identifier == %@", title, title))
-      .allElementsBoundByIndex.filter {
-        guard $0.exists && $0.isHittable && $0.frame.width >= screen.width * 0.4 &&
-          $0.frame.height >= 40 && $0.frame.height <= screen.height * 0.4 else { return false }
-        return $0.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "Revision [0-9]+"))
-          .allElementsBoundByIndex.contains { $0.exists }
-      }.sorted { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
-    guard let card = candidates.first else { throw failure("Cannot identify the synthetic activity card and revision") }
-    if candidates.count > 1, candidates[1].frame == card.frame { throw failure("Ambiguous synthetic activity card") }
+    let candidates = board.cells.allElementsBoundByIndex.filter { cell in
+      guard cell.exists && cell.isHittable && cell.frame.width >= screen.width * 0.4 &&
+        cell.frame.height >= 40 && cell.frame.height <= screen.height * 0.4 else { return false }
+      let labels = cell.staticTexts.allElementsBoundByIndex.filter { $0.exists }.map(\.label)
+      let titles = labels.filter { $0 == title }
+      let revisions = labels.filter { $0.range(of: "^Revision [0-9]+$", options: .regularExpression) != nil }
+      let content = labels.filter { $0 != title && $0 != "Focus Probe" && !revisions.contains($0) }
+      return titles.count == 1 && revisions.count == 1 && content.count == 1 &&
+        (content[0].hasPrefix("Synthetic") || content[0] == "Updates delayed")
+    }
+    guard candidates.count == 1, let card = candidates.first else { throw failure("Synthetic activity cell missing or ambiguous") }
     return card
+  }
+  func respondActivityClockRequest(_ lastNonce: inout String?) throws {
+    let requestURL = documents.appendingPathComponent("activity-clock-request.json")
+    guard let data = try? Data(contentsOf: requestURL), data.count <= 1024,
+      let value = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+      let id = value["id"], id == ProcessInfo.processInfo.environment["FOCUS_OBSERVATION_ID"], UUID(uuidString: id) != nil,
+      let nonce = value["nonce"], UUID(uuidString: nonce) != nil, nonce != lastNonce else { return }
+    // The device timestamp is captured after the host's request was read and
+    // before the response is written, providing a bounded round-trip estimate.
+    let uptime = Int(ProcessInfo.processInfo.systemUptime * 1000)
+    let wall = Int(Date().timeIntervalSince1970 * 1000)
+    try JSONSerialization.data(withJSONObject: ["id": id, "nonce": nonce, "uptimeMs": uptime, "wallTimeMs": wall])
+      .write(to: documents.appendingPathComponent("activity-clock-response.json"), options: .atomic)
+    lastNonce = nonce
   }
   func observeActivity(_ duration: Double) throws {
     guard duration.isFinite && (1...180).contains(duration) else { throw failure("Invalid activity observation duration") }
@@ -855,6 +920,7 @@ final class FocusUITests: XCTestCase {
     let started = Int(ProcessInfo.processInfo.systemUptime * 1000)
     let deadline = Date().addingTimeInterval(duration)
     var previous = "", count = 0, ready = false
+    var lastClockNonce: String?
     repeat {
       let sampleStart = Int(ProcessInfo.processInfo.systemUptime * 1000)
       try front(board)
@@ -876,7 +942,10 @@ final class FocusUITests: XCTestCase {
       events.append(["event": "activity.sample", "revision": revisions[0], "stale": stale,
                      "sampleStartUptimeMs": sampleStart, "uptimeMs": ended, "wallTimeMs": wallTimeMs])
       if signature != previous {
-        events.append(["event": "activity.renderSample", "revision": revisions[0], "text": text,
+        // Only a Boolean is exported: labels may include other notification
+        // content if a system accessibility ancestor is broader than expected.
+        events.append(["event": "activity.renderSample", "revision": revisions[0],
+                       "syntheticTextVisible": text.contains(where: { $0.hasPrefix("Synthetic") }),
                        "stale": stale, "sampleStartUptimeMs": sampleStart, "uptimeMs": ended, "wallTimeMs": wallTimeMs])
         previous = signature
       }
@@ -888,6 +957,7 @@ final class FocusUITests: XCTestCase {
           .write(to: documents.appendingPathComponent("activity-observation-ready.json"), options: .atomic)
         ready = true
       }
+      try respondActivityClockRequest(&lastClockNonce)
       if Date() < deadline { Thread.sleep(forTimeInterval: 0.5) }
     } while Date() < deadline
     let ended = Int(ProcessInfo.processInfo.systemUptime * 1000)
@@ -914,7 +984,7 @@ final class FocusUITests: XCTestCase {
     try saveActivityScreenshot("activity.absent", fields: ["notificationCenterVerified": true])
     home()
   }
-  func activityContains(_ shouldContain: Bool) throws {
+  func activityTextVisibility(_ expected: Bool?) throws {
     try openNotificationCenter()
     let card = try identifiedActivityCard()
     let wanted = ProcessInfo.processInfo.environment["FOCUS_EXPECTED_ACTIVITY_TEXT"] ?? ""
@@ -923,7 +993,7 @@ final class FocusUITests: XCTestCase {
     }
     let query = card.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", wanted))
     let found = query.allElementsBoundByIndex.contains { $0.exists && $0.isHittable }
-    guard found == shouldContain else { throw failure("Activity text visibility differs from expectation") }
+    if let expected, found != expected { throw failure("Activity text visibility differs from expectation") }
     // Record only whether the synthetic marker is visible, never arbitrary text.
     try saveActivityScreenshot("activity.textVisibility", fields: ["visible": found])
     home()
@@ -931,7 +1001,23 @@ final class FocusUITests: XCTestCase {
   func activityDismiss() throws {
     try openNotificationCenter()
     let title = "Focus Probe · synthetic transcript"
-    let card = try identifiedActivityCard()
+    let marker = ProcessInfo.processInfo.environment["FOCUS_EXPECTED_ACTIVITY_TEXT"] ?? ""
+    let prefix = "Synthetic dismissal "
+    guard marker.hasPrefix(prefix), UUID(uuidString: String(marker.dropFirst(prefix.count))) != nil else {
+      throw failure("A unique synthetic dismissal marker is required")
+    }
+    try front(board)
+    let candidates = board.cells.allElementsBoundByIndex.filter { cell in
+      guard cell.exists && cell.isHittable else { return false }
+      let labels = cell.staticTexts.allElementsBoundByIndex.filter { $0.exists }.map(\.label)
+      let titles = labels.filter { $0 == title }
+      let revisions = labels.filter { $0.range(of: "^Revision [0-9]+$", options: .regularExpression) != nil }
+      let content = labels.filter { $0 != title && $0 != "Focus Probe" && !revisions.contains($0) }
+      // A dedicated cell must contain exactly one target title/revision and
+      // one run-unique synthetic message, with no unrelated notification text.
+      return titles.count == 1 && revisions.count == 1 && content.count == 1 && content[0] == marker
+    }
+    guard candidates.count == 1, let card = candidates.first else { throw failure("Probe activity cell is missing, ambiguous or contains unrelated text") }
     let originalFrame = card.frame
     try front(board); card.swipeLeft(); try front(board)
     let titleQuery = board.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR identifier == %@", title, title))
@@ -1130,7 +1216,7 @@ final class FocusUITests: XCTestCase {
         guard p.count == 2, let n = Double(p[1]), n.isFinite, n >= 1,
           n <= (p[0] == "activity-observe" ? 180.0 : 240.0) else { throw failure("Invalid observation duration") }
       } else {
-        guard p.count == 1 && ["setup", "restore-all", "sample", "launch", "home", "terminate", "activity-consent", "activity-check", "activity-absent", "activity-contains", "activity-hidden", "activity-shortcut", "activity-dismiss", "lock"].contains(p[0]) else { throw failure("Unknown action") }
+        guard p.count == 1 && ["setup", "restore-all", "sample", "launch", "home", "terminate", "activity-consent", "activity-check", "activity-absent", "activity-contains", "activity-hidden", "activity-probe-text", "activity-shortcut", "activity-dismiss", "lock"].contains(p[0]) else { throw failure("Unknown action") }
       }
     }
     do {
@@ -1162,8 +1248,9 @@ final class FocusUITests: XCTestCase {
         case "activity-observe": try observeActivity(Double(value) ?? 0)
         case "activity-consent": try activityConsent()
         case "activity-absent": try activityAbsent()
-        case "activity-contains": try activityContains(true)
-        case "activity-hidden": try activityContains(false)
+        case "activity-contains": try activityTextVisibility(true)
+        case "activity-hidden": try activityTextVisibility(false)
+        case "activity-probe-text": try activityTextVisibility(nil)
         case "activity-shortcut": try invokeActivityShortcut()
         case "activity-dismiss": try activityDismiss()
         case "activity-setting":
