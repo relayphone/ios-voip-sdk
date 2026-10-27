@@ -231,7 +231,7 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                 timing.record(phase + '.deadline')
                 if startup_timeout is not None:
                     result['timeoutReason'] = phase
-                    result['failureClass'] = 'infra:startup' if phase == 'startup' else 'timeout:capture'
+                    result['failureClass'] = 'infra:startup' if phase == 'startup' else 'infra:capture'
                 raise RuntimeError("deadline before " + ('app entry' if phase == 'startup' else 'terminal done event'))
 
             while not result["completed"]:

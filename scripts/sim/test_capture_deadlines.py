@@ -110,7 +110,7 @@ class CaptureDeadlines(unittest.TestCase):
         status, receipt, now = self.capture(events)
         self.assertEqual(status, 1, receipt)
         self.assertEqual(receipt['timeoutReason'], 'capture')
-        self.assertEqual(receipt['failureClass'], 'timeout:capture')
+        self.assertEqual(receipt['failureClass'], 'infra:capture')
         self.assertFalse(receipt['completed'])
         self.assertAlmostEqual(now, 182)
 
