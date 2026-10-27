@@ -2,7 +2,7 @@
 
 There are **no manual QA rows** in this harness. Hamza already approved changing Auto-Answer Calls and Auto-Lock on the iPhone 13, with restoration, and using the Mac microphone. Do not request that approval again. The only remaining human interaction is clicking **Allow** on the first macOS microphone permission prompt. Missing permission produces `mic permission pending` and visual-only evidence; it does not hold a row open waiting for a person.
 
-Claude owns device execution. This lane compiled generic iOS and dry-ran the host tools without using a device or recording microphone input. Build/dry-run success does not qualify installed-OS selectors or Auto-Answer behavior.
+Claude owns device execution. This lane compiles generic iOS and dry-runs host tools without using a device or recording microphone input. Build/dry-run success does not qualify installed-OS selectors or Auto-Answer behavior. The new one-command [morning batch](../../../spikes/focus/README.md#morning-batch) signs using Xcode's account, checkpoints each row, yields to Phone through PAUSE, and restores at the end. Its only human interaction is the microphone permission click. The batch cannot read or change the physical Ring/Silent switch, so its position and both switch-specific outcomes remain unqualified without independent evidence.
 
 ## Claude's automated sequence
 

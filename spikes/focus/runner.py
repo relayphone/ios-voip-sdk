@@ -63,8 +63,80 @@ def surface_windows(events, received, observation):
     return windows
 
 
+def answer_evidence(events, trace, observation, signal_id, push_ms):
+    """Qualify a local signal-to-disappearance interval only with continuous visible evidence."""
+    matching = [item for item in trace if str(item.get("signalID", "")).lower() == signal_id.lower()]
+    signals = [item for item in matching if item.get("event") == "answer.signal"]
+    reports = [item for item in matching if item.get("event") == "answer.report"]
+    if len(signals) != 1 or len(reports) != 1:
+        return {"status": "unqualified", "reason": "missing-or-duplicate-signal-or-report"}
+    start, report = signals[0].get("monoMs"), reports[0].get("monoMs")
+    if not isinstance(start, int) or not isinstance(report, int) or report < start:
+        return {"status": "unqualified", "reason": "invalid-device-timestamps"}
+    if not isinstance(push_ms, int) or not observation.get("startUptimeMs", start + 1) <= push_ms <= start <= report <= observation.get("endUptimeMs", -1):
+        return {"status": "unqualified", "reason": "outside-observation-window"}
+    for surface in ("banner", "callScreen"):
+        prior_samples = [e for e in events if e.get("event") == "surface.sample" and e.get("surface") == surface
+                         and isinstance(e.get("uptimeMs"), int) and isinstance(e.get("sampleStartUptimeMs"), int)
+                         and e["sampleStartUptimeMs"] <= e["uptimeMs"] <= push_ms]
+        if not prior_samples:
+            return {"status": "unqualified", "reason": "missing-pre-push-surface-sample"}
+        last_sample = max(prior_samples, key=lambda e: e["uptimeMs"])
+        if last_sample.get("visible") is not False or push_ms - last_sample["uptimeMs"] > 2000:
+            return {"status": "unqualified", "reason": "pre-push-surface-not-clear"}
+    transitions = [e for e in events if e.get("event") == "surface.transition" and isinstance(e.get("uptimeMs"), int)]
+    visible = {}
+    for surface in ("banner", "callScreen"):
+        prior = [e for e in transitions if e.get("surface") == surface and e["uptimeMs"] <= push_ms]
+        if prior and max(prior, key=lambda e: e["uptimeMs"]).get("visible") is True:
+            return {"status": "unqualified", "reason": "surface-visible-before-push", "signalUptimeMs": start}
+        after = [e for e in transitions if e.get("surface") == surface and push_ms < e["uptimeMs"] <= start]
+        if after:
+            if any(e.get("visible") is True and e.get("sampleStartUptimeMs", -1) <= push_ms for e in after):
+                return {"status": "unqualified", "reason": "presentation-spans-push", "signalUptimeMs": start}
+            last = max(after, key=lambda e: e["uptimeMs"])
+            if last.get("visible") is True:
+                visible[surface] = last.get("callerMatched") is True
+    if not visible or not all(visible.values()):
+        return {"status": "unqualified", "reason": "no-identified-ui-after-push", "signalUptimeMs": start}
+    samples = sorted({(e["uptimeMs"], e["sampleStartUptimeMs"]) for e in events
+                      if e.get("event") == "surface.sample" and isinstance(e.get("uptimeMs"), int)
+                      and isinstance(e.get("sampleStartUptimeMs"), int) and e["sampleStartUptimeMs"] <= e["uptimeMs"]})
+    before_signal = [value for value in samples if value[0] <= start]
+    if not before_signal or start - before_signal[-1][0] > 2000 or before_signal[-1][1] <= push_ms:
+        return {"status": "unqualified", "reason": "stale-ui-sample-at-signal", "signalUptimeMs": start}
+    later = sorted((e for e in transitions if start < e["uptimeMs"] <= observation["endUptimeMs"]), key=lambda e: e["uptimeMs"])
+    # Banner and full-screen state are sampled together. Apply the whole sample
+    # before deciding that both surfaces vanished.
+    from itertools import groupby
+    for timestamp, sample in groupby(later, key=lambda e: e["uptimeMs"]):
+        group = list(sample)
+        if any(not isinstance(e.get("sampleStartUptimeMs"), int) or e["sampleStartUptimeMs"] < report for e in group):
+            return {"status": "unqualified", "reason": "ui-sample-spans-end-report", "signalUptimeMs": start}
+        for event in group:
+            surface = event.get("surface")
+            if event.get("visible") is True:
+                visible[surface] = event.get("callerMatched") is True
+            else:
+                visible.pop(surface, None)
+        if visible and not all(visible.values()):
+            return {"status": "unqualified", "reason": "ambiguous-ui-identity", "signalUptimeMs": start}
+        if not visible and timestamp >= report:
+            coverage = [before_signal[-1]] + [value for value in samples if before_signal[-1][0] < value[0] <= timestamp]
+            if (not coverage or coverage[-1][0] != timestamp or any(end - begin > 2000 for end, begin in coverage)
+                    or any(b[1] - a[0] > 2000 for a, b in zip(coverage, coverage[1:]))):
+                return {"status": "unqualified", "reason": "ui-observation-gap", "signalUptimeMs": start}
+            last_sample_start = coverage[-2][1] if len(coverage) > 1 else coverage[-1][1]
+            return {"status": "observed", "signalUptimeMs": start, "reportUptimeMs": report,
+                    "dismissalUptimeMs": timestamp, "signalToDismissalMs": timestamp - start,
+                    "dismissalLowerBoundMs": max(0, last_sample_start - start),
+                    "samplingUncertaintyMs": timestamp - last_sample_start,
+                    "source": "local mailbox; not network delivery"}
+    return {"status": "unqualified", "reason": "dismissal-not-observed", "signalUptimeMs": start, "reportUptimeMs": report}
+
+
 def plan(row, locked=False, listen=False, provider=None, caller_format="e164", repeated_calls="off", caller_value=None):
-    aliases = {"CK-F13": ("F13", "callkit"), "CK-C02": ("C02", "callkit"), "LCK-C02b": ("C02", "lck")}
+    aliases = {"CK-F09": ("F09", "callkit"), "CK-F13": ("F13", "callkit"), "CK-C02": ("C02", "callkit"), "LCK-C02b": ("C02", "lck")}
     original = row
     if row in aliases:
         row, expected = aliases[row]
@@ -94,7 +166,7 @@ def plan(row, locked=False, listen=False, provider=None, caller_format="e164", r
             p["blocked"] = "Alerting push-to-start excluded from silent mode"
         if n == 16:
             p["blocked"] = "iPhone 13 has no Dynamic Island"
-    elif row == "restore-all":
+    elif row in ["restore-all", "preflight"]:
         p["sendVoIP"] = False
     elif row.startswith("T") and row[1:].isdigit() and 1 <= int(row[1:]) <= 6:
         p["blocked"] = "Requires Phone LiveKit owner-join/backend; probe has no AI/media"
@@ -129,6 +201,8 @@ def plan(row, locked=False, listen=False, provider=None, caller_format="e164", r
     if row == "restore-all":
         p["steps"] = ["restore owned journal; restore Auto-Answer/delay + Auto-Lock; delete test Focus/contact; restore prior active Focus",
                       "uninstall disposable probe only if required to restore undetermined permissions; no push"]
+    elif row == "preflight":
+        p["steps"] = ["check Share Across Devices is OFF in Settings without changing Focus or sending a push"]
     return p
 
 
@@ -195,9 +269,16 @@ class Run:
                       "--destination", "Documents/" + name if to else str(destination)])
 
     def ui(self, actions, background=False, text=None):
+        # A killed UI session may have journaled a mutation after the last host
+        # backup. Refresh from the test container before passing recovery state
+        # back to XCUITest; never overwrite a newer device journal with a stale one.
+        self.recover(required=self.journal.exists() or os.environ.get("FOCUS_REQUIRE_DEVICE_JOURNAL") == "1")
         data = plistlib.loads(self.source.read_bytes())
         env = {"FOCUS_ACTIONS": json.dumps(actions), "FOCUS_NAME": os.environ.get("FOCUS_NAME", "Focus Probe 124"),
-               "FOCUS_CALLER": "+15555550199", "FOCUS_OBSERVATION_ID": self.invitation}
+               "FOCUS_CALLER": "+15555550199", "FOCUS_OBSERVATION_ID": self.invitation,
+               "FOCUS_EXPECTED_CALLER": self.p["callerValue"]}
+        if self.p.get("unknownCaller"):
+            env["FOCUS_UNKNOWN_CALLER"] = self.p["callerValue"]
         if self.journal.exists() and self.journal_fresh:
             env["FOCUS_RESTORE_STATE"] = base64.b64encode(self.journal.read_bytes()).decode()
         if (self.work / "system-settings-approved").exists():
@@ -238,21 +319,26 @@ class Run:
                 self.recover(required=True)
 
     def recover(self, required=False):
+        candidate = self.folder / ("journal-" + uuid.uuid4().hex + ".json")
         try:
-            self.copy("focus-ui-state.json", self.journal, test=True)
-            json.loads(self.journal.read_text())
+            self.copy("focus-ui-state.json", candidate, test=True)
+            json.loads(candidate.read_text())
+            os.replace(candidate, self.journal)
+            self.journal.chmod(0o600)
             self.journal_fresh = True
-        except (RuntimeError, subprocess.TimeoutExpired):
+        except (RuntimeError, subprocess.TimeoutExpired, OSError, ValueError):
             self.journal_fresh = False
             if required:
                 raise RuntimeError("Restoration journal could not be backed up; no push allowed")
+        finally:
+            candidate.unlink(missing_ok=True)
 
     def arm(self, config):
         path = self.folder / "config.json"; write(path, config); self.copy("focus.json", path, to=True)
 
     def restore(self):
         self.arm({"armed": False, "activityAction": "end"})
-        self.ui(["launch", "restore-all"])
+        self.ui(["share-across-devices:check", "launch", "restore-all"])
         if self.journal.exists() and json.loads(self.journal.read_text()).get("requiresProbeUninstall"):
             self.command(["xcrun", "devicectl", "device", "uninstall", "app", "--device", self.device, BUNDLE])
             self.journal.unlink()
@@ -318,18 +404,27 @@ class Run:
             if p["row"] == "restore-all":
                 self.restore(); result["status"] = "restored"; return result
             # The Focus app picker lists only apps that have notification permission (iOS 27).
-            actions = ["setup", "launch", "notifications:allow", "app:" + ("include" if p["app"] else "exclude"),
+            actions = ["share-across-devices:check", "setup", "launch", "notifications:allow",
+                       "app:" + ("include" if p["app"] else "exclude"),
                        "person:" + ("include" if p["person"] else "exclude"), "calls:Allowed People Only"]
             if p["baseRow"] == "C01":
                 actions[-1] = "calls:" + self.args.calls
             actions += ["repeated-calls:" + (self.args.repeated_calls if p["baseRow"] == "C02" else "off")]
+            if p["unknownCaller"]:
+                actions += ["unknown:verify"]
+            if p["favorite"] is not None:
+                actions += ["favorite:" + ("on" if p["favorite"] == "yes" else "off")]
             if p["row"] == "C06":
                 actions += ["policy:screenWithAI"]
-            actions += ["focus:" + ("on" if p["focus"] else "off")]
+            if p["focusMode"] == "dnd":
+                actions += ["dnd:configure", "dnd:on"]
+            else:
+                actions += ["focus:" + ("on" if p["focus"] else "off")]
             self.ui(actions)
             self.arm({"rowID": p["row"], "runID": self.run_id, "provider": p["provider"], "handleType": p["handleType"],
                       "armed": True, "communicationNotification": p["cn"],
-                      "activityAction": "start" if p["activity"] else None})
+                      "activityAction": "start" if p["activity"] else None,
+                      "ringTimeout": 60 if p["serverAnswer"] else 25})
             self.ui(["launch", "notifications:allow"] + (["focus-authorization:allow"] if p["row"] == "C05" else []))
             if p["activity"]:
                 self.ui(["activity-consent"])
@@ -347,7 +442,7 @@ class Run:
                 history = self.work / "last-voip-attempt.json"
                 if history.exists():
                     previous = json.loads(history.read_text())
-                    if needs_repeat_fence(p["baseRow"], previous):
+                    if p["focusMode"] == "dnd" or needs_repeat_fence(p["baseRow"], previous):
                         last = previous["attemptedAt"]
                         while repeat_cooldown(last, time.time()) > 0:
                             time.sleep(min(30, repeat_cooldown(last, time.time())))
@@ -378,6 +473,14 @@ class Run:
                 time.sleep(5)  # Quiet baseline before the controlled signal.
             if p["sendVoIP"]:
                 self.send()
+                if p["serverAnswer"]:
+                    # Simulate a server answer through a local mailbox, never a cancellation-only VoIP push.
+                    # The app must be runnable; absence of its trace is recorded as unqualified.
+                    time.sleep(5)
+                    self.signal_id = str(uuid.uuid4())
+                    path = self.folder / "answer-signal.json"
+                    write(path, {"runID": self.run_id, "invitationID": self.invitation, "signalID": self.signal_id})
+                    self.copy("answer-signal.json", path, to=True)
                 if p["baseRow"] == "C02":
                     time.sleep(69); self.invitation = str(uuid.uuid4()); self.invitations.append(self.invitation); self.send("-repeat")
             if p["activity"]:
@@ -413,6 +516,8 @@ class Run:
                     result["repeatIntervalMs"] = device_receipts[1][1] - device_receipts[0][1]
             result["invitationIDs"] = self.invitations
             result["reports"] = [e for e in matching if e["event"] == "report.result"]
+            if p["serverAnswer"] and observer:
+                result["answeredElsewhere"] = answer_evidence(ui["events"], matching, result["visual"][0], self.signal_id, device_receipts[0][1])
             first_window = result.get("visualByInvitation", [{}])[0]
             if p["row"] == "C00" and len(result["reports"]) == 1 and result["reports"][0].get("outcome") == "reported" and first_window.get("observationQualified") and (first_window.get("bannerFirstNewPresentationUptimeMs") is not None or first_window.get("callScreenFirstNewPresentationUptimeMs") is not None):
                 write(self.work / "visual-calibration.json", {"positive": True, "binding": self.binding, "createdAt": time.time()})
@@ -456,7 +561,8 @@ class Run:
                     self.recover()
                     if self.args.keep_setup:
                         # Matrix runs keep the owned Focus/contact between rows; only the Focus-on window ends here.
-                        self.arm({"armed": False, "activityAction": None if p["activity"] else "end"}); self.ui(["focus:off"])
+                        self.arm({"armed": False, "activityAction": None if p["activity"] else "end"})
+                        self.ui(["dnd:off" if p["focusMode"] == "dnd" else "focus:off"])
                         result["restored"] = "focus-off"
                     else:
                         self.restore(); result["restored"] = True
@@ -485,11 +591,28 @@ def main():
     parser.add_argument("--caller-value", help="synthetic handle in the chosen format; default matches the test contact")
     parser.add_argument("--calls", default="Everyone", choices=["Everyone", "All Contacts", "Contacts Only", "Favorites", "Allowed People Only"])
     parser.add_argument("--keep-setup", action="store_true", help="matrix mode: turn Focus off after the row; run restore-all at the end")
+    parser.add_argument("--focus-mode", choices=["custom", "dnd"], default="custom")
+    parser.add_argument("--unknown-caller", action="store_true", help="verify the supplied E.164 caller is absent from Contacts")
+    parser.add_argument("--favorite", choices=["yes", "no"], help="set the owned test contact's Favorites state")
+    parser.add_argument("--server-answer", action="store_true", help="simulate an answer through a local mailbox, not APNs")
     args = parser.parse_args()
     p = plan(args.row, args.locked_auto_answer, args.listen, args.provider, args.caller_format, args.repeated_calls, args.caller_value)
-    if not p["blocked"] and p["baseRow"] != "restore-all":
+    if args.focus_mode == "dnd" and (not p["focus"] or p["app"] or p["person"] or not p["sendVoIP"]):
+        raise ValueError("Built-in DND rows require a focused incoming call with app and person excluded")
+    if args.unknown_caller and (not args.caller_value or args.caller_format != "e164" or args.caller_value == "+15555550199" or p["person"]):
+        raise ValueError("Unknown caller needs a different E.164 number and no allowed test contact")
+    if args.server_answer and (not p["sendVoIP"] or p["baseRow"] == "C02" or args.locked_auto_answer):
+        raise ValueError("Local answer signaling requires one unlocked incoming-call observation")
+    p.update(focusMode=args.focus_mode, unknownCaller=args.unknown_caller, favorite=args.favorite, serverAnswer=args.server_answer)
+    if not p["blocked"] and p["baseRow"] not in ["restore-all", "preflight"]:
         p["callsFrom"] = args.calls if p["baseRow"] == "C01" else "Allowed People Only"
         p["keepSetup"] = args.keep_setup
+        if args.focus_mode == "dnd":
+            p["steps"].insert(1, "snapshot built-in DND settings, verify app exclusion and selected controls, then enable DND")
+        if args.unknown_caller:
+            p["steps"].insert(1, "verify the caller is absent from Contacts before the call")
+        if args.server_answer:
+            p["steps"].insert(-2, "write a matched local answer signal; trace receipt/report and UI disappearance")
         if args.keep_setup:
             p["steps"][-1] = "write private row result; disarm and turn Focus off; keep owned setup (run restore-all after matrix)"
     if args.dry_run or p["blocked"]:
@@ -497,6 +620,9 @@ def main():
             p["status"] = "skipped-dependency-or-unsupported"
             p["humanQA"] = False
         print(json.dumps(p, indent=2)); return
+    if p["baseRow"] == "preflight":
+        Run(p, args).ui(["share-across-devices:check"])
+        print(json.dumps({"row": "preflight", "status": "recorded"})); return
     result = Run(p, args).execute()
     if result["status"] not in ["recorded", "restored"]:
         raise RuntimeError("Row or restoration incomplete")
