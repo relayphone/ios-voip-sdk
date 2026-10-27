@@ -13,6 +13,7 @@ import {
   type PushToken,
 } from 'ios-voip-sdk';
 
+import { callerFixture } from './callerFixture';
 import { journey } from './journey';
 
 type Fields = Record<string, string | boolean | number | null>;
@@ -94,12 +95,7 @@ function payload(): IncomingCallPayload {
   return {
     eventId: 'sdk-example-event-' + journey().runID,
     serverCallId: 'sdk-example-server-' + journey().runID,
-    caller: {
-      handleType: 'phone',
-      value: '+15555550142',
-      displayName: 'SDK example',
-      hostContactID: 'sdk-example-caller',
-    },
+    caller: callerFixture(),
     hasVideo: false,
   };
 }
