@@ -72,6 +72,32 @@ int main(void) { @autoreleasepool {
   [binding setSystemAudioAuthorization:YES];
   completeOperation(^(VSMediaCompletion completion) { [binding activate:audio completion:completion]; }, 0);
   CHECK(rtc.isAudioEnabled && [rtc.events isEqual:@[@"manual:on", @"enabled:off", @"activate", @"enabled:on"]]);
+  // Route-only configuration shares the native lock without re-preparing an
+  // already authorized backend or writing either manual/audio-enabled flag.
+  NSUInteger routeEvents = rtc.events.count, routeGateWrites = rtc.lockedGateWrites;
+  completeOperation(^(VSMediaCompletion completion) { [binding configureAudioRoute:^NSError * {
+    CHECK(!NSThread.isMainThread && VSAudioSessionIsOnQueue() && rtc.configurationLocked);
+    return nil;
+  } completion:completion]; }, 0);
+  CHECK(!rtc.configurationLocked && rtc.useManualAudio && rtc.isAudioEnabled);
+  CHECK(rtc.events.count == routeEvents && rtc.lockedGateWrites == routeGateWrites);
+  completeOperation(^(VSMediaCompletion completion) { [binding configureAudioRoute:^NSError * {
+    CHECK(VSAudioSessionIsOnQueue() && rtc.configurationLocked);
+    return [NSError errorWithDomain:@"VoIPSDK.MediaAdapter" code:7 userInfo:nil];
+  } completion:completion]; }, 7);
+  CHECK(!rtc.configurationLocked && rtc.useManualAudio && rtc.isAudioEnabled && rtc.events.count == routeEvents);
+  completeOperationWithDomain(^(VSMediaCompletion completion) { [binding configureAudioRoute:^NSError * {
+    CHECK(VSAudioSessionIsOnQueue() && rtc.configurationLocked);
+    return [NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil];
+  } completion:completion]; }, NSUserCancelledError, NSCocoaErrorDomain);
+  CHECK(!rtc.configurationLocked && rtc.useManualAudio && rtc.isAudioEnabled && rtc.events.count == routeEvents);
+  completeOperation(^(VSMediaCompletion completion) { [binding configureAudioRoute:^NSError * {
+    CHECK(VSAudioSessionIsOnQueue() && rtc.configurationLocked);
+    [NSException raise:@"SyntheticRouteConfiguration" format:@"host-only exception"];
+    return nil;
+  } completion:completion]; }, 2);
+  CHECK(!rtc.configurationLocked && rtc.useManualAudio && rtc.isAudioEnabled);
+  CHECK(rtc.events.count == routeEvents && rtc.lockedGateWrites == routeGateWrites);
   NSUInteger authorizedEvents = rtc.events.count, lockedWrites = rtc.lockedGateWrites;
   completeOperation(^(VSMediaCompletion completion) { [binding prepareWithCheck:^NSError * { return nil; } configuration:configure completion:completion]; }, 0);
   CHECK(rtc.isAudioEnabled && rtc.events.count == authorizedEvents + 1 && rtc.lockedGateWrites == lockedWrites);
@@ -119,5 +145,5 @@ int main(void) { @autoreleasepool {
   completeOperation(^(VSMediaCompletion completion) { [rejected activate:audio completion:completion]; }, 2);
   refusesManualAudio = NO;
   // The final reset revoked permission without fabricating a deactivation callback.
-  puts("passed: idle no-op, queued WebRTC configuration/manual gate under lock, error/exception unlock, authorized second-call preservation, callback balance, withdrawn delayed activation, reset revocation");
+  puts("passed: idle no-op, queued WebRTC configuration/manual gate under lock, route-only lock and error/cancellation/exception unlock without flag writes, authorized second-call preservation, callback balance, withdrawn delayed activation, reset revocation");
 } return 0; }

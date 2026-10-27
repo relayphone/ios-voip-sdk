@@ -14,7 +14,7 @@ def results(native, optional):
     return {'changes': {'result': 'success'},
             **{job: {'result': native} for job in NATIVE},
             **{job: {'result': optional} for job in
-               ('legacy-audio-lifecycle', 'swift-livekit-native', 'expo-livekit-native')}}
+               ('legacy-audio-lifecycle', 'swift-livekit-native', 'expo-livekit-native', 'routes-duo')}}
 
 
 class ParallelGateTests(unittest.TestCase):

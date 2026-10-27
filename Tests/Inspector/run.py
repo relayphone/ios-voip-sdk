@@ -22,6 +22,9 @@ from run import capture_diagnostics, fixture_session, latest_runtime, launch_fix
 sys.path.insert(0, str(ROOT / 'scripts/sim'))
 from inspector_startup import cleanup_operations, locate_probe, supervise_launch
 
+sys.path.insert(0, str(Path(__file__).parent))
+from foreground_control import activate_existing as phase_activate_existing, read_identity
+
 BUNDLE = 'dev.callkitsim.eventfixture'
 INSPECTOR = 'dev.callkitsim.inspector'
 
@@ -130,7 +133,7 @@ def remaining_budget(deadline):
 
 
 def activate_existing(device, bundle, pid, deadline):
-    # Foregrounding shares the consumer lifetime, including hosted launch latency.
+    # Preparation only: the planned next consumer has not started yet.
     output = run('xcrun', 'simctl', 'launch', device, bundle, timeout=remaining_budget(deadline))
     remaining_budget(deadline)
     identities = [line.split(':', 1)[1].strip() for line in output.splitlines() if line.startswith(bundle + ':')]
@@ -366,20 +369,46 @@ def consumer_control(channel, session, target, deadline):
     return send
 
 
-def foreground_control(target, session, channel, deadline, out):
+def foreground_control(target, session, channel, deadline, out, probe, connection):
+    remaining_budget(deadline)
+    fixture = read_identity(channel.parent.parent, bundle=session['bundleID'], pid=session['pid'],
+                            nonce=session['runID'], session=session)
+    remaining_budget(deadline)
+    inspector = read_identity(probe.container, bundle=INSPECTOR, pid=probe.pid,
+                              nonce=probe.nonce, session=session)
+    remaining_budget(deadline)
+    if inspector['startedWallTimeMS'] != probe.started:
+        raise RuntimeError('Inspector foreground startup identity changed')
+    identities = {session['bundleID']: fixture, INSPECTOR: inspector}
     phases = []
     def foreground(bundle, pid):
         started = time.time() * 1000
-        activate_existing(target, bundle, pid, deadline)
+        identity = identities[bundle]
+        if type(pid) is not int or identity['pid'] != pid:
+            raise RuntimeError('Foreground phase process identity changed')
+        phase = f'{len(phases) + 1:02d}-' + ('fixture' if bundle == session['bundleID'] else 'inspector')
+        acknowledgement = phase_activate_existing(target, identity, phase, deadline,
+            consumer_started_wall_ms=probe.started, log=out / ('foreground-' + phase + '.log'),
+            bridge_alive=connection.is_alive)
+        remaining_budget(deadline)
+        request = (Path(identity['dataContainer']) / 'Documents/cksim-foreground-phase-request.json').read_bytes()
+        remaining_budget(deadline)
+        if json.loads(request) != dict(identity, phase=phase, challenge=acknowledgement['challenge']):
+            raise RuntimeError('Foreground phase request changed')
+        (out / ('foreground-' + phase + '-request.json')).write_bytes(request)
+        (out / ('foreground-' + phase + '-ack.json')).write_text(json.dumps(acknowledgement))
         if json.loads((channel / 'session.json').read_text()) != session:
             raise RuntimeError('Runtime session changed during foreground control')
-        phases.append(dict(bundleID=bundle, pid=pid, startedWallTimeMS=started, finishedWallTimeMS=time.time() * 1000))
+        remaining_budget(deadline)
+        phases.append(dict(bundleID=bundle, pid=pid, phase=phase,
+                           startedWallTimeMS=started, finishedWallTimeMS=time.time() * 1000))
         (out / 'foreground-phases.json').write_text(json.dumps(phases))
+        remaining_budget(deadline)
         return started
     return foreground
 
 
-def journal_journey(common, target, nonce, session, out, deadline, channel=None, probe=None):
+def journal_journey(common, target, nonce, session, out, deadline, channel=None, probe=None, *, connection):
     """Drive controls and require the foreground Inspector's consumed projections."""
     if probe is None:
         path = locate_probe(target, nonce, INSPECTOR)
@@ -393,7 +422,7 @@ def journal_journey(common, target, nonce, session, out, deadline, channel=None,
     assert not ready.get('incoming') and not ready['conversations'], 'fixture must start without a call'
     (out / 'inspector-online.json').write_text(json.dumps(ready))
     command = consumer_control(channel, session, target, deadline)
-    foreground = foreground_control(target, session, channel, deadline, out)
+    foreground = foreground_control(target, session, channel, deadline, out, probe, connection)
     payload = out / 'incoming.json'
     payload.write_text(json.dumps(dict(operation='incoming')))
     foreground(session['bundleID'], session['pid'])
@@ -454,14 +483,14 @@ def journal_journey(common, target, nonce, session, out, deadline, channel=None,
 
 
 def filter_journey(common, target, nonce, session, out, deadline, channel, probe,
-                   *, before, reason, code, verification):
+                   *, before, reason, code, verification, connection):
     """Verify one filter transition within this consumer's original 25 seconds."""
     ready = probe.wait(lambda row: row['online'], timeout=10, deadline=deadline)
     deadline = min(deadline, time.monotonic() + 25 - (time.time() * 1000 - probe.started) / 1000)
     remaining_budget(deadline)
     assert ready.get('incomingFilter') == before, 'filter case must retain the preceding runtime setting'
     (out / 'inspector-online.json').write_text(json.dumps(ready))
-    foreground = foreground_control(target, session, channel, deadline, out)
+    foreground = foreground_control(target, session, channel, deadline, out, probe, connection)
     foreground(session['bundleID'], session['pid'])
     command = consumer_control(channel, session, target, deadline)
     response = json.loads(command('incoming-filter', reason=reason,
@@ -512,7 +541,8 @@ def run_filter_cases(common, target, connection, session, channel, out):
                 raise RuntimeError('Inspector filter bridge must be fresh and retain the target session')
             probe, deadline = launch_inspector(fresh, target, nonce, session, channel, case_out, True)
             result = filter_journey(common, target, nonce, session, case_out, deadline, channel, probe,
-                                    before=before, reason=reason, code=code, verification=verification)
+                                    before=before, reason=reason, code=code, verification=verification,
+                                    connection=fresh)
             if result.get('success') is not True:
                 raise RuntimeError('Inspector filter case did not succeed')
         connection = fresh
@@ -522,7 +552,8 @@ def run_filter_cases(common, target, connection, session, channel, out):
 
 def journal_cases(common, target, nonce, session, out, deadline, channel, connection,
                   *, verify_filters=False, probe=None):
-    result = journal_journey(common, target, nonce, session, out, deadline, channel, probe=probe)
+    result = journal_journey(common, target, nonce, session, out, deadline, channel, probe=probe,
+                             connection=connection)
     if result.get('success') is not True:
         raise RuntimeError('Inspector incoming/answer case did not succeed')
     if verify_filters:

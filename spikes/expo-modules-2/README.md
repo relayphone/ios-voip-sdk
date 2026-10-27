@@ -66,7 +66,7 @@ The benchmark checks 1,000 cached reads at both 2 and 2,048 conversations after
 loop/timer overhead. It asserts identity and valid samples without setting a
 host-dependent latency budget. Initial encoding and publication are excluded.
 
-See the [findings and M3.5 recommendation](../../docs/progress/2026-10-23-expo-modules-2-findings.md).
+See the [findings and M3.5 recommendation](../../docs/design/2026-10-23-expo-modules-2-findings.md).
 The next checks cover handler/deadline/AbortSignal, reload, export drift, shared
 object events and early PushKit registration. The shipping SDK is unchanged by
 this spike; the final findings update follows those checks.
@@ -80,7 +80,7 @@ this spike; the final findings update follows those checks.
   transitively through `expo-modules-core`; no separate plugin build is needed.
 - [SDK 58 pod integration](https://github.com/expo/expo/blob/sdk-58/packages/expo-modules-autolinking/scripts/ios/project_integrator.rb)
   adds the macro executable to pods with a direct `ExpoModulesCore` dependency.
-- [Steering §B](../../docs/progress/2026-10-22-claude-steering.md#b-bridge-and-threading-direction-decide-now-while-the-js-surface-is-small)
+- [Requirements §B](../../docs/design/2026-10-22-requirements-after-m0-m1.md#b-bridge-and-threading-direction-decide-now-while-the-js-surface-is-small)
   supplies the threading contract: async `@JS` defaults to the JS actor until
   its first suspension; command isolation must be explicit. Value-returning JS
   closures block native callers; the handler must use an async closure.

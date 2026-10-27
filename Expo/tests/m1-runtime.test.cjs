@@ -72,6 +72,7 @@ function native() {
     },
     getConversations: async () => ({ revision: 0, conversations: [] }),
     getPushToken: async () => ({ revision: 0, token: null }),
+    getAudioRoutes: async () => ({ revision: 0, routes: [], current: null }),
     setHandlerAttached(attached, generation) {
       this.attachments.push({ attached, generation });
     },
@@ -385,4 +386,54 @@ test('non-state signals are routed by name and unsubscribe removes the listener'
   unsubscribe();
   bridge.emit('conversationEvent', { type: 'providerReset', payload: {} });
   assert.deepEqual(events, [{}]);
+});
+
+test('audio route event wins over stale hydration and preserves stable immutable state', async () => {
+  const bridge = native();
+  const initial = deferred();
+  bridge.getAudioRoutes = () => initial.promise;
+  const runtime = new ConversationRuntime(bridge);
+  let changes = 0;
+  runtime.audioRoutes.subscribe(() => changes++);
+  runtime.startAudioRoutes();
+  const output = { id: 'output:speaker-uid', name: 'Speaker', type: 'Speaker' };
+  bridge.emit('audioRoutesChanged', {
+    revision: 2,
+    routes: [output],
+    current: output,
+  });
+  const current = runtime.audioRoutes.getSnapshot();
+  initial.resolve({ revision: 1, routes: [], current: null });
+  await flush();
+  assert.equal(runtime.audioRoutes.getSnapshot(), current);
+  assert.deepEqual(current, { routes: [output], current: output });
+  assert.ok(Object.isFrozen(current));
+  assert.ok(Object.isFrozen(current.routes));
+  assert.ok(Object.isFrozen(current.routes[0]));
+  assert.ok(Object.isFrozen(current.current));
+  output.name = 'Changed upstream';
+  assert.equal(current.current.name, 'Speaker');
+  assert.equal(current.routes[0].name, 'Speaker');
+  assert.equal(changes, 1);
+  bridge.emit('audioRoutesChanged', { revision: 2, routes: [], current: null });
+  assert.equal(runtime.audioRoutes.getSnapshot(), current);
+});
+
+test('audio route loss stays null after a delayed initial read', async () => {
+  const bridge = native();
+  const initial = deferred();
+  bridge.getAudioRoutes = () => initial.promise;
+  const runtime = new ConversationRuntime(bridge);
+  runtime.startAudioRoutes();
+  bridge.emit('audioRoutesChanged', { revision: 3, routes: [], current: null });
+  initial.resolve({
+    revision: 0,
+    routes: [{ id: 'output:old-uid', name: 'Old', type: 'Headphones' }],
+    current: { id: 'output:old-uid', name: 'Old', type: 'Headphones' },
+  });
+  await flush();
+  assert.deepEqual(runtime.audioRoutes.getSnapshot(), {
+    routes: [],
+    current: null,
+  });
 });

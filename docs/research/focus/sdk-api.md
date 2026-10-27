@@ -2,7 +2,7 @@
 
 Proposal for [#124](https://github.com/ziahamza/ios-voip-sdk/issues/124), informed by the [platform findings](README.md). None of the additions below exists yet. Apple API availability and measured limitations are in the README. Existing SDK names are linked to their source; all new signatures are illustrative contracts, not a buildable patch. No SDK source change is part of this lane.
 
-The Phone contract follows [phone-app#885](https://github.com/ziahamza/phone-app/issues/885) and the orchestrator's clarification: numbers use LiveKit SIP ([#458](https://github.com/ziahamza/phone-app/issues/458)), owner join/take-over already exists ([#456](https://github.com/ziahamza/phone-app/issues/456)), and server captions come from celld's SSE stream ([#858](https://github.com/ziahamza/phone-app/issues/858)). Use those services; do not create a second AI or captions pipeline.
+The Phone contract follows the Phone app's requirements: numbers use LiveKit SIP ([#458](https://github.com/ziahamza/phone-app/issues/458)), owner join/take-over already exists ([#456](https://github.com/ziahamza/phone-app/issues/456)), and server captions come from celld's SSE stream ([#858](https://github.com/ziahamza/phone-app/issues/858)). Use those services; do not create a second AI or captions pipeline.
 
 ## Typed incoming result and native policy
 
