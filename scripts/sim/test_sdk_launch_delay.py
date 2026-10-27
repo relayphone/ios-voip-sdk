@@ -72,6 +72,8 @@ class ContractLaunchDelayTests(unittest.TestCase):
         args = case['args']
         value = lambda name: args[args.index(name) + 1]
         timeout = float(value('--timeout')) if timeout_override is None else timeout_override
+        startup_timeout = float(value('--startup-timeout'))
+        self.assertEqual(startup_timeout, 180)
         launch_index, terminate_index = args.index('--launch-command'), args.index('--terminate-command')
         launch, terminate = args[launch_index + 1:], args[terminate_index + 1:launch_index]
         identity = dict(runID=value('--run-id'), simulatorID=value('--simulator-id'),
@@ -112,7 +114,7 @@ class ContractLaunchDelayTests(unittest.TestCase):
                  patch.object(run_scenario.subprocess, 'run', side_effect=terminate_owned), \
                  patch.object(run_scenario.os, 'kill', side_effect=kill):
                 status = run_scenario.run(launch, terminate, output, receipt, timeout, identity,
-                                          console_launcher_stop=True)
+                                          console_launcher_stop=True, startup_timeout=startup_timeout)
             captured = json.loads(receipt.read_text())
             self.assertEqual(launched.call_count, 1, 'the fixture must never replay a case')
             return status, captured, clock.now
@@ -125,13 +127,14 @@ class ContractLaunchDelayTests(unittest.TestCase):
         self.assertEqual(captured['lastProbeEvent'], 'done')
         self.assertGreaterEqual(elapsed, 101.5)
 
-    def test_original_ninety_second_host_bound_fails_after_app_entry(self):
-        status, captured, elapsed = self.capture(timeout_override=90)
+    def test_capture_timeout_is_measured_after_app_entry(self):
+        status, captured, elapsed = self.capture(timeout_override=30)
         self.assertEqual(status, 1, captured)
         self.assertTrue(captured.get('appEntryObserved'), captured)
-        self.assertEqual(captured['lastProbeEvent'], 'contract.pending')
+        self.assertEqual(captured['lastProbeEvent'], 'contract.actionDiagnostic')
+        self.assertEqual(captured['timeoutReason'], 'capture')
         self.assertEqual(captured['error'], 'deadline before terminal done event')
-        self.assertAlmostEqual(elapsed, 90.0, places=6)
+        self.assertAlmostEqual(elapsed, 100.0, places=6)
 
 
 if __name__ == '__main__':

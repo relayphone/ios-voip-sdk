@@ -16,7 +16,7 @@ import sys
 import time
 import uuid
 
-from run import lifecycle, session_transport, simulator_infra
+from run import install_fixture, inventory_reader, lifecycle, session_transport, simulator_infra
 from ci_simulator import create, cleanup, simulator_uuid, state_path
 
 BUNDLE = 'dev.callkitsim.lckfixture'
@@ -92,10 +92,12 @@ def resolve_container(applications, run_id, bundle, pid):
     return matches[0] if matches else None
 
 
-def simulator_applications(device, *, session):
+def simulator_applications(device, *, session, prepare=False, read_devices=None):
     if device != session.current:
         raise ValueError('Simulator does not match its existing Session')
-    inventory = json.loads(lifecycle(session, 'list', 'devices', '-j', timeout=30))['devices']
+    raw = ((read_devices or inventory_reader(session))() if prepare else
+           lifecycle(session, 'list', 'devices', '-j', timeout=30))
+    inventory = json.loads(raw)['devices']
     matches = [(runtime, row) for runtime, group in inventory.items() for row in group
                if row.get('udid', '').lower() == device.lower()]
     if len(matches) != 1 or matches[0][1].get('state') != 'Booted':
@@ -106,7 +108,7 @@ def simulator_applications(device, *, session):
     if not data.is_absolute() or data.name != 'data' or data.parent.name.lower() != device.lower():
         raise RuntimeError('Simulator data path does not match its owned UUID')
     applications = data / 'Containers/Data/Application'
-    if not applications.is_dir() or applications.resolve(strict=True) != applications:
+    if not prepare and (not applications.is_dir() or applications.resolve(strict=True) != applications):
         raise RuntimeError('Fixture application directory is missing or noncanonical')
     return applications
 
@@ -333,9 +335,9 @@ def main():
             if owned:
                 lifecycle(session, 'boot', session.current, timeout=60)
                 lifecycle(session, 'bootstatus', session.current, '-b', timeout=300)
-            lifecycle(session, 'install', session.current, args.app.resolve(), timeout=install_bound)
-            applications = simulator_applications(session.current, session=session)
-            journey = Journey(session.current, None, args.out, applications=applications, native_session=session)
+            device, applications = install_fixture(session.current, args.app, session=session,
+                                                  timeout=install_bound, inventory=simulator_applications)
+            journey = Journey(device, None, args.out, applications=applications, native_session=session)
             run_filter_case(journey)
             print(json.dumps(dict(success=True, fixture='genuine ConversationManager', runtime=RUNTIME,
                                   mode='explicit-incoming-fault')))

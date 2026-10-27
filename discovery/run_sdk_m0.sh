@@ -25,6 +25,7 @@ INHERITED_DYLD_SIMULATOR=""
 INHERITED_DYLD_REDACTIONS=""
 RUN_ID=$(uuidgen)
 SIM_STATE="$OUT/simulator-state.json"
+export SIM_FAILURE_MARKER="$SIM_STATE.failure"
 PRODUCT_CHECK=preflight
 source scripts/sim/sim.sh
 limit() {
@@ -199,7 +200,7 @@ PRODUCT_CHECK=sdk-m0
 # the launcher's stdio; --console-pty interleaved its PID header into PROBE JSON.
 env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_SDK_M0_ACCEPTANCE=1 \
   SIMCTL_CHILD_SDK_M0_RUN_ID="$RUN_ID" \
-  python3 discovery/run_scenario.py --console-launcher-stop --timeout 120 --output "$OUT/sdk-m0.log" --receipt "$OUT/sdk-m0.receipt.json" \
+  python3 discovery/run_scenario.py --console-launcher-stop --startup-timeout 180 --timeout 120 --output "$OUT/sdk-m0.log" --receipt "$OUT/sdk-m0.receipt.json" \
   --run-id "$RUN_ID" --simulator-id "$UDID" --scenario sdk-m0 --bundle-id dev.iosvoipsdk.example \
   --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.example \
   --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.iosvoipsdk.example
@@ -208,7 +209,7 @@ for case in healthy profile push-after-install; do
   PRODUCT_CHECK="bootstrap-$case"
   env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" \
     SIMCTL_CHILD_CKSIM_BOOTSTRAP_CASE="$case" \
-    python3 discovery/run_scenario.py --console-launcher-stop --timeout 90 --output "$OUT/bootstrap-$case.log" --receipt "$OUT/bootstrap-$case.receipt.json" \
+    python3 discovery/run_scenario.py --console-launcher-stop --startup-timeout 180 --timeout 90 --output "$OUT/bootstrap-$case.log" --receipt "$OUT/bootstrap-$case.receipt.json" \
     --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "bootstrap-$case" --bundle-id dev.callkitsim.sdkbootstrap \
     --terminate-command xcrun simctl terminate "$UDID" dev.callkitsim.sdkbootstrap \
     --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.callkitsim.sdkbootstrap
@@ -230,7 +231,7 @@ if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then
     env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
       SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M0_RUN_ID="$RUN_ID" \
       SIMCTL_CHILD_SDK_M1_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M1_CASE="$case" \
-      python3 discovery/run_scenario.py --console-launcher-stop --timeout "$budget" \
+      python3 discovery/run_scenario.py --console-launcher-stop --startup-timeout 180 --timeout "$budget" \
       --output "$OUT/m1/$name.log" --receipt "$OUT/m1/$name.receipt.json" \
       --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.iosvoipsdk.example \
       --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.example \
@@ -258,13 +259,9 @@ PY
   for case in guard unhandled-accept unhandled-fail duplicate-wrapper media-reentrancy audio-lifecycle; do
     name="sdk-m1-contract-$case"
     PRODUCT_CHECK="$name"
-    budget=90
-    # Finite host budget: 90s launch + 30s advertised action window + 30s
-    # observation headroom. This changes no SDK or platform action deadline.
-    case "$case" in unhandled-accept|unhandled-fail) budget=150 ;; esac
     env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
       SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M1_CONTRACT_CASE="$case" \
-      python3 discovery/run_scenario.py --console-launcher-stop --timeout "$budget" \
+      python3 discovery/run_scenario.py --console-launcher-stop --startup-timeout 180 --timeout 90 \
       --output "$OUT/m1/contracts/$name.log" --receipt "$OUT/m1/contracts/$name.receipt.json" \
       --run-id "$RUN_ID" --simulator-id "$UDID" --scenario "$name" --bundle-id dev.iosvoipsdk.m1contracts \
       --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.m1contracts \

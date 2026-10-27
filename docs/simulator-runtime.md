@@ -306,6 +306,19 @@ both native and Inspector acceptance. It starts a fresh fixture session for each
 stage, without reinstalling the fixture between them, and always deletes that
 simulator.
 
+The event and LCK fixtures capture their canonical simulator paths before installation.
+Its owner repeats that preparation for a replacement device before replaying
+installs, collecting inventory once per device. After installation it validates
+the final device's cached application directory locally, then checkpoints and
+launches once. Journal discovery uses that directory without another inventory
+RPC. Pre-install inventory has its own 180-second bound per query and one
+timeout-only re-attempt across the entire install preparation, including
+replacement callbacks. `infra:inventory` distinguishes a timeout, recovery or
+exhaustion. Non-timeout failures, uncertain host cleanup, stale ownership and
+checkpoint evidence prevent re-attempt; cancellation propagates. The shared
+installation recovery budget, product deadlines and native acceptance checks
+remain unchanged. Other inventory lookups retain their existing bounds.
+
 The automatic `--driver journal` journey uses `cksim` to inject an incoming call
 and issue one system-origin Answer. It foregrounds the fixture for controls and
 the real SwiftUI Inspector for observations. An opt-in Inspector receipt records
@@ -321,6 +334,15 @@ do not need a `simctl spawn` wake helper. The Inspector reuses its validated
 container path for subsequent reads and controls. Older runtime packages retain
 a bounded notifier fallback. Normal Inspector launches do not write acceptance
 receipts; the test enables them with a unique launch nonce.
+
+Inspector startup uses a 180-second host-launch bound. A shared consumer keeps
+its original 25-second deadline from launch issuance, including startup; every
+receipt must also fit the native process's 25-second lifetime. Authenticated
+readiness still needs a fresh publication after host reap. A missing or late
+acknowledgement fails without replaying the launch.
+Recorded startup timeouts are classified as `infra:startup`; diagnostic failures
+preserve the original exception. Already classified terminal transport outcomes
+retain their reason without spending the shared preparation recovery budget.
 
 **Measured:** [automatic native and GUI run](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40067131951)
 passed automatic native and live Inspector acceptance

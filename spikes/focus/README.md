@@ -1,9 +1,10 @@
 # Focus device probe
 
-Runner: `./run.sh F09 --dry-run`, `./run.sh C00 --listen`, and `./run.sh F01 --locked-auto-answer --listen`.
+Runner dry-runs: `./run.sh F09 --dry-run`, `./run.sh C00 --listen --dry-run`, and `./run.sh F01 --locked-auto-answer --listen --dry-run`.
 See [execution and the single microphone permission click](../../docs/research/focus/human-session.md).
-Real runs require `FOCUS_DEVICE`, a signed `FOCUS_XCTESTRUN` and the documented APNs environment.
-`./run.sh restore-all` recovers the persistent host journal. Runtime evidence goes to ignored `out/`
+Real rows run only through the lock-owning `morning-batch` supervisor; invoking a real standalone row is rejected.
+Direct `./run.sh restore-all` remains available: it starts a separate lock-owning recovery supervisor and needs
+`FOCUS_DEVICE`, the original signed `FOCUS_XCTESTRUN`, and the persistent `FOCUS_WORK`. Runtime evidence goes to ignored `out/`
 or private `FOCUS_WORK`; it must not be committed. Every command has a bounded timeout; unknown APNs
 outcomes are never automatically retried. The approved system-setting changes need no new confirmation.
 Additional row flags: `--provider callkit|lck`, `--calls Everyone` for C01, `--repeated-calls on|off`,
@@ -14,7 +15,8 @@ wait at least 181 seconds after the last attempted VoIP push before their first 
 about 69 seconds later. An uncertain attempt is never automatically retried.
 Scenarios with missing adapters or unsupported hardware/backend/fault controls return explicit automatic skips rather than human QA tasks.
 
-Local CLI verification: `python3 -m unittest discover -s spikes/focus -p test_runner.py`.
+Local CLI verification: `python3 -m unittest discover -s spikes/focus -p 'test_*.py'` and
+`node --test spikes/focus/test_activity_payloads.mjs`.
 
 ## Morning batch
 
@@ -25,9 +27,22 @@ signed-in account and `-allowProvisioningUpdates`; it does not print the APNs ke
 requires a uniquely identified iPhone 13 before signing or UI tests. It checks Share Across Devices is off before
 any Focus change, then runs C06, C01 and C05 first, the calling controls and three-sample comparisons, the Live
 Activity rows, and C00 `--listen` last. A bounded early microphone authorization request needs one Allow click;
-without permission the batch proceeds with visual-only evidence. Existing
-Live Activity rows that lack an adapter or require unsupported hardware are explicit skips; an APNs acceptance
-or a partial update subcase is not full row qualification.
+without permission the batch proceeds with visual-only evidence. L01–L15 now run their applicable activity
+scenarios, with both Focus states for L07–L15; L16 records a hardware N/A because iPhone 13 has no Dynamic Island.
+Each case reports actual observations, simulations and unqualified subcases separately. APNs acceptance is not
+rendering, and Notification Center on an unlocked phone is not a Lock Screen or wake observation.
+Cadence updates use a run-specific synthetic excerpt. The UI observer compares the accessibility label for
+each revision and exports only a match flag; the result distinguishes the latest accepted revision from
+partial and complete sampled series. Accessibility equality cannot prove that every character was visible
+in pixels. Missing or ambiguous text and unqualified clock synchronization remain unqualified.
+
+The batch exercises L09 network interruption only after verifying a wired connection; it journals and restores
+Wi-Fi and Cellular Data, and requires a fresh `NWPathMonitor` callback before claiming an offline path. L15 sends
+an **alerting** synthetic push-to-start as a separate, explicitly requested test, then obtains the activity's
+different update token. All other activity updates omit alerts. L10–L14 include labeled offline fixtures for
+system-controlled rotation, budgets, ordering, privacy and lifecycle behavior; those fixtures are not device or
+production-backend results. A secure lock/unlock path, real AI/SIP backend, actual token rotation, eight-hour expiry
+and Lock Screen privacy remain unqualified when unavailable.
 
 The batch atomically holds `~/.device-locks/<FOCUS_DEVICE>.lock` as a directory throughout mutation and restoration;
 Phone's runner must honor the same convention for mutual exclusion. A pre-existing lock is never stolen. To yield
@@ -37,7 +52,8 @@ from the private checkpoint. An interrupted attempt is not repeated: after safe 
 unqualified. Failed restoration retains the lock and journal for recovery. A hard-killed batch can leave its own
 lock behind: the batch will not automatically take it over because a device subprocess may still be alive. The
 operator must establish that the old batch and its device subprocesses have stopped, coordinate with Phone, verify
-Share Across Devices is off, and restore the journal before releasing that specific owned lock. The ringer switch is physical and its
+Share Across Devices is off, remove only that verified stale owned lock, and immediately run `./run.sh restore-all`.
+Recovery reacquires the same lock and refuses any competing owner; if recovery fails, it retains the lock. The ringer switch is physical and its
 position is not read by this harness, so an unattended session cannot claim either switch variant without independent evidence.
 
 For individual rows, `--focus-mode dnd` snapshots/restores the built-in profile and refuses unknown or Silence list
@@ -84,7 +100,7 @@ Write `Documents/focus.json` before launch. Unspecified fields are safe defaults
 }
 ```
 
-`activityAction` is `start` (foreground only), `end`, or absent. Local updates are bounded, silent and **foreground-runtime only**: suspension may stop the timer; use ActivityKit push-to-update to measure background cadence. Leave the interval absent for stale-date tests or server-only updates. A user can also invoke the **Start transcript** App Shortcut (`LiveActivityIntent`). Starts reuse an existing activity. There is no automatic push-to-start path requiring an alert.
+`activityAction` is `start` (foreground only), `end`, `reset`, `snapshot`, or absent. Local updates are bounded, silent and **foreground-runtime only**: suspension may stop the timer; use ActivityKit push-to-update to measure background cadence. Leave the interval absent for stale-date tests or server-only updates. A user can also invoke the **Start transcript** App Shortcut (`LiveActivityIntent`). Starts reuse an existing activity. Opt-in `exportPushToStart: true` exports a separate push-to-start token for L15; remote starts require an alert and do not establish a silent-start path.
 
 The app registers PushKit at launch. Choose `provider` before launch (`lck` or `callkit`); changing it requires a process restart. Every genuine incoming push is reported, even when unarmed; `armed` controls the optional Communication Notification only. `mustReport` is recorded, not used to hide incoming reports in this probe. The LCK reporting task is scheduled from a private PushKit queue before delegate return; `reportTaskEntered` is a scheduling marker, not proof of private system-function entry. CallKit enters its synchronous completion-handler report from that queue. Focus sampling, donation and notification scheduling never gate report entry. Late report, completion, action/state and survival events use monotonic and wall timestamps. Missing survival events mean **unobserved/suspended**, not proof of termination.
 
@@ -99,6 +115,8 @@ Exports are private app-container files:
 | `focus.jsonl` | Row/event, monotonic/wall timestamps, domain/code chains, outcomes 3–7, call states/actions, native policy and survival samples; no token or arbitrary error descriptions |
 | `voip-token.txt` | Current PushKit token; never print, commit or upload as an artifact |
 | `activity-update-token.json` | Current activity ID/surface ID/type and **per-activity** token; replaced on rotation, removed by End transcript; never print or commit |
+| `activity-start-token.json` | Opt-in push-to-start token and generation for the current run; never print or commit |
+| `activity-capabilities.json`, `activity-network.json` | Run-bound authorization/inventory and timestamped network-path samples; a cached sample or Settings readback is not proof of delivery or connectivity |
 | `activity-identity.json`, `activity-registration.json` | Non-secret persisted activity/surface identity and current registration generation; paired with the token before any ActivityKit push |
 
 One activity is supported at a time. The persisted identity prevents a relaunch from silently creating a replacement; missing or ambiguous activity stops as unqualified until explicit `end`/reset. Rediscovery exports the existing `pushToken` and observes rotations. Before a push, the runner checks matching activity/surface IDs and token generation across relaunch and again immediately before sending. `--keep-setup` retains the activity for subsequent L rows; `restore-all` ends it. APNs HTTP 200 still does not prove rendering. Disable local timer updates while testing server push ordering.
@@ -111,4 +129,4 @@ Use the per-activity exported token, `apns-push-type: liveactivity`, topic `dev.
 {"aps":{"timestamp":1900000000,"event":"update","content-state":{"revision":1,"excerpt":"Synthetic caller: test update","updatedAt":1900000000},"stale-date":1900000030}}
 ```
 
-Replace times with current increasing Unix seconds. Match Swift field names/types exactly, keep total JSON <=4096 bytes, and omit `alert`/sound. `stale-date` renders **Updates delayed** even if no app code is running. ActivityKit transport acceptance does not prove rendering; Claude/Hamza record Lock Screen observations. iPhone 13 has no Dynamic Island. Real captions/SIP take-over, unsupported security-policy triggers and Apple Intelligence remain separately qualified dependencies in the plan.
+Replace times with current increasing Unix seconds. Match Swift field names/types exactly, keep total JSON <=4096 bytes, and omit `alert`/sound. The widget is configured to show **Updates delayed** after `stale-date`; the device run must observe it. ActivityKit transport acceptance does not prove rendering, and unlocked Notification Center observations do not establish secure Lock Screen behavior. iPhone 13 has no Dynamic Island. Real captions/SIP take-over, unsupported security-policy triggers and Apple Intelligence remain separately qualified dependencies in the plan.

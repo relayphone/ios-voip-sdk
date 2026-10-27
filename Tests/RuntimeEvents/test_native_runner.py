@@ -210,5 +210,5 @@ class RunnerTests(unittest.TestCase):
 
 if __name__ == '__main__':
     # Keep the inventory regression in this existing automatic CI entry point.
-    from test_fixture_inventory import FixtureInventoryTests
+    from test_fixture_inventory import FixtureInventoryTests, PreinstallInventoryTests
     unittest.main()

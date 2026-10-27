@@ -189,12 +189,11 @@ class ContractCaptureBudgetControls(unittest.TestCase):
         self.assertTrue({'guard', 'unhandled-accept', 'unhandled-fail'} <= {call['case'] for call in calls})
         for call in calls:
             args = call['args']; budget = int(args[args.index('--timeout') + 1])
-            policy = call['case'] in ('unhandled-accept', 'unhandled-fail')
-            self.assertEqual(budget, 150 if policy else 90)
-            if policy:
-                # #145 measured pending deadline97.447s from host start. Leave
-                # observation headroom beyond even its advertised30s window.
-                self.assertGreater(budget * 1000, 97_447 + 3_000 + 10_000)
+            self.assertEqual(budget, 90)
+            self.assertEqual(int(args[args.index('--startup-timeout') + 1]), 180)
+            # The unchanged 90-second post-entry capture exceeds the native
+            # 30-second policy window plus observation headroom.
+            self.assertGreater(budget * 1000, 30_000 + 3_000 + 10_000)
 
     def test_failed_policy_capture_is_not_replayed_or_followed(self):
         result, calls = self.capture(refuse='unhandled-fail')
