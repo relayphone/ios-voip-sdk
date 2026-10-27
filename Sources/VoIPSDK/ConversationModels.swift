@@ -93,7 +93,7 @@ public struct Caller: Codable, Sendable, Equatable {
   }
 
   public var participant: Participant {
-    Participant(id: hostContactID ?? value, displayName: displayName,
+    Participant(id: value, displayName: displayName,
       phoneNumber: handleType == .phone ? value : nil, email: handleType == .email ? value : nil)
   }
 }

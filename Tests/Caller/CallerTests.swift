@@ -30,7 +30,7 @@ import Foundation
     }
     let generic = try Caller(handleType: .generic, value: "opaque-caller", displayName: "Opaque")
     precondition(generic.participant == Participant(id: "opaque-caller", displayName: "Opaque"))
-    precondition(phone.participant == Participant(id: "host-42", displayName: "Cafe caller", phoneNumber: "+12025550123"))
+    precondition(phone.participant == Participant(id: "+12025550123", displayName: "Cafe caller", phoneNumber: "+12025550123"))
     print("passed: Caller normalization, validation, Codable and participant projection")
   }
 }

@@ -810,8 +810,30 @@ import Foundation
     precondition(timeoutEnd.settlements == 1 && afterTimeoutEnd.state == .failed &&
       afterTimeoutEnd.settlements == 1 && endCalls.filter { $0 == timeoutID }.count == 1,
       "A native timeout consumes cleanup input and late handler completion cannot settle again")
+    // Metadata-only updates must preserve the exact original calling address.
+    for caller in [
+      try Caller(handleType: .phone, value: "+1 (202) 555-0123", displayName: "Phone", hostContactID: "contact-phone"),
+      try Caller(handleType: .email, value: "caller@example.com", displayName: "Email", hostContactID: "contact-email"),
+      try Caller(handleType: .generic, value: "remote-user", displayName: "Generic", hostContactID: "contact-generic")
+    ] {
+      let id = try await client.reportIncomingConversation(.init(eventId: UUID().uuidString,
+        serverCallId: UUID().uuidString, caller: caller))
+      try await client.reportConversation(id, report: .updated(members: nil, video: true))
+      guard case .conversationUpdated(let update) = manager.reports.last?.1 else { preconditionFailure() }
+      let type: Handle.Kind = caller.handleType == .phone ? .phoneNumber : caller.handleType == .email ? .emailAddress : .generic
+      precondition(update.members == [Handle(type: type, value: caller.value, displayName: caller.displayName)],
+        "A video-only update must not replace the calling address with an opaque contact ID")
+      precondition(snapshot(id)?.payload?.caller.hostContactID == caller.hostContactID,
+        "The host contact ID stays in the Caller payload")
+      let replacement = Participant(id: "explicit-replacement", displayName: "Replacement")
+      try await client.reportConversation(id, report: .updated(members: [replacement], video: nil))
+      try await client.reportConversation(id, report: .updated(members: nil, video: false))
+      guard case .conversationUpdated(let replaced) = manager.reports.last?.1 else { preconditionFailure() }
+      precondition(replaced.members == [Handle(type: .generic, value: replacement.id, displayName: replacement.displayName)],
+        "Explicit member changes remain authoritative on later metadata-only updates")
+    }
     precondition(held.isEmpty)
-    print("{\"success\":true,\"groups\":50,\"actualClientAndCoordinatorAndIntake\":true,\"nativeFrameworkMeasured\":false}")
+    print("{\"success\":true,\"groups\":51,\"actualClientAndCoordinatorAndIntake\":true,\"nativeFrameworkMeasured\":false}")
   }
 }
 
