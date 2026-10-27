@@ -470,6 +470,20 @@ final class FocusUITests: XCTestCase {
       journal.autoLock = nil; try save()
     }
   }
+  func activityConsent() throws {
+    home(); try front(board)
+    board.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.01)).press(forDuration: 0.1,
+      thenDragTo: board.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.8)))
+    _ = try element(board, ["Focus Probe · synthetic transcript"], timeout: 10)
+    for _ in 0..<3 {
+      let prompt = board.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Live Activities from Focus Probe")).firstMatch
+      if !prompt.exists { home(); return }
+      let allow = board.buttons.matching(NSPredicate(format: "identifier == %@ AND label IN %@", "swipe-action-button-identifier", ["Always Allow", "Allow"])).firstMatch
+      guard allow.exists else { throw failure("Live Activity consent prompt without Allow") }
+      try tap(board, allow); Thread.sleep(forTimeInterval: 1)
+    }
+    throw failure("Live Activity consent did not clear")
+  }
   func checkActivity() throws {
     home(); try front(board)
     board.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.01)).press(forDuration: 0.1,
@@ -483,7 +497,7 @@ final class FocusUITests: XCTestCase {
     if board.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Live Activities from Focus Probe")).firstMatch.exists {
       let allow = board.buttons.matching(NSPredicate(format: "identifier == %@ AND label IN %@", "swipe-action-button-identifier", ["Always Allow", "Allow"])).firstMatch
       guard allow.exists else { throw failure("Live Activity consent prompt without Allow") }
-      allow.tap(); Thread.sleep(forTimeInterval: 1)
+      try tap(board, allow); Thread.sleep(forTimeInterval: 1)
       throw failure("Live Activity consent was pending; granted it, rerun the row")
     }
     let card = try element(board, [wanted], timeout: 10)
@@ -497,21 +511,31 @@ final class FocusUITests: XCTestCase {
     home()
     try JSONSerialization.data(withJSONObject: ["id": ProcessInfo.processInfo.environment["FOCUS_OBSERVATION_ID"] ?? "none"])
       .write(to: documents.appendingPathComponent("focus-ui-ready.json"), options: .atomic)
-    let end = Date().addingTimeInterval(min(max(duration, 1), 90))
+    let startedUptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
+    let end = Date().addingTimeInterval(min(max(duration, 1), 240))
     var banner = false, fullScreen = false
     var bannerAt: Double?, screenAt: Double?
+    var previousBanner = false, previousScreen = false
     repeat {
+      var currentBanner = false
       if board.state == .runningForeground {
-        banner = banner || board.buttons.matching(NSPredicate(format: "label IN %@", ["Accept", "Answer call", "Decline"])).firstMatch.exists
+        currentBanner = board.buttons.matching(NSPredicate(format: "label IN %@", ["Accept", "Answer call", "Decline"])).firstMatch.exists
       }
-      fullScreen = fullScreen || (callUI.state == .runningForeground && callUI.otherElements["InCallRootView"].exists)
+      let currentScreen = callUI.state == .runningForeground && callUI.otherElements["InCallRootView"].exists
+      let now = Date().timeIntervalSince1970
+      let uptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
+      if currentBanner != previousBanner { events.append(["event": "surface.transition", "surface": "banner", "visible": currentBanner, "observedAt": now, "uptimeMs": uptimeMs]) }
+      if currentScreen != previousScreen { events.append(["event": "surface.transition", "surface": "callScreen", "visible": currentScreen, "observedAt": now, "uptimeMs": uptimeMs]) }
+      previousBanner = currentBanner; previousScreen = currentScreen
+      banner = banner || currentBanner; fullScreen = fullScreen || currentScreen
       if banner && bannerAt == nil { bannerAt = Date().timeIntervalSince1970 }
       if fullScreen && screenAt == nil { screenAt = Date().timeIntervalSince1970 }
       Thread.sleep(forTimeInterval: 0.25)
     } while Date() < end
     events.append(["event": "call.observed", "banner": banner, "callScreen": fullScreen,
       "bannerAt": bannerAt.map { $0 as Any } ?? NSNull(), "callScreenAt": screenAt.map { $0 as Any } ?? NSNull(),
-      "qualification": "requires-C00", "observedAt": Date().timeIntervalSince1970])
+      "qualification": "requires-C00", "observedAt": Date().timeIntervalSince1970,
+      "startUptimeMs": startedUptimeMs, "endUptimeMs": Int(ProcessInfo.processInfo.systemUptime * 1000)])
   }
   // Read-only accessibility trees for selector work, written to the runner's Documents.
   func dump(_ name: String) throws {
@@ -583,9 +607,9 @@ final class FocusUITests: XCTestCase {
       } else if p[0] == "dump" {
         guard p.count == 2 else { throw failure("Invalid dump") }
       } else if p[0] == "observe" {
-        guard p.count == 2, let n = Double(p[1]), n.isFinite, (1...90).contains(n) else { throw failure("Invalid observation duration") }
+        guard p.count == 2, let n = Double(p[1]), n.isFinite, (1...240).contains(n) else { throw failure("Invalid observation duration") }
       } else {
-        guard p.count == 1 && ["setup", "restore-all", "sample", "launch", "home", "terminate", "activity-check", "lock"].contains(p[0]) else { throw failure("Unknown action") }
+        guard p.count == 1 && ["setup", "restore-all", "sample", "launch", "home", "terminate", "activity-consent", "activity-check", "lock"].contains(p[0]) else { throw failure("Unknown action") }
       }
     }
     do {
@@ -607,6 +631,7 @@ final class FocusUITests: XCTestCase {
         case "restore-all": try restore()
         case "system-settings": try value == "enable" ? enableSystemSettings() : restoreSystemSettings()
         case "activity-check": try checkActivity()
+        case "activity-consent": try activityConsent()
         case "notifications": try authorize(false, allow: value == "allow")
         case "focus-authorization": try authorize(true, allow: value == "allow")
         case "sample": probe.activate(); try tap(probe, ["focus.sample"])

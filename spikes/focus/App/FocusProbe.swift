@@ -1,5 +1,6 @@
 import ActivityKit
 import AVFoundation
+import CallKit
 import Intents
 @preconcurrency import LiveCommunicationKit
 import PushKit
@@ -8,6 +9,7 @@ import UserNotifications
 
 struct ProbeConfig: Decodable {
   var rowID: String?
+  var runID: String?
   var armed: Bool?
   var communicationNotification: Bool?
   var requestFocusAuthorization: Bool?
@@ -15,6 +17,8 @@ struct ProbeConfig: Decodable {
   var localUpdateInterval: Double?
   var localUpdateCount: Int?
   var ringTimeout: Double?
+  var provider: String?
+  var handleType: String?
   static func load() -> ProbeConfig {
     guard let data = try? Data(contentsOf: ProbeFiles.documents.appendingPathComponent("focus.json")),
       let value = try? JSONDecoder().decode(Self.self, from: data) else { return Self() }
@@ -30,6 +34,7 @@ final class Trace: @unchecked Sendable {
     var record = fields
     record["event"] = event
     record["rowID"] = ProbeConfig.load().rowID ?? "idle"
+    record["runID"] = ProbeConfig.load().runID ?? "idle"
     record["monoMs"] = Int(ProcessInfo.processInfo.systemUptime * 1000)
     record["wallMs"] = Int(Date().timeIntervalSince1970 * 1000)
     record["main"] = Thread.isMainThread
@@ -45,15 +50,25 @@ final class Trace: @unchecked Sendable {
 }
 
 final class Calls: NSObject, PKPushRegistryDelegate, ConversationManagerDelegate, @unchecked Sendable {
-  let manager: ConversationManager
+  let manager: ConversationManager?
+  let callKit: CallKitControl?
+  let mode: String
   let queue = DispatchQueue(label: "focus.pushkit")
   var registry: PKPushRegistry!
   override init() {
-    manager = ConversationManager(configuration: .init(ringtoneName: nil, iconTemplateImageData: nil,
-      maximumConversationGroups: 1, maximumConversationsPerConversationGroup: 1,
-      includesConversationInRecents: false, supportsVideo: false, supportedHandleTypes: [.phoneNumber]))
+    mode = ProbeConfig.load().provider == "callkit" ? "callkit" : "lck"
+    if mode == "callkit" {
+      manager = nil
+      callKit = CallKitControl()
+    } else {
+      callKit = nil
+      manager = ConversationManager(configuration: .init(ringtoneName: nil, iconTemplateImageData: nil,
+        maximumConversationGroups: 1, maximumConversationsPerConversationGroup: 1,
+        includesConversationInRecents: false, supportsVideo: false, supportedHandleTypes: [.phoneNumber, .generic]))
+    }
     super.init()
-    manager.delegate = self
+    manager?.delegate = self
+    Trace.shared.log("provider.selected", ["provider": mode])
     registry = PKPushRegistry(queue: queue); registry.delegate = self; registry.desiredPushTypes = [.voIP]
   }
   func pushRegistry(_ registry: PKPushRegistry, didUpdate credentials: PKPushCredentials, for type: PKPushType) {
@@ -78,50 +93,68 @@ final class Calls: NSObject, PKPushRegistryDelegate, ConversationManagerDelegate
     let config = ProbeConfig.load()
     let id = (payload.dictionaryPayload["invitationID"] as? String).flatMap(UUID.init(uuidString:)) ?? UUID()
     let caller = payload.dictionaryPayload["from"] as? String ?? "+15555550199"
-    Trace.shared.log("push.received", ["invitationID": id.uuidString, "mustReport": mustReport,
+    let kind = config.handleType == "generic" ? "generic" : "phoneNumber"
+    Trace.shared.log("push.received", ["invitationID": id.uuidString, "mustReport": mustReport, "provider": mode,
+      "handleType": kind, "handleValue": caller,
       "aiPolicy": UserDefaults(suiteName: ProbeFiles.group)?.string(forKey: "focus.aiPolicy") ?? "unset"])
     // Real incoming pushes are always reported, even if unarmed. Arming controls only auxiliary work.
-    let update = Conversation.Update(members: [Handle(type: .phoneNumber, value: caller, displayName: "Focus Test Caller")], capabilities: [])
-    let entered = DispatchSemaphore(value: 0)
-    Task.detached(priority: .userInitiated) {
-      Trace.shared.log("report.enter", ["invitationID": id.uuidString, "elapsedMs": Int((ProcessInfo.processInfo.systemUptime - start) * 1000)])
-      entered.signal()
-      do {
-        try await self.manager.reportNewIncomingConversation(uuid: id, update: update)
-        Trace.shared.log("report.result", ["invitationID": id.uuidString, "outcome": "reported", "elapsedMs": Int((ProcessInfo.processInfo.systemUptime - start) * 1000)])
-        DispatchQueue.main.asyncAfter(deadline: .now() + min(max(config.ringTimeout ?? 25, 3), 60)) {
-          if let call = self.manager.conversations.first(where: { $0.uuid == id }) {
-            let answered = call.state == .joined
-            self.manager.reportConversationEvent(.conversationEnded(Date(), answered ? .remoteEnded : .unanswered), for: call)
-            Trace.shared.log("call.autoEnd", ["invitationID": id.uuidString, "answered": answered])
-          }
-        }
-      } catch {
-        var chain: [[String: Any]] = []; var e: NSError? = error as NSError
-        for _ in 0..<4 {
-          guard let current = e else { break }
-          chain.append(["domain": current.domain, "code": current.code])
-          e = current.userInfo[NSUnderlyingErrorKey] as? NSError
-        }
-        let reasons = [3: "focus", 4: "blockList", 5: "restrictedSharing", 6: "protectedCall", 7: "sensitiveParticipants"]
-        let filtered = chain.first { ($0["domain"] as? String) == "com.apple.CallKit.error.incomingcall" && reasons[$0["code"] as? Int ?? -1] != nil }
-        Trace.shared.log("report.result", ["invitationID": id.uuidString, "outcome": filtered == nil ? "failed" : "filtered",
-          "reason": reasons[filtered?["code"] as? Int ?? -1] ?? "unknown", "errors": chain,
-          "elapsedMs": Int((ProcessInfo.processInfo.systemUptime - start) * 1000)])
-      }
-      completion()
-      Trace.shared.log("push.completion", ["invitationID": id.uuidString])
+    let finished: (Error?) -> Void = { error in
+      self.reportFinished(id, start: start, error: error)
+      completion(); Trace.shared.log("push.completion", ["invitationID": id.uuidString, "provider": self.mode])
     }
-    let signalled = entered.wait(timeout: .now() + 1) == .success
-    Trace.shared.log("push.delegateReturn", ["reportTaskEntered": signalled])
+    let ringTimeout = min(max(config.ringTimeout ?? 25, 3), 60)
+    if let callKit {
+      Trace.shared.log("report.enter", ["invitationID": id.uuidString, "provider": mode, "elapsedMs": Int((ProcessInfo.processInfo.systemUptime - start) * 1000)])
+      callKit.report(id: id, caller: caller, kind: kind, ringTimeout: ringTimeout, completion: finished)
+      Trace.shared.log("push.delegateReturn", ["reportTaskEntered": true, "provider": mode])
+    } else if manager != nil {
+      let update = Conversation.Update(members: [Handle(type: kind == "generic" ? .generic : .phoneNumber, value: caller, displayName: "Focus Test Caller")], capabilities: [])
+      let entered = DispatchSemaphore(value: 0)
+      Task.detached(priority: .userInitiated) {
+        guard let manager = self.manager else { return }
+        Trace.shared.log("report.enter", ["invitationID": id.uuidString, "provider": self.mode, "elapsedMs": Int((ProcessInfo.processInfo.systemUptime - start) * 1000)])
+        entered.signal()
+        do {
+          try await manager.reportNewIncomingConversation(uuid: id, update: update)
+          finished(nil)
+          DispatchQueue.main.asyncAfter(deadline: .now() + ringTimeout) {
+            if let manager = self.manager, let call = manager.conversations.first(where: { $0.uuid == id }) {
+              let answered = call.state == .joined
+              manager.reportConversationEvent(.conversationEnded(Date(), answered ? .remoteEnded : .unanswered), for: call)
+              Trace.shared.log("call.autoEnd", ["invitationID": id.uuidString, "answered": answered, "provider": self.mode])
+            }
+          }
+        } catch { finished(error) }
+      }
+      let signalled = entered.wait(timeout: .now() + 1) == .success
+      Trace.shared.log("push.delegateReturn", ["reportTaskEntered": signalled, "provider": mode])
+    }
     if config.armed == true, config.communicationNotification == true {
-      Task { await CommunicationNotification.send(caller: caller, id: id) }
+      Task { await CommunicationNotification.send(caller: caller, id: id, kind: kind) }
     }
     for delay in [1.0, 3, 10, 30] {
       queue.asyncAfter(deadline: .now() + delay) {
         Trace.shared.log("push.survival", ["invitationID": id.uuidString, "elapsedMs": Int((ProcessInfo.processInfo.systemUptime - start) * 1000)])
       }
     }
+  }
+  private func reportFinished(_ id: UUID, start: TimeInterval, error: Error?) {
+    var fields: [String: Any] = ["invitationID": id.uuidString, "provider": mode,
+      "elapsedMs": Int((ProcessInfo.processInfo.systemUptime - start) * 1000)]
+    if let error {
+      var chain: [[String: Any]] = []; var e: NSError? = error as NSError
+      for _ in 0..<4 {
+        guard let current = e else { break }
+        chain.append(["domain": current.domain, "code": current.code])
+        e = current.userInfo[NSUnderlyingErrorKey] as? NSError
+      }
+      let reasons = [3: "focus", 4: "blockList", 5: "restrictedSharing", 6: "protectedCall", 7: "sensitiveParticipants"]
+      let filtered = chain.first { ($0["domain"] as? String) == "com.apple.CallKit.error.incomingcall" && reasons[$0["code"] as? Int ?? -1] != nil }
+      fields["outcome"] = filtered == nil ? "failed" : "filtered"
+      fields["reason"] = reasons[filtered?["code"] as? Int ?? -1] ?? "unknown"
+      fields["errors"] = chain
+    } else { fields["outcome"] = "reported" }
+    Trace.shared.log("report.result", fields)
   }
   func conversationManagerDidBegin(_ manager: ConversationManager) { Trace.shared.log("call.begin") }
   func conversationManagerDidReset(_ manager: ConversationManager) { Trace.shared.log("call.reset") }
@@ -139,9 +172,12 @@ final class Calls: NSObject, PKPushRegistryDelegate, ConversationManagerDelegate
 }
 
 enum CommunicationNotification {
-  static func send(caller: String, id: UUID) async {
-    let person = INPerson(personHandle: INPersonHandle(value: caller, type: .phoneNumber), nameComponents: nil,
-      displayName: "Focus Test Caller", image: nil, contactIdentifier: nil, customIdentifier: caller)
+  static func send(caller: String, id: UUID, kind: String) async {
+    let intentKind = kind == "generic" ? "unknown" : "phoneNumber"
+    Trace.shared.log("cn.intent", ["invitationID": id.uuidString, "callHandleType": kind,
+      "intentHandleType": intentKind, "handleValue": caller])
+    let person = INPerson(personHandle: INPersonHandle(value: caller, type: kind == "generic" ? .unknown : .phoneNumber), nameComponents: nil,
+      displayName: "Focus Test Caller", image: nil, contactIdentifier: nil, customIdentifier: caller, aliases: nil, suggestionType: .none)
     let intent = INStartCallIntent(callRecordFilter: nil, callRecordToCallBack: nil, audioRoute: .unknown,
       destinationType: .normal, contacts: [person], callCapability: .audioCall)
     let interaction = INInteraction(intent: intent, response: nil); interaction.direction = .incoming
@@ -152,7 +188,8 @@ enum CommunicationNotification {
       content.interruptionLevel = .active; content.sound = .default
       let updated = try content.updating(from: intent)
       try await UNUserNotificationCenter.current().add(.init(identifier: "focus.cn.\(id)", content: updated, trigger: nil))
-      Trace.shared.log("cn.scheduled", ["invitationID": id.uuidString])
+      Trace.shared.log("cn.scheduled", ["invitationID": id.uuidString, "callHandleType": kind,
+        "intentHandleType": intentKind, "handleValue": caller])
     } catch { Trace.shared.log("cn.failed", ["domain": (error as NSError).domain, "code": (error as NSError).code]) }
   }
 }
