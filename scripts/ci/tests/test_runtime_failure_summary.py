@@ -24,6 +24,31 @@ class RuntimeFailureSummary(unittest.TestCase):
         self.assertNotIn('infra:install', result)
         self.assertNotIn('secret', result)
 
+    def test_inventory_retry_recovered_before_later_launch_failure(self):
+        result = summary.render({'watch': 'failure'}, {'watch':
+            '- `infra:inventory`: timeout after 180s; scheduled one bounded re-attempt\n'
+            '- `infra:inventory`: recovered within 180s inventory bound\n'
+            '- `infra:launch`: transport failed; never retried\n'})
+        self.assertNotIn('infra:inventory', result)
+        self.assertIn('`infra:launch`', result)
+
+    def test_other_label_with_similar_text_remains_visible(self):
+        result = summary.render({'watch': 'failure'}, {'watch':
+            '- `infra:launch`: timeout after 180s; scheduled one bounded re-attempt\n'})
+        self.assertIn('`infra:launch`', result)
+
+    def test_inventory_retry_exhaustion_is_still_reported(self):
+        result = summary.render({'watch': 'failure'}, {'watch':
+            '- `infra:inventory`: timeout after 180s; scheduled one bounded re-attempt\n'
+            '- `infra:inventory`: timeout after 180s; inventory re-attempt exhausted\n'})
+        self.assertIn('`infra:inventory`', result)
+
+    def test_recovery_does_not_hide_an_independent_terminal_failure(self):
+        result = summary.render({'watch': 'failure'}, {'watch':
+            '- `infra:inventory`: not eligible\n'
+            '- `infra:inventory`: recovered within 180s inventory bound\n'})
+        self.assertIn('`infra:inventory`', result)
+
     def test_success_and_skipped_phases_do_not_report_recovered_failures(self):
         result = summary.render({'watch': 'success', 'inspector': 'skipped'}, {
             'watch': '- `infra:list`: recovered\n'})
