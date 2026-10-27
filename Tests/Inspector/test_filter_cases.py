@@ -1,6 +1,7 @@
 """Host-only regression controls for separate, bounded Inspector consumers."""
 import hashlib
 import json
+from contextlib import contextmanager
 from pathlib import Path
 import runpy
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ import uuid
 
 
 RUNNER = runpy.run_path(str(Path(__file__).with_name('run.py')))
+SHIPPING = runpy.run_path(str(Path(__file__).resolve().parents[2] / 'Tools/cksim'))
 FIXTURE = 'dev.callkitsim.eventfixture'
 INSPECTOR = 'dev.callkitsim.inspector'
 CALL = 'FFEEDABC-BAB8-4057-A23F-65695E9F49C1'
@@ -49,6 +51,10 @@ class NativeWorld:
         self.calls = []
         self.launches = []
         self.probes = []
+        self.connections = {}
+        self.closed_contexts = []
+        self.context_events = []
+        self.connection_fault = None
         self.control_error = None
         self.nonces = iter([uuid.UUID(int=101), uuid.UUID(int=102)])
         self.probe = self.new_probe('basic-consumer', 30378, 0, self.out)
@@ -59,7 +65,7 @@ class NativeWorld:
 
     def row(self, event, **fields):
         return dict(self.session, sequence=len(getattr(self, 'rows', [])) + 1,
-                    event=event, **fields)
+                    event=event, wallTimeMS=1000000 + fields.get('t_ms', 1), **fields)
 
     def new_probe(self, nonce, pid, started, out):
         path = self.native_receipt(nonce, pid, started, out)
@@ -72,7 +78,7 @@ class NativeWorld:
         self.probes.append(self.active_probe)
         return path
 
-    def references(self):
+    def references(self, rows):
         source = 'docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md'
         def reference(name, device, **fields):
             return dict(id=name, deviceValue=device, sourcePath=source,
@@ -80,31 +86,46 @@ class NativeWorld:
         values = [reference('pushReport', '≈190 ms'), reference('answerAudio', '≈236 ms'),
                   reference('muteEcho', '8–17 ms after fulfillment'),
                   reference('unreportedPush', '≈4.4 s')]
-        if len(self.rows) >= 4:
+        if len(rows) >= 4:
             values[0].update(actualMS=190, startSequence=2, endSequence=3)
-        if len(self.rows) >= 8:
+        if len(rows) >= 8:
             values[1].update(actualMS=236, startSequence=5, endSequence=8,
                              actualLabel='Simulator · CallKit answer delivered → audio.activated')
         return values
 
     def publish(self):
         self.journal.write_text(''.join(json.dumps(row) + '\n' for row in self.rows))
-        calls = [row for row in self.rows if row['event'] == 'call.changed']
-        current = calls[-1:]
         for record in self.probes:
             # A suspended process publishes again only when explicitly resumed.
             if record is not self.active_probe:
                 continue
+            if hasattr(self, 'active_connection'):
+                try:
+                    batch = self.active_connection.bridge.events(record.get('cursor', 0))
+                    record['cursor'] = batch['cursor']
+                    record.setdefault('timeline', []).extend(batch['events'])
+                    record['session'], record['online'], record['error'] = batch['session'], True, None
+                except RuntimeError as error:
+                    record['online'], record['error'] = False, str(error)
+            else:
+                record.update(cursor=len(self.rows), timeline=list(self.rows), session=self.session, online=True)
+            observed = record.get('timeline', [])
+            calls = [row for row in observed if row['event'] == 'call.changed']
+            current = calls[-1:]
+            configured = [row for row in observed if row['event'] == 'incomingFilter.configured']
             receipt = dict(nonce=record['nonce'], inspectorPID=record['pid'],
                            inspectorBundleID=INSPECTOR,
                            inspectorDataContainer=str(record['path'].parent.parent),
                            startedWallTimeMS=(1000 + record['started']) * 1000,
-                           wallTimeMS=self.clock.time() * 1000, session=self.session,
-                           cursor=len(self.rows), online=True, incomingFilter=self.filter,
-                           audioActive=len(self.rows) >= 8, conversations=current,
-                           pending=[], timeline=self.rows, timingReferences=self.references(),
+                           wallTimeMS=self.clock.time() * 1000, session=record.get('session'),
+                           cursor=record.get('cursor', 0), online=record.get('online', False),
+                           incomingFilter=configured[-1]['reason'] if configured else 'none',
+                           audioActive=any(row['event'] == 'audio.activated' for row in observed), conversations=current,
+                           pending=[], timeline=observed, timingReferences=self.references(observed),
                            timelinePresentation=[dict(sequence=6, title='Answer fulfilled',
                                detail='system · 125 ms · 60 s profile budget')])
+            if record.get('error'):
+                receipt['error'] = record['error']
             if current and current[0].get('ringing'):
                 receipt['incoming'] = current[0]
             record['path'].write_text(json.dumps(receipt))
@@ -165,6 +186,37 @@ class NativeWorld:
             return json.dumps(dict(success=True, id=identifier, result=result))
         return send
 
+    def make_connection(self, name):
+        connection = SimpleNamespace(
+            bridge=SHIPPING['InspectorBridge'](SimpleNamespace(bundle=FIXTURE), 'device', self.channel),
+            session=dict(self.session), target_container=self.channel.parent.parent, alive=True,
+            launch_environment={'SIMCTL_CHILD_CKSIM_TEST_BRIDGE': name})
+        connection.is_alive = lambda: connection.alive
+        self.connections[name] = connection
+        return connection
+
+    @contextmanager
+    def bridge_factory(self, args, target):
+        self.test.assertEqual(target, 'device')
+        self.test.assertEqual(args.bundle, FIXTURE)
+        self.test.assertEqual(args.app_container, self.channel.parent.parent)
+        self.test.assertEqual(args.runtime_dir, Path(__file__).resolve().parents[2])
+        self.test.assertEqual(args.timeout, 15)
+        self.test.assertEqual(self.actor, FIXTURE, 'prepare fixture before opening a new bridge')
+        name = 'case-' + str(len(self.connections))
+        connection = self.connection if self.connection_fault == 'same' else self.make_connection(name)
+        if self.connection_fault == 'session':
+            connection.session = dict(self.session, pid=99999)
+        elif self.connection_fault == 'container':
+            connection.target_container = self.root / 'foreign-container'
+        self.context_events.append(('open', name))
+        try:
+            yield connection
+        finally:
+            connection.alive = False
+            self.closed_contexts.append(connection)
+            self.context_events.append(('close', name))
+
     def locate_probe(self, display, nonce, bundle):
         self.test.assertEqual((display, bundle), ('device', INSPECTOR))
         return self.active_probe['path'] if nonce == self.active_probe['nonce'] else None
@@ -186,6 +238,7 @@ class NativeWorld:
         self.test.assertEqual({key: baseline[key] for key in ('runID', 'pid', 'bundleID')},
                              {key: self.session[key] for key in ('runID', 'pid', 'bundleID')})
         started = self.elapsed
+        self.active_connection = self.connections[env['SIMCTL_CHILD_CKSIM_TEST_BRIDGE']]
         nonce = env['SIMCTL_CHILD_CKSIM_INSPECTOR_PROBE_NONCE']
         pid = 30400 + len(self.launches)
         self.native_receipt(nonce, pid, started, out)
@@ -194,18 +247,25 @@ class NativeWorld:
         self.actor = INSPECTOR
         self.advance(3.9055)
         self.publish()
+        self.launches[-1]['bootstrap_cursor'] = self.active_probe.get('cursor', 0)
+        self.launches[-1]['bootstrap_rows'] = len(self.active_probe.get('timeline', []))
         log.write_text(INSPECTOR + ': ' + str(pid) + '\n')
         value = observe()
+        if value is None:
+            raise RuntimeError(self.active_probe.get('error') or 'Native projection unavailable')
         self.test.assertTrue(value['online'])
         self.test.assertEqual(value['inspectorPID'], pid)
         return value, started + 25
 
     def patches(self):
-        self.connection = SimpleNamespace(launch_environment={'SIMCTL_CHILD_CKSIM_TEST_BRIDGE': 'host-only'},
-                                          is_alive=lambda: True)
+        self.connection = self.make_connection('base')
+        self.active_connection = self.connection
+        self.active_probe.update(cursor=0, timeline=[])
+        self.publish()
         globals_ = RUNNER['journal_journey'].__globals__
         return patch.dict(globals_, time=self.clock, run=self.rpc,
                           consumer_control=self.control_factory,
+                          _shipping_tools=lambda: dict(inspector_bridge=self.bridge_factory),
                           locate_probe=self.locate_probe, supervise_launch=self.supervise,
                           uuid=SimpleNamespace(UUID=uuid.UUID, uuid4=lambda: next(self.nonces)))
 
@@ -232,6 +292,29 @@ class FilterCaseTests(unittest.TestCase):
         self.assertNotEqual(first['journalSHA256'], second['journalSHA256'])
         self.assertLess(first['journalBytes'], second['journalBytes'])
         self.assertEqual(first['sessionSHA256'], second['sessionSHA256'])
+        self.assertEqual([row['bootstrap_cursor'] for row in world.launches], [8, 9])
+        self.assertEqual([row['bootstrap_rows'] for row in world.launches], [8, 9])
+        self.assertEqual([kind for kind, _ in world.context_events], ['open', 'close', 'open', 'close'])
+        self.assertEqual(len(world.closed_contexts), 2)
+        self.assertTrue(all(not connection.is_alive() for connection in world.closed_contexts))
+        self.assertTrue(world.connection.is_alive(), 'the caller still owns the original base context')
+
+    def test_reused_advanced_shipping_bridge_rejects_new_consumer_cursor_zero(self):
+        world = NativeWorld(self)
+        out = world.out / 'reused-bridge'
+        out.mkdir()
+        with world.patches():
+            result = RUNNER['journal_journey']([], 'device', 'basic-consumer', world.session,
+                world.out, 25, world.channel, probe=world.probe)
+            self.assertIs(result['success'], True)
+            self.assertEqual(world.connection.bridge.journal.sequence, 8)
+            RUNNER['activate_existing']('device', FIXTURE, world.session['pid'],
+                                       deadline=world.elapsed + 20)
+            with self.assertRaisesRegex(RuntimeError, 'Timeline cursor changed'):
+                RUNNER['launch_inspector'](world.connection, 'device', 'new-consumer',
+                    world.session, world.channel, out, True)
+        self.assertEqual(world.active_probe.get('cursor', 0), 0)
+        self.assertFalse(world.active_probe['online'])
 
     def test_combined_foreground_trace_cannot_reset_the_existing_consumer(self):
         world = NativeWorld(self)
@@ -305,6 +388,7 @@ class FilterCaseTests(unittest.TestCase):
                               25, world.channel, world.connection, verify_filters=True, probe=world.probe)
                 self.assertEqual(world.launches, [])
                 self.assertEqual(world.calls, [])
+                self.assertEqual(world.context_events, [])
 
     def test_basic_exception_is_preserved_without_starting_filter_consumers(self):
         world = NativeWorld(self)
@@ -318,6 +402,7 @@ class FilterCaseTests(unittest.TestCase):
                       25, world.channel, world.connection, verify_filters=True, probe=world.probe)
         self.assertIs(raised.exception, failure)
         self.assertEqual(world.launches, [])
+        self.assertEqual(world.context_events, [])
 
     def test_unsuccessful_filter_case_never_starts_the_clear_consumer(self):
         cases = RUNNER['run_filter_cases']
@@ -331,6 +416,8 @@ class FilterCaseTests(unittest.TestCase):
                 self.assertEqual(len(world.launches), 1)
                 self.assertEqual(world.launches[0]['out'].name, 'filter-do-not-disturb')
                 self.assertFalse((world.out / 'filter-none').exists())
+                self.assertEqual(len(world.closed_contexts), 1)
+                self.assertFalse(world.closed_contexts[0].is_alive())
 
     def test_entered_filter_exception_is_preserved_without_a_new_consumer(self):
         world = NativeWorld(self)
@@ -342,6 +429,8 @@ class FilterCaseTests(unittest.TestCase):
         self.assertIs(raised.exception, world.control_error)
         self.assertEqual(len(world.launches), 1)
         self.assertFalse((world.out / 'filter-none').exists())
+        self.assertEqual(len(world.closed_contexts), 1)
+        self.assertFalse(world.closed_contexts[0].is_alive())
 
     def test_native_timeout_aborts_filter_plan_without_retry(self):
         world = NativeWorld(self)
@@ -354,6 +443,8 @@ class FilterCaseTests(unittest.TestCase):
         self.assertEqual(len(world.launches), 1)
         self.assertEqual(world.rpc_count, 2)
         self.assertFalse((world.out / 'filter-none').exists())
+        self.assertEqual(len(world.closed_contexts), 1)
+        self.assertFalse(world.closed_contexts[0].is_alive())
 
     def test_filter_wait_cannot_reset_the_native_process_start_deadline(self):
         world = NativeWorld(self)
@@ -383,6 +474,23 @@ class FilterCaseTests(unittest.TestCase):
         self.assertEqual(len(world.launches), 1)
         self.assertTrue((world.out / 'filter-do-not-disturb/inspector-filter-do-not-disturb.json').exists())
         self.assertFalse((world.out / 'filter-none/case-baseline.json').exists())
+        self.assertEqual(len(world.closed_contexts), 1)
+        self.assertFalse(world.closed_contexts[0].is_alive())
+
+    def test_reused_or_changed_bridge_is_closed_before_any_native_consumer(self):
+        for fault in ('same', 'session', 'container'):
+            with self.subTest(fault=fault):
+                world = NativeWorld(self)
+                world.connection_fault = fault
+                with world.patches():
+                    with self.assertRaises(RuntimeError):
+                        RUNNER['run_filter_cases']([], 'device', world.connection,
+                            world.session, world.channel, world.out)
+                self.assertEqual(world.launches, [])
+                self.assertEqual([kind for kind, _ in world.context_events], ['open', 'close'])
+                self.assertEqual(len(world.closed_contexts), 1)
+                self.assertFalse(world.closed_contexts[0].is_alive())
+                self.assertFalse((world.out / 'filter-none').exists())
 
 
 if __name__ == '__main__':

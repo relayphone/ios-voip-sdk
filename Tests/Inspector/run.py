@@ -491,6 +491,9 @@ def filter_journey(common, target, nonce, session, out, deadline, channel, probe
 
 def run_filter_cases(common, target, connection, session, channel, out):
     results = []
+    factory = _shipping_tools()['inspector_bridge']
+    args = SimpleNamespace(bundle=session['bundleID'], app_container=channel.parent.parent,
+                           runtime_dir=ROOT, timeout=15)
     for before, reason, code, verification in (
             ('none', 'do-not-disturb', 3, 'verified'),
             ('do-not-disturb', 'none', 0, 'not-applicable')):
@@ -501,11 +504,18 @@ def run_filter_cases(common, target, connection, session, channel, out):
         # launch boundary. This never extends or restarts an existing consumer.
         activate_existing(target, session['bundleID'], session['pid'], time.monotonic() + 20)
         nonce = str(uuid.uuid4())
-        probe, deadline = launch_inspector(connection, target, nonce, session, channel, case_out, True)
-        result = filter_journey(common, target, nonce, session, case_out, deadline, channel, probe,
-                                before=before, reason=reason, code=code, verification=verification)
-        if result.get('success') is not True:
-            raise RuntimeError('Inspector filter case did not succeed')
+        # Each Inspector process starts its stream at zero. A bridge is pinned
+        # to one consumer's cursor, so a new process requires a new bridge.
+        with factory(args, target) as fresh:
+            if (fresh is connection or dict(fresh.session) != session or
+                    fresh.target_container != channel.parent.parent):
+                raise RuntimeError('Inspector filter bridge must be fresh and retain the target session')
+            probe, deadline = launch_inspector(fresh, target, nonce, session, channel, case_out, True)
+            result = filter_journey(common, target, nonce, session, case_out, deadline, channel, probe,
+                                    before=before, reason=reason, code=code, verification=verification)
+            if result.get('success') is not True:
+                raise RuntimeError('Inspector filter case did not succeed')
+        connection = fresh
         results.append(result)
     return results
 
