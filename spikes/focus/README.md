@@ -19,7 +19,7 @@ Local CLI verification: `python3 -m unittest discover -s spikes/focus -p test_ru
 ## Morning batch
 
 `spikes/focus/morning-batch --dry-run` executes every underlying row dry-run without a device or credentials.
-For a real run, the operator supplies the iPhone 13's canonical UDID or CoreDevice UUID in `FOCUS_DEVICE`, a private persistent `FOCUS_WORK`, and the
+For a real run, the operator supplies the iPhone 13's canonical uppercase hardware UDID in `FOCUS_DEVICE`, a private persistent `FOCUS_WORK`, and the
 [sandbox APNs environment](../../discovery/device/README.md). The batch generates a signed test build with Xcode's
 signed-in account and `-allowProvisioningUpdates`; it does not print the APNs key. A read-only inventory check
 requires a uniquely identified iPhone 13 before signing or UI tests. It checks Share Across Devices is off before
@@ -34,7 +34,10 @@ Phone's runner must honor the same convention for mutual exclusion. A pre-existi
 to Phone, create `FOCUS_WORK/PAUSE`, `~/.device-locks/PAUSE`, or `~/.device-locks/<FOCUS_DEVICE>.priority`;
 the batch finishes the active row, restores settings and releases its lock. Remove the marker and rerun to resume
 from the private checkpoint. An interrupted attempt is not repeated: after safe restoration it is recorded
-unqualified. Failed restoration retains the lock and journal for recovery. The ringer switch is physical and its
+unqualified. Failed restoration retains the lock and journal for recovery. A hard-killed batch can leave its own
+lock behind: the batch will not automatically take it over because a device subprocess may still be alive. The
+operator must establish that the old batch and its device subprocesses have stopped, coordinate with Phone, verify
+Share Across Devices is off, and restore the journal before releasing that specific owned lock. The ringer switch is physical and its
 position is not read by this harness, so an unattended session cannot claim either switch variant without independent evidence.
 
 For individual rows, `--focus-mode dnd` snapshots/restores the built-in profile and refuses unknown or Silence list

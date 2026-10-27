@@ -63,7 +63,7 @@ def surface_windows(events, received, observation):
     return windows
 
 
-def answer_evidence(events, trace, observation, signal_id):
+def answer_evidence(events, trace, observation, signal_id, push_ms):
     """Qualify a local signal-to-disappearance interval only with continuous visible evidence."""
     matching = [item for item in trace if str(item.get("signalID", "")).lower() == signal_id.lower()]
     signals = [item for item in matching if item.get("event") == "answer.signal"]
@@ -73,16 +73,25 @@ def answer_evidence(events, trace, observation, signal_id):
     start, report = signals[0].get("monoMs"), reports[0].get("monoMs")
     if not isinstance(start, int) or not isinstance(report, int) or report < start:
         return {"status": "unqualified", "reason": "invalid-device-timestamps"}
-    if not observation.get("startUptimeMs", start + 1) <= start <= report <= observation.get("endUptimeMs", -1):
+    if not isinstance(push_ms, int) or not observation.get("startUptimeMs", start + 1) <= push_ms <= start <= report <= observation.get("endUptimeMs", -1):
         return {"status": "unqualified", "reason": "outside-observation-window"}
     transitions = [e for e in events if e.get("event") == "surface.transition" and isinstance(e.get("uptimeMs"), int)]
-    visible = set()
+    visible = {}
     for surface in ("banner", "callScreen"):
-        prior = [e for e in transitions if e.get("surface") == surface and e["uptimeMs"] <= start]
+        prior = [e for e in transitions if e.get("surface") == surface and e["uptimeMs"] <= push_ms]
         if prior and max(prior, key=lambda e: e["uptimeMs"]).get("visible") is True:
-            visible.add(surface)
-    if not visible:
-        return {"status": "unqualified", "reason": "no-observed-ui-before-signal", "signalUptimeMs": start}
+            return {"status": "unqualified", "reason": "surface-visible-before-push", "signalUptimeMs": start}
+        after = [e for e in transitions if e.get("surface") == surface and push_ms < e["uptimeMs"] <= start]
+        if after:
+            last = max(after, key=lambda e: e["uptimeMs"])
+            if last.get("visible") is True:
+                visible[surface] = last.get("callerMatched") is True
+    if not visible or not all(visible.values()):
+        return {"status": "unqualified", "reason": "no-identified-ui-after-push", "signalUptimeMs": start}
+    samples = sorted({e["uptimeMs"] for e in events if e.get("event") == "surface.sample" and isinstance(e.get("uptimeMs"), int)})
+    before_signal = [value for value in samples if value <= start]
+    if not before_signal or start - before_signal[-1] > 2000:
+        return {"status": "unqualified", "reason": "stale-ui-sample-at-signal", "signalUptimeMs": start}
     later = sorted((e for e in transitions if start < e["uptimeMs"] <= observation["endUptimeMs"]), key=lambda e: e["uptimeMs"])
     # Banner and full-screen state are sampled together. Apply the whole sample
     # before deciding that both surfaces vanished.
@@ -91,12 +100,20 @@ def answer_evidence(events, trace, observation, signal_id):
         for event in sample:
             surface = event.get("surface")
             if event.get("visible") is True:
-                visible.add(surface)
+                visible[surface] = event.get("callerMatched") is True
             else:
-                visible.discard(surface)
+                visible.pop(surface, None)
+        if visible and not all(visible.values()):
+            return {"status": "unqualified", "reason": "ambiguous-ui-identity", "signalUptimeMs": start}
         if not visible and timestamp >= report:
+            coverage = [before_signal[-1]] + [value for value in samples if before_signal[-1] < value <= timestamp]
+            if not coverage or coverage[-1] != timestamp or any(b - a > 2000 for a, b in zip(coverage, coverage[1:])):
+                return {"status": "unqualified", "reason": "ui-observation-gap", "signalUptimeMs": start}
+            last_sample = coverage[-2] if len(coverage) > 1 else coverage[-1]
             return {"status": "observed", "signalUptimeMs": start, "reportUptimeMs": report,
                     "dismissalUptimeMs": timestamp, "signalToDismissalMs": timestamp - start,
+                    "dismissalLowerBoundMs": max(0, last_sample - start),
+                    "samplingUncertaintyMs": timestamp - last_sample,
                     "source": "local mailbox; not network delivery"}
     return {"status": "unqualified", "reason": "dismissal-not-observed", "signalUptimeMs": start, "reportUptimeMs": report}
 
@@ -241,7 +258,8 @@ class Run:
         self.recover(required=self.journal.exists() or os.environ.get("FOCUS_REQUIRE_DEVICE_JOURNAL") == "1")
         data = plistlib.loads(self.source.read_bytes())
         env = {"FOCUS_ACTIONS": json.dumps(actions), "FOCUS_NAME": os.environ.get("FOCUS_NAME", "Focus Probe 124"),
-               "FOCUS_CALLER": "+15555550199", "FOCUS_OBSERVATION_ID": self.invitation}
+               "FOCUS_CALLER": "+15555550199", "FOCUS_OBSERVATION_ID": self.invitation,
+               "FOCUS_EXPECTED_CALLER": self.p["callerValue"]}
         if self.p.get("unknownCaller"):
             env["FOCUS_UNKNOWN_CALLER"] = self.p["callerValue"]
         if self.journal.exists() and self.journal_fresh:
@@ -482,7 +500,7 @@ class Run:
             result["invitationIDs"] = self.invitations
             result["reports"] = [e for e in matching if e["event"] == "report.result"]
             if p["serverAnswer"] and observer:
-                result["answeredElsewhere"] = answer_evidence(ui["events"], matching, result["visual"][0], self.signal_id)
+                result["answeredElsewhere"] = answer_evidence(ui["events"], matching, result["visual"][0], self.signal_id, device_receipts[0][1])
             first_window = result.get("visualByInvitation", [{}])[0]
             if p["row"] == "C00" and len(result["reports"]) == 1 and result["reports"][0].get("outcome") == "reported" and first_window.get("observationQualified") and (first_window.get("bannerFirstNewPresentationUptimeMs") is not None or first_window.get("callScreenFirstNewPresentationUptimeMs") is not None):
                 write(self.work / "visual-calibration.json", {"positive": True, "binding": self.binding, "createdAt": time.time()})

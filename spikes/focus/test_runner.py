@@ -106,19 +106,25 @@ class DryRunTests(unittest.TestCase):
         observation = {"startUptimeMs": 900, "endUptimeMs": 1500}
         signal = [{"event": "answer.signal", "signalID": "abc", "monoMs": 1100},
                   {"event": "answer.report", "signalID": "abc", "monoMs": 1120}]
-        events = [{"event": "surface.transition", "surface": "callScreen", "visible": True, "uptimeMs": 1000},
-                  {"event": "surface.transition", "surface": "callScreen", "visible": False, "uptimeMs": 1200}]
-        evidence = answer_evidence(events, signal, observation, "abc")
+        events = [{"event": "surface.transition", "surface": "callScreen", "visible": True, "callerMatched": True, "uptimeMs": 1000},
+                  {"event": "surface.transition", "surface": "callScreen", "visible": False, "uptimeMs": 1200},
+                  {"event": "surface.sample", "uptimeMs": 1000}, {"event": "surface.sample", "uptimeMs": 1200}]
+        evidence = answer_evidence(events, signal, observation, "abc", 950)
         self.assertEqual((evidence["status"], evidence["signalToDismissalMs"]), ("observed", 100))
-        self.assertEqual(answer_evidence(events[1:], signal, observation, "abc")["status"], "unqualified")
-        self.assertEqual(answer_evidence(events[:1], signal, observation, "abc")["status"], "unqualified")
-        self.assertEqual(answer_evidence(events, signal[:1], observation, "abc")["status"], "unqualified")
-        handoff = [{"event": "surface.transition", "surface": "banner", "visible": True, "uptimeMs": 1000},
+        self.assertEqual(answer_evidence(events[1:], signal, observation, "abc", 950)["status"], "unqualified")
+        self.assertEqual(answer_evidence(events[:1], signal, observation, "abc", 950)["status"], "unqualified")
+        self.assertEqual(answer_evidence(events, signal[:1], observation, "abc", 950)["status"], "unqualified")
+        self.assertEqual(answer_evidence(events, signal, observation, "abc", 1050)["status"], "unqualified")
+        self.assertEqual(answer_evidence([{**events[0], "callerMatched": False}, *events[1:]], signal, observation, "abc", 950)["status"], "unqualified")
+        self.assertEqual(answer_evidence(events[:2], signal, observation, "abc", 950)["status"], "unqualified")
+        handoff = [{"event": "surface.transition", "surface": "banner", "visible": True, "callerMatched": True, "uptimeMs": 1000},
                    {"event": "surface.transition", "surface": "banner", "visible": False, "uptimeMs": 1200},
-                   {"event": "surface.transition", "surface": "callScreen", "visible": True, "uptimeMs": 1200},
-                   {"event": "surface.transition", "surface": "callScreen", "visible": False, "uptimeMs": 1400}]
-        self.assertEqual(answer_evidence(handoff, signal, observation, "abc")["signalToDismissalMs"], 300)
-        self.assertEqual(answer_evidence(handoff[:-1], signal, observation, "abc")["status"], "unqualified")
+                   {"event": "surface.transition", "surface": "callScreen", "visible": True, "callerMatched": True, "uptimeMs": 1200},
+                   {"event": "surface.transition", "surface": "callScreen", "visible": False, "uptimeMs": 1400},
+                   {"event": "surface.sample", "uptimeMs": 1000}, {"event": "surface.sample", "uptimeMs": 1200},
+                   {"event": "surface.sample", "uptimeMs": 1400}]
+        self.assertEqual(answer_evidence(handoff, signal, observation, "abc", 950)["signalToDismissalMs"], 300)
+        self.assertEqual(answer_evidence([e for e in handoff if e.get("uptimeMs") != 1400], signal, observation, "abc", 950)["status"], "unqualified")
 
     def test_failed_positive_control_cannot_qualify_audio(self):
         valid = {"status": "recorded", "visualNegativeQualified": True, "reports": [{"outcome": "reported"}]}

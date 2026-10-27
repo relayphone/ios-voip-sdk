@@ -36,8 +36,10 @@ def make_plan(unknown):
         if index in [5, 9, 13]:
             add(f"callkit-refresh-f{index:02}", "C00", ["--provider", "callkit"])
         add(f"ck-matrix-f{index:02}", f"F{index:02}", ["--provider", "callkit"], samples=3)
+    add("ck-dnd-unknown-positive-before", "C00", ["--provider", "callkit", "--unknown-caller", "--caller-value", unknown])
     add("ck-dnd-unknown", "F09", ["--provider", "callkit", "--focus-mode", "dnd",
                                     "--unknown-caller", "--caller-value", unknown], samples=3)
+    add("ck-dnd-unknown-positive-after", "C00", ["--provider", "callkit", "--unknown-caller", "--caller-value", unknown])
     for row, provider in [("CK-C02", "callkit"), ("LCK-C02b", "lck")]:
         add(f"{provider}-repeat-positive", "C00", ["--provider", provider])
         for setting in ["off", "on"]:
@@ -60,8 +62,10 @@ def make_plan(unknown):
     for provider in ["callkit", "lck"]:
         add(f"{provider}-answer-positive", "C00", ["--provider", provider])
         add(f"{provider}-answer", "F01", ["--provider", provider, "--server-answer"], 3)
+    add("callkit-dnd-answer-positive-before", "C00", ["--provider", "callkit", "--unknown-caller", "--caller-value", unknown])
     add("callkit-dnd-answer", "F09", ["--provider", "callkit", "--focus-mode", "dnd",
                                        "--unknown-caller", "--caller-value", unknown, "--server-answer"], 3)
+    add("callkit-dnd-answer-positive-after", "C00", ["--provider", "callkit", "--unknown-caller", "--caller-value", unknown])
     for index in range(1, 17):
         add(f"activity-{index:02}", f"L{index:02}")
     # Mac permission is requested only here; C00 --listen is the last measurement.
@@ -123,13 +127,13 @@ def phone_wants_device(work, lock_dir, device):
     return (work / "PAUSE").exists() or (lock_dir / "PAUSE").exists() or (lock_dir / (device + ".priority")).exists()
 
 
-DEVICE_ID_PATTERN = re.compile(r"(?:[A-Fa-f0-9]{8}-[A-Fa-f0-9]{16}|[A-Fa-f0-9]{8}(?:-[A-Fa-f0-9]{4}){3}-[A-Fa-f0-9]{12})")
+DEVICE_ID_PATTERN = re.compile(r"[A-F0-9]{8}-[A-F0-9]{16}")
 
 
 def iphone13_identity(inventory, selected):
-    """Accept one canonical CoreDevice UUID or UDID only, never a device name."""
+    """Accept a canonical uppercase hardware UDID only, never an alias or name."""
     if not DEVICE_ID_PATTERN.fullmatch(selected):
-        raise ValueError("FOCUS_DEVICE must be a canonical CoreDevice UUID or iPhone UDID")
+        raise ValueError("FOCUS_DEVICE must be the canonical uppercase iPhone hardware UDID")
     devices = inventory.get("result", {}).get("devices", [])
     if not isinstance(devices, list):
         raise ValueError("device inventory is unavailable")
@@ -140,8 +144,8 @@ def iphone13_identity(inventory, selected):
         hardware = item.get("hardwareProperties") or {}
         if not isinstance(hardware, dict):
             continue
-        identifiers = [item.get("identifier"), hardware.get("udid")]
-        if any(isinstance(value, str) and value.lower() == selected.lower() for value in identifiers):
+        udid = hardware.get("udid")
+        if isinstance(udid, str) and udid.upper() == selected:
             matches.append((item, hardware))
     if len(matches) != 1:
         raise ValueError("device identity is missing or ambiguous")
@@ -149,16 +153,12 @@ def iphone13_identity(inventory, selected):
     model, kind = hardware.get("marketingName"), hardware.get("productType")
     if model not in [None, "iPhone 13"] or kind not in [None, "iPhone14,5"] or (model is None and kind is None):
         raise ValueError("only iPhone 13 is authorized; model missing, conflicting or different")
-    # Use one canonical UDID for locking even if the caller supplied CoreDevice UUID.
-    canonical = hardware.get("udid") or item.get("identifier")
-    if not isinstance(canonical, str) or not DEVICE_ID_PATTERN.fullmatch(canonical):
-        raise ValueError("canonical device identity is unavailable")
-    return canonical.upper()
+    return selected
 
 
 def identify_iphone13(selected, work):
     if not DEVICE_ID_PATTERN.fullmatch(selected):
-        raise ValueError("FOCUS_DEVICE must be a canonical CoreDevice UUID or iPhone UDID")
+        raise ValueError("FOCUS_DEVICE must be the canonical uppercase iPhone hardware UDID")
     inventory = work / ("device-inventory-" + uuid.uuid4().hex + ".json")
     try:
         command(["xcrun", "devicectl", "list", "devices", "--json-output", str(inventory), "--quiet"],
@@ -230,29 +230,65 @@ class BatchPaused(RuntimeError):
     pass
 
 
+class ProcessGroupCleanupError(RuntimeError):
+    """A timed-out command still owns processes; keep the device locked."""
+
+
+def stop_process_group(process):
+    """Stop the entire inherited group, including the runner's UI observer."""
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        process.wait(timeout=5)
+        return
+    except OSError as error:
+        raise ProcessGroupCleanupError("cannot stop the process group") from error
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        pass
+    # The parent may have exited while an observer remains, so always kill the group.
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except OSError as error:
+        raise ProcessGroupCleanupError("cannot kill the process group") from error
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired as error:
+        raise ProcessGroupCleanupError("runner did not exit after termination") from error
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            return
+        except OSError as error:
+            raise ProcessGroupCleanupError("cannot verify process group exit") from error
+        if time.monotonic() >= deadline:
+            raise ProcessGroupCleanupError("process group remains after termination")
+        time.sleep(0.05)
+
+
 def command(argv, env, log, timeout, should_pause=None):
     with log.open("ab") as stream:
-        if should_pause is None:
-            result = subprocess.run(argv, stdout=stream, stderr=subprocess.STDOUT, env=env, timeout=timeout)
-        else:
-            process = subprocess.Popen(argv, stdout=stream, stderr=subprocess.STDOUT, env=env, start_new_session=True)
-            deadline = time.monotonic() + timeout
-            try:
-                while process.poll() is None:
-                    if should_pause():
-                        raise BatchPaused("Phone priority or PAUSE requested")
-                    if time.monotonic() >= deadline:
-                        raise subprocess.TimeoutExpired(argv, timeout)
-                    time.sleep(1)
-                result = process
-            finally:
-                if process.poll() is None:
-                    os.killpg(process.pid, signal.SIGTERM)
-                    try:
-                        process.wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        os.killpg(process.pid, signal.SIGKILL)
-                        process.wait(timeout=10)
+        process = subprocess.Popen(argv, stdout=stream, stderr=subprocess.STDOUT, env=env, start_new_session=True)
+        deadline = time.monotonic() + timeout
+        try:
+            while process.poll() is None:
+                if should_pause is not None and should_pause():
+                    raise BatchPaused("Phone priority or PAUSE requested")
+                if time.monotonic() >= deadline:
+                    raise subprocess.TimeoutExpired(argv, timeout)
+                time.sleep(0.1)
+        except BaseException:
+            stop_process_group(process)
+            raise
+        result = process
+        if result.returncode:
+            # A failed parent can leave its observer alive even after it has exited.
+            stop_process_group(process)
     if result.returncode:
         raise RuntimeError("command failed; inspect the private batch log; uncertain attempts are not retried")
 
@@ -283,6 +319,8 @@ def authorize_microphone(work, should_pause):
         return "authorized" if "Microphone authorized" in log.read_text() else "pending-or-denied"
     except BatchPaused:
         raise
+    except ProcessGroupCleanupError:
+        raise
     except (RuntimeError, subprocess.TimeoutExpired, OSError):
         return "pending-or-denied"
 
@@ -308,11 +346,13 @@ def run_batch(plan, args):
     checkpoint = work / "morning-checkpoint.json"
     # Row execution needs APNs credentials. The runner only forwards them to the sender.
     env = os.environ.copy()
+    env.pop("FOCUS_REQUIRE_DEVICE_JOURNAL", None)
     env["FOCUS_DEVICE"], env["FOCUS_WORK"] = device, str(work)
     state = None
     dirty = checkpoint.exists()  # Unknown state is unsafe until a valid checkpoint proves it clean.
     verified = False
     stopped = False
+    unsafe_processes = False
     old_handlers = {}
 
     def pause_handler(_signum, _frame):
@@ -364,12 +404,15 @@ def run_batch(plan, args):
         if pause_requested():
             raise BatchPaused("Phone priority or PAUSE requested")
         # No Focus action, including restoration, occurs before this assertion succeeds.
+        if dirty:
+            env["FOCUS_REQUIRE_DEVICE_JOURNAL"] = "1"
         command([str(RUNNER), "preflight"], env, work / "preflight.log", 660, pause_requested)
         verified = True
         if dirty:
             # Previous crash: restore first, then account for the ambiguous attempt without retry.
             command([str(RUNNER), "restore-all"], env, work / "batch-restore.log", 660)
             mark_restored()
+            env.pop("FOCUS_REQUIRE_DEVICE_JOURNAL", None)
         if pause_requested():
             raise BatchPaused("Phone priority or PAUSE requested")
         state["microphoneAuthorization"] = authorize_microphone(work, pause_requested)
@@ -392,6 +435,8 @@ def run_batch(plan, args):
             row_failed = False
             try:
                 command([str(RUNNER), item["row"], *item["args"]], env, log, 900)
+            except ProcessGroupCleanupError:
+                raise
             except RuntimeError:
                 # A measured-but-unqualified row may exit nonzero after successful cleanup.
                 # Only continue if its private result independently proves restoration.
@@ -431,23 +476,31 @@ def run_batch(plan, args):
         return 75 if pause_requested() else 0
     except BatchPaused:
         return 75
+    except ProcessGroupCleanupError:
+        unsafe_processes = True
+        raise
     finally:
         failure = None
-        if dirty:
+        if unsafe_processes:
+            failure = RuntimeError("a subprocess group may still be running")
+        elif dirty:
             if verified and state is not None and env.get("FOCUS_XCTESTRUN"):
                 try:
+                    env["FOCUS_REQUIRE_DEVICE_JOURNAL"] = "1"
                     command([str(RUNNER), "restore-all"], env, work / "batch-restore.log", 660)
                     mark_restored()
                 except (RuntimeError, subprocess.TimeoutExpired, OSError) as error:
                     failure = error
             else:
                 failure = RuntimeError("restore required but Share Across Devices OFF could not be verified")
-        if not dirty:
+        if not dirty and failure is None:
             lock.release()
         for signum, handler in old_handlers.items():
             signal.signal(signum, handler)
         if failure:
             print("Restoration incomplete; device lock retained for recovery", file=sys.stderr)
+            if unsafe_processes:
+                raise RuntimeError("subprocess group may still be running; retain the device lock until it is stopped") from failure
             raise RuntimeError("restore-all failed or could not be safely attempted; recover settings before releasing lock") from failure
 
 

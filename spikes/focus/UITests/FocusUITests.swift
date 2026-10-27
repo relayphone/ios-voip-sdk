@@ -670,6 +670,30 @@ final class FocusUITests: XCTestCase {
     events.append(["event": "activity.card", "expectedText": wanted, "exists": true, "observedAt": Date().timeIntervalSince1970])
     home()
   }
+  // Match only exact synthetic caller identity inside the currently visible call surface.
+  // An inaccessible, ambiguous or differently formatted identity is deliberately false.
+  func callerMatches(_ scope: XCUIElement, app: XCUIApplication, expected: String) -> Bool {
+    guard app.state == .runningForeground, scope.exists else { return false }
+    let names = ["Focus Test Caller", expected].filter { !$0.isEmpty }
+    let predicate = NSPredicate(format: "label IN %@ OR identifier IN %@", names, names)
+    let matched = scope.descendants(matching: .any).matching(predicate).allElementsBoundByIndex
+      .contains { $0.exists && $0.isHittable }
+    return app.state == .runningForeground && matched
+  }
+  func bannerCallerMatches(expected: String) -> Bool {
+    guard board.state == .runningForeground else { return false }
+    let controls = ["Accept", "Answer call", "Decline"]
+    // Reject full-screen ancestors: the caller and call button must share a compact banner container.
+    let containers = board.descendants(matching: .any)
+      .containing(NSPredicate(format: "label IN %@ OR identifier IN %@", controls, controls)).allElementsBoundByIndex
+    let limit = min(board.frame.height * 0.4, 250)
+    for item in containers where item.exists && item.frame.height > 0 && item.frame.height <= limit {
+      let buttons = item.buttons.matching(NSPredicate(format: "label IN %@ OR identifier IN %@", controls, controls))
+      if buttons.allElementsBoundByIndex.contains(where: { $0.exists && $0.isHittable }),
+         callerMatches(item, app: board, expected: expected) { return true }
+    }
+    return false
+  }
   func observe(_ duration: Double) throws {
     home()
     try JSONSerialization.data(withJSONObject: ["id": ProcessInfo.processInfo.environment["FOCUS_OBSERVATION_ID"] ?? "none"])
@@ -679,17 +703,29 @@ final class FocusUITests: XCTestCase {
     var banner = false, fullScreen = false
     var bannerAt: Double?, screenAt: Double?
     var previousBanner = false, previousScreen = false
+    var previousBannerCaller = false, previousScreenCaller = false
+    let expected = ProcessInfo.processInfo.environment["FOCUS_EXPECTED_CALLER"] ?? ""
+    guard expected.utf8.count <= 128 else { throw failure("Invalid expected caller") }
     repeat {
       var currentBanner = false
       if board.state == .runningForeground {
         currentBanner = board.buttons.matching(NSPredicate(format: "label IN %@", ["Accept", "Answer call", "Decline"])).firstMatch.exists
       }
       let currentScreen = callUI.state == .runningForeground && callUI.otherElements["InCallRootView"].exists
+      let bannerCaller = currentBanner && bannerCallerMatches(expected: expected)
+      let screenCaller = currentScreen && callerMatches(callUI.otherElements["InCallRootView"], app: callUI, expected: expected)
       let now = Date().timeIntervalSince1970
       let uptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
-      if currentBanner != previousBanner { events.append(["event": "surface.transition", "surface": "banner", "visible": currentBanner, "observedAt": now, "uptimeMs": uptimeMs]) }
-      if currentScreen != previousScreen { events.append(["event": "surface.transition", "surface": "callScreen", "visible": currentScreen, "observedAt": now, "uptimeMs": uptimeMs]) }
+      events.append(["event": "surface.sample", "surface": "banner", "visible": currentBanner, "callerMatched": bannerCaller, "observedAt": now, "uptimeMs": uptimeMs])
+      events.append(["event": "surface.sample", "surface": "callScreen", "visible": currentScreen, "callerMatched": screenCaller, "observedAt": now, "uptimeMs": uptimeMs])
+      if currentBanner != previousBanner || bannerCaller != previousBannerCaller {
+        events.append(["event": "surface.transition", "surface": "banner", "visible": currentBanner, "callerMatched": bannerCaller, "observedAt": now, "uptimeMs": uptimeMs])
+      }
+      if currentScreen != previousScreen || screenCaller != previousScreenCaller {
+        events.append(["event": "surface.transition", "surface": "callScreen", "visible": currentScreen, "callerMatched": screenCaller, "observedAt": now, "uptimeMs": uptimeMs])
+      }
       previousBanner = currentBanner; previousScreen = currentScreen
+      previousBannerCaller = bannerCaller; previousScreenCaller = screenCaller
       banner = banner || currentBanner; fullScreen = fullScreen || currentScreen
       if banner && bannerAt == nil { bannerAt = Date().timeIntervalSince1970 }
       if fullScreen && screenAt == nil { screenAt = Date().timeIntervalSince1970 }

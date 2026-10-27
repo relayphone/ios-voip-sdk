@@ -4,7 +4,10 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -33,6 +36,12 @@ class MorningPlanTests(unittest.TestCase):
             self.assertTrue(all(x["row"] == f"F{index:02}" and "callkit" in x["args"] for x in matrix))
         for name in ["ck-dnd-unknown", "callkit-dnd-answer"]:
             self.assertTrue(all("--unknown-caller" in x["args"] and "--focus-mode" in x["args"] for x in groups[name]))
+            positions = [i for i, item in enumerate(plan) if item["id"].startswith(name + "-") and
+                         "--focus-mode" in item["args"]]
+            for control in [plan[positions[0] - 1], plan[positions[-1] + 1]]:
+                self.assertEqual(control["row"], "C00")
+                self.assertIn("--unknown-caller", control["args"])
+                self.assertIn("callkit", control["args"])
         self.assertEqual(len({x["id"] for x in plan}), len(plan))
 
     def test_dry_run_calls_real_plan_interface_without_secrets_or_unknown_number(self):
@@ -61,13 +70,30 @@ class MorningPlanTests(unittest.TestCase):
             owner.release()
             self.assertFalse(owner.path.exists())
 
+    def test_timed_out_row_terminates_its_observer_process_group(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            ready, escaped = root / "observer-ready", root / "observer-escaped"
+            child = ("import signal,time,pathlib; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+                     f"pathlib.Path({str(ready)!r}).touch(); time.sleep(3); "
+                     f"pathlib.Path({str(escaped)!r}).touch()")
+            parent = f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child!r}]); time.sleep(30)"
+            with self.assertRaises(subprocess.TimeoutExpired):
+                batch.command([sys.executable, "-c", parent], os.environ.copy(), root / "command.log", 1)
+            self.assertTrue(ready.exists())
+            time.sleep(3)
+            self.assertFalse(escaped.exists())
+
     def test_device_gate_requires_unique_iphone_13_with_canonical_id(self):
         udid = "00008110-0011223344556677"
         core = "01234567-1234-5678-ABCD-1234567890AB"
         good = {"identifier": core, "hardwareProperties": {"udid": udid, "marketingName": "iPhone 13", "productType": "iPhone14,5"}}
         inventory = {"result": {"devices": [good]}}
         self.assertEqual(batch.iphone13_identity(inventory, udid), udid)
-        self.assertEqual(batch.iphone13_identity(inventory, core.lower()), udid)
+        with self.assertRaises(ValueError):
+            batch.iphone13_identity(inventory, core)
+        with self.assertRaises(ValueError):
+            batch.iphone13_identity(inventory, "00008110-00a1223344556677")
         for hardware in [{"udid": udid, "marketingName": "iPhone 15 Pro Max"},
                          {"udid": udid, "marketingName": "iPhone 15 Pro Max", "productType": "iPhone14,5"},
                          {"udid": udid}]:
@@ -176,7 +202,10 @@ class MorningPlanTests(unittest.TestCase):
             calls = []
             def fake_command(argv, env, log, timeout, should_pause=None):
                 calls.append(argv[1])
+                if argv[1] in ["preflight", "restore-all"]:
+                    self.assertEqual(env.get("FOCUS_REQUIRE_DEVICE_JOURNAL"), "1")
                 if argv[1] == "C01":
+                    self.assertNotIn("FOCUS_REQUIRE_DEVICE_JOURNAL", env)
                     result_path = work / (argv[1] + ".json")
                     result_path.write_text(json.dumps({"row": argv[1], "status": "recorded", "restored": "focus-off"}))
                     log.write_text(json.dumps({"status": "recorded", "result": str(result_path)}) + "\n")
@@ -247,6 +276,30 @@ class MorningPlanTests(unittest.TestCase):
                  contextlib.redirect_stderr(io.StringIO()):
                 with self.assertRaises(RuntimeError):
                     batch.run_batch(plan, None)
+            self.assertTrue((root / ".device-locks" / "00008110-0011223344556677.lock").is_dir())
+
+    def test_unknown_surviving_process_group_prevents_restore_and_unlock(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            work = root / "work"
+            product = root / "device.xctestrun"
+            product.write_bytes(b"signed-product")
+            plan = batch.make_plan(batch.DEFAULT_UNKNOWN)[:1]
+            calls = []
+            def fake_command(argv, env, log, timeout, should_pause=None):
+                calls.append(argv[1])
+                if argv[1] == "C06":
+                    raise batch.ProcessGroupCleanupError("cannot verify process exit")
+            with mock.patch.dict(os.environ, {"FOCUS_DEVICE": "00008110-0011223344556677", "FOCUS_WORK": str(work)}), \
+                 mock.patch.object(Path, "home", return_value=root), \
+                 mock.patch.object(batch, "identify_iphone13", side_effect=lambda device, workdir: device), \
+                 mock.patch.object(batch, "authorize_microphone", return_value="authorized"), \
+                 mock.patch.object(batch, "signed_build", return_value=product), \
+                 mock.patch.object(batch, "command", side_effect=fake_command), \
+                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(RuntimeError):
+                    batch.run_batch(plan, None)
+            self.assertEqual(calls, ["preflight", "C06"])
             self.assertTrue((root / ".device-locks" / "00008110-0011223344556677.lock").is_dir())
 
     def test_phone_priority_during_build_stops_before_preflight_and_unlocks(self):
