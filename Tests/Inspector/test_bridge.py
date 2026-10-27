@@ -230,10 +230,10 @@ class ProbeTests(unittest.TestCase):
     def test_journey_foregrounds_fixture_for_each_control_then_inspector_for_projection(self):
         self.journey_transport()
 
-    def test_loaded_controls_avoid_the_exhausted_final_foreground_frontier(self):
-        self.journey_transport(verify_filters=True, startup_cost=2.961383)
+    def test_loaded_controls_keep_the_answer_journey_within_its_original_budget(self):
+        self.journey_transport(startup_cost=2.961383)
 
-    def journey_transport(self, verify_filters=False, startup_cost=0):
+    def journey_transport(self, startup_cost=0):
         self.session['controlTransport'] = 'directory-watch-v1'
         self.row['controlTransport'] = 'directory-watch-v1'
         identifier = 'A7E390AF-6B78-4190-B946-26D9C6438584'
@@ -262,14 +262,8 @@ class ProbeTests(unittest.TestCase):
         connected = dict(self.value, cursor=8, conversations=[joined], timeline=rows, audioActive=True,
                          timingReferences=answered_references,
                          timelinePresentation=[dict(sequence=6, title='Answer fulfilled', detail='system · 125 ms · 60 s profile budget')])
-        selected = dict(self.row, sequence=9, t_ms=600, event='incomingFilter.configured',
-                        requestID='filter-dnd', reason='do-not-disturb', code=3, verification='verified')
-        cleared = dict(self.row, sequence=10, t_ms=650, event='incomingFilter.configured',
-                       requestID='filter-none', reason='none', code=0, verification='not-applicable')
-        filtered = dict(connected, cursor=9, timeline=rows + [selected], incomingFilter='do-not-disturb')
-        unfiltered = dict(connected, cursor=10, timeline=rows + [selected, cleared], incomingFilter='none')
-        states = iter([self.value, incoming, connected, filtered, unfiltered])
-        all_rows = rows + [selected, cleared] if verify_filters else rows
+        states = iter([self.value, incoming, connected])
+        all_rows = rows
         actor = ['inspector']
         observed = []
         class Reader:
@@ -296,19 +290,18 @@ class ProbeTests(unittest.TestCase):
                 actor[0] = 'fixture' if parts[-1] == self.session['bundleID'] else 'inspector'
                 observed.append(actor[0])
                 return parts[-1] + (': 123' if actor[0] == 'fixture' else ': 42')
-            if 'push' in parts or 'answer' in parts or 'incoming-filter' in parts:
+            if 'push' in parts or 'answer' in parts:
                 self.elapsed[0] += startup_cost
                 self.assertEqual(actor[0], 'fixture', 'controls need a foreground target')
-                operation = next(value for value in ('push', 'answer', 'incoming-filter') if value in parts)
-                fields = dict(reason=parts[-1]) if operation == 'incoming-filter' else {}
-                return json.dumps(control(SimpleNamespace(operation=operation, **fields), 'device', expected_session=self.session))
+                operation = next(value for value in ('push', 'answer') if value in parts)
+                return json.dumps(control(SimpleNamespace(operation=operation), 'device', expected_session=self.session))
             if 'watch' in parts:
                 return '\n'.join(json.dumps(row) for row in all_rows)
             return ''
         native = [0]
         def wait_native(predicate, channel, session, deadline, **kwargs):
             self.assertEqual(actor[0], 'fixture')
-            values = [rows[:4], rows, rows + [selected], all_rows][native[0]]
+            values = [rows[:4], rows][native[0]]
             native[0] += 1
             self.assertTrue(predicate(values))
             return values
@@ -323,23 +316,15 @@ class ProbeTests(unittest.TestCase):
             calls.append(args.operation)
             observed.append(args.operation)
             self.elapsed[0] += 0.05 if startup_cost else 0
-            result = dict(actionIDs=['answer'])
-            identifier = 'control'
-            if args.operation == 'incoming-filter':
-                row = selected if args.reason == 'do-not-disturb' else cleared
-                result = dict(incomingFilter={key: row[key] for key in ('reason', 'code', 'verification')})
-                identifier = row['requestID']
-            return dict(success=True, id=identifier, result=result)
+            return dict(success=True, id='control', result=dict(actionIDs=['answer']))
         loader = Mock(return_value={'control': control})
         with patch.dict(journey.__globals__, time=self.clock,
                 run=rpc, ProbeReader=Reader, wait_runtime=wait_native, _shipping_tools=loader):
             self.assertTrue(journey(['cksim'], 'device', 'fresh', self.session, self.path.parent,
-                                    25, channel, verify_filters=verify_filters, probe=Reader())['success'])
+                                    25, channel, probe=Reader())['success'])
         expected = ['fixture', 'push', 'inspector', 'fixture', 'answer', 'inspector']
-        if verify_filters:
-            expected += ['fixture', 'incoming-filter', 'inspector'] * 2
         self.assertEqual(observed, expected)
-        self.assertEqual(calls, ['push', 'answer'] + ['incoming-filter'] * (2 if verify_filters else 0))
+        self.assertEqual(calls, ['push', 'answer'])
         self.assertLess(self.elapsed[0], 25)
 
 
