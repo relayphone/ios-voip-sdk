@@ -1,4 +1,4 @@
-# Steering after M0–M1 (Claude, October 22, 2026)
+# Requirements after M0–M1 (October 22, 2026)
 
 Inputs:
 
@@ -6,7 +6,7 @@ Inputs:
 - research on audio routing, Expo Modules 2.0 versus Turbo Modules, and the web;
 - Hamza's product direction (§D).
 
-Claude independently confirmed the two highest-risk findings (A1 and A2) in the code. Section A comes first, before more API surface accumulates on top of it.
+The two highest-risk findings (A1 and A2) were independently confirmed in the code. Section A comes first, before more API surface accumulates on top of it.
 
 **Verdict.** The core is in good shape:
 
@@ -21,7 +21,7 @@ Claude independently confirmed the two highest-risk findings (A1 and A2) in the 
 
 ## A0. Release blockers found by the Apple-capabilities research (do these first)
 
-Research notes, with sources: `scratchpad/research-apple/NOTES.md`, summarized here. Claude confirmed both conditions in the code on `main`.
+The research, with sources, is summarized here. Both conditions were confirmed in the code on `main`.
 
 1. **The PushKit delegate must not return before the LiveCommunicationKit (LCK) report has started.**
    - **The bug:** LCK's async `reportNewIncomingConversation` reportedly crashes the app if the PushKit delegate returns before the report has been *entered* (FB16655952; Apple Forums 774958). DTS's workaround is the completion-handler delegate plus a `Task`, with a short wait before calling `completion()`.
@@ -32,7 +32,7 @@ Research notes, with sources: `scratchpad/research-apple/NOTES.md`, summarized h
      3. Start the report in a non-main `Task`.
      4. Wait a bounded time on that queue for a "report entered" signal, then return.
      5. Call PushKit's `completion` when the report settles, with a bounded watchdog.
-   - **Simulator:** add this rule to the runtime's push lane, so returning before the report starts fails in the simulator too.
+   - **Simulator:** add this rule to the runtime's push path, so returning before the report starts fails in the simulator too.
    - **Device:** measure it on the iPhone 13: a cold launch, both locked and unlocked.
 2. **Don't link CallKit.framework in device builds** (China).
    - **The risk:** China's MIIT asked Apple to disable CallKit in 2018. It was recently reported (2026-10-20) that *linking* CallKit triggers rejection when China is a selected territory. LCK is the route WeChat and QQ use in China.
@@ -54,7 +54,7 @@ Research notes, with sources: `scratchpad/research-apple/NOTES.md`, summarized h
    - **Today:** `PushService.receiveVoIPPush` (`Sources/VoIPSDK/PushService.swift:83-105`) schedules `Task { @MainActor … }` and returns. The LCK report then starts at least two main-queue turns later, behind `SerializedIncomingReports`. On a cold launch it waits behind React Native boot.
    - **Fix:** register metadata and call `reportNewIncomingConversation` directly from the PushKit callback, with one Task and no serializer hop for new UUIDs. Call PushKit's completion when the report settles.
    - **Watchdog:** add a bounded completion watchdog.
-   - **Simulator:** make the runtime's push lane enforce PushKit's "must report" rule, so the simulator can fail this path.
+   - **Simulator:** make the runtime's push path enforce PushKit's "must report" rule, so the simulator can fail this path.
    - **Device:** §4.D.1–D.3 (cold launch while locked; does an LCK report satisfy PushKit) must be measured on the iPhone before beta.
 2. **Settle before the platform deadline.**
    - **Today:** `ConversationHandler` expires actions *at* `timeoutDate` (`ConversationHandler.swift:97-105, 199-203`), so `unhandledAction: "accept"` races LCK's own timeout.
@@ -63,8 +63,8 @@ Research notes, with sources: `scratchpad/research-apple/NOTES.md`, summarized h
 3. **Echo filter.**
    - **Today:** the filter is skipped while an app mute is pending (`!hasPendingAction(.mute)`), so with a JS handler slower than about 14 ms the system echo reaches JS as a second mute.
    - **Fix:** compare against the *pending* app mute value instead.
-   - **Measure:** echo timing with a delayed fulfill. Claude can do this on the iPhone.
-4. **Audio: off main, and at call time** (research: `scratchpad/research-audio`, summarized here).
+   - **Measure:** echo timing with a delayed fulfill, on a physical iPhone.
+4. **Audio: off main, and at call time** (research summarized here).
    - **One serial `AudioSessionQueue`** (a dedicated thread, or an actor with a custom serial executor) owns every `AVAudioSession`, `RTCAudioSession` and LiveKit audio call.
      - LCK main-thread callbacks capture minimal state, enqueue the work and return.
      - `setActive` and the session setters block for hundreds of milliseconds.
@@ -83,7 +83,7 @@ Research notes, with sources: `scratchpad/research-apple/NOTES.md`, summarized h
    - **iPhone Duo.** It ships October 23 with iOS 27.1, and Xcode 27.1 has an "iPhone Duo" simulator.
      - Apple documents nothing about routes changing with the fold, so never hard-code by device.
      - `UIHinge`/`UIHingeInteraction` (iOS 27.1, main-actor, view-bound) may be passed in by the host app as an optional hint that triggers a route re-probe.
-     - Add an iPhone Duo simulator lane.
+     - Add an iPhone Duo simulator job.
    - **Suggested types:**
 
      ```
@@ -157,7 +157,7 @@ Research notes, with sources: `scratchpad/research-apple/NOTES.md`, summarized h
    | **AudioSessionQueue** | Every audio-session, WebRTC and LiveKit audio call |
    | **JS thread** | Expo bindings only |
 
-   **Enforce it:** add a main-thread stall check to the journeys (fail on main-run-loop latency above a threshold, for example 50 ms) and to the iPhone Duo lane.
+   **Enforce it:** add a main-thread stall check to the journeys (fail on main-run-loop latency above a threshold, for example 50 ms) and to the iPhone Duo job.
 3. **TypeScript ergonomics.**
    - Hand-written discriminated unions keyed on status, with a branded `ConversationId` and typed error codes.
    - Until Expo's type generation ships, add a CI drift check against the macros' `scan-exports` output.
@@ -223,7 +223,7 @@ Each item below is its own optional module, so the core stays small.
    - the threading contract plus the stall check;
    - typed errors;
    - the audio route model;
-   - the iPhone Duo lane.
-3. **Device pass with Claude** on the iPhone 13 (§4.D plus the echo timing), and on an iPhone Duo if one is available.
+   - the iPhone Duo job.
+3. **Device pass** on the iPhone 13 (§4.D plus the echo timing), and on an iPhone Duo if one is available.
 4. **M4:** the simulator call UI and inspector.
 5. **M5 and beyond:** the C items, in the order the research supports.

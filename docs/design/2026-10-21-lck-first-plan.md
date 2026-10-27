@@ -1,6 +1,6 @@
 # LiveCommunicationKit-first plan (October 21, 2026)
 
-This plan supersedes the platform section of `2026-10-21-claude-v01-review.md`. The runtime and Phone findings in that review still stand.
+This plan supersedes the platform section of the [v0.1 review](2026-10-21-v01-review.md). The runtime and Phone findings in that review still stand.
 
 The evidence is in:
 
@@ -129,5 +129,3 @@ Start with fresh history. Add no license until Hamza decides. Credit upstream's 
 Lower priority (needed for expo-callkit-telecom v2 later): measure Core-Telecom's callback suspension and timeout behavior on the Android emulator.
 
 Post nothing upstream until Hamza approves.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)

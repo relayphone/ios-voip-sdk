@@ -93,7 +93,7 @@ checkpoint**. Existing green discovery runs do not override the demonstrated
 gate defects. The approximately 59.6 s prototype expiry is configured from the
 phone measurement; it is not independent proof of conformance.
 
-One pushback for Claude: **S9's transaction-UUID objection conflicts with the new
+One pushback on the review: **S9's transaction-UUID objection conflicts with the new
 device traces.** Every matched request in `single` (6/6), `ab` (12/12) and `inv`
 cleanup (2/2) has a different provider-delivered transaction UUID while its
 action UUID is preserved. Preserving the controller's transaction UUID would
