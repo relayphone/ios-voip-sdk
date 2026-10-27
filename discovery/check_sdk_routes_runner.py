@@ -193,7 +193,7 @@ class RouteRunnerControls(unittest.TestCase):
         self.assert_cleanup(fixture)
 
     def test_timeout_classification_survives_session_without_retry(self):
-        for reason, label in (('startup', 'infra:startup'), ('capture', 'timeout:capture')):
+        for reason, label in (('startup', 'infra:startup'), ('capture', 'infra:capture')):
             with self.subTest(reason=reason), tempfile.TemporaryDirectory(dir=self.root) as temporary:
                 fixture = Fixture(Path(temporary), status=1, receipt_meta=dict(
                     timeoutReason=reason, failureClass=label, failureReported=True))

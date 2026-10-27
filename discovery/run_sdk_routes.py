@@ -79,7 +79,7 @@ def capture(build, out, session_factory=Session, supervisor=supervise, locate=co
         if status:
             try:
                 evidence = json.loads(receipt.read_text())
-                label = {'startup': 'infra:startup', 'capture': 'timeout:capture'}
+                label = {'startup': 'infra:startup', 'capture': 'infra:capture'}
                 reason = evidence.get('timeoutReason')
                 classified = (type(reason) is str and reason in label and
                               evidence.get('failureReported') is True and
