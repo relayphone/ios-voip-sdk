@@ -448,20 +448,15 @@ struct ProbeView: View {
       }
       let candidate = value.filter { $0.isASCII && $0.isNumber }
       let ownedName = ProcessInfo.processInfo.environment["FOCUS_OWNED_NAME"]
-      var ownedCount = 0, ownedNumberValid = false
+      var ownedAudit = OwnedContactAudit(candidate: candidate)
       var matched = false, ambiguous = false
       let request = CNContactFetchRequest(keysToFetch: [CNContactPhoneNumbersKey as CNKeyDescriptor,
         CNContactFormatter.descriptorForRequiredKeys(for: .fullName)])
       request.unifyResults = false
       try store.enumerateContacts(with: request) { contact, _ in
         if let ownedName {
-          guard contact.givenName == ownedName || CNContactFormatter.string(from: contact, style: .fullName) == ownedName else { return }
-          ownedCount += 1
-          guard contact.phoneNumbers.count == 1 else { return }
-          let raw = contact.phoneNumbers[0].value.stringValue
-          let digits = raw.filter { $0.isASCII && $0.isNumber }
-          let isFormatted = raw.allSatisfy { $0.isASCII && ($0.isNumber || $0.isWhitespace || "+-()".contains($0)) }
-          ownedNumberValid = isFormatted && (digits == candidate || (candidate.count >= 10 && digits == String(candidate.suffix(10))))
+          let sameName = contact.givenName == ownedName || CNContactFormatter.string(from: contact, style: .fullName) == ownedName
+          ownedAudit.record(nameMatches: sameName, numbers: contact.phoneNumbers.map { $0.value.stringValue })
           return
         }
         for phone in contact.phoneNumbers {
@@ -472,7 +467,7 @@ struct ProbeView: View {
         }
       }
       if ownedName != nil {
-        contactCheck = ownedCount == 0 ? "absent" : (ownedCount == 1 && ownedNumberValid ? "present" : "unavailable")
+        contactCheck = ownedAudit.result
       } else {
         contactCheck = ambiguous ? "unavailable" : (matched ? "match" : "absent")
       }
