@@ -4,10 +4,12 @@ import json
 from contextlib import contextmanager
 from pathlib import Path
 import runpy
+import signal
+import sys
 from types import SimpleNamespace
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import uuid
 
 
@@ -228,7 +230,7 @@ class NativeWorld:
         out = log.parent
         self.test.assertEqual(command, ['xcrun', 'simctl', 'launch',
                                        '--terminate-running-process', 'device', INSPECTOR])
-        self.test.assertEqual((host_timeout, consumer_timeout, bundle), (20, 25, INSPECTOR))
+        self.test.assertEqual((host_timeout, consumer_timeout, bundle), (180, 25, INSPECTOR))
         self.test.assertTrue(bridge_alive())
         self.test.assertEqual(self.actor, FIXTURE, 'foreground fixture before starting a new consumer')
         baseline = json.loads((out / 'case-baseline.json').read_text())
@@ -271,6 +273,77 @@ class NativeWorld:
 
 
 class FilterCaseTests(unittest.TestCase):
+    def cold_launch(self, ack_delay, *, stale_after_reap=False):
+        """Run the actual supervisor/ProbeReader with a fake clock and host child."""
+        world = NativeWorld(self)
+        world.actor = FIXTURE
+        out = world.out / 'cold-entry'; out.mkdir()
+        started = world.elapsed
+        process = SimpleNamespace(pid=77001, returncode=None)
+        process.poll = lambda: process.returncode
+        reaped = []
+        def reap(child):
+            self.assertIs(child, process)
+            reaped.append(True)
+            child.returncode = -signal.SIGKILL
+            world.advance(.001)
+        def locate(display, nonce, bundle):
+            if ack_delay is None or world.elapsed - started < ack_delay:
+                return None
+            if not reaped or not stale_after_reap:
+                if not getattr(process, 'published', False):
+                    # The observed OS entry was20.609s after host issuance.
+                    world.native_receipt(nonce, 30400, started + 20.609, out)
+                    process.published = True
+                world.publish()
+            return world.locate_probe(display, nonce, bundle)
+        launch = RUNNER['launch_inspector']
+        supervisor = launch.__globals__['supervise_launch']
+        helper = sys.modules['inspector_startup']
+        with world.patches(), patch.dict(launch.__globals__, supervise_launch=supervisor, locate_probe=locate), \
+             patch.object(helper, 'time', world.clock), \
+             patch.object(helper.subprocess, 'Popen', return_value=process) as spawn, \
+             patch.object(helper.threading, 'Timer', return_value=Mock(ident=None)), \
+             patch.object(helper, 'reap_group', side_effect=reap):
+            try:
+                probe, deadline = launch(world.connection, 'device', 'cold-native', world.session,
+                                         world.channel, out, True)
+                self.assertAlmostEqual(deadline - started, 25)
+                self.assertEqual(probe.pid, 30400)
+                return world.elapsed - started
+            finally:
+                self.assertEqual(spawn.call_count, 1)
+                self.assertEqual(reaped, [True])
+
+    def test_authenticated_cold_launch_ack_after20_stays_inside_original25(self):
+        self.assertLess(self.cold_launch(22), 25)
+
+    def test_cold_launch_without_authenticated_ack_before25_is_terminal(self):
+        for delay in (None, 25, 26):
+            with self.subTest(ack_delay=delay):
+                with self.assertRaisesRegex(RuntimeError, 'timed out'):
+                    self.cold_launch(delay)
+
+    def test_cold_launch_requires_fresh_authenticated_publication_after_reap(self):
+        with self.assertRaisesRegex(RuntimeError, 'post-reap native publication budget expired'):
+            self.cold_launch(22, stale_after_reap=True)
+
+    def test_cold_launch_timeout_records_the_startup_reason_without_replay(self):
+        with patch.object(sys.modules['sim'], 'report_failure') as classified:
+            with self.assertRaisesRegex(RuntimeError, 'timed out'):
+                self.cold_launch(None)
+        classified.assert_called_once()
+        label, reason = classified.call_args.args
+        self.assertEqual(label, 'infra:startup')
+        for detail in ('Inspector', 'timeout', 'host=180s', 'consumer=25s', 'never replayed'):
+            self.assertIn(detail, reason)
+
+    def test_stale_post_reap_publication_is_not_an_infrastructure_timeout(self):
+        with patch.object(sys.modules['sim'], 'report_failure') as classified:
+            with self.assertRaisesRegex(RuntimeError, 'post-reap native publication budget expired'):
+                self.cold_launch(22, stale_after_reap=True)
+        classified.assert_not_called()
+
     def test_planned_consumers_finish_with_observed_foreground_costs(self):
         world = NativeWorld(self)
         with world.patches():

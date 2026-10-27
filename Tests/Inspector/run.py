@@ -17,7 +17,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'Tests/RuntimeEvents'))
-from run import capture_diagnostics, fixture_session, latest_runtime, launch_fixture, record_environment, remove_simulators, run
+from run import capture_diagnostics, fixture_session, latest_runtime, launch_fixture, record_environment, remove_simulators, run, simulator_infra
 
 sys.path.insert(0, str(ROOT / 'scripts/sim'))
 from inspector_startup import cleanup_operations, locate_probe, supervise_launch
@@ -570,12 +570,23 @@ def launch_inspector(connection, display, nonce, session, channel, out, shared):
         if value is not None and value['online']:
             verify_probe_journal((value,), read_runtime_journal(channel, session), session)
         return value
-    _, deadline = supervise_launch(
-        ['xcrun', 'simctl', 'launch', '--terminate-running-process', display, INSPECTOR],
-        env=dict(os.environ, **connection.launch_environment, SIMCTL_CHILD_CKSIM_INSPECTOR_PROBE_NONCE=nonce),
-        log=out / 'inspector-launch.log', observe=observe, bridge_alive=connection.is_alive,
-        host_timeout=20 if shared else 180, consumer_timeout=25 if shared else None,
-        redactions=tuple(connection.launch_environment.values()), bundle=INSPECTOR)
+    try:
+        _, deadline = supervise_launch(
+            ['xcrun', 'simctl', 'launch', '--terminate-running-process', display, INSPECTOR],
+            env=dict(os.environ, **connection.launch_environment, SIMCTL_CHILD_CKSIM_INSPECTOR_PROBE_NONCE=nonce),
+            log=out / 'inspector-launch.log', observe=observe, bridge_alive=connection.is_alive,
+            host_timeout=180, consumer_timeout=25 if shared else None,
+            redactions=tuple(connection.launch_environment.values()), bundle=INSPECTOR)
+    except RuntimeError:
+        try:
+            outcome = json.loads((out / 'inspector-launch.json').read_text())
+            if isinstance(outcome, dict) and outcome.get('timedOut') is True:
+                consumer_bound = '25s' if shared else 'native25s'
+                simulator_infra.report_failure('infra:startup',
+                    'Inspector native launch/readiness timeout; host=180s consumer=' + consumer_bound + '; never replayed')
+        except (OSError, ValueError):
+            pass  # Diagnostic I/O must not replace the original startup failure.
+        raise
     if deadline is not None:
         deadline = min(deadline, time.monotonic() + 25 - (time.time() * 1000 - probe.started) / 1000)
         remaining_budget(deadline)

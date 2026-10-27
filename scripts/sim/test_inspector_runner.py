@@ -46,7 +46,7 @@ class InspectorRunnerTests(unittest.TestCase):
         environment = dict(SIMCTL_CHILD_CKSIM_INSPECTOR_URL='http://private-endpoint', SIMCTL_CHILD_CKSIM_INSPECTOR_TOKEN='secret-token')
         connection = Mock(launch_environment=environment)
         connection.is_alive.return_value = True
-        for shared, timeout in ((True, 20), (False, 180)):
+        for shared, timeout in ((True, 180), (False, 180)):
             observed = []
             def supervise(command, **kwargs):
                 self.assertEqual(command, ['xcrun', 'simctl', 'launch', '--terminate-running-process', SIMULATOR, RUNNER['INSPECTOR']])
