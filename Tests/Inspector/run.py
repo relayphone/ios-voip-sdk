@@ -2,6 +2,7 @@
 """Tap the separate inspector, then consume its runtime journal and UI screenshots."""
 import argparse
 from functools import lru_cache
+import hashlib
 import json
 import math
 import os
@@ -149,6 +150,20 @@ def read_runtime_journal(channel, session):
     return rows
 
 
+def record_case_baseline(out, channel, session, name):
+    """Retain the bound journal bytes before a distinct planned consumer starts."""
+    read_runtime_journal(channel, session)
+    identity = (channel / 'session.json').read_bytes()
+    journal = (channel / session['runID'] / 'events.jsonl').read_bytes()
+    if json.loads(identity) != session or (channel / 'session.json').read_bytes() != identity:
+        raise RuntimeError('Runtime session changed while recording case baseline')
+    (out / 'case-baseline.json').write_text(json.dumps(dict(
+        name=name, runID=session['runID'], pid=session['pid'], bundleID=session['bundleID'],
+        sessionSHA256=hashlib.sha256(identity).hexdigest(),
+        journalSHA256=hashlib.sha256(journal).hexdigest(), journalBytes=len(journal),
+        recordedWallTimeMS=int(time.time() * 1000))))
+
+
 def wait_runtime(predicate, channel, session, deadline, timeout=5):
     stop = min(time.monotonic() + timeout, deadline)
     while time.monotonic() < stop:
@@ -174,6 +189,11 @@ def verify_probe_journal(receipts, rows, session):
             assert all(projected[call['uuid']].get(key) == value for key, value in call.items())
         if 'timingReferences' in receipt:
             verify_timing_reference_journal(receipt, rows)
+
+        if 'incomingFilter' in receipt:
+            configured = [row for row in rows if row['sequence'] <= receipt['cursor']
+                          and row['event'] == 'incomingFilter.configured']
+            assert receipt['incomingFilter'] == (configured[-1]['reason'] if configured else 'none')
 
 
 def journal_mute_value(action, rows):
@@ -346,6 +366,19 @@ def consumer_control(channel, session, target, deadline):
     return send
 
 
+def foreground_control(target, session, channel, deadline, out):
+    phases = []
+    def foreground(bundle, pid):
+        started = time.time() * 1000
+        activate_existing(target, bundle, pid, deadline)
+        if json.loads((channel / 'session.json').read_text()) != session:
+            raise RuntimeError('Runtime session changed during foreground control')
+        phases.append(dict(bundleID=bundle, pid=pid, startedWallTimeMS=started, finishedWallTimeMS=time.time() * 1000))
+        (out / 'foreground-phases.json').write_text(json.dumps(phases))
+        return started
+    return foreground
+
+
 def journal_journey(common, target, nonce, session, out, deadline, channel=None, probe=None):
     """Drive controls and require the foreground Inspector's consumed projections."""
     if probe is None:
@@ -360,15 +393,7 @@ def journal_journey(common, target, nonce, session, out, deadline, channel=None,
     assert not ready.get('incoming') and not ready['conversations'], 'fixture must start without a call'
     (out / 'inspector-online.json').write_text(json.dumps(ready))
     command = consumer_control(channel, session, target, deadline)
-    phases = []
-    def foreground(bundle, pid):
-        started = time.time() * 1000
-        activate_existing(target, bundle, pid, deadline)
-        if json.loads((channel / 'session.json').read_text()) != session:
-            raise RuntimeError('Runtime session changed during foreground control')
-        phases.append(dict(bundleID=bundle, pid=pid, startedWallTimeMS=started, finishedWallTimeMS=time.time() * 1000))
-        (out / 'foreground-phases.json').write_text(json.dumps(phases))
-        return started
+    foreground = foreground_control(target, session, channel, deadline, out)
     payload = out / 'incoming.json'
     payload.write_text(json.dumps(dict(operation='incoming')))
     foreground(session['bundleID'], session['pid'])
@@ -428,6 +453,83 @@ def journal_journey(common, target, nonce, session, out, deadline, channel=None,
     return dict(success=True, driver='journal', uiConsumer=True, answerLatencyMS=answers[0]['latencyMS'])
 
 
+def filter_journey(common, target, nonce, session, out, deadline, channel, probe,
+                   *, before, reason, code, verification):
+    """Verify one filter transition within this consumer's original 25 seconds."""
+    ready = probe.wait(lambda row: row['online'], timeout=10, deadline=deadline)
+    deadline = min(deadline, time.monotonic() + 25 - (time.time() * 1000 - probe.started) / 1000)
+    remaining_budget(deadline)
+    assert ready.get('incomingFilter') == before, 'filter case must retain the preceding runtime setting'
+    (out / 'inspector-online.json').write_text(json.dumps(ready))
+    foreground = foreground_control(target, session, channel, deadline, out)
+    foreground(session['bundleID'], session['pid'])
+    command = consumer_control(channel, session, target, deadline)
+    response = json.loads(command('incoming-filter', reason=reason,
+                                  command_receipt=out / 'filter-control.json'))
+    assert response['success'] and response['result']['incomingFilter'] == dict(
+        reason=reason, code=code, verification=verification)
+    request_id = response['id']
+    def configured(row):
+        return (row['sequence'] > ready['cursor'] and row['event'] == 'incomingFilter.configured'
+                and row.get('requestID') == request_id and row.get('reason') == reason
+                and row.get('code') == code and row.get('verification') == verification)
+    wait_runtime(lambda rows: any(configured(row) for row in rows), channel, session, deadline)
+    resumed = foreground(INSPECTOR, probe.pid)
+    receipt = probe.wait(lambda row: row.get('incomingFilter') == reason and
+                         any(configured(event) for event in row['timeline']),
+                         deadline=deadline, resume_after=resumed)
+    assert receipt['conversations'] == ready['conversations'], 'filter changed an existing call'
+    assert receipt['audioActive'] == ready['audioActive'], 'filter changed existing audio'
+    (out / ('inspector-filter-' + reason + '.json')).write_text(json.dumps(receipt))
+    captured = run(*common, 'watch', '--json', '--duration', '0.3', timeout=min(5, remaining_budget(deadline)))
+    (out / 'events.jsonl').write_text(captured + '\n')
+    verify_probe_journal((ready, receipt), [json.loads(line) for line in captured.splitlines()], session)
+    assert time.time() * 1000 - probe.started <= 25000, 'shared fixture background budget exceeded'
+    remaining_budget(deadline)
+    return dict(success=True, reason=reason, requestID=request_id, nonce=nonce, inspectorPID=probe.pid)
+
+
+def run_filter_cases(common, target, connection, session, channel, out):
+    results = []
+    factory = _shipping_tools()['inspector_bridge']
+    args = SimpleNamespace(bundle=session['bundleID'], app_container=channel.parent.parent,
+                           runtime_dir=ROOT, timeout=15)
+    for before, reason, code, verification in (
+            ('none', 'do-not-disturb', 3, 'verified'),
+            ('do-not-disturb', 'none', 0, 'not-applicable')):
+        case_out = out / ('filter-' + reason)
+        case_out.mkdir()
+        read_runtime_journal(channel, session)
+        # A planned new consumer needs a live target bridge before its own
+        # launch boundary. This never extends or restarts an existing consumer.
+        activate_existing(target, session['bundleID'], session['pid'], time.monotonic() + 20)
+        nonce = str(uuid.uuid4())
+        # Each Inspector process starts its stream at zero. A bridge is pinned
+        # to one consumer's cursor, so a new process requires a new bridge.
+        with factory(args, target) as fresh:
+            if (fresh is connection or dict(fresh.session) != session or
+                    fresh.target_container != channel.parent.parent):
+                raise RuntimeError('Inspector filter bridge must be fresh and retain the target session')
+            probe, deadline = launch_inspector(fresh, target, nonce, session, channel, case_out, True)
+            result = filter_journey(common, target, nonce, session, case_out, deadline, channel, probe,
+                                    before=before, reason=reason, code=code, verification=verification)
+            if result.get('success') is not True:
+                raise RuntimeError('Inspector filter case did not succeed')
+        connection = fresh
+        results.append(result)
+    return results
+
+
+def journal_cases(common, target, nonce, session, out, deadline, channel, connection,
+                  *, verify_filters=False, probe=None):
+    result = journal_journey(common, target, nonce, session, out, deadline, channel, probe=probe)
+    if result.get('success') is not True:
+        raise RuntimeError('Inspector incoming/answer case did not succeed')
+    if verify_filters:
+        result['filterCases'] = run_filter_cases(common, target, connection, session, channel, out)
+    return result
+
+
 # Provided display: four 60s simctl calls, a 180s cold launch, and the status reply.
 def wait_for_inspector(process, log, timeout=480, consumer_budget=None):
     deadline = time.monotonic() + timeout
@@ -450,6 +552,7 @@ def wait_for_inspector(process, log, timeout=480, consumer_budget=None):
 
 
 def launch_inspector(connection, display, nonce, session, channel, out, shared):
+    record_case_baseline(out, channel, session, out.name)
     probe = None
     def observe(resume_after=None):
         nonlocal probe
@@ -491,7 +594,10 @@ def main():
     parser.add_argument('--display-simulator')
     parser.add_argument('--runtime', help='Require this exact available simulator runtime identifier')
     parser.add_argument('--driver', choices=('xctest', 'journal'), default='xctest')
+    parser.add_argument('--verify-filter-controls', action='store_true', help='Verify journal-driver filter selection and clearing')
     args = parser.parse_args()
+    if args.verify_filter_controls and args.driver != 'journal':
+        parser.error('--verify-filter-controls requires --driver journal')
     if args.fixture_installed and not args.target_simulator:
         parser.error('--fixture-installed requires an explicit --target-simulator')
     if args.driver == 'journal' and args.display_simulator and args.display_simulator != args.target_simulator:
@@ -547,7 +653,8 @@ def main():
         run('xcrun', 'simctl', 'install', display, args.inspector.resolve(), timeout=60)
         probe, consumer_deadline = launch_inspector(connection, display, nonce, session, channel, out, journal)
         if journal:
-            print(json.dumps(journal_journey(common, target, nonce, session, out, consumer_deadline, channel, probe=probe)))
+            print(json.dumps(journal_cases(common, target, nonce, session, out, consumer_deadline, channel,
+                                          connection, verify_filters=args.verify_filter_controls, probe=probe)))
             return
         with (out / 'ui-test.log').open('w') as log:
             tests = subprocess.Popen(['xcodebuild','test-without-building','-project',str(project),'-scheme','InspectorUITests',

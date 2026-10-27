@@ -257,6 +257,62 @@ class GitChangesTests(unittest.TestCase):
                 values = dict(line.split('=', 1) for line in output.read_text().splitlines())
                 self.assertTrue(all(json.loads(values['sdk_plan']).values()))
 
+    def test_push_only_known_non_native_paths_skips_native_and_keeps_host_controls(self):
+        (self.root / 'spikes').mkdir()
+        (self.root / 'spikes/experiment.swift').write_text('fixture')
+        (self.root / 'README.md').write_text('fixture')
+        (self.root / 'docs/research').mkdir()
+        (self.root / 'docs/research/probe.swift').write_text('fixture')
+        self.git('add', '.')
+        self.git('commit', '-m', 'non-native')
+        head = self.git('rev-parse', 'HEAD').strip()
+        result, output = self.invoke('push', {'before': self.head, 'after': head})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = dict(line.split('=', 1) for line in output.read_text().splitlines())
+        self.assertEqual((values['sdk'], values['runtime'], values['helper']), ('false', 'false', 'true'))
+        self.assertFalse(any(json.loads(values['sdk_plan']).values()))
+
+    def test_push_unknown_mixed_and_unavailable_diffs_run_everything(self):
+        (self.root / 'unknown').write_text('fixture')
+        self.git('add', '.')
+        self.git('commit', '-m', 'unknown')
+        head = self.git('rev-parse', 'HEAD').strip()
+        for payload in ({'before': self.base, 'after': self.head},
+                        {'before': self.head, 'after': head},
+                        {'before': '0' * 40, 'after': head},
+                        {'before': 'f' * 40, 'after': head},
+                        {'before': head, 'after': head}, {}):
+            with self.subTest(payload=payload):
+                result, output = self.invoke('push', payload)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                values = dict(line.split('=', 1) for line in output.read_text().splitlines())
+                self.assertEqual((values['sdk'], values['runtime'], values['helper']), ('true', 'true', 'true'))
+                self.assertTrue(all(json.loads(values['sdk_plan']).values()))
+
+    def test_push_multi_commit_with_native_input_runs_everything(self):
+        (self.root / 'native.swift').write_text('fixture')
+        self.git('add', '.')
+        self.git('commit', '-m', 'native research')
+        (self.root / 'README.md').write_text('docs')
+        self.git('add', '.')
+        self.git('commit', '-m', 'documentation')
+        head = self.git('rev-parse', 'HEAD').strip()
+        result, output = self.invoke('push', {'before': self.head, 'after': head})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('sdk=true\n', output.read_text())
+        self.assertIn('runtime=true\n', output.read_text())
+
+    def test_force_push_compares_endpoints_not_merge_base(self):
+        # Reverting a code deletion on a non-descendant branch must run native.
+        self.git('checkout', '-b', 'other', self.base)
+        (self.root / 'README.md').write_text('docs')
+        self.git('add', '.')
+        self.git('commit', '-m', 'other branch')
+        other = self.git('rev-parse', 'HEAD').strip()
+        result, output = self.invoke('push', {'before': self.head, 'after': other})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('sdk=true\n', output.read_text())
+
     def test_gate_cli_rejects_an_unexpected_native_skip(self):
         result, _ = self.invoke('pull_request', {}, 'gate', extra={
             'CI_NEEDS_JSON': json.dumps({'changes': {'result': 'success'}, 'journeys': {'result': 'skipped'}}),

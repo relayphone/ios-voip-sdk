@@ -131,11 +131,12 @@ def gate(results, expected):
         raise ValueError('Required check results differ: ' + str(failed))
 
 
-def changed_paths(base, head, root):
+def changed_paths(base, head, root, *, push=False):
     if any(not isinstance(v, str) or not re.fullmatch('[0-9a-fA-F]{40}', v) for v in (base, head)):
         raise ValueError('Expected immutable base/head commit SHAs')
     diff = subprocess.run(['git', 'diff', '--no-renames', '--name-only', '-z',
-        base + '...' + head, '--'], cwd=root, check=True, capture_output=True, timeout=20)
+        *([base, head] if push else [base + '...' + head]), '--'],
+        cwd=root, check=True, capture_output=True, timeout=20)
     return diff.stdout.decode('utf-8', errors='surrogateescape').rstrip('\0').split('\0') if diff.stdout else []
 
 
@@ -195,7 +196,23 @@ def workflow_optional_changes(before, after):
 
 
 def event_selection(name, event, root):
-    if name in ('push', 'schedule', 'workflow_dispatch'):
+    if name == 'push':
+        # A push may contain several commits or be forced. Compare the exact
+        # endpoints and only skip native work when every changed path is known.
+        try:
+            before, after = event['before'], event['after']
+            if before == '0' * 40 or after == '0' * 40:
+                raise ValueError('Push endpoint is unavailable')
+            paths = changed_paths(before, after, root, push=True)
+            non_native = paths and all(documentation(p) or p.startswith(('docs/', 'spikes/')) for p in paths)
+            if non_native:
+                plan = select([])
+                plan['helper'] = True  # Preserve the inexpensive host controls.
+                return plan
+        except (KeyError, TypeError, ValueError, OSError, subprocess.SubprocessError):
+            pass  # An unavailable or malformed diff must never suppress native work.
+        return select([], full=True)
+    if name in ('schedule', 'workflow_dispatch'):
         return select([], full=True)
     if name == 'pull_request':
         base, head = event['pull_request']['base']['sha'], event['pull_request']['head']['sha']

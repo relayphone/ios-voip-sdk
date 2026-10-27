@@ -41,10 +41,22 @@ final class CallKitControl: NSObject, CXProviderDelegate, @unchecked Sendable {
     lock.lock(); answered.removeAll(); active.removeAll(); lock.unlock()
     Trace.shared.log("call.reset", ["provider": "callkit"])
   }
+  // Returns false if the invitation has already ended or the local user answered.
+  func answeredElsewhere(id: UUID) -> Bool {
+    lock.lock()
+    guard active.contains(id), !answered.contains(id) else { lock.unlock(); return false }
+    active.remove(id)
+    lock.unlock()
+    provider.reportCall(with: id, endedAt: Date(), reason: .answeredElsewhere)
+    return true
+  }
   func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
-    lock.lock(); answered.insert(action.callUUID); lock.unlock()
+    lock.lock()
+    let stillActive = active.contains(action.callUUID)
+    if stillActive { answered.insert(action.callUUID) }
+    lock.unlock()
     Trace.shared.log("call.action", ["kind": "CXAnswerCallAction", "invitationID": action.callUUID.uuidString, "provider": "callkit"])
-    action.fulfill()
+    if stillActive { action.fulfill() } else { action.fail() }
   }
   func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
     lock.lock(); answered.remove(action.callUUID); active.remove(action.callUUID); lock.unlock()
