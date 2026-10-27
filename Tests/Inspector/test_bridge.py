@@ -144,7 +144,8 @@ class ProbeTests(unittest.TestCase):
         probe = Mock(wait=Mock(side_effect=Stopped))
         with patch.dict(journey.__globals__, time=self.clock):
             with self.assertRaises(Stopped):
-                journey([], 'target', 'fresh', self.session, self.path.parent, deadline=0.25, probe=probe)
+                journey([], 'target', 'fresh', self.session, self.path.parent, deadline=0.25, probe=probe,
+                        connection=Mock())
         self.assertEqual(probe.wait.call_args.kwargs['deadline'], 0.25)
 
     def test_explicit_resume_tolerates_pause_but_never_resets_identity(self):
@@ -269,6 +270,8 @@ class ProbeTests(unittest.TestCase):
         class Reader:
             pid = 42
             started = 1000000
+            nonce = 'fresh'
+            container = self.path.parent.resolve() / 'inspector'
             def __init__(self, *args, **kwargs):
                 pass
             def wait(inner, predicate, **kwargs):
@@ -305,9 +308,34 @@ class ProbeTests(unittest.TestCase):
             native[0] += 1
             self.assertTrue(predicate(values))
             return values
-        channel = self.path.parent / 'channel'
-        channel.mkdir()
+        channel = self.path.parent.resolve() / 'fixture/Documents/channel'
+        channel.mkdir(parents=True)
         (channel / 'session.json').write_text(json.dumps(self.session))
+        identities = {}
+        for bundle, pid, nonce, container, started in (
+                (self.session['bundleID'], self.session['pid'], self.session['runID'], channel.parent.parent, 940000),
+                (RUNNER['INSPECTOR'], Reader.pid, Reader.nonce, Reader.container, Reader.started)):
+            documents = container / 'Documents'
+            documents.mkdir(parents=True, exist_ok=True)
+            identity = dict(schemaVersion=1, nonce=nonce, pid=pid, bundleID=bundle,
+                            dataContainer=str(container), startedWallTimeMS=started,
+                            session={key: self.session[key] for key in
+                                     ('schemaVersion', 'runID', 'pid', 'bundleID', 'profile')})
+            (documents / 'cksim-foreground-phase-identity.json').write_text(json.dumps(identity))
+            identities[bundle] = identity
+        def phase_activate(device, identity, phase, deadline, *, consumer_started_wall_ms, log, bridge_alive):
+            self.assertEqual(identity, identities[identity['bundleID']])
+            self.assertEqual(consumer_started_wall_ms, Reader.started)
+            self.assertEqual(deadline, 25)
+            self.assertTrue(bridge_alive())
+            output = rpc('xcrun', 'simctl', 'launch', device, identity['bundleID'],
+                         timeout=RUNNER['remaining_budget'](deadline))
+            request = dict(identity, phase=phase, challenge=str(RUNNER['uuid'].uuid4()))
+            (Path(identity['dataContainer']) / 'Documents/cksim-foreground-phase-request.json').write_text(json.dumps(request))
+            log.write_text(output + '\n')
+            return dict(request, applicationState='active', publicationID=str(RUNNER['uuid'].uuid4()),
+                        wallTimeMS=int(self.clock.time() * 1000), uptimeNS=int(self.clock.monotonic() * 1e9),
+                        activeGeneration=0)
         journey = RUNNER['journal_journey']
         calls = []
         def control(args, device, expected_session):
@@ -319,9 +347,11 @@ class ProbeTests(unittest.TestCase):
             return dict(success=True, id='control', result=dict(actionIDs=['answer']))
         loader = Mock(return_value={'control': control})
         with patch.dict(journey.__globals__, time=self.clock,
-                run=rpc, ProbeReader=Reader, wait_runtime=wait_native, _shipping_tools=loader):
+                run=rpc, phase_activate_existing=phase_activate,
+                ProbeReader=Reader, wait_runtime=wait_native, _shipping_tools=loader):
             self.assertTrue(journey(['cksim'], 'device', 'fresh', self.session, self.path.parent,
-                                    25, channel, probe=Reader())['success'])
+                                    25, channel, probe=Reader(),
+                                    connection=SimpleNamespace(is_alive=lambda: True))['success'])
         expected = ['fixture', 'push', 'inspector', 'fixture', 'answer', 'inspector']
         self.assertEqual(observed, expected)
         self.assertEqual(calls, ['push', 'answer'])
@@ -587,5 +617,6 @@ class BridgeTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    from test_foreground_control import ForegroundControlTests
     from test_foreground_phase_probe import ForegroundPhaseProbeTests
     unittest.main()
