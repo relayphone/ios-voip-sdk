@@ -335,6 +335,12 @@ container path for subsequent reads and controls. Older runtime packages retain
 a bounded notifier fallback. Normal Inspector launches do not write acceptance
 receipts; the test enables them with a unique launch nonce.
 
+Inspector startup uses a 180-second host-launch bound. A shared consumer keeps
+its original 25-second deadline from launch issuance, including startup; every
+receipt must also fit the native process's 25-second lifetime. Authenticated
+readiness still needs a fresh publication after host reap. A missing or late
+acknowledgement fails without replaying the launch.
+
 **Measured:** [automatic native and GUI run](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40067131951)
 passed automatic native and live Inspector acceptance
 on iOS 27.0 after the complete transport and simulator-lifecycle fix. Initial

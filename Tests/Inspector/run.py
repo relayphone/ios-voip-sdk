@@ -574,7 +574,7 @@ def launch_inspector(connection, display, nonce, session, channel, out, shared):
         ['xcrun', 'simctl', 'launch', '--terminate-running-process', display, INSPECTOR],
         env=dict(os.environ, **connection.launch_environment, SIMCTL_CHILD_CKSIM_INSPECTOR_PROBE_NONCE=nonce),
         log=out / 'inspector-launch.log', observe=observe, bridge_alive=connection.is_alive,
-        host_timeout=20 if shared else 180, consumer_timeout=25 if shared else None,
+        host_timeout=180, consumer_timeout=25 if shared else None,
         redactions=tuple(connection.launch_environment.values()), bundle=INSPECTOR)
     if deadline is not None:
         deadline = min(deadline, time.monotonic() + 25 - (time.time() * 1000 - probe.started) / 1000)
