@@ -597,6 +597,26 @@ class Run:
             write(self.folder / f"picker-evidence-observer-{uuid.uuid4().hex}.json",
                   {"runID": self.run_id, "available": False, "truncated": False, "nodes": []})
 
+    def finish_background(self, observer, audio):
+        for process in [observer, audio]:
+            if not process:
+                continue
+            code = process.poll()
+            if code is None:
+                if process is observer and self.unsafe_observer:
+                    continue
+                try:
+                    code = process.wait(timeout=90)
+                except subprocess.TimeoutExpired:
+                    if process is observer:
+                        self.picker_unavailable()
+                        self.unsafe_observer = True
+                    else:
+                        process.kill(); process.wait(timeout=10)
+            if process is observer and code is not None and code != 0:
+                self.picker_unavailable()
+                self.unsafe_observer = True
+
     def execute(self):
         p = self.p
         result = {"row": p["row"], "invitationID": self.invitation, "status": "unqualified", "humanQA": False}
@@ -771,24 +791,7 @@ class Run:
                 result["status"] = "invalid-or-unmeasured-repeat-interval"
             return result
         finally:
-            for process in [observer, audio]:
-                if not process:
-                    continue
-                code = process.poll()
-                if code is None:
-                    if process is observer and self.unsafe_observer:
-                        continue
-                    try:
-                        code = process.wait(timeout=90)
-                    except subprocess.TimeoutExpired:
-                        if process is observer:
-                            self.picker_unavailable()
-                            self.unsafe_observer = True
-                        else:
-                            process.kill(); process.wait(timeout=10)
-                if process is observer and code is not None and code != 0:
-                    self.picker_unavailable()
-                    self.unsafe_observer = True
+            self.finish_background(observer, audio)
             if (self.folder / "audio.json").exists():
                 data = json.loads((self.folder / "audio.json").read_text()); result["audio"] = data
                 if p["row"] == "C00":

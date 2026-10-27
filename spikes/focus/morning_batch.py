@@ -418,9 +418,11 @@ def finalize_picker_results(work, run_id, interrupted=False):
     if root.parent != work.resolve():
         raise ProcessGroupCleanupError("Invalid private test evidence root")
     raw = root / run_id
+    if raw.is_symlink():
+        raise ProcessGroupCleanupError("Invalid private test evidence directory")
     if not raw.exists():
         return
-    if raw.is_symlink() or raw.resolve().parent != root or str(uuid.UUID(run_id)) != run_id:
+    if raw.resolve().parent != root or str(uuid.UUID(run_id)) != run_id:
         raise ProcessGroupCleanupError("Invalid private test evidence directory")
     try:
         sessions = set()
@@ -433,13 +435,17 @@ def finalize_picker_results(work, run_id, interrupted=False):
                 sessions.add(entry.name.split(".")[0])
         row_file = raw / "row"
         destination = work.resolve()
-        if row_file.exists():
+        if row_file.exists() or row_file.is_symlink():
             if row_file.is_symlink() or not row_file.is_file() or row_file.stat().st_size > 256:
                 raise ProcessGroupCleanupError("Invalid private row evidence identity")
             row = row_file.read_text().strip()
             destination = (work / row).resolve()
             if not row or destination.parent != work.resolve() or not destination.is_dir():
                 raise ProcessGroupCleanupError("Private row evidence destination unavailable")
+        if interrupted and not sessions:
+            from runner import write
+            write(destination / ("picker-evidence-interrupted-" + run_id + ".json"),
+                  {"runID": run_id, "available": False, "truncated": False, "nodes": []})
         for session in sorted(sessions):
             extract_picker_evidence(raw / (session + ".xcresult"), run_id,
                                     destination / ("picker-evidence-" + session + ".json"))

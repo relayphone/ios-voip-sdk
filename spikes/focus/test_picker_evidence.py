@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 import uuid
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import morning_batch
@@ -88,6 +89,7 @@ class PickerEvidenceTests(unittest.TestCase):
             root = Path(directory)
             env = {"FOCUS_WORK": str(root)}
             process = Mock()
+            process.pid = 424242
             process.poll.return_value = None
             with patch("morning_batch.subprocess.Popen", return_value=process), \
                  patch("morning_batch.stop_process_group") as stop, \
@@ -102,6 +104,92 @@ class PickerEvidenceTests(unittest.TestCase):
                 with self.assertRaises(morning_batch.ProcessGroupCleanupError):
                     morning_batch.command([str(morning_batch.RUNNER), "F15"], env, root / "log", 5, lambda: True)
                 finish.assert_not_called()
+
+    def test_interrupted_unmarked_bundle_and_dead_group_are_reconciled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            row = root / "F15-example"
+            row.mkdir()
+            run_id, session = str(uuid.uuid4()), uuid.uuid4().hex
+            raw = root / ".picker-results" / run_id
+            raw.mkdir(parents=True)
+            (raw / "row").write_text(row.name)
+            (raw / "group.json").write_text(json.dumps({"pgid": 424242}))
+            (raw / (session + ".xcresult")).mkdir()
+            with patch("morning_batch.os.killpg", side_effect=ProcessLookupError), \
+                 patch("runner.extract_picker_evidence") as extract:
+                morning_batch.reconcile_picker_orphans(root)
+            self.assertEqual(extract.call_count, 1)
+            self.assertEqual(extract.call_args.args[2], (row / ("picker-evidence-" + session + ".json")).resolve())
+            self.assertFalse(raw.exists())
+
+    def test_interrupted_before_bundle_creates_unavailable_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            row = root / "F15-example"
+            row.mkdir()
+            run_id = str(uuid.uuid4())
+            raw = root / ".picker-results" / run_id
+            raw.mkdir(parents=True)
+            (raw / "row").write_text(row.name)
+            (raw / "group.json").write_text(json.dumps({"pgid": 424242}))
+            morning_batch.finalize_picker_results(root, run_id, interrupted=True)
+            marker = row / ("picker-evidence-interrupted-" + run_id + ".json")
+            self.assertEqual(json.loads(marker.read_text()),
+                             {"runID": run_id, "available": False, "truncated": False, "nodes": []})
+            self.assertFalse(raw.exists())
+
+    def test_live_or_unverifiable_orphan_fails_closed_and_keeps_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = root / ".picker-results" / str(uuid.uuid4())
+            raw.mkdir(parents=True)
+            for metadata, outcome in [(None, None), ({"pgid": 424242}, None),
+                                      ({"pgid": 424242}, PermissionError())]:
+                file = raw / "group.json"
+                if metadata is None:
+                    file.unlink(missing_ok=True)
+                else:
+                    file.write_text(json.dumps(metadata))
+                with patch("morning_batch.os.killpg", side_effect=outcome), \
+                     patch("runner.extract_picker_evidence") as extract:
+                    with self.assertRaises(morning_batch.ProcessGroupCleanupError):
+                        morning_batch.reconcile_picker_orphans(root)
+                self.assertTrue(raw.exists())
+                extract.assert_not_called()
+
+    def test_live_orphan_stops_before_inventory_and_retains_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            work = root / "work"
+            raw = work / ".picker-results" / str(uuid.uuid4())
+            raw.mkdir(parents=True)
+            (raw / "group.json").write_text(json.dumps({"pgid": 424242}))
+            device = "00008110-0011223344556677"
+            env = {"FOCUS_WORK": str(work), "FOCUS_DEVICE": device}
+            with patch.dict("os.environ", env), patch("morning_batch.Path.home", return_value=root), \
+                 patch("morning_batch.os.killpg", return_value=None), \
+                 patch("morning_batch.identify_iphone13") as inventory:
+                with self.assertRaises(morning_batch.ProcessGroupCleanupError):
+                    morning_batch.run_batch([], SimpleNamespace(quiet=False))
+            inventory.assert_not_called()
+            self.assertTrue((root / ".device-locks" / (device + ".lock")).is_dir())
+            self.assertTrue(raw.exists())
+
+    def test_nonzero_observer_in_finally_prevents_device_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = Run.__new__(Run)
+            run.folder, run.run_id, run.unsafe_observer = Path(directory), str(uuid.uuid4()), False
+            observer = Mock()
+            observer.poll.return_value = None
+            observer.wait.return_value = 1
+            run.finish_background(observer, None)
+            self.assertTrue(run.unsafe_observer)
+            self.assertEqual(len(list(run.folder.glob("picker-evidence-observer-*.json"))), 1)
+            run.unsafe_observer = False
+            observer.poll.return_value = 1
+            run.finish_background(observer, None)
+            self.assertTrue(run.unsafe_observer)
 
     def test_background_failure_marker_has_no_ui_data(self):
         with tempfile.TemporaryDirectory() as directory:
