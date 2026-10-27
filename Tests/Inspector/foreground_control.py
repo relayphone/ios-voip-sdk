@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import time
 import uuid
 
@@ -32,10 +33,8 @@ def _same_identity(value, identity):
 def _read(path):
     canonical(path)
     try:
-        if not path.is_file():
-            if path.exists():
-                raise RuntimeError('Foreground evidence is not a regular file')
-            return None
+        if not stat.S_ISREG(path.stat().st_mode):
+            raise RuntimeError('Foreground evidence is not a regular file')
         data = path.read_bytes()
     except FileNotFoundError:
         return None
