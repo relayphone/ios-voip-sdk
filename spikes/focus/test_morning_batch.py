@@ -28,8 +28,15 @@ class MorningPlanTests(unittest.TestCase):
                      "lck-everyone-contact", "lck-favorite-yes", "callkit-handle-generic",
                      "callkit-answer", "lck-answer", "callkit-dnd-answer"]:
             self.assertEqual(len(groups[name]), 3, name)
-        self.assertEqual([x["row"] for x in plan if x["id"].startswith("activity-")],
-                         [f"L{i:02}" for i in range(1, 17)])
+        activity = [x for x in plan if x["id"].startswith("activity-")]
+        self.assertEqual([x["row"] for x in activity],
+                         [f"L{i:02}" for i in range(1, 7)] +
+                         [f"L{i:02}" for i in range(7, 16) for _ in range(2)] + ["L16"])
+        for index in range(1, 16):
+            variants = [x for x in activity if x["row"] == f"L{index:02}"]
+            expected = ["on" if index % 2 == 0 else "off"] if index <= 6 else ["off", "on"]
+            self.assertEqual([x["args"][x["args"].index("--activity-focus") + 1] for x in variants], expected)
+        self.assertNotIn("--activity-focus", activity[-1]["args"])
         for index in range(1, 17):
             matrix = groups[f"ck-matrix-f{index:02}"]
             self.assertEqual(len(matrix), 3)
@@ -127,6 +134,61 @@ class MorningPlanTests(unittest.TestCase):
                                      {"audio": {"reason": "mic permission pending", "token": "private"}})
         self.assertEqual(audio["microphone"], "mic permission pending; visual evidence only")
         self.assertNotIn("activityCoverage", batch.result_summary({"row": "LCK-C02b", "args": []}, {}))
+        self.assertEqual(batch.result_summary({"row": "L12", "args": []}, {"coverage": {"simulation": "observed"}})["activityCoverage"], "structured")
+
+    def test_activity_unqualified_and_hardware_na_keep_honest_status(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            work = root / "work"
+            product = root / "device.xctestrun"
+            product.write_bytes(b"signed-product")
+            full_plan = batch.make_plan(batch.DEFAULT_UNKNOWN)
+            plan = [next(item for item in full_plan if item["id"] == name)
+                    for name in ["activity-07-off-01", "activity-16-01"]]
+            def fake_command(argv, env, log, timeout, should_pause=None):
+                if argv[1] not in ["L07", "L16"]:
+                    return
+                status = "unqualified" if argv[1] == "L07" else "not-applicable-hardware"
+                result = {"row": argv[1], "status": status, "restored": True,
+                          "coverage": {"outcome": "unqualified"}}
+                result_path = work / (argv[1] + ".json")
+                result_path.write_text(json.dumps(result))
+                log.write_text(json.dumps({"status": status, "result": str(result_path)}) + "\n")
+                if argv[1] == "L07":
+                    raise RuntimeError("unqualified")
+            with mock.patch.dict(os.environ, {"FOCUS_DEVICE": "00008110-0011223344556677", "FOCUS_WORK": str(work)}), \
+                 mock.patch.object(Path, "home", return_value=root), \
+                 mock.patch.object(batch, "identify_iphone13", side_effect=lambda device, workdir: device), \
+                 mock.patch.object(batch, "authorize_microphone", return_value="authorized"), \
+                 mock.patch.object(batch, "signed_build", return_value=product), \
+                 mock.patch.object(batch, "command", side_effect=fake_command), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(batch.run_batch(plan, None), 0)
+            state = json.loads((work / "morning-checkpoint.json").read_text())
+            self.assertEqual(state["completed"][plan[0]["id"]]["status"], "unqualified")
+            self.assertEqual(state["completed"][plan[0]["id"]]["activityCoverage"], "structured")
+            self.assertEqual(state["completed"][plan[1]["id"]]["status"], "not-applicable-hardware")
+            self.assertFalse(state["dirty"])
+
+    def test_activity_skip_is_not_accepted_as_completed_coverage(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            work = root / "work"
+            product = root / "device.xctestrun"
+            product.write_bytes(b"signed-product")
+            plan = [next(item for item in batch.make_plan(batch.DEFAULT_UNKNOWN) if item["id"] == "activity-10-off-01")]
+            def fake_command(argv, env, log, timeout, should_pause=None):
+                if argv[1] == "L10":
+                    log.write_text(json.dumps({"row": "L10", "status": "skipped-dependency-or-unsupported"}) + "\n")
+            with mock.patch.dict(os.environ, {"FOCUS_DEVICE": "00008110-0011223344556677", "FOCUS_WORK": str(work)}), \
+                 mock.patch.object(Path, "home", return_value=root), \
+                 mock.patch.object(batch, "identify_iphone13", side_effect=lambda device, workdir: device), \
+                 mock.patch.object(batch, "authorize_microphone", return_value="authorized"), \
+                 mock.patch.object(batch, "signed_build", return_value=product), \
+                 mock.patch.object(batch, "command", side_effect=fake_command), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(RuntimeError):
+                    batch.run_batch(plan, None)
 
     def test_pause_restores_and_resume_does_not_repeat_completed_rows(self):
         with tempfile.TemporaryDirectory() as root:

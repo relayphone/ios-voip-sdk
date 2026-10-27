@@ -3,6 +3,7 @@ import AVFoundation
 import CallKit
 import Intents
 @preconcurrency import LiveCommunicationKit
+import Network
 import PushKit
 import SwiftUI
 import UserNotifications
@@ -14,6 +15,7 @@ struct ProbeConfig: Decodable {
   var communicationNotification: Bool?
   var requestFocusAuthorization: Bool?
   var activityAction: String?
+  var exportPushToStart: Bool?
   var localUpdateInterval: Double?
   var localUpdateCount: Int?
   var ringTimeout: Double?
@@ -288,16 +290,32 @@ final class AppDelegate: NSObject, ObservableObject, UIApplicationDelegate, UNUs
   @Published var authorizationSnapshot = "{}"
   var calls: Calls!
   var timer: Timer?
+  private let networkQueue = DispatchQueue(label: "focus.activity-network")
+  private var networkMonitor: NWPathMonitor?
+  // Read and written only on networkQueue after the monitor has started.
+  private var lastNetworkUpdateAtMs: Int?
   func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
     Trace.shared.log("app.launch", ["pid": Int(getpid()), "os": UIDevice.current.systemVersion])
     calls = Calls() // register before any authorization UI or scene work
     UNUserNotificationCenter.current().delegate = self
+    startNetworkObservation()
+    // A remote start may launch the app in the background. Discover existing
+    // activities and tokens without requesting a new activity in this path.
+    Task { @MainActor in
+      FocusActivities.record = { Trace.shared.log($0, $1) }
+      FocusActivities.observeAuthorization()
+      FocusActivities.observePushToStart(enabled: ProbeConfig.load().exportPushToStart == true)
+      FocusActivities.discover()
+    }
     return true
   }
   func activate() {
+    sampleNetworkAtActivation()
     Task { @MainActor in
       let config = ProbeConfig.load()
       FocusActivities.record = { Trace.shared.log($0, $1) }
+      FocusActivities.observeAuthorization()
+      FocusActivities.observePushToStart(enabled: config.exportPushToStart == true)
       FocusActivities.discover()
       sampleFocus()
       if config.requestFocusAuthorization == true {
@@ -306,6 +324,8 @@ final class AppDelegate: NSObject, ObservableObject, UIApplicationDelegate, UNUs
       }
       if config.activityAction == "start" { do { try FocusActivities.start(); Trace.shared.log("activity.start") } catch { Trace.shared.log("activity.startFailed", ["code": (error as NSError).code]) } }
       if config.activityAction == "end" { await FocusActivities.end(); Trace.shared.log("activity.end") }
+      if config.activityAction == "reset" { await FocusActivities.reset() }
+      if config.activityAction == "snapshot" { FocusActivities.snapshotCapabilities() }
       timer?.invalidate()
       var remaining = min(max(config.localUpdateCount ?? 12, 0), 120)
       if let interval = config.localUpdateInterval, interval >= 1, remaining > 0 {
@@ -316,6 +336,57 @@ final class AppDelegate: NSObject, ObservableObject, UIApplicationDelegate, UNUs
         }
       }
     }
+  }
+  private func startNetworkObservation() {
+    let monitor = NWPathMonitor()
+    networkMonitor = monitor
+    monitor.pathUpdateHandler = { [weak self] path in
+      guard let self else { return }
+      self.lastNetworkUpdateAtMs = Int(Date().timeIntervalSince1970 * 1000)
+      self.writeNetworkSnapshot(path, source: "pathUpdate")
+    }
+    monitor.start(queue: networkQueue)
+  }
+  private func sampleNetworkAtActivation() {
+    networkQueue.async { [weak self] in
+      guard let self else { return }
+      // A cached activation sample is not proof of a newly delivered path
+      // callback after Settings changed the connectivity switches.
+      let current = self.lastNetworkUpdateAtMs == nil ? nil : self.networkMonitor?.currentPath
+      self.writeNetworkSnapshot(current, source: "activation")
+    }
+  }
+  private func writeNetworkSnapshot(_ path: NWPath?, source: String) {
+    func interfaceName(_ type: NWInterface.InterfaceType) -> String {
+      switch type {
+      case .wifi: return "wifi"
+      case .cellular: return "cellular"
+      case .wiredEthernet: return "wiredEthernet"
+      case .loopback: return "loopback"
+      case .other: return "other"
+      @unknown default: return "unknown"
+      }
+    }
+    let status: String
+    if let path {
+      switch path.status {
+      case .satisfied: status = "satisfied"
+      case .unsatisfied: status = "unsatisfied"
+      case .requiresConnection: status = "requiresConnection"
+      @unknown default: status = "unknown"
+      }
+    } else { status = "unknown" }
+    let interfaces = path.map { Array(Set($0.availableInterfaces.map { interfaceName($0.type) })).sorted() } ?? []
+    let snapshot: [String: Any] = ["status": status, "availableInterfaces": interfaces,
+      "usesWiFi": path.map { $0.usesInterfaceType(.wifi) as Any } ?? NSNull(),
+      "usesCellular": path.map { $0.usesInterfaceType(.cellular) as Any } ?? NSNull(),
+      "source": source, "pathReady": path != nil, "observedAtMs": Int(Date().timeIntervalSince1970 * 1000),
+      "lastPathUpdateAtMs": lastNetworkUpdateAtMs.map { $0 as Any } ?? NSNull(),
+      "runID": ProbeConfig.load().runID ?? "idle"]
+    do {
+      try ProbeFiles.write("activity-network.json", data: JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys]))
+      Trace.shared.log("activity.network", snapshot)
+    } catch { Trace.shared.log("activity.networkExportFailed") }
   }
   func sampleFocus() {
     let center = INFocusStatusCenter.default

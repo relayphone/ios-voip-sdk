@@ -6,6 +6,7 @@ final class FocusUITests: XCTestCase {
   let board = XCUIApplication(bundleIdentifier: "com.apple.springboard")
   let contacts = XCUIApplication(bundleIdentifier: "com.apple.MobileAddressBook")
   let phone = XCUIApplication(bundleIdentifier: "com.apple.mobilephone")
+  let shortcuts = XCUIApplication(bundleIdentifier: "com.apple.shortcuts")
   let probe = XCUIApplication(bundleIdentifier: "dev.callkitsim.focus")
   let callUI = XCUIApplication(bundleIdentifier: "com.apple.InCallService")
   struct Journal: Codable {
@@ -25,6 +26,11 @@ final class FocusUITests: XCTestCase {
     var dndCalls: String?
     var dndRepeated: Bool?
     var ownsFavorite: Bool? // nil decodes journals created by earlier versions
+    var liveActivitiesEnabled: Bool?
+    var liveActivitiesFrequent: Bool?
+    var activityPreview: String?
+    var activityWiFi: Bool?
+    var activityCellularData: Bool?
   }
   var journal = Journal()
   var verifiedFocusOff = false
@@ -460,6 +466,7 @@ final class FocusUITests: XCTestCase {
   }
   func restore() throws {
     guard journal.captured else { return }
+    try restoreActivitySettings()
     try restoreSystemSettings()
     try restoreDND()
     if journal.ownsFocus {
@@ -633,6 +640,167 @@ final class FocusUITests: XCTestCase {
       journal.autoLock = nil; try save()
     }
   }
+  // New ActivityKit Settings selectors have not yet been qualified on a device.
+  // Each mutation saves the original value first and fails if it cannot be read back.
+  func liveActivitiesPage() throws {
+    settings.terminate(); settings.launch()
+    try tap(settings, scrollTo(settings, ["Apps"]))
+    try tap(settings, scrollTo(settings, ["Focus Probe"]))
+    try tap(settings, scrollTo(settings, ["Live Activities"]))
+  }
+  func liveSwitch(_ names: [String]) throws -> XCUIElement {
+    try front(settings)
+    let predicate = NSPredicate(format: "label IN %@ OR identifier IN %@", names, names)
+    let candidates = settings.switches.matching(predicate).allElementsBoundByIndex.filter { $0.exists }
+    guard candidates.count == 1, ["0", "1"].contains(candidates[0].value as? String ?? "") else {
+      throw failure("Live Activity switch unavailable or ambiguous: \(names.joined(separator: "/"))")
+    }
+    return candidates[0]
+  }
+  func activitySwitchValue(_ names: [String]) throws -> Bool {
+    (try liveSwitch(names).value as? String) == "1"
+  }
+  func setActivitySwitch(_ names: [String], enabled: Bool) throws {
+    let item = try liveSwitch(names)
+    if ((item.value as? String) == "1") != enabled {
+      try tap(settings, item)
+      let deadline = Date().addingTimeInterval(4)
+      while (item.value as? String) != (enabled ? "1" : "0"), Date() < deadline {
+        try front(settings); Thread.sleep(forTimeInterval: 0.2)
+      }
+    }
+    guard try activitySwitchValue(names) == enabled else { throw failure("Live Activity setting did not converge") }
+  }
+  func activityEnabled(_ enabled: Bool) throws {
+    try captureInitialFocus()
+    try liveActivitiesPage()
+    let names = ["Allow Live Activities"]
+    if journal.liveActivitiesEnabled == nil { journal.liveActivitiesEnabled = try activitySwitchValue(names); try save() }
+    try setActivitySwitch(names, enabled: enabled)
+    try liveActivitiesPage()
+    guard try activitySwitchValue(names) == enabled else { throw failure("Live Activity setting did not persist") }
+    events.append(["event": "activity.setting", "setting": "enabled", "value": enabled])
+  }
+  func activityFrequent(_ enabled: Bool) throws {
+    // The frequent-update control may be hidden while activity permission is off.
+    // Snapshot and restore the permission separately before temporarily enabling it.
+    try activityEnabled(true)
+    try liveActivitiesPage()
+    let names = ["More Frequent Updates", "Frequent Updates"]
+    if journal.liveActivitiesFrequent == nil { journal.liveActivitiesFrequent = try activitySwitchValue(names); try save() }
+    try setActivitySwitch(names, enabled: enabled)
+    try liveActivitiesPage()
+    guard try activitySwitchValue(names) == enabled else { throw failure("Frequent updates setting did not persist") }
+    events.append(["event": "activity.setting", "setting": "frequent", "value": enabled])
+  }
+  func activityPreviewPage() throws {
+    settings.terminate(); settings.launch()
+    try tap(settings, scrollTo(settings, ["Notifications"]))
+    try tap(settings, scrollTo(settings, ["Focus Probe"]))
+    try tap(settings, scrollTo(settings, ["Show Previews"]))
+  }
+  func selectedActivityPreview() throws -> String {
+    try front(settings)
+    let choices = ["Default", "Always", "When Unlocked", "Never"]
+    let values = settings.descendants(matching: .any).allElementsBoundByIndex.filter {
+      choices.contains($0.label) && ($0.isSelected || ($0.value as? String) == "1" || ($0.value as? String) == "Selected")
+    }
+    let selected = Set(values.map(\.label))
+    guard selected.count == 1, let value = selected.first else { throw failure("Cannot snapshot the app preview setting") }
+    return value
+  }
+  func activityPreview(_ value: String) throws {
+    try captureInitialFocus()
+    try activityPreviewPage()
+    if journal.activityPreview == nil { journal.activityPreview = try selectedActivityPreview(); try save() }
+    if try selectedActivityPreview() != value { try tap(settings, [value]) }
+    try activityPreviewPage()
+    guard try selectedActivityPreview() == value else { throw failure("Preview setting did not persist") }
+    events.append(["event": "activity.preview", "value": value, "scope": "app notifications; not a Live Activity privacy guarantee"])
+  }
+  func networkSettingsPage(_ kind: String) throws {
+    settings.terminate(); settings.launch()
+    let names = kind == "wifi" ? ["Wi-Fi"] : ["Cellular", "Mobile Service", "Mobile Data"]
+    try tap(settings, scrollTo(settings, names))
+  }
+  func networkSwitchNames(_ kind: String) -> [String] {
+    kind == "wifi" ? ["Wi-Fi"] : ["Cellular Data", "Mobile Data"]
+  }
+  func setNetworkSwitch(_ kind: String, enabled: Bool) throws {
+    try networkSettingsPage(kind)
+    let names = networkSwitchNames(kind)
+    try setActivitySwitch(names, enabled: enabled)
+    try networkSettingsPage(kind)
+    guard try activitySwitchValue(names) == enabled else { throw failure("\(kind) setting did not persist") }
+  }
+  func activityOffline() throws {
+    guard ProcessInfo.processInfo.environment["FOCUS_USB_VERIFIED"] == "1" else {
+      throw failure("A currently verified wired device connection is required before disabling network settings")
+    }
+    try captureInitialFocus()
+    // Both original values are saved before either radio setting is changed.
+    try networkSettingsPage("wifi")
+    if journal.activityWiFi == nil { journal.activityWiFi = try activitySwitchValue(networkSwitchNames("wifi")); try save() }
+    try networkSettingsPage("cellular")
+    if journal.activityCellularData == nil { journal.activityCellularData = try activitySwitchValue(networkSwitchNames("cellular")); try save() }
+    try setNetworkSwitch("cellular", enabled: false)
+    try setNetworkSwitch("wifi", enabled: false)
+    events.append(["event": "activity.networkSettings", "wifi": false, "cellularData": false,
+                   "qualification": "Settings readback only; Ethernet and actual reachability not established"])
+  }
+  func restoreActivityNetwork() throws {
+    if let value = journal.activityCellularData {
+      try setNetworkSwitch("cellular", enabled: value)
+      journal.activityCellularData = nil; try save()
+    }
+    if let value = journal.activityWiFi {
+      try setNetworkSwitch("wifi", enabled: value)
+      journal.activityWiFi = nil; try save()
+    }
+  }
+  func restoreActivitySettings() throws {
+    // Restore connectivity first; recovery is allowed even if the original USB
+    // verification is no longer available.
+    try restoreActivityNetwork()
+    if let preview = journal.activityPreview {
+      try activityPreviewPage()
+      if try selectedActivityPreview() != preview { try tap(settings, [preview]) }
+      try activityPreviewPage()
+      guard try selectedActivityPreview() == preview else { throw failure("Preview setting restore failed") }
+      journal.activityPreview = nil; try save()
+    }
+    if let frequent = journal.liveActivitiesFrequent {
+      try liveActivitiesPage()
+      // Enabled state was saved before it was changed; preserve it through recovery.
+      guard journal.liveActivitiesEnabled != nil else { throw failure("Missing Live Activity permission restore journal") }
+      try setActivitySwitch(["Allow Live Activities"], enabled: true)
+      try liveActivitiesPage()
+      try setActivitySwitch(["More Frequent Updates", "Frequent Updates"], enabled: frequent)
+      try liveActivitiesPage()
+      guard try activitySwitchValue(["More Frequent Updates", "Frequent Updates"]) == frequent else { throw failure("Frequent updates restore failed") }
+      journal.liveActivitiesFrequent = nil; try save()
+    }
+    if let enabled = journal.liveActivitiesEnabled {
+      try liveActivitiesPage()
+      try setActivitySwitch(["Allow Live Activities"], enabled: enabled)
+      try liveActivitiesPage()
+      guard try activitySwitchValue(["Allow Live Activities"]) == enabled else { throw failure("Live Activity permission restore failed") }
+      journal.liveActivitiesEnabled = nil; try save()
+    }
+  }
+  func invokeActivityShortcut() throws {
+    shortcuts.activate()
+    guard shortcuts.wait(for: .runningForeground, timeout: 8) else { throw failure("Shortcuts did not become foreground") }
+    try front(shortcuts)
+    guard probe.state != .runningForeground else { throw failure("Probe must be outside foreground before shortcut invocation") }
+    try tap(shortcuts, scrollTo(shortcuts, ["App Shortcuts"]))
+    try tap(shortcuts, scrollTo(shortcuts, ["Focus Probe"]))
+    guard probe.state != .runningForeground else { throw failure("Probe entered foreground before shortcut invocation") }
+    try tap(shortcuts, scrollTo(shortcuts, ["Start transcript", "Start Focus transcript probe"]))
+    // Tapping the system shortcut is not proof of activity creation. The host
+    // must verify the token, activity identity and the subsequent trace separately.
+    events.append(["event": "activity.shortcutInvoked", "source": "Shortcuts UI", "observedAt": Date().timeIntervalSince1970])
+  }
   func activityConsent() throws {
     home(); try front(board)
     board.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.01)).press(forDuration: 0.1,
@@ -646,6 +814,144 @@ final class FocusUITests: XCTestCase {
       try tap(board, allow); Thread.sleep(forTimeInterval: 1)
     }
     throw failure("Live Activity consent did not clear")
+  }
+  func openNotificationCenter() throws {
+    home(); try front(board)
+    board.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.01)).press(forDuration: 0.1,
+      thenDragTo: board.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.8)))
+    try front(board)
+  }
+  func requireNotificationCenterMarker() throws {
+    _ = try element(board, ["Notification Center", "No Older Notifications", "No Notifications"], timeout: 5)
+  }
+  func saveActivityScreenshot(_ event: String, fields: [String: Any] = [:]) throws {
+    try front(board)
+    let screenshot = XCUIScreen.main.screenshot()
+    try screenshot.pngRepresentation.write(to: documents.appendingPathComponent("focus-activity.png"), options: .atomic)
+    var record = fields
+    record["event"] = event; record["observedAt"] = Date().timeIntervalSince1970
+    events.append(record)
+  }
+  func identifiedActivityCard() throws -> XCUIElement {
+    try front(board)
+    let title = "Focus Probe · synthetic transcript"
+    _ = try element(board, [title], timeout: 3)
+    let screen = board.frame
+    let candidates = board.descendants(matching: .any)
+      .containing(NSPredicate(format: "label == %@ OR identifier == %@", title, title))
+      .allElementsBoundByIndex.filter {
+        guard $0.exists && $0.isHittable && $0.frame.width >= screen.width * 0.4 &&
+          $0.frame.height >= 40 && $0.frame.height <= screen.height * 0.4 else { return false }
+        return $0.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "Revision [0-9]+"))
+          .allElementsBoundByIndex.contains { $0.exists }
+      }.sorted { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
+    guard let card = candidates.first else { throw failure("Cannot identify the synthetic activity card and revision") }
+    if candidates.count > 1, candidates[1].frame == card.frame { throw failure("Ambiguous synthetic activity card") }
+    return card
+  }
+  func observeActivity(_ duration: Double) throws {
+    guard duration.isFinite && (1...180).contains(duration) else { throw failure("Invalid activity observation duration") }
+    try openNotificationCenter()
+    let started = Int(ProcessInfo.processInfo.systemUptime * 1000)
+    let deadline = Date().addingTimeInterval(duration)
+    var previous = "", count = 0, ready = false
+    repeat {
+      let sampleStart = Int(ProcessInfo.processInfo.systemUptime * 1000)
+      try front(board)
+      let card = try identifiedActivityCard()
+      let labels = card.staticTexts.allElementsBoundByIndex.filter { $0.exists && $0.isHittable }.map(\.label)
+      let revisions = labels.compactMap { value -> Int? in
+        guard value.hasPrefix("Revision ") else { return nil }
+        return Int(value.dropFirst("Revision ".count))
+      }
+      guard revisions.count == 1 else { throw failure("Synthetic activity revision is missing or ambiguous") }
+      try front(board)
+      let ended = Int(ProcessInfo.processInfo.systemUptime * 1000)
+      let wallTimeMs = Int(Date().timeIntervalSince1970 * 1000)
+      let text = labels.filter { $0 != "Focus Probe · synthetic transcript" && !$0.hasPrefix("Revision ") }
+        .map { String($0.prefix(512)) }
+      guard text.count <= 10 else { throw failure("Ambiguous synthetic activity text") }
+      let stale = text.contains("Updates delayed")
+      let signature = "\(revisions[0])|\(stale)|" + text.joined(separator: "|")
+      events.append(["event": "activity.sample", "revision": revisions[0], "stale": stale,
+                     "sampleStartUptimeMs": sampleStart, "uptimeMs": ended, "wallTimeMs": wallTimeMs])
+      if signature != previous {
+        events.append(["event": "activity.renderSample", "revision": revisions[0], "text": text,
+                       "stale": stale, "sampleStartUptimeMs": sampleStart, "uptimeMs": ended, "wallTimeMs": wallTimeMs])
+        previous = signature
+      }
+      count += 1
+      if !ready {
+        let id = ProcessInfo.processInfo.environment["FOCUS_OBSERVATION_ID"] ?? "none"
+        try JSONSerialization.data(withJSONObject: ["id": id, "startUptimeMs": started,
+                                                    "uptimeMs": ended, "wallTimeMs": wallTimeMs])
+          .write(to: documents.appendingPathComponent("activity-observation-ready.json"), options: .atomic)
+        ready = true
+      }
+      if Date() < deadline { Thread.sleep(forTimeInterval: 0.5) }
+    } while Date() < deadline
+    let ended = Int(ProcessInfo.processInfo.systemUptime * 1000)
+    try saveActivityScreenshot("activity.observed", fields: ["startUptimeMs": started, "endUptimeMs": ended,
+      "samples": count, "qualification": "rendering only; no audio or wake conclusion"])
+    home()
+  }
+  func activityAbsent() throws {
+    try openNotificationCenter()
+    // Absence on an unrecognized screen is not evidence. Require an explicit
+    // Notification Center marker before checking the card.
+    try requireNotificationCenterMarker()
+    let title = "Focus Probe · synthetic transcript"
+    let empty = board.staticTexts.matching(NSPredicate(format: "label == %@", "No Notifications"))
+      .allElementsBoundByIndex.contains { $0.exists && $0.isHittable }
+    if empty {
+      let query = board.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR identifier == %@", title, title))
+      guard !query.allElementsBoundByIndex.contains(where: { $0.exists }) else { throw failure("Live Activity card is still present") }
+    } else {
+      // Scroll the loaded list to a stable end; an incomplete list is not an absence.
+      guard try lookup(board, [title], scan: true) == nil else { throw failure("Live Activity card is still present") }
+    }
+    try requireNotificationCenterMarker()
+    try saveActivityScreenshot("activity.absent", fields: ["notificationCenterVerified": true])
+    home()
+  }
+  func activityContains(_ shouldContain: Bool) throws {
+    try openNotificationCenter()
+    let card = try identifiedActivityCard()
+    let wanted = ProcessInfo.processInfo.environment["FOCUS_EXPECTED_ACTIVITY_TEXT"] ?? ""
+    guard !wanted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, wanted.utf8.count <= 512 else {
+      throw failure("Invalid synthetic activity expectation")
+    }
+    let query = card.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", wanted))
+    let found = query.allElementsBoundByIndex.contains { $0.exists && $0.isHittable }
+    guard found == shouldContain else { throw failure("Activity text visibility differs from expectation") }
+    // Record only whether the synthetic marker is visible, never arbitrary text.
+    try saveActivityScreenshot("activity.textVisibility", fields: ["visible": found])
+    home()
+  }
+  func activityDismiss() throws {
+    try openNotificationCenter()
+    let title = "Focus Probe · synthetic transcript"
+    let card = try identifiedActivityCard()
+    let originalFrame = card.frame
+    try front(board); card.swipeLeft(); try front(board)
+    let titleQuery = board.descendants(matching: .any).matching(NSPredicate(format: "label == %@ OR identifier == %@", title, title))
+    func titleVisible() -> Bool { titleQuery.allElementsBoundByIndex.contains { $0.exists } }
+    if titleVisible() {
+      // Only an action within the identified card's own frame may be tapped.
+      let buttons = board.buttons.matching(NSPredicate(format: "label IN %@", ["Clear", "Dismiss", "Remove"]))
+        .allElementsBoundByIndex.filter { $0.exists && $0.isHittable && originalFrame.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
+      guard buttons.count == 1 else { throw failure("Specific Live Activity dismissal control unavailable") }
+      try tap(board, buttons[0])
+    }
+    let deadline = Date().addingTimeInterval(5)
+    while titleVisible() && Date() < deadline { try front(board); Thread.sleep(forTimeInterval: 0.2) }
+    try front(board)
+    guard !titleVisible() else { throw failure("Live Activity dismissal was not observed") }
+    try requireNotificationCenterMarker()
+    // The disappearance is a UI observation. The app must separately verify
+    // ActivityKit state and registration cleanup.
+    try saveActivityScreenshot("activity.dismissed", fields: ["observation": "UI card disappeared"])
+    home()
   }
   func checkActivity() throws {
     home(); try front(board)
@@ -813,15 +1119,18 @@ final class FocusUITests: XCTestCase {
       let values: [String: [String]] = ["focus": ["on", "off"], "app": ["include", "exclude"],
         "person": ["include", "exclude"], "repeated-calls": ["on", "off"], "calls": ["Allowed People Only", "Everyone", "All Contacts", "Contacts Only", "Favorites", "No One", "Nobody"],
         "policy": ["screenWithAI"], "system-settings": ["enable", "restore"], "notifications": ["allow", "deny"], "focus-authorization": ["allow", "deny"],
-        "share-across-devices": ["check"], "dnd": ["on", "off", "configure"], "unknown": ["verify"], "favorite": ["on", "off"]]
+        "share-across-devices": ["check"], "dnd": ["on", "off", "configure"], "unknown": ["verify"], "favorite": ["on", "off"],
+        "activity-setting": ["enable", "disable", "frequent-on", "frequent-off"], "activity-preview": ["always", "unlocked", "never"],
+        "activity-network": ["offline", "restore"]]
       if let allowed = values[p[0]] {
         guard p.count == 2 && allowed.contains(p[1]) else { throw failure("Invalid action value") }
       } else if p[0] == "dump" {
         guard p.count == 2 else { throw failure("Invalid dump") }
-      } else if p[0] == "observe" {
-        guard p.count == 2, let n = Double(p[1]), n.isFinite, (1...240).contains(n) else { throw failure("Invalid observation duration") }
+      } else if p[0] == "observe" || p[0] == "activity-observe" {
+        guard p.count == 2, let n = Double(p[1]), n.isFinite, n >= 1,
+          n <= (p[0] == "activity-observe" ? 180.0 : 240.0) else { throw failure("Invalid observation duration") }
       } else {
-        guard p.count == 1 && ["setup", "restore-all", "sample", "launch", "home", "terminate", "activity-consent", "activity-check", "lock"].contains(p[0]) else { throw failure("Unknown action") }
+        guard p.count == 1 && ["setup", "restore-all", "sample", "launch", "home", "terminate", "activity-consent", "activity-check", "activity-absent", "activity-contains", "activity-hidden", "activity-shortcut", "activity-dismiss", "lock"].contains(p[0]) else { throw failure("Unknown action") }
       }
     }
     do {
@@ -850,7 +1159,21 @@ final class FocusUITests: XCTestCase {
         case "restore-all": try restore()
         case "system-settings": try value == "enable" ? enableSystemSettings() : restoreSystemSettings()
         case "activity-check": try checkActivity()
+        case "activity-observe": try observeActivity(Double(value) ?? 0)
         case "activity-consent": try activityConsent()
+        case "activity-absent": try activityAbsent()
+        case "activity-contains": try activityContains(true)
+        case "activity-hidden": try activityContains(false)
+        case "activity-shortcut": try invokeActivityShortcut()
+        case "activity-dismiss": try activityDismiss()
+        case "activity-setting":
+          if value == "enable" || value == "disable" { try activityEnabled(value == "enable") }
+          else { try activityFrequent(value == "frequent-on") }
+        case "activity-preview":
+          let modes = ["always": "Always", "unlocked": "When Unlocked", "never": "Never"]
+          guard let mode = modes[value] else { throw failure("Invalid preview option") }
+          try activityPreview(mode)
+        case "activity-network": try value == "offline" ? activityOffline() : restoreActivityNetwork()
         case "notifications": try authorize(false, allow: value == "allow")
         case "focus-authorization": try authorize(true, allow: value == "allow")
         case "sample": probe.activate(); try tap(probe, ["focus.sample"])

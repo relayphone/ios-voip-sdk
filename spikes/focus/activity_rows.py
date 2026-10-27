@@ -1,0 +1,542 @@
+"""Device-facing Live Activity experiments; simulations never count as OS evidence."""
+import json
+import time
+import uuid
+from pathlib import Path
+
+from activity_contract import simulate_row
+
+
+def activity_plan(row):
+    cases = {
+        "L01": "foreground start, 24 silent priority-5 updates at five-second cadence, observe rendered revisions",
+        "L02": "same cadence with Focus enabled and app/person excluded",
+        "L03": "pre-arm an activity, background app and project a synthetic session without SSE",
+        "L04": "pre-arm, terminate the app and project a synthetic session under Focus",
+        "L05": "reset activities, background without push or user action, verify inventory and card absence",
+        "L06": "same no-start negative with Focus enabled",
+        "L07": "start from the system Shortcuts UI with the app absent; export the update token",
+        "L08": "journal and exercise Live Activity authorization and frequent-update settings",
+        "L09": "verify wired transport, disconnect Wi-Fi/cellular, observe stale state, reconnect and update",
+        "L10": "relaunch/token continuity, sandbox invalid-token control and simulated rotation ordering",
+        "L11": "bounded priority-5/10 cadence with frequent updates off/on and a simulated budget",
+        "L12": "send newer/older snapshots and simulate APNs acceptance, unrendered delivery and backoff",
+        "L13": "send a bounded UTF-8/Unicode payload and exercise restored notification-preview settings",
+        "L14": "end by APNs, dismiss a second card and simulate logout, consent and expiry",
+        "L15": "explicit alerting push-to-start, then receive and use the per-activity update token",
+        "L16": "identify the iPhone 13 and record Dynamic Island as not applicable",
+    }
+    if row not in cases:
+        raise ValueError("unknown activity row")
+    return ["verify device and Share Across Devices; journal reversible settings", cases[row],
+            "record device evidence separately from simulations and unobserved lock/audio conditions",
+            "restore settings and stop or preserve activity according to batch policy"]
+
+
+class ActivityScenario:
+    def __init__(self, run, result):
+        self.run, self.result, self.row = run, result, run.p["row"]
+        self.coverage = result.setdefault("coverage", {})
+        self.sequence = 0
+        self.result["activityReceipts"] = []
+
+    def note(self, name, state, detail=None):
+        item = {"status": state}
+        if detail is not None:
+            item["detail"] = detail
+        self.coverage[name] = item
+
+    def config(self, action="snapshot", start_token=False):
+        self.run.arm({"rowID": self.row, "runID": self.run.run_id, "provider": self.run.p["provider"],
+                      "armed": True, "activityAction": action, "exportPushToStart": start_token})
+
+    def read_file(self, name, suffix):
+        target = self.run.folder / (suffix + ".json")
+        self.run.copy(name, target)
+        return json.loads(target.read_text())
+
+    def setup(self):
+        self.config("reset")
+        self.run.ui(["share-across-devices:check", "setup", "launch", "notifications:allow",
+                     "app:exclude", "person:exclude", "calls:Allowed People Only", "repeated-calls:off",
+                     "focus:" + ("on" if self.run.p["focus"] else "off")])
+        self.config("snapshot")
+        self.run.ui(["launch"])
+        self.capabilities("initial", {"activeActivityCount": 0})
+
+    def capabilities(self, suffix, expected=None, newer_than=None):
+        deadline = time.monotonic() + 25
+        while time.monotonic() < deadline:
+            try:
+                value = self.read_file("activity-capabilities.json", "capabilities-" + suffix)
+                if (value.get("runID") == self.run.run_id and
+                        (newer_than is None or value.get("observedAtMs", 0) > newer_than) and
+                        (expected is None or all(value.get(k) == v for k, v in expected.items()))):
+                    return value
+            except (OSError, ValueError, RuntimeError):
+                pass
+            time.sleep(1)
+        raise RuntimeError("Activity capabilities unavailable for this run")
+
+    def start(self):
+        self.config("start")
+        self.run.ui(["launch", "activity-consent"])
+        current = self.run.current_activity("initial")
+        self.result["activityContinuity"] = {"activityID": current["activityID"], "surfaceID": current["surfaceID"]}
+        return current
+
+    def end_local(self):
+        self.config("end")
+        self.run.ui(["launch"])
+        self.config("snapshot")
+
+    def ui_card(self, text, suffix, action="activity-contains"):
+        self.run.ui([action], text=text)
+        self.run.copy("focus-activity.png", self.run.folder / ("activity-" + suffix + ".png"), test=True)
+
+    def send(self, event="update", text="Synthetic caller: APNs update", priority=5, timestamp=None,
+             revision=None, stale_after=30, surface=None, session=None, fit=False, invalid=False):
+        self.sequence += 1
+        suffix = "send-" + str(self.sequence)
+        receipt = self.run.folder / ("activity-apns-" + str(self.sequence) + ".json")
+        if event == "start":
+            token = self.run.folder / "activity-start-token.json"
+            deadline = time.monotonic() + 30
+            while True:
+                try:
+                    self.run.copy("activity-start-token.json", token)
+                    value = json.loads(token.read_text())
+                    if value.get("runID") == self.run.run_id and value.get("tokenGeneration"):
+                        break
+                except (OSError, ValueError, RuntimeError):
+                    pass
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("current push-to-start token unavailable")
+                time.sleep(1)
+            registration = None
+        elif invalid:
+            token, registration = self.invalid_fixture()
+        else:
+            current = self.run.current_activity(suffix)
+            expected = self.result.get("activityContinuity")
+            if expected and (current["activityID"], current["surfaceID"]) != (expected["activityID"], expected["surfaceID"]):
+                raise RuntimeError("activity identity changed before push")
+            token = self.run.folder / "activity-token.json"
+            registration = self.run.folder / ("activity-registration-" + suffix + ".json")
+        stamp = int(time.time()) if timestamp is None else timestamp
+        argv = ["node", str(Path(__file__).with_name("activity-payloads.mjs")),
+                "--event", event, "--token-file", str(token), "--receipt-file", str(receipt),
+                "--timestamp", str(stamp), "--revision", str(revision if revision is not None else self.sequence),
+                "--excerpt", text, "--stale-after", str(stale_after), "--priority", str(priority)]
+        if registration is not None:
+            argv += ["--registration-file", str(registration)]
+        if event == "start":
+            argv += ["--allow-alert", "--surface-id", surface or str(uuid.uuid4())]
+        if session:
+            argv += ["--session-id", session]
+        if fit:
+            argv += ["--fit"]
+        if invalid:
+            argv += ["--test-invalid-token"]
+        started = time.time()
+        try:
+            self.run.command(argv, timeout=30)
+        except RuntimeError:
+            if not receipt.exists():
+                raise
+        if not receipt.exists():
+            raise RuntimeError("missing reserved APNs receipt")
+        value = json.loads(receipt.read_text())
+        value["hostSendStart"] = started
+        value["hostSendEnd"] = time.time()
+        self.result["activityReceipts"].append(value)
+        return value
+
+    def invalid_fixture(self):
+        # A dedicated all-zero token can never address the registered activity.
+        marker = "synthetic-invalid-" + uuid.uuid4().hex
+        value = {"activityID": "synthetic-invalid-token", "surfaceID": str(uuid.uuid4()),
+                 "tokenGeneration": marker, "state": "active", "token": "00" * 32}
+        token = self.run.folder / "invalid-activity-token.json"
+        registration = self.run.folder / "invalid-activity-registration.json"
+        token.write_text(json.dumps(value)); registration.write_text(json.dumps({k: v for k, v in value.items() if k != "token"}))
+        token.chmod(0o600); registration.chmod(0o600)
+        return token, registration
+
+    def observer(self, duration):
+        # Each concurrent UI session gets a fresh marker; a prior session's ready file is not valid.
+        self.run.invitation = str(uuid.uuid4())
+        host_start = time.time() * 1000
+        process = self.run.ui(["activity-observe:" + str(duration)], background=True)
+        ready = self.run.folder / "activity-ready.json"
+        deadline = time.monotonic() + 90
+        try:
+            while time.monotonic() < deadline:
+                if process.poll() is not None:
+                    raise RuntimeError("activity observer ended before readiness")
+                try:
+                    self.run.copy("activity-observation-ready.json", ready, test=True)
+                    value = json.loads(ready.read_text())
+                    if value.get("id") == self.run.invitation:
+                        host_end = time.time() * 1000
+                        if isinstance(value.get("wallTimeMs"), int):
+                            self.result.setdefault("clockOffsetBoundsMs", []).append({
+                                "deviceMinusHostMin": value["wallTimeMs"] - host_end,
+                                "deviceMinusHostMax": value["wallTimeMs"] - host_start,
+                                "qualification": "ready event bracket only; clocks may change"})
+                        return process
+                except (OSError, ValueError, RuntimeError):
+                    pass
+                time.sleep(1)
+            raise RuntimeError("activity observer readiness timeout")
+        except BaseException:
+            if process.poll() is None:
+                process.terminate()
+                try: process.wait(timeout=10)
+                except Exception: process.kill(); process.wait(timeout=10)
+            raise
+
+    def begin_audio(self, seconds):
+        binary = self.run.work / "listen"
+        output = self.run.folder / "activity-audio.json"
+        try:
+            if not binary.exists():
+                self.run.command(["swiftc", str(Path(__file__).with_name("listen.swift")), "-o", str(binary)], timeout=90)
+            process = self.run.command([str(binary), "--output", str(output), "--seconds", str(seconds)], background=True)
+        except (OSError, RuntimeError):
+            self.note("acousticEnvelope", "unqualified", "microphone helper unavailable")
+            return None, output
+        deadline = time.monotonic() + 10
+        while process.poll() is None and not Path(str(output) + ".ready").exists() and time.monotonic() < deadline:
+            time.sleep(0.2)
+        if process.poll() is None:
+            time.sleep(5)  # Establish a quiet interval before the first update.
+        return process, output
+
+    def finish_audio(self, pair):
+        process, output = pair
+        if process is None:
+            return
+        try:
+            if process.poll() is None:
+                process.wait(timeout=180)
+        except Exception:
+            process.kill(); process.wait(timeout=10)
+        if output.exists():
+            value = json.loads(output.read_text())
+            value["binding"] = self.run.binding
+            output.write_text(json.dumps(value))
+            output.chmod(0o600)
+            self.result["activityAudio"] = str(output)
+            sent = self.result.get("activityReceipts", [])
+            if sent:
+                self.result["activityAudioWindow"] = {"start": min(r["hostSendStart"] for r in sent),
+                                                       "end": max(r["hostSendEnd"] for r in sent) + 5}
+            self.note("acousticEnvelope", "recorded" if value.get("samples") else "unqualified",
+                      "uncalibrated RMS proxy; compare with final C00, not proof of silence")
+        else:
+            self.note("acousticEnvelope", "unqualified", "microphone unavailable or capture incomplete")
+
+    def finish_observer(self, process, suffix="observed"):
+        if process.wait(timeout=200):
+            raise RuntimeError("activity observation failed")
+        self.run.recover(required=True)
+        path = self.run.folder / ("activity-ui-" + suffix + ".json")
+        self.run.copy("focus-ui-result.json", path, test=True)
+        self.run.copy("focus-activity.png", self.run.folder / ("activity-" + suffix + ".png"), test=True)
+        value = json.loads(path.read_text())
+        self.result["activityObservation"] = value.get("events", [])
+        self.result.setdefault("activityObservations", []).append({"case": suffix, "events": value.get("events", [])})
+        observations = [e for e in value.get("events", []) if e.get("event") == "activity.observed"]
+        if len(observations) != 1:
+            raise RuntimeError("activity observer lacks a complete interval")
+        return observations[0]
+
+    def cadence(self, count, interval, priority=5, text_prefix="Synthetic cadence", session=None, observer=None):
+        if not 1 <= count <= 60 or interval < 1:
+            raise ValueError("activity cadence exceeds safe bounds")
+        previous = None
+        for index in range(count):
+            if observer is not None and observer.poll() is not None:
+                self.note("presentation", "unqualified", "observer ended before cadence completed")
+                return False
+            if previous is not None:
+                delay = previous + interval - time.monotonic()
+                if delay > 0:
+                    time.sleep(delay)
+            previous = time.monotonic()
+            receipt = self.send(text=f"{text_prefix} {index + 1}", priority=priority,
+                                revision=self.sequence + 1, session=session)
+            if receipt.get("status") != 200:
+                self.note("transport", "unqualified", "APNs did not accept an update; no automatic retry")
+                return False
+        return True
+
+    def fixture(self):
+        value = simulate_row(self.row)
+        self.coverage["offlineSimulation"] = value
+        if value.get("status") != "simulated":
+            raise RuntimeError("offline simulation failed")
+
+    def trace(self):
+        path = self.run.folder / "activity-trace.jsonl"
+        self.run.copy("focus.jsonl", path)
+        return [value for value in (json.loads(line) for line in path.read_text().splitlines() if line)
+                if value.get("runID") == self.run.run_id]
+
+    def verify_usb(self):
+        inventory = self.run.folder / "activity-usb-inventory.json"
+        self.run.command(["xcrun", "devicectl", "list", "devices", "--json-output", str(inventory), "--quiet"], timeout=30)
+        devices = json.loads(inventory.read_text()).get("result", {}).get("devices", [])
+        matches = [d for d in devices if str((d.get("hardwareProperties") or {}).get("udid", "")).upper() == self.run.device.upper()]
+        if len(matches) != 1:
+            raise RuntimeError("USB device identity unavailable")
+        connection = matches[0].get("connectionProperties") or {}
+        if str(connection.get("transportType", "")).lower() != "wired" or str(connection.get("tunnelState", "")).lower() != "connected":
+            raise RuntimeError("wired device transport not verified; do not disable radios")
+        self.run.usb_verified = True
+
+    def network_offline_snapshot(self, newer_than):
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline:
+            try:
+                value = self.read_file("activity-network.json", "network-offline")
+                if (value.get("runID") == self.run.run_id and value.get("source") == "pathUpdate" and
+                        value.get("pathReady") is True and value.get("status") == "unsatisfied" and
+                        isinstance(value.get("lastPathUpdateAtMs"), int) and value["lastPathUpdateAtMs"] > newer_than):
+                    return value
+            except (OSError, ValueError, RuntimeError):
+                pass
+            time.sleep(1)
+        raise RuntimeError("offline network path not established")
+
+
+def execute_activity(run, result):
+    scenario = ActivityScenario(run, result)
+    try:
+        scenario.setup()
+        run_activity_case(scenario)
+        # `recorded` means every required non-simulated subcase was observed;
+        # fixtures are never promoted into device or backend evidence.
+        result["status"] = "unqualified" if any(v.get("status") == "unqualified" for v in scenario.coverage.values() if isinstance(v, dict)) else "recorded"
+    except (OSError, ValueError, RuntimeError, TimeoutError) as error:
+        scenario.note("execution", "unqualified", type(error).__name__)
+        result["status"] = "unqualified"
+
+
+def run_activity_case(s):
+    """Each scenario records OS observations and offline fixtures separately."""
+    row = s.row
+    if row in ("L05", "L06"):
+        before = s.capabilities("before-background", {"activeActivityCount": 0})
+        s.run.ui(["home"])
+        time.sleep(15)  # No push, activity request or user action in the background interval.
+        s.config("snapshot")
+        s.run.ui(["launch"])
+        after = s.capabilities("after-background", {"activeActivityCount": 0}, before["observedAtMs"])
+        s.run.ui(["activity-absent"])
+        s.note("noAutomaticStart", "observed", {"before": before["activeActivityCount"], "after": after["activeActivityCount"], "pushes": 0})
+        return
+
+    if row == "L07":
+        s.run.ui(["terminate", "activity-shortcut"])
+        s.config("snapshot")
+        s.run.ui(["launch", "activity-consent"])
+        current = s.run.current_activity("shortcut")
+        s.result["activityContinuity"] = {"activityID": current["activityID"], "surfaceID": current["surfaceID"]}
+        s.note("systemShortcutAndUpdateToken", "observed", "Shortcut UI initiated; app rediscovered activity")
+        return
+
+    if row == "L08":
+        s.run.ui(["activity-setting:disable"])
+        s.config("start")
+        s.run.ui(["launch"])
+        denied = s.capabilities("disabled", {"activitiesEnabled": False, "activeActivityCount": 0})
+        s.config("snapshot")
+        s.run.ui(["launch"])
+        s.capabilities("disabled-again", {"activitiesEnabled": False, "activeActivityCount": 0}, denied["observedAtMs"])
+        attempts = [event for event in s.trace() if event.get("event") in ("activity.start", "activity.startFailed")]
+        if len(attempts) != 1 or attempts[0]["event"] != "activity.startFailed":
+            raise RuntimeError("disabled start attempt count or outcome was not qualified")
+        s.run.ui(["activity-setting:enable"])
+        for enabled in (False, True):
+            s.run.ui(["activity-setting:frequent-" + ("on" if enabled else "off")])
+            s.run.ui(["launch"])
+            value = s.capabilities("frequent-" + str(enabled).lower(), {"activitiesEnabled": True, "frequentPushesEnabled": enabled})
+            s.note("frequent-" + str(enabled).lower(), "observed", {"value": value["frequentPushesEnabled"]})
+        s.note("disabledNoStart", "observed", "no active activity after disabled start and subsequent snapshot")
+        s.note("backendCapabilityRegistration", "unqualified", "probe has no production backend registration")
+        return
+
+    if row == "L15":
+        s.config("snapshot", start_token=True)
+        s.run.ui(["launch"])
+        audio = s.begin_audio(90)
+        try:
+            receipt = s.send(event="start", priority=10, text="Synthetic push-to-start")
+        finally:
+            s.finish_audio(audio)
+        s.note("startTransport", "observed" if receipt.get("status") == 200 else "unqualified", "alerting mode; APNs acceptance does not prove presentation")
+        if receipt.get("status") != 200:
+            raise RuntimeError("push-to-start not accepted")
+        s.config("snapshot", start_token=True)
+        s.run.ui(["launch", "activity-consent"])
+        current = s.run.current_activity("remote-start")
+        s.result["activityContinuity"] = {"activityID": current["activityID"], "surfaceID": current["surfaceID"]}
+        if current["surfaceID"] != receipt.get("surfaceID"):
+            raise RuntimeError("remote-start surface mismatch")
+        update = s.send(text="Synthetic started activity update", priority=5)
+        if update.get("status") == 200:
+            s.ui_card("Synthetic started activity update", "remote-start-update")
+            s.note("perActivityUpdateToken", "observed", "separate activity token used and synthetic content rendered")
+        else:
+            s.note("perActivityUpdateToken", "unqualified", "update not accepted")
+        s.note("alertSoundAndWake", "unqualified", "alerting push was sent; sound and wake are not inferred")
+        return
+
+    initial = s.start()
+    if row in ("L01", "L02", "L03", "L04"):
+        s.config("snapshot")
+        s.run.ui(["terminate" if row == "L04" else "home"])
+        observer = s.observer(180 if row in ("L01", "L02") else 45)
+        session = "focus-synthetic-" + str(uuid.uuid4()) if row in ("L03", "L04") else None
+        s.result["syntheticSessionID"] = session
+        audio = None
+        try:
+            audio = s.begin_audio(150) if row in ("L01", "L02") else None
+            accepted = s.cadence(25 if row in ("L01", "L02") else 4, 5,
+                                 text_prefix="Synthetic cadence", session=session, observer=observer)
+            observation = s.finish_observer(observer)
+            samples = [e for e in s.result["activityObservation"] if e.get("event") == "activity.renderSample"]
+            s.note("renderCadence", "observed" if accepted and samples else "unqualified",
+                   {"apnsAccepted": sum(r.get("status") == 200 for r in s.result["activityReceipts"]),
+                    "observedRevisions": [e.get("revision") for e in samples], "observer": observation})
+        finally:
+            if observer.poll() is None:
+                observer.terminate()
+                try: observer.wait(timeout=10)
+                except Exception: observer.kill(); observer.wait(timeout=10)
+            if audio:
+                s.finish_audio(audio)
+        s.note("lockScreenAndWake", "unqualified", "secure iPhone cannot be locked and automatically unlocked without an authorized unlock path")
+        s.note("soundAndHaptics", "unqualified", "RMS is an energy proxy and cannot prove no acoustic or haptic alert")
+        if session:
+            s.note("sessionBackend", "simulated", "synthetic ActivityKit session; no Phone AI/SIP backend")
+        return
+
+    if row == "L09":
+        s.verify_usb()
+        s.run.ui(["launch"])
+        prior = s.read_file("activity-network.json", "network-before")
+        sent = s.send(text="Synthetic before offline")
+        if sent.get("status") != 200:
+            raise RuntimeError("initial update not accepted")
+        time.sleep(8)
+        s.ui_card("Synthetic before offline", "before-offline")
+        s.note("initialPresentation", "observed")
+        try:
+            s.run.ui(["activity-network:offline"])
+            s.run.ui(["launch"])
+            path = s.network_offline_snapshot(prior.get("lastPathUpdateAtMs") or 0)
+            s.note("offlinePath", "observed", {"status": path["status"], "source": path["source"]})
+            time.sleep(38)
+            s.ui_card("Updates delayed", "stale")
+            s.note("stalePresentation", "observed")
+        finally:
+            s.run.ui(["activity-network:restore"])
+        s.run.ui(["launch"])
+        resumed = s.send(text="Synthetic resumed update")
+        if resumed.get("status") != 200:
+            raise RuntimeError("resumed update not accepted")
+        time.sleep(8)
+        s.ui_card("Synthetic resumed update", "resumed")
+        s.note("resumedPresentation", "observed")
+        s.note("backendAI", "unqualified", "synthetic probe has no AI backend")
+        return
+
+    if row == "L10":
+        s.fixture()
+        s.config("snapshot")
+        s.run.ui(["launch", "activity-consent"])
+        reloaded = s.run.current_activity("reloaded")
+        if (reloaded["activityID"], reloaded["surfaceID"]) != (initial["activityID"], initial["surfaceID"]):
+            raise RuntimeError("activity changed on relaunch")
+        s.note("continuity", "observed", "same activity and current paired registration after relaunch")
+        rejection = s.send(invalid=True)
+        s.note("invalidToken", "observed" if rejection.get("expectedRejection") is True else "unqualified", rejection.get("reason"))
+        s.note("actualTokenRotation", "unqualified", "rotation is system controlled; generation ordering tested in simulation")
+        return
+
+    if row == "L11":
+        s.fixture()
+        total = 0
+        for frequent in (False, True):
+            s.run.ui(["activity-setting:frequent-" + ("on" if frequent else "off"), "launch"])
+            s.capabilities("budget-" + str(frequent).lower(), {"frequentPushesEnabled": frequent})
+            observer = s.observer(90)
+            try:
+                for priority in (5, 10):
+                    for interval in (5, 1):
+                        if total + 3 > 60:
+                            raise RuntimeError("activity send cap exceeded")
+                        accepted = s.cadence(3, interval, priority, text_prefix=f"Synthetic p{priority} i{interval}", observer=observer)
+                        total += 3
+                        s.note(f"frequent-{frequent}-p{priority}-i{interval}", "observed" if accepted else "unqualified",
+                               {"sent": 3, "intervalSeconds": interval, "APNsAcceptanceOnly": True})
+                observation = s.finish_observer(observer, "budget-" + str(frequent).lower())
+                s.note("renderSamples-" + str(frequent).lower(), "observed", {"samples": observation.get("samples")})
+            finally:
+                if observer.poll() is None:
+                    observer.terminate()
+                    try: observer.wait(timeout=10)
+                    except Exception: observer.kill(); observer.wait(timeout=10)
+        s.note("actualBudgetLimit", "unqualified", "bounded test never infers an Apple budget or exhaustion")
+        return
+
+    if row == "L12":
+        s.fixture()
+        now = int(time.time())
+        newer = s.send(text="Synthetic ordering newest", timestamp=now, revision=20)
+        older = s.send(text="Synthetic ordering old", timestamp=now - 10, revision=19)
+        s.note("transportOrdering", "observed", {"newStatus": newer.get("status"), "oldStatus": older.get("status")})
+        time.sleep(8)
+        s.ui_card("Synthetic ordering newest", "ordering")
+        s.note("latestPresentation", "observed", "newer synthetic content visible after older send")
+        return
+
+    if row == "L13":
+        s.fixture()
+        marker = "Synthetic unicode 🧪 \\\""
+        long_text = marker + ("é😀\\\"\\n" * 900)
+        receipt = s.send(text=long_text, fit=True)
+        if receipt.get("status") != 200 or receipt.get("bytes", 4097) > 4096:
+            raise RuntimeError("Unicode update not accepted within byte limit")
+        for value in ("always", "never"):
+            s.run.ui(["activity-preview:" + value])
+            s.ui_card(marker, "preview-" + value)
+        s.note("unicodePayloadAndSettings", "observed", {"bytes": receipt["bytes"], "truncated": receipt.get("truncated")})
+        s.note("lockedPrivacy", "unqualified", "unlocked Notification Center preview is not Lock Screen redaction evidence")
+        return
+
+    if row == "L14":
+        s.fixture()
+        receipt = s.send(event="end", text="Synthetic activity ended")
+        if receipt.get("status") != 200:
+            raise RuntimeError("end push not accepted")
+        time.sleep(8)
+        s.config("snapshot")
+        s.run.ui(["launch"])
+        s.capabilities("ended", {"activeActivityCount": 0})
+        s.run.ui(["activity-absent"])
+        s.note("remoteEnd", "observed", "no active probe activity and no card")
+        s.end_local()
+        s.start()
+        s.run.ui(["activity-dismiss"])
+        s.config("snapshot")
+        s.run.ui(["launch"])
+        after = s.capabilities("dismissed")
+        s.note("userDismissal", "observed", {"activeActivityCount": after["activeActivityCount"], "uiAndActivityStateAreDistinct": True})
+        s.note("logoutConsentExpiry", "simulated", "probe has no production account or eight-hour staging run")
+        s.note("actualLogoutConsentExpiry", "unqualified", "requires production account and a sustained staging run")
+        return
+    raise ValueError("unknown activity case")

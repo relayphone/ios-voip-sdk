@@ -160,12 +160,9 @@ def plan(row, locked=False, listen=False, provider=None, caller_format="e164", r
             p["focus"] = row != "C00"
     elif row.startswith("L") and row[1:].isdigit() and 1 <= int(row[1:]) <= 16:
         n = int(row[1:]); p.update(activity=True, sendVoIP=False, focus=n % 2 == 0)
-        if n in [5, 6, 7, 8, 10, 11, 12, 13, 14]:
-            p["blocked"] = "Requires authorization/rotation/budget fault-injection adapter; not fabricated by this probe"
-        if n == 15:
-            p["blocked"] = "Alerting push-to-start excluded from silent mode"
         if n == 16:
-            p["blocked"] = "iPhone 13 has no Dynamic Island"
+            p["activity"] = False
+            p["hardwareNA"] = "iPhone 13 has no Dynamic Island; capability check only"
     elif row in ["restore-all", "preflight"]:
         p["sendVoIP"] = False
     elif row.startswith("T") and row[1:].isdigit() and 1 <= int(row[1:]) <= 6:
@@ -203,6 +200,9 @@ def plan(row, locked=False, listen=False, provider=None, caller_format="e164", r
                       "uninstall disposable probe only if required to restore undetermined permissions; no push"]
     elif row == "preflight":
         p["steps"] = ["check Share Across Devices is OFF in Settings without changing Focus or sending a push"]
+    elif row.startswith("L"):
+        from activity_rows import activity_plan
+        p["steps"] = activity_plan(row)
     return p
 
 
@@ -240,6 +240,7 @@ class Run:
         self.run_id = str(uuid.uuid4())
         self.binding = {"device": self.device, "build": hashlib.sha256(self.source.read_bytes()).hexdigest(),
                         "provider": p["provider"], "callerFormat": p["callerFormat"]}
+        self.usb_verified = False
 
     def qualified(self, path):
         if not path.exists():
@@ -279,6 +280,8 @@ class Run:
                "FOCUS_EXPECTED_CALLER": self.p["callerValue"]}
         if self.p.get("unknownCaller"):
             env["FOCUS_UNKNOWN_CALLER"] = self.p["callerValue"]
+        if self.usb_verified:
+            env["FOCUS_USB_VERIFIED"] = "1"
         if self.journal.exists() and self.journal_fresh:
             env["FOCUS_RESTORE_STATE"] = base64.b64encode(self.journal.read_bytes()).decode()
         if (self.work / "system-settings-approved").exists():
@@ -403,6 +406,15 @@ class Run:
                 (self.work / "audio-calibration.json").unlink(missing_ok=True)
             if p["row"] == "restore-all":
                 self.restore(); result["status"] = "restored"; return result
+            if p.get("hardwareNA"):
+                from morning_batch import identify_iphone13
+                identify_iphone13(self.device, self.work)
+                result.update(status="not-applicable-hardware", restored=True, reason=p["hardwareNA"])
+                return result
+            if p["activity"]:
+                from activity_rows import execute_activity
+                execute_activity(self, result)
+                return result
             # The Focus app picker lists only apps that have notification permission (iOS 27).
             actions = ["share-across-devices:check", "setup", "launch", "notifications:allow",
                        "app:" + ("include" if p["app"] else "exclude"),
@@ -556,7 +568,7 @@ class Run:
                     if data["calibrationValid"]:
                         data.update(binding=self.binding, createdAt=time.time())
                         write(self.work / "audio-calibration.json", data)
-            if p["row"] != "restore-all":
+            if p["row"] != "restore-all" and not p.get("hardwareNA"):
                 try:
                     self.recover()
                     if self.args.keep_setup:
@@ -595,8 +607,13 @@ def main():
     parser.add_argument("--unknown-caller", action="store_true", help="verify the supplied E.164 caller is absent from Contacts")
     parser.add_argument("--favorite", choices=["yes", "no"], help="set the owned test contact's Favorites state")
     parser.add_argument("--server-answer", action="store_true", help="simulate an answer through a local mailbox, not APNs")
+    parser.add_argument("--activity-focus", choices=["on", "off"], help="choose Focus for L07–L15")
     args = parser.parse_args()
     p = plan(args.row, args.locked_auto_answer, args.listen, args.provider, args.caller_format, args.repeated_calls, args.caller_value)
+    if args.activity_focus is not None:
+        if p["row"] not in [f"L{n:02}" for n in range(7, 16)]:
+            raise ValueError("Activity Focus override is only valid for L07–L15")
+        p["focus"] = args.activity_focus == "on"
     if args.focus_mode == "dnd" and (not p["focus"] or p["app"] or p["person"] or not p["sendVoIP"]):
         raise ValueError("Built-in DND rows require a focused incoming call with app and person excluded")
     if args.unknown_caller and (not args.caller_value or args.caller_format != "e164" or args.caller_value == "+15555550199" or p["person"]):
@@ -624,7 +641,7 @@ def main():
         Run(p, args).ui(["share-across-devices:check"])
         print(json.dumps({"row": "preflight", "status": "recorded"})); return
     result = Run(p, args).execute()
-    if result["status"] not in ["recorded", "restored"]:
+    if result["status"] not in ["recorded", "restored", "not-applicable-hardware"]:
         raise RuntimeError("Row or restoration incomplete")
 
 

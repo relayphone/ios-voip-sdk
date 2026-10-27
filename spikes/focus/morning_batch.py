@@ -66,8 +66,14 @@ def make_plan(unknown):
     add("callkit-dnd-answer", "F09", ["--provider", "callkit", "--focus-mode", "dnd",
                                        "--unknown-caller", "--caller-value", unknown, "--server-answer"], 3)
     add("callkit-dnd-answer-positive-after", "C00", ["--provider", "callkit", "--unknown-caller", "--caller-value", unknown])
-    for index in range(1, 17):
-        add(f"activity-{index:02}", f"L{index:02}")
+    for index in range(1, 7):
+        focus = "on" if index % 2 == 0 else "off"
+        add(f"activity-{index:02}-{focus}", f"L{index:02}", ["--activity-focus", focus])
+    for index in range(7, 16):
+        for focus in ["off", "on"]:
+            add(f"activity-{index:02}-{focus}", f"L{index:02}", ["--activity-focus", focus])
+    # The iPhone 13 has no Dynamic Island; record a hardware N/A once.
+    add("activity-16", "L16")
     # Mac permission is requested only here; C00 --listen is the last measurement.
     add("microphone-positive", "C00", ["--listen"])
     return out
@@ -200,8 +206,70 @@ def result_summary(item, result):
         else:
             summary["microphone"] = "visual evidence only"
     if re.fullmatch(r"L[0-9]{2}", item["row"]):
-        summary["activityCoverage"] = "single transport/presentation subcase" if result.get("coverage") else "unqualified"
+        coverage = result.get("coverage")
+        summary["activityCoverage"] = "structured" if isinstance(coverage, dict) else (
+            "single transport/presentation subcase" if coverage else "unqualified")
     return summary
+
+
+def _read_private_json(path, work, parent=None):
+    """Do not follow row-provided paths outside the private work tree."""
+    if not isinstance(path, str) or not Path(path).is_absolute():
+        return None, None
+    try:
+        target = Path(path).resolve()
+        if not target.is_relative_to(work) or (parent is not None and target.parent != parent):
+            return None, None
+        if target.stat().st_size > 2_000_000:
+            return None, None
+        value = json.loads(target.read_text())
+        return (target, value) if isinstance(value, dict) else (None, None)
+    except (OSError, ValueError, RuntimeError):
+        return None, None
+
+
+def postclassify_activity_audio(work, state, plan):
+    """Use only this batch's final positive C00; never infer alert or silence."""
+    from activity_acoustics import classify_activity_audio
+
+    completed = state.get("completed", {})
+    positive = completed.get("microphone-positive-01", {})
+    _, c00 = _read_private_json(positive.get("result"), work)
+    _, calibration = _read_private_json(str(work / "audio-calibration.json"), work)
+    c00_audio = c00.get("audio") if isinstance(c00, dict) else None
+    keys = ("calibrationValid", "binding", "threshold", "quietP95", "signalP95", "createdAt")
+    # A stale file from another C00 must not be used when this final control failed.
+    if (positive.get("status") != "recorded" or not isinstance(c00, dict) or c00.get("row") != "C00"
+            or c00.get("status") != "recorded" or c00.get("restored") not in [True, "focus-off"]
+            or not isinstance(c00_audio, dict) or not isinstance(calibration, dict)
+            or any(key not in c00_audio or c00_audio.get(key) != calibration.get(key) for key in keys)):
+        calibration = {}
+
+    for item in plan:
+        if item.get("row") not in ["L01", "L02", "L15"] or item.get("id") not in completed:
+            continue
+        entry = completed[item["id"]]
+        result_path, result = _read_private_json(entry.get("result"), work)
+        window = result.get("activityAudioWindow") if isinstance(result, dict) else None
+        audio_path = result.get("activityAudio") if isinstance(result, dict) else None
+        _, envelope = _read_private_json(audio_path, work, parent=result_path.parent if result_path else None)
+        args = item.get("args", [])
+        def option(name, default):
+            return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else default
+        expected = {"device": state.get("device"), "build": state.get("buildHash"),
+                    "provider": option("--provider", "lck"), "callerFormat": option("--caller-format", "e164")}
+        valid_binding = (isinstance(expected["device"], str) and DEVICE_ID_PATTERN.fullmatch(expected["device"])
+                         and isinstance(expected["build"], str) and re.fullmatch(r"[0-9a-f]{64}", expected["build"]))
+        if (not valid_binding or not isinstance(result, dict) or result.get("row") != item["row"]
+                or result.get("restored") not in [True, "focus-off"]):
+            envelope = None
+        acoustic = classify_activity_audio(envelope, calibration, expected_binding=expected,
+                                           window_start=window.get("start") if isinstance(window, dict) else None,
+                                           window_end=window.get("end") if isinstance(window, dict) else None)
+        if result_path is not None and isinstance(result, dict) and result.get("row") == item["row"]:
+            result["activityAcoustic"] = acoustic
+            atomic_json(result_path, result)
+        entry["activityAcoustic"] = {key: acoustic[key] for key in ("status", "energyAboveThreshold", "reason") if key in acoustic}
 
 
 class DeviceLock:
@@ -464,10 +532,13 @@ def run_batch(plan, args):
                     raise RuntimeError("failed row restoration is not verified")
                 state["completed"][item["id"]] = {"status": "unqualified", "reason": status, "result": result_name,
                                                     **result_summary(item, row_result)}
-            elif status == "recorded":
+            elif status in ["recorded", "unqualified"]:
                 result_name, row_result = private_row_result(work, item, payload)
                 state["completed"][item["id"]] = {"status": status, "result": result_name, **result_summary(item, row_result)}
-            elif status == "skipped-dependency-or-unsupported":
+            elif status == "not-applicable-hardware" and item["row"] == "L16":
+                result_name, row_result = private_row_result(work, item, payload)
+                state["completed"][item["id"]] = {"status": status, "result": result_name, **result_summary(item, row_result)}
+            elif status == "skipped-dependency-or-unsupported" and not re.fullmatch(r"L[0-9]{2}", item["row"]):
                 state["completed"][item["id"]] = {"status": status, "result": None}
             else:
                 raise RuntimeError("row did not finish with a recorded result or explicit skip")
