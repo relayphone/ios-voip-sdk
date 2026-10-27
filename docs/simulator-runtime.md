@@ -340,6 +340,9 @@ its original 25-second deadline from launch issuance, including startup; every
 receipt must also fit the native process's 25-second lifetime. Authenticated
 readiness still needs a fresh publication after host reap. A missing or late
 acknowledgement fails without replaying the launch.
+Recorded startup timeouts are classified as `infra:startup`; diagnostic failures
+preserve the original exception. Already classified terminal transport outcomes
+retain their reason without spending the shared preparation recovery budget.
 
 **Measured:** [automatic native and GUI run](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40067131951)
 passed automatic native and live Inspector acceptance

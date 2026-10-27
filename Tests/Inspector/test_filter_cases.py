@@ -328,6 +328,22 @@ class FilterCaseTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'post-reap native publication budget expired'):
             self.cold_launch(22, stale_after_reap=True)
 
+    def test_cold_launch_timeout_records_the_startup_reason_without_replay(self):
+        with patch.object(sys.modules['sim'], 'report_failure') as classified:
+            with self.assertRaisesRegex(RuntimeError, 'timed out'):
+                self.cold_launch(None)
+        classified.assert_called_once()
+        label, reason = classified.call_args.args
+        self.assertEqual(label, 'infra:startup')
+        for detail in ('Inspector', 'timeout', 'host=180s', 'consumer=25s', 'never replayed'):
+            self.assertIn(detail, reason)
+
+    def test_stale_post_reap_publication_is_not_an_infrastructure_timeout(self):
+        with patch.object(sys.modules['sim'], 'report_failure') as classified:
+            with self.assertRaisesRegex(RuntimeError, 'post-reap native publication budget expired'):
+                self.cold_launch(22, stale_after_reap=True)
+        classified.assert_not_called()
+
     def test_planned_consumers_finish_with_observed_foreground_costs(self):
         world = NativeWorld(self)
         with world.patches():

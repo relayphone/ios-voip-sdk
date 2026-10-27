@@ -71,6 +71,22 @@ class RuntimeInstallCoreTests(unittest.TestCase):
     def runtime_list(self, owner):
         return owner.call(['xcrun', 'simctl', 'list', 'runtimes', '-j'], 60)
 
+    def test_classified_terminal_failure_does_not_spend_preparation_recovery(self):
+        self.native.failures['install', 1] = 'timeout'
+        def classified(command, timeout):
+            result = self.native(command, timeout)
+            if command[2] == 'install':
+                result.failure_classified = True
+            return result
+        self.owner.runner = classified
+        result = self.install(self.owner)
+        self.assertEqual(result.returncode, 124)
+        self.assertTrue(result.failure_classified)
+        self.assertFalse(self.owner.state['retry_used'])
+        self.assertEqual(self.native.counts['install'], 1)
+        self.assertEqual(self.native.counts['create'], 1)
+        self.assertFalse(self.owner.state['checkpoint'])
+
     def test_initial_runtime_timeout_retries_query_only_and_exhausts_create_budget(self):
         owner = self.empty_owner()
         self.native.failures['list', 1] = 'timeout'
