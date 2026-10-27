@@ -64,6 +64,7 @@ jobs:
         run: |
           runtime_original_summary="$GITHUB_STEP_SUMMARY"
           export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/runtime-phase-create.md"
+          export CKSIM_RECORD_TIMEOUT_OPERATIONS=1
           trap 'if [ -f "$GITHUB_STEP_SUMMARY" ]; then cat "$GITHUB_STEP_SUMMARY" >> "$runtime_original_summary" || :; fi' EXIT
           python3 Tests/RuntimeEvents/ci_simulator.py create --runtime "$CKSIM_TEST_RUNTIME" \
             --id-file "$RUNNER_TEMP/m4-simulator-id" --env-file "$GITHUB_ENV"
@@ -72,6 +73,7 @@ jobs:
         run: |
           runtime_original_summary="$GITHUB_STEP_SUMMARY"
           export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/runtime-phase-watch.md"
+          export CKSIM_RECORD_TIMEOUT_OPERATIONS=1
           trap 'if [ -f "$GITHUB_STEP_SUMMARY" ]; then cat "$GITHUB_STEP_SUMMARY" >> "$runtime_original_summary" || :; fi' EXIT
           set -o pipefail
           python3 Tests/RuntimeEvents/run.py --package "$RUNNER_TEMP/runtime" \
@@ -83,6 +85,7 @@ jobs:
         run: |
           runtime_original_summary="$GITHUB_STEP_SUMMARY"
           export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/runtime-phase-lck.md"
+          export CKSIM_RECORD_TIMEOUT_OPERATIONS=1
           trap 'if [ -f "$GITHUB_STEP_SUMMARY" ]; then cat "$GITHUB_STEP_SUMMARY" >> "$runtime_original_summary" || :; fi' EXIT
           python3 Tests/RuntimeEvents/lck_acceptance.py --app "$RUNNER_TEMP/lck-fixture/LCKRuntimeFixture.app" \
             --out "$RUNNER_TEMP/m4-lck" --filter-only --simulator "$CKSIM_TEST_SIMULATOR"
@@ -91,6 +94,7 @@ jobs:
         run: |
           runtime_original_summary="$GITHUB_STEP_SUMMARY"
           export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/runtime-phase-inspector.md"
+          export CKSIM_RECORD_TIMEOUT_OPERATIONS=1
           trap 'if [ -f "$GITHUB_STEP_SUMMARY" ]; then cat "$GITHUB_STEP_SUMMARY" >> "$runtime_original_summary" || :; fi' EXIT
           python3 Tests/Inspector/run.py --package "$RUNNER_TEMP/runtime" \
             --fixture "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" \
@@ -103,6 +107,7 @@ jobs:
         run: |
           runtime_original_summary="$GITHUB_STEP_SUMMARY"
           export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/runtime-phase-cleanup.md"
+          export CKSIM_RECORD_TIMEOUT_OPERATIONS=1
           trap 'if [ -f "$GITHUB_STEP_SUMMARY" ]; then cat "$GITHUB_STEP_SUMMARY" >> "$runtime_original_summary" || :; fi' EXIT
           python3 Tests/RuntimeEvents/ci_simulator.py cleanup --id-file "$RUNNER_TEMP/m4-simulator-id"
       - name: Summarize Runtime failures
