@@ -1,11 +1,17 @@
 import contextlib
+import hashlib
 import io
 import json
+import os
 from pathlib import Path
+import runpy
+import stat
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+import uuid
 
 import run
 
@@ -206,6 +212,135 @@ class RunnerTests(unittest.TestCase):
                         run.remove_simulators(['owned'])
         self.assertEqual(process.call_count, 2)
         self.assertIn('cleanup failed', output.getvalue())
+
+
+CLI = runpy.run_path(str(Path(__file__).resolve().parents[2] / 'Tools/cksim'))
+DEVICE = '00000000-0000-0000-0000-000000000001'
+BUNDLE = 'test.fixture'
+SERVICES = b'PID\tStatus\tLabel\n-\t0\tUIKitApplication:test.fixture[stopped]\n'
+NONCE = '00000002-1111-4111-8111-111111111111'
+
+
+class PushLaunchStagingTests(unittest.TestCase):
+    def setUp(self):
+        self.work = tempfile.TemporaryDirectory()
+        self.addCleanup(self.work.cleanup)
+        directory = Path(self.work.name)
+        self.container = directory / 'container'
+        self.root = self.container / 'Documents/.callkit-simulator'
+        payload = directory / 'payload.json'
+        payload.write_text('{"type":"incomingCall","eventId":"synthetic"}')
+        self.args = SimpleNamespace(bundle=BUNDLE, run_id='staged-run', payload_file=payload,
+                                    must_report='true', launch_receipt=directory / 'receipt.json')
+        self.stage = CLI['stage_push_launch']
+        rpc = Mock(side_effect=AssertionError('Staging cannot query or launch a simulator'))
+        for patcher in (patch.dict(self.stage.__globals__, simctl=rpc),
+                        patch.object(CLI['subprocess'], 'run', rpc), patch.object(os, 'execvpe', rpc)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_stages_exact_envelope_receipt_and_console_command_without_simulator_io(self):
+        inherited = dict(CKSIM_RUN_ID='parent-run', SIMCTL_CHILD_CKSIM_RUN_ID='old-run',
+                         SIMCTL_CHILD_DYLD_INSERT_LIBRARIES='/synthetic/inherited.dylib',
+                         SIMCTL_CHILD_SYNTHETIC_MARKER='preserve-me')
+        with patch.dict(os.environ, inherited, clear=True), \
+             patch.object(CLI['uuid'], 'uuid4', return_value=uuid.UUID(NONCE)), \
+             patch.object(CLI['time'], 'time', return_value=1700000000):
+            argv, env = self.stage(self.args, DEVICE, container=self.container, service_table=SERVICES)
+        self.assertEqual(argv, ['xcrun', 'simctl', 'launch', '--console', DEVICE, BUNDLE])
+        self.assertEqual(env, dict(inherited, SIMCTL_CHILD_CKSIM_RUN_ID='staged-run'))
+        raw = (b'{"bundleID": "test.fixture", "createdAtMS": 1700000000000, '
+               b'"expiresAtMS": 1700000030000, "id": "00000002-1111-4111-8111-111111111111", '
+               b'"mustReport": true, "payload": {"eventId": "synthetic", "type": "incomingCall"}, '
+               b'"runID": "staged-run", "schemaVersion": 1}\n')
+        self.assertEqual((self.root / 'push-launch.json').read_bytes(), raw)
+        self.assertEqual(json.loads(self.args.launch_receipt.read_text()), dict(
+            schemaVersion=1, simulatorID=DEVICE, bundleID=BUNDLE, runID='staged-run', pushID=NONCE,
+            envelope=json.loads(raw), envelopeSHA256=hashlib.sha256(raw).hexdigest(), mode=0o600,
+            appServiceAbsent=True, serviceQuery=SERVICES.decode(),
+            serviceQuerySHA256=hashlib.sha256(SERVICES).hexdigest(), runtimeInjectionRequested=False))
+        for path, mode in ((self.root, 0o700), (self.root / 'push-launch.json', 0o600),
+                           (self.args.launch_receipt, 0o600)):
+            with self.subTest(path=path):
+                info = path.lstat()
+                self.assertFalse(path.is_symlink())
+                self.assertEqual(stat.S_IMODE(info.st_mode), mode)
+                self.assertEqual(info.st_uid, os.getuid())
+        self.assertEqual(list(self.root.glob('.push-launch-*')), [])
+
+    def test_rejects_invalid_service_tables_and_running_target_before_staging(self):
+        for services, message in ((b'', 'Invalid launchctl service table'),
+                (b'PID\tStatus\tLabel\n', 'Invalid launchctl service table'),
+                (b'PID\tStatus\tLabel\ninvalid\t0\tlabel\n', 'Invalid launchctl service table'),
+                (SERVICES + b'123\t0\tUIKitApplication:test.fixture[running]\n', 'requires a stopped app')):
+            with self.subTest(services=services), self.assertRaisesRegex(RuntimeError, message):
+                self.stage(self.args, DEVICE, container=self.container, service_table=services)
+            self.assertFalse(self.root.exists())
+            self.assertFalse(self.args.launch_receipt.exists())
+
+    def test_refuses_unsafe_directory_mode_symlink_and_owner(self):
+        self.root.mkdir(parents=True, mode=0o755)
+        self.root.chmod(0o755)
+        with self.assertRaisesRegex(RuntimeError, 'Unsafe push launch directory'):
+            self.stage(self.args, DEVICE, container=self.container, service_table=SERVICES)
+        self.root.chmod(0o700)
+        with patch.object(os, 'getuid', return_value=os.getuid() + 1):
+            with self.assertRaisesRegex(RuntimeError, 'Unsafe push launch directory'):
+                self.stage(self.args, DEVICE, container=self.container, service_table=SERVICES)
+        self.root.rmdir()
+        self.root.symlink_to(self.args.payload_file.parent, target_is_directory=True)
+        with self.assertRaisesRegex(RuntimeError, 'Unsafe push launch directory'):
+            self.stage(self.args, DEVICE, container=self.container, service_table=SERVICES)
+        self.assertTrue(self.root.is_symlink())
+        self.assertFalse(self.args.launch_receipt.exists())
+
+    def test_preserves_pending_claim_and_receipt_files_and_dangling_symlinks(self):
+        self.root.mkdir(parents=True, mode=0o700)
+        for path in (self.root / 'push-launch.json', self.root / 'push-launch.consuming', self.args.launch_receipt):
+            for symlink in (False, True):
+                with self.subTest(path=path, symlink=symlink):
+                    if symlink:
+                        path.symlink_to(path.parent / 'absent')
+                    else:
+                        path.write_bytes(b'preserved\n')
+                    with self.assertRaises((RuntimeError, FileExistsError)):
+                        self.stage(self.args, DEVICE, container=self.container, service_table=SERVICES)
+                    if symlink:
+                        self.assertEqual(path.readlink(), path.parent / 'absent')
+                    else:
+                        self.assertEqual(path.read_bytes(), b'preserved\n')
+                    self.assertEqual(list(self.root.glob('.push-launch-*')), [])
+                    self.assertEqual(list(self.root.iterdir()), [] if path == self.args.launch_receipt else [path])
+                    self.assertEqual(self.args.launch_receipt.exists(), path == self.args.launch_receipt and not symlink)
+                    path.unlink()
+
+    def test_payload_object_and_5120_byte_limit_are_preserved(self):
+        for payload in ('[]', '{', json.dumps({'x': 'x' * 5112})):
+            with self.subTest(payload=payload[:20]):
+                self.args.payload_file.write_text(payload)
+                with self.assertRaises((RuntimeError, json.JSONDecodeError)):
+                    self.stage(self.args, DEVICE, container=self.container, service_table=SERVICES)
+                self.assertFalse((self.root / 'push-launch.json').exists())
+                self.assertFalse(self.args.launch_receipt.exists())
+        self.args.payload_file.write_text(json.dumps({'x': 'x' * 5111}))
+        self.args.must_report = 'false'
+        self.stage(self.args, DEVICE, container=self.container, service_table=SERVICES)
+        envelope = json.loads((self.root / 'push-launch.json').read_bytes())
+        self.assertEqual(envelope['payload'], {'x': 'x' * 5111})
+        self.assertIs(envelope['mustReport'], False)
+
+    def test_cli_queries_then_executes_the_exact_returned_command_and_environment(self):
+        argv, env = ['owned-console-launcher', 'synthetic'], {'SYNTHETIC': 'preserve-exactly'}
+        stage = Mock(return_value=(argv, env))
+        query = SimpleNamespace(returncode=0, stderr=b'', stdout=SERVICES)
+        with patch.dict(self.stage.__globals__, simctl=Mock(return_value=str(self.container)), stage_push_launch=stage), \
+             patch.object(CLI['subprocess'], 'run', return_value=query) as process, \
+             patch.object(os, 'execvpe') as execute:
+            CLI['launch_push'](self.args, DEVICE)
+        stage.assert_called_once_with(self.args, DEVICE, container=self.container, service_table=SERVICES)
+        self.assertEqual(process.call_args.args[0], ['xcrun', 'simctl', 'spawn', DEVICE, 'launchctl', 'list'])
+        self.assertEqual(process.call_args.kwargs['env']['SIMCTL_CHILD_DYLD_INSERT_LIBRARIES'], '')
+        execute.assert_called_once_with(argv[0], argv, env)
 
 
 if __name__ == '__main__':
