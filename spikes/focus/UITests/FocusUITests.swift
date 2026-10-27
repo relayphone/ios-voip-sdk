@@ -916,6 +916,10 @@ final class FocusUITests: XCTestCase {
   }
   func observeActivity(_ duration: Double) throws {
     guard duration.isFinite && (1...180).contains(duration) else { throw failure("Invalid activity observation duration") }
+    guard let observationID = ProcessInfo.processInfo.environment["FOCUS_OBSERVATION_ID"],
+      let parsedID = UUID(uuidString: observationID), parsedID.uuidString.lowercased() == observationID else {
+      throw failure("Invalid activity observation ID")
+    }
     try openNotificationCenter()
     let started = Int(ProcessInfo.processInfo.systemUptime * 1000)
     let deadline = Date().addingTimeInterval(duration)
@@ -931,6 +935,12 @@ final class FocusUITests: XCTestCase {
         return Int(value.dropFirst("Revision ".count))
       }
       guard revisions.count == 1 else { throw failure("Synthetic activity revision is missing or ambiguous") }
+      // Match the complete accessibility label within the uniquely identified
+      // card. Never export that label (or accept a truncated prefix) as evidence.
+      let revision = revisions[0]
+      let allLabels = card.staticTexts.allElementsBoundByIndex.filter { $0.exists }.map(\.label)
+      let exactMatch = exactCadenceMatch(observationID: observationID, revision: revision,
+                                         allLabels: allLabels, visibleLabels: labels)
       try front(board)
       let ended = Int(ProcessInfo.processInfo.systemUptime * 1000)
       let wallTimeMs = Int(Date().timeIntervalSince1970 * 1000)
@@ -938,7 +948,7 @@ final class FocusUITests: XCTestCase {
         .map { String($0.prefix(512)) }
       guard text.count <= 10 else { throw failure("Ambiguous synthetic activity text") }
       let stale = text.contains("Updates delayed")
-      let signature = "\(revisions[0])|\(stale)|" + text.joined(separator: "|")
+      let signature = "\(revision)|\(stale)|\(exactMatch)|" + text.joined(separator: "|")
       events.append(["event": "activity.sample", "revision": revisions[0], "stale": stale,
                      "sampleStartUptimeMs": sampleStart, "uptimeMs": ended, "wallTimeMs": wallTimeMs])
       if signature != previous {
@@ -946,6 +956,7 @@ final class FocusUITests: XCTestCase {
         // content if a system accessibility ancestor is broader than expected.
         events.append(["event": "activity.renderSample", "revision": revisions[0],
                        "syntheticTextVisible": text.contains(where: { $0.hasPrefix("Synthetic") }),
+                       "syntheticExactMatch": exactMatch, "observationID": observationID,
                        "stale": stale, "sampleStartUptimeMs": sampleStart, "uptimeMs": ended, "wallTimeMs": wallTimeMs])
         previous = signature
       }

@@ -31,6 +31,10 @@ without permission the batch proceeds with visual-only evidence. L01–L15 now r
 scenarios, with both Focus states for L07–L15; L16 records a hardware N/A because iPhone 13 has no Dynamic Island.
 Each case reports actual observations, simulations and unqualified subcases separately. APNs acceptance is not
 rendering, and Notification Center on an unlocked phone is not a Lock Screen or wake observation.
+Cadence updates use a run-specific synthetic excerpt. The UI observer compares the accessibility label for
+each revision and exports only a match flag; the result distinguishes the latest accepted revision from
+partial and complete sampled series. Accessibility equality cannot prove that every character was visible
+in pixels. Missing or ambiguous text and unqualified clock synchronization remain unqualified.
 
 The batch exercises L09 network interruption only after verifying a wired connection; it journals and restores
 Wi-Fi and Cellular Data, and requires a fresh `NWPathMonitor` callback before claiming an offline path. L15 sends

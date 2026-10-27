@@ -143,6 +143,38 @@ class PreinstallInventoryTests(unittest.TestCase):
         self.assertEqual(self.inventoried, [original])
         self.assertFalse(self.owner.state['retry_used'])
 
+    def test_slow_preinstall_inventory_has_its_own_budget(self):
+        queries = []
+        def slow_inventory(command, timeout, **kwargs):
+            if command[2:5] == ['list', 'devices', '-j']:
+                queries.append(timeout)
+                # Model a loaded host taking 91s without sleeping in the suite.
+                if timeout < 91:
+                    return run.simulator_infra.Result(command, 124, timed_out=True)
+            return self.transport(command, timeout, **kwargs)
+        with patch.object(run.simulator_infra, 'bounded', side_effect=slow_inventory):
+            self.launch()
+        self.assertEqual(queries, [180])
+        self.assertFalse(self.owner.state['retry_used'])
+        installs = [bound for command, bound in self.native.calls if command[2] == 'install']
+        self.assertEqual(installs, [180])
+
+    def test_inventory_timeout_recovers_once_without_spending_install_recovery(self):
+        original = self.owner.current
+        self.native.failures['list', 1] = 'timeout'
+        marker = self.root / 'terminal-failure'
+        with patch.dict(os.environ, SIM_FAILURE_MARKER=str(marker)), \
+             patch.object(run.simulator_infra, 'summary') as summary:
+            self.launch()
+        self.assertEqual(self.inventoried, [original, original])
+        queries = [bound for command, bound in self.native.calls if command[2:4] == ['list', 'devices']]
+        self.assertEqual(queries, [180, 180])
+        self.assertFalse(self.owner.state['retry_used'])
+        self.assertFalse(marker.exists(), 'a recovered inventory timeout is not terminal')
+        messages = [call.args[1] for call in summary.call_args_list if call.args[0] == 'infra:inventory']
+        self.assertTrue(any('timeout' in message for message in messages))
+        self.assertTrue(any('recovered' in message for message in messages))
+
     def test_install_replacement_collects_the_replacement_path_before_its_install(self):
         original = self.owner.current
         self.native.failures['install', 1] = 'timeout'
@@ -163,16 +195,23 @@ class PreinstallInventoryTests(unittest.TestCase):
         self.assertEqual([bound for _, bound in installs], [180] * 4)
 
     def test_failed_preinstall_inventory_cannot_install_or_launch(self):
-        self.native.failures['list', 1] = 'timeout'
-        with self.assertRaises(run.CommandError) as caught:
-            run.launch_fixture(self.owner.current, self.app, session=self.owner)
+        self.native.failures.update({('list', 1): 'timeout', ('list', 2): 'timeout'})
+        marker = self.root / 'terminal-failure'
+        with patch.dict(os.environ, SIM_FAILURE_MARKER=str(marker)), \
+             patch.object(run.simulator_infra, 'summary') as summary:
+            with self.assertRaises(run.CommandError) as caught:
+                run.launch_fixture(self.owner.current, self.app, session=self.owner)
         self.assertEqual(caught.exception.result.args[2:4], ['list', 'devices'])
+        self.assertEqual(self.inventoried, [self.owner.current] * 2)
+        self.assertTrue(marker.exists())
+        self.assertTrue(any(call.args[0] == 'infra:inventory' and 'timeout' in call.args[1]
+                            and 'exhausted' in call.args[1] for call in summary.call_args_list))
         self.assertFalse(any(command[2] in ('install', 'launch') for command, _ in self.native.calls))
         self.assertFalse(self.owner.state['retry_used'])
         self.assertFalse(self.owner.state['checkpoint'])
 
     def test_replacement_inventory_failure_retains_the_original_install_result(self):
-        self.native.failures.update({('install', 1): 'timeout', ('list', 2): 'timeout'})
+        self.native.failures.update({('install', 1): 'timeout', ('list', 2): 'timeout', ('list', 3): 'timeout'})
         with self.assertRaises(run.CommandError) as caught:
             run.launch_fixture(self.owner.current, self.app, session=self.owner)
         original = next(result for result in self.native.results if result.args[2] == 'install')
@@ -181,6 +220,85 @@ class PreinstallInventoryTests(unittest.TestCase):
         self.assertFalse(any(command[2] == 'launch' for command, _ in self.native.calls))
         self.assertTrue(self.owner.state['retry_used'])
         self.assertFalse(self.owner.state['checkpoint'])
+
+    def test_inventory_recovery_allowance_is_shared_with_replacement(self):
+        self.native.failures.update({('list', 1): 'timeout', ('install', 1): 'timeout',
+                                     ('list', 3): 'timeout'})
+        with self.assertRaises(run.CommandError) as caught:
+            run.launch_fixture(self.owner.current, self.app, session=self.owner)
+        original = next(result for result in self.native.results if result.args[2] == 'install')
+        self.assertIs(caught.exception.result, original)
+        queries = [bound for command, bound in self.native.calls if command[2:4] == ['list', 'devices']]
+        self.assertEqual(queries, [180, 180, 180])
+        self.assertEqual(len(self.inventoried), 3)
+        self.assertTrue(self.owner.state['retry_used'])
+        self.assertFalse(self.owner.state['checkpoint'])
+        self.assertFalse(any(command[2] == 'launch' for command, _ in self.native.calls))
+
+    def test_non_timeout_inventory_failure_is_not_retried(self):
+        for status in (73, 124):
+            with self.subTest(status=status):
+                self.native.failures['list', self.native.counts.get('list', 0) + 1] = status
+                before = len(self.inventoried)
+                with self.assertRaises(run.CommandError) as caught:
+                    run.launch_fixture(self.owner.current, self.app, session=self.owner)
+                self.assertEqual(caught.exception.result.returncode, status)
+                self.assertFalse(caught.exception.result.timed_out)
+                self.assertEqual(len(self.inventoried), before + 1)
+        self.assertFalse(self.owner.state['retry_used'])
+        self.assertFalse(any(command[2] in ('install', 'launch') for command, _ in self.native.calls))
+
+    def test_inventory_timeout_with_uncertain_cleanup_is_not_retried(self):
+        queries = []
+        def uncertain(command, timeout, **kwargs):
+            if command[2:4] == ['list', 'devices']:
+                queries.append(timeout)
+                return run.simulator_infra.Result(command, 124, timed_out=True, cleanup_uncertain=True)
+            return self.transport(command, timeout, **kwargs)
+        with patch.object(run.simulator_infra, 'bounded', side_effect=uncertain):
+            with self.assertRaises(run.CommandError) as caught:
+                run.launch_fixture(self.owner.current, self.app, session=self.owner)
+        self.assertTrue(caught.exception.result.cleanup_uncertain)
+        self.assertEqual(queries, [180])
+        self.assertFalse(any(command[2] in ('install', 'launch') for command, _ in self.native.calls))
+
+    def test_another_owners_checkpoint_blocks_inventory_recovery(self):
+        queries = []
+        def checkpointed(command, timeout, **kwargs):
+            if command[2:4] == ['list', 'devices']:
+                queries.append(timeout)
+                other = run.simulator_infra.Session.resume(self.owner.path, self.owner.current,
+                                                          runner=self.transport)
+                other.checkpoint()
+                return run.simulator_infra.Result(command, 124, timed_out=True)
+            return self.transport(command, timeout, **kwargs)
+        with patch.object(run.simulator_infra, 'bounded', side_effect=checkpointed):
+            with self.assertRaises(run.CommandError):
+                run.launch_fixture(self.owner.current, self.app, session=self.owner)
+        self.assertEqual(queries, [180])
+        self.assertTrue(json.loads(self.owner.path.read_text())['checkpoint'])
+        self.assertFalse(any(command[2] in ('install', 'launch') for command, _ in self.native.calls))
+
+    def test_inventory_cancellation_propagates_without_another_query(self):
+        for attempt in (1, 2):
+            for error in (KeyboardInterrupt(), SystemExit(130),
+                          run.simulator_infra.Interrupted(signal.SIGINT),
+                          run.simulator_infra.Interrupted(signal.SIGTERM)):
+                with self.subTest(attempt=attempt, error=type(error).__name__):
+                    queries = []
+                    def cancel(command, timeout, **kwargs):
+                        if command[2:4] == ['list', 'devices']:
+                            queries.append(timeout)
+                            if len(queries) == attempt:
+                                raise error
+                            return run.simulator_infra.Result(command, 124, timed_out=True)
+                        return self.transport(command, timeout, **kwargs)
+                    with patch.object(run.simulator_infra, 'bounded', side_effect=cancel):
+                        with self.assertRaises(type(error)) as caught:
+                            run.launch_fixture(self.owner.current, self.app, session=self.owner)
+                    self.assertIs(caught.exception, error)
+                    self.assertEqual(queries, [180] * attempt)
+        self.assertFalse(any(command[2] in ('install', 'launch') for command, _ in self.native.calls))
 
     def replacement_metadata_failure(self, change):
         self.native.failures['install', 1] = 'timeout'

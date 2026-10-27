@@ -78,6 +78,7 @@ class ActivityRowsTests(unittest.TestCase):
             fake = Mock()
             fake.p = {"row": "L11"}
             fake.folder = Path(directory)
+            fake.invitation = "550e8400-e29b-41d4-a716-446655440000"
             scenario = ActivityScenario(fake, {})
             with self.assertRaises(ValueError):
                 scenario.cadence(61, 1)

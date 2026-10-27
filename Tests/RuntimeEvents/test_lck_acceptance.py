@@ -262,7 +262,7 @@ class PreinstallRunnerTests(unittest.TestCase):
         if command[2:5] == ['list', 'devices', '-j']:
             self.assertFalse(self.installed.intersection(self.native.devices), 'LCK inventory after install')
             self.inventoried.append(next(iter(self.native.devices)))
-            self.assertEqual(timeout, 30)
+            self.assertEqual(timeout, 180)
         result = self.native(command, timeout, **kwargs)
         if command[2:4] == ['list', 'runtimes']:
             result.stdout = json.dumps(dict(runtimes=[dict(identifier=acceptance.RUNTIME, isAvailable=True)])).encode()
@@ -300,6 +300,25 @@ class PreinstallRunnerTests(unittest.TestCase):
         original = self.owner.current
         self.assertEqual(self.run_to_consumer(), original)
         self.assertEqual(self.inventoried, [original])
+
+    def test_owning_main_accepts_slow_preinstall_inventory(self):
+        queries = []
+        def slow(command, timeout, **kwargs):
+            if command[2:4] == ['list', 'devices']:
+                queries.append(timeout)
+                if timeout < 91:
+                    return acceptance.simulator_infra.Result(command, 124, timed_out=True)
+            return self.transport(command, timeout, **kwargs)
+        with patch.object(acceptance.simulator_infra, 'bounded', side_effect=slow):
+            self.run_to_consumer()
+        self.assertEqual(queries, [180])
+
+    def test_owning_main_recovers_one_inventory_timeout(self):
+        self.native.failures['list', 2] = 'timeout'  # Runtimes are queried first.
+        original = self.owner.current
+        self.assertEqual(self.run_to_consumer(), original)
+        self.assertEqual(self.inventoried, [original, original])
+        self.assertFalse(json.loads(self.owner.path.read_text())['retry_used'])
 
     def test_owning_main_passes_replacement_path_to_the_first_consumer(self):
         original = self.owner.current
