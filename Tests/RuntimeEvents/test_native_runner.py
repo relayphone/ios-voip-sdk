@@ -16,6 +16,119 @@ import uuid
 import run
 
 
+class LaunchStartupTests(unittest.TestCase):
+    def setUp(self):
+        environment = patch.dict(run.os.environ, {'SIM_STATE': ''})
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.applications = Path('/owned/applications')
+        self.channel = Path('/owned/channel')
+        for name, value in (('fixture_applications', self.applications),
+                            ('discover_fixture_channel', self.channel)):
+            replacement = patch.object(run, name, return_value=value)
+            setattr(self, name, replacement.start())
+            self.addCleanup(replacement.stop)
+
+    def launch(self, **kwargs):
+        return run.launch_fixture('owned', Path('/owned/Fixture.app'), install=False, **kwargs)
+
+    def test_slow_launch_beyond_the_old_budget_completes_before_any_stimulus(self):
+        def slow(command, timeout, **kwargs):
+            if timeout < 130:
+                return run.simulator_infra.Result(command, 124, timed_out=True)
+            return run.simulator_infra.Result(command, 0, (run.BUNDLE + ': 42').encode())
+        with patch.object(run.simulator_infra, 'bounded', side_effect=slow) as process:
+            channel, run_id = self.launch()
+        self.assertEqual(channel, self.channel)
+        self.assertEqual(process.call_count, 1)
+        self.assertEqual(process.call_args.kwargs['timeout'], 180)
+        self.discover_fixture_channel.assert_called_once_with(self.applications, run_id, 42)
+
+    def test_one_timeout_restarts_with_a_fresh_journal_identity(self):
+        outcomes = [run.simulator_infra.Result([], 124, timed_out=True),
+                    run.simulator_infra.Result([], 0, (run.BUNDLE + ': 84').encode())]
+        session = SimpleNamespace(current='owned', checkpoint=Mock())
+        with patch.object(run.uuid, 'uuid4', side_effect=['first', 'second']), \
+             patch.object(run.simulator_infra, 'bounded', side_effect=outcomes) as process, \
+             patch.object(run.simulator_infra, 'summary') as summary:
+            channel, run_id = self.launch(session=session)
+        self.assertEqual((channel, run_id), (self.channel, 'fixture-second'))
+        self.assertEqual(process.call_count, 2)
+        self.assertEqual([c.kwargs['timeout'] for c in process.call_args_list], [180, 180])
+        self.assertEqual([c.kwargs['env']['SIMCTL_CHILD_CKSIM_RUN_ID'] for c in process.call_args_list],
+                         ['fixture-first', 'fixture-second'])
+        self.assertTrue(all(c.args[0] == ['xcrun', 'simctl', 'launch', '--terminate-running-process',
+                                        'owned', run.BUNDLE] for c in process.call_args_list))
+        session.checkpoint.assert_called_once_with()
+        self.discover_fixture_channel.assert_called_once_with(self.applications, 'fixture-second', 84)
+        self.assertTrue(any(c.args[0] == 'infra:launch' and 'recovered' in c.args[1]
+                            for c in summary.call_args_list))
+        render = runpy.run_path(str(run.ROOT / 'scripts/ci/runtime_failure_summary.py'))['render']
+        receipts = ''.join(f'- `{call.args[0]}`: {call.args[1]}\n' for call in summary.call_args_list)
+        self.assertNotIn('`infra:launch`', render({'watch': 'failure'}, {'watch': receipts}))
+
+    def test_second_timeout_is_terminal(self):
+        outcomes = [run.simulator_infra.Result([], 124, timed_out=True) for _ in range(2)]
+        with patch.object(run.simulator_infra, 'bounded', side_effect=outcomes) as process, \
+             patch.object(run.simulator_infra, 'report_failure') as report:
+            with self.assertRaises(run.CommandError) as caught:
+                self.launch()
+        self.assertIs(caught.exception.result, outcomes[-1])
+        self.assertEqual(process.call_count, 2)
+        self.discover_fixture_channel.assert_not_called()
+        self.assertEqual(report.call_args.args[0], 'infra:launch')
+        self.assertIn('exhausted', report.call_args.args[1])
+
+    def test_retry_does_not_repeat_install_or_prelaunch_inventory(self):
+        outcomes = [run.simulator_infra.Result([], 124, timed_out=True),
+                    run.simulator_infra.Result([], 0, (run.BUNDLE + ': 84').encode())]
+        session = SimpleNamespace(current='owned', checkpoint=Mock())
+        with patch.object(run, 'install_fixture', return_value=('owned', self.applications)) as install, \
+             patch.object(run.simulator_infra, 'bounded', side_effect=outcomes) as process:
+            run.launch_fixture('owned', Path('/owned/Fixture.app'), session=session)
+        self.assertEqual(process.call_count, 2)
+        install.assert_called_once_with('owned', Path('/owned/Fixture.app'), session=session, timeout=180)
+        self.fixture_applications.assert_not_called()
+        session.checkpoint.assert_called_once_with()
+
+    def test_non_timeout_and_uncertain_host_cleanup_are_never_retried(self):
+        outcomes = [run.simulator_infra.Result([], 2), run.simulator_infra.Result([], 124),
+                    run.simulator_infra.Result([], 124, timed_out=True, cleanup_uncertain=True),
+                    run.simulator_infra.Result([], 124, timed_out=True, reaped=False)]
+        for result in outcomes:
+            with self.subTest(result=result), \
+                 patch.object(run.simulator_infra, 'bounded', return_value=result) as process, \
+                 patch.object(run.simulator_infra, 'report_failure') as report:
+                with self.assertRaises(run.CommandError) as caught:
+                    self.launch()
+                self.assertIs(caught.exception.result, result)
+                self.assertEqual(process.call_count, 1)
+                self.assertEqual(report.call_args.args[0], 'infra:launch')
+        self.discover_fixture_channel.assert_not_called()
+
+    def test_untyped_timeout_does_not_assert_owned_host_cleanup(self):
+        error = subprocess.TimeoutExpired(['xcrun', 'simctl', 'launch'], 180)
+        with patch.object(run.simulator_infra, 'bounded', side_effect=error) as process:
+            with self.assertRaises(run.CommandError) as caught:
+                self.launch()
+        self.assertEqual(process.call_count, 1)
+        self.assertFalse(caught.exception.result.reaped)
+        self.assertTrue(caught.exception.result.cleanup_uncertain)
+
+    def test_cancellation_and_invalid_pid_acknowledgements_are_terminal(self):
+        interrupted = run.simulator_infra.Interrupted(15)
+        with patch.object(run.simulator_infra, 'bounded', side_effect=interrupted) as process:
+            with self.assertRaises(run.simulator_infra.Interrupted) as caught:
+                self.launch()
+        self.assertIs(caught.exception, interrupted)
+        self.assertEqual(process.call_count, 1)
+        with patch.object(run.simulator_infra, 'bounded', return_value=run.simulator_infra.Result([], 0, b'foreign: 42')) as process:
+            with self.assertRaisesRegex(RuntimeError, 'Missing fixture launch PID'):
+                self.launch()
+        self.assertEqual(process.call_count, 1)
+        self.discover_fixture_channel.assert_not_called()
+
+
 class RunnerTests(unittest.TestCase):
     def test_reused_fixture_still_launches_a_fresh_pinned_session_without_reinstall(self):
         app = Path('/owned/RuntimeEventFixture.app')
