@@ -36,7 +36,9 @@ def render(outcomes, receipts):
             if not match:
                 continue
             label, detail = match.groups()
-            if detail.startswith(('scheduled', 'recovered')):
+            if (detail.startswith(('scheduled', 'recovered')) or
+                    (label == 'infra:inventory' and
+                     detail.endswith('; scheduled one bounded re-attempt'))):
                 continue
             if label not in labels:
                 labels.append(label)
