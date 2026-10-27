@@ -5,6 +5,7 @@ No simulator creation, installation, DYLD mutation or device access lives here.
 Native acceptance is decided by sdk_system_conformance, never by this driver.
 """
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -190,6 +191,12 @@ class Journey:
         deadline = time.monotonic() + SCENARIO_TIMEOUT_SECONDS
         paths = (self.runtime.parent / 'session.json', self.journal)
         baseline = tuple(path.read_bytes() if path.exists() else None for path in paths)
+        write(self.root / 'prelaunch-baseline.json', dict(
+            case=self.case, scenario=self.name, runID=self.args.run_id, simulatorID=self.args.simulator,
+            files=[dict(kind=kind, path=str(path), present=raw is not None,
+                        bytes=len(raw) if raw is not None else None,
+                        sha256=hashlib.sha256(raw).hexdigest() if raw is not None else None)
+                   for kind, path, raw in zip(('session', 'journal'), paths, baseline)]))
         receipt_path = self.root / (self.name + '.receipt.json')
         for attempt in range(2):
             remaining = deadline - time.monotonic()

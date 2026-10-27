@@ -790,6 +790,13 @@ def startup_recovery_controls(selected=None):
                 def poll(self): return 1 if self.attempt == 1 or kind == 'second-failure' else None
                 def wait(self, timeout): return 1
             def spawn(argv, **kwargs):
+                captured = json.loads((journey.root / 'prelaunch-baseline.json').read_text())
+                assert (captured['case'], captured['scenario'], captured['runID'], captured['simulatorID']) == (
+                    journey.case, journey.name, args.run_id, args.simulator)
+                expected_raw = (b'{"fixtureKind":"previous-case-session"}\n', b'{"fixtureKind":"previous-case-journal"}\n')
+                assert captured['files'] == [dict(kind=kind, path=str(path), present=True,
+                    bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+                    for kind, path, raw in zip(('session', 'journal'), (session, journey.journal), expected_raw)]
                 attempt = len(launched) + 1
                 launched.append((list(argv), kwargs))
                 assert kwargs['start_new_session'] is True
