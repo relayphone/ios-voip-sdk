@@ -9,11 +9,18 @@ import sys
 
 SDK_JOBS = ('sdk-native', 'legacy-audio-lifecycle', 'swift-livekit-native',
             'expo-livekit-native')
+SDK_NATIVE_JOBS = ('offline-controls', 'apple-host-controls', 'sdk-example', 'sdk-core',
+                   'sdk-fixtures', 'device-release', 'journeys')
+GROUPS = {'m1': dict(group='m1', m1='1', part='journeys', system='0'),
+          'contracts': dict(group='contracts', m1='1', part='contracts', system='0'),
+          'push-entry': dict(group='push-entry', m1='1', part='push-entry', system='0'),
+          'system': dict(group='system', m1='0', part='all', system='1')}
 
 
 def select(paths, full=False):
     if full:
-        return dict(sdk=True, runtime=True, helper=True, sdk_plan=dict.fromkeys(SDK_JOBS, True))
+        return dict(sdk=True, runtime=True, helper=True, sdk_plan=dict.fromkeys(SDK_JOBS, True),
+                    matrix=dict(include=list(GROUPS.values())))
     paths = [p for p in paths if not documentation(p)]
     sdk = runtime = helper = False
     for path in paths:
@@ -57,7 +64,27 @@ def select(paths, full=False):
     jobs['legacy-audio-lifecycle'] = sdk and (shared or any('m1_contract' in p
         or 'run_audio_lifecycle_legacy' in p or audio_contract(p)
         or p.startswith('scripts/sim/') or p == 'discovery/run_scenario.py' for p in paths))
-    return dict(sdk=sdk, runtime=runtime, helper=helper, sdk_plan=jobs)
+    groups = {'m1'}
+    # Only known, narrow inputs may reduce the matrix. An unrecognized file,
+    # including a new script or shared action, keeps every native journey.
+    def narrow(p):
+        return (p.startswith(('Expo/', 'example/', 'Tests/AudioLifecycle/', 'Tests/PushLaunch/',
+                              'Tests/SwiftLiveKit/', 'Tests/RuntimeEvents/', 'Tests/Inspector/'))
+                or p in ('package.json', 'package-lock.json', 'tsconfig.json',
+                         'expo-module.config.json', 'app.plugin.js')
+                or audio_contract(p)
+                or p.startswith('discovery/') and any(token in p for token in
+                    ('sdk_m1_contract', 'sdk_system', 'push_report_entry', 'push_entry_')))
+    shared_harness = any(not narrow(p) for p in paths)
+    if shared_harness:
+        groups.update(GROUPS)
+    else:
+        if any('m1_contract' in p or audio_contract(p) for p in paths): groups.add('contracts')
+        if any('push_report_entry' in p or 'push_entry_' in p or p.startswith('Tests/PushLaunch/')
+               for p in paths): groups.add('push-entry')
+        if any('sdk_system' in p or p == 'scripts/build-runtime.sh' for p in paths): groups.add('system')
+    return dict(sdk=sdk, runtime=runtime, helper=helper, sdk_plan=jobs,
+                matrix=dict(include=[value for key, value in GROUPS.items() if key in groups]))
 
 
 SDK_INPUTS = {'Package.swift', 'VERSION', 'IosVoipSDK.podspec', 'expo-module.config.json',
@@ -84,6 +111,18 @@ def documentation(path):
 def gate(results, expected):
     if results.get('changes', {}).get('result') != 'success':
         raise ValueError('Change selection did not succeed')
+    if 'sdk-native' in expected and 'sdk-native' not in results:
+        # Preserve the serial selector contract when its native job is sharded.
+        # Every shard must match the same selected/skip state, and no missing or
+        # unexpected dependency may be hidden by collapsing the results.
+        if set(expected) != set(SDK_JOBS) or set(results) != {
+                'changes', *SDK_NATIVE_JOBS, *(set(SDK_JOBS) - {'sdk-native'})}:
+            raise ValueError('Selected native shards and aggregate dependencies differ')
+        wanted = 'success' if expected['sdk-native'] is True else 'skipped'
+        shard_result = wanted if all(results[name].get('result') == wanted
+                                     for name in SDK_NATIVE_JOBS) else 'failure'
+        results = {name: row for name, row in results.items() if name not in SDK_NATIVE_JOBS}
+        results['sdk-native'] = {'result': shard_result}
     if set(results) != {'changes', *expected} or any(type(v) is not bool for v in expected.values()):
         raise ValueError('Selected jobs and aggregate dependencies differ')
     failed = {name: row.get('result') for name, row in results.items() if name != 'changes'

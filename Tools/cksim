@@ -604,23 +604,18 @@ def inspect_app(args, device):
                 simctl("delete", display)
 
 
-def launch_push(args, device):
-    """Stage a single simulator-only delivery, then become its real launcher.
+def stage_push_launch(args, device, *, container: Path, service_table: bytes):
+    """Stage parsed push-launch arguments using the caller's stopped-app query.
 
     The SDK runtime consumes this envelope after installing its PushKit hooks.
     The app does not synthesize a push or report an incoming call on startup.
+    Arguments must satisfy push --launch parser validation; the caller owns
+    container discovery and successful, diagnostic-free service-query capture.
+    Return the console command and environment without querying or launching.
     """
     if args.launch_receipt.exists() or args.launch_receipt.is_symlink():
         raise RuntimeError("Launch receipt already exists; inspect before staging.")
-    container = Path(simctl("get_app_container", device, args.bundle, "data"))
-    try:
-        query = subprocess.run(["xcrun", "simctl", "spawn", device, "launchctl", "list"], capture_output=True,
-                               env={**os.environ, "SIMCTL_CHILD_DYLD_INSERT_LIBRARIES": ""}, timeout=SIMCTL_TIMEOUT)
-    except subprocess.TimeoutExpired as error:
-        raise RuntimeError("Stopped-app query timed out; inspect before staging.") from error
-    if query.returncode or query.stderr:
-        raise RuntimeError("Stopped-app query failed or returned diagnostics: " + query.stderr.decode(errors="replace"))
-    services = query.stdout.decode()
+    services = service_table.decode()
     entries = [line.split() for line in services.splitlines() if line.split()]
     if (len(entries) < 2 or entries[0] != ["PID", "Status", "Label"] or
             any(len(row) != 3 or not re.fullmatch(r"-|[1-9][0-9]*", row[0]) or not re.fullmatch(r"-|-?[0-9]+", row[1]) for row in entries[1:])):
@@ -663,7 +658,23 @@ def launch_push(args, device):
         output.write("\n")
     env = dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=args.run_id)
     # Preserve all inherited child overrides. No external runtime is injected.
-    os.execvpe("xcrun", ["xcrun", "simctl", "launch", "--console", device, args.bundle], env)
+    return ["xcrun", "simctl", "launch", "--console", device, args.bundle], env
+
+
+def launch_push(args, device):
+    """Stage a single simulator-only delivery, then become its real launcher."""
+    if args.launch_receipt.exists() or args.launch_receipt.is_symlink():
+        raise RuntimeError("Launch receipt already exists; inspect before staging.")
+    container = Path(simctl("get_app_container", device, args.bundle, "data"))
+    try:
+        query = subprocess.run(["xcrun", "simctl", "spawn", device, "launchctl", "list"], capture_output=True,
+                               env={**os.environ, "SIMCTL_CHILD_DYLD_INSERT_LIBRARIES": ""}, timeout=SIMCTL_TIMEOUT)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("Stopped-app query timed out; inspect before staging.") from error
+    if query.returncode or query.stderr:
+        raise RuntimeError("Stopped-app query failed or returned diagnostics: " + query.stderr.decode(errors="replace"))
+    launch_argv, launch_env = stage_push_launch(args, device, container=container, service_table=query.stdout)
+    os.execvpe(launch_argv[0], launch_argv, launch_env)
 
 
 def main():

@@ -10,6 +10,8 @@ on:
         value: ${{ jobs.detect.outputs.helper }}
       sdk_plan:
         value: ${{ jobs.detect.outputs.sdk_plan }}
+      matrix:
+        value: ${{ jobs.detect.outputs.matrix }}
       runtime_plan:
         value: ${{ jobs.detect.outputs.runtime_plan }}
       swift:
@@ -29,6 +31,7 @@ jobs:
       runtime: ${{ steps.select.outputs.runtime }}
       helper: ${{ steps.select.outputs.helper }}
       sdk_plan: ${{ steps.select.outputs.sdk_plan }}
+      matrix: ${{ steps.select.outputs.matrix }}
       runtime_plan: ${{ steps.select.outputs.runtime_plan }}
       swift: ${{ steps.select.outputs.swift }}
       expo: ${{ steps.select.outputs.expo }}

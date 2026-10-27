@@ -23,7 +23,7 @@ if arguments[0] == 'discovery/run_scenario.py':
     with (root / 'supervisors.jsonl').open('a') as stream:
         stream.write(json.dumps(arguments[1:]) + '\n')
     with (root / 'supervisor-environments.jsonl').open('a') as stream:
-        stream.write(json.dumps(dict(dyld=os.environ.get('SIMCTL_CHILD_DYLD_INSERT_LIBRARIES'), checkpoint=json.loads((root/'owned.json').read_text())['checkpoint'])) + '\n')
+        stream.write(json.dumps(dict(failureMarker=os.environ.get('SIM_FAILURE_MARKER'), dyld=os.environ.get('SIMCTL_CHILD_DYLD_INSERT_LIBRARIES'), checkpoint=json.loads((root/'owned.json').read_text())['checkpoint'])) + '\n')
     sys.exit(int(os.environ.get('FAKE_SUPERVISOR_STATUS', '0')))
 if arguments[0] == 'scripts/sim/legacy_diagnostics.py':
     with (root/'diagnostics.jsonl').open('a') as stream:
@@ -218,6 +218,8 @@ RUNTIME=host-runtime
         self.assertEqual(environment['dyld'], '/host/new/external-second.dylib')
         arguments = json.loads((fixture.root / 'supervisors.jsonl').read_text())
         self.assertEqual(arguments[arguments.index('--timeout') + 1], '90')
+        self.assertEqual(arguments[arguments.index('--startup-timeout') + 1], '180')
+        self.assertEqual(environment['failureMarker'], str(fixture.state) + '.failure')
         self.assertEqual(arguments[arguments.index('--simulator-id') + 1], final)
         commands = [json.loads(line) for line in (fixture.root / 'helper-commands.jsonl').read_text().splitlines()]
         query_commands = [row for row in commands if 'spawn' in row]
