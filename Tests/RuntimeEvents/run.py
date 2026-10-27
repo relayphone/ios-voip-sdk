@@ -370,7 +370,7 @@ def main(acceptance=None):
     root = None
     try:
         if not device:
-            sim('create', 'Codex M4 ' + str(uuid.uuid4())[:8],
+            sim('create', 'Runtime M4 ' + str(uuid.uuid4())[:8],
                 'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro', runtime)
         # A supplied simulator must also belong to this test run's operator.
         devices = json.loads(sim('list', 'devices', '-j'))['devices']

@@ -8,7 +8,7 @@ public final class IosVoipSDKModule: Module {
   public func definition() -> ModuleDefinition {
     Name("IosVoipSDK")
     Constants(["mediaAdapter": ExpoMediaSelection.name])
-    Events("conversationsChanged", "pushTokenUpdated", "handlerAction", "actionCancelled", "conversationEvent")
+    Events("conversationsChanged", "pushTokenUpdated", "audioRoutesChanged", "handlerAction", "actionCancelled", "conversationEvent")
 
     OnCreate {
       let id = self.bridgeID
@@ -51,6 +51,17 @@ public final class IosVoipSDKModule: Module {
         var body = try BridgeJSON.dictionary(ExpoMediaSupport.startFromBundle().pushService.tokenState)
         if body["token"] == nil { body["token"] = NSNull() }
         return body
+      }
+    }
+    AsyncFunction("getAudioRoutes") { (promise: Promise) in
+      Self.respond(promise, failureCode: "audio_routes", failureMessage: "The system audio routes are unavailable.") {
+        try BridgeJSON.dictionary(ExpoMediaSupport.startFromBundle().client.audioRoutes)
+      }
+    }
+    AsyncFunction("selectAudioRoute") { (id: String, promise: Promise) in
+      Self.respond(promise, failureCode: "audio_route", failureMessage: "The system could not select this audio route.") {
+        try await ExpoMediaSupport.startFromBundle().client.selectAudioRoute(id)
+        return nil
       }
     }
 
@@ -126,12 +137,13 @@ public final class IosVoipSDKModule: Module {
     promise.reject(rejection.code, rejection.message)
   }
 
-  private static func respond(_ promise: Promise,
+  private static func respond(_ promise: Promise, failureCode: String = "conversation",
+                              failureMessage: String = "The system could not complete the conversation operation.",
                               _ operation: @escaping @MainActor @Sendable () async throws -> Any?) {
     Task { @MainActor in
       do { promise.resolve(try await operation()) }
       catch {
-        let rejection = BridgeJSON.rejection(error)
+        let rejection = BridgeJSON.rejection(error, fallbackCode: failureCode, fallbackMessage: failureMessage)
         promise.reject(rejection.code, rejection.message)
       }
     }

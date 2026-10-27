@@ -166,6 +166,12 @@ struct AudioTests {
       try await endReentrancy(); checks.append("end-callback-may-start-a-fresh-episode")
       try await replacingFailedDemand(); checks.append("replacement-demand-without-empty-gap-gets-new-watchdog")
       try await overlappingFailedDemand(); checks.append("fresh-demand-overlapping-failed-call-gets-scoped-watchdog")
+      try routeHydration(); checks.append("route-null-roundtrip-hydration")
+      try stableRoutes(); checks.append("route-uid-deduplication-and-stable-revision")
+      try routeObservers(); checks.append("route-observer-reentrancy-and-removal")
+      try knownRouteSelection(); checks.append("route-selection-keeps-actual-input-uids")
+      try rejectedRouteSelection(); checks.append("route-selection-rejects-inactive-disconnected-unknown")
+      try observedOutputs(); checks.append("observed-output-identity-is-not-a-selection-target")
       let bytes = try JSONSerialization.data(withJSONObject: ["success": true, "checks": checks], options: [.sortedKeys])
       print(String(decoding: bytes, as: UTF8.self))
     } catch {
@@ -549,4 +555,126 @@ struct AudioTests {
                "The new absence must end only fresh demand, without repeating the old failed end.")
   }
 
+  private static let mic = AudioRoutePort(uid: "mic", name: "iPhone", type: "MicrophoneBuiltIn")
+  private static let wired = AudioRoutePort(uid: "wired", name: "Headset", type: "MicrophoneWired")
+  private static let bluetooth = AudioRoutePort(uid: "bluetooth", name: "Headset Bluetooth", type: "BluetoothHFP")
+  private static let receiver = AudioRoutePort(uid: "receiver", name: "Receiver", type: "Receiver")
+  private static let speaker = AudioRoutePort(uid: "speaker-port", name: "Built-in Speaker", type: "Speaker")
+
+  @MainActor private static func routeHydration() throws {
+    let store = AudioRoutesStore()
+    var revisions: [UInt64] = []
+    let observer = store.observe { revisions.append($0.revision) }
+    defer { store.removeObserver(observer) }
+    try expect(revisions == [0] && store.snapshot.routes.isEmpty && store.snapshot.current == nil,
+               "A new observer immediately receives empty revision zero.")
+    for populated in [false, true] {
+      if populated { store.update(inputs: [mic], outputs: []) }
+      let encoded = try JSONEncoder().encode(store.snapshot)
+      let object = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+      let decoded = try JSONDecoder().decode(AudioRoutesSnapshot.self, from: encoded)
+      try expect(object?["current"] is NSNull && decoded == store.snapshot,
+                 "Absent current must round-trip as explicit current:null.")
+    }
+    try expect(revisions == [0, 1] && store.snapshot.routes.map(\.id) == ["input:mic", "speaker"],
+               "Input selection and speaker override targets do not imply a current output.")
+  }
+
+  @MainActor private static func stableRoutes() throws {
+    let store = AudioRoutesStore()
+    store.update(inputs: [mic, mic, bluetooth], outputs: [receiver])
+    let initial = store.snapshot
+    try expect(initial.revision == 1 && initial.routes.map(\.id) == ["input:mic", "input:bluetooth", "speaker", "output:receiver"],
+               "Duplicate input UIDs must not create duplicate identities.")
+    store.update(inputs: [mic, mic, bluetooth], outputs: [receiver])
+    try expect(store.snapshot == initial, "Identical observations do not advance revision.")
+    store.update(inputs: [mic, bluetooth], outputs: [receiver])
+    try expect(store.snapshot == initial, "Removing a duplicate does not change the projected state.")
+    store.update(inputs: [mic, bluetooth], outputs: [speaker])
+    try expect(store.snapshot.revision == 2 && store.snapshot.current ==
+               AudioRoute(id: "output:speaker-port", name: "Built-in Speaker", type: "Speaker"),
+               "An actual output change advances revision with the exact output UID/name/type.")
+  }
+
+  @MainActor private static func routeObservers() throws {
+    let store = AudioRoutesStore()
+    var first: [UInt64] = [], second: [UInt64] = []
+    var changedDuringCallback = false
+    let firstID = store.observe { value in
+      first.append(value.revision)
+      if value.revision == 1 && !changedDuringCallback {
+        changedDuringCallback = true
+        store.update(inputs: [mic], outputs: [speaker])
+      }
+    }
+    let secondID = store.observe { second.append($0.revision) }
+    store.update(inputs: [mic], outputs: [receiver])
+    try expect(first == [0, 1, 2] && second == [0, 1, 2],
+               "Every observer sees the old revision before a reentrant newer revision.")
+    store.removeObserver(firstID)
+    store.update(inputs: [mic], outputs: [receiver])
+    try expect(first == [0, 1, 2] && second == [0, 1, 2, 3], "Removal stops only the selected observer.")
+    store.removeObserver(secondID)
+    store.update(inputs: [], outputs: [])
+    try expect(second == [0, 1, 2, 3], "Removed observers receive no later updates.")
+  }
+
+  @MainActor private static func knownRouteSelection() throws {
+    let store = AudioRoutesStore()
+    for output in [receiver,
+                   AudioRoutePort(uid: "headphones", name: "Headphones", type: "Headphones"),
+                   AudioRoutePort(uid: "bluetooth-output", name: "Bluetooth", type: "BluetoothHFP")] {
+      store.update(inputs: [mic, wired, bluetooth], outputs: [output])
+      try expect(store.snapshot.current == AudioRoute(id: "output:" + output.uid, name: output.name, type: output.type),
+                 "Current preserves the OS output instead of pairing it with an input.")
+    }
+    let before = store.snapshot
+    var selected: [AudioRouteSelection] = []
+    for id in ["input:mic", "input:wired", "input:bluetooth", "speaker"] {
+      selected.append(try store.selection(id, isActive: true))
+    }
+    try expect(selected == [.input("mic"), .input("wired"), .input("bluetooth"), .speaker] && store.snapshot == before,
+               "Commands keep actual input UIDs without optimistically changing observed state.")
+  }
+
+  @MainActor private static func rejectedRouteSelection() throws {
+    let store = AudioRoutesStore()
+    store.update(inputs: [mic, bluetooth], outputs: [receiver])
+    let initial = store.snapshot
+    do {
+      _ = try store.selection("input:bluetooth", isActive: false)
+      throw TestFailure.failed("Inactive audio must reject selection.")
+    } catch AudioRouteError.audioSessionInactive {}
+    try expect(store.snapshot == initial, "Inactive selection cannot change observed state.")
+    store.update(inputs: [mic], outputs: [receiver])
+    let withoutBluetooth = store.snapshot
+    for unknown in ["input:bluetooth", "output:unobserved", "receiver"] {
+      do {
+        _ = try store.selection(unknown, isActive: true)
+        throw TestFailure.failed("A disconnected or unknown route must be rejected.")
+      } catch AudioRouteError.unknownRoute {}
+    }
+    try expect(store.snapshot == withoutBluetooth, "Rejected selection cannot change observed state.")
+  }
+
+  @MainActor private static func observedOutputs() throws {
+    let store = AudioRoutesStore()
+    let airplay = AudioRoutePort(uid: "living-room", name: "Living Room", type: "AirPlay")
+    store.update(inputs: [mic], outputs: [airplay])
+    try expect(store.snapshot.routes.map(\.id) == ["input:mic", "speaker", "output:living-room"] &&
+               store.snapshot.current?.id == "output:living-room",
+               "Current output is observed without inventing other outputs.")
+    let current = store.snapshot
+    let selected = try store.selection("output:living-room", isActive: true)
+    try expect(selected == .currentOutput("living-room"),
+               "A cached current output requires queue-bound OS validation before its no-op.")
+    try expect(store.snapshot == current, "No-op selection preserves the snapshot.")
+    store.update(inputs: [mic], outputs: [speaker])
+    try expect(store.snapshot.routes.map(\.id) == ["input:mic", "speaker", "output:speaker-port"],
+               "An old output disappears and the actual speaker output differs from its override target.")
+    do {
+      _ = try store.selection("output:living-room", isActive: true)
+      throw TestFailure.failed("A formerly-current output is no longer selectable.")
+    } catch AudioRouteError.unknownRoute {}
+  }
 }

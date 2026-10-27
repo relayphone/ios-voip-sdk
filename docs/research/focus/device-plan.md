@@ -1,6 +1,6 @@
-# Focus device measurement plan for Claude
+# Focus device measurement plan
 
-Execution handoff for [#124](https://github.com/ziahamza/ios-voip-sdk/issues/124). **Claude operates the iPhone 13; this lane does not use a device.** This is an unexecuted plan, not new evidence. Read [platform findings](README.md) and the [proposed SDK contract](sdk-api.md) first. Use owned test numbers and a sandbox backend; no production calls or real caller transcripts. Implementation/probe adapters described below are future prerequisites, not files shipped by this docs lane.
+Device plan for [#124](https://github.com/ziahamza/ios-voip-sdk/issues/124), run on an iPhone 13. This is a plan, not new evidence. Read [platform findings](README.md) and the [proposed SDK contract](sdk-api.md) first. Use owned test numbers and a sandbox backend; no production calls or real caller transcripts. Implementation/probe adapters described below are prerequisites, not part of this document.
 
 ## Setup and recording contract
 

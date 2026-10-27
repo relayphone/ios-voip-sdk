@@ -48,9 +48,10 @@ For a real run, the operator supplies the iPhone 13's canonical uppercase hardwa
 configured signing credentials and `-allowProvisioningUpdates`; it does not print the APNs key. A read-only inventory check
 requires a uniquely identified iPhone 13 before signing or UI tests. It checks Share Across Devices is off before
 any Focus change, then runs C06, C01 and C05 first, the calling controls and three-sample comparisons, the Live
-Activity rows, and C00 `--listen` last. A bounded early microphone authorization request needs one Allow click;
-without permission the batch proceeds with visual-only evidence. L01–L15 now run their applicable activity
-scenarios, with both Focus states for L07–L15; L16 records a hardware N/A because iPhone 13 has no Dynamic Island.
+Activity rows. In nonquiet mode, C00 `--listen` runs last and a bounded early microphone authorization request
+needs one Allow click; without permission the batch proceeds with visual-only evidence. L01–L15 run their
+applicable activity scenarios, with both Focus states for L07–L15; quiet mode skips L15. L16 records a hardware
+N/A because iPhone 13 has no Dynamic Island.
 Each case reports actual observations, simulations and unqualified subcases separately. APNs acceptance is not
 rendering, and Notification Center on an unlocked phone is not a Lock Screen or wake observation.
 Cadence updates use a run-specific synthetic excerpt. The UI observer compares the accessibility label for
@@ -59,8 +60,8 @@ partial and complete sampled series. Accessibility equality cannot prove that ev
 in pixels. Missing or ambiguous text and unqualified clock synchronization remain unqualified.
 
 The batch exercises L09 network interruption only after verifying a wired connection; it journals and restores
-Wi-Fi and Cellular Data, and requires a fresh `NWPathMonitor` callback before claiming an offline path. L15 sends
-an **alerting** synthetic push-to-start as a separate, explicitly requested test, then obtains the activity's
+Wi-Fi and Cellular Data, and requires a fresh `NWPathMonitor` callback before claiming an offline path. In nonquiet
+mode, L15 sends an **alerting** synthetic push-to-start as a separate, explicitly requested test, then obtains the activity's
 different update token. All other activity updates omit alerts. L10–L14 include labeled offline fixtures for
 system-controlled rotation, budgets, ordering, privacy and lifecycle behavior; those fixtures are not device or
 production-backend results. A secure lock/unlock path, real AI/SIP backend, actual token rotation, eight-hour expiry
@@ -77,6 +78,18 @@ operator must establish that the old batch and its device subprocesses have stop
 Share Across Devices is off, remove only that verified stale owned lock, and immediately run `./run.sh restore-all`.
 Recovery reacquires the same lock and refuses any competing owner; if recovery fails, it retains the lock. The ringer switch is physical and its
 position is not read by this harness, so an unattended session cannot claim either switch variant without independent evidence.
+
+## Staged-push test failures
+
+Keep the failed job's logs, simulator receipt, staged envelope and cleanup evidence. A staged push must not be
+replayed on the same simulator after a launch failure: the app may have started without producing a complete
+trace. Check whether the envelope expired, whether an app-entry event or process identifier was observed, and
+whether the simulator and its subprocesses were cleaned up. Treat missing evidence as inconclusive.
+
+When a retry is appropriate, wait for the original workflow to finish, then start a single new CI attempt with a
+fresh simulator, run identifier and synthetic envelope. Retain the original failed artifacts and assess the new
+result separately; do not extend the envelope lifetime or treat a later pass as proof of the earlier failure's
+cause. Product behavior failures need investigation rather than repeated attempts.
 
 For individual rows, `--focus-mode dnd` snapshots/restores the built-in profile and refuses unknown or Silence list
 modes; `--unknown-caller --caller-value <E.164>` verifies absence from Contacts; `--favorite yes|no` changes only the
@@ -95,7 +108,7 @@ without them and therefore did not qualify that row. For a signed device build, 
 `xcodebuild -allowProvisioningUpdates` with `DEVELOPMENT_TEAM=85A9MS6428`; do not pass ASC `-authenticationKey*`
 arguments. The App Store Connect key cannot register groups.
 
-Implements the native/platform portions of [the device plan](../../docs/research/focus/device-plan.md). This isolated spike chooses **one** provider at process launch: LiveCommunicationKit (default) or the CallKit `CXProvider` control. It never creates both in the same process, and has no SDK dependency, real media, backend AI or owner-join implementation. The two modes share one test bundle, so explicitly record the mode and all user settings. Build/dry-run qualification does **not** qualify device behavior.
+Implements the native/platform portions of [the device plan](../../docs/research/focus/device-plan.md). This isolated spike chooses **one** provider at process launch: LiveCommunicationKit (default) or the CallKit `CXProvider` control. It never creates both in the same process, and has no SDK dependency, real media, backend AI or owner-join implementation. The two modes share one test bundle, so explicitly record the mode and all user settings. Build/dry-run qualification does **not** qualify device behavior. The device operator runs the device rows; CI only dry-runs.
 
 ```sh
 spikes/focus/build.sh

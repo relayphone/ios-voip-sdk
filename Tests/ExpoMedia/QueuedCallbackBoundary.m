@@ -13,6 +13,9 @@ NSUInteger VSHostMediaPreparationCount(void) {
   return binding;
 }
 - (void)setSystemAudioAuthorization:(BOOL)active {}
+- (void)configureAudioRoute:(VSMediaConfiguration)configuration completion:(VSMediaCompletion)completion {
+  dispatch_async(VSAudioSessionGetQueue(), ^{ completion(configuration()); });
+}
 - (void)prepareWithCheck:(VSMediaConfiguration)check configuration:(VSMediaConfiguration)configuration
               completion:(VSMediaCompletion)completion {
   @synchronized(VSSelectedMediaBinding.class) { preparations++; }

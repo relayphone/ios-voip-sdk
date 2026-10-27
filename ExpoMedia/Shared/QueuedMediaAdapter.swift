@@ -3,7 +3,7 @@ import Foundation
 
 /// Framework objects remain on the common audio queue; only results cross back.
 @MainActor
-final class QueuedMediaAdapter: MediaAdapter {
+final class QueuedMediaAdapter: MediaAdapter, AudioRouteConfigurationAdapter {
   private let binding = VSSelectedMediaBinding.shared()
 
   func setSystemAudioAuthorization(_ active: Bool) {
@@ -12,6 +12,13 @@ final class QueuedMediaAdapter: MediaAdapter {
 
   func prepare() async throws { try await prepare(configureSession: false) }
   func prepareForFulfillment() async throws { try await prepare(configureSession: true) }
+
+  func configureAudioRoute(_ operation: @escaping @Sendable () throws -> Void) async throws {
+    try await complete { binding.configureAudioRoute({ @Sendable in
+      do { try operation(); return nil }
+      catch { return error as NSError }
+    }, completion: $0) }
+  }
 
   private func prepare(configureSession: Bool) async throws {
     let permit = AudioPreparationScope.permit

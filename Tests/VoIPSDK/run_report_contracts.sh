@@ -31,7 +31,7 @@ for TEST_CASE in ReportContractTests ConnectionContractTests; do
     Sources/VoIPSDK/ConversationHandler.swift Sources/VoIPSDK/IncomingInvitationGate.swift \
     Sources/VoIPSDK/IncomingIntake.swift Sources/VoIPSDK/PushWire.swift \
     Sources/VoIPSDK/SimulatorSupport.swift Sources/VoIPSDK/ProcessSDKOwnership.swift \
-    Sources/VoIPSDK/AudioActivation.swift Sources/VoIPSDK/AudioAdapterOperations.swift Sources/VoIPSDK/AudioSessionQueue.swift \
+    Sources/VoIPSDK/AudioActivation.swift Sources/VoIPSDK/AudioAdapterOperations.swift Sources/VoIPSDK/AudioSessionQueue.swift Sources/VoIPSDK/AudioRoutes.swift \
     "$TEST_OUTPUT/MediaAdapter.swift" \
     "$TEST_OUTPUT/ConversationClient.swift" "$TEST_OUTPUT/IncomingReportTransport.swift" \
     Tests/VoIPSDK/IncomingCachePlatform.swift "Tests/VoIPSDK/$TEST_CASE.swift" \
