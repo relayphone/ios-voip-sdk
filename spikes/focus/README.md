@@ -19,11 +19,13 @@ Local CLI verification: `python3 -m unittest discover -s spikes/focus -p test_ru
 ## Morning batch
 
 `spikes/focus/morning-batch --dry-run` executes every underlying row dry-run without a device or credentials.
-For a real run, the operator supplies `FOCUS_DEVICE` for the iPhone 13, a private persistent `FOCUS_WORK`, and the
+For a real run, the operator supplies the iPhone 13's canonical UDID or CoreDevice UUID in `FOCUS_DEVICE`, a private persistent `FOCUS_WORK`, and the
 [sandbox APNs environment](../../discovery/device/README.md). The batch generates a signed test build with Xcode's
-signed-in account and `-allowProvisioningUpdates`; it does not print the APNs key. It checks Share Across Devices is
-off before any Focus change, then runs C06, C01 and C05 first, the calling controls and three-sample comparisons,
-the Live Activity rows, and C00 `--listen` last. The Mac microphone prompt needs one Allow click. Existing
+signed-in account and `-allowProvisioningUpdates`; it does not print the APNs key. A read-only inventory check
+requires a uniquely identified iPhone 13 before signing or UI tests. It checks Share Across Devices is off before
+any Focus change, then runs C06, C01 and C05 first, the calling controls and three-sample comparisons, the Live
+Activity rows, and C00 `--listen` last. A bounded early microphone authorization request needs one Allow click;
+without permission the batch proceeds with visual-only evidence. Existing
 Live Activity rows that lack an adapter or require unsupported hardware are explicit skips; an APNs acceptance
 or a partial update subcase is not full row qualification.
 
