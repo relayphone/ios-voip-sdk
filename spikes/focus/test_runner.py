@@ -5,12 +5,35 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-from runner import Run, audio_control_eligible, correlate, matching_activity, needs_repeat_fence, repeat_cooldown, reports_complete, surface_windows
+from runner import Run, audio_control_eligible, correlate, matching_activity, needs_repeat_fence, repeat_cooldown, reports_complete, require_device_supervisor, surface_windows
 
 HERE = Path(__file__).resolve().parent
 
 
 class DryRunTests(unittest.TestCase):
+    def test_device_rows_require_live_lock_owning_supervisor(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            device = "00008110-0011223344556677"
+            lock = root / ".device-locks" / (device + ".lock")
+            lock.mkdir(parents=True)
+            nonce = "a" * 32
+            (lock / "owner.json").write_text(json.dumps({"owner": "focus-morning-batch", "pid": 1234, "nonce": nonce}))
+            env = {"FOCUS_DEVICE": device, "FOCUS_BATCH_OWNER_PID": "1234", "FOCUS_BATCH_LOCK_NONCE": nonce}
+            with patch.object(Path, "home", return_value=root), patch.dict(os.environ, env, clear=True), \
+                 patch("runner.os.getppid", return_value=1234), patch("runner.os.getpid", return_value=5678), \
+                 patch("runner.os.getpgrp", return_value=5678):
+                require_device_supervisor()
+                (lock / "owner.json").write_text(json.dumps({"owner": "phone", "pid": 1234, "nonce": nonce}))
+                with self.assertRaises(RuntimeError):
+                    require_device_supervisor()
+
+    def test_direct_device_row_rejected_before_device_commands(self):
+        result = subprocess.run(["/bin/bash", str(HERE / "run.sh"), "L01"],
+                                env={"PATH": os.environ["PATH"]}, capture_output=True, text=True, timeout=10)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RuntimeError", result.stderr)
+
     def test_device_journal_recovery_replaces_stale_host_atomically(self):
         with tempfile.TemporaryDirectory() as folder:
             run = Run.__new__(Run)
