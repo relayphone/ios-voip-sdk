@@ -15,7 +15,12 @@ private struct EventBatch: Decodable {
   let cursor: Int
 }
 private struct ControlResult: Decodable {
-  struct Result: Decodable { var actionIDs: [String]? }
+  struct Result: Decodable {
+    var actionIDs: [String]?
+    var incomingFilter: InspectorIncomingFilterState?
+    var incomingErrorCode: Int?
+  }
+  var id: String?
   let success: Bool
   var error: String?
   var result: Result?
@@ -43,12 +48,18 @@ private struct InspectorProbeSnapshot: Encodable {
   let timelinePresentation: [TimelinePresentation]
   let timingReferences: [RuntimeTimingReadout]
   let audioActive: Bool
+  let incomingFilter: InspectorIncomingFilter
+  let incomingErrorCode: Int
   let online: Bool
   let error: String?
 }
 
 @MainActor
 final class InspectorModel: ObservableObject {
+  private enum ConfigurationAcknowledgement: Hashable {
+    case incomingFilter(String, InspectorIncomingFilter)
+    case incomingError(String, Int)
+  }
   @Published var session: RuntimeSession?
   @Published var conversations: [String: RuntimeEvent] = [:]
   @Published var pending: [String: RuntimeEvent] = [:]
@@ -58,9 +69,13 @@ final class InspectorModel: ObservableObject {
   @Published var busy = false
   @Published var error: String?
   @Published var commandError: String?
+  @Published var incomingFilter: InspectorIncomingFilter = .none
+  @Published var incomingErrorCode = 0
   private var cursor = 0
   private var acknowledgedActions = Set<String>()
   private var actionOrder: [String] = []
+  private var configurationAcknowledgements = Set<ConfigurationAcknowledgement>()
+  private var configurationOrder: [ConfigurationAcknowledgement] = []
   private let endpoint: URL?
   private let token: String
   private let client = URLSession(configuration: .ephemeral)
@@ -146,7 +161,7 @@ final class InspectorModel: ObservableObject {
         pending: pending.values.sorted { $0.sequence < $1.sequence }, timeline: timeline,
         timelinePresentation: timeline.map { .init(sequence: $0.sequence, title: $0.title, detail: $0.detail) },
         timingReferences: timingReferences,
-        audioActive: audioActive, online: online, error: error)
+        audioActive: audioActive, incomingFilter: incomingFilter, incomingErrorCode: incomingErrorCode, online: online, error: error)
       try JSONEncoder().encode(snapshot).write(to: documents.appendingPathComponent("cksim-inspector-results.json"), options: .atomic)
     } catch { NSLog("Inspector probe receipt failed: %@", String(describing: error)) }
   }
@@ -158,16 +173,70 @@ final class InspectorModel: ObservableObject {
       let ended = conversations.values.filter { $0.ended == true }.sorted { $0.sequence > $1.sequence }
       for old in ended.dropFirst(5) { if let id = old.uuid { conversations.removeValue(forKey: id) } }
     }
+    if let state = InspectorIncomingFilterState(event: row), let id = row.requestID {
+      incomingFilter = state.reason
+      acknowledgeConfiguration(.incomingFilter(id, state.reason))
+    }
+    if row.event == "faults.configured", let code = row.incomingErrorCode, [0, 4].contains(code),
+       let id = row.requestID, !id.isEmpty {
+      incomingErrorCode = code
+      acknowledgeConfiguration(.incomingError(id, code))
+    }
     if let id = row.actionID {
-      if acknowledgedActions.insert(id).inserted {
-        actionOrder.append(id)
-        if actionOrder.count > 1000 { acknowledgedActions.remove(actionOrder.removeFirst()) }
-      }
+      acknowledge(id)
       if row.event == "action.deadline" { pending[id] = row }
       if ["action.settled", "action.expired", "action.timeout", "action.cancelled"].contains(row.event) { pending.removeValue(forKey: id) }
     }
     if row.event == "audio.activated" { audioActive = true }
     if row.event == "audio.deactivated" { audioActive = false }
+  }
+  private func acknowledge(_ id: String) {
+    if acknowledgedActions.insert(id).inserted {
+      actionOrder.append(id)
+      if actionOrder.count > 1000 { acknowledgedActions.remove(actionOrder.removeFirst()) }
+    }
+  }
+  private func acknowledgeConfiguration(_ value: ConfigurationAcknowledgement) {
+    if configurationAcknowledgements.insert(value).inserted {
+      configurationOrder.append(value)
+      if configurationOrder.count > 1000 { configurationAcknowledgements.remove(configurationOrder.removeFirst()) }
+    }
+  }
+  func configureIncomingFilter(_ reason: InspectorIncomingFilter) {
+    submitConfiguration(["operation": "incoming-filter", "reason": reason.rawValue],
+                        acknowledgement: { .incomingFilter($0, reason) }) {
+      $0.incomingFilter?.isValid == true && $0.incomingFilter?.reason == reason
+    }
+  }
+  func configureIncomingError(_ code: Int) {
+    guard [0, 4].contains(code) else { return }
+    submitConfiguration(["operation": "faults", "incomingErrorCode": String(code)],
+                        acknowledgement: { .incomingError($0, code) }) { $0.incomingErrorCode == code }
+  }
+  private func submitConfiguration(_ body: [String: String],
+                                   acknowledgement: @escaping (String) -> ConfigurationAcknowledgement,
+                                   accepting: @escaping (ControlResult.Result) -> Bool) {
+    guard !busy, online else { return }
+    busy = true
+    Task {
+      defer { busy = false }
+      do {
+        let response = try JSONDecoder().decode(ControlResult.self, from: await request("/command",
+          body: body))
+        guard response.success, let id = response.id, !id.isEmpty, let result = response.result, accepting(result) else {
+          throw NSError(domain: "Inspector", code: 5, userInfo: [NSLocalizedDescriptionKey:
+            response.error ?? "Runtime rejected the configuration."])
+        }
+        let deadline = Date().addingTimeInterval(3)
+        while !configurationAcknowledgements.contains(acknowledgement(id)) {
+          guard Date() < deadline else {
+            throw NSError(domain: "Inspector", code: 6, userInfo: [NSLocalizedDescriptionKey:
+              "Configuration accepted, but its journal confirmation has not arrived. Check the timeline before retrying."])
+          }
+          try await Task.sleep(for: .milliseconds(25))
+        }
+      } catch { commandError = error.localizedDescription }
+    }
   }
   func send(_ operation: String, call: RuntimeEvent, active: RuntimeEvent? = nil) {
     guard !busy, online, let id = call.uuid else { return }
