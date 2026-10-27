@@ -37,7 +37,7 @@ done
 if [[ -f Tests/RuntimeEvents/test_fixture_inventory.py ]]; then
   check cached-inventory python3 Tests/RuntimeEvents/test_fixture_inventory.py
 fi
-for fixture in test_runtime_cached_control.py test_runtime_install_adapter.py 'test_sdk*.py'; do
+for fixture in test_runtime_cached_control.py test_runtime_install_adapter.py test_failure_summary.py 'test_sdk*.py'; do
   check "$fixture" python3 -m unittest discover -s scripts/sim -p "$fixture"
 done
 for script in scripts/sim/sim.sh discovery/run*.sh; do
