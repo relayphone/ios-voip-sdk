@@ -289,7 +289,7 @@ class Run:
 
     def restore(self):
         self.arm({"armed": False, "activityAction": "end"})
-        self.ui(["launch", "restore-all"])
+        self.ui(["share-across-devices:check", "launch", "restore-all"])
         if self.journal.exists() and json.loads(self.journal.read_text()).get("requiresProbeUninstall"):
             self.command(["xcrun", "devicectl", "device", "uninstall", "app", "--device", self.device, BUNDLE])
             self.journal.unlink()
