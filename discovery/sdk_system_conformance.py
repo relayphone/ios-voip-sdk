@@ -64,7 +64,7 @@ def supervisor_check(receipt, index, failed_cleanup):
     require(not failed_cleanup, 'failure cleanup cannot qualify a native journey')
 
 
-def validate_case(rows, engine, index, controls, fixture_commands, case, expected_d5, launch_receipt=None):
+def validate_case(rows, engine, index, controls, fixture_commands, case, expected_d5, profile, launch_receipt=None):
     """Pure logical gate, also exercised by synthetic negative controls.
 
     The enclosing gate binds the original trace/journal, launcher PID, source,
@@ -179,12 +179,19 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
         require(action['call'] in by_native, 'native action targets unknown call')
         settled = one([row for row in engine if row.get('actionID') == action['id']], 'action.settled')
         advertised = one([row for row in engine if row.get('actionID') == action['id']], 'action.deadline')
-        require(settled.get('fulfilled') is True and settled.get('origin') == action['origin'] and
+        # Effective expiry is independent of timeoutDate and comes from the source-bound profile.
+        expiry = (profile['lckMultiCall']['joinExpirySeconds'] if action['kind'] == NATIVE['join'] else
+                  profile['lckMultiCall']['pauseEndExpirySeconds'] if action['kind'] in (NATIVE['hold'], NATIVE['end']) else
+                  profile['lckActionDeadlineSeconds'])
+        require(settled.get('fulfilled') is True and settled.get('expired') is False and settled.get('origin') == action['origin'] and
                 action['delivered']['sequence'] < advertised['sequence'] < settled['sequence'] and
-                advertised.get('apiKind') == 'livecommunicationkit' and advertised.get('deadlineSeconds') == advertised.get('expirySeconds') == 30 and
-                type(advertised.get('deadlineMS')) is int and advertised.get('provider') == action['delivered'].get('provider'), 'unsettled/expired/wrong native deadline')
+                advertised.get('apiKind') == 'livecommunicationkit' and advertised.get('deadlineSeconds') == 30 and
+                advertised.get('expirySeconds') == expiry and
+                all(type(advertised.get(key)) is int for key in ('deadlineMS', 'issuedAtMS', 'expiryMS')) and
+                advertised.get('provider') == action['delivered'].get('provider') and advertised['expiryMS'] == advertised['issuedAtMS'] + expiry * 1000, 'unsettled/expired/wrong native deadline')
         upper = ready['wallTimeMS'] + settled['t_ms'] - marker['t_ms'] + 1
-        require(upper < advertised['deadlineMS'], 'native settlement reached platform expiry')
+        require(upper < min(advertised['deadlineMS'], advertised['expiryMS']),
+                'native settlement reached platform expiry')
         action.update(settled=settled, deadline=advertised)
 
     handlers = [row for row in rows if row['event'] == 'system.handler']
@@ -393,6 +400,7 @@ def validate(parent, source_root=ROOT):
     package_check(root / 'control-package', identity, source_root)
     expected = d5_compositions([json.loads(line) for line in (source_root / D5).read_text().splitlines()])
     deadlines, reference_files = deadline_oracles(source_root)
+    profile = json.loads((source_root / 'Sources/Engine/Resources/ios-27.0.json').read_text())
     reference_files.update(cold_push_reference(source_root))
     results = []
     for case in CASES:
@@ -414,7 +422,7 @@ def validate(parent, source_root=ROOT):
                 translated[NATIVE['hold']] = 'PauseConversationAction'
                 translated[NATIVE['tones']] = 'PlayToneAction'
                 check_deadline(dict(kind=translated.get(kind), timeoutIn=row.get('deadlineSeconds')), deadlines)
-        results.append(validate_case(rows, engine, index, controls, commands, case, expected,
+        results.append(validate_case(rows, engine, index, controls, commands, case, expected, profile,
                        json.loads((directory / 'launch-push.json').read_text()) if case == 'push-launch' else None))
     return dict(success=True, measurement='measured source-bound simulator system journeys', **identity,
                 runID=manifest['runID'], simulatorID=manifest['simulatorID'], simulatorOS=json.loads((parent / 'environment.json').read_text())['simulatorOS'],

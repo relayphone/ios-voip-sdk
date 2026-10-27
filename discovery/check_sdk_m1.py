@@ -156,7 +156,7 @@ def fixture_case(root, case, pid):
         runtime('transaction.delivered', provider='synthetic-provider', actionIDs=['action-' + str(index)], kinds=[kind])
         if case != 'journey' and index == 0:
             runtime('action.deadline', actionID='action-' + str(index), provider='synthetic-provider',
-                    apiKind='livecommunicationkit', deadlineMS=WALL + 30_000, deadlineSeconds=30, expirySeconds=30)
+                    apiKind='livecommunicationkit', deadlineMS=WALL + 30_000, deadlineSeconds=30, expirySeconds=64)
             pending = next(row for row in rows if row['event'] == 'm1.coldPending')
             runtime('m1.coldPendingClock', at=pending['t_ms'], conversationID=CONVERSATION, actionID=PENDING)
         runtime('action.settled', at=30_000 if case == 'unhandled-expiry' else 5020 if case == 'cold-launch' else None,
@@ -445,7 +445,7 @@ class Controls(unittest.TestCase):
                 with self.subTest(case=case, mutation=name):
                     self.check(lambda root, case=case, edit=edit: mutate_journal(root / 'm1', case, edit))
             for field, value in (('actionID', PENDING), ('provider', 'different-provider'), ('apiKind', 'callkit'),
-                                 ('deadlineMS', WALL + 27_000), ('deadlineSeconds', 60), ('expirySeconds', 60)):
+                                 ('deadlineMS', WALL + 27_000), ('deadlineSeconds', 60), ('expirySeconds', 60), ('expirySeconds', 30), ('expirySeconds', 65)):
                 with self.subTest(case=case, field=field):
                     self.check(lambda root, case=case, field=field, value=value: mutate_journal(root / 'm1', case,
                         lambda rows: next(row for row in rows if row['event'] == 'action.deadline').update({field: value})))

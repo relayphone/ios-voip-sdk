@@ -280,8 +280,8 @@ never deleted by the command. The inspector is iPhone-only for this MVP.
 The incoming banner expands to a full call screen. Answer and Decline handle a
 single incoming call; Call waiting options offers Hold & Accept and End & Accept
 when another call is active. End Call ends a connected call. Buttons dispatch the
-runtime's existing system-origin commands; acceptance is shown only after the
-journal records the resulting state. Conversations, pending deadlines, action
+runtime's system controls; LCK App Pause/Resume/Merge/Unmerge explicitly request
+application origin. Acceptance follows the resulting journal state. Conversations, pending deadlines, action
 settlement latency versus the profile budget, and audio activation remain live.
 The device-reference section compares journal-measured simulator intervals with
 the iPhone 13 / iOS 27.0 LCK captures: about 190 ms from push to report done,

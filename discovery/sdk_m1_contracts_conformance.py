@@ -11,6 +11,7 @@ import uuid
 from device_oracles import check_deadline, deadline_bands
 from sdk_m2_audio_lifecycle import validate_authority, validate_lifecycle
 from sdk_m0_conformance import bound_rows, digest
+from sdk_m1_conformance import join_expiry_seconds
 from summarize import EvidenceError, load, one, require
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,6 +21,7 @@ OWN_FILES = ('discovery/probe/sdk_m1_contracts.swift', 'discovery/build_sdk_m1_c
              'discovery/run_audio_lifecycle_legacy.sh', 'scripts/sim/sim.py', 'scripts/sim/sim.sh', 'scripts/sim/paths.py',
              'scripts/sim/legacy_diagnostics.py',
              'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
+             'discovery/sdk_m1_conformance.py',
              'discovery/probe/Info.plist', 'discovery/run_scenario.py', 'discovery/sdk_m0_conformance.py',
              'discovery/sdk_m2_audio_lifecycle.py', 'discovery/check_sdk_m2_audio_lifecycle.py',
              'discovery/sdk_bootstrap_conformance.py', 'discovery/summarize.py', 'discovery/device_oracles.py', 'VERSION')
@@ -225,7 +227,7 @@ def accept_contract(rows, engine, source_root):
     advertised = one(engine, 'action.deadline')
     platform_deadline = advertised.get('deadlineMS')
     require(advertised.get('apiKind') == 'livecommunicationkit' and type(platform_deadline) is int and
-            advertised.get('deadlineSeconds') == advertised.get('expirySeconds') == 30 and
+            advertised.get('deadlineSeconds') == 30 and advertised.get('expirySeconds') == join_expiry_seconds(source_root) and
             2500 <= platform_deadline - deadline <= 3500,
             'effective deadline lacks the LCK safety margin or uses provider timing')
     snapshots = [r for r in rows if r['event'] == 'contract.snapshot']
@@ -338,7 +340,7 @@ def fail_contract(rows, engine, source_root):
     require(settled.get('fulfilled') is False and settled.get('origin') == 'application' and
             advertised.get('apiKind') == 'livecommunicationkit' and type(platform_deadline) is int and
             advertised.get('provider') == answer['provider'] and
-            advertised.get('deadlineSeconds') == advertised.get('expirySeconds') == 30 and
+            advertised.get('deadlineSeconds') == 30 and advertised.get('expirySeconds') == join_expiry_seconds(source_root) and
             2500 <= platform_deadline - deadline <= 3500 and
             engine.index(answer) < engine.index(advertised) < engine.index(marker) < engine.index(settled) and
             native_wall(settled)[0] >= deadline - 25 and native_wall(settled)[1] < platform_deadline,
@@ -352,7 +354,7 @@ def fail_contract(rows, engine, source_root):
                 ids[0] not in action_ids and transaction.get('provider') == answer['provider'], 'unknown/reused fail native action')
         action_ids.add(ids[0])
         if transaction is answer: continue
-        require(transaction.get('kinds') == ['CXEndCallAction'] and transaction.get('origin') == 'system' and
+        require(transaction.get('kinds') == ['CXEndCallAction'] and transaction.get('origin') == 'failureCleanup' and
                 transaction.get('requestID') == 'system' and engine.index(transaction) > engine.index(settled),
                 'unrelated action in fail contract')
         later_ends.append(transaction)
