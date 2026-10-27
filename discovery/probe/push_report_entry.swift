@@ -91,7 +91,7 @@ private final class EntryProbe {
       let required = mode != "optional"
       let run = env["CKSIM_RUN_ID"] ?? ""
       let payload: [AnyHashable: Any] = ["incomingCall": ["eventId": "entry-event", "serverCallId": "entry-server",
-        "caller": ["id": "entry-caller", "displayName": "Entry fixture"], "hasVideo": false]]
+        "caller": ["handleType": "generic", "value": "entry-caller", "displayName": "Entry fixture"], "hasVideo": false]]
       for index in 0..<count {
         let pushID = run + "-" + String(index)
         EntryTrace.log("entry.inject", ["pushID": pushID, "mustReport": required])
@@ -120,7 +120,7 @@ private final class EntryProbe {
   private func runMainStall(_ application: VoIPApplication) async throws {
     let owner = try PushRegistryOwner.shared(receiver: application.pushService)
     let payload: [AnyHashable: Any] = ["incomingCall": ["eventId": "main-stall-event", "serverCallId": "main-stall-server",
-      "caller": ["id": "main-stall-caller", "displayName": "Main stall fixture"], "hasVideo": false]]
+      "caller": ["handleType": "generic", "value": "main-stall-caller", "displayName": "Main stall fixture"], "hasVideo": false]]
     // This helper invokes the linked native callback body on a worker after
     // main has begun its controlled stall. It never marks framework entry.
     CKProbeRunIncomingMainStall(owner, payload)

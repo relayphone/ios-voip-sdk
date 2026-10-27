@@ -40,7 +40,7 @@ import Foundation
     client.setConversationHandler(handler)
     func payload(_ value: String) -> IncomingCallPayload {
       .init(eventId: "report-event-" + value, serverCallId: "report-server-" + value,
-        caller: .init(id: "report-fixture"))
+        caller: try! Caller(handleType: .generic, value: "report-fixture", displayName: "report-fixture"))
     }
     func wait(_ condition: @escaping @MainActor () -> Bool) async throws {
       let limit = ContinuousClock.now + .seconds(2)

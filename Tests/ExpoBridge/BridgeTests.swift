@@ -133,6 +133,13 @@ struct BridgeTests {
     try expect(body["connectedAt"] as? String == expected, "Snapshot dates must use the same ISO wire format.")
     try expect((body["ended"] as? [String: Any])?["at"] as? String == expected, "Ended dates must retain milliseconds.")
     let wire: [String: Any] = ["id": "person", "phoneNumber": "+15555550142"]
+    let caller = try BridgeJSON.decode(Caller.self, from: BridgeJSON.data([
+      "handleType": "phone", "value": "+1 (202) 555-0123", "displayName": "Exact caller", "hostContactID": "host-42"]))
+    try expect(caller.value == "+12025550123" && caller.hostContactID == "host-42", "Expo must share Caller normalization.")
+    do {
+      _ = try BridgeJSON.decode(Caller.self, from: BridgeJSON.data(["handleType": "phone", "value": "2025550123", "displayName": "Name"]))
+      throw TestFailure.failed("Invalid caller must reject before reporting.")
+    } catch BridgeError.invalidArguments {}
     let participant = try BridgeJSON.decode(Participant.self, from: BridgeJSON.data(wire))
     try expect(participant.id == "person", "Valid JSON must decode into the production model.")
     for invalid: [String: Any] in [["value": Double.nan], ["value": Date()], ["value": NSObject()]] {
@@ -326,7 +333,7 @@ struct BridgeTests {
     defer { bridge.destroy(detachHandler: true) }
     bridge.attach(true, generation: 0)
     var invalid = snapshot()
-    invalid.payload = .init(eventId: "event", serverCallId: "server", caller: .init(id: "caller"), metadata: ["bad": .number(.nan)])
+    invalid.payload = .init(eventId: "event", serverCallId: "server", caller: try! Caller(handleType: .generic, value: "caller", displayName: "caller"), metadata: ["bad": .number(.nan)])
     let invocation = try invoke(application, conversation: invalid, context: context())
     try await eventually("Encoding failure must reject without installing a continuation.") { invocation.outcome != nil }
     try expect(invocation.outcome == .encodingFailed && events.named("handlerAction").isEmpty,

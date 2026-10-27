@@ -114,7 +114,7 @@ import Foundation
       client.setConversationHandler(.init(join: { _, _ in }, start: { _, _ in }, end: { _, _ in }))
       activate()
       let id = try await client.reportIncomingConversation(.init(eventId: "observer-" + trigger.rawValue,
-        serverCallId: "observer-" + trigger.rawValue, caller: .init(id: "host-audio-caller")))
+        serverCallId: "observer-" + trigger.rawValue, caller: try! Caller(handleType: .generic, value: "host-audio-caller", displayName: "host-audio-caller")))
       try await client.joinConversation(id)
       let original = manager.conversations.first { $0.uuid == id }!
       var replacement: Conversation?
@@ -177,7 +177,7 @@ import Foundation
           try await withCheckedThrowingContinuation { pending = $0 }
         }))
       let id = try await client.reportIncomingConversation(.init(eventId: "reentrant-" + suffix,
-        serverCallId: "reentrant-" + suffix, caller: .init(id: "host-audio-caller")))
+        serverCallId: "reentrant-" + suffix, caller: try! Caller(handleType: .generic, value: "host-audio-caller", displayName: "host-audio-caller")))
       callID = id
       // Keep modeled LCK authority through setup, so scheduler delay cannot
       // race the watchdog before its cancellation observer exists.

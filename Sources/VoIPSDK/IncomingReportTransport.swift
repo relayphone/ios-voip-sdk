@@ -14,12 +14,10 @@ final class IncomingReportTransport: @unchecked Sendable {
   func report(_ reservation: IncomingIntake.Reservation) async -> IncomingIntake.ReportOutcome {
     let caller = reservation.payload.caller
     let handle: Handle
-    if let phone = caller.phoneNumber {
-      handle = Handle(type: .phoneNumber, value: phone, displayName: caller.displayName)
-    } else if let email = caller.email {
-      handle = Handle(type: .emailAddress, value: email, displayName: caller.displayName)
-    } else {
-      handle = Handle(type: .generic, value: caller.id, displayName: caller.displayName)
+    switch caller.handleType {
+    case .phone: handle = Handle(type: .phoneNumber, value: caller.value, displayName: caller.displayName)
+    case .email: handle = Handle(type: .emailAddress, value: caller.value, displayName: caller.displayName)
+    case .generic: handle = Handle(type: .generic, value: caller.value, displayName: caller.displayName)
     }
     var capabilities: Conversation.Capabilities = [.pausing, .merging, .unmerging, .playingTones]
     if reservation.payload.hasVideo { capabilities.insert(.video) }

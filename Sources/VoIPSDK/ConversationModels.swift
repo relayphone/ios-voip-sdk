@@ -41,16 +41,73 @@ public struct Participant: Codable, Sendable, Equatable {
   }
 }
 
+/// Host-supplied system calling identity. No address-book lookup or type inference.
+public struct Caller: Codable, Sendable, Equatable {
+  public enum HandleType: String, Codable, Sendable { case phone, email, generic }
+  public enum ValidationError: Error, Sendable { case invalidValue, invalidDisplayName, invalidHostContactID }
+  public let handleType: HandleType
+  public let value: String
+  public let displayName: String
+  /// Opaque identifier in the host's contact store, not a CNContact identifier.
+  public let hostContactID: String?
+
+  public init(handleType: HandleType, value: String, displayName: String, hostContactID: String? = nil) throws {
+    let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard Self.validText(name) else { throw ValidationError.invalidDisplayName }
+    var normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if handleType == .phone {
+      // The host supplies a country code. Never guess a region or strip extensions.
+      let separators = CharacterSet(charactersIn: " ()-.")
+      normalized = String(String.UnicodeScalarView(normalized.unicodeScalars.filter { !separators.contains($0) }))
+      guard normalized.first == "+", (2...15).contains(normalized.dropFirst().count),
+            normalized.dropFirst().allSatisfy({ $0.isASCII && $0 >= "0" && $0 <= "9" }),
+            normalized.dropFirst().first != "0" else { throw ValidationError.invalidValue }
+    } else {
+      guard Self.validText(normalized) else { throw ValidationError.invalidValue }
+      if handleType == .email {
+        let parts = normalized.split(separator: "@", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts.allSatisfy({ !$0.isEmpty }),
+              normalized.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else { throw ValidationError.invalidValue }
+      }
+    }
+    let contact = hostContactID?.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let contact, !Self.validText(contact) { throw ValidationError.invalidHostContactID }
+    self.handleType = handleType; self.value = normalized; self.displayName = name; self.hostContactID = contact
+  }
+
+  static let unknown = Caller()
+  private init() {
+    handleType = .generic; value = "unknown"; displayName = "Unknown caller"; hostContactID = nil
+  }
+
+  private static func validText(_ value: String) -> Bool {
+    !value.isEmpty && value.rangeOfCharacter(from: .controlCharacters) == nil
+  }
+
+  private enum CodingKeys: String, CodingKey { case handleType, value, displayName, hostContactID }
+  public init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(handleType: values.decode(HandleType.self, forKey: .handleType),
+      value: values.decode(String.self, forKey: .value), displayName: values.decode(String.self, forKey: .displayName),
+      hostContactID: values.decodeIfPresent(String.self, forKey: .hostContactID))
+  }
+
+  public var participant: Participant {
+    Participant(id: hostContactID ?? value, displayName: displayName,
+      phoneNumber: handleType == .phone ? value : nil, email: handleType == .email ? value : nil)
+  }
+}
+
 public struct IncomingCallPayload: Codable, Sendable, Equatable {
   public var eventId: String
   public var serverCallId: String
-  public var caller: Participant
+  public var caller: Caller
   public var hasVideo: Bool
   /// The original RFC3339 wire value, when supplied by the transport.
   public var startedAt: String?
   public var metadata: [String: JSONValue]?
 
-  public init(eventId: String, serverCallId: String, caller: Participant, hasVideo: Bool = false,
+  public init(eventId: String, serverCallId: String, caller: Caller, hasVideo: Bool = false,
               startedAt: String? = nil, metadata: [String: JSONValue]? = nil) {
     self.eventId = eventId; self.serverCallId = serverCallId; self.caller = caller
     self.hasVideo = hasVideo; self.startedAt = startedAt; self.metadata = metadata

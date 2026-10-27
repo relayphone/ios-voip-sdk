@@ -95,9 +95,10 @@ function payload(): IncomingCallPayload {
     eventId: 'sdk-example-event-' + journey().runID,
     serverCallId: 'sdk-example-server-' + journey().runID,
     caller: {
-      id: 'sdk-example-caller',
+      handleType: 'phone',
+      value: '+15555550142',
       displayName: 'SDK example',
-      phoneNumber: '+15555550142',
+      hostContactID: 'sdk-example-caller',
     },
     hasVideo: false,
   };
