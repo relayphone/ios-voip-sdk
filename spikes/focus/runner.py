@@ -160,12 +160,9 @@ def plan(row, locked=False, listen=False, provider=None, caller_format="e164", r
             p["focus"] = row != "C00"
     elif row.startswith("L") and row[1:].isdigit() and 1 <= int(row[1:]) <= 16:
         n = int(row[1:]); p.update(activity=True, sendVoIP=False, focus=n % 2 == 0)
-        if n in [5, 6, 7, 8, 10, 11, 12, 13, 14]:
-            p["blocked"] = "Requires authorization/rotation/budget fault-injection adapter; not fabricated by this probe"
-        if n == 15:
-            p["blocked"] = "Alerting push-to-start excluded from silent mode"
         if n == 16:
-            p["blocked"] = "iPhone 13 has no Dynamic Island"
+            p["activity"] = False
+            p["hardwareNA"] = "iPhone 13 has no Dynamic Island; capability check only"
     elif row in ["restore-all", "preflight"]:
         p["sendVoIP"] = False
     elif row.startswith("T") and row[1:].isdigit() and 1 <= int(row[1:]) <= 6:
@@ -203,6 +200,9 @@ def plan(row, locked=False, listen=False, provider=None, caller_format="e164", r
                       "uninstall disposable probe only if required to restore undetermined permissions; no push"]
     elif row == "preflight":
         p["steps"] = ["check Share Across Devices is OFF in Settings without changing Focus or sending a push"]
+    elif row.startswith("L"):
+        from activity_rows import activity_plan
+        p["steps"] = activity_plan(row)
     return p
 
 
@@ -216,6 +216,28 @@ def matching_activity(registration, token):
 def write(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n")
     path.chmod(0o600)
+
+
+def require_device_supervisor():
+    """Require the lock-owning batch parent and its bounded row process group.
+
+    This is an accidental-misuse guard, not an authorization boundary. The
+    supervisor must still stop and verify descendants before restoring state.
+    """
+    device = os.environ.get("FOCUS_DEVICE", "")
+    owner_pid = os.environ.get("FOCUS_BATCH_OWNER_PID", "")
+    nonce = os.environ.get("FOCUS_BATCH_LOCK_NONCE", "")
+    if (not re.fullmatch(r"[A-F0-9]{8}-[A-F0-9]{16}", device)
+            or not owner_pid.isdigit() or int(owner_pid) != os.getppid()
+            or not re.fullmatch(r"[a-f0-9]{32}", nonce) or os.getpgrp() != os.getpid()):
+        raise RuntimeError("Real device rows require the lock-owning morning-batch supervisor")
+    try:
+        receipt = json.loads((Path.home() / ".device-locks" / (device + ".lock") / "owner.json").read_text())
+    except (OSError, ValueError):
+        raise RuntimeError("Device supervisor lock receipt unavailable")
+    if (not isinstance(receipt, dict) or receipt.get("owner") != "focus-morning-batch" or receipt.get("pid") != int(owner_pid)
+            or receipt.get("nonce") != nonce):
+        raise RuntimeError("Device supervisor lock receipt does not match")
 
 
 class Run:
@@ -238,8 +260,10 @@ class Run:
         self.invitations = [self.invitation]
         self.sent_times = []
         self.run_id = str(uuid.uuid4())
+        self.unsafe_observer = False
         self.binding = {"device": self.device, "build": hashlib.sha256(self.source.read_bytes()).hexdigest(),
                         "provider": p["provider"], "callerFormat": p["callerFormat"]}
+        self.usb_verified = False
 
     def qualified(self, path):
         if not path.exists():
@@ -249,6 +273,8 @@ class Run:
         return value.get("binding") == self.binding and 0 <= age < 3600 and value.get("positive", value.get("calibrationValid")) is True
 
     def command(self, argv, timeout=60, background=False):
+        if self.unsafe_observer:
+            raise RuntimeError("device subprocess cleanup required before further commands")
         self.counter += 1
         log = self.folder / f"command-{self.counter}.log"
         env = {k: v for k, v in os.environ.items() if not k.startswith("PHONE_APNS_")}
@@ -258,8 +284,15 @@ class Run:
         with log.open("wb") as stream:
             if background:
                 return subprocess.Popen(argv, stdout=stream, stderr=subprocess.STDOUT, env=env)
-            result = subprocess.run(argv, stdout=stream, stderr=subprocess.STDOUT, env=env, timeout=timeout)
+            try:
+                result = subprocess.run(argv, stdout=stream, stderr=subprocess.STDOUT, env=env, timeout=timeout)
+            except subprocess.TimeoutExpired:
+                # A child of xcodebuild/devicectl may outlive its immediate parent.
+                self.unsafe_observer = True
+                raise
         if result.returncode:
+            if Path(argv[0]).name == "xcodebuild":
+                self.unsafe_observer = True
             raise RuntimeError(f"{Path(argv[0]).name} failed; inspect private command log; no automatic retry")
 
     def copy(self, name, destination, to=False, test=False):
@@ -269,6 +302,8 @@ class Run:
                       "--destination", "Documents/" + name if to else str(destination)])
 
     def ui(self, actions, background=False, text=None):
+        if self.unsafe_observer:
+            raise RuntimeError("UI process cleanup required before another session")
         # A killed UI session may have journaled a mutation after the last host
         # backup. Refresh from the test container before passing recovery state
         # back to XCUITest; never overwrite a newer device journal with a stale one.
@@ -279,6 +314,8 @@ class Run:
                "FOCUS_EXPECTED_CALLER": self.p["callerValue"]}
         if self.p.get("unknownCaller"):
             env["FOCUS_UNKNOWN_CALLER"] = self.p["callerValue"]
+        if self.usb_verified:
+            env["FOCUS_USB_VERIFIED"] = "1"
         if self.journal.exists() and self.journal_fresh:
             env["FOCUS_RESTORE_STATE"] = base64.b64encode(self.journal.read_bytes()).decode()
         if (self.work / "system-settings-approved").exists():
@@ -315,7 +352,7 @@ class Run:
                                  "-destination", "id=" + self.device,
                                  "-only-testing:FocusUITests/FocusUITests/testActions"], timeout=600, background=background)
         finally:
-            if not background:
+            if not background and not self.unsafe_observer:
                 self.recover(required=True)
 
     def recover(self, required=False):
@@ -403,6 +440,15 @@ class Run:
                 (self.work / "audio-calibration.json").unlink(missing_ok=True)
             if p["row"] == "restore-all":
                 self.restore(); result["status"] = "restored"; return result
+            if p.get("hardwareNA"):
+                from morning_batch import identify_iphone13
+                identify_iphone13(self.device, self.work)
+                result.update(status="not-applicable-hardware", restored=True, reason=p["hardwareNA"])
+                return result
+            if p["activity"]:
+                from activity_rows import execute_activity
+                execute_activity(self, result)
+                return result
             # The Focus app picker lists only apps that have notification permission (iOS 27).
             actions = ["share-across-devices:check", "setup", "launch", "notifications:allow",
                        "app:" + ("include" if p["app"] else "exclude"),
@@ -493,7 +539,13 @@ class Run:
             elif not observer:
                 time.sleep(35)
             if observer:
-                if observer.wait(timeout=300):
+                try:
+                    observation_code = observer.wait(timeout=300)
+                except subprocess.TimeoutExpired:
+                    self.unsafe_observer = True
+                    raise
+                if observation_code:
+                    self.unsafe_observer = True
                     raise RuntimeError("UI observer failed")
                 self.recover(); self.copy("focus-ui-result.json", self.folder / "ui.json", test=True)
                 ui = json.loads((self.folder / "ui.json").read_text())
@@ -545,10 +597,15 @@ class Run:
         finally:
             for process in [observer, audio]:
                 if process and process.poll() is None:
+                    if process is observer and self.unsafe_observer:
+                        continue
                     try:
                         process.wait(timeout=90)
                     except subprocess.TimeoutExpired:
-                        process.kill(); process.wait(timeout=10)
+                        if process is observer:
+                            self.unsafe_observer = True
+                        else:
+                            process.kill(); process.wait(timeout=10)
             if (self.folder / "audio.json").exists():
                 data = json.loads((self.folder / "audio.json").read_text()); result["audio"] = data
                 if p["row"] == "C00":
@@ -556,13 +613,21 @@ class Run:
                     if data["calibrationValid"]:
                         data.update(binding=self.binding, createdAt=time.time())
                         write(self.work / "audio-calibration.json", data)
-            if p["row"] != "restore-all":
+            if self.unsafe_observer:
+                # Do not race an observer that may still be driving the phone.
+                # The batch supervisor kills and verifies the whole row process
+                # group before attempting journal restoration.
+                result["restored"] = False
+                result["status"] = "restore-failed-use-restore-all"
+            elif p["row"] != "restore-all" and not p.get("hardwareNA"):
                 try:
                     self.recover()
                     if self.args.keep_setup:
                         # Matrix runs keep the owned Focus/contact between rows; only the Focus-on window ends here.
                         self.arm({"armed": False, "activityAction": None if p["activity"] else "end"})
-                        self.ui(["dnd:off" if p["focusMode"] == "dnd" else "focus:off"])
+                        cleanup = (["activity-network:restore"] if p["activity"] else [])
+                        cleanup += ["dnd:off" if p["focusMode"] == "dnd" else "focus:off"]
+                        self.ui(cleanup)
                         result["restored"] = "focus-off"
                     else:
                         self.restore(); result["restored"] = True
@@ -595,8 +660,16 @@ def main():
     parser.add_argument("--unknown-caller", action="store_true", help="verify the supplied E.164 caller is absent from Contacts")
     parser.add_argument("--favorite", choices=["yes", "no"], help="set the owned test contact's Favorites state")
     parser.add_argument("--server-answer", action="store_true", help="simulate an answer through a local mailbox, not APNs")
+    parser.add_argument("--activity-focus", choices=["on", "off"], help="choose Focus for L07–L15")
     args = parser.parse_args()
     p = plan(args.row, args.locked_auto_answer, args.listen, args.provider, args.caller_format, args.repeated_calls, args.caller_value)
+    if args.activity_focus is not None:
+        value = args.activity_focus == "on"
+        if p["row"] in [f"L{n:02}" for n in range(1, 7)] and value != p["focus"]:
+            raise ValueError("L01–L06 have a prescribed Focus state")
+        if p["row"] not in [f"L{n:02}" for n in range(1, 16)]:
+            raise ValueError("Activity Focus override is only valid for L01–L15")
+        p["focus"] = value
     if args.focus_mode == "dnd" and (not p["focus"] or p["app"] or p["person"] or not p["sendVoIP"]):
         raise ValueError("Built-in DND rows require a focused incoming call with app and person excluded")
     if args.unknown_caller and (not args.caller_value or args.caller_format != "e164" or args.caller_value == "+15555550199" or p["person"]):
@@ -620,11 +693,19 @@ def main():
             p["status"] = "skipped-dependency-or-unsupported"
             p["humanQA"] = False
         print(json.dumps(p, indent=2)); return
+    if (p["baseRow"] == "restore-all" and not os.environ.get("FOCUS_BATCH_OWNER_PID")
+            and not os.environ.get("FOCUS_BATCH_LOCK_NONCE")):
+        # Preserve direct restore-all, but let a lock-owning supervisor run its
+        # preflight and restoration in bounded process groups.
+        from morning_batch import supervised_restore
+        supervised_restore()
+        return
+    require_device_supervisor()
     if p["baseRow"] == "preflight":
         Run(p, args).ui(["share-across-devices:check"])
         print(json.dumps({"row": "preflight", "status": "recorded"})); return
     result = Run(p, args).execute()
-    if result["status"] not in ["recorded", "restored"]:
+    if result["status"] not in ["recorded", "restored", "not-applicable-hardware"]:
         raise RuntimeError("Row or restoration incomplete")
 
 

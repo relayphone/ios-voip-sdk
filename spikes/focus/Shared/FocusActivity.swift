@@ -17,6 +17,8 @@ struct FocusAttributes: ActivityAttributes {
     var revision: Int
     var excerpt: String
     var updatedAt: Int64
+    // Optional for old payloads; this probe uses only synthetic session IDs.
+    var sessionID: String? = nil
   }
 }
 
@@ -28,6 +30,13 @@ enum FocusActivities {
   // Set by the containing app; the widget never writes app-container traces.
   @MainActor static var record: ((String, [String: Any]) -> Void)?
   @MainActor static var discovery: Task<Void, Never>?
+  @MainActor static let authorization = ActivityAuthorizationInfo()
+  @MainActor static var enablementObservation: Task<Void, Never>?
+  @MainActor static var frequentObservation: Task<Void, Never>?
+  @MainActor static var pushToStartObservation: Task<Void, Never>?
+  @MainActor static var pushToStartEnabled = false
+  @MainActor static var lastPushToStartToken: Data?
+  @MainActor static var lastPushToStartRunID: String?
   @MainActor static var ending = false
   enum ContinuityError: Error { case missing, ambiguous, ending }
 
@@ -53,6 +62,108 @@ enum FocusActivities {
       try? FileManager.default.removeItem(at: ProbeFiles.documents.appendingPathComponent(name))
     }
   }
+  // Shared with the widget target, so do not depend on the app-only ProbeConfig.
+  // Only a test run UUID is eligible for export; malformed or missing config is nil.
+  private struct RunContext: Decodable { let runID: String? }
+  private struct RegistrationIdentity: Decodable { let activityID: String }
+  static func currentRunID() -> String? {
+    let url = ProbeFiles.documents.appendingPathComponent("focus.json")
+    guard let data = try? Data(contentsOf: url),
+          let context = try? JSONDecoder().decode(RunContext.self, from: data),
+          let runID = context.runID, UUID(uuidString: runID) != nil else { return nil }
+    return runID
+  }
+  // This file is a private handoff, not an APNs request or an assertion that a
+  // remote start will be delivered. Never include the token in logs.
+  @MainActor static func exportPushToStart(_ token: Data) {
+    guard pushToStartEnabled, !token.isEmpty else { return }
+    let url = ProbeFiles.documents.appendingPathComponent("activity-start-token.json")
+    let runID = currentRunID()
+    if lastPushToStartToken == token, lastPushToStartRunID == runID,
+      FileManager.default.fileExists(atPath: url.path) { return }
+    let generation = UUID().uuidString
+    var value = ["token": token.map { String(format: "%02x", $0) }.joined(), "tokenGeneration": generation]
+    if let runID { value["runID"] = runID }
+    do {
+      try ProbeFiles.write("activity-start-token.json", data: JSONEncoder().encode(value))
+      lastPushToStartToken = token
+      lastPushToStartRunID = runID
+      record?("activity.pushToStartTokenExported", ["tokenGeneration": generation, "bytes": token.count])
+    } catch {
+      lastPushToStartToken = nil
+      lastPushToStartRunID = nil
+      try? FileManager.default.removeItem(at: url)
+      record?("activity.pushToStartTokenExportFailed", [:])
+    }
+  }
+  @MainActor static func observePushToStart(enabled: Bool) {
+    pushToStartEnabled = enabled
+    guard enabled else {
+      pushToStartObservation?.cancel(); pushToStartObservation = nil
+      lastPushToStartToken = nil
+      lastPushToStartRunID = nil
+      try? FileManager.default.removeItem(at: ProbeFiles.documents.appendingPathComponent("activity-start-token.json"))
+      return
+    }
+    if #available(iOS 17.2, *) {
+      if let token = Activity<FocusAttributes>.pushToStartToken { exportPushToStart(token) }
+      else {
+        lastPushToStartToken = nil
+        lastPushToStartRunID = nil
+        try? FileManager.default.removeItem(at: ProbeFiles.documents.appendingPathComponent("activity-start-token.json"))
+        record?("activity.pushToStartTokenUnavailable", [:])
+      }
+      guard pushToStartObservation == nil else { return }
+      pushToStartObservation = Task { @MainActor in
+        for await token in Activity<FocusAttributes>.pushToStartTokenUpdates {
+          guard !Task.isCancelled, pushToStartEnabled else { return }
+          exportPushToStart(token)
+        }
+      }
+    } else { record?("activity.pushToStartUnavailable", [:]) }
+  }
+  // A sampled capability is an observation, not a guarantee of future push
+  // delivery or a server-side registration acknowledgement.
+  @MainActor static func snapshotCapabilities() {
+    do {
+      let all = Activity<FocusAttributes>.activities
+      let active = all.filter { $0.activityState == .active || $0.activityState == .stale }
+      // Enumeration must succeed before absence is asserted. A corrupt or
+      // unreadable registration still counts as present; its ID is unknown.
+      let names = Set(try FileManager.default.contentsOfDirectory(atPath: ProbeFiles.documents.path))
+      let registrationPresent = names.contains("activity-registration.json")
+      let tokenPresent = names.contains("activity-update-token.json")
+      var registeredID: String?
+      if registrationPresent,
+         let data = try? Data(contentsOf: ProbeFiles.documents.appendingPathComponent("activity-registration.json")),
+         let registration = try? JSONDecoder().decode(RegistrationIdentity.self, from: data),
+         all.contains(where: { $0.id == registration.activityID }) {
+        // Only an ID supplied by ActivityKit is exposed; update-token contents are never read or logged.
+        registeredID = registration.activityID
+      }
+      let value: [String: Any] = ["activitiesEnabled": authorization.areActivitiesEnabled,
+        "frequentPushesEnabled": authorization.frequentPushesEnabled, "activeActivityCount": active.count,
+        "allActivityCount": all.count, "registrationPresent": registrationPresent,
+        "registeredActivityID": registeredID.map { $0 as Any } ?? NSNull(), "updateTokenPresent": tokenPresent,
+        "observedAtMs": Int(Date().timeIntervalSince1970 * 1000),
+        "runID": currentRunID().map { $0 as Any } ?? NSNull()]
+      try ProbeFiles.write("activity-capabilities.json", data: JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]))
+      record?("activity.capabilities", value)
+    } catch { record?("activity.capabilitiesExportFailed", [:]) }
+  }
+  @MainActor static func observeAuthorization() {
+    snapshotCapabilities()
+    if enablementObservation == nil {
+      enablementObservation = Task { @MainActor in
+        for await _ in authorization.activityEnablementUpdates { snapshotCapabilities() }
+      }
+    }
+    if frequentObservation == nil {
+      frequentObservation = Task { @MainActor in
+        for await _ in authorization.frequentPushEnablementUpdates { snapshotCapabilities() }
+      }
+    }
+  }
   @MainActor static func cancelObservations() {
     for task in observations.values { task.cancel() }
     for task in stateTasks.values { task.cancel() }
@@ -62,6 +173,12 @@ enum FocusActivities {
   @MainActor static func isUniqueCurrent(_ activity: Activity<FocusAttributes>) -> Bool {
     let current = Activity<FocusAttributes>.activities.filter { $0.activityState == .active || $0.activityState == .stale }
     return selection(current) == .reuse(0) && current.first?.id == activity.id
+  }
+  // Do not write arbitrary server/user identifiers into the probe trace.
+  static func tracedSession(_ value: String?) -> Any {
+    let prefix = "focus-synthetic-"
+    guard let value, value.hasPrefix(prefix), UUID(uuidString: String(value.dropFirst(prefix.count))) != nil else { return NSNull() }
+    return value
   }
   @MainActor static func export(_ token: Data, for activity: Activity<FocusAttributes>) {
     guard !ending, isUniqueCurrent(activity), marker()?["activityID"] == activity.id,
@@ -94,13 +211,15 @@ enum FocusActivities {
   @MainActor static func reconcile() {
     guard !ending else { return }
     record?("activity.inventory", ["ids": Activity<FocusAttributes>.activities.map(\.id)])
+    snapshotCapabilities()
     let current = Activity<FocusAttributes>.activities.filter { $0.activityState == .active || $0.activityState == .stale }
     switch selection(current) {
     case .reuse(let index):
       let activity = current[index]
       if marker() == nil { try? setMarker(activity) }
       record?("activity.current", ["activityID": activity.id, "state": String(describing: activity.activityState),
-        "revision": activity.content.state.revision, "excerpt": activity.content.state.excerpt])
+        "revision": activity.content.state.revision, "excerpt": activity.content.state.excerpt,
+        "sessionID": tracedSession(activity.content.state.sessionID)])
       observe(activity)
     case .create: clearRegistration(); cancelObservations()
     case .missing: clearRegistration(); cancelObservations(); record?("activity.missing", [:])
@@ -127,6 +246,7 @@ enum FocusActivities {
     try setMarker(activity)
     observe(activity)
     record?("activity.created", ["activityID": activity.id, "surfaceID": activity.attributes.surfaceID])
+    snapshotCapabilities()
   }
   @MainActor static func observe(_ activity: Activity<FocusAttributes>) {
     if let token = activity.pushToken { export(token, for: activity) }
@@ -150,7 +270,8 @@ enum FocusActivities {
     contentTasks[activity.id] = Task { @MainActor in
       for await content in activity.contentUpdates {
         record?("activity.content", ["activityID": activity.id, "revision": content.state.revision,
-          "excerpt": content.state.excerpt, "updatedAt": content.state.updatedAt])
+          "excerpt": content.state.excerpt, "updatedAt": content.state.updatedAt,
+          "sessionID": tracedSession(content.state.sessionID)])
       }
     }
   }
@@ -158,7 +279,8 @@ enum FocusActivities {
     for activity in Activity<FocusAttributes>.activities {
       let revision = activity.content.state.revision + 1
       await activity.update(ActivityContent(state: .init(revision: revision,
-        excerpt: "Synthetic transcript turn \(revision)", updatedAt: Int64(Date().timeIntervalSince1970)),
+        excerpt: "Synthetic transcript turn \(revision)", updatedAt: Int64(Date().timeIntervalSince1970),
+        sessionID: activity.content.state.sessionID),
         staleDate: Date().addingTimeInterval(30))) // no alertConfiguration
     }
   }
@@ -172,6 +294,13 @@ enum FocusActivities {
     }
     clearRegistration()
     try? FileManager.default.removeItem(at: ProbeFiles.documents.appendingPathComponent("activity-identity.json"))
+    snapshotCapabilities()
+  }
+  // Reset is local-only; removing an exported token does not revoke it at APNs.
+  @MainActor static func reset() async {
+    observePushToStart(enabled: false)
+    await end()
+    record?("activity.reset", ["localRegistrationCleared": true])
   }
 }
 

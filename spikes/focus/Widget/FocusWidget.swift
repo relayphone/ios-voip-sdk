@@ -7,13 +7,15 @@ import WidgetKit
     ActivityConfiguration(for: FocusAttributes.self) { context in
       VStack(alignment: .leading) {
         Text("Focus Probe · synthetic transcript").font(.headline)
-        Text(context.isStale ? "Updates delayed" : context.state.excerpt)
+        if context.isStale { Text("Updates delayed") }
+        else { Text(context.state.excerpt).privacySensitive() }
         Text("Revision \(context.state.revision)").font(.caption)
       }.padding().activityBackgroundTint(.black).activitySystemActionForegroundColor(.white)
     } dynamicIsland: { context in
       DynamicIsland {
         DynamicIslandExpandedRegion(.center) {
-          Text(context.isStale ? "Updates delayed" : context.state.excerpt)
+          if context.isStale { Text("Updates delayed") }
+          else { Text(context.state.excerpt).privacySensitive() }
         }
       } compactLeading: { Image(systemName: "captions.bubble") }
         compactTrailing: { Text("\(context.state.revision)") }
