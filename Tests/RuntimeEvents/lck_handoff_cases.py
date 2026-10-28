@@ -12,12 +12,15 @@ def event(j, name, predicate=lambda row: True, *, start=0):
     return j.wait(lambda rows: next((r for r in rows[start:] if r['event'] == PREFIX + name and predicate(r)), None))
 
 
-def audio_delay(j, settled, low, description):
+def audio_delay(j, settled, expected, description):
+    j.app('advance', ms=expected - 1)
+    assert not any(r['event'] == PREFIX + 'didActivate' for r in j.rows()), description + ' audio fired before its deadline'
+    j.app('advance', ms=1)
     activated = event(j, 'didActivate')
     assert activated['sequence'] > settled['sequence'], description + ' audio preceded native fulfillment'
-    delay = activated['t_ms'] - settled['t_ms']
-    assert low <= delay <= 1000, f'{description} audio after settlement: {delay}ms'
-    print(f'LCK {description} audio after settlement: {delay} ms', flush=True)
+    delay = fixture_time(activated) - fixture_time(settled)
+    assert delay == expected, f'{description} controlled audio after settlement: {delay}ms'
+    print(f'LCK {description} controlled audio after settlement: {delay} ms', flush=True)
     return delay
 
 
@@ -50,22 +53,65 @@ def composite_audio(j, name, operation, delayed_kind):
     return delay
 
 
+def fixture_time(row):
+    value = row.get('fixtureTimeMS')
+    assert type(value) is int, 'controlled fixture clock evidence is required'
+    return value
+
+
+def run_mute_case(j):
+    j.begin('mutePreservesPendingJoinAudio')
+    j.app('incoming', call='A')
+    j.app('clock')
+    action_ids = set(j.system('answer', call='A')['actionIDs'])
+    joined = event(j, 'settled', lambda r: r.get('actionID') in action_ids and r['kind'] == 'Join')
+    fixture_time(joined)
+    j.app('advance', ms=180)
+    assert not any(r['event'] == PREFIX + 'didActivate' for r in j.rows()), 'Mute stimulus missed the pending Join audio window'
+    mute_ids = set(j.system('mute', call='A', muted=True)['actionIDs'])
+    muted = event(j, 'perform', lambda r: r.get('actionID') in mute_ids and r['kind'] in ('Mute', 'MuteConversationAction'))
+    mute_settlement = event(j, 'settled', lambda r: r.get('actionID') == muted['actionID'])
+    delivery_ms = fixture_time(muted) - fixture_time(joined)
+    assert delivery_ms == 180, f'controlled Mute delivery was {delivery_ms}ms'
+    j.app('advance', ms=109)
+    assert not any(r['event'] == PREFIX + 'didActivate' for r in j.rows()), 'Join audio fired before its original deadline'
+    j.app('advance', ms=1)
+    activated = event(j, 'didActivate')
+    assert joined['sequence'] < muted['sequence'] < mute_settlement['sequence'] < activated['sequence'], 'Mute must settle while the original Join audio remains pending'
+    join_audio_ms = fixture_time(activated) - fixture_time(joined)
+    after_mute_ms = fixture_time(activated) - fixture_time(mute_settlement)
+    assert join_audio_ms == 290, f'Mute changed the original Join audio deadline: {join_audio_ms}ms'
+    assert after_mute_ms == 110, f'Mute restarted the pending Join audio timer: {after_mute_ms}ms'
+    j.app('advance', ms=350)
+    assert len([r for r in j.rows() if r['event'] == PREFIX + 'didActivate']) == 1, 'Mute caused duplicate audio activation'
+    assert not any(r['event'] == PREFIX + 'didDeactivate' for r in j.rows()), 'Mute unexpectedly deactivated audio'
+    print(f'LCK controlled Mute delivery: {delivery_ms} ms; Join audio: {join_audio_ms} ms; audio after Mute: {after_mute_ms} ms', flush=True)
+    return dict(joinToMuteDeliveryMS=delivery_ms,
+                joinToMuteSettlementMS=fixture_time(mute_settlement) - fixture_time(joined),
+                joinToAudioMS=join_audio_ms, muteSettlementToAudioMS=after_mute_ms,
+                timingEvidence='controlled fixture clock; not device measurements')
+
+
 def run_cases(j):
     j.begin('singleJoinAudio')
     j.app('incoming', call='A')
+    j.app('clock')
     action_ids = set(j.system('answer', call='A')['actionIDs'])
     assert len(action_ids) == 1, 'single Join must contain exactly one runtime action'
     settled = event(j, 'settled', lambda r: r.get('actionID') in action_ids and r['kind'] == 'Join')
     j.state(A='joined')
-    # #85's first Join activates hundreds of ms after settlement. This budget
-    # catches the composite-only path accidentally making it immediate.
-    join_audio_delay = audio_delay(j, settled, 200, 'single Join')
+    # Keep the shipping single-Join schedule distinct from the composite path;
+    # fixture time catches an accidentally immediate activation.
+    join_audio_delay = audio_delay(j, settled, 290, 'single Join')
 
     j.begin('singleStartAudio')
+    j.app('clock')
     j.app('start', call='A')
     started = event(j, 'perform', lambda r: r['kind'] == 'Start' and r['callUUID'] == j.ids['A'])
     settled = event(j, 'settled', lambda r: r.get('actionID') == started['actionID'])
-    start_audio_delay = audio_delay(j, settled, 150, 'single Start')
+    start_audio_delay = audio_delay(j, settled, 230, 'single Start')
+
+    mute_timings = run_mute_case(j)
 
     hold_audio_delay = composite_audio(j, 'delayedPauseCompositeAudio', 'hold-and-accept', 'Pause')
     end_audio_delay = composite_audio(j, 'delayedEndCompositeAudio', 'end-and-accept', 'End')
@@ -93,6 +139,7 @@ def run_cases(j):
     print(f'LCK delayed unpause fulfillment: {fulfillment_delay} ms; End B after settlement: {after_settlement} ms', flush=True)
     j.save()
     return dict(singleJoinAudioMS=join_audio_delay, singleStartAudioMS=start_audio_delay,
-                delayedPauseCompositeAudioMS=hold_audio_delay,
+                singleAudioTimingEvidence='controlled fixture clock; not device measurements',
+                mutePreservedJoinAudioMS=mute_timings['joinToAudioMS'], muteTimings=mute_timings, delayedPauseCompositeAudioMS=hold_audio_delay,
                 delayedEndCompositeAudioMS=end_audio_delay, delayedResumeMS=fulfillment_delay,
                 endAfterResumeSettlementMS=after_settlement, delayedResumeEvidence='injected scheduler regression')
