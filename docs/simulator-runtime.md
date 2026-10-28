@@ -72,11 +72,10 @@ for the app under test, or its `XCUIApplication.launchEnvironment`, with that
 app's bundle ID. An injection into the test runner alone does not reach the app.
 Other test tools should likewise set the environment only on the app they launch.
 
-**Measured:** Phone's app-hosted XCTest integration uses a generated `.xctestrun`
-and an allowlist without global simulator environment changes ([Phone #374](https://github.com/ziahamza/phone-app/pull/374),
-reviewed in [the v0.1 review](design/2026-10-21-v01-review.md)).
-**Proposed:** apply this procedure to each new host's test configuration; that
-host still needs its own ring/join acceptance run.
+App-hosted XCTest integration can use a generated `.xctestrun` and an allowlist
+without global simulator environment changes. Each host still needs its own
+ring/join acceptance run; see the
+[integration constraints](design/2026-10-21-v01-review.md).
 
 ## Optional simulator-wide loader and recovery
 
@@ -191,6 +190,41 @@ For direct launch customization, the process environment accepts `CKSIM_RUN_ID`,
 forwards incoming reports to genuine CallKit, shielding the app from its simulator
 teardown. That experimental mode does not prove real-push obligations are met.
 
+## Remaining device measurements
+
+The iPhone 13 / iOS 27.0 LCK-only captures in
+[#85](https://github.com/relayphone/ios-voip-sdk/pull/85) cover system Hold/End/End Held
+& Accept, delayed or failed constituents, configuration-dependent choices, successful
+application unpause, merge/unmerge pass-through and lock-screen behavior. The
+[multi-call report](research/callkit-simulator-probe/livecommunicationkit/multicall/README.md)
+contains the observations; the cases below remain unverified.
+
+LCK exposes neither concrete transaction IDs nor group membership. Simulator IDs
+provide simulator correlation. The advertised action `timeoutDate` is 30 seconds;
+observed effective expiry is about 5.3 seconds for Pause/End and 64 seconds for Join.
+Representative samples and simulator scheduling policies do not establish bounds
+for other devices, OS versions or action kinds.
+
+The simulator uses these observations for system call-waiting settlement barriers,
+effective expiry, capacity choices and application unpause behavior. Transaction
+identity and group membership remain simulator policy. Injected delayed-action
+and audio regressions verify that policy; they add no device measurements.
+
+| Initial state | Measurement | Evidence needed |
+| --- | --- | --- |
+| A paused, B joined, configuration 2×1 | In one application `perform`, pause B and unpause A | Constituent inventory/order, B's resulting state, delivery versus settlement, intermediate states and audio order. Repeat reversed fulfillment, each failure and each pending constituent. |
+| A paused, B joined, configuration 2×1 | Unpause A alone with delayed, failed or pending settlement | Generated End B timing versus delivery and settlement, both conversation states and audio order. The existing capture covers immediate successful settlement only. |
+| Genuine CallKit-only probe | Hold/End/End Held & Accept and application merge/unmerge | Actual `CXTransaction` identifiers/composition and public CallKit group behavior. Use a separate probe without a simultaneous LCK manager (D13). |
+| Ringing, joining or leaving near capacity | Incoming/start during each transition, then end/fail the existing call | Which transient states consume capacity, slot-release timing and error domain/code. Existing measurements cover joined/paused capacity and outgoing Start error 7. |
+| An otherwise valid conversation/action | Leave Start, Mute, tones, Merge or Unmerge pending | Effective expiry versus advertised 30 seconds, cleanup callbacks, state and audio effects. |
+| Conversation left after a failed or expired constituent | Immediately fulfill the generated cleanup End; compare failed/pending settlement | Reproduce the observed cleanup-End timeout after fulfillment, retaining action identity and duplicate callbacks. Keep this anomaly distinct from normal End settlement. |
+| Relevant system settings enabled | Incoming reports for restricted sharing, protected calls or sensitive participants | Actual codes 5–7, domain, report-to-completion interval, process survival and repeated-caller behavior. Incoming code 4 was absent in the LCK captures; its injected form is a synthetic fault. |
+
+Retain OS/build, configuration, full stable conversation/action UUIDs, monotonic
+and wall times, callback entry/exit, parameters, advertised deadlines, settlement
+times, manager snapshots and audio callbacks. Identify each assertion's source:
+public LCK observation, genuine CallKit observation or simulator policy.
+
 ## Verification
 
 ```sh
@@ -203,7 +237,7 @@ bash discovery/run.sh
 Legacy discovery compiles with Xcode 26.6 and 26.3 on macOS 26. It runs nightly
 at 02:20 UTC or by manual dispatch, outside the PR/main acceptance gate. Hosted
 simulator migration/startup continued to time out after the agreed hardening
-time-box. Failures remain visible; this lane no longer blocks SDK work.
+time-box. Nightly failures remain visible alongside the separate SDK acceptance.
 SDK M0/M1 is a separate required PR/main workflow, including Release device
 exclusion checks. Changes to either workflow trigger that SDK acceptance.
 **Measured:** [hosted run 39680771297](https://github.com/relayphone/ios-voip-sdk/actions/runs/39680771297)
@@ -278,10 +312,11 @@ display simulator. To reuse a separate, already booted simulator, pass
 never deleted by the command. The inspector is iPhone-only for this MVP.
 
 The incoming banner expands to a full call screen. Answer and Decline handle a
-single incoming call; Call waiting options offers Hold & Accept and End & Accept
-when another call is active. End Call ends a connected call. Buttons dispatch the
-runtime's system controls; application pause, unpause, merge, and unmerge controls request
-application origin. Acceptance follows the resulting journal state. Conversations, pending deadlines, action
+single incoming call. Call waiting options follows the runtime's available choices,
+including Hold & Accept, End & Accept and End Held & Accept where supported.
+End Call ends a connected call. Application pause, unpause, merge and unmerge
+controls request application origin; call-waiting buttons request system origin.
+Acceptance follows the resulting journal state. Conversations, pending deadlines, action
 settlement latency versus the profile budget, and audio activation remain live.
 The device-reference section compares journal-measured simulator intervals with
 the iPhone 13 / iOS 27.0 LCK captures: about 190 ms from push to report done,
@@ -292,8 +327,10 @@ The UI retains the latest 300 events and five ended conversations; the full
 journal remains available to watch and CI.
 
 A random-token-authenticated bridge binds only to host loopback. It incrementally
-reads the same event channel and forwards the five call commands through the
-existing mailbox. The target run/process identity is pinned for both reads and
+reads the same event channel and forwards system call controls, application
+pause/unpause and merge/unmerge requests, incoming-report filter settings and
+the explicit incoming code 4 fault through the existing mailbox.
+The target run/process identity is pinned for both reads and
 commands. A target restart requires reconnecting with `cksim inspect`; connection
 errors disable controls. A control timeout means its outcome is unknown: inspect
 the timeline before retrying. No inspector transport or app code is linked into
@@ -309,8 +346,12 @@ simulator.
 The event and LCK fixtures capture their canonical simulator paths before installation.
 Its owner repeats that preparation for a replacement device before replaying
 installs, collecting inventory once per device. After installation it validates
-the final device's cached application directory locally, then checkpoints and
-launches once. Journal discovery uses that directory without another inventory
+the final device's cached application directory locally, then checkpoints before
+launch. Event fixture launch has a 180-second host bound per attempt and one timeout-only
+re-attempt after confirmed host cleanup. Each attempt uses a fresh journal identity;
+the first stimulus waits for the final process and channel to be validated.
+Installation and inventory occur once before these event fixture startup attempts.
+Journal discovery uses the cached directory without another inventory
 RPC. Pre-install inventory has its own 180-second bound per query and one
 timeout-only re-attempt across the entire install preparation, including
 replacement callbacks. `infra:inventory` distinguishes a timeout, recovery or
@@ -318,6 +359,8 @@ exhaustion. Non-timeout failures, uncertain host cleanup, stale ownership and
 checkpoint evidence prevent re-attempt; cancellation propagates. The shared
 installation recovery budget, product deadlines and native acceptance checks
 remain unchanged. Other inventory lookups retain their existing bounds.
+The LCK fixture uses a separate 120-second host-launch bound and a 20-second
+fresh-journal discovery bound, without replaying its launch.
 
 The automatic `--driver journal` journey uses `cksim` to inject an incoming call
 and issue one system-origin Answer. It foregrounds the fixture for controls and
@@ -336,13 +379,21 @@ a bounded notifier fallback. Normal Inspector launches do not write acceptance
 receipts; the test enables them with a unique launch nonce.
 
 Inspector startup uses a 180-second host-launch bound. A shared consumer keeps
-its original 25-second deadline from launch issuance, including startup; every
-receipt must also fit the native process's 25-second lifetime. Authenticated
+its original 25-second deadline from launch issuance, including startup; Inspector
+receipts must also fit that native process's 25-second lifetime. Authenticated
 readiness still needs a fresh publication after host reap. A missing or late
 acknowledgement fails without replaying the launch.
 Recorded startup timeouts are classified as `infra:startup`; diagnostic failures
 preserve the original exception. Already classified terminal transport outcomes
 retain their reason without spending the shared preparation recovery budget.
+
+Within the journey, the driver issues a fresh foreground challenge tied to
+the process, startup identity, target session and canonical data container. UIKit
+must report the app active. After cleaning up its owned launcher, the driver
+requires another fresh active publication. The current Inspector consumer
+deadline applies to both apps; the fixture's actual, potentially older startup identity is
+validated separately. Background, stale or late evidence, conflicting process
+headers, nonzero exits, cancellation and uncertain cleanup remain failures.
 
 **Measured:** [automatic native and GUI run](https://github.com/relayphone/ios-voip-sdk/actions/runs/40067131951)
 passed automatic native and live Inspector acceptance
