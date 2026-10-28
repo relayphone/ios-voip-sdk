@@ -10,6 +10,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = (
     'Sources/VoIPSDK/ConversationModels.swift',
+    'Sources/VoIPSDK/DialRequest.swift',
     'Sources/VoIPSDK/ConversationHandler.swift',
     'Sources/VoIPSDK/PushService.swift',
     'Sources/VoIPSDK/AudioRoutes.swift',

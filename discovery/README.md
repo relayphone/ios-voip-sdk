@@ -27,7 +27,7 @@ The SDK header controls compilation of the newer PushKit callback and metadata s
 
 `COMPILER_DEVELOPER_DIR` selects a compiler/SDK separately from the active Xcode
 that hosts CoreSimulator. CI tests Xcode 26.6 and 26.3 compiler paths on macOS 26.
-**Measured:** [hosted run 39680771297](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39680771297)
+**Measured:** [hosted run 39680771297](https://github.com/relayphone/ios-voip-sdk/actions/runs/39680771297)
 used iOS **26.5 (23F77)** with the `ios-27.0` behavior profile. Its Xcode 26.6
 lane used Xcode **26.6 (17F113)** on macOS **26.6.2 (25G83)**. The compiler
 matrix does not establish additional simulator OS coverage. This run does not

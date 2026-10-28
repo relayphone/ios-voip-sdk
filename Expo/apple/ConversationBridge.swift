@@ -18,6 +18,8 @@ final class ConversationBridge {
   private var stateObserver: UUID?
   private var eventObserver: UUID?
   private var tokenObserver: UUID?
+  private var dialObserver: UUID?
+  private var dialGeneration = -1
   private var audioRoutesObserver: UUID?
   private var deliveries: [UUID: Delivery] = [:]
   private var generation = -1
@@ -33,6 +35,8 @@ final class ConversationBridge {
     eventObserver = client.observeEvents { [weak self] event in
       var payload: [String: String] = [:]
       if let id = event.conversationID { payload["conversationId"] = id.uuidString }
+      if let id = event.serverCallID { payload["serverCallId"] = id }
+      if let id = event.eventID { payload["eventId"] = id }
       self?.emit("conversationEvent", ["type": event.type.rawValue, "payload": payload])
     }
     tokenObserver = pushService.observeToken { [weak self] token in
@@ -60,6 +64,32 @@ final class ConversationBridge {
 
   func accepts(generation: Int) -> Bool { !destroyed && generation >= 0 && generation > self.generation }
 
+  func listenForDialRequests(attached: Bool, generation: Int) {
+    guard !destroyed, generation >= 0, generation > dialGeneration else { return }
+    dialGeneration = generation
+    stopListeningForDialRequests()
+    guard attached else { return }
+    // Store identity before synchronous cold replay: teardown from an emitter
+    // callback can then remove this exact consumer without detaching a newer one.
+    let observer = UUID()
+    dialObserver = observer
+    DialRequestRouter.shared.observePending(id: observer) { [weak self] delivery, request in
+      guard let self, !self.destroyed else { return }
+      self.emit("conversationEvent", ["type": "dialRequest", "deliveryID": delivery.uuidString, "generation": generation,
+        "payload": ["handle": request.handle, "video": request.video]])
+    }
+  }
+
+  func acknowledgeDialRequest(_ delivery: UUID, generation: Int) {
+    guard !destroyed, generation == dialGeneration, let observer = dialObserver else { return }
+    DialRequestRouter.shared.acknowledge(delivery, observer: observer)
+  }
+
+  func stopListeningForDialRequests() {
+    if let dialObserver { DialRequestRouter.shared.removeObserver(dialObserver) }
+    dialObserver = nil
+  }
+
   func settle(_ id: UUID, generation: Int, success: Bool, rejection: HandlerRejection = .init(nil)) {
     guard !destroyed, self.generation == generation,
           let delivery = deliveries[id], delivery.generation == generation else { return }
@@ -72,6 +102,7 @@ final class ConversationBridge {
   func destroy(detachHandler: Bool) {
     guard !destroyed else { return }
     destroyed = true
+    stopListeningForDialRequests()
     cancelDeliveries(reason: "cancelled")
     if detachHandler { client.setConversationHandler(nil) }
     if let stateObserver { client.removeStateObserver(stateObserver) }
@@ -198,10 +229,21 @@ enum BridgeJSON {
 enum ConversationBridges {
   private static var bridges: [UUID: ConversationBridge] = [:]
   private static var handlerOwner: UUID?
+  private static var latestDialBridge: UUID?
 
   static func install(_ id: UUID, emit: @escaping ConversationBridge.Emit) throws {
     guard bridges[id] == nil else { return }
     bridges[id] = ConversationBridge(application: try ExpoMediaSupport.startFromBundle(), emit: emit)
+    if let previous = latestDialBridge { bridges[previous]?.stopListeningForDialRequests() }
+    latestDialBridge = id
+  }
+  static func listenForDialRequests(_ id: UUID, attached: Bool, generation: Int) {
+    guard latestDialBridge == id else { return }
+    bridges[id]?.listenForDialRequests(attached: attached, generation: generation)
+  }
+  static func acknowledgeDialRequest(_ id: UUID, delivery: UUID, generation: Int) {
+    guard latestDialBridge == id else { return }
+    bridges[id]?.acknowledgeDialRequest(delivery, generation: generation)
   }
   static func attach(_ id: UUID, attached: Bool, generation: Int) {
     guard let bridge = bridges[id], bridge.accepts(generation: generation) else { return }
@@ -221,5 +263,6 @@ enum ConversationBridges {
   static func remove(_ id: UUID) {
     bridges.removeValue(forKey: id)?.destroy(detachHandler: handlerOwner == id)
     if handlerOwner == id { handlerOwner = nil }
+    if latestDialBridge == id { latestDialBridge = nil }
   }
 }

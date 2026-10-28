@@ -39,6 +39,11 @@ def timestamp_ms(value):
     return date.timestamp() * 1000
 
 
+def join_expiry_seconds(source_root):
+    profile = json.loads((source_root / 'Sources/Engine/Resources/ios-27.0.json').read_text())
+    return profile['lckMultiCall']['joinExpirySeconds']
+
+
 def read_journal(directory, name, manifest, receipt, version):
     path = directory / (name + '.runtime.jsonl')
     require(path.stat().st_size > 0 and m0.digest(path) == receipt.get('journalSHA256'),
@@ -78,7 +83,7 @@ def projected(rows, conversation):
     return snapshots
 
 
-def case_conformance(rows, engine, case, simulator_os, deadlines):
+def case_conformance(rows, engine, case, simulator_os, deadlines, source_root=ROOT):
     launch = one(rows, 'launch')
     require(launch.get('mode') == 'sdk-m1' and launch.get('case') == case and launch.get('traceVersion') == 2,
             case + ': wrong example mode')
@@ -230,7 +235,7 @@ def case_conformance(rows, engine, case, simulator_os, deadlines):
                 isinstance(native_answer.get('provider'), str) and native_answer['provider'] and
                 advertised.get('provider') == native_answer['provider'] and
                 advertised.get('apiKind') == 'livecommunicationkit' and type(platform_deadline) is int and
-                advertised.get('deadlineSeconds') == advertised.get('expirySeconds') == 30 and
+                advertised.get('deadlineSeconds') == 30 and advertised.get('expirySeconds') == join_expiry_seconds(source_root) and
                 2500 <= platform_deadline - original_deadline <= 3500 and
                 engine.index(native_answer) < engine.index(advertised) < engine.index(marker) < engine.index(native_settlement),
                 case + ': effective deadline lacks the bound native LCK safety margin')
@@ -298,7 +303,7 @@ def validate(root, source_root=ROOT):
         rows, receipt = m0.bound_rows(directory, name, manifest, 'dev.iosvoipsdk.example')
         require(receipt.get('appEntryObserved') is True, case + ': app entry missing')
         engine = read_journal(directory, name, manifest, receipt, version)
-        results.append(case_conformance(rows, engine, case, environment['simulatorOS'], deadlines))
+        results.append(case_conformance(rows, engine, case, environment['simulatorOS'], deadlines, source_root))
     return dict(success=True, scenario='sdk-m1', cases=results, m0=baseline,
                 manifestSHA256=m0.digest(root / 'manifest.json'), deadlineBands=deadlines,
                 deadlineReferenceSHA256=references)

@@ -18,7 +18,8 @@ from summarize import EvidenceError, load, one, require
 
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = 'dev.iosvoipsdk.example'
-CASES = ('answer-end', 'decline', 'hold-accept', 'end-accept', 'mute-echo', 'provider-reset', 'push-launch')
+CASES = ('answer-end', 'decline', 'hold-accept', 'end-accept', 'mute-echo', 'provider-reset', 'push-launch', 'answered-elsewhere')
+ANSWERED_ELSEWHERE_BUDGET_MS = 1000
 D5 = 'docs/research/callkit-simulator-probe/device-system-ui/2026-10-20-iphone13-ui10-app.jsonl'
 COLD_PUSH = 'docs/research/callkit-simulator-probe/livecommunicationkit/push/2026-10-23-iphone13-ios27-d1-locked-cold-answer.jsonl'
 NATIVE = dict(join='CXAnswerCallAction', end='CXEndCallAction', hold='CXSetHeldCallAction',
@@ -66,7 +67,7 @@ def supervisor_check(receipt, index, failed_cleanup):
     require(not failed_cleanup, 'failure cleanup cannot qualify a native journey')
 
 
-def validate_case(rows, engine, index, controls, fixture_commands, case, expected_d5, launch_receipt=None):
+def validate_case(rows, engine, index, controls, fixture_commands, case, expected_d5, profile, launch_receipt=None):
     """Pure logical gate, also exercised by synthetic negative controls.
 
     The enclosing gate binds the original trace/journal, launcher PID, source,
@@ -99,9 +100,12 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
     for event in [row for row in rows if row['event'] == 'system.event']:
         name = event.get('name')
         require('conversationId' not in event, 'invalid SDK event context field')
-        require(name in ('audioActivated', 'audioDeactivated', 'providerReset', 'pushTokenUpdated', 'providerOwnershipLost'),
-                'unexpected SDK event context')
-        require('conversationID' not in event, 'invalid global SDK event context')
+        if case == 'answered-elsewhere' and name == 'answeredElsewhere':
+            require(event.get('conversationID') in by_sdk, 'unbound answered-elsewhere SDK event')
+        else:
+            require(name in ('audioActivated', 'audioDeactivated', 'providerReset', 'pushTokenUpdated', 'providerOwnershipLost'),
+                    'unexpected SDK event context')
+            require('conversationID' not in event, 'invalid global SDK event context')
     snapshots = [row for row in rows if row['event'] == 'sdk.snapshot']
     require(snapshots and all(type(row.get('revision')) is int for row in snapshots) and
             all(a['revision'] < b['revision'] for a, b in zip(snapshots, snapshots[1:])) and
@@ -133,6 +137,7 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
         'end-accept': ['push', 'answer', 'push', 'end-and-accept', 'end'],
         'mute-echo': ['push', 'answer', 'mute', 'push', 'reset', 'mute', 'tones', 'end'],
         'provider-reset': ['push', 'answer', 'reset'], 'push-launch': ['answer', 'end'],
+        'answered-elsewhere': ['push'],
     }[case]
     require(len(controls) == len(expected_operations), 'control inventory differs')
     for control, operation in zip(controls, expected_operations):
@@ -181,12 +186,19 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
         require(action['call'] in by_native, 'native action targets unknown call')
         settled = one([row for row in engine if row.get('actionID') == action['id']], 'action.settled')
         advertised = one([row for row in engine if row.get('actionID') == action['id']], 'action.deadline')
-        require(settled.get('fulfilled') is True and settled.get('origin') == action['origin'] and
+        # Effective expiry is independent of timeoutDate and comes from the source-bound profile.
+        expiry = (profile['lckMultiCall']['joinExpirySeconds'] if action['kind'] == NATIVE['join'] else
+                  profile['lckMultiCall']['pauseEndExpirySeconds'] if action['kind'] in (NATIVE['hold'], NATIVE['end']) else
+                  profile['lckActionDeadlineSeconds'])
+        require(settled.get('fulfilled') is True and settled.get('expired') is False and settled.get('origin') == action['origin'] and
                 action['delivered']['sequence'] < advertised['sequence'] < settled['sequence'] and
-                advertised.get('apiKind') == 'livecommunicationkit' and advertised.get('deadlineSeconds') == advertised.get('expirySeconds') == 30 and
-                type(advertised.get('deadlineMS')) is int and advertised.get('provider') == action['delivered'].get('provider'), 'unsettled/expired/wrong native deadline')
+                advertised.get('apiKind') == 'livecommunicationkit' and advertised.get('deadlineSeconds') == 30 and
+                advertised.get('expirySeconds') == expiry and
+                all(type(advertised.get(key)) is int for key in ('deadlineMS', 'issuedAtMS', 'expiryMS')) and
+                advertised.get('provider') == action['delivered'].get('provider') and advertised['expiryMS'] == advertised['issuedAtMS'] + expiry * 1000, 'unsettled/expired/wrong native deadline')
         upper = ready['wallTimeMS'] + settled['t_ms'] - marker['t_ms'] + 1
-        require(upper < advertised['deadlineMS'], 'native settlement reached platform expiry')
+        require(upper < min(advertised['deadlineMS'], advertised['expiryMS']),
+                'native settlement reached platform expiry')
         action.update(settled=settled, deadline=advertised)
 
     handlers = [row for row in rows if row['event'] == 'system.handler']
@@ -286,8 +298,11 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
         'mute-echo': ['backend-connected', 'app-mute', 'release-mute', 'finish'],
         'provider-reset': ['backend-connected', 'finish'],
         'push-launch': ['attach-handler', 'backend-connected', 'finish'],
+        'answered-elsewhere': ['answered-elsewhere', 'finish'],
     }[case]
     require([command.get('operation') for command in fixture_commands] == expected_commands, 'unexpected fixture operation')
+    if case == 'answered-elsewhere':
+        answered_elsewhere_contract(rows, engine, requests, fixture_commands, bindings[0], snapshots, hooks)
     for command in [value for value in fixture_commands if value['operation'] == 'backend-connected']:
         call = by_sdk.get(command.get('conversationID'))
         require(call, 'backend report targets unknown conversation')
@@ -351,6 +366,59 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
     return dict(case=case, nativeActions=len(actions), handlers=len(handlers), conversations=len(bindings), passed=True)
 
 
+def answered_elsewhere_contract(rows, engine, requests, commands, binding, snapshots, hooks):
+    """Bind the public host signal to native dismissal, without any End action."""
+    command = next(value for value in commands if value['operation'] == 'answered-elsewhere')
+    request = next(value for value in requests if value['operation'] == 'push')
+    server_id = request.get('payload', {}).get('incomingCall', {}).get('serverCallId')
+    context = dict(id=command['id'], eventId=command['id'], serverCallId=server_id,
+                   conversationID=binding['conversationID'])
+    require(isinstance(server_id, str) and server_id and command.get('serverCallId') == server_id and
+            command.get('conversationID') == binding['conversationID'], 'answered-elsewhere command targets another call')
+    requested = one(rows, 'system.answeredElsewhereRequested')
+    accepted = one(rows, 'system.answeredElsewhereAccepted')
+    signal = one(engine, 'system.answeredElsewhereSignal')
+    delivered = one([row for row in rows if row.get('id') == command['id']], 'system.commandReceived')
+    completed = one([row for row in rows if row.get('id') == command['id']], 'system.commandCompleted')
+    require(all(row.get(key) == value for row in (requested, accepted, signal) for key, value in context.items()) and
+            signal.get('traceSequence') == requested['sequence'] and accepted.get('accepted') is True and
+            delivered['sequence'] < requested['sequence'] < accepted['sequence'] < completed['sequence'],
+            'answered-elsewhere signal identity/order differs')
+    require(type(requested.get('clockBeforeMS')) is int and
+            0 <= requested['wallTimeMS'] - requested['clockBeforeMS'] <= 25,
+            'unbounded answered-elsewhere signal clock')
+    require(type(signal.get('t_ms')) is int, 'invalid answered-elsewhere native signal clock')
+    require(not any(row['event'] in ('transaction.delivered', 'action.settled', 'system.handlerEntered') for row in engine) and
+            not any(row['event'] == 'system.handler' for row in rows), 'answered-elsewhere submitted a native action or handler')
+    require(not any(call['status'] in ('connecting', 'connected', 'held') for row in snapshots for call in row['conversations']),
+            'answered-elsewhere call connected')
+    native = one(engine, 'report.ended')
+    incoming = one([row for row in engine if row.get('pushID') == binding['pushID']], 'report.incoming')
+    changes = [row for row in engine if row['event'] == 'call.changed']
+    ended = one([row for row in changes if row.get('ended') is True], 'call.changed')
+    require(type(native.get('reason')) is int and native['reason'] == 4 and
+            native.get('callUUID') == binding['callUUID'] and native.get('pushID') == binding['pushID'] and
+            native.get('provider') == incoming.get('provider') and
+            all(row.get('uuid') == binding['callUUID'] for row in changes) and ended.get('ringing') is False and
+            any(row['sequence'] < signal['sequence'] and row.get('ended') is False and row.get('ringing') is True for row in changes) and
+            signal['sequence'] < native['sequence'] < ended['sequence'], 'answered-elsewhere native dismissal differs')
+    require(all(type(row.get('t_ms')) is int and 0 <= row['t_ms'] - signal['t_ms'] <= ANSWERED_ELSEWHERE_BUDGET_MS
+                for row in (native, ended)), 'answered-elsewhere native dismissal exceeded 1000 ms')
+    terminal = next((row for row in snapshots if row['sequence'] > requested['sequence'] and
+                     any(call['id'] == binding['conversationID'] and call['status'] == 'ended' and
+                         call.get('endedReason') == 'answeredElsewhere' for call in row['conversations'])), None)
+    empty = next((row for row in snapshots if terminal and row['sequence'] > terminal['sequence'] and row['conversations'] == []), None)
+    event = one([row for row in rows if row['event'] == 'system.event' and row.get('name') == 'answeredElsewhere'], 'system.event')
+    require(terminal and empty and all(event.get(key) == value for key, value in context.items() if key != 'id') and
+            requested['sequence'] < terminal['sequence'] <= event['sequence'] and
+            terminal['wallTimeMS'] >= requested['clockBeforeMS'] + native['t_ms'] - signal['t_ms'] - 1 and
+            hooks[-1]['sequence'] > empty['sequence'],
+            'answered-elsewhere terminal projection/event differs')
+    require(all(requested['wallTimeMS'] <= row['wallTimeMS'] and
+                row['wallTimeMS'] - requested['clockBeforeMS'] <= ANSWERED_ELSEWHERE_BUDGET_MS
+                for row in (terminal, empty, event, hooks[-1])), 'answered-elsewhere projection/event/hook exceeded 1000 ms')
+
+
 def record_manifest(root, parent):
     manifest = json.loads((parent / 'manifest.json').read_text())
     result = bounded(['xcrun', 'simctl', 'list', 'devices', '-j'], 30)
@@ -395,6 +463,7 @@ def validate(parent, source_root=ROOT):
     package_check(root / 'control-package', identity, source_root)
     expected = d5_compositions([json.loads(line) for line in (source_root / D5).read_text().splitlines()])
     deadlines, reference_files = deadline_oracles(source_root)
+    profile = json.loads((source_root / 'Sources/Engine/Resources/ios-27.0.json').read_text())
     reference_files.update(cold_push_reference(source_root))
     results = []
     for case in CASES:
@@ -416,7 +485,7 @@ def validate(parent, source_root=ROOT):
                 translated[NATIVE['hold']] = 'PauseConversationAction'
                 translated[NATIVE['tones']] = 'PlayToneAction'
                 check_deadline(dict(kind=translated.get(kind), timeoutIn=row.get('deadlineSeconds')), deadlines)
-        results.append(validate_case(rows, engine, index, controls, commands, case, expected,
+        results.append(validate_case(rows, engine, index, controls, commands, case, expected, profile,
                        json.loads((directory / 'launch-push.json').read_text()) if case == 'push-launch' else None))
     return dict(success=True, measurement='measured source-bound simulator system journeys', **identity,
                 runID=manifest['runID'], simulatorID=manifest['simulatorID'], simulatorOS=json.loads((parent / 'environment.json').read_text())['simulatorOS'],

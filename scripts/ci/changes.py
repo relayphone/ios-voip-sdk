@@ -57,8 +57,8 @@ def select(paths, full=False):
     shared = any(p.startswith(COMPILED_SDK) for p in paths)
     jobs = dict.fromkeys(SDK_JOBS, False)
     jobs['sdk-native'] = sdk
-    jobs['expo-livekit-native'] = sdk and (shared or any(p in NATIVE_INPUTS or p in DEVICE_BUILDERS
-        or p.startswith(('Expo/', 'ExpoMedia/', 'example/', 'Tests/ExpoMedia/')) for p in paths))
+    jobs['expo-livekit-native'] = sdk and (shared or any('expo_livekit' in p or p in EXPO_JOURNEY_INPUTS or p in NATIVE_INPUTS or p in DEVICE_BUILDERS
+        or p.startswith(('Expo/', 'ExpoMedia/', 'example/', 'Tests/ExpoMedia/', 'scripts/sim/')) for p in paths))
     jobs['swift-livekit-native'] = sdk and any('swift_livekit' in p or p.startswith(
         ('Sources/VoIPSDK/', 'Sources/VoIPPlatform/', 'Integrations/LiveKit/',
          'Tests/SwiftLiveKit/', 'scripts/sim/')) or p in ('Package.swift', 'Tools/cksim-notify.c',
@@ -100,6 +100,11 @@ NATIVE_INPUTS = {'Package.swift', 'IosVoipSDK.podspec', 'expo-module.config.json
                  'package.json', 'package-lock.json', 'app.plugin.js'}
 DEVICE_BUILDERS = {'discovery/build_sdk_device_release.py', 'discovery/device_oracles.py',
                    'discovery/device_release_exclusion.py', 'discovery/check_device_release.py'}
+
+EXPO_JOURNEY_INPUTS = {'VERSION', 'discovery/run_swift_livekit.py',
+                       'discovery/build_swift_livekit_contract.py', 'discovery/swift_livekit_conformance.py',
+                       'discovery/run_scenario.py', 'discovery/sdk_m0_conformance.py',
+                       'discovery/sdk_m1_conformance.py', 'discovery/summarize.py'}
 
 
 def audio_contract(path):

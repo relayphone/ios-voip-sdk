@@ -3,18 +3,18 @@
 Release simulator spike: Expo 58.0.17, RN 0.88.0, core 58.0.24, macros 0.22.0;
 Xcode 27.1 / Swift 6.4, iPhone 17 Pro / iOS 27.0. App/pod minimum: iOS 17.4.
 Simulator timing only. Results-file assertions gate
-the [spike workflow](https://github.com/ziahamza/ios-voip-sdk/actions/workflows/spike-expo-modules-2.yml);
+the [spike workflow](https://github.com/relayphone/ios-voip-sdk/actions/workflows/spike-expo-modules-2.yml);
 screenshots are diagnostic. Results/logs remain CI artifacts.
-Implemented in [#56](https://github.com/ziahamza/ios-voip-sdk/pull/56),
-[#57](https://github.com/ziahamza/ios-voip-sdk/pull/57),
-[#58](https://github.com/ziahamza/ios-voip-sdk/pull/58) and
-[#59](https://github.com/ziahamza/ios-voip-sdk/pull/59), plus
-[#60](https://github.com/ziahamza/ios-voip-sdk/pull/60);
-[threading CI](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40008477163),
-[hazard CI](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40031867400),
-[handler CI](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40035458634),
-[drift CI](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40036685866),
-[interop CI](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40040182795).
+Implemented in [#56](https://github.com/relayphone/ios-voip-sdk/pull/56),
+[#57](https://github.com/relayphone/ios-voip-sdk/pull/57),
+[#58](https://github.com/relayphone/ios-voip-sdk/pull/58) and
+[#59](https://github.com/relayphone/ios-voip-sdk/pull/59), plus
+[#60](https://github.com/relayphone/ios-voip-sdk/pull/60);
+[threading CI](https://github.com/relayphone/ios-voip-sdk/actions/runs/40008477163),
+[hazard CI](https://github.com/relayphone/ios-voip-sdk/actions/runs/40031867400),
+[handler CI](https://github.com/relayphone/ios-voip-sdk/actions/runs/40035458634),
+[drift CI](https://github.com/relayphone/ios-voip-sdk/actions/runs/40036685866),
+[interop CI](https://github.com/relayphone/ios-voip-sdk/actions/runs/40040182795).
 
 ## Threading and snapshots
 

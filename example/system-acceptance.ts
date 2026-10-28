@@ -1,5 +1,6 @@
 import {
   getConversations,
+  receiveCallEnded,
   reportConversation,
   setConversationHandler,
   setMuted,
@@ -99,6 +100,28 @@ async function execute(): Promise<void> {
             conversationID: id,
           });
           break;
+        case 'answered-elsewhere': {
+          if (!id || !command.serverCallId)
+            throw new Error('Missing answered-elsewhere conversation');
+          const signal = {
+            id: command.id,
+            conversationID: id,
+            serverCallId: command.serverCallId,
+            eventId: command.id,
+          };
+          await systemTrace('system.answeredElsewhereRequested', signal);
+          const accepted = await receiveCallEnded({
+            eventId: command.id,
+            serverCallId: command.serverCallId,
+            reason: 'answeredElsewhere',
+          });
+          await systemTrace('system.answeredElsewhereAccepted', {
+            ...signal,
+            accepted,
+          });
+          if (!accepted) throw new Error('Answered-elsewhere signal rejected');
+          break;
+        }
         case 'app-mute':
           if (!id || appMute) throw new Error('Invalid app mute barrier');
           await systemTrace('system.appMuteRequested', { conversationID: id });

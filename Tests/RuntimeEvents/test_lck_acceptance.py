@@ -2,16 +2,38 @@
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 import uuid
 from unittest.mock import Mock, patch
 
 import lck_acceptance as acceptance
+import lck_handoff_cases as handoff
 from test_runtime_install_adapter import AdapterNative
 
 
 class JournalOracleTests(unittest.TestCase):
+    def test_barrier_rejects_join_before_last_constituent_settlement(self):
+        rows = [dict(event='lck.fixture.settled', actionID='join', t_ms=10),
+                dict(event='lck.fixture.changed', callUUID='B', state='joined', t_ms=11),
+                dict(event='lck.fixture.settled', actionID='pause', t_ms=2000)]
+        with self.assertRaisesRegex(AssertionError, 'before every constituent'):
+            acceptance.verify_barrier(rows, 'B', {'join', 'pause'})
+        rows[1]['t_ms'] = 2010
+        acceptance.verify_barrier([rows[0], rows[2], rows[1]], 'B', {'join', 'pause'})
+        rows[1]['t_ms'] = rows[2]['t_ms']
+        with self.assertRaisesRegex(AssertionError, 'before every constituent'):
+            acceptance.verify_barrier(rows, 'B', {'join', 'pause'})
+
+    def test_timeout_checks_effective_elapsed_and_advertised_deadline_separately(self):
+        delivered = dict(t_ms=1000, advertisedRemainingMS=30000)
+        acceptance.verify_timeout(delivered, dict(t_ms=6330), 'Pause')
+        acceptance.verify_timeout(delivered, dict(t_ms=65000), 'Join')
+        with self.assertRaises(AssertionError):
+            acceptance.verify_timeout(delivered, dict(t_ms=31000), 'Pause')
+
     def test_changed_callback_without_matching_manager_snapshot_is_not_acceptance(self):
         rows = [dict(event='lck.fixture.changed', callUUID='A', state='joined'),
                 dict(event='lck.fixture.snapshot', conversations=[dict(callUUID='A', state='idle')])]
@@ -20,6 +42,14 @@ class JournalOracleTests(unittest.TestCase):
         self.assertTrue(acceptance.snapshot_matches(rows, {'A': 'joined'}))
         rows[-1]['conversations'] = []
         self.assertTrue(acceptance.snapshot_matches(rows, {'A': 'left'}))
+
+    def test_merge_oracle_rejects_transient_state_change_even_after_restoration(self):
+        rows = [dict(event='lck.fixture.changed', callUUID='A', state='joined'),
+                dict(event='lck.fixture.changed', callUUID='A', state='paused')]
+        with self.assertRaisesRegex(AssertionError, 'changed native'):
+            acceptance.verify_unchanged(rows, {'A': 'paused'})
+        with self.assertRaisesRegex(AssertionError, 'manager snapshot'):
+            acceptance.verify_unchanged([dict(event='lck.fixture.snapshot', conversations=[])], {'A': 'paused'})
 
     def test_reader_rejects_a_different_runtime_session(self):
         with tempfile.TemporaryDirectory() as work:
@@ -30,6 +60,140 @@ class JournalOracleTests(unittest.TestCase):
             (journey.channel / 'session.json').write_text(json.dumps(dict(runID='replacement')))
             with self.assertRaisesRegex(AssertionError, 'session changed'):
                 journey.rows()
+
+
+class MuteClockTests(unittest.TestCase):
+    def run_mute(self, *, restart=False, delivery=180, early=False, duplicate=False, deactivate=False, missing_clock=False):
+        class Fixture:
+            def __init__(self):
+                self.now = 0
+                self.events = []
+                self.audio_at = 0 if early else 290
+
+            def emit(self, name, **fields):
+                row = dict(event='lck.fixture.' + name, sequence=len(self.events) + 1,
+                           fixtureTimeMS=self.now, t_ms=900000, wallTimeMS=1, **fields)
+                if missing_clock:
+                    row.pop('fixtureTimeMS')
+                self.events.append(row)
+
+            def begin(self, name): pass
+
+            def app(self, operation, **fields):
+                if operation == 'advance':
+                    self.now += fields['ms']
+                    if self.now >= self.audio_at and not any(r['event'].endswith('.didActivate') for r in self.events):
+                        self.emit('didActivate')
+                    elif duplicate and self.now > 290:
+                        self.emit('didActivate')
+                    if deactivate and self.now > 290:
+                        self.emit('didDeactivate')
+                elif operation not in ('incoming', 'clock'):
+                    raise AssertionError(operation)
+                return {}
+
+            def system(self, operation, **fields):
+                if operation == 'answer':
+                    self.emit('settled', kind='Join', actionID='join')
+                    return dict(actionIDs=['join'])
+                self.now = delivery
+                self.emit('perform', kind='MuteConversationAction', actionID='mute')
+                self.emit('settled', kind='MuteConversationAction', actionID='mute')
+                if restart:
+                    self.audio_at = self.now + 290
+                return dict(actionIDs=['mute'])
+
+            def rows(self): return self.events
+
+            def wait(self, predicate, timeout=12):
+                value = predicate(self.rows())
+                if not value:
+                    raise AssertionError('controlled fixture event missing')
+                return value
+
+        def forbidden(*args):
+            raise AssertionError('host clock must not drive the Mute regression')
+        with patch.object(handoff, 'time', SimpleNamespace(monotonic=forbidden, time=forbidden, sleep=forbidden)):
+            return handoff.run_mute_case(Fixture())
+
+    def test_mute_uses_only_controlled_fixture_time(self):
+        result = self.run_mute()
+        self.assertEqual(result['joinToMuteDeliveryMS'], 180)
+        self.assertEqual(result['joinToAudioMS'], 290)
+        self.assertEqual(result['muteSettlementToAudioMS'], 110)
+
+    def test_restarted_timer_still_fails(self):
+        with self.assertRaisesRegex(AssertionError, 'controlled fixture event missing'):
+            self.run_mute(restart=True)
+
+    def test_late_native_delivery_still_fails(self):
+        with self.assertRaisesRegex(AssertionError, 'Mute delivery'):
+            self.run_mute(delivery=262)
+
+    def test_early_audio_still_fails(self):
+        with self.assertRaisesRegex(AssertionError, 'pending Join audio'):
+            self.run_mute(early=True)
+
+    def test_duplicate_audio_still_fails(self):
+        with self.assertRaisesRegex(AssertionError, 'duplicate audio'):
+            self.run_mute(duplicate=True)
+
+    def test_deactivation_still_fails(self):
+        with self.assertRaisesRegex(AssertionError, 'unexpectedly deactivated audio'):
+            self.run_mute(deactivate=True)
+
+    def test_wall_timestamps_cannot_substitute_for_fixture_time(self):
+        with self.assertRaisesRegex(AssertionError, 'fixture clock'):
+            self.run_mute(missing_clock=True)
+
+
+class FixtureSchedulerTests(unittest.TestCase):
+    def test_deadlines_fifo_nested_jobs_and_cancellation(self):
+        source = Path(__file__).with_name('FixtureClock.swift')
+        harness = '''
+import Foundation
+final class Probe: @unchecked Sendable {
+  let clock = RuntimeFixtureClock()
+  var events: [String] = []
+  func add(_ label: String, _ ms: Int) {
+    clock.schedule(Double(ms) / 1000) { self.events.append("\\(label)@\\(self.clock.nowMS)") }
+  }
+}
+@main struct ClockTests {
+  static func main() {
+    let p = Probe()
+    p.add("audio", 290)
+    p.clock.advance(180)
+    precondition(p.events.isEmpty)
+    p.add("mute", 0)
+    p.clock.advance(0)
+    precondition(p.events == ["mute@180"])
+    p.clock.advance(109)
+    precondition(p.events == ["mute@180"])
+    p.clock.advance(1)
+    precondition(p.events == ["mute@180", "audio@290"])
+    p.add("first", 10); p.add("second", 10)
+    p.clock.schedule(0.01) { p.add("nested", 20) }
+    precondition(p.clock.step(toward: 640))
+    precondition(p.events.last == "first@300" && p.clock.nowMS == 300)
+    // Model an async delegate adding a same-time job between native steps.
+    p.add("delegate", 0)
+    while p.clock.step(toward: 640) {}
+    precondition(p.events == ["mute@180", "audio@290", "first@300", "second@300", "delegate@300", "nested@320"])
+    precondition(p.clock.nowMS == 640)
+    p.add("cancelled", 1)
+    p.clock.cancelAll(); p.clock.advance(10)
+    precondition(p.events.count == 6 && p.clock.nowMS == 650)
+  }
+}
+'''
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            (root / 'Main.swift').write_text(harness)
+            subprocess.run(['xcrun', 'swiftc', '-swift-version', '6', '-parse-as-library',
+                            str(source), str(root / 'Main.swift'), '-o', str(root / 'clock')],
+                           check=True, capture_output=True, timeout=60)
+            subprocess.run([str(root / 'clock')], check=True, capture_output=True, timeout=10)
 
 
 class ContainerDiscoveryTests(unittest.TestCase):

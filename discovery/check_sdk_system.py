@@ -22,6 +22,8 @@ WALL = 1792627200000
 SESSION = dict(schemaVersion=1, runID='synthetic-system-run', pid=12345, bundleID=gate.BUNDLE,
                profile='ios-27.0', notification='dev.callkitsim.control.12345')
 SERVICES = 'PID\tStatus\tLabel\n-\t0\tUIKitApplication:' + gate.BUNDLE + '[synthetic-stopped]\n'
+EXPIRY_SECONDS = dict(join=64, end=5.3, hold=5.3, mute=30, tones=30)
+PROFILE = dict(lckActionDeadlineSeconds=30, lckMultiCall=dict(joinExpirySeconds=64, pauseEndExpirySeconds=5.3))
 
 
 def iso(value):
@@ -89,9 +91,10 @@ class Fixture:
         self.controls.append(control)
         return control
 
-    def command(self, operation, binding=None, body=None):
+    def command(self, operation, binding=None, body=None, server_call=None):
         command = dict(id=self.uuid(), runID=SESSION['runID'], case=self.case, pid=SESSION['pid'], operation=operation)
         if binding: command['conversationID'] = binding['conversationID']
+        if server_call: command['serverCallId'] = server_call
         self.index['fixtureCommands'].append(f'fixture-{len(self.commands):02}.json')
         self.commands.append(command)
         self.app('system.commandReceived', id=command['id'], operation=operation)
@@ -121,6 +124,8 @@ class Fixture:
             binding = dict(role=role, conversationID=self.uuid(), callUUID=self.uuid(), pushID=push_id)
             self.clock += self.report_start_ms - 1
             report = self.native('report.incoming', pushID=push_id, callUUID=binding['callUUID'])
+            if self.case == 'answered-elsewhere':
+                self.native('call.changed', uuid=binding['callUUID'], ended=False, ringing=True)
             self.calls[binding['conversationID']] = dict(id=binding['conversationID'], direction='incoming', status='ringing',
                                                        isMuted=False, isVideo=False, hasConnectedAt=False)
             snapshot = self.snapshot()
@@ -142,8 +147,11 @@ class Fixture:
         if control: control['response']['result'] = dict(actionIDs=ids)
         actions = []
         for identity, (kind, binding, params) in zip(ids, specs):
+            issued = WALL + self.clock
             deadline = self.native('action.deadline', actionID=identity, apiKind='livecommunicationkit',
-                                   deadlineMS=WALL + self.clock + 30000, deadlineSeconds=30, expirySeconds=30)
+                                   deadlineMS=issued + 30000, deadlineSeconds=30,
+                                   expirySeconds=EXPIRY_SECONDS[kind], issuedAtMS=issued,
+                                   expiryMS=issued + round(EXPIRY_SECONDS[kind] * 1000))
             cap = {'hold': 5300, 'end': 5300, 'join': 64000}.get(kind)
             selected = min(deadline['deadlineMS'], WALL + delivered['t_ms'] + cap) if cap else deadline['deadlineMS']
             action = dict(id=identity, kind=kind, binding=binding, params=params, origin=origin,
@@ -168,7 +176,7 @@ class Fixture:
 
     def settle(self, actions):
         for action in actions:
-            self.native('action.settled', actionID=action['id'], fulfilled=True, origin=action['origin'])
+            self.native('action.settled', actionID=action['id'], fulfilled=True, expired=False, origin=action['origin'])
             call = self.calls.get(action['binding']['conversationID'])
             if action['origin'] == 'muteEcho' or not call or action['kind'] == 'mute' and not action['handled']: continue
             call.pop('pending', None)
@@ -203,6 +211,22 @@ class Fixture:
     def build(self):
         first = self.push('first', cold=self.case == 'push-launch')
         if self.case == 'decline': self.action('decline', first)
+        elif self.case == 'answered-elsewhere':
+            def signal(command):
+                context = dict(id=command['id'], eventId=command['id'], serverCallId='synthetic-server-first',
+                               conversationID=first['conversationID'])
+                marker = self.native('system.answeredElsewhereSignal', traceSequence=len(self.rows) + 1, **context)
+                self.app('system.answeredElsewhereRequested', clockBeforeMS=WALL + marker['t_ms'], **context)
+                self.native('report.ended', callUUID=first['callUUID'], pushID=first['pushID'], reason=4)
+                self.native('call.changed', uuid=first['callUUID'], ended=True, ringing=False)
+                self.calls[first['conversationID']].update(status='ended', endedReason='answeredElsewhere')
+                self.snapshot()
+                self.app('system.event', name='answeredElsewhere', **{key: value for key, value in context.items() if key != 'id'})
+                self.calls.clear()
+                self.snapshot()
+                self.hook()
+                self.app('system.answeredElsewhereAccepted', accepted=True, **context)
+            self.command('answered-elsewhere', first, signal, server_call='synthetic-server-first')
         else:
             self.action('answer', first)
             self.connected(first)
@@ -247,11 +271,40 @@ class Fixture:
         self.app('sdk.result', success=True)
         self.app('done')
         return dict(rows=self.rows, engine=self.engine, index=self.index, controls=self.controls,
-                    fixture_commands=self.commands, case=self.case, expected_d5=self.expected, launch_receipt=self.launch_receipt)
+                    fixture_commands=self.commands, case=self.case, expected_d5=self.expected, profile=PROFILE,
+                    launch_receipt=self.launch_receipt)
 
 
 def first(values, event):
     return next(value for value in values if value['event'] == event)
+
+
+def native_action(value, kind, event='action.deadline'):
+    transaction = next(row for row in value['engine'] if row['event'] == 'transaction.delivered' and gate.NATIVE[kind] in row['kinds'])
+    identity = transaction['actionIDs'][transaction['kinds'].index(gate.NATIVE[kind])]
+    return next(row for row in value['engine'] if row['event'] == event and row.get('actionID') == identity)
+
+
+def duplicate_answered_event(value):
+    event = first(value['rows'], 'system.event')
+    value['rows'].insert(value['rows'].index(event) + 1, deepcopy(event))
+    for sequence, row in enumerate(value['rows'], 1): row['sequence'] = sequence
+
+
+def late_answered_native(value, delay=1001):
+    signal = first(value['engine'], 'system.answeredElsewhereSignal')
+    report = first(value['engine'], 'report.ended')
+    report['t_ms'] = signal['t_ms'] + delay
+    next(row for row in value['engine'] if row['event'] == 'call.changed' and row['ended'])['t_ms'] = report['t_ms']
+
+
+def answered_at_budget(value):
+    late_answered_native(value, 1000)
+    requested = first(value['rows'], 'system.answeredElsewhereRequested')
+    terminal = next(row for row in value['rows'] if row['event'] == 'sdk.snapshot' and
+                    any(call['status'] == 'ended' for call in row['conversations']))
+    for row in value['rows'][value['rows'].index(terminal):]:
+        row['wallTimeMS'] = requested['clockBeforeMS'] + 1000
 
 
 def move_before(value, row, target):
@@ -266,12 +319,12 @@ def move_before(value, row, target):
             if event['event'] == 'report.incoming' and event.get('pushID') == binding['pushID'])
 
 
-def expired_settlement(value):
+def expired_settlement(value, effective=False, offset_ms=0):
     ready = first(value['rows'], 'system.ready')
     marker = first(value['engine'], 'system.clock')
     deadline = first(value['engine'], 'action.deadline')
     settled = first(value['engine'], 'action.settled')
-    elapsed = deadline['deadlineMS'] - ready['wallTimeMS'] + marker['t_ms'] - 1
+    elapsed = deadline['expiryMS' if effective else 'deadlineMS'] - ready['wallTimeMS'] + marker['t_ms'] - 1 + offset_ms
     difference = elapsed - settled['t_ms']
     for event in value['engine'][value['engine'].index(settled):]: event['t_ms'] += difference
 
@@ -920,6 +973,13 @@ def startup_recovery_controls(selected=None):
                 def poll(self): return 1 if self.attempt == 1 or kind == 'second-failure' else None
                 def wait(self, timeout): return 1
             def spawn(argv, **kwargs):
+                captured = json.loads((journey.root / 'prelaunch-baseline.json').read_text())
+                assert (captured['case'], captured['scenario'], captured['runID'], captured['simulatorID']) == (
+                    journey.case, journey.name, args.run_id, args.simulator)
+                expected_raw = (b'{"fixtureKind":"previous-case-session"}\n', b'{"fixtureKind":"previous-case-journal"}\n')
+                assert captured['files'] == [dict(kind=kind, path=str(path), present=True,
+                    bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+                    for kind, path, raw in zip(('session', 'journal'), (session, journey.journal), expected_raw)]
                 attempt = len(launched) + 1
                 launched.append((list(argv), kwargs))
                 assert kwargs['start_new_session'] is True
@@ -1074,6 +1134,42 @@ def controls():
         checks.append(dict(name=name, passed=True, expected=error or 'synthetic logical case accepted'))
 
     for case in gate.CASES: check('positive-' + case, case)
+    check('answered-at-budget', 'answered-elsewhere', answered_at_budget)
+    check('answered-native-beyond-budget', 'answered-elsewhere', late_answered_native,
+          'answered-elsewhere native dismissal exceeded 1000 ms')
+    check('answered-wrong-native-reason', 'answered-elsewhere', lambda value: first(value['engine'], 'report.ended').update(reason=2),
+          'answered-elsewhere native dismissal differs')
+    check('answered-wrong-native-call', 'answered-elsewhere', lambda value: first(value['engine'], 'report.ended').update(callUUID=str(uuid.UUID(int=999)).upper()),
+          'answered-elsewhere native dismissal differs')
+    check('answered-native-still-ringing', 'answered-elsewhere', lambda value: next(row for row in value['engine'] if row['event'] == 'call.changed' and row['ended']).update(ringing=True),
+          'answered-elsewhere native dismissal differs')
+    check('answered-wrong-signal-id', 'answered-elsewhere', lambda value: first(value['engine'], 'system.answeredElsewhereSignal').update(eventId='other-event'),
+          'answered-elsewhere signal identity/order differs')
+    check('answered-wrong-signal-sequence', 'answered-elsewhere', lambda value: first(value['engine'], 'system.answeredElsewhereSignal').update(traceSequence=1),
+          'answered-elsewhere signal identity/order differs')
+    check('answered-command-wrong-server', 'answered-elsewhere', lambda value: value['fixture_commands'][0].update(serverCallId='other-server'),
+          'answered-elsewhere command targets another call')
+    check('answered-rejected-host-signal', 'answered-elsewhere', lambda value: first(value['rows'], 'system.answeredElsewhereAccepted').update(accepted=False),
+          'answered-elsewhere signal identity/order differs')
+    check('answered-clock-unbounded', 'answered-elsewhere', lambda value: first(value['rows'], 'system.answeredElsewhereRequested').update(
+          clockBeforeMS=first(value['rows'], 'system.answeredElsewhereRequested')['wallTimeMS'] - 26),
+          'unbounded answered-elsewhere signal clock')
+    check('answered-event-wrong-call', 'answered-elsewhere', lambda value: first(value['rows'], 'system.event').update(conversationID=str(uuid.UUID(int=999)).upper()),
+          'unbound answered-elsewhere SDK event')
+    check('answered-event-wrong-server', 'answered-elsewhere', lambda value: first(value['rows'], 'system.event').update(serverCallId='other-server'),
+          'answered-elsewhere terminal projection/event differs')
+    check('answered-event-wrong-event', 'answered-elsewhere', lambda value: first(value['rows'], 'system.event').update(eventId='other-event'),
+          'answered-elsewhere terminal projection/event differs')
+    check('answered-event-late', 'answered-elsewhere', lambda value: first(value['rows'], 'system.event').update(
+          wallTimeMS=first(value['rows'], 'system.answeredElsewhereRequested')['clockBeforeMS'] + 1001),
+          'answered-elsewhere projection/event/hook exceeded 1000 ms')
+    check('answered-event-duplicate', 'answered-elsewhere', duplicate_answered_event, 'require one system.event')
+    check('answered-wrong-projected-reason', 'answered-elsewhere', lambda value: [call.update(endedReason='remoteEnded')
+          for row in value['rows'] if row['event'] == 'sdk.snapshot' for call in row['conversations'] if call['status'] == 'ended'],
+          'answered-elsewhere terminal projection/event differs')
+    check('answered-empty-hook-late', 'answered-elsewhere', lambda value: [row for row in value['rows'] if row['event'] == 'system.hook'][-1].update(
+          wallTimeMS=first(value['rows'], 'system.answeredElsewhereRequested')['clockBeforeMS'] + 1001),
+          'answered-elsewhere projection/event/hook exceeded 1000 ms')
     for delay in (0, 499):
         check('cold-report-start-' + str(delay), 'push-launch', report_start_ms=delay)
     check('cold-report-start-at-budget', 'push-launch', error='cold PushKit report start exceeded 500 ms', report_start_ms=500)
@@ -1096,7 +1192,29 @@ def controls():
     check('mute-hook-stays-false', 'mute-echo', lambda value: [row.update(muted=False) for row in value['rows'] if row['event'] == 'system.hook'], 'mute projection/hook did not round trip')
     check('decline-connected', 'decline', lambda value: next(row for row in value['rows'] if row['event'] == 'sdk.snapshot' and row['conversations'])['conversations'][0].update(status='connected'), 'declined call connected')
     check('native-action-id', 'answer-end', lambda value: value['controls'][1]['response']['result'].update(actionIDs=[str(uuid.UUID(int=999)).upper()]), 'system native action binding/origin differs')
+    for kind, case in (('join', 'answer-end'), ('hold', 'hold-accept'), ('end', 'decline')):
+        check('old-30-expiry-' + kind, case,
+              lambda value, kind=kind: native_action(value, kind).update(expirySeconds=30), 'unsettled/expired/wrong native deadline')
+    for kind in ('mute', 'tones'):
+        check('non-target-expiry-' + kind, 'mute-echo',
+              lambda value, kind=kind: native_action(value, kind).update(expirySeconds=64), 'unsettled/expired/wrong native deadline')
+    check('arbitrary-join-expiry', 'answer-end', lambda value: native_action(value, 'join').update(expirySeconds=65), 'unsettled/expired/wrong native deadline')
+    check('altered-advertised-deadline', 'answer-end', lambda value: native_action(value, 'join').update(deadlineSeconds=64), 'unsettled/expired/wrong native deadline')
+    check('fulfilled-but-expired', 'answer-end', lambda value: native_action(value, 'join', 'action.settled').update(expired=True), 'unsettled/expired/wrong native deadline')
+    for field in ('issuedAtMS', 'expiryMS'):
+        check('native-' + field + '-missing', 'answer-end',
+              lambda value, field=field: native_action(value, 'join').pop(field), 'unsettled/expired/wrong native deadline')
+        for invalid in (True, '0', None):
+            check('native-' + field + '-type-' + str(invalid), 'answer-end',
+                  lambda value, field=field, invalid=invalid: native_action(value, 'join').update({field: invalid}),
+                  'unsettled/expired/wrong native deadline')
+        check('native-' + field + '-mismatch-1ms', 'answer-end',
+              lambda value, field=field: native_action(value, 'join').update({field: native_action(value, 'join')[field] + 1}),
+              'unsettled/expired/wrong native deadline')
     check('settlement-at-expiry', 'answer-end', expired_settlement, 'native settlement reached platform expiry')
+    check('settlement-at-effective-end-expiry', 'decline', lambda value: expired_settlement(value, effective=True), 'native settlement reached platform expiry')
+    check('settlement-after-reported-expiry-1ms', 'answer-end', lambda value: expired_settlement(value, offset_ms=1), 'native settlement reached platform expiry')
+    check('settlement-after-effective-end-expiry-1ms', 'decline', lambda value: expired_settlement(value, effective=True, offset_ms=1), 'native settlement reached platform expiry')
     check('effective-margin-absent', 'answer-end', lambda value: first(value['rows'], 'system.handler').update(deadline=iso(first(value['engine'], 'action.deadline')['deadlineMS'])), 'handler deadline differs from selected cap and margin')
     for kind, case in (('hold', 'hold-accept'), ('end', 'answer-end')):
         check('effective-' + kind + '-old-advertised-only', case,

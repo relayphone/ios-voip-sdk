@@ -196,14 +196,18 @@ public struct ConversationStateUpdate: Codable, Sendable, Equatable {
 }
 
 public enum ConversationEvent: String, Codable, Sendable {
-  case audioActivated, audioDeactivated, audioActivationMissing, audioActivationFailed, providerReset, providerOwnershipLost
+  case audioActivated, audioDeactivated, audioActivationMissing, audioActivationFailed, providerReset, providerOwnershipLost, answeredElsewhere
 }
 
 public struct ConversationEventContext: Codable, Sendable, Equatable {
   public let type: ConversationEvent
   /// Absent for process-wide system callbacks and reset/ownership events.
   public let conversationID: UUID?
-  public init(type: ConversationEvent, conversationID: UUID? = nil) {
+  public let serverCallID: String?
+  public let eventID: String?
+  public init(type: ConversationEvent, conversationID: UUID? = nil,
+              serverCallID: String? = nil, eventID: String? = nil) {
     self.type = type; self.conversationID = conversationID
+    self.serverCallID = serverCallID; self.eventID = eventID
   }
 }

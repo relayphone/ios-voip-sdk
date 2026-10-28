@@ -1,12 +1,35 @@
 import ExpoModulesCore
 import IosVoipSDK
+import CryptoKit
+import Intents
+#if targetEnvironment(simulator) && canImport(livekit_react_native_webrtc)
+import AVFoundation
+@preconcurrency import livekit_react_native_webrtc
+#endif
+
+#if targetEnvironment(simulator) && canImport(livekit_react_native_webrtc)
+private struct MediaEngineSample: Sendable {
+  let deviceID: String
+  let inputAvailable: Bool
+  let outputAvailable: Bool
+  let isEngineRunning: Bool
+  let category: String
+  let mode: String
+}
+#endif
 
 private enum JourneyConfiguration {
   static let environment = ProcessInfo.processInfo.environment
-  static let runID = environment["SDK_SYSTEM_RUN_ID"] ?? environment["SDK_M1_RUN_ID"] ?? environment["SDK_M0_RUN_ID"] ?? UUID().uuidString
+  static let runID = environment["SDK_M3_RUN_ID"] ?? environment["SDK_M2_RUN_ID"] ?? environment["SDK_SYSTEM_RUN_ID"] ?? environment["SDK_M1_RUN_ID"] ?? environment["SDK_M0_RUN_ID"] ?? UUID().uuidString
+  #if targetEnvironment(simulator)
+  static let dialRequestAcceptance = environment["SDK_M3_DIRECT"] == "1"
+  #else
+  static let dialRequestAcceptance = false
+  #endif
   static let m0 = environment["SDK_M0_ACCEPTANCE"] == "1"
   static let m1Case = environment["SDK_M1_CASE"] ?? ""
   static let systemCase = environment["SDK_SYSTEM_CASE"] ?? ""
+  static let m2Case = environment["SDK_M2_CASE"] ?? ""
 }
 
 /// Example-only instrumentation. Never records push tokens or arbitrary payloads.
@@ -17,6 +40,7 @@ private enum JourneyTrace {
   static let runID = JourneyConfiguration.runID
   static let m0 = JourneyConfiguration.m0
   static let m1Case = JourneyConfiguration.m1Case
+  static let m2Case = JourneyConfiguration.m2Case
   static var sequence = 0
 
   static func record(_ event: String, _ fields: [String: Any] = [:], observedAt: Date = Date()) {
@@ -47,10 +71,11 @@ public final class VoIPExampleAppDelegateSubscriber: ExpoAppDelegateSubscriber {
   public func appDelegateWillBeginInitialization() {
     JourneyTrace.record("app.entry")
     var launch: [String: Any] = ["traceVersion": 2,
-      "mode": !JourneyConfiguration.systemCase.isEmpty ? "sdk-system" : JourneyTrace.m0 ? "sdk-m0" : "sdk-m1",
-      "case": JourneyConfiguration.systemCase.isEmpty ? JourneyTrace.m1Case : JourneyConfiguration.systemCase]
+      "mode": JourneyConfiguration.dialRequestAcceptance ? "sdk-m3" : !JourneyTrace.m2Case.isEmpty ? "sdk-m2" : !JourneyConfiguration.systemCase.isEmpty ? "sdk-system" : JourneyTrace.m0 ? "sdk-m0" : "sdk-m1",
+      "case": JourneyConfiguration.dialRequestAcceptance ? "direct" : !JourneyTrace.m2Case.isEmpty ? JourneyTrace.m2Case : JourneyConfiguration.systemCase.isEmpty ? JourneyTrace.m1Case : JourneyConfiguration.systemCase]
     #if targetEnvironment(simulator)
     launch["bundlePath"] = Bundle.main.bundleURL.resolvingSymlinksInPath().path
+    launch["dataContainer"] = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath().path
     #endif
     JourneyTrace.record("launch", launch)
     if !JourneyConfiguration.systemCase.isEmpty { ExampleJourney.shared.startSystem() }
@@ -63,8 +88,12 @@ public final class VoIPExampleAppDelegateSubscriber: ExpoAppDelegateSubscriber {
 @MainActor
 private final class ExampleJourney {
   static let shared = ExampleJourney()
+  private var directDialStarted = false
+  private var directDialObservations = 0
   private var client: ConversationClient?
   private var stateObserver: UUID?
+  private var mediaObserver: UUID?
+  private var mediaEventCounts: [String: Int] = [:]
   private var previousStates: [UUID: ConversationStatus] = [:]
   private var coldTask: Task<[String: String], Error>?
   private var coldJoinTask: Task<Void, Never>?
@@ -83,6 +112,20 @@ private final class ExampleJourney {
     // No manager/provider is constructed by this example.
     JourneyTrace.record("sdk.managerCreated", ["owner": "VoIPApplication.start"])
     stateObserver = client.observeState { [weak self] update in self?.recordState(update) }
+    if !JourneyTrace.m2Case.isEmpty {
+      mediaObserver = client.observeEvents { [weak self] event in
+        guard let self, !self.completed else { return }
+        switch event.type {
+        case .audioActivated, .audioDeactivated, .audioActivationMissing, .audioActivationFailed:
+          let name = event.type.rawValue
+          self.mediaEventCounts[name, default: 0] += 1
+          var values: [String: Any] = ["name": name, "count": self.mediaEventCounts[name]!]
+          if let id = event.conversationID { values["conversationID"] = id.uuidString }
+          JourneyTrace.record("m2.audioEvent", values)
+        default: break
+        }
+      }
+    }
     return client
   }
 
@@ -93,6 +136,7 @@ private final class ExampleJourney {
         "status": conversation.status.rawValue, "direction": conversation.direction.rawValue,
         "isMuted": conversation.isMuted, "isVideo": conversation.isVideo,
         "hasConnectedAt": conversation.connectedAt != nil]
+      if let ended = conversation.ended { row["endedReason"] = ended.reason.rawValue }
       if let pending = conversation.pending {
         row["pending"] = ["id": pending.id.uuidString, "kind": pending.kind.rawValue,
           "deadline": JourneyTrace.iso(pending.deadline), "origin": pending.origin.rawValue]
@@ -173,7 +217,7 @@ private final class ExampleJourney {
       throw JourneyError.invalidPayload
     }
     let pushID = UUID().uuidString
-    JourneyTrace.record("m1.pushInjected", ["pushID": pushID, "mustReport": mustReport, "label": label])
+    JourneyTrace.record(JourneyTrace.m2Case.isEmpty ? "m1.pushInjected" : "m2.pushInjected", ["pushID": pushID, "mustReport": mustReport, "label": label])
     CKSimInjectPush(payload, mustReport, pushID)
     return pushID
     #else
@@ -225,6 +269,75 @@ private final class ExampleJourney {
     return try await coldTask.value
   }
 
+  #if targetEnvironment(simulator)
+  /// The runner acknowledges the stale fault before this fixture can push/join.
+  /// Reading its sandbox receipt never changes faults or audio authorization.
+  func awaitMediaControl() async throws {
+    let runID = JourneyTrace.runID
+    let mode = JourneyTrace.m2Case
+    let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-"))
+    guard mode == "stale-audio", !runID.isEmpty, runID.count <= 128,
+          runID.unicodeScalars.allSatisfy({ allowed.contains($0) }) else { throw JourneyError.wrongMode }
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("sdk-m2-control-" + runID + ".json")
+    let deadline = ContinuousClock.now.advanced(by: .seconds(15))
+    while ContinuousClock.now < deadline {
+      if FileManager.default.fileExists(atPath: url.path) {
+        let bytes = try Data(contentsOf: url)
+        guard let value = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              Set(value.keys) == ["runID", "case", "pid", "staleAudio", "requestID", "acknowledgedWallTimeMS"],
+              value["runID"] as? String == runID, value["case"] as? String == mode,
+              let requestID = value["requestID"] as? String, UUID(uuidString: requestID) != nil,
+              let acknowledged = value["acknowledgedWallTimeMS"] as? NSNumber,
+              CFGetTypeID(acknowledged) != CFBooleanGetTypeID(), acknowledged.doubleValue.isFinite,
+              acknowledged.int64Value > 0, acknowledged.doubleValue == Double(acknowledged.int64Value),
+              acknowledged.doubleValue <= Date().timeIntervalSince1970 * 1000,
+              let pid = value["pid"] as? NSNumber, CFGetTypeID(pid) != CFBooleanGetTypeID(),
+              pid.doubleValue == Double(getpid()),
+              let stale = value["staleAudio"] as? NSNumber, CFGetTypeID(stale) == CFBooleanGetTypeID(),
+              stale.boolValue else { throw JourneyError.invalidMediaControl }
+        try FileManager.default.removeItem(at: url)
+        JourneyTrace.record("m2.controlReady", ["staleAudio": true, "requestID": requestID,
+          "acknowledgedWallTimeMS": acknowledged.int64Value])
+        return
+      }
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    throw JourneyError.mediaControlDeadline
+  }
+  #endif
+
+  #if targetEnvironment(simulator) && canImport(livekit_react_native_webrtc)
+  /// Public getters on the shared audio executor. No factory/session
+  /// activation, availability writes, or private runtime lookup is performed.
+  func mediaSnapshot(_ module: WebRTCModule, label: String) async throws -> String {
+    let labels: Set<String> = ["poll", "initial", "demand", "active", "held", "resumed", "ended", "failed"]
+    guard ["livekit", "stale-audio"].contains(JourneyTrace.m2Case), !completed, labels.contains(label) else { throw JourneyError.wrongMode }
+    _ = try bindClient()
+    let moduleID = String(describing: ObjectIdentifier(module))
+    let sample = try await withCheckedThrowingContinuation { (reply: CheckedContinuation<MediaEngineSample, Error>) in
+      VSAudioSessionGetQueue().async {
+        guard let device = module.audioDeviceModule else { reply.resume(throwing: JourneyError.mediaUnavailable); return }
+        let availability = device.engineAvailability
+        let session = AVAudioSession.sharedInstance()
+        reply.resume(returning: MediaEngineSample(deviceID: String(describing: ObjectIdentifier(device)),
+          inputAvailable: availability.isInputAvailable.boolValue, outputAvailable: availability.isOutputAvailable.boolValue,
+          isEngineRunning: device.isEngineRunning, category: session.category.rawValue, mode: session.mode.rawValue))
+      }
+    }
+    let snapshot: [String: Any] = ["label": label, "moduleID": moduleID, "deviceID": sample.deviceID,
+      "inputAvailable": sample.inputAvailable, "outputAvailable": sample.outputAvailable,
+      "isEngineRunning": sample.isEngineRunning, "category": sample.category, "mode": sample.mode,
+      "activatedCount": mediaEventCounts[ConversationEvent.audioActivated.rawValue, default: 0],
+      "deactivatedCount": mediaEventCounts[ConversationEvent.audioDeactivated.rawValue, default: 0],
+      "missingCount": mediaEventCounts[ConversationEvent.audioActivationMissing.rawValue, default: 0],
+      "failedCount": mediaEventCounts[ConversationEvent.audioActivationFailed.rawValue, default: 0]]
+    if label != "poll" { JourneyTrace.record("m2.mediaSnapshot", snapshot) }
+    let bytes = try JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys])
+    guard let json = String(data: bytes, encoding: .utf8) else { throw JourneyError.mediaUnavailable }
+    return json
+  }
+  #endif
+
   /// Whitelisted test fields prevent accidental payload/token logging.
   func startSystem() {
     do { _ = try bindClient() }
@@ -233,7 +346,7 @@ private final class ExampleJourney {
 
   // Example-only backend/handler barriers; external cksim controls actual system actions and pushes.
   func nextSystemCommand() async throws -> [String: String] {
-    guard ["answer-end", "decline", "hold-accept", "end-accept", "mute-echo", "provider-reset", "push-launch"]
+    guard ["answer-end", "decline", "hold-accept", "end-accept", "mute-echo", "provider-reset", "push-launch", "answered-elsewhere"]
       .contains(JourneyConfiguration.systemCase) else { throw JourneyError.wrongMode }
     let path = FileManager.default.temporaryDirectory.appendingPathComponent("sdk-system-control-\(JourneyTrace.runID).json")
     let deadline = ContinuousClock.now.advanced(by: .seconds(90))
@@ -244,11 +357,11 @@ private final class ExampleJourney {
     let bytes = try Data(contentsOf: path)
     try FileManager.default.removeItem(at: path)
     guard bytes.count <= 1024, let value = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
-      Set(value.keys).isSubset(of: ["id", "runID", "case", "pid", "operation", "conversationID"]),
+      Set(value.keys).isSubset(of: ["id", "runID", "case", "pid", "operation", "conversationID", "serverCallId"]),
       value["runID"] as? String == JourneyTrace.runID, value["case"] as? String == JourneyConfiguration.systemCase,
       value["pid"] as? Int == Int(getpid()), let id = value["id"] as? String, UUID(uuidString: id) != nil,
       let operation = value["operation"] as? String,
-      ["attach-handler", "backend-connected", "app-mute", "release-mute", "finish"].contains(operation) else {
+      ["attach-handler", "backend-connected", "answered-elsewhere", "app-mute", "release-mute", "finish"].contains(operation) else {
       throw JourneyError.invalidTrace
     }
     var command = ["id": id, "operation": operation]
@@ -256,6 +369,8 @@ private final class ExampleJourney {
       guard UUID(uuidString: conversation) != nil else { throw JourneyError.invalidTrace }
       command["conversationID"] = conversation
     }
+    if let server = value["serverCallId"] as? String, !server.isEmpty { command["serverCallId"] = server }
+    if operation == "answered-elsewhere", command["serverCallId"] == nil { throw JourneyError.invalidTrace }
     JourneyTrace.record("system.commandReceived", command)
     return command
   }
@@ -265,20 +380,43 @@ private final class ExampleJourney {
     let events: Set<String> = ["m1.jsReady", "m1.subscriptionsStarting", "m1.handlerAttached", "m1.handler", "m1.cancelled",
       "m1.assertion", "m1.hookConversations", "m1.hookToken", "m1.event", "m1.expiryObserved", "m1.backendConnectedRequested",
       "system.ready", "system.handler", "system.handlerAttached", "system.hook", "system.event",
-      "system.backendConnected", "system.appMuteRequested", "system.appMuteCompleted", "system.commandCompleted"]
-    let fields: Set<String> = ["label", "passed", "conversationID", "kind", "origin", "deadline",
+      "system.backendConnected", "system.answeredElsewhereRequested", "system.answeredElsewhereAccepted",
+      "system.appMuteRequested", "system.appMuteCompleted", "system.commandCompleted"]
+    let mediaEvents: Set<String> = ["m2.assertion", "m2.handler", "m2.localTrack", "m2.localTrackReleased", "m2.recordingDemand", "m2.hookEvent"]
+    let fields: Set<String> = ["enabled", "accepted", "label", "passed", "conversationID", "kind", "origin", "deadline",
       "held", "muted", "attached", "available", "tokenType", "name", "count", "status",
-      "pending", "hasConnectedAt", "reason", "id", "operation", "digits"]
-    guard events.contains(event), let bytes = fieldsJSON.data(using: .utf8),
+      "pending", "hasConnectedAt", "reason", "id", "operation", "digits", "serverCallId", "eventId"]
+    guard (events.contains(event) || (!JourneyTrace.m2Case.isEmpty && mediaEvents.contains(event))), let bytes = fieldsJSON.data(using: .utf8),
           let value = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
           Set(value.keys).isSubset(of: fields),
           value.values.allSatisfy({ $0 is String || $0 is NSNumber || $0 is NSNull }) else {
       throw JourneyError.invalidTrace
     }
-    if event == "system.ready" {
+    if event == "m2.hookEvent" {
+      let names: Set<String> = ["audioActivated", "audioDeactivated", "audioActivationMissing", "audioActivationFailed",
+        "providerReset", "providerOwnershipLost", "pushTokenUpdated"]
+      guard let name = value["name"] as? String, names.contains(name) else {
+        throw JourneyError.invalidTrace
+      }
+      let scoped = ["audioActivationMissing", "audioActivationFailed"].contains(name)
+      let keys: Set<String> = scoped ? ["name", "conversationID"] : ["name"]
+      guard Set(value.keys) == keys else { throw JourneyError.invalidTrace }
+      if scoped {
+        guard let id = value["conversationID"] as? String, UUID(uuidString: id) != nil else {
+          throw JourneyError.invalidTrace
+        }
+      }
+    }
+    if event == "system.ready" || event == "system.answeredElsewhereRequested" {
+
       let before = Date()
       #if targetEnvironment(simulator)
-      CKSimEmit("system.clock", [:])
+      if event == "system.ready" { CKSimEmit("system.clock", [:]) }
+      else {
+        var marker = value
+        marker["traceSequence"] = JourneyTrace.sequence + 1
+        CKSimEmit("system.answeredElsewhereSignal", marker)
+      }
       #endif
       var sample = value
       sample["clockBeforeMS"] = Int64(before.timeIntervalSince1970 * 1000)
@@ -295,12 +433,56 @@ private final class ExampleJourney {
     }
   }
 
+  func observedDialRequest(handle: String, video: Bool) throws {
+    guard !completed else { throw JourneyError.wrongMode }
+    let client = try bindClient()
+    let digest = SHA256.hash(data: Data(handle.utf8)).map { String(format: "%02x", $0) }.joined()
+    JourneyTrace.record("m3.dialRequest", ["handleSHA256": digest, "video": video,
+      "conversationCount": client.snapshots.count])
+    if JourneyConfiguration.dialRequestAcceptance {
+      let expected = directDialObservations == 0 ? ("+15555550142", false) : ("+15555550143", true)
+      guard directDialStarted, directDialObservations < 2, handle == expected.0,
+            video == expected.1, client.snapshots.isEmpty else {
+        finish(success: false, errorType: "UnexpectedDialRequest")
+        throw JourneyError.invalidPayload
+      }
+      directDialObservations += 1
+    }
+  }
+
+  #if targetEnvironment(simulator)
+  // Direct public ingress exercises delivery; default-app dispatch needs a device.
+  func deliverDialRequests() async throws {
+    guard JourneyConfiguration.dialRequestAcceptance, !directDialStarted, !completed else { throw JourneyError.wrongMode }
+    directDialStarted = true
+    let client = try bindClient()
+    guard client.snapshots.isEmpty else { throw JourneyError.alreadyCalling }
+    JourneyTrace.record("m3.ready")
+    JourneyTrace.record("m3.delivery", ["kind": "url", "method": "UIApplicationDelegate.application(open:options:)"])
+    let handledURL = UIApplication.shared.delegate?.application?(UIApplication.shared,
+      open: URL(string: "tel:+15555550142")!, options: [:]) == true
+    JourneyTrace.record("m3.returned", ["kind": "url", "handled": handledURL])
+    guard handledURL else { throw JourneyError.invalidPayload }
+    try await waitUntil { self.directDialObservations == 1 }
+    let person = INPerson(personHandle: INPersonHandle(value: "+15555550143", type: .phoneNumber),
+      nameComponents: nil, displayName: nil, image: nil, contactIdentifier: nil, customIdentifier: nil)
+    let intent = INStartCallIntent(callRecordFilter: nil, callRecordToCallBack: nil,
+      audioRoute: .unknown, destinationType: .normal, contacts: [person], callCapability: .videoCall)
+    JourneyTrace.record("m3.delivery", ["kind": "intent", "method": "VoIPSystemEntryPoints.handle(intent:)"])
+    let handledIntent = VoIPSystemEntryPoints.handle(intent: intent)
+    JourneyTrace.record("m3.returned", ["kind": "intent", "handled": handledIntent])
+    guard handledIntent else { throw JourneyError.invalidPayload }
+    try await waitUntil { self.directDialObservations == 2 }
+    finish(success: true)
+  }
+  #endif
+
   func finish(success: Bool, errorType: String? = nil) {
     guard !completed else { return }
     completed = true
     var fields: [String: Any] = ["success": success]
     if let errorType { fields["errorType"] = errorType }
-    JourneyTrace.record("sdk.result", fields)
+    JourneyTrace.record(JourneyTrace.m2Case.isEmpty ? "sdk.result" : "m2.result", fields)
     JourneyTrace.record("done")
   }
 
@@ -315,7 +497,7 @@ private final class ExampleJourney {
 
 private enum JourneyError: Error {
   case alreadyCalling, noIncomingConversation, noPendingAction, notRinging, stateDeadline
-  case wrongMode, simulatorOnly, invalidPayload, invalidTrace
+  case wrongMode, simulatorOnly, invalidPayload, invalidTrace, mediaUnavailable, invalidMediaControl, mediaControlDeadline
 }
 
 /// Excluded from the distributed SDK. Synthetic push injection is simulator-only.
@@ -323,7 +505,22 @@ public final class VoIPExampleJourneyModule: Module {
   public func definition() -> ModuleDefinition {
     Name("VoIPExampleJourney")
     Constants(["acceptanceEnabled": JourneyConfiguration.m0, "m1Case": JourneyConfiguration.m1Case,
-      "systemCase": JourneyConfiguration.systemCase, "runID": JourneyConfiguration.runID])
+      "systemCase": JourneyConfiguration.systemCase, "m2Case": JourneyConfiguration.m2Case,
+      "dialRequestAcceptanceEnabled": JourneyConfiguration.dialRequestAcceptance, "runID": JourneyConfiguration.runID])
+    AsyncFunction("observedDialRequest") { (handle: String, video: Bool, promise: Promise) in
+      Task { @MainActor in
+        do { try ExampleJourney.shared.observedDialRequest(handle: handle, video: video); promise.resolve() }
+        catch { promise.reject("journey", String(reflecting: type(of: error))) }
+      }
+    }
+    #if targetEnvironment(simulator)
+    AsyncFunction("deliverDialRequests") { (promise: Promise) in
+      Task { @MainActor in
+        do { try await ExampleJourney.shared.deliverDialRequests(); promise.resolve() }
+        catch { ExampleJourney.shared.finish(success: false, errorType: String(reflecting: type(of: error))); promise.reject("journey", "Dial delivery failed.") }
+      }
+    }
+    #endif
     AsyncFunction("nextSystemCommand") { (promise: Promise) in
       Task { @MainActor in
         do { promise.resolve(try await ExampleJourney.shared.nextSystemCommand()) }
@@ -348,6 +545,29 @@ public final class VoIPExampleJourneyModule: Module {
         catch { promise.reject("journey", String(reflecting: type(of: error))) }
       }
     }
+    #if targetEnvironment(simulator)
+    AsyncFunction("awaitMediaControl") { (promise: Promise) in
+      Task { @MainActor in
+        do { try await ExampleJourney.shared.awaitMediaControl(); promise.resolve() }
+        catch { promise.reject("journey", String(reflecting: type(of: error))) }
+      }
+    }
+    AsyncFunction("mediaSnapshot") { (label: String, promise: Promise) in
+      let context = self.appContext
+      Task { @MainActor in
+        do {
+          #if canImport(livekit_react_native_webrtc)
+          guard let context, let module: WebRTCModule = context.nativeModule(named: "WebRTCModule") else {
+            throw JourneyError.mediaUnavailable
+          }
+          promise.resolve(try await ExampleJourney.shared.mediaSnapshot(module, label: label))
+          #else
+          throw JourneyError.mediaUnavailable
+          #endif
+        } catch { promise.reject("journey", String(reflecting: type(of: error))) }
+      }
+    }
+    #endif
     AsyncFunction("trace") { (event: String, fieldsJSON: String, promise: Promise) in
       Task { @MainActor in
         do { try ExampleJourney.shared.trace(event, fieldsJSON: fieldsJSON); promise.resolve() }

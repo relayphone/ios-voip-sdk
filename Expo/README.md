@@ -1,54 +1,54 @@
-# Expo module preparation
+# iOS-only Expo module
 
-This is M0 packaging infrastructure for the iOS-only Expo module. The public
-conversation API is specified by [RFC 0001](https://github.com/ziahamza/expo-callkit-telecom/blob/rfc/v2-conversations-api/rfcs/0001-v2-conversations-api.md)
-and arrives in M1. The package root currently exports no conversation API.
+The package root exports the public conversation API: state and push-token hooks,
+handlers, commands, reports, audio routes, typed incoming callers and
+`receiveCallEnded` for backend ownership signals. Read the [API contract](M1-API.md)
+and [answered-elsewhere guide](ANSWERED-ELSEWHERE.md) for application behavior.
 
-## Shared native sources
+The API design follows [RFC 0001](https://github.com/relayphone/expo-callkit-telecom/blob/rfc/v2-conversations-api/rfcs/0001-v2-conversations-api.md).
 
-`IosVoipSDK.podspec` lives at repository root so it can compile `Sources/` and
-`Expo/apple/` directly, without copying Swift sources. Its only native dependency
-is `ExpoModulesCore`; LiveCommunicationKit and the simulator runtime belong to the
-shared SDK sources. The separate `CKLoader.m` external injection loader is excluded.
-The pod sets `CKSIM_SDK_SOURCE=1` and derives `CKSIM_RUNTIME_VERSION` from the
-repository's canonical `VERSION` file.
+The Expo 58 example, native conversation/PushKit journeys, selected LiveKit Release
+build and device-code exclusions pass [SDK CI](https://github.com/relayphone/ios-voip-sdk/actions/runs/40693437174).
+The [LiveKit runtime journeys](M2-LIVEKIT.md) exercise healthy hold/resume/end and
+stale-audio watchdog cleanup on the existing React Native audio engine. Native [default-calling requests](M3-default-calling.md) deliver `tel:` URLs and resolved start-call intents to the public `dialRequest` hook, with native buffering until a listener attaches. Device Settings/Siri dispatch remains to be measured. The [M-Stable checkpoint](../docs/progress/2026-10-28-m-stable.md)
+records the remaining acceptance and device-measurement limits.
 
-The module configuration lists `apple` only, and the podspec restricts the platform
-to iOS 17.4 or later. The example uses Expo SDK 58, React 19.3 and React Native 0.88.
-One npm workspace installation supplies both the module and example.
+## Shared native sources and startup
 
-Expo 58 provides the UIKit scene lifecycle required when building for iOS 27.
-Prebuild generates the scene delegate and manifest; Expo keeps the React Native
-factory in its app delegate and forwards scene events to app delegate subscribers.
-The SDK does not take ownership of the example's launch or window lifecycle.
-Expo's documented minimums are iOS 16.4 and Xcode 26.4, so the SDK's iOS 17.4
-deployment target and the Xcode 26.6/27.1 build environments remain supported.
-Actual native acceptance on each environment is recorded separately.
+`IosVoipSDK.podspec` compiles `Sources/`, `Expo/apple/` and the selected media binding
+directly, without copying Swift sources. `ExpoModulesCore` is always required;
+selected media bindings add their own native dependencies. The external
+`CKLoader.m` injection loader is excluded. The pod sets `CKSIM_SDK_SOURCE=1` and
+derives `CKSIM_RUNTIME_VERSION` from the repository's `VERSION` file.
 
-## Native integration seam
+`VoIPAppDelegateSubscriber` starts the shared `VoIPApplication` and PushKit service
+during native app initialization, before JavaScript or a UI scene is required.
+The module reuses that process owner and its single `ConversationManager`.
+Handlers and hooks attach to the existing native client.
 
-The wrapper expects the following symbol from the shared Swift sources:
+The shared SDK calls `SimulatorSupport.activateIfNeeded()` before creating its
+manager. Activation is idempotent, returns `false` on devices, and preserves genuine
+framework behavior if simulator activation is refused. SwiftPM and CocoaPods SDK
+simulator builds embed the canonical runtime profile; the runtime implementation
+and profile are guarded out of device builds. No runtime resource bundle is
+required by the module.
 
-```swift
-public enum SimulatorSupport {
-  @MainActor public static func activateIfNeeded() -> Bool
-}
-```
+`IosVoipSDK.bootstrap()` remains an explicitly internal diagnostic entry at
+`ios-voip-sdk/internal/bootstrap`. It returns `{ platform: 'ios', simulator,
+runtimeActive }` for the example's status display. It does not replace the public
+conversation API or establish call acceptance by itself.
 
-Activation must be idempotent. It returns whether the simulator runtime is active;
-on devices it returns `false`. Failure logs its reason and allows genuine system
-behavior, as required by `docs/START-HERE.md`. The wrapper dispatches to `MainActor`
-before calling it. No `ConversationManager` is created by this scaffold.
+## Requirements and example
 
-`IosVoipSDK.bootstrap()` is exposed only through the package's explicitly internal
-`ios-voip-sdk/internal/bootstrap` entry. It returns `{ platform: 'ios', simulator,
-runtimeActive }` for the example's status screen. It is M0 infrastructure with no
-public API stability promise. Ring/join acceptance remains separate from bootstrap.
+The module supports iOS 17.4 or later and builds with the iOS 27 SDK or newer;
+CI uses Xcode 27.1. Its configuration lists `apple` only. The example pins Expo 58,
+React 19.3 and React Native 0.88; the declared Expo peer range is 55–58. Runtime
+compatibility with Expo 55–57 remains unqualified.
 
-The CocoaPods resource bundle is named `IosVoipSDKRuntime`. It currently includes
-the profile under `profiles/` and also recognizes the planned canonical location
-`Sources/Engine/Resources/`. Native integration must resolve the profile from this
-bundle. SwiftPM uses its own `Bundle.module` accessor.
+One npm workspace installation supplies the module and example. Expo owns its
+scene, window and React Native lifecycle; the SDK registers native services through
+an app-delegate subscriber. See the [example guide](../example/README.md) for
+prebuild and Release builds.
 
 ## Validation
 
@@ -59,20 +59,16 @@ npm ci --ignore-scripts --no-audit --no-fund
 npm run build
 npm run typecheck
 npm run format:check
+node --test Expo/tests/m1-runtime.test.cjs
 npm exec --workspace ios-voip-sdk-example -- expo config --type prebuild
 npm exec --workspace ios-voip-sdk-example -- expo-modules-autolinking resolve --platform apple
 pod ipc spec IosVoipSDK.podspec
 ```
 
-These checks validate TypeScript, configuration and discovery of the pod. They do
-not compile Swift, test simulator activation or prove call behavior. The native
-`SimulatorSupport` implementation and the full M0 acceptance still need integration.
-
-The scaffold uses direct TypeScript compilation instead of the larger
-`expo-module-scripts` development toolchain. Dependency versions are pinned in
-`package-lock.json`. The package remains private and unlicensed before beta.
-The example declares its own pinned `babel-preset-expo` dependency so Babel can
-resolve it directly even when npm nests Expo's transitive copy.
+These commands validate JavaScript, types, configuration and pod discovery. Native
+compilation, simulator journeys and device Release exclusions are separate CI
+checks linked above. Dependency versions are pinned in `package-lock.json`; the
+package remains private and unlicensed before beta.
 
 ## Primary references
 
