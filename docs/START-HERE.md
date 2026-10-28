@@ -11,7 +11,7 @@ Build a VoIP calling SDK for iOS on **LiveCommunicationKit (LCK)** and ship it a
 
 Both include **built-in simulator support**. Genuine CallKit and LCK tear calls down in the iOS simulator, about 100 ms after an incoming report, so this repository's simulator runtime supplies the missing call service. Developers and CI can then test calling on any iOS simulator without a device.
 
-The API is specified in [RFC 0001](https://github.com/ziahamza/expo-callkit-telecom/blob/rfc/v2-conversations-api/rfcs/0001-v2-conversations-api.md), on [fork PR #10](https://github.com/ziahamza/expo-callkit-telecom/pull/10). It is written as a possible **v2 of [expo-callkit-telecom](https://github.com/mfairley/expo-callkit-telecom)**, an MIT Expo module by Michael Fairley that wraps CallKit and Android Core-Telecom. That v2's iOS side would depend on this repository's Expo module, and its Android side would stay in that repository.
+The API is specified in [RFC 0001](https://github.com/relayphone/expo-callkit-telecom/blob/rfc/v2-conversations-api/rfcs/0001-v2-conversations-api.md), on [fork PR #10](https://github.com/relayphone/expo-callkit-telecom/pull/10). It is written as a possible **v2 of [expo-callkit-telecom](https://github.com/mfairley/expo-callkit-telecom)**, an MIT Expo module by Michael Fairley that wraps CallKit and Android Core-Telecom. That v2's iOS side would depend on this repository's Expo module, and its Android side would stay in that repository.
 
 **We don't wait for upstream.** This SDK is useful on its own: to native Swift apps, Expo apps, and Phone (Hamza's app, whose calling moves from Telnyx to LiveKit and then onto this SDK).
 
@@ -59,7 +59,7 @@ The API is specified in [RFC 0001](https://github.com/ziahamza/expo-callkit-tele
 
 ## 4. Work plan (in order)
 
-> **Current order (Hamza, October 23):** restore every required main CI workflow first; remove archived receipt packets and correct the APNs workflow guard; land the §A0 and §A fixes in small PRs; finish M2 and M3; then complete the corrected-source iPhone measurement in [#22](https://github.com/ziahamza/ios-voip-sdk/pull/22), or record its exact blocker.
+> **Current order (Hamza, October 23):** restore every required main CI workflow first; remove archived receipt packets and correct the APNs workflow guard; land the §A0 and §A fixes in small PRs; finish M2 and M3; then complete the corrected-source iPhone measurement in [#22](https://github.com/relayphone/ios-voip-sdk/pull/22), or record its exact blocker.
 >
 > **CI time-box (Hamza, October 23):** legacy discovery on Xcode 26.3/26.6 is nightly/manual and non-blocking after repeated hosted simulator-startup failures. Failures remain visible in that workflow. SDK M0/M1 acceptance remains required on relevant PRs and main, including changes to either workflow. Do not add further legacy startup repair machinery.
 >
@@ -126,7 +126,7 @@ All of this is under `docs/research/callkit-simulator-probe/` unless noted. The 
 
 ## 6. Related work outside this repository
 
-- **Fork `ziahamza/expo-callkit-telecom`** (`main` mirrors upstream):
+- **Fork `relayphone/expo-callkit-telecom`** (`main` mirrors upstream):
   - **#10:** RFC 0001.
   - **#9:** a fix for the incoming-session publication race, intended for upstream once Hamza approves. Review items E4–E6 still need fixing.
   - **#1 and #4:** parked (PushKit hardening and its CI).

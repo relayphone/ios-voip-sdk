@@ -8,7 +8,7 @@ group is gone.
 Use it for local GitHub commands, downloads, scans and simulator commands:
 
 ```sh
-scripts/ci/bounded 40 gh issue view 93 --repo ziahamza/ios-voip-sdk
+scripts/ci/bounded 40 gh issue view 93 --repo relayphone/ios-voip-sdk
 scripts/ci/bounded 20 du -sh /tmp/one-owned-output
 scripts/ci/bounded 20 find /tmp/one-owned-output -maxdepth 2 -type f
 scripts/ci/bounded 30 xcrun simctl list devices -j

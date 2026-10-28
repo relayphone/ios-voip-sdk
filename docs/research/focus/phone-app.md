@@ -1,6 +1,6 @@
 # Phone integration: AI handles a call during Focus
 
-Integration notes for the Phone app, tracked by [#124](https://github.com/ziahamza/ios-voip-sdk/issues/124). This is a proposed UI/data contract, not implemented behavior or a new Phone backend schema. Read the [platform limits](README.md), [typed SDK proposal](sdk-api.md), and [the device plan](device-plan.md) before implementation.
+Integration notes for the Phone app, tracked by [#124](https://github.com/relayphone/ios-voip-sdk/issues/124). This is a proposed UI/data contract, not implemented behavior or a new Phone backend schema. Read the [platform limits](README.md), [typed SDK proposal](sdk-api.md), and [the device plan](device-plan.md) before implementation.
 
 Reuse Phone's existing LiveKit SIP numbers ([#458](https://github.com/ziahamza/phone-app/issues/458)), owner-join/take-over UI and flow ([#456](https://github.com/ziahamza/phone-app/issues/456)), and celld captions SSE ([#858](https://github.com/ziahamza/phone-app/issues/858), frame-loss fix). **Take-over joins the existing AI LiveKit room/SIP call through a new outgoing local SDK conversation.** It does not answer the rejected incoming invitation, dial the caller again, or turn Focus off.
 
