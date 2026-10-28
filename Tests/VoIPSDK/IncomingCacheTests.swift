@@ -10,14 +10,14 @@ import Foundation
     let manager = ConversationManager.latest!
     let payload = IncomingCallPayload(eventId: "cache-event-" + mode,
       serverCallId: "cache-server-" + mode,
-      caller: Participant(id: "cache-caller", displayName: "Cache fixture"),
+      caller: try Caller(handleType: .generic, value: "cache-caller", displayName: "Cache fixture"),
       metadata: ["fixture": .string(mode)])
     var result: [String: Any] = ["mode": mode,
       "classification": "whole production client with platform callback timing deliberately modeled; no LCK execution"]
 
     func snapshotMatches(_ id: UUID) -> Bool {
       client.snapshots.count == 1 && client.snapshots.first?.id == id &&
-        client.snapshots.first?.payload == payload && client.snapshots.first?.members == [payload.caller]
+        client.snapshots.first?.payload == payload && client.snapshots.first?.members == [payload.caller.participant]
     }
     func attempt(_ reservation: IncomingIntake.Reservation) -> IncomingIntake.Attempt {
       guard case .report(let value) = reservation.disposition else {

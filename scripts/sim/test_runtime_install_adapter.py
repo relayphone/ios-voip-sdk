@@ -205,9 +205,10 @@ class RuntimeInstallAdapterTests(unittest.TestCase):
         self.assertFalse(self.state()['retry_used'])
         self.assertNotIn('launch', self.native.counts)
 
-    def test_direct_launch_failure_leaves_checkpoint_sticky_without_launch_retry(self):
+    def test_exhausted_launch_failure_leaves_checkpoint_sticky_without_lifecycle_retry(self):
         owner = self.owner()
         self.native.failures['launch', 1] = 'timeout'
+        self.native.failures['launch', 2] = 'timeout'
         with self.assertRaises(runtime.CommandError) as caught:
             runtime.launch_fixture(owner.current, self.app, session=owner)
         self.assertIs(caught.exception.result, self.native.results[-1])
@@ -215,7 +216,7 @@ class RuntimeInstallAdapterTests(unittest.TestCase):
         self.native.failures['install', 2] = 'timeout'
         with self.assertRaises(runtime.CommandError):
             runtime.lifecycle(owner, 'install', owner.current, self.app)
-        self.assertEqual(self.native.counts['launch'], 1)
+        self.assertEqual(self.native.counts['launch'], 2)
         self.assertEqual(self.native.counts['create'], 1)
         self.assertNotIn('get_app_container', self.native.counts)
 

@@ -121,7 +121,7 @@ private final class ExampleJourney {
   private func fixturePayload() -> IncomingCallPayload {
     IncomingCallPayload(eventId: "sdk-example-event-" + JourneyTrace.runID,
       serverCallId: "sdk-example-server-" + JourneyTrace.runID,
-      caller: .init(id: "sdk-example-caller", displayName: "SDK example", phoneNumber: "+15555550142"),
+      caller: try! Caller(handleType: .phone, value: "+15555550142", displayName: "SDK example", hostContactID: "sdk-example-caller"),
       hasVideo: false)
   }
 

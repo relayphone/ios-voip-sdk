@@ -145,7 +145,7 @@ class Journey:
         path = self.root / (role + ('-duplicate' if duplicate else '') + '.payload.json')
         payload = dict(incomingCall=dict(eventId='system-event-' + self.args.run_id + '-' + role,
             serverCallId='system-server-' + self.args.run_id + '-' + role,
-            caller=dict(id='system-fixture', displayName='System acceptance', phoneNumber='+15555550142'), hasVideo=False))
+            caller=dict(handleType='phone', value='+15555550142', displayName='System acceptance', hostContactID='system-fixture'), hasVideo=False))
         write(path, payload)
         response = self.cli('push', '--payload-file', str(path), '--must-report', 'false' if duplicate else 'true')
         if duplicate:
@@ -258,7 +258,7 @@ class Journey:
         if self.case == 'push-launch':
             path = self.root / 'first.payload.json'
             write(path, dict(incomingCall=dict(eventId='system-event-' + self.args.run_id + '-first',
-                serverCallId='system-server-' + self.args.run_id + '-first', caller=dict(id='cold-fixture'), hasVideo=False)))
+                serverCallId='system-server-' + self.args.run_id + '-first', caller=dict(handleType='generic', value='cold-fixture', displayName='cold-fixture'), hasVideo=False)))
             launch = [str(self.args.package / 'cksim'), '--simulator', self.args.simulator, '--bundle', BUNDLE,
                 '--runtime-dir', str(self.args.package), 'push', '--payload-file', str(path), '--must-report', 'true',
                 '--launch', '--run-id', self.args.run_id, '--launch-receipt', str(self.root / 'launch-push.json')]

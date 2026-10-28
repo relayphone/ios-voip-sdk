@@ -290,7 +290,9 @@ def controls():
         import signal, subprocess
         fixed_run = '00000000-0000-0000-0000-000000000005'
         startup = dict(launch_at29=29, launch_at31=31, launch_at33=33,
-                       launch_never=None, launch_beyond90=91, launch_early_exit=None)
+                       launch_beyond90=91, launch_never=None, launch_beyond_watchdog=311,
+                       launch_early_exit=None)
+        outer_bound = 180 + 90 + 40
         for label in ('healthy-published-home', 'healthy-buffered-header', 'stale-published-home', 'wrong-run', 'wrong-pid', 'wrong-bundle',
                       'wrong-simulator', 'wrong-case', 'wrong-mode', 'wrong-image', 'missing-path', 'relative-path',
                       'wrong-device-path', 'dotdot-path', 'malformed-path', 'absent-path', 'symlink-path', 'wrong-installation',
@@ -301,7 +303,7 @@ def controls():
             executable.parent.mkdir(); executable.write_text('synthetic executable')
             container = directory / 'Devices' / SIM / 'data/Containers/Data/Application' / CALL
             container.mkdir(parents=True)
-            mode = 'stale-audio' if label in ('stale-published-home', 'changed-session-run', 'wrong-session-transport', 'missing-session-transport') else 'healthy'
+            mode = 'stale-audio' if label in ('stale-published-home', 'launch_beyond90', 'changed-session-run', 'wrong-session-transport', 'missing-session-transport') else 'healthy'
             launch = dict(event='launch', runID=fixed_run, pid=100, bundleID=gate.BUNDLE, simulatorID=SIM,
                           case=mode, mode='sdk-swift-livekit', executableSHA256=digest(executable), dataContainer=str(container))
             for suffix, field, value in (('run', 'runID', CALL), ('pid', 'pid', 999), ('bundle', 'bundleID', 'other.bundle'),
@@ -343,9 +345,10 @@ def controls():
                 pid = owner
                 alive = True
                 def poll(self): return None if self.alive and not (label == 'launch_early_exit' and clock[0] >= 10) else 0
-                def wait(self, timeout): self.alive = False; return 0
+                def wait(self, timeout): self.waits.append(timeout); self.alive = False; return 0
             process = Process(); allowed = label in ('healthy-published-home', 'healthy-buffered-header', 'stale-published-home') or \
-                (label in startup and delay is not None and delay < 90)
+                (label in startup and delay is not None and delay < outer_bound)
+            process.waits = []
             original_read = Path.read_text; session_reads = [0]
             def read(path, *args, **kwargs):
                 assert allowed or (path.name == 'session.json' and (label.startswith(('wrong-session-', 'missing-session-')) or label == 'changed-session-run')) or \
@@ -377,9 +380,13 @@ def controls():
                     assert allowed and result['dataContainer'] == str(container), label
                 assert fault_call.call_count == (1 if allowed and mode == 'stale-audio' else 0)
             if label in startup:
-                assert clock[0] == (delay if allowed else 10 if label == 'launch_early_exit' else 90), label
+                assert clock[0] == (delay if allowed else 10 if label == 'launch_early_exit' else outer_bound), label
                 command = spawn.call_args.args[0]
+                assert spawn.call_count == 1, label
                 assert command[command.index('--timeout') + 1] == '90'
+                if allowed and delay > 90:
+                    assert command[command.index('--startup-timeout') + 1] == '180'
+                    assert process.waits == [130], label
             assert (directory / (mode + '.runtime.jsonl')).exists() is allowed
             checks.append(label)
         # Drive capture_case itself with an inert process object. Every signal,
@@ -455,7 +462,7 @@ def controls():
             assert spawn.call_args.args[0].count('--inherit-launcher-group') == 1
             assert handlers == previous and len(signal_calls) == 4
             if label == 'private-group-normal':
-                assert not stopped and process.waits == [100]
+                assert not stopped and process.waits == [130]
                 assert json.loads(receipt.read_text())['supervisorGroupAbsentAfterStop'] is True
             elif label == 'remaining-group-refuses':
                 assert not stopped and 'supervisorGroupAbsentAfterStop' not in json.loads(receipt.read_text())
