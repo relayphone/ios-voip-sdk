@@ -20,7 +20,7 @@ State and arbitration are per application process; calls in other apps are outsi
 this version's scope. The runtime activates the app's real audio session; it does not provide signaling,
 WebRTC transport, network peers or audio samples for a silent CI microphone.
 
-Standalone release provenance and verification are described in [runtime releases](https://github.com/ziahamza/ios-voip-sdk/blob/main/docs/runtime-releases.md).
+Standalone release provenance and verification are described in [runtime releases](https://github.com/relayphone/ios-voip-sdk/blob/main/docs/runtime-releases.md).
 
 ## Build and run
 
@@ -175,7 +175,7 @@ reports. Filtered reports create no call, ring timer or audio activation. Codes
 The [device capture](research/callkit-simulator-probe/livecommunicationkit/push/README.md)
 is the reference for code 3; filtering never grants a repeated-caller exception.
 The [blocked-number LCK measurements](research/callkit-simulator-probe/livecommunicationkit/multicall/README.md)
-([#85](https://github.com/ziahamza/ios-voip-sdk/pull/85)) succeeded and rang; a repeat
+([#85](https://github.com/relayphone/ios-voip-sdk/pull/85)) succeeded and rang; a repeat
 66 seconds later also succeeded, with the unanswered call ending at about 60 s.
 Code 4 is not produced by iOS 27.0 for LCK in these measurements. It is available
 only as an explicit fault: `faults --incoming-error-code 4`; use `0` to clear it.
@@ -206,7 +206,7 @@ simulator migration/startup continued to time out after the agreed hardening
 time-box. Failures remain visible; this lane no longer blocks SDK work.
 SDK M0/M1 is a separate required PR/main workflow, including Release device
 exclusion checks. Changes to either workflow trigger that SDK acceptance.
-**Measured:** [hosted run 39680771297](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39680771297)
+**Measured:** [hosted run 39680771297](https://github.com/relayphone/ios-voip-sdk/actions/runs/39680771297)
 used the iOS **26.5 (23F77)** simulator against the `ios-27.0` behavior profile.
 That profile names the iPhone measurements being reproduced; it is separate
 from the simulator OS and selected compiler. This CI run does not qualify
@@ -344,7 +344,7 @@ Recorded startup timeouts are classified as `infra:startup`; diagnostic failures
 preserve the original exception. Already classified terminal transport outcomes
 retain their reason without spending the shared preparation recovery budget.
 
-**Measured:** [automatic native and GUI run](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40067131951)
+**Measured:** [automatic native and GUI run](https://github.com/relayphone/ios-voip-sdk/actions/runs/40067131951)
 passed automatic native and live Inspector acceptance
 on iOS 27.0 after the complete transport and simulator-lifecycle fix. Initial
 fixture stimulus is sent only after the host observes the fresh session, so slow

@@ -1,7 +1,7 @@
 # Expo module preparation
 
 This is M0 packaging infrastructure for the iOS-only Expo module. The public
-conversation API is specified by [RFC 0001](https://github.com/ziahamza/expo-callkit-telecom/blob/rfc/v2-conversations-api/rfcs/0001-v2-conversations-api.md)
+conversation API is specified by [RFC 0001](https://github.com/relayphone/expo-callkit-telecom/blob/rfc/v2-conversations-api/rfcs/0001-v2-conversations-api.md)
 and arrives in M1. The package root currently exports no conversation API.
 
 ## Shared native sources

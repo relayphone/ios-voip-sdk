@@ -6,9 +6,9 @@ A VoIP calling SDK for iOS built on **LiveCommunicationKit**, Apple's successor 
 | --- | --- |
 | **Swift package**: owns the app's only `ConversationManager`, projects system call state, runs a promise/async handler with platform deadlines, handles PushKit (including the iOS 26.4 `mustReport` metadata), media adapters and default-calling-app entry points | M0 local native acceptance measured; CI pending. M1 implementation in progress; M2–M3 planned. |
 | **iOS-only Expo module**: the same Swift sources behind a React Native/Expo API (`useConversations()`, a handler, commands, reports, audio routes, push token) with a config plugin | M0 local native acceptance measured; CI pending. M1 implementation in progress; M2–M3 planned. |
-| **Simulator runtime**: genuine CallKit and LiveCommunicationKit tear calls down in the iOS simulator; this runtime supplies the missing call service | **v0.1 shipped** ([release](https://github.com/ziahamza/ios-voip-sdk/releases/tag/v0.1), [docs](docs/simulator-runtime.md)). The M0 source package activates it in-process; qualification is pending. |
+| **Simulator runtime**: genuine CallKit and LiveCommunicationKit tear calls down in the iOS simulator; this runtime supplies the missing call service | **v0.1 shipped** ([release](https://github.com/relayphone/ios-voip-sdk/releases/tag/v0.1), [docs](docs/simulator-runtime.md)). The M0 source package activates it in-process; qualification is pending. |
 
-The API design is [RFC 0001](https://github.com/ziahamza/expo-callkit-telecom/pull/10). It is written as a possible v2 of [expo-callkit-telecom](https://github.com/mfairley/expo-callkit-telecom), whose iOS side would then depend on this package's Expo module. This SDK doesn't wait on that: it is built here first.
+The API design is [RFC 0001](https://github.com/relayphone/expo-callkit-telecom/pull/10). It is written as a possible v2 of [expo-callkit-telecom](https://github.com/mfairley/expo-callkit-telecom), whose iOS side would then depend on this package's Expo module. This SDK doesn't wait on that: it is built here first.
 
 **Start with [docs/START-HERE.md](docs/START-HERE.md).** It covers decisions, architecture, milestones, evidence and working rules.
 
