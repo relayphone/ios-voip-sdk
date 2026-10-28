@@ -36,6 +36,7 @@ import {
   runSystemAcceptance,
   systemTrace,
 } from './system-acceptance';
+import { observeMediaEvent, runMediaAcceptance } from './media';
 
 type Status =
   | { phase: 'loading' }
@@ -63,7 +64,8 @@ function CallingJourney() {
   const automated =
     journey().acceptanceEnabled ||
     journey().m1Case !== '' ||
-    journey().systemCase !== '';
+    journey().systemCase !== '' ||
+    journey().m2Case !== '';
   const conversation = conversations[0];
 
   useEffect(() => {
@@ -79,13 +81,20 @@ function CallingJourney() {
   useEffect(() => {
     if (journey().m1Case !== '') observeToken(pushToken);
   }, [pushToken]);
-  const observeEvent = (name: string) => {
+  const observeEvent = (name: string, conversationID?: string) => {
     if (journey().m1Case !== '') void trace('m1.event', { name });
     if (journey().systemCase !== '') void systemTrace('system.event', { name });
+    if (journey().m2Case !== '') observeMediaEvent(name, conversationID);
   };
   useConversationEvent('audioActivated', () => observeEvent('audioActivated'));
   useConversationEvent('audioDeactivated', () =>
     observeEvent('audioDeactivated'),
+  );
+  useConversationEvent('audioActivationMissing', ({ conversationId }) =>
+    observeEvent('audioActivationMissing', conversationId),
+  );
+  useConversationEvent('audioActivationFailed', ({ conversationId }) =>
+    observeEvent('audioActivationFailed', conversationId),
   );
   useConversationEvent('providerReset', () => observeEvent('providerReset'));
   useConversationEvent(
@@ -214,11 +223,15 @@ export default function App() {
         !acceptanceStarted.current &&
         (journey().acceptanceEnabled ||
           journey().m1Case !== '' ||
-          journey().systemCase !== '')
+          journey().systemCase !== '' ||
+          journey().m2Case !== '')
       ) {
         acceptanceStarted.current = true;
         setAcceptanceMessage('Running simulator acceptance…');
-        if (journey().acceptanceEnabled) {
+        if (journey().m2Case !== '') {
+          setStatus({ phase: 'ready', info });
+          await runMediaAcceptance();
+        } else if (journey().acceptanceEnabled) {
           setStatus({ phase: 'ready', info });
           await journey().acceptance();
         } else if (journey().systemCase !== '') {
@@ -241,7 +254,11 @@ export default function App() {
       }
     } catch (error) {
       try {
-        if (journey().m1Case !== '' || journey().systemCase !== '')
+        if (
+          journey().m1Case !== '' ||
+          journey().systemCase !== '' ||
+          journey().m2Case !== ''
+        )
           await journey().finish(false);
       } catch {
         // Preserve the screen's native-module loading error if no fixture exists.

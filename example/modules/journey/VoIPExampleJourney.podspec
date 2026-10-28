@@ -19,6 +19,8 @@ Pod::Spec.new do |s|
   if properties['ios-voip-sdk.mediaAdapter'] == 'webrtc'
     s.dependency 'react-native-webrtc', '= 155.0.1'
     s.dependency 'JitsiWebRTC', '= 155.0.1'
+  elsif properties['ios-voip-sdk.mediaAdapter'] == 'livekit'
+    s.dependency 'livekit-react-native-webrtc', '>= 150.1.0', '< 151.0.0'
   end
   s.source_files = 'apple/*.swift'
   if properties['ios-voip-sdk.mediaAdapter'] == 'webrtc'

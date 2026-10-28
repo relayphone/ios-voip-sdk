@@ -41,7 +41,7 @@ jobs:
   expo-livekit-native:
     needs: [changes, nightly-coverage]
     if: needs.nightly-coverage.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.expo == 'true'
-    name: Pinned Expo LiveKit selected Release device build
+    name: Pinned Expo LiveKit runtime and Release acceptance
     runs-on: xcode-27
     timeout-minutes: 60
     defaults:
@@ -74,6 +74,18 @@ jobs:
         run: >-
           python3 discovery/build_sdk_device_release.py "$RUNNER_TEMP/expo-livekit-device"
           --derived-data "$RUNNER_TEMP/expo-livekit-build/DerivedData" --livekit
+      - name: Release the device build cache before the simulator build
+        run: rm -rf "$RUNNER_TEMP/expo-livekit-build/DerivedData"
+      - name: Build the pinned Release simulator consumer
+        run: python3 discovery/build_expo_livekit.py "$RUNNER_TEMP/expo-livekit-runtime-build"
+      - name: Require healthy and stale-audio journeys on the existing ADM
+        run: python3 discovery/run_expo_livekit.py "$RUNNER_TEMP/expo-livekit-runtime-build" "$RUNNER_TEMP/expo-livekit-runtime"
+      - name: Clean up the owned Expo simulator after interruption
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/expo-livekit-runtime/simulator-state/owner.json" ]]; then
+            python3 scripts/sim/sim.py cleanup "$RUNNER_TEMP/expo-livekit-runtime/simulator-state/owner.json" --timeout 60
+          fi
       - name: Preserve selected Release build inputs and inspection
         if: always()
         uses: ./.github/actions/upload-transfer
@@ -83,12 +95,16 @@ jobs:
           path: |
             ${{ runner.temp }}/expo-livekit-device/*.json
             ${{ runner.temp }}/expo-livekit-device/*.log
+            ${{ runner.temp }}/expo-livekit-runtime-build/*.json
+            ${{ runner.temp }}/expo-livekit-runtime-build/*.log
+            ${{ runner.temp }}/expo-livekit-runtime-build/example.app
+            ${{ runner.temp }}/expo-livekit-runtime
           if-no-files-found: error
           retention-days: 3
           compression-level: 6
       - name: Remove this job's native build cache
         if: always()
-        run: rm -rf "$RUNNER_TEMP/expo-livekit-build/DerivedData"
+        run: rm -rf "$RUNNER_TEMP/expo-livekit-build/DerivedData" "$RUNNER_TEMP/expo-livekit-runtime-build/DerivedData"
   offline-controls:
     needs: changes
     if: needs.changes.outputs.sdk == 'true'
@@ -116,6 +132,7 @@ jobs:
           python3 -m unittest discover -s scripts/ci/tests -p 'test_*.py'
           python3 discovery/check_sdk_m0.py | tee "$SDK_M0_BUILD_LOGS/offline-controls.json"
           python3 discovery/check_sdk_installed_paths.py
+          python3 discovery/check_expo_livekit.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/expo-media-journey-controls.log"
           python3 discovery/check_sdk_m1.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-offline-controls.log"
           python3 discovery/check_sdk_m1_container_capture.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-container-controls.log"
           python3 discovery/check_sdk_routes_runner.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/routes-runner-controls.log"
