@@ -804,26 +804,32 @@ class RunnerControls(unittest.TestCase):
                 simulator = str(uuid.uuid4()).upper(); instances = []
                 inventory = dict(runtimes=[dict(identifier='com.apple.CoreSimulator.SimRuntime.iOS-27-0',
                     platform='iOS', isAvailable=True, version='27.0', buildversion='synthetic')])
+                def execute(arguments, timeout, **options):
+                    output = simulator.encode() if arguments[2] == 'create' else (
+                        json.dumps(inventory if arguments[3] == 'runtimes' else {'devices': {}}).encode()
+                        if arguments[2] == 'list' else b'')
+                    return runner.Result(arguments, 0, stdout=output)
                 class Setup(runner.ExpoSetup):
                     def __init__(self, directory): super().__init__(directory); instances.append(self)
-                    def recorded(self, name, arguments, timeout=60, env=None):
-                        output = simulator.encode() if arguments[2] == 'create' else (
-                            json.dumps(inventory if arguments[3] == 'runtimes' else {'devices': {}}).encode()
-                            if arguments[2] == 'list' else b'')
-                        return runner.Result(arguments, 0, stdout=output)
                     def environment(self): return ''
                 with patch.object(runner, 'source_identity', return_value=IDENTITY), \
                      patch.object(runner, 'validate_build'), patch.object(runner, 'redact'), \
+                     patch.object(runner.sys.modules['sim'], 'bounded', side_effect=execute) as native, \
+                     patch.object(runner.subprocess, 'Popen', side_effect=AssertionError('offline control launched a host process')) as spawn, \
                      patch.object(runner, 'scenario', side_effect=runner.ExpoSupervisorTimeout(label)) as capture, \
                      patch.object(runner.sys.modules['sim'], 'summary') as summary:
                     with self.assertRaisesRegex(EvidenceError, 'launch failed: 1'):
                         runner.run(build, out, Setup)
                 capture.assert_called_once()
+                spawn.assert_not_called()
+                self.assertEqual(sum(c.args[0] == ['xcrun', 'simctl', 'list', 'devices', '-j']
+                                     for c in native.call_args_list), 1)
                 self.assertFalse(any(c.args[0].startswith('product:') for c in summary.call_args_list))
                 state = json.loads(instances[0].state_path.read_text())
                 self.assertTrue(state['checkpoint']); self.assertFalse(state['retry_used'])
                 self.assertEqual(state['owned'], [])
                 self.assertTrue(gate.read(out, 'cleanup.json')['absent'])
+                self.assertEqual(gate.read(out, 'cleanup.json')['deleteExitCode'], 0)
 
     def test_only_matching_reported_timeout_receipts_preserve_infra_classification(self):
         with tempfile.TemporaryDirectory() as temporary:
