@@ -118,6 +118,7 @@ struct BridgeTests {
     try await destruction(); checks.append("destroyed-bridge-observers-continuations-and-release")
     try await invalidDelivery(); checks.append("invalid-model-encoding-rejects-handler-delivery")
     try observation(); checks.append("production-state-event-null-token-and-route-encoding")
+    try dialRequests(); checks.append("cold-dial-request-readiness-reload-and-stale-owner")
     let result = try JSONSerialization.data(withJSONObject: ["success": true, "checks": checks], options: [.sortedKeys])
     print(String(decoding: result, as: UTF8.self))
   }
@@ -396,5 +397,57 @@ struct BridgeTests {
       throw TestFailure.failed("Missing action \(id).")
     }
     return body
+  }
+
+  @MainActor private static func dialRequests() throws {
+    VoIPApplication.fixture = VoIPApplication()
+    let a = UUID(), b = UUID(), first = Events(), second = Events()
+    defer { ConversationBridges.remove(a); ConversationBridges.remove(b); VoIPApplication.fixture = nil }
+    let request = DialRequest(handle: "+15555550142", video: true)
+    DialRequestRouter.shared.receive(request)
+    try ConversationBridges.install(a, emit: first.emit)
+    try expect(first.named("conversationEvent").isEmpty, "Module creation must not consume a cold dial request.")
+    ConversationBridges.listenForDialRequests(a, attached: true, generation: 0)
+    let cold = first.named("conversationEvent")
+    try expect(cold.count == 1 && cold[0]["type"] as? String == "dialRequest", "Public listener readiness drains the cold request.")
+    let payload = cold[0]["payload"] as? [String: Any]
+    try expect(payload?["handle"] as? String == request.handle && payload?["video"] as? Bool == true,
+               "Dial requests use the exact RFC payload.")
+    ConversationBridges.acknowledgeDialRequest(a, delivery: UUID(uuidString: cold[0]["deliveryID"] as! String)!, generation: 0)
+    try ConversationBridges.install(b, emit: second.emit)
+    DialRequestRouter.shared.receive(request)
+    ConversationBridges.listenForDialRequests(a, attached: true, generation: 1)
+    try expect(first.named("conversationEvent").count == 1 && second.named("conversationEvent").isEmpty,
+               "A new module lifetime buffers requests until its listener is ready; old attach cannot reclaim ownership.")
+    ConversationBridges.listenForDialRequests(b, attached: true, generation: 0)
+    try expect(second.named("conversationEvent").count == 1, "A new listener receives the retained request.")
+    let replacementDelivery = UUID(uuidString: second.named("conversationEvent")[0]["deliveryID"] as! String)!
+    ConversationBridges.acknowledgeDialRequest(b, delivery: replacementDelivery, generation: 0)
+    ConversationBridges.remove(a)
+    DialRequestRouter.shared.receive(request)
+    try expect(second.named("conversationEvent").count == 2, "Old teardown cannot detach the new dial consumer.")
+    let observedDelivery = UUID(uuidString: second.named("conversationEvent")[1]["deliveryID"] as! String)!
+    ConversationBridges.acknowledgeDialRequest(b, delivery: observedDelivery, generation: 0)
+    ConversationBridges.listenForDialRequests(b, attached: false, generation: 2)
+    DialRequestRouter.shared.receive(request)
+    ConversationBridges.listenForDialRequests(b, attached: true, generation: 1)
+    try expect(second.named("conversationEvent").count == 2, "Stale listener generations cannot drain or attach.")
+    ConversationBridges.listenForDialRequests(b, attached: true, generation: 3)
+    try expect(second.named("conversationEvent").count == 3, "Reattaching a current listener drains the retained request.")
+    let held = UUID(uuidString: second.named("conversationEvent")[2]["deliveryID"] as! String)!
+    let c = UUID(), third = Events()
+    defer { ConversationBridges.remove(c) }
+    try ConversationBridges.install(c, emit: third.emit)
+    ConversationBridges.listenForDialRequests(c, attached: true, generation: 0)
+    try expect(third.named("conversationEvent")[0]["deliveryID"] as? String == held.uuidString,
+               "A request stays native until JS acknowledges, including a reload before observation.")
+    ConversationBridges.acknowledgeDialRequest(b, delivery: held, generation: 3)
+    ConversationBridges.acknowledgeDialRequest(c, delivery: held, generation: 1)
+    DialRequestRouter.shared.receive(request)
+    try expect(third.named("conversationEvent").count == 1, "Stale owners and generations cannot acknowledge a pending request.")
+    ConversationBridges.acknowledgeDialRequest(c, delivery: held, generation: 0)
+    try expect(third.named("conversationEvent").count == 2, "Only a current observation releases the next request.")
+    let last = UUID(uuidString: third.named("conversationEvent")[1]["deliveryID"] as! String)!
+    ConversationBridges.acknowledgeDialRequest(c, delivery: last, generation: 0)
   }
 }

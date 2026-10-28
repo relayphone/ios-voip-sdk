@@ -6,6 +6,7 @@ import {
   setConversationHandler,
   setHeld,
   useConversationEvent,
+  type ConversationEventMap,
   useConversations,
   usePushToken,
 } from 'ios-voip-sdk';
@@ -59,9 +60,14 @@ function StatusRow({ label, value }: { label: string; value: string }) {
 function CallingJourney() {
   const conversations = useConversations();
   const pushToken = usePushToken();
+  const [dialRequest, setDialRequest] = useState<
+    ConversationEventMap['dialRequest'] | null
+  >(null);
+  const dialAcceptanceStarted = useRef(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('Ready for an example call.');
   const automated =
+    journey().dialRequestAcceptanceEnabled ||
     journey().acceptanceEnabled ||
     journey().m1Case !== '' ||
     journey().systemCase !== '' ||
@@ -113,6 +119,22 @@ function CallingJourney() {
     observeEvent('pushTokenUpdated'),
   );
 
+  useConversationEvent('dialRequest', (request) => {
+    setDialRequest(request);
+    void journey().observedDialRequest(request.handle, request.video);
+  });
+  useEffect(() => {
+    if (
+      !journey().dialRequestAcceptanceEnabled ||
+      dialAcceptanceStarted.current
+    )
+      return;
+    dialAcceptanceStarted.current = true;
+    void journey()
+      .deliverDialRequests()
+      .catch(() => journey().finish(false));
+  }, []);
+
   const command = async (operation: () => Promise<unknown>) => {
     setBusy(true);
     try {
@@ -149,6 +171,14 @@ function CallingJourney() {
       <StatusRow
         label="Conversation"
         value={conversation?.status ?? 'No active call'}
+      />
+      <StatusRow
+        label="Dial request"
+        value={
+          dialRequest
+            ? `${dialRequest.handle} (${dialRequest.video ? 'video' : 'audio'})`
+            : 'None'
+        }
       />
       <StatusRow
         label="Push token"

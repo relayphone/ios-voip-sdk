@@ -10,8 +10,7 @@ results from remaining media, default-calling and device acceptance work.
 The public entry exports state hooks, imperative snapshots, handlers, commands,
 reports, push-token and lifecycle-event hooks, and audio routes. The M0 internal
 `ios-voip-sdk/internal/bootstrap` entry remains diagnostic infrastructure.
-Watchdog and audio-route producers are implemented; `dialRequest` remains reserved
-for M3. Genuine activation, deactivation, reset and answered-elsewhere events are
+Watchdog and audio-route producers are implemented; `dialRequest` is produced by the native [default-calling entry points](M3-default-calling.md). Genuine activation, deactivation, reset and answered-elsewhere events are
 forwarded from the shared native client.
 
 RFC 0001 omits formal definitions for `Participant`, `IncomingCallPayload` and
@@ -109,7 +108,7 @@ Only one active JS context may own the process's native handler bridge.
 
 These API details resolve gaps in the draft RFC and need review with the combined
 M1 implementation. They do not claim device qualification, media integration or
-default-calling entry-point support.
+device default-calling dispatch acceptance.
 
 ## Capacity rejection
 

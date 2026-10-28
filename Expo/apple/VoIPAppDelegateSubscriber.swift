@@ -8,6 +8,16 @@ public final class VoIPAppDelegateSubscriber: ExpoAppDelegateSubscriber {
     catch { NSLog("[VoIPSDK] Could not register native VoIP services during app launch.") }
   }
 
+  public func application(_ application: UIApplication, open url: URL,
+                          options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+    VoIPSystemEntryPoints.handle(url: url)
+  }
+
+  public func application(_ application: UIApplication, continue userActivity: NSUserActivity,
+                          restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
+    VoIPSystemEntryPoints.handle(userActivity: userActivity)
+  }
+
   public func application(_ application: UIApplication,
                           didReceiveRemoteNotification userInfo: [AnyHashable: Any],
                           fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
