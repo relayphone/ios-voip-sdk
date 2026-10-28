@@ -409,6 +409,26 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private var stopped = false
   private var commandResults: [UUID: [String: Any]] = [:]
   private var timers: [UUID: any DispatchSourceTimer] = [:]
+  #if CKSIM_FIXTURE_CLOCK
+  private var fixtureClock: RuntimeFixtureClock?
+  private var fixtureCallbacks = 0
+  func startFixtureClock() -> Bool {
+    withState {
+      guard !stopped, fixtureClock == nil else { return false }
+      fixtureClock = RuntimeFixtureClock()
+      return true
+    }
+  }
+  func stepFixtureClock(toward target: Int) -> Bool? {
+    withState {
+      guard !stopped, let fixtureClock, target >= fixtureClock.nowMS,
+            target - fixtureClock.nowMS <= 60000 else { return nil }
+      return fixtureClock.step(toward: target)
+    }
+  }
+  func fixtureTimeMS() -> Int? { withState { fixtureClock?.nowMS } }
+  func fixtureCallbacksPending() -> Bool { withState { fixtureCallbacks != 0 } }
+  #endif
 
   private init(prepared: Void) throws {
     let env = ProcessInfo.processInfo.environment
@@ -702,6 +722,10 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       guard !stopped else { return }
       stopped = true
       audioRevision += 1
+      #if CKSIM_FIXTURE_CLOCK
+      fixtureClock?.cancelAll()
+      fixtureClock = nil
+      #endif
       for timer in timers.values { timer.setEventHandler(handler: nil); timer.cancel() }
       timers.removeAll()
       for provider in providers.values { provider.valid = false; provider.generation += 1 }
@@ -729,6 +753,15 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   }
   private func after(_ seconds: Double, from start: DispatchTime = .now(), _ body: @escaping @Sendable () -> Void) {
     guard !stopped else { return }
+    #if CKSIM_FIXTURE_CLOCK
+    if let fixtureClock {
+      fixtureClock.schedule(seconds) { [weak self] in
+        guard let self, !self.stopped else { return }
+        body()
+      }
+      return
+    }
+    #endif
     let id = UUID()
     let timer = DispatchSource.makeTimerSource(flags: .strict, queue: state)
     timers[id] = timer
@@ -820,7 +853,13 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private func callback(_ provider: ProviderRegistration, _ block: @escaping @Sendable (any CXProviderDelegate) -> Void) {
     guard let delegate = provider.delegate else { return }
     let generation = provider.generation
+    #if CKSIM_FIXTURE_CLOCK
+    withState { fixtureCallbacks += 1 }
+    #endif
     (provider.queue ?? .main).async {
+      #if CKSIM_FIXTURE_CLOCK
+      defer { self.withState { self.fixtureCallbacks -= 1 } }
+      #endif
       guard self.withState({ !self.stopped && provider.valid && provider.generation == generation }) else { return }
       block(delegate)
     }
@@ -1351,7 +1390,13 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       return
     }
     if desired && faults.staleAudio == true { record(event: "fault.audioSuppressed", fields: [:]); return }
+    #if CKSIM_FIXTURE_CLOCK
+    fixtureCallbacks += 1
+    #endif
     DispatchQueue.main.async {
+      #if CKSIM_FIXTURE_CLOCK
+      defer { self.withState { self.fixtureCallbacks -= 1 } }
+      #endif
       guard self.withState({ !self.stopped && self.audioRevision == revision }) else { return }
       do {
         try AVAudioSession.sharedInstance().setActive(desired, options: desired ? [] : [.notifyOthersOnDeactivation])
