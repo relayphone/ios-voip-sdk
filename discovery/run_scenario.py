@@ -18,6 +18,9 @@ import threading
 import time
 import tty
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts/sim"))
+from sim import bounded
+
 
 
 class HostTiming:
@@ -346,9 +349,9 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                     os.kill(process.pid, signal.SIGTERM)
                     result["terminationSignalDelivered"] = True
                 else:
-                    stop = subprocess.run(terminate, capture_output=True, timeout=20)
+                    stop = bounded(terminate, 20)
                     result["terminateExitCode"] = stop.returncode
-                    if stop.returncode:
+                    if stop.returncode or stop.timed_out or stop.cleanup_uncertain or not stop.reaped:
                         raise RuntimeError("failed to terminate completed run-owned app")
                     stopped = True
                 try:
@@ -406,7 +409,9 @@ def run(launch, terminate, output, receipt, timeout, identity=None, console_laun
                 # The launcher can exit while the app it launched remains alive.
                 if not stopped:
                     try:
-                        stop = subprocess.run(terminate, capture_output=True, timeout=10)
+                        stop = bounded(terminate, 10)
+                        if stop.timed_out or stop.cleanup_uncertain or not stop.reaped:
+                            result["cleanupError"] = "terminate transport timed out or cleanup is uncertain"
                         result["cleanupExitCode"] = stop.returncode
                         for field in ("stdout", "stderr"):
                             raw = getattr(stop, field, None)
