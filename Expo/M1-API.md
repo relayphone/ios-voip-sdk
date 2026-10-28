@@ -124,3 +124,5 @@ Use `isConversationCommandError` to narrow the rejection. The SDK does not infer
 available system call groups from its local conversation count.
 
 Incoming callers use the validated [Caller contract](CALLER.md), shared by Swift, pushes and Expo reports.
+
+Hosts can send an explicit [answered-elsewhere ownership signal](ANSWERED-ELSEWHERE.md) to stop a known incoming ring.

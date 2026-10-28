@@ -150,6 +150,85 @@ import Foundation
     guard case .conversationEnded(_, .declinedElsewhere) = manager.reports.last?.1 else { preconditionFailure() }
     precondition(manager.reports.last?.0 == wireID)
 
+    // Explicit backend ownership ends ringing without waiting for an End handler.
+    let elsewherePayload = payload("answered-elsewhere")
+    let elsewhereID = try await client.reportIncomingConversation(elsewherePayload)
+    var elsewhereEvents: [ConversationEventContext] = []
+    var stateAtElsewhereEvent: ConversationSnapshot?
+    let elsewhereObserver = client.observeEvents { event in
+      if event.type == .answeredElsewhere {
+        elsewhereEvents.append(event); stateAtElsewhereEvent = snapshot(event.conversationID!)
+      }
+    }
+    let elsewhereAttempts = manager.performAttempts
+    let elsewhereSignal = CallEndedPayload(eventId: "answered-signal", serverCallId: elsewherePayload.serverCallId,
+      reason: .answeredElsewhere)
+    precondition(client.receiveCallEnded(elsewhereSignal))
+    guard case .conversationEnded(_, .joinedElsewhere) = manager.reports.last?.1 else { preconditionFailure() }
+    precondition(manager.reports.last?.0 == elsewhereID && manager.performAttempts == elsewhereAttempts)
+    precondition(elsewhereEvents.count == 1 && elsewhereEvents[0].conversationID == elsewhereID &&
+      elsewhereEvents[0].serverCallID == elsewherePayload.serverCallId && elsewhereEvents[0].eventID == "answered-signal")
+    precondition(stateAtElsewhereEvent?.ended?.reason == .answeredElsewhere && stateAtElsewhereEvent?.status == .ended)
+    precondition(!client.receiveCallEnded(elsewhereSignal) && elsewhereEvents.count == 1)
+    precondition(!client.receiveCallEnded(.init(eventId: "unknown-answered", serverCallId: "unknown", reason: .answeredElsewhere)))
+    precondition(!client.receiveCallEnded(.init(eventId: "", serverCallId: elsewherePayload.serverCallId, reason: .answeredElsewhere)))
+
+    let pairedA = payload("answered-paired-a"), pairedB = payload("answered-paired-b")
+    let pairedAID = try await client.reportIncomingConversation(pairedA)
+    let pairedBID = try await client.reportIncomingConversation(pairedB)
+    var pairedBSignalled = false
+    let pairedState = client.observeState { update in
+      if !pairedBSignalled && update.conversations.contains(where: { $0.id == pairedAID && $0.status == .ended }) {
+        pairedBSignalled = true
+        precondition(client.receiveCallEnded(.init(eventId: "paired-b", serverCallId: pairedB.serverCallId, reason: .answeredElsewhere)))
+      }
+    }
+    var pairedEvents: [UUID: Int] = [:]
+    let pairedObserver = client.observeEvents { event in
+      if event.type == .answeredElsewhere, let id = event.conversationID, [pairedAID, pairedBID].contains(id) {
+        pairedEvents[id, default: 0] += 1
+        client.incomingIntakeDidChange() // Reenter while another ready event is pending.
+      }
+    }
+    precondition(client.receiveCallEnded(.init(eventId: "paired-a", serverCallId: pairedA.serverCallId, reason: .answeredElsewhere)))
+    precondition(pairedBSignalled && pairedEvents == [pairedAID: 1, pairedBID: 1],
+      "Reentrant state/event observers cannot drain a pending ownership event twice")
+    client.removeStateObserver(pairedState); client.removeEventObserver(pairedObserver)
+
+    let workerPayload = payload("answered-worker-window")
+    let workerID = try await client.reportIncomingConversation(workerPayload)
+    let workerObject = manager.conversations.first { $0.uuid == workerID }!
+    // Model the supported worker-to-intake delivery precisely between the
+    // actor's projection read and pending-termination claim at the LCK boundary.
+    workerObject.onNextStateRead = {
+      precondition(client.incomingIntake.terminate(.init(eventId: "worker-signal",
+        serverCallId: workerPayload.serverCallId, reason: .answeredElsewhere)))
+    }
+    client.incomingIntakeDidChange()
+    precondition(workerObject.state == .left && elsewhereEvents.filter { $0.conversationID == workerID }.count == 1,
+      "A worker termination after projection capture cannot lose the SDK event")
+
+    // A report already in flight can publish a fresh ringing object after the
+    // first platform object has consumed the pending termination bit.
+    let racingPayload = payload("answered-race")
+    let racingID = try await client.reportIncomingConversation(racingPayload)
+    manager.pauseIncoming = true
+    let racingReport = Task { @MainActor in try await client.reportIncomingConversation(racingPayload, source: .pushKit) }
+    waitStage = "answered elsewhere duplicate report pending"
+    try await wait { manager.incomingWork != nil }
+    precondition(client.receiveCallEnded(.init(eventId: "race-answer", serverCallId: racingPayload.serverCallId,
+      reason: .answeredElsewhere)))
+    let reportsForA = manager.reports.filter { $0.0 == racingID }.count
+    manager.conversations.removeAll { $0.uuid == racingID }
+    manager.pauseIncoming = false; manager.incomingWork?.resume(); manager.incomingWork = nil
+    let racingResult = try await racingReport.value
+    precondition(racingResult == racingID)
+    precondition(manager.conversations.first { $0.uuid == racingID }?.state == .left,
+      "Retained answered-elsewhere must end the later actual ringing object")
+    precondition(manager.reports.filter { $0.0 == racingID }.count == reportsForA + 1)
+    precondition(elsewhereEvents.filter { $0.conversationID == racingID }.count == 1,
+      "Ending a replacement object cannot duplicate the ownership event")
+
     // A new actual object for a retained, locally ended UUID needs a real End
     // request too. No fake local native enum or remote report is available.
     remove(local)
@@ -832,8 +911,18 @@ import Foundation
       precondition(replaced.members == [Handle(type: .generic, value: replacement.id, displayName: replacement.displayName)],
         "Explicit member changes remain authoritative on later metadata-only updates")
     }
+    // A real reset changes intake generations but does not invent a new server
+    // ownership notification. Residual native objects still need an end report.
+    client.conversationManagerDidReset(manager)
+    manager.conversations.removeAll { $0.uuid == racingID }
+    let resetResidual = Conversation(racingID, state: .idle)
+    manager.conversations.append(resetResidual)
+    client.incomingIntakeDidChange()
+    precondition(resetResidual.state == .left && elsewhereEvents.filter { $0.conversationID == racingID }.count == 1,
+      "Reset-retained ownership cleanup cannot emit the same server event twice")
+    client.removeEventObserver(elsewhereObserver)
     precondition(held.isEmpty)
-    print("{\"success\":true,\"groups\":51,\"actualClientAndCoordinatorAndIntake\":true,\"nativeFrameworkMeasured\":false}")
+    print("{\"success\":true,\"groups\":56,\"actualClientAndCoordinatorAndIntake\":true,\"nativeFrameworkMeasured\":false}")
   }
 }
 

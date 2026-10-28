@@ -60,8 +60,17 @@ public struct Handle: Hashable, Sendable {
     case conversationUpdated(Update), conversationEnded(Date, EndedReason)
   }
   public let uuid: UUID
-  public var state: State
-  init(_ id: UUID, state: State) { uuid = id; self.state = state }
+  private var storedState: State
+  var onNextStateRead: (@MainActor () -> Void)?
+  public var state: State {
+    get {
+      let callback = onNextStateRead; onNextStateRead = nil
+      callback?()
+      return storedState
+    }
+    set { storedState = newValue }
+  }
+  init(_ id: UUID, state: State) { uuid = id; storedState = state }
 }
 @MainActor public class ConversationAction {
   public enum State { case idle, running, complete, failed }
