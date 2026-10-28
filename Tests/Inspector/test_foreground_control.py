@@ -1,4 +1,5 @@
 """Host foreground transport tests; fake publications do not prove UIKit state."""
+from contextlib import contextmanager
 import errno
 import json
 import os
@@ -100,6 +101,30 @@ class ForegroundControlTests(unittest.TestCase):
                                      consumer_started_wall_ms=kwargs.pop('consumer_started_wall_ms', self.started),
                                      log=self.root / 'launch.log', **kwargs)
 
+    @contextmanager
+    def controlled_clock(self):
+        import foreground_control
+        import inspector_startup
+        clock = SimpleNamespace(now=0.0)
+        clock.monotonic = lambda: clock.now
+        clock.time = lambda: self.started / 1000 + clock.now
+        def advance(seconds):
+            clock.now += seconds
+        clock.sleep = advance
+        # Fixture time controls these phase-specific deadlines; child ownership
+        # and cleanup remain real.
+        with patch.object(foreground_control, 'time', clock), \
+             patch.object(inspector_startup, 'time', clock), \
+             patch.object(inspector_startup.threading, 'Timer', return_value=Mock(ident=None)):
+            yield clock
+
+    def publish_ack(self, elapsed=0):
+        request = json.loads((self.documents / 'cksim-foreground-phase-request.json').read_text())
+        value = dict(request, applicationState='active', publicationID=str(uuid.uuid4()),
+                     wallTimeMS=self.started + round(elapsed * 1000), uptimeNS=time.monotonic_ns(), activeGeneration=0)
+        self.write('ack', value)
+        self.publications.append(value)
+
     def test_native_active_publication_resolves_pending_host(self):
         self.start_writer()
         with patch.object(subprocess, 'Popen', side_effect=self.spawn):
@@ -173,11 +198,19 @@ class ForegroundControlTests(unittest.TestCase):
                 self.activate(budget=.1)
 
     def test_frozen_ack_cannot_prove_active_after_owned_host_reap(self):
-        self.start_writer(once=True)
-        with self.assertRaisesRegex(RuntimeError, 'budget|publication'):
-            self.activate(budget=.15)
+        def spawn_with_frozen_ack(command, **kwargs):
+            process = self.spawn(command, **kwargs)
+            self.publish_ack()
+            return process
+        with self.controlled_clock(), \
+             patch.object(subprocess, 'Popen', side_effect=spawn_with_frozen_ack):
+            with self.assertRaisesRegex(RuntimeError, 'budget|publication'):
+                activate_existing(DEVICE, self.identity, 'incoming', .15,
+                                  consumer_started_wall_ms=self.started, log=self.root / 'launch.log')
         outcome = json.loads((self.root / 'launch.json').read_text())
         self.assertTrue(outcome['qualifiedNativeAcknowledgement'])
+        self.assertFalse(outcome['timedOut'])
+        self.assertEqual(len(self.publications), 1)
         with self.assertRaises(ProcessLookupError):
             os.killpg(outcome['hostPID'], 0)
 
@@ -279,14 +312,28 @@ class ForegroundControlTests(unittest.TestCase):
             self.activate()
 
     def test_zero_exit_with_matching_original_pid_and_fresh_active_succeeds(self):
+        import foreground_control
         self.child_code = 'print("' + BUNDLE + ': 42",flush=True)'
         self.child_exits = True
-        self.start_writer()
-        result = self.activate()
+        read = foreground_control._read
+        def publish_before_read(path):
+            if path.name.endswith('-ack.json'):
+                clock.now += .01
+                self.publish_ack(clock.now)
+            return read(path)
+        with self.controlled_clock() as clock, \
+             patch.object(foreground_control, '_read', side_effect=publish_before_read), \
+             patch.object(subprocess, 'Popen', side_effect=self.spawn):
+            result = activate_existing(DEVICE, self.identity, 'incoming', .25,
+                                       consumer_started_wall_ms=self.started, log=self.root / 'launch.log')
         self.assertEqual(result['pid'], 42)
         outcome = json.loads((self.root / 'launch.json').read_text())
         self.assertEqual(outcome['hostExitCode'], 0)
         self.assertFalse(outcome['qualifiedNativeAcknowledgement'])
+        self.assertNotEqual(result['publicationID'], self.publications[0]['publicationID'])
+        self.assertGreater(result['wallTimeMS'], outcome['reapedWallTimeMS'])
+        with self.assertRaises(ProcessLookupError):
+            os.killpg(outcome['hostPID'], 0)
 
     def test_native_identity_change_and_uncertain_reap_are_terminal(self):
         import inspector_startup
