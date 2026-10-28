@@ -50,7 +50,8 @@ def run(*args, timeout=120, **kwargs):
         try:
             try: result = simulator_infra.bounded(command, timeout=timeout, **kwargs)
             except subprocess.TimeoutExpired as error:
-                result = simulator_infra.Result(command, 124, error.stdout or b'', error.stderr or b'', timed_out=True)
+                result = simulator_infra.Result(command, 124, error.stdout or b'', error.stderr or b'', timed_out=True,
+                    reaped=getattr(error, 'reaped', False), cleanup_uncertain=getattr(error, 'cleanup_uncertain', True))
         finally:
             if started is not None:
                 simulator_infra.summary('measurement:fixture-install',
@@ -160,7 +161,6 @@ def record_environment(out, runtime, *, session=None):
 
 def launch_fixture(device, app, *, install=True, session=None):
     """Start a fresh session; the host sends the first stimulus after readiness."""
-    run_id = 'fixture-' + str(uuid.uuid4())
     if session is None and os.environ.get('SIM_STATE'):
         session = simulator_infra.Session.resume(os.environ['SIM_STATE'], device, runner=session_transport,
                                                inventory_timeout=60)
@@ -177,11 +177,36 @@ def launch_fixture(device, app, *, install=True, session=None):
         # This slice retries preparation only. Persist the barrier before the
         # original launch, including unknown launch outcomes and process death.
         session.checkpoint()
-    launched = run('xcrun', 'simctl', 'launch', '--terminate-running-process', device, BUNDLE,
-                   env=dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=run_id))
+    for attempt in range(2):
+        # No stimulus is sent until the final process and journal are pinned.
+        # A different run directory preserves an earlier startup's journal.
+        run_id = 'fixture-' + str(uuid.uuid4())
+        try:
+            launched = run('xcrun', 'simctl', 'launch', '--terminate-running-process', device, BUNDLE,
+                           timeout=180, env=dict(os.environ, SIMCTL_CHILD_CKSIM_RUN_ID=run_id))
+        except CommandError as error:
+            result = error.result
+            result.failure_classified = True
+            reason = 'timeout after 180s' if result.timed_out else 'non-timeout failure; never re-attempted'
+            if result.cleanup_uncertain or not result.reaped:
+                reason += '; owned host cleanup uncertain; never re-attempted'
+            elif result.timed_out and attempt == 0:
+                simulator_infra.summary('infra:launch', 'scheduled one bounded re-attempt after timeout at 180s; before first stimulus')
+                continue
+            elif result.timed_out:
+                reason += '; launch re-attempt exhausted'
+            simulator_infra.report_failure('infra:launch', reason)
+            raise
+        except simulator_infra.Interrupted:
+            simulator_infra.report_failure('infra:launch', 'cancelled; never re-attempted')
+            raise
+        break
     match = re.fullmatch(re.escape(BUNDLE) + r': ([1-9][0-9]*)', launched)
     if match is None:
+        simulator_infra.report_failure('infra:launch', 'invalid PID acknowledgement; never re-attempted')
         raise RuntimeError('Missing fixture launch PID acknowledgement')
+    if attempt:
+        simulator_infra.summary('infra:launch', 'recovered within 180s startup bound')
     return discover_fixture_channel(applications, run_id, int(match[1])), run_id
 
 
