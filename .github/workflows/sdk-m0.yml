@@ -60,6 +60,7 @@ jobs:
         with:
           node-version: "24.22.1"
           package-manager-cache: false
+      - uses: ./.github/actions/cache-native-dependencies
       - name: Check selection controls and prepare the pinned selected consumer
         run: |
           set -euo pipefail
@@ -69,7 +70,7 @@ jobs:
           npm run build
           npm run typecheck
           npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install
-          (cd example/ios && pod install)
+          (cd example/ios && "$GITHUB_WORKSPACE/scripts/ci/pod_install.sh")
       - name: Inspect the selected pod-built Release device app
         run: >-
           python3 discovery/build_sdk_device_release.py "$RUNNER_TEMP/expo-livekit-device"
@@ -233,6 +234,7 @@ jobs:
         with:
           node-version: "24.22.1"
           package-manager-cache: false
+      - uses: ./.github/actions/cache-native-dependencies
       - name: Build source-bound example products
         run: |
           set -euo pipefail
@@ -244,7 +246,7 @@ jobs:
           set -euo pipefail
           npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install 2>&1 | tee "$SDK_M0_BUILD_LOGS/expo-prebuild.log"
           cd example/ios
-          pod install 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-install.log"
+          "$GITHUB_WORKSPACE/scripts/ci/pod_install.sh" 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-install.log"
           cd "$GITHUB_WORKSPACE"
           set -euo pipefail
           workspaces=(example/ios/*.xcworkspace)
@@ -403,6 +405,7 @@ jobs:
         with:
           node-version: "24.22.1"
           package-manager-cache: false
+      - uses: ./.github/actions/cache-native-dependencies
       - name: Prepare the device build workspace
         run: |
           set -euo pipefail
@@ -412,7 +415,7 @@ jobs:
           set -euo pipefail
           npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install 2>&1 | tee "$SDK_M0_BUILD_LOGS/expo-prebuild.log"
           cd example/ios
-          pod install 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-install.log"
+          "$GITHUB_WORKSPACE/scripts/ci/pod_install.sh" 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-install.log"
       - name: Inspect default and opted-in Release device products
         run: |
           set -euo pipefail
@@ -433,7 +436,7 @@ jobs:
           path.write_text(json.dumps(properties, indent=2) + '\n')
           PYCONFIG
           pushd example/ios > /dev/null
-          pod install --no-repo-update 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-diagnostics-install.log"
+          "$GITHUB_WORKSPACE/scripts/ci/pod_install.sh" --no-repo-update 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-diagnostics-install.log"
           popd > /dev/null
           python3 discovery/build_sdk_device_release.py "$SDK_M0_BUILD_ROOT/pod-device-diagnostics" \
             --derived-data "$SDK_M0_BUILD_ROOT/pod-device/DerivedData" --provider-diagnostics \
@@ -446,7 +449,7 @@ jobs:
           export SDK_EXAMPLE_MEDIA_ADAPTER=webrtc
           set -euo pipefail
           npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install 2>&1 | tee "$SDK_M0_BUILD_LOGS/webrtc-prebuild.log"
-          (cd example/ios && pod install) 2>&1 | tee "$SDK_M0_BUILD_LOGS/webrtc-pod-install.log"
+          (cd example/ios && "$GITHUB_WORKSPACE/scripts/ci/pod_install.sh") 2>&1 | tee "$SDK_M0_BUILD_LOGS/webrtc-pod-install.log"
           python3 discovery/build_sdk_device_release.py "$SDK_M0_BUILD_ROOT/pod-standard-webrtc" --standard-webrtc \
             --derived-data "$SDK_M0_BUILD_ROOT/pod-device/DerivedData" > "$SDK_M0_BUILD_LOGS/webrtc-device-inspection.log" 2>&1
       - name: Retain device diagnostics
