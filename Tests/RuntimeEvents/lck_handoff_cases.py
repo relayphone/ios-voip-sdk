@@ -53,24 +53,26 @@ def composite_audio(j, name, operation, delayed_kind):
 def run_mute_case(j):
     j.begin('mutePreservesPendingJoinAudio')
     j.app('incoming', call='A')
-    action_ids = set(j.system('answer', call='A')['actionIDs'])
-    joined = event(j, 'settled', lambda r: r.get('actionID') in action_ids and r['kind'] == 'Join')
-    # Proposed regression budgets, not Apple timing measurements: stimulate
-    # late enough that restarting the 290ms Join timer is distinguishable.
-    observed_at = time.monotonic()
-    observed_age_ms = time.time() * 1000 - joined['wallTimeMS']
-    assert -5 <= observed_age_ms <= 260, 'Join settlement was observed too late for the Mute timing window'
-    stimulus_at = observed_at + max(0, (180 - observed_age_ms) / 1000)
+    joined = None
     command_offset_ms = None
     def before_publish():
-        nonlocal command_offset_ms
+        nonlocal joined, command_offset_ms
+        action_ids = set(j.system('answer', call='A')['actionIDs'])
+        joined = event(j, 'settled', lambda r: r.get('actionID') in action_ids and r['kind'] == 'Join')
+        # Proposed regression budgets, not Apple timing measurements: stimulate
+        # late enough that restarting the 290ms Join timer is distinguishable.
+        observed_at = time.monotonic()
+        observed_age_ms = time.time() * 1000 - joined['wallTimeMS']
+        assert -5 <= observed_age_ms <= 260, f'Join settlement was observed too late for the Mute timing window: {observed_age_ms:.1f}ms'
+        stimulus_at = observed_at + max(0, (180 - observed_age_ms) / 1000)
         while (remaining := stimulus_at - time.monotonic()) > 0:
             time.sleep(min(remaining, 0.02))
         command_offset_ms = observed_age_ms + (time.monotonic() - observed_at) * 1000
-        assert 150 <= command_offset_ms <= 260, 'host missed the proposed late-Mute stimulus window'
+        assert 150 <= command_offset_ms <= 260, f'host missed the proposed late-Mute stimulus window: {command_offset_ms:.1f}ms; observed Join age: {observed_age_ms:.1f}ms'
         assert not any(r['event'] == PREFIX + 'didActivate' for r in j.rows()), 'Mute stimulus missed the pending Join audio window'
-    # Serialize the real mailbox request before waiting; publish it atomically
-    # at the stimulus time without spending that window on file preparation.
+    # Prepare the Mute mailbox request before starting Join, so file preparation
+    # cannot consume any of the original Join audio window. Only its atomic
+    # publication waits for the late stimulus time.
     mute_ids = set(j.system('mute', call='A', muted=True, before_publish=before_publish)['actionIDs'])
     muted = event(j, 'perform', lambda r: r.get('actionID') in mute_ids and r['kind'] in ('Mute', 'MuteConversationAction'))
     mute_settlement = event(j, 'settled', lambda r: r.get('actionID') == muted['actionID'])

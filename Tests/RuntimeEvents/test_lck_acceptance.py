@@ -62,23 +62,26 @@ class JournalOracleTests(unittest.TestCase):
 
 
 class MuteStimulusTests(unittest.TestCase):
-    def run_mute(self, preparation_ms, *, delivery_ms=0, restart_audio=False):
+    def run_mute(self, preparation_ms, *, delivery_ms=0, restart_audio=False, host_pause_ms=0):
         with tempfile.TemporaryDirectory() as work:
             root = Path(work)
             elapsed = [0.0]
             def advance(seconds):
                 elapsed[0] = round(elapsed[0] + seconds, 6)
+            def sleep(seconds):
+                nonlocal host_pause_ms
+                advance(seconds + host_pause_ms / 1000)
+                host_pause_ms = 0
             clock = SimpleNamespace(monotonic=lambda: elapsed[0],
-                                    time=lambda: 1000 + elapsed[0], sleep=advance)
+                                    time=lambda: 1000 + elapsed[0], sleep=sleep)
 
             class Fixture(acceptance.Journey):
                 def __init__(self):
                     super().__init__('owned', root, root / 'out')
                     self.session = dict(runID='synthetic-run', pid=123, bundleID=acceptance.BUNDLE)
                     self.ids = dict(A='synthetic-call')
-                    self.audio_at = .290
-                    self.events = [dict(event='lck.fixture.settled', kind='Join', actionID='join',
-                                        sequence=1, t_ms=0, wallTimeMS=1000000)]
+                    self.audio_at = float('inf')
+                    self.events = []
 
                 def begin(self, name):
                     self.name = name
@@ -103,6 +106,10 @@ class MuteStimulusTests(unittest.TestCase):
 
                 def system(self, operation, **fields):
                     if operation == 'answer':
+                        self.events.append(dict(event='lck.fixture.settled', kind='Join', actionID='join',
+                                                sequence=1, t_ms=round(elapsed[0] * 1000),
+                                                wallTimeMS=round((1000 + elapsed[0]) * 1000)))
+                        self.audio_at = elapsed[0] + .290
                         return dict(actionIDs=['join'])
                     return super().system(operation, **fields)
 
@@ -124,10 +131,10 @@ class MuteStimulusTests(unittest.TestCase):
                 return handoff.run_mute_case(Fixture())
 
     def test_request_preparation_does_not_consume_the_late_mute_window(self):
-        for preparation in (0, 82, 140, 220):
+        for preparation in (0, 82, 140, 220, 261, 600):
             with self.subTest(preparation_ms=preparation):
                 result = self.run_mute(preparation)
-                self.assertEqual(result['joinToMuteDeliveryMS'], max(180, preparation))
+                self.assertEqual(result['joinToMuteDeliveryMS'], 180)
                 self.assertEqual(result['joinToAudioMS'], 290)
 
     def test_native_delivery_outside_the_original_window_still_fails(self):
@@ -138,9 +145,9 @@ class MuteStimulusTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, 'Mute restarted the pending Join audio timer'):
             self.run_mute(0, restart_audio=True)
 
-    def test_preparation_beyond_the_original_host_window_still_fails(self):
+    def test_host_pause_beyond_the_original_window_still_fails(self):
         with self.assertRaisesRegex(AssertionError, 'host missed the proposed late-Mute stimulus window'):
-            self.run_mute(261)
+            self.run_mute(0, host_pause_ms=261)
 
     def test_failed_stimulus_callback_cannot_publish_a_request(self):
         with tempfile.TemporaryDirectory() as work:
