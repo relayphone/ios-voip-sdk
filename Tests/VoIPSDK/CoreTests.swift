@@ -200,9 +200,9 @@ struct CoreTests {
     hungContinuation?.resume()
     for _ in 0..<8 { await Task.yield() }
 
-    let wire = Data(#"{"eventId":"e","serverCallId":"s","caller":{"id":"caller","phoneNumber":"+15555550142"},"hasVideo":true,"startedAt":"2026-10-22T00:00:00.123Z","metadata":{"flag":true,"nested":[1,"two",null]}}"#.utf8)
+    let wire = Data(#"{"eventId":"e","serverCallId":"s","caller":{"handleType":"phone","value":"+15555550142","displayName":"caller","hostContactID":"caller"},"hasVideo":true,"startedAt":"2026-10-22T00:00:00.123Z","metadata":{"flag":true,"nested":[1,"two",null]}}"#.utf8)
     let payload = try JSONDecoder().decode(IncomingCallPayload.self, from: wire)
-    precondition(payload.eventId == "e" && payload.caller.phoneNumber == "+15555550142" && payload.hasVideo)
+    precondition(payload.eventId == "e" && payload.caller.handleType == .phone && payload.caller.value == "+15555550142" && payload.hasVideo)
     precondition(payload.metadata?["flag"] == .bool(true) && payload.startedAt == "2026-10-22T00:00:00.123Z")
     let roundtrip = try JSONDecoder().decode(IncomingCallPayload.self, from: JSONEncoder().encode(payload))
     precondition(roundtrip == payload)

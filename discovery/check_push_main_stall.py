@@ -36,7 +36,7 @@ def synthetic_fixture(run_id, pid):
     observation = dict(scope, event='entry.mainStallObservation', conversationID=CALL_ID,
         completionCount=1, callbackReturned=True, conversations=[dict(id=CALL_ID,
         status='ringing', direction='incoming', payload=dict(eventId='main-stall-event',
-        serverCallId='main-stall-server', caller=dict(id='main-stall-caller', displayName='Main stall fixture'), hasVideo=False))])
+        serverCallId='main-stall-server', caller=dict(handleType='generic', value='main-stall-caller', displayName='Main stall fixture'), hasVideo=False))])
     return rows, observation
 
 
@@ -57,7 +57,7 @@ def main():
     nulls = copy.deepcopy(probes)
     payload = nulls[2]['conversations'][0]['payload']
     payload.update(startedAt=None, metadata=None)
-    payload['caller'].update(avatarUrl=None, phoneNumber=None, email=None)
+    payload['caller'].update(hostContactID=None)
     main_completion = copy.deepcopy(runtime)
     main_completion[-1]['main'] = True
     positives.append(qualify_main_stall_journal(main_completion, nulls, RUN_ID, 123))
@@ -138,7 +138,7 @@ def main():
         ('wrong-public-direction', lambda r,p: p[2]['conversations'][0].update(direction='outgoing')),
         ('wrong-public-event', lambda r,p: payload(p).update(eventId='other')),
         ('wrong-public-server', lambda r,p: payload(p).update(serverCallId='other')),
-        ('wrong-public-caller', lambda r,p: payload(p)['caller'].update(id='other')),
+        ('wrong-public-caller', lambda r,p: payload(p)['caller'].update(value='other')),
         ('wrong-public-name', lambda r,p: payload(p)['caller'].update(displayName='other')),
         ('false-public-video-type', lambda r,p: payload(p).update(hasVideo=0)),
         ('unexpected-public-metadata', lambda r,p: payload(p).update(metadata={'invented':True})),

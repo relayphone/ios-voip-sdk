@@ -88,7 +88,7 @@ private enum FixtureMetadata {
     precondition(projection.id == id)
     precondition(projection.payload.eventId == "main-stall-event")
     precondition(projection.payload.serverCallId == "main-stall-server")
-    precondition(projection.payload.caller == Participant(id: "main-stall-caller"))
+    precondition(projection.payload.caller == (try! Caller(handleType: .generic, value: "main-stall-caller", displayName: "main-stall-caller")))
     precondition(!projection.payload.hasVideo)
     precondition(projection.payload.startedAt == nil && projection.payload.metadata == nil)
     precondition(projection.terminal == nil)
@@ -128,7 +128,7 @@ final class ConversationManager: @unchecked Sendable {
     }
     FixtureMetadata.validate(projection, id: uuid)
     precondition(intake.hasPending(uuid), "The actual report attempt must still be pending at entry.")
-    precondition(update.members == [Handle(type: .generic, value: "main-stall-caller")])
+    precondition(update.members == [Handle(type: .generic, value: "main-stall-caller", displayName: "main-stall-caller")])
     precondition(update.capabilities == [.pausing, .merging, .unmerging, .playingTones])
     state.record(uuid)
     HostReportEntered()

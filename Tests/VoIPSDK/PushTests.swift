@@ -5,7 +5,7 @@ struct PushTests {
   @MainActor static func main() throws {
     let raw: [String: Any] = ["incomingCall": [
       "eventId": "event-1", "serverCallId": "server-1",
-      "caller": ["id": "caller", "displayName": "Fixture"], "hasVideo": true,
+      "caller": ["handleType": "generic", "value": "caller", "displayName": "Fixture"], "hasVideo": true,
       "startedAt": "2026-10-22T00:00:00.125Z", "metadata": ["flag": true, "nested": [1, "two"]]
     ]]
     guard case .incoming(let incoming) = PushWire.parse(raw) else { preconditionFailure("Valid invitation was rejected") }
@@ -18,7 +18,7 @@ struct PushTests {
     guard case .fallback(let fallback, _) = IncomingPushPolicy.plan(.malformed, mustReport: true, fallbackIdentity: id) else {
       preconditionFailure("Required malformed push must attempt an incoming report")
     }
-    precondition(fallback.eventId == id.uuidString && fallback.caller.id == "unknown" && !fallback.hasVideo)
+    precondition(fallback.eventId == id.uuidString && fallback.caller.value == "unknown" && !fallback.hasVideo)
     precondition(IncomingPushPolicy.plan(.incoming(incoming), mustReport: false, fallbackIdentity: id) == .incoming(incoming))
     precondition(PushWire.parse(["incoming_call": raw["incomingCall"]!]) == .incoming(incoming))
     precondition(PushWire.parse(raw["incomingCall"] as! [String: Any]) == .malformed, "Flat payloads are not APNs invitations")
@@ -45,6 +45,19 @@ struct PushTests {
       precondition(PushWire.decodeIncomingInvitation(body) == nil)
     }
     precondition(PushWire.decodeIncomingInvitation(["eventId": "e", "serverCallId": "s", "caller": ["id": 123]]) == nil)
+    for caller: [String: Any] in [
+      ["id": "old-untyped"],
+      ["handleType": "phone", "value": "2025550123", "displayName": "Name"],
+      ["handleType": "other", "value": "caller", "displayName": "Name"],
+      ["handleType": "generic", "value": "caller"],
+      ["handleType": "generic", "value": "caller", "displayName": "Name", "hostContactID": 123]
+    ] {
+      let push: [AnyHashable: Any] = ["incomingCall": ["eventId": "e", "serverCallId": "s", "caller": caller]]
+      precondition(PushWire.parse(push) == .malformed)
+      guard case .fallback = IncomingPushPolicy.plan(PushWire.parse(push), mustReport: true, fallbackIdentity: id) else {
+        preconditionFailure("Invalid required caller must retain mandatory reporting")
+      }
+    }
     let endedBody: [String: Any] = ["eventId": "end-event", "serverCallId": "server-1", "reason": "answeredElsewhere"]
     let endedWire: [AnyHashable: Any] = ["messageType": "callEnded", "callEnded": String(data: try JSONSerialization.data(withJSONObject: endedBody), encoding: .utf8)!]
     guard case .callEnded(let ended) = PushWire.parse(endedWire) else { preconditionFailure("FCM callEnded was rejected") }
