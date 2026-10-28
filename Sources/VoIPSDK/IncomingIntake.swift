@@ -117,7 +117,7 @@ final class IncomingIntake: @unchecked Sendable {
                now: Date = Date()) throws -> Reservation {
     guard !payload.eventId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
           !payload.serverCallId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          !payload.caller.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+          !payload.caller.value.isEmpty else {
       throw ConversationClientError.invalidPayload
     }
     lock.lock()

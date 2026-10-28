@@ -33,6 +33,8 @@ class SwiftFreshLaunchTests(unittest.TestCase):
                         ['xcrun', 'simctl', 'launch', '--console', '--terminate-running-process',
                          'owned-simulator', runner.BUNDLE])
                     self.assertEqual(command[command.index('--timeout') + 1], '90')
+                    self.assertEqual(command.count('--startup-timeout'), 1)
+                    self.assertEqual(command[command.index('--startup-timeout') + 1], '180')
                     self.assertEqual(command.count('--inherit-launcher-group'), 1)
                     self.assertIs(spawn.call_args.kwargs['start_new_session'], True)
 

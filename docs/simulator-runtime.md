@@ -74,7 +74,7 @@ Other test tools should likewise set the environment only on the app they launch
 
 **Measured:** Phone's app-hosted XCTest integration uses a generated `.xctestrun`
 and an allowlist without global simulator environment changes ([Phone #374](https://github.com/ziahamza/phone-app/pull/374),
-reviewed in [the v0.1 review](progress/2026-10-21-claude-v01-review.md)).
+reviewed in [the v0.1 review](design/2026-10-21-v01-review.md)).
 **Proposed:** apply this procedure to each new host's test configuration; that
 host still needs its own ring/join acceptance run.
 

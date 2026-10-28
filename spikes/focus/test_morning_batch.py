@@ -15,6 +15,10 @@ import morning_batch as batch
 
 
 class MorningPlanTests(unittest.TestCase):
+    def test_default_unknown_uses_distinct_synthetic_number(self):
+        self.assertNotEqual(batch.DEFAULT_UNKNOWN[-7:], "+15555550199"[-7:])
+        self.assertTrue(batch.DEFAULT_UNKNOWN.startswith("+447700900"))
+
     def test_matrix_order_counts_and_unknown_controls(self):
         plan = batch.make_plan(batch.DEFAULT_UNKNOWN)
         self.assertEqual([x["row"] for x in plan[:3]], ["C06", "C01", "C05"])

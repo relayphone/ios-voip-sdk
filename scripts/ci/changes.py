@@ -8,7 +8,7 @@ import os
 import sys
 
 SDK_JOBS = ('sdk-native', 'legacy-audio-lifecycle', 'swift-livekit-native',
-            'expo-livekit-native')
+            'expo-livekit-native', 'routes-duo')
 SDK_NATIVE_JOBS = ('offline-controls', 'apple-host-controls', 'sdk-example', 'sdk-core',
                    'sdk-fixtures', 'device-release', 'journeys')
 GROUPS = {'m1': dict(group='m1', m1='1', part='journeys', system='0'),
@@ -23,6 +23,7 @@ def select(paths, full=False):
                     matrix=dict(include=list(GROUPS.values())))
     paths = [p for p in paths if not documentation(p)]
     sdk = runtime = helper = False
+    unknown = False
     for path in paths:
         if path.startswith('scripts/sim/'):
             sdk = runtime = helper = True
@@ -52,6 +53,7 @@ def select(paths, full=False):
         else:
             # New executable/configuration inputs get conservative critical checks.
             sdk = runtime = helper = True
+            unknown = True
     shared = any(p.startswith(COMPILED_SDK) for p in paths)
     jobs = dict.fromkeys(SDK_JOBS, False)
     jobs['sdk-native'] = sdk
@@ -64,6 +66,10 @@ def select(paths, full=False):
     jobs['legacy-audio-lifecycle'] = sdk and (shared or any('m1_contract' in p
         or 'run_audio_lifecycle_legacy' in p or audio_contract(p)
         or p.startswith('scripts/sim/') or p == 'discovery/run_scenario.py' for p in paths))
+    jobs['routes-duo'] = sdk and (shared or unknown or any(p.startswith(('Sources/', 'Integrations/', 'discovery/', 'scripts/sim/',
+        'scripts/ci/', 'Tests/AudioRoutes/', 'Tools/',
+        'docs/research/callkit-simulator-probe/livecommunicationkit/'))
+        or p in ('Package.swift', 'VERSION', 'IosVoipSDK.podspec') for p in paths))
     groups = {'m1'}
     # Only known, narrow inputs may reduce the matrix. An unrecognized file,
     # including a new script or shared action, keeps every native journey.
@@ -109,6 +115,10 @@ def documentation(path):
 
 
 def gate(results, expected):
+    results = dict(results)
+    coverage = results.pop('nightly-coverage', None)
+    if coverage is not None and coverage.get('result') != 'success':
+        raise ValueError('Nightly coverage check did not succeed')
     if results.get('changes', {}).get('result') != 'success':
         raise ValueError('Change selection did not succeed')
     if 'sdk-native' in expected and 'sdk-native' not in results:
@@ -176,8 +186,14 @@ def workflow_parts(text):
 def workflow_optional_changes(before, after):
     old, old_env = workflow_parts(before)
     new, new_env = workflow_parts(after)
+    if 'routes-duo' in old and 'routes-duo' not in new:
+        raise ValueError('Expected Duo job is missing')
+    changed = {'routes-duo'} if 'routes-duo' in new and old.get('routes-duo') != new['routes-duo'] else set()
+    if old.get('sdk-fixtures') != new.get('sdk-fixtures'):
+        changed.add('legacy-audio-lifecycle')
+        if 'routes-duo' in new: changed.add('routes-duo')
     if old_env != new_env:
-        return set(OPTIONAL)
+        return changed | set(OPTIONAL) | ({'routes-duo'} if 'routes-duo' in new else set())
     if 'changes' not in old and 'changes' in new:
         # One-time migration of the exact guards introduced by this policy.
         # Every other command/env/condition/dependency edit remains observable.
@@ -192,7 +208,7 @@ def workflow_optional_changes(before, after):
                     raise ValueError('Unknown pre-selection job guard')
                 first, rest = old[job].split('\n', 1)
                 old[job] = first + '\n    needs: changes\n' + condition + rest
-    return {job for job in OPTIONAL if old[job].strip() != new[job].strip()}
+    return changed | {job for job in OPTIONAL if old[job].strip() != new[job].strip()}
 
 
 def event_selection(name, event, root):
@@ -247,7 +263,8 @@ def main():
             values = {k: json.dumps(v, separators=(',', ':')) for k, v in plan.items()}
             values['runtime_plan'] = json.dumps({'runtime-native': plan['runtime']})
             for key, job in (('swift', 'swift-livekit-native'),
-                             ('expo', 'expo-livekit-native'), ('legacy', 'legacy-audio-lifecycle')):
+                             ('expo', 'expo-livekit-native'), ('legacy', 'legacy-audio-lifecycle'),
+                             ('routes', 'routes-duo')):
                 values[key] = json.dumps(plan['sdk_plan'][job])
             with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
                 for key, value in values.items(): output.write(key + '=' + value + '\n')

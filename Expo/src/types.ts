@@ -37,10 +37,20 @@ export interface Participant {
   email?: string;
 }
 
+/** Exact host-supplied identity reported to iOS. Phone values require an international + country code. */
+export interface Caller {
+  handleType: 'phone' | 'email' | 'generic';
+  /** Phone inputs normalize formatting to E.164; email/generic values are not reinterpreted. */
+  value: string;
+  displayName: string;
+  /** Opaque identifier in the host contact store, not an Apple Contacts identifier. */
+  hostContactID?: string;
+}
+
 export interface IncomingCallPayload {
   eventId: string;
   serverCallId: string;
-  caller: Participant;
+  caller: Caller;
   hasVideo: boolean;
   startedAt?: string;
   metadata?: { [key: string]: JSONValue };
@@ -134,6 +144,18 @@ export interface PushToken {
   /** This iOS module supplies apns-voip; fcm preserves the shared RFC type. */
   type: 'apns-voip' | 'fcm';
   value: string;
+}
+
+export interface AudioRoute {
+  readonly id: string;
+  readonly name: string;
+  /** AVAudioSession's raw port type value on iOS. */
+  readonly type: string;
+}
+
+export interface AudioRoutes {
+  readonly routes: readonly AudioRoute[];
+  readonly current: AudioRoute | null;
 }
 
 /** M2 supplies watchdog signals; M3 supplies dial requests. */

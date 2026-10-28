@@ -25,7 +25,7 @@ The Swift package exports `SimulatorSupport.activateIfNeeded()`. The Expo module
 
 From a clean checkout, run `npm ci`, `npm run build`, then `npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install`. Install the generated iOS project's pods and build its Release scheme to bundle JavaScript. The example's ring/join/end controls are milestone instrumentation; RFC commands, handlers, push and hooks arrive in M1.
 
-**Measured locally:** the Expo 58 Release example rings, joins and ends on iOS 27.0 without injection; all three bootstrap cases and device-code exclusion checks pass. [The M0 handoff](docs/progress/2026-10-22-codex-m0.md) identifies the source-bound capture and its limits. CI acceptance remains pending.
+**Measured locally:** the Expo 58 Release example rings, joins and ends on iOS 27.0 without injection; all three bootstrap cases and device-code exclusion checks pass. CI acceptance remains pending.
 
 The module's peer ranges retain Expo 55–58 compatibility. The example and development tools pin Expo 58 for its native scene lifecycle. Expo 58 is locally qualified; Expo 55 has historical build evidence, while runtime compatibility with Expo 55–57 remains unqualified.
 

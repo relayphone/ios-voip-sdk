@@ -1,5 +1,6 @@
 import type {
   ActionOrigin,
+  AudioRoutes,
   Conversation,
   ConversationEventMap,
   ConversationReport,
@@ -16,6 +17,10 @@ export interface ConversationEnvelope {
 export interface PushTokenEnvelope {
   revision: number;
   token: PushToken | null;
+}
+
+export interface AudioRoutesEnvelope extends AudioRoutes {
+  revision: number;
 }
 
 interface HandlerActionBase {
@@ -50,6 +55,7 @@ export type ConversationEvent = {
 export type NativeEvents = {
   conversationsChanged: (event: ConversationEnvelope) => void;
   pushTokenUpdated: (event: PushTokenEnvelope) => void;
+  audioRoutesChanged: (event: AudioRoutesEnvelope) => void;
   handlerAction: (event: HandlerAction) => void;
   actionCancelled: (event: ActionCancellation) => void;
   conversationEvent: (event: ConversationEvent) => void;
@@ -63,6 +69,8 @@ export interface NativeBridge {
   ): { remove(): void };
   getConversations(): Promise<ConversationEnvelope>;
   getPushToken(): Promise<PushTokenEnvelope>;
+  getAudioRoutes(): Promise<AudioRoutesEnvelope>;
+  selectAudioRoute(id: string): Promise<void>;
   setHandlerAttached(attached: boolean, generation: number): void;
   settleAction(
     actionID: string,

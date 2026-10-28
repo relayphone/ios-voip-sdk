@@ -162,6 +162,7 @@ public final class ConversationClient: NSObject {
   private var eventObservers: [UUID: @MainActor (ConversationEventContext) -> Void] = [:]
   public private(set) var state = ConversationStateUpdate(revision: 0, conversations: [])
   public var snapshots: [ConversationSnapshot] { state.conversations }
+  public var audioRoutes: AudioRoutesSnapshot { systemAudio.routes.snapshot }
 
   private init(configuration: Configuration, mediaAdapter: any MediaAdapter, audioPolicy: AudioActivationPolicy) {
     self.configuration = configuration
@@ -181,6 +182,7 @@ public final class ConversationClient: NSObject {
       supportedHandleTypes: [.generic, .phoneNumber, .emailAddress]))
     incomingTransport = IncomingReportTransport(manager: manager)
     super.init()
+    systemAudio.routeConfigurationAdapter = mediaAdapter as? any AudioRouteConfigurationAdapter
     #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
     ProviderCreationMonitor.endOwnedManagerCreation()
     #endif
@@ -321,6 +323,13 @@ public final class ConversationClient: NSObject {
   }
 
   @discardableResult
+  public func observeAudioRoutes(_ callback: @escaping @MainActor (AudioRoutesSnapshot) -> Void) -> UUID {
+    systemAudio.routes.observe(callback)
+  }
+  public func removeAudioRoutesObserver(_ token: UUID) { systemAudio.routes.removeObserver(token) }
+  public func selectAudioRoute(_ id: String) async throws { try await systemAudio.selectRoute(id, isActive: audio.isActive) }
+
+  @discardableResult
   public func observeState(_ callback: @escaping @MainActor (ConversationStateUpdate) -> Void) -> UUID {
     let token = UUID(); stateObservers[token] = callback; callback(state); return token
   }
@@ -432,7 +441,7 @@ public final class ConversationClient: NSObject {
   private func hydrateIncoming(_ id: UUID) -> IncomingIntake.Projection? {
     guard let projection = incomingIntake.projection(id) else { return nil }
     if records[id] == nil || records[id]?.metadataIsPlaceholder == true {
-      var record = makeRecord(direction: .incoming, members: [projection.payload.caller],
+      var record = makeRecord(direction: .incoming, members: [projection.payload.caller.participant],
         video: projection.payload.hasVideo)
       record.payload = projection.payload
       records[id] = record
@@ -812,6 +821,7 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
     audioAuthorityGeneration &+= 1
     systemAudio.setSystemAudioAuthorization(false)
     audioDemandObjects.removeAll()
+    systemAudio.refreshRoutes()
     audio.reset()
     mediaAdapter.setSystemAudioAuthorization(false)
     incomingIntake.reset()
@@ -883,6 +893,7 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
     audioAuthorityGeneration &+= 1
     let generation = audioAuthorityGeneration
     systemAudio.setSystemAudioAuthorization(true)
+    systemAudio.refreshRoutes()
     mediaAdapter.setSystemAudioAuthorization(true)
     guard audioAuthorityGeneration == generation else { return }
     audioOperations.enqueue { [mediaAdapter] in try await mediaAdapter.didActivate(audioSession) }
@@ -894,6 +905,7 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
     audioAuthorityGeneration &+= 1
     let generation = audioAuthorityGeneration
     systemAudio.setSystemAudioAuthorization(false)
+    systemAudio.refreshRoutes()
     mediaAdapter.setSystemAudioAuthorization(false)
     guard audioAuthorityGeneration == generation else { return }
     audioOperations.enqueue { [mediaAdapter] in try await mediaAdapter.didDeactivate(audioSession) }

@@ -93,6 +93,20 @@ static NSError *mediaError(NSInteger code) {
     completion(error);
   });
 }
+- (void)configureAudioRoute:(VSMediaConfiguration)configuration completion:(VSMediaCompletion)completion {
+  dispatch_async(_worker, ^{
+    NSError *error = nil;
+    @try {
+      id<VSMediaRTCAudioSession> session = [self audioSession:&error];
+      if (session) {
+        [session lockForConfiguration];
+        @try { error = configuration(); }
+        @finally { [session unlockForConfiguration]; }
+      }
+    } @catch (NSException *exception) { error = mediaError(2); }
+    completion(error);
+  });
+}
 - (void)activate:(AVAudioSession *)audioSession completion:(VSMediaCompletion)completion {
   dispatch_async(_worker, ^{
     if (!_prepared) { completion(mediaError(2)); return; }
