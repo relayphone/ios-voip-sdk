@@ -8,6 +8,7 @@ import argparse
 import json
 import math
 import os
+import runpy
 from pathlib import Path
 import shutil
 import signal
@@ -15,11 +16,14 @@ import subprocess
 import sys
 import time
 import uuid
+from types import SimpleNamespace
 
 import sdk_m0_conformance as m0
 from summarize import require
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts/sim'))
+from sim import bounded
 BUNDLE = 'dev.iosvoipsdk.example'
 CASES = ('answer-end', 'decline', 'hold-accept', 'end-accept', 'mute-echo', 'provider-reset', 'push-launch')
 SCENARIO_TIMEOUT_SECONDS = 120
@@ -59,15 +63,10 @@ def live(path, probe=False):
 
 
 def app_data_container(simulator, supplied=None):
-    if supplied is not None:
-        container = Path(supplied)
-    else:
-        result = subprocess.run(['xcrun', 'simctl', 'get_app_container', simulator, BUNDLE, 'data'],
-                                capture_output=True, text=True, timeout=60)
-        require(result.returncode == 0, 'simctl get_app_container failed: ' + result.stderr)
-        raw = result.stdout.removesuffix('\n')
-        require(bool(raw), 'Example data container is missing or invalid')
-        container = Path(raw)
+    # The parent binds this path to a completed native capture. Never add a
+    # container RPC after app entry: it can starve the evidence capture.
+    require(supplied is not None, 'validated example data container is required')
+    container = Path(supplied)
     require(container.is_absolute() and container.is_dir(), 'Example data container is missing or invalid')
     return container
 
@@ -86,9 +85,28 @@ class Journey:
         self.pid = None
 
     def sim(self, *command, timeout=60):
-        result = subprocess.run(['xcrun', 'simctl', *command], capture_output=True, text=True, timeout=timeout)
-        require(result.returncode == 0, 'simctl ' + command[0] + ' failed: ' + result.stderr)
-        return result.stdout.removesuffix('\n')
+        env = dict(os.environ)
+        if command[0] == 'spawn':
+            env['SIMCTL_CHILD_DYLD_INSERT_LIBRARIES'] = ''
+        result = bounded(['xcrun', 'simctl', *command], timeout, env=env)
+        require(result.returncode == 0 and not result.timed_out and not result.cleanup_uncertain and result.reaped,
+                'simctl ' + command[0] + ' failed: ' + result.stderr.decode(errors='replace'))
+        return result.stdout.decode().removesuffix('\n')
+
+    def stage_push(self, env, remaining):
+        require(remaining > 0, self.case + ': checkpoint deadline')
+        query = bounded(['xcrun', 'simctl', 'spawn', self.args.simulator, 'launchctl', 'list'],
+                        min(60, remaining), env={**env, 'SIMCTL_CHILD_DYLD_INSERT_LIBRARIES': ''})
+        require(query.returncode == 0 and not query.timed_out and not query.cleanup_uncertain and query.reaped and not query.stderr,
+                'Stopped-app query failed or returned diagnostics')
+        stage = runpy.run_path(str(self.args.package / 'cksim'))['stage_push_launch']
+        arguments = SimpleNamespace(bundle=BUNDLE, run_id=self.args.run_id, must_report='true',
+            payload_file=self.root / 'first.payload.json', launch_receipt=self.root / 'launch-push.json')
+        command, staged_env = stage(arguments, self.args.simulator,
+                                   container=self.container, service_table=query.stdout)
+        # Staging inherits host environment; the already prepared fixture values
+        # must win without mutating this process or the simulator's launchd.
+        return command, {**staged_env, **env}
 
     def wait(self, condition, seconds=12):
         deadline = time.monotonic() + seconds
@@ -199,6 +217,9 @@ class Journey:
                     (archived / receipt_path.name).read_bytes() == receipt_bytes,
                     'fresh evidence before startup recovery')
             launch = list(command)
+            if self.case == 'push-launch':
+                native, env = self.stage_push(env, remaining)
+                launch = launch[:launch.index('--launch-command') + 1] + native
             with (self.root / 'supervisor.log').open('xb') as log:
                 remaining = deadline - time.monotonic()
                 require(remaining > 0, self.case + ': checkpoint deadline')
@@ -259,9 +280,6 @@ class Journey:
             path = self.root / 'first.payload.json'
             write(path, dict(incomingCall=dict(eventId='system-event-' + self.args.run_id + '-first',
                 serverCallId='system-server-' + self.args.run_id + '-first', caller=dict(handleType='generic', value='cold-fixture', displayName='cold-fixture'), hasVideo=False)))
-            launch = [str(self.args.package / 'cksim'), '--simulator', self.args.simulator, '--bundle', BUNDLE,
-                '--runtime-dir', str(self.args.package), 'push', '--payload-file', str(path), '--must-report', 'true',
-                '--launch', '--run-id', self.args.run_id, '--launch-receipt', str(self.root / 'launch-push.json')]
         command = [sys.executable, str(ROOT / 'discovery/run_scenario.py'), '--console-launcher-stop', '--inherit-launcher-group', '--timeout', str(SCENARIO_TIMEOUT_SECONDS),
             '--output', str(self.trace), '--receipt', str(self.root / (self.name + '.receipt.json')),
             '--run-id', self.args.run_id, '--simulator-id', self.args.simulator, '--scenario', self.name, '--bundle-id', BUNDLE,
@@ -373,7 +391,7 @@ if __name__ == '__main__':
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--package', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--data-container', type=Path, help='Reuse the installed example container already validated by M0')
+    parser.add_argument('--data-container', type=Path, required=True, help='Reuse the installed example container already validated by M0')
     args = parser.parse_args()
     require(str(uuid.UUID(args.simulator)).upper() == args.simulator and
             __import__('re').fullmatch(r'[A-Za-z0-9_-]{1,64}', args.run_id), 'invalid owned simulator/run identity')

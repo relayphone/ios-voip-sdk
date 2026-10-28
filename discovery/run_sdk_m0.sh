@@ -199,7 +199,7 @@ PRODUCT_CHECK=sdk-m0
 # Plain --console preserves the app streams. The raw host PTY only flushes
 # the launcher's stdio; --console-pty interleaved its PID header into PROBE JSON.
 env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_SDK_M0_ACCEPTANCE=1 \
-  SIMCTL_CHILD_SDK_M0_RUN_ID="$RUN_ID" \
+  SIMCTL_CHILD_SDK_M0_RUN_ID="$RUN_ID" SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" \
   python3 discovery/run_scenario.py --console-launcher-stop --startup-timeout 180 --timeout 120 --output "$OUT/sdk-m0.log" --receipt "$OUT/sdk-m0.receipt.json" \
   --run-id "$RUN_ID" --simulator-id "$UDID" --scenario sdk-m0 --bundle-id dev.iosvoipsdk.example \
   --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.example \
@@ -294,15 +294,14 @@ PY
 fi
 PRODUCT_CHECK=sdk-system
 if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then
-  if [[ -n "${example_container:-}" ]]; then
-    env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
-      python3 discovery/run_sdk_system.py --simulator "$UDID" --run-id "$RUN_ID" \
-      --package "$SDK_SYSTEM_CONTROL_PACKAGE" --output "$OUT/system" --data-container "$example_container"
-  else
-    env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
-      python3 discovery/run_sdk_system.py --simulator "$UDID" --run-id "$RUN_ID" \
-      --package "$SDK_SYSTEM_CONTROL_PACKAGE" --output "$OUT/system"
+  if [[ -z "${example_container:-}" ]]; then
+    example_container=$(limit 30 python3 scripts/sim/paths.py --receipt "$OUT/sdk-m0.receipt.json" --trace "$OUT/sdk-m0.log" \
+      --simulator "$UDID" --run-id "$RUN_ID" --bundle dev.iosvoipsdk.example)
+    [[ -n "$example_container" && -d "$example_container" ]] || { echo "Missing owned example data container" >&2; exit 1; }
   fi
+  env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
+    python3 discovery/run_sdk_system.py --simulator "$UDID" --run-id "$RUN_ID" \
+    --package "$SDK_SYSTEM_CONTROL_PACKAGE" --output "$OUT/system" --data-container "$example_container"
 fi
 cleanup_simulator
 redact_external_paths

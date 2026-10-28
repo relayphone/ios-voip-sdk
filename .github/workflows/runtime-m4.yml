@@ -3,21 +3,36 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   schedule:
     - cron: "20 3 * * *"
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: runtime-m4-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  nightly-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      skip: ${{ steps.coverage.outputs.skip }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: coverage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/nightly_coverage.py runtime-m4.yml
   changes:
     uses: ./.github/workflows/ci-changes.yml
   runtime-native:
     name: Runtime native and Inspector
-    needs: changes
-    if: needs.changes.outputs.runtime == 'true'
+    needs: [changes, nightly-coverage]
+    if: needs.nightly-coverage.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.runtime == 'true'
     runs-on: xcode-27
     timeout-minutes: 30
     env:
@@ -141,8 +156,8 @@ jobs:
         run: rm -rf "$RUNNER_TEMP/runtime" "$RUNNER_TEMP/fixture" "$RUNNER_TEMP/lck-fixture" "$RUNNER_TEMP/inspector" "$RUNNER_TEMP/m4-inspector/ui-build"
 
   runtime-events:
-    if: always()
-    needs: [changes, runtime-native]
+    if: always() && (github.event_name != 'schedule' || needs.nightly-coverage.outputs.skip != 'true') && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+    needs: [changes, nightly-coverage, runtime-native]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

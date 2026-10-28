@@ -2,6 +2,7 @@ name: Expo Modules 2.0 scaffold
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - 'spikes/expo-modules-2/**'
       - '.github/workflows/spike-expo-modules-2.yml'
@@ -21,6 +22,7 @@ concurrency:
 
 jobs:
   scaffold:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: xcode-27
     timeout-minutes: 40
     defaults:

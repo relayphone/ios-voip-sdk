@@ -1,6 +1,7 @@
 """Host-only regression controls for separate, bounded Inspector consumers."""
 import hashlib
 import json
+import math
 from contextlib import contextmanager
 from pathlib import Path
 import runpy
@@ -59,6 +60,8 @@ class NativeWorld:
         self.connection_fault = None
         self.control_error = None
         self.nonces = iter([uuid.UUID(int=101), uuid.UUID(int=102)])
+        self.fixture_identity = self.phase_identity(self.channel.parent.parent, FIXTURE,
+            self.session['pid'], self.session['runID'], 940000)
         self.probe = self.new_probe('basic-consumer', 30378, 0, self.out)
         self.publish()
 
@@ -76,9 +79,19 @@ class NativeWorld:
     def native_receipt(self, nonce, pid, started, out):
         path = out / 'native-container/Documents/cksim-inspector-results.json'
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.active_probe = dict(nonce=nonce, pid=pid, started=started, path=path)
+        identity = self.phase_identity(path.parent.parent, INSPECTOR, pid, nonce,
+                                       math.ceil((1000 + started) * 1000))
+        self.active_probe = dict(nonce=nonce, pid=pid, started=started, path=path, identity=identity)
         self.probes.append(self.active_probe)
         return path
+
+    def phase_identity(self, container, bundle, pid, nonce, started):
+        identity = dict(schemaVersion=1, nonce=nonce, pid=pid, bundleID=bundle,
+                        dataContainer=str(container), startedWallTimeMS=started,
+                        session={key: self.session[key] for key in
+                                 ('schemaVersion', 'runID', 'pid', 'bundleID', 'profile')})
+        (container / 'Documents/cksim-foreground-phase-identity.json').write_text(json.dumps(identity))
+        return identity
 
     def references(self, rows):
         source = 'docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md'
@@ -118,7 +131,7 @@ class NativeWorld:
             receipt = dict(nonce=record['nonce'], inspectorPID=record['pid'],
                            inspectorBundleID=INSPECTOR,
                            inspectorDataContainer=str(record['path'].parent.parent),
-                           startedWallTimeMS=(1000 + record['started']) * 1000,
+                           startedWallTimeMS=record['identity']['startedWallTimeMS'],
                            wallTimeMS=self.clock.time() * 1000, session=record.get('session'),
                            cursor=record.get('cursor', 0), online=record.get('online', False),
                            incomingFilter=configured[-1]['reason'] if configured else 'none',
@@ -150,6 +163,34 @@ class NativeWorld:
         if parts[:3] == ('xcrun', 'simctl', 'io'):
             return ''
         raise AssertionError('Unexpected host/native operation: ' + repr(parts))
+
+    def phase_activate(self, device, identity, phase, deadline, *, consumer_started_wall_ms, log, bridge_alive):
+        self.test.assertEqual(device, 'device')
+        self.test.assertIs(bridge_alive, self.active_connection.is_alive)
+        self.test.assertTrue(bridge_alive(), 'foreground phases require the live current consumer bridge')
+        self.test.assertEqual(consumer_started_wall_ms, self.active_probe['identity']['startedWallTimeMS'])
+        self.test.assertIs(type(consumer_started_wall_ms), int)
+        self.test.assertLessEqual(deadline, self.active_probe['started'] + 25)
+        expected = self.fixture_identity if identity['bundleID'] == FIXTURE else self.active_probe['identity']
+        self.test.assertEqual(identity, expected)
+        self.test.assertRegex(phase, r'^\d{2}-(fixture|inspector)$')
+        self.test.assertEqual(log, self.active_probe['path'].parents[2] / ('foreground-' + phase + '.log'))
+        budget = min(deadline - self.elapsed,
+                     25 - (self.clock.time() * 1000 - consumer_started_wall_ms) / 1000)
+        if budget <= 0:
+            raise RuntimeError('modeled native foreground timed out inside consumer budget')
+        output = self.rpc('xcrun', 'simctl', 'launch', device, identity['bundleID'], timeout=budget)
+        request = dict(identity, phase=phase, challenge=str(uuid.uuid4()))
+        ack = dict(request, applicationState='active', publicationID=str(uuid.uuid4()),
+                   wallTimeMS=math.ceil(self.clock.time() * 1000),
+                   uptimeNS=math.ceil(self.elapsed * 1000000000), activeGeneration=0)
+        documents = Path(identity['dataContainer']) / 'Documents'
+        (documents / 'cksim-foreground-phase-request.json').write_text(json.dumps(request))
+        (documents / 'cksim-foreground-phase-ack.json').write_text(json.dumps(ack))
+        log.write_text(output + '\n')
+        log.with_suffix('.json').write_text(json.dumps(dict(hostExitCode=0,
+            qualifiedNativeAcknowledgement=False, reapedWallTimeMS=ack['wallTimeMS'] - 1, timedOut=False)))
+        return ack
 
     def control_factory(self, channel, session, target, deadline):
         self.test.assertEqual(channel, self.channel)
@@ -266,6 +307,7 @@ class NativeWorld:
         self.publish()
         globals_ = RUNNER['journal_journey'].__globals__
         return patch.dict(globals_, time=self.clock, run=self.rpc,
+                          phase_activate_existing=self.phase_activate,
                           consumer_control=self.control_factory,
                           _shipping_tools=lambda: dict(inspector_bridge=self.bridge_factory),
                           locate_probe=self.locate_probe, supervise_launch=self.supervise,
@@ -378,7 +420,7 @@ class FilterCaseTests(unittest.TestCase):
         out.mkdir()
         with world.patches():
             result = RUNNER['journal_journey']([], 'device', 'basic-consumer', world.session,
-                world.out, 25, world.channel, probe=world.probe)
+                world.out, 25, world.channel, probe=world.probe, connection=world.connection)
             self.assertIs(result['success'], True)
             self.assertEqual(world.connection.bridge.journal.sequence, 8)
             RUNNER['activate_existing']('device', FIXTURE, world.session['pid'],
@@ -527,7 +569,7 @@ class FilterCaseTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'foreground timed out'):
                 RUNNER['filter_journey']([], 'device', 'basic-consumer', world.session,
                     world.out, 100, world.channel, world.probe, before='none',
-                    reason='do-not-disturb', code=3, verification='verified')
+                    reason='do-not-disturb', code=3, verification='verified', connection=world.connection)
         self.assertAlmostEqual(world.elapsed, 25)
         self.assertAlmostEqual(world.calls[-1][-1], 1)
         self.assertEqual(world.rpc_count, 1)
