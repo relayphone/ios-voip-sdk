@@ -4,12 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   schedule:
     - cron: "20 3 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: sdk-m0-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
@@ -20,12 +22,25 @@ env:
   SIMCTL_CHILD_DYLD_INSERT_LIBRARIES: ""
 
 jobs:
+  nightly-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      skip: ${{ steps.coverage.outputs.skip }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: coverage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/nightly_coverage.py sdk-m0.yml
   changes:
     uses: ./.github/workflows/ci-changes.yml
 
   expo-livekit-native:
-    needs: changes
-    if: needs.changes.outputs.expo == 'true'
+    needs: [changes, nightly-coverage]
+    if: needs.nightly-coverage.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.expo == 'true'
     name: Pinned Expo LiveKit selected Release device build
     runs-on: xcode-27
     timeout-minutes: 60
@@ -141,8 +156,8 @@ jobs:
           compression-level: 6
 
   apple-host-controls:
-    needs: changes
-    if: needs.changes.outputs.sdk == 'true'
+    needs: [changes, nightly-coverage]
+    if: needs.nightly-coverage.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.sdk == 'true'
     runs-on: xcode-27
     timeout-minutes: 20
     env:
@@ -202,8 +217,8 @@ jobs:
           compression-level: 6
 
   sdk-example:
-    needs: changes
-    if: needs.changes.outputs.sdk == 'true'
+    needs: [changes, nightly-coverage]
+    if: needs.nightly-coverage.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.sdk == 'true'
     runs-on: xcode-27
     timeout-minutes: 30
     env:
@@ -266,8 +281,8 @@ jobs:
         run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
 
   sdk-core:
-    needs: changes
-    if: needs.changes.outputs.sdk == 'true'
+    needs: [changes, nightly-coverage]
+    if: needs.nightly-coverage.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.sdk == 'true'
     runs-on: xcode-27
     timeout-minutes: 30
     env:
@@ -317,8 +332,8 @@ jobs:
         run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
 
   sdk-fixtures:
-    needs: changes
-    if: needs.changes.outputs.sdk == 'true'
+    needs: [changes, nightly-coverage]
+    if: needs.nightly-coverage.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.sdk == 'true'
     runs-on: xcode-27
     timeout-minutes: 30
     env:
@@ -372,8 +387,8 @@ jobs:
         run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
 
   device-release:
-    needs: changes
-    if: needs.changes.outputs.sdk == 'true'
+    needs: [changes, nightly-coverage]
+    if: needs.nightly-coverage.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.sdk == 'true'
     runs-on: xcode-27
     timeout-minutes: 45
     env:
@@ -470,8 +485,8 @@ jobs:
 
   journeys:
     name: SDK journey (${{ matrix.group }})
-    needs: [changes, sdk-example, sdk-core, sdk-fixtures]
-    if: needs.changes.outputs.sdk == 'true'
+    needs: [changes, nightly-coverage, sdk-example, sdk-core, sdk-fixtures]
+    if: needs.nightly-coverage.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.sdk == 'true'
     runs-on: xcode-27
     timeout-minutes: 30
     strategy:
@@ -534,8 +549,8 @@ jobs:
     permissions:
       contents: read
       actions: read
-    if: always()
-    needs: [changes, offline-controls, apple-host-controls, sdk-example, sdk-core, sdk-fixtures, device-release, journeys, legacy-audio-lifecycle, swift-livekit-native, expo-livekit-native, routes-duo]
+    if: always() && (github.event_name != 'schedule' || needs.nightly-coverage.outputs.skip != 'true') && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+    needs: [changes, nightly-coverage, offline-controls, apple-host-controls, sdk-example, sdk-core, sdk-fixtures, device-release, journeys, legacy-audio-lifecycle, swift-livekit-native, expo-livekit-native, routes-duo]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -567,8 +582,8 @@ jobs:
 
   routes-duo:
     name: SDK audio routes on iPhone Duo
-    needs: [changes, sdk-fixtures]
-    if: needs.changes.outputs.routes == 'true'
+    needs: [changes, nightly-coverage, sdk-fixtures]
+    if: needs.nightly-coverage.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.routes == 'true'
     runs-on: xcode-27
     timeout-minutes: 30
     steps:
@@ -604,8 +619,8 @@ jobs:
         run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
 
   legacy-audio-lifecycle:
-    needs: [changes, sdk-fixtures]
-    if: needs.changes.outputs.legacy == 'true'
+    needs: [changes, nightly-coverage, sdk-fixtures]
+    if: needs.nightly-coverage.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.legacy == 'true'
     runs-on: macos-26
     timeout-minutes: 15
     defaults:
@@ -648,8 +663,8 @@ jobs:
         run: rm -rf "$RUNNER_TEMP/sdk-27-contract-build"
 
   swift-livekit-native:
-    needs: changes
-    if: needs.changes.outputs.swift == 'true'
+    needs: [changes, nightly-coverage]
+    if: needs.nightly-coverage.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.swift == 'true'
     runs-on: xcode-27
     timeout-minutes: 45
     env:

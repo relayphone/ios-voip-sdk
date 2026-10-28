@@ -64,8 +64,8 @@ jobs:
         root = Path(__file__).resolve().parents[3]
         jobs, _ = workflow_parts((root / '.github/workflows/sdk-m0.yml').read_text())
         duo = jobs['routes-duo']
-        self.assertIn('needs: [changes, sdk-fixtures]', duo)
-        self.assertIn("if: needs.changes.outputs.routes == 'true'", duo)
+        self.assertIn('needs: [changes, nightly-coverage, sdk-fixtures]', duo)
+        self.assertIn("needs.changes.outputs.routes == 'true'", duo)
         self.assertIn('name: sdk-native-fixtures-${{ github.run_id }}', duo)
         self.assertLess(duo.index('sdk_artifacts.py unpack fixtures'), duo.index('run_sdk_routes.py'))
         self.assertIn('--build "$SDK_M1_CONTRACT_BUILD"', duo)
