@@ -37,6 +37,8 @@ final class FocusUITests: XCTestCase {
   var journal = Journal()
   var verifiedFocusOff = false
   var events: [[String: Any]] = []
+  var pickerEvidence: [[String: Any]]?
+  var pickerTruncated = false
   var documents: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
   func save() throws {
     try JSONEncoder().encode(journal).write(to: documents.appendingPathComponent("focus-ui-state.json"), options: .atomic)
@@ -196,9 +198,31 @@ final class FocusUITests: XCTestCase {
     // The full list behind the search results holds a same-named, unhittable cell: match inside the results only.
     let results = contacts.collectionViews["Search results"]
     guard results.waitForExistence(timeout: 4) else { throw failure("Contacts search results unavailable") }
-    let match = results.cells.matching(NSPredicate(format: "label == %@", journal.contactName)).firstMatch
-    guard match.waitForExistence(timeout: 3) else { try front(contacts); return false }
-    try tap(contacts, match); return true
+    let matches = results.cells.matching(NSPredicate(format: "label == %@", journal.contactName))
+    guard matches.firstMatch.waitForExistence(timeout: 3) else {
+      try front(contacts)
+      guard (search.value as? String) == journal.contactName,
+        (try? element(contacts, ["No Results", "No Results Found", "No Contacts"], timeout: 3)) != nil,
+        results.cells.count == 0 else { throw failure("Cannot verify test contact absence") }
+      return false
+    }
+    try front(contacts)
+    guard (search.value as? String) == journal.contactName else { throw failure("Contacts search text changed") }
+    let found = matches.allElementsBoundByIndex.filter { $0.exists }
+    guard found.count == 1 else { throw failure("Test contact name is ambiguous") }
+    try tap(contacts, found[0]); return true
+  }
+  func verifyOwnedContactCard() throws {
+    try front(contacts)
+    let expected = journal.caller.filter(\.isNumber)
+    guard expected.count >= 10 else { throw failure("Owned contact number is invalid") }
+    let validNumbers = Set([expected, String(expected.suffix(10))])
+    let names = contacts.staticTexts.matching(NSPredicate(format: "label == %@", journal.contactName))
+      .allElementsBoundByIndex.filter { $0.exists }
+    let numbers = contacts.staticTexts.allElementsBoundByIndex.filter {
+      $0.exists && validNumbers.contains($0.label.filter(\.isNumber))
+    }
+    guard names.count == 1 && numbers.count == 1 else { throw failure("Owned contact card is ambiguous") }
   }
   // iOS 27 Contacts reopens an interrupted new-contact draft over the list. Only our own draft is discarded.
   func discardDraft() throws {
@@ -317,14 +341,64 @@ final class FocusUITests: XCTestCase {
     if profile != nil { try requireAllowListMode() }
     if (try? element(settings, ["Cancel"], timeout: 1)) != nil { try commitSheet(); try openProfile(profile); try tap(settings, exceptions("People")); if profile != nil { try requireAllowListMode() } }
   }
+  // Only picker controls with a closed vocabulary are retained; names, numbers and identifiers are never exported.
+  func captureCallsPicker() throws {
+    try front(settings)
+    let allowed: Set<String> = ["allow", "allowed", "calls", "from", "people", "only", "everyone", "everybody", "anyone", "anybody", "all", "contacts", "contact", "favorite", "favorites", "favourite", "favourites", "no", "one", "nobody", "none", "back", "done"]
+    var nodes: [[String: Any]] = []
+    pickerTruncated = false
+    func visit(_ item: XCUIElement, parent: Int, depth: Int) {
+      guard nodes.count < 200, depth < 20 else { pickerTruncated = true; return }
+      guard item.exists else { return }
+      let words = item.label.lowercased().split(separator: " ").map(String.init)
+      let label = !words.isEmpty && words.count <= 5 && words.allSatisfy({ allowed.contains($0) }) ? item.label : ""
+      let kind: String
+      switch item.elementType {
+      case .window: kind = "window"
+      case .navigationBar: kind = "navigation"
+      case .table: kind = "table"
+      case .collectionView: kind = "collection"
+      case .button: kind = "button"
+      case .cell: kind = "cell"
+      case .staticText: kind = "text"
+      default: kind = "other"
+      }
+      let index = nodes.count
+      nodes.append(["type": kind, "label": label, "selected": item.isSelected, "parent": parent])
+      for child in item.children(matching: .any).allElementsBoundByIndex {
+        if nodes.count >= 200 { pickerTruncated = true; break }
+        visit(child, parent: index, depth: depth + 1)
+      }
+    }
+    for child in settings.children(matching: .any).allElementsBoundByIndex {
+      if nodes.count >= 200 { pickerTruncated = true; break }
+      visit(child, parent: -1, depth: 0)
+    }
+    pickerEvidence = nodes
+  }
+  func attachPickerEvidence() {
+    let requested = ProcessInfo.processInfo.environment["FOCUS_EVIDENCE_ID"] ?? ""
+    let id = UUID(uuidString: requested)?.uuidString ?? UUID().uuidString
+    let data: [String: Any] = ["runID": id.lowercased(), "available": pickerEvidence != nil,
+      "truncated": pickerEvidence != nil && pickerTruncated, "nodes": pickerEvidence ?? []]
+    guard let bytes = try? JSONSerialization.data(withJSONObject: data, options: [.sortedKeys]) else { return }
+    try? bytes.write(to: documents.appendingPathComponent("focus-dump-settings-calls.json"), options: .atomic)
+    XCTContext.runActivity(named: "Picker evidence") { activity in
+      let attachment = XCTAttachment(data: bytes, uniformTypeIdentifier: "public.json")
+      attachment.name = "focus-picker-evidence.json"
+      attachment.lifetime = .keepAlways
+      activity.add(attachment)
+    }
+  }
   func setCalls(_ value: String, profile: String? = nil) throws {
     try openPeople(profile)
     try tap(settings, scrollTo(settings, ["also-allow-calls-from-group-picker", "Allow Calls From", "Calls From"]))
+    try captureCallsPicker()
     try tap(settings, [value]); try settle()
     // Reopen the profile: seeing a menu option is not evidence of its selected value.
     try openPeople(profile)
     let picker = try scrollTo(settings, ["also-allow-calls-from-group-picker"])
-    guard picker.label == value else { throw failure("Allow Calls From stayed \(picker.label)") }
+    guard picker.label == value else { throw failure("Allow Calls From did not match the requested setting") }
   }
   func setPolicy() throws {
     try openProfile()
@@ -385,31 +459,47 @@ final class FocusUITests: XCTestCase {
       try setMember("Apps", include: value, profile: profile); journal.dndAppAllowed = nil; try save()
     }
   }
-  func verifyUnknownCaller(_ value: String?) throws {
-    guard let value, value.range(of: "^[+][1-9][0-9]{7,14}$", options: .regularExpression) != nil,
-      value != journal.caller else { throw failure("FOCUS_UNKNOWN_CALLER must be a different owned E.164 number") }
-    contacts.terminate(); contacts.launch(); try discardDraft()
-    for _ in 0..<4 where !contacts.searchFields.firstMatch.exists {
-      guard let back = try? element(contacts, ["Contacts", "Back", "Lists"], timeout: 1) else { break }
-      try tap(contacts, back)
+  func inspectContacts(_ value: String, ownedName: String? = nil) throws -> String {
+    guard value.range(of: "^[+][1-9][0-9]{7,14}$", options: .regularExpression) != nil else {
+      throw failure("Contact check requires an E.164 number")
     }
-    let search = contacts.searchFields.firstMatch
-    guard search.waitForExistence(timeout: 4) else { throw failure("Contacts search unavailable for unknown-caller check") }
-    let digits = value.filter(\.isNumber)
-    // Check the full normalized number and its national suffix. Any hit is unsafe/ambiguous.
-    for query in Set([value, digits, String(digits.suffix(10))]) {
-      try type(contacts, search, query); Thread.sleep(forTimeInterval: 1)
-      let results = contacts.collectionViews["Search results"]
-      guard results.waitForExistence(timeout: 4) else { throw failure("Unknown-caller search results unavailable") }
-      try front(contacts)
-      guard results.cells.count == 0 else { throw failure("Unknown caller search matched a contact") }
-      // An empty collection while indexing is not proof of absence: require an explicit settled empty state.
-      guard (try? element(contacts, ["No Results", "No Results Found", "No Contacts"], timeout: 4)) != nil else {
-        throw failure("Cannot verify Contacts finished the unknown-caller search")
+    probe.terminate()
+    if let ownedName {
+      probe.launchEnvironment = ["FOCUS_OWNED_NAME": ownedName, "FOCUS_OWNED_CALLER": value]
+    } else {
+      probe.launchEnvironment = ["FOCUS_UNKNOWN_CALLER": value]
+    }
+    probe.launch()
+    let authorization = probe.staticTexts["focus.contacts.authorization"]
+    guard authorization.waitForExistence(timeout: 5), let original = Int(authorization.label) else {
+      throw failure("Contacts authorization readback unavailable")
+    }
+    events.append(["event": "contactCheck.authorization", "original": original])
+    // A new permission cannot be reset to undetermined in Settings; restoration removes the disposable probe.
+    if original == 0 { journal.requiresProbeUninstall = true; try save() }
+    guard original == 0 || original == 3 else { throw failure("Full Contacts access required for verification") }
+    try tap(probe, ["focus.contacts.check"])
+    let result = probe.staticTexts["focus.contacts.result"]
+    let deadline = Date().addingTimeInterval(20)
+    repeat {
+      if result.exists && ["absent", "present", "match"].contains(result.label) {
+        guard authorization.label == "3" else { throw failure("Full Contacts access was not verified") }
+        return result.label
       }
-      try front(contacts)
-      guard results.cells.count == 0 else { throw failure("Unknown caller search matched a contact") }
-    }
+      if result.exists && result.label == "unavailable" { throw failure("Contacts verification unavailable or ambiguous") }
+      if let owner = [probe, board].first(where: { $0.state == .runningForeground && $0.alerts.firstMatch.exists }) {
+        let labels = ["Allow Full Access", "Allow Access to All Contacts", "Continue", "Allow"]
+        let button = owner.alerts.firstMatch.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
+        guard button.exists && button.isHittable else { throw failure("Full Contacts access choice unavailable") }
+        try tap(owner, button)
+      }
+      Thread.sleep(forTimeInterval: 0.25)
+    } while Date() < deadline
+    throw failure("Contacts verification did not complete")
+  }
+  func verifyUnknownCaller(_ value: String?) throws {
+    guard let value, value != journal.caller else { throw failure("Unknown caller must differ from the test contact") }
+    guard try inspectContacts(value) == "absent" else { throw failure("Unknown caller matched a contact") }
     events.append(["event": "unknownCaller.verified", "absentFromContacts": true, "observedAt": Date().timeIntervalSince1970])
   }
   func favoriteRow() throws -> XCUIElement? {
@@ -420,7 +510,15 @@ final class FocusUITests: XCTestCase {
     for _ in 0..<16 {
       try front(phone)
       let cells = phone.cells.allElementsBoundByIndex
-      let matches = cells.filter { $0.exists && $0.label.contains(journal.contactName) }
+      let candidates = cells.filter { cell in
+        cell.exists && (cell.label.contains(journal.contactName) || cell.staticTexts.matching(
+          NSPredicate(format: "label == %@", journal.contactName)).allElementsBoundByIndex.contains { $0.exists })
+      }
+      let matches = candidates.filter { cell in
+        cell.label == journal.contactName || cell.staticTexts.matching(
+          NSPredicate(format: "label == %@", journal.contactName)).allElementsBoundByIndex.contains { $0.exists }
+      }
+      guard candidates.count == matches.count else { throw failure("Favorite name cannot be verified exactly") }
       guard matches.count <= 1 else { throw failure("Ambiguous owned favorite rows") }
       if let match = matches.first { return match }
       let visible = cells.filter(\.isHittable).map(\.label).joined(separator: "|")
@@ -436,6 +534,9 @@ final class FocusUITests: XCTestCase {
   }
   func setFavorite(_ enabled: Bool) throws {
     guard journal.ownsContact else { throw failure("Favorite operations require the owned test contact") }
+    guard try inspectContacts(journal.caller, ownedName: journal.contactName) == "present" else {
+      throw failure("Owned contact cannot be verified for favorite operation")
+    }
     let existing = try favoriteRow()
     if (existing != nil) == enabled {
       if enabled && journal.ownsFavorite != true { throw failure("Will not claim an unowned favorite") }
@@ -444,6 +545,7 @@ final class FocusUITests: XCTestCase {
     }
     if enabled {
       guard try openContact() else { throw failure("Owned test contact unavailable") }
+      try verifyOwnedContactCard()
       journal.ownsFavorite = true; try save() // Recovery may remove only this owned contact's favorite.
       try tap(contacts, scrollTo(contacts, ["Add to Favorites", "Add to Favourites"]))
       if let choice = try? element(contacts, ["Call"], timeout: 2) { try tap(contacts, choice) }
@@ -483,17 +585,33 @@ final class FocusUITests: XCTestCase {
       }
       journal.ownsFocus = false; try save()
     }
+    // Restore Focus before contact cleanup, which can fail independently.
+    if let initial = journal.initialFocus { try setFocus(initial, enabled: true) }
+    else { try setFocus(journal.focusName, enabled: false) }
     if journal.ownsContact {
-      if journal.ownsFavorite == true { try setFavorite(false) }
-      if try openContact() {
-        try tap(contacts, ["Edit"]); try tap(contacts, scrollTo(contacts, ["Delete Contact"]))
+      let current = try inspectContacts(journal.caller, ownedName: journal.contactName)
+      if current == "present" {
+        if journal.ownsFavorite == true { try setFavorite(false) }
+        guard try openContact() else { throw failure("Owned contact unavailable in Contacts") }
+        var edit = try? element(contacts, ["Edit"], timeout: 3)
+        if edit == nil {
+          guard try openContact() else { throw failure("Owned contact unavailable during restore retry") }
+          edit = try element(contacts, ["Edit"], timeout: 3)
+        }
+        guard let edit else { throw failure("Contacts Edit unavailable") }
+        try verifyOwnedContactCard()
+        try tap(contacts, edit); try tap(contacts, scrollTo(contacts, ["Delete Contact"]))
         try tap(contacts, ["Delete Contact", "Delete"])
-        guard try !openContact() else { throw failure("Test contact still present") }
+        guard try inspectContacts(journal.caller, ownedName: journal.contactName) == "absent" else {
+          throw failure("Test contact absence could not be verified")
+        }
+      } else {
+        guard current == "absent" && journal.ownsFavorite != true else {
+          throw failure("Owned contact or favorite is ambiguous")
+        }
       }
       journal.ownsContact = false; try save()
     }
-    if let initial = journal.initialFocus { try setFocus(initial, enabled: true) }
-    else { try setFocus(journal.focusName, enabled: false) }
     journal.captured = false; try save(); home()
   }
   func ringerVolumeSlider() throws -> XCUIElement {
@@ -1161,13 +1279,20 @@ final class FocusUITests: XCTestCase {
     var previousBanner = false, previousScreen = false
     var previousBannerCaller = false, previousScreenCaller = false
     var readyPublished = false
+    var gapStart: Int?, gapReason = "foreground-transition", lastSampleUptimeMs: Int?
+    var lastForeground: String?
     let expected = ProcessInfo.processInfo.environment["FOCUS_EXPECTED_CALLER"] ?? ""
     guard expected.utf8.count <= 128 else { throw failure("Invalid expected caller") }
     repeat {
       let sampleStartUptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
       let boardIsFront = board.state == .runningForeground
       let callIsFront = callUI.state == .runningForeground
-      guard boardIsFront || callIsFront else { throw failure("Call surfaces cannot be sampled without a recognized foreground app") }
+      if !boardIsFront && !callIsFront {
+        if gapStart == nil { gapStart = lastSampleUptimeMs ?? sampleStartUptimeMs }
+        gapReason = "unrecognized-foreground"
+        guard sampleStartUptimeMs - gapStart! < 5000 else { throw failure("Call surfaces unavailable for five seconds") }
+        Thread.sleep(forTimeInterval: 0.25); continue
+      }
       var currentBanner = false
       if boardIsFront {
         currentBanner = board.buttons.matching(NSPredicate(format: "label IN %@", ["Accept", "Answer call", "Decline"])).firstMatch.exists
@@ -1176,10 +1301,22 @@ final class FocusUITests: XCTestCase {
       let bannerCaller = currentBanner && bannerCallerMatches(expected: expected)
       let screenCaller = currentScreen && callerMatches(callUI.otherElements["InCallRootView"], app: callUI, expected: expected)
       guard boardIsFront == (board.state == .runningForeground), callIsFront == (callUI.state == .runningForeground) else {
-        throw failure("Foreground app changed while sampling call surfaces")
+        if gapStart == nil { gapStart = lastSampleUptimeMs ?? sampleStartUptimeMs }
+        guard Int(ProcessInfo.processInfo.systemUptime * 1000) - gapStart! < 5000 else { throw failure("Call surfaces unavailable for five seconds") }
+        Thread.sleep(forTimeInterval: 0.25); continue
       }
       let now = Date().timeIntervalSince1970
       let uptimeMs = Int(ProcessInfo.processInfo.systemUptime * 1000)
+      let foreground = callIsFront ? "InCallService" : "SpringBoard"
+      if let previous = lastForeground, previous != foreground, gapStart == nil {
+        gapStart = lastSampleUptimeMs ?? sampleStartUptimeMs
+        gapReason = "foreground-transition"
+      }
+      if let start = gapStart {
+        events.append(["event": "surface.gap", "reason": gapReason, "startUptimeMs": start, "endUptimeMs": uptimeMs])
+        gapStart = nil; gapReason = "foreground-transition"
+      }
+      lastSampleUptimeMs = uptimeMs; lastForeground = foreground
       events.append(["event": "surface.sample", "surface": "banner", "visible": currentBanner, "callerMatched": bannerCaller, "observedAt": now, "uptimeMs": uptimeMs, "sampleStartUptimeMs": sampleStartUptimeMs])
       events.append(["event": "surface.sample", "surface": "callScreen", "visible": currentScreen, "callerMatched": screenCaller, "observedAt": now, "uptimeMs": uptimeMs, "sampleStartUptimeMs": sampleStartUptimeMs])
       if currentBanner != previousBanner || bannerCaller != previousBannerCaller {
@@ -1201,6 +1338,9 @@ final class FocusUITests: XCTestCase {
       if fullScreen && screenAt == nil { screenAt = Date().timeIntervalSince1970 }
       Thread.sleep(forTimeInterval: 0.25)
     } while Date() < end
+    if let start = gapStart {
+      events.append(["event": "surface.gap", "reason": gapReason, "startUptimeMs": start, "endUptimeMs": Int(ProcessInfo.processInfo.systemUptime * 1000)])
+    }
     events.append(["event": "call.observed", "banner": banner, "callScreen": fullScreen,
       "bannerAt": bannerAt.map { $0 as Any } ?? NSNull(), "callScreenAt": screenAt.map { $0 as Any } ?? NSNull(),
       "qualification": "requires-C00", "observedAt": Date().timeIntervalSince1970,
@@ -1218,6 +1358,10 @@ final class FocusUITests: XCTestCase {
       settings.terminate(); settings.launch(); Thread.sleep(forTimeInterval: 1)
       if let item = try? scrollTo(settings, ["Focus"]) { try tap(settings, item) }
       Thread.sleep(forTimeInterval: 1.5); text = settings.debugDescription
+    case "settings-calls":
+      try openProfile(); try tap(settings, exceptions("People"))
+      try tap(settings, scrollTo(settings, ["also-allow-calls-from-group-picker", "Allow Calls From", "Calls From"]))
+      Thread.sleep(forTimeInterval: 1); try captureCallsPicker(); attachPickerEvidence(); home(); return
     case "screen":
       try XCUIScreen.main.screenshot().pngRepresentation.write(to: documents.appendingPathComponent("focus-dump-screen.png"), options: .atomic)
       text = board.debugDescription
@@ -1290,6 +1434,7 @@ final class FocusUITests: XCTestCase {
     }
     do {
       for action in actions {
+        pickerEvidence = nil
         let parts = action.split(separator: ":", maxSplits: 1).map(String.init)
         let value = parts.count > 1 ? parts[1] : ""
         if ["focus", "app", "person", "calls", "policy", "repeated-calls"].contains(parts[0]) {
@@ -1349,9 +1494,7 @@ final class FocusUITests: XCTestCase {
       }
       try writeResult("ok")
     } catch {
-      // Exploration aid: keep the front app's tree for selector fixes.
-      let app = [settings, contacts, probe, callUI].first(where: { $0.state == .runningForeground }) ?? board
-      try? (error.localizedDescription + "\n" + app.debugDescription).write(to: documents.appendingPathComponent("focus-dump-failure.txt"), atomically: true, encoding: .utf8)
+      attachPickerEvidence()
       try? writeResult("failed"); throw error
     }
   }

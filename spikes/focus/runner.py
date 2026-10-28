@@ -8,6 +8,7 @@ from pathlib import Path
 import plistlib
 import re
 import subprocess
+import tempfile
 import time
 import uuid
 from work_path import default_work
@@ -16,6 +17,62 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 BUNDLE = "dev.callkitsim.focus"
 TEST_BUNDLE = BUNDLE + ".uitests.xctrunner"
+
+
+PICKER_WORDS = frozenset("allow allowed calls from people only everyone everybody anyone anybody all contacts contact favorite favorites favourite favourites no one nobody none back done".split())
+
+
+def validate_picker_evidence(value, run_id):
+    if (not isinstance(value, dict) or set(value) != {"runID", "available", "truncated", "nodes"}
+            or value.get("runID") != run_id or type(value.get("available")) is not bool
+            or type(value.get("truncated")) is not bool):
+        return None
+    try:
+        uuid.UUID(run_id)
+    except (ValueError, TypeError, AttributeError):
+        return None
+    nodes = value["nodes"]
+    if not isinstance(nodes, list) or len(nodes) > 200 or (not value["available"] and (nodes or value["truncated"])):
+        return None
+    for index, node in enumerate(nodes):
+        if not isinstance(node, dict) or set(node) != {"type", "label", "selected", "parent"}:
+            return None
+        label = node["label"]
+        if (not isinstance(node["type"], str)
+                or node["type"] not in {"window", "navigation", "table", "collection", "button", "cell", "text", "other"}
+                or type(node["selected"]) is not bool or type(node["parent"]) is not int
+                or not -1 <= node["parent"] < index or not isinstance(label, str) or len(label) > 100):
+            return None
+        words = label.lower().split(" ") if label else []
+        if len(words) > 5 or any(word not in PICKER_WORDS for word in words):
+            return None
+    return value
+
+
+def extract_picker_evidence(bundle, run_id, destination):
+    # This is host-only even if the failed UI test left a device process behind.
+    result = {"runID": run_id, "available": False, "truncated": False, "nodes": []}
+    try:
+        with tempfile.TemporaryDirectory(prefix="focus-picker-export-") as directory:
+            exported = Path(directory) / "attachments"
+            subprocess.run(["xcrun", "xcresulttool", "export", "attachments", "--path", str(bundle),
+                            "--output-path", str(exported), "--filter", "focus-picker-evidence*"],
+                           check=True, timeout=30, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            matches = []
+            for item in exported.iterdir():
+                if item.name == "manifest.json" or not item.is_file() or item.stat().st_size > 65536:
+                    continue
+                try:
+                    valid = validate_picker_evidence(json.loads(item.read_text()), run_id)
+                except (OSError, UnicodeError, ValueError):
+                    valid = None
+                if valid is not None:
+                    matches.append(valid)
+            if len(matches) == 1:
+                result = matches[0]
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+    write(destination, result)
 
 
 def correlate(traces, invitations):
@@ -47,13 +104,26 @@ def needs_repeat_fence(base_row, previous):
     return base_row == "C02" or previous.get("repeatPair") is not False
 
 
+def surface_gap_intersects(events, start, end):
+    for event in events:
+        if event.get("event") != "surface.gap":
+            continue
+        left, right = event.get("startUptimeMs"), event.get("endUptimeMs")
+        if not isinstance(left, int) or not isinstance(right, int) or left > right:
+            return True
+        if left <= end and right >= start:
+            return True
+    return False
+
+
 def surface_windows(events, received, observation):
     transitions = [e for e in events if e.get("event") == "surface.transition"]
     windows = []
     for index, (invitation, start) in enumerate(received):
         end = min(received[index + 1][1], observation["endUptimeMs"]) if index + 1 < len(received) else observation["endUptimeMs"]
         item = {"invitationID": invitation, "pushReceivedUptimeMs": start,
-                "observationQualified": observation["startUptimeMs"] <= start and end - start >= 15000}
+                "observationQualified": observation["startUptimeMs"] <= start and end - start >= 15000,
+                "continuityQualified": not surface_gap_intersects(events, start, end)}
         for surface in ["banner", "callScreen"]:
             prior = [e for e in transitions if e.get("surface") == surface and e["uptimeMs"] < start]
             rises = [e["uptimeMs"] for e in transitions if e.get("surface") == surface
@@ -76,6 +146,8 @@ def answer_evidence(events, trace, observation, signal_id, push_ms):
         return {"status": "unqualified", "reason": "invalid-device-timestamps"}
     if not isinstance(push_ms, int) or not observation.get("startUptimeMs", start + 1) <= push_ms <= start <= report <= observation.get("endUptimeMs", -1):
         return {"status": "unqualified", "reason": "outside-observation-window"}
+    if surface_gap_intersects(events, push_ms, observation["endUptimeMs"]):
+        return {"status": "unqualified", "reason": "surface-observation-gap"}
     for surface in ("banner", "callScreen"):
         prior_samples = [e for e in events if e.get("event") == "surface.sample" and e.get("surface") == surface
                          and isinstance(e.get("uptimeMs"), int) and isinstance(e.get("sampleStartUptimeMs"), int)
@@ -260,7 +332,12 @@ class Run:
         self.journal_fresh = True
         self.invitations = [self.invitation]
         self.sent_times = []
-        self.run_id = str(uuid.uuid4())
+        self.run_id = os.environ.get("FOCUS_EVIDENCE_RUN_ID", str(uuid.uuid4()))
+        try:
+            if str(uuid.UUID(self.run_id)) != self.run_id:
+                raise ValueError()
+        except (ValueError, AttributeError):
+            raise ValueError("Invalid evidence identifier")
         self.unsafe_observer = False
         self.binding = {"device": self.device, "build": hashlib.sha256(self.source.read_bytes()).hexdigest(),
                         "provider": p["provider"], "callerFormat": p["callerFormat"]}
@@ -310,7 +387,8 @@ class Run:
         # back to XCUITest; never overwrite a newer device journal with a stale one.
         self.recover(required=self.journal.exists() or os.environ.get("FOCUS_REQUIRE_DEVICE_JOURNAL") == "1")
         data = plistlib.loads(self.source.read_bytes())
-        env = {"FOCUS_ACTIONS": json.dumps(actions), "FOCUS_NAME": os.environ.get("FOCUS_NAME", "Focus Probe 124"),
+        env = {"FOCUS_ACTIONS": json.dumps(actions), "FOCUS_EVIDENCE_ID": getattr(self, "run_id", ""),
+               "FOCUS_NAME": os.environ.get("FOCUS_NAME", "Focus Probe 124"),
                "FOCUS_CALLER": "+15555550199", "FOCUS_OBSERVATION_ID": self.invitation,
                "FOCUS_EXPECTED_CALLER": self.p["callerValue"]}
         if self.p.get("unknownCaller"):
@@ -353,10 +431,26 @@ class Run:
         target = self.folder / f"tests-{self.counter}.xctestrun"
         target.write_bytes(plistlib.dumps(absolute(data)))
         self.journal_fresh = False
+        if not hasattr(self, "run_id"):
+            self.run_id = str(uuid.uuid4())
+        raw = self.work / ".picker-results" / self.run_id
+        raw.mkdir(mode=0o700, parents=True, exist_ok=True)
+        raw.chmod(0o700)
+        (raw / "row").write_text(self.folder.name)
+        session = uuid.uuid4().hex
+        bundle = raw / (session + ".xcresult")
+        failed = raw / (session + ".failed")
+        self.journal_fresh = False
         try:
-            return self.command(["xcodebuild", "test-without-building", "-xctestrun", str(target),
-                                 "-destination", "id=" + self.device,
-                                 "-only-testing:FocusUITests/FocusUITests/testActions"], timeout=600, background=background)
+            if background:
+                self.observer_picker_marker = failed
+            try:
+                return self.command(["xcodebuild", "test-without-building", "-xctestrun", str(target),
+                                     "-destination", "id=" + self.device, "-resultBundlePath", str(bundle),
+                                     "-only-testing:FocusUITests/FocusUITests/testActions"], timeout=600, background=background)
+            except (RuntimeError, subprocess.TimeoutExpired, OSError):
+                failed.touch(mode=0o600)
+                raise
         finally:
             if not background and not self.unsafe_observer:
                 self.recover(required=True)
@@ -495,6 +589,34 @@ class Run:
             time.sleep(1)
         raise RuntimeError("No matching current activity/token; APNs update not sent")
 
+    def picker_unavailable(self):
+        marker = getattr(self, "observer_picker_marker", None)
+        if marker is not None:
+            marker.touch(mode=0o600)
+        else:
+            write(self.folder / f"picker-evidence-observer-{uuid.uuid4().hex}.json",
+                  {"runID": self.run_id, "available": False, "truncated": False, "nodes": []})
+
+    def finish_background(self, observer, audio):
+        for process in [observer, audio]:
+            if not process:
+                continue
+            code = process.poll()
+            if code is None:
+                if process is observer and self.unsafe_observer:
+                    continue
+                try:
+                    code = process.wait(timeout=90)
+                except subprocess.TimeoutExpired:
+                    if process is observer:
+                        self.picker_unavailable()
+                        self.unsafe_observer = True
+                    else:
+                        process.kill(); process.wait(timeout=10)
+            if process is observer and code is not None and code != 0:
+                self.picker_unavailable()
+                self.unsafe_observer = True
+
     def execute(self):
         p = self.p
         result = {"row": p["row"], "invitationID": self.invitation, "status": "unqualified", "humanQA": False}
@@ -571,6 +693,8 @@ class Run:
                 ready = self.folder / "ready.json"; deadline = time.monotonic() + 120
                 while time.monotonic() < deadline:
                     if observer.poll() is not None:
+                        self.picker_unavailable()
+                        self.unsafe_observer = True
                         raise RuntimeError("Observation session ended before readiness")
                     try:
                         self.copy("focus-ui-ready.json", ready, test=True)
@@ -609,9 +733,11 @@ class Run:
                 try:
                     observation_code = observer.wait(timeout=300)
                 except subprocess.TimeoutExpired:
+                    self.picker_unavailable()
                     self.unsafe_observer = True
                     raise
                 if observation_code:
+                    self.picker_unavailable()
                     self.unsafe_observer = True
                     raise RuntimeError("UI observer failed")
                 self.recover(); self.copy("focus-ui-result.json", self.folder / "ui.json", test=True)
@@ -638,7 +764,9 @@ class Run:
             if p["serverAnswer"] and observer:
                 result["answeredElsewhere"] = answer_evidence(ui["events"], matching, result["visual"][0], self.signal_id, device_receipts[0][1])
             first_window = result.get("visualByInvitation", [{}])[0]
-            if p["row"] == "C00" and len(result["reports"]) == 1 and result["reports"][0].get("outcome") == "reported" and first_window.get("observationQualified") and (first_window.get("bannerFirstNewPresentationUptimeMs") is not None or first_window.get("callScreenFirstNewPresentationUptimeMs") is not None):
+            if observer and any(not window["continuityQualified"] for window in result["visualByInvitation"]):
+                result["visualNegativeQualified"] = False
+            if p["row"] == "C00" and len(result["reports"]) == 1 and result["reports"][0].get("outcome") == "reported" and first_window.get("observationQualified") and first_window.get("continuityQualified") and (first_window.get("bannerFirstNewPresentationUptimeMs") is not None or first_window.get("callScreenFirstNewPresentationUptimeMs") is not None):
                 write(self.work / "visual-calibration.json", {"positive": True, "binding": self.binding, "createdAt": time.time()})
                 result["visualNegativeQualified"] = True
             if p["locked"]:
@@ -656,23 +784,14 @@ class Run:
                 result["activityContentEvents"] = [e for e in traces if e["event"].startswith("activity.") and e.get("runID") == self.run_id and e.get("activityID") == activity_id]
                 result["coverage"] = "Single transport/presentation subcase, not full cadence/lock/privacy qualification"
             result["status"] = "recorded" if not p["sendVoIP"] or reports_complete(result["reports"], self.invitations) else "incomplete-report-evidence"
-            if observer and any(not window["observationQualified"] for window in result["visualByInvitation"]):
+            if observer and any(not window["observationQualified"] or not window["continuityQualified"]
+                    for window in result["visualByInvitation"]):
                 result["status"] = "incomplete-observation-window"
             if p["baseRow"] == "C02" and (not observer or not 0 < result["repeatIntervalMs"] <= 180000):
                 result["status"] = "invalid-or-unmeasured-repeat-interval"
             return result
         finally:
-            for process in [observer, audio]:
-                if process and process.poll() is None:
-                    if process is observer and self.unsafe_observer:
-                        continue
-                    try:
-                        process.wait(timeout=90)
-                    except subprocess.TimeoutExpired:
-                        if process is observer:
-                            self.unsafe_observer = True
-                        else:
-                            process.kill(); process.wait(timeout=10)
+            self.finish_background(observer, audio)
             if (self.folder / "audio.json").exists():
                 data = json.loads((self.folder / "audio.json").read_text()); result["audio"] = data
                 if p["row"] == "C00":

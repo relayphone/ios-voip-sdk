@@ -24,6 +24,7 @@ targets:
         UIBackgroundModes: [voip, audio]
         NSFocusStatusUsageDescription: Measure shared Focus status for test calls.
         NSMicrophoneUsageDescription: Measure test call audio activation.
+        NSContactsUsageDescription: Verify that a synthetic test caller is not in Contacts.
         NSSupportsLiveActivities: true
         NSSupportsLiveActivitiesFrequentUpdates: true
         NSUserActivityTypes: [INStartCallIntent]

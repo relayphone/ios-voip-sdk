@@ -21,6 +21,11 @@ Scenarios with missing adapters or unsupported hardware/backend/fault controls r
 
 Local CLI verification: `python3 -m unittest discover -s spikes/focus -p 'test_*.py'` and
 `node --test spikes/focus/test_activity_payloads.mjs`.
+For an optional read-only GitHub Actions failure summary, run
+`spikes/focus/morning-batch --ci-summary <run-id> --repo <owner>/<repo>`. It does not access a device.
+It queries failed jobs and their check annotations through `gh`, reports aggregate counts without remote text, and
+identifies a billing lock only when an annotation confirms that a job was not started for that reason. The summary covers
+the latest attempt; inspect earlier attempts separately when comparing retry evidence.
 
 ## Morning batch
 
@@ -93,16 +98,30 @@ cause. Product behavior failures need investigation rather than repeated attempt
 
 For individual rows, `--focus-mode dnd` snapshots/restores the built-in profile and refuses unknown or Silence list
 modes; `--unknown-caller --caller-value <E.164>` verifies absence from Contacts; `--favorite yes|no` changes only the
-owned contact. `--server-answer` writes a matched local test signal, never a cancellation-only VoIP push. The app
+owned contact. The unknown-caller check requires full Contacts access and enumerates phone numbers without exporting
+them. A matching suffix, an unparseable number, limited access or an error stops the row before any push. If access
+was undetermined, the original value is journaled before the prompt and restoration removes the disposable probe;
+permission-prompt handling and the reset on removal require device qualification. Restoring the owned test contact
+uses the same full-access check: a unique name and owned number are required before deletion, and an independent
+lookup must confirm absence before the ownership journal is cleared. A call-surface foreground change
+is recorded as an observation gap; any invitation intersecting a gap remains unqualified even if a later surface is visible. `--server-answer` writes a matched local test signal, never a cancellation-only VoIP push. The app
 must be runnable to receive it; signal-to-UI-disappearance uses device uptime and is unqualified if the signal,
 visible call or dismissal is missing. This is not a server-to-device network-latency measurement. The new DND,
 Favorites and unknown-contact selectors are unqualified until tested on the operator's iPhone 13.
 
 Matrix runs: `--keep-setup` keeps the owned Focus and contact between rows and only turns the Focus off after each
-row; run `restore-all` once at the end. Selectors are qualified on iOS 27.0 (iPhone 13); see
-[results](../../docs/research/focus/results.md). For selector work, the `dump:<controlcenter|focusmenu|settings-focus|settings-root|screen>`
-UI action writes a read-only accessibility tree to the runner's Documents, and any failed action leaves the front
-app's tree in `focus-dump-failure.txt`. The device operator has registered `group.dev.callkitsim.focus` for the
+row; run `restore-all` once at the end. The iOS 27.0 device pass exercised some selectors; see
+[results](../../docs/research/focus/results.md). For selector work, the `dump:<controlcenter|focusmenu|settings-focus|settings-calls|settings-root|screen>`
+UI action captures read-only accessibility evidence. A failed UI action saves a privacy-filtered picker snapshot in
+the row evidence, or marks it unavailable when the picker was not reached. Only general picker words are retained;
+names, numbers, identifiers and unrelated UI text are excluded. Blank labels are redacted, so an unfamiliar option
+may need a separately privacy-reviewed inspection before its selector can be determined. To inspect Allow Calls From without changing its selection, run the signed
+`FocusUITests/testActions` with `FOCUS_ACTIONS` set to `["dump:settings-calls"]` in the UI-test environment and an
+existing custom probe Focus named by `FOCUS_NAME` (default `Focus Probe 124`). Copy
+`Documents/focus-dump-settings-calls.json` from the `dev.callkitsim.focus.uitests.xctrunner` app-data container with
+`xcrun devicectl device copy from`. The filtered snapshot contains only general picker terms. Use the observed
+picker text and a verified selected-value readback to update C01; the current Everyone selector is unqualified.
+The device operator has registered `group.dev.callkitsim.focus` for the
 app, widget and filter under team `85A9MS6428`. Keep the App Group entitlements for C06; the earlier run built
 without them and therefore did not qualify that row. For a signed device build, use Xcode's configured signing credentials and
 `xcodebuild -allowProvisioningUpdates` with `DEVELOPMENT_TEAM=85A9MS6428`; do not pass ASC `-authenticationKey*`
