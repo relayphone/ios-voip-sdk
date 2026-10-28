@@ -30,6 +30,9 @@ type JourneyModule = NativeModule & {
     | 'push-launch';
   m2Case: '' | 'livekit' | 'stale-audio';
   runID: string;
+  dialRequestAcceptanceEnabled: boolean;
+  deliverDialRequests(): Promise<void>;
+  observedDialRequest(handle: string, video: boolean): Promise<void>;
   nextSystemCommand(): Promise<{
     id: string;
     operation: string;

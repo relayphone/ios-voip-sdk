@@ -130,6 +130,7 @@ jobs:
           source scripts/ci/sdk_paths.sh
           python3 -m unittest discover -s scripts/sim -p 'test_*.py'
           python3 -m unittest discover -s scripts/ci/tests -p 'test_*.py'
+          python3 discovery/check_sdk_dial_requests.py
           python3 discovery/check_sdk_m0.py | tee "$SDK_M0_BUILD_LOGS/offline-controls.json"
           python3 discovery/check_sdk_installed_paths.py
           python3 discovery/check_expo_livekit.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/expo-media-journey-controls.log"
@@ -195,6 +196,7 @@ jobs:
           python3 discovery/check_sdk_m1_contracts.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-contract-controls.log"
           bash Tests/PushLaunch/run.sh | tee "$SDK_M0_BUILD_LOGS/push-launch-filesystem-controls.json"
           python3 Tests/VoIPSDK/run_push_context.py | tee "$SDK_M0_BUILD_LOGS/push-context-controls.json"
+          bash Tests/DialRequests/run.sh
           python3 discovery/check_expo_bridge.py | tee "$SDK_M0_BUILD_LOGS/expo-relay-controls.json"
           python3 discovery/check_platform_shims.py | tee "$SDK_M0_BUILD_LOGS/platform-controls.json"
           python3 discovery/check_sdk_ownership.py | tee "$SDK_M0_BUILD_LOGS/ownership-controls.json"

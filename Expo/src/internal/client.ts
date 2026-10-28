@@ -22,6 +22,8 @@ export class ConversationRuntime {
   readonly pushToken = new RevisionStore<PushToken | null>(null);
   readonly audioRoutes = new RevisionStore<AudioRoutes>(EMPTY_AUDIO_ROUTES);
   private readonly handlers: HandlerDispatcher;
+  private dialRequestListeners = 0;
+  private dialRequestGeneration = 0;
   private readonly eventListeners = new Set<
     (name: keyof ConversationEventMap, payload: unknown) => void
   >();
@@ -50,7 +52,17 @@ export class ConversationRuntime {
       this.handlers.cancel(event),
     );
     bridge.addListener('conversationEvent', (event) => {
-      this.publishEvent(event.type, immutableCopy(event.payload));
+      if (event.type === 'dialRequest') {
+        if (
+          this.dialRequestListeners === 0 ||
+          event.generation !== this.dialRequestGeneration
+        )
+          return;
+        this.publishEvent(event.type, immutableCopy(event.payload));
+        this.bridge.acknowledgeDialRequest(event.deliveryID, event.generation);
+      } else {
+        this.publishEvent(event.type, immutableCopy(event.payload));
+      }
     });
   }
 
@@ -95,7 +107,21 @@ export class ConversationRuntime {
       if (eventName === name) listener(payload as ConversationEventMap[Name]);
     };
     this.eventListeners.add(dispatch);
-    return () => this.eventListeners.delete(dispatch);
+    if (name === 'dialRequest' && ++this.dialRequestListeners === 1) {
+      this.bridge.setDialRequestListenerAttached(
+        true,
+        ++this.dialRequestGeneration,
+      );
+    }
+    return () => {
+      if (!this.eventListeners.delete(dispatch)) return;
+      if (name === 'dialRequest' && --this.dialRequestListeners === 0) {
+        this.bridge.setDialRequestListenerAttached(
+          false,
+          ++this.dialRequestGeneration,
+        );
+      }
+    };
   }
 
   private async readConversations(): Promise<void> {

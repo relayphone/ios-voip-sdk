@@ -32,6 +32,15 @@ public final class IosVoipSDKModule: Module {
       // Synchronous JS calls are enqueued in order on the native owner's queue.
       DispatchQueue.main.async { ConversationBridges.attach(id, attached: attached, generation: generation) }
     }
+    Function("setDialRequestListenerAttached") { (attached: Bool, generation: Int) in
+      let id = self.bridgeID
+      DispatchQueue.main.async { ConversationBridges.listenForDialRequests(id, attached: attached, generation: generation) }
+    }
+    Function("acknowledgeDialRequest") { (deliveryID: String, generation: Int) in
+      guard let delivery = UUID(uuidString: deliveryID) else { return }
+      let id = self.bridgeID
+      DispatchQueue.main.async { ConversationBridges.acknowledgeDialRequest(id, delivery: delivery, generation: generation) }
+    }
     Function("settleAction") { (actionID: String, generation: Int, success: Bool, reason: [String: String]?) in
       guard let action = UUID(uuidString: actionID) else { return }
       let id = self.bridgeID
