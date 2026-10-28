@@ -6,7 +6,7 @@ resume and end. It owns no `ConversationManager` or `CXProvider`. The SDK starts
 its sole client and PushKit service during native launch, before JavaScript.
 The screen also shows native module loading and runtime activation, with loading,
 error and retry states. The example handler accepts requests locally; production
-apps provide signaling and media. No media adapter is demonstrated in M1.
+apps provide signaling and media. The basic example supplies no backend media connection.
 
 Install and build the package from repository root:
 
@@ -46,14 +46,12 @@ buttons. iPhone/iPad, Dark Mode and large-text visual checks remain pending.
 
 ## Acceptance fixtures
 
-**Measured for this slice:** the package builds, the example typechecks against
-this worktree's public declarations, Swift grammar parsing passes, and
-`python3 discovery/check_sdk_m1.py` passes eight offline control groups containing
-two positive three-case fixture variants and 29 tamper cases. The local dependency symlink
-points to another worktree's M0 package, so this slice's example typecheck uses a
-temporary TypeScript path mapping; it does not modify shared dependencies.
-**Proposed:** the combined native build and M1 journeys await source-bound runs.
-These host controls do not claim simulator or device qualification.
+The example's M0/M1 native journeys and system-action controls pass
+[SDK acceptance](https://github.com/relayphone/ios-voip-sdk/actions/runs/40693437174),
+alongside TypeScript and portable conformance checks. The
+[M-Stable checkpoint](../docs/progress/2026-10-28-m-stable.md) records the exact
+qualification scope and remaining media/default-calling and device measurements.
+Host fixtures validate their assertions separately from native simulator runs.
 
 `SDK_M0_ACCEPTANCE=1` preserves the M0 incoming/ring/join/end journey. Its small
 Swift handler exists only in that mode. It uses the SDK client; the legacy trace

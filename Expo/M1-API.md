@@ -1,21 +1,18 @@
 # M1 TypeScript bridge
 
-**Measured:** `npm run build`, `npm run typecheck`, the repository format check,
-and `node --test Expo/tests/m1-runtime.test.cjs` pass for this TypeScript slice.
-The ten offline controls exercise the real dependency-free store/dispatcher
-with a controlled bridge. They cover stale hydration, immutable snapshot identity,
-nullable token invalidation, hydration failure/recovery, handler settlement,
-cancellation, replacement/redelivery, reentrant abort-listener replacement,
-cancellation before invocation, and event
-subscription cleanup. These are JavaScript measurements; native integration and
-the M1 simulator journeys remain **proposed** until the combined milestone runs.
+**Status:** the public bridge and M1 native simulator journeys pass
+[SDK acceptance](https://github.com/relayphone/ios-voip-sdk/actions/runs/40693437174).
+The portable controls cover immutable state, handler settlement/cancellation,
+replacement, reentrancy and subscription cleanup. The
+[M-Stable checkpoint](../docs/progress/2026-10-28-m-stable.md) separates these
+results from remaining media, default-calling and device acceptance work.
 
-The public entry exports RFC 0001's state hooks, imperative snapshot, handler,
-commands, reports, push-token hook and lifecycle-event hook. The M0 internal
-`ios-voip-sdk/internal/bootstrap` entry remains unchanged. Audio-route APIs arrive
-in M2. The event types include watchdog and dial-request signals, but those
-producers arrive in M2 and M3 respectively; M1 can forward genuine activation,
-deactivation and provider-reset signals.
+The public entry exports state hooks, imperative snapshots, handlers, commands,
+reports, push-token and lifecycle-event hooks, and audio routes. The M0 internal
+`ios-voip-sdk/internal/bootstrap` entry remains diagnostic infrastructure.
+Watchdog and audio-route producers are implemented; `dialRequest` remains reserved
+for M3. Genuine activation, deactivation, reset and answered-elsewhere events are
+forwarded from the shared native client.
 
 RFC 0001 omits formal definitions for `Participant`, `IncomingCallPayload` and
 `PendingAction`. The first two preserve the existing push fields. Pending actions
