@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 import queue
 import signal
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -14,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'discovery'))
 import check_sdk_m1_container_capture as controls
 import run_scenario
+from sim import Result
 
 
 class Clock:
@@ -102,7 +102,7 @@ class ContractLaunchDelayTests(unittest.TestCase):
             process.returncode = 0
         def terminate_owned(*args, **kwargs):
             process.returncode = 0
-            return subprocess.CompletedProcess(args[0], 0, b'', b'')
+            return Result(args[0], 0)
         with tempfile.TemporaryDirectory(prefix='sdk-virtual-launch-') as temporary:
             output = Path(temporary) / 'capture.log'
             receipt = output.with_suffix('.receipt.json')
@@ -111,7 +111,7 @@ class ContractLaunchDelayTests(unittest.TestCase):
                  patch.object(run_scenario.threading, 'Thread', NoNativeThread), \
                  patch.object(run_scenario.tty, 'setraw'), \
                  patch.object(run_scenario.subprocess, 'Popen', return_value=process) as launched, \
-                 patch.object(run_scenario.subprocess, 'run', side_effect=terminate_owned), \
+                 patch.object(run_scenario, 'bounded', side_effect=terminate_owned), \
                  patch.object(run_scenario.os, 'kill', side_effect=kill):
                 status = run_scenario.run(launch, terminate, output, receipt, timeout, identity,
                                           console_launcher_stop=True, startup_timeout=startup_timeout)

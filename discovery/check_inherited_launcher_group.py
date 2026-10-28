@@ -12,6 +12,7 @@ from unittest.mock import Mock, call, patch
 import tempfile
 
 import run_scenario as supervisor
+from sim import Result
 
 BUNDLE = 'dev.iosvoipsdk.example'
 SUPERVISOR, LAUNCHER, APP = 7001, 7002, 7003
@@ -23,7 +24,7 @@ class InheritedGroupControls(unittest.TestCase):
             patcher = patch.object(owner, name, **options)
             value = patcher.start(); self.addCleanup(patcher.stop); return value
         self.popen = mocked(supervisor.subprocess, 'Popen')
-        self.command = mocked(supervisor.subprocess, 'run', return_value=SimpleNamespace(returncode=0))
+        self.command = mocked(supervisor, 'bounded', side_effect=lambda command, timeout: Result(command, 0))
         self.getpid = mocked(supervisor.os, 'getpid', return_value=SUPERVISOR)
         self.getpgid = mocked(supervisor.os, 'getpgid', return_value=SUPERVISOR)
         self.getsid = mocked(supervisor.os, 'getsid', return_value=SUPERVISOR)
