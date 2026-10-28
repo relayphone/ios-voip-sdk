@@ -31,6 +31,8 @@ SOURCE_PATHS = ('Sources', 'Integrations', 'Expo', 'ExpoMedia', 'example', 'Pack
                 'discovery/sdk_m1_contracts_conformance.py', 'discovery/check_sdk_m1_contracts.py',
                 'discovery/check_expo_bridge.py', 'discovery/check_expo_plugin.cjs',
                 'discovery/check_expo_media.py', 'discovery/check_expo_media_config.py',
+                'discovery/build_expo_livekit.py', 'discovery/run_expo_livekit.py',
+                'discovery/expo_livekit_conformance.py', 'discovery/check_expo_livekit.py',
                 'discovery/check_inherited_launcher_group.py',
                 'Tools/cksim-notify.c',
                 'discovery/check_platform_shims.py', 'discovery/check_sdk_ownership.py',

@@ -9,8 +9,9 @@ The API design follows [RFC 0001](https://github.com/relayphone/expo-callkit-tel
 
 The Expo 58 example, native conversation/PushKit journeys, selected LiveKit Release
 build and device-code exclusions pass [SDK CI](https://github.com/relayphone/ios-voip-sdk/actions/runs/40693437174).
-Complete Expo healthy/stale media runtime journeys and M3 default-calling delivery
-remain open. The `dialRequest` event type is reserved; its native producer is not
+The [LiveKit runtime journeys](M2-LIVEKIT.md) exercise healthy hold/resume/end and
+stale-audio watchdog cleanup on the existing React Native audio engine. M3
+default-calling delivery remains open. The `dialRequest` event type is reserved; its native producer is not
 implemented on main. The [M-Stable checkpoint](../docs/progress/2026-10-28-m-stable.md)
 records the remaining acceptance and device-measurement limits.
 
