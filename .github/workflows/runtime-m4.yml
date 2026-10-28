@@ -58,12 +58,17 @@ jobs:
           python3 Tests/RuntimeEvents/test_filtered_policy.py
           python3 Tests/RuntimeEvents/test_filtered_acceptance.py
           python3 Tests/RuntimeEvents/test_lck_acceptance.py
+          python3 Tests/RuntimeEvents/run_lck_multi_policy.py
           python3 Tests/Inspector/test_bridge.py
+          python3 Tests/Inspector/test_filter_cases.py
           python3 -m unittest discover -s scripts/sim -p 'test_inspector_*.py'
           python3 Tests/Inspector/test_timing_references.py
           python3 Tests/Inspector/test_timing_receipts.py
           python3 Tests/Inspector/test_incoming_filter.py
           python3 Tests/Inspector/test_filter_model.py
+          python3 Tests/Inspector/test_lck_projection.py
+          python3 Tests/Inspector/test_lck_controls.py
+          python3 Tests/Inspector/test_lck_model.py
           python3 discovery/check_cli_controls.py
           python3 discovery/check_lck_provider_policy.py
       - name: Build simulator runtime and event fixture
@@ -100,7 +105,7 @@ jobs:
           export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/runtime-phase-lck.md"
           trap 'if [ -f "$GITHUB_STEP_SUMMARY" ]; then cat "$GITHUB_STEP_SUMMARY" >> "$runtime_original_summary" || :; fi' EXIT
           python3 Tests/RuntimeEvents/lck_acceptance.py --app "$RUNNER_TEMP/lck-fixture/LCKRuntimeFixture.app" \
-            --out "$RUNNER_TEMP/m4-lck" --filter-only --simulator "$CKSIM_TEST_SIMULATOR"
+            --out "$RUNNER_TEMP/m4-lck" --all --simulator "$CKSIM_TEST_SIMULATOR"
       - name: Follow an incoming call through the live SwiftUI inspector
         id: inspector
         run: |

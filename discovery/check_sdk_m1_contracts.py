@@ -152,7 +152,7 @@ def fixture(build, capture):
             runtime('transaction.delivered', kinds=['CXAnswerCallAction'], actionIDs=['native-cx-action'],
                     provider='provider-1', origin='application', requestID='native-request')
             runtime('action.deadline', actionID='native-cx-action', apiKind='livecommunicationkit',
-                    provider='provider-1', deadlineMS=WALL + 30_000, deadlineSeconds=30, expirySeconds=30)
+                    provider='provider-1', deadlineMS=WALL + 30_000, deadlineSeconds=30, expirySeconds=64)
             runtime('contract.pendingClock', at=sample['t_ms'], actionID=ACTION)
             if case == 'unhandled-accept':
                 runtime('action.settled', at=27_000, actionID='native-cx-action', fulfilled=True)
@@ -217,11 +217,11 @@ def later_system_end(rows, engine, settle=False):
     index = next(i for i, r in enumerate(engine) if r['event'] == 'action.settled') + 1
     engine[index:index] = [
         event('transaction.delivered', 27_002, kinds=['CXEndCallAction'], actionIDs=['native-system-end'],
-              provider='provider-1', origin='system', requestID='system'),
+              provider='provider-1', origin='failureCleanup', requestID='system'),
         event('action.deadline', 27_003, actionID='native-system-end', apiKind='livecommunicationkit',
-              provider='provider-1', deadlineMS=WALL + 57_002, deadlineSeconds=30, expirySeconds=30)]
+              provider='provider-1', deadlineMS=WALL + 57_002, deadlineSeconds=30, expirySeconds=5.2)]
     if settle:
-        engine.insert(index + 2, event('action.settled', 27_004, actionID='native-system-end', fulfilled=False, origin='system'))
+        engine.insert(index + 2, event('action.settled', 27_004, actionID='native-system-end', fulfilled=False, origin='failureCleanup'))
     renumber(engine)
 
 
@@ -302,6 +302,13 @@ class Controls(unittest.TestCase):
                                 call['pending']['deadlineMS'] = pending['deadlineMS']
             with self.subTest(case=case):
                 self.check(case, former_margin)
+
+    def test_join_reported_deadline_and_effective_expiry_remain_distinct(self):
+        for case in ('unhandled-accept', 'unhandled-fail'):
+            for field, value in (('deadlineSeconds', 64), ('expirySeconds', 30), ('expirySeconds', 65)):
+                with self.subTest(case=case, field=field, value=value):
+                    self.check(case, lambda rows, engine, field=field, value=value:
+                        next(row for row in engine if row['event'] == 'action.deadline').update({field: value}))
 
     def test_duplicate_command_return_is_not_settlement(self):
         def returned_later(rows, engine):
@@ -532,15 +539,19 @@ class Controls(unittest.TestCase):
             snapshot = next(r for r in rows if r['event'] == 'contract.snapshot' and r['wallTimeMS'] == WALL + 27_003)
             snapshot['conversations'][0]['pending'] = dict(id='lck-system-end', kind='end', origin='system', deadlineMS=WALL + 55_502)
         self.check('unhandled-fail', end_pending, succeeds=True)
-        for field, value in (('origin', 'application'), ('kinds', ['CXStartCallAction']), ('provider', 'unrelated'), ('requestID', 'app-request')):
+        for field, value in (('origin', 'system'), ('origin', 'application'), ('kinds', ['CXStartCallAction']), ('provider', 'unrelated'), ('requestID', 'app-request')):
             def unrelated(rows, engine, field=field, value=value):
                 later_system_end(rows, engine)
-                next(r for r in engine if r['event'] == 'transaction.delivered' and r['origin'] == 'system')[field] = value
+                next(r for r in engine if r['event'] == 'transaction.delivered' and r['origin'] == 'failureCleanup')[field] = value
             with self.subTest(field=field): self.check('unhandled-fail', unrelated)
         def end_cannot_substitute(rows, engine):
             later_system_end(rows, engine, settle=True)
             next(r for r in engine if r['event'] == 'action.settled')['fulfilled'] = True
         self.check('unhandled-fail', end_cannot_substitute)
+        def wrong_cleanup_settlement_origin(rows, engine):
+            later_system_end(rows, engine, settle=True)
+            next(r for r in engine if r['event'] == 'action.settled' and r['actionID'] == 'native-system-end')['origin'] = 'system'
+        self.check('unhandled-fail', wrong_cleanup_settlement_origin)
 
     def test_fail_requires_all_bound_diagnostics(self):
         for phase in ('policy-fire', 'platform-settle-enter', 'platform-settle-return', 'pending-state-published'):

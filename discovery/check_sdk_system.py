@@ -22,6 +22,8 @@ WALL = 1792627200000
 SESSION = dict(schemaVersion=1, runID='synthetic-system-run', pid=12345, bundleID=gate.BUNDLE,
                profile='ios-27.0', notification='dev.callkitsim.control.12345')
 SERVICES = 'PID\tStatus\tLabel\n-\t0\tUIKitApplication:' + gate.BUNDLE + '[synthetic-stopped]\n'
+EXPIRY_SECONDS = dict(join=64, end=5.3, hold=5.3, mute=30, tones=30)
+PROFILE = dict(lckActionDeadlineSeconds=30, lckMultiCall=dict(joinExpirySeconds=64, pauseEndExpirySeconds=5.3))
 
 
 def iso(value):
@@ -145,8 +147,11 @@ class Fixture:
         if control: control['response']['result'] = dict(actionIDs=ids)
         actions = []
         for identity, (kind, binding, params) in zip(ids, specs):
+            issued = WALL + self.clock
             deadline = self.native('action.deadline', actionID=identity, apiKind='livecommunicationkit',
-                                   deadlineMS=WALL + self.clock + 30000, deadlineSeconds=30, expirySeconds=30)
+                                   deadlineMS=issued + 30000, deadlineSeconds=30,
+                                   expirySeconds=EXPIRY_SECONDS[kind], issuedAtMS=issued,
+                                   expiryMS=issued + round(EXPIRY_SECONDS[kind] * 1000))
             cap = {'hold': 5300, 'end': 5300, 'join': 64000}.get(kind)
             selected = min(deadline['deadlineMS'], WALL + delivered['t_ms'] + cap) if cap else deadline['deadlineMS']
             action = dict(id=identity, kind=kind, binding=binding, params=params, origin=origin,
@@ -171,7 +176,7 @@ class Fixture:
 
     def settle(self, actions):
         for action in actions:
-            self.native('action.settled', actionID=action['id'], fulfilled=True, origin=action['origin'])
+            self.native('action.settled', actionID=action['id'], fulfilled=True, expired=False, origin=action['origin'])
             call = self.calls.get(action['binding']['conversationID'])
             if action['origin'] == 'muteEcho' or not call or action['kind'] == 'mute' and not action['handled']: continue
             call.pop('pending', None)
@@ -266,11 +271,18 @@ class Fixture:
         self.app('sdk.result', success=True)
         self.app('done')
         return dict(rows=self.rows, engine=self.engine, index=self.index, controls=self.controls,
-                    fixture_commands=self.commands, case=self.case, expected_d5=self.expected, launch_receipt=self.launch_receipt)
+                    fixture_commands=self.commands, case=self.case, expected_d5=self.expected, profile=PROFILE,
+                    launch_receipt=self.launch_receipt)
 
 
 def first(values, event):
     return next(value for value in values if value['event'] == event)
+
+
+def native_action(value, kind, event='action.deadline'):
+    transaction = next(row for row in value['engine'] if row['event'] == 'transaction.delivered' and gate.NATIVE[kind] in row['kinds'])
+    identity = transaction['actionIDs'][transaction['kinds'].index(gate.NATIVE[kind])]
+    return next(row for row in value['engine'] if row['event'] == event and row.get('actionID') == identity)
 
 
 def duplicate_answered_event(value):
@@ -307,12 +319,12 @@ def move_before(value, row, target):
             if event['event'] == 'report.incoming' and event.get('pushID') == binding['pushID'])
 
 
-def expired_settlement(value):
+def expired_settlement(value, effective=False, offset_ms=0):
     ready = first(value['rows'], 'system.ready')
     marker = first(value['engine'], 'system.clock')
     deadline = first(value['engine'], 'action.deadline')
     settled = first(value['engine'], 'action.settled')
-    elapsed = deadline['deadlineMS'] - ready['wallTimeMS'] + marker['t_ms'] - 1
+    elapsed = deadline['expiryMS' if effective else 'deadlineMS'] - ready['wallTimeMS'] + marker['t_ms'] - 1 + offset_ms
     difference = elapsed - settled['t_ms']
     for event in value['engine'][value['engine'].index(settled):]: event['t_ms'] += difference
 
@@ -1180,7 +1192,29 @@ def controls():
     check('mute-hook-stays-false', 'mute-echo', lambda value: [row.update(muted=False) for row in value['rows'] if row['event'] == 'system.hook'], 'mute projection/hook did not round trip')
     check('decline-connected', 'decline', lambda value: next(row for row in value['rows'] if row['event'] == 'sdk.snapshot' and row['conversations'])['conversations'][0].update(status='connected'), 'declined call connected')
     check('native-action-id', 'answer-end', lambda value: value['controls'][1]['response']['result'].update(actionIDs=[str(uuid.UUID(int=999)).upper()]), 'system native action binding/origin differs')
+    for kind, case in (('join', 'answer-end'), ('hold', 'hold-accept'), ('end', 'decline')):
+        check('old-30-expiry-' + kind, case,
+              lambda value, kind=kind: native_action(value, kind).update(expirySeconds=30), 'unsettled/expired/wrong native deadline')
+    for kind in ('mute', 'tones'):
+        check('non-target-expiry-' + kind, 'mute-echo',
+              lambda value, kind=kind: native_action(value, kind).update(expirySeconds=64), 'unsettled/expired/wrong native deadline')
+    check('arbitrary-join-expiry', 'answer-end', lambda value: native_action(value, 'join').update(expirySeconds=65), 'unsettled/expired/wrong native deadline')
+    check('altered-advertised-deadline', 'answer-end', lambda value: native_action(value, 'join').update(deadlineSeconds=64), 'unsettled/expired/wrong native deadline')
+    check('fulfilled-but-expired', 'answer-end', lambda value: native_action(value, 'join', 'action.settled').update(expired=True), 'unsettled/expired/wrong native deadline')
+    for field in ('issuedAtMS', 'expiryMS'):
+        check('native-' + field + '-missing', 'answer-end',
+              lambda value, field=field: native_action(value, 'join').pop(field), 'unsettled/expired/wrong native deadline')
+        for invalid in (True, '0', None):
+            check('native-' + field + '-type-' + str(invalid), 'answer-end',
+                  lambda value, field=field, invalid=invalid: native_action(value, 'join').update({field: invalid}),
+                  'unsettled/expired/wrong native deadline')
+        check('native-' + field + '-mismatch-1ms', 'answer-end',
+              lambda value, field=field: native_action(value, 'join').update({field: native_action(value, 'join')[field] + 1}),
+              'unsettled/expired/wrong native deadline')
     check('settlement-at-expiry', 'answer-end', expired_settlement, 'native settlement reached platform expiry')
+    check('settlement-at-effective-end-expiry', 'decline', lambda value: expired_settlement(value, effective=True), 'native settlement reached platform expiry')
+    check('settlement-after-reported-expiry-1ms', 'answer-end', lambda value: expired_settlement(value, offset_ms=1), 'native settlement reached platform expiry')
+    check('settlement-after-effective-end-expiry-1ms', 'decline', lambda value: expired_settlement(value, effective=True, offset_ms=1), 'native settlement reached platform expiry')
     check('effective-margin-absent', 'answer-end', lambda value: first(value['rows'], 'system.handler').update(deadline=iso(first(value['engine'], 'action.deadline')['deadlineMS'])), 'handler deadline differs from selected cap and margin')
     for kind, case in (('hold', 'hold-accept'), ('end', 'answer-end')):
         check('effective-' + kind + '-old-advertised-only', case,
