@@ -115,6 +115,10 @@ def documentation(path):
 
 
 def gate(results, expected):
+    results = dict(results)
+    coverage = results.pop('nightly-coverage', None)
+    if coverage is not None and coverage.get('result') != 'success':
+        raise ValueError('Nightly coverage check did not succeed')
     if results.get('changes', {}).get('result') != 'success':
         raise ValueError('Change selection did not succeed')
     if 'sdk-native' in expected and 'sdk-native' not in results:
