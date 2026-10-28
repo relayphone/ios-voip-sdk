@@ -5,11 +5,27 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: simulator-discovery-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  nightly-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      skip: ${{ steps.coverage.outputs.skip }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: coverage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/nightly_coverage.py simulator-discovery.yml
   probe:
+    needs: nightly-coverage
+    if: needs.nightly-coverage.outputs.skip != 'true'
     strategy:
       fail-fast: false
       matrix:

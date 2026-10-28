@@ -75,15 +75,18 @@ class DocsPushWorkflowTests(unittest.TestCase):
         for name in expected_native:
             flag = optional.get(name, 'sdk')
             with self.subTest(job=name):
-                self.assertRegex(sdk[name], r"(?m)^    if: needs\.changes\.outputs\." + flag + r" == 'true'$" )
+                self.assertIn("needs.changes.outputs." + flag + " == 'true'", sdk[name])
+                if name != 'offline-controls':
+                    self.assertIn("needs.nightly-coverage.outputs.skip != 'true'", sdk[name])
+                    self.assertIn("!github.event.pull_request.draft", sdk[name])
                 self.assertRegex(sdk[name], r'(?m)^    needs: (?:\[[^\n]*\bchanges\b[^\n]*\]|changes)\s*$')
 
         aggregate = sdk['plain-simulator']
-        self.assertRegex(aggregate, r'(?m)^    if: always\(\)$')
+        self.assertIn('if: always()', aggregate)
         needs = re.search(r'(?m)^    needs: \[([^\]]+)\]$', aggregate)
         self.assertIsNotNone(needs)
         self.assertEqual({value.strip() for value in needs.group(1).split(',')},
-                         expected_native | {'changes'})
+                         expected_native | {'changes', 'nightly-coverage'})
         self.assertIn('CI_NEEDS_JSON: ${{ toJSON(needs) }}', aggregate)
         self.assertIn('CI_EXPECTED_JSON: ${{ needs.changes.outputs.sdk_plan }}', aggregate)
         self.assertRegex(aggregate, r'python3 scripts/ci/changes\.py gate(?:;|\s|$)')
@@ -94,11 +97,12 @@ class DocsPushWorkflowTests(unittest.TestCase):
         runtime_native = {name for name, block in runtime.items()
                           if re.search(r'^    runs-on: (?:xcode-27|macos-26)\s*$', block, re.M)}
         self.assertEqual(runtime_native, {'runtime-native'})
-        self.assertRegex(runtime['runtime-native'], r'(?m)^    needs: changes$')
-        self.assertRegex(runtime['runtime-native'], r"(?m)^    if: needs\.changes\.outputs\.runtime == 'true'$")
+        self.assertIn('needs: [changes, nightly-coverage]', runtime['runtime-native'])
+        self.assertIn("needs.changes.outputs.runtime == 'true'", runtime['runtime-native'])
+        self.assertIn("!github.event.pull_request.draft", runtime['runtime-native'])
         runtime_gate = runtime['runtime-events']
-        self.assertRegex(runtime_gate, r'(?m)^    if: always\(\)$')
-        self.assertRegex(runtime_gate, r'(?m)^    needs: \[changes, runtime-native\]$')
+        self.assertIn('if: always()', runtime_gate)
+        self.assertRegex(runtime_gate, r'(?m)^    needs: \[changes, nightly-coverage, runtime-native\]$')
         self.assertIn('CI_NEEDS_JSON: ${{ toJSON(needs) }}', runtime_gate)
         self.assertIn('CI_EXPECTED_JSON: ${{ needs.changes.outputs.runtime_plan }}', runtime_gate)
         self.assertRegex(runtime_gate, r'python3 scripts/ci/changes\.py gate(?:;|\s|$)')

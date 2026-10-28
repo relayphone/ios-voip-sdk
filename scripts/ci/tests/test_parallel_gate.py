@@ -73,7 +73,7 @@ class ParallelMatrixTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[3]
         jobs, _ = workflow_parts((root / '.github/workflows/sdk-m0.yml').read_text())
         for job in NATIVE:
-            self.assertIn("if: needs.changes.outputs.sdk == 'true'", jobs[job])
+            self.assertIn("needs.changes.outputs.sdk == 'true'", jobs[job])
             self.assertIn(job, jobs['plain-simulator'])
         self.assertIn('fromJSON(needs.changes.outputs.matrix)', jobs['journeys'])
         selection = (root / '.github/workflows/ci-changes.yml').read_text()

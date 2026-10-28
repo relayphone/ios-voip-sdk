@@ -6,10 +6,12 @@ import json
 import re
 from pathlib import Path
 import runpy
-import subprocess
+import sys
 import uuid
 
 import sdk_m0_conformance as m0
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts/sim'))
+from sim import bounded
 from sdk_m1_conformance import read_journal, timestamp_ms, deadline_oracles
 from device_oracles import d5_compositions, check_deadline
 from summarize import EvidenceError, load, one, require
@@ -358,7 +360,7 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
 
 def record_manifest(root, parent):
     manifest = json.loads((parent / 'manifest.json').read_text())
-    result = subprocess.run(['xcrun', 'simctl', 'list', 'devices', '-j'], capture_output=True, timeout=30)
+    result = bounded(['xcrun', 'simctl', 'list', 'devices', '-j'], 30)
     require(result.returncode == 0 and not result.stderr, 'cannot independently verify owned simulator deletion')
     with (root / 'cleanup-inventory.json').open('xb') as stream: stream.write(result.stdout)
     devices = json.loads(result.stdout)['devices']

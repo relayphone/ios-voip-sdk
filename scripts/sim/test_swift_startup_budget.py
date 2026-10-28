@@ -14,6 +14,7 @@ import test_swift_livekit_setup as setup
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'discovery'))
 import run_scenario
+from sim import Result
 import run_swift_livekit as runner
 
 
@@ -60,9 +61,10 @@ class SwiftSupervisorBudgetTests(unittest.TestCase):
                 self.assertEqual((target, signum), (process.pid, signal.SIGTERM))
                 process.returncode = 0
 
-            def terminate(arguments, **options):
+            def terminate(arguments, timeout):
+                self.assertEqual(timeout, 10)
                 process.returncode = 0
-                return subprocess.CompletedProcess(arguments, 0, b'', b'')
+                return Result(arguments, 0)
 
             output, receipt = root / 'capture.log', root / 'capture.receipt.json'
             with patch.object(run_scenario.time, 'monotonic', clock.monotonic), \
@@ -70,7 +72,7 @@ class SwiftSupervisorBudgetTests(unittest.TestCase):
                  patch.object(run_scenario.threading, 'Thread', NoNativeThread), \
                  patch.object(run_scenario.tty, 'setraw'), \
                  patch.object(run_scenario.subprocess, 'Popen', return_value=process) as spawn, \
-                 patch.object(run_scenario.subprocess, 'run', side_effect=terminate), \
+                 patch.object(run_scenario, 'bounded', side_effect=terminate), \
                  patch.object(run_scenario.os, 'getpid', return_value=supervisor), \
                  patch.object(run_scenario.os, 'getpgid', return_value=supervisor), \
                  patch.object(run_scenario.os, 'getsid', return_value=supervisor), \
