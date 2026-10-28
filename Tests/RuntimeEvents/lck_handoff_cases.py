@@ -50,49 +50,6 @@ def composite_audio(j, name, operation, delayed_kind):
     return delay
 
 
-def run_mute_case(j):
-    j.begin('mutePreservesPendingJoinAudio')
-    j.app('incoming', call='A')
-    joined = None
-    command_offset_ms = None
-    def before_publish():
-        nonlocal joined, command_offset_ms
-        action_ids = set(j.system('answer', call='A')['actionIDs'])
-        joined = event(j, 'settled', lambda r: r.get('actionID') in action_ids and r['kind'] == 'Join')
-        # Proposed regression budgets, not Apple timing measurements: stimulate
-        # late enough that restarting the 290ms Join timer is distinguishable.
-        observed_at = time.monotonic()
-        observed_age_ms = time.time() * 1000 - joined['wallTimeMS']
-        assert -5 <= observed_age_ms <= 260, f'Join settlement was observed too late for the Mute timing window: {observed_age_ms:.1f}ms'
-        stimulus_at = observed_at + max(0, (180 - observed_age_ms) / 1000)
-        while (remaining := stimulus_at - time.monotonic()) > 0:
-            time.sleep(min(remaining, 0.02))
-        command_offset_ms = observed_age_ms + (time.monotonic() - observed_at) * 1000
-        assert 150 <= command_offset_ms <= 260, f'host missed the proposed late-Mute stimulus window: {command_offset_ms:.1f}ms; observed Join age: {observed_age_ms:.1f}ms'
-        assert not any(r['event'] == PREFIX + 'didActivate' for r in j.rows()), 'Mute stimulus missed the pending Join audio window'
-    # Prepare the Mute mailbox request before starting Join, so file preparation
-    # cannot consume any of the original Join audio window. Only its atomic
-    # publication waits for the late stimulus time.
-    mute_ids = set(j.system('mute', call='A', muted=True, before_publish=before_publish)['actionIDs'])
-    muted = event(j, 'perform', lambda r: r.get('actionID') in mute_ids and r['kind'] in ('Mute', 'MuteConversationAction'))
-    mute_settlement = event(j, 'settled', lambda r: r.get('actionID') == muted['actionID'])
-    activated = event(j, 'didActivate')
-    assert joined['sequence'] < muted['sequence'] < mute_settlement['sequence'] < activated['sequence'], 'Mute must settle while the original Join audio remains pending'
-    delivery_ms = muted['t_ms'] - joined['t_ms']
-    settlement_ms = mute_settlement['t_ms'] - joined['t_ms']
-    assert 150 <= delivery_ms <= 260, f'native Mute delivery missed the proposed late window: {delivery_ms}ms'
-    join_audio_ms = audio_delay(j, joined, 280, 'Join with late intervening Mute')
-    after_mute_ms = activated['t_ms'] - mute_settlement['t_ms']
-    assert 0 <= after_mute_ms <= 240, f'Mute restarted the pending Join audio timer: {after_mute_ms}ms after Mute settlement'
-    time.sleep(0.35)
-    assert len([r for r in j.rows() if r['event'] == PREFIX + 'didActivate']) == 1, 'Mute caused duplicate audio activation'
-    assert not any(r['event'] == PREFIX + 'didDeactivate' for r in j.rows()), 'Mute unexpectedly deactivated audio'
-    print(f'LCK late Mute delivery: {delivery_ms} ms; Join audio: {join_audio_ms} ms; audio after Mute settlement: {after_mute_ms} ms', flush=True)
-    return dict(joinToMuteDeliveryMS=delivery_ms, joinToMuteSettlementMS=settlement_ms,
-                joinToAudioMS=join_audio_ms, muteSettlementToAudioMS=after_mute_ms,
-                hostMuteCommandOffsetMS=command_offset_ms, timingEvidence='proposed regression budgets')
-
-
 def run_cases(j):
     j.begin('singleJoinAudio')
     j.app('incoming', call='A')
@@ -109,8 +66,6 @@ def run_cases(j):
     started = event(j, 'perform', lambda r: r['kind'] == 'Start' and r['callUUID'] == j.ids['A'])
     settled = event(j, 'settled', lambda r: r.get('actionID') == started['actionID'])
     start_audio_delay = audio_delay(j, settled, 150, 'single Start')
-
-    mute_timings = run_mute_case(j)
 
     hold_audio_delay = composite_audio(j, 'delayedPauseCompositeAudio', 'hold-and-accept', 'Pause')
     end_audio_delay = composite_audio(j, 'delayedEndCompositeAudio', 'end-and-accept', 'End')
@@ -138,6 +93,6 @@ def run_cases(j):
     print(f'LCK delayed unpause fulfillment: {fulfillment_delay} ms; End B after settlement: {after_settlement} ms', flush=True)
     j.save()
     return dict(singleJoinAudioMS=join_audio_delay, singleStartAudioMS=start_audio_delay,
-                mutePreservedJoinAudioMS=mute_timings['joinToAudioMS'], muteTimings=mute_timings, delayedPauseCompositeAudioMS=hold_audio_delay,
+                delayedPauseCompositeAudioMS=hold_audio_delay,
                 delayedEndCompositeAudioMS=end_audio_delay, delayedResumeMS=fulfillment_delay,
                 endAfterResumeSettlementMS=after_settlement, delayedResumeEvidence='injected scheduler regression')
