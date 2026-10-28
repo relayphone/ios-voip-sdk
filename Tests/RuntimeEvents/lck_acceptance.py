@@ -220,15 +220,13 @@ class Journey:
         print('LCK native case: ' + name, flush=True)
 
     @staticmethod
-    def publish(folder, value, *, before_publish=None):
+    def publish(folder, value):
         folder.mkdir(parents=True, exist_ok=True)
         temporary = folder / (value['id'] + '.tmp')
         with temporary.open('x') as output:
             os.chmod(temporary, 0o600)
             json.dump(value, output)
         try:
-            if before_publish is not None:
-                before_publish()
             temporary.rename(temporary.with_suffix('.json'))
         finally:
             temporary.unlink(missing_ok=True)
@@ -242,7 +240,7 @@ class Journey:
             self.ids[fields['call']] = result['callUUID']
         return result
 
-    def system(self, operation, *, call='B', active=None, held=None, expect_success=True, before_publish=None, **fields):
+    def system(self, operation, *, call='B', active=None, held=None, expect_success=True, **fields):
         request = dict(id=str(uuid.uuid4()).upper(), operation=operation,
                        **{k: self.session[k] for k in ('runID', 'pid', 'bundleID')}, **fields)
         if call:
@@ -252,10 +250,7 @@ class Journey:
         if held:
             request['heldCallUUID'] = self.ids[held]
         mailbox = self.channel / self.session['runID']
-        if before_publish is None:
-            self.publish(mailbox / 'requests', request)
-        else:
-            self.publish(mailbox / 'requests', request, before_publish=before_publish)
+        self.publish(mailbox / 'requests', request)
         response = mailbox / 'responses' / (request['id'] + '.json')
         deadline = time.monotonic() + 10
         while not response.exists() and time.monotonic() < deadline:

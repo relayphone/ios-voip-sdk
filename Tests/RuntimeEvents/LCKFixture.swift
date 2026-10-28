@@ -45,6 +45,9 @@ final class LCKFixture: NSObject, UIApplicationDelegate, @preconcurrency Convers
   func log(_ event: String, _ fields: [String: Any] = [:]) {
     var value = fields
     value["main"] = Thread.isMainThread
+    #if CKSIM_FIXTURE_CLOCK
+    if let time = RuntimeEngine.existing()?.fixtureTimeMS() { value["fixtureTimeMS"] = time }
+    #endif
     CKSimEmit("lck.fixture." + event, value)
   }
   func snapshot(_ label: String) {
@@ -74,6 +77,20 @@ final class LCKFixture: NSObject, UIApplicationDelegate, @preconcurrency Convers
     do {
       var action: ConversationAction?
       switch op {
+      #if CKSIM_FIXTURE_CLOCK
+      case "clock":
+        guard RuntimeEngine.existing()?.startFixtureClock() == true else { throw CocoaError(.validationMissingMandatoryProperty) }
+      case "advance":
+        guard let milliseconds = value["ms"] as? Int, (0...60000).contains(milliseconds),
+              let engine = RuntimeEngine.existing(), let start = engine.fixtureTimeMS() else { throw CocoaError(.validationMissingMandatoryProperty) }
+        let target = start + milliseconds
+        while true {
+          // Drain each deadline's complete callback chain before the next job.
+          while engine.fixtureCallbacksPending() { await Task.yield() }
+          guard let fired = engine.stepFixtureClock(toward: target) else { throw CocoaError(.validationMissingMandatoryProperty) }
+          if !fired { break }
+        }
+      #endif
       case "policy":
         rules = value["rules"] as? [String: [String: Any]] ?? [:]
         counts = [:]
