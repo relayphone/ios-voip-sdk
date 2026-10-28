@@ -77,7 +77,7 @@ class ForegroundControlTests(unittest.TestCase):
         self.spawned.set()
         return process
 
-    def start_writer(self, transform=lambda value: value, *, once=False):
+    def start_writer(self):
         def publish():
             self.spawned.wait(2)
             while not self.stop.is_set():
@@ -86,18 +86,16 @@ class ForegroundControlTests(unittest.TestCase):
                     request = json.loads(request_path.read_text())
                     value = dict(request, applicationState='active', publicationID=str(uuid.uuid4()),
                                  wallTimeMS=int(time.time() * 1000), uptimeNS=time.monotonic_ns(), activeGeneration=0)
-                    value = transform(value)
                     self.write('ack', value)
                     self.publications.append(value)
-                    if once:
-                        return
                 self.stop.wait(.005)
         self.writer = threading.Thread(target=publish)
         self.writer.start()
 
     def activate(self, **kwargs):
+        clock = kwargs.pop('clock', time)
         with patch.object(subprocess, 'Popen', side_effect=self.spawn):
-            return activate_existing(DEVICE, self.identity, 'incoming', time.monotonic() + kwargs.pop('budget', .25),
+            return activate_existing(DEVICE, self.identity, 'incoming', clock.monotonic() + kwargs.pop('budget', .25),
                                      consumer_started_wall_ms=kwargs.pop('consumer_started_wall_ms', self.started),
                                      log=self.root / 'launch.log', **kwargs)
 
@@ -115,21 +113,34 @@ class ForegroundControlTests(unittest.TestCase):
         # and cleanup remain real.
         with patch.object(foreground_control, 'time', clock), \
              patch.object(inspector_startup, 'time', clock), \
-             patch.object(inspector_startup.threading, 'Timer', return_value=Mock(ident=None)):
+             patch.object(inspector_startup.threading, 'Timer', return_value=Mock(ident=None)), \
+             patch.dict(RUNNER['foreground_control'].__globals__, time=clock):
             yield clock
 
-    def publish_ack(self, elapsed=0):
+    def publish_ack(self, elapsed=0, *, transform=lambda value: value):
         request = json.loads((self.documents / 'cksim-foreground-phase-request.json').read_text())
         value = dict(request, applicationState='active', publicationID=str(uuid.uuid4()),
                      wallTimeMS=self.started + round(elapsed * 1000), uptimeNS=time.monotonic_ns(), activeGeneration=0)
+        value = transform(value)
         self.write('ack', value)
         self.publications.append(value)
 
+    @contextmanager
+    def active_receipts(self, transform=lambda value: value):
+        import foreground_control
+        read = foreground_control._read
+        def publish_before_read(path):
+            if path.name.endswith('-ack.json'):
+                clock.now += .01
+                self.publish_ack(clock.now, transform=transform)
+            return read(path)
+        with self.controlled_clock() as clock, \
+             patch.object(foreground_control, '_read', side_effect=publish_before_read):
+            yield clock
+
     def test_native_active_publication_resolves_pending_host(self):
-        self.start_writer()
-        with patch.object(subprocess, 'Popen', side_effect=self.spawn):
-            result = activate_existing(DEVICE, self.identity, 'incoming', time.monotonic() + .3,
-                                       consumer_started_wall_ms=self.started, log=self.root / 'launch.log')
+        with self.active_receipts() as clock:
+            result = self.activate(clock=clock, budget=.3)
         self.assertEqual({key: result[key] for key in self.identity}, self.identity)
         self.assertTrue(self.publications)
         self.assertEqual(self.commands, [['xcrun', 'simctl', 'launch', DEVICE, BUNDLE]])
@@ -140,11 +151,9 @@ class ForegroundControlTests(unittest.TestCase):
             os.killpg(outcome['hostPID'], 0)
 
     def test_boolean_schema_cannot_impersonate_native_identity(self):
-        self.start_writer(lambda value: dict(value, schemaVersion=True))
-        with patch.object(subprocess, 'Popen', side_effect=self.spawn):
+        with self.active_receipts(lambda value: dict(value, schemaVersion=True)) as clock:
             with self.assertRaisesRegex(RuntimeError, 'invalid|identity'):
-                activate_existing(DEVICE, self.identity, 'incoming', time.monotonic() + .3,
-                                  consumer_started_wall_ms=self.started, log=self.root / 'launch.log')
+                self.activate(clock=clock, budget=.3)
 
     def test_legacy_rpc_wait_times_out_despite_independent_active_publications(self):
         self.write('request', dict(self.identity, phase='incoming', challenge=str(uuid.uuid4())))
@@ -156,11 +165,12 @@ class ForegroundControlTests(unittest.TestCase):
         self.assertEqual(self.commands, [['xcrun', 'simctl', 'launch', DEVICE, BUNDLE]])
 
     def test_missing_or_foreign_challenge_cannot_qualify(self):
-        with self.assertRaises(RuntimeError):
-            self.activate(budget=.08)
-        self.start_writer(lambda value: dict(value, challenge=str(uuid.uuid4())))
-        with self.assertRaises(RuntimeError):
-            self.activate(budget=.12)
+        with self.controlled_clock() as clock:
+            with self.assertRaises(RuntimeError):
+                self.activate(clock=clock, budget=.08)
+        with self.active_receipts(lambda value: dict(value, challenge=str(uuid.uuid4()))) as clock:
+            with self.assertRaises(RuntimeError):
+                self.activate(clock=clock, budget=.12)
         self.assertEqual(len(self.commands), 2)
         self.assertFalse(json.loads((self.root / 'launch.json').read_text())['qualifiedNativeAcknowledgement'])
 
@@ -171,31 +181,27 @@ class ForegroundControlTests(unittest.TestCase):
                      dict(session=dict(self.session, schemaVersion=True)))
         for mutation in mutations:
             with self.subTest(mutation=mutation):
-                self.start_writer(lambda value: dict(value, **mutation))
-                try:
+                with self.active_receipts(lambda value: dict(value, **mutation)) as clock:
                     with self.assertRaisesRegex(RuntimeError, 'invalid|foreign|stale'):
-                        self.activate()
-                finally:
-                    self.stop.set()
-                    self.writer.join(timeout=2)
-                    self.stop.clear()
+                        self.activate(clock=clock)
 
     def test_original_deadline_and_native_consumer_budget_are_not_reset(self):
-        self.start_writer()
-        with self.assertRaisesRegex(RuntimeError, 'budget'):
-            self.activate(consumer_started_wall_ms=self.started - 25001)
-        self.assertEqual(self.commands, [])
-        # A blocked read crossing the caller's short absolute deadline cannot qualify.
         import foreground_control
-        original_read = foreground_control._read
-        def delayed(path):
-            value = original_read(path)
-            if path.name.endswith('-ack.json'):
-                time.sleep(.15)
-            return value
-        with patch.object(foreground_control, '_read', side_effect=delayed):
+        with self.active_receipts() as clock:
             with self.assertRaisesRegex(RuntimeError, 'budget'):
-                self.activate(budget=.1)
+                self.activate(clock=clock, consumer_started_wall_ms=self.started - 25001)
+            self.assertEqual(self.commands, [])
+            # A blocked read crossing the caller's short absolute deadline cannot qualify.
+            original_read = foreground_control._read
+            def delayed(path):
+                value = original_read(path)
+                if path.name.endswith('-ack.json'):
+                    self.assertIsNotNone(value)
+                    clock.now += .15
+                return value
+            with patch.object(foreground_control, '_read', side_effect=delayed):
+                with self.assertRaisesRegex(RuntimeError, 'budget'):
+                    self.activate(clock=clock, budget=.1)
 
     def test_frozen_ack_cannot_prove_active_after_owned_host_reap(self):
         def spawn_with_frozen_ack(command, **kwargs):
@@ -218,8 +224,8 @@ class ForegroundControlTests(unittest.TestCase):
         self.identity = dict(self.identity, bundleID=self.session['bundleID'], pid=self.session['pid'],
                              nonce=self.session['runID'], startedWallTimeMS=self.started - 60000)
         self.write('identity', self.identity)
-        self.start_writer()
-        result = self.activate()
+        with self.active_receipts() as clock:
+            result = self.activate(clock=clock)
         self.assertEqual(result['startedWallTimeMS'], self.started - 60000)
         self.assertEqual(result['pid'], self.session['pid'])
 
@@ -269,10 +275,10 @@ class ForegroundControlTests(unittest.TestCase):
         connection = SimpleNamespace(is_alive=lambda: True)
         factory = RUNNER['foreground_control']
         activate = RUNNER['phase_activate_existing']
-        self.start_writer()
-        with patch.object(subprocess, 'Popen', side_effect=self.spawn), \
+        with self.active_receipts() as clock, \
+             patch.object(subprocess, 'Popen', side_effect=self.spawn), \
              patch.dict(factory.__globals__, phase_activate_existing=Mock(wraps=activate)):
-            foreground = factory(DEVICE, self.session, channel, time.monotonic() + .3, out, probe, connection)
+            foreground = factory(DEVICE, self.session, channel, clock.monotonic() + .3, out, probe, connection)
             foreground(self.session['bundleID'], self.session['pid'])
             arguments = factory.__globals__['phase_activate_existing'].call_args
         self.assertEqual(arguments.kwargs['consumer_started_wall_ms'], self.started)
@@ -295,37 +301,22 @@ class ForegroundControlTests(unittest.TestCase):
                 self.child_code = code
                 self.child_exits = code.startswith('raise')
                 self.header_expected = not self.child_exits
-                self.start_writer()
-                try:
+                with self.active_receipts() as clock:
                     with self.assertRaisesRegex(RuntimeError, 'failed|conflict'):
-                        self.activate()
-                finally:
-                    self.stop.set()
-                    self.writer.join(timeout=2)
-                    self.stop.clear()
+                        self.activate(clock=clock)
 
     def test_zero_exit_requires_matching_pid_header(self):
         self.child_code = 'pass'
         self.child_exits = True
-        self.start_writer()
-        with self.assertRaisesRegex(RuntimeError, 'conflict'):
-            self.activate()
+        with self.active_receipts() as clock:
+            with self.assertRaisesRegex(RuntimeError, 'conflict'):
+                self.activate(clock=clock)
 
     def test_zero_exit_with_matching_original_pid_and_fresh_active_succeeds(self):
-        import foreground_control
         self.child_code = 'print("' + BUNDLE + ': 42",flush=True)'
         self.child_exits = True
-        read = foreground_control._read
-        def publish_before_read(path):
-            if path.name.endswith('-ack.json'):
-                clock.now += .01
-                self.publish_ack(clock.now)
-            return read(path)
-        with self.controlled_clock() as clock, \
-             patch.object(foreground_control, '_read', side_effect=publish_before_read), \
-             patch.object(subprocess, 'Popen', side_effect=self.spawn):
-            result = activate_existing(DEVICE, self.identity, 'incoming', .25,
-                                       consumer_started_wall_ms=self.started, log=self.root / 'launch.log')
+        with self.active_receipts() as clock:
+            result = self.activate(clock=clock)
         self.assertEqual(result['pid'], 42)
         outcome = json.loads((self.root / 'launch.json').read_text())
         self.assertEqual(outcome['hostExitCode'], 0)
@@ -341,28 +332,29 @@ class ForegroundControlTests(unittest.TestCase):
         def changed(process):
             real_reap(process)
             self.write('identity', dict(self.identity, startedWallTimeMS=self.started - 1))
-        self.start_writer()
-        with patch.object(inspector_startup, 'reap_group', side_effect=changed):
+        with self.active_receipts() as clock, \
+             patch.object(inspector_startup, 'reap_group', side_effect=changed):
             with self.assertRaisesRegex(RuntimeError, 'identity changed'):
-                self.activate()
+                self.activate(clock=clock)
         self.write('identity', self.identity)
         def uncertain(process):
             real_reap(process)
             raise RuntimeError('group absence uncertain')
-        with patch.object(inspector_startup, 'reap_group', side_effect=uncertain):
+        with self.active_receipts() as clock, \
+             patch.object(inspector_startup, 'reap_group', side_effect=uncertain):
             with self.assertRaisesRegex(RuntimeError, 'uncertain'):
-                self.activate()
+                self.activate(clock=clock)
 
     def test_cancellation_reaps_owned_host_and_never_returns_active_success(self):
-        self.start_writer()
         sent = []
         def alive():
             if not sent:
                 sent.append(True)
                 os.kill(os.getpid(), signal.SIGINT)
             return True
-        with self.assertRaises(KeyboardInterrupt):
-            self.activate(bridge_alive=alive)
+        with self.active_receipts() as clock:
+            with self.assertRaises(KeyboardInterrupt):
+                self.activate(clock=clock, bridge_alive=alive)
         self.assertEqual(len(self.commands), 1)
         with self.assertRaises(ProcessLookupError):
             os.killpg(self.processes[0].pid, 0)
@@ -375,12 +367,14 @@ class ForegroundControlTests(unittest.TestCase):
         identity_path = self.documents / 'cksim-foreground-phase-identity.json'
         identity_path.rename(self.root / 'identity.json')
         identity_path.symlink_to(self.root / 'identity.json')
-        with self.assertRaises(ValueError):
-            self.activate()
+        with self.controlled_clock() as clock:
+            with self.assertRaises(ValueError):
+                self.activate(clock=clock)
         identity_path.unlink()
         self.write('identity', dict(self.identity, session=dict(self.session, schemaVersion=True)))
-        with self.assertRaisesRegex(RuntimeError, 'identity'):
-            self.activate()
+        with self.controlled_clock() as clock:
+            with self.assertRaisesRegex(RuntimeError, 'identity'):
+                self.activate(clock=clock)
         self.assertEqual(self.commands, [])
 
 
