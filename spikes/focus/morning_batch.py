@@ -6,18 +6,21 @@ import os
 from pathlib import Path
 import re
 import signal
+import shutil
 import subprocess
 import sys
 import time
 import uuid
+from work_path import (default_work, legacy_dir, legacy_hashes, legacy_snapshot, LEGACY_FILES,
+                       validate_clean_journal, journal_restore_binding, LEGACY_RECEIPT, LEGACY_RESTORE_RECEIPT)
 
 HERE = Path(__file__).resolve().parent
 RUNNER = HERE / "run.sh"
-DEFAULT_UNKNOWN = "+15555550200"
+DEFAULT_UNKNOWN = "+447700900123"
 TEAM = "85A9MS6428"
 
 
-def make_plan(unknown):
+def make_plan(unknown, quiet=False):
     """Give every sample a stable identity, so an interrupted attempt is never replayed."""
     if not re.fullmatch(r"\+[1-9][0-9]{7,14}", unknown) or unknown == "+15555550199":
         raise ValueError("unknown caller must be a different E.164 test handle")
@@ -25,8 +28,14 @@ def make_plan(unknown):
 
     def add(label, row, args=(), samples=1):
         for sample in range(1, samples + 1):
-            out.append({"id": f"{label}-{sample:02}", "row": row,
-                        "args": [*args, "--keep-setup"], "sample": sample})
+            skip = quiet and (row == "L15" or label == "microphone-positive")
+            arguments = [*args, "--keep-setup"]
+            if quiet:
+                arguments = [arg for arg in arguments if arg != "--listen"] + ["--quiet"]
+            item = {"id": f"{label}-{sample:02}", "row": row, "args": arguments, "sample": sample}
+            if skip:
+                item["skip"] = "skipped: quiet"
+            out.append(item)
 
     add("filter", "C06")
     add("calls-baseline", "C01")
@@ -101,7 +110,7 @@ def run_json(argv, env=None, timeout=25):
     return json.loads(result.stdout)
 
 
-def dry_run(plan, unknown):
+def dry_run(plan, unknown, quiet=False):
     # Explicitly run the underlying dry-runs, rather than merely inventing a plan.
     clean = {k: v for k, v in safe_env().items() if not k.startswith("FOCUS_")}
     def redact(value):
@@ -112,16 +121,20 @@ def dry_run(plan, unknown):
         return value.replace(unknown, "<unknown-test-handle>") if isinstance(value, str) else value
     preflight = redact(run_json([str(RUNNER), "preflight", "--dry-run"], env=clean))
     print(json.dumps({"deviceGate": "require unique iPhone 13 from devicectl device inventory before build/UI",
-                      "preflight": preflight, "signing": "xcodegen; xcodebuild build-for-testing -allowProvisioningUpdates with signed-in Xcode account and team " + TEAM,
-                      "microphonePreflight": "compile listener and request authorization once (bounded 30 seconds, no recording)",
+                      "preflight": preflight, "signing": "xcodegen; xcodebuild build-for-testing -allowProvisioningUpdates with configured Xcode signing credentials and team " + TEAM,
+                      "microphonePreflight": "skipped: quiet" if quiet else "compile listener and request authorization once (bounded 30 seconds, no recording)",
+                      "quiet": "capture and durably back up ringtone volume before setting minimum; restore on exit" if quiet else False,
                       "deviceLock": "~/.device-locks/<FOCUS_DEVICE>.lock; no stealing; Phone priority"}))
     for item in plan:
+        if item.get("skip"):
+            print(json.dumps({"id": item["id"], "row": item["row"], "sample": item["sample"], "status": item["skip"]}, separators=(",", ":")))
+            continue
         value = run_json([str(RUNNER), item["row"], *item["args"], "--dry-run"], env=clean)
         # Unknown number may be a real test handle; never display it.
         value = redact(value)
         print(json.dumps({"id": item["id"], "sample": item["sample"], "plan": value}, separators=(",", ":")))
     print(json.dumps({"cleanup": redact(run_json([str(RUNNER), "restore-all", "--dry-run"], env=clean)),
-                      "pause": "Create FOCUS_WORK/PAUSE; finish current row, restore, release lock, resume after removing marker"}))
+                      "pause": "Create FOCUS_WORK/PAUSE; finish current row, restore, release lock, continue after removing marker"}))
 
 
 def checkpoint_id(plan):
@@ -303,6 +316,53 @@ class DeviceLock:
         self.path.rmdir()
 
 
+def archive_legacy():
+    """Archive restored host state while leaving original paths intact."""
+    legacy = legacy_dir()
+    # A successful restore may uninstall the disposable probe and remove its
+    # journal. With no legacy state left, the persistent default is already usable.
+    if not any((legacy / name).exists() or (legacy / name).is_symlink() for name in LEGACY_FILES):
+        return None
+    state, _ = legacy_snapshot(legacy)
+    lock = DeviceLock(Path.home() / ".device-locks", state["device"])
+    lock.acquire()
+    try:
+        state, contents = legacy_snapshot(legacy)
+        if state["device"] != lock.path.name.removesuffix(".lock"):
+            raise RuntimeError("legacy checkpoint device changed")
+        archive_name = uuid.uuid4().hex
+        archive_root = legacy / "legacy-archives"
+        archive_root.mkdir(mode=0o700, exist_ok=True)
+        if archive_root.is_symlink() or not archive_root.is_dir():
+            raise RuntimeError("legacy archive directory is invalid")
+        archive = archive_root / archive_name
+        archive.mkdir(mode=0o700, exist_ok=False)
+        for name, data in contents.items():
+            if data is None:
+                continue
+            with (archive / name).open("xb") as stream:
+                os.chmod(archive / name, 0o600)
+                stream.write(data); stream.flush(); os.fsync(stream.fileno())
+        fd = os.open(archive, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        _, after = legacy_snapshot(legacy)
+        if after != contents:
+            raise RuntimeError("legacy state changed while archiving")
+        atomic_json(legacy / LEGACY_RECEIPT, {"version": 1, "device": state["device"],
+                                               "archive": archive_name, "files": legacy_hashes(contents)})
+        fd = os.open(legacy, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        return archive
+    finally:
+        lock.release()
+
+
 class BatchPaused(RuntimeError):
     pass
 
@@ -348,11 +408,108 @@ def stop_process_group(process):
         time.sleep(0.05)
 
 
+def finalize_picker_results(work, run_id, interrupted=False):
+    """Consume private test bundles only after the supervised process group is gone."""
+    from runner import extract_picker_evidence
+    base = work / ".picker-results"
+    if base.is_symlink():
+        raise ProcessGroupCleanupError("Invalid private test evidence root")
+    root = base.resolve()
+    if root.parent != work.resolve():
+        raise ProcessGroupCleanupError("Invalid private test evidence root")
+    raw = root / run_id
+    if raw.is_symlink():
+        raise ProcessGroupCleanupError("Invalid private test evidence directory")
+    if not raw.exists():
+        return
+    if raw.resolve().parent != root or str(uuid.UUID(run_id)) != run_id:
+        raise ProcessGroupCleanupError("Invalid private test evidence directory")
+    try:
+        sessions = set()
+        for entry in raw.iterdir():
+            if entry.name in {"row", "group.json"}:
+                continue
+            if entry.is_symlink() or not re.fullmatch(r"[a-f0-9]{32}\.(failed|xcresult)", entry.name):
+                raise ProcessGroupCleanupError("Invalid private test evidence entry")
+            if entry.name.endswith(".failed") or interrupted:
+                sessions.add(entry.name.split(".")[0])
+        row_file = raw / "row"
+        destination = work.resolve()
+        if row_file.exists() or row_file.is_symlink():
+            if row_file.is_symlink() or not row_file.is_file() or row_file.stat().st_size > 256:
+                raise ProcessGroupCleanupError("Invalid private row evidence identity")
+            row = row_file.read_text().strip()
+            destination = (work / row).resolve()
+            if not row or destination.parent != work.resolve() or not destination.is_dir():
+                raise ProcessGroupCleanupError("Private row evidence destination unavailable")
+        if interrupted and not sessions:
+            from runner import write
+            write(destination / ("picker-evidence-interrupted-" + run_id + ".json"),
+                  {"runID": run_id, "available": False, "truncated": False, "nodes": []})
+        for session in sorted(sessions):
+            extract_picker_evidence(raw / (session + ".xcresult"), run_id,
+                                    destination / ("picker-evidence-" + session + ".json"))
+        shutil.rmtree(raw)
+    except (OSError, ValueError) as error:
+        raise ProcessGroupCleanupError("Private test evidence cleanup failed") from error
+
+
+def reconcile_picker_orphans(work):
+    """Called only while holding the device lock, before any device operation."""
+    base = work / ".picker-results"
+    if base.is_symlink():
+        raise ProcessGroupCleanupError("Invalid private test evidence root")
+    if not base.exists():
+        return
+    if not base.is_dir():
+        raise ProcessGroupCleanupError("Invalid private test evidence root")
+    for raw in base.iterdir():
+        try:
+            if raw.is_symlink() or not raw.is_dir() or str(uuid.UUID(raw.name)) != raw.name:
+                raise ProcessGroupCleanupError("Invalid private test evidence directory")
+            metadata = raw / "group.json"
+            if metadata.is_symlink() or not metadata.is_file() or metadata.stat().st_size > 256:
+                raise ProcessGroupCleanupError("Previous process group cannot be verified")
+            value = json.loads(metadata.read_text())
+            if not isinstance(value, dict) or set(value) != {"pgid"} or type(value["pgid"]) is not int or value["pgid"] <= 1:
+                raise ProcessGroupCleanupError("Previous process group cannot be verified")
+            try:
+                os.killpg(value["pgid"], 0)
+            except ProcessLookupError:
+                finalize_picker_results(work, raw.name, interrupted=True)
+            except OSError as error:
+                raise ProcessGroupCleanupError("Previous process group cannot be verified") from error
+            else:
+                raise ProcessGroupCleanupError("Previous process group may still be running")
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            raise ProcessGroupCleanupError("Previous process group cannot be verified") from error
+
+
 def command(argv, env, log, timeout, should_pause=None):
+    child_env = env.copy()
+    run_id = str(uuid.uuid4()) if argv and argv[0] == str(RUNNER) else None
+    raw = None
+    if run_id:
+        child_env["FOCUS_EVIDENCE_RUN_ID"] = run_id
+        root = Path(child_env["FOCUS_WORK"]).resolve() / ".picker-results"
+        if root.is_symlink():
+            raise ProcessGroupCleanupError("Invalid private test evidence root")
+        raw = root / run_id
+        raw.mkdir(mode=0o700, parents=True)
+    def finish(interrupted=False):
+        if run_id:
+            finalize_picker_results(Path(child_env["FOCUS_WORK"]).resolve(), run_id, interrupted=interrupted)
     with log.open("ab") as stream:
-        process = subprocess.Popen(argv, stdout=stream, stderr=subprocess.STDOUT, env=env, start_new_session=True)
+        try:
+            process = subprocess.Popen(argv, stdout=stream, stderr=subprocess.STDOUT, env=child_env, start_new_session=True)
+        except BaseException:
+            if raw is not None:
+                shutil.rmtree(raw)
+            raise
         deadline = time.monotonic() + timeout
         try:
+            if raw is not None:
+                atomic_json(raw / "group.json", {"pgid": process.pid})
             while process.poll() is None:
                 if should_pause is not None and should_pause():
                     raise BatchPaused("Phone priority or PAUSE requested")
@@ -361,12 +518,12 @@ def command(argv, env, log, timeout, should_pause=None):
                 time.sleep(0.1)
         except BaseException:
             stop_process_group(process)
+            finish(interrupted=True)
             raise
         result = process
-        # A parent can exit successfully or unsuccessfully while descendants
-        # remain. Never restore or release the device lock until the entire
-        # command group is gone.
+        # Never inspect or remove a test bundle until the entire command group is gone.
         stop_process_group(process)
+        finish(interrupted=result.returncode != 0)
     if result.returncode:
         raise RuntimeError("command failed; inspect the private batch log; uncertain attempts are not retried")
 
@@ -416,18 +573,25 @@ def supervised_restore():
     if not device or not source.is_file():
         raise ValueError("Recovery needs the iPhone 13 UDID and original signed FOCUS_XCTESTRUN")
     os.umask(0o077)
-    work = Path(os.environ.get("FOCUS_WORK", str(HERE / "out"))).resolve()
+    work = (Path(os.environ["FOCUS_WORK"]) if "FOCUS_WORK" in os.environ else default_work()).resolve()
     repo = HERE.parents[1]
     if work.is_relative_to(repo) and work != HERE / "out":
         raise ValueError("Use ignored spikes/focus/out or a private path outside the repository")
     work.mkdir(mode=0o700, parents=True, exist_ok=True)
     work.chmod(0o700)
-    device = identify_iphone13(device, work)
+    if not DEVICE_ID_PATTERN.fullmatch(device):
+        raise ValueError("FOCUS_DEVICE must be the canonical uppercase iPhone hardware UDID")
     lock_dir = Path.home() / ".device-locks"
     if phone_wants_device(work, lock_dir, device):
         raise RuntimeError("Phone priority or PAUSE marker exists; no recovery action taken")
     lock = DeviceLock(lock_dir, device)
     lock.acquire()
+    reconcile_picker_orphans(work)  # Failure intentionally retains the lock.
+    try:
+        device = identify_iphone13(device, work)
+    except BaseException:
+        lock.release()
+        raise
     env = os.environ.copy()
     env["FOCUS_DEVICE"], env["FOCUS_WORK"], env["FOCUS_XCTESTRUN"] = device, str(work), str(source)
     env["FOCUS_REQUIRE_DEVICE_JOURNAL"] = "1"
@@ -452,6 +616,27 @@ def supervised_restore():
             state.pop("inFlightAttempt", None)
             state["dirty"] = False
             atomic_json(checkpoint, state)
+        elif work == legacy_dir().resolve():
+            # A journal-only legacy run has no device identity of its own.
+            # Bind its verified clean bytes to the actually restored device
+            # while still holding the same device lock.
+            journal = work / "restore-state.json"
+            if journal.is_symlink():
+                raise RuntimeError("legacy journal cannot be a symlink")
+            if journal.exists():
+                content = journal.read_bytes()
+                validate_clean_journal(content)
+                if journal.read_bytes() != content:
+                    raise RuntimeError("legacy journal changed after restoration")
+                journal_hash = hashlib.sha256(content).hexdigest()
+                atomic_json(work / LEGACY_RESTORE_RECEIPT,
+                            {"version": 1, "device": device, "journalHash": journal_hash,
+                             "binding": journal_restore_binding(device, journal_hash)})
+                fd = os.open(work, os.O_RDONLY)
+                try:
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
         restored = True
     finally:
         if restored:
@@ -461,23 +646,30 @@ def supervised_restore():
 
 
 def run_batch(plan, args):
+    quiet = getattr(args, "quiet", False)
     device = os.environ.get("FOCUS_DEVICE")
     if not device:
         raise ValueError("FOCUS_DEVICE is required; no device selected automatically")
     os.umask(0o077)
-    work = Path(os.environ.get("FOCUS_WORK", str(HERE / "out"))).resolve()
+    work = (Path(os.environ["FOCUS_WORK"]) if "FOCUS_WORK" in os.environ else default_work()).resolve()
     repo = HERE.parents[1]
     if work.is_relative_to(repo) and work != HERE / "out":
         raise ValueError("Use ignored spikes/focus/out or a private path outside the repository")
     work.mkdir(mode=0o700, parents=True, exist_ok=True)
     work.chmod(0o700)
-    # Inventory is read-only and happens before signing, UI tests, or any Focus change.
-    device = identify_iphone13(device, work)
+    if not DEVICE_ID_PATTERN.fullmatch(device):
+        raise ValueError("FOCUS_DEVICE must be the canonical uppercase iPhone hardware UDID")
     lock_dir = Path.home() / ".device-locks"
     if phone_wants_device(work, lock_dir, device):
         raise BatchPaused("PAUSE or Phone priority marker exists; no device action taken")
     lock = DeviceLock(lock_dir, device)
     lock.acquire()
+    reconcile_picker_orphans(work)  # Failure intentionally retains the lock.
+    try:
+        device = identify_iphone13(device, work)
+    except BaseException:
+        lock.release()
+        raise
     checkpoint = work / "morning-checkpoint.json"
     # Row execution needs APNs credentials. The runner only forwards them to the sender.
     env = os.environ.copy()
@@ -490,6 +682,7 @@ def run_batch(plan, args):
     stopped = False
     unsafe_processes = False
     recovery_failed = False
+    quiet_applied = False
     old_handlers = {}
 
     def pause_handler(_signum, _frame):
@@ -504,7 +697,7 @@ def run_batch(plan, args):
         state["dirty"] = False
         interrupted = state.get("inFlight")
         if interrupted:
-            # Its outcome may include a delivered push: never replay it on resume.
+            # Its outcome may include a delivered push: never replay it on continuation.
             state["completed"][interrupted] = {"status": "unqualified-interrupted", "result": None}
             state["inFlight"] = None
         state.pop("inFlightAttempt", None)
@@ -520,8 +713,6 @@ def run_batch(plan, args):
                 dirty = False  # A different device's checkpoint must not be touched.
                 raise RuntimeError("checkpoint belongs to another device; use a separate work directory")
             dirty = state.get("dirty", bool(state.get("inFlight") or state.get("completed")))
-            if state.get("planHash") != checkpoint_id(plan):
-                raise RuntimeError("checkpoint plan changed; recover the original run before resuming")
         else:
             state = {"version": 1, "device": device, "planHash": checkpoint_id(plan),
                      "completed": {}, "inFlight": None, "dirty": False}
@@ -547,15 +738,32 @@ def run_batch(plan, args):
         command([str(RUNNER), "preflight"], env, work / "preflight.log", 660, pause_requested)
         verified = True
         if dirty:
-            # Previous crash: restore first, then account for the ambiguous attempt without retry.
+            # Previous crash: restore first, then record the ambiguous attempt without retry.
             command([str(RUNNER), "restore-all"], env, work / "batch-restore.log", 660)
             mark_restored()
             env.pop("FOCUS_REQUIRE_DEVICE_JOURNAL", None)
+        if state.get("planHash") != checkpoint_id(plan):
+            # A mode change may continue the same fixed matrix after recovering
+            # the old journal; completed and interrupted attempts are never replayed.
+            unknown = getattr(args, "unknown_caller", DEFAULT_UNKNOWN)
+            old_mode = not quiet
+            if state.get("planHash") != checkpoint_id(make_plan(unknown, quiet=old_mode)):
+                raise RuntimeError("checkpoint plan changed; previous settings were restored, use the original plan")
+            state["planHash"] = checkpoint_id(plan)
+            state["modeChange"] = "quiet" if quiet else "normal"
+            if not quiet:
+                # Rows explicitly skipped in quiet mode have never been
+                # attempted. Requeue only those, never interrupted or real rows.
+                for item in plan:
+                    prior = state["completed"].get(item["id"])
+                    if isinstance(prior, dict) and prior.get("status") == "skipped: quiet":
+                        del state["completed"][item["id"]]
+            atomic_json(checkpoint, state)
         if pause_requested():
             raise BatchPaused("Phone priority or PAUSE requested")
-        state["microphoneAuthorization"] = authorize_microphone(work, pause_requested)
+        state["microphoneAuthorization"] = "skipped: quiet" if quiet else authorize_microphone(work, pause_requested)
         atomic_json(checkpoint, state)
-        if state["microphoneAuthorization"] != "authorized":
+        if not quiet and state["microphoneAuthorization"] != "authorized":
             print("mic permission pending or unavailable; continuing with visual evidence only", flush=True)
         for item in plan:
             if item["id"] in state["completed"]:
@@ -563,6 +771,23 @@ def run_batch(plan, args):
             if pause_requested():
                 stopped = True
                 break
+            if item.get("skip") == "skipped: quiet":
+                state["completed"][item["id"]] = {"status": "skipped: quiet", "result": None}
+                atomic_json(checkpoint, state)
+                print("Skipped", item["id"], "quiet", flush=True)
+                continue
+            if quiet and not quiet_applied:
+                # Persist dirty before capture or mutation; recovery must run if
+                # either UI session is interrupted. The runner backs up the
+                # capture before starting the separate minimum-volume session.
+                state["dirty"] = True
+                atomic_json(checkpoint, state)
+                dirty = True
+                command([str(RUNNER), "preflight", "--quiet"], env, work / "quiet-setup.log", 660, pause_requested)
+                quiet_applied = True
+                if pause_requested():
+                    stopped = True
+                    break
             # Persist the attempt before a push can occur. Never replay an interrupted attempt.
             state["dirty"] = True
             state["inFlight"] = item["id"]
@@ -624,6 +849,7 @@ def run_batch(plan, args):
                     state["inFlight"] = None
                     state.pop("inFlightAttempt", None)
                     mark_restored()
+                    quiet_applied = False
                     env.pop("FOCUS_REQUIRE_DEVICE_JOURNAL", None)
                     continue
                 result_name, row_result = private_row_result(work, item, payload, prior_entries=prior_entries)
@@ -646,7 +872,7 @@ def run_batch(plan, args):
             state["inFlight"] = None
             state.pop("inFlightAttempt", None)
             atomic_json(checkpoint, state)
-        if "microphone-positive-01" in state["completed"]:
+        if not quiet and "microphone-positive-01" in state["completed"]:
             # C00 is deliberately last; only now can earlier RMS envelopes be compared.
             postclassify_activity_audio(work, state, plan)
             atomic_json(checkpoint, state)
@@ -683,15 +909,36 @@ def run_batch(plan, args):
             raise RuntimeError("restore-all failed or could not be safely attempted; recover settings before releasing lock") from failure
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Run the Focus morning matrix with durable checkpoints")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--unknown-caller", default=DEFAULT_UNKNOWN,
+    parser.add_argument("--quiet", action="store_true", help="minimize ringtone volume and skip acoustic/vibration tests")
+    parser.add_argument("--archive-legacy", action="store_true", help="archive restored checkout-local state and enable the persistent default")
+    parser.add_argument("--ci-summary", metavar="RUN_ID", help="summarize Actions checks without a device")
+    parser.add_argument("--repo", help="GitHub repository in owner/name form for --ci-summary")
+    parser.add_argument("--unknown-caller", default=None,
                         help="synthetic owned E.164 test caller absent from the iPhone contacts")
-    args = parser.parse_args()
-    plan = make_plan(args.unknown_caller)
+    args = parser.parse_args(argv)
+    if args.ci_summary is not None:
+        if not args.repo:
+            parser.error("--ci-summary requires --repo")
+        if args.quiet or args.dry_run or args.archive_legacy or args.unknown_caller is not None:
+            parser.error("--ci-summary cannot be combined with device options")
+        import ci_summary
+        return ci_summary.main([args.ci_summary, "--repo", args.repo])
+    if args.repo is not None:
+        parser.error("--repo requires --ci-summary")
+    if args.unknown_caller is None:
+        args.unknown_caller = DEFAULT_UNKNOWN
+    if args.archive_legacy:
+        if args.quiet or args.dry_run:
+            raise ValueError("--archive-legacy cannot be combined with --quiet or --dry-run")
+        archive = archive_legacy()
+        print("Archived restored legacy state: " + str(archive) if archive else "No legacy state remains; persistent default is ready")
+        return 0
+    plan = make_plan(args.unknown_caller, quiet=args.quiet)
     if args.dry_run:
-        dry_run(plan, args.unknown_caller)
+        dry_run(plan, args.unknown_caller, quiet=args.quiet)
         return 0
     return run_batch(plan, args)
 

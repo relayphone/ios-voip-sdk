@@ -1,16 +1,105 @@
 import json
 import os
+import plistlib
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from runner import Run, audio_control_eligible, correlate, matching_activity, needs_repeat_fence, repeat_cooldown, reports_complete, require_device_supervisor, surface_windows
 
 HERE = Path(__file__).resolve().parent
 
 
 class DryRunTests(unittest.TestCase):
+    def test_restore_reinstalls_only_verified_missing_probe_and_preserves_journal_first(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "test.xctestrun"
+            app = root / "Debug-iphoneos" / "FocusProbe.app"
+            app.mkdir(parents=True)
+            (app / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": "dev.callkitsim.focus"}))
+            (app / "embedded.mobileprovision").write_bytes(b"profile")
+            source.write_bytes(plistlib.dumps({"test": {"IsUITestBundle": True,
+                "UITargetAppPath": "__TESTROOT__/Debug-iphoneos/FocusProbe.app"}}))
+            run = Run.__new__(Run)
+            run.source, run.folder, run.device = source, root, "device"
+            run.journal = root / "journal.json"
+            run.journal.write_text('{"captured": true, "ownsFocus": true}')
+            run.recover = Mock()
+            run.arm = Mock()
+            run.ui = Mock()
+            actions = []
+            def command(argv, **kwargs):
+                actions.append(argv)
+                if argv[1:5] == ["devicectl", "device", "info", "apps"]:
+                    output = Path(argv[argv.index("--json-output") + 1])
+                    installed = any(a[1:5] == ["devicectl", "device", "install", "app"] for a in actions)
+                    output.write_text(json.dumps({"info": {"outcome": "success"}, "result": {"apps":
+                        [{"bundleIdentifier": "dev.callkitsim.focus"}] if installed else []}}))
+            run.command = command
+            run.restore()
+            run.recover.assert_called_once_with(required=True)
+            run.arm.assert_called_once_with({"armed": False, "activityAction": "end"})
+            self.assertEqual([a[0] for a in actions], ["xcrun", "codesign", "xcrun", "xcrun"])
+            self.assertIn(str(app.resolve()), actions[2])
+            self.assertTrue(json.loads(run.journal.read_text())["ownsFocus"])
+
+    def test_restore_probe_inventory_or_identity_ambiguity_never_installs(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            run = Run.__new__(Run)
+            run.folder, run.device = root, "device"
+            def bad_inventory(argv, **kwargs):
+                Path(argv[argv.index("--json-output") + 1]).write_text('{"result": {}}')
+            run.command = Mock(side_effect=bad_inventory)
+            with self.assertRaises(RuntimeError):
+                run.ensure_probe_installed()
+            self.assertEqual(run.command.call_count, 1)
+            def wrong_shape(argv, **kwargs):
+                Path(argv[argv.index("--json-output") + 1]).write_text('{"info": [], "result": []}')
+            run.command = Mock(side_effect=wrong_shape)
+            with self.assertRaises(RuntimeError):
+                run.ensure_probe_installed()
+            self.assertEqual(run.command.call_count, 1)
+            run.source = root / "test.xctestrun"
+            run.source.write_bytes(plistlib.dumps({"test": {"IsUITestBundle": True,
+                "UITargetAppPath": "__TESTROOT__/../../Other.app"}}))
+            with self.assertRaises(RuntimeError):
+                run.signed_probe()
+
+    def test_quiet_preflight_plan_and_listen_are_exclusive(self):
+        value = json.loads(self.run_plan("preflight", "--quiet").stdout)
+        self.assertTrue(value["quiet"])
+        self.assertTrue(any("durably" in step for step in value["steps"]))
+        result = self.run_plan("C00", "--quiet", "--listen")
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_ringer_mutation_receives_proof_only_for_valid_backed_up_journal(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            run = Run.__new__(Run)
+            run.p = {"callerValue": "+15555550199"}
+            run.work = run.folder = root
+            run.journal = root / "journal.json"
+            run.source = root / "test.xctestrun"
+            run.source.write_bytes(plistlib.dumps({"test": {"IsUITestBundle": True}}))
+            run.device, run.invitation, run.counter = "device", "invitation", 0
+            run.unsafe_observer, run.usb_verified, run.journal_fresh = False, False, True
+            run.recover = Mock()
+            environments = []
+            def command(argv, **kwargs):
+                data = plistlib.loads(Path(argv[argv.index("-xctestrun") + 1]).read_bytes())
+                environments.append(data["test"]["EnvironmentVariables"])
+            run.command = command
+            for value in ({"captured": True, "ringerVolumePercent": 37},
+                          {"captured": True, "ringerVolumePercent": 101},
+                          {"captured": False, "ringerVolumePercent": 37}):
+                run.journal.write_text(json.dumps(value))
+                run.journal_fresh = True
+                run.ui(["ringer-volume:minimum"])
+            self.assertEqual([env.get("FOCUS_RINGER_BACKED_UP") for env in environments], ["1", None, None])
+
     def test_device_rows_require_live_lock_owning_supervisor(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -79,6 +168,25 @@ class DryRunTests(unittest.TestCase):
         short = surface_windows(events, [("first", 100000), ("second", 169000)], {"startUptimeMs": 90000, "endUptimeMs": 180000})
         self.assertFalse(short[1]["observationQualified"])
 
+    def test_surface_foreground_gap_is_recorded_and_disqualifies_absence(self):
+        events = [{"event": "surface.gap", "reason": "foreground-transition",
+                   "startUptimeMs": 100010, "endUptimeMs": 100500},
+                  {"event": "surface.transition", "surface": "callScreen", "visible": True, "uptimeMs": 100600}]
+        windows = surface_windows(events, [("first", 100000)], {"startUptimeMs": 90000, "endUptimeMs": 120000})
+        self.assertTrue(windows[0]["observationQualified"])
+        self.assertFalse(windows[0]["continuityQualified"])
+        self.assertEqual(windows[0]["callScreenFirstNewPresentationUptimeMs"], 100600)
+        # A surface first seen after a gap is raw evidence, not a qualified presentation.
+        self.assertFalse(windows[0]["observationQualified"] and windows[0]["continuityQualified"])
+        crossing = [{**events[0], "startUptimeMs": 99900}, events[1]]
+        crossing_window = surface_windows(crossing, [("first", 100000)], {"startUptimeMs": 90000, "endUptimeMs": 120000})[0]
+        self.assertEqual(crossing_window["callScreenFirstNewPresentationUptimeMs"], 100600)
+        self.assertFalse(crossing_window["continuityQualified"])
+        windows = surface_windows(events, [("first", 101000)], {"startUptimeMs": 90000, "endUptimeMs": 120000})
+        self.assertTrue(windows[0]["continuityQualified"])
+        malformed = [{"event": "surface.gap", "startUptimeMs": None}]
+        self.assertFalse(surface_windows(malformed, [("first", 100000)], {"startUptimeMs": 90000, "endUptimeMs": 120000})[0]["continuityQualified"])
+
     def test_repeat_pair_waits_until_prior_attempt_is_outside_three_minutes(self):
         self.assertEqual(repeat_cooldown(1000, 1000), 181)
         self.assertEqual(repeat_cooldown(1000, 1179), 2)
@@ -136,6 +244,8 @@ class DryRunTests(unittest.TestCase):
         baseline = [{"event": "surface.sample", "surface": surface, "visible": False,
                      "sampleStartUptimeMs": 905, "uptimeMs": 925} for surface in ("banner", "callScreen")]
         events += baseline
+        gap = {"event": "surface.gap", "startUptimeMs": 1100, "endUptimeMs": 1150}
+        self.assertEqual(answer_evidence(events + [gap], signal, observation, "abc", 950)["reason"], "surface-observation-gap")
         evidence = answer_evidence(events, signal, observation, "abc", 950)
         self.assertEqual((evidence["status"], evidence["signalToDismissalMs"]), ("observed", 100))
         self.assertEqual(answer_evidence(events[1:], signal, observation, "abc", 950)["status"], "unqualified")

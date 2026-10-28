@@ -38,3 +38,5 @@ for TEST_CASE in ReportContractTests ConnectionContractTests; do
     "$TEST_OUTPUT/ownership.o" -o "$TEST_OUTPUT/$TEST_CASE"
   perl -e 'alarm shift; exec @ARGV' 20 "$TEST_OUTPUT/$TEST_CASE"
 done
+
+python3 Tests/Caller/run.py

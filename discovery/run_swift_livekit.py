@@ -23,6 +23,8 @@ sys.path.insert(0, str(ROOT / 'scripts/sim'))
 import sim as simulator_infra
 
 SCENARIO_TIMEOUT_SECONDS = 90
+STARTUP_TIMEOUT_SECONDS = 180
+SUPERVISOR_FINALIZATION_SECONDS = 40
 PRIVACY_TIMEOUT_SECONDS = 180
 REPORTER = ContextVar('swift_livekit_failure_reporter', default=None)
 
@@ -353,7 +355,7 @@ def capture_case(build, out, simulator, inherited, mode, expected_container=None
     env = {key: value for key, value in os.environ.items() if not key.startswith('SIMCTL_CHILD_')}
     env.update(SIMCTL_CHILD_DYLD_INSERT_LIBRARIES=inherited, SIMCTL_CHILD_CKSIM_RUN_ID=run_id,
                SIMCTL_CHILD_SDK_SWIFT_LIVEKIT_CASE=mode)
-    argv = [sys.executable, ROOT / 'discovery/run_scenario.py', '--console-launcher-stop', '--inherit-launcher-group', '--timeout', str(SCENARIO_TIMEOUT_SECONDS),
+    argv = [sys.executable, ROOT / 'discovery/run_scenario.py', '--console-launcher-stop', '--inherit-launcher-group', '--startup-timeout', str(STARTUP_TIMEOUT_SECONDS), '--timeout', str(SCENARIO_TIMEOUT_SECONDS),
             '--output', trace, '--receipt', receipt, '--run-id', run_id, '--simulator-id', simulator,
             '--scenario', mode, '--bundle-id', BUNDLE, '--terminate-command', 'xcrun', 'simctl', 'terminate', simulator, BUNDLE,
             '--launch-command', 'xcrun', 'simctl', 'launch', '--console', '--terminate-running-process', simulator, BUNDLE]
@@ -371,7 +373,8 @@ def capture_case(build, out, simulator, inherited, mode, expected_container=None
         timing.record('supervisor.spawn.end', pid=process.pid)
         cleanup_required = False
         try:
-            launch = timing.checkpoint('launch', lambda: wait(process, lambda: next((row for row in observed() if row['event'] == 'launch'), None), SCENARIO_TIMEOUT_SECONDS), SCENARIO_TIMEOUT_SECONDS)
+            launch_watchdog = STARTUP_TIMEOUT_SECONDS + SCENARIO_TIMEOUT_SECONDS + SUPERVISOR_FINALIZATION_SECONDS
+            launch = timing.checkpoint('launch', lambda: wait(process, lambda: next((row for row in observed() if row['event'] == 'launch'), None), launch_watchdog), launch_watchdog)
             entry = one(observed(), 'app.entry')
             require(all(entry.get(key) == launch.get(key) for key in ('runID', 'pid', 'bundleID', 'simulatorID')),
                     'fresh entry/launch identity differs')
@@ -398,7 +401,7 @@ def capture_case(build, out, simulator, inherited, mode, expected_container=None
                 response = fault(out, build, simulator, runtime, session)
                 timing.checkpoint('fault.response', lambda: wait(process, response.exists, 10), 10)
                 shutil.copyfile(response, out / 'fault-response.json')
-            require(process.wait(timeout=100) == 0, 'supervisor refused native capture')
+            require(process.wait(timeout=SCENARIO_TIMEOUT_SECONDS + SUPERVISOR_FINALIZATION_SECONDS) == 0, 'supervisor refused native capture')
         finally:
             timing.record('cleanup.start')
             handlers = {sig: signal.signal(sig, signal.SIG_IGN) for sig in (signal.SIGTERM, signal.SIGINT)}
@@ -510,11 +513,12 @@ def capture_owned(build, out):
                 cases[mode] = capture_case(build, out, simulator, inherited, mode, container)
             except BaseException as error:
                 if cancelled(error): reporter.report('infra:runner-cancelled', error)
+                elif isinstance(error, OSError) and not isinstance(error, NativeCommandError):
+                    reporter.report('infra:evidence-write', error)
+                elif reporter.marker_identity() not in (None, marker_before):
+                    reporter.mark(error)  # Preserve classification from this child, not an earlier invocation.
                 elif isinstance(error, (subprocess.TimeoutExpired, NativeCommandError)):
                     reporter.report('infra:launch', error)
-                elif isinstance(error, OSError): reporter.report('infra:evidence-write', error)
-                elif reporter.marker_identity() not in (None, marker_before):
-                    reporter.mark(error)  # This child classified its failed capture, not an earlier invocation.
                 else: reporter.report('product:swift-livekit-' + mode, error)
                 raise
             finally:

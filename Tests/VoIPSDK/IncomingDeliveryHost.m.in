@@ -67,7 +67,7 @@ void HostDrive(id<VSPushReceiver> receiver) {
   HostNativeOwner *owner = [[HostNativeOwner alloc] initWithReceiver:receiver];
   PKPushPayload *payload = [PKPushPayload new];
   payload.dictionaryPayload = @{@"incomingCall": @{@"eventId": @"main-stall-event",
-      @"serverCallId": @"main-stall-server", @"caller": @{@"id": @"main-stall-caller"},
+      @"serverCallId": @"main-stall-server", @"caller": @{@"handleType": @"generic", @"value": @"main-stall-caller", @"displayName": @"main-stall-caller"},
       @"hasVideo": @NO}};
   dispatch_queue_t queue = dispatch_queue_create("dev.iosvoipsdk.host.push-main-stall", DISPATCH_QUEUE_SERIAL);
   dispatch_semaphore_t entered = dispatch_semaphore_create(0);
