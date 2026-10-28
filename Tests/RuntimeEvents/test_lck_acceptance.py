@@ -3,11 +3,13 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 import uuid
 from unittest.mock import Mock, patch
 
 import lck_acceptance as acceptance
+import lck_handoff_cases as handoff
 from test_runtime_install_adapter import AdapterNative
 
 
@@ -57,6 +59,110 @@ class JournalOracleTests(unittest.TestCase):
             (journey.channel / 'session.json').write_text(json.dumps(dict(runID='replacement')))
             with self.assertRaisesRegex(AssertionError, 'session changed'):
                 journey.rows()
+
+
+class MuteStimulusTests(unittest.TestCase):
+    def run_mute(self, preparation_ms, *, delivery_ms=0, restart_audio=False):
+        with tempfile.TemporaryDirectory() as work:
+            root = Path(work)
+            elapsed = [0.0]
+            def advance(seconds):
+                elapsed[0] = round(elapsed[0] + seconds, 6)
+            clock = SimpleNamespace(monotonic=lambda: elapsed[0],
+                                    time=lambda: 1000 + elapsed[0], sleep=advance)
+
+            class Fixture(acceptance.Journey):
+                def __init__(self):
+                    super().__init__('owned', root, root / 'out')
+                    self.session = dict(runID='synthetic-run', pid=123, bundleID=acceptance.BUNDLE)
+                    self.ids = dict(A='synthetic-call')
+                    self.audio_at = .290
+                    self.events = [dict(event='lck.fixture.settled', kind='Join', actionID='join',
+                                        sequence=1, t_ms=0, wallTimeMS=1000000)]
+
+                def begin(self, name):
+                    self.name = name
+
+                def app(self, operation, **fields):
+                    assert (operation, fields) == ('incoming', dict(call='A'))
+
+                def rows(self):
+                    if elapsed[0] >= self.audio_at and not any(r['event'] == 'lck.fixture.didActivate' for r in self.events):
+                        self.events.append(dict(event='lck.fixture.didActivate', sequence=len(self.events) + 1,
+                                                t_ms=round(self.audio_at * 1000)))
+                    return self.events
+
+                def wait(self, predicate, timeout=12):
+                    deadline = elapsed[0] + timeout
+                    while elapsed[0] < deadline:
+                        found = predicate(self.rows())
+                        if found:
+                            return found
+                        advance(.020)
+                    raise AssertionError('synthetic journal observation timed out')
+
+                def system(self, operation, **fields):
+                    if operation == 'answer':
+                        return dict(actionIDs=['join'])
+                    return super().system(operation, **fields)
+
+                def publish(self, folder, request, **options):
+                    advance(preparation_ms / 1000)
+                    acceptance.Journey.publish(folder, request, **options)
+                    advance(delivery_ms / 1000)
+                    for event in ('perform', 'settled'):
+                        self.events.append(dict(event='lck.fixture.' + event, kind='MuteConversationAction',
+                                                actionID='mute', sequence=len(self.events) + 1,
+                                                t_ms=round(elapsed[0] * 1000)))
+                    if restart_audio:
+                        self.audio_at = elapsed[0] + .290
+                    response = folder.parent / 'responses' / (request['id'] + '.json')
+                    response.parent.mkdir(parents=True, exist_ok=True)
+                    response.write_text(json.dumps(dict(request, success=True, result=dict(actionIDs=['mute']))))
+
+            with patch.object(handoff, 'time', clock), patch.object(acceptance, 'time', clock):
+                return handoff.run_mute_case(Fixture())
+
+    def test_request_preparation_does_not_consume_the_late_mute_window(self):
+        for preparation in (0, 82, 140, 220):
+            with self.subTest(preparation_ms=preparation):
+                result = self.run_mute(preparation)
+                self.assertEqual(result['joinToMuteDeliveryMS'], max(180, preparation))
+                self.assertEqual(result['joinToAudioMS'], 290)
+
+    def test_native_delivery_outside_the_original_window_still_fails(self):
+        with self.assertRaisesRegex(AssertionError, 'native Mute delivery.*262ms'):
+            self.run_mute(0, delivery_ms=82)
+
+    def test_a_restarted_join_audio_timer_still_fails(self):
+        with self.assertRaisesRegex(AssertionError, 'Mute restarted the pending Join audio timer'):
+            self.run_mute(0, restart_audio=True)
+
+    def test_preparation_beyond_the_original_host_window_still_fails(self):
+        with self.assertRaisesRegex(AssertionError, 'host missed the proposed late-Mute stimulus window'):
+            self.run_mute(261)
+
+    def test_failed_stimulus_callback_cannot_publish_a_request(self):
+        with tempfile.TemporaryDirectory() as work:
+            folder = Path(work)
+            request = dict(id='synthetic-request', operation='mute')
+            def refused():
+                self.assertEqual(json.loads((folder / 'synthetic-request.tmp').read_text()), request)
+                self.assertFalse((folder / 'synthetic-request.json').exists())
+                raise RuntimeError('stimulus window missed')
+            with self.assertRaisesRegex(RuntimeError, 'stimulus window missed'):
+                acceptance.Journey.publish(folder, request, before_publish=refused)
+            self.assertEqual(list(folder.iterdir()), [])
+
+    def test_existing_temporary_request_is_preserved_on_collision(self):
+        with tempfile.TemporaryDirectory() as work:
+            folder = Path(work)
+            temporary = folder / 'synthetic-request.tmp'
+            temporary.write_bytes(b'previous request')
+            with self.assertRaises(FileExistsError):
+                acceptance.Journey.publish(folder, dict(id='synthetic-request'), before_publish=lambda: None)
+            self.assertEqual(temporary.read_bytes(), b'previous request')
+            self.assertFalse((folder / 'synthetic-request.json').exists())
 
 
 class ContainerDiscoveryTests(unittest.TestCase):
