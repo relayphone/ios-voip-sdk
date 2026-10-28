@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Seven external cksim journeys on the simulator already owned by M0.
+"""External cksim journeys on the simulator already owned by M0.
 
 No simulator creation, installation, DYLD mutation or device access lives here.
 Native acceptance is decided by sdk_system_conformance, never by this driver.
 """
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -25,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts/sim'))
 from sim import bounded
 BUNDLE = 'dev.iosvoipsdk.example'
-CASES = ('answer-end', 'decline', 'hold-accept', 'end-accept', 'mute-echo', 'provider-reset', 'push-launch')
+CASES = ('answer-end', 'decline', 'hold-accept', 'end-accept', 'mute-echo', 'provider-reset', 'push-launch', 'answered-elsewhere')
 SCENARIO_TIMEOUT_SECONDS = 120
 PREAPP_ERROR = (f'An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=3):\n'
     f'Simulator device failed to launch {BUNDLE}.\nNo such process\n'
@@ -129,10 +130,12 @@ class Journey:
         rows = [row for row in self.rows() if row['event'] == 'sdk.snapshot']
         return rows and predicate(rows[-1]['conversations']) and rows[-1]
 
-    def command(self, operation, conversation=None):
+    def command(self, operation, conversation=None, server_call=None):
         value = dict(id=str(uuid.uuid4()).upper(), runID=self.args.run_id, case=self.case, pid=self.pid, operation=operation)
         if conversation:
             value['conversationID'] = conversation
+        if server_call:
+            value['serverCallId'] = server_call
         name = f'fixture-{len(self.commands):02}.json'
         write(self.root / name, value)
         target = self.container / ('tmp/sdk-system-control-' + self.args.run_id + '.json')
@@ -206,6 +209,12 @@ class Journey:
         deadline = time.monotonic() + SCENARIO_TIMEOUT_SECONDS
         paths = (self.runtime.parent / 'session.json', self.journal)
         baseline = tuple(path.read_bytes() if path.exists() else None for path in paths)
+        write(self.root / 'prelaunch-baseline.json', dict(
+            case=self.case, scenario=self.name, runID=self.args.run_id, simulatorID=self.args.simulator,
+            files=[dict(kind=kind, path=str(path), present=raw is not None,
+                        bytes=len(raw) if raw is not None else None,
+                        sha256=hashlib.sha256(raw).hexdigest() if raw is not None else None)
+                   for kind, path, raw in zip(('session', 'journal'), paths, baseline)]))
         receipt_path = self.root / (self.name + '.receipt.json')
         for attempt in range(2):
             remaining = deadline - time.monotonic()
@@ -303,6 +312,9 @@ class Journey:
                 first = self.push('first')
                 if self.case == 'decline':
                     self.end(first, True)
+                elif self.case == 'answered-elsewhere':
+                    self.command('answered-elsewhere', first['conversationID'],
+                                 'system-server-' + self.args.run_id + '-first')
                 else:
                     self.answer(first)
                     if self.case in ('hold-accept', 'end-accept'):
