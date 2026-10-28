@@ -5,16 +5,7 @@ runs:
   steps:
     - id: versions
       shell: bash
-      run: |
-        node <<'NODE'
-        const fs = require('fs');
-        const packages = JSON.parse(fs.readFileSync('package-lock.json', 'utf8')).packages;
-        for (const [name, path] of [['rn', 'node_modules/react-native'], ['hermes', 'node_modules/hermes-compiler']]) {
-          const version = packages[path]?.version;
-          if (!version || !/^[0-9A-Za-z.+-]+$/.test(version)) throw new Error(`Missing or invalid ${name} version`);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${version}\n`);
-        }
-        NODE
+      run: node Tools/native-dependency-versions.ts
     - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: |
