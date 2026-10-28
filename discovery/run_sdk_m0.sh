@@ -292,6 +292,22 @@ PY
       --out "$OUT/push-entry" --simulator "$UDID"
   fi
 fi
+PRODUCT_CHECK=sdk-m3-direct
+if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then
+  mkdir "$OUT/m3"
+  env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" \
+    SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M3_RUN_ID="$RUN_ID" SIMCTL_CHILD_SDK_M3_DIRECT=1 \
+    python3 discovery/run_scenario.py --console-launcher-stop --startup-timeout 180 --timeout 60 \
+    --output "$OUT/m3/sdk-m3-direct.log" --receipt "$OUT/m3/sdk-m3-direct.receipt.json" \
+    --run-id "$RUN_ID" --simulator-id "$UDID" --scenario sdk-m3-direct --bundle-id dev.iosvoipsdk.example \
+    --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.example \
+    --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.iosvoipsdk.example
+  example_container=$(limit 30 python3 scripts/sim/paths.py --receipt "$OUT/m3/sdk-m3-direct.receipt.json" --trace "$OUT/m3/sdk-m3-direct.log" \
+    --simulator "$UDID" --run-id "$RUN_ID" --bundle dev.iosvoipsdk.example)
+  [[ -n "$example_container" && -d "$example_container" ]] || { echo "Missing owned dial-request data container" >&2; exit 1; }
+  cp "$example_container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/m3/sdk-m3-direct.runtime.jsonl"
+  python3 discovery/sdk_dial_requests.py record "$OUT" --run-id "$RUN_ID" --simulator "$UDID"
+fi
 PRODUCT_CHECK=sdk-system
 if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then
   if [[ -z "${example_container:-}" ]]; then
@@ -316,6 +332,8 @@ PY
 PRODUCT_CHECK=sdk-m0-conformance
 python3 discovery/sdk_m0_conformance.py "$OUT" | tee "$OUT/summary.json"
 if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then
+  PRODUCT_CHECK=sdk-m3-conformance
+  python3 discovery/sdk_dial_requests.py validate "$OUT" | tee "$OUT/m3/summary.json"
   PRODUCT_CHECK=sdk-system-conformance
   python3 discovery/sdk_system_conformance.py "$OUT" --record
   python3 discovery/sdk_system_conformance.py "$OUT" | tee "$OUT/system/summary.json"

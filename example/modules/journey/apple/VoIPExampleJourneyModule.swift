@@ -1,5 +1,7 @@
 import ExpoModulesCore
 import IosVoipSDK
+import CryptoKit
+import Intents
 #if targetEnvironment(simulator) && canImport(livekit_react_native_webrtc)
 import AVFoundation
 @preconcurrency import livekit_react_native_webrtc
@@ -18,7 +20,12 @@ private struct MediaEngineSample: Sendable {
 
 private enum JourneyConfiguration {
   static let environment = ProcessInfo.processInfo.environment
-  static let runID = environment["SDK_M2_RUN_ID"] ?? environment["SDK_SYSTEM_RUN_ID"] ?? environment["SDK_M1_RUN_ID"] ?? environment["SDK_M0_RUN_ID"] ?? UUID().uuidString
+  static let runID = environment["SDK_M3_RUN_ID"] ?? environment["SDK_M2_RUN_ID"] ?? environment["SDK_SYSTEM_RUN_ID"] ?? environment["SDK_M1_RUN_ID"] ?? environment["SDK_M0_RUN_ID"] ?? UUID().uuidString
+  #if targetEnvironment(simulator)
+  static let dialRequestAcceptance = environment["SDK_M3_DIRECT"] == "1"
+  #else
+  static let dialRequestAcceptance = false
+  #endif
   static let m0 = environment["SDK_M0_ACCEPTANCE"] == "1"
   static let m1Case = environment["SDK_M1_CASE"] ?? ""
   static let systemCase = environment["SDK_SYSTEM_CASE"] ?? ""
@@ -64,8 +71,8 @@ public final class VoIPExampleAppDelegateSubscriber: ExpoAppDelegateSubscriber {
   public func appDelegateWillBeginInitialization() {
     JourneyTrace.record("app.entry")
     var launch: [String: Any] = ["traceVersion": 2,
-      "mode": !JourneyTrace.m2Case.isEmpty ? "sdk-m2" : !JourneyConfiguration.systemCase.isEmpty ? "sdk-system" : JourneyTrace.m0 ? "sdk-m0" : "sdk-m1",
-      "case": !JourneyTrace.m2Case.isEmpty ? JourneyTrace.m2Case : JourneyConfiguration.systemCase.isEmpty ? JourneyTrace.m1Case : JourneyConfiguration.systemCase]
+      "mode": JourneyConfiguration.dialRequestAcceptance ? "sdk-m3" : !JourneyTrace.m2Case.isEmpty ? "sdk-m2" : !JourneyConfiguration.systemCase.isEmpty ? "sdk-system" : JourneyTrace.m0 ? "sdk-m0" : "sdk-m1",
+      "case": JourneyConfiguration.dialRequestAcceptance ? "direct" : !JourneyTrace.m2Case.isEmpty ? JourneyTrace.m2Case : JourneyConfiguration.systemCase.isEmpty ? JourneyTrace.m1Case : JourneyConfiguration.systemCase]
     #if targetEnvironment(simulator)
     launch["bundlePath"] = Bundle.main.bundleURL.resolvingSymlinksInPath().path
     launch["dataContainer"] = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath().path
@@ -81,6 +88,8 @@ public final class VoIPExampleAppDelegateSubscriber: ExpoAppDelegateSubscriber {
 @MainActor
 private final class ExampleJourney {
   static let shared = ExampleJourney()
+  private var directDialStarted = false
+  private var directDialObservations = 0
   private var client: ConversationClient?
   private var stateObserver: UUID?
   private var mediaObserver: UUID?
@@ -424,6 +433,50 @@ private final class ExampleJourney {
     }
   }
 
+  func observedDialRequest(handle: String, video: Bool) throws {
+    guard !completed else { throw JourneyError.wrongMode }
+    let client = try bindClient()
+    let digest = SHA256.hash(data: Data(handle.utf8)).map { String(format: "%02x", $0) }.joined()
+    JourneyTrace.record("m3.dialRequest", ["handleSHA256": digest, "video": video,
+      "conversationCount": client.snapshots.count])
+    if JourneyConfiguration.dialRequestAcceptance {
+      let expected = directDialObservations == 0 ? ("+15555550142", false) : ("+15555550143", true)
+      guard directDialStarted, directDialObservations < 2, handle == expected.0,
+            video == expected.1, client.snapshots.isEmpty else {
+        finish(success: false, errorType: "UnexpectedDialRequest")
+        throw JourneyError.invalidPayload
+      }
+      directDialObservations += 1
+    }
+  }
+
+  #if targetEnvironment(simulator)
+  // Direct public ingress exercises delivery; default-app dispatch needs a device.
+  func deliverDialRequests() async throws {
+    guard JourneyConfiguration.dialRequestAcceptance, !directDialStarted, !completed else { throw JourneyError.wrongMode }
+    directDialStarted = true
+    let client = try bindClient()
+    guard client.snapshots.isEmpty else { throw JourneyError.alreadyCalling }
+    JourneyTrace.record("m3.ready")
+    JourneyTrace.record("m3.delivery", ["kind": "url", "method": "UIApplicationDelegate.application(open:options:)"])
+    let handledURL = UIApplication.shared.delegate?.application?(UIApplication.shared,
+      open: URL(string: "tel:+15555550142")!, options: [:]) == true
+    JourneyTrace.record("m3.returned", ["kind": "url", "handled": handledURL])
+    guard handledURL else { throw JourneyError.invalidPayload }
+    try await waitUntil { self.directDialObservations == 1 }
+    let person = INPerson(personHandle: INPersonHandle(value: "+15555550143", type: .phoneNumber),
+      nameComponents: nil, displayName: nil, image: nil, contactIdentifier: nil, customIdentifier: nil)
+    let intent = INStartCallIntent(callRecordFilter: nil, callRecordToCallBack: nil,
+      audioRoute: .unknown, destinationType: .normal, contacts: [person], callCapability: .videoCall)
+    JourneyTrace.record("m3.delivery", ["kind": "intent", "method": "VoIPSystemEntryPoints.handle(intent:)"])
+    let handledIntent = VoIPSystemEntryPoints.handle(intent: intent)
+    JourneyTrace.record("m3.returned", ["kind": "intent", "handled": handledIntent])
+    guard handledIntent else { throw JourneyError.invalidPayload }
+    try await waitUntil { self.directDialObservations == 2 }
+    finish(success: true)
+  }
+  #endif
+
   func finish(success: Bool, errorType: String? = nil) {
     guard !completed else { return }
     completed = true
@@ -453,7 +506,21 @@ public final class VoIPExampleJourneyModule: Module {
     Name("VoIPExampleJourney")
     Constants(["acceptanceEnabled": JourneyConfiguration.m0, "m1Case": JourneyConfiguration.m1Case,
       "systemCase": JourneyConfiguration.systemCase, "m2Case": JourneyConfiguration.m2Case,
-      "runID": JourneyConfiguration.runID])
+      "dialRequestAcceptanceEnabled": JourneyConfiguration.dialRequestAcceptance, "runID": JourneyConfiguration.runID])
+    AsyncFunction("observedDialRequest") { (handle: String, video: Bool, promise: Promise) in
+      Task { @MainActor in
+        do { try ExampleJourney.shared.observedDialRequest(handle: handle, video: video); promise.resolve() }
+        catch { promise.reject("journey", String(reflecting: type(of: error))) }
+      }
+    }
+    #if targetEnvironment(simulator)
+    AsyncFunction("deliverDialRequests") { (promise: Promise) in
+      Task { @MainActor in
+        do { try await ExampleJourney.shared.deliverDialRequests(); promise.resolve() }
+        catch { ExampleJourney.shared.finish(success: false, errorType: String(reflecting: type(of: error))); promise.reject("journey", "Dial delivery failed.") }
+      }
+    }
+    #endif
     AsyncFunction("nextSystemCommand") { (promise: Promise) in
       Task { @MainActor in
         do { promise.resolve(try await ExampleJourney.shared.nextSystemCommand()) }

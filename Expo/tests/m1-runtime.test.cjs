@@ -35,13 +35,25 @@ const { ConversationRuntime } = require(
 const { isConversationCommandError } = require(path.join(output, 'types.js'));
 
 test('native command rejection guard retains only declared codes', () => {
-  for (const code of ['invalid_arguments', 'unknown_conversation', 'unsupported', 'conversation', 'duplicate_sdk_linkage', 'at_capacity']) {
+  for (const code of [
+    'invalid_arguments',
+    'unknown_conversation',
+    'unsupported',
+    'conversation',
+    'duplicate_sdk_linkage',
+    'at_capacity',
+  ]) {
     const error = Object.assign(new Error('native rejection'), { code });
     assert.equal(isConversationCommandError(error), true);
   }
-  for (const value of [null, undefined, 'conversation', new Error('plain'),
+  for (const value of [
+    null,
+    undefined,
+    'conversation',
+    new Error('plain'),
     { code: 'conversation', message: 'plain object' },
-    Object.assign(new Error('foreign'), { code: 'foreign' })]) {
+    Object.assign(new Error('foreign'), { code: 'foreign' }),
+  ]) {
     assert.equal(isConversationCommandError(value), false);
   }
 });
@@ -61,6 +73,14 @@ function native() {
   return {
     attachments: [],
     settlements: [],
+    dialAttachments: [],
+    dialAcknowledgements: [],
+    acknowledgeDialRequest(deliveryID, generation) {
+      this.dialAcknowledgements.push({ deliveryID, generation });
+    },
+    setDialRequestListenerAttached(attached, generation) {
+      this.dialAttachments.push({ attached, generation });
+    },
     addListener(name, callback) {
       const callbacks = listeners.get(name) ?? new Set();
       callbacks.add(callback);
@@ -388,6 +408,45 @@ test('non-state signals are routed by name and unsubscribe removes the listener'
   assert.deepEqual(events, [{}]);
 });
 
+test('dial request readiness follows actual public listeners, including synchronous cold drain', () => {
+  const bridge = native();
+  const request = { handle: '+15555550142', video: true };
+  bridge.setDialRequestListenerAttached = function (attached, generation) {
+    this.dialAttachments.push({ attached, generation });
+    if (attached)
+      this.emit('conversationEvent', {
+        type: 'dialRequest',
+        payload: request,
+        deliveryID: 'request-1',
+        generation,
+      });
+  };
+  const runtime = new ConversationRuntime(bridge);
+  runtime.subscribeEvent('audioActivated', () => {});
+  assert.deepEqual(bridge.dialAttachments, []);
+  const seen = [];
+  const first = runtime.subscribeEvent('dialRequest', (event) =>
+    seen.push(event),
+  );
+  assert.deepEqual(seen, [request]);
+  assert.deepEqual(bridge.dialAttachments, [{ attached: true, generation: 1 }]);
+  const second = runtime.subscribeEvent('dialRequest', () => {});
+  first();
+  first();
+  assert.equal(bridge.dialAttachments.length, 1);
+  second();
+  assert.deepEqual(bridge.dialAttachments[1], {
+    attached: false,
+    generation: 2,
+  });
+  const third = runtime.subscribeEvent('dialRequest', () => {});
+  assert.deepEqual(bridge.dialAttachments[2], {
+    attached: true,
+    generation: 3,
+  });
+  third();
+});
+
 test('audio route event wins over stale hydration and preserves stable immutable state', async () => {
   const bridge = native();
   const initial = deferred();
@@ -442,9 +501,61 @@ test('answered elsewhere events preserve the correlated server ownership signal'
   const bridge = native();
   const runtime = new ConversationRuntime(bridge);
   const events = [];
-  const unsubscribe = runtime.subscribeEvent('answeredElsewhere', (value) => events.push(value));
-  const payload = { conversationId: 'conversation-1', serverCallId: 'server-1', eventId: 'event-1' };
+  const unsubscribe = runtime.subscribeEvent('answeredElsewhere', (value) =>
+    events.push(value),
+  );
+  const payload = {
+    conversationId: 'conversation-1',
+    serverCallId: 'server-1',
+    eventId: 'event-1',
+  };
   bridge.emit('conversationEvent', { type: 'answeredElsewhere', payload });
   assert.deepEqual(events, [payload]);
   unsubscribe();
+});
+
+test('queued readiness retains unobserved requests until a current public listener acknowledges', () => {
+  const bridge = native();
+  const commands = [];
+  const request = { handle: '+15555550142', video: false };
+  let pending = true;
+  let activeGeneration = null;
+  bridge.setDialRequestListenerAttached = (attached, generation) =>
+    commands.push(() => {
+      activeGeneration = attached ? generation : null;
+      if (attached && pending)
+        bridge.emit('conversationEvent', {
+          type: 'dialRequest',
+          payload: request,
+          deliveryID: 'cold-1',
+          generation,
+        });
+    });
+  bridge.acknowledgeDialRequest = (id, generation) =>
+    commands.push(() => {
+      if (id === 'cold-1' && activeGeneration === generation) pending = false;
+    });
+  const runtime = new ConversationRuntime(bridge);
+  const seen = [];
+  const flushCommands = () => {
+    while (commands.length) commands.shift()();
+  };
+  const remove = runtime.subscribeEvent('dialRequest', (event) =>
+    seen.push(event),
+  );
+  remove();
+  flushCommands();
+  assert.deepEqual(seen, []);
+  assert.equal(pending, true);
+  runtime.subscribeEvent('dialRequest', (event) => seen.push(event));
+  bridge.emit('conversationEvent', {
+    type: 'dialRequest',
+    payload: request,
+    deliveryID: 'cold-1',
+    generation: 1,
+  });
+  assert.deepEqual(seen, []);
+  flushCommands();
+  assert.deepEqual(seen, [request]);
+  assert.equal(pending, false);
 });

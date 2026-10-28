@@ -45,6 +45,7 @@ SOURCE_PATHS = ('Sources', 'Integrations', 'Expo', 'ExpoMedia', 'example', 'Pack
                 'discovery/check_lck_provider_policy.py',
                 'Tools', 'scripts/build-runtime.sh', 'discovery/run_sdk_system.py',
                 'discovery/sdk_system_conformance.py', 'discovery/check_sdk_system.py',
+                'discovery/sdk_dial_requests.py', 'discovery/check_sdk_dial_requests.py',
                 'discovery/check_cli_controls.py', 'discovery/check_cli_push_launch.py',
                 'docs/research/callkit-simulator-probe/device-system-ui/2026-10-20-iphone13-ui10-app.jsonl',
                 'discovery/build_sdk_device_release.py', 'discovery/device_release_exclusion.py',
