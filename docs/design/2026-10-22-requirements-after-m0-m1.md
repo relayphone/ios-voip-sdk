@@ -148,7 +148,7 @@ The research, with sources, is summarized here. Both conditions were confirmed i
    - **Unconfirmed in 2.0, so check first:**
      - `@Event` on `@SharedObject`;
      - whether `ExpoAppDelegateSubscriber` sees PushKit early enough under SDK 58's scene lifecycle.
-2. **Threading contract.** Write it down in START-HERE, and enforce it.
+2. **Threading contract.** Document and enforce it.
 
    | Thread | What runs there |
    | --- | --- |

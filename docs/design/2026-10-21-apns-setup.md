@@ -17,7 +17,7 @@ A new **Phone CallKit QA Sandbox** key now supports **APNs only, Team Scoped
 (All topics), Sandbox**. It does not authorize production pushes. No existing
 key was revoked, rotated or given another capability.
 
-- Canonical key: **Phone APNs sandbox team key**, a document in **Phone App**,
+- Canonical key: **Phone APNs sandbox team key**, a document in your secrets manager,
   with key/team/environment/scope fields. Retrieval through the already approved
   Phone service account was byte-verified.
 - Local configs: `.env/apns-sandbox.env` in the simulator clone, its runtime

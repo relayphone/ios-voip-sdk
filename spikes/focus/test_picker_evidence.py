@@ -173,7 +173,7 @@ class PickerEvidenceTests(unittest.TestCase):
                 with self.assertRaises(morning_batch.ProcessGroupCleanupError):
                     morning_batch.run_batch([], SimpleNamespace(quiet=False))
             inventory.assert_not_called()
-            self.assertTrue((root / ".device-locks" / (device + ".lock")).is_dir())
+            self.assertTrue((root / ".focus-locks" / (device + ".lock")).is_dir())
             self.assertTrue(raw.exists())
 
     def test_nonzero_observer_in_finally_prevents_device_recovery(self):
