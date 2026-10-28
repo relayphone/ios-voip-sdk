@@ -382,6 +382,13 @@ struct BridgeTests {
                "Actual route snapshots must retain native revision, output identity and raw port type.")
     application.client.publish(AudioRoutesSnapshot(revision: 10, routes: [], current: nil))
     try expect(events.named("audioRoutesChanged").last?["current"] is NSNull, "Route loss must emit explicit null.")
+    application.client.publish(.answeredElsewhere, conversationID: conversation.id,
+      serverCallID: "server-answered", eventID: "event-answered")
+    let answered = events.named("conversationEvent").last
+    try expect(answered?["type"] as? String == "answeredElsewhere" &&
+      (answered?["payload"] as? [String: String]) == ["conversationId": conversation.id.uuidString,
+        "serverCallId": "server-answered", "eventId": "event-answered"],
+      "The ownership event must retain its backend and conversation identities.")
   }
 
   @MainActor private static func action(_ events: Events, id: UUID) throws -> [String: Any] {

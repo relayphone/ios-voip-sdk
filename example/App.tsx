@@ -88,6 +88,18 @@ function CallingJourney() {
     observeEvent('audioDeactivated'),
   );
   useConversationEvent('providerReset', () => observeEvent('providerReset'));
+  useConversationEvent(
+    'answeredElsewhere',
+    ({ conversationId, serverCallId, eventId }) => {
+      if (journey().systemCase !== '')
+        void systemTrace('system.event', {
+          name: 'answeredElsewhere',
+          conversationID: conversationId,
+          serverCallId,
+          eventId,
+        });
+    },
+  );
   useConversationEvent('pushTokenUpdated', () =>
     observeEvent('pushTokenUpdated'),
   );
