@@ -153,9 +153,9 @@ flowchart TB
    - ring timeout, action timeouts and `providerDidReset`;
    - system-originated mute;
    - delayed or duplicate pushes, and `mustReport` false.
-6. **PushKit has two lanes.**
+6. **PushKit has two paths.**
    - Synthetic pushes through the metadata API (R5), for deterministic tests.
-   - Real sandbox APNs to the simulator's genuine token (S7). Here the runtime **must** also report to genuine CallKit (P3), through a runtime-owned delegate on the real provider (R6), which keeps PushKit's in-process check satisfied (P4). Cold launches need the launchd bootstrap or the linked route, because per-launch environment variables never reach a push-initiated launch (P5). The synthetic lane emulates P2: completing without a report raises the same exception unless the test disables it.
+   - Real sandbox APNs to the simulator's genuine token (S7). Here the runtime **must** also report to genuine CallKit (P3), through a runtime-owned delegate on the real provider (R6), which keeps PushKit's in-process check satisfied (P4). Cold launches need the launchd bootstrap or the linked route, because per-launch environment variables never reach a push-initiated launch (P5). The synthetic path emulates P2: completing without a report raises the same exception unless the test disables it.
 7. **Audio.** The engine activates the real session and calls `didActivate` with `AVAudioSession.sharedInstance()`. In CI the input is silent (S8), so media tests inject audio: Phone's BlackHole harness, or a WebRTC audio-device hook.
 8. **React Native is delivery plus typed control.** Existing RN calling libraries keep working unchanged. The npm package ships the runtime (podspec glue), the typed control/observation API, an Expo config plugin, Detox and Maestro helpers, and a clearly labeled Jest mock.
 9. **Build compatibility.** Compile-guard newer SDK symbols so older Xcode (26.3 lacks 26.4 PushKit) can still build consumers (S8).
@@ -183,7 +183,7 @@ flowchart TB
 2. **Real conversation.** Peer bot plus BlackHole tone injection and capture, both directions, mute suppression proven with a known tone, in CI. Then Phone's Telnyx path, unmodified. _Exit:_ directional audio receipts in CI.
 3. **UI, control plane and test frameworks.** Emulated UI with genuine identifiers, CLI, console, fault controls; XCUITest, Detox, Maestro and Appium examples. One shared UI test passing on the iPhone 13 and the simulator.
 4. **React Native and Expo.** Typed package, config plugin, bare RN and Expo examples (callkeep, `react-native-webrtc`) from the tarball.
-5. **PushKit and hosted environments.** Real APNs lane, cold launch, Xcode Cloud (linked route), EAS and remote providers with per-capability receipts; 0.1 release.
+5. **PushKit and hosted environments.** Real APNs testing, cold launch, Xcode Cloud (linked route), EAS and remote providers with per-capability receipts; 0.1 release.
 
 ## 6. Open questions and blockers
 
@@ -194,7 +194,7 @@ flowchart TB
 
 ## 7. Comparison with the other plan
 
-The other agent reviewed v1 and adopted interposition as its primary direction (`callkit-simulator` commit `d3b7353`). The plans now agree on the seam, distribution, a typed control surface for React Native, and evidence discipline. Their remaining objections, and where each stands:
+A reviewer reviewed v1 and adopted interposition as its primary direction (`callkit-simulator` commit `d3b7353`). The plans now agree on the seam, distribution, a typed control surface for React Native, and evidence discipline. Their remaining objections, and where each stands:
 
 | Objection in their review                     | Status                                                                                                                          |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |

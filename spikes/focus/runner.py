@@ -305,7 +305,7 @@ def require_device_supervisor():
             or not re.fullmatch(r"[a-f0-9]{32}", nonce) or os.getpgrp() != os.getpid()):
         raise RuntimeError("Real device rows require the lock-owning morning-batch supervisor")
     try:
-        receipt = json.loads((Path.home() / ".device-locks" / (device + ".lock") / "owner.json").read_text())
+        receipt = json.loads((Path(os.environ.get("FOCUS_LOCK_DIR", Path.home() / ".focus-locks")) / (device + ".lock") / "owner.json").read_text())
     except (OSError, ValueError):
         raise RuntimeError("Device supervisor lock receipt unavailable")
     if (not isinstance(receipt, dict) or receipt.get("owner") != "focus-morning-batch" or receipt.get("pid") != int(owner_pid)

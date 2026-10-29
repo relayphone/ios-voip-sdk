@@ -1,6 +1,6 @@
 # Focus-aware calling: platform findings
 
-Research for [#124](https://github.com/relayphone/ios-voip-sdk/issues/124), checked 26 October 2026. This is a design input, not an implemented SDK feature; device measurements are in [results](results.md). Companion deliverables: [proposed SDK API](sdk-api.md), [device measurement plan](device-plan.md), [Phone app integration contract](phone-app.md), the first [device results](results.md), and the conditional [host-controlled breakthrough RFC](app-breakthrough.md).
+Research for [#124](https://github.com/relayphone/ios-voip-sdk/issues/124), checked 26 October 2026. This is a design input, not an implemented SDK feature; device measurements are in [results](results.md). Companion deliverables: [proposed SDK API](sdk-api.md), [device measurement plan](device-plan.md), the first [device results](results.md), and the conditional [host-controlled breakthrough RFC](app-breakthrough.md).
 
 **Recommendation:** report legitimate incoming VoIP calls immediately, accept the system's filtering decision, and let the backend decline or screen a filtered call. Offer an opt-in, silent transcript Live Activity and a user-initiated join into the existing AI call. No public API found here turns Focus off or guarantees that a call, notification or Live Activity will break through.
 

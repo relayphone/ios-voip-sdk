@@ -2,7 +2,7 @@
 
 Proposal for [#124](https://github.com/relayphone/ios-voip-sdk/issues/124), informed by the [platform findings](README.md). None of the additions below exists yet. Apple API availability and measured limitations are in the README. Existing SDK names are linked to their source; all new signatures are illustrative contracts, not a buildable patch. No SDK source change is included.
 
-The Phone contract follows the Phone app's requirements: numbers use LiveKit SIP ([#458](https://github.com/ziahamza/phone-app/issues/458)), owner join/take-over already exists ([#456](https://github.com/ziahamza/phone-app/issues/456)), and server captions come from celld's SSE stream ([#858](https://github.com/ziahamza/phone-app/issues/858)). Use those services; do not create a second AI or captions pipeline.
+A production app uses LiveKit SIP numbers, supports owner join and take-over, and receives server captions over SSE. Use those services; do not create a second AI or captions pipeline.
 
 ## Typed incoming result and native policy
 
@@ -201,4 +201,4 @@ All LCK ownership, action fulfillment and SDK conversation projection stays on M
 
 Expose no `forceRing`, `disableFocus` or API that **generates or retries** a call to manufacture a repeated-call breakthrough. A user-authorized host policy may classify separate, genuine incoming calls by exact caller and time window, then send a single VoIP push for an eligible later call when the user has allowed the app; see the [app-breakthrough RFC](app-breakthrough.md). That server decision does not claim iOS's repeat-call rule applies or bypass a Focus setting. Settings may explain user-managed Focus app/person/call allowances. Genuine communication notifications are an opt-in, independently tested path; an AI urgency label is not an entitlement. Any separately justified urgent alert must pass user authorization and the [README's interruption rules](README.md#interruption-levels-and-compliant-breakthrough). Silent transcript mode always omits alerts.
 
-Before implementing: qualify native callback-once and backend deduplication under suspension/relaunch; permission/unknown status; foreground/intent/pre-armed starts and dismissal; any separately enabled alerting push-to-start then update-token handoff; Unicode payload bounds; stale/disabled surfaces; and owner take-over races on the device plan. These gates are proposed follow-up work, not tests run by this docs lane.
+Before implementing: qualify native callback-once and backend deduplication under suspension/relaunch; permission/unknown status; foreground/intent/pre-armed starts and dismissal; any separately enabled alerting push-to-start then update-token handoff; Unicode payload bounds; stale/disabled surfaces; and owner take-over races on the device plan. These gates are proposed follow-up work, not completed tests.

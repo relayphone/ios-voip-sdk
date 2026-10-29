@@ -12,12 +12,12 @@ See the [M-Stable review checkpoint](docs/progress/2026-10-28-m-stable.md) for d
 
 The API design is [RFC 0001](https://github.com/relayphone/expo-callkit-telecom/pull/10). It is written as a possible v2 of [expo-callkit-telecom](https://github.com/mfairley/expo-callkit-telecom), whose iOS side would then depend on this package's Expo module. This SDK doesn't wait on that: it is built here first.
 
-**Start with [docs/START-HERE.md](docs/START-HERE.md).** It covers decisions, architecture, milestones, evidence and working rules.
+**Start with the [documentation index](docs/README.md).**
 
 ## Requirements
 
 - iOS and iPadOS 17.4 or later.
-- Build the Swift package and Expo module with the iOS 27 SDK or newer (CI uses Xcode 27.1). One binary handles legacy interruptions on 17.4–26 and the new lifecycle notifications on 27+. The standalone simulator runtime retains its earlier compiler lanes.
+- Build the Swift package and Expo module with the iOS 27 SDK or newer (CI uses Xcode 27.1). One binary handles legacy interruptions on 17.4–26 and the new lifecycle notifications on 27+. The standalone simulator runtime retains its earlier compiler jobs.
 - Mac Catalyst waits for an Apple SDK fix: with Xcode 27.1, `ConversationManagerDelegate` conformances fail to link on Catalyst.
 - Apple Watch is deferred.
 

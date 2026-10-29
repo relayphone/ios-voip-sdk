@@ -82,7 +82,7 @@ with the retry result. Use `sim.py product <check>` for product failures; it nev
 executes or retries a check. Summary labels exclude command arguments and
 environment values. The lifecycle API rejects `spawn` and container RPCs. During
 incremental adoption, `sim.sh` keeps existing product probes on the bounded path
-without lifecycle retries; their replacement requires the owning lane's product
+without lifecycle retries; their replacement requires the maintainer's product
 controls.
 
 A stateless bounded probe can declare one expected nonzero status with
