@@ -57,7 +57,7 @@ public final class PushService {
   private nonisolated let intake: IncomingIntake
   private nonisolated let transport: IncomingReportTransport
   private let tokens = PushTokenStore()
-  private var owner: PushRegistryOwner?
+  private(set) var owner: PushRegistryOwner?
   // The native process owner retains the proxy, which retains this service.
   // A weak cache preserves receiver identity across repeated start attempts.
   private weak var receiver: PushReceiverProxy?
