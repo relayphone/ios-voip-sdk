@@ -118,7 +118,9 @@ private final class EntryProbe {
     } catch { finish(false) }
   }
   private func runMainStall(_ application: VoIPApplication) async throws {
-    let owner = try PushRegistryOwner.shared(receiver: application.pushService)
+    guard let owner = application.pushService.owner else {
+      preconditionFailure("The main-stall fixture requires the started SDK registry owner.")
+    }
     let payload: [AnyHashable: Any] = ["incomingCall": ["eventId": "main-stall-event", "serverCallId": "main-stall-server",
       "caller": ["handleType": "generic", "value": "main-stall-caller", "displayName": "Main stall fixture"], "hasVideo": false]]
     // This helper invokes the linked native callback body on a worker after
