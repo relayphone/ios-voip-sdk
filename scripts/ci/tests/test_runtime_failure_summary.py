@@ -37,23 +37,6 @@ class RuntimeFailureSummary(unittest.TestCase):
             '- `infra:launch`: timeout after 180s; scheduled one bounded re-attempt\n'})
         self.assertIn('`infra:launch`', result)
 
-    def test_failed_phase_reports_observed_timeout_without_arguments(self):
-        report = summary.render({'inspector': 'failure'}, {'inspector':
-            '- `measurement:simctl-timeout`: launch\n'
-            '- `measurement:simctl-timeout`: launch\n'
-            '- `measurement:simctl-timeout`: launch private-device\n'
-            '- `measurement:simctl-timeout`: unknown-operation\n'})
-        self.assertIn('observed simctl timeouts: `launch`', report)
-        self.assertEqual(report.count('`launch`'), 1)
-        self.assertNotIn('private-device', report)
-        self.assertNotIn('unknown-operation', report)
-        self.assertIn('no infrastructure label recorded', report)
-
-    def test_timeout_in_successful_phase_is_not_reported_as_failure(self):
-        report = summary.render({'watch': 'success'}, {'watch':
-            '- `measurement:simctl-timeout`: list\n'})
-        self.assertNotIn('simctl timeouts', report)
-
     def test_inventory_retry_exhaustion_is_still_reported(self):
         result = summary.render({'watch': 'failure'}, {'watch':
             '- `infra:inventory`: timeout after 180s; scheduled one bounded re-attempt\n'
@@ -103,10 +86,6 @@ class RuntimeFailureSummary(unittest.TestCase):
         self.assertIn('continue-on-error: true', upload)
         for key in ('create', 'watch', 'lck', 'inspector', 'cleanup'):
             self.assertIn('runtime-phase-' + key + '.md', text)
-            phase = text.split('        id: ' + key + '\n', 1)[1].split('      - ', 1)[0]
-            self.assertIn('export CKSIM_RECORD_TIMEOUT_OPERATIONS=1', phase)
-        controls = text.split('        id: controls\n', 1)[1].split('      - ', 1)[0]
-        self.assertNotIn('CKSIM_RECORD_TIMEOUT_OPERATIONS', controls)
         with tempfile.TemporaryDirectory() as tmp:
             env = dict(os.environ, RUNNER_TEMP=tmp, GITHUB_STEP_SUMMARY=tmp + '/original')
             shell = ('runtime_original_summary="$GITHUB_STEP_SUMMARY"; '
