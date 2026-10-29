@@ -17,8 +17,8 @@ The evidence is in:
   - Mac Catalyst waits until Apple fixes the SDK defect (Feedback draft 2). There is no temporary CallKit adapter.
   - Apple Watch is deferred.
 - **Propose v2 upstream first.** The preferred outcome is an evolved, LiveCommunicationKit-based API that @mfairley adopts as expo-callkit-telecom v2. If he declines, the same design ships as our own `react-native-voip`. Either way:
-  - **The design:** [RFC 0001](https://github.com/ziahamza/expo-callkit-telecom/blob/rfc/v2-conversations-api/rfcs/0001-v2-conversations-api.md), under internal review in fork [PR #10](https://github.com/ziahamza/expo-callkit-telecom/pull/10).
-  - **The iOS native core:** the Swift package **`ziahamza/ios-voip-sdk`**, public, with **no license file yet**.
+  - **The design:** [RFC 0001](https://github.com/relayphone/expo-callkit-telecom/blob/rfc/v2-conversations-api/rfcs/0001-v2-conversations-api.md), under internal review in fork [PR #10](https://github.com/relayphone/expo-callkit-telecom/pull/10).
+  - **The iOS native core:** the Swift package **`relayphone/ios-voip-sdk`**, public, with **no license file yet**.
   - **Android:** stays on Core-Telecom, refactored to the same model.
 - **`ios-voip-sdk` goes ahead at full speed, independent of upstream.** It ships a Swift package and an iOS-only Expo module built from the same sources, per RFC 0001. expo-callkit-telecom v2 can adopt the module whenever upstream is ready. There is no v1 compatibility shim, so v2 is a clean break.
 - **Phone** moves from Telnyx to LiveKit, then onto this library.
@@ -103,7 +103,7 @@ Start with fresh history. Add no license until Hamza decides. Credit upstream's 
 
 **Skip** Phone P3: it is Telnyx-specific, and Telnyx is going away.
 
-**Add:** build `ziahamza/ios-voip-sdk` (public, no license file yet), with RFC 0001 as the API source of truth. Record deviations as comments on fork PR #10.
+**Add:** build `relayphone/ios-voip-sdk` (public, no license file yet), with RFC 0001 as the API source of truth. Record deviations as comments on fork PR #10.
 
 | Milestone | Scope | Done when |
 | --- | --- | --- |

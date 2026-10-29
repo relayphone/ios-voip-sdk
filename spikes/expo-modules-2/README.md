@@ -1,6 +1,6 @@
 # Expo Modules 2.0 bridge spike
 
-Isolated SDK 58 app for [lane #52](https://github.com/ziahamza/ios-voip-sdk/issues/52).
+Isolated SDK 58 app for [issue #52](https://github.com/relayphone/ios-voip-sdk/issues/52).
 The app checks a cached, frozen snapshot (`@Record` + `@Union`) and coalesced
 `@Event` notifications on an `@ExpoModule` class.
 It does not depend on the production SDK or change its bridge.

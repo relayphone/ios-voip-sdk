@@ -117,7 +117,10 @@ async function main() {
       ringtoneName: 'default',
     });
     assert.deepEqual(plist.Custom, { nested: true });
-    assert.deepEqual(plist.NSUserActivityTypes, ['OtherIntent']);
+    assert.deepEqual(plist.NSUserActivityTypes, [
+      'OtherIntent',
+      'INStartCallIntent',
+    ]);
     checks.push('defaults-and-existing-plist-preserved');
     assert.equal(plist.VoIPSDK.providerOwnershipMonitoring, undefined);
     assert.deepEqual(
@@ -240,13 +243,37 @@ async function main() {
       { sounds: ['/outside.wav'] },
       { iconTemplateIos: false },
       { microphonePermission: '' },
-      { defaultCallingApp: true },
+      { defaultCallingApp: 'true' },
+      { mediaAdapter: 'unknown' },
+      { mediaAdapter: null },
       { incomingCallTimeout: 45 },
       { typo: true },
     ]) {
       assert.throws(() => configured(options), /ios-voip-sdk:/);
     }
     checks.push('invalid-and-unimplemented-options-rejected');
+    const calling = await apply(
+      configured({ defaultCallingApp: true }),
+      'entitlements',
+      { OtherEntitlement: true },
+    );
+    assert.equal(calling['com.apple.developer.calling-app'], true);
+    assert.equal(calling.OtherEntitlement, true);
+    assert.equal(calling['com.apple.developer.dialing-app'], undefined);
+    const disabled = await apply(
+      configured({ defaultCallingApp: false }),
+      'entitlements',
+      calling,
+    );
+    assert.equal(disabled['com.apple.developer.calling-app'], undefined);
+    assert.equal(disabled.OtherEntitlement, true);
+    checks.push('default-calling-app-optin-and-owned-entitlement-cleanup');
+    await rejectsMod(
+      {},
+      'infoPlist',
+      { NSUserActivityTypes: 'INStartCallIntent' },
+      /NSUserActivityTypes/,
+    );
     await rejectsMod(
       {},
       'infoPlist',

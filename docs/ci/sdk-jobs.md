@@ -26,10 +26,9 @@ contract on an available iOS 27.1+ runtime; it refuses a substitute device or OS
 gate requires every selected host/build/journey/legacy/Duo result to succeed, including every
 matrix member; skipped or cancelled dependencies fail the gate.
 
-Baseline [main5419149](https://github.com/ziahamza/ios-voip-sdk/actions/runs/40296800038):
+Baseline [main5419149](https://github.com/relayphone/ios-voip-sdk/actions/runs/40296800038):
 the old sequential job took33.87minutes; the SDK workflow took36.52minutes from
-first job start through final legacy completion. PR descriptions and lane STATUS
-reports record measured candidate/main timings. Targets are PR critical path
+first job start through final legacy completion. PR descriptions and status reports record measured candidate/main timings. Targets are PR critical path
 under15minutes and main full run under20. Path selection, caching and merge-group
 support follow in separate changes after this graph qualifies on main.
 

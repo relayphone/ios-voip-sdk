@@ -17,7 +17,7 @@ A new **Phone CallKit QA Sandbox** key now supports **APNs only, Team Scoped
 (All topics), Sandbox**. It does not authorize production pushes. No existing
 key was revoked, rotated or given another capability.
 
-- Canonical key: **Phone APNs sandbox team key**, a document in **Phone App**,
+- Canonical key: **Phone APNs sandbox team key**, a document in your secrets manager,
   with key/team/environment/scope fields. Retrieval through the already approved
   Phone service account was byte-verified.
 - Local configs: `.env/apns-sandbox.env` in the simulator clone, its runtime
@@ -29,13 +29,13 @@ key was revoked, rotated or given another capability.
   required operator reviewer and exact branch rules for `main` and
   `feat/runtime-engine`. Its secret is available only to the approved
   credential-check job. Ordinary simulator/library PR CI receives no APNs key.
-- [Hosted credential check](https://github.com/ziahamza/ios-voip-sdk/actions/runs/39574173320)
+- [Hosted credential check](https://github.com/relayphone/ios-voip-sdk/actions/runs/39574173320)
   passed: private-key retrieval and local P-256 ES256 signing. This job sends
   no push, uploads no artifacts and makes no APNs-delivery claim.
 
 ## Real device smoke test
 
-[Evidence](https://github.com/ziahamza/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-21-apns-sandbox/README.md) contains one real
+[Evidence](https://github.com/relayphone/ios-voip-sdk/blob/addd1bf4a2d1abf90133fa6e6224f71f5271d5d4/docs/verification/2026-10-21-apns-sandbox/README.md) contains one real
 sandbox APNs acceptance receipt and the corresponding metadata callback from
 the dedicated iPhone 13. The topic remains **dev.callkitsim.probe.voip**.
 

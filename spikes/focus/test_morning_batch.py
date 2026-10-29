@@ -124,7 +124,7 @@ class MorningPlanTests(unittest.TestCase):
             calls = []
             def fake_command(argv, env, log, timeout, should_pause=None):
                 calls.append(argv[1])
-                owner = json.loads((root / ".device-locks" / (device + ".lock") / "owner.json").read_text())
+                owner = json.loads((root / ".focus-locks" / (device + ".lock") / "owner.json").read_text())
                 self.assertEqual(env["FOCUS_BATCH_OWNER_PID"], str(os.getpid()))
                 self.assertEqual(env["FOCUS_BATCH_LOCK_NONCE"], owner["nonce"])
                 self.assertEqual(env["FOCUS_REQUIRE_DEVICE_JOURNAL"], "1")
@@ -134,7 +134,7 @@ class MorningPlanTests(unittest.TestCase):
                  mock.patch.object(batch, "command", side_effect=fake_command):
                 batch.supervised_restore()
             self.assertEqual(calls, ["preflight", "restore-all"])
-            self.assertFalse((root / ".device-locks" / (device + ".lock")).exists())
+            self.assertFalse((root / ".focus-locks" / (device + ".lock")).exists())
             state = json.loads((work / "morning-checkpoint.json").read_text())
             self.assertFalse(state["dirty"])
             self.assertIsNone(state["inFlight"])
@@ -159,7 +159,7 @@ class MorningPlanTests(unittest.TestCase):
                      contextlib.redirect_stderr(io.StringIO()):
                     with self.assertRaises(batch.ProcessGroupCleanupError):
                         batch.supervised_restore()
-                self.assertTrue((root / ".device-locks" / (device + ".lock")).is_dir())
+                self.assertTrue((root / ".focus-locks" / (device + ".lock")).is_dir())
 
     def test_standalone_restore_never_steals_an_existing_lock(self):
         with tempfile.TemporaryDirectory() as root:
@@ -168,7 +168,7 @@ class MorningPlanTests(unittest.TestCase):
             product = root / "device.xctestrun"
             product.write_bytes(b"signed-product")
             device = "00008110-0011223344556677"
-            occupied = batch.DeviceLock(root / ".device-locks", device)
+            occupied = batch.DeviceLock(root / ".focus-locks", device)
             occupied.acquire()
             with mock.patch.dict(os.environ, {"FOCUS_DEVICE": device, "FOCUS_WORK": str(work), "FOCUS_XCTESTRUN": str(product)}), \
                  mock.patch.object(Path, "home", return_value=root), \
@@ -382,7 +382,7 @@ class MorningPlanTests(unittest.TestCase):
                  mock.patch.object(batch, "command", side_effect=fake_command), \
                  contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(batch.run_batch(plan, None), 75)
-                self.assertFalse((root / ".device-locks" / "00008110-0011223344556677.lock").exists())
+                self.assertFalse((root / ".focus-locks" / "00008110-0011223344556677.lock").exists())
                 self.assertEqual(commands, ["preflight", "C06", "restore-all"])
                 (work / "PAUSE").unlink()
                 self.assertEqual(batch.run_batch(plan, None), 0)
@@ -410,7 +410,7 @@ class MorningPlanTests(unittest.TestCase):
                  contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 with self.assertRaises(RuntimeError):
                     batch.run_batch(plan, None)
-            self.assertTrue((root / ".device-locks" / "00008110-0011223344556677.lock").is_dir())
+            self.assertTrue((root / ".focus-locks" / "00008110-0011223344556677.lock").is_dir())
             self.assertEqual(json.loads((work / "morning-checkpoint.json").read_text())["inFlight"], plan[0]["id"])
 
     def test_old_log_and_result_cannot_certify_new_attempt(self):
@@ -539,7 +539,7 @@ class MorningPlanTests(unittest.TestCase):
                     raise RuntimeError("row process stopped")
                 if argv[1] == "restore-all":
                     self.assertEqual(env.get("FOCUS_REQUIRE_DEVICE_JOURNAL"), "1")
-                    self.assertTrue((root / ".device-locks" / (device + ".lock")).is_dir())
+                    self.assertTrue((root / ".focus-locks" / (device + ".lock")).is_dir())
                 if argv[1] == "C01":
                     self.assertNotIn("FOCUS_REQUIRE_DEVICE_JOURNAL", env)
                     checkpoint = json.loads((work / "morning-checkpoint.json").read_text())
@@ -594,7 +594,7 @@ class MorningPlanTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     batch.run_batch(plan, None)
             self.assertEqual(calls, ["preflight", "C06", "restore-all"])
-            self.assertTrue((root / ".device-locks" / (device + ".lock")).is_dir())
+            self.assertTrue((root / ".focus-locks" / (device + ".lock")).is_dir())
             state = json.loads((work / "morning-checkpoint.json").read_text())
             self.assertTrue(state["dirty"])
             self.assertEqual(state["inFlight"], plan[0]["id"])
@@ -622,7 +622,7 @@ class MorningPlanTests(unittest.TestCase):
                  contextlib.redirect_stderr(io.StringIO()):
                 with self.assertRaises(RuntimeError):
                     batch.run_batch(plan, None)
-            self.assertTrue((root / ".device-locks" / "00008110-0011223344556677.lock").is_dir())
+            self.assertTrue((root / ".focus-locks" / "00008110-0011223344556677.lock").is_dir())
 
     def test_unknown_surviving_process_group_prevents_restore_and_unlock(self):
         with tempfile.TemporaryDirectory() as root:
@@ -646,7 +646,7 @@ class MorningPlanTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     batch.run_batch(plan, None)
             self.assertEqual(calls, ["preflight", "C06"])
-            self.assertTrue((root / ".device-locks" / "00008110-0011223344556677.lock").is_dir())
+            self.assertTrue((root / ".focus-locks" / "00008110-0011223344556677.lock").is_dir())
 
     def test_phone_priority_during_build_stops_before_preflight_and_unlocks(self):
         with tempfile.TemporaryDirectory() as root:
@@ -667,7 +667,7 @@ class MorningPlanTests(unittest.TestCase):
                  mock.patch.object(batch, "command", side_effect=no_device_actions):
                 self.assertEqual(batch.run_batch(batch.make_plan(batch.DEFAULT_UNKNOWN)[:1], None), 75)
             self.assertEqual(calls, [])
-            self.assertFalse((root / ".device-locks" / "00008110-0011223344556677.lock").exists())
+            self.assertFalse((root / ".focus-locks" / "00008110-0011223344556677.lock").exists())
 
 
 if __name__ == "__main__":

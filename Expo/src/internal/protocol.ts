@@ -1,6 +1,7 @@
 import type {
   ActionOrigin,
   AudioRoutes,
+  CallEndedPayload,
   Conversation,
   ConversationEventMap,
   ConversationReport,
@@ -45,12 +46,24 @@ export interface ActionCancellation {
   reason: string;
 }
 
-export type ConversationEvent = {
-  [Name in Exclude<keyof ConversationEventMap, 'pushTokenUpdated'>]: {
-    type: Name;
-    payload: ConversationEventMap[Name];
-  };
-}[Exclude<keyof ConversationEventMap, 'pushTokenUpdated'>];
+export type ConversationEvent =
+  | {
+      [
+        Name in Exclude<
+          keyof ConversationEventMap,
+          'pushTokenUpdated' | 'dialRequest'
+        >
+      ]: {
+        type: Name;
+        payload: ConversationEventMap[Name];
+      };
+    }[Exclude<keyof ConversationEventMap, 'pushTokenUpdated' | 'dialRequest'>]
+  | {
+      type: 'dialRequest';
+      payload: ConversationEventMap['dialRequest'];
+      deliveryID: string;
+      generation: number;
+    };
 
 export type NativeEvents = {
   conversationsChanged: (event: ConversationEnvelope) => void;
@@ -72,6 +85,8 @@ export interface NativeBridge {
   getAudioRoutes(): Promise<AudioRoutesEnvelope>;
   selectAudioRoute(id: string): Promise<void>;
   setHandlerAttached(attached: boolean, generation: number): void;
+  setDialRequestListenerAttached(attached: boolean, generation: number): void;
+  acknowledgeDialRequest(deliveryID: string, generation: number): void;
   settleAction(
     actionID: string,
     generation: number,
@@ -87,4 +102,5 @@ export interface NativeBridge {
   mergeConversations(first: string, second: string): Promise<void>;
   reportConversation(id: string, report: ConversationReport): Promise<void>;
   reportIncomingConversation(payload: IncomingCallPayload): Promise<string>;
+  receiveCallEnded(payload: CallEndedPayload): Promise<boolean>;
 }

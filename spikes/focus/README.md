@@ -72,9 +72,9 @@ system-controlled rotation, budgets, ordering, privacy and lifecycle behavior; t
 production-backend results. A secure lock/unlock path, real AI/SIP backend, actual token rotation, eight-hour expiry
 and Lock Screen privacy remain unqualified when unavailable.
 
-The batch atomically holds `~/.device-locks/<FOCUS_DEVICE>.lock` as a directory throughout mutation and restoration;
+The batch atomically holds `${FOCUS_LOCK_DIR:-~/.focus-locks}/<FOCUS_DEVICE>.lock` as a directory throughout mutation and restoration;
 Phone's runner must honor the same convention for mutual exclusion. A pre-existing lock is never stolen. To yield
-to Phone, create `FOCUS_WORK/PAUSE`, `~/.device-locks/PAUSE`, or `~/.device-locks/<FOCUS_DEVICE>.priority`;
+to Phone, create `FOCUS_WORK/PAUSE`, `${FOCUS_LOCK_DIR:-~/.focus-locks}/PAUSE`, or `${FOCUS_LOCK_DIR:-~/.focus-locks}/<FOCUS_DEVICE>.priority`;
 the batch finishes the active row, restores settings and releases its lock. Remove the marker and rerun to continue
 from the private checkpoint. An interrupted attempt is not repeated: after safe restoration it is recorded
 unqualified. Failed restoration retains the lock and journal for recovery. A hard-killed batch can leave its own

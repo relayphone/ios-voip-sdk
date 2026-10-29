@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 import queue
 import signal
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -14,6 +13,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'discovery'))
 import run_scenario
+from sim import Result
 
 IDENTITY = dict(runID='run', simulatorID='simulator', bundleID='dev.fixture', scenario='fixture')
 PID = 12345
@@ -73,7 +73,7 @@ class CaptureDeadlines(unittest.TestCase):
             process.returncode = 0
         def terminate(*args, **kwargs):
             process.returncode = 0
-            return subprocess.CompletedProcess(args[0], 0, b'', b'')
+            return Result(args[0], 0)
         with tempfile.TemporaryDirectory(prefix='ci-capture-clock-') as temporary:
             output, receipt = Path(temporary) / 'capture.log', Path(temporary) / 'receipt.json'
             with patch.object(run_scenario.time, 'monotonic', clock.monotonic), \
@@ -81,7 +81,7 @@ class CaptureDeadlines(unittest.TestCase):
                  patch.object(run_scenario.threading, 'Thread', NoNativeThread), \
                  patch.object(run_scenario.tty, 'setraw'), \
                  patch.object(run_scenario.subprocess, 'Popen', return_value=process) as launched, \
-                 patch.object(run_scenario.subprocess, 'run', side_effect=terminate), \
+                 patch.object(run_scenario, 'bounded', side_effect=terminate), \
                  patch.object(run_scenario.os, 'kill', side_effect=kill):
                 status = run_scenario.run(['launch'], ['terminate'], output, receipt, capture,
                                           IDENTITY, console_launcher_stop=True, startup_timeout=startup)
@@ -183,14 +183,14 @@ class CaptureDeadlines(unittest.TestCase):
         process = Process()
         def terminate(*args, **kwargs):
             process.returncode = 0
-            return subprocess.CompletedProcess(args[0], 0, b'', b'')
+            return Result(args[0], 0)
         with tempfile.TemporaryDirectory(prefix='ci-capture-interrupt-') as temporary:
             output, receipt = Path(temporary) / 'capture.log', Path(temporary) / 'receipt.json'
             with patch.object(run_scenario.queue, 'Queue', return_value=Tail()), \
                  patch.object(run_scenario.threading, 'Thread', InterruptedThread), \
                  patch.object(run_scenario.tty, 'setraw'), \
                  patch.object(run_scenario.subprocess, 'Popen', return_value=process), \
-                 patch.object(run_scenario.subprocess, 'run', side_effect=terminate):
+                 patch.object(run_scenario, 'bounded', side_effect=terminate):
                 with self.assertRaisesRegex(KeyboardInterrupt, 'during reader start'):
                     run_scenario.run(['launch'], ['terminate'], output, receipt, 90,
                                      IDENTITY, console_launcher_stop=True, startup_timeout=180)

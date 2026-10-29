@@ -3,8 +3,10 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
+import io
 import json
 import os
+import shutil
 import signal
 import subprocess
 from pathlib import Path
@@ -20,6 +22,8 @@ WALL = 1792627200000
 SESSION = dict(schemaVersion=1, runID='synthetic-system-run', pid=12345, bundleID=gate.BUNDLE,
                profile='ios-27.0', notification='dev.callkitsim.control.12345')
 SERVICES = 'PID\tStatus\tLabel\n-\t0\tUIKitApplication:' + gate.BUNDLE + '[synthetic-stopped]\n'
+EXPIRY_SECONDS = dict(join=64, end=5.3, hold=5.3, mute=30, tones=30)
+PROFILE = dict(lckActionDeadlineSeconds=30, lckMultiCall=dict(joinExpirySeconds=64, pauseEndExpirySeconds=5.3))
 
 
 def iso(value):
@@ -87,9 +91,10 @@ class Fixture:
         self.controls.append(control)
         return control
 
-    def command(self, operation, binding=None, body=None):
+    def command(self, operation, binding=None, body=None, server_call=None):
         command = dict(id=self.uuid(), runID=SESSION['runID'], case=self.case, pid=SESSION['pid'], operation=operation)
         if binding: command['conversationID'] = binding['conversationID']
+        if server_call: command['serverCallId'] = server_call
         self.index['fixtureCommands'].append(f'fixture-{len(self.commands):02}.json')
         self.commands.append(command)
         self.app('system.commandReceived', id=command['id'], operation=operation)
@@ -119,6 +124,8 @@ class Fixture:
             binding = dict(role=role, conversationID=self.uuid(), callUUID=self.uuid(), pushID=push_id)
             self.clock += self.report_start_ms - 1
             report = self.native('report.incoming', pushID=push_id, callUUID=binding['callUUID'])
+            if self.case == 'answered-elsewhere':
+                self.native('call.changed', uuid=binding['callUUID'], ended=False, ringing=True)
             self.calls[binding['conversationID']] = dict(id=binding['conversationID'], direction='incoming', status='ringing',
                                                        isMuted=False, isVideo=False, hasConnectedAt=False)
             snapshot = self.snapshot()
@@ -140,8 +147,11 @@ class Fixture:
         if control: control['response']['result'] = dict(actionIDs=ids)
         actions = []
         for identity, (kind, binding, params) in zip(ids, specs):
+            issued = WALL + self.clock
             deadline = self.native('action.deadline', actionID=identity, apiKind='livecommunicationkit',
-                                   deadlineMS=WALL + self.clock + 30000, deadlineSeconds=30, expirySeconds=30)
+                                   deadlineMS=issued + 30000, deadlineSeconds=30,
+                                   expirySeconds=EXPIRY_SECONDS[kind], issuedAtMS=issued,
+                                   expiryMS=issued + round(EXPIRY_SECONDS[kind] * 1000))
             cap = {'hold': 5300, 'end': 5300, 'join': 64000}.get(kind)
             selected = min(deadline['deadlineMS'], WALL + delivered['t_ms'] + cap) if cap else deadline['deadlineMS']
             action = dict(id=identity, kind=kind, binding=binding, params=params, origin=origin,
@@ -166,7 +176,7 @@ class Fixture:
 
     def settle(self, actions):
         for action in actions:
-            self.native('action.settled', actionID=action['id'], fulfilled=True, origin=action['origin'])
+            self.native('action.settled', actionID=action['id'], fulfilled=True, expired=False, origin=action['origin'])
             call = self.calls.get(action['binding']['conversationID'])
             if action['origin'] == 'muteEcho' or not call or action['kind'] == 'mute' and not action['handled']: continue
             call.pop('pending', None)
@@ -201,6 +211,22 @@ class Fixture:
     def build(self):
         first = self.push('first', cold=self.case == 'push-launch')
         if self.case == 'decline': self.action('decline', first)
+        elif self.case == 'answered-elsewhere':
+            def signal(command):
+                context = dict(id=command['id'], eventId=command['id'], serverCallId='synthetic-server-first',
+                               conversationID=first['conversationID'])
+                marker = self.native('system.answeredElsewhereSignal', traceSequence=len(self.rows) + 1, **context)
+                self.app('system.answeredElsewhereRequested', clockBeforeMS=WALL + marker['t_ms'], **context)
+                self.native('report.ended', callUUID=first['callUUID'], pushID=first['pushID'], reason=4)
+                self.native('call.changed', uuid=first['callUUID'], ended=True, ringing=False)
+                self.calls[first['conversationID']].update(status='ended', endedReason='answeredElsewhere')
+                self.snapshot()
+                self.app('system.event', name='answeredElsewhere', **{key: value for key, value in context.items() if key != 'id'})
+                self.calls.clear()
+                self.snapshot()
+                self.hook()
+                self.app('system.answeredElsewhereAccepted', accepted=True, **context)
+            self.command('answered-elsewhere', first, signal, server_call='synthetic-server-first')
         else:
             self.action('answer', first)
             self.connected(first)
@@ -245,11 +271,40 @@ class Fixture:
         self.app('sdk.result', success=True)
         self.app('done')
         return dict(rows=self.rows, engine=self.engine, index=self.index, controls=self.controls,
-                    fixture_commands=self.commands, case=self.case, expected_d5=self.expected, launch_receipt=self.launch_receipt)
+                    fixture_commands=self.commands, case=self.case, expected_d5=self.expected, profile=PROFILE,
+                    launch_receipt=self.launch_receipt)
 
 
 def first(values, event):
     return next(value for value in values if value['event'] == event)
+
+
+def native_action(value, kind, event='action.deadline'):
+    transaction = next(row for row in value['engine'] if row['event'] == 'transaction.delivered' and gate.NATIVE[kind] in row['kinds'])
+    identity = transaction['actionIDs'][transaction['kinds'].index(gate.NATIVE[kind])]
+    return next(row for row in value['engine'] if row['event'] == event and row.get('actionID') == identity)
+
+
+def duplicate_answered_event(value):
+    event = first(value['rows'], 'system.event')
+    value['rows'].insert(value['rows'].index(event) + 1, deepcopy(event))
+    for sequence, row in enumerate(value['rows'], 1): row['sequence'] = sequence
+
+
+def late_answered_native(value, delay=1001):
+    signal = first(value['engine'], 'system.answeredElsewhereSignal')
+    report = first(value['engine'], 'report.ended')
+    report['t_ms'] = signal['t_ms'] + delay
+    next(row for row in value['engine'] if row['event'] == 'call.changed' and row['ended'])['t_ms'] = report['t_ms']
+
+
+def answered_at_budget(value):
+    late_answered_native(value, 1000)
+    requested = first(value['rows'], 'system.answeredElsewhereRequested')
+    terminal = next(row for row in value['rows'] if row['event'] == 'sdk.snapshot' and
+                    any(call['status'] == 'ended' for call in row['conversations']))
+    for row in value['rows'][value['rows'].index(terminal):]:
+        row['wallTimeMS'] = requested['clockBeforeMS'] + 1000
 
 
 def move_before(value, row, target):
@@ -264,12 +319,12 @@ def move_before(value, row, target):
             if event['event'] == 'report.incoming' and event.get('pushID') == binding['pushID'])
 
 
-def expired_settlement(value):
+def expired_settlement(value, effective=False, offset_ms=0):
     ready = first(value['rows'], 'system.ready')
     marker = first(value['engine'], 'system.clock')
     deadline = first(value['engine'], 'action.deadline')
     settled = first(value['engine'], 'action.settled')
-    elapsed = deadline['deadlineMS'] - ready['wallTimeMS'] + marker['t_ms'] - 1
+    elapsed = deadline['expiryMS' if effective else 'deadlineMS'] - ready['wallTimeMS'] + marker['t_ms'] - 1 + offset_ms
     difference = elapsed - settled['t_ms']
     for event in value['engine'][value['engine'].index(settled):]: event['t_ms'] += difference
 
@@ -389,41 +444,33 @@ def container_cache_controls():
         container = root / 'container'; container.mkdir()
         package = root / 'package'; package.mkdir()
 
-        def check(name, supplied, response=None, failure=None):
-            queries, journeys = [], []
+        def check(name, supplied, accepted):
+            journeys = []
             args = SimpleNamespace(package=package, output=root / name, simulator='synthetic-owned-simulator',
                                    run_id='synthetic-run', data_container=supplied)
             class StubJourney:
                 def __init__(self, args, directory, case, selected):
                     journeys.append((case, selected))
                 def run(self): pass
-            def query(argv, **kwargs):
-                queries.append(argv)
-                if supplied is not None: raise AssertionError('Supplied container must never trigger another query')
-                require(argv == ['xcrun', 'simctl', 'get_app_container', args.simulator, runner.BUNDLE, 'data'] and
-                        kwargs == dict(capture_output=True, text=True, timeout=60), 'container query changed ownership or bounds')
-                return response
             with patch.object(runner.m0, 'source_identity', return_value={}), \
-                 patch.object(runner, 'Journey', StubJourney), patch.object(runner.subprocess, 'run', side_effect=query), \
+                 patch.object(runner, 'Journey', StubJourney), \
+                 patch.object(runner.subprocess, 'run', side_effect=AssertionError('container discovery must not issue an RPC')), \
+                 patch.object(runner, 'bounded', side_effect=AssertionError('container discovery must use retained evidence')), \
                  patch.object(gate, 'package_check', return_value={}):
                 try: runner.run(args)
                 except gate.EvidenceError as error:
-                    require(failure and failure in str(error), name + ': unexpected refusal ' + str(error))
+                    require(not accepted, name + ': unexpected refusal ' + str(error))
                 else:
-                    require(failure is None, name + ': missing refusal')
-            require(len(queries) == (0 if supplied is not None else 1), name + ': query was repeated or missing')
-            require(journeys == ([] if failure else [(case, container) for case in runner.CASES]),
-                    name + ': seven cases did not reuse the same validated path')
-            checks.append(dict(name=name, passed=True, expected=failure or 'seven stub journeys share one validated container'))
+                    require(accepted, name + ': missing refusal')
+            require(journeys == ([(case, container) for case in runner.CASES] if accepted else []),
+                    name + ': cases did not reuse the same validated path')
+            checks.append(dict(name=name, passed=True,
+                               expected='one retained container; no RPC' if accepted else 'invalid retained container refused'))
 
-        check('parent-container-no-query', container)
-        check('fallback-container-one-query', None, SimpleNamespace(returncode=0, stdout=str(container) + '\n', stderr=''))
-        check('invalid-parent-container-refused', root / 'missing', failure='missing or invalid')
-        check('failed-container-query-refused', None, SimpleNamespace(returncode=1, stdout='', stderr='synthetic refusal'),
-              'get_app_container failed')
-        check('empty-container-query-refused', None, SimpleNamespace(returncode=0, stdout='', stderr=''), 'missing or invalid')
-        check('invalid-container-query-refused', None, SimpleNamespace(returncode=0, stdout=str(root / 'missing') + '\n', stderr=''),
-              'missing or invalid')
+        check('parent-container-no-query', container, True)
+        check('missing-parent-container-refused', None, False)
+        check('invalid-parent-container-refused', root / 'missing', False)
+        check('relative-parent-container-refused', Path('container'), False)
         # Run the real running-control argument builder; the CLI process is inert.
         args = SimpleNamespace(package=package, simulator='synthetic-owned-simulator', run_id='synthetic-run')
         calls = []
@@ -445,33 +492,184 @@ def container_cache_controls():
         # Execute only the exact parent dispatch block with a fake python3.
         # No simulator command or the full M0 lifecycle is executed.
         parent = (gate.ROOT / 'discovery/run_sdk_m0.sh').read_text()
-        marker = 'if [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then\n  if [[ -n'
+        marker = 'PRODUCT_CHECK=sdk-system\nif [[ "${SDK_SYSTEM_ACCEPTANCE:-0}" == 1 ]]; then\n'
         require(parent.count(marker) == 1, 'parent system dispatch seam differs')
         start = parent.index(marker)
         block = parent[start:parent.index('\ncleanup_simulator', start)]
         binary = root / 'bin'; binary.mkdir()
         fake = binary / 'python3'
-        fake.write_text('#!/bin/bash\nprintf \'%s\\0\' "$@" > "$ARGUMENT_CAPTURE"\n')
+        fake.write_text('#!/bin/bash\n'
+                        'printf \'%s\\0\' "$@" >> "$ARGUMENT_CAPTURE"\n'
+                        'if [[ "$*" == *scripts/sim/paths.py* ]]; then printf \'%s\\n\' "$RESOLVED_CONTAINER"; fi\n')
         fake.chmod(0o700)
         for supplied in (True, False):
             capture = root / ('parent-arguments-' + str(supplied))
             env = dict(os.environ, PATH=str(binary) + os.pathsep + os.defpath,
-                       ARGUMENT_CAPTURE=str(capture), SDK_SYSTEM_ACCEPTANCE='1',
+                       ARGUMENT_CAPTURE=str(capture), RESOLVED_CONTAINER=str(container), SDK_SYSTEM_ACCEPTANCE='1',
                        INHERITED_DYLD='/synthetic/inherited.dylib', UDID='synthetic-owned-simulator',
                        RUN_ID='synthetic-run', SDK_SYSTEM_CONTROL_PACKAGE=str(package), OUT=str(root / 'parent-output'))
             env.pop('example_container', None)
             if supplied: env['example_container'] = str(container)
-            result = subprocess.run(['/bin/bash', '-eu', '-c', block], env=env,
+            result = subprocess.run(['/bin/bash', '-eu', '-c', 'limit() { shift; "$@"; }\n' + block], env=env,
                                     capture_output=True, text=True, timeout=5)
             require(result.returncode == 0 and not result.stdout and not result.stderr,
                     'parent container dispatch failed: ' + result.stderr)
             arguments = [part.decode() for part in capture.read_bytes().split(b'\0')[:-1]]
             expected = ['discovery/run_sdk_system.py', '--simulator', env['UDID'], '--run-id', env['RUN_ID'],
-                        '--package', str(package), '--output', env['OUT'] + '/system']
-            if supplied: expected += ['--data-container', str(container)]
-            require(arguments == expected, 'parent dispatch lost cached container or changed fallback arguments')
-            checks.append(dict(name='parent-shell-cached-path' if supplied else 'parent-shell-one-query-fallback',
-                               passed=True, expected='exact parent Bash dispatch preserves optional cache arguments'))
+                        '--package', str(package), '--output', env['OUT'] + '/system', '--data-container', str(container)]
+            if not supplied:
+                discovery = arguments[:-len(expected)]
+                require(discovery == ['scripts/sim/paths.py', '--receipt', env['OUT'] + '/sdk-m0.receipt.json',
+                    '--trace', env['OUT'] + '/sdk-m0.log', '--simulator', env['UDID'], '--run-id', env['RUN_ID'],
+                    '--bundle', runner.BUNDLE], 'fallback must bind the completed M0 capture without a container RPC')
+                arguments = arguments[-len(expected):]
+            require(arguments == expected, 'parent dispatch must always supply the retained container')
+            checks.append(dict(name='parent-shell-cached-path' if supplied else 'parent-shell-completed-evidence-fallback',
+                               passed=True, expected='parent Bash dispatch always supplies an evidence-bound container'))
+    return checks
+
+
+def cold_staging_controls():
+    """Exercise the consumer and actual shipping stage; only its native query is fake."""
+    import run_sdk_system as runner
+    checks = []
+    services = SERVICES.encode()
+    cases = (
+        ('staged-native-launch', None, 120, None),
+        ('staged-query-shares-remaining-budget', None, 3, None),
+        ('staged-no-remaining-budget', None, 0, 'checkpoint deadline'),
+        ('staged-query-nonzero', 'nonzero', 120, 'Stopped-app query'),
+        ('staged-query-timeout', 'timeout', 120, 'Stopped-app query'),
+        ('staged-query-timeout-with-zero-status', 'timeout-zero', 120, 'Stopped-app query'),
+        ('staged-query-cleanup-uncertain', 'cleanup-uncertain', 120, 'Stopped-app query'),
+        ('staged-query-unreaped', 'unreaped', 120, 'Stopped-app query'),
+        ('staged-query-diagnostics', 'diagnostics', 120, 'Stopped-app query'),
+        ('staged-empty-service-table', 'empty', 120, 'Invalid launchctl service table'),
+        ('staged-header-only-service-table', 'header-only', 120, 'Invalid launchctl service table'),
+        ('staged-malformed-service-table', 'malformed', 120, 'Invalid launchctl service table'),
+        ('staged-running-target', 'running', 120, 'requires a stopped app'),
+        ('staged-invalid-payload', 'payload', 120, 'Push payload must be an object'),
+        ('staged-oversized-payload', 'oversized', 120, 'Push payload must be an object'),
+        ('staged-existing-receipt', 'receipt', 120, 'Launch receipt already exists'),
+        ('staged-existing-pending-envelope', 'pending', 120, 'File exists'),
+        ('staged-existing-claim', 'claim', 120, 'A push launch claim already exists'),
+    )
+    for label, kind, remaining, expected_error in cases:
+        with tempfile.TemporaryDirectory(prefix='sdk-system-staging-pure-') as temporary:
+            root = Path(temporary)
+            package = root / 'package'; package.mkdir()
+            shutil.copyfile(gate.ROOT / 'Tools/cksim', package / 'cksim')
+            container = root / 'container'; container.mkdir()
+            args = SimpleNamespace(run_id='synthetic-staging', simulator=str(uuid.UUID(int=1)).upper(), package=package)
+            journey = runner.Journey(args, root / 'case', 'push-launch', container)
+            payload = journey.root / 'first.payload.json'
+            runner.write(payload, dict(incomingCall=dict(eventId='synthetic-event', serverCallId='synthetic-server')))
+            receipt = journey.root / 'launch-push.json'
+            staged_root = container / 'Documents/.callkit-simulator'
+            preserved = {}
+            if kind == 'payload': payload.write_text('[]')
+            if kind == 'oversized': payload.write_text(json.dumps(dict(value='x' * 5120)))
+            if kind in ('receipt', 'pending', 'claim'):
+                if kind == 'receipt': path = receipt
+                else:
+                    staged_root.mkdir(parents=True, mode=0o700)
+                    path = staged_root / ('push-launch.json' if kind == 'pending' else 'push-launch.consuming')
+                path.write_bytes(b'previous-evidence\n'); preserved[path] = path.read_bytes()
+            table = dict(empty=b'', header_only=b'PID\tStatus\tLabel\n',
+                         malformed=b'PID\tStatus\tLabel\ninvalid\t0\tlabel\n').get(
+                             (kind or '').replace('-', '_'), services)
+            if kind == 'running': table += ('123\t0\tUIKitApplication:' + runner.BUNDLE + '[running]\n').encode()
+            result = SimpleNamespace(returncode=1 if kind == 'nonzero' else 124 if kind == 'timeout' else 0,
+                timed_out=kind in ('timeout', 'timeout-zero'), cleanup_uncertain=kind == 'cleanup-uncertain',
+                reaped=kind != 'unreaped', stdout=table,
+                stderr=b'synthetic diagnostics\n' if kind == 'diagnostics' else b'')
+            inherited = dict(CKSIM_RUN_ID='parent-run', SIMCTL_CHILD_CKSIM_RUN_ID='previous-child-run',
+                SIMCTL_CHILD_DYLD_INSERT_LIBRARIES='/synthetic/inherited.dylib',
+                SIMCTL_CHILD_SYNTHETIC_MARKER='preserve-me')
+            prepared = dict(inherited, SIMCTL_CHILD_CKSIM_RUN_ID=args.run_id,
+                SIMCTL_CHILD_SDK_SYSTEM_RUN_ID=args.run_id, SIMCTL_CHILD_SDK_SYSTEM_CASE='push-launch',
+                SIMCTL_CHILD_SDK_M0_ACCEPTANCE='0', SIMCTL_CHILD_SDK_M1_CASE='')
+            def query(command, timeout, *, env):
+                assert command == ['xcrun', 'simctl', 'spawn', args.simulator, 'launchctl', 'list']
+                assert timeout == min(60, remaining)
+                assert env == dict(prepared, SIMCTL_CHILD_DYLD_INSERT_LIBRARIES='')
+                return result
+            with patch.object(runner, 'bounded', side_effect=query) as bounded, \
+                 patch.object(runner.subprocess, 'run', side_effect=AssertionError('staging issued an unowned native RPC')), \
+                 patch.object(runner.subprocess, 'Popen', side_effect=AssertionError('staging launched a child')), \
+                 patch.object(runner.os, 'execvpe', side_effect=AssertionError('staging executed the cold CLI launcher')), \
+                 patch.dict(os.environ, inherited, clear=True):
+                try: command, environment = journey.stage_push(prepared, remaining)
+                except (RuntimeError, ValueError, OSError) as error:
+                    assert expected_error and expected_error in str(error), (label, str(error))
+                else:
+                    assert expected_error is None, label + ': unsafe staging was accepted'
+                    assert command == ['xcrun', 'simctl', 'launch', '--console', args.simulator, runner.BUNDLE]
+                    assert environment == prepared, (label, environment)
+                    raw = (staged_root / 'push-launch.json').read_bytes()
+                    staged = json.loads(raw); evidence = json.loads(receipt.read_bytes())
+                    assert staged['payload'] == json.loads(payload.read_bytes()) and staged['mustReport'] is True
+                    assert (staged['runID'], staged['bundleID']) == (args.run_id, runner.BUNDLE)
+                    assert evidence['pushID'] == staged['id'] and evidence['envelope'] == staged
+                    assert evidence['serviceQuery'] == services.decode()
+                    assert evidence['serviceQuerySHA256'] == hashlib.sha256(services).hexdigest()
+                    assert evidence['envelopeSHA256'] == hashlib.sha256(raw).hexdigest()
+                    assert evidence['runtimeInjectionRequested'] is False and evidence['appServiceAbsent'] is True
+                    assert (receipt.stat().st_mode & 0o777, (staged_root / 'push-launch.json').stat().st_mode & 0o777) == (0o600, 0o600)
+                assert dict(os.environ) == inherited, label + ': staging mutated the host environment'
+            assert bounded.call_count == (1 if remaining > 0 else 0), label + ': native query repeated'
+            for path, data in preserved.items(): assert path.read_bytes() == data, label + ': evidence overwritten'
+            assert not list(staged_root.glob('.push-launch-*')), label + ': temporary staging file leaked'
+            if expected_error:
+                assert not receipt.exists() or receipt in preserved, label + ': failure wrote a launch receipt'
+                assert not (staged_root / 'push-launch.json').exists() or staged_root / 'push-launch.json' in preserved, \
+                    label + ': failure published a launch envelope'
+            checks.append(dict(name=label, passed=True, expected=expected_error or 'shared staging returns exact native launch and fixture environment'))
+    return checks
+
+
+def cleanup_transport_controls():
+    import run_scenario as supervisor
+    from sim import Result, bounded as actual_bounded
+    checks = []
+    with tempfile.TemporaryDirectory(prefix='sdk-system-stop-transport-') as temporary:
+        root = Path(temporary)
+        for name, status, stdout, stderr, uncertain in (
+            ('success', 0, b'synthetic stopped\n', b'', None),
+            ('not-running', 3, b'', __import__('run_sdk_system').NOT_RUNNING.encode(), None),
+            ('timeout', 3, b'', b'synthetic diagnostic\n', 'timed_out'),
+            ('uncertain', 3, b'', b'synthetic diagnostic\n', 'cleanup_uncertain'),
+            ('unreaped', 3, b'', b'synthetic diagnostic\n', 'reaped')):
+            command = ['synthetic-stop', name]
+            result = Result(command, status, stdout, stderr)
+            if uncertain: setattr(result, uncertain, uncertain != 'reaped')
+            trace, receipt = root / (name + '.log'), root / (name + '.receipt.json')
+            with patch.object(supervisor, 'bounded', return_value=result) as stop:
+                supervisor.run([__import__('sys').executable, '-c', 'pass'], command, trace, receipt, 2, {})
+            stop.assert_called_once_with(command, 10)
+            evidence = json.loads(receipt.read_text())
+            assert evidence['cleanupExitCode'] == status
+            assert evidence['cleanupStdout'] == stdout.decode() and evidence['cleanupStderr'] == stderr.decode()
+            assert ('cleanupError' in evidence) == bool(uncertain)
+            checks.append(dict(name='supervisor-stop-' + name, passed=True))
+        # Use the actual shared helper in the actual supervisor cleanup path.
+        # An isolated host process group must be killed and reaped on timeout.
+        pidfile = root / 'stop.pid'
+        command = [__import__('sys').executable, '-c',
+                   'import os,pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)', str(pidfile)]
+        def short_bound(argv, timeout):
+            assert argv == command and timeout == 10
+            return actual_bounded(argv, .25)
+        trace, receipt = root / 'real-timeout.log', root / 'real-timeout.receipt.json'
+        with patch.object(supervisor, 'bounded', side_effect=short_bound):
+            supervisor.run([__import__('sys').executable, '-c', 'pass'], command, trace, receipt, 2, {})
+        evidence = json.loads(receipt.read_text())
+        assert evidence['cleanupExitCode'] == 124 and 'cleanupError' in evidence
+        pid = int(pidfile.read_text())
+        try: os.killpg(pid, 0)
+        except ProcessLookupError: pass
+        else: raise AssertionError('timed-out stop transport group leaked')
+        checks.append(dict(name='supervisor-stop-real-timeout-kills-reaps-group', passed=True))
     return checks
 
 
@@ -599,14 +797,16 @@ def readiness_controls():
     checks = []
     class ReachedReady(Exception): pass
     cases = (
-        ('push-delayed-ready', 'push-launch', 32, None, 'ready', 32),
-        ('direct-delayed-ready', 'decline', 32, None, 'ready', 32),
-        ('direct-never-ready', 'decline', None, None, 'deadline', 120),
-        ('push-never-ready', 'push-launch', None, None, 'deadline', 120),
-        ('push-ready-beyond-budget', 'push-launch', 121, None, 'deadline', 120),
-        ('push-supervisor-exit', 'push-launch', None, 10, 'exited', 10),
+        ('push-delayed-ready', 'push-launch', 32, None, 'ready', 32, 0),
+        ('direct-delayed-ready', 'decline', 32, None, 'ready', 32, 0),
+        ('direct-never-ready', 'decline', None, None, 'deadline', 120, 0),
+        ('push-never-ready', 'push-launch', None, None, 'deadline', 120, 0),
+        ('push-ready-beyond-budget', 'push-launch', 121, None, 'deadline', 120, 0),
+        ('push-supervisor-exit', 'push-launch', None, 10, 'exited', 10, 0),
+        ('push-staging-and-readiness-share-budget', 'push-launch', 32, None, 'ready', 32, 30),
+        ('push-staging-does-not-extend-deadline', 'push-launch', None, None, 'deadline', 120, 60),
     )
-    for label, case, ready_at, exit_at, expected, elapsed in cases:
+    for label, case, ready_at, exit_at, expected, elapsed, stage_seconds in cases:
         with tempfile.TemporaryDirectory(prefix='sdk-system-readiness-pure-') as temporary:
             root = Path(temporary); clock = [0.0]; owner = 7101
             class Process:
@@ -620,18 +820,21 @@ def readiness_controls():
                     return 0
             process = Process()
             container = root / 'container'; container.mkdir()
+            shutil.copyfile(gate.ROOT / 'Tools/cksim', root / 'cksim')
             args = SimpleNamespace(run_id='synthetic-readiness', simulator='synthetic-owned', package=root)
             journey = runner.Journey(args, root / 'case', case, container)
-            journey.runtime.parent.mkdir(parents=True)
+            journey.runtime.parent.mkdir(parents=True, mode=0o700)
             runner.write(journey.runtime.parent / 'session.json',
                          dict(runID=args.run_id, pid=7103, bundleID=runner.BUNDLE))
-            runner.write(journey.root / 'launch-push.json', dict(pushID='synthetic-staged-push'))
             def tick(seconds):
                 clock[0] = round(clock[0] + seconds, 3)
                 if ready_at is not None and clock[0] >= ready_at and not journey.trace.exists():
                     journey.trace.write_text('PROBE ' + json.dumps(dict(event='system.ready', pid=7103)) + '\n')
             def reached(role, push_id):
-                assert role == 'first' and push_id == 'synthetic-staged-push'
+                evidence = json.loads((journey.root / 'launch-push.json').read_text())
+                assert role == 'first' and push_id == evidence['pushID']
+                assert evidence['envelope']['payload']['incomingCall']['caller'] == dict(
+                    handleType='generic', value='cold-fixture', displayName='cold-fixture'), 'cold delivery lost the typed calling address'
                 raise ReachedReady()
             journey.bind = Mock(side_effect=reached)
             journey.push = Mock(side_effect=ReachedReady())
@@ -639,8 +842,17 @@ def readiness_controls():
             def group_absent(group, value):
                 assert (group, value) == (owner, 0)
                 raise ProcessLookupError('synthetic absent group')
+            def query(command, timeout, *, env):
+                assert case == 'push-launch'
+                assert command == ['xcrun', 'simctl', 'spawn', args.simulator, 'launchctl', 'list']
+                assert timeout == 60 and env['SIMCTL_CHILD_DYLD_INSERT_LIBRARIES'] == ''
+                assert env['SIMCTL_CHILD_SDK_SYSTEM_CASE'] == case
+                tick(stage_seconds)
+                return SimpleNamespace(returncode=0, stdout=SERVICES.encode(), stderr=b'',
+                                       timed_out=False, cleanup_uncertain=False, reaped=True)
             with patch.object(runner.subprocess, 'Popen', return_value=process) as spawn, \
                  patch.object(runner.subprocess, 'run', side_effect=AssertionError('unexpected native command')), \
+                 patch.object(runner, 'bounded', side_effect=query) as bounded, \
                  patch.object(runner.time, 'monotonic', side_effect=lambda: clock[0]), \
                  patch.object(runner.time, 'sleep', side_effect=tick), \
                  patch.object(runner.signal, 'signal'), \
@@ -656,11 +868,22 @@ def readiness_controls():
             assert outcome == expected, (label, 'expected ' + expected, outcome, clock[0])
             assert clock[0] == elapsed, (label, 'startup bound changed', clock[0], elapsed)
             command = spawn.call_args.args[0]
-            assert float(command[command.index('--timeout') + 1]) == 120
+            assert float(command[command.index('--timeout') + 1]) == 120 - stage_seconds
             assert spawn.call_args.kwargs['start_new_session'] is True
+            assert command[command.index('--launch-command') + 1:] == [
+                'xcrun', 'simctl', 'launch', '--console', args.simulator, runner.BUNDLE]
+            assert command[command.index('--terminate-command') + 1:command.index('--launch-command')] == [
+                'xcrun', 'simctl', 'terminate', args.simulator, runner.BUNDLE]
+            environment = spawn.call_args.kwargs['env']
+            assert environment['SIMCTL_CHILD_SDK_SYSTEM_CASE'] == case
+            assert environment['SIMCTL_CHILD_SDK_SYSTEM_RUN_ID'] == args.run_id
+            assert environment['SIMCTL_CHILD_CKSIM_RUN_ID'] == args.run_id
+            assert environment['SIMCTL_CHILD_SDK_M0_ACCEPTANCE'] == '0'
+            assert environment['SIMCTL_CHILD_SDK_M1_CASE'] == ''
+            assert bounded.call_count == (1 if case == 'push-launch' else 0)
             if expected == 'ready':
                 if case == 'push-launch':
-                    journey.bind.assert_called_once_with('first', 'synthetic-staged-push')
+                    journey.bind.assert_called_once_with('first', json.loads((journey.root / 'launch-push.json').read_text())['pushID'])
                     journey.push.assert_not_called()
                 else:
                     journey.push.assert_called_once_with('first')
@@ -744,11 +967,19 @@ def startup_recovery_controls(selected=None):
                 '--bundle-id', runner.BUNDLE, '--terminate-command', 'xcrun', 'simctl', 'terminate',
                 args.simulator, runner.BUNDLE, '--launch-command', 'xcrun', 'simctl', 'launch',
                 '--console', args.simulator, runner.BUNDLE]
+            journey.stage_push = Mock(return_value=(command[command.index('--launch-command') + 1:], {}))
             class Process:
                 def __init__(self, attempt): self.pid, self.attempt = 7200 + attempt, attempt
                 def poll(self): return 1 if self.attempt == 1 or kind == 'second-failure' else None
                 def wait(self, timeout): return 1
             def spawn(argv, **kwargs):
+                captured = json.loads((journey.root / 'prelaunch-baseline.json').read_text())
+                assert (captured['case'], captured['scenario'], captured['runID'], captured['simulatorID']) == (
+                    journey.case, journey.name, args.run_id, args.simulator)
+                expected_raw = (b'{"fixtureKind":"previous-case-session"}\n', b'{"fixtureKind":"previous-case-journal"}\n')
+                assert captured['files'] == [dict(kind=kind, path=str(path), present=True,
+                    bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+                    for kind, path, raw in zip(('session', 'journal'), (session, journey.journal), expected_raw)]
                 attempt = len(launched) + 1
                 launched.append((list(argv), kwargs))
                 assert kwargs['start_new_session'] is True
@@ -842,6 +1073,7 @@ def startup_recovery_controls(selected=None):
                 for name, content in first_files.items(): assert (journey.root / name).read_bytes() == content, name
             assert clock[0] == (120 if kind in ('deadline', 'second-deadline', 'deadline-during-guard') else
                                 1 if kind == 'second-failure' else .5), label
+            assert journey.stage_push.call_count == (1 if kind == 'push-launch' else 0), label + ': cold stage repeated'
             checks.append(dict(name=label, passed=True,
                 expected='one bounded pre-app recovery; original attempt retained' if change is None else
                          'fresh, partial, unknown or second-attempt evidence never triggers another launch'))
@@ -902,6 +1134,42 @@ def controls():
         checks.append(dict(name=name, passed=True, expected=error or 'synthetic logical case accepted'))
 
     for case in gate.CASES: check('positive-' + case, case)
+    check('answered-at-budget', 'answered-elsewhere', answered_at_budget)
+    check('answered-native-beyond-budget', 'answered-elsewhere', late_answered_native,
+          'answered-elsewhere native dismissal exceeded 1000 ms')
+    check('answered-wrong-native-reason', 'answered-elsewhere', lambda value: first(value['engine'], 'report.ended').update(reason=2),
+          'answered-elsewhere native dismissal differs')
+    check('answered-wrong-native-call', 'answered-elsewhere', lambda value: first(value['engine'], 'report.ended').update(callUUID=str(uuid.UUID(int=999)).upper()),
+          'answered-elsewhere native dismissal differs')
+    check('answered-native-still-ringing', 'answered-elsewhere', lambda value: next(row for row in value['engine'] if row['event'] == 'call.changed' and row['ended']).update(ringing=True),
+          'answered-elsewhere native dismissal differs')
+    check('answered-wrong-signal-id', 'answered-elsewhere', lambda value: first(value['engine'], 'system.answeredElsewhereSignal').update(eventId='other-event'),
+          'answered-elsewhere signal identity/order differs')
+    check('answered-wrong-signal-sequence', 'answered-elsewhere', lambda value: first(value['engine'], 'system.answeredElsewhereSignal').update(traceSequence=1),
+          'answered-elsewhere signal identity/order differs')
+    check('answered-command-wrong-server', 'answered-elsewhere', lambda value: value['fixture_commands'][0].update(serverCallId='other-server'),
+          'answered-elsewhere command targets another call')
+    check('answered-rejected-host-signal', 'answered-elsewhere', lambda value: first(value['rows'], 'system.answeredElsewhereAccepted').update(accepted=False),
+          'answered-elsewhere signal identity/order differs')
+    check('answered-clock-unbounded', 'answered-elsewhere', lambda value: first(value['rows'], 'system.answeredElsewhereRequested').update(
+          clockBeforeMS=first(value['rows'], 'system.answeredElsewhereRequested')['wallTimeMS'] - 26),
+          'unbounded answered-elsewhere signal clock')
+    check('answered-event-wrong-call', 'answered-elsewhere', lambda value: first(value['rows'], 'system.event').update(conversationID=str(uuid.UUID(int=999)).upper()),
+          'unbound answered-elsewhere SDK event')
+    check('answered-event-wrong-server', 'answered-elsewhere', lambda value: first(value['rows'], 'system.event').update(serverCallId='other-server'),
+          'answered-elsewhere terminal projection/event differs')
+    check('answered-event-wrong-event', 'answered-elsewhere', lambda value: first(value['rows'], 'system.event').update(eventId='other-event'),
+          'answered-elsewhere terminal projection/event differs')
+    check('answered-event-late', 'answered-elsewhere', lambda value: first(value['rows'], 'system.event').update(
+          wallTimeMS=first(value['rows'], 'system.answeredElsewhereRequested')['clockBeforeMS'] + 1001),
+          'answered-elsewhere projection/event/hook exceeded 1000 ms')
+    check('answered-event-duplicate', 'answered-elsewhere', duplicate_answered_event, 'require one system.event')
+    check('answered-wrong-projected-reason', 'answered-elsewhere', lambda value: [call.update(endedReason='remoteEnded')
+          for row in value['rows'] if row['event'] == 'sdk.snapshot' for call in row['conversations'] if call['status'] == 'ended'],
+          'answered-elsewhere terminal projection/event differs')
+    check('answered-empty-hook-late', 'answered-elsewhere', lambda value: [row for row in value['rows'] if row['event'] == 'system.hook'][-1].update(
+          wallTimeMS=first(value['rows'], 'system.answeredElsewhereRequested')['clockBeforeMS'] + 1001),
+          'answered-elsewhere projection/event/hook exceeded 1000 ms')
     for delay in (0, 499):
         check('cold-report-start-' + str(delay), 'push-launch', report_start_ms=delay)
     check('cold-report-start-at-budget', 'push-launch', error='cold PushKit report start exceeded 500 ms', report_start_ms=500)
@@ -924,7 +1192,29 @@ def controls():
     check('mute-hook-stays-false', 'mute-echo', lambda value: [row.update(muted=False) for row in value['rows'] if row['event'] == 'system.hook'], 'mute projection/hook did not round trip')
     check('decline-connected', 'decline', lambda value: next(row for row in value['rows'] if row['event'] == 'sdk.snapshot' and row['conversations'])['conversations'][0].update(status='connected'), 'declined call connected')
     check('native-action-id', 'answer-end', lambda value: value['controls'][1]['response']['result'].update(actionIDs=[str(uuid.UUID(int=999)).upper()]), 'system native action binding/origin differs')
+    for kind, case in (('join', 'answer-end'), ('hold', 'hold-accept'), ('end', 'decline')):
+        check('old-30-expiry-' + kind, case,
+              lambda value, kind=kind: native_action(value, kind).update(expirySeconds=30), 'unsettled/expired/wrong native deadline')
+    for kind in ('mute', 'tones'):
+        check('non-target-expiry-' + kind, 'mute-echo',
+              lambda value, kind=kind: native_action(value, kind).update(expirySeconds=64), 'unsettled/expired/wrong native deadline')
+    check('arbitrary-join-expiry', 'answer-end', lambda value: native_action(value, 'join').update(expirySeconds=65), 'unsettled/expired/wrong native deadline')
+    check('altered-advertised-deadline', 'answer-end', lambda value: native_action(value, 'join').update(deadlineSeconds=64), 'unsettled/expired/wrong native deadline')
+    check('fulfilled-but-expired', 'answer-end', lambda value: native_action(value, 'join', 'action.settled').update(expired=True), 'unsettled/expired/wrong native deadline')
+    for field in ('issuedAtMS', 'expiryMS'):
+        check('native-' + field + '-missing', 'answer-end',
+              lambda value, field=field: native_action(value, 'join').pop(field), 'unsettled/expired/wrong native deadline')
+        for invalid in (True, '0', None):
+            check('native-' + field + '-type-' + str(invalid), 'answer-end',
+                  lambda value, field=field, invalid=invalid: native_action(value, 'join').update({field: invalid}),
+                  'unsettled/expired/wrong native deadline')
+        check('native-' + field + '-mismatch-1ms', 'answer-end',
+              lambda value, field=field: native_action(value, 'join').update({field: native_action(value, 'join')[field] + 1}),
+              'unsettled/expired/wrong native deadline')
     check('settlement-at-expiry', 'answer-end', expired_settlement, 'native settlement reached platform expiry')
+    check('settlement-at-effective-end-expiry', 'decline', lambda value: expired_settlement(value, effective=True), 'native settlement reached platform expiry')
+    check('settlement-after-reported-expiry-1ms', 'answer-end', lambda value: expired_settlement(value, offset_ms=1), 'native settlement reached platform expiry')
+    check('settlement-after-effective-end-expiry-1ms', 'decline', lambda value: expired_settlement(value, effective=True, offset_ms=1), 'native settlement reached platform expiry')
     check('effective-margin-absent', 'answer-end', lambda value: first(value['rows'], 'system.handler').update(deadline=iso(first(value['engine'], 'action.deadline')['deadlineMS'])), 'handler deadline differs from selected cap and margin')
     for kind, case in (('hold', 'hold-accept'), ('end', 'answer-end')):
         check('effective-' + kind + '-old-advertised-only', case,
@@ -993,6 +1283,8 @@ def controls():
     checks.append(dict(name='cold-device-reference', passed=True, expected='entered iOS27 report reference consumed'))
     checks.extend(manifest_controls())
     checks.extend(container_cache_controls())
+    checks.extend(cold_staging_controls())
+    checks.extend(cleanup_transport_controls())
     checks.extend(cleanup_controls())
     checks.extend(supervisor_controls())
     checks.extend(readiness_controls())

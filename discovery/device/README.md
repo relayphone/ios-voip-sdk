@@ -23,8 +23,7 @@ and belongs only in a reporting-obligation experiment. The token is written to
 the probe's private `Documents/voip-token.txt`, never to its trace. Retrieve it
 after a fresh launch; do not rely on a token from another app or installation.
 
-The canonical sandbox APNs authentication key is the **Phone APNs sandbox team
-key** document in the **Phone App** 1Password vault. Its metadata records the key
+The canonical sandbox APNs authentication key is the APNs sandbox key in your secrets manager. Its metadata records the key
 ID, team ID and scope. The Sign in with Apple and App Store Connect `.p8` keys
 are different credentials and cannot substitute for this key.
 

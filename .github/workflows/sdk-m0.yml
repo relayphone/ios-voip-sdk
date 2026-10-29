@@ -41,7 +41,7 @@ jobs:
   expo-livekit-native:
     needs: [changes, nightly-coverage]
     if: needs.nightly-coverage.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.expo == 'true'
-    name: Pinned Expo LiveKit selected Release device build
+    name: Pinned Expo LiveKit runtime and Release acceptance
     runs-on: xcode-27
     timeout-minutes: 60
     defaults:
@@ -60,6 +60,7 @@ jobs:
         with:
           node-version: "24.22.1"
           package-manager-cache: false
+      - uses: ./.github/actions/cache-native-dependencies
       - name: Check selection controls and prepare the pinned selected consumer
         run: |
           set -euo pipefail
@@ -69,11 +70,23 @@ jobs:
           npm run build
           npm run typecheck
           npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install
-          (cd example/ios && pod install)
+          (cd example/ios && node "$GITHUB_WORKSPACE/Tools/pod-install.ts")
       - name: Inspect the selected pod-built Release device app
         run: >-
           python3 discovery/build_sdk_device_release.py "$RUNNER_TEMP/expo-livekit-device"
           --derived-data "$RUNNER_TEMP/expo-livekit-build/DerivedData" --livekit
+      - name: Release the device build cache before the simulator build
+        run: rm -rf "$RUNNER_TEMP/expo-livekit-build/DerivedData"
+      - name: Build the pinned Release simulator consumer
+        run: python3 discovery/build_expo_livekit.py "$RUNNER_TEMP/expo-livekit-runtime-build"
+      - name: Require healthy and stale-audio journeys on the existing ADM
+        run: python3 discovery/run_expo_livekit.py "$RUNNER_TEMP/expo-livekit-runtime-build" "$RUNNER_TEMP/expo-livekit-runtime"
+      - name: Clean up the owned Expo simulator after interruption
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/expo-livekit-runtime/simulator-state/owner.json" ]]; then
+            python3 scripts/sim/sim.py cleanup "$RUNNER_TEMP/expo-livekit-runtime/simulator-state/owner.json" --timeout 60
+          fi
       - name: Preserve selected Release build inputs and inspection
         if: always()
         uses: ./.github/actions/upload-transfer
@@ -83,12 +96,16 @@ jobs:
           path: |
             ${{ runner.temp }}/expo-livekit-device/*.json
             ${{ runner.temp }}/expo-livekit-device/*.log
+            ${{ runner.temp }}/expo-livekit-runtime-build/*.json
+            ${{ runner.temp }}/expo-livekit-runtime-build/*.log
+            ${{ runner.temp }}/expo-livekit-runtime-build/example.app
+            ${{ runner.temp }}/expo-livekit-runtime
           if-no-files-found: error
           retention-days: 3
           compression-level: 6
       - name: Remove this job's native build cache
         if: always()
-        run: rm -rf "$RUNNER_TEMP/expo-livekit-build/DerivedData"
+        run: rm -rf "$RUNNER_TEMP/expo-livekit-build/DerivedData" "$RUNNER_TEMP/expo-livekit-runtime-build/DerivedData"
   offline-controls:
     needs: changes
     if: needs.changes.outputs.sdk == 'true'
@@ -114,8 +131,11 @@ jobs:
           source scripts/ci/sdk_paths.sh
           python3 -m unittest discover -s scripts/sim -p 'test_*.py'
           python3 -m unittest discover -s scripts/ci/tests -p 'test_*.py'
+          node --test Tools/pod-install.test.ts
+          python3 discovery/check_sdk_dial_requests.py
           python3 discovery/check_sdk_m0.py | tee "$SDK_M0_BUILD_LOGS/offline-controls.json"
           python3 discovery/check_sdk_installed_paths.py
+          python3 discovery/check_expo_livekit.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/expo-media-journey-controls.log"
           python3 discovery/check_sdk_m1.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-offline-controls.log"
           python3 discovery/check_sdk_m1_container_capture.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-container-controls.log"
           python3 discovery/check_sdk_routes_runner.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/routes-runner-controls.log"
@@ -178,6 +198,7 @@ jobs:
           python3 discovery/check_sdk_m1_contracts.py 2>&1 | tee "$SDK_M0_BUILD_LOGS/m1-contract-controls.log"
           bash Tests/PushLaunch/run.sh | tee "$SDK_M0_BUILD_LOGS/push-launch-filesystem-controls.json"
           python3 Tests/VoIPSDK/run_push_context.py | tee "$SDK_M0_BUILD_LOGS/push-context-controls.json"
+          bash Tests/DialRequests/run.sh
           python3 discovery/check_expo_bridge.py | tee "$SDK_M0_BUILD_LOGS/expo-relay-controls.json"
           python3 discovery/check_platform_shims.py | tee "$SDK_M0_BUILD_LOGS/platform-controls.json"
           python3 discovery/check_sdk_ownership.py | tee "$SDK_M0_BUILD_LOGS/ownership-controls.json"
@@ -233,6 +254,7 @@ jobs:
         with:
           node-version: "24.22.1"
           package-manager-cache: false
+      - uses: ./.github/actions/cache-native-dependencies
       - name: Build source-bound example products
         run: |
           set -euo pipefail
@@ -244,7 +266,7 @@ jobs:
           set -euo pipefail
           npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install 2>&1 | tee "$SDK_M0_BUILD_LOGS/expo-prebuild.log"
           cd example/ios
-          pod install 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-install.log"
+          node "$GITHUB_WORKSPACE/Tools/pod-install.ts" 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-install.log"
           cd "$GITHUB_WORKSPACE"
           set -euo pipefail
           workspaces=(example/ios/*.xcworkspace)
@@ -403,6 +425,7 @@ jobs:
         with:
           node-version: "24.22.1"
           package-manager-cache: false
+      - uses: ./.github/actions/cache-native-dependencies
       - name: Prepare the device build workspace
         run: |
           set -euo pipefail
@@ -412,7 +435,7 @@ jobs:
           set -euo pipefail
           npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install 2>&1 | tee "$SDK_M0_BUILD_LOGS/expo-prebuild.log"
           cd example/ios
-          pod install 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-install.log"
+          node "$GITHUB_WORKSPACE/Tools/pod-install.ts" 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-install.log"
       - name: Inspect default and opted-in Release device products
         run: |
           set -euo pipefail
@@ -433,7 +456,7 @@ jobs:
           path.write_text(json.dumps(properties, indent=2) + '\n')
           PYCONFIG
           pushd example/ios > /dev/null
-          pod install --no-repo-update 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-diagnostics-install.log"
+          node "$GITHUB_WORKSPACE/Tools/pod-install.ts" --no-repo-update 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-diagnostics-install.log"
           popd > /dev/null
           python3 discovery/build_sdk_device_release.py "$SDK_M0_BUILD_ROOT/pod-device-diagnostics" \
             --derived-data "$SDK_M0_BUILD_ROOT/pod-device/DerivedData" --provider-diagnostics \
@@ -446,7 +469,7 @@ jobs:
           export SDK_EXAMPLE_MEDIA_ADAPTER=webrtc
           set -euo pipefail
           npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install 2>&1 | tee "$SDK_M0_BUILD_LOGS/webrtc-prebuild.log"
-          (cd example/ios && pod install) 2>&1 | tee "$SDK_M0_BUILD_LOGS/webrtc-pod-install.log"
+          (cd example/ios && node "$GITHUB_WORKSPACE/Tools/pod-install.ts") 2>&1 | tee "$SDK_M0_BUILD_LOGS/webrtc-pod-install.log"
           python3 discovery/build_sdk_device_release.py "$SDK_M0_BUILD_ROOT/pod-standard-webrtc" --standard-webrtc \
             --derived-data "$SDK_M0_BUILD_ROOT/pod-device/DerivedData" > "$SDK_M0_BUILD_LOGS/webrtc-device-inspection.log" 2>&1
       - name: Retain device diagnostics

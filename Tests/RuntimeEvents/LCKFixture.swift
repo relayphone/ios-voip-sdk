@@ -21,7 +21,9 @@ final class LCKFixture: NSObject, UIApplicationDelegate, @preconcurrency Convers
   func application(_ app: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
     guard RuntimeBootstrap.activate() else { fatalError("LCK fixture runtime refused") }
     let env = ProcessInfo.processInfo.environment
-    if env["LCK_FIXTURE_CAPABILITIES"] == "none" { capabilities = [] }
+    if let names = env["LCK_FIXTURE_CAPABILITIES"], names != "all" {
+      capabilities = selectedCapabilities(names.split(separator: ",").map(String.init))
+    }
     manager = ConversationManager(configuration: .init(ringtoneName: nil, iconTemplateImageData: nil,
       maximumConversationGroups: Int(env["LCK_FIXTURE_GROUPS"] ?? "2") ?? 2,
       maximumConversationsPerConversationGroup: Int(env["LCK_FIXTURE_PER_GROUP"] ?? "1") ?? 1,
@@ -34,9 +36,18 @@ final class LCKFixture: NSObject, UIApplicationDelegate, @preconcurrency Convers
     log("ready")
     return true
   }
+  func selectedCapabilities(_ names: [String]) -> Conversation.Capabilities {
+    var result: Conversation.Capabilities = []
+    let options: [(String, Conversation.Capabilities)] = [("pausing", .pausing), ("merging", .merging), ("unmerging", .unmerging)]
+    for (name, capability) in options where names.contains(name) { result.insert(capability) }
+    return result
+  }
   func log(_ event: String, _ fields: [String: Any] = [:]) {
     var value = fields
     value["main"] = Thread.isMainThread
+    #if CKSIM_FIXTURE_CLOCK
+    if let time = RuntimeEngine.existing()?.fixtureTimeMS() { value["fixtureTimeMS"] = time }
+    #endif
     CKSimEmit("lck.fixture." + event, value)
   }
   func snapshot(_ label: String) {
@@ -66,12 +77,28 @@ final class LCKFixture: NSObject, UIApplicationDelegate, @preconcurrency Convers
     do {
       var action: ConversationAction?
       switch op {
+      #if CKSIM_FIXTURE_CLOCK
+      case "clock":
+        guard RuntimeEngine.existing()?.startFixtureClock() == true else { throw CocoaError(.validationMissingMandatoryProperty) }
+      case "advance":
+        guard let milliseconds = value["ms"] as? Int, (0...60000).contains(milliseconds),
+              let engine = RuntimeEngine.existing(), let start = engine.fixtureTimeMS() else { throw CocoaError(.validationMissingMandatoryProperty) }
+        let target = start + milliseconds
+        while true {
+          // Drain each deadline's complete callback chain before the next job.
+          while engine.fixtureCallbacksPending() { await Task.yield() }
+          guard let fired = engine.stepFixtureClock(toward: target) else { throw CocoaError(.validationMissingMandatoryProperty) }
+          if !fired { break }
+        }
+      #endif
       case "policy":
         rules = value["rules"] as? [String: [String: Any]] ?? [:]
         counts = [:]
       case "incoming":
         let number = value["handle"] as? String
         let handle = Handle(type: number == nil ? .generic : .phoneNumber, value: number ?? name, displayName: "LCK " + name)
+        log("reportStarted", ["requestID": requestID, "callUUID": id.uuidString,
+                              "handleType": number == nil ? "generic" : "phoneNumber", "handleValue": handle.value])
         try await manager.reportNewIncomingConversation(uuid: id, update: .init(members: [handle], capabilities: capabilities))
       case "start": action = StartConversationAction(conversationUUID: id, handles: [Handle(type: .generic, value: name)], isVideo: false)
       case "pause": action = PauseConversationAction(conversationUUID: id, isPaused: value["paused"] as? Bool ?? true)
@@ -80,6 +107,9 @@ final class LCKFixture: NSObject, UIApplicationDelegate, @preconcurrency Convers
         guard let other = ids[value["other"] as? String ?? ""] else { throw CocoaError(.validationMissingMandatoryProperty) }
         action = MergeConversationAction(conversationUUID: id, conversationUUIDToMergeWith: other)
       case "unmerge": action = UnmergeConversationAction(conversationUUID: id)
+      case "caps":
+        guard let conversation = manager.conversations.first(where: { $0.uuid == id }) else { throw CocoaError(.validationMissingMandatoryProperty) }
+        manager.reportConversationEvent(.conversationUpdated(.init(capabilities: selectedCapabilities(value["capabilities"] as? [String] ?? []))), for: conversation)
       case "snapshot": break
       default: throw CocoaError(.validationMissingMandatoryProperty)
       }

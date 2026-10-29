@@ -2,8 +2,12 @@
 """Host-only container lookup controls; no simulator or native RPC runs."""
 import hashlib
 import json
+import os
 from pathlib import Path
+import shlex
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -23,18 +27,18 @@ def write_json(path, value):
     path.write_text(json.dumps(value) + '\n')
 
 
-def make_capture(root):
+def make_capture(root, bundle=BUNDLE, scenario='sdk-m1-contract-audio-lifecycle'):
     """Reusable filesystem-only fixture, never a native qualification receipt."""
     root = Path(root).resolve()
     captures = root / 'captures'
     captures.mkdir()
-    trace = captures / 'sdk-m1-contract-audio-lifecycle.log'
+    trace = captures / (scenario + '.log')
     rows = [dict(event=event, t_ms=index, pid=PID, runID=RUN_ID, simulatorID=SIMULATOR,
-                 bundleID=BUNDLE, main=True) for index, event in enumerate(('app.entry', 'launch', 'done'))]
-    trace.write_text(BUNDLE + ': ' + str(PID) + '\n' +
+                 bundleID=bundle, main=True) for index, event in enumerate(('app.entry', 'launch', 'done'))]
+    trace.write_text(bundle + ': ' + str(PID) + '\n' +
                      ''.join('PROBE ' + json.dumps(row) + '\n' for row in rows))
     receipt = trace.with_suffix('.receipt.json')
-    write_json(receipt, dict(schemaVersion=2, scenario=trace.stem, bundleID=BUNDLE,
+    write_json(receipt, dict(schemaVersion=2, scenario=trace.stem, bundleID=bundle,
         runID=RUN_ID, simulatorID=SIMULATOR, appPID=PID, launcherAppPID=PID,
         completed=True, success=True, lastProbeEvent='done', launchExitCode=0,
         traceSHA256=hashlib.sha256(trace.read_bytes()).hexdigest(),
@@ -47,12 +51,12 @@ def make_capture(root):
     runtime = container / 'Documents/.callkit-simulator'
     journal = runtime / RUN_ID / 'events.jsonl'
     journal.parent.mkdir(parents=True)
-    journal.write_text(json.dumps(dict(event='host-only-journal', pid=PID, runID=RUN_ID, bundleID=BUNDLE)) + '\n')
+    journal.write_text(json.dumps(dict(event='host-only-journal', pid=PID, runID=RUN_ID, bundleID=bundle)) + '\n')
     session = runtime / 'session.json'
-    write_json(session, dict(schemaVersion=1, runID=RUN_ID, pid=PID, bundleID=BUNDLE,
+    write_json(session, dict(schemaVersion=1, runID=RUN_ID, pid=PID, bundleID=bundle,
                             notification='dev.callkitsim.control.' + str(PID)))
     return dict(receipt=receipt, trace=trace, devices_root=devices, simulator=SIMULATOR,
-                run_id=RUN_ID, bundle=BUNDLE, container=container, journal=journal, session=session, home=home)
+                run_id=RUN_ID, bundle=bundle, container=container, journal=journal, session=session, home=home)
 
 
 class CompletedContainerTests(unittest.TestCase):
@@ -78,6 +82,40 @@ class CompletedContainerTests(unittest.TestCase):
     def test_unique_completed_process_selects_exact_owned_container(self):
         self.assertEqual(self.locate(), self.fixture['container'])
         self.assertEqual(self.locate().resolve(strict=True), self.locate())
+
+    def test_initial_m0_launch_binds_runtime_session_to_completed_capture(self):
+        parent = (paths.ROOT / 'discovery/run_sdk_m0.sh').read_text()
+        start = parent.index('env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_SDK_M0_ACCEPTANCE=1')
+        block = parent[start:parent.index('\nif declare -F sim_checkpoint', start)]
+        binary = self.root / 'bin'; binary.mkdir()
+        capture = self.root / 'launch.json'
+        script = ('import json,os,pathlib,sys; '
+                  'pathlib.Path(os.environ["LAUNCH_CAPTURE"]).write_text(json.dumps(dict('
+                  'arguments=sys.argv[1:], sdk=os.environ.get("SIMCTL_CHILD_SDK_M0_RUN_ID"), '
+                  'runtime=os.environ.get("SIMCTL_CHILD_CKSIM_RUN_ID"))))')
+        fake = binary / 'python3'
+        fake.write_text('#!/bin/sh\nexec ' + shlex.quote(sys.executable) + ' -c ' +
+                        shlex.quote(script) + ' "$@"\n')
+        fake.chmod(0o700)
+        env = dict(os.environ, PATH=str(binary) + os.pathsep + os.defpath,
+                   LAUNCH_CAPTURE=str(capture), RUN_ID=RUN_ID, UDID=SIMULATOR,
+                   OUT=str(self.root), INHERITED_DYLD='')
+        env.pop('SIMCTL_CHILD_CKSIM_RUN_ID', None)
+        subprocess.run(['/bin/bash', '-eu', '-c', block], env=env, check=True, timeout=5)
+        launch = json.loads(capture.read_text())
+        self.assertEqual(launch['sdk'], RUN_ID)
+        arguments = launch['arguments']
+        self.assertEqual(arguments[arguments.index('--run-id') + 1], RUN_ID)
+        root = self.root / 'm0'; root.mkdir()
+        fixture = make_capture(root, bundle=arguments[arguments.index('--bundle-id') + 1],
+                               scenario=arguments[arguments.index('--scenario') + 1])
+        session = json.loads(fixture['session'].read_text())
+        # An unset runtime override creates its own unrelated run identity.
+        session['runID'] = launch['runtime'] or 'automatic-runtime-run'
+        write_json(fixture['session'], session)
+        options = {key: fixture[key] for key in
+                   ('receipt', 'trace', 'simulator', 'run_id', 'bundle', 'devices_root')}
+        self.assertEqual(paths.completed_container(**options), fixture['container'])
 
     def test_foreign_simulator_and_unrelated_sessions_are_not_selected(self):
         foreign = Path(str(self.fixture['container']).replace(SIMULATOR, FOREIGN))

@@ -20,7 +20,7 @@ Pod::Spec.new do |s|
   s.name = 'IosVoipSDK'
   s.version = package['version']
   s.summary = package['description']
-  s.homepage = 'https://github.com/ziahamza/ios-voip-sdk'
+  s.homepage = 'https://github.com/relayphone/ios-voip-sdk'
   s.author = { 'Hamza Zia' => 'https://github.com/ziahamza' }
   s.license = { :type => 'UNLICENSED' }
   s.source = { :git => package['repository']['url'], :tag => "v#{s.version}" }

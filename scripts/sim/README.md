@@ -65,7 +65,7 @@ an initial query with no owned device retries only the query. Borrowed sessions
 and checkpointed sessions never recover. Runtime latches the checkpoint before
 its existing direct launch, so this slice adds no app-launch replay.
 Fixture installs log each attempt's elapsed time and use a 180-second default.
-[Two independent hosted cold installs](https://github.com/ziahamza/ios-voip-sdk/pull/111#issuecomment-6398285146)
+[Two independent hosted cold installs](https://github.com/relayphone/ios-voip-sdk/pull/111#issuecomment-6398285146)
 took 124.051 and 112.653 seconds. Rounding a 25% margin over the observed maximum
 to the next 30 seconds gives 180 seconds; two samples are not a percentile estimate.
 `CKSIM_FIXTURE_INSTALL_TIMEOUT` permits an explicit positive bound up to 600
@@ -82,7 +82,7 @@ with the retry result. Use `sim.py product <check>` for product failures; it nev
 executes or retries a check. Summary labels exclude command arguments and
 environment values. The lifecycle API rejects `spawn` and container RPCs. During
 incremental adoption, `sim.sh` keeps existing product probes on the bounded path
-without lifecycle retries; their replacement requires the owning lane's product
+without lifecycle retries; their replacement requires the maintainer's product
 controls.
 
 A stateless bounded probe can declare one expected nonzero status with

@@ -65,6 +65,10 @@ final class IncomingIntake: @unchecked Sendable {
   struct Terminal: Sendable, Equatable {
     let revision: UUID
     let ended: ConversationEnded
+    let notification: CallEndedPayload?
+    init(revision: UUID, ended: ConversationEnded, notification: CallEndedPayload? = nil) {
+      self.revision = revision; self.ended = ended; self.notification = notification
+    }
   }
 
   struct Projection: Sendable {
@@ -245,7 +249,7 @@ final class IncomingIntake: @unchecked Sendable {
     endEventIDs[payload.eventId] = now
     guard let id = invitations.conversation(serverCallId: payload.serverCallId),
           let entry = entries[id] else { return false }
-    entry.terminal = Terminal(revision: UUID(), ended: ConversationEnded(at: now, reason: payload.reason))
+    entry.terminal = Terminal(revision: UUID(), ended: ConversationEnded(at: now, reason: payload.reason), notification: payload)
     entry.terminalPending = true
     return true
   }

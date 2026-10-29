@@ -46,7 +46,7 @@ The app ran from a temporary build folder, which LaunchServices does not registe
 - This is consistent with a nil bundle identifier used as a key after the LaunchServices lookup failed (-10814).
 - launchd restarted the daemon each time.
 - A third-party app whose LaunchServices record is missing can therefore crash the system call daemon. Report it to Apple through Feedback Assistant.
-- Before running, an automated Mac lane must register the app once and must not re-register it while the app is running.
+- Before running, an automated Mac job must register the app once and must not re-register it while the app is running.
 - An ad-hoc signed run during that churn was inconclusive (NSCocoaError 4097). Whether ad-hoc signing works (no provisioning profile, the CI-friendly option) is still to be settled on a clean runner.
 
 **Incoming calls are not yet measured.** A Focus on this Mac still resolves to `silence`.
