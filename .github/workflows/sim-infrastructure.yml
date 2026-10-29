@@ -20,7 +20,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "24.22.1"
+          package-manager-cache: false
       - run: python3 -m unittest discover -s scripts/sim -p 'test_*.py' -v
+      - run: node --test Tools/simctl-timeout.test.ts
       - run: bash -n scripts/sim/sim.sh discovery/run_sdk_m0.sh
       - name: Classify failed helper controls
         if: failure()

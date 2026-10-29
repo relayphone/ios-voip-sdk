@@ -132,6 +132,7 @@ jobs:
           python3 -m unittest discover -s scripts/sim -p 'test_*.py'
           python3 -m unittest discover -s scripts/ci/tests -p 'test_*.py'
           node --test Tools/pod-install.test.ts
+          node --test Tools/simctl-timeout.test.ts
           python3 discovery/check_sdk_dial_requests.py
           python3 discovery/check_sdk_m0.py | tee "$SDK_M0_BUILD_LOGS/offline-controls.json"
           python3 discovery/check_sdk_installed_paths.py
