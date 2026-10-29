@@ -4,7 +4,7 @@
 # only. Each row: arm Documents/lck-multi.json, reset the trace, run MultiCallUITests/testRow with the
 # row's UI steps, wait for the probe's DONE status, fetch the trace to <row>.jsonl, disarm.
 set -uo pipefail
-U=00008110-000628E12244401E   # hzia-iphone-13; never any other device
+U=${FOCUS_DEVICE:?Set FOCUS_DEVICE to the target device identifier}
 HERE=$(cd "$(dirname "$0")" && pwd)
 PROBE=$(cd "$HERE/../.." && pwd)
 REPO=$(cd "$PROBE/../../.." && pwd)

@@ -35,7 +35,7 @@
 - Required simulator CI uses a **proposed <500 ms budget** from PushKit delivery to native provider-report entry. The D1 fixture records `afterMs: 0` (separately rounded trace timestamps differ by 1 ms); 500 ms is a CI safety budget, not a measured Apple deadline.
 - The 4.0 s completion watchdog is fine, but the *report start* is what must happen early.
 
-**Runtime:** the simulator's push lane should terminate the app at about 4.4 s when no report has been made, as an `ios-27.0` profile value.
+**Runtime:** the simulator's push job should terminate the app at about 4.4 s when no report has been made, as an `ios-27.0` profile value.
 
 **Filtered calls:**
 

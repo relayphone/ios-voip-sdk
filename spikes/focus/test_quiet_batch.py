@@ -95,7 +95,7 @@ class QuietBatchTests(unittest.TestCase):
                 self.assertEqual(json.loads((archive / "morning-checkpoint.json").read_text()), checkpoint)
                 self.assertEqual(json.loads((legacy / "morning-checkpoint.json").read_text()), checkpoint)
                 self.assertEqual(json.loads((archive / "restore-state.json").read_text()), journal)
-                self.assertFalse((root / ".device-locks" / (DEVICE + ".lock")).exists())
+                self.assertFalse((root / ".focus-locks" / (DEVICE + ".lock")).exists())
                 (archive / "restore-state.json").unlink()
                 with self.assertRaisesRegex(ValueError, "Prior Focus work"):
                     default_work()
@@ -135,7 +135,7 @@ class QuietBatchTests(unittest.TestCase):
             (legacy / "morning-checkpoint.json").write_text(json.dumps(checkpoint))
             with mock.patch("work_path.__file__", str(root / "spike" / "work_path.py")), \
                  mock.patch.object(Path, "home", return_value=root):
-                owner = batch.DeviceLock(root / ".device-locks", DEVICE)
+                owner = batch.DeviceLock(root / ".focus-locks", DEVICE)
                 owner.acquire()
                 try:
                     with self.assertRaisesRegex(RuntimeError, "lock occupied"):

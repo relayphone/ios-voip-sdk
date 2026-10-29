@@ -104,7 +104,7 @@ class DryRunTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             device = "00008110-0011223344556677"
-            lock = root / ".device-locks" / (device + ".lock")
+            lock = root / ".focus-locks" / (device + ".lock")
             lock.mkdir(parents=True)
             nonce = "a" * 32
             (lock / "owner.json").write_text(json.dumps({"owner": "focus-morning-batch", "pid": 1234, "nonce": nonce}))
