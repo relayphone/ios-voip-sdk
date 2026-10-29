@@ -9,8 +9,8 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
-import threading
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +38,45 @@ if args == ["simctl", "get_app_container", config["device"], config["bundle"], "
     print(fixture / "container")
 else:
     raise SystemExit("Unexpected fake xcrun invocation: " + repr(args))
+'''
+
+
+# Publish a response synchronously at the request's atomic rename boundary so
+# these CLI controls do not depend on a second thread winning a deadline race.
+# The CLI still writes and reads the real mailbox with its unchanged timeout.
+DIRECTORY_RESPONDER = '''
+import json
+import os
+from pathlib import Path
+import runpy
+import sys
+from unittest.mock import patch
+
+fixture = Path(os.environ["CKSIM_SYNTHETIC_CLI_FIXTURE"])
+config = json.loads((fixture / "config.json").read_text())
+mailbox = fixture / "container/Documents/.callkit-simulator" / config["run"]
+rename = Path.rename
+
+def publish(path, target):
+    result = rename(path, target)
+    if result.parent == mailbox / "requests" and result.suffix == ".json":
+        requests = list(result.parent.glob("*.json"))
+        if requests != [result]:
+            raise RuntimeError("Expected exactly one synthetic request")
+        value = json.loads(result.read_text())
+        field = config["response"]
+        if field != "timeout":
+            answer = dict(value, success=True, fixture="synthetic")
+            if field != "positive":
+                answer[field] = value[field] + 1 if field == "pid" else "mismatched"
+            temporary = mailbox / "responses" / (result.name + ".tmp")
+            temporary.write_text(json.dumps(answer))
+            rename(temporary, temporary.with_suffix(""))
+    return result
+
+cli = sys.argv.pop(1)
+with patch.object(Path, "rename", publish):
+    runpy.run_path(cli, run_name="__main__")
 '''
 
 
@@ -82,37 +121,11 @@ def controls():
                 mutate(package, root, session)
             env = dict(os.environ, PATH=str(directory / "bin") + os.pathsep + os.environ.get("PATH", ""),
                        CKSIM_SYNTHETIC_CLI_FIXTURE=str(directory))
-            finished = threading.Event()
-            errors = []
-            def respond():
-                try:
-                    while not finished.wait(0.001):
-                        requests = list((root / RUN / "requests").glob("*.json"))
-                        if not requests:
-                            continue
-                        require(len(requests) == 1, "Expected exactly one synthetic request")
-                        value = json.loads(requests[0].read_text())
-                        if response != "timeout":
-                            answer = dict(value, success=True, fixture="synthetic")
-                            if response != "positive":
-                                answer[response] = value[response] + 1 if response == "pid" else "mismatched"
-                            temporary = root / RUN / "responses" / (requests[0].name + ".tmp")
-                            temporary.write_text(json.dumps(answer))
-                            temporary.rename(temporary.with_suffix(""))
-                        return
-                except BaseException as error:
-                    errors.append(error)
-            responder = threading.Thread(target=respond, daemon=True)
-            responder.start()
-            try:
-                result = subprocess.run([str(CLI), "--simulator", DEVICE, "--bundle", BUNDLE,
+            result = subprocess.run([sys.executable, "-c", DIRECTORY_RESPONDER, str(CLI),
+                                     "--simulator", DEVICE, "--bundle", BUNDLE,
                                      "--runtime-dir", str(package), "--timeout", "0.1",
                                      "--command-receipt", str(directory / "command-receipt.json"), *command],
                                     env=env, capture_output=True, text=True, timeout=20)
-            finally:
-                finished.set()
-                responder.join(timeout=1)
-            require(not responder.is_alive() and not errors, "Synthetic directory responder failed: " + repr(errors))
             diagnostic = f"{label}: exit={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}"
             if expected:
                 require(result.returncode == exit_code and expected in result.stderr and not result.stdout, diagnostic)
