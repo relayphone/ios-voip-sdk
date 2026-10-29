@@ -80,7 +80,7 @@ else:
             package.mkdir()
             version = (CLI.parent.parent / "VERSION").read_text().strip()
             files = {}
-            for name in ("CKSimRuntime.dylib", "CKSimLoader.dylib", "cksim-notify", "cksim", "profiles/ios-27.0.json", "VERSION"):
+            for name in ("CKSimRuntime.dylib", "CKSimLoader.dylib", "cksim", "profiles/ios-27.0.json", "VERSION"):
                 path = package / name
                 path.parent.mkdir(exist_ok=True)
                 path.write_bytes((version + "\n").encode() if name == "VERSION" else b"offline fixture\n")

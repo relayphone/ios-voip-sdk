@@ -54,7 +54,7 @@ def fixture(directory):
     (package / "profiles").mkdir(parents=True)
     version = (ROOT / "VERSION").read_text().strip()
     files = {}
-    for name in ("CKSimRuntime.dylib", "CKSimLoader.dylib", "cksim-notify", "cksim",
+    for name in ("CKSimRuntime.dylib", "CKSimLoader.dylib", "cksim",
                  "profiles/ios-27.0.json", "VERSION"):
         data = ((version + "\n") if name == "VERSION" else "synthetic fixture: " + name).encode()
         (package / name).write_bytes(data)

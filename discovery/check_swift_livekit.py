@@ -105,7 +105,7 @@ def materialize(root):
             appAbsentAfterStop=True, appAbsenceMethod='signal-zero', consoleTransport='host-pty',
             traceSHA256=digest(capture / (mode + '.log')), journalSHA256=digest(capture / (mode + '.runtime.jsonl'))))
         save(capture / (mode + '.session.json'), dict(schemaVersion=1, runID=run, pid=pid, bundleID=gate.BUNDLE,
-             profile='ios-27.0', notification='dev.callkitsim.control.' + str(pid), controlTransport='directory-watch-v1'))
+             profile='ios-27.0', controlTransport='directory-watch-v1'))
     (capture / 'create.stdout').write_text(SIM + '\n')
     save(capture / 'runtime.json', dict(identifier='com.apple.CoreSimulator.SimRuntime.iOS-27-0', version='27.0', buildversion='synthetic'))
     save(capture / 'cleanup.json', dict(simulatorID=SIM, deleteExitCode=0, deleted=True))
@@ -157,7 +157,7 @@ def controls():
             directory = root / label; directory.mkdir()
             runtime = directory / 'runtime'; (runtime / 'requests').mkdir(parents=True)
             (runtime / 'responses').mkdir()
-            session = dict(runID=CALL, pid=100, bundleID=gate.BUNDLE, notification='dev.callkitsim.control.100')
+            session = dict(runID=CALL, pid=100, bundleID=gate.BUNDLE)
             if transport is not None: session['controlTransport'] = transport
             with patch.object(runner, 'command', side_effect=AssertionError('fault transport attempted a wake RPC')) as wake, \
                  patch.object(runner.subprocess, 'run', side_effect=AssertionError('fault transport spawned a process')), \
@@ -238,8 +238,7 @@ def controls():
         check('missing-PID-ACK', lambda b, c: alter_json(c / 'healthy.receipt.json', lambda r: r.pop('launcherAppPID')))
         check('missing-owned-process-absence', lambda b, c: alter_json(c / 'healthy.receipt.json', lambda r: r.pop('appAbsentAfterStop')))
         for field, expected in dict(schemaVersion=1, runID='00000000-0000-0000-0000-000000000005',
-                pid=100, bundleID=gate.BUNDLE, profile='ios-27.0', notification='dev.callkitsim.control.100',
-                controlTransport='directory-watch-v1').items():
+                pid=100, bundleID=gate.BUNDLE, profile='ios-27.0', controlTransport='directory-watch-v1').items():
             check('missing-runtime-session-' + field, lambda b, c, field=field:
                 alter_json(c / 'healthy.session.json', lambda r: r.pop(field)))
             check('wrong-runtime-session-' + field, lambda b, c, field=field, expected=expected:
@@ -322,7 +321,7 @@ def controls():
                 launch['dataContainer'] = str(alias)
             runtime = container / 'Documents/.callkit-simulator' / fixed_run; runtime.mkdir(parents=True)
             session = dict(runID=fixed_run, pid=100, bundleID=gate.BUNDLE,
-                profile='ios-27.0', notification='dev.callkitsim.control.100', controlTransport='directory-watch-v1')
+                profile='ios-27.0', controlTransport='directory-watch-v1')
             if label == 'wrong-session-pid': session['pid'] = 999
             if label == 'wrong-session-profile': session['profile'] = 'other'
             if label == 'wrong-session-transport': session['controlTransport'] = 'notify-v1'
@@ -441,8 +440,7 @@ def controls():
                     raise RuntimeError('synthetic checkpoint failure')
                 return dict(event='launch', runID=fixed_run, pid=100, simulatorID=SIM, bundleID=gate.BUNDLE,
                     case='healthy', mode='sdk-swift-livekit', executableSHA256=digest(executable), dataContainer=str(container)) if not hasattr(checkpoint, 'seen') else dict(
-                    runID=fixed_run, pid=100, bundleID=gate.BUNDLE, profile='ios-27.0', notification='dev.callkitsim.control.100',
-                    controlTransport='directory-watch-v1')
+                    runID=fixed_run, pid=100, bundleID=gate.BUNDLE, profile='ios-27.0', controlTransport='directory-watch-v1')
             def checkpoints(*args):
                 value = checkpoint(*args); checkpoint.seen = True; return value
             with patch.object(runner.subprocess, 'Popen', return_value=process) as spawn, \

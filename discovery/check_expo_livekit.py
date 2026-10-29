@@ -127,7 +127,7 @@ def fixture_case(root, case, pid):
     write(root / (name + '.receipt.json'), receipt)
     if case == 'stale-audio':
         write(root / (name + '.session.json'), dict(schemaVersion=1, runID='run-1', pid=pid, bundleID=gate.BUNDLE,
-              profile='ios-27.0', notification=f'dev.callkitsim.control.{pid}', controlTransport='directory-watch-v1'))
+              profile='ios-27.0', controlTransport='directory-watch-v1'))
         write(root / (name + '.request.json'), dict(id=NONCE, runID='run-1', pid=pid, bundleID=gate.BUNDLE,
               operation='faults', faults=dict(staleAudio=True, reportCallbackDelayMS=0, invalidateDuringHandoff=False)))
         write(root / (name + '.response.json'), dict(id=NONCE, runID='run-1', pid=pid, bundleID=gate.BUNDLE,
@@ -315,7 +315,7 @@ class GateControls(unittest.TestCase):
 
     def test_stale_session_request_ack_and_readiness_bind_the_current_process(self):
         expected = {
-            '.session.json': ('schemaVersion', 'runID', 'pid', 'bundleID', 'profile', 'notification', 'controlTransport'),
+            '.session.json': ('schemaVersion', 'runID', 'pid', 'bundleID', 'profile', 'controlTransport'),
             '.request.json': ('id', 'runID', 'pid', 'bundleID', 'operation', 'faults'),
             '.response.json': ('id', 'runID', 'pid', 'bundleID', 'success', 'result'),
             '.ready.json': ('runID', 'case', 'pid', 'staleAudio', 'requestID', 'acknowledgedWallTimeMS'),
@@ -485,7 +485,7 @@ class RunnerControls(unittest.TestCase):
         for path in (out, data / 'tmp', runtime / 'requests', runtime / 'responses'):
             path.mkdir(parents=True)
         session = dict(schemaVersion=1, runID='run', pid=123, bundleID=gate.BUNDLE,
-            profile='ios-27.0', notification='dev.callkitsim.control.123', controlTransport='directory-watch-v1')
+            profile='ios-27.0', controlTransport='directory-watch-v1')
         write(runtime.parent / 'session.json', session)
         trace = out / 'expo-livekit-stale-audio.log'
         rows = [dict(event=event, wallTimeMS=1000, pid=123, runID='run', bundleID=gate.BUNDLE)
@@ -541,10 +541,10 @@ class RunnerControls(unittest.TestCase):
 
     def test_fault_session_must_be_fresh_exact_and_native_before_any_command(self):
         mutations = [lambda row, key=key: row.pop(key) for key in (
-            'schemaVersion', 'runID', 'pid', 'bundleID', 'profile', 'notification', 'controlTransport')]
+            'schemaVersion', 'runID', 'pid', 'bundleID', 'profile', 'controlTransport')]
         mutations += [lambda row, key=key, value=value: row.update({key: value}) for key, value in (
             ('schemaVersion', True), ('runID', 'old-run'), ('pid', 122), ('pid', True),
-            ('bundleID', 'foreign'), ('profile', 'other'), ('notification', 'dev.callkitsim.control.122'),
+            ('bundleID', 'foreign'), ('profile', 'other'), ('controlTransport', 'unsupported'),
             ('controlTransport', 'notify-v1'), ('extra', 1))]
         for index, mutate in enumerate(mutations):
             with self.subTest(index=index), tempfile.TemporaryDirectory() as temporary:

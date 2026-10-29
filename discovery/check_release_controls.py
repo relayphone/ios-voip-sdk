@@ -37,7 +37,7 @@ def repository(root, annotated=True, merged=True):
 
 def package(root, repo):
     (root / 'profiles').mkdir(parents=True)
-    for name in ('CKSimRuntime.dylib', 'CKSimLoader.dylib', 'cksim-notify'):
+    for name in ('CKSimRuntime.dylib', 'CKSimLoader.dylib'):
         (root / name).write_bytes(b'synthetic release fixture\n')
     (root / 'profiles/ios-27.0.json').write_text('{}\n')
     (root / 'VERSION').write_text('0.1.1\n')

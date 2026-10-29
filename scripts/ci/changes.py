@@ -61,7 +61,7 @@ def select(paths, full=False):
         or p.startswith(('Expo/', 'ExpoMedia/', 'example/', 'Tests/ExpoMedia/', 'scripts/sim/')) for p in paths))
     jobs['swift-livekit-native'] = sdk and any('swift_livekit' in p or p.startswith(
         ('Sources/VoIPSDK/', 'Sources/VoIPPlatform/', 'Integrations/LiveKit/',
-         'Tests/SwiftLiveKit/', 'scripts/sim/')) or p in ('Package.swift', 'Tools/cksim-notify.c',
+         'Tests/SwiftLiveKit/', 'scripts/sim/')) or p in ('Package.swift',
          'discovery/run_scenario.py') for p in paths)
     jobs['legacy-audio-lifecycle'] = sdk and (shared or any('m1_contract' in p
         or 'run_audio_lifecycle_legacy' in p or audio_contract(p)

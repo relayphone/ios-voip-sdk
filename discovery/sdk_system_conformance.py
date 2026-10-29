@@ -148,7 +148,7 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
         if refusal: require('selected-provider reset requires no pending runtime actions' in response.get('error', ''), 'unsafe pending reset was not refused')
         uuid_value(request.get('id'))
         require(all(request.get(key) == response.get(key) == session.get(key) == launch.get(key) for key in ('runID', 'pid', 'bundleID')) and
-                request['id'] == response.get('id') and session.get('notification') == 'dev.callkitsim.control.' + str(launch['pid']), 'control identity differs')
+                request['id'] == response.get('id') and session.get('controlTransport') == 'directory-watch-v1', 'control identity differs')
         requests.append(request)
         if operation in ('push', 'reset'):
             continue

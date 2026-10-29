@@ -16,7 +16,7 @@ FILES = ('SDKSwiftLiveKit.app/SDKSwiftLiveKit', 'SDKSwiftLiveKit.app/Info.plist'
          'SDKSwiftLiveKit.app/Frameworks/LiveKitWebRTC.framework/LiveKitWebRTC',
          'SDKSwiftLiveKit.app/Frameworks/RustLiveKitUniFFI.framework/RustLiveKitUniFFI',
          'SDKSwiftLiveKit.app/VoIPSDK_CKSimRuntime.bundle/ios-27.0.json', 'Package.resolved',
-         'build.log', 'source-before.json', 'source-after.json', 'cksim-notify')
+         'build.log', 'source-before.json', 'source-after.json')
 CLASSIFICATION = 'real pinned Swift LiveKit manual/no-device engine; no Room, server, playback or device audio proof'
 
 
@@ -235,8 +235,7 @@ def validate(build, capture):
         require(one(native, 'runtime.installed').get('version') == (ROOT / 'VERSION').read_text().strip(), 'runtime version differs')
         session = json.loads((capture / (mode + '.session.json')).read_text())
         expected_session = dict(schemaVersion=1, runID=identity['runID'], pid=receipt['appPID'], bundleID=BUNDLE,
-                    profile='ios-27.0', notification='dev.callkitsim.control.' + str(receipt['appPID']),
-                    controlTransport='directory-watch-v1')
+                    profile='ios-27.0', controlTransport='directory-watch-v1')
         require(type(session) is dict and all(type(session.get(key)) is type(value) and session[key] == value
                     for key, value in expected_session.items()), 'runtime session differs')
         fault = [json.loads((capture / name).read_text()) for name in ('fault-request.json', 'fault-response.json')] if mode == 'stale-audio' else [None, None]
