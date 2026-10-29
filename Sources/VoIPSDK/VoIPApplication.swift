@@ -16,36 +16,36 @@ public final class VoIPApplication {
     }
 
     /// Reads the config plugin's VoIPSDK Info.plist dictionary.
-    public static func fromBundle(_ bundle: Bundle = .main) throws -> Configuration {
+    public static func fromBundle(_ bundle: Bundle = .main) throws(VoIPStartupError) -> Configuration {
       let info: [String: Any]
       if let value = bundle.object(forInfoDictionaryKey: "VoIPSDK") {
-        guard let dictionary = value as? [String: Any] else { throw ConversationClientError.invalidConfiguration }
+        guard let dictionary = value as? [String: Any] else { throw VoIPStartupError.invalidConfiguration }
         info = dictionary
       } else { info = [:] }
-      func bool(_ key: String, default fallback: Bool) throws -> Bool {
+      func bool(_ key: String, default fallback: Bool) throws(VoIPStartupError) -> Bool {
         guard let value = info[key] else { return fallback }
         guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else {
-          throw ConversationClientError.invalidConfiguration
+          throw VoIPStartupError.invalidConfiguration
         }
         return number.boolValue
       }
-      func integer(_ key: String, default fallback: Int) throws -> Int {
+      func integer(_ key: String, default fallback: Int) throws(VoIPStartupError) -> Int {
         guard let value = info[key] else { return fallback }
         guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
               number.doubleValue.isFinite, number.doubleValue >= 1,
               number.doubleValue < Double(Int.max), number.doubleValue.rounded() == number.doubleValue else {
-          throw ConversationClientError.invalidConfiguration
+          throw VoIPStartupError.invalidConfiguration
         }
         return number.intValue
       }
-      func string(_ key: String) throws -> String? {
+      func string(_ key: String) throws(VoIPStartupError) -> String? {
         guard let value = info[key] else { return nil }
-        guard let string = value as? String else { throw ConversationClientError.invalidConfiguration }
+        guard let string = value as? String else { throw VoIPStartupError.invalidConfiguration }
         return string
       }
       let policy: UnhandledActionPolicy
       if let value = try string("unhandledAction") {
-        guard let parsed = UnhandledActionPolicy(rawValue: value) else { throw ConversationClientError.invalidConfiguration }
+        guard let parsed = UnhandledActionPolicy(rawValue: value) else { throw VoIPStartupError.invalidConfiguration }
         policy = parsed
       } else { policy = .fail }
       let ringtone = try string("ringtoneName")
@@ -84,33 +84,39 @@ public final class VoIPApplication {
   /// without creating another manager or receiver.
   @discardableResult
   public static func start(configuration: Configuration = .init(), mediaAdapter: (any MediaAdapter)? = nil,
-                           audioPolicy: AudioActivationPolicy = .standard) throws -> VoIPApplication {
+                           audioPolicy: AudioActivationPolicy = .standard) throws(VoIPStartupError) -> VoIPApplication {
     try ProcessSDKOwnership.claim()
     if let current {
-      guard current.configuration == configuration else { throw ConversationClientError.alreadyConfigured }
+      guard current.configuration == configuration else { throw VoIPStartupError.alreadyConfigured }
       _ = try ConversationClient.forApplication(configuration: configuration.client,
         mediaAdapter: mediaAdapter, audioPolicy: audioPolicy)
       current.client.finishLaunch()
-      try current.pushService.start()
+      try startPushService(current.pushService)
       return current
     }
-    guard !starting else { throw ConversationClientError.alreadyConfigured }
+    guard !starting else { throw VoIPStartupError.alreadyConfigured }
     starting = true
     defer { starting = false }
-    try SimulatorSupport.configure(enabled: configuration.simulatorSupport)
+    do { try SimulatorSupport.configure(enabled: configuration.simulatorSupport) }
+    catch { throw VoIPStartupError.simulatorAlreadyActivated }
     let client = try ConversationClient.forApplication(configuration: configuration.client,
       mediaAdapter: mediaAdapter, audioPolicy: audioPolicy)
     let application = VoIPApplication(client: client, configuration: configuration)
     current = application
     client.finishLaunch()
-    try application.pushService.start()
+    try startPushService(application.pushService)
     return application
   }
 
   @discardableResult
   public static func startFromBundle(_ bundle: Bundle = .main, mediaAdapter: (any MediaAdapter)? = nil,
-                                     audioPolicy: AudioActivationPolicy = .standard) throws -> VoIPApplication {
+                                     audioPolicy: AudioActivationPolicy = .standard) throws(VoIPStartupError) -> VoIPApplication {
     try start(configuration: Configuration.fromBundle(bundle), mediaAdapter: mediaAdapter, audioPolicy: audioPolicy)
+  }
+
+  private static func startPushService(_ service: PushService) throws(VoIPStartupError) {
+    do { try service.start() }
+    catch { throw VoIPStartupError.pushRegistration(error) }
   }
 }
 #endif
