@@ -26,6 +26,7 @@ def audio_delay(j, settled, expected, description):
 
 def composite_audio(j, name, operation, delayed_kind):
     j.pair(name)
+    j.app('clock')
     j.app('policy', rules={delayed_kind: dict(mode='delay', ms=2000, nth=1)})
     start = len(j.rows())
     action_ids = j.composite(operation)
@@ -33,22 +34,33 @@ def composite_audio(j, name, operation, delayed_kind):
     performed = [r for r in j.rows()[start:] if r['event'] == PREFIX + 'perform' and r.get('actionID') in action_ids]
     assert {(r['kind'], r['callUUID']) for r in performed} == {(delayed_kind, j.ids['A']), ('Join', j.ids['B'])}
     delayed = next(r for r in performed if r['kind'] == delayed_kind)
+    fixture_time(delayed)
+    j.app('advance', ms=1999)
+    rows = j.rows()[start:]
+    assert not any(r['event'] == PREFIX + 'settled' and r.get('actionID') == delayed['actionID'] for r in rows), 'delayed constituent settled early'
+    assert not any(r['event'] == PREFIX + 'changed' and r.get('callUUID') == j.ids['B'] and r.get('state') == 'joined' for r in rows), 'accepted B joined before every constituent settled'
+    assert not any(r['event'] == PREFIX + 'didActivate' for r in rows), 'composite reactivated audio before its last settlement'
+    j.app('advance', ms=1)
     j.wait(lambda rows: action_ids <= {r.get('actionID') for r in rows[start:] if r['event'] == PREFIX + 'settled'})
+    j.app('advance', ms=114)
+    assert not any(r['event'] == PREFIX + 'didActivate' for r in j.rows()[start:]), 'composite audio fired before its deadline'
+    j.app('advance', ms=1)
     rows = j.state(A='paused' if delayed_kind == 'Pause' else 'left', B='joined')
     settled = [r for r in rows[start:] if r['event'] == PREFIX + 'settled' and r.get('actionID') in action_ids]
     delayed_settlement = next(r for r in settled if r['actionID'] == delayed['actionID'])
-    assert 1900 <= delayed_settlement['t_ms'] - delayed['t_ms'] <= 5000, 'delayed constituent must really settle about 2s late'
+    assert fixture_time(delayed_settlement) - fixture_time(delayed) == 2000, 'controlled constituent settlement must be exactly 2000ms'
     joined_settlement = next(r for r in settled if r['kind'] == 'Join')
     assert joined_settlement['sequence'] < delayed_settlement['sequence'], 'Join must settle while the other constituent remains pending'
     terminal_sequence = max(r['sequence'] for r in settled)
-    joined = next(r for r in rows[start:] if r['event'] == PREFIX + 'changed' and r['callUUID'] == j.ids['B'] and r['state'] == 'joined')
+    joined = event(j, 'changed', lambda r: r.get('callUUID') == j.ids['B'] and r.get('state') == 'joined', start=start)
     assert joined['sequence'] > terminal_sequence, 'accepted B joined before every constituent settled'
     activated = event(j, 'didActivate', start=start)
     rows = j.rows()[start:]
     assert not any(r['event'] == PREFIX + 'didActivate' and r['sequence'] < terminal_sequence for r in rows), 'composite reactivated audio before its last settlement'
     assert activated['sequence'] > terminal_sequence
     assert any(r['event'] == PREFIX + 'didDeactivate' and r['sequence'] < activated['sequence'] for r in rows), 'native handoff must deactivate before activating'
-    delay = activated['t_ms'] - max(r['t_ms'] for r in settled)
+    delay = fixture_time(activated) - max(fixture_time(r) for r in settled)
+    assert delay == 115, 'composite audio must activate 115ms after final settlement'
     print(f'LCK {name} audio after last native settlement: {delay} ms', flush=True)
     return delay
 
@@ -141,5 +153,5 @@ def run_cases(j):
     return dict(singleJoinAudioMS=join_audio_delay, singleStartAudioMS=start_audio_delay,
                 singleAudioTimingEvidence='controlled fixture clock; not device measurements',
                 mutePreservedJoinAudioMS=mute_timings['joinToAudioMS'], muteTimings=mute_timings, delayedPauseCompositeAudioMS=hold_audio_delay,
-                delayedEndCompositeAudioMS=end_audio_delay, delayedResumeMS=fulfillment_delay,
+                delayedEndCompositeAudioMS=end_audio_delay, compositeAudioTimingEvidence='controlled fixture clock; not device measurements', delayedResumeMS=fulfillment_delay,
                 endAfterResumeSettlementMS=after_settlement, delayedResumeEvidence='injected scheduler regression')

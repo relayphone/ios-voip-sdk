@@ -174,6 +174,11 @@ final class LCKFixture: NSObject, UIApplicationDelegate, @preconcurrency Convers
     switch policy {
     case "pending": break
     case "delay":
+      #if CKSIM_FIXTURE_CLOCK
+      if RuntimeEngine.existing()?.scheduleFixtureWork(Double(rule["ms"] as? Int ?? 2000) / 1000, {
+        self.settle(action, failed: false, policy: policy)
+      }) == true { break }
+      #endif
       DispatchQueue.main.asyncAfter(deadline: .now() + Double(rule["ms"] as? Int ?? 2000) / 1000) {
         self.settle(action, failed: false, policy: policy)
       }

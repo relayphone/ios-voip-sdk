@@ -27,6 +27,18 @@ class JournalOracleTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, 'before every constituent'):
             acceptance.verify_barrier(rows, 'B', {'join', 'pause'})
 
+    def test_composite_delivery_uses_fixture_time_when_active(self):
+        rows = [dict(t_ms=0, fixtureTimeMS=0), dict(t_ms=900000, fixtureTimeMS=0)]
+        acceptance.verify_composite_delivery(rows)
+        rows[1]['fixtureTimeMS'] = 1
+        with self.assertRaisesRegex(AssertionError, 'separated'):
+            acceptance.verify_composite_delivery(rows)
+        rows[1].pop('fixtureTimeMS')
+        with self.assertRaisesRegex(AssertionError, 'clock evidence'):
+            acceptance.verify_composite_delivery(rows)
+        with self.assertRaisesRegex(AssertionError, 'separated'):
+            acceptance.verify_composite_delivery([dict(t_ms=0), dict(t_ms=100)])
+
     def test_timeout_checks_effective_elapsed_and_advertised_deadline_separately(self):
         delivered = dict(t_ms=1000, advertisedRemainingMS=30000)
         acceptance.verify_timeout(delivered, dict(t_ms=6330), 'Pause')
@@ -145,6 +157,64 @@ class MuteClockTests(unittest.TestCase):
     def test_wall_timestamps_cannot_substitute_for_fixture_time(self):
         with self.assertRaisesRegex(AssertionError, 'fixture clock'):
             self.run_mute(missing_clock=True)
+
+
+class CompositeClockTests(unittest.TestCase):
+    def run_case(self, *, settlement=2000, audio=2115, early_join=False, missing_clock=False):
+        class Fixture:
+            ids = dict(A='A', B='B')
+            def __init__(self): self.now = 0; self.events = []
+            def emit(self, event, **fields):
+                row = dict(event='lck.fixture.' + event, sequence=len(self.events) + 1,
+                           fixtureTimeMS=self.now, t_ms=999999, **fields)
+                if missing_clock: row.pop('fixtureTimeMS')
+                self.events.append(row)
+            def pair(self, name): pass
+            def app(self, op, **fields):
+                if op == 'advance':
+                    target = self.now + fields['ms']
+                    for at, name in ((settlement, 'settle'), (audio, 'audio')):
+                        if self.now < at <= target:
+                            self.now = at
+                            if name == 'settle': self.emit('settled', actionID='pause', kind='Pause')
+                            else:
+                                self.emit('changed', callUUID='B', state='joined')
+                                self.emit('didActivate')
+                    self.now = target
+                elif op not in ('clock', 'policy'): raise AssertionError(op)
+            def composite(self, operation):
+                self.emit('perform', actionID='pause', kind='Pause', callUUID='A')
+                self.emit('perform', actionID='join', kind='Join', callUUID='B')
+                self.emit('settled', actionID='join', kind='Join')
+                self.emit('didDeactivate')
+                if early_join: self.emit('changed', callUUID='B', state='joined')
+                return {'pause', 'join'}
+            def rows(self): return self.events
+            def wait(self, predicate):
+                found = predicate(self.rows())
+                assert found, 'controlled fixture event missing'
+                return found
+            def state(self, **fields): return self.events
+        forbidden = Mock(side_effect=AssertionError('host time must not drive composite audio'))
+        with patch.object(handoff, 'time', SimpleNamespace(sleep=forbidden, monotonic=forbidden, time=forbidden)):
+            return handoff.composite_audio(Fixture(), 'controlledComposite', 'hold-and-accept', 'Pause')
+
+    def test_controlled_composite_ignores_wall_timestamps(self):
+        self.assertEqual(self.run_case(), 115)
+
+    def test_wrong_settlement_delay_still_fails(self):
+        for delay in (1999, 2001):
+            with self.subTest(delay=delay), self.assertRaises(AssertionError): self.run_case(settlement=delay)
+
+    def test_early_or_late_audio_still_fails(self):
+        for delay in (2114, 2116):
+            with self.subTest(delay=delay), self.assertRaises(AssertionError): self.run_case(audio=delay)
+
+    def test_early_join_still_fails(self):
+        with self.assertRaises(AssertionError): self.run_case(early_join=True)
+
+    def test_missing_fixture_clock_still_fails(self):
+        with self.assertRaisesRegex(AssertionError, 'fixture clock'): self.run_case(missing_clock=True)
 
 
 class FixtureSchedulerTests(unittest.TestCase):

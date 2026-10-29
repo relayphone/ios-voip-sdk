@@ -65,6 +65,7 @@ let package = Package(
     .target(name: "VoIPSDKTesting"),
     .testTarget(name: "VoIPSDKTests", dependencies: ["VoIPSDK", "VoIPSDKTesting"]),
     .testTarget(name: "VoIPSDKTestingTests", dependencies: ["VoIPSDKTesting"]),
+    .testTarget(name: "RuntimeEngineTests", dependencies: ["CKSimRuntime"]),
   ],
   swiftLanguageModes: [.v6]
 )

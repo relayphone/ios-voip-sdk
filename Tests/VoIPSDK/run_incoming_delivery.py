@@ -216,7 +216,7 @@ final class ConversationManager: @unchecked Sendable {
 
 def prepare(out, sources):
     push = sources['Sources/VoIPSDK/PushService.swift'].decode()
-    receiver = braced(push, '  public nonisolated func receiveVoIPPush(')
+    receiver = braced(push, '  nonisolated func receiveVoIPPush(')
     schedule = braced(push, '  private nonisolated func scheduleProjection(')
     transport = sources['Sources/VoIPSDK/IncomingReportTransport.swift'].decode()
     report_errors = braced(sources['Sources/VoIPSDK/ConversationClient.swift'].decode(),

@@ -124,7 +124,7 @@ def dry_run(plan, unknown, quiet=False):
                       "preflight": preflight, "signing": "xcodegen; xcodebuild build-for-testing -allowProvisioningUpdates with configured Xcode signing credentials and team " + TEAM,
                       "microphonePreflight": "skipped: quiet" if quiet else "compile listener and request authorization once (bounded 30 seconds, no recording)",
                       "quiet": "capture and durably back up ringtone volume before setting minimum; restore on exit" if quiet else False,
-                      "deviceLock": "~/.device-locks/<FOCUS_DEVICE>.lock; no stealing; Phone priority"}))
+                      "deviceLock": "${FOCUS_LOCK_DIR}/<FOCUS_DEVICE>.lock; no stealing; Phone priority"}))
     for item in plan:
         if item.get("skip"):
             print(json.dumps({"id": item["id"], "row": item["row"], "sample": item["sample"], "status": item["skip"]}, separators=(",", ":")))
@@ -324,7 +324,7 @@ def archive_legacy():
     if not any((legacy / name).exists() or (legacy / name).is_symlink() for name in LEGACY_FILES):
         return None
     state, _ = legacy_snapshot(legacy)
-    lock = DeviceLock(Path.home() / ".device-locks", state["device"])
+    lock = DeviceLock(Path(os.environ.get("FOCUS_LOCK_DIR", Path.home() / ".focus-locks")), state["device"])
     lock.acquire()
     try:
         state, contents = legacy_snapshot(legacy)
@@ -581,7 +581,7 @@ def supervised_restore():
     work.chmod(0o700)
     if not DEVICE_ID_PATTERN.fullmatch(device):
         raise ValueError("FOCUS_DEVICE must be the canonical uppercase iPhone hardware UDID")
-    lock_dir = Path.home() / ".device-locks"
+    lock_dir = Path(os.environ.get("FOCUS_LOCK_DIR", Path.home() / ".focus-locks"))
     if phone_wants_device(work, lock_dir, device):
         raise RuntimeError("Phone priority or PAUSE marker exists; no recovery action taken")
     lock = DeviceLock(lock_dir, device)
@@ -659,7 +659,7 @@ def run_batch(plan, args):
     work.chmod(0o700)
     if not DEVICE_ID_PATTERN.fullmatch(device):
         raise ValueError("FOCUS_DEVICE must be the canonical uppercase iPhone hardware UDID")
-    lock_dir = Path.home() / ".device-locks"
+    lock_dir = Path(os.environ.get("FOCUS_LOCK_DIR", Path.home() / ".focus-locks"))
     if phone_wants_device(work, lock_dir, device):
         raise BatchPaused("PAUSE or Phone priority marker exists; no device action taken")
     lock = DeviceLock(lock_dir, device)

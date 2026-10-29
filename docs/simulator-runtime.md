@@ -1,6 +1,6 @@
 # Simulator runtime (v0.1)
 
-This is the runtime formerly published as "CallKit Simulator". It now lives in `ios-voip-sdk`, and the SDK will activate it in-process (see [START-HERE](START-HERE.md)). The standalone loader below still serves apps that don't use the SDK.
+This is the runtime formerly published as "CallKit Simulator". It now lives in `ios-voip-sdk`, and the SDK will activate it in-process (see the [documentation index](README.md)). The standalone loader below still serves apps that don't use the SDK.
 
 A simulator-only CallKit runtime for testing existing iOS calling integrations.
 Apps and SDKs continue to use Apple's `CXProvider`, `CXCallController`, actions,
