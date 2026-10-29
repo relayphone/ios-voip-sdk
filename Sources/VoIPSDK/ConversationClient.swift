@@ -63,7 +63,7 @@ import VoIPPlatform
 
 /// The process's sole LCK owner. Calling code never receives the manager or a provider.
 @MainActor
-public final class ConversationClient: NSObject {
+public final class ConversationClient {
   public struct Configuration: Sendable, Equatable {
     public var ringtoneName: String?
     public var iconTemplateImageData: Data?
@@ -118,6 +118,7 @@ public final class ConversationClient: NSObject {
 
   private typealias Record = ConversationRecord
   private let manager: ConversationManager
+  private let managerDelegate = ConversationManagerDelegateProxy()
   private let coordinator: ConversationActionCoordinator
   private let configuration: Configuration
   private var launchFinished = false
@@ -181,12 +182,12 @@ public final class ConversationClient: NSObject {
       supportsVideo: configuration.supportsVideo,
       supportedHandleTypes: [.generic, .phoneNumber, .emailAddress]))
     incomingTransport = IncomingReportTransport(manager: manager)
-    super.init()
     systemAudio.routeConfigurationAdapter = mediaAdapter as? any AudioRouteConfigurationAdapter
     #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
     ProviderCreationMonitor.endOwnedManagerCreation()
     #endif
-    manager.delegate = self
+    managerDelegate.client = self
+    manager.delegate = managerDelegate
     coordinator.snapshot = { [weak self] id in self?.snapshot(id) }
     coordinator.didChange = { [weak self] in self?.refresh() }
     coordinator.willSettle = { [weak self] id, action, accepted in
@@ -853,15 +854,13 @@ public final class ConversationClient: NSObject {
   }
 }
 
-// Device traces prove all LCK delegate callbacks arrive on main. @preconcurrency limits
-// the missing SDK isolation annotation to these witnesses; it adds a runtime actor check.
-extension ConversationClient: @preconcurrency ConversationManagerDelegate {
-  public func conversationManager(_ manager: ConversationManager, conversationChanged conversation: Conversation) {
+extension ConversationClient {
+  func conversationManager(_ manager: ConversationManager, conversationChanged conversation: Conversation) {
     if conversation.state == .left { publishTerminal(conversation) }
     else { refresh() }
   }
-  public func conversationManagerDidBegin(_ manager: ConversationManager) { refresh() }
-  public func conversationManagerDidReset(_ manager: ConversationManager) {
+  func conversationManagerDidBegin(_ manager: ConversationManager) { refresh() }
+  func conversationManagerDidReset(_ manager: ConversationManager) {
     audioAuthorityGeneration &+= 1
     systemAudio.setSystemAudioAuthorization(false)
     audioDemandObjects.removeAll()
@@ -873,7 +872,7 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
     retainedTerminalCleanup.removeAll()
     coordinator.cancelAll(reason: .reset); appActions.removeAll(); refresh(); emit(.providerReset)
   }
-  public func conversationManager(_ manager: ConversationManager, perform action: ConversationAction) {
+  func conversationManager(_ manager: ConversationManager, perform action: ConversationAction) {
     switch action.state { case .idle, .running: break; default: return }
     let deliveredAt = Date()
     let advertisedDeadline = action.timeoutDate
@@ -929,11 +928,11 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
       if accepted { action.fulfill() } else { action.fail() }
     })
   }
-  public func conversationManager(_ manager: ConversationManager, timedOutPerforming action: ConversationAction) {
+  func conversationManager(_ manager: ConversationManager, timedOutPerforming action: ConversationAction) {
     consumeTerminalCleanup(action.uuid)
     coordinator.cancel(action.uuid, reason: .platformTimeout)
   }
-  public func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) {
+  func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) {
     audioAuthorityGeneration &+= 1
     let generation = audioAuthorityGeneration
     systemAudio.setSystemAudioAuthorization(true)
@@ -945,7 +944,7 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
     // event observers may synchronously reset or deliver an opposite callback.
     audio.didActivate()
   }
-  public func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession) {
+  func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession) {
     audioAuthorityGeneration &+= 1
     let generation = audioAuthorityGeneration
     systemAudio.setSystemAudioAuthorization(false)
@@ -956,6 +955,42 @@ extension ConversationClient: @preconcurrency ConversationManagerDelegate {
     // Publish only after the authorization and ordered native work are installed;
     // event observers may synchronously reset or deliver an opposite callback.
     audio.didDeactivate()
+  }
+}
+
+// LCK delivers these callbacks on main. The conformance confines the framework's
+// missing isolation annotations to private witnesses with runtime actor checks.
+@MainActor
+private final class ConversationManagerDelegateProxy: NSObject, @preconcurrency ConversationManagerDelegate {
+  weak var client: ConversationClient?
+
+  func conversationManager(_ manager: ConversationManager, conversationChanged conversation: Conversation) {
+    client?.conversationManager(manager, conversationChanged: conversation)
+  }
+
+  func conversationManagerDidBegin(_ manager: ConversationManager) {
+    client?.conversationManagerDidBegin(manager)
+  }
+
+  func conversationManagerDidReset(_ manager: ConversationManager) {
+    client?.conversationManagerDidReset(manager)
+  }
+
+  func conversationManager(_ manager: ConversationManager, perform action: ConversationAction) {
+    guard let client else { action.fail(); return }
+    client.conversationManager(manager, perform: action)
+  }
+
+  func conversationManager(_ manager: ConversationManager, timedOutPerforming action: ConversationAction) {
+    client?.conversationManager(manager, timedOutPerforming: action)
+  }
+
+  func conversationManager(_ manager: ConversationManager, didActivate audioSession: AVAudioSession) {
+    client?.conversationManager(manager, didActivate: audioSession)
+  }
+
+  func conversationManager(_ manager: ConversationManager, didDeactivate audioSession: AVAudioSession) {
+    client?.conversationManager(manager, didDeactivate: audioSession)
   }
 }
 #endif

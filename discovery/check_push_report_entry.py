@@ -598,7 +598,7 @@ def main():
     service=(ROOT/'Sources/VoIPSDK/PushService.swift').read_text()
     client=(ROOT/'Sources/VoIPSDK/ConversationClient.swift').read_text()
     obligations=braced(engine,'private struct PushReportingObligations {')
-    receiver=braced(service,'  public nonisolated func receiveVoIPPush(')
+    receiver=braced(service,'  nonisolated func receiveVoIPPush(')
     projection=braced(service,'  private nonisolated func scheduleProjection(')
     assert 'SerializedIncomingReports' not in client, 'PushKit must not wait for a same-UUID predecessor'
     assert receiver.count('Task.detached(')==1, 'one typed report Task is required'

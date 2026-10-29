@@ -52,23 +52,27 @@ import VoIPPlatform
 
 /// Launch-owned process receiver. The Objective-C owner finishes each completion once.
 @MainActor
-public final class PushService: NSObject, PushReceiver {
+public final class PushService {
   private let client: ConversationClient
   private nonisolated let intake: IncomingIntake
   private nonisolated let transport: IncomingReportTransport
   private let tokens = PushTokenStore()
-  private var owner: PushRegistryOwner?
+  private(set) var owner: PushRegistryOwner?
+  // The native process owner retains the proxy, which retains this service.
+  // A weak cache preserves receiver identity across repeated start attempts.
+  private weak var receiver: PushReceiverProxy?
   public var tokenState: PushTokenState { tokens.state }
   public var isStarted: Bool { owner?.isStarted ?? false }
   init(client: ConversationClient) {
     self.client = client
     intake = client.incomingIntake
     transport = client.incomingTransport
-    super.init()
   }
 
   public func start() throws {
-    let owner = try PushRegistryOwner.shared(receiver: self)
+    let receiver = receiver ?? PushReceiverProxy(service: self)
+    let owner = try PushRegistryOwner.shared(receiver: receiver)
+    self.receiver = receiver
     try owner.start()
     self.owner = owner
   }
@@ -77,8 +81,8 @@ public final class PushService: NSObject, PushReceiver {
     tokens.observe(callback)
   }
   public func removeTokenObserver(_ token: UUID) { tokens.removeObserver(token) }
-  public func pushTokenDidUpdate(_ token: Data) { tokens.update(token) }
-  public func pushTokenDidInvalidate() { tokens.update(nil) }
+  func pushTokenDidUpdate(_ token: Data) { tokens.update(token) }
+  func pushTokenDidInvalidate() { tokens.update(nil) }
 
   /// Remote-notification/Expo path for the unchanged FCM callEnded envelope.
   @discardableResult
@@ -89,8 +93,8 @@ public final class PushService: NSObject, PushReceiver {
 
   /// Reserve canonical metadata on PushKit's serial queue, before creating a
   /// Task. Reporting and native completion never depend on the SDK actor.
-  public nonisolated func receiveVoIPPush(_ payload: [AnyHashable: Any], mustReport: Bool,
-                                         delivery: PushDelivery) {
+  nonisolated func receiveVoIPPush(_ payload: [AnyHashable: Any], mustReport: Bool,
+                                 delivery: PushDelivery) {
     #if os(iOS) && targetEnvironment(simulator)
     let pushIdentifier = SimulatorSupport.currentPushIdentifier
     #endif
@@ -144,5 +148,28 @@ public final class PushService: NSObject, PushReceiver {
     Task { @MainActor [weak self] in self?.client.incomingIntakeDidChange() }
   }
 
+}
+
+@MainActor
+private final class PushReceiverProxy: NSObject, PushReceiver {
+  private let service: PushService
+
+  init(service: PushService) {
+    self.service = service
+    super.init()
+  }
+
+  func pushTokenDidUpdate(_ token: Data) {
+    service.pushTokenDidUpdate(token)
+  }
+
+  func pushTokenDidInvalidate() {
+    service.pushTokenDidInvalidate()
+  }
+
+  nonisolated func receiveVoIPPush(_ payload: [AnyHashable: Any], mustReport: Bool,
+                                 delivery: PushDelivery) {
+    service.receiveVoIPPush(payload, mustReport: mustReport, delivery: delivery)
+  }
 }
 #endif

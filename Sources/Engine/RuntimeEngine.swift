@@ -1,97 +1,5 @@
-import Foundation
-
-#if os(macOS) || (os(iOS) && targetEnvironment(simulator))
-  // Access is serialized by the engine's state queue.
-  struct RuntimeJournalWriter {
-    private(set) var sequence: UInt64 = 0
-
-    mutating func append<Entry: Encodable>(
-      to file: FileHandle?, entry: (UInt64) throws -> Entry
-    ) throws {
-      guard let file else { return }
-      let nextSequence = sequence + 1
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = [.sortedKeys]
-      var data = try encoder.encode(entry(nextSequence))
-      data.append(10)
-      try file.write(contentsOf: data)
-      sequence = nextSequence
-    }
-  }
-
-  // Compatibility boundary for fields received through the existing ObjC seam.
-  // Stored journal values are Codable; unsupported objects fail before any write.
-  enum RuntimeJournalValue: Codable, Sendable {
-    case null
-    case boolean(Bool)
-    case integer(Int64)
-    case unsignedInteger(UInt64)
-    case number(Double)
-    case string(String)
-    case array([RuntimeJournalValue])
-    case object([String: RuntimeJournalValue])
-
-    enum ConversionError: Error { case unsupportedValue }
-
-    init(legacyValue value: Any) throws {
-      switch value {
-      case is NSNull: self = .null
-      case let number as NSNumber:
-        if CFGetTypeID(number) == CFBooleanGetTypeID() {
-          self = .boolean(number.boolValue)
-        } else {
-          switch String(cString: number.objCType) {
-          case "f", "d": self = .number(number.doubleValue)
-          case "Q": self = .unsignedInteger(number.uint64Value)
-          default: self = .integer(number.int64Value)
-          }
-        }
-      case let string as String: self = .string(string)
-      case let array as [Any]: self = .array(try array.map(Self.init(legacyValue:)))
-      case let object as [String: Any]:
-        self = .object(try object.mapValues(Self.init(legacyValue:)))
-      default: throw ConversionError.unsupportedValue
-      }
-    }
-
-    init(from decoder: any Decoder) throws {
-      let value = try decoder.singleValueContainer()
-      if value.decodeNil() {
-        self = .null
-      } else if let boolean = try? value.decode(Bool.self) {
-        self = .boolean(boolean)
-      } else if let integer = try? value.decode(Int64.self) {
-        self = .integer(integer)
-      } else if let integer = try? value.decode(UInt64.self) {
-        self = .unsignedInteger(integer)
-      } else if let number = try? value.decode(Double.self) {
-        self = .number(number)
-      } else if let string = try? value.decode(String.self) {
-        self = .string(string)
-      } else if let array = try? value.decode([Self].self) {
-        self = .array(array)
-      } else {
-        self = .object(try value.decode([String: Self].self))
-      }
-    }
-
-    func encode(to encoder: any Encoder) throws {
-      var value = encoder.singleValueContainer()
-      switch self {
-      case .null: try value.encodeNil()
-      case .boolean(let boolean): try value.encode(boolean)
-      case .integer(let integer): try value.encode(integer)
-      case .unsignedInteger(let integer): try value.encode(integer)
-      case .number(let number): try value.encode(number)
-      case .string(let string): try value.encode(string)
-      case .array(let array): try value.encode(array)
-      case .object(let object): try value.encode(object)
-      }
-    }
-  }
-#endif
-
 #if os(iOS) && targetEnvironment(simulator)
+import Foundation
 import Darwin
 #if SWIFT_PACKAGE
 import CKSimRuntimeC
@@ -1737,4 +1645,96 @@ private final class RuntimeStorage: @unchecked Sendable {
   var engine: RuntimeEngine?
 }
 private enum BootstrapError: Error { case invalid(String) }
+#endif
+
+#if os(macOS) || (os(iOS) && targetEnvironment(simulator))
+  import Foundation
+  // Access is serialized by the engine's state queue.
+  struct RuntimeJournalWriter {
+    private(set) var sequence: UInt64 = 0
+
+    mutating func append<Entry: Encodable>(
+      to file: FileHandle?, entry: (UInt64) throws -> Entry
+    ) throws {
+      guard let file else { return }
+      let nextSequence = sequence + 1
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      var data = try encoder.encode(entry(nextSequence))
+      data.append(10)
+      try file.write(contentsOf: data)
+      sequence = nextSequence
+    }
+  }
+
+  // Compatibility boundary for fields received through the existing ObjC seam.
+  // Stored journal values are Codable; unsupported objects fail before any write.
+  enum RuntimeJournalValue: Codable, Sendable {
+    case null
+    case boolean(Bool)
+    case integer(Int64)
+    case unsignedInteger(UInt64)
+    case number(Double)
+    case string(String)
+    case array([RuntimeJournalValue])
+    case object([String: RuntimeJournalValue])
+
+    enum ConversionError: Error { case unsupportedValue }
+
+    init(legacyValue value: Any) throws {
+      switch value {
+      case is NSNull: self = .null
+      case let number as NSNumber:
+        if CFGetTypeID(number) == CFBooleanGetTypeID() {
+          self = .boolean(number.boolValue)
+        } else {
+          switch String(cString: number.objCType) {
+          case "f", "d": self = .number(number.doubleValue)
+          case "Q": self = .unsignedInteger(number.uint64Value)
+          default: self = .integer(number.int64Value)
+          }
+        }
+      case let string as String: self = .string(string)
+      case let array as [Any]: self = .array(try array.map(Self.init(legacyValue:)))
+      case let object as [String: Any]:
+        self = .object(try object.mapValues(Self.init(legacyValue:)))
+      default: throw ConversionError.unsupportedValue
+      }
+    }
+
+    init(from decoder: any Decoder) throws {
+      let value = try decoder.singleValueContainer()
+      if value.decodeNil() {
+        self = .null
+      } else if let boolean = try? value.decode(Bool.self) {
+        self = .boolean(boolean)
+      } else if let integer = try? value.decode(Int64.self) {
+        self = .integer(integer)
+      } else if let integer = try? value.decode(UInt64.self) {
+        self = .unsignedInteger(integer)
+      } else if let number = try? value.decode(Double.self) {
+        self = .number(number)
+      } else if let string = try? value.decode(String.self) {
+        self = .string(string)
+      } else if let array = try? value.decode([Self].self) {
+        self = .array(array)
+      } else {
+        self = .object(try value.decode([String: Self].self))
+      }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+      var value = encoder.singleValueContainer()
+      switch self {
+      case .null: try value.encodeNil()
+      case .boolean(let boolean): try value.encode(boolean)
+      case .integer(let integer): try value.encode(integer)
+      case .unsignedInteger(let integer): try value.encode(integer)
+      case .number(let number): try value.encode(number)
+      case .string(let string): try value.encode(string)
+      case .array(let array): try value.encode(array)
+      case .object(let object): try value.encode(object)
+      }
+    }
+  }
 #endif
