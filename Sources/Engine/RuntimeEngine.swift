@@ -426,6 +426,21 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       return fixtureClock.step(toward: target)
     }
   }
+  func scheduleFixtureWork(_ seconds: Double, _ body: @escaping @MainActor @Sendable () -> Void) -> Bool {
+    withState {
+      guard !stopped, let fixtureClock else { return false }
+      fixtureClock.schedule(seconds) { [weak self] in
+        guard let self, !self.stopped else { return }
+        self.fixtureCallbacks += 1
+        DispatchQueue.main.async {
+          defer { self.withState { self.fixtureCallbacks -= 1 } }
+          guard self.withState({ !self.stopped }) else { return }
+          body()
+        }
+      }
+      return true
+    }
+  }
   func fixtureTimeMS() -> Int? { withState { fixtureClock?.nowMS } }
   func fixtureCallbacksPending() -> Bool { withState { fixtureCallbacks != 0 } }
   #endif

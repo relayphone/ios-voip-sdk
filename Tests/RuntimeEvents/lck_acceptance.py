@@ -32,6 +32,14 @@ def verify_barrier(rows, accepted, action_ids):
     assert joined > max(index for index, _ in terminal), 'accepted Join happened before every constituent settled'
 
 
+def verify_composite_delivery(native):
+    controlled = any('fixtureTimeMS' in r for r in native)
+    field = 'fixtureTimeMS' if controlled else 't_ms'
+    assert all(type(r.get(field)) is int for r in native), 'composite delivery clock evidence is required'
+    gap = max(r[field] for r in native) - min(r[field] for r in native)
+    assert gap == 0 if controlled else gap < 100, 'native composite deliveries separated'
+
+
 def verify_timeout(delivered, expired, kind):
     assert 29000 <= delivered['advertisedRemainingMS'] <= 31000, 'LCK must still advertise 30 seconds'
     elapsed = expired['t_ms'] - delivered['t_ms']
@@ -295,7 +303,7 @@ class Journey:
         if held:
             expected.add(('End', self.ids[held]))
         assert {(r['kind'], r['callUUID']) for r in native} == expected, 'unexpected native composite constituents'
-        assert max(r['t_ms'] for r in native) - min(r['t_ms'] for r in native) < 100, 'native composite deliveries separated'
+        verify_composite_delivery(native)
         runtime = [r for r in rows[start:] if r['event'] == 'action.deadline' and r.get('actionID') in ids]
         assert len(runtime) == len(ids) and len({r['transactionID'] for r in runtime}) == 1, 'modeled system envelope must be shared'
         assert all(r['apiKind'] == 'livecommunicationkit' for r in runtime)
