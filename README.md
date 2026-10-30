@@ -49,14 +49,24 @@ From a clean checkout, run `npm ci`, `npm run build`, then `npm exec --workspace
 
 The module's peer ranges retain Expo 55–58 compatibility. The example and development tools pin Expo 58 for its native scene lifecycle. Expo 58 is covered by CI; Expo 55 has historical build evidence, while runtime compatibility with Expo 55–57 remains unqualified.
 
+## Call core
+
+The `VoIPCore` library is the start of a smaller core that keeps its own state for every
+call and treats CallKit and LiveCommunicationKit as presentation surfaces. It holds the call
+values and the call state machine, imports no UIKit, CallKit, LiveCommunicationKit, PushKit or
+AVFAudio, and doesn't present calls yet; the engine and the calling-framework adapters follow.
+Its terms are defined in the [glossary](GLOSSARY.md) and its decisions are recorded in
+[docs/adr](docs/adr).
+
 ## Testing
 
 Run `swift test` on macOS 26 or later with the Xcode toolchain above. The Swift
-Testing suites cover caller validation, push decoding, models, and the test clock
-without a simulator. Native calling and media acceptance run separately in CI.
+Testing suites cover caller validation, push decoding, models, the call state machine
+and the test clock without a simulator. Native calling and media acceptance run
+separately in CI.
 
-Tests in consuming apps can add the `VoIPSDKTesting` library product to their test
-target and import `VoIPSDKTesting`. Its `TestClock` conforms to `Clock<Duration>`;
+Tests in consuming apps can add the `VoIPTesting` library product to their test
+target and import `VoIPTesting`. Its `TestClock` conforms to `Clock<Duration>`;
 use `waitForSleepers(count:)` to await registration, then `advance(by:)` or `run()`
 to resume pending sleeps without waiting for wall time to pass.
 

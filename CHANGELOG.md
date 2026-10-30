@@ -4,7 +4,19 @@ Changes not yet released are recorded below. Public API changes include migratio
 
 ## Unreleased
 
+### Added
+
+- The `VoIPCore` library holds the values of the new call core: `Call`,
+  `CallID`, `Handle` (phone numbers must be E.164), `Party`, `CallStatus` with
+  `PreviewReason` and `EndReason`, `Action`, `ServerEvent`, `PresentationPolicy`,
+  `CallEvent` and `VoIPConfiguration` with `Deadlines`. It has no system framework dependencies and
+  doesn't present calls yet. The existing `VoIPSDK` product is unchanged.
+
 ### Breaking changes
+
+- The `VoIPSDKTesting` product is now `VoIPTesting`. Depend on
+  `.product(name: "VoIPTesting", package: "ios-voip-sdk")` and `import VoIPTesting`;
+  `TestClock` is unchanged.
 
 - The SDK now requires iOS 26, macOS 26 for host tests, and Swift tools 6.4
   (Xcode 27.1) in the Swift 6 language mode. The Swift package, the CocoaPods
