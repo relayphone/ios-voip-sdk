@@ -24,17 +24,14 @@ for arch in $ARCHS; do
     -import-objc-header Sources/Interposition/CKRuntimeSeam.h Sources/Engine/RuntimeEngine.swift \
     "$WORK/CKInterposition-$arch.o" "$WORK/CKPushDelivery-$arch.o" "$WORK/CKPushLaunch-$arch.o" \
     -Xlinker -install_name -Xlinker @rpath/CKSimRuntime.dylib -o "$WORK/CKSimRuntime-$arch.dylib"
-  xcrun --sdk iphonesimulator clang -target "$target" -isysroot "$SDK" Tools/cksim-notify.c -o "$WORK/cksim-notify-$arch"
   xcrun --sdk iphonesimulator clang -target "$target" -isysroot "$SDK" -fobjc-arc -dynamiclib -framework Foundation \
     Sources/Interposition/CKLoader.m -o "$WORK/CKSimLoader-$arch.dylib"
 done
-runtime=(); notifier=(); loader=()
-for arch in $ARCHS; do runtime+=("$WORK/CKSimRuntime-$arch.dylib"); notifier+=("$WORK/cksim-notify-$arch"); loader+=("$WORK/CKSimLoader-$arch.dylib"); done
+runtime=(); loader=()
+for arch in $ARCHS; do runtime+=("$WORK/CKSimRuntime-$arch.dylib"); loader+=("$WORK/CKSimLoader-$arch.dylib"); done
 lipo -create "${runtime[@]}" -output "$PACKAGE/CKSimRuntime.dylib"
-lipo -create "${notifier[@]}" -output "$PACKAGE/cksim-notify"
 lipo -create "${loader[@]}" -output "$PACKAGE/CKSimLoader.dylib"
 codesign -s - --force "$PACKAGE/CKSimRuntime.dylib"
-codesign -s - --force "$PACKAGE/cksim-notify"
 codesign -s - --force "$PACKAGE/CKSimLoader.dylib"
 mkdir "$PACKAGE/profiles"
 cp Sources/Engine/Resources/*.json "$PACKAGE/profiles/"

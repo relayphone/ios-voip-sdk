@@ -103,8 +103,7 @@ def validate_build(build, source_root=ROOT, require_source=True):
 def stale_controls(root, name, manifest, receipt, rows):
     pid, run = receipt['appPID'], manifest['runID']
     require(exact(read(root, name + '.session.json'), dict(schemaVersion=1, runID=run, pid=pid,
-            bundleID=BUNDLE, profile='ios-27.0', notification=f'dev.callkitsim.control.{pid}',
-            controlTransport='directory-watch-v1')), 'stale-audio: runtime control session differs')
+            bundleID=BUNDLE, profile='ios-27.0', controlTransport='directory-watch-v1')), 'stale-audio: runtime control session differs')
     request = read(root, name + '.request.json')
     require(type(request) is dict and valid_uuid(request.get('id')) and
             exact(request, dict(id=request['id'], runID=run, pid=pid, bundleID=BUNDLE, operation='faults',

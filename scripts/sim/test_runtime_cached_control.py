@@ -101,7 +101,7 @@ class CachedRuntimeTests(unittest.TestCase):
             root = Path(temporary).resolve()
             package = root / 'package'
             package.mkdir()
-            files = ('CKSimRuntime.dylib', 'CKSimLoader.dylib', 'cksim-notify', 'cksim',
+            files = ('CKSimRuntime.dylib', 'CKSimLoader.dylib', 'cksim',
                      'profiles/ios-27.0.json', 'VERSION')
             for name in files:
                 path = package / name

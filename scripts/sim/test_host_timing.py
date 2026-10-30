@@ -206,7 +206,7 @@ class HostTimingTests(unittest.TestCase):
 
 
 class ExistingDriverControlsTests(unittest.TestCase):
-    def test_existing_140_acceptance_controls_keep_their_outcomes_with_native_calls_refused(self):
+    def test_acceptance_controls_keep_their_outcomes_with_native_calls_refused(self):
         import check_swift_livekit
         native = ('subprocess.Popen', 'subprocess.run', 'os.system', 'os.kill', 'os.killpg',
                   'os.fork', 'os.posix_spawn', 'os.posix_spawnp', 'signal.signal')
@@ -215,17 +215,18 @@ class ExistingDriverControlsTests(unittest.TestCase):
                 stack.enter_context(patch(target, side_effect=AssertionError('native services forbidden: ' + target)))
             result = check_swift_livekit.controls()
         self.assertTrue(result['success'])
-        self.assertEqual(result['checks'], 151)
+        # The three notification-field mutations retired with that transport.
+        self.assertEqual(result['checks'], 148)
         for label in ('launch_at29', 'launch_at31', 'launch_at33', 'launch_never', 'launch_beyond90',
                       'launch_beyond_watchdog', 'launch_early_exit', 'timeout-kills-exact-owned-group', 'unknown-group-never-killed',
                       'owner-exited-no-group-kill', 'launchd-timeout-stops-and-cleans'):
             self.assertIn(label, result['cases'])
 
 
-    def test_driver_observer_fault_preserves_all_140_allowed_and_refused_controls(self):
+    def test_driver_observer_fault_preserves_allowed_and_refused_controls(self):
         with patch.object(run_scenario.HostTiming, 'observe_row',
                           side_effect=RuntimeError('diagnostic observer unavailable')):
-            self.test_existing_140_acceptance_controls_keep_their_outcomes_with_native_calls_refused()
+            self.test_acceptance_controls_keep_their_outcomes_with_native_calls_refused()
 
     def test_strict_live_parser_error_keeps_its_original_identity(self):
         import run_swift_livekit as runner

@@ -83,7 +83,7 @@ def launch_environment(device, key):
 
 def validate_package(runtime):
     info = json.loads((runtime / "build-info.json").read_text())
-    required = {"CKSimRuntime.dylib", "CKSimLoader.dylib", "cksim-notify", "cksim", "profiles/ios-27.0.json"}
+    required = {"CKSimRuntime.dylib", "CKSimLoader.dylib", "cksim", "profiles/ios-27.0.json"}
     version = (runtime / "VERSION").read_text().strip()
     if (info.get("schemaVersion") != 1 or not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", version) or
             info.get("version") != version or "VERSION" not in info.get("files", {}) or not required.issubset(info.get("files", {}))):
@@ -234,6 +234,8 @@ def control(args, device, expected_session=None):
             not isinstance(session.get("pid"), int) or session["pid"] <= 0 or
             not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", session.get("runID", ""))):
         raise RuntimeError("Invalid runtime session; launch the app with this runtime first.")
+    if session.get("controlTransport") != "directory-watch-v1":
+        raise RuntimeError("Unsupported runtime control transport; rebuild the runtime and relaunch the app.")
     identifier = str(uuid.uuid4()).upper()
     command = {key: session[key] for key in ("runID", "pid", "bundleID")}
     command.update(id=identifier, operation=args.operation)
@@ -267,9 +269,6 @@ def control(args, device, expected_session=None):
         os.chmod(temporary, 0o600)
         json.dump(command, output)
     temporary.rename(temporary.with_suffix(".json"))
-    if session.get("controlTransport") != "directory-watch-v1":
-        notifier = args.runtime_dir.resolve() / "cksim-notify"
-        simctl("spawn", device, notifier, session["notification"])
     response_path = mailbox / f"responses/{identifier}.json"
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline:

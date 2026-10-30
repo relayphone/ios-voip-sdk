@@ -129,7 +129,7 @@ def validate(out):
                 session.get('bundleID') == BUNDLE and type(session.get('schemaVersion')) is int and
                 session['schemaVersion'] == 1 and
                 session.get('profile') == profile['id'] and
-                session.get('notification') == 'dev.callkitsim.control.' + str(pid), 'unbound runtime session')
+                session.get('controlTransport') == 'directory-watch-v1', 'unbound runtime session')
         rows = [json.loads(line) for line in (out / (mode + '.runtime.jsonl')).read_text().splitlines()]
         require(rows and all(row.get('profile') == profile['id'] for row in rows), 'mixed native runtime profile')
         if mode == 'late-report':
