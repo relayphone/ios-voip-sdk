@@ -69,16 +69,28 @@ export async function runBounded(
     if (failure) throw failure;
     if (completed) return { status: status ?? 1, timedOut: false };
     const timedOut = stop === 'timeout';
-    group('SIGTERM');
+    // macOS can report EPERM for a group containing an unreaped zombie.
+    // Retry briefly, but never treat a persistent permission error as cleanup.
+    const groupAfterTermination = async (signal: NodeJS.Signals | 0): Promise<boolean> => {
+      const retry = AbortSignal.timeout(2000);
+      for (;;) {
+        try { return group(signal); }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EPERM' || retry.aborted) throw error;
+          await delay(25);
+        }
+      }
+    };
+    await groupAfterTermination('SIGTERM');
     const grace = AbortSignal.timeout(2000);
-    while (!grace.aborted && group(0)) await delay(25);
-    if (group(0)) group('SIGKILL');
+    while (!grace.aborted && await groupAfterTermination(0)) await delay(25);
+    if (await groupAfterTermination(0)) await groupAfterTermination('SIGKILL');
     const reap = AbortSignal.timeout(2000);
-    while (!reap.aborted && (status === undefined || group(0))) {
+    while (!reap.aborted && (status === undefined || await groupAfterTermination(0))) {
       if (failure) throw failure;
       await delay(25);
     }
-    if (status === undefined || group(0)) throw new Error('Owned process group cleanup is uncertain');
+    if (status === undefined || await groupAfterTermination(0)) throw new Error('Owned process group cleanup is uncertain');
     return { status: timedOut ? 124 : 130, timedOut };
   } catch (error) {
     // A failed probe cannot establish ownership cleanup. Kill the group and

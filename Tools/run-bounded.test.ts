@@ -117,6 +117,65 @@ test('reports process group probe failures rather than throwing from a callback'
   assert.equal(result.status, 0, result.stderr.toString());
 });
 
+test('waits for child reaping when a termination probe temporarily returns EPERM', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const moduleURL = new URL('./run-bounded.ts', import.meta.url).href;
+  const script = `const { runBounded } = await import(process.argv[1]);
+    const kill = process.kill.bind(process);
+    let terminated = false;
+    let injected = false;
+    process.kill = (pid, signal) => {
+      if (signal === 'SIGTERM') terminated = true;
+      if (terminated && signal === 0 && !injected) {
+        injected = true;
+        const error = new Error('temporary probe failure'); error.code = 'EPERM'; throw error;
+      }
+      return kill(pid, signal);
+    };
+    const result = await runBounded(process.execPath, ['-e', 'setTimeout(() => {}, 1000)'], {timeoutMs: 100});
+    if (!injected || result.status !== 124) process.exitCode = 2;`;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script, moduleURL], { timeout: 5000 });
+  assert.equal(result.status, 0, result.stderr.toString());
+});
+
+test('retries a temporary termination signal permission failure', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const moduleURL = new URL('./run-bounded.ts', import.meta.url).href;
+  const script = `const { runBounded } = await import(process.argv[1]);
+    const kill = process.kill.bind(process);
+    let injected = false;
+    process.kill = (pid, signal) => {
+      if (signal === 'SIGTERM' && !injected) {
+        injected = true;
+        const error = new Error('temporary signal failure'); error.code = 'EPERM'; throw error;
+      }
+      return kill(pid, signal);
+    };
+    const result = await runBounded(process.execPath, ['-e', 'setTimeout(() => {}, 1000)'], {timeoutMs: 100});
+    if (!injected || result.status !== 124) process.exitCode = 2;`;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script, moduleURL], { timeout: 5000 });
+  assert.equal(result.status, 0, result.stderr.toString());
+});
+
+test('reports a persistent termination probe permission failure', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const moduleURL = new URL('./run-bounded.ts', import.meta.url).href;
+  const script = `const { runBounded } = await import(process.argv[1]);
+    const kill = process.kill.bind(process);
+    let terminated = false;
+    process.kill = (pid, signal) => {
+      if (signal === 'SIGTERM') terminated = true;
+      if (terminated && signal === 0) {
+        const error = new Error('persistent probe failure'); error.code = 'EPERM'; throw error;
+      }
+      return kill(pid, signal);
+    };
+    try { await runBounded(process.execPath, ['-e', 'setTimeout(() => {}, 1000)'], {timeoutMs: 100}); process.exitCode = 2; }
+    catch (error) { if (error.code !== 'EPERM') process.exitCode = 3; }`;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script, moduleURL], { timeout: 7000 });
+  assert.equal(result.status, 0, result.stderr.toString());
+});
+
 test('keeps ownership of a descendant after the parent exits', { timeout: 10_000 }, async () => {
   const { mkdtemp, readFile, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
