@@ -40,8 +40,12 @@ let transitionRows: [TransitionRow] = [
   // MARK: Reporting an incoming call
   .init(.reporting, .event(.reportCompleted(.presented)), .ringing, [.arm(.ring), .presented]),
   .init(
-    .reporting, .event(.reportCompleted(.filtered(.doNotDisturb))), .previewing,
+    .reporting, .event(.reportCompleted(.filtered(.doNotDisturb))),
+    .previewing(.filtered(.doNotDisturb)),
     [.previewStarted]),
+  .init(
+    .reporting, .event(.reportCompleted(.filtered(.blockList))),
+    .previewing(.filtered(.blockList)), [.previewStarted]),
   .init(
     .reporting, .event(.reportCompleted(.filtered(.blockList))), .ended(.filtered(.blockList)),
     [.ended(.filtered(.blockList))], policy: noPreviews),
@@ -72,13 +76,15 @@ let transitionRows: [TransitionRow] = [
 
   // MARK: A server event that arrived while reporting
   .init(
-    .reportingAnsweredElsewhere, .event(.reportCompleted(.presented)), .previewing,
+    .reportingAnsweredElsewhere, .event(.reportCompleted(.presented)),
+    .previewing(.answeredElsewhere),
     [.reportEnded(.answeredElsewhere), .previewStarted]),
   .init(
     .reportingAnsweredElsewhere, .event(.reportCompleted(.presented)), .ended(.answeredElsewhere),
     [.reportEnded(.answeredElsewhere), .ended(.answeredElsewhere)], policy: noPreviews),
   .init(
-    .reportingAnsweredElsewhere, .event(.reportCompleted(.filtered(.doNotDisturb))), .previewing,
+    .reportingAnsweredElsewhere, .event(.reportCompleted(.filtered(.doNotDisturb))),
+    .previewing(.answeredElsewhere),
     [.previewStarted]),
   .init(
     .reportingAnsweredElsewhere, .event(.reportCompleted(.refused(.refused))),
@@ -110,7 +116,7 @@ let transitionRows: [TransitionRow] = [
     .ringing, .event(.requested(startAction)), .ringing,
     [.reject(startAction, .notAllowed(.ringing))]),
   .init(
-    .ringing, .event(.server(.answeredElsewhere)), .previewing,
+    .ringing, .event(.server(.answeredElsewhere)), .previewing(.answeredElsewhere),
     [.disarm(.ring), .reportEnded(.answeredElsewhere), .previewStarted]),
   .init(
     .ringing, .event(.server(.answeredElsewhere)), .ended(.answeredElsewhere),
@@ -147,14 +153,14 @@ let transitionRows: [TransitionRow] = [
     .previewing, .event(.requested(end)), .ended(.endedHere),
     [.performed(end), .ended(.endedHere)]),
   .init(
-    .previewing, .event(.requested(answer)), .previewing,
-    [.reject(answer, .notAllowed(.previewing))]),
+    .previewing, .event(.requested(answer)), .previewing(.policy),
+    [.reject(answer, .notAllowed(.previewing(.policy)))]),
   .init(
-    .previewing, .event(.requested(muteOn)), .previewing,
-    [.reject(muteOn, .notAllowed(.previewing))]),
-  .init(.previewing, .event(.performed(a2, join)), .previewing, [.fail(a2)]),
-  .init(.previewing, .event(.performed(a2, end)), .previewing, [.fail(a2)]),
-  .init(.previewing, .event(.server(.answeredElsewhere)), .previewing, []),
+    .previewing, .event(.requested(muteOn)), .previewing(.policy),
+    [.reject(muteOn, .notAllowed(.previewing(.policy)))]),
+  .init(.previewing, .event(.performed(a2, join)), .previewing(.policy), [.fail(a2)]),
+  .init(.previewing, .event(.performed(a2, end)), .previewing(.policy), [.fail(a2)]),
+  .init(.previewing, .event(.server(.answeredElsewhere)), .previewing(.policy), []),
   .init(
     .previewing, .event(.server(.endedRemotely)), .ended(.endedRemotely),
     [.ended(.endedRemotely)]),
@@ -163,9 +169,9 @@ let transitionRows: [TransitionRow] = [
     [.ended(.declinedElsewhere)]),
   .init(
     .previewing, .event(.server(.unanswered)), .ended(.unanswered), [.ended(.unanswered)]),
-  .init(.previewing, .event(.server(.partiesChanged([alice]))), .previewing, []),
-  .init(.previewing, .event(.server(.connected)), .previewing, []),
-  .init(.previewing, .event(.frameworkReset), .previewing, []),
+  .init(.previewing, .event(.server(.partiesChanged([alice]))), .previewing(.policy), []),
+  .init(.previewing, .event(.server(.connected)), .previewing(.policy), []),
+  .init(.previewing, .event(.frameworkReset), .previewing(.policy), []),
 
   // MARK: Requesting a start
   .init(
@@ -196,17 +202,17 @@ let transitionRows: [TransitionRow] = [
   .init(.requestingJoin, .event(.performed(a2, join)), .placing(held(a2, join)), [.joinRequested]),
   .init(.requestingJoin, .event(.performed(a2, startAction)), .requesting(join), [.fail(a2)]),
   .init(
-    .requestingJoin, .event(.requestFailed(join)), .previewing,
+    .requestingJoin, .event(.requestFailed(join)), .previewing(.policy),
     [.disarm(.placement), .previewStarted]),
   .init(
-    .requestingJoin, .expiry(.placement), .previewing,
+    .requestingJoin, .expiry(.placement), .previewing(.policy),
     [.reportEnded(.failed(.notPlaced)), .previewStarted]),
   .init(.requestingJoin, .event(.server(.answeredElsewhere)), .requesting(join), []),
   .init(
     .requestingJoin, .event(.server(.endedRemotely)), .ended(.endedRemotely),
     [.disarm(.placement), .reportEnded(.endedRemotely), .ended(.endedRemotely)]),
   .init(
-    .requestingJoin, .event(.frameworkReset), .previewing,
+    .requestingJoin, .event(.frameworkReset), .previewing(.policy),
     [.disarm(.placement), .previewStarted]),
 
   // MARK: Placing a started call
@@ -244,16 +250,16 @@ let transitionRows: [TransitionRow] = [
     .placingJoin, .event(.placed), .preparing(held(a1, join)),
     [.disarm(.placement), .arm(.mediaPreparation), .prepareMedia]),
   .init(
-    .placingJoin, .expiry(.placement), .previewing,
+    .placingJoin, .expiry(.placement), .previewing(.policy),
     [.fail(a1), .reportEnded(.failed(.notPlaced)), .previewStarted]),
   .init(
-    .placingJoin, .event(.performed(a2, end)), .previewing,
+    .placingJoin, .event(.performed(a2, end)), .previewing(.policy),
     [.fail(a1), .fulfill(a2), .disarm(.placement), .previewStarted]),
   .init(
-    .placingJoin, .event(.frameworkReset), .previewing,
+    .placingJoin, .event(.frameworkReset), .previewing(.policy),
     [.fail(a1), .disarm(.placement), .previewStarted]),
   .init(
-    .placingJoin, .event(.actionTimedOut(a1)), .previewing,
+    .placingJoin, .event(.actionTimedOut(a1)), .previewing(.policy),
     [.fail(a1), .disarm(.placement), .reportEnded(.failed(.actionTimedOut)), .previewStarted]),
   .init(
     .placingJoin, .event(.server(.endedRemotely)), .ended(.endedRemotely),
@@ -276,7 +282,7 @@ let transitionRows: [TransitionRow] = [
     .preparingAnswer, .expiry(.mediaPreparation), .ended(.failed(.media)),
     [.fail(a1), .reportEnded(.failed(.media)), .ended(.failed(.media))]),
   .init(
-    .preparingAnswer, .event(.server(.answeredElsewhere)), .previewing,
+    .preparingAnswer, .event(.server(.answeredElsewhere)), .previewing(.answeredElsewhere),
     [.fail(a1), .disarm(.mediaPreparation), .reportEnded(.answeredElsewhere), .previewStarted]),
   .init(
     .preparingAnswer, .event(.performed(a2, end)), .ended(.endedHere),
@@ -320,10 +326,10 @@ let transitionRows: [TransitionRow] = [
       .reportOutgoing(connected: false), .performed(join),
     ]),
   .init(
-    .preparingJoin, .event(.mediaPreparationFailed), .previewing,
+    .preparingJoin, .event(.mediaPreparationFailed), .previewing(.policy),
     [.fail(a1), .disarm(.mediaPreparation), .reportEnded(.failed(.media)), .previewStarted]),
   .init(
-    .preparingJoin, .expiry(.mediaPreparation), .previewing,
+    .preparingJoin, .expiry(.mediaPreparation), .previewing(.policy),
     [.fail(a1), .reportEnded(.failed(.media)), .previewStarted]),
 
   // MARK: Dialing
@@ -365,7 +371,7 @@ let transitionRows: [TransitionRow] = [
       .ended(.failed(.connectTimedOut)),
     ]),
   .init(
-    .connectingAnswer, .event(.server(.answeredElsewhere)), .previewing,
+    .connectingAnswer, .event(.server(.answeredElsewhere)), .previewing(.answeredElsewhere),
     [
       .disarm(.audioActivation), .disarm(.connect), .reportEnded(.answeredElsewhere),
       .previewStarted,
@@ -477,11 +483,11 @@ let beginRows: [BeginRow] = [
   BeginRow(
     name: "a call's policy previews it",
     origin: .incoming(incoming(.preview, policy: PresentationPolicy())),
-    phase: .previewing, effects: [.previewStarted]),
+    phase: .previewing(.policy), effects: [.previewStarted]),
   BeginRow(
     name: "the configuration's policy previews a call",
     origin: .incoming(IncomingCall(id: callID, parties: [alice])),
-    configuration: previewByDefault, phase: .previewing, effects: [.previewStarted]),
+    configuration: previewByDefault, phase: .previewing(.policy), effects: [.previewStarted]),
   BeginRow(
     name: "a call's policy overrides the configuration's",
     origin: .incoming(incoming(.ring, policy: PresentationPolicy())),
@@ -532,6 +538,26 @@ let beginRows: [BeginRow] = [
   @Test func everyStartingStateIsCovered() {
     let covered = Set(transitionRows.map(\.start))
     #expect(covered == Set(Start.allCases))
+  }
+
+  @Test(arguments: [
+    (Start.ringing, Event.server(.answeredElsewhere), PreviewReason.answeredElsewhere),
+    (.reporting, .reportCompleted(.filtered(.doNotDisturb)), .filtered(.doNotDisturb)),
+    (.reportingAnsweredElsewhere, .reportCompleted(.filtered(.blockList)), .answeredElsewhere),
+  ])
+  func aFailedJoinReturnsToTheSamePreview(_ start: Start, _ event: Event, _ reason: PreviewReason)
+    throws
+  {
+    let configuration = VoIPConfiguration()
+    var (state, _) = CallMachine.transition(
+      try start.state(), event, configuration: configuration, now: later)
+    #expect(state.call.status == .previewing(reason))
+
+    for event: Event in [.requested(join), .performed(a2, join), .placed, .mediaPreparationFailed] {
+      (state, _) = CallMachine.transition(state, event, configuration: configuration, now: later)
+    }
+    #expect(state.phase == .previewing(reason))
+    #expect(state.call.status == .previewing(reason))
   }
 
   @Test func answeringRecordsWhenTheUserAnswered() throws {

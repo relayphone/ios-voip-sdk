@@ -4,7 +4,8 @@ public enum CallStatus: Hashable, Sendable {
   case ringing
   /// The call is live elsewhere, and this device follows it in a call preview from which the user
   /// can join. The calling framework isn't involved, and the call never rings or opens audio here.
-  case previewing
+  /// The reason says why the call is a preview rather than ringing or ended.
+  case previewing(PreviewReason)
   /// An outgoing call is being placed, or the other side's device is ringing.
   case dialing
   /// The call was answered or joined, and its media is connecting.
@@ -15,6 +16,19 @@ public enum CallStatus: Hashable, Sendable {
   case reconnecting
   /// The call ended on this device.
   case ended(EndReason)
+}
+
+/// Why an incoming call is shown as a call preview on this device.
+public enum PreviewReason: Hashable, Sendable {
+  /// The system filtered the call because of the user's Do Not Disturb, Focus or block list, and
+  /// the presentation policy previews filtered calls. The call never rings.
+  case filtered(FilterCause)
+  /// The call was answered on another of the user's devices, or by a service acting for the user,
+  /// and the presentation policy previews such calls.
+  case answeredElsewhere
+  /// The presentation policy shows the call as a preview instead of ringing it, for example while
+  /// an assistant handles it.
+  case policy
 }
 
 /// Why a call ended on this device.

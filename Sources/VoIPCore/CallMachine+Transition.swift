@@ -24,7 +24,7 @@ extension CallMachine {
         return step.result
       case .preview:
         var step = Step(
-          call: call, phase: .previewing, policy: policy,
+          call: call, phase: .previewing(.policy), policy: policy,
           configuration: configuration, now: now)
         step.emit(.previewStarted(step.state.call))
         return step.result
@@ -91,11 +91,10 @@ private struct Step {
     call: Call, phase: Phase, policy: PresentationPolicy, configuration: VoIPConfiguration,
     now: Date
   ) {
-    var call = call
-    call.status = phase.status
     self.init(
       state: CallMachine.State(call: call, phase: phase, policy: policy),
       configuration: configuration, now: now)
+    enter(phase)
   }
 
   var result: (CallMachine.State, [Effect]) {
@@ -140,7 +139,7 @@ private struct Step {
       emit(.presented(state.call))
     case (.filtered(let cause), nil):
       if state.policy.previewsFilteredCalls {
-        preview(reportingEnd: nil)
+        preview(.filtered(cause), reportingEnd: nil)
       } else {
         end(.filtered(cause), reportingEnd: false)
       }
@@ -166,7 +165,7 @@ private struct Step {
       emit(action.isStart ? .startRequested(state.call) : .joinRequested(state.call))
     case (_, .end) where state.phase == .ringing || state.phase.isActive:
       if state.phase.isJoining {
-        preview(reportingEnd: nil, fulfilling: id)
+        returnToPreview(fulfilling: id)
       } else {
         end(.endedHere, reportingEnd: false, fulfilling: id, performed: action)
       }
@@ -199,7 +198,7 @@ private struct Step {
       guard phase == .ringing else { return reject(action, .notAllowed(state.call.status)) }
       output(.request(action))
     case .join:
-      guard phase == .previewing else { return reject(action, .notAllowed(state.call.status)) }
+      guard phase.isPreviewing else { return reject(action, .notAllowed(state.call.status)) }
       enter(.requesting(action))
       arm(.placement)
       output(.request(action))
@@ -228,7 +227,7 @@ private struct Step {
   private mutating func requestFailed(_ action: Action) {
     guard case .requesting(let requested) = state.phase, requested == action else { return }
     if action.isJoin {
-      preview(reportingEnd: nil)
+      returnToPreview()
     } else {
       end(.failed(.refused), reportingEnd: false)
     }
@@ -271,7 +270,7 @@ private struct Step {
     case .partiesChanged(let parties):
       if case .ended = phase { return }
       state.call.parties = parties
-      if phase != .previewing { output(.update(state.call)) }
+      if !phase.isPreviewing { output(.update(state.call)) }
     case .connecting:
       switch phase {
       case .dialing:
@@ -350,7 +349,7 @@ private struct Step {
     case .previewing, .ended:
       break
     case let phase where phase.isJoining:
-      preview(reportingEnd: nil)
+      returnToPreview()
     default:
       end(.failed(.frameworkReset), reportingEnd: false)
     }
@@ -362,7 +361,7 @@ private struct Step {
   /// took part here.
   private mutating func answeredElsewhere(frameworkPresentsCall: Bool) {
     if state.policy.previewsCallsAnsweredElsewhere {
-      preview(reportingEnd: frameworkPresentsCall ? .answeredElsewhere : nil)
+      preview(.answeredElsewhere, reportingEnd: frameworkPresentsCall ? .answeredElsewhere : nil)
     } else {
       end(.answeredElsewhere, reportingEnd: frameworkPresentsCall)
     }
@@ -372,7 +371,7 @@ private struct Step {
   /// call ends.
   private mutating func abandon(_ failure: CallFailure) {
     if state.phase.isJoining {
-      preview(reportingEnd: .failed(failure))
+      returnToPreview(reportingEnd: .failed(failure))
     } else {
       end(.failed(failure), reportingEnd: true)
     }
@@ -380,18 +379,27 @@ private struct Step {
 
   /// Moves the call to a call preview, removing it from the calling framework.
   private mutating func preview(
-    reportingEnd reason: EndReason?, fulfilling endAction: ActionID? = nil
+    _ reason: PreviewReason, reportingEnd endReason: EndReason?,
+    fulfilling endAction: ActionID? = nil
   ) {
     if let held = state.phase.held { fail(held.id) }
     if let endAction { fulfill(endAction) }
     disarmAll()
-    if let reason { output(.reportEnded(state.call.id, reason)) }
+    if let endReason { output(.reportEnded(state.call.id, endReason)) }
     state.startedHere = false
     state.earlyProgress = nil
     state.call.isMuted = false
     state.call.isOnHold = false
-    enter(.previewing)
+    enter(.previewing(reason))
     emit(.previewStarted(state.call))
+  }
+
+  /// Returns a call that was joining to the preview it was joined from.
+  private mutating func returnToPreview(
+    reportingEnd endReason: EndReason? = nil, fulfilling endAction: ActionID? = nil
+  ) {
+    // A call can only join from a preview, so the reason is always known here.
+    preview(state.previewReason ?? .policy, reportingEnd: endReason, fulfilling: endAction)
   }
 
   /// Ends the call. This is the only way into ``CallMachine/Phase/ended(_:)``.
@@ -420,6 +428,7 @@ private struct Step {
   private mutating func enter(_ phase: Phase) {
     state.phase = phase
     state.call.status = phase.status
+    if case .previewing(let reason) = phase { state.previewReason = reason }
   }
 
   mutating func arm(_ deadline: Deadline) {

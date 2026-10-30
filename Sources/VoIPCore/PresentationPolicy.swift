@@ -10,8 +10,8 @@ public struct PresentationPolicy: Hashable, Sendable {
   public enum Presentation: Hashable, Sendable {
     /// The calling framework presents the call on the system call screen, and it rings.
     case ring
-    /// The call appears as a call preview, such as a Live Activity, from which the user can join.
-    /// It never rings and opens no audio.
+    /// The call appears as a call preview, such as a Live Activity, from which the user can join,
+    /// with reason ``PreviewReason/policy``. It never rings and opens no audio.
     case preview
     /// The call doesn't appear on this device.
     case none
@@ -21,13 +21,15 @@ public struct PresentationPolicy: Hashable, Sendable {
   public var incoming: Presentation
 
   /// Whether a call that the system filtered because of Do Not Disturb, Focus or the block list
-  /// becomes a call preview. Otherwise it ends as ``EndReason/filtered(_:)``. Defaults to `true`.
+  /// becomes a call preview, with reason ``PreviewReason/filtered(_:)``. Otherwise it ends as
+  /// ``EndReason/filtered(_:)``. Defaults to `true`.
   ///
   /// The SDK never presents a filtered call again, because that would override the user's choice.
   public var previewsFilteredCalls: Bool
 
-  /// Whether a call answered elsewhere becomes a call preview on this device. Otherwise it ends as
-  /// ``EndReason/answeredElsewhere``. Defaults to `true`.
+  /// Whether a call answered elsewhere becomes a call preview on this device, with reason
+  /// ``PreviewReason/answeredElsewhere``. Otherwise it ends as ``EndReason/answeredElsewhere``.
+  /// Defaults to `true`.
   public var previewsCallsAnsweredElsewhere: Bool
 
   /// Creates a presentation policy.

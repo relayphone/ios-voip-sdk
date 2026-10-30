@@ -45,7 +45,7 @@ enum CallMachine {
     /// The incoming call rings.
     case ringing
     /// The call is live elsewhere and followed in a call preview.
-    case previewing
+    case previewing(PreviewReason)
     /// The app's start or join request is with the calling framework.
     case requesting(Action)
     /// The calling framework performed the start or join; the app is placing the call.
@@ -87,6 +87,9 @@ enum CallMachine {
     var phase: Phase
     /// The call's presentation policy, resolved when the call began.
     var policy: PresentationPolicy
+    /// Why the call was last a call preview. It is kept while the call joins, so that a join that
+    /// fails before the call takes part returns to the same preview.
+    var previewReason: PreviewReason?
     /// Whether the calling framework sees the call as started on this device: an outgoing call,
     /// or a call joined from its preview, once it takes part.
     var startedHere = false
@@ -158,7 +161,7 @@ extension CallMachine.Phase {
   var status: CallStatus {
     switch self {
     case .reporting, .ringing: .ringing
-    case .previewing: .previewing
+    case .previewing(let reason): .previewing(reason)
     case .requesting(let action): action.isStart ? .dialing : .connecting
     case .placing(let held), .preparing(let held): held.action.isStart ? .dialing : .connecting
     case .dialing: .dialing
@@ -175,6 +178,11 @@ extension CallMachine.Phase {
     case .placing(let held), .preparing(let held): held
     default: nil
     }
+  }
+
+  /// Whether the call is a call preview.
+  var isPreviewing: Bool {
+    if case .previewing = self { true } else { false }
   }
 
   /// Whether this device is joining a call from its preview and doesn't take part yet.

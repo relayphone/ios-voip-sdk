@@ -6,7 +6,7 @@ public enum CallEvent: Hashable, Sendable {
   case presented(Call)
   /// This device started following the call in a call preview: the call was presented as one, or
   /// it was filtered or answered elsewhere and the presentation policy previews it, or joining it
-  /// failed.
+  /// failed. The call's status holds the reason.
   case previewStarted(Call)
   /// The calling framework started an outgoing call. The app places it, then confirms it.
   case startRequested(Call)

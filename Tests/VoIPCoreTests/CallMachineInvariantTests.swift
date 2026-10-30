@@ -84,11 +84,19 @@ private struct InvariantChecker {
       #expect(endedCount == 0, sourceLocation: sourceLocation)
     }
 
-    // A call preview never involves the calling framework.
-    if before.phase == .previewing, after.phase == .previewing {
+    // A call preview never involves the calling framework, and keeps its reason. A join that
+    // fails before the call takes part returns to the preview it started from.
+    if before.phase.isPreviewing, after.phase.isPreviewing {
       #expect(
         !effects.contains { $0.involvesFramework }, "\(effects)",
         sourceLocation: sourceLocation)
+      #expect(after.phase == before.phase, sourceLocation: sourceLocation)
+    }
+    if case .previewing(let reason) = after.phase {
+      #expect(after.previewReason == reason, sourceLocation: sourceLocation)
+      if before.phase.isJoining {
+        #expect(reason == before.previewReason, sourceLocation: sourceLocation)
+      }
     }
 
     // An app request is sent, refused, or carried out by the SDK, exactly once.
