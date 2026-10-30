@@ -36,7 +36,7 @@ struct PushTests {
     }
     var offsetBody = raw["incomingCall"] as! [String: Any]
     offsetBody["startedAt"] = "2026-10-22T00:00:00+02:00"
-    precondition(PushWire.decodeIncomingInvitation(offsetBody)?.startedAt == "2026-10-22T00:00:00+02:00")
+    precondition(PushWire.decodeIncomingInvitation(offsetBody)?.startedAt == Date(timeIntervalSince1970: 1792620000))
     offsetBody["metadata"] = ["array", "not-object"]
     precondition(PushWire.decodeIncomingInvitation(offsetBody)?.metadata == nil)
     for key in ["eventId", "serverCallId"] {
@@ -62,7 +62,7 @@ struct PushTests {
     let endedWire: [AnyHashable: Any] = ["messageType": "callEnded", "callEnded": String(data: try JSONSerialization.data(withJSONObject: endedBody), encoding: .utf8)!]
     guard case .callEnded(let ended) = PushWire.parse(endedWire) else { preconditionFailure("FCM callEnded was rejected") }
     precondition(ended.reason == .answeredElsewhere)
-    precondition(PushWire.decodeCallEnded(["eventId": "e", "serverCallId": "s", "reason": "unknown"])?.reason == .remoteEnded)
+    precondition(PushWire.decodeCallEnded(["eventId": "e", "serverCallId": "s", "reason": "unknown"]) == nil)
     precondition(PushWire.parse(["messageType": "callEnded", "callEnded": endedBody]) == .malformed)
     precondition(IncomingPushPolicy.plan(.callEnded(ended), mustReport: false, fallbackIdentity: id) == .callEnded(ended))
     guard case .fallback(_, let target) = IncomingPushPolicy.plan(.callEnded(ended), mustReport: true, fallbackIdentity: id) else {

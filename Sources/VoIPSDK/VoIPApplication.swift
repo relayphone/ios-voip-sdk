@@ -1,6 +1,40 @@
-#if canImport(LiveCommunicationKit) && (os(iOS) || os(watchOS))
 import Foundation
-import CoreFoundation
+
+/// The config plugin's plist schema, decoded before any platform services start.
+struct VoIPBundleConfiguration: Decodable {
+  let ringtoneName: String?
+  let iconTemplateImageName: String?
+  let maximumConversationGroups: Int
+  let maximumConversationsPerConversationGroup: Int
+  let includesCallsInRecents: Bool
+  let supportsVideo: Bool
+  let unhandledAction: UnhandledActionPolicy
+  let providerOwnershipMonitoring: Bool?
+  let simulatorSupport: Bool
+
+  private enum CodingKeys: String, CodingKey {
+    case ringtoneName, iconTemplateImageName, maximumConversationGroups, maximumConversationsPerConversationGroup
+    case includesCallsInRecents, supportsVideo, unhandledAction, providerOwnershipMonitoring, simulatorSupport
+  }
+
+  init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    ringtoneName = try values.decodeIfPresent(String.self, forKey: .ringtoneName)
+    iconTemplateImageName = try values.decodeIfPresent(String.self, forKey: .iconTemplateImageName)
+    maximumConversationGroups = try values.decodeIfPresent(Int.self, forKey: .maximumConversationGroups) ?? 2
+    maximumConversationsPerConversationGroup = try values.decodeIfPresent(Int.self, forKey: .maximumConversationsPerConversationGroup) ?? 2
+    includesCallsInRecents = try values.decodeIfPresent(Bool.self, forKey: .includesCallsInRecents) ?? true
+    supportsVideo = try values.decodeIfPresent(Bool.self, forKey: .supportsVideo) ?? true
+    unhandledAction = try values.decodeIfPresent(UnhandledActionPolicy.self, forKey: .unhandledAction) ?? .fail
+    providerOwnershipMonitoring = try values.decodeIfPresent(Bool.self, forKey: .providerOwnershipMonitoring)
+    simulatorSupport = try values.decodeIfPresent(Bool.self, forKey: .simulatorSupport) ?? true
+    guard maximumConversationGroups > 0, maximumConversationsPerConversationGroup > 0 else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Conversation limits must be positive"))
+    }
+  }
+}
+
+#if canImport(LiveCommunicationKit) && (os(iOS) || os(watchOS))
 #if os(iOS)
 import UIKit
 #endif
@@ -17,40 +51,16 @@ public final class VoIPApplication {
 
     /// Reads the config plugin's VoIPSDK Info.plist dictionary.
     public static func fromBundle(_ bundle: Bundle = .main) throws -> Configuration {
-      let info: [String: Any]
-      if let value = bundle.object(forInfoDictionaryKey: "VoIPSDK") {
-        guard let dictionary = value as? [String: Any] else { throw ConversationClientError.invalidConfiguration }
-        info = dictionary
-      } else { info = [:] }
-      func bool(_ key: String, default fallback: Bool) throws -> Bool {
-        guard let value = info[key] else { return fallback }
-        guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else {
-          throw ConversationClientError.invalidConfiguration
-        }
-        return number.boolValue
-      }
-      func integer(_ key: String, default fallback: Int) throws -> Int {
-        guard let value = info[key] else { return fallback }
-        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
-              number.doubleValue.isFinite, number.doubleValue >= 1,
-              number.doubleValue < Double(Int.max), number.doubleValue.rounded() == number.doubleValue else {
-          throw ConversationClientError.invalidConfiguration
-        }
-        return number.intValue
-      }
-      func string(_ key: String) throws -> String? {
-        guard let value = info[key] else { return nil }
-        guard let string = value as? String else { throw ConversationClientError.invalidConfiguration }
-        return string
-      }
-      let policy: UnhandledActionPolicy
-      if let value = try string("unhandledAction") {
-        guard let parsed = UnhandledActionPolicy(rawValue: value) else { throw ConversationClientError.invalidConfiguration }
-        policy = parsed
-      } else { policy = .fail }
-      let ringtone = try string("ringtoneName")
+      let info: VoIPBundleConfiguration
+      do {
+        let data = try PropertyListSerialization.data(
+          fromPropertyList: bundle.object(forInfoDictionaryKey: "VoIPSDK") ?? [String: String](),
+          format: .binary, options: 0)
+        info = try PropertyListDecoder().decode(VoIPBundleConfiguration.self, from: data)
+      } catch { throw ConversationClientError.invalidConfiguration }
+      let ringtone = info.ringtoneName
       var iconData: Data?
-      if let name = try string("iconTemplateImageName"), !name.isEmpty {
+      if let name = info.iconTemplateImageName, !name.isEmpty {
         #if os(iOS)
         iconData = UIImage(named: name, in: bundle, compatibleWith: nil)?.pngData()
         #else
@@ -58,15 +68,15 @@ public final class VoIPApplication {
         #endif
         if iconData == nil { NSLog("VoIPSDK: configured icon could not be loaded; using the system icon.") }
       }
-      return try Configuration(client: .init(
+      return Configuration(client: .init(
         ringtoneName: ringtone == "default" || ringtone == "" ? nil : ringtone,
         iconTemplateImageData: iconData,
-        maximumConversationGroups: integer("maximumConversationGroups", default: 2),
-        maximumConversationsPerGroup: integer("maximumConversationsPerConversationGroup", default: 2),
-        includesConversationInRecents: bool("includesCallsInRecents", default: true),
-        supportsVideo: bool("supportsVideo", default: true), unhandledAction: policy,
-        providerOwnershipMonitoring: bool("providerOwnershipMonitoring", default: ConversationClient.Configuration.defaultProviderOwnershipMonitoring)),
-        simulatorSupport: bool("simulatorSupport", default: true))
+        maximumConversationGroups: info.maximumConversationGroups,
+        maximumConversationsPerGroup: info.maximumConversationsPerConversationGroup,
+        includesConversationInRecents: info.includesCallsInRecents,
+        supportsVideo: info.supportsVideo, unhandledAction: info.unhandledAction,
+        providerOwnershipMonitoring: info.providerOwnershipMonitoring ?? ConversationClient.Configuration.defaultProviderOwnershipMonitoring),
+        simulatorSupport: info.simulatorSupport)
     }
   }
 

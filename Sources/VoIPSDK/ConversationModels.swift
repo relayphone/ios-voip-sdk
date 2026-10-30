@@ -2,14 +2,19 @@ import Foundation
 
 /// JSON without untyped, non-Sendable dictionaries at the native/JavaScript boundary.
 public enum JSONValue: Codable, Sendable, Equatable {
-  case string(String), number(Double), bool(Bool), object([String: JSONValue]), array([JSONValue]), null
+  case string(String), bool(Bool), object([String: JSONValue]), array([JSONValue]), null
+  /// A signed 64-bit integer, preserved without a floating-point conversion.
+  case int(Int64)
+  /// A fractional number or a number outside the signed 64-bit integer range.
+  case double(Double)
 
   public init(from decoder: any Decoder) throws {
     let value = try decoder.singleValueContainer()
     if value.decodeNil() { self = .null }
     else if let x = try? value.decode(Bool.self) { self = .bool(x) }
     else if let x = try? value.decode(String.self) { self = .string(x) }
-    else if let x = try? value.decode(Double.self) { self = .number(x) }
+    else if let x = try? value.decode(Int64.self) { self = .int(x) }
+    else if let x = try? value.decode(Double.self) { self = .double(x) }
     else if let x = try? value.decode([String: JSONValue].self) { self = .object(x) }
     else { self = .array(try value.decode([JSONValue].self)) }
   }
@@ -18,7 +23,8 @@ public enum JSONValue: Codable, Sendable, Equatable {
     var value = encoder.singleValueContainer()
     switch self {
     case .string(let x): try value.encode(x)
-    case .number(let x): try value.encode(x)
+    case .int(let x): try value.encode(x)
+    case .double(let x): try value.encode(x)
     case .bool(let x): try value.encode(x)
     case .object(let x): try value.encode(x)
     case .array(let x): try value.encode(x)
@@ -98,28 +104,99 @@ public struct Caller: Codable, Sendable, Equatable {
   }
 }
 
+/// A validated transport invitation with a typed caller and optional timestamp and metadata.
 public struct IncomingCallPayload: Codable, Sendable, Equatable {
   public var eventId: String
   public var serverCallId: String
   public var caller: Caller
   public var hasVideo: Bool
-  /// The original RFC3339 wire value, when supplied by the transport.
-  public var startedAt: String?
+  /// The transport's RFC3339 timestamp as an instant, when valid.
+  public var startedAt: Date?
   public var metadata: [String: JSONValue]?
 
+  /// Creates an invitation using an already parsed timestamp.
   public init(eventId: String, serverCallId: String, caller: Caller, hasVideo: Bool = false,
-              startedAt: String? = nil, metadata: [String: JSONValue]? = nil) {
+              startedAt: Date? = nil, metadata: [String: JSONValue]? = nil) {
     self.eventId = eventId; self.serverCallId = serverCallId; self.caller = caller
     self.hasVideo = hasVideo; self.startedAt = startedAt; self.metadata = metadata
   }
+
+  private enum CodingKeys: String, CodingKey { case eventId, serverCallId, caller, hasVideo, startedAt, metadata }
+
+  /// Decodes required identity/caller fields and tolerates invalid optional fields.
+  public init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    eventId = try values.decode(String.self, forKey: .eventId)
+    serverCallId = try values.decode(String.self, forKey: .serverCallId)
+    guard !eventId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          !serverCallId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Empty invitation identity"))
+    }
+    caller = try values.decode(Caller.self, forKey: .caller)
+    hasVideo = (try? values.decode(Bool.self, forKey: .hasVideo)) ?? false
+    startedAt = (try? values.decode(String.self, forKey: .startedAt)).flatMap(PushTimestamp.parse)
+    metadata = try? values.decode([String: JSONValue].self, forKey: .metadata)
+  }
+
+  /// Encodes timestamps as RFC3339 UTC strings with millisecond precision.
+  public func encode(to encoder: any Encoder) throws {
+    var values = encoder.container(keyedBy: CodingKeys.self)
+    try values.encode(eventId, forKey: .eventId)
+    try values.encode(serverCallId, forKey: .serverCallId)
+    try values.encode(caller, forKey: .caller)
+    try values.encode(hasVideo, forKey: .hasVideo)
+    try values.encodeIfPresent(startedAt?.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)), forKey: .startedAt)
+    try values.encodeIfPresent(metadata, forKey: .metadata)
+  }
 }
 
+/// Foundation parses the instant; full consumption and a local-time round trip
+/// reject trailing text, normalized calendar dates and invalid offset minutes.
+private enum PushTimestamp {
+  static func parse(_ text: String) -> Date? {
+    let text = text.uppercased()
+    guard text.count >= 20,
+          let match = text.wholeMatch(of: Date.ISO8601FormatStyle(includingFractionalSeconds: text.contains("."))) else { return nil }
+    let offset: Int
+    if text.hasSuffix("Z") { offset = 0 }
+    else {
+      let zone = Array(text.suffix(6).utf8)
+      guard zone.count == 6, zone[0] == 43 || zone[0] == 45, zone[3] == 58,
+            [zone[1], zone[2], zone[4], zone[5]].allSatisfy({ (48...57).contains($0) }) else { return nil }
+      let hours = Int(zone[1] - 48) * 10 + Int(zone[2] - 48)
+      let minutes = Int(zone[4] - 48) * 10 + Int(zone[5] - 48)
+      guard hours <= 23, minutes <= 59 else { return nil }
+      offset = (hours * 3600 + minutes * 60) * (zone[0] == 45 ? -1 : 1)
+    }
+    let date = match.output
+    guard date.addingTimeInterval(TimeInterval(offset)).formatted(.iso8601).prefix(19) == text.prefix(19),
+          !text.hasPrefix("0000") else { return nil }
+    return date
+  }
+}
+
+/// A backend termination; decoded reasons must describe a remote system outcome.
 public struct CallEndedPayload: Codable, Sendable, Equatable {
   public var eventId: String
   public var serverCallId: String
   public var reason: ConversationEndedReason
   public init(eventId: String, serverCallId: String, reason: ConversationEndedReason = .remoteEnded) {
     self.eventId = eventId; self.serverCallId = serverCallId; self.reason = reason
+  }
+
+  private enum CodingKeys: String, CodingKey { case eventId, serverCallId, reason }
+
+  /// Rejects unknown and receiver-local transport reasons; a missing reason defaults to remoteEnded.
+  public init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    eventId = try values.decode(String.self, forKey: .eventId)
+    serverCallId = try values.decode(String.self, forKey: .serverCallId)
+    reason = try values.decodeIfPresent(ConversationEndedReason.self, forKey: .reason) ?? .remoteEnded
+    guard !eventId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          !serverCallId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          reason != .local else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid transport termination"))
+    }
   }
 }
 
