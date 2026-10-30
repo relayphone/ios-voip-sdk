@@ -274,7 +274,7 @@ def validate(root, source_root=ROOT):
     require(digest(root / 'device-build.json') == manifest['deviceBuildSHA256'], 'device build receipt hash mismatch')
     device_build = json.loads((root / 'device-build.json').read_text())
     require(device_build.get('product') == 'unified-shared-source-device' and
-            device_build.get('target') == 'arm64-apple-ios17.4' and
+            device_build.get('target') == 'arm64-apple-ios26.0' and
             device_build.get('binarySHA256') == manifest['files'][BINARIES['device']] and
             all(device_build.get(key) == value for key, value in identity.items()), 'device build/source mismatch')
     for key in ('example', 'bootstrap', 'javascript'):

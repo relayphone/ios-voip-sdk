@@ -13,7 +13,7 @@ from check_push_report_entry import native_source_identity
 pathlib.Path(sys.argv[1]).write_text(json.dumps(native_source_identity(),indent=2)+'\n')
 PY
 SDK=$(limit 30 xcrun --sdk iphonesimulator --show-sdk-path)
-TARGET="$(uname -m)-apple-ios17.4-simulator"
+TARGET="$(uname -m)-apple-ios26.0-simulator"
 VERSION=$(cat VERSION)
 WORK=$(mktemp -d "$OUT/.build.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
@@ -24,7 +24,7 @@ python3 - "$APP/Info.plist" <<'PY'
 import pathlib,plistlib,sys
 path=pathlib.Path(sys.argv[1])
 info=plistlib.loads(pathlib.Path('discovery/probe/Info.plist').read_bytes())
-info.update(CFBundleIdentifier='dev.iosvoipsdk.pushentry',CFBundleExecutable='PushEntry',MinimumOSVersion='17.4')
+info.update(CFBundleIdentifier='dev.iosvoipsdk.pushentry',CFBundleExecutable='PushEntry',MinimumOSVersion='26.0')
 path.write_bytes(plistlib.dumps(info))
 (path.parent/'IosVoipSDKRuntime.bundle/Info.plist').write_bytes(plistlib.dumps(dict(
  CFBundleIdentifier='dev.iosvoipsdk.pushentry.runtime',CFBundlePackageType='BNDL',CFBundleVersion='1')))

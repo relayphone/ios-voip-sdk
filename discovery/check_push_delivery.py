@@ -213,7 +213,7 @@ def main():
         swift.write_text(SWIFT)
         negative = out / 'token-off-main.swift'
         negative.write_text('import VoIPPlatform\nfunc wrong(_ receiver: any PushReceiver) { receiver.pushTokenDidInvalidate() }\n')
-        for sdk_name, target in (('iphonesimulator', 'arm64-apple-ios17.4-simulator'),
+        for sdk_name, target in (('iphonesimulator', 'arm64-apple-ios26.0-simulator'),
                                  ('watchos', 'arm64_32-apple-watchos10.4')):
             sdk = run(['xcrun', '--sdk', sdk_name, '--show-sdk-path']).stdout.strip()
             implementations = [str(PLATFORM / name) for name in ('VSPushRegistryOwner.m', 'VSPushDelivery.m', 'VSCompletionOnce.m')]

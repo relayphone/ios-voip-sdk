@@ -9,7 +9,7 @@ WORK=$(mktemp -d "$OUT/.device-build.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
 SDK=$(limit 30 xcrun --sdk iphoneos --show-sdk-path)
-TARGET=arm64-apple-ios17.4
+TARGET=arm64-apple-ios26.0
 VERSION=$(cat VERSION)
 cat > "$WORK/main.swift" <<'SWIFT'
 @main

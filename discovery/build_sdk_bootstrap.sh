@@ -6,7 +6,7 @@ OUT=${1:?provide a fresh output directory}
 mkdir "$OUT"
 OUT=$(cd "$OUT" && pwd)
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
-TARGET="${CKSIM_BUILD_ARCH:-$(uname -m)}-apple-ios17.4-simulator"
+TARGET="${CKSIM_BUILD_ARCH:-$(uname -m)}-apple-ios26.0-simulator"
 VERSION=$(cat VERSION)
 WORK=$(mktemp -d "$OUT/.build.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT

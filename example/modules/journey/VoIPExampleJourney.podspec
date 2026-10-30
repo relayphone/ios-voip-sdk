@@ -10,7 +10,7 @@ Pod::Spec.new do |s|
   s.author = 'Hamza Zia'
   s.license = { :type => 'UNLICENSED' }
   s.source = { :git => 'https://github.com/relayphone/ios-voip-sdk.git' }
-  s.platform = :ios, '17.4'
+  s.platform = :ios, '26.0'
   s.swift_version = '6.0'
   s.static_framework = true
   s.dependency 'ExpoModulesCore'

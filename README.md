@@ -34,8 +34,8 @@ Follow the [Expo setup guide](Expo/README.md) to configure the plugin and rebuil
 
 ## Requirements
 
-- iOS and iPadOS 17.4 or later.
-- Build the Swift package and Expo module with the iOS 27 SDK or newer (CI uses Xcode 27.1). One binary handles legacy interruptions on 17.4–26 and the new lifecycle notifications on 27+. The standalone simulator runtime retains its earlier compiler jobs.
+- iOS and iPadOS 26 or later.
+- Swift 6.4 tools with the Swift 6 language mode. Build the Swift package and Expo module with the iOS 27 SDK or newer (CI uses Xcode 27.1). One binary handles legacy interruptions on iOS 26 and the new lifecycle notifications on 27+. The standalone simulator runtime retains its earlier compiler jobs.
 - Mac Catalyst waits for an Apple SDK fix: with Xcode 27.1, `ConversationManagerDelegate` conformances fail to link on Catalyst.
 - Apple Watch is deferred.
 
@@ -51,7 +51,7 @@ The module's peer ranges retain Expo 55–58 compatibility. The example and deve
 
 ## Testing
 
-Run `swift test` on macOS 13 or later with the Xcode toolchain above. The Swift
+Run `swift test` on macOS 26 or later with the Xcode toolchain above. The Swift
 Testing suites cover caller validation, push decoding, models, and the test clock
 without a simulator. Native calling and media acceptance run separately in CI.
 

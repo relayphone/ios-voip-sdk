@@ -20,7 +20,7 @@ def run(argv, **kwargs):
 
 def check_packaging(out):
     manifest = json.loads(run(['swift', 'package', 'dump-package'], cwd=ROOT).stdout)
-    assert manifest['toolsVersion']['_version'] == '6.1.0'
+    assert manifest['toolsVersion']['_version'] == '6.4.0'
     assert not manifest.get('traits')
     # CocoaPods IPC evaluates a spec in its own directory. Copy exact source
     # bytes so the isolated Podfile.properties fixture models that install root.

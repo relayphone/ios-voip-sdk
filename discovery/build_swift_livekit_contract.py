@@ -56,7 +56,7 @@ def main():
     out = Path(sys.argv[1]).resolve(); out.mkdir()
     before = source(); save(out / 'source-before.json', before)
     architecture = os.environ.get('CKSIM_BUILD_ARCH', platform.machine())
-    target = architecture + '-apple-ios17.4-simulator'
+    target = architecture + '-apple-ios26.0-simulator'
     app = out / 'SDKSwiftLiveKit.app'
     with tempfile.TemporaryDirectory(prefix='.build-', dir=out) as temporary, (out / 'build.log').open('wb') as log:
         work = Path(temporary); consumer = work / 'consumer'; consumer.mkdir()
@@ -74,7 +74,7 @@ def main():
         sdk = run(['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path'], timeout=30, capture=True)
         sdk_version = run(['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-version'], timeout=30, capture=True)
         if int(sdk_version.split('.')[0]) < 27:
-            raise RuntimeError('The consumer requires SDK 27 or later; minimum runtime remains 17.4')
+            raise RuntimeError('The consumer requires SDK 27 or later; minimum runtime remains 26.0')
         manifest = (FIXTURE / 'Package.swift').read_text()
         marker = 'let sdkRoot = "../.."'
         if manifest.count(marker) != 1:
@@ -116,7 +116,7 @@ def main():
         (app / 'VoIPSDK_CKSimRuntime.bundle/Info.plist').write_bytes(plistlib.dumps(profile_info))
         info = plistlib.loads((ROOT / 'discovery/probe/Info.plist').read_bytes())
         info.update(CFBundleIdentifier='dev.iosvoipsdk.swiftlivekit', CFBundleExecutable='SDKSwiftLiveKit',
-                    CFBundleName='SDKSwiftLiveKit', CFBundleDisplayName='SDK Swift LiveKit', MinimumOSVersion='17.4')
+                    CFBundleName='SDKSwiftLiveKit', CFBundleDisplayName='SDK Swift LiveKit', MinimumOSVersion='26.0')
         (app / 'Info.plist').write_bytes(plistlib.dumps(info))
         for bundle in products.glob('*.bundle'):
             shutil.copytree(bundle, app / bundle.name, symlinks=True)

@@ -51,7 +51,7 @@ def inspect_public_headers(directory):
     for path in headers:
         require(path.name != 'CKRuntimeSeam.h', 'private simulator seam is public')
         result = subprocess.run(['xcrun', 'clang', '-E', '-P', '-x', 'objective-c', '-fblocks',
-                                 '-target', 'arm64-apple-ios17.4', '-isysroot', sdk, '-DDEBUG=0',
+                                 '-target', 'arm64-apple-ios26.0', '-isysroot', sdk, '-DDEBUG=0',
                                  '-I', str(directory), str(path)], capture_output=True, text=True, timeout=30)
         require(result.returncode == 0, 'cannot preprocess Release iphoneos public header: ' + path.name)
         require('CKSim' not in result.stdout, 'public simulator test hook')

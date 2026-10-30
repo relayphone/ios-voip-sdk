@@ -1,4 +1,4 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.4
 import PackageDescription
 
 // Test-only consumer. Package.resolved is the prior genuine consumer's input
@@ -6,7 +6,7 @@ import PackageDescription
 let sdkRoot = "../.."
 let package = Package(
   name: "LiveKitConsumer",
-  platforms: [.iOS("17.4")],
+  platforms: [.iOS(.v26)],
   products: [.library(name: "LiveKitConsumer", targets: ["LiveKitConsumer"])],
   dependencies: [
     .package(name: "SDKUnderTest", path: sdkRoot),

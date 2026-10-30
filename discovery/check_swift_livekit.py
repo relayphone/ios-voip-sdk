@@ -78,7 +78,7 @@ def materialize(root):
     save(build / 'Package.resolved', dict(pins=[dict(identity=name, state=dict(revision=value)) for name, value in PINS.items()]))
     for name in ('source-before.json', 'source-after.json'): save(build / name, IDENTITY)
     save(build / 'build-info.json', dict(schemaVersion=1, product='sdk-swift-livekit-contract', configuration='Debug',
-        **IDENTITY, resolvedPins=PINS, target='arm64-apple-ios17.4-simulator', sdkVersion='27.0',
+        **IDENTITY, resolvedPins=PINS, target='arm64-apple-ios26.0-simulator', sdkVersion='27.0',
         xcodeVersion='Xcode 27.1\nBuild version 27A9275', files={name: digest(build / name) for name in gate.FILES}))
     cases = {}
     for index, mode in enumerate(gate.CASES):

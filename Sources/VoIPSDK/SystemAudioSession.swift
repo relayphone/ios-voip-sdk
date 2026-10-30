@@ -53,8 +53,7 @@ final class SystemAudioSession {
 
   init() {
     #if os(iOS)
-    var names = [AVAudioSession.routeChangeNotification]
-    if #available(iOS 26.0, *) { names.append(AVAudioSession.availableInputsChangeNotification) }
+    let names = [AVAudioSession.routeChangeNotification, AVAudioSession.availableInputsChangeNotification]
     routeObservers = RouteNotificationTokens(names.map { name in
       NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
         MainActor.assumeIsolated { self?.refreshRoutes() }

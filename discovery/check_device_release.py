@@ -109,7 +109,7 @@ class Controls(unittest.TestCase):
                               'CKSimEmit(@"clock", @{}); }\n')
             sdk = subprocess.check_output(['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path'], text=True).strip()
             result = subprocess.run(['xcrun', 'clang', '-fsyntax-only', '-fobjc-arc',
-                '-Werror=implicit-function-declaration', '-target', 'arm64-apple-ios17.4-simulator',
+                '-Werror=implicit-function-declaration', '-target', 'arm64-apple-ios26.0-simulator',
                 '-isysroot', sdk, '-I', str(ROOT / 'Sources/Interposition/include'),
                 '-I', str(ROOT / 'Sources/VoIPPlatform/include'),
                 '-include', str(ROOT / 'Expo/apple/IosVoipSDK.h'), str(source)],
@@ -123,7 +123,7 @@ class Controls(unittest.TestCase):
             code.write_text('int main(void) { return 0; }\n')
             sdk = subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()
             for name, extra in [('clean', []), ('callkit', ['-framework', 'CallKit'])]:
-                subprocess.run(['xcrun', 'clang', '-target', 'arm64-apple-ios17.4', '-isysroot', sdk,
+                subprocess.run(['xcrun', 'clang', '-target', 'arm64-apple-ios26.0', '-isysroot', sdk,
                                 str(code), '-o', str(out / name), *extra], capture_output=True,
                                text=True, timeout=30, check=True)
             inspect_binary(out / 'clean')
@@ -131,7 +131,7 @@ class Controls(unittest.TestCase):
                 inspect_binary(out / 'callkit')
             leaked = out / 'leaked.c'
             leaked.write_text('void CKSimInjectPush(void) {}\nint main(void) { CKSimInjectPush(); return 0; }\n')
-            subprocess.run(['xcrun', 'clang', '-target', 'arm64-apple-ios17.4', '-isysroot', sdk,
+            subprocess.run(['xcrun', 'clang', '-target', 'arm64-apple-ios26.0', '-isysroot', sdk,
                             str(leaked), '-o', str(out / 'leaked')], capture_output=True,
                            text=True, timeout=30, check=True)
             with self.assertRaisesRegex(ExclusionError, 'simulator/debug implementation'):
@@ -140,14 +140,14 @@ class Controls(unittest.TestCase):
             # source filename. That archive metadata is not implementation.
             empty = out / 'RuntimeEngine.m'
             empty.write_text('// Guarded implementation compiled out.\n')
-            subprocess.run(['xcrun', 'clang', '-target', 'arm64-apple-ios17.4', '-isysroot', sdk,
+            subprocess.run(['xcrun', 'clang', '-target', 'arm64-apple-ios26.0', '-isysroot', sdk,
                             '-c', str(empty), '-o', str(out / 'RuntimeEngine.o')],
                            capture_output=True, text=True, timeout=30, check=True)
             subprocess.run(['xcrun', 'ar', '-rcs', str(out / 'libGuarded.a'),
                             str(out / 'RuntimeEngine.o')], capture_output=True,
                            text=True, timeout=30, check=True)
             inspect_binary(out / 'libGuarded.a')
-            subprocess.run(['xcrun', 'clang', '-target', 'arm64-apple-ios17.4', '-isysroot', sdk,
+            subprocess.run(['xcrun', 'clang', '-target', 'arm64-apple-ios26.0', '-isysroot', sdk,
                             '-c', str(leaked), '-o', str(out / 'RuntimeEngine.o')],
                            capture_output=True, text=True, timeout=30, check=True)
             subprocess.run(['xcrun', 'ar', '-rcs', str(out / 'libGuarded.a'),

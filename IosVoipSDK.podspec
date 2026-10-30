@@ -18,7 +18,7 @@ Pod::Spec.new do |s|
   s.author = { 'Hamza Zia' => 'https://github.com/ziahamza' }
   s.license = { :type => 'UNLICENSED' }
   s.source = { :git => package['repository']['url'], :commit => '87a6125c18f9ec7018ac056c67baa06e9dbac07c' }
-  s.platform = :ios, '17.4'
+  s.platform = :ios, '26.0'
   s.swift_version = '6.0'
   s.static_framework = true
   s.header_dir = 'IosVoipSDK'

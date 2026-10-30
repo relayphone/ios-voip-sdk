@@ -50,7 +50,7 @@ def main():
                          '#define __IPHONE_OS_VERSION_MAX_ALLOWED 260000\n'
                          '#undef __WATCH_OS_VERSION_MAX_ALLOWED\n'
                          '#define __WATCH_OS_VERSION_MAX_ALLOWED 260000\n')
-        for sdk_name, target in [('iphoneos', 'arm64-apple-ios17.4'),
+        for sdk_name, target in [('iphoneos', 'arm64-apple-ios26.0'),
                                  ('watchsimulator', 'arm64-apple-watchos10.0-simulator')]:
             sdk = run(['xcrun', '--sdk', sdk_name, '--show-sdk-path'], results,
                       sdk_name + '-path', timeout=20).stdout.strip()
@@ -90,10 +90,10 @@ def main():
 
         # The source-only diagnostic surface must disappear in every device
         # build and every non-Debug simulator build.
-        for sdk_name, target, debug in [('iphonesimulator', 'arm64-apple-ios17.4-simulator', True),
-                                        ('iphonesimulator', 'arm64-apple-ios17.4-simulator', False),
-                                        ('iphoneos', 'arm64-apple-ios17.4', True),
-                                        ('iphoneos', 'arm64-apple-ios17.4', False)]:
+        for sdk_name, target, debug in [('iphonesimulator', 'arm64-apple-ios26.0-simulator', True),
+                                        ('iphonesimulator', 'arm64-apple-ios26.0-simulator', False),
+                                        ('iphoneos', 'arm64-apple-ios26.0', True),
+                                        ('iphoneos', 'arm64-apple-ios26.0', False)]:
             label = sdk_name + ('-debug' if debug else '-release')
             sdk = run(['xcrun', '--sdk', sdk_name, '--show-sdk-path'], results,
                       label + '-diagnostic-sdk', timeout=20).stdout.strip()
@@ -127,7 +127,7 @@ def main():
                               '#undef __WATCH_OS_VERSION_MAX_ALLOWED\n'
                               '#define __WATCH_OS_VERSION_MAX_ALLOWED 0\n')
             binary = out / ('host-' + label)
-            command = ['xcrun', 'clang', '-target', 'arm64-apple-macos14.0', '-isysroot', mac_sdk,
+            command = ['xcrun', 'clang', '-target', 'arm64-apple-macos26.0', '-isysroot', mac_sdk,
                        '-fobjc-arc', '-fblocks', '-Wall', '-Wextra', '-Werror',
                        '-Wno-unused-parameter', '-DDEBUG=1', '-DVS_HOST_NEW_API=' + ('1' if new_api else '0'),
                        '-include', str(prefix), '-I' + str(TEST / 'Facades'),

@@ -92,8 +92,8 @@ def main() -> None:
         swift.write_text(SWIFT)
         implementations = sorted(str(path) for path in PLATFORM.glob("*.m"))
         configurations = [
-            ("iphonesimulator", "arm64-apple-ios17.4-simulator"),
-            ("iphoneos", "arm64-apple-ios17.4"),
+            ("iphonesimulator", "arm64-apple-ios26.0-simulator"),
+            ("iphoneos", "arm64-apple-ios26.0"),
             ("watchos", "arm64_32-apple-watchos10.4"),
         ]
         for sdk_name, target in configurations:

@@ -25,7 +25,7 @@ def main():
         (out / 'Journey.swift').write_text('import Foundation\n@MainActor final class NativeJourney {\n' + prefix + '  }\n}\n')
         header = ROOT / 'Sources/VoIPPlatform/include/VSAudioSessionQueue.h'
         (out / 'module.modulemap').write_text(f'module VoIPPlatform {{ header "{header}" export * }}\n')
-        target = platform.machine() + '-apple-macos14.0'
+        target = platform.machine() + '-apple-macos26.0'
         run(['xcrun', 'clang', '-target', target, '-fobjc-arc', '-fmodules', '-Wall', '-Wextra', '-Werror',
              '-c', ROOT / 'Sources/VoIPPlatform/VSAudioSessionQueue.m', '-o', out / 'Queue.o'])
         run(['swiftc', '-target', target, '-swift-version', '6', '-warnings-as-errors', '-parse-as-library',

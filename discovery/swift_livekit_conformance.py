@@ -35,7 +35,7 @@ def validate_build(build):
             info.get('resolvedPins') == PINS, 'resolved/built dependency pins differ')
     require(re.fullmatch(r'Xcode 27\.1\nBuild version \S+', info.get('xcodeVersion', '')) and
             int(info['sdkVersion'].split('.')[0]) >= 27 and
-            re.fullmatch(r'(arm64|x86_64)-apple-ios17\.4-simulator', info.get('target', '')),
+            re.fullmatch(r'(arm64|x86_64)-apple-ios26\.0-simulator', info.get('target', '')),
             'requires Xcode 27.1 and an SDK 27 simulator build')
     require((build / 'SDKSwiftLiveKit.app/VoIPSDK_CKSimRuntime.bundle/ios-27.0.json').read_bytes() ==
             (ROOT / 'Sources/Engine/Resources/ios-27.0.json').read_bytes(), 'profile bytes differ from source')

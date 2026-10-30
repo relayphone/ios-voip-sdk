@@ -39,7 +39,7 @@ def main():
                           '#undef TARGET_OS_SIMULATOR\n#define TARGET_OS_SIMULATOR 0\n'
                           '#undef __IPHONE_OS_VERSION_MAX_ALLOWED\n'
                           '#define __IPHONE_OS_VERSION_MAX_ALLOWED 270000\n')
-        target = platform.machine() + '-apple-macos14.0'
+        target = platform.machine() + '-apple-macos26.0'
         common = ['xcrun', 'clang', '-target', target, '-fobjc-arc', '-fmodules', '-fblocks',
                   '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter']
         objects = []

@@ -1,4 +1,4 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.4
 import Foundation
 import PackageDescription
 
@@ -8,7 +8,7 @@ let runtimeVersion = try String(contentsOf: root.appendingPathComponent("VERSION
 
 let package = Package(
   name: "VoIPSDK",
-  platforms: [.iOS("17.4"), .macOS(.v13)],
+  platforms: [.iOS(.v26), .macOS(.v26)],
   products: [
     .library(name: "VoIPSDK", targets: ["VoIPSDK"]),
     .library(name: "VoIPSDKTesting", targets: ["VoIPSDKTesting"]),

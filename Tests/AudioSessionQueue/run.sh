@@ -10,9 +10,9 @@ root, out = map(Path, sys.argv[1:])
 (out / 'module.modulemap').write_text('module VoIPPlatform { header "' +
     str(root / 'Sources/VoIPPlatform/include/VSAudioSessionQueue.h') + '" export * }\n')
 PY
-xcrun clang -target arm64-apple-macos14.0 -fobjc-arc -fmodules -Wall -Wextra -Werror \
+xcrun clang -target arm64-apple-macos26.0 -fobjc-arc -fmodules -Wall -Wextra -Werror \
   -c Sources/VoIPPlatform/VSAudioSessionQueue.m -o "$TEST_OUTPUT/Queue.o"
-xcrun swiftc -swift-version 6 -warnings-as-errors -target arm64-apple-macos14.0 \
+xcrun swiftc -swift-version 6 -warnings-as-errors -target arm64-apple-macos26.0 \
   -parse-as-library -I "$TEST_OUTPUT" Sources/VoIPSDK/AudioSessionQueue.swift \
   Tests/AudioSessionQueue/QueueTests.swift "$TEST_OUTPUT/Queue.o" \
   -framework Foundation -o "$TEST_OUTPUT/QueueTests"
