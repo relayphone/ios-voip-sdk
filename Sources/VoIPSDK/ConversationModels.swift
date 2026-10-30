@@ -150,15 +150,15 @@ public struct IncomingCallPayload: Codable, Sendable, Equatable {
   }
 }
 
-/// Foundation parses the instant; full consumption and a local-time round trip
-/// reject trailing text, normalized calendar dates and invalid offset minutes.
+/// Foundation validates calendar fields separately from fractional time rounding.
+/// Normalize long fractions to nanoseconds and offsets to UTC for its parser.
 private enum PushTimestamp {
   static func parse(_ text: String) -> Date? {
     let text = text.uppercased()
-    guard text.count >= 20,
-          let match = text.wholeMatch(of: Date.ISO8601FormatStyle(includingFractionalSeconds: text.contains("."))) else { return nil }
+    guard text.count >= 20 else { return nil }
     let offset: Int
-    if text.hasSuffix("Z") { offset = 0 }
+    let local: Substring
+    if text.hasSuffix("Z") { offset = 0; local = text.dropLast() }
     else {
       let zone = Array(text.suffix(6).utf8)
       guard zone.count == 6, zone[0] == 43 || zone[0] == 45, zone[3] == 58,
@@ -167,11 +167,25 @@ private enum PushTimestamp {
       let minutes = Int(zone[4] - 48) * 10 + Int(zone[5] - 48)
       guard hours <= 23, minutes <= 59 else { return nil }
       offset = (hours * 3600 + minutes * 60) * (zone[0] == 45 ? -1 : 1)
+      local = text.dropLast(6)
     }
-    let date = match.output
-    guard date.addingTimeInterval(TimeInterval(offset)).formatted(.iso8601).prefix(19) == text.prefix(19),
+    guard local.count >= 19 else { return nil }
+    let suffix = local.dropFirst(19)
+    let fraction: String
+    if suffix.isEmpty { fraction = "" }
+    else {
+      let digits = suffix.dropFirst()
+      guard suffix.first == ".", !digits.isEmpty,
+            digits.utf8.allSatisfy({ (48...57).contains($0) }) else { return nil }
+      fraction = "." + digits.prefix(9)
+    }
+    let calendarText = String(local.prefix(19)) + "Z"
+    guard let calendar = calendarText.wholeMatch(of: Date.ISO8601FormatStyle()),
+          calendar.output.formatted(.iso8601).prefix(19) == local.prefix(19),
           !text.hasPrefix("0000") else { return nil }
-    return date
+    let normalized = String(local.prefix(19)) + fraction + "Z"
+    guard let match = normalized.wholeMatch(of: Date.ISO8601FormatStyle(includingFractionalSeconds: !fraction.isEmpty)) else { return nil }
+    return match.output.addingTimeInterval(TimeInterval(-offset))
   }
 }
 
@@ -263,8 +277,78 @@ public enum ConversationReport: Sendable {
 }
 public enum IncomingReportSource: Sendable { case foreground, pushKit }
 public enum UnhandledActionPolicy: String, Codable, Sendable { case fail, accept }
-public enum ConversationClientError: Error, Sendable, Equatable {
-  case alreadyConfigured, invalidConfiguration, invalidPayload, unknownConversation, unsupported, invalidDigits, duplicateSDKLinkage, atCapacity
+/// Failures when configuring or starting the process's VoIP services.
+public enum VoIPStartupError: Error, Sendable, Equatable {
+  /// Services already use a different configuration or media adapter.
+  case alreadyConfigured
+  /// A configuration value has an invalid type or range.
+  case invalidConfiguration
+  /// More than one linked SDK image attempted to own the process.
+  case duplicateSDKLinkage
+  /// Simulator activation already occurred with a different configuration.
+  case simulatorAlreadyActivated
+  /// The configured services could not register their native push receiver.
+  case pushRegistration(PushRegistrationError)
+}
+
+/// Failures when registering the process's native push receiver.
+public enum PushRegistrationError: Error, Sendable, Equatable {
+  /// Registration was attempted outside the main thread.
+  case wrongExecutor
+  /// The native receiver is incomplete.
+  case invalidReceiver
+  /// The process already owns a different receiver.
+  case receiverAlreadyRegistered
+  /// PushKit could not create the process registry.
+  case registryUnavailable
+  /// An unrecognized system failure, without its potentially private user info.
+  case systemFailure(domain: String, code: Int)
+}
+
+/// Failures when submitting an outgoing conversation or an action request.
+/// Request acceptance does not imply later handler fulfillment or connection.
+public enum ConversationActionError: Error, Sendable, Equatable {
+  /// An outgoing participant has an empty identifier.
+  case invalidParticipant
+  /// The requested conversation is no longer active.
+  case unknownConversation
+  /// The requested tones are empty or contain unsupported digits.
+  case invalidDigits
+  /// A conversation cannot be merged with itself.
+  case cannotMergeSameConversation
+  /// The system has reached its conversation capacity.
+  case atCapacity
+  /// The system operation was cancelled.
+  case cancelled
+  /// An unrecognized system failure, without its potentially private user info.
+  case systemFailure(domain: String, code: Int)
+}
+
+/// Failures when reporting an incoming invitation from the foreground.
+/// PushKit delivery uses the same intake but settles its native completion separately.
+public enum IncomingConversationError: Error, Sendable, Equatable {
+  /// The invitation has an empty event, server-call or caller identifier.
+  case invalidPayload
+  /// The manager reset before the pending report could establish ownership.
+  case providerReset
+  /// The system reports an existing UUID without SDK ownership of that UUID.
+  case alreadyReported
+  /// The system report was cancelled.
+  case cancelled
+  /// An unrecognized system failure, without its potentially private user info.
+  case systemFailure(domain: String, code: Int)
+}
+
+/// Failures when publishing backend state or requesting a local end.
+public enum ConversationReportError: Error, Sendable, Equatable {
+  /// The conversation is unknown to the manager or SDK.
+  case unknownConversation
+  /// An updated member has an empty identifier.
+  case invalidMembers
+  /// The requested end reason cannot be reported to the system.
+  case unsupportedEndReason
+  /// A local end's action request was rejected before handler fulfillment.
+  case action(ConversationActionError)
 }
 
 public struct ConversationStateUpdate: Codable, Sendable, Equatable {

@@ -41,7 +41,7 @@ def check(tag, main_ref, package=None):
                 raise ValueError(f'Runtime package is missing SDK {key}')
         if set(info.get('architectures', [])) != {'arm64', 'x86_64'}:
             raise ValueError('Release requires arm64 and x86_64 simulator slices')
-        required = {'CKSimRuntime.dylib', 'CKSimLoader.dylib', 'cksim-notify', 'cksim', 'VERSION', 'profiles/ios-27.0.json'}
+        required = {'CKSimRuntime.dylib', 'CKSimLoader.dylib', 'cksim', 'VERSION', 'profiles/ios-27.0.json'}
         if info.get('schemaVersion') != 1 or not required.issubset(info.get('files', {})):
             raise ValueError('Incomplete runtime release package')
         for name, digest in info['files'].items():

@@ -81,12 +81,23 @@ private func invoke(_ application: VoIPApplication, kind: ConversationActionKind
 struct BridgeTests {
   @MainActor static func main() async {
     let rejections: [(any Error, String)] = [
-      (ConversationClientError.atCapacity, "at_capacity"),
-      (ConversationClientError.unknownConversation, "unknown_conversation"),
-      (ConversationClientError.unsupported, "unsupported"),
-      (ConversationClientError.duplicateSDKLinkage, "duplicate_sdk_linkage"),
-      (ConversationClientError.invalidPayload, "invalid_arguments"),
-      (ConversationClientError.invalidDigits, "invalid_arguments"),
+      (ConversationActionError.atCapacity, "at_capacity"),
+      (ConversationActionError.unknownConversation, "unknown_conversation"),
+      (ConversationActionError.cannotMergeSameConversation, "unsupported"),
+      (VoIPStartupError.duplicateSDKLinkage, "duplicate_sdk_linkage"),
+      (IncomingConversationError.invalidPayload, "invalid_arguments"),
+      (ConversationActionError.invalidDigits, "invalid_arguments"),
+      (ConversationActionError.invalidParticipant, "invalid_arguments"),
+      (ConversationReportError.invalidMembers, "invalid_arguments"),
+      (ConversationReportError.unknownConversation, "unknown_conversation"),
+      (ConversationReportError.unsupportedEndReason, "unsupported"),
+      (ConversationReportError.action(.atCapacity), "at_capacity"),
+      (ConversationReportError.action(.unknownConversation), "unknown_conversation"),
+      (IncomingConversationError.providerReset, "conversation"),
+      (IncomingConversationError.alreadyReported, "conversation"),
+      (IncomingConversationError.cancelled, "conversation"),
+      (ConversationActionError.systemFailure(domain: "private-system", code: 1), "conversation"),
+      (VoIPStartupError.pushRegistration(.receiverAlreadyRegistered), "conversation"),
       (BridgeError.invalidArguments, "invalid_arguments"),
       (BridgeError.unavailable, "conversation"),
       (NSError(domain: "com.apple.CallKit.error.requesttransaction", code: 7), "conversation")]
@@ -97,7 +108,7 @@ struct BridgeTests {
     let routeFailure = BridgeJSON.rejection(BridgeError.unavailable,
       fallbackCode: "audio_route", fallbackMessage: "The route request failed.")
     precondition(routeFailure.code == "audio_route" && routeFailure.message == "The route request failed.")
-    precondition(BridgeJSON.rejection(ConversationClientError.atCapacity,
+    precondition(BridgeJSON.rejection(ConversationActionError.atCapacity,
       fallbackCode: "audio_route").code == "at_capacity",
       "Operation-specific fallbacks must not replace known typed errors")
     do { try await run() }
@@ -334,7 +345,7 @@ struct BridgeTests {
     defer { bridge.destroy(detachHandler: true) }
     bridge.attach(true, generation: 0)
     var invalid = snapshot()
-    invalid.payload = .init(eventId: "event", serverCallId: "server", caller: try! Caller(handleType: .generic, value: "caller", displayName: "caller"), metadata: ["bad": .number(.nan)])
+    invalid.payload = .init(eventId: "event", serverCallId: "server", caller: try! Caller(handleType: .generic, value: "caller", displayName: "caller"), metadata: ["bad": .double(.nan)])
     let invocation = try invoke(application, conversation: invalid, context: context())
     try await eventually("Encoding failure must reject without installing a continuation.") { invocation.outcome != nil }
     try expect(invocation.outcome == .encodingFailed && events.named("handlerAction").isEmpty,

@@ -20,7 +20,7 @@ import sdk_system_conformance as gate
 
 WALL = 1792627200000
 SESSION = dict(schemaVersion=1, runID='synthetic-system-run', pid=12345, bundleID=gate.BUNDLE,
-               profile='ios-27.0', notification='dev.callkitsim.control.12345')
+               profile='ios-27.0', controlTransport='directory-watch-v1')
 SERVICES = 'PID\tStatus\tLabel\n-\t0\tUIKitApplication:' + gate.BUNDLE + '[synthetic-stopped]\n'
 EXPIRY_SECONDS = dict(join=64, end=5.3, hold=5.3, mute=30, tones=30)
 PROFILE = dict(lckActionDeadlineSeconds=30, lckMultiCall=dict(joinExpirySeconds=64, pauseEndExpirySeconds=5.3))

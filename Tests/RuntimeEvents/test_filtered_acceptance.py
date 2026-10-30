@@ -44,6 +44,17 @@ class FilteredAcceptanceTests(unittest.TestCase):
     def test_observes_actual_nserror_callback(self):
         self.assertEqual(self.check(self.evidence())['code'], 3)
 
+    def test_delayed_callback_accepts_slow_scheduling_but_rejects_nonfinite_latency(self):
+        rows = self.evidence()
+        for row in rows[-2:]:
+            row['t_ms'] += 900000
+            row['latencyMS'] += 900000
+        self.assertEqual(self.check(rows)['code'], 3)
+        for invalid in (float('inf'), float('nan')):
+            rows[-1]['latencyMS'] = invalid
+            with self.assertRaises(AssertionError):
+                self.check(rows)
+
     def test_report_completed_alone_does_not_prove_the_callback(self):
         with self.assertRaisesRegex(AssertionError, 'actual callback'):
             self.check(self.evidence()[:-1])

@@ -214,6 +214,9 @@ private final class RuntimePendingAction: @unchecked Sendable {
   let lckComposite: LCKRuntimeComposite?
   let issuedAt = Date()
   let issuedUptime = DispatchTime.now().uptimeNanoseconds
+  #if CKSIM_FIXTURE_CLOCK
+  var issuedFixtureTimeMS: Int?
+  #endif
   var expired = false
   var settled = false
   init(_ action: CXAction, _ provider: ProviderRegistration, _ transaction: CXTransaction, _ origin: ActionOrigin, call: CallState?, groupTarget: CallState?, lckComposite: LCKRuntimeComposite?) {
@@ -403,8 +406,6 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private var journal: FileHandle?
   private var journalWriter = RuntimeJournalWriter()
   private let epoch = DispatchTime.now().uptimeNanoseconds
-  private var notificationToken: Int32 = 0
-  private var notificationRegistered = false
   private var requestWatcher: (any DispatchSourceFileSystemObject)?
   private var stopped = false
   private var commandResults: [UUID: [String: Any]] = [:]
@@ -489,11 +490,6 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         throw BootstrapError.invalid("cannot create simulator event journal")
       }
       journal = try FileHandle(forWritingTo: path)
-      let status = notify_register_dispatch("dev.callkitsim.control.\(getpid())", &notificationToken, state) { [weak self] _ in
-        self?.processCommands()
-      }
-      guard status == NOTIFY_STATUS_OK else { throw BootstrapError.invalid("cannot register simulator mailbox notification") }
-      notificationRegistered = true
       // The host can publish requests even when CoreSimulator's spawn service
       // stalls. Observe the atomic rename instead of requiring a helper process
       // in the simulator to wake this queue for every command.
@@ -506,7 +502,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       requestWatcher = watcher
       watcher.resume()
       let session: [String: Any] = ["schemaVersion": 1, "runID": runID, "pid": Int(getpid()),
-        "bundleID": bundleID, "profile": profile.id, "notification": "dev.callkitsim.control.\(getpid())",
+        "bundleID": bundleID, "profile": profile.id,
         "controlTransport": "directory-watch-v1"]
       let data = try JSONSerialization.data(withJSONObject: session, options: [.sortedKeys])
       try data.write(to: documents.appendingPathComponent(".callkit-simulator/session.json"), options: .atomic)
@@ -747,7 +743,6 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       observers.removeAll()
       pendingActions.removeAll()
       calls.removeAll()
-      if notificationRegistered { notify_cancel(notificationToken); notificationRegistered = false }
       requestWatcher?.setEventHandler(handler: nil)
       requestWatcher?.cancel()
       requestWatcher = nil
@@ -765,6 +760,14 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private func withState<T>(_ body: () -> T) -> T {
     if DispatchQueue.getSpecific(key: stateKey) == true { return body() }
     return state.sync(execute: body)
+  }
+  private func elapsedSinceIssued(_ item: RuntimePendingAction) -> Double {
+    #if CKSIM_FIXTURE_CLOCK
+    if let issued = item.issuedFixtureTimeMS, let fixtureClock {
+      return Double(fixtureClock.nowMS - issued) / 1000
+    }
+    #endif
+    return Double(DispatchTime.now().uptimeNanoseconds - item.issuedUptime) / 1_000_000_000
   }
   private func after(_ seconds: Double, from start: DispatchTime = .now(), _ body: @escaping @Sendable () -> Void) {
     guard !stopped else { return }
@@ -1068,6 +1071,9 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       let pending = RuntimePendingAction(action, provider, delivered, origin,
         call: (action as? CXCallAction).flatMap { calls[$0.callUUID] },
         groupTarget: (action as? CXSetGroupCallAction)?.callUUIDToGroupWith.flatMap { calls[$0] }, lckComposite: composite)
+      #if CKSIM_FIXTURE_CLOCK
+      pending.issuedFixtureTimeMS = fixtureClock?.nowMS
+      #endif
       let issued = pending.issuedAt
       let deadline = issued.addingTimeInterval(timing.deadline)
       deadlines.setObject(deadline as NSDate, forKey: action)
@@ -1125,7 +1131,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         if LCKMultiCallPolicy.shouldEndActiveOnResume(maximumGroups: Int(config.maximumCallGroups), maximumPerGroup: Int(config.maximumCallsPerCallGroup)),
            let other = calls.values.first(where: { $0.reporter === call.reporter && $0.id != call.id && $0.connected && !$0.held && !$0.ended }) {
           let revision = call.holdRevision
-          let elapsed = Double(DispatchTime.now().uptimeNanoseconds - item.issuedUptime) / 1_000_000_000
+          let elapsed = elapsedSinceIssued(item)
           after(LCKMultiCallPolicy.resumeEndDelay(nominal: profile.lckMultiCall.appResumeEndDelaySeconds, elapsedSinceIssued: elapsed)) {
             guard self.calls[call.id] === call, !call.held, call.holdRevision == revision,
                   self.calls[other.id] === other, !other.held else { return }

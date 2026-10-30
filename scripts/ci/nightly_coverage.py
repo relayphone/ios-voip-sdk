@@ -1,19 +1,63 @@
 """Skip a nightly only when an earlier successful main run covered its native jobs."""
 import json
 import os
+from pathlib import Path
+import re
 import sys
 import urllib.parse
 import urllib.request
 
 REQUIRED = {
-    'sdk-m0.yml': {'apple-host-controls', 'sdk-example', 'sdk-core', 'sdk-fixtures',
-                   'device-release', 'legacy-audio-lifecycle', 'swift-livekit-native',
-                   'Pinned Expo LiveKit selected Release device build',
-                   'SDK audio routes on iPhone Duo', *(f'SDK journey ({g})' for g in
-                       ('m1', 'contracts', 'push-entry', 'system'))},
     'runtime-m4.yml': {'Runtime native and Inspector'},
     'simulator-discovery.yml': {'probe (26.6)', 'probe (26.3)'},
 }
+
+
+def sdk_required(path):
+    """Resolve native jobs from the acceptance gate and its full matrix."""
+    from changes import GROUPS
+    text = Path(path).read_text(encoding='utf-8').split('\njobs:\n', 1)[1]
+    blocks = re.split(r'(?m)^  ([a-z][a-z0-9-]*):\s*$', text)
+    jobs = dict(zip(blocks[1::2], blocks[2::2]))
+    gate = jobs['plain-simulator']
+    dependencies = re.search(r'(?m)^    needs: \[([^\]]+)\]\s*$', gate)
+    if not dependencies:
+        raise ValueError('Unsupported acceptance dependencies')
+    required = set()
+    for job in (name.strip() for name in dependencies.group(1).split(',')):
+        block = jobs[job]
+        runner = re.search(r'(?m)^    runs-on: ([^\n]+)$', block)
+        if not runner:
+            if re.search(r'(?m)^    uses:', block):
+                continue
+            raise ValueError('Missing runner for ' + job)
+        if runner.group(1) not in ('xcode-27', 'macos-26'):
+            if runner.group(1) == 'ubuntu-latest':
+                continue
+            raise ValueError('Unsupported runner for ' + job)
+        name = re.search(r'(?m)^    name: (.+)$', block)
+        display = name.group(1) if name else job
+        if 'matrix.' in display:
+            if display != 'SDK journey (${{ matrix.group }})' or 'matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}' not in block:
+                raise ValueError('Unsupported matrix for ' + job)
+            names = {display.replace('${{ matrix.group }}', group) for group in GROUPS}
+        else:
+            if '${{' in display or re.search(r'(?m)^    strategy:', block):
+                raise ValueError('Unsupported job name or matrix for ' + job)
+            names = {display}
+        if required.intersection(names):
+            raise ValueError('Duplicate native job name')
+        required.update(names)
+    if not required:
+        raise ValueError('Empty native acceptance dependencies')
+    return required
+
+
+try:
+    REQUIRED['sdk-m0.yml'] = sdk_required(Path(__file__).resolve().parents[2] / '.github/workflows/sdk-m0.yml')
+except (OSError, ValueError, KeyError, IndexError):
+    # A workflow layout we cannot resolve must run, never skip, the nightly.
+    REQUIRED['sdk-m0.yml'] = set()
 
 
 def covered(workflow, jobs):
@@ -21,7 +65,7 @@ def covered(workflow, jobs):
         return False
     required = REQUIRED[workflow]
     selected = [job for job in jobs['jobs'] if job['name'] in required]
-    return (len(selected) == len(required)
+    return (bool(required) and len(selected) == len(required)
             and {job['name'] for job in selected} == required
             and all(job['conclusion'] == 'success' for job in selected))
 

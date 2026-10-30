@@ -137,7 +137,7 @@ def stale_audio(process, trace, data, out, run_id, pid):
     name = 'expo-livekit-stale-audio'
     root = data / 'Documents/.callkit-simulator'
     expected = dict(schemaVersion=1, runID=run_id, pid=pid, bundleID=BUNDLE, profile='ios-27.0',
-                    notification=f'dev.callkitsim.control.{pid}', controlTransport='directory-watch-v1')
+                    controlTransport='directory-watch-v1')
     def current_session():
         path = root / 'session.json'
         if not path.exists(): return None

@@ -178,16 +178,20 @@ enum BridgeJSON {
   static func rejection(_ error: any Error, fallbackCode: String = "conversation",
                         fallbackMessage: String = "The system could not complete the conversation operation.") -> (code: String, message: String) {
     switch error {
-    case BridgeError.invalidArguments, ConversationClientError.invalidPayload, ConversationClientError.invalidDigits:
+    case BridgeError.invalidArguments, ConversationActionError.invalidParticipant,
+         IncomingConversationError.invalidPayload, ConversationReportError.invalidMembers,
+         ConversationActionError.invalidDigits:
       return ("invalid_arguments", "The conversation command has invalid arguments.")
-    case ConversationClientError.unknownConversation:
+    case ConversationActionError.unknownConversation, ConversationReportError.unknownConversation:
       return ("unknown_conversation", "The conversation is no longer active.")
-    case ConversationClientError.unsupported:
+    case ConversationActionError.cannotMergeSameConversation, ConversationReportError.unsupportedEndReason:
       return ("unsupported", "This conversation operation is unsupported.")
-    case ConversationClientError.duplicateSDKLinkage:
+    case VoIPStartupError.duplicateSDKLinkage:
       return ("duplicate_sdk_linkage", "Link one VoIP SDK product in this process; both SwiftPM and the Expo pod were loaded.")
-    case ConversationClientError.atCapacity:
+    case ConversationActionError.atCapacity:
       return ("at_capacity", "The system has reached its conversation capacity.")
+    case ConversationReportError.action(let action):
+      return rejection(action, fallbackCode: fallbackCode, fallbackMessage: fallbackMessage)
     default:
       return (fallbackCode, fallbackMessage)
     }

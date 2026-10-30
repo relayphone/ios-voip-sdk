@@ -150,6 +150,18 @@ class ForegroundControlTests(unittest.TestCase):
         with self.assertRaises(ProcessLookupError):
             os.killpg(outcome['hostPID'], 0)
 
+    def test_fresh_active_after_twenty_five_seconds_uses_host_deadline(self):
+        with self.active_receipts() as clock:
+            clock.now = 30
+            result = self.activate(clock=clock, budget=1)
+        self.assertEqual(result['startedWallTimeMS'], self.started)
+        self.assertGreater(result['wallTimeMS'] - self.started, 25000)
+        self.assertEqual(len(self.commands), 1)
+        outcome = json.loads((self.root / 'launch.json').read_text())
+        self.assertGreater(result['wallTimeMS'], outcome['reapedWallTimeMS'])
+        with self.assertRaises(ProcessLookupError):
+            os.killpg(outcome['hostPID'], 0)
+
     def test_boolean_schema_cannot_impersonate_native_identity(self):
         with self.active_receipts(lambda value: dict(value, schemaVersion=True)) as clock:
             with self.assertRaisesRegex(RuntimeError, 'invalid|identity'):
@@ -185,11 +197,13 @@ class ForegroundControlTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, 'invalid|foreign|stale'):
                         self.activate(clock=clock)
 
-    def test_original_deadline_and_native_consumer_budget_are_not_reset(self):
+    def test_original_host_deadline_is_not_reset_and_future_start_is_rejected(self):
         import foreground_control
         with self.active_receipts() as clock:
             with self.assertRaisesRegex(RuntimeError, 'budget'):
-                self.activate(clock=clock, consumer_started_wall_ms=self.started - 25001)
+                self.activate(clock=clock, budget=0)
+            with self.assertRaisesRegex(RuntimeError, 'future'):
+                self.activate(clock=clock, consumer_started_wall_ms=self.started + 1001)
             self.assertEqual(self.commands, [])
             # A blocked read crossing the caller's short absolute deadline cannot qualify.
             original_read = foreground_control._read

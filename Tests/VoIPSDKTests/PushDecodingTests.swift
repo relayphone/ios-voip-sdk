@@ -82,7 +82,7 @@ struct PushDecodingTests {
 
   @Test(arguments: [
     "2026-10-22T00:00:00Z", "2026-10-22t00:00:00z", "2026-10-22T02:00:00+02:00",
-    "2026-10-21T19:30:00-04:30",
+    "2026-10-21T19:30:00-04:30", "2026-10-22T23:59:00+23:59", "2026-10-21T00:01:00-23:59",
   ])
   func offsetsDescribeTheSameInstant(text: String) throws {
     var body = invitation
@@ -90,6 +90,28 @@ struct PushDecodingTests {
     #expect(
       try #require(PushWire.decodeIncomingInvitation(body)).startedAt
         == Date(timeIntervalSince1970: 1_792_627_200))
+  }
+
+  @Test func longFractionsRetainTheInstant() throws {
+    var body = invitation
+    body["startedAt"] = "2026-10-22T00:00:00.1234567890Z"
+    let expected = try Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(
+      "2026-10-22T00:00:00.123456789Z")
+    #expect(try #require(PushWire.decodeIncomingInvitation(body)).startedAt == expected)
+  }
+
+  @Test(arguments: [
+    ("2026-10-22T00:00:00.999999999Z", 1_792_627_201.0),
+    ("2026-10-22T00:00:00.9999999990Z", 1_792_627_201.0),
+    ("2026-10-22T23:59:59.9999999990Z", 1_792_713_600.0),
+    ("2026-10-22T23:59:59.9999999990+23:59", 1_792_627_260.0),
+  ])
+  func fractionsCanRoundAcrossCalendarBoundaries(text: String, seconds: TimeInterval) throws {
+    var body = invitation
+    body["startedAt"] = text
+    #expect(
+      try #require(PushWire.decodeIncomingInvitation(body)).startedAt
+        == Date(timeIntervalSince1970: seconds))
   }
 
   @Test func envelopePrecedenceAndRequiredReportingRemainIntact() throws {

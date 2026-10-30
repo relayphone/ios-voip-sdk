@@ -51,17 +51,17 @@ class InspectorRunnerTests(unittest.TestCase):
             def supervise(command, **kwargs):
                 self.assertEqual(command, ['xcrun', 'simctl', 'launch', '--terminate-running-process', SIMULATOR, RUNNER['INSPECTOR']])
                 self.assertEqual(kwargs['host_timeout'], timeout)
-                self.assertEqual(kwargs['consumer_timeout'], 25 if shared else None)
+                self.assertIsNone(kwargs['consumer_timeout'])
                 self.assertEqual(kwargs['env']['SIMCTL_CHILD_CKSIM_INSPECTOR_PROBE_NONCE'], NONCE)
                 self.assertEqual(kwargs['env']['SIMCTL_CHILD_CKSIM_INSPECTOR_TOKEN'], 'secret-token')
                 self.assertNotIn('secret-token', repr(command))
                 observed.append(kwargs['observe']())
-                return observed[-1], 25 if shared else None
+                return observed[-1], None
             with patch.dict(start.__globals__, locate_probe=Mock(return_value=self.path), supervise_launch=supervise):
                 with patch.object(start.__globals__['time'], 'time', return_value=1000), patch.object(start.__globals__['time'], 'monotonic', return_value=0):
                     probe, deadline = start(connection, SIMULATOR, NONCE, self.session, self.channel, self.root, shared)
             self.assertEqual(probe.pid, 42)
-            self.assertEqual(deadline, 25 if shared else None)
+            self.assertEqual(deadline, 180 if shared else None)
             self.assertEqual(len(observed), 1)
 
     def test_strict_native_identity_and_original_projection_are_required(self):
