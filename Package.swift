@@ -72,6 +72,13 @@ let package = Package(
       name: "VoIPLiveCommunicationKitTests", dependencies: ["VoIPLiveCommunicationKit"],
       swiftSettings: strictSwift),
     .testTarget(
+      name: "VoIPJourneyTests",
+      dependencies: [
+        "VoIPCore", "VoIPLiveCommunicationKit", "VoIPPushKit", "VoIPSimulator", "VoIPTesting",
+        "CKSimProtocol",
+      ],
+      swiftSettings: strictSwift),
+    .testTarget(
       name: "VoIPPushKitTests", dependencies: ["VoIPPushKit", "VoIPPushDelivery"],
       swiftSettings: strictSwift),
     .testTarget(
