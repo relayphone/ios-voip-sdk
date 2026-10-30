@@ -345,7 +345,7 @@ struct BridgeTests {
     defer { bridge.destroy(detachHandler: true) }
     bridge.attach(true, generation: 0)
     var invalid = snapshot()
-    invalid.payload = .init(eventId: "event", serverCallId: "server", caller: try! Caller(handleType: .generic, value: "caller", displayName: "caller"), metadata: ["bad": .number(.nan)])
+    invalid.payload = .init(eventId: "event", serverCallId: "server", caller: try! Caller(handleType: .generic, value: "caller", displayName: "caller"), metadata: ["bad": .double(.nan)])
     let invocation = try invoke(application, conversation: invalid, context: context())
     try await eventually("Encoding failure must reject without installing a continuation.") { invocation.outcome != nil }
     try expect(invocation.outcome == .encodingFailed && events.named("handlerAction").isEmpty,
