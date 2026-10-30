@@ -16,6 +16,20 @@ import uuid
 import run
 
 
+class ActionTimingOracleTests(unittest.TestCase):
+    def test_settlement_after_advertised_deadline_retains_lower_bound_and_metadata_guards(self):
+        row = dict(event='action.settled', kind='answer', origin='system', callUUID='call',
+                   transactionID='transaction', apiKind='callkit', deadlineMS=5000,
+                   deadlineSeconds=5, latencyMS=5100)
+        run.verify_action_timing(row)
+        for latency in (49, float('nan'), float('inf')):
+            with self.subTest(latency=latency), self.assertRaises(AssertionError):
+                run.verify_action_timing(dict(row, latencyMS=latency))
+        row.pop('transactionID')
+        with self.assertRaises(AssertionError):
+            run.verify_action_timing(row)
+
+
 class LaunchStartupTests(unittest.TestCase):
     def setUp(self):
         environment = patch.dict(run.os.environ, {'SIM_STATE': ''})

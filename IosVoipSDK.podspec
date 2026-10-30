@@ -18,12 +18,12 @@ media_directory = { 'webrtc' => 'WebRTC', 'livekit' => 'LiveKit', 'none' => 'Non
 
 Pod::Spec.new do |s|
   s.name = 'IosVoipSDK'
-  s.version = package['version']
+  s.version = runtime_version
   s.summary = package['description']
   s.homepage = 'https://github.com/relayphone/ios-voip-sdk'
   s.author = { 'Hamza Zia' => 'https://github.com/ziahamza' }
   s.license = { :type => 'UNLICENSED' }
-  s.source = { :git => package['repository']['url'], :tag => "v#{s.version}" }
+  s.source = { :git => package['repository']['url'], :commit => '87a6125c18f9ec7018ac056c67baa06e9dbac07c' }
   s.platform = :ios, '17.4'
   s.swift_version = '6.0'
   s.static_framework = true
@@ -36,7 +36,7 @@ Pod::Spec.new do |s|
   end
   s.source_files = ['Sources/**/*.{swift,h,m}', 'Expo/apple/**/*.{swift,h}', *media_sources]
   # The external DYLD loader is not part of the embedded SDK.
-  s.exclude_files = 'Sources/Interposition/CKLoader.m'
+  s.exclude_files = ['Sources/Interposition/CKLoader.m', 'Sources/VoIPSDKTesting/**/*']
   public_headers = ['Sources/Interposition/include/CKRuntimeBridge.h', 'Sources/VoIPPlatform/include/*.h', 'Expo/apple/IosVoipSDK.h']
   public_headers << 'ExpoMedia/Shared/VSMediaBinding.h' if media_adapter != 'none'
   s.public_header_files = public_headers

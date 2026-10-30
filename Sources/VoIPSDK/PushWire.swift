@@ -1,5 +1,4 @@
 import Foundation
-import CoreFoundation
 
 public enum ParsedVoIPPush: Sendable, Equatable {
   case incoming(IncomingCallPayload)
@@ -9,96 +8,67 @@ public enum ParsedVoIPPush: Sendable, Equatable {
 
 /// Synchronous decoding keeps untyped PushKit dictionaries out of asynchronous work.
 public enum PushWire {
+  /// Decodes APNs invitation objects or an FCM callEnded JSON string.
+  /// The canonical incomingCall key takes precedence even when its value is invalid.
   public static func parse(_ dictionary: [AnyHashable: Any]) -> ParsedVoIPPush {
-    // Presence, not successful parsing, selects the canonical invitation envelope.
+    let envelope: [String: Any]
     if let value = dictionary["incomingCall"] {
-      return parseInvitationEnvelope(value)
+      envelope = ["incomingCall": invitationObject(value)]
+    } else if let value = dictionary["incoming_call"] {
+      envelope = ["incoming_call": invitationObject(value)]
+    } else {
+      envelope = ["messageType": dictionary["messageType"] as? String ?? "",
+                  "callEnded": dictionary["callEnded"] as? String ?? ""]
     }
-    if let value = dictionary["incoming_call"] {
-      return parseInvitationEnvelope(value)
-    }
-    if dictionary["messageType"] as? String == "callEnded",
-       let body = dictionary["callEnded"] as? String,
-       let data = body.data(using: .utf8),
-       let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-       let ended = decodeCallEnded(value) { return .callEnded(ended) }
-    return .malformed
-  }
-
-  private static func parseInvitationEnvelope(_ value: Any) -> ParsedVoIPPush {
-    guard let body = value as? [String: Any], let payload = decodeIncomingInvitation(body) else { return .malformed }
-    return .incoming(payload)
+    return decode(Envelope.self, from: envelope)?.message ?? .malformed
   }
 
   /// Foreground native/Expo reports pass the inner invitation object.
   public static func decodeIncomingInvitation(_ body: [String: Any]) -> IncomingCallPayload? {
-    guard let eventID = nonemptyString(body["eventId"]),
-          let serverID = nonemptyString(body["serverCallId"]),
-          let callerObject = body["caller"] as? [String: Any],
-          JSONSerialization.isValidJSONObject(callerObject),
-          let callerData = try? JSONSerialization.data(withJSONObject: callerObject),
-          let caller = try? JSONDecoder().decode(Caller.self, from: callerData) else { return nil }
-    let video = strictBoolean(body["hasVideo"]) ?? false
-    let started = (body["startedAt"] as? String).flatMap(validRFC3339)
-    var metadata: [String: JSONValue]?
-    if let value = body["metadata"] as? [String: Any], JSONSerialization.isValidJSONObject(value),
-       let data = try? JSONSerialization.data(withJSONObject: value) {
-      metadata = try? JSONDecoder().decode([String: JSONValue].self, from: data)
-    }
-    return IncomingCallPayload(eventId: eventID, serverCallId: serverID, caller: caller,
-      hasVideo: video, startedAt: started, metadata: metadata)
+    decode(IncomingCallPayload.self, from: serializableFields(body))
   }
 
-  /// The FCM callEnded body and native/Expo helper use the same strong model.
+  /// Unknown reasons and the receiver-local reason are invalid transport terminations.
+  /// An absent reason retains the remoteEnded default.
   public static func decodeCallEnded(_ body: [String: Any]) -> CallEndedPayload? {
-    guard let eventID = nonemptyString(body["eventId"]),
-          let serverID = nonemptyString(body["serverCallId"]) else { return nil }
-    let reason: ConversationEndedReason
-    switch body["reason"] as? String {
-    case "failed": reason = .failed
-    case "unanswered": reason = .unanswered
-    case "answeredElsewhere": reason = .answeredElsewhere
-    case "declinedElsewhere": reason = .declinedElsewhere
-    default: reason = .remoteEnded
-    }
-    return CallEndedPayload(eventId: eventID, serverCallId: serverID, reason: reason)
+    if let reason = body["reason"], !JSONSerialization.isValidJSONObject([reason]) { return nil }
+    return decode(CallEndedPayload.self, from: serializableFields(body))
   }
 
-  private static func nonemptyString(_ value: Any?) -> String? {
-    guard let value = value as? String,
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-    return value
-  }
-  private static func strictBoolean(_ value: Any?) -> Bool? {
-    guard let value = value as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() else { return nil }
-    return value.boolValue
+  private static func invitationObject(_ object: Any) -> Any {
+    guard let body = object as? [String: Any] else { return NSNull() }
+    return serializableFields(body)
   }
 
-  /// Reject invalid calendar dates as well as non-RFC3339 ISO8601 variants.
-  private static func validRFC3339(_ value: String) -> String? {
-    let pattern = #"\A([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt]([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.[0-9]+)?(?:[Zz]|([+-])([0-9]{2}):([0-9]{2}))\z"#
-    guard let regex = try? NSRegularExpression(pattern: pattern),
-          let match = regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) else { return nil }
-    let parts = (1...6).compactMap { index -> Int? in
-      guard let range = Range(match.range(at: index), in: value) else { return nil }
-      return Int(value[range])
+  // Bridge unsupported native values to null before Codable applies the schema:
+  // required fields reject null, optional fields default, and unknown fields are ignored.
+  private static func serializableFields(_ body: [String: Any]) -> [String: Any] {
+    body.mapValues { JSONSerialization.isValidJSONObject([$0]) ? $0 : NSNull() }
+  }
+
+  private static func decode<Value: Decodable>(_ type: Value.Type, from object: Any) -> Value? {
+    guard JSONSerialization.isValidJSONObject(object),
+          let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
+    return try? JSONDecoder().decode(type, from: data)
+  }
+
+  private struct Envelope: Decodable {
+    let message: ParsedVoIPPush
+    private enum CodingKeys: String, CodingKey { case incomingCall, incoming_call, messageType, callEnded }
+
+    init(from decoder: any Decoder) throws {
+      let values = try decoder.container(keyedBy: CodingKeys.self)
+      if values.contains(.incomingCall) {
+        message = .incoming(try values.decode(IncomingCallPayload.self, forKey: .incomingCall))
+      } else if values.contains(.incoming_call) {
+        message = .incoming(try values.decode(IncomingCallPayload.self, forKey: .incoming_call))
+      } else if try values.decodeIfPresent(String.self, forKey: .messageType) == "callEnded" {
+        let body = try values.decode(String.self, forKey: .callEnded)
+        message = .callEnded(try JSONDecoder().decode(CallEndedPayload.self, from: Data(body.utf8)))
+      } else {
+        message = .malformed
+      }
     }
-    guard parts.count == 6, (1...9999).contains(parts[0]), (1...12).contains(parts[1]),
-          (0...23).contains(parts[3]), (0...59).contains(parts[4]), (0...59).contains(parts[5]) else { return nil }
-    if match.range(at: 8).location != NSNotFound {
-      guard let hoursRange = Range(match.range(at: 8), in: value),
-            let minutesRange = Range(match.range(at: 9), in: value),
-            let hours = Int(value[hoursRange]), let minutes = Int(value[minutesRange]),
-            hours <= 23, minutes <= 59 else { return nil }
-    }
-    var calendar = Calendar(identifier: .gregorian)
-    guard let utc = TimeZone(secondsFromGMT: 0) else { return nil }
-    calendar.timeZone = utc
-    guard let month = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: 1)),
-          let days = calendar.range(of: .day, in: .month, for: month), days.contains(parts[2]) else { return nil }
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = value.contains(".") ? [.withInternetDateTime, .withFractionalSeconds] : [.withInternetDateTime]
-    return formatter.date(from: value.uppercased()) == nil ? nil : value
   }
 }
 
