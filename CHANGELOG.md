@@ -4,6 +4,14 @@ Changes not yet released are recorded below. Public API changes include migratio
 
 ## Unreleased
 
+### Added
+
+- The `VoIPCore` library holds the values of the new call core: `Call`,
+  `CallID`, `Handle` (phone numbers must be E.164), `Party`, `CallStatus` with
+  `EndReason`, `Action`, `ServerEvent`, `PresentationPolicy`, `CallEvent` and
+  `VoIPConfiguration` with `Deadlines`. It has no system framework dependencies and
+  doesn't present calls yet. The existing `VoIPSDK` product is unchanged.
+
 ### Breaking changes
 
 - The `VoIPSDKTesting` product is now `VoIPTesting`. Depend on

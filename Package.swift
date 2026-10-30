@@ -20,6 +20,7 @@ let package = Package(
   platforms: [.iOS(.v26), .macOS(.v26)],
   products: [
     .library(name: "VoIPSDK", targets: ["VoIPSDK"]),
+    .library(name: "VoIPCore", targets: ["VoIPCore"]),
     .library(name: "VoIPTesting", targets: ["VoIPTesting"]),
   ],
   targets: [
@@ -52,8 +53,10 @@ let package = Package(
         .define("DEBUG", to: "1", .when(configuration: .debug))
       ],
       swiftSettings: strictSwift),
-    .target(name: "VoIPTesting", swiftSettings: strictSwift),
+    .target(name: "VoIPCore", swiftSettings: strictSwift),
+    .target(name: "VoIPTesting", dependencies: ["VoIPCore"], swiftSettings: strictSwift),
     .testTarget(name: "VoIPSDKTests", dependencies: ["VoIPSDK"], swiftSettings: strictSwift),
+    .testTarget(name: "VoIPCoreTests", dependencies: ["VoIPCore"], swiftSettings: strictSwift),
     .testTarget(
       name: "VoIPTestingTests", dependencies: ["VoIPTesting"], swiftSettings: strictSwift),
     .testTarget(
