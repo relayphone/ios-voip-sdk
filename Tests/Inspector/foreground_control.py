@@ -76,17 +76,17 @@ def activate_existing(device, identity, phase, deadline, *, consumer_started_wal
     The supervisor receives a private normalized transport view: its
     startedWallTimeMS is the ORIGINAL Inspector consumer start, even when the
     foregrounded native identity is an older Fixture. Returned evidence always
-    retains the actual native identity; this alias never grants another 25s.
+    retains the actual native identity. The caller's absolute host deadline
+    bounds transport waits; native process age is not a performance assertion.
     """
     if not _uuid(device) or not isinstance(phase, str) or re.fullmatch(r'[A-Za-z0-9_-]{1,64}', phase) is None:
         raise ValueError('Foreground device or phase is invalid')
     if not _integer(consumer_started_wall_ms):
         raise ValueError('Foreground consumer start is invalid')
-    original_deadline = min(deadline, time.monotonic() + 25 - (time.time() * 1000 - consumer_started_wall_ms) / 1000)
     def budget():
-        remaining = original_deadline - time.monotonic()
-        if remaining <= 0 or not -1000 <= time.time() * 1000 - consumer_started_wall_ms < 25000:
-            raise RuntimeError('Foreground original consumer budget expired')
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or time.time() * 1000 - consumer_started_wall_ms < -1000:
+            raise RuntimeError('Foreground host budget expired or consumer start is in the future')
         return remaining
     def pinned():
         budget()

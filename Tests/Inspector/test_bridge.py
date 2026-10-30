@@ -40,7 +40,7 @@ class StartupTests(unittest.TestCase):
         ready = RUNNER['wait_for_inspector']
         log = Mock(read_text=Mock(return_value='Inspector: launching app on display simulator.'))
         with patch.dict(ready.__globals__, time=clock):
-            with self.assertRaisesRegex(RuntimeError, 'background budget'):
+            with self.assertRaisesRegex(RuntimeError, 'host wait budget'):
                 ready(Mock(poll=Mock(return_value=None)), log, consumer_budget=25)
         self.assertEqual(elapsed[0], 25)
 
@@ -73,6 +73,18 @@ class ProbeTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'Inspector process changed'):
                 reader.read()
 
+    def test_fresh_receipt_from_older_consumer_remains_process_pinned(self):
+        reader = RUNNER['ProbeReader'](self.path, 'fresh', self.session)
+        with patch.dict(reader.read.__globals__, time=self.clock):
+            self.write()
+            reader.read()
+            self.elapsed[0] = 60
+            self.write(wallTimeMS=1060000)
+            self.assertTrue(reader.read()['online'])
+            self.write(wallTimeMS=1060000, inspectorPID=99)
+            with self.assertRaisesRegex(RuntimeError, 'process changed'):
+                reader.read()
+
     def test_old_nonce_cannot_satisfy_readiness(self):
         self.write(nonce='old')
         reader = RUNNER['ProbeReader'](self.path, 'fresh', self.session)
@@ -92,15 +104,15 @@ class ProbeTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'cursor regressed'):
                 reader.read()
 
-    def test_frozen_receipt_and_expired_background_budget_fail(self):
+    def test_frozen_receipt_and_future_start_fail(self):
         reader = RUNNER['ProbeReader'](self.path, 'fresh', self.session)
         with patch.dict(reader.read.__globals__, time=self.clock):
             self.write(wallTimeMS=994000)
             with self.assertRaisesRegex(RuntimeError, 'stale'):
                 reader.read()
             reader = RUNNER['ProbeReader'](self.path, 'fresh', self.session)
-            self.write(startedWallTimeMS=974000)
-            with self.assertRaisesRegex(RuntimeError, 'background budget'):
+            self.write(startedWallTimeMS=1001001)
+            with self.assertRaisesRegex(RuntimeError, 'future'):
                 reader.read()
 
     def test_error_after_readiness_is_not_silently_retried(self):
@@ -133,7 +145,7 @@ class ProbeTests(unittest.TestCase):
         self.write(nonce='old')
         reader = RUNNER['ProbeReader'](self.path, 'fresh', self.session)
         with patch.dict(reader.read.__globals__, time=self.clock):
-            with self.assertRaisesRegex(RuntimeError, 'background budget'):
+            with self.assertRaisesRegex(RuntimeError, 'host wait budget'):
                 reader.wait(lambda row: row['online'], timeout=10, deadline=0.2)
         self.assertLess(self.elapsed[0], 0.3)
 
@@ -211,7 +223,7 @@ class ProbeTests(unittest.TestCase):
             return 'test.fixture: 123'
         rpc = Mock(side_effect=late_reply)
         with patch.dict(activate.__globals__, time=self.clock, run=rpc):
-            with self.assertRaisesRegex(RuntimeError, 'background budget expired'):
+            with self.assertRaisesRegex(RuntimeError, 'host wait budget expired'):
                 activate('device', 'test.fixture', 123, deadline=25)
         self.assertEqual(rpc.call_count, 1)
         self.assertEqual(rpc.call_args.kwargs['timeout'], 2)
@@ -415,7 +427,7 @@ class ConsumerControlTests(unittest.TestCase):
         self.assertAlmostEqual(self.elapsed[0], 20.281)
         with patch.dict(factory.__globals__, time=self.clock):
             self.elapsed[0] = 25
-            with self.assertRaisesRegex(RuntimeError, 'background budget'):
+            with self.assertRaisesRegex(RuntimeError, 'host wait budget'):
                 send('answer', call='A7E390AF-6B78-4190-B946-26D9C6438584')
         self.assertEqual(len(list((self.mailbox / 'requests').glob('*.json'))), 2)
 
@@ -499,7 +511,7 @@ class ConsumerControlTests(unittest.TestCase):
         self.assertAlmostEqual(self.elapsed[0], 20.281)
         with patch.dict(factory.__globals__, time=self.clock):
             self.elapsed[0] = 25
-            with self.assertRaisesRegex(RuntimeError, 'background budget'):
+            with self.assertRaisesRegex(RuntimeError, 'host wait budget'):
                 send('incoming-filter', reason='none')
         self.assertEqual(len(list((self.mailbox / 'requests').glob('*.json'))), 2)
 

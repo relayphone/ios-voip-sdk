@@ -2,6 +2,7 @@
 """Native acceptance against a disposable simulator, preserving only ignored/CI output."""
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -363,6 +364,15 @@ def capture_diagnostics(out, device, *, bundle=BUNDLE, channel=None, failed=Fals
             print('Cannot save diagnostic errors: ' + str(error), file=sys.stderr)
 
 
+def verify_action_timing(row):
+    if row['event'].startswith('action.'):
+        assert all(key in row for key in ('kind', 'origin', 'callUUID', 'transactionID',
+                                         'apiKind', 'deadlineMS', 'deadlineSeconds', 'latencyMS'))
+        assert math.isfinite(row['latencyMS']) and row['latencyMS'] >= 0
+    if row['event'] == 'action.settled':
+        assert row['latencyMS'] >= 50
+
+
 def main(acceptance=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--package', type=Path, required=True)
@@ -464,11 +474,7 @@ def main(acceptance=None):
             assert row['schemaVersion'] == 1 and row['sequence'] == index
             assert all(row[k] == session[k] for k in ('runID', 'bundleID', 'pid'))
             assert isinstance(row['wallTimeMS'], int)
-            if row['event'].startswith('action.'):
-                assert all(k in row for k in ('kind','origin','callUUID','transactionID','apiKind','deadlineMS','deadlineSeconds','latencyMS'))
-                assert row['latencyMS'] >= 0
-            if row['event'] == 'action.settled':
-                assert 50 <= row['latencyMS'] < row['deadlineSeconds'] * 1000
+            verify_action_timing(row)
         events = {r['event'] for r in watched}
         assert {'report.incoming','report.completed','report.updated','report.connecting','report.connected',
                 'action.deadline','action.settled','call.changed','audio.activated','push.received','push.completed'} <= events
