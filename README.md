@@ -49,6 +49,17 @@ From a clean checkout, run `npm ci`, `npm run build`, then `npm exec --workspace
 
 The module's peer ranges retain Expo 55–58 compatibility. The example and development tools pin Expo 58 for its native scene lifecycle. Expo 58 is covered by CI; Expo 55 has historical build evidence, while runtime compatibility with Expo 55–57 remains unqualified.
 
+## Testing
+
+Run `swift test` on macOS 13 or later with the Xcode toolchain above. The Swift
+Testing suites cover caller validation, push decoding, models, and the test clock
+without a simulator. Native calling and media acceptance run separately in CI.
+
+Tests in consuming apps can add the `VoIPSDKTesting` library product to their test
+target and import `VoIPSDKTesting`. Its `TestClock` conforms to `Clock<Duration>`;
+use `waitForSleepers(count:)` to await registration, then `advance(by:)` or `run()`
+to resume pending sleeps without waiting for wall time to pass.
+
 ## License
 
 None yet. A license will be added before the beta release. The v0.1 release was published with an MIT license file.
