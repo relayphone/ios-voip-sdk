@@ -29,9 +29,9 @@
   /// party's display name as the caller's name. It performs only the starts that the app
   /// requests; Recents and Siri open the app to start a call.
   ///
-  /// The provider calls its delegate on `VoIPActor.queue`, so the SDK performs the system's
-  /// actions, and starts audio, without leaving `VoIPActor`. CallKit gives each action a
-  /// deadline. When the system stops waiting for an action, the SDK receives
+  /// The provider calls its delegate, and completes reports, on `VoIPActor.queue`, so the SDK
+  /// performs the system's actions, and starts audio, without leaving `VoIPActor`. CallKit gives
+  /// each action a deadline. When the system stops waiting for an action, the SDK receives
   /// `FrameworkEvent.actionTimedOut(_:)`.
   @VoIPActor
   public final class CallKitAdapter: CallingFramework {
@@ -89,9 +89,8 @@
       let update = CXCallUpdate(call, capabilities: configuration.capabilities)
       provider.reportNewIncomingCall(with: uuid, update: update) { [weak self] error in
         let outcome = SystemError.presentationOutcome(for: error)
-        // CallKit names a queue only for its delegate's callbacks, so the completion joins
-        // `VoIPActor` behind anything already queued there.
-        Task { @VoIPActor in
+        // The provider completes the report on its delegate queue.
+        VoIPActor.assumeIsolated {
           guard let self else { return completion(outcome) }
           self.reportCompleted(uuid, outcome, then: completion)
         }

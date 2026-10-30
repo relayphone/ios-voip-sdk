@@ -38,6 +38,9 @@ Changes not yet released are recorded below. Public API changes include migratio
   to the SDK, and reports a call that Do Not Disturb, a Focus or the block list filtered as
   `PresentationOutcome.filtered(_:)`. Its provider calls the SDK on `VoIPActor`. The call
   journeys now run through both adapters.
+- `VoIPActor.assumeIsolated(_:file:line:)` runs a system callback that arrives on
+  `VoIPActor.queue`, such as a CallKit report's completion, on the actor without hopping, and
+  stops the app when the callback arrives elsewhere.
 - The `VoIPPushKit` library's `PushKitSource` receives VoIP pushes from PushKit on `VoIPActor`,
   with the `mustReport` metadata on iOS 26.4 and later, and finishes each push exactly once,
   within 4 seconds. `init(decode:)` takes the app's decoder for its push payloads, and
