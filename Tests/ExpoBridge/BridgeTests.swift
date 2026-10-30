@@ -387,7 +387,7 @@ struct BridgeTests {
     let initialRoutes = events.named("audioRoutesChanged")
     try expect(initialRoutes.count == 1 && initialRoutes[0]["current"] is NSNull && (initialRoutes[0]["routes"] as? [Any])?.isEmpty == true,
                "Route hydration must encode an explicit null before system audio exists.")
-    let output = AudioRoute(id: "output:speaker-uid", name: "Speaker", type: "Speaker")
+    let output = AudioRoute(id: .init(rawValue: "output:speaker-uid"), name: "Speaker", type: "Speaker")
     application.client.publish(AudioRoutesSnapshot(revision: 9, routes: [output], current: output))
     let routes = events.named("audioRoutesChanged").last
     try expect(routes?["revision"] as? Int == 9 && (routes?["routes"] as? [[String: Any]])?.first?["id"] as? String == "output:speaker-uid" && (routes?["current"] as? [String: Any])?["id"] as? String == "output:speaker-uid" && (routes?["current"] as? [String: Any])?["type"] as? String == "Speaker",
