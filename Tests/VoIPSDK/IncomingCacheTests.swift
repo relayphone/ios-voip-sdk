@@ -68,28 +68,60 @@ import Foundation
       let seeded = snapshotMatches(id)
       // A known owned call now returns its canonical UUID. Exercise a genuinely
       // unreported invitation's failure while the separate cached call disappears.
-      var unreported = payload
-      unreported.eventId += "-unreported"; unreported.serverCallId += "-unreported"
-      let reservation = try client.incomingIntake.reserve(unreported, source: .pushKit)
-      precondition(reservation.id != id)
-      var entered = false
-      let caller = Task { @MainActor () -> (Bool, Int) in
-        entered = true
-        do {
-          _ = try await client.reportIncomingConversation(unreported)
-          return (false, client.snapshots.count)
-        } catch PlatformFailure.rejected {
-          // Capture in the caller's catch, with no yield or extra cache refresh.
-          return (true, client.snapshots.count)
-        } catch { return (false, client.snapshots.count) }
+      let native = PlatformFailure.rejected as NSError
+      let duplicate = NSError(domain: "com.apple.CallKit.error.incomingcall", code: 2)
+      let failures: [(error: any Error, expected: IncomingConversationError)] = [
+        (PlatformFailure.rejected, .systemFailure(domain: native.domain, code: native.code)),
+        (CancellationError(), .cancelled),
+        (NSError(domain: "LCK-wrapper", code: 0, userInfo: [NSUnderlyingErrorKey: duplicate]), .alreadyReported),
+        (IncomingIntake.IntakeError.managerReset, .providerReset)
+      ]
+      var allExpected = true
+      var cacheCount = client.snapshots.count
+      for (index, failure) in failures.enumerated() {
+        var candidate = payload
+        candidate.eventId += "-unreported-\(index)"; candidate.serverCallId += "-unreported-\(index)"
+        let unreported = candidate
+        let reservation = try client.incomingIntake.reserve(unreported, source: .pushKit)
+        precondition(reservation.id != id)
+        var entered = false
+        let caller = Task { @MainActor () -> (Bool, Int) in
+          entered = true
+          do throws(IncomingConversationError) {
+            _ = try await client.reportIncomingConversation(unreported)
+            return (false, client.snapshots.count)
+          } catch {
+            // Capture directly at the public await boundary, before refreshing.
+            return (error == failure.expected, client.snapshots.count)
+          }
+        }
+        while !entered { await Task.yield() }
+        manager.conversations = []
+        if failure.expected == .providerReset { client.incomingIntake.reset() }
+        client.incomingIntake.complete(attempt(reservation), outcome: .failed(failure.error))
+        let observed = await caller.value
+        allExpected = allExpected && observed.0 && observed.1 == 0
+        cacheCount = observed.1
       }
-      while !entered { await Task.yield() }
-      manager.conversations = []
-      client.incomingIntake.complete(attempt(reservation), outcome: .failed(PlatformFailure.rejected))
-      let observed = await caller.value
-      passed = seeded && observed.0 && observed.1 == 0
-      result.merge(["seededLiveCache": seeded, "callerCaughtExpectedFailure": observed.0,
-        "callerCacheCount": observed.1]) { _, value in value }
+
+      // Reset can also occur during the foreground caller's own native report.
+      var pendingPayload = payload
+      pendingPayload.eventId += "-pending-reset"; pendingPayload.serverCallId += "-pending-reset"
+      manager.pauseIncoming = true
+      let pending = Task { @MainActor () -> Bool in
+        do throws(IncomingConversationError) { _ = try await client.reportIncomingConversation(pendingPayload); return false }
+        catch { return error == .providerReset }
+      }
+      while manager.incomingWork == nil { await Task.yield() }
+      client.incomingIntake.reset()
+      manager.pauseIncoming = false
+      manager.incomingErrors = [PlatformFailure.rejected]
+      manager.incomingWork?.resume(); manager.incomingWork = nil
+      let pendingResetCaught = await pending.value
+      passed = seeded && allExpected && pendingResetCaught && client.snapshots.isEmpty
+      result.merge(["seededLiveCache": seeded, "callerCaughtExpectedFailure": allExpected,
+        "callerCacheCount": cacheCount, "typedFailureCases": failures.count,
+        "pendingReportResetCaught": pendingResetCaught]) { _, value in value }
 
     default: fatalError("Unknown incoming cache fixture mode.")
     }

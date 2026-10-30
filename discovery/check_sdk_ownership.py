@@ -123,7 +123,7 @@ def main():
 }
 @MainActor public final class PushService {
   init(client: ConversationClient) {}
-  func start() throws {}
+  func start() throws(PushRegistrationError) {}
 }
 ''')
         (out / 'Probe.swift').write_text('''import Foundation
@@ -149,7 +149,7 @@ def main():
           maximumConversationGroups: groups, maximumConversationsPerGroup: members)))
         return false
       } catch {
-        guard (error as? ConversationClientError) == .invalidConfiguration,
+        guard case VoIPStartupError.invalidConfiguration = error,
               ConversationClient.creations == 0, VoIPApplication.current == nil else { return false }
       }
     }
@@ -188,20 +188,20 @@ def main():
       _ = try VoIPApplication.start(configuration: configuration, mediaAdapter: conflictingAdapter)
       return false
     } catch {
-      guard (error as? ConversationClientError) == .alreadyConfigured else { return false }
+      guard case VoIPStartupError.alreadyConfigured = error else { return false }
     }
     do {
       _ = try ConversationClient.forApplication(configuration: configuration.client, mediaAdapter: conflictingAdapter)
       return false
     } catch {
-      guard (error as? ConversationClientError) == .alreadyConfigured else { return false }
+      guard case VoIPStartupError.alreadyConfigured = error else { return false }
     }
     do {
       _ = try VoIPApplication.start(configuration: configuration, mediaAdapter: adapter,
         audioPolicy: AudioActivationPolicy(activationTimeout: 12, recoveryTimeout: 6))
       return false
     } catch {
-      guard (error as? ConversationClientError) == .alreadyConfigured else { return false }
+      guard case VoIPStartupError.alreadyConfigured = error else { return false }
     }
     var changedClient = configuration; changedClient.client.supportsVideo.toggle()
     var changedApplication = configuration; changedApplication.simulatorSupport.toggle()
@@ -211,12 +211,12 @@ def main():
       _ = try ConversationClient.forApplication(configuration: changedClient.client)
       return false
     } catch {
-      guard (error as? ConversationClientError) == .alreadyConfigured else { return false }
+      guard case VoIPStartupError.alreadyConfigured = error else { return false }
     }
     for conflict in [changedClient, changedApplication] {
       do { _ = try VoIPApplication.start(configuration: conflict); return false }
       catch {
-        guard (error as? ConversationClientError) == .alreadyConfigured else { return false }
+        guard case VoIPStartupError.alreadyConfigured = error else { return false }
       }
     }
     guard ConversationClient.creations == 1 && ConversationClient.tracks == 1,
@@ -249,8 +249,8 @@ public func claimOnly() -> Bool {
         run(['clang', '-fobjc-arc', '-fmodules', '-c', str(gate), '-o', str(obj)])
         objects = [str(obj)]
         models = (ROOT / 'Sources/VoIPSDK/ConversationModels.swift').read_text()
-        selected_models = '\n'.join(re.findall(r'public enum (?:UnhandledActionPolicy|ConversationClientError|ConversationEvent)[^{]+\{.*?\}', models, re.S))
-        assert selected_models.count('public enum ') == 3
+        selected_models = '\n'.join(re.findall(r'public enum (?:UnhandledActionPolicy|VoIPStartupError|PushRegistrationError|ConversationEvent)[^{]+\{.*?\}', models, re.S))
+        assert selected_models.count('public enum ') == 4
         selected_models += '\n' + models[models.index('public struct ConversationEventContext:'):]
         claim = ROOT / 'Sources/VoIPSDK/ProcessSDKOwnership.swift'
         combined = out / 'SDK.swift'

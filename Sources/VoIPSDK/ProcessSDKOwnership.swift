@@ -9,9 +9,9 @@ enum ProcessSDKOwnership {
   // coalesces their identically named platform helper class.
   private static let token = UUID().uuidString
 
-  static func claim() throws {
+  static func claim() throws(VoIPStartupError) {
     guard SDKProcessOwnership.claim(moduleIdentity: String(reflecting: Self.self), ownerToken: token) else {
-      throw ConversationClientError.duplicateSDKLinkage
+      throw VoIPStartupError.duplicateSDKLinkage
     }
   }
 }

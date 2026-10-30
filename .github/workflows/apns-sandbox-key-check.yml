@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   signing-key:
-    if: github.repository == 'ziahamza/ios-voip-sdk'
+    if: github.repository == 'relayphone/ios-voip-sdk'
     runs-on: macos-26
     timeout-minutes: 5
     environment: apns-sandbox-device-qa
