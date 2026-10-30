@@ -99,7 +99,6 @@ export interface NativeBridge {
   setMuted(id: string, muted: boolean): Promise<void>;
   setHeld(id: string, held: boolean): Promise<void>;
   playTones(id: string, digits: string): Promise<void>;
-  mergeConversations(first: string, second: string): Promise<void>;
   reportConversation(id: string, report: ConversationReport): Promise<void>;
   reportIncomingConversation(payload: IncomingCallPayload): Promise<string>;
   receiveCallEnded(payload: CallEndedPayload): Promise<boolean>;

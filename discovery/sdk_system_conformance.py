@@ -103,7 +103,7 @@ def validate_case(rows, engine, index, controls, fixture_commands, case, expecte
         if case == 'answered-elsewhere' and name == 'answeredElsewhere':
             require(event.get('conversationID') in by_sdk, 'unbound answered-elsewhere SDK event')
         else:
-            require(name in ('audioActivated', 'audioDeactivated', 'providerReset', 'pushTokenUpdated', 'providerOwnershipLost'),
+            require(name in ('audioActivated', 'audioDeactivated', 'providerReset', 'pushTokenUpdated'),
                     'unexpected SDK event context')
             require('conversationID' not in event, 'invalid global SDK event context')
     snapshots = [row for row in rows if row['event'] == 'sdk.snapshot']

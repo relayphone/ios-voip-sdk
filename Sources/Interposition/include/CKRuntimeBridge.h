@@ -39,8 +39,6 @@ const char *CKSimRuntimeVersion(void);
 // Runtime mailbox and example controls exist only in simulator builds.
 void CKSimInjectPush(NSDictionary *payload, BOOL mustReport, NSString *identifier);
 void CKSimEmit(NSString *event, NSDictionary *fields);
-// SDK Debug or explicit provider-diagnostics opt-in simulator builds only.
-bool CKSimInstallProviderCreationObserver(void (^observer)(id provider));
 
 // Capture before replacing any superclass implementation. SDK activation uses
 // the same journal for CallKit and PushKit so a refusal restores both together.

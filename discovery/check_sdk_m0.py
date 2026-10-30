@@ -54,7 +54,7 @@ def fixture(root):
     (root / 'build-logs').mkdir()
     (root / 'build-logs/build.log').write_text('synthetic build receipt\n')
     write_json(root / 'device-build.json', dict(product='unified-shared-source-device',
-        target='arm64-apple-ios17.4', binarySHA256=files[gate.BINARIES['device']], **IDENTITY))
+        target='arm64-apple-ios26.0', binarySHA256=files[gate.BINARIES['device']], **IDENTITY))
     write_json(root / 'source-before.json', IDENTITY)
     write_json(root / 'cleanup.json', dict(simulatorID='sim-1', deleted=True, deleteExitCode=0))
     installed = {key: files[gate.BINARIES[key]] for key in ('example', 'bootstrap', 'javascript')}
@@ -387,8 +387,7 @@ os.execv(sys.executable,[sys.executable,*sys.argv[1:]])
         sources = dict(CKSimProtocol=('RuntimeSession.o',),
                        CKSimRuntimeC=('CKInterposition.o', 'CKPushDelivery.o'),
                        CKSimRuntime=('RuntimeEngine.o', 'resource_bundle_accessor.o'),
-                       VoIPPlatform=('VSCompletionOnce.o', 'VSProviderCreationMonitor.o',
-                                     'VSProviderMonitorInternal.o', 'VSPushRegistryOwner.o'),
+                       VoIPPlatform=('VSCompletionOnce.o', 'VSPushRegistryOwner.o'),
                        VoIPSDK=('SimulatorSupport.o',))
         for suffix in ('.build', '-t.build'):
             with self.subTest(target_directory_suffix=suffix), tempfile.TemporaryDirectory() as temporary:

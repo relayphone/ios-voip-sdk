@@ -6,6 +6,36 @@ Changes not yet released are recorded below. Public API changes include migratio
 
 ### Breaking changes
 
+- The SDK now requires iOS 26, macOS 26 for host tests, and Swift tools 6.4
+  (Xcode 27.1) in the Swift 6 language mode. The Swift package, the CocoaPods
+  spec and the example app declare iOS 26. Raise your app's deployment target;
+  Expo apps set it through `expo-build-properties`.
+
+- `Participant.avatarUrl` is removed from Swift and TypeScript. The SDK never
+  read or displayed it; keep avatar URLs in your own contact model.
+
+- Merging is removed. `ConversationClient.mergeConversations(_:_:)`, the Expo
+  `mergeConversations` function, `ConversationCapabilities.merge`, the `merge`
+  and `unmerge` action kinds and `ConversationActionError.cannotMergeSameConversation`
+  no longer exist. Conversations no longer advertise merging to the system, and a
+  merge or unmerge action that still arrives fails instead of being fulfilled:
+  the SDK cannot mix media, so fulfilling one would report a conference that does
+  not exist. Hold and mute are unchanged.
+
+- The process-wide duplicate linkage claim is removed, together with
+  `VoIPStartupError.duplicateSDKLinkage` and the Expo `duplicate_sdk_linkage`
+  rejection code. Link either the Swift package or the Expo pod in a process,
+  not both. Remove switches over the deleted case and code.
+
+- The provider ownership monitor is removed. Delete uses of
+  `ConversationClient.Configuration.providerOwnershipMonitoring` and
+  `defaultProviderOwnershipMonitoring`, the `ProviderOwnershipDiagnostics`
+  package trait, the `ios-voip-sdk.providerOwnershipMonitoring` Podfile property
+  and the config plugin's `providerOwnershipMonitoring` option, which is now
+  rejected as unsupported. The `providerOwnershipLost` event no longer exists in
+  Swift or TypeScript. Its best-effort coverage could not detect every competing
+  provider, so it could not be relied on.
+
 - Inspector controls now validate complete runtime responses before awaiting
   journal confirmation. Custom bridges must return the existing runtime identity,
   UUID request/action/transaction identifiers and the operation's complete result

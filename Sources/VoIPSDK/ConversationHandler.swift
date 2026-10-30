@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// Cooperative cancellation also covers handlers that do not inspect Task cancellation.
 @MainActor
@@ -60,7 +60,6 @@ public struct ConversationHandler {
     case .hold: hold
     case .mute: mute
     case .tones: tones
-    case .merge, .unmerge: nil
     }
   }
 }

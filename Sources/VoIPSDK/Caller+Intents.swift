@@ -1,6 +1,6 @@
 #if canImport(Intents)
 import Foundation
-@preconcurrency import Intents
+@preconcurrency public import Intents
 
 extension Caller {
   /// The same typed identity used in the LCK report, for host-driven call donation.

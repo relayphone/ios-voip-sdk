@@ -203,7 +203,7 @@ jobs:
           bash Tests/DialRequests/run.sh
           python3 discovery/check_expo_bridge.py | tee "$SDK_M0_BUILD_LOGS/expo-relay-controls.json"
           python3 discovery/check_platform_shims.py | tee "$SDK_M0_BUILD_LOGS/platform-controls.json"
-          python3 discovery/check_sdk_ownership.py | tee "$SDK_M0_BUILD_LOGS/ownership-controls.json"
+          python3 discovery/check_sdk_startup.py | tee "$SDK_M0_BUILD_LOGS/startup-controls.json"
           python3 discovery/check_push_delivery.py | tee "$SDK_M0_BUILD_LOGS/push-delivery-controls.json"
           python3 discovery/check_push_report_entry.py | tee "$SDK_M0_BUILD_LOGS/push-entry-controls.json"
           python3 Tests/VoIPSDK/run_incoming_delivery.py | tee "$SDK_M0_BUILD_LOGS/push-main-stall-controls.json"
@@ -439,7 +439,7 @@ jobs:
           npm exec --workspace ios-voip-sdk-example -- expo prebuild --platform ios --no-install 2>&1 | tee "$SDK_M0_BUILD_LOGS/expo-prebuild.log"
           cd example/ios
           node "$GITHUB_WORKSPACE/Tools/pod-install.ts" 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-install.log"
-      - name: Inspect default and opted-in Release device products
+      - name: Inspect the default Release device product
         run: |
           set -euo pipefail
           source scripts/ci/sdk_paths.sh
@@ -447,24 +447,8 @@ jobs:
           python3 discovery/build_sdk_device_release.py "$SDK_M0_BUILD_ROOT/pod-device" \
             > "$SDK_M0_BUILD_LOGS/pod-device-inspection.log" 2>&1
           cp "$SDK_M0_BUILD_ROOT/pod-device/receipt.json" "$SDK_M0_BUILD_LOGS/pod-device-receipt.json"
-          set -euo pipefail
           test -s example/ios/Podfile.lock
           test -d example/ios/Pods
-          python3 - <<'PYCONFIG'
-          import json
-          from pathlib import Path
-          path = Path('example/ios/Podfile.properties.json')
-          properties = json.loads(path.read_text())
-          properties['ios-voip-sdk.providerOwnershipMonitoring'] = 'true'
-          path.write_text(json.dumps(properties, indent=2) + '\n')
-          PYCONFIG
-          pushd example/ios > /dev/null
-          node "$GITHUB_WORKSPACE/Tools/pod-install.ts" --no-repo-update 2>&1 | tee "$SDK_M0_BUILD_LOGS/pod-diagnostics-install.log"
-          popd > /dev/null
-          python3 discovery/build_sdk_device_release.py "$SDK_M0_BUILD_ROOT/pod-device-diagnostics" \
-            --derived-data "$SDK_M0_BUILD_ROOT/pod-device/DerivedData" --provider-diagnostics \
-            > "$SDK_M0_BUILD_LOGS/pod-device-diagnostics-inspection.log" 2>&1
-          cp "$SDK_M0_BUILD_ROOT/pod-device-diagnostics/receipt.json" "$SDK_M0_BUILD_LOGS/pod-device-diagnostics-receipt.json"
       - name: Inspect the pinned standard WebRTC device product
         run: |
           set -euo pipefail
@@ -480,7 +464,7 @@ jobs:
         run: |
           set -euo pipefail
           source scripts/ci/sdk_paths.sh
-          for variant in pod-device pod-device-diagnostics; do
+          for variant in pod-device; do
             for name in build.log build-status.json source-before.json command.json; do
               if test -f "$SDK_M0_BUILD_ROOT/$variant/$name"; then
                 cp "$SDK_M0_BUILD_ROOT/$variant/$name" "$SDK_M0_BUILD_LOGS/$variant-$name"

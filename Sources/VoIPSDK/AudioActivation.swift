@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// Proposed SDK watchdog budgets. Device activation measurements are separate
 /// evidence; they do not define these configurable policy intervals.

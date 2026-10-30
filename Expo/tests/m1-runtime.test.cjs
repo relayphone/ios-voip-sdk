@@ -40,7 +40,6 @@ test('native command rejection guard retains only declared codes', () => {
     'unknown_conversation',
     'unsupported',
     'conversation',
-    'duplicate_sdk_linkage',
     'at_capacity',
   ]) {
     const error = Object.assign(new Error('native rejection'), { code });
@@ -53,6 +52,7 @@ test('native command rejection guard retains only declared codes', () => {
     new Error('plain'),
     { code: 'conversation', message: 'plain object' },
     Object.assign(new Error('foreign'), { code: 'foreign' }),
+    Object.assign(new Error('removed'), { code: 'duplicate_sdk_linkage' }),
   ]) {
     assert.equal(isConversationCommandError(value), false);
   }
@@ -108,7 +108,7 @@ function conversation(id = 'call') {
     direction: 'incoming',
     status: 'ringing',
     members: [{ id: 'caller' }],
-    capabilities: { hold: true, merge: true, tones: true, video: true },
+    capabilities: { hold: true, tones: true, video: true },
     isMuted: false,
     isVideo: false,
     payload: {

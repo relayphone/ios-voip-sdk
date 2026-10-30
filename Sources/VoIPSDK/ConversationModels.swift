@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// JSON without untyped, non-Sendable dictionaries at the native/JavaScript boundary.
 public enum JSONValue: Codable, Sendable, Equatable {
@@ -36,14 +36,11 @@ public enum JSONValue: Codable, Sendable, Equatable {
 public struct Participant: Codable, Sendable, Equatable {
   public var id: String
   public var displayName: String?
-  public var avatarUrl: String?
   public var phoneNumber: String?
   public var email: String?
 
-  public init(id: String, displayName: String? = nil, avatarUrl: String? = nil,
-              phoneNumber: String? = nil, email: String? = nil) {
-    self.id = id; self.displayName = displayName; self.avatarUrl = avatarUrl
-    self.phoneNumber = phoneNumber; self.email = email
+  public init(id: String, displayName: String? = nil, phoneNumber: String? = nil, email: String? = nil) {
+    self.id = id; self.displayName = displayName; self.phoneNumber = phoneNumber; self.email = email
   }
 }
 
@@ -254,11 +251,10 @@ public enum ConversationEndedReason: String, Codable, Sendable {
 }
 public struct ConversationCapabilities: Codable, Sendable, Equatable {
   public var hold: Bool
-  public var merge: Bool
   public var tones: Bool
   public var video: Bool
-  public init(hold: Bool = true, merge: Bool = true, tones: Bool = true, video: Bool = true) {
-    self.hold = hold; self.merge = merge; self.tones = tones; self.video = video
+  public init(hold: Bool = true, tones: Bool = true, video: Bool = true) {
+    self.hold = hold; self.tones = tones; self.video = video
   }
 }
 public struct ConversationEnded: Codable, Sendable, Equatable {
@@ -267,7 +263,7 @@ public struct ConversationEnded: Codable, Sendable, Equatable {
   public init(at: Date, reason: ConversationEndedReason) { self.at = at; self.reason = reason }
 }
 public enum ConversationActionKind: String, Codable, Sendable {
-  case join, start, end, hold, mute, tones, merge, unmerge
+  case join, start, end, hold, mute, tones
 }
 public enum ConversationActionOrigin: String, Codable, Sendable { case system, app }
 public struct PendingAction: Codable, Sendable, Equatable {
@@ -314,8 +310,6 @@ public enum VoIPStartupError: Error, Sendable, Equatable {
   case alreadyConfigured
   /// A configuration value has an invalid type or range.
   case invalidConfiguration
-  /// More than one linked SDK image attempted to own the process.
-  case duplicateSDKLinkage
   /// Simulator activation already occurred with a different configuration.
   case simulatorAlreadyActivated
   /// The configured services could not register their native push receiver.
@@ -345,8 +339,6 @@ public enum ConversationActionError: Error, Sendable, Equatable {
   case unknownConversation
   /// The requested tones are empty or contain unsupported digits.
   case invalidDigits
-  /// A conversation cannot be merged with itself.
-  case cannotMergeSameConversation
   /// The system has reached its conversation capacity.
   case atCapacity
   /// The system operation was cancelled.
@@ -388,12 +380,12 @@ public struct ConversationStateUpdate: Codable, Sendable, Equatable {
 }
 
 public enum ConversationEvent: String, Codable, Sendable {
-  case audioActivated, audioDeactivated, audioActivationMissing, audioActivationFailed, providerReset, providerOwnershipLost, answeredElsewhere
+  case audioActivated, audioDeactivated, audioActivationMissing, audioActivationFailed, providerReset, answeredElsewhere
 }
 
 public struct ConversationEventContext: Codable, Sendable, Equatable {
   public let type: ConversationEvent
-  /// Absent for process-wide system callbacks and reset/ownership events.
+  /// Absent for process-wide system callbacks and reset events.
   public let conversationID: UUID?
   /// The backend call associated with this event, when present.
   public let serverCallID: ServerCallID?

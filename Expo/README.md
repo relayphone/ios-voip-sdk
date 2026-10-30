@@ -40,7 +40,7 @@ conversation API or establish call acceptance by itself.
 
 ## Requirements and example
 
-The module supports iOS 17.4 or later and builds with the iOS 27 SDK or newer;
+The module supports iOS 26 or later and builds with the iOS 27 SDK or newer;
 CI uses Xcode 27.1. Its configuration lists `apple` only. The example pins Expo 58,
 React 19.3 and React Native 0.88; the declared Expo peer range is 55–58. Runtime
 compatibility with Expo 55–57 remains unqualified.

@@ -9,8 +9,7 @@ export type ConversationErrorCode =
   | 'unknown_conversation'
   | 'unsupported'
   | 'at_capacity'
-  | 'conversation'
-  | 'duplicate_sdk_linkage';
+  | 'conversation';
 
 export interface ConversationCommandError extends Error {
   readonly code: ConversationErrorCode;
@@ -26,7 +25,6 @@ export function isConversationCommandError(
     value.code === 'unknown_conversation' ||
     value.code === 'unsupported' ||
     value.code === 'at_capacity' ||
-    value.code === 'duplicate_sdk_linkage' ||
     value.code === 'conversation'
   );
 }
@@ -34,7 +32,6 @@ export function isConversationCommandError(
 export interface Participant {
   id: string;
   displayName?: string;
-  avatarUrl?: string;
   phoneNumber?: string;
   email?: string;
 }
@@ -104,7 +101,6 @@ export interface Conversation {
   members: Participant[];
   capabilities: {
     hold: boolean;
-    merge: boolean;
     tones: boolean;
     video: boolean;
   };
@@ -181,5 +177,4 @@ export interface ConversationEventMap {
     eventId: string;
   };
   providerReset: Record<string, never>;
-  providerOwnershipLost: Record<string, never>;
 }

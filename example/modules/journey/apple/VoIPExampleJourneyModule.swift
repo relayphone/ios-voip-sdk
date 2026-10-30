@@ -394,7 +394,7 @@ private final class ExampleJourney {
     }
     if event == "m2.hookEvent" {
       let names: Set<String> = ["audioActivated", "audioDeactivated", "audioActivationMissing", "audioActivationFailed",
-        "providerReset", "providerOwnershipLost", "pushTokenUpdated"]
+        "providerReset", "pushTokenUpdated"]
       guard let name = value["name"] as? String, names.contains(name) else {
         throw JourneyError.invalidTrace
       }

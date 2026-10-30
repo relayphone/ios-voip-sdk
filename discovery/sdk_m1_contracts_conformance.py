@@ -16,7 +16,7 @@ from summarize import EvidenceError, load, one, require
 
 ROOT = Path(__file__).resolve().parent.parent
 BUNDLE = 'dev.iosvoipsdk.m1contracts'
-CASES = ('guard', 'unhandled-accept', 'unhandled-fail', 'duplicate-wrapper', 'media-reentrancy', 'audio-lifecycle', 'audio-routes')
+CASES = ('unhandled-accept', 'unhandled-fail', 'duplicate-wrapper', 'media-reentrancy', 'audio-lifecycle', 'audio-routes')
 OWN_FILES = ('discovery/run_sdk_routes.py', 'discovery/probe/sdk_m1_contracts.swift', 'discovery/build_sdk_m1_contracts.sh',
              'discovery/run_audio_lifecycle_legacy.sh', 'scripts/sim/sim.py', 'scripts/sim/sim.sh', 'scripts/sim/paths.py',
              'scripts/sim/legacy_diagnostics.py',
@@ -27,7 +27,6 @@ OWN_FILES = ('discovery/run_sdk_routes.py', 'discovery/probe/sdk_m1_contracts.sw
              'discovery/sdk_bootstrap_conformance.py', 'discovery/summarize.py', 'discovery/device_oracles.py', 'VERSION')
 REFERENCES = tuple('docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-' + case + '.jsonl'
                    for case in ('basic', 'cx-after', 'lck-after', 'two-managers'))
-WARNING = 'Another CXProvider was created. D13 routes actions to the newest provider; keep one ConversationManager in this process.'
 BUILD_FILES = ('SDKM1Contracts.app/SDKM1Contracts', 'SDKM1Contracts.app/Info.plist',
                'SDKM1Contracts.app/IosVoipSDKRuntime.bundle/ios-27.0.json',
                'SDKM1Contracts.app/IosVoipSDKRuntime.bundle/Info.plist', 'build.log',
@@ -61,10 +60,10 @@ def reentrancy_contract(rows, engine):
     owner = one(rows, 'contract.owner')
     result = one(rows, 'contract.mediaReentrancy')
     require(isinstance(owner.get('identity'), str) and owner['identity'] and
-            owner['identity'] == owner.get('sharedIdentity') and owner.get('warnings') == 0,
+            owner['identity'] == owner.get('sharedIdentity'),
             'reentrancy: process owner differs')
     require(type(result.get('authorizationCalls')) is int and result['authorizationCalls'] == 1 and
-            result.get('sameOwner') is True and type(result.get('warnings')) is int and result['warnings'] == 0,
+            result.get('sameOwner') is True,
             'reentrancy: singleton/adapter callback contract failed')
     require(len([r for r in engine if r['event'] == 'provider.created']) == 1 and
             not any(r['event'] in ('transaction.delivered', 'call.changed') for r in engine),
@@ -75,7 +74,7 @@ def reentrancy_contract(rows, engine):
 def routes_contract(rows, engine):
     owner = one(rows, 'contract.owner')
     require(isinstance(owner.get('identity'), str) and owner['identity'] and
-            owner['identity'] == owner.get('sharedIdentity') and owner.get('warnings') == 0,
+            owner['identity'] == owner.get('sharedIdentity'),
             'routes: process owner differs')
     require(len([r for r in engine if r['event'] == 'provider.created']) == 1,
             'routes: expected one provider')
@@ -137,28 +136,6 @@ def routes_contract(rows, engine):
                 classification='native OS route observations; no hardware or fold claim')
 
 
-def guard_contract(rows, engine):
-    owner = one(rows, 'contract.owner')
-    require(owner.get('warnings') == 0 and isinstance(owner.get('identity'), str) and
-            owner['identity'] and owner['identity'] == owner.get('sharedIdentity'), 'SDK singleton/owned warning mismatch')
-    warnings = [r for r in rows if r['event'] == 'contract.warning']
-    require([(r.get('phase'), r.get('count'), r.get('message')) for r in warnings] ==
-            [(phase, count, WARNING) for phase, count in [('extra-cx', 1), ('extra-lck', 2)]],
-            'foreign provider warning inventory/identity differs')
-    created = [r for r in engine if r['event'] == 'provider.created']
-    require(len(created) == 3 and len({r.get('provider') for r in created}) == 3, 'expected exactly three fixture providers')
-    identities = [owner['identity']]
-    for phase, count, warning in zip(('extra-cx', 'extra-lck'), (1, 2), warnings):
-        begin = one(rows, 'contract.creationBegin', phase=phase)
-        end = one(rows, 'contract.creationEnd', phase=phase)
-        require(rows.index(owner) < rows.index(begin) < rows.index(warning) < rows.index(end) and
-                end.get('warnings') == count and isinstance(end.get('identity'), str) and end['identity'],
-                'foreign provider warning order/count differs')
-        identities.append(end['identity'])
-    require(len(set(identities)) == 3 and identities[1] == created[1]['provider'], 'foreign provider identity differs')
-    return dict(success=True, warnings=2, providers=3)
-
-
 def duplicate_contract(rows, engine):
     """Public duplicate result through genuine LCK, not NSError-depth inspection.
 
@@ -166,12 +143,11 @@ def duplicate_contract(rows, engine):
     The runtime supplies CX service behavior; the LCK framework is unchanged.
     """
     owner = one(rows, 'contract.owner')
-    require(type(owner.get('warnings')) is int and owner['warnings'] == 0 and
-            isinstance(owner.get('identity'), str) and owner['identity'] and
+    require(isinstance(owner.get('identity'), str) and owner['identity'] and
             owner['identity'] == owner.get('sharedIdentity') and owner.get('entryPoint') == 'VoIPApplication.start',
             'duplicate public application owner differs')
-    require(not any(r['event'] in ('contract.warning', 'contract.duplicateUnexpectedAction') for r in rows),
-            'duplicate contract received an unexpected owner/action')
+    require(not any(r['event'] == 'contract.duplicateUnexpectedAction' for r in rows),
+            'duplicate contract received an unexpected action')
     requests = [r for r in rows if r['event'] == 'contract.duplicateReportRequested']
     results = [r for r in rows if r['event'] == 'contract.duplicateReportResult']
     require(len(requests) == len(results) == 2, 'duplicate requires two public report attempts/results')
@@ -272,11 +248,10 @@ def duplicate_contract(rows, engine):
 
 
 def accept_contract(rows, engine, source_root):
-    configuration = one(rows, 'contract.configuration')
+    configuration = one(rows, 'contract.configuration'); owner = one(rows, 'contract.owner')
     require(configuration.get('policy') == 'accept' and configuration.get('handlerAttached') is False and
-            rows.index(configuration) < rows.index(one(rows, 'contract.owner')), 'accept policy configured too late')
-    require(not any(r['event'] == 'contract.warning' for r in rows) and one(rows, 'contract.owner').get('warnings') == 0,
-            'unexpected provider ownership warning')
+            rows.index(configuration) < rows.index(owner), 'accept policy configured too late')
+    require(owner.get('identity') and owner['identity'] == owner.get('sharedIdentity'), 'unexpected accept owner')
     incoming = one(rows, 'contract.incoming'); call = incoming.get('conversationID')
     pending = one(rows, 'contract.pending'); deadline = pending.get('deadlineMS')
     require(isinstance(call, str) and call and pending.get('conversationID') == call and
@@ -375,8 +350,7 @@ def fail_contract(rows, engine, source_root):
     configuration = one(rows, 'contract.configuration'); owner = one(rows, 'contract.owner')
     require(configuration.get('policy') == 'fail' and configuration.get('handlerAttached') is False and
             rows.index(configuration) < rows.index(owner), 'fail policy configured too late')
-    require(not any(r['event'] == 'contract.warning' for r in rows) and owner.get('warnings') == 0 and
-            owner.get('identity') and owner['identity'] == owner.get('sharedIdentity'), 'unexpected fail owner/warning')
+    require(owner.get('identity') and owner['identity'] == owner.get('sharedIdentity'), 'unexpected fail owner')
     incoming = one(rows, 'contract.incoming'); call = incoming.get('conversationID')
     pending = one(rows, 'contract.pending'); deadline = pending.get('deadlineMS'); action_id = pending.get('actionID')
     require(isinstance(call, str) and call and pending.get('conversationID') == call and
@@ -577,8 +551,7 @@ def validate(build, capture, source_root=ROOT, parent_manifest=None, cases=CASES
                 all(r.get('runID') == manifest['runID'] and r.get('pid') == receipt['appPID'] and
                     r.get('bundleID') == BUNDLE and r.get('profile') == 'ios-27.0' for r in engine), 'mixed runtime journal')
         require(one(engine, 'runtime.installed').get('version') == (source_root / 'VERSION').read_text().strip(), 'runtime version differs')
-        if case == 'guard': results[case] = guard_contract(rows, engine)
-        elif case == 'unhandled-accept': results[case] = accept_contract(rows, engine, source_root)
+        if case == 'unhandled-accept': results[case] = accept_contract(rows, engine, source_root)
         elif case == 'unhandled-fail': results[case] = fail_contract(rows, engine, source_root)
         elif case == 'audio-lifecycle':
             require(re.fullmatch(r'[0-9]+(?:\.[0-9]+){1,2}', execution_os), 'lifecycle: invalid execution OS')

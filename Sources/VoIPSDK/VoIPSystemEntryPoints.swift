@@ -1,8 +1,8 @@
 #if canImport(Intents)
-import Foundation
-import Intents
+public import Foundation
+public import Intents
 #if canImport(UIKit)
-import UIKit
+public import UIKit
 #endif
 
 /// Forward system entry points here from custom application/scene delegates.

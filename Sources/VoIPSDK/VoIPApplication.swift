@@ -1,4 +1,9 @@
+// Public declarations that use Foundation types compile only on iOS and watchOS.
+#if os(iOS) || os(watchOS)
+public import Foundation
+#else
 import Foundation
+#endif
 
 /// The config plugin's plist schema, decoded before any platform services start.
 struct VoIPBundleConfiguration: Decodable {
@@ -9,12 +14,11 @@ struct VoIPBundleConfiguration: Decodable {
   let includesCallsInRecents: Bool
   let supportsVideo: Bool
   let unhandledAction: UnhandledActionPolicy
-  let providerOwnershipMonitoring: Bool?
   let simulatorSupport: Bool
 
   private enum CodingKeys: String, CodingKey {
     case ringtoneName, iconTemplateImageName, maximumConversationGroups, maximumConversationsPerConversationGroup
-    case includesCallsInRecents, supportsVideo, unhandledAction, providerOwnershipMonitoring, simulatorSupport
+    case includesCallsInRecents, supportsVideo, unhandledAction, simulatorSupport
   }
 
   init(from decoder: any Decoder) throws {
@@ -26,7 +30,6 @@ struct VoIPBundleConfiguration: Decodable {
     includesCallsInRecents = try values.decodeIfPresent(Bool.self, forKey: .includesCallsInRecents) ?? true
     supportsVideo = try values.decodeIfPresent(Bool.self, forKey: .supportsVideo) ?? true
     unhandledAction = try values.decodeIfPresent(UnhandledActionPolicy.self, forKey: .unhandledAction) ?? .fail
-    providerOwnershipMonitoring = try values.decodeIfPresent(Bool.self, forKey: .providerOwnershipMonitoring)
     simulatorSupport = try values.decodeIfPresent(Bool.self, forKey: .simulatorSupport) ?? true
     guard maximumConversationGroups > 0, maximumConversationsPerConversationGroup > 0 else {
       throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Conversation limits must be positive"))
@@ -74,8 +77,7 @@ public final class VoIPApplication {
         maximumConversationGroups: info.maximumConversationGroups,
         maximumConversationsPerGroup: info.maximumConversationsPerConversationGroup,
         includesConversationInRecents: info.includesCallsInRecents,
-        supportsVideo: info.supportsVideo, unhandledAction: info.unhandledAction,
-        providerOwnershipMonitoring: info.providerOwnershipMonitoring ?? ConversationClient.Configuration.defaultProviderOwnershipMonitoring),
+        supportsVideo: info.supportsVideo, unhandledAction: info.unhandledAction),
         simulatorSupport: info.simulatorSupport)
     }
   }
@@ -95,7 +97,6 @@ public final class VoIPApplication {
   @discardableResult
   public static func start(configuration: Configuration = .init(), mediaAdapter: (any MediaAdapter)? = nil,
                            audioPolicy: AudioActivationPolicy = .standard) throws(VoIPStartupError) -> VoIPApplication {
-    try ProcessSDKOwnership.claim()
     if let current {
       guard current.configuration == configuration else { throw VoIPStartupError.alreadyConfigured }
       _ = try ConversationClient.forApplication(configuration: configuration.client,

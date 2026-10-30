@@ -30,7 +30,6 @@ const KEYS = new Set([
   'iconTemplateIos',
   'microphonePermission',
   'cameraPermission',
-  'providerOwnershipMonitoring',
 ]);
 
 function fail(message) {
@@ -55,11 +54,6 @@ function validate(options) {
       Object.entries(options).filter(([, value]) => value !== undefined),
     ),
   };
-  if (
-    settings.providerOwnershipMonitoring !== undefined &&
-    typeof settings.providerOwnershipMonitoring !== 'boolean'
-  )
-    fail('providerOwnershipMonitoring must be a boolean.');
   if (!['webrtc', 'livekit', 'none'].includes(settings.mediaAdapter))
     fail('mediaAdapter must be webrtc, livekit, or none.');
   if (!['fail', 'accept'].includes(settings.unhandledAction))
@@ -348,11 +342,6 @@ function withVoIPSDK(config, options) {
         settings.maximumConversationsPerConversationGroup,
       ringtoneName: settings.defaultRingtoneIos,
     };
-    if (settings.providerOwnershipMonitoring === undefined)
-      delete plist.VoIPSDK.providerOwnershipMonitoring;
-    else
-      plist.VoIPSDK.providerOwnershipMonitoring =
-        settings.providerOwnershipMonitoring;
     if (settings.iconTemplateIos === undefined)
       delete plist.VoIPSDK.iconTemplateImageName;
     else
@@ -365,12 +354,6 @@ function withVoIPSDK(config, options) {
     ]) {
       if (typeof settings[option] === 'string') plist[key] = settings[option];
     }
-    return mod;
-  });
-  config = withPodfileProperties(config, (mod) => {
-    mod.modResults['ios-voip-sdk.providerOwnershipMonitoring'] = String(
-      settings.providerOwnershipMonitoring === true,
-    );
     return mod;
   });
   config = withEntitlementsPlist(config, (mod) => {

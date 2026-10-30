@@ -34,7 +34,7 @@ SOURCE_PATHS = ('Sources', 'Integrations', 'Expo', 'ExpoMedia', 'example', 'Pack
                 'discovery/build_expo_livekit.py', 'discovery/run_expo_livekit.py',
                 'discovery/expo_livekit_conformance.py', 'discovery/check_expo_livekit.py',
                 'discovery/check_inherited_launcher_group.py',
-                'discovery/check_platform_shims.py', 'discovery/check_sdk_ownership.py',
+                'discovery/check_platform_shims.py', 'discovery/check_sdk_startup.py',
                 'discovery/check_push_delivery.py', 'discovery/check_push_report_entry.py',
                 'discovery/build_push_report_entry.sh', 'discovery/run_push_report_entry.py',
                 'discovery/check_push_report_capture.py', 'discovery/probe/push_report_entry.swift',
@@ -274,7 +274,7 @@ def validate(root, source_root=ROOT):
     require(digest(root / 'device-build.json') == manifest['deviceBuildSHA256'], 'device build receipt hash mismatch')
     device_build = json.loads((root / 'device-build.json').read_text())
     require(device_build.get('product') == 'unified-shared-source-device' and
-            device_build.get('target') == 'arm64-apple-ios17.4' and
+            device_build.get('target') == 'arm64-apple-ios26.0' and
             device_build.get('binarySHA256') == manifest['files'][BINARIES['device']] and
             all(device_build.get(key) == value for key, value in identity.items()), 'device build/source mismatch')
     for key in ('example', 'bootstrap', 'javascript'):

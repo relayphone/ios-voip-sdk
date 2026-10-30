@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// A rejected control's existing human-readable error text.
 public struct ControlFailure: LocalizedError, Codable, Equatable, Sendable {

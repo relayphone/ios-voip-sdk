@@ -31,7 +31,7 @@ struct ModelTests {
 
   @Test func capabilitiesDefaultToSupported() {
     let capabilities = ConversationCapabilities()
-    #expect(capabilities.hold && capabilities.merge && capabilities.tones && capabilities.video)
+    #expect(capabilities.hold && capabilities.tones && capabilities.video)
   }
 
   @Test func eventContextPreservesIdentifiers() throws {

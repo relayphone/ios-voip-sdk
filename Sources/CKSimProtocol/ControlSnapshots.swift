@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// The framework whose provider is represented by a runtime snapshot.
 public enum ProviderAPI: String, Codable, Sendable {

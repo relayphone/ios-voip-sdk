@@ -49,9 +49,8 @@ public struct Handle: Hashable, Sendable {
   public struct Capabilities: OptionSet, Sendable {
     public let rawValue: Int
     public init(rawValue: Int) { self.rawValue = rawValue }
-    public static let pausing = Self(rawValue: 1), merging = Self(rawValue: 2)
+    public static let pausing = Self(rawValue: 1)
     public static let playingTones = Self(rawValue: 4), video = Self(rawValue: 8)
-    public static let unmerging = Self(rawValue: 16)
   }
   public struct Update: Sendable { public let members: Set<Handle>; public let capabilities: Capabilities }
   public enum EndedReason: Equatable { case remoteEnded, failed, unanswered, joinedElsewhere, declinedElsewhere }
@@ -100,7 +99,6 @@ public struct Handle: Hashable, Sendable {
 }
 @MainActor public final class JoinConversationAction: ConversationAction {}
 @MainActor public final class EndConversationAction: ConversationAction {}
-@MainActor public final class UnmergeConversationAction: ConversationAction {}
 @MainActor public final class StartConversationAction: ConversationAction {
   public let handles: [Handle]; public let isVideo: Bool
   init(conversationUUID: UUID, handles: [Handle], isVideo: Bool) {
@@ -119,9 +117,6 @@ public struct Handle: Hashable, Sendable {
   public enum Tone { case single }
   public let digits: String
   init(conversationUUID: UUID, digits: String, tone: Tone) { self.digits = digits; super.init(conversationUUID: conversationUUID) }
-}
-@MainActor public final class MergeConversationAction: ConversationAction {
-  init(conversationUUID: UUID, conversationUUIDToMergeWith: UUID) { super.init(conversationUUID: conversationUUID) }
 }
 public protocol ConversationManagerDelegate: AnyObject {
   func conversationManager(_ manager: ConversationManager, conversationChanged conversation: Conversation)

@@ -9,7 +9,7 @@ struct BundleDecodingTests {
     #expect(
       value.maximumConversationGroups == 2 && value.maximumConversationsPerConversationGroup == 2)
     #expect(value.supportsVideo && value.includesCallsInRecents && value.simulatorSupport)
-    #expect(value.unhandledAction == .fail && value.providerOwnershipMonitoring == nil)
+    #expect(value.unhandledAction == .fail)
     #expect(value.ringtoneName == nil && value.iconTemplateImageName == nil)
   }
 
@@ -19,7 +19,7 @@ struct BundleDecodingTests {
       <key>maximumConversationGroups</key><integer>9223372036854775807</integer>
       <key>maximumConversationsPerConversationGroup</key><integer>3</integer>
       <key>supportsVideo</key><false/><key>includesCallsInRecents</key><false/>
-      <key>simulatorSupport</key><false/><key>providerOwnershipMonitoring</key><true/>
+      <key>simulatorSupport</key><false/>
       <key>unhandledAction</key><string>accept</string>
       <key>ringtoneName</key><string>ring.caf</string><key>iconTemplateImageName</key><string>Phone</string>
       """)
@@ -27,7 +27,7 @@ struct BundleDecodingTests {
       value.maximumConversationGroups == Int.max
         && value.maximumConversationsPerConversationGroup == 3)
     #expect(!value.supportsVideo && !value.includesCallsInRecents && !value.simulatorSupport)
-    #expect(value.providerOwnershipMonitoring == true && value.unhandledAction == .accept)
+    #expect(value.unhandledAction == .accept)
     #expect(value.ringtoneName == "ring.caf" && value.iconTemplateImageName == "Phone")
   }
 

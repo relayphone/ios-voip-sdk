@@ -83,8 +83,6 @@ struct BridgeTests {
     let rejections: [(any Error, String)] = [
       (ConversationActionError.atCapacity, "at_capacity"),
       (ConversationActionError.unknownConversation, "unknown_conversation"),
-      (ConversationActionError.cannotMergeSameConversation, "unsupported"),
-      (VoIPStartupError.duplicateSDKLinkage, "duplicate_sdk_linkage"),
       (IncomingConversationError.invalidPayload, "invalid_arguments"),
       (ConversationActionError.invalidDigits, "invalid_arguments"),
       (ConversationActionError.invalidParticipant, "invalid_arguments"),
@@ -374,11 +372,11 @@ struct BridgeTests {
     let event = events.named("conversationEvent").last
     try expect(event?["type"] as? String == "audioActivated" && (event?["payload"] as? [String: Any])?.isEmpty == true,
                "Native events must use the public event envelope.")
-    application.client.publish(.providerOwnershipLost)
-    let ownership = events.named("conversationEvent").last
-    try expect(ownership?["type"] as? String == "providerOwnershipLost" &&
-               (ownership?["payload"] as? [String: Any])?.isEmpty == true,
-               "Process ownership loss must not invent a conversation identity.")
+    application.client.publish(.providerReset)
+    let reset = events.named("conversationEvent").last
+    try expect(reset?["type"] as? String == "providerReset" &&
+               (reset?["payload"] as? [String: Any])?.isEmpty == true,
+               "A process-wide reset must not invent a conversation identity.")
     application.client.publish(.audioActivationMissing, conversationID: conversation.id)
     let scoped = events.named("conversationEvent").last
     try expect(scoped?["type"] as? String == "audioActivationMissing" &&

@@ -47,7 +47,7 @@ def main():
                 expected_dependencies.update({'React-Core': [], 'livekit-react-native-webrtc': ['= 150.1.0']})
             assert dependencies == expected_dependencies
             assert ('ExpoMedia/Shared/VSMediaBinding.h' in spec['public_header_files']) == (selected != 'none')
-            assert spec['platforms'] == {'ios': '17.4'}
+            assert spec['platforms'] == {'ios': '26.0'}
             checks.append(f'{adapter or "default"}-one-source-and-dependency-selection')
     assert 'ExpoMedia' in json.loads((ROOT / 'package.json').read_text())['files']
     assert hashes() == before, 'Sources changed during CocoaPods evaluation.'

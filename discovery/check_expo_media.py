@@ -12,7 +12,7 @@ TEST = ROOT / 'Tests/ExpoMedia'
 
 
 def queued_adapter_controls(out, sdk):
-    target = platform.machine() + '-apple-macos14.0'
+    target = platform.machine() + '-apple-macos26.0'
     (out / 'module.modulemap').write_text('module VoIPPlatform { header "' +
         str(ROOT / 'Sources/VoIPPlatform/include/VSAudioSessionQueue.h') + '" export * }\n' +
         'module VSMediaInterop { header "' + str(TEST / 'QueuedCallbackBoundary.h') + '" export * }\n')
@@ -59,7 +59,7 @@ def route_selection_controls(parent, sdk):
     """Actual Core → selected Swift adapter → native WebRTC route lock seam."""
     out = parent / 'route'
     out.mkdir()
-    target = platform.machine() + '-apple-macos14.0'
+    target = platform.machine() + '-apple-macos26.0'
     platform_headers = ROOT / 'Sources/VoIPPlatform/include'
     (out / 'module.modulemap').write_text(
         'module VoIPPlatform { header "' + str(platform_headers / 'VSAudioSessionQueue.h') +

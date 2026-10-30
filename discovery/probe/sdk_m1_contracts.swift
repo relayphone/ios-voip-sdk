@@ -1,8 +1,6 @@
-import CallKit
 import AVFAudio
 import CryptoKit
 import Foundation
-@preconcurrency import LiveCommunicationKit
 import SwiftUI
 import UIKit
 
@@ -144,7 +142,7 @@ private enum LifecycleContract {
     let client = application.client
     let repeated = try VoIPApplication.start(mediaAdapter: adapter)
     ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(client)),
-      "sharedIdentity": String(describing: ObjectIdentifier(repeated.client)), "warnings": 0])
+      "sharedIdentity": String(describing: ObjectIdentifier(repeated.client))])
     client.setConversationHandler(.init(
       join: { _, _ in ContractTrace.log("lifecycle.handler", ["kind": "join", "phase": phase]) },
       start: { _, _ in ContractTrace.log("lifecycle.handler", ["kind": "start", "phase": phase]) },
@@ -262,7 +260,7 @@ private enum RouteContract {
     let client = application.client
     let repeated = try VoIPApplication.start(mediaAdapter: adapter)
     ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(client)),
-      "sharedIdentity": String(describing: ObjectIdentifier(repeated.client)), "warnings": 0])
+      "sharedIdentity": String(describing: ObjectIdentifier(repeated.client))])
     client.setConversationHandler(.init(join: { _, _ in }, start: { _, _ in }, end: { _, _ in }))
     let id = try await client.reportIncomingConversation(.init(eventID: UUID().uuidString,
       serverCallID: .init(rawValue: UUID().uuidString), caller: try Caller(handleType: .generic,
@@ -294,11 +292,6 @@ private enum RouteContract {
 
 @MainActor
 private final class SDKM1ContractsProbe {
-  private var warnings = 0
-  private var phase = "owned"
-  private var extraProvider: CXProvider?
-  private var extraManager: ConversationManager?
-
   private func wait(seconds: Double, until condition: () -> Bool) async -> Bool {
     let stop = Date().addingTimeInterval(max(0, seconds))
     while !condition(), Date() < stop { try? await Task.sleep(for: .milliseconds(20)) }
@@ -335,10 +328,6 @@ private final class SDKM1ContractsProbe {
     let active = SimulatorSupport.activateIfNeeded()
     ContractTrace.log("contract.activation", ["active": active])
     guard active else { finish(false); return }
-    ProviderCreationMonitor.install { [self] message in
-      warnings += 1
-      ContractTrace.log("contract.warning", ["message": message, "phase": phase, "count": warnings])
-    }
     do {
       if mode == "audio-lifecycle" { finish(try await LifecycleContract.run()); return }
       if mode == "audio-routes" { finish(try await RouteContract.run()); return }
@@ -349,10 +338,10 @@ private final class SDKM1ContractsProbe {
         let repeated = try VoIPApplication.start(mediaAdapter: adapter)
         let sameOwner = adapter.observedClient === client && application === repeated
         ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(client)),
-          "sharedIdentity": String(describing: ObjectIdentifier(repeated.client)), "warnings": warnings])
+          "sharedIdentity": String(describing: ObjectIdentifier(repeated.client))])
         ContractTrace.log("contract.mediaReentrancy", ["authorizationCalls": adapter.authorizationCalls,
-          "sameOwner": sameOwner, "warnings": warnings])
-        finish(sameOwner && adapter.authorizationCalls == 1 && warnings == 0)
+          "sameOwner": sameOwner])
+        finish(sameOwner && adapter.authorizationCalls == 1)
         return
       }
       if mode == "duplicate-wrapper" {
@@ -360,47 +349,25 @@ private final class SDKM1ContractsProbe {
         let application = try VoIPApplication.start(configuration: configuration)
         let repeated = try VoIPApplication.start(configuration: configuration)
         ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(application.client)),
-          "sharedIdentity": String(describing: ObjectIdentifier(repeated.client)), "warnings": warnings,
+          "sharedIdentity": String(describing: ObjectIdentifier(repeated.client)),
           "entryPoint": "VoIPApplication.start"])
         try await duplicateContract(application.client)
         return
       }
-      if mode == "unhandled-accept" || mode == "unhandled-fail" {
-        let policy: UnhandledActionPolicy = mode == "unhandled-accept" ? .accept : .fail
-        ContractTrace.log("contract.configuration", ["policy": policy.rawValue, "handlerAttached": false])
-      }
+      guard mode == "unhandled-accept" || mode == "unhandled-fail" else { finish(false); return }
+      let policy: UnhandledActionPolicy = mode == "unhandled-accept" ? .accept : .fail
+      ContractTrace.log("contract.configuration", ["policy": policy.rawValue, "handlerAttached": false])
       let configuration = VoIPApplication.Configuration(client: .init(includesConversationInRecents: false,
-        unhandledAction: mode == "unhandled-accept" ? .accept : .fail))
+        unhandledAction: policy))
       let client = try VoIPApplication.start(configuration: configuration).client
       let repeated = try VoIPApplication.start(configuration: configuration).client
       ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(client)),
-        "sharedIdentity": String(describing: ObjectIdentifier(repeated)), "warnings": warnings])
-      if mode == "guard" { guardContract() }
-      else if mode == "unhandled-accept" || mode == "unhandled-fail" {
-        try await policyContract(client, accepting: mode == "unhandled-accept")
-      }
-      else { finish(false) }
+        "sharedIdentity": String(describing: ObjectIdentifier(repeated))])
+      try await policyContract(client, accepting: mode == "unhandled-accept")
     } catch {
       ContractTrace.log("contract.error", ["type": String(describing: type(of: error))])
       finish(false)
     }
-  }
-
-  private func guardContract() {
-    phase = "extra-cx"
-    ContractTrace.log("contract.creationBegin", ["phase": phase])
-    extraProvider = CXProvider(configuration: CXProviderConfiguration())
-    ContractTrace.log("contract.creationEnd", ["phase": phase, "warnings": warnings,
-      "identity": String(describing: ObjectIdentifier(extraProvider!))])
-    phase = "extra-lck"
-    ContractTrace.log("contract.creationBegin", ["phase": phase])
-    extraManager = ConversationManager(configuration: .init(ringtoneName: nil, iconTemplateImageData: nil,
-      maximumConversationGroups: 2, maximumConversationsPerConversationGroup: 1,
-      includesConversationInRecents: false, supportsVideo: false, supportedHandleTypes: [.generic]))
-    ContractTrace.log("contract.creationEnd", ["phase": phase, "warnings": warnings,
-      "identity": String(describing: ObjectIdentifier(extraManager!))])
-    // Extra owners exist only in this diagnostic fixture; no SDK command uses them.
-    finish(warnings == 2)
   }
 
   /// Exercise the SDK's public result through genuine LCK and its runtime-backed
@@ -467,7 +434,7 @@ private final class SDKM1ContractsProbe {
     let empty = await wait(seconds: 5) { endHandled && client.snapshots.isEmpty }
     CKSimEmit("contract.duplicateEndBoundary", ["stage": "observed-complete", "callUUID": first.uuidString, "empty": empty])
     ContractTrace.log("contract.duplicateObservation", ["conversationID": first.uuidString, "empty": empty])
-    finish(first == second && oneLiveConversation && empty && warnings == 0)
+    finish(first == second && oneLiveConversation && empty)
   }
 
   private func policyContract(_ client: ConversationClient, accepting: Bool) async throws {
@@ -529,7 +496,7 @@ private final class SDKM1ContractsProbe {
         ContractTrace.log("contract.fixtureCleanupSkipped", ["conversationID": id.uuidString])
       }
       let empty = await wait(seconds: 3) { client.snapshots.isEmpty }
-      finish(cleared && empty && warnings == 0)
+      finish(cleared && empty)
       return
     }
     let joined = await wait(seconds: pending.deadline.timeIntervalSinceNow + 3) {
@@ -554,7 +521,7 @@ private final class SDKM1ContractsProbe {
       ContractTrace.log("contract.reportEnded", ["conversationID": id.uuidString])
     }
     let empty = await wait(seconds: 3) { client.snapshots.isEmpty }
-    finish(connected && empty && warnings == 0)
+    finish(connected && empty)
   }
 
   private func finish(_ success: Bool) { ContractTrace.log("contract.result", ["success": success]); ContractTrace.log("done") }

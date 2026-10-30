@@ -4,7 +4,7 @@ Thanks for contributing. Before starting a large change, open an issue to discus
 
 ## Setup
 
-Use macOS with Xcode 27.1 and the iOS 27 SDK for native builds; the SDK supports iOS 17.4 and later. The Expo example uses Node 24 and CocoaPods. Install JavaScript dependencies from the repository root:
+Use macOS 26 or later with Xcode 27.1 (Swift 6.4) and the iOS 27 SDK for native builds; the SDK supports iOS 26 and later. The Expo example uses Node 24 and CocoaPods. Install JavaScript dependencies from the repository root:
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund

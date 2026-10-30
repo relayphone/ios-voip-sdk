@@ -112,12 +112,6 @@ public final class IosVoipSDKModule: Module {
     AsyncFunction("playTones") { (id: String, digits: String, promise: Promise) in
       Self.respond(promise) { try await ExpoMediaSupport.startFromBundle().client.playTones(Self.uuid(id), digits); return nil }
     }
-    AsyncFunction("mergeConversations") { (first: String, second: String, promise: Promise) in
-      Self.respond(promise) {
-        try await ExpoMediaSupport.startFromBundle().client.mergeConversations(Self.uuid(first), Self.uuid(second))
-        return nil
-      }
-    }
     AsyncFunction("reportConversation") { (id: String, report: [String: Any], promise: Promise) in
       guard let data = try? BridgeJSON.data(report) else { Self.rejectArguments(promise); return }
       Self.respond(promise) {

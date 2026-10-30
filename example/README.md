@@ -33,7 +33,7 @@ Set `EXAMPLE_SIMULATOR_UDID` to a newly created simulator owned by your run, and
 delete that simulator afterwards. Release mode bundles JavaScript so launch does
 not depend on a Metro development server. Native projects, Pods and local Expo
 state are ignored. Configure the app's deployment target through
-`expo-build-properties` in `app.json`; the pod also requires iOS 17.4.
+`expo-build-properties` in `app.json`; the pod also requires iOS 26.
 
 Expo 58 generates `SceneDelegate.swift` and a `UIApplicationSceneManifest`, creates
 the window from its `UIWindowScene`, and preserves autolinked Expo subscribers and

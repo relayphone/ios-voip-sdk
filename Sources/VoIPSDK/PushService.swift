@@ -1,4 +1,9 @@
+// Public declarations that use Foundation types compile only on iOS and watchOS.
+#if os(iOS) || os(watchOS)
+public import Foundation
+#else
 import Foundation
+#endif
 
 public struct PushToken: Codable, Sendable, Equatable {
   public let type: String
