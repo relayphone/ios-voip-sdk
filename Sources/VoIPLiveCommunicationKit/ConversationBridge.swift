@@ -27,6 +27,11 @@
     func perform(_ action: sending ConversationAction) async throws {
       try await manager.perform([action])
     }
+
+    /// Stops the manager, so that the system no longer presents calls through it.
+    func invalidate() {
+      DispatchQueue.main.async { self.onMain.invalidate() }
+    }
   }
 
   /// Something the system told the adapter, in values that can leave the main actor.

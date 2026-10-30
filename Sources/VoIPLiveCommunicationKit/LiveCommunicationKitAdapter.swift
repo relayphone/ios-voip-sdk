@@ -33,9 +33,8 @@
   /// stops waiting for an action, the SDK receives `FrameworkEvent.actionTimedOut(_:)`.
   @VoIPActor
   public final class LiveCommunicationKitAdapter: CallingFramework {
-    /// How long a report waits for its task to start, so that a VoIP push's report has started
-    /// before the push callback returns (FB16655952).
-    static let reportStartLimit: DispatchTimeInterval = .seconds(2)
+    /// How long ``reportIncoming(_:completion:)`` waits for the system to answer a report.
+    static let reportWaitLimit: DispatchTimeInterval = .seconds(2)
 
     private static let log = Logger(subsystem: "VoIPLiveCommunicationKit", category: "adapter")
 
@@ -56,6 +55,11 @@
 
     /// Creates the LiveCommunicationKit adapter.
     public nonisolated init() {}
+
+    isolated deinit {
+      // A process has one calling framework provider, which a later client's adapter takes over.
+      manager?.invalidate()
+    }
 
     // MARK: CallingFramework
 
@@ -79,7 +83,13 @@
       }
     }
 
-    /// Reports an incoming call, and waits until the report has started.
+    /// Reports an incoming call, and waits until the system answers the report, for at most 2
+    /// seconds.
+    ///
+    /// LiveCommunicationKit's report is asynchronous, but the system terminates an app whose
+    /// VoIP push callback returns before the report has started (FB16655952). The report runs in
+    /// its own task, which doesn't need `VoIPActor`, and the push callback returns once the
+    /// system has answered it, or when the wait ends.
     public func reportIncoming(
       _ call: Call, completion: @escaping @VoIPActor (PresentationOutcome) -> Void
     ) {
@@ -90,9 +100,8 @@
         capabilities: Conversation.Capabilities(configuration.capabilities, hasVideo: call.hasVideo)
       )
       reporting.insert(uuid)
-      let started = DispatchSemaphore(value: 0)
+      let answered = DispatchSemaphore(value: 0)
       Task.detached(priority: .userInitiated) { [weak self] in
-        started.signal()
         let outcome: PresentationOutcome
         do {
           try await manager.reportNewIncomingConversation(uuid: uuid, update: update)
@@ -100,16 +109,15 @@
         } catch {
           outcome = SystemError.presentationOutcome(for: error)
         }
+        answered.signal()
         if let self {
           await self.reportCompleted(uuid, outcome, then: completion)
         } else {
           await completion(outcome)
         }
       }
-      // The system terminates an app whose VoIP push returns before a LiveCommunicationKit report
-      // has started, even though the report itself is asynchronous.
-      if started.wait(timeout: .now() + Self.reportStartLimit) == .timedOut {
-        Self.log.error("An incoming report didn't start before the push callback returned")
+      if answered.wait(timeout: .now() + Self.reportWaitLimit) == .timedOut {
+        Self.log.notice("The system hadn't answered an incoming report after 2 seconds")
       }
     }
 
