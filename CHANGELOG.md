@@ -25,6 +25,12 @@ Changes not yet released are recorded below. Public API changes include migratio
   `ActionError` adds `unknownCall` and `refused`.
 - `VoIPTesting` adds `FakeCallingFramework`, `FakeMedia` and `FakePushSource`, which run the
   client on the macOS host with `TestClock`.
+- The `VoIPLiveCommunicationKit` library's `LiveCommunicationKitAdapter` presents calls with
+  LiveCommunicationKit. It reports every handle of every party, maps the SDK's actions and end
+  reasons to LiveCommunicationKit's, passes audio activation, action timeouts and resets to the
+  SDK, and starts a VoIP push's report before the push callback returns. It never links CallKit.
+  `VoIPConfiguration.supportsVideo` (default `false`) tells the system whether calls can have
+  video.
 - `VoIPPush(defaultFormat:)` decodes the SDK's existing `incomingCall` and `callEnded` push
   payloads. Only string metadata values are kept.
 - `VoIPClient.report(_:)` returns how the call appears on this device: `previewed(_:)` for a
