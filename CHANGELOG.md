@@ -4,6 +4,14 @@
 
 ### Breaking changes
 
+- Runtime mailbox requests now reject parameters belonging to other controls,
+  duplicate JSON fields and empty fault updates. Custom clients must provide
+  ordinary integer tokens for integer fields and distinct UUIDs for multi-call
+  controls. Push integers outside the signed/unsigned 64-bit range must be strings;
+  floating values must fit a finite Double without underflow. Requests with a valid current
+  identity and invalid parameters receive a rejection response; ambiguous or
+  foreign identities are discarded. The CLI keeps the existing flat v1 format.
+
 - The Inspector now decodes the same validated session model as the runtime.
   Custom session fixtures must include `controlTransport: "directory-watch-v1"`,
   schema version 1, a positive process ID, nonempty bundle/profile names and a

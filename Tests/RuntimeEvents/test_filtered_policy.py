@@ -23,8 +23,8 @@ class FilteredPolicyTests(unittest.TestCase):
 
     def test_filtered_report_selection_and_snapshot(self):
         source = (ROOT / 'Sources/Engine/RuntimeEngine.swift').read_text()
-        definitions = []
-        for kind, name in [('enum', 'IncomingFilterReason'), ('struct', 'IncomingFilterPolicy'),
+        definitions = ['private typealias IncomingFilterReason = ControlRequest.FilterReason']
+        for kind, name in [('extension', 'ControlRequest.FilterReason'), ('struct', 'IncomingFilterPolicy'),
                            ('struct', 'IncomingReportOutcome'), ('struct', 'Faults')]:
             matches = re.findall(r'private ' + kind + ' ' + name + r'[^\n]*\{\n.*?\n\}', source, re.S)
             self.assertEqual(len(matches), 1, 'missing production filtered-report policy seam: ' + name)
@@ -66,10 +66,10 @@ class FilteredPolicyTests(unittest.TestCase):
       precondition(selected.code == code && selected.filterReason == name && selected.delaySeconds > 2)
     }
     var settings = Faults()
-    settings.apply(try JSONDecoder().decode(Faults.self, from: Data(#"{"staleAudio":true,"reportCallbackDelayMS":5000,"invalidateDuringHandoff":true}"#.utf8)))
-    settings.apply(try JSONDecoder().decode(Faults.self, from: Data(#"{"incomingErrorCode":4}"#.utf8)))
+    settings.apply([.staleAudio(true), .reportCallbackDelayMS(5000), .invalidateDuringHandoff(true)])
+    settings.apply([.incomingErrorCode(4)])
     precondition(settings.staleAudio == true && settings.reportCallbackDelayMS == 5000 && settings.invalidateDuringHandoff == true && settings.incomingErrorCode == 4)
-    settings.apply(try JSONDecoder().decode(Faults.self, from: Data(#"{"incomingErrorCode":0}"#.utf8)))
+    settings.apply([.incomingErrorCode(0)])
     precondition(settings.reportCallbackDelayMS == 5000 && settings.incomingErrorCode == 0, "Clearing the explicit fault preserves unrelated faults")
     let fault = IncomingReportOutcome(reason: .none, duplicate: false, policy: nil,
       normalDelaySeconds: 0.02, extraDelaySeconds: 0.4, incomingErrorCode: 4)
@@ -91,7 +91,8 @@ class FilteredPolicyTests(unittest.TestCase):
             swift.write_text('import Foundation\n' + '\n'.join(definitions) + '\n' + checks)
             binary = root / 'policy'
             result = subprocess.run(['xcrun', 'swiftc', '-swift-version', '6', '-warnings-as-errors',
-                                     '-parse-as-library', str(swift), '-o', str(binary)],
+                                     '-parse-as-library', *map(str, sorted((ROOT / 'Sources/CKSimProtocol').glob('*.swift'))),
+                                     str(swift), '-o', str(binary)],
                                     capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             result = subprocess.run([str(binary), str(ROOT / 'Sources/Engine/Resources/ios-27.0.json')],

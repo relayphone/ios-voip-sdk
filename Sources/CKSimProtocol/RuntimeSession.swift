@@ -40,11 +40,7 @@ public struct RuntimeSession: Codable, Equatable, Sendable {
     bundleID: String, runID: String, pid: Int, profile: String,
     controlTransport: ControlTransport = .directoryWatchV1
   ) throws(ValidationError) {
-    guard (1...64).contains(runID.utf8.count),
-      runID.utf8.allSatisfy({
-        (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0)
-          || $0 == 45 || $0 == 95
-      })
+    guard validRuntimeRunID(runID)
     else { throw .invalidRunID }
     guard pid > 0 else { throw .invalidProcessID }
     guard !bundleID.isEmpty else { throw .emptyBundleID }

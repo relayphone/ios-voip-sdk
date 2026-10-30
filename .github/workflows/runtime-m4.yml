@@ -52,7 +52,7 @@ jobs:
       - name: Watcher and existing CLI controls
         id: controls
         run: |
-          swift test --scratch-path "$RUNNER_TEMP/runtime-host-tests" --filter 'RuntimeJournalTests|RuntimeSessionTests'
+          swift test --scratch-path "$RUNNER_TEMP/runtime-host-tests" --filter 'RuntimeJournalTests|RuntimeSessionTests|ControlRequestTests'
           python3 Tests/RuntimeEvents/test_watch.py
           python3 Tests/RuntimeEvents/test_native_runner.py
           python3 Tests/RuntimeEvents/test_ci_simulator.py
