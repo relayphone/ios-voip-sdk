@@ -229,16 +229,16 @@ private enum RouteContract {
       let native = await AudioSessionQueue.shared.perform { () -> [[AudioRoute]] in
         let session = AVAudioSession.sharedInstance()
         func route(_ port: AVAudioSessionPortDescription) -> AudioRoute {
-          AudioRoute(id: port.uid, name: port.portName, type: port.portType.rawValue)
+          AudioRoute(id: .init(rawValue: port.uid), name: port.portName, type: port.portType.rawValue)
         }
         return [(session.availableInputs ?? []).map(route), session.currentRoute.outputs.map(route)]
       }
       var expected: [AudioRoute] = []
-      for port in native[0] where !expected.contains(where: { $0.id == "input:" + port.id }) {
-        expected.append(.init(id: "input:" + port.id, name: port.name, type: port.type))
+      for port in native[0] where !expected.contains(where: { $0.id.rawValue == "input:" + port.id.rawValue }) {
+        expected.append(.init(id: .init(rawValue: "input:" + port.id.rawValue), name: port.name, type: port.type))
       }
-      expected.append(.init(id: "speaker", name: "Speaker", type: "Speaker"))
-      let current = native[1].first.map { AudioRoute(id: "output:" + $0.id, name: $0.name, type: $0.type) }
+      expected.append(.init(id: .init(rawValue: "speaker"), name: "Speaker", type: "Speaker"))
+      let current = native[1].first.map { AudioRoute(id: .init(rawValue: "output:" + $0.id.rawValue), name: $0.name, type: $0.type) }
       if let current { expected.append(current) }
       let observed = client.audioRoutes
       // Notifications use a debounce. Wait for a coherent OS/cache checkpoint
@@ -246,7 +246,7 @@ private enum RouteContract {
       if observed.routes == expected && observed.current == current {
         let snapshot = try JSONSerialization.jsonObject(with: JSONEncoder().encode(observed))
         func values(_ ports: [AudioRoute]) -> [[String: String]] {
-          ports.map { ["uid": $0.id, "name": $0.name, "type": $0.type] }
+          ports.map { ["uid": $0.id.rawValue, "name": $0.name, "type": $0.type] }
         }
         ContractTrace.log("routes.observed", ["phase": phase, "snapshot": snapshot,
           "inputs": values(native[0]), "outputs": values(native[1])])
@@ -271,7 +271,7 @@ private enum RouteContract {
     guard await LifecycleContract.wait({ adapter.authorized && adapter.activations == 1 && client.audioRoutes.revision > 0 }) else { return false }
     ContractTrace.log("routes.authority", ["conversationID": id.uuidString, "authorized": true])
     do {
-      try await client.selectAudioRoute("speaker")
+      try await client.selectAudioRoute(.init(rawValue: "speaker"))
       ContractTrace.log("routes.command", ["id": "speaker", "succeeded": true])
     } catch let error as AudioRouteError { throw error }
     catch {
