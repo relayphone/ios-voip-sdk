@@ -60,7 +60,6 @@ public struct ConversationHandler {
     case .hold: hold
     case .mute: mute
     case .tones: tones
-    case .merge, .unmerge: nil
     }
   }
 }

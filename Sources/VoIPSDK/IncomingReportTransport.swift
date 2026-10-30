@@ -19,7 +19,7 @@ final class IncomingReportTransport: @unchecked Sendable {
     case .email: handle = Handle(type: .emailAddress, value: caller.value, displayName: caller.displayName)
     case .generic: handle = Handle(type: .generic, value: caller.value, displayName: caller.displayName)
     }
-    var capabilities: Conversation.Capabilities = [.pausing, .merging, .unmerging, .playingTones]
+    var capabilities: Conversation.Capabilities = [.pausing, .playingTones]
     if reservation.payload.hasVideo { capabilities.insert(.video) }
     let update = Conversation.Update(members: [handle], capabilities: capabilities)
     #if os(iOS) && targetEnvironment(simulator)

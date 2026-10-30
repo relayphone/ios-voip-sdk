@@ -102,7 +102,6 @@ export interface Conversation {
   members: Participant[];
   capabilities: {
     hold: boolean;
-    merge: boolean;
     tones: boolean;
     video: boolean;
   };

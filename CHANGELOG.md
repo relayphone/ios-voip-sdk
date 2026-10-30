@@ -6,6 +6,14 @@ Changes not yet released are recorded below. Public API changes include migratio
 
 ### Breaking changes
 
+- Merging is removed. `ConversationClient.mergeConversations(_:_:)`, the Expo
+  `mergeConversations` function, `ConversationCapabilities.merge`, the `merge`
+  and `unmerge` action kinds and `ConversationActionError.cannotMergeSameConversation`
+  no longer exist. Conversations no longer advertise merging to the system, and a
+  merge or unmerge action that still arrives fails instead of being fulfilled:
+  the SDK cannot mix media, so fulfilling one would report a conference that does
+  not exist. Hold and mute are unchanged.
+
 - The process-wide duplicate linkage claim is removed, together with
   `VoIPStartupError.duplicateSDKLinkage` and the Expo `duplicate_sdk_linkage`
   rejection code. Link either the Swift package or the Expo pod in a process,

@@ -108,7 +108,7 @@ function conversation(id = 'call') {
     direction: 'incoming',
     status: 'ringing',
     members: [{ id: 'caller' }],
-    capabilities: { hold: true, merge: true, tones: true, video: true },
+    capabilities: { hold: true, tones: true, video: true },
     isMuted: false,
     isVideo: false,
     payload: {

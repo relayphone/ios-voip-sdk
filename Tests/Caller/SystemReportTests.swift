@@ -9,7 +9,7 @@ struct Handle: Hashable, Sendable {
 enum Conversation {
   struct Capabilities: OptionSet, Sendable {
     let rawValue: Int
-    static let pausing = Self(rawValue: 1), merging = Self(rawValue: 2), unmerging = Self(rawValue: 4)
+    static let pausing = Self(rawValue: 1)
     static let playingTones = Self(rawValue: 8), video = Self(rawValue: 16)
   }
   struct Update: Sendable { let members: Set<Handle>; let capabilities: Capabilities }

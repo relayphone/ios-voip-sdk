@@ -83,7 +83,6 @@ struct BridgeTests {
     let rejections: [(any Error, String)] = [
       (ConversationActionError.atCapacity, "at_capacity"),
       (ConversationActionError.unknownConversation, "unknown_conversation"),
-      (ConversationActionError.cannotMergeSameConversation, "unsupported"),
       (IncomingConversationError.invalidPayload, "invalid_arguments"),
       (ConversationActionError.invalidDigits, "invalid_arguments"),
       (ConversationActionError.invalidParticipant, "invalid_arguments"),

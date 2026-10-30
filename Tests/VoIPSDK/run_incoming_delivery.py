@@ -72,8 +72,6 @@ enum Conversation {
   struct Capabilities: OptionSet, Sendable {
     let rawValue: UInt32
     static let pausing = Self(rawValue: 1 << 0)
-    static let merging = Self(rawValue: 1 << 1)
-    static let unmerging = Self(rawValue: 1 << 2)
     static let playingTones = Self(rawValue: 1 << 3)
     static let video = Self(rawValue: 1 << 4)
   }
@@ -129,7 +127,7 @@ final class ConversationManager: @unchecked Sendable {
     FixtureMetadata.validate(projection, id: uuid)
     precondition(intake.hasPending(uuid), "The actual report attempt must still be pending at entry.")
     precondition(update.members == [Handle(type: .generic, value: "main-stall-caller", displayName: "main-stall-caller")])
-    precondition(update.capabilities == [.pausing, .merging, .unmerging, .playingTones])
+    precondition(update.capabilities == [.pausing, .playingTones])
     state.record(uuid)
     HostReportEntered()
   }

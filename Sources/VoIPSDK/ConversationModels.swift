@@ -254,11 +254,10 @@ public enum ConversationEndedReason: String, Codable, Sendable {
 }
 public struct ConversationCapabilities: Codable, Sendable, Equatable {
   public var hold: Bool
-  public var merge: Bool
   public var tones: Bool
   public var video: Bool
-  public init(hold: Bool = true, merge: Bool = true, tones: Bool = true, video: Bool = true) {
-    self.hold = hold; self.merge = merge; self.tones = tones; self.video = video
+  public init(hold: Bool = true, tones: Bool = true, video: Bool = true) {
+    self.hold = hold; self.tones = tones; self.video = video
   }
 }
 public struct ConversationEnded: Codable, Sendable, Equatable {
@@ -267,7 +266,7 @@ public struct ConversationEnded: Codable, Sendable, Equatable {
   public init(at: Date, reason: ConversationEndedReason) { self.at = at; self.reason = reason }
 }
 public enum ConversationActionKind: String, Codable, Sendable {
-  case join, start, end, hold, mute, tones, merge, unmerge
+  case join, start, end, hold, mute, tones
 }
 public enum ConversationActionOrigin: String, Codable, Sendable { case system, app }
 public struct PendingAction: Codable, Sendable, Equatable {
@@ -343,8 +342,6 @@ public enum ConversationActionError: Error, Sendable, Equatable {
   case unknownConversation
   /// The requested tones are empty or contain unsupported digits.
   case invalidDigits
-  /// A conversation cannot be merged with itself.
-  case cannotMergeSameConversation
   /// The system has reached its conversation capacity.
   case atCapacity
   /// The system operation was cancelled.

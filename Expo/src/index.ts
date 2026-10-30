@@ -62,13 +62,6 @@ export function playTones(id: string, digits: string): Promise<void> {
   return getRuntime().bridge.playTones(id, digits);
 }
 
-export function mergeConversations(
-  first: string,
-  second: string,
-): Promise<void> {
-  return getRuntime().bridge.mergeConversations(first, second);
-}
-
 export function reportConversation(
   id: string,
   report: ConversationReport,
