@@ -1,11 +1,35 @@
 import Foundation
 
+/// An observed audio route or an explicit speaker override target.
 public struct AudioRoute: Codable, Sendable, Equatable, Identifiable {
-  public let id: String
+  /// An opaque route identity, distinct from conversation and observer identifiers.
+  public struct ID: RawRepresentable, Codable, Sendable, Hashable {
+    /// The route identity used in Codable and JavaScript payloads.
+    public let rawValue: String
+
+    /// Restores an identity received from a route snapshot or a serialized payload.
+    /// Selection still requires the route to be available and audio to be active.
+    public init(rawValue: String) { self.rawValue = rawValue }
+
+    /// Decodes the existing string representation of a route identity.
+    public init(from decoder: any Decoder) throws {
+      rawValue = try decoder.singleValueContainer().decode(String.self)
+    }
+
+    /// Encodes the identity as a string, preserving the existing wire format.
+    public func encode(to encoder: any Encoder) throws {
+      var value = encoder.singleValueContainer()
+      try value.encode(rawValue)
+    }
+  }
+
+  /// The typed identity to pass to route selection.
+  public let id: ID
   public let name: String
   /// Raw OS port type; the explicit speaker override target uses Speaker.
   public let type: String
-  public init(id: String, name: String, type: String) { self.id = id; self.name = name; self.type = type }
+  /// Creates a route description with a typed identity.
+  public init(id: ID, name: String, type: String) { self.id = id; self.name = name; self.type = type }
 }
 
 public struct AudioRoutesSnapshot: Codable, Sendable, Equatable {
@@ -38,8 +62,8 @@ enum AudioRouteSelection: Sendable, Equatable { case speaker, input(String), cur
 /// Projects only observed inputs/current output. It never invents other output devices.
 @MainActor
 final class AudioRoutesStore {
-  static let speakerID = "speaker"
-  private var selections: [String: AudioRouteSelection] = [:]
+  static let speakerID = AudioRoute.ID(rawValue: "speaker")
+  private var selections: [AudioRoute.ID: AudioRouteSelection] = [:]
   private var observers: [UUID: @MainActor (AudioRoutesSnapshot) -> Void] = [:]
   private var publishing = false
   private(set) var snapshot = AudioRoutesSnapshot(revision: 0, routes: [], current: nil)
@@ -53,15 +77,15 @@ final class AudioRoutesStore {
   func update(inputs: [AudioRoutePort], outputs: [AudioRoutePort]) {
     let speaker = AudioRoute(id: Self.speakerID, name: "Speaker", type: "Speaker")
     var routes: [AudioRoute] = []
-    var available: [String: AudioRouteSelection] = [:]
+    var available: [AudioRoute.ID: AudioRouteSelection] = [:]
     for input in inputs {
-      let id = "input:" + input.uid
+      let id = AudioRoute.ID(rawValue: "input:" + input.uid)
       guard available[id] == nil else { continue }
       routes.append(AudioRoute(id: id, name: input.name, type: input.type))
       available[id] = .input(input.uid)
     }
     routes.append(speaker); available[speaker.id] = .speaker
-    let current = outputs.first.map { AudioRoute(id: "output:" + $0.uid, name: $0.name, type: $0.type) }
+    let current = outputs.first.map { AudioRoute(id: .init(rawValue: "output:" + $0.uid), name: $0.name, type: $0.type) }
     // Current is the observed output itself, never a paired input or a command
     // target. An OS observation does not imply arbitrary output selection exists.
     if let current, let output = outputs.first {
@@ -81,7 +105,7 @@ final class AudioRoutesStore {
     publishing = false
   }
 
-  func selection(_ id: String, isActive: Bool) throws -> AudioRouteSelection {
+  func selection(_ id: AudioRoute.ID, isActive: Bool) throws -> AudioRouteSelection {
     guard isActive else { throw AudioRouteError.audioSessionInactive }
     guard let selection = selections[id] else { throw AudioRouteError.unknownRoute }
     return selection

@@ -6,6 +6,12 @@ Changes not yet released are recorded below. Public API changes include migratio
 
 ### Breaking changes
 
+- `AudioRoute.id`, the route initializer and `ConversationClient.selectAudioRoute(_:)`
+  now use `AudioRoute.ID`. Pass an observed route's `id` directly, or restore a
+  serialized ID with `AudioRoute.ID(rawValue:)`; use `id.rawValue` when a string is
+  needed. Codable and Expo keep their existing string IDs and snapshot shape.
+  Route availability, audio authorization and native selection errors are unchanged.
+
 - The Inspector now decodes the same validated session model as the runtime.
   Custom session fixtures must include `controlTransport: "directory-watch-v1"`,
   schema version 1, a positive process ID, nonempty bundle/profile names and a

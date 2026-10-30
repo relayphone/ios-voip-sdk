@@ -22,20 +22,20 @@ enum ExpoMediaSelection { static let name = "webrtc" }
     owner.routeConfigurationAdapter = adapter
     owner.setSystemAudioAuthorization(true)
     let limit = ContinuousClock.now + .seconds(3)
-    while owner.routes.snapshot.current?.id != "output:receiver" {
+    while owner.routes.snapshot.current?.id.rawValue != "output:receiver" {
       guard ContinuousClock.now < limit else { throw Failure.timedOut }
       try await Task.sleep(for: .milliseconds(1))
     }
     let audio = AVFAudio.AVAudioSession.fixture
-    try await owner.selectRoute("speaker", isActive: true)
-    try await owner.selectRoute("input:built-in", isActive: true)
+    try await owner.selectRoute(.init(rawValue: "speaker"), isActive: true)
+    try await owner.selectRoute(.init(rawValue: "input:built-in"), isActive: true)
     precondition(audio.writes == 3, "All actual Core route setters must run under the selected WebRTC lock")
     let reads = audio.reads
     audio.rejectNextSetter()
-    do { try await owner.selectRoute("speaker", isActive: true); throw Failure.expectedSetterFailure }
+    do { try await owner.selectRoute(.init(rawValue: "speaker"), isActive: true); throw Failure.expectedSetterFailure }
     catch AVFAudio.AVAudioSession.FixtureError.setterRejected {}
     precondition(audio.reads > reads, "An error must reread observed routes")
-    try await owner.selectRoute("output:receiver", isActive: true)
+    try await owner.selectRoute(.init(rawValue: "output:receiver"), isActive: true)
     precondition(audio.writes == 4, "Current output validation must not mutate the session")
 
     let entered = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
@@ -50,7 +50,7 @@ enum ExpoMediaSelection { static let name = "webrtc" }
     let selection = Task { @MainActor in
       started.continuation.yield(())
       started.continuation.finish()
-      try await owner.selectRoute("speaker", isActive: true)
+      try await owner.selectRoute(.init(rawValue: "speaker"), isActive: true)
     }
     // This actor resumes only after selection suspends on its queued callback.
     for await _ in started.stream { break }
