@@ -5,8 +5,8 @@ import Testing
 
 struct ModelTests {
   @Test(arguments: [
-    JSONValue.string("value"), .number(42.5), .bool(true), .null,
-    .array([.number(1), .string("two")]), .object(["flag": .bool(false)]),
+    JSONValue.string("value"), .double(42.5), .bool(true), .null,
+    .array([.int(1), .string("two")]), .object(["flag": .bool(false)]),
   ])
   func jsonValuesRoundTrip(value: JSONValue) throws {
     #expect(try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value)) == value)
