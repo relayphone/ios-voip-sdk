@@ -203,7 +203,8 @@ struct CoreTests {
     let wire = Data(#"{"eventId":"e","serverCallId":"s","caller":{"handleType":"phone","value":"+15555550142","displayName":"caller","hostContactID":"caller"},"hasVideo":true,"startedAt":"2026-10-22T00:00:00.123Z","metadata":{"flag":true,"nested":[1,"two",null]}}"#.utf8)
     let payload = try JSONDecoder().decode(IncomingCallPayload.self, from: wire)
     precondition(payload.eventId == "e" && payload.caller.handleType == .phone && payload.caller.value == "+15555550142" && payload.hasVideo)
-    precondition(payload.metadata?["flag"] == .bool(true) && payload.startedAt == "2026-10-22T00:00:00.123Z")
+    precondition(payload.metadata?["flag"] == .bool(true) &&
+      payload.startedAt?.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)) == "2026-10-22T00:00:00.123Z")
     let roundtrip = try JSONDecoder().decode(IncomingCallPayload.self, from: JSONEncoder().encode(payload))
     precondition(roundtrip == payload)
     print("Core tests passed: dedup/in-flight, two-minute boundary, cold launch, late attachment, replacement, deadline/policy, no resurrection, optional handlers and wire roundtrip")

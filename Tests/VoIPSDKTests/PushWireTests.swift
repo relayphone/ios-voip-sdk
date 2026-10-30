@@ -17,8 +17,8 @@ struct PushWireTests {
     IncomingCallPayload(
       eventId: "event-1", serverCallId: "server-1",
       caller: try Caller(handleType: .generic, value: "caller", displayName: "Fixture"),
-      hasVideo: true, startedAt: "2026-10-22T00:00:00.125Z",
-      metadata: ["flag": .bool(true), "nested": .array([.number(1), .string("two")])])
+      hasVideo: true, startedAt: Date(timeIntervalSince1970: 1_792_627_200.125),
+      metadata: ["flag": .bool(true), "nested": .array([.int(1), .string("two")])])
   }
 
   @Test func parsesCanonicalAndLegacyEnvelopes() throws {
@@ -58,10 +58,12 @@ struct PushWireTests {
     #expect(decoded.startedAt == nil)
   }
 
-  @Test func preservesOriginalDateOffset() {
+  @Test func convertsDateOffsetToAnInstant() {
     var body = invitation
     body["startedAt"] = "2026-10-22T00:00:00+02:00"
-    #expect(PushWire.decodeIncomingInvitation(body)?.startedAt == "2026-10-22T00:00:00+02:00")
+    #expect(
+      PushWire.decodeIncomingInvitation(body)?.startedAt
+        == Date(timeIntervalSince1970: 1_792_620_000))
   }
 
   @Test func discardsNonObjectMetadata() throws {
@@ -106,8 +108,7 @@ struct PushWireTests {
       PushWire.parse(["messageType": "callEnded", "callEnded": encoded]) == .callEnded(ended))
     #expect(PushWire.parse(["messageType": "callEnded", "callEnded": body]) == .malformed)
     #expect(
-      PushWire.decodeCallEnded(["eventId": "e", "serverCallId": "s", "reason": "unknown"])?.reason
-        == .remoteEnded)
+      PushWire.decodeCallEnded(["eventId": "e", "serverCallId": "s", "reason": "unknown"]) == nil)
   }
 
   @Test func optionalMalformedPushIsSkipped() {
