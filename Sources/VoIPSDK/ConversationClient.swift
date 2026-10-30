@@ -86,28 +86,16 @@ public final class ConversationClient {
     public var maximumConversationsPerGroup: Int
     public var includesConversationInRecents: Bool
     public var supportsVideo: Bool
-    /// Debug defaults on; Release requires explicit configuration and the
-    /// ProviderOwnershipDiagnostics build option. Coverage is best effort.
-    public var providerOwnershipMonitoring: Bool
-    public static var defaultProviderOwnershipMonitoring: Bool {
-      #if DEBUG
-      true
-      #else
-      false
-      #endif
-    }
     public var unhandledAction: UnhandledActionPolicy
     public init(ringtoneName: String? = nil, iconTemplateImageData: Data? = nil,
                 maximumConversationGroups: Int = 2, maximumConversationsPerGroup: Int = 2,
                 includesConversationInRecents: Bool = true, supportsVideo: Bool = true,
-                unhandledAction: UnhandledActionPolicy = .fail,
-                providerOwnershipMonitoring: Bool = Self.defaultProviderOwnershipMonitoring) {
+                unhandledAction: UnhandledActionPolicy = .fail) {
       self.ringtoneName = ringtoneName; self.iconTemplateImageData = iconTemplateImageData
       self.maximumConversationGroups = maximumConversationGroups
       self.maximumConversationsPerGroup = maximumConversationsPerGroup
       self.includesConversationInRecents = includesConversationInRecents
       self.supportsVideo = supportsVideo; self.unhandledAction = unhandledAction
-      self.providerOwnershipMonitoring = providerOwnershipMonitoring
     }
   }
 
@@ -186,9 +174,6 @@ public final class ConversationClient {
     audio = AudioActivationCoordinator(policy: audioPolicy)
     coordinator = ConversationActionCoordinator(policy: configuration.unhandledAction)
     SimulatorSupport.activateIfNeeded()
-    #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
-    ProviderCreationMonitor.beginOwnedManagerCreation()
-    #endif
     manager = ConversationManager(configuration: .init(ringtoneName: configuration.ringtoneName,
       iconTemplateImageData: configuration.iconTemplateImageData,
       maximumConversationGroups: configuration.maximumConversationGroups,
@@ -198,9 +183,6 @@ public final class ConversationClient {
       supportedHandleTypes: [.generic, .phoneNumber, .emailAddress]))
     incomingTransport = IncomingReportTransport(manager: manager)
     systemAudio.routeConfigurationAdapter = mediaAdapter as? any AudioRouteConfigurationAdapter
-    #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
-    ProviderCreationMonitor.endOwnedManagerCreation()
-    #endif
     managerDelegate.client = self
     manager.delegate = managerDelegate
     coordinator.snapshot = { [weak self] id in self?.snapshot(id) }
@@ -226,16 +208,6 @@ public final class ConversationClient {
   func finishLaunch() {
     guard !launchFinished else { return }
     launchFinished = true
-    if configuration.providerOwnershipMonitoring {
-      #if DEBUG || VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
-      // Install after the owned manager has exposed the system class. The
-      // monitor never loads a framework or constructs a provider to find it.
-      ProviderCreationMonitor.setOwnershipConflictHandler { [weak self] in self?.emit(.providerOwnershipLost) }
-      ProviderCreationMonitor.install { message in NSLog("VoIPSDK provider ownership: %@", message) }
-      #else
-      NSLog("VoIPSDK: provider ownership diagnostics were not compiled in; enable the build option.")
-      #endif
-    }
     trackManager()
     mediaAdapter.setSystemAudioAuthorization(false)
   }

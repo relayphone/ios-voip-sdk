@@ -181,5 +181,4 @@ export interface ConversationEventMap {
     eventId: string;
   };
   providerReset: Record<string, never>;
-  providerOwnershipLost: Record<string, never>;
 }

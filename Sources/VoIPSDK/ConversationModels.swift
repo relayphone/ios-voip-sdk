@@ -388,12 +388,12 @@ public struct ConversationStateUpdate: Codable, Sendable, Equatable {
 }
 
 public enum ConversationEvent: String, Codable, Sendable {
-  case audioActivated, audioDeactivated, audioActivationMissing, audioActivationFailed, providerReset, providerOwnershipLost, answeredElsewhere
+  case audioActivated, audioDeactivated, audioActivationMissing, audioActivationFailed, providerReset, answeredElsewhere
 }
 
 public struct ConversationEventContext: Codable, Sendable, Equatable {
   public let type: ConversationEvent
-  /// Absent for process-wide system callbacks and reset/ownership events.
+  /// Absent for process-wide system callbacks and reset events.
   public let conversationID: UUID?
   /// The backend call associated with this event, when present.
   public let serverCallID: ServerCallID?

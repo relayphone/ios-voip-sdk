@@ -55,15 +55,10 @@ def fixture(build, capture):
         add('contract.activation', active=True)
         if case in ('unhandled-accept', 'unhandled-fail'):
             add('contract.configuration', policy=case.removeprefix('unhandled-'), handlerAttached=False)
-        add('contract.owner', identity='client', sharedIdentity='client', warnings=0)
+        add('contract.owner', identity='client', sharedIdentity='client')
         if case == 'duplicate-wrapper': rows[-1]['entryPoint'] = 'VoIPApplication.start'
-        if case == 'guard':
-            for phase, count, identity in [('extra-cx', 1, 'provider-2'), ('extra-lck', 2, 'manager-2')]:
-                add('contract.creationBegin', phase=phase)
-                add('contract.warning', phase=phase, count=count, message=gate.WARNING)
-                add('contract.creationEnd', phase=phase, warnings=count, identity=identity)
-        elif case == 'media-reentrancy':
-            add('contract.mediaReentrancy', authorizationCalls=1, sameOwner=True, warnings=0)
+        if case == 'media-reentrancy':
+            add('contract.mediaReentrancy', authorizationCalls=1, sameOwner=True)
         elif case == 'audio-lifecycle':
             for row in authority_rows():
                 add(row['event'], **{key: value for key, value in row.items() if key != 'event'})
@@ -147,7 +142,7 @@ def fixture(build, capture):
             engine.append(dict(event=event, sequence=len(engine) + 1, t_ms=len(engine) if at is None else at,
                 runID='synthetic-run', pid=pid, bundleID=gate.BUNDLE, profile='ios-27.0', **fields))
         runtime('runtime.installed', version=(gate.ROOT / 'VERSION').read_text().strip())
-        for count in range(1, 4 if case == 'guard' else 2): runtime('provider.created', provider='provider-' + str(count))
+        runtime('provider.created', provider='provider-1')
         if case in ('unhandled-accept', 'unhandled-fail'):
             runtime('transaction.delivered', kinds=['CXAnswerCallAction'], actionIDs=['native-cx-action'],
                     provider='provider-1', origin='application', requestID='native-request')
@@ -235,7 +230,7 @@ class Controls(unittest.TestCase):
                 self.assertEqual(set(result['cases']), {'audio-lifecycle'})
                 with self.assertRaises(gate.EvidenceError): gate.validate(build, capture, cases=())
                 with self.assertRaises(gate.EvidenceError): gate.validate(build, capture, cases=('absent',))
-                with self.assertRaises(gate.EvidenceError): gate.validate(build, capture, cases=('guard', 'guard'))
+                with self.assertRaises(gate.EvidenceError): gate.validate(build, capture, cases=('audio-lifecycle', 'audio-lifecycle'))
 
     def test_route_observations_preserve_actual_output_and_reject_optimistic_state(self):
         for mutate in (
@@ -267,8 +262,7 @@ class Controls(unittest.TestCase):
             next(row for row in rows if row['event'] == 'launch').update(simulatorOS='26.5'))
 
     def test_media_adapter_publication_and_reentrancy(self):
-        for field, value in [('authorizationCalls', 2), ('authorizationCalls', True),
-                             ('sameOwner', False), ('warnings', True), ('warnings', 1)]:
+        for field, value in [('authorizationCalls', 2), ('authorizationCalls', True), ('sameOwner', False)]:
             with self.subTest(field=field, value=value):
                 self.check('media-reentrancy', lambda rows, engine, field=field, value=value:
                     next(r for r in rows if r['event'] == 'contract.mediaReentrancy').update({field: value}))
@@ -419,13 +413,6 @@ class Controls(unittest.TestCase):
         for key in parent:
             with self.subTest(key=key):
                 self.check(parent={**parent, key: 'different-' + key})
-
-    def test_guard_warnings(self):
-        for field, value in [('main', False), ('message', 'monitor disabled'), ('count', 0), ('phase', 'owned')]:
-            with self.subTest(field=field):
-                self.check('guard', lambda rows, engine: next(r for r in rows if r['event'] == 'contract.warning').update({field: value}))
-        self.check('guard', lambda rows, engine: next(r for r in rows if r['event'] == 'contract.owner').update(warnings=1))
-        self.check('guard', lambda rows, engine: next(r for r in rows if r['event'] == 'contract.creationEnd').update(identity='wrong-provider'))
 
     def test_pending_deadline(self):
         self.check('unhandled-accept', lambda rows, engine: next(r for r in rows if r['event'] == 'contract.pending').update(deadlineMS=WALL + 5000, remainingMS=4990))
@@ -651,7 +638,7 @@ class Controls(unittest.TestCase):
 
     def test_build_and_receipt_binding(self):
         self.check(file_edit=lambda build, capture: (build / gate.BUILD_FILES[0]).write_text('tampered'))
-        self.check(file_edit=lambda build, capture: (capture / 'sdk-m1-contract-guard.runtime.jsonl').write_text(''))
+        self.check(file_edit=lambda build, capture: (capture / 'sdk-m1-contract-unhandled-accept.runtime.jsonl').write_text(''))
         for key, value in (('configuration', 'Release'), ('product', 'different'), ('schemaVersion', 0)):
             def metadata(build, capture, key=key, value=value):
                 path = build / 'build-info.json'
@@ -665,7 +652,7 @@ class Controls(unittest.TestCase):
             write(path, info)
         self.check(file_edit=rehashed_source_after)
         def bad_pid(build, capture):
-            path = capture / 'sdk-m1-contract-guard.receipt.json'
+            path = capture / 'sdk-m1-contract-unhandled-accept.receipt.json'
             receipt = json.loads(path.read_text()); receipt['launcherAppPID'] = 999; write(path, receipt)
         self.check(file_edit=bad_pid)
 

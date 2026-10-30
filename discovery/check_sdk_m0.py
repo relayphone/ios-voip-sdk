@@ -387,8 +387,7 @@ os.execv(sys.executable,[sys.executable,*sys.argv[1:]])
         sources = dict(CKSimProtocol=('RuntimeSession.o',),
                        CKSimRuntimeC=('CKInterposition.o', 'CKPushDelivery.o'),
                        CKSimRuntime=('RuntimeEngine.o', 'resource_bundle_accessor.o'),
-                       VoIPPlatform=('VSCompletionOnce.o', 'VSProviderCreationMonitor.o',
-                                     'VSProviderMonitorInternal.o', 'VSPushRegistryOwner.o'),
+                       VoIPPlatform=('VSCompletionOnce.o', 'VSPushRegistryOwner.o'),
                        VoIPSDK=('SimulatorSupport.o',))
         for suffix in ('.build', '-t.build'):
             with self.subTest(target_directory_suffix=suffix), tempfile.TemporaryDirectory() as temporary:

@@ -162,7 +162,7 @@ class ContainerCaptureControls(unittest.TestCase):
 class ContractCaptureBudgetControls(unittest.TestCase):
     def capture(self, refuse=''):
         source = RUNNER.read_text()
-        start = source.index('  for case in guard ')
+        start = source.index('  for case in unhandled-accept ')
         end = source.index('    if [[ -z "$contract_container" ]]', start)
         # Execute the actual contract-loop launch call site. The inert supervisor
         # records arguments; no app, simulator, journal or conformance is faked.
@@ -188,7 +188,7 @@ class ContractCaptureBudgetControls(unittest.TestCase):
         result, calls = self.capture()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(calls), len({call['case'] for call in calls}))
-        self.assertTrue({'guard', 'unhandled-accept', 'unhandled-fail'} <= {call['case'] for call in calls})
+        self.assertTrue({'unhandled-accept', 'unhandled-fail'} <= {call['case'] for call in calls})
         for call in calls:
             args = call['args']; budget = int(args[args.index('--timeout') + 1])
             self.assertEqual(budget, 90)
@@ -200,8 +200,7 @@ class ContractCaptureBudgetControls(unittest.TestCase):
     def test_failed_policy_capture_is_not_replayed_or_followed(self):
         result, calls = self.capture(refuse='unhandled-fail')
         self.assertEqual(result.returncode, 73, result.stderr)
-        self.assertEqual([call['case'] for call in calls],
-                         ['guard', 'unhandled-accept', 'unhandled-fail'])
+        self.assertEqual([call['case'] for call in calls], ['unhandled-accept', 'unhandled-fail'])
 
 
 if __name__ == '__main__':

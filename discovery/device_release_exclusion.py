@@ -21,10 +21,7 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-PROVIDER_MONITOR_SYMBOLS = ('VSProviderMonitorInstall', 'VSProviderCreationMonitor')
-
-
-def inspect_binary(path, provider_diagnostics=False):
+def inspect_binary(path):
     require(path.is_file() and path.stat().st_size > 0, 'missing native binary')
     result = subprocess.run(['xcrun', 'otool', '-L', str(path)],
                             capture_output=True, text=True, timeout=30)
@@ -39,23 +36,14 @@ def inspect_binary(path, provider_diagnostics=False):
     # Empty archive members retain source filenames. Inspect actual symbols,
     # rather than treating that metadata as compiled runtime implementation.
     for marker in ('CKSimInjectPush', 'CKSimEmit', 'CKSimPrepareEngine', 'CKSimActivateRuntime',
-                   'CKSimMakeCall', 'RuntimeEngine', 'RuntimeBootstrap', 'CXCallObserver', 'CXProvider',
-                   *(() if provider_diagnostics else PROVIDER_MONITOR_SYMBOLS)):
+                   'CKSimMakeCall', 'RuntimeEngine', 'RuntimeBootstrap', 'CXCallObserver', 'CXProvider'):
         require(marker not in names, 'device binary contains simulator/debug implementation: ' + marker)
     require(b'fulfilledPostEndUnmutePolicy' not in data, 'device binary contains embedded simulator profile')
-    inspection = dict(sha256=digest(path), bytes=len(data), directDependencies=dependencies,
-                      symbolsSHA256=hashlib.sha256(symbols.stdout.encode()).hexdigest())
-    if provider_diagnostics:
-        defined = subprocess.run(['xcrun', 'nm', '-jU', str(path)], capture_output=True, text=True, timeout=30)
-        require(defined.returncode == 0, 'nm could not inspect defined native symbols')
-        definitions = set(defined.stdout.splitlines())
-        inspection['providerMonitorPresent'] = {
-            '_VSProviderMonitorInstall', '_OBJC_CLASS_$_VSProviderCreationMonitor',
-        }.issubset(definitions)
-    return inspection
+    return dict(sha256=digest(path), bytes=len(data), directDependencies=dependencies,
+                symbolsSHA256=hashlib.sha256(symbols.stdout.encode()).hexdigest())
 
 
-def inspect_public_headers(directory, provider_diagnostics=False):
+def inspect_public_headers(directory):
     headers = sorted(directory.rglob('*.h'))
     require(headers, 'missing SDK public headers')
     sdk = subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()
@@ -64,22 +52,19 @@ def inspect_public_headers(directory, provider_diagnostics=False):
         require(path.name != 'CKRuntimeSeam.h', 'private simulator seam is public')
         result = subprocess.run(['xcrun', 'clang', '-E', '-P', '-x', 'objective-c', '-fblocks',
                                  '-target', 'arm64-apple-ios17.4', '-isysroot', sdk, '-DDEBUG=0',
-                                 *(['-DVSSDK_ENABLE_PROVIDER_DIAGNOSTICS=1'] if provider_diagnostics else []),
                                  '-I', str(directory), str(path)], capture_output=True, text=True, timeout=30)
         require(result.returncode == 0, 'cannot preprocess Release iphoneos public header: ' + path.name)
         require('CKSim' not in result.stdout, 'public simulator test hook')
-        if not provider_diagnostics:
-            require('VSProviderCreationMonitor' not in result.stdout, 'public Release creation monitor')
         inspected[str(path.relative_to(directory))] = dict(sourceSHA256=digest(path),
             devicePreprocessedSHA256=hashlib.sha256(result.stdout.encode()).hexdigest())
     return inspected
 
 
-def inspect_app(app, pod_binary, public_headers, provider_diagnostics=False):
+def inspect_app(app, pod_binary, public_headers):
     info = plistlib.loads((app / 'Info.plist').read_bytes())
     require(info.get('DTPlatformName') == 'iphoneos', 'acceptance requires an iphoneos app')
     executable = app / info['CFBundleExecutable']
-    binaries = {str(executable.relative_to(app)): inspect_binary(executable, provider_diagnostics)}
+    binaries = {str(executable.relative_to(app)): inspect_binary(executable)}
     magics = (b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe', b'\xca\xfe\xba\xbe', b'\xca\xfe\xba\xbf')
     for path in sorted(app.rglob('*')):
         if not path.is_file() or path == executable:
@@ -90,13 +75,11 @@ def inspect_app(app, pod_binary, public_headers, provider_diagnostics=False):
         with path.open('rb') as stream:
             magic = stream.read(4)
         if magic in magics:
-            binaries[str(path.relative_to(app))] = inspect_binary(path, provider_diagnostics)
-    pod = inspect_binary(pod_binary, provider_diagnostics)
-    if provider_diagnostics:
-        require(pod['providerMonitorPresent'], 'opted-in pod binary is missing provider monitor implementation')
+            binaries[str(path.relative_to(app))] = inspect_binary(path)
+    pod = inspect_binary(pod_binary)
     return dict(success=True, qualification='pod-built Release iphoneos binary/resource/header inspection only',
                 platform='iphoneos', appBinaries=binaries, podBinary=pod,
-                publicHeaders=inspect_public_headers(public_headers, provider_diagnostics),
+                publicHeaders=inspect_public_headers(public_headers),
                 limits='Direct linkage only; Apple LiveCommunicationKit transitive dependencies are not claimed absent.')
 
 
@@ -106,10 +89,9 @@ def main():
     parser.add_argument('--pod-binary', type=Path, required=True)
     parser.add_argument('--public-headers', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--provider-diagnostics', action='store_true', help='permit and require the optional provider monitor')
     args = parser.parse_args()
     try:
-        result = inspect_app(args.app, args.pod_binary, args.public_headers, args.provider_diagnostics)
+        result = inspect_app(args.app, args.pod_binary, args.public_headers)
     except (ExclusionError, OSError, ValueError, KeyError, subprocess.TimeoutExpired) as error:
         result = dict(success=False, error=str(error))
     args.output.write_text(json.dumps(result, indent=2) + '\n')

@@ -21,29 +21,14 @@ def run(argv, **kwargs):
 def check_packaging(out):
     manifest = json.loads(run(['swift', 'package', 'dump-package'], cwd=ROOT).stdout)
     assert manifest['toolsVersion']['_version'] == '6.1.0'
-    assert [trait['name'] for trait in manifest['traits']] == ['ProviderOwnershipDiagnostics']
-    targets = {target['name']: target for target in manifest['targets']}
-    for name, tools in [('VoIPPlatform', ['c']), ('CKSimRuntimeC', ['c']),
-                        ('CKSimRuntime', ['swift']), ('VoIPSDK', ['c', 'swift'])]:
-        for tool in tools:
-            settings = [setting for setting in targets[name]['settings'] if setting['tool'] == tool and
-                        setting['kind'].get('define', {}).get('_0', '').startswith('VSSDK_ENABLE_PROVIDER_DIAGNOSTICS')]
-            assert len(settings) == 1 and settings[0]['condition'].get('traits') == ['ProviderOwnershipDiagnostics'], (name, tool)
+    assert not manifest.get('traits')
     # CocoaPods IPC evaluates a spec in its own directory. Copy exact source
     # bytes so the isolated Podfile.properties fixture models that install root.
     for name in ['IosVoipSDK.podspec', 'package.json', 'VERSION']:
         shutil.copyfile(ROOT / name, out / name)
-    for enabled in [None, False, True]:
-        properties = out / 'Podfile.properties.json'
-        properties.write_text(json.dumps({} if enabled is None else {'ios-voip-sdk.providerOwnershipMonitoring': str(enabled).lower()}))
-        spec = json.loads(run(['pod', 'ipc', 'spec', str(out / 'IosVoipSDK.podspec')], cwd=out).stdout)
-        flags = spec['pod_target_xcconfig']
-        assert ('VSSDK_ENABLE_PROVIDER_DIAGNOSTICS' in flags['SWIFT_ACTIVE_COMPILATION_CONDITIONS']) == (enabled is True)
-        assert ('VSSDK_ENABLE_PROVIDER_DIAGNOSTICS=1' in flags['GCC_PREPROCESSOR_DEFINITIONS']) == (enabled is True)
-        assert 'CallKit' not in spec['frameworks']
-    properties.write_text(json.dumps({'ios-voip-sdk.providerOwnershipMonitoring': 'yes'}))
-    invalid = subprocess.run(['pod', 'ipc', 'spec', str(out / 'IosVoipSDK.podspec')], cwd=out, capture_output=True, timeout=30)
-    assert invalid.returncode != 0 and b'must be true or false' in invalid.stdout + invalid.stderr
+    (out / 'Podfile.properties.json').write_text('{}')
+    spec = json.loads(run(['pod', 'ipc', 'spec', str(out / 'IosVoipSDK.podspec')], cwd=out).stdout)
+    assert 'CallKit' not in spec['frameworks']
 
 def main():
     inputs = [ROOT / name for name in (
@@ -74,16 +59,6 @@ def main():
         policy = activation[activation.index('public struct AudioActivationPolicy:'):activation.index('enum AudioActivationEvent:')]
         (out / 'Facades.swift').write_text('''import Foundation
 ''' + policy + '''
-// Explicit platform facade: a coverage diagnostic is not a provider conflict.
-@MainActor enum ProviderCreationMonitor {
-  static var conflict: (@MainActor () -> Void)?
-  static var installs = 0
-  static var coverageDiagnostics = 0
-  static func setOwnershipConflictHandler(_ handler: @escaping @MainActor () -> Void) { conflict = handler }
-  static func install(_ diagnostic: (String) -> Void) {
-    installs += 1; coverageDiagnostics += 1; diagnostic("host facade: coverage unavailable")
-  }
-}
 @MainActor public protocol MediaAdapter: AnyObject {
   func setSystemAudioAuthorization(_ active: Bool)
 }
@@ -130,15 +105,11 @@ def main():
 #if DEBUG
 #error("Ownership callback probe must exercise Release Swift, without DEBUG")
 #endif
-#if !VSSDK_ENABLE_PROVIDER_DIAGNOSTICS
-#error("Ownership callback probe requires the explicit Release build option")
-#endif
 @MainActor public func startProbe() -> String {
   do { _ = try VoIPApplication.start(); return "started" }
   catch { return String(describing: error) }
 }
 @MainActor public func managerCreations() -> Int { ConversationClient.creations }
-@MainActor public func monitorInstallations() -> Int { ProviderCreationMonitor.installs }
 @MainActor public func configurationAndPublicationProbe() -> Bool {
   do {
     // Invalid first configurations must fail before the manager factory. The
@@ -153,10 +124,7 @@ def main():
               ConversationClient.creations == 0, VoIPApplication.current == nil else { return false }
       }
     }
-    guard !ConversationClient.Configuration.defaultProviderOwnershipMonitoring,
-          ProviderCreationMonitor.installs == 0 else { return false }
-    let configuration = VoIPApplication.Configuration(client: .init(
-      supportsVideo: false, providerOwnershipMonitoring: true))
+    let configuration = VoIPApplication.Configuration(client: .init(supportsVideo: false))
     let adapter = RecordingMediaAdapter()
     var reentered = false
     var authorizationReentered = false
@@ -219,22 +187,8 @@ def main():
         guard case VoIPStartupError.alreadyConfigured = error else { return false }
       }
     }
-    guard ConversationClient.creations == 1 && ConversationClient.tracks == 1,
-          ProviderCreationMonitor.installs == 1, conflictingAdapter.authorizations.isEmpty,
-          adapter.authorizations == [false] else { return false }
-    var events: [ConversationEventContext] = []
-    let observer = application.client.observeEvents { events.append($0) }
-    // These are the actual finishLaunch closure and actual observe/emit methods.
-    // Interception/coverage itself remains the explicit platform facade above.
-    ProviderCreationMonitor.install { _ in }
-    guard events.isEmpty, ProviderCreationMonitor.coverageDiagnostics == 2,
-          let conflict = ProviderCreationMonitor.conflict else { return false }
-    conflict()
-    guard events == [.init(type: .providerOwnershipLost)] else { return false }
-    application.client.removeEventObserver(observer)
-    conflict()
-    return events == [.init(type: .providerOwnershipLost)] && ConversationClient.creations == 1 &&
-      ConversationClient.tracks == 1
+    return ConversationClient.creations == 1 && ConversationClient.tracks == 1 &&
+      conflictingAdapter.authorizations.isEmpty && adapter.authorizations == [false]
   } catch { return false }
 }
 public func claimOnly() -> Bool {
@@ -261,7 +215,7 @@ public func claimOnly() -> Bool {
                             '\n' + claim.read_text())
         for module in ('SwiftPackageSDK', 'ExpoPodSDK'):
             print('Compiling ' + module, flush=True)
-            run(['swiftc', '-O', '-D', 'VSSDK_ENABLE_PROVIDER_DIAGNOSTICS', '-swift-version', '6', '-warnings-as-errors', '-parse-as-library',
+            run(['swiftc', '-O', '-swift-version', '6', '-warnings-as-errors', '-parse-as-library',
                  '-emit-library', '-emit-module', '-module-name', module, '-import-objc-header', str(header),
                  str(combined), *objects, '-emit-module-path', str(out / (module + '.swiftmodule')),
                  '-o', str(out / ('lib' + module + '.dylib'))])
@@ -285,8 +239,6 @@ import ExpoPodSDK
     let start = podFirst ? ExpoPodSDK.startProbe : SwiftPackageSDK.startProbe
     let duplicate = podFirst ? SwiftPackageSDK.startProbe : ExpoPodSDK.startProbe
     precondition(start() == "started" && start() == "started", "Same linked SDK owner must be idempotent")
-    precondition(SwiftPackageSDK.monitorInstallations() + ExpoPodSDK.monitorInstallations() == 0,
-      "Release must default to no provider monitor installation even when support is compiled")
     precondition(duplicate() == "duplicateSDKLinkage", "A second linked SDK must fail before constructing its manager")
     precondition(SwiftPackageSDK.managerCreations() + ExpoPodSDK.managerCreations() == 1,
       "The process must construct exactly one manager across both SDK modules")
@@ -314,7 +266,7 @@ import ExpoPodSDK
                                 capture_output=True, timeout=30)
         assert static.returncode != 0 and b'duplicate symbol' in static.stderr, 'static duplicate failure must be an actual linker collision'
     assert before == {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in inputs}, 'sources changed during host qualification'
-    print(json.dumps(dict(success=True, sourceSHA256=before, classification='two real optimized Release-opt-in host modules/dylibs; actual Application, client selection, finishLaunch, event observe/emit and process claim; provider interception, LCK observation/construction, simulator configuration and PushKit factories are explicit facades',
+    print(json.dumps(dict(success=True, sourceSHA256=before, classification='two real optimized Release host modules/dylibs; actual Application, client selection, finishLaunch, event observe/emit and process claim; provider interception, LCK observation/construction, simulator configuration and PushKit factories are explicit facades',
                           checks=['package-first-duplicate-refused-before-second-manager', 'pod-first-duplicate-refused-before-second-manager',
                                   'same-objc-helper-present-in-both-images', 'concurrent-claims-preserve-owner', 'static-linker-duplicate-is-already-loud',
                                   'actual-forApplication-repeated-same-configuration-is-idempotent',
@@ -325,12 +277,7 @@ import ExpoPodSDK
                                   'actual-finishLaunch-reentrant-authorization-sees-published-owner-exactly-once',
                                   'actual-finishLaunch-reentrant-observation-sees-published-application-and-client',
                                   'actual-finishLaunch-observes-exactly-once-for-both-linked-module-orders',
-                                  'release-monitor-default-does-not-install',
-                                  'release-explicit-opt-in-installs-once-and-emits-actual-public-ownership-event',
-                                  'release-coverage-diagnostics-do-not-emit-ownership-loss',
-                                  'release-event-observer-removal-stops-delivery',
-                                  'swiftpm-trait-and-pod-property-compile-time-opt-in',
-                                  'pod-default-excludes-monitor-and-invalid-opt-in-refuses' ])))
+                                  'pod-excludes-callkit'])))
 
 
 if __name__ == '__main__':

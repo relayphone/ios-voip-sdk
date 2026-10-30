@@ -6,6 +6,15 @@ Changes not yet released are recorded below. Public API changes include migratio
 
 ### Breaking changes
 
+- The provider ownership monitor is removed. Delete uses of
+  `ConversationClient.Configuration.providerOwnershipMonitoring` and
+  `defaultProviderOwnershipMonitoring`, the `ProviderOwnershipDiagnostics`
+  package trait, the `ios-voip-sdk.providerOwnershipMonitoring` Podfile property
+  and the config plugin's `providerOwnershipMonitoring` option, which is now
+  rejected as unsupported. The `providerOwnershipLost` event no longer exists in
+  Swift or TypeScript. Its best-effort coverage could not detect every competing
+  provider, so it could not be relied on.
+
 - Inspector controls now validate complete runtime responses before awaiting
   journal confirmation. Custom bridges must return the existing runtime identity,
   UUID request/action/transaction identifiers and the operation's complete result
