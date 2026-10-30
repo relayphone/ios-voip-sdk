@@ -381,6 +381,23 @@ def check_symbols(root, relative, expected, names):
             'symbol evidence mismatch: ' + relative)
 
 
+def join_diagnostics(root):
+    manifest = json.loads((root / 'manifest.json').read_text())
+    rows, _ = bound_rows(root, 'sdk-m0', manifest, 'dev.iosvoipsdk.example')
+    snapshots = [row for row in rows if row['event'] == 'sdk.snapshot']
+    points = dict(
+        joinPending=[row for row in snapshots if any(
+            (call.get('pending') or {}).get('kind') == 'join' for call in row['conversations'])],
+        joinHandler=[row for row in rows if row['event'] == 'sdk.action' and
+                     row.get('kind') == 'JoinConversationAction'],
+        joinSettled=[row for row in rows if row['event'] == 'sdk.joinSettled'],
+        lastSnapshot=snapshots[-1:],
+        result=[row for row in rows if row['event'] == 'sdk.result'],
+        done=[row for row in rows if row['event'] == 'done'])
+    return {name: [{key: row[key] for key in ('t_ms', 'wallTimeMS') if key in row}
+                   for row in matches] for name, matches in points.items()}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('root', nargs='?', type=Path)
@@ -407,6 +424,11 @@ def main():
             result = validate(args.root)
     except (EvidenceError, OSError, ValueError, KeyError, TypeError, StopIteration, subprocess.SubprocessError) as error:
         result = dict(success=False, error=str(error))
+    if args.root is not None:
+        try:
+            result['joinDiagnostics'] = join_diagnostics(args.root)
+        except (EvidenceError, OSError, ValueError, KeyError, TypeError, AttributeError, StopIteration) as error:
+            result['joinDiagnostics'] = dict(error=str(error))
     print(json.dumps(result, indent=2))
     return 0 if result['success'] else 1
 

@@ -69,16 +69,28 @@ if sys.argv[1] == 'discovery/run_scenario.py':
     name=arg('--scenario'); source=pathlib.Path(os.environ['FIXTURE_CAPTURES'])
     shutil.copyfile(source/(name+'.log'),arg('--output'))
     shutil.copyfile(source/(name+'.receipt.json'),arg('--receipt'))
+elif sys.argv[1] == 'scripts/sim/paths.py':
+    # Container binding has its own controls; this fixture checks installed bytes.
+    out=pathlib.Path(os.environ['OUT'])
+    assert sys.argv[2:]==['--receipt',str(out/'sdk-m0.receipt.json'),
+        '--trace',str(out/'sdk-m0.log'),'--simulator',os.environ['UDID'],
+        '--run-id','run-1','--bundle','dev.iosvoipsdk.example']
+    print(os.environ['FIXTURE_CONTAINER'])
 else: os.execv(sys.executable,[sys.executable,*sys.argv[1:]])
 ''')
             python.chmod(0o755)
             output = root / 'out'; output.mkdir()
+            container = root / 'synthetic data container'
+            journal = container / 'Documents/.callkit-simulator/run-1/events.jsonl'
+            journal.parent.mkdir(parents=True)
+            journal.write_text('host-only synthetic journal\n')
             source = (ROOT / 'discovery/run_sdk_m0.sh').read_text()
             start = source.index('limit 180 xcrun simctl install "$UDID" "$SDK_M0_APP"')
             end = source.index('if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then', start)
             environment = dict(os.environ, PATH=str(binary) + ':/usr/bin:/bin', OUT=str(output),
                 UDID=SIMULATOR, RUN_ID='run-1', INHERITED_DYLD='', SDK_M0_APP='source-example',
-                SDK_M0_BOOTSTRAP_APP='source-bootstrap', FIXTURE_CAPTURES=str(captures))
+                SDK_M0_BOOTSTRAP_APP='source-bootstrap', FIXTURE_CAPTURES=str(captures),
+                FIXTURE_CONTAINER=str(container))
             result = subprocess.run(['/bin/bash', '-c', 'set -euo pipefail\nlimit() { shift; "$@"; }\n' + source[start:end]],
                 cwd=ROOT, env=environment, capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)

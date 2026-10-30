@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Offline positive and tamper controls for the M0 evidence gate."""
+import contextlib
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -225,6 +227,43 @@ os.execv(sys.executable,[sys.executable,*sys.argv[1:]])
 
     def test_positive(self):
         self.check()
+
+    def test_failed_join_summary_keeps_failure_and_reports_bound_timestamps(self):
+        with tempfile.TemporaryDirectory(prefix='sdk-join-summary-') as temporary:
+            root = Path(temporary)
+            fixture(root)
+            rows = gate.load(root, 'sdk-m0')
+            pending = dict(rows[6], t_ms=3506, wallTimeMS=103506, revision=1,
+                conversations=[dict(rows[6]['conversations'][0], pending=dict(kind='join'))])
+            handler = dict(rows[8], t_ms=3564, wallTimeMS=103564)
+            failed = dict(rows[-2], t_ms=11602, wallTimeMS=111602, success=False)
+            done = dict(rows[-1], t_ms=11602, wallTimeMS=111602)
+            write_trace(root, 'sdk-m0', rows[:8] + [pending, handler, failed, done])
+            output = io.StringIO()
+            with patch.object(gate, 'source_identity', return_value=IDENTITY), \
+                 patch.object(gate, 'symbol_names', return_value=SYMBOLS), \
+                 patch.object(sys, 'argv', ['sdk_m0_conformance.py', str(root)]), \
+                 contextlib.redirect_stdout(output):
+                status = gate.main()
+            summary = json.loads(output.getvalue())
+            self.assertEqual(status, 1)
+            self.assertFalse(summary['success'])
+            self.assertEqual(summary['error'], 'require one sdk.joinSettled {}; got 0')
+            self.assertEqual(summary['joinDiagnostics'], dict(
+                joinPending=[dict(t_ms=3506, wallTimeMS=103506)],
+                joinHandler=[dict(t_ms=3564, wallTimeMS=103564)], joinSettled=[],
+                lastSnapshot=[dict(t_ms=3506, wallTimeMS=103506)],
+                result=[dict(t_ms=11602, wallTimeMS=111602)],
+                done=[dict(t_ms=11602, wallTimeMS=111602)]))
+
+    def test_join_diagnostics_refuses_a_trace_with_a_changed_hash(self):
+        with tempfile.TemporaryDirectory(prefix='sdk-join-unbound-') as temporary:
+            root = Path(temporary)
+            fixture(root)
+            trace = root / 'sdk-m0.log'
+            trace.write_text(trace.read_text() + '\n')
+            with self.assertRaisesRegex(gate.EvidenceError, 'trace hash mismatch'):
+                gate.join_diagnostics(root)
 
     def test_signal_receipts_integration(self):
         def signal_receipts(root):

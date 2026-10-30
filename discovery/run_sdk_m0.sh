@@ -205,6 +205,18 @@ env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_SDK_M0_ACC
   --terminate-command xcrun simctl terminate "$UDID" dev.iosvoipsdk.example \
   --launch-command xcrun simctl launch --console --terminate-running-process "$UDID" dev.iosvoipsdk.example
 if declare -F sim_checkpoint >/dev/null; then sim_checkpoint; fi
+# Preserve this process's journal before any later launch resets the run file.
+initial_container=$(limit 30 python3 scripts/sim/paths.py --receipt "$OUT/sdk-m0.receipt.json" --trace "$OUT/sdk-m0.log" \
+  --simulator "$UDID" --run-id "$RUN_ID" --bundle dev.iosvoipsdk.example)
+[[ -n "$initial_container" && -d "$initial_container" ]] || { echo "Missing owned example data container" >&2; exit 1; }
+cp "$initial_container/Documents/.callkit-simulator/$RUN_ID/events.jsonl" "$OUT/sdk-m0.runtime.jsonl"
+python3 - "$OUT/sdk-m0.receipt.json" "$OUT/sdk-m0.runtime.jsonl" <<'PY'
+import hashlib,json,pathlib,sys
+receipt,journal=map(pathlib.Path,sys.argv[1:])
+row=json.loads(receipt.read_text())
+row['journalSHA256']=hashlib.sha256(journal.read_bytes()).hexdigest()
+receipt.write_text(json.dumps(row,indent=2)+'\n')
+PY
 for case in healthy profile push-after-install; do
   PRODUCT_CHECK="bootstrap-$case"
   env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES="$INHERITED_DYLD" SIMCTL_CHILD_CKSIM_RUN_ID="$RUN_ID" \

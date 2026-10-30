@@ -18,8 +18,11 @@ SIMULATOR = 'host-synthetic-simulator'
 LABEL = 'host-only synthetic fixture; never native acceptance'
 
 
-def capture_block():
+def capture_block(initial=False):
     source = RUNNER.read_text()
+    if initial:
+        start = source.index('PRODUCT_CHECK=sdk-m0\n')
+        return source[start:source.index('for case in healthy profile push-after-install; do\n', start)]
     end = source.index('  mkdir "$OUT/m1/contracts"\n')
     # The earlier acceptance preflight uses the same exact opening line.
     start = source.rindex('if [[ "${SDK_M1_ACCEPTANCE:-0}" == 1 ]]; then\n', 0, end)
@@ -34,13 +37,13 @@ SCENARIO_STUB = r'''
 import json, os, pathlib, sys
 args = sys.argv[1:]
 def option(name): return args[args.index(name) + 1]
-case = os.environ['SIMCTL_CHILD_SDK_M1_CASE']
-assert case in ('journey', 'cold-launch', 'unhandled-expiry')
-assert option('--scenario') == 'sdk-m1-' + case
+case = os.environ.get('SIMCTL_CHILD_SDK_M1_CASE', 'sdk-m0')
+assert case in ('sdk-m0', 'journey', 'cold-launch', 'unhandled-expiry')
+assert option('--scenario') == ('sdk-m0' if case == 'sdk-m0' else 'sdk-m1-' + case)
 assert option('--bundle-id') == 'dev.iosvoipsdk.example'
 assert option('--run-id') == os.environ['RUN_ID']
 assert option('--simulator-id') == os.environ['UDID']
-assert option('--timeout') == ('120' if case == 'journey' else '90')
+assert option('--timeout') == ('120' if case in ('sdk-m0', 'journey') else '90')
 assert args[args.index('--terminate-command') + 1:args.index('--launch-command')] == [
     'xcrun', 'simctl', 'terminate', os.environ['UDID'], 'dev.iosvoipsdk.example']
 assert args[args.index('--launch-command') + 1:] == [
@@ -61,8 +64,9 @@ if os.environ['FIXTURE_MODE'] != 'missing-journal':
 
 PATH_STUB = r'''
 import json, os, pathlib, sys
-expected = ['--receipt', str(pathlib.Path(os.environ['OUT']) / 'm1/sdk-m1-journey.receipt.json'),
-    '--trace', str(pathlib.Path(os.environ['OUT']) / 'm1/sdk-m1-journey.log'),
+name = 'sdk-m0' if os.environ['FIXTURE_INITIAL'] == '1' else 'm1/sdk-m1-journey'
+expected = ['--receipt', str(pathlib.Path(os.environ['OUT']) / (name + '.receipt.json')),
+    '--trace', str(pathlib.Path(os.environ['OUT']) / (name + '.log')),
     '--simulator', os.environ['UDID'], '--run-id', os.environ['RUN_ID'], '--bundle', 'dev.iosvoipsdk.example']
 with open(os.environ['FIXTURE_QUERIES'], 'a') as stream: stream.write(json.dumps(sys.argv[1:]) + '\n')
 assert sys.argv[1:] == expected, 'only the completed owned capture can resolve a container'
@@ -77,7 +81,7 @@ else: print(os.environ['FIXTURE_CONTAINER'])
 
 
 class ContainerCaptureControls(unittest.TestCase):
-    def run_capture(self, mode, check):
+    def run_capture(self, mode, check, *, initial=False):
         with tempfile.TemporaryDirectory(prefix='sdk-m1-host-capture-') as temporary:
             root = Path(temporary)
             (root / 'discovery').mkdir()
@@ -100,19 +104,41 @@ class ContainerCaptureControls(unittest.TestCase):
             environment = dict(os.environ, PATH=str(binary) + ':/usr/bin:/bin',
                 SDK_M1_ACCEPTANCE='1', OUT=str(output), INHERITED_DYLD='',
                 RUN_ID=RUN_ID, UDID=SIMULATOR, FIXTURE_MODE=mode,
+                FIXTURE_INITIAL='1' if initial else '0',
                 FIXTURE_CONTAINER=str(container), FIXTURE_NON_DIRECTORY=str(non_directory),
                 FIXTURE_CASES=str(cases), FIXTURE_QUERIES=str(queries))
             # Only the real block is under test. No setup, app installation, or
             # contract loop from the native runner is executed by this fixture.
             # Trace actual copy attempts without replacing the real cp command.
             harness = "set -euo pipefail\nPS4='+ '\nset -x\n" + \
-                'limit() { [[ "$1" == 30 ]] || return 74; shift; "$@"; }\n' + capture_block()
+                'limit() { [[ "$1" == 30 ]] || return 74; shift; "$@"; }\n' + capture_block(initial)
+            if initial:
+                harness += 'printf "later process journal\\n" > "$FIXTURE_CONTAINER/Documents/.callkit-simulator/$RUN_ID/events.jsonl"\n'
             result = subprocess.run(['/bin/bash', '-c', harness], cwd=root, env=environment,
                 capture_output=True, text=True, timeout=15)
             observed_cases = cases.read_text().splitlines() if cases.exists() else []
             observed_queries = [json.loads(line) for line in queries.read_text().splitlines()] if queries.exists() else []
             self.assertEqual(len(observed_queries), 1, result.stderr)
-            check(result, output / 'm1', observed_cases)
+            check(result, output if initial else output / 'm1', observed_cases)
+
+    def test_initial_journal_is_preserved_before_a_later_process_overwrites_it(self):
+        def check(result, output, observed_cases):
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(observed_cases, ['sdk-m0'])
+            captured = (output / 'sdk-m0.runtime.jsonl').read_bytes()
+            self.assertEqual(captured, journal_bytes('sdk-m0'))
+            receipt = json.loads((output / 'sdk-m0.receipt.json').read_text())
+            self.assertEqual(receipt['journalSHA256'], hashlib.sha256(captured).hexdigest())
+        self.run_capture('success', check, initial=True)
+
+    def test_initial_capture_errors_stop_before_a_later_process(self):
+        for mode in ('lookup-fails', 'empty', 'not-directory', 'missing-journal', 'bad-receipt'):
+            with self.subTest(mode=mode):
+                def check(result, output, observed_cases):
+                    self.assertNotEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(observed_cases, ['sdk-m0'])
+                    self.assertNotIn("+ printf 'later process journal", result.stderr)
+                self.run_capture(mode, check, initial=True)
 
     def test_one_bound_lookup_captures_three_distinct_journals_and_receipt_hashes(self):
         def check(result, output, observed_cases):
