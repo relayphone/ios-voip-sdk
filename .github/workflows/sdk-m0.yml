@@ -583,7 +583,7 @@ jobs:
           udid=$(scripts/ci/bounded 60 xcrun simctl create "call-journeys-$GITHUB_RUN_ID" \
             com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-0)
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
-      - name: Run the call journeys through LiveCommunicationKit and PushKit
+      - name: Run the call journeys through LiveCommunicationKit, CallKit and PushKit
         env:
           SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
         run: |

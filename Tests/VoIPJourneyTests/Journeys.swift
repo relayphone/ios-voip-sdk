@@ -5,17 +5,19 @@
   import VoIPCore
   import VoIPTesting
 
-  /// Call journeys through the shipping LiveCommunicationKit adapter and PushKit source, with
-  /// the simulator runtime acting as the system. They run one at a time, because a process has
-  /// one calling framework provider.
+  /// Call journeys through each shipping calling framework adapter and the PushKit source, with
+  /// the simulator runtime acting as the system. Every journey runs once through
+  /// LiveCommunicationKit and once through CallKit, and they run one at a time, because a process
+  /// has one calling framework provider.
   @MainActor
   @Suite(.serialized, .timeLimit(.minutes(1)))
   struct Journeys {
-    @Test func pushAnswerConnectAndEndRemotely() async throws {
+    @Test(arguments: Framework.allCases)
+    func pushAnswerConnectAndEndRemotely(_ framework: Framework) async throws {
       let id = newCallID("answer")
       var pushID = UUID()
       // The push waits for the app's PushKit registry, as when a VoIP push launches the app.
-      let app = try await App { pushID = try await $0.pushIncomingCall(id) }
+      let app = try await App(framework) { pushID = try await $0.pushIncomingCall(id) }
       defer { app.stop() }
       try await app.expect([.presented(id)])
       let uuid = deviceUUID(for: id)
@@ -36,8 +38,9 @@
       app.expectNoMoreEvents()
     }
 
-    @Test func declineFromTheCallScreen() async throws {
-      let app = try await App()
+    @Test(arguments: Framework.allCases)
+    func declineFromTheCallScreen(_ framework: Framework) async throws {
+      let app = try await App(framework)
       defer { app.stop() }
       let id = newCallID("decline")
       let pushID = try await app.system.pushIncomingCall(id)
@@ -51,8 +54,9 @@
       app.expectNoMoreEvents()
     }
 
-    @Test func answeredElsewhereBecomesAPreview() async throws {
-      let app = try await App()
+    @Test(arguments: Framework.allCases)
+    func answeredElsewhereBecomesAPreview(_ framework: Framework) async throws {
+      let app = try await App(framework)
       defer { app.stop() }
       let id = newCallID("elsewhere")
       let invite = try await app.system.pushIncomingCall(id)
@@ -69,8 +73,9 @@
       app.expectNoMoreEvents()
     }
 
-    @Test func unrecognizedPushIsReportedAndEndedAtOnce() async throws {
-      let app = try await App()
+    @Test(arguments: Framework.allCases)
+    func unrecognizedPushIsReportedAndEndedAtOnce(_ framework: Framework) async throws {
+      let app = try await App(framework)
       defer { app.stop() }
       // PushKit requires every VoIP push to be reported as a call, even one the app can't read.
       let pushID = try await app.system.push(["aps": .object([:]), "greeting": .string("hello")])
@@ -82,8 +87,9 @@
       app.expectNoMoreEvents()
     }
 
-    @Test func filteredCallBecomesAPreview() async throws {
-      let app = try await App()
+    @Test(arguments: Framework.allCases)
+    func filteredCallBecomesAPreview(_ framework: Framework) async throws {
+      let app = try await App(framework)
       defer { app.stop() }
       try await app.system.filterIncomingCalls(.doNotDisturb)
       let id = newCallID("filtered")
@@ -104,8 +110,9 @@
       app.expectNoMoreEvents()
     }
 
-    @Test func outgoingCallConnectsAndEndsHere() async throws {
-      let app = try await App()
+    @Test(arguments: Framework.allCases)
+    func outgoingCallConnectsAndEndsHere(_ framework: Framework) async throws {
+      let app = try await App(framework)
       defer { app.stop() }
       let id = newCallID("outgoing")
       let bob = try Party(handle: Handle(kind: .phoneNumber, value: "+442071838750"))
@@ -131,9 +138,10 @@
       app.expectNoMoreEvents()
     }
 
-    @Test func muteHoldAndTonesFromTheCallScreen() async throws {
+    @Test(arguments: Framework.allCases)
+    func muteHoldAndTonesFromTheCallScreen(_ framework: Framework) async throws {
       let id = newCallID("controls")
-      let app = try await App()
+      let app = try await App(framework)
       defer { app.stop() }
       try await app.system.pushIncomingCall(id)
       try await app.expect([.presented(id)])
