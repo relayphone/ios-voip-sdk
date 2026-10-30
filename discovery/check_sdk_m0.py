@@ -384,7 +384,8 @@ os.execv(sys.executable,[sys.executable,*sys.argv[1:]])
         self.check(lambda root: None, SYMBOLS + ['_CKSimGetEngine'])
 
     def test_device_object_paths(self):
-        sources = dict(CKSimRuntimeC=('CKInterposition.o', 'CKPushDelivery.o'),
+        sources = dict(CKSimProtocol=('RuntimeSession.o',),
+                       CKSimRuntimeC=('CKInterposition.o', 'CKPushDelivery.o'),
                        CKSimRuntime=('RuntimeEngine.o', 'resource_bundle_accessor.o'),
                        VoIPPlatform=('VSCompletionOnce.o', 'VSProviderCreationMonitor.o',
                                      'VSProviderMonitorInternal.o', 'VSPushRegistryOwner.o'),

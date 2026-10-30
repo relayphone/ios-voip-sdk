@@ -40,7 +40,7 @@ for source in Sources/Interposition/CKInterposition.m Sources/Interposition/CKPu
     -c "$source" -o "$WORK/$(basename "$source" .m).o" >> "$OUT/build.log" 2>&1
 done
 limit 180 xcrun --sdk iphonesimulator swiftc -target "$TARGET" -sdk "$SDK" -swift-version 6 -D DEBUG -parse-as-library \
-  -module-cache-path "$WORK/modules" -import-objc-header "$WORK/Headers.h" Sources/Engine/*.swift Sources/VoIPSDK/*.swift \
+  -module-cache-path "$WORK/modules" -import-objc-header "$WORK/Headers.h" Sources/CKSimProtocol/*.swift Sources/Engine/*.swift Sources/VoIPSDK/*.swift \
   discovery/probe/push_report_entry.swift "$WORK/"*.o -o "$APP/PushEntry" >> "$OUT/build.log" 2>&1
 limit 30 codesign -s - --force "$APP" >> "$OUT/build.log" 2>&1
 python3 - "$OUT" <<'PY'

@@ -9,7 +9,7 @@ APP="$OUT/CKSimInspector.app"
 mkdir "$APP"
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun --sdk iphonesimulator swiftc -target "$(uname -m)-apple-ios17.4-simulator" -sdk "$SDK" \
-  -swift-version 6 -parse-as-library Inspector/*.swift -o "$APP/CKSimInspector"
+  -swift-version 6 -parse-as-library Sources/CKSimProtocol/*.swift Inspector/*.swift -o "$APP/CKSimInspector"
 python3 - "$APP/Info.plist" <<'PY'
 import pathlib,plistlib,sys
 info=dict(CFBundleIdentifier='dev.callkitsim.inspector',CFBundleExecutable='CKSimInspector',

@@ -55,7 +55,7 @@ SOURCE_PATHS = ('Sources', 'Integrations', 'Expo', 'ExpoMedia', 'example', 'Pack
                 'docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27/device-trace.jsonl',
                 'docs/research/callkit-simulator-probe/audio-session-lifecycle/2026-10-22-iphone13-ios27-noio/device-trace.jsonl',
                 'docs/research/callkit-simulator-probe/livecommunicationkit')
-TARGETS = ('CKSimRuntimeC', 'CKSimRuntime', 'VoIPPlatform', 'VoIPSDK')
+TARGETS = ('CKSimProtocol', 'CKSimRuntimeC', 'CKSimRuntime', 'VoIPPlatform', 'VoIPSDK')
 BINARIES = dict(example='binaries/example', bootstrap='binaries/bootstrap',
                 device='binaries/device', javascript='binaries/main.jsbundle')
 

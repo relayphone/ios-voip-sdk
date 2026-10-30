@@ -34,8 +34,10 @@ class SelectionTests(unittest.TestCase):
     def test_pr_routing_follows_product_and_infrastructure_boundaries(self):
         examples = [
             ('Tests/RuntimeEvents/run.py', False, True, True),
+            ('Tests/CKSimProtocolTests/RuntimeSessionTests.swift', False, True, False),
             ('Inspector/App.swift', False, True, False),
             ('Sources/Engine/RuntimeEngine.swift', True, True, False),
+            ('Sources/CKSimProtocol/RuntimeSession.swift', True, True, False),
             ('Sources/VoIPSDK/ConversationClient.swift', True, False, False),
             ('docs/research/callkit-simulator-probe/livecommunicationkit/multicall/Probe.swift', True, True, False),
             ('.github/workflows/sdk-m0.yml', True, False, False),
@@ -57,6 +59,7 @@ class SelectionTests(unittest.TestCase):
         examples = [('Sources/VoIPSDK/ConversationClient.swift', True),
                     ('discovery/probe/push_report_entry.swift', False),
                     ('Sources/Engine/RuntimeEngine.swift', True),
+                    ('Sources/CKSimProtocol/RuntimeSession.swift', True),
                     ('discovery/probe/sdk_m1_contracts.swift', True),
                     ('discovery/sdk_m2_audio_lifecycle.py', True)]
         for path, legacy in examples:
