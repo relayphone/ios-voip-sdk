@@ -53,22 +53,26 @@ The module's peer ranges retain Expo 55–58 compatibility. The example and deve
 
 The `VoIPCore` library is the start of a smaller core that keeps its own state for every
 call and treats CallKit and LiveCommunicationKit as presentation surfaces. It holds the call
-values and the call state machine, imports no UIKit, CallKit, LiveCommunicationKit, PushKit or
-AVFAudio, and doesn't present calls yet; the engine and the calling-framework adapters follow.
+values, the call state machine and `VoIPClient`, which runs them behind small seams for the
+calling framework, the app's media and VoIP pushes. It imports no UIKit, CallKit,
+LiveCommunicationKit, PushKit or AVFAudio, and doesn't present calls yet; the calling-framework
+and PushKit adapters follow.
 Its terms are defined in the [glossary](GLOSSARY.md) and its decisions are recorded in
 [docs/adr](docs/adr).
 
 ## Testing
 
 Run `swift test` on macOS 26 or later with the Xcode toolchain above. The Swift
-Testing suites cover caller validation, push decoding, models, the call state machine
-and the test clock without a simulator. Native calling and media acceptance run
-separately in CI.
+Testing suites cover caller validation, push decoding, models, the call state machine,
+the call engine and the test clock without a simulator. Native calling and media
+acceptance run separately in CI.
 
 Tests in consuming apps can add the `VoIPTesting` library product to their test
 target and import `VoIPTesting`. Its `TestClock` conforms to `Clock<Duration>`;
 use `waitForSleepers(count:)` to await registration, then `advance(by:)` or `run()`
-to resume pending sleeps without waiting for wall time to pass.
+to resume pending sleeps without waiting for wall time to pass. `FakeCallingFramework`,
+`FakeMedia` and `FakePushSource` stand in for the system and the app's media, so a
+`VoIPClient` started with them and a `TestClock` runs every call path on the host.
 
 ## License
 

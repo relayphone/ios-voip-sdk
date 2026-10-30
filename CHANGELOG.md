@@ -12,6 +12,20 @@ Changes not yet released are recorded below. Public API changes include migratio
   `CallEvent` and `VoIPConfiguration` with `Deadlines`. It has no system framework dependencies and
   doesn't present calls yet. The existing `VoIPSDK` product is unchanged.
 
+- `VoIPClient` runs the call core on the `VoIPActor` global actor. Start it once with
+  `start(framework:media:push:configuration:clock:)`, observe `calls` and `isAudioActive`,
+  subscribe with `events()`, and drive calls with `request(_:)`, `confirmPlaced(_:)`,
+  `report(_:)` and `receive(_:for:eventID:)`. It reports a VoIP push's call before the push
+  callback returns, recognises repeated pushes and server events by event ID and call ID, and
+  remembers ended calls and early server events for `VoIPConfiguration.retention`.
+- The seams for calling-framework adapters and the app's media: `CallingFramework` with
+  `FrameworkEvent`, `CallMedia`, `PushSource` with `VoIPPush` and `PushCompletion`, `ActionID`
+  and `deviceUUID(for:)`. `VoIPConfiguration` adds `maximumCalls`, `supportedHandleTypes`,
+  `includesCallsInRecents`, `ringtoneSound`, `iconTemplateImageData` and `retention`, and
+  `ActionError` adds `unknownCall` and `refused`.
+- `VoIPTesting` adds `FakeCallingFramework`, `FakeMedia` and `FakePushSource`, which run the
+  client on the macOS host with `TestClock`.
+
 ### Breaking changes
 
 - The `VoIPSDKTesting` product is now `VoIPTesting`. Depend on

@@ -1,11 +1,5 @@
 import Foundation
 
-/// Identifies one action that the calling framework asked the SDK to perform, so that the SDK can
-/// fulfil or fail it.
-struct ActionID: Hashable, Sendable {
-  let rawValue: UUID
-}
-
 /// The state machine for one call.
 ///
 /// ``begin(_:configuration:now:)`` creates a call and ``transition(_:_:configuration:now:)``

@@ -1,3 +1,5 @@
+public import Foundation
+
 /// How the SDK presents and controls calls in this app.
 public struct VoIPConfiguration: Hashable, Sendable {
   /// The optional actions that calls in this app support.
@@ -25,23 +27,73 @@ public struct VoIPConfiguration: Hashable, Sendable {
   /// How incoming calls appear on this device, unless a call sets its own policy.
   public var presentationPolicy: PresentationPolicy
 
+  /// The most calls this device presents at once, ringing or taking part. Defaults to 2.
+  ///
+  /// Call previews don't count. An incoming call that would ring beyond this ends with
+  /// ``CallFailure/atCapacity``. CallKit and LiveCommunicationKit receive it as their maximum
+  /// number of call groups.
+  public var maximumCalls: Int
+
+  /// The kinds of handle that the app can call. Defaults to every kind.
+  public var supportedHandleTypes: Set<Handle.Kind>
+
+  /// Whether the system lists the app's calls in Recents. Defaults to `true`.
+  ///
+  /// LiveCommunicationKit calls this including conversations in Recents.
+  public var includesCallsInRecents: Bool
+
+  /// The name of a sound file in the app's bundle that plays while an incoming call rings, or
+  /// `nil` for the system ringtone.
+  ///
+  /// LiveCommunicationKit calls this the ringtone name.
+  public var ringtoneSound: String?
+
+  /// PNG data for a 40 by 40 point template image that the system shows for the app on its call
+  /// screen, or `nil` for none.
+  public var iconTemplateImageData: Data?
+
   /// How long the SDK waits at each step of a call before ending it.
   public var deadlines: Deadlines
+
+  /// How long the SDK remembers ended calls, event IDs, and server events for calls it doesn't
+  /// know yet. Defaults to 5 minutes.
+  ///
+  /// A VoIP push for a call that ended within this time doesn't ring again, and a server event
+  /// that arrives before its call's VoIP push is applied when the call arrives.
+  public var retention: Duration
 
   /// Creates a configuration.
   ///
   /// - Parameters:
   ///   - capabilities: The optional actions that calls support.
   ///   - presentationPolicy: How incoming calls appear on this device.
+  ///   - maximumCalls: The most calls this device presents at once.
+  ///   - supportedHandleTypes: The kinds of handle that the app can call.
+  ///   - includesCallsInRecents: Whether the system lists the app's calls in Recents.
+  ///   - ringtoneSound: The name of a sound file that plays while a call rings.
+  ///   - iconTemplateImageData: PNG data for the app's icon on the system's call screen.
   ///   - deadlines: How long the SDK waits at each step of a call.
+  ///   - retention: How long the SDK remembers ended calls and early server events.
   public init(
     capabilities: Capabilities = [.holding, .playingTones],
     presentationPolicy: PresentationPolicy = PresentationPolicy(),
-    deadlines: Deadlines = Deadlines()
+    maximumCalls: Int = 2,
+    supportedHandleTypes: Set<Handle.Kind> = Set(Handle.Kind.allCases),
+    includesCallsInRecents: Bool = true,
+    ringtoneSound: String? = nil,
+    iconTemplateImageData: Data? = nil,
+    deadlines: Deadlines = Deadlines(),
+    retention: Duration = .seconds(300)
   ) {
     self.capabilities = capabilities
     self.presentationPolicy = presentationPolicy
+    self.maximumCalls = maximumCalls
+    self.supportedHandleTypes = supportedHandleTypes
+    self.includesCallsInRecents = includesCallsInRecents
+    self.ringtoneSound = ringtoneSound
+    self.iconTemplateImageData = iconTemplateImageData
     self.deadlines = deadlines
+    self.retention = retention
   }
 }
 
