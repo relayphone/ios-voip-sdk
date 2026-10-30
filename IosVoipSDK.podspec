@@ -32,7 +32,7 @@ Pod::Spec.new do |s|
   # The external DYLD loader is not part of the embedded SDK. The call core and its adapters are
   # separate Swift modules that the pod doesn't ship yet.
   s.exclude_files = ['Sources/Interposition/CKLoader.m', 'Sources/VoIPCore/**/*', 'Sources/VoIPTesting/**/*',
-                     'Sources/VoIPLiveCommunicationKit/**/*', 'Sources/VoIPPushKit/**/*',
+                     'Sources/VoIPCallKit/**/*', 'Sources/VoIPLiveCommunicationKit/**/*', 'Sources/VoIPPushKit/**/*',
                      'Sources/VoIPPushDelivery/**/*', 'Sources/VoIPSimulator/**/*']
   public_headers = ['Sources/Interposition/include/CKRuntimeBridge.h', 'Sources/VoIPPlatform/include/*.h', 'Expo/apple/IosVoipSDK.h']
   public_headers << 'ExpoMedia/Shared/VSMediaBinding.h' if media_adapter != 'none'

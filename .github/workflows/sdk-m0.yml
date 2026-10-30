@@ -342,7 +342,7 @@ jobs:
         run: |
           set -euo pipefail
           source scripts/ci/sdk_paths.sh
-          for scheme in VoIPCore VoIPLiveCommunicationKit VoIPPushKit VoIPSimulator VoIPTesting; do
+          for scheme in VoIPCore VoIPCallKit VoIPLiveCommunicationKit VoIPPushKit VoIPSimulator VoIPTesting; do
             for destination in 'generic/platform=iOS' 'generic/platform=iOS Simulator'; do
               xcodebuild -scheme "$scheme" -configuration Release -destination "$destination" \
                 -derivedDataPath "$SDK_M0_BUILD_ROOT/call-core" CODE_SIGNING_ALLOWED=NO \
@@ -591,7 +591,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/call-journeys-logs"
           xcodebuild test -scheme VoIPSDK-Package -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
             -derivedDataPath "$RUNNER_TEMP/call-journeys" -resultBundlePath "$RUNNER_TEMP/call-journeys-logs/journeys.xcresult" \
-            -only-testing:VoIPJourneyTests CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \
+            -only-testing:VoIPJourneyTests -only-testing:VoIPCallKitTests \
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \
             2>&1 | tee "$RUNNER_TEMP/call-journeys-logs/xcodebuild.log"
       - name: Delete the journeys' simulator
         if: always() && steps.simulator.outputs.udid != ''
