@@ -317,6 +317,12 @@ private struct PushReportingObligations {
     if let delivery = deliveries[id], delivery.returned && delivery.completed { deliveries.removeValue(forKey: id) }
   }
   func deadlineToken(_ id: String) -> UUID? { deliveries[id]?.token }
+  /// LiveCommunicationKit reports from its own queue, so its report carries no thread-local push
+  /// context. A report entered while exactly one required callback is still running belongs to it.
+  func runningDeliveryAwaitingReport() -> String? {
+    let running = deliveries.filter { $0.value.required && !$0.value.returned && !$0.value.reportEntered }
+    return running.count == 1 ? running.first?.key : nil
+  }
   mutating func expire(_ id: String, token: UUID) -> Bool {
     guard let delivery = deliveries[id], delivery.token == token, delivery.required, !delivery.reportEntered else { return false }
     deliveries.removeValue(forKey: id)
@@ -1288,6 +1294,8 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     withState {
       let pushID: String
       switch incomingPushAssociations.consume(uuid) {
+      case .absent where synchronousPushID.isEmpty:
+        pushID = pushReportingObligations.runningDeliveryAwaitingReport() ?? ""
       case .absent: pushID = synchronousPushID
       case .associated(let identifier): pushID = identifier
       case .ambiguous: pushID = ""

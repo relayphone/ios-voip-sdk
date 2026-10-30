@@ -7,7 +7,7 @@ from changes import gate, select, workflow_parts
 
 
 NATIVE = ('offline-controls', 'apple-host-controls', 'sdk-example', 'sdk-core',
-          'sdk-fixtures', 'device-release', 'journeys')
+          'sdk-fixtures', 'device-release', 'journeys', 'simulator-journeys')
 
 
 def results(native, optional):

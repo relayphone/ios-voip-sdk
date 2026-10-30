@@ -60,10 +60,14 @@ LiveCommunicationKit, PushKit or AVFAudio. Two more libraries plug the system in
 receives VoIP pushes and the push token with `PushKitSource`:
 
 ```swift
+VoIPSimulator.activate()  // Debug simulator builds only; elsewhere it does nothing.
 let push = PushKitSource()
 let client = try VoIPClient.start(
   framework: LiveCommunicationKitAdapter(), media: media, push: push)
 ```
+
+`VoIPSimulator` runs the simulator runtime beneath those adapters, so the same code presents
+calls in the iOS Simulator.
 
 Its terms are defined in the [glossary](GLOSSARY.md) and its decisions are recorded in
 [docs/adr](docs/adr).
@@ -81,6 +85,16 @@ use `waitForSleepers(count:)` to await registration, then `advance(by:)` or `run
 to resume pending sleeps without waiting for wall time to pass. `FakeCallingFramework`,
 `FakeMedia` and `FakePushSource` stand in for the system and the app's media, so a
 `VoIPClient` started with them and a `TestClock` runs every call path on the host.
+
+The call journeys run the client with the LiveCommunicationKit adapter and the PushKit
+source on the simulator runtime, which acts as the system: a VoIP push, answer, audio,
+connect and remote end; decline; answered elsewhere and filtered calls as previews; an
+outgoing call; and mute, hold and tones from the call screen. Run them on an iOS 27 simulator:
+
+```sh
+xcodebuild test -scheme VoIPSDK-Package -only-testing:VoIPJourneyTests \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=27.0'
+```
 
 ## License
 

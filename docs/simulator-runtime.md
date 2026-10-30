@@ -139,8 +139,10 @@ Payloads go through the app's actual registered PushKit delegate. Metadata-capab
 delegates receive the explicit `mustReport` flag; legacy delegates always have a
 reporting obligation. The runtime records the actual callback API and completion.
 Each push has a correlation ID. Synchronous incoming reports inherit it; later
-end reports use the call's stored binding. Reports made asynchronously outside
-the push callback have no inferred push correlation.
+end reports use the call's stored binding. LiveCommunicationKit reports from its
+own queue, so a report entered on another thread while exactly one required push
+callback is still running is attributed to that push. Reports made after the
+push callback returned have no inferred push correlation.
 
 `faults --report-delay-ms 1500` delays incoming-report completion so tests can
 answer or decline before it returns. `faults --stale-audio` suppresses activation
