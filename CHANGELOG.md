@@ -6,6 +6,12 @@ Changes not yet released are recorded below. Public API changes include migratio
 
 ### Breaking changes
 
+- `Participant.avatarUrl: String?` and its initializer label are now
+  `avatarURL: URL?`. Construct a Foundation `URL` before passing an avatar from
+  Swift and use its `absoluteString` when a string is needed. Codable and Expo
+  retain the `avatarUrl` key and string representation. Missing or null avatars
+  remain absent; strings that Foundation cannot parse as URLs now fail decoding.
+
 - `IncomingCallPayload` and `CallEndedPayload` now spell their Swift identity
   properties and initializer labels `eventID` and `serverCallID`. The server ID
   uses `ServerCallID`, including `ConversationEventContext.serverCallID`.

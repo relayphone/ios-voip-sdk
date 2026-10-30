@@ -33,17 +33,25 @@ public enum JSONValue: Codable, Sendable, Equatable {
   }
 }
 
+/// A conversation member's host-supplied identity and presentation.
 public struct Participant: Codable, Sendable, Equatable {
   public var id: String
   public var displayName: String?
-  public var avatarUrl: String?
+  /// An optional avatar location, encoded using the existing `avatarUrl` string key.
+  public var avatarURL: URL?
   public var phoneNumber: String?
   public var email: String?
 
-  public init(id: String, displayName: String? = nil, avatarUrl: String? = nil,
+  /// Creates a member with an already parsed avatar URL, when available.
+  public init(id: String, displayName: String? = nil, avatarURL: URL? = nil,
               phoneNumber: String? = nil, email: String? = nil) {
-    self.id = id; self.displayName = displayName; self.avatarUrl = avatarUrl
+    self.id = id; self.displayName = displayName; self.avatarURL = avatarURL
     self.phoneNumber = phoneNumber; self.email = email
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case id, displayName, phoneNumber, email
+    case avatarURL = "avatarUrl"
   }
 }
 
