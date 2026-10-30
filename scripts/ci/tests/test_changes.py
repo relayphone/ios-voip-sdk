@@ -79,7 +79,6 @@ class SelectionTests(unittest.TestCase):
         for path in ('Tests/SwiftLiveKit/NativeJourney.swift', 'Tests/SwiftLiveKit/Package.resolved'):
             with self.subTest(path=path):
                 self.assertTrue(select([path])['sdk_plan']['swift-livekit-native'])
-        self.assertTrue(select(['Tools/cksim-notify.c'])['sdk_plan']['swift-livekit-native'])
         self.assertTrue(select(['discovery/sdk_m2_audio_lifecycle.py'])['sdk_plan']['legacy-audio-lifecycle'])
         for path in ('discovery/build_sdk_device_release.py', 'discovery/device_oracles.py'):
             with self.subTest(path=path):

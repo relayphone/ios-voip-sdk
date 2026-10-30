@@ -17,7 +17,7 @@ ADAPTER = ROOT / 'Integrations/LiveKit/LiveKitMediaAdapter.swift'
 INPUTS = ('Tests/SwiftLiveKit/Package.swift', 'Tests/SwiftLiveKit/Package.resolved',
           'Tests/SwiftLiveKit/NativeJourney.swift', 'Tests/SwiftLiveKit/StartupTests.swift',
           'Tests/SwiftLiveKit/run_startup.py', 'Integrations/LiveKit/LiveKitMediaAdapter.swift',
-          'discovery/build_swift_livekit_contract.py', 'Package.swift', 'Tools/cksim-notify.c',
+          'discovery/build_swift_livekit_contract.py', 'Package.swift',
           'discovery/run_swift_livekit.py', 'discovery/swift_livekit_conformance.py',
           'discovery/check_swift_livekit.py', '.github/workflows/sdk-m0.yml')
 PINS = {'client-sdk-swift': '93a7251057bdb6a80a7b1f6d11464d578ebdc09b',
@@ -134,9 +134,6 @@ def main():
              '-Xlinker', '-ObjC', '-Xlinker', '-rpath', '-Xlinker', '@executable_path/Frameworks',
              '-o', app / 'SDKSwiftLiveKit'], timeout=180)
         run(['codesign', '-s', '-', '--force', app], timeout=30)
-        run(['xcrun', '--sdk', 'iphonesimulator', 'clang', '-target', target, '-isysroot', sdk,
-             ROOT / 'Tools/cksim-notify.c', '-o', out / 'cksim-notify'], timeout=60)
-        run(['codesign', '-s', '-', '--force', out / 'cksim-notify'], timeout=30)
         xcode_version = run(['xcodebuild', '-version'], timeout=30, capture=True)
     after = source(); save(out / 'source-after.json', after)
     if before != after:
@@ -145,7 +142,7 @@ def main():
         app / 'Frameworks/LiveKitWebRTC.framework/LiveKitWebRTC',
         app / 'Frameworks/RustLiveKitUniFFI.framework/RustLiveKitUniFFI',
         app / 'VoIPSDK_CKSimRuntime.bundle/ios-27.0.json', out / 'Package.resolved',
-        out / 'build.log', out / 'source-before.json', out / 'source-after.json', out / 'cksim-notify']
+        out / 'build.log', out / 'source-before.json', out / 'source-after.json']
     require_files(bound_files)
     save(out / 'build-info.json', dict(schemaVersion=1, product='sdk-swift-livekit-contract',
         configuration='Debug', target=target, sdkVersion=sdk_version, xcodeVersion=xcode_version,

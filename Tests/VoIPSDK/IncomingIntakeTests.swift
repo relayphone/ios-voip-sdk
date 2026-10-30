@@ -314,7 +314,7 @@ struct IncomingIntakeTests {
     var invalid = payload()
     invalid.eventId = " \n"
     do { _ = try intake.reserve(invalid, source: .pushKit, now: now); preconditionFailure("Invalid reservation accepted") }
-    catch { precondition(error as? ConversationClientError == .invalidPayload) }
+    catch { precondition(error == .invalidPayload) }
     let good = try intake.reserve(payload(), source: .foreground, now: now)
     intake.complete(attempt(good), outcome: .reported, now: now)
   }

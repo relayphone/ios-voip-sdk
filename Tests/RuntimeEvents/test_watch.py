@@ -105,7 +105,7 @@ class ControlTransportTests(unittest.TestCase):
             mailbox = root / 'run'
             for name in ('requests', 'responses'):
                 (mailbox / name).mkdir(parents=True)
-            session = dict(schemaVersion=1, runID='run', pid=123, bundleID='test.fixture', notification='test.notify')
+            session = dict(schemaVersion=1, runID='run', pid=123, bundleID='test.fixture')
             if transport is not None:
                 session['controlTransport'] = transport
             (root / 'session.json').write_text(json.dumps(session))
@@ -124,16 +124,15 @@ class ControlTransportTests(unittest.TestCase):
                 calls.append(parts)
                 if parts[0] == 'get_app_container':
                     return str(container)
-                if parts[0] == 'spawn':
-                    if transport == 'directory-watch-v1':
-                        raise RuntimeError('target simctl spawn stalled')
-                    respond()
-                    return ''
                 raise AssertionError(parts)
             control = CLI['control']
             clock = SimpleNamespace(monotonic=lambda: elapsed[0], sleep=respond)
             with patch.dict(control.__globals__, simctl=simctl, time=clock):
-                if mismatch:
+                if transport != 'directory-watch-v1':
+                    with self.assertRaisesRegex(RuntimeError, 'Unsupported runtime control transport'):
+                        control(args, 'device', expected_session=session)
+                    self.assertEqual(list((mailbox / 'requests').iterdir()), [])
+                elif mismatch:
                     with self.assertRaisesRegex(RuntimeError, 'response identity mismatch'):
                         control(args, 'device', expected_session=session)
                 elif not response:
@@ -147,9 +146,9 @@ class ControlTransportTests(unittest.TestCase):
         calls = self.exercise('directory-watch-v1')
         self.assertEqual([call[0] for call in calls], ['get_app_container'])
 
-    def test_older_runtime_still_receives_its_darwin_notification(self):
+    def test_older_runtime_is_rejected_before_publishing_a_request(self):
         calls = self.exercise(None)
-        self.assertEqual([call[0] for call in calls], ['get_app_container', 'spawn'])
+        self.assertEqual([call[0] for call in calls], ['get_app_container'])
 
     def test_watched_response_must_match_the_pinned_command(self):
         self.exercise('directory-watch-v1', mismatch=True)
@@ -172,7 +171,7 @@ class CachedContainerTests(unittest.TestCase):
         for name in ('requests', 'responses'):
             (self.mailbox / name).mkdir(parents=True)
         self.session = dict(schemaVersion=1, runID='run', pid=123, bundleID='test.fixture',
-                            notification='test.notify', controlTransport='directory-watch-v1')
+                            controlTransport='directory-watch-v1')
         (self.root / 'session.json').write_text(json.dumps(self.session))
         self.row = dict(self.session, event='runtime.installed', sequence=1, t_ms=1, wallTimeMS=1000)
         (self.mailbox / 'events.jsonl').write_text(json.dumps(self.row) + '\n')

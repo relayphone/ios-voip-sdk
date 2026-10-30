@@ -74,7 +74,7 @@ def fixture(root):
         journal = root / (mode + '.runtime.jsonl')
         journal.write_text(''.join(json.dumps(row) + '\n' for row in events))
         gate.save(root / (mode + '.session.json'), dict(common, schemaVersion=1, profile='ios-27.0',
-                  notification='dev.callkitsim.control.' + str(pid)))
+                  controlTransport='directory-watch-v1'))
         fields = [dict(event='app.entry'), dict(event='launch', case=mode,
                   executableSHA256=files['PushEntry.app/PushEntry'])]
         if observation: fields.append(observation)
@@ -271,7 +271,7 @@ class CaptureControls(unittest.TestCase):
                     ('build/build-receipt.json', 'wrong-build-kind', lambda r: r.update(classification='other')),
                     ('build/build-receipt.json', 'wrong-build-schema', lambda r: r.update(schemaVersion=True)),
                     ('deferred.session.json', 'wrong-profile', lambda r: r.update(profile='other')),
-                    ('deferred.session.json', 'wrong-notification', lambda r: r.update(notification='dev.callkitsim.control.1')),
+                    ('deferred.session.json', 'wrong-control-transport', lambda r: r.update(controlTransport='unsupported')),
                     ('deferred.session.json', 'wrong-session-run', lambda r: r.update(runID='other')),
                     ('sdk-required.receipt.json', 'missing-stop-method', lambda r: r.pop('terminationMethod')),
                     ('sdk-required.receipt.json', 'missing-launch-exit', lambda r: r.pop('launchExitCode')),

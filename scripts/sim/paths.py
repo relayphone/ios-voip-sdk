@@ -68,7 +68,7 @@ def completed_container(receipt, trace, simulator, run_id, bundle, devices_root=
                     session['schemaVersion'] == 1 and session.get('runID') == run_id and
                     type(session.get('pid')) is int and session['pid'] == pid and
                     session.get('bundleID') == bundle and
-                    session.get('notification') == 'dev.callkitsim.control.' + str(pid)):
+                    session.get('controlTransport') == 'directory-watch-v1'):
                 continue
             matches.append((container, session_path.parent / run_id / 'events.jsonl'))
         except (OSError, ValueError):
