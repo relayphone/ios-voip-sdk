@@ -34,11 +34,18 @@ import Foundation
     for (offset, value) in values.enumerated() {
       let reason = value == 1 ? InspectorIncomingFilter.doNotDisturb : .none
       let code = value == 1 ? 4 : 0
-      let id = "request-\(offset + 1)"
+      let id = String(format: "10000000-0000-4000-8000-%012X", offset + 1)
       let started = Date()
       if faults { model.configureIncomingError(code) } else { model.configureIncomingFilter(reason) }
       precondition(model.busy)
       try await wait { model.timeline.contains { $0.event == "test.commandAccepted" && $0.requestID == id } }
+      if mode.hasPrefix("response-") {
+        try await wait { !model.busy }
+        precondition(model.commandError != nil && model.incomingFilter == prior && model.incomingErrorCode == priorCode,
+                     "A mismatched or malformed response cannot confirm a configuration")
+        if mode == "response-failure" { precondition(model.commandError == "runtime rejection message") }
+        continue
+      }
       precondition(model.busy && model.incomingFilter == prior && model.incomingErrorCode == priorCode && model.commandError == nil,
                    "HTTP acceptance must not optimistically change observed configuration")
       FileHandle.standardOutput.write(Data("release:\(offset + 1)\n".utf8))
@@ -79,7 +86,9 @@ class FilterModelTests(unittest.TestCase):
                 str(harness), '-o', str(binary)], text=True, capture_output=True, timeout=60)
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
             for kind in ('filter', 'faults'):
-                for mode in ('success', 'wrong', 'missing', 'wrong-value', 'wrong-kind', 'action-id') + (('invalid-code', 'missing-id') if kind == 'faults' else ()):
+                for mode in ('success', 'wrong', 'missing', 'wrong-value', 'wrong-kind', 'action-id',
+                             'response-kind', 'response-value', 'response-ambiguous', 'response-identity',
+                             'response-id', 'response-failure') + (('invalid-code', 'missing-id') if kind == 'faults' else ()):
                     with self.subTest(kind=kind, mode=mode):
                         self.exercise(binary, mode, kind)
 
@@ -120,11 +129,22 @@ class FilterModelTests(unittest.TestCase):
                     failures.append('Unexpected command route or encoding')
                 with lock:
                     commands.append(body)
-                    identifier = 'request-' + str(len(commands))
+                    identifier = f'10000000-0000-4000-8000-{len(commands):012X}'
                     append('test.commandAccepted', requestID=identifier)
-                result = (dict(incomingErrorCode=int(body['incomingErrorCode'])) if kind == 'faults'
+                result = (dict(configured=True, incomingErrorCode=int(body['incomingErrorCode'])) if kind == 'faults'
                           else dict(incomingFilter=state(body['reason'])))
-                self.respond(dict(success=True, id=identifier, result=result))
+                response = dict(success=True, id=identifier, result=result,
+                                **{key: session[key] for key in ('runID', 'pid', 'bundleID')})
+                if mode == 'response-kind': response['result'] = dict(events='unrelated result')
+                if mode == 'response-value':
+                    response['result'] = dict(configured=True, incomingErrorCode=0) if kind == 'faults' else dict(incomingFilter=state('none'))
+                if mode == 'response-ambiguous': response['result']['events'] = 'ambiguous result'
+                if mode == 'response-identity': response['runID'] = 'different-runtime'
+                if mode == 'response-id': response['id'] = 'invalid-response-id'
+                if mode == 'response-failure':
+                    response.update(success=False, error='runtime rejection message')
+                    del response['result']
+                self.respond(response)
         server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         serving = threading.Thread(target=server.serve_forever, daemon=True)
         serving.start()
@@ -136,7 +156,7 @@ class FilterModelTests(unittest.TestCase):
                 if line.startswith('release:') and mode != 'missing':
                     index = int(line.split(':')[1])
                     with lock:
-                        identifier = 'unrelated-request' if mode == 'wrong' else 'request-' + str(index)
+                        identifier = 'FFFFFFFF-FFFF-4FFF-8FFF-FFFFFFFFFFFF' if mode == 'wrong' else f'10000000-0000-4000-8000-{index:012X}'
                         identity = {} if mode == 'missing-id' else dict(requestID=identifier)
                         if mode == 'action-id':
                             append('action.deadline', actionID=identifier)
