@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 
@@ -20,8 +21,8 @@ RUN = "synthetic-cli-control"
 PID = 12345
 CALL = "A7E390AF-6B78-4190-B946-26D9C6438584"
 
-# A notification drives the synthetic runtime responder synchronously. Every
-# xcrun invocation is recorded; any unsupported operation fails closed.
+# The responder observes directory requests. Every xcrun invocation is recorded;
+# unsupported operations, including simulator spawn, fail closed.
 FAKE_XCRUN = '''#!/usr/bin/env python3
 import json
 import os
@@ -35,21 +36,47 @@ with (fixture / "xcrun.jsonl").open("a") as output:
 config = json.loads((fixture / "config.json").read_text())
 if args == ["simctl", "get_app_container", config["device"], config["bundle"], "data"]:
     print(fixture / "container")
-elif args == ["simctl", "spawn", config["device"],
-              str(fixture / "package/cksim-notify"), "synthetic.notification"]:
-    mailbox = fixture / "container/Documents/.callkit-simulator" / config["run"]
-    requests = list((mailbox / "requests").glob("*.json"))
-    if len(requests) != 1:
-        raise SystemExit("Expected exactly one synthetic request")
-    command = json.loads(requests[0].read_text())
-    if config["response"] != "timeout":
-        response = dict(command, success=True, fixture="synthetic")
-        field = config["response"]
-        if field != "positive":
-            response[field] = command[field] + 1 if field == "pid" else "mismatched"
-        (mailbox / "responses" / requests[0].name).write_text(json.dumps(response))
 else:
     raise SystemExit("Unexpected fake xcrun invocation: " + repr(args))
+'''
+
+
+# Publish a response synchronously at the request's atomic rename boundary so
+# these CLI controls do not depend on a second thread winning a deadline race.
+# The CLI still writes and reads the real mailbox with its unchanged timeout.
+DIRECTORY_RESPONDER = '''
+import json
+import os
+from pathlib import Path
+import runpy
+import sys
+from unittest.mock import patch
+
+fixture = Path(os.environ["CKSIM_SYNTHETIC_CLI_FIXTURE"])
+config = json.loads((fixture / "config.json").read_text())
+mailbox = fixture / "container/Documents/.callkit-simulator" / config["run"]
+rename = Path.rename
+
+def publish(path, target):
+    result = rename(path, target)
+    if result.parent == mailbox / "requests" and result.suffix == ".json":
+        requests = list(result.parent.glob("*.json"))
+        if requests != [result]:
+            raise RuntimeError("Expected exactly one synthetic request")
+        value = json.loads(result.read_text())
+        field = config["response"]
+        if field != "timeout":
+            answer = dict(value, success=True, fixture="synthetic")
+            if field != "positive":
+                answer[field] = value[field] + 1 if field == "pid" else "mismatched"
+            temporary = mailbox / "responses" / (result.name + ".tmp")
+            temporary.write_text(json.dumps(answer))
+            rename(temporary, temporary.with_suffix(""))
+    return result
+
+cli = sys.argv.pop(1)
+with patch.object(Path, "rename", publish):
+    runpy.run_path(cli, run_name="__main__")
 '''
 
 
@@ -63,7 +90,7 @@ def fixture(directory, response):
     (package / "profiles").mkdir(parents=True)
     version = (ROOT / "VERSION").read_text().strip()
     files = {}
-    for name in ("CKSimRuntime.dylib", "CKSimLoader.dylib", "cksim-notify", "cksim", "profiles/ios-27.0.json", "VERSION"):
+    for name in ("CKSimRuntime.dylib", "CKSimLoader.dylib", "cksim", "profiles/ios-27.0.json", "VERSION"):
         path = package / name
         path.write_bytes((version + "\n").encode() if name == "VERSION" else ("synthetic fixture: " + name).encode())
         files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -71,7 +98,7 @@ def fixture(directory, response):
     root = directory / "container/Documents/.callkit-simulator"
     for name in ("requests", "responses"):
         (root / RUN / name).mkdir(parents=True)
-    session = dict(schemaVersion=1, bundleID=BUNDLE, pid=PID, runID=RUN, notification="synthetic.notification")
+    session = dict(schemaVersion=1, bundleID=BUNDLE, pid=PID, runID=RUN, controlTransport="directory-watch-v1")
     (root / "session.json").write_text(json.dumps(session))
     (directory / "config.json").write_text(json.dumps(dict(device=DEVICE, bundle=BUNDLE, run=RUN, response=response)))
     binary = directory / "bin/xcrun"
@@ -86,15 +113,16 @@ def controls():
     with tempfile.TemporaryDirectory(prefix="cksim-cli-controls-") as temporary:
         work = Path(temporary).resolve()
 
-        def check(label, expected=None, *, mutate=None, response="positive", invocations=2,
-                  command=("status",), fields=None, exit_code=1):
+        def check(label, expected=None, *, mutate=None, response="positive", invocations=1,
+                  command=("status",), fields=None, exit_code=1, request_expected=True):
             directory = work / label
             package, root, session = fixture(directory, response)
             if mutate:
                 mutate(package, root, session)
             env = dict(os.environ, PATH=str(directory / "bin") + os.pathsep + os.environ.get("PATH", ""),
                        CKSIM_SYNTHETIC_CLI_FIXTURE=str(directory))
-            result = subprocess.run([str(CLI), "--simulator", DEVICE, "--bundle", BUNDLE,
+            result = subprocess.run([sys.executable, "-c", DIRECTORY_RESPONDER, str(CLI),
+                                     "--simulator", DEVICE, "--bundle", BUNDLE,
                                      "--runtime-dir", str(package), "--timeout", "0.1",
                                      "--command-receipt", str(directory / "command-receipt.json"), *command],
                                     env=env, capture_output=True, text=True, timeout=20)
@@ -115,7 +143,7 @@ def controls():
             log = directory / "xcrun.jsonl"
             calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
             require(len(calls) == invocations, f"{label}: unexpected fake xcrun calls: {calls}")
-            if invocations < 2:
+            if not request_expected:
                 require(not list((root / RUN / "requests").iterdir()), f"{label}: rejected input created a command")
             checks.append(dict(name=label, expected=expected or "synthetic status success", passed=True))
 
@@ -143,23 +171,23 @@ def controls():
         check("system-tones", command=("tones", CALL, "--digits", "12#A"),
               fields={"callUUID": CALL, "digits": "12#A"})
         check("selected-provider-reset", command=("reset",))
-        check("reused-command-receipt", "Command receipt already exists", invocations=0,
+        check("reused-command-receipt", "Command receipt already exists", invocations=0, request_expected=False,
               mutate=lambda package, root, session: (package.parent / "command-receipt.json").write_text("prior receipt"))
-        check("invalid-tones", "digits must contain 1-64 DTMF characters", invocations=0,
+        check("invalid-tones", "digits must contain 1-64 DTMF characters", invocations=0, request_expected=False,
               command=("tones", CALL, "--digits", "1,2"), exit_code=2)
-        check("invalid-tones-trailing-newline", "digits must contain 1-64 DTMF characters", invocations=0,
+        check("invalid-tones-trailing-newline", "digits must contain 1-64 DTMF characters", invocations=0, request_expected=False,
               command=("tones", CALL, "--digits", "1\n"), exit_code=2)
-        check("invalid-mute", "invalid choice", invocations=0,
+        check("invalid-mute", "invalid choice", invocations=0, request_expected=False,
               command=("mute", CALL, "--muted", "invalid"), exit_code=2)
         check("package-checksum-corruption", "Runtime package checksum mismatch: CKSimRuntime.dylib",
-              mutate=corrupt_package, invocations=0)
+              mutate=corrupt_package, invocations=0, request_expected=False)
         check("package-path-traversal", "Runtime package checksum mismatch: ../outside.dylib",
-              mutate=traversal_package, invocations=0)
+              mutate=traversal_package, invocations=0, request_expected=False)
         for label, key, value in (("bundle", "bundleID", "dev.callkitsim.other"),
                                   ("pid-zero", "pid", 0), ("pid-string", "pid", "12345"),
                                   ("runID-traversal", "runID", "../outside"), ("runID-empty", "runID", "")):
             check("session-" + label, "Invalid runtime session; launch the app with this runtime first.",
-                  mutate=session_value(key, value), invocations=1)
+                  mutate=session_value(key, value), invocations=1, request_expected=False)
         for field in ("id", "runID", "pid", "bundleID"):
             check("response-mismatched-" + field, "Runtime response identity mismatch.", response=field)
         check("response-timeout", "timed out; outcome is unknown. Query status/events before retrying.", response="timeout")

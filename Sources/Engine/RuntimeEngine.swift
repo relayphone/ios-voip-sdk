@@ -403,8 +403,6 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private var journal: FileHandle?
   private var journalWriter = RuntimeJournalWriter()
   private let epoch = DispatchTime.now().uptimeNanoseconds
-  private var notificationToken: Int32 = 0
-  private var notificationRegistered = false
   private var requestWatcher: (any DispatchSourceFileSystemObject)?
   private var stopped = false
   private var commandResults: [UUID: [String: Any]] = [:]
@@ -489,11 +487,6 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         throw BootstrapError.invalid("cannot create simulator event journal")
       }
       journal = try FileHandle(forWritingTo: path)
-      let status = notify_register_dispatch("dev.callkitsim.control.\(getpid())", &notificationToken, state) { [weak self] _ in
-        self?.processCommands()
-      }
-      guard status == NOTIFY_STATUS_OK else { throw BootstrapError.invalid("cannot register simulator mailbox notification") }
-      notificationRegistered = true
       // The host can publish requests even when CoreSimulator's spawn service
       // stalls. Observe the atomic rename instead of requiring a helper process
       // in the simulator to wake this queue for every command.
@@ -506,7 +499,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       requestWatcher = watcher
       watcher.resume()
       let session: [String: Any] = ["schemaVersion": 1, "runID": runID, "pid": Int(getpid()),
-        "bundleID": bundleID, "profile": profile.id, "notification": "dev.callkitsim.control.\(getpid())",
+        "bundleID": bundleID, "profile": profile.id,
         "controlTransport": "directory-watch-v1"]
       let data = try JSONSerialization.data(withJSONObject: session, options: [.sortedKeys])
       try data.write(to: documents.appendingPathComponent(".callkit-simulator/session.json"), options: .atomic)
@@ -747,7 +740,6 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       observers.removeAll()
       pendingActions.removeAll()
       calls.removeAll()
-      if notificationRegistered { notify_cancel(notificationToken); notificationRegistered = false }
       requestWatcher?.setEventHandler(handler: nil)
       requestWatcher?.cancel()
       requestWatcher = nil
