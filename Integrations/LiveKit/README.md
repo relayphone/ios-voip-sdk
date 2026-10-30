@@ -31,8 +31,7 @@ All SDK-owned LiveKit calls use the common queue, off MainActor and the cooperat
 pool. Availability errors propagate; revocation errors are logged. A blocking native
 operation cannot be preempted, and availability is not proof of media flow.
 
-`Tests/AudioCore/run_livekit.sh` checks the actual adapter against explicit inert
-facades. `Tests/SwiftLiveKit` prepares a separate real pinned consumer/engine journey
-in manual rendering mode with no device I/O, Room, server or playback. Facade
-checks and API compilation do not qualify that journey. See the fixture's README
-for required engine observations and the component PR for measured CI outcomes.
+`Tests/SwiftLiveKit` prepares a real pinned consumer/engine journey
+in manual rendering mode with no device I/O, Room, server or playback. API
+compilation does not qualify that journey. See the fixture's README for required
+engine observations and the component PR for measured CI outcomes.
