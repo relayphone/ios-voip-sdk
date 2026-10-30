@@ -108,7 +108,7 @@ class LCKModelTests(unittest.TestCase):
         def actions(index):
             definitions = [(ACTIVE, 'hold', {'held': True}), (HELD, 'end', {}), (WAITING, 'answer', {})] if index == 5 else [
                 (ACTIVE, 'hold' if index <= 2 else 'group', {'held': index == 1} if index <= 2 else {'groupTargetUUID': WAITING if index == 3 else ''})]
-            return [dict(actionID=f'action-{index}-{offset}', callUUID=call, kind=kind, transactionID=f'transaction-{index}',
+            return [dict(actionID=f'20000000-0000-4000-8000-{index * 10 + offset:012X}', callUUID=call, kind=kind, transactionID=f'30000000-0000-4000-8000-{index:012X}',
                          origin='system', provider='p1', apiKind='livecommunicationkit', **parameters)
                     for offset, (call, kind, parameters) in enumerate(definitions)]
         class Handler(BaseHTTPRequestHandler):
@@ -134,7 +134,10 @@ class LCKModelTests(unittest.TestCase):
                     commands.append(body)
                     index = len(commands)
                     append('test.commandAccepted', requestID=f'command-{index}')
-                self.respond(dict(success=True, result=dict(actionIDs=[row['actionID'] for row in actions(index)], transactionID=f'transaction-{index}')))
+                self.respond(dict(success=True, id=f'10000000-0000-4000-8000-{index:012X}',
+                                  **{key: session[key] for key in ('runID', 'pid', 'bundleID')},
+                                  result=dict(actionIDs=[row['actionID'].lower() for row in actions(index)],
+                                              transactionID=f'30000000-0000-4000-8000-{index:012X}')))
         server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         serving = threading.Thread(target=server.serve_forever, daemon=True)
         serving.start()
@@ -161,7 +164,7 @@ class LCKModelTests(unittest.TestCase):
                         constituents = actions(index)
                         classNames = {'hold': 'CXSetHeldCallAction', 'end': 'CXEndCallAction',
                                       'answer': 'CXAnswerCallAction', 'group': 'CXSetGroupCallAction'}
-                        append('transaction.delivered', transactionID=f'transaction-{index}', provider='p1',
+                        append('transaction.delivered', transactionID=f'30000000-0000-4000-8000-{index:012X}', provider='p1',
                                origin='system',
                                actionIDs=[row['actionID'] for row in constituents],
                                callUUIDs=[row['callUUID'] for row in constituents],

@@ -391,7 +391,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private let epoch = DispatchTime.now().uptimeNanoseconds
   private var requestWatcher: (any DispatchSourceFileSystemObject)?
   private var stopped = false
-  private var commandResults: [UUID: [String: Any]] = [:]
+  private var commandResults: [UUID: ControlResponse] = [:]
   private var timers: [UUID: any DispatchSourceTimer] = [:]
   #if CKSIM_FIXTURE_CLOCK
   private var fixtureClock: RuntimeFixtureClock?
@@ -852,6 +852,17 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       "selected": entry === selected, "valid": entry.valid,
       "maximumCallGroups": config.maximumCallGroups, "maximumCallsPerCallGroup": config.maximumCallsPerCallGroup]
   }
+  private func providerSnapshot(_ entry: ProviderRegistration) -> ProviderSnapshot {
+    let config = entry.provider.configuration
+    return ProviderSnapshot(provider: providerID(entry.provider),
+      apiKind: entry.apiKind == .callkit ? .callkit : .livecommunicationkit,
+      selected: entry === selected, valid: entry.valid,
+      maximumCallGroups: config.maximumCallGroups, maximumCallsPerCallGroup: config.maximumCallsPerCallGroup)
+  }
+  private func incomingFilterSnapshot(_ reason: IncomingFilterReason) throws -> IncomingFilterSnapshot {
+    try IncomingFilterSnapshot(reason: reason, code: reason.code,
+      verification: profile.incomingFilterPolicies[reason.rawValue]?.verification ?? "not-applicable")
+  }
   private func callback(_ provider: ProviderRegistration, _ block: @escaping @Sendable (any CXProviderDelegate) -> Void) {
     guard let delegate = provider.delegate else { return }
     let generation = provider.generation
@@ -914,6 +925,25 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     if call.reporter.apiKind == .livecommunicationkit { fields["availableSystemChoices"] = availableChoices(call) }
     else { fields["group"] = call.group.uuidString }
     return fields
+  }
+  private func callSnapshot(_ call: CallState) throws -> CallSnapshot {
+    var capabilities: [CallSnapshot.State.Capability] = []
+    if call.update?.supportsHolding == true { capabilities.append(.pausing) }
+    if call.update?.supportsGrouping == true { capabilities.append(.merging) }
+    if call.update?.supportsUngrouping == true { capabilities.append(.unmerging) }
+    let state = CallSnapshot.State(uuid: call.id, outgoing: call.outgoing, connected: call.connected,
+      held: call.held, ended: call.ended, muted: call.muted, ringing: call.ringing,
+      callerName: call.update?.localizedCallerName ?? "", handle: call.update?.remoteHandle?.value ?? "",
+      capabilities: capabilities)
+    let relationship: CallSnapshot.Relationship
+    if call.reporter.apiKind == .callkit { relationship = .callkit(group: call.group) }
+    else {
+      relationship = .livecommunicationkit(availableSystemChoices: try availableChoices(call).map {
+        guard let choice = CallSnapshot.SystemChoice(rawValue: $0) else { throw ControlError.invalid("unknown system choice") }
+        return choice
+      })
+    }
+    return CallSnapshot(state: state, relationship: relationship)
   }
   private func availableChoices(_ call: CallState) -> [String] {
     guard call.ringing, !call.ended else { return [] }
@@ -1442,20 +1472,24 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
             UUID(uuidString: file.deletingPathExtension().lastPathComponent) == header.id else { continue }
       let responseURL = controlRoot.appendingPathComponent("responses/\(header.id.uuidString).json")
       if FileManager.default.fileExists(atPath: responseURL.path) { continue }
-      var response: [String: Any] = ["id": header.id.uuidString, "runID": runID, "pid": Int(getpid()), "bundleID": bundleID]
+      let response: ControlResponse
       if let cached = commandResults[header.id] { response = cached }
-      else { do {
-        response["result"] = try execute(ControlRequest.decode(bytes))
-        response["success"] = true
-      } catch {
-        response["success"] = false; response["error"] = String(describing: error)
-        record(event: "control.rejected", fields: ["requestID": header.id.uuidString,
-          "operation": header.operationName, "error": String(describing: error)])
-      }
-      commandResults[header.id] = response
+      else {
+        let outcome: ControlResponse.Outcome
+        do { outcome = .success(try execute(ControlRequest.decode(bytes))) }
+        catch {
+          let message = String(describing: error)
+          outcome = .failure(ControlFailure(message: message))
+          record(event: "control.rejected", fields: ["requestID": header.id.uuidString,
+            "operation": header.operationName, "error": message])
+        }
+        response = ControlResponse(id: header.id, target: header.target, outcome: outcome)
+        commandResults[header.id] = response
       }
       do {
-        let data = try JSONSerialization.data(withJSONObject: response, options: [.sortedKeys])
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(response)
         try data.write(to: responseURL, options: .atomic)
       } catch {
         remove = false
@@ -1463,36 +1497,37 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       }
     }
   }
-  private func execute(_ command: ControlRequest) throws -> [String: Any] {
+  private func execute(_ command: ControlRequest) throws -> ControlResult {
     switch command.operation {
-    case .status: return ["calls": calls.values.map(callJSON), "pending": pendingActions.values.filter { !$0.settled }.count,
-      "audioActive": audioActive, "sequence": journalWriter.sequence, "incomingErrorCode": faults.incomingErrorCode ?? 0,
-      "incomingFilter": incomingFilter.snapshot(policy: profile.incomingFilterPolicies[incomingFilter.rawValue]),
-      "providerConfigurations": providers.values.sorted { providerID($0.provider) < providerID($1.provider) }.map(providerConfigurationJSON)]
-    case .events: return ["events": (try? String(contentsOf: controlRoot.appendingPathComponent("events.jsonl"), encoding: .utf8)) ?? ""]
+    case .status: return .status(try RuntimeSnapshot(calls: calls.values.map(callSnapshot), pending: UInt(pendingActions.values.filter { !$0.settled }.count),
+      audioActive: audioActive, sequence: journalWriter.sequence, incomingErrorCode: faults.incomingErrorCode ?? 0,
+      incomingFilter: incomingFilterSnapshot(incomingFilter),
+      providerConfigurations: providers.values.sorted { providerID($0.provider) < providerID($1.provider) }.map(providerSnapshot)))
+    case .events: return .events((try? String(contentsOf: controlRoot.appendingPathComponent("events.jsonl"), encoding: .utf8)) ?? "")
     case .inspectAdapter:
       let name = "CallKitVoIPPushDelegate"
       let selector = NSSelectorFromString("pushRegistry:didReceiveIncomingVoIPPushWithPayload:metadata:withCompletionHandler:")
       guard let cls = NSClassFromString(name) else { throw ControlError.invalid("adapter class missing") }
-      return ["metadataSelector": class_getInstanceMethod(cls, selector) != nil]
+      return .adapter(metadataSelector: class_getInstanceMethod(cls, selector) != nil)
     case .incomingFilter(let reason):
+      let result = try incomingFilterSnapshot(reason)
       incomingFilter = reason
       let snapshot = reason.snapshot(policy: profile.incomingFilterPolicies[reason.rawValue])
       var fields = snapshot
       fields["requestID"] = command.id.uuidString
       record(event: "incomingFilter.configured", fields: fields)
-      return ["incomingFilter": snapshot]
+      return .incomingFilter(result)
     case .faults(let changes):
       faults.apply(changes)
       let code = faults.incomingErrorCode ?? 0
       record(event: "faults.configured", fields: ["requestID": command.id.uuidString, "incomingErrorCode": code])
-      return ["configured": true, "incomingErrorCode": code]
+      return .faults(incomingErrorCode: code)
     case .push(let applicationPayload, let mustReport):
       // PushKit's Objective-C seam requires NSDictionary; only application data is bridged.
       let bytes = try JSONEncoder().encode(applicationPayload)
       guard let payload = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { throw ControlError.invalid("payload object required") }
       CKSimInjectPush(payload, mustReport, command.id.uuidString)
-      return ["scheduled": true, "pushID": command.id.uuidString]
+      return .push(pushID: command.id)
     case .reset:
       // Explicit selected-provider fault. This does not model invalidation of
       // an older provider (R3) or change provider-selection behavior.
@@ -1511,7 +1546,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
         "requestID": command.id.uuidString, "callUUIDs": owned.map { $0.id.uuidString }, "cancelledActionIDs": [String]()])
       reconcileAudio(provider: provider, delay: 0)
       callback(provider) { $0.providerDidReset(provider.provider) }
-      return ["reset": true, "provider": providerID(provider.provider)]
+      return .reset(provider: providerID(provider.provider))
     case .call(let control):
       if control.origin == .application && selected?.apiKind != .livecommunicationkit {
         throw ControlError.invalid("applicationRequest requires an LCK hold, merge or unmerge control")
@@ -1567,7 +1602,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       }
       guard let transaction = deliver(actions, provider, origin: origin, requestID: command.id) else { throw ControlError.invalid("provider unavailable") }
       if actions.count > 1 && faults.invalidateDuringHandoff == true { provider.provider.invalidate() }
-      return ["actionIDs": actions.map { $0.uuid.uuidString }, "transactionID": transaction.uuidString]
+      return .actions(actionIDs: actions.map(\.uuid), transactionID: transaction)
     }
   }
 }

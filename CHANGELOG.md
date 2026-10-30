@@ -6,6 +6,12 @@ Changes not yet released are recorded below. Public API changes include migratio
 
 ### Breaking changes
 
+- Inspector controls now validate complete runtime responses before awaiting
+  journal confirmation. Custom bridges must return the existing runtime identity,
+  UUID request/action/transaction identifiers and the operation's complete result
+  fields, including `configured: true` for fault acknowledgements. Mismatched
+  result kinds or identities are rejected; the flat version-one wire is retained.
+
 - Runtime mailbox requests now reject parameters belonging to other controls,
   duplicate JSON fields and empty fault updates. Custom clients must provide
   ordinary integer tokens for integer fields and distinct UUIDs for multi-call

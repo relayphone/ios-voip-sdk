@@ -9,17 +9,6 @@ private struct EventBatch: Decodable {
   let events: [RuntimeEvent]
   let cursor: Int
 }
-private struct ControlResult: Decodable {
-  struct Result: Decodable {
-    var actionIDs: [String]?
-    var incomingFilter: InspectorIncomingFilterState?
-    var incomingErrorCode: Int?
-  }
-  var id: String?
-  let success: Bool
-  var error: String?
-  var result: Result?
-}
 private struct BridgeError: Decodable { let error: String }
 private struct InspectorProbeSnapshot: Encodable {
   struct TimelinePresentation: Encodable {
@@ -53,8 +42,8 @@ private struct InspectorProbeSnapshot: Encodable {
 @MainActor
 final class InspectorModel: ObservableObject {
   private enum ConfigurationAcknowledgement: Hashable {
-    case incomingFilter(String, InspectorIncomingFilter)
-    case incomingError(String, Int)
+    case incomingFilter(UUID, InspectorIncomingFilter)
+    case incomingError(UUID, Int)
   }
   @Published var session: RuntimeSession?
   @Published var conversations: [String: RuntimeEvent] = [:]
@@ -71,8 +60,8 @@ final class InspectorModel: ObservableObject {
   private var transactionCalls: [String: Set<String>] = [:]
   private var transactionOrder: [String] = []
   private var cursor = 0
-  private var acknowledgedActions = Set<String>()
-  private var actionOrder: [String] = []
+  private var acknowledgedActions = Set<UUID>()
+  private var actionOrder: [UUID] = []
   private var configurationAcknowledgements = Set<ConfigurationAcknowledgement>()
   private var configurationOrder: [ConfigurationAcknowledgement] = []
   private let endpoint: URL?
@@ -137,6 +126,12 @@ final class InspectorModel: ObservableObject {
       throw NSError(domain: "Inspector", code: 2, userInfo: [NSLocalizedDescriptionKey: message])
     }
     return data
+  }
+  private func controlResponse(_ body: [String: String]) async throws -> ControlResponse {
+    let response = try JSONDecoder().decode(ControlResponse.self, from: await request("/command", body: body))
+    guard let session, response.target.runID == session.runID, response.target.pid == session.pid,
+          response.target.bundleID == session.bundleID else { throw URLError(.cannotParseResponse) }
+    return response
   }
   func follow() async {
     while !Task.isCancelled {
@@ -210,12 +205,12 @@ final class InspectorModel: ObservableObject {
       let ended = conversations.values.filter { $0.ended == true }.sorted { $0.sequence > $1.sequence }
       for old in ended.dropFirst(5) { if let id = old.uuid { conversations.removeValue(forKey: id) } }
     }
-    if let state = InspectorIncomingFilterState(event: row), let id = row.requestID {
+    if let state = InspectorIncomingFilterState(event: row), let rawID = row.requestID, let id = UUID(uuidString: rawID) {
       incomingFilter = state.reason
       acknowledgeConfiguration(.incomingFilter(id, state.reason))
     }
     if row.event == "faults.configured", let code = row.incomingErrorCode, [0, 4].contains(code),
-       let id = row.requestID, !id.isEmpty {
+       let rawID = row.requestID, let id = UUID(uuidString: rawID) {
       incomingErrorCode = code
       acknowledgeConfiguration(.incomingError(id, code))
     }
@@ -236,7 +231,8 @@ final class InspectorModel: ObservableObject {
       transactionCalls.removeValue(forKey: transactionOrder.remove(at: index))
     }
   }
-  private func acknowledge(_ id: String) {
+  private func acknowledge(_ rawID: String) {
+    guard let id = UUID(uuidString: rawID) else { return }
     if acknowledgedActions.insert(id).inserted {
       actionOrder.append(id)
       if actionOrder.count > 1000 { acknowledgedActions.remove(actionOrder.removeFirst()) }
@@ -251,30 +247,30 @@ final class InspectorModel: ObservableObject {
   func configureIncomingFilter(_ reason: InspectorIncomingFilter) {
     submitConfiguration(["operation": "incoming-filter", "reason": reason.rawValue],
                         acknowledgement: { .incomingFilter($0, reason) }) {
-      $0.incomingFilter?.isValid == true && $0.incomingFilter?.reason == reason
+      if case .incomingFilter(let state) = $0 { return state.reason.rawValue == reason.rawValue }
+      return false
     }
   }
   func configureIncomingError(_ code: Int) {
     guard [0, 4].contains(code) else { return }
     submitConfiguration(["operation": "faults", "incomingErrorCode": String(code)],
-                        acknowledgement: { .incomingError($0, code) }) { $0.incomingErrorCode == code }
+                        acknowledgement: { .incomingError($0, code) }) {
+      if case .faults(let applied) = $0 { return applied == code }
+      return false
+    }
   }
   private func submitConfiguration(_ body: [String: String],
-                                   acknowledgement: @escaping (String) -> ConfigurationAcknowledgement,
-                                   accepting: @escaping (ControlResult.Result) -> Bool) {
+                                   acknowledgement: @escaping (UUID) -> ConfigurationAcknowledgement,
+                                   accepting: @escaping (ControlResult) -> Bool) {
     guard !busy, online else { return }
     busy = true
     Task {
       defer { busy = false }
       do {
-        let response = try JSONDecoder().decode(ControlResult.self, from: await request("/command",
-          body: body))
-        guard response.success, let id = response.id, !id.isEmpty, let result = response.result, accepting(result) else {
-          throw NSError(domain: "Inspector", code: 5, userInfo: [NSLocalizedDescriptionKey:
-            response.error ?? "Runtime rejected the configuration."])
-        }
+        let response = try await controlResponse(body)
+        guard accepting(try response.get()) else { throw URLError(.cannotParseResponse) }
         let deadline = Date().addingTimeInterval(3)
-        while !configurationAcknowledgements.contains(acknowledgement(id)) {
+        while !configurationAcknowledgements.contains(acknowledgement(response.id)) {
           guard Date() < deadline else {
             throw NSError(domain: "Inspector", code: 6, userInfo: [NSLocalizedDescriptionKey:
               "Configuration accepted, but its journal confirmation has not arrived. Check the timeline before retrying."])
@@ -299,11 +295,8 @@ final class InspectorModel: ObservableObject {
         if let heldID = heldCall?.uuid { command["heldCallUUID"] = heldID }
         if let held { command["held"] = held ? "true" : "false" }
         if let groupID = groupTarget?.uuid { command["groupWithCallUUID"] = groupID }
-        let response = try JSONDecoder().decode(ControlResult.self, from: await request("/command", body: command))
-        if !response.success {
-          throw NSError(domain: "Inspector", code: 3, userInfo: [NSLocalizedDescriptionKey: response.error ?? "Runtime rejected this call action."])
-        }
-        guard let ids = response.result?.actionIDs, !ids.isEmpty else { throw URLError(.cannotParseResponse) }
+        let response = try await controlResponse(command)
+        guard case .actions(let ids, _) = try response.get() else { throw URLError(.cannotParseResponse) }
         let deadline = Date().addingTimeInterval(3)
         while !Set(ids).isSubset(of: acknowledgedActions) {
           guard Date() < deadline else {
