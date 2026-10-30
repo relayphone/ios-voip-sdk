@@ -12,6 +12,11 @@ public struct PresentationPolicy: Hashable, Sendable {
     case ring
     /// The call appears as a call preview, such as a Live Activity, from which the user can join,
     /// with reason ``PreviewReason/policy``. It never rings and opens no audio.
+    ///
+    /// The calling framework isn't involved, so a server must not send a VoIP push for a call
+    /// that only appears as a preview: Apple requires every VoIP push to be reported as a call.
+    /// Send a Live Activity push instead. When a VoIP push brings such a call anyway, the SDK
+    /// reports a call to satisfy the rule and ends it at once.
     case preview
     /// The call doesn't appear on this device.
     case none
