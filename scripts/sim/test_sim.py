@@ -341,7 +341,10 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(len(self.calls('create')), 2)
         self.assertEqual(len(self.calls('boot')), 2)
         self.assertEqual(len(self.calls('install')), 1)
-        self.cli('cleanup', self.state, '--timeout', .2)
+        # Replay deadlines are checked above; healthy teardown uses the normal
+        # fixture command budget, including a slow successful delete.
+        self.rules(dict(step='delete', at=[2], action='slow-success'))
+        self.cli('cleanup', self.state, '--timeout', 2)
         self.assertEqual(self.inventory(), [])
 
     def test_checkpoint_permanently_disables_infrastructure_retries(self):
