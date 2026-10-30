@@ -146,11 +146,15 @@
       try await app.system.perform(.mute(uuid, muted: true))
       try await app.expect([.performed(.mute(id, muted: true), .connected)])
       #expect(app.call(id)?.isMuted == true)
+      // With its only call on hold, the system deactivates audio, and activates it again when
+      // the call resumes.
       try await app.system.perform(.hold(uuid, held: true, origin: .system))
-      try await app.expect([.performed(.hold(id, onHold: true), .connected)])
+      try await app.expect([.performed(.hold(id, onHold: true), .connected), .audioDeactivated])
       #expect(app.call(id)?.isOnHold == true)
       try await app.system.perform(.hold(uuid, held: false, origin: .system))
-      try await app.expect([.performed(.hold(id, onHold: false), .connected)])
+      try await app.expect([.performed(.hold(id, onHold: false), .connected), .audioActivated])
+      #expect(
+        await app.media.records.map(\.kind) == [.prepare, .activate, .deactivate, .activate])
       try await app.system.perform(.tones(uuid, digits: "12#"))
       try await app.expect([.performed(.playTones(id, digits: "12#"), .connected)])
       try await app.system.perform(.mute(uuid, muted: false))
