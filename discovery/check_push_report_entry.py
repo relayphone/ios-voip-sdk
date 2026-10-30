@@ -153,7 +153,7 @@ private actor IncomingReportTransport {
     for required in [false, true] {
       let client = FixtureClient(), ticket = PushDelivery()
       let actual = PushService(client)
-      let known = try! client.incomingIntake.reserve(.init(eventId:"known", serverCallId:"s", caller:try! Caller(handleType:.generic, value:"caller", displayName:"caller")), source:.foreground)
+      let known = try! client.incomingIntake.reserve(.init(eventID:"known", serverCallID:.init(rawValue:"s"), caller:try! Caller(handleType:.generic, value:"caller", displayName:"caller")), source:.foreground)
       guard case .report(let first) = known.disposition else { preconditionFailure() }
       client.incomingIntake.complete(first, outcome:.reported)
       await Task.detached {
@@ -174,7 +174,7 @@ private actor IncomingReportTransport {
       await wait { ticket.finishCount == 1 && client.projections == (required ? 2 : 1) }
       let count = await client.incomingTransport.count
       precondition(count == (required ? 1 : 0))
-      precondition(!client.incomingIntake.terminate(.init(eventId:"end",serverCallId:"s",reason:.remoteEnded)))
+      precondition(!client.incomingIntake.terminate(.init(eventID:"end",serverCallID:.init(rawValue:"s"),reason:.remoteEnded)))
     }
     print("passed: exact off-main receiver synchronous reservation/decoding, actual-await completion boundary, optional omission, required fallback success/failure, canonical pending termination and optional/required callEnded dedup")
   }

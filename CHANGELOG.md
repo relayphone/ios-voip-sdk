@@ -6,6 +6,14 @@ Changes not yet released are recorded below. Public API changes include migratio
 
 ### Breaking changes
 
+- `IncomingCallPayload` and `CallEndedPayload` now spell their Swift identity
+  properties and initializer labels `eventID` and `serverCallID`. The server ID
+  uses `ServerCallID`, including `ConversationEventContext.serverCallID`.
+  Restore a backend string with `ServerCallID(rawValue:)` and use `id.rawValue`
+  when a string is needed. JSON and Expo retain their existing string values
+  and keys (`eventId`/`serverCallId` for transport payloads). Existing identity
+  validation, deduplication and termination behavior are unchanged.
+
 - `AudioRoute.id`, the route initializer and `ConversationClient.selectAudioRoute(_:)`
   now use `AudioRoute.ID`. Pass an observed route's `id` directly, or restore a
   serialized ID with `AudioRoute.ID(rawValue:)`; use `id.rawValue` when a string is

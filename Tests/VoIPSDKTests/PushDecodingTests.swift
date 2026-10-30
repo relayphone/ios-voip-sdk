@@ -18,7 +18,7 @@ struct PushDecodingTests {
     #expect(
       PushWire.parse(["incoming_call": body, "unused": Date(timeIntervalSince1970: 0)])
         == .incoming(payload))
-    let ended = CallEndedPayload(eventId: "end", serverCallId: "s")
+    let ended = CallEndedPayload(eventID: "end", serverCallID: .init(rawValue: "s"))
     #expect(
       PushWire.decodeCallEnded(["eventId": "end", "serverCallId": "s", "unused": Data([1])])
         == ended)
@@ -129,7 +129,7 @@ struct PushDecodingTests {
       return
     }
     #expect(
-      payload.eventId == id.uuidString && payload.caller.value == "unknown" && !payload.hasVideo
+      payload.eventID == id.uuidString && payload.caller.value == "unknown" && !payload.hasVideo
         && ended == nil)
     #expect(IncomingPushPolicy.plan(.malformed, mustReport: false, fallbackIdentity: id) == .skip)
   }

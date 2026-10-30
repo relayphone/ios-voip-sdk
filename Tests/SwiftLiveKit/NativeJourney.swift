@@ -204,8 +204,8 @@ private struct EngineState: Sendable {
     client.setConversationHandler(.init(join: { [self] _, context in try await startDemand(context) },
       start: { _, _ in throw JourneyError.failed("Unexpected start action") },
       end: { [self] _, context in try context.signal.throwIfCancelled(); try await stopDemand() }, hold: { _, _ in }))
-    let id = try await client.reportIncomingConversation(.init(eventId: UUID().uuidString,
-      serverCallId: UUID().uuidString, caller: try! Caller(handleType: .generic, value: "swift-livekit-fixture", displayName: "swift-livekit-fixture")))
+    let id = try await client.reportIncomingConversation(.init(eventID: UUID().uuidString,
+      serverCallID: .init(rawValue: UUID().uuidString), caller: try! Caller(handleType: .generic, value: "swift-livekit-fixture", displayName: "swift-livekit-fixture")))
     Trace.log("livekit.incoming", ["conversationID": id.uuidString])
     try await client.joinConversation(id)
     if stale {

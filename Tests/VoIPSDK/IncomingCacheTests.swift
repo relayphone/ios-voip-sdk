@@ -8,8 +8,8 @@ import Foundation
     let client = try ConversationClient.forApplication(configuration: .init())
     client.finishLaunch()
     let manager = ConversationManager.latest!
-    let payload = IncomingCallPayload(eventId: "cache-event-" + mode,
-      serverCallId: "cache-server-" + mode,
+    let payload = IncomingCallPayload(eventID: "cache-event-" + mode,
+      serverCallID: .init(rawValue: "cache-server-" + mode),
       caller: try Caller(handleType: .generic, value: "cache-caller", displayName: "Cache fixture"),
       metadata: ["fixture": .string(mode)])
     var result: [String: Any] = ["mode": mode,
@@ -80,7 +80,7 @@ import Foundation
       var cacheCount = client.snapshots.count
       for (index, failure) in failures.enumerated() {
         var candidate = payload
-        candidate.eventId += "-unreported-\(index)"; candidate.serverCallId += "-unreported-\(index)"
+        candidate.eventID += "-unreported-\(index)"; candidate.serverCallID = .init(rawValue: candidate.serverCallID.rawValue + "-unreported-\(index)")
         let unreported = candidate
         let reservation = try client.incomingIntake.reserve(unreported, source: .pushKit)
         precondition(reservation.id != id)
@@ -106,7 +106,7 @@ import Foundation
 
       // Reset can also occur during the foreground caller's own native report.
       var pendingPayload = payload
-      pendingPayload.eventId += "-pending-reset"; pendingPayload.serverCallId += "-pending-reset"
+      pendingPayload.eventID += "-pending-reset"; pendingPayload.serverCallID = .init(rawValue: pendingPayload.serverCallID.rawValue + "-pending-reset")
       manager.pauseIncoming = true
       let pending = Task { @MainActor () -> Bool in
         do throws(IncomingConversationError) { _ = try await client.reportIncomingConversation(pendingPayload); return false }

@@ -88,8 +88,8 @@ enum IncomingPushPolicy {
       if case .callEnded(let payload) = message { return .callEnded(payload) }
       return .skip
     }
-    let fallback = IncomingCallPayload(eventId: fallbackIdentity.uuidString,
-      serverCallId: "unrecognized-\(fallbackIdentity.uuidString)",
+    let fallback = IncomingCallPayload(eventID: fallbackIdentity.uuidString,
+      serverCallID: .init(rawValue: "unrecognized-\(fallbackIdentity.uuidString)"),
       caller: .unknown, hasVideo: false)
     if case .callEnded(let ended) = message { return .fallback(fallback, ended: ended) }
     return .fallback(fallback, ended: nil)

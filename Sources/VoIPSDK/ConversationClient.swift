@@ -420,15 +420,15 @@ public final class ConversationClient {
     for (id, pending) in answeredElsewherePending {
       guard answeredElsewherePending[id]?.generation == pending.generation,
             answeredElsewherePending[id]?.notification == pending.notification,
-            answeredElsewhereEmitted[pending.notification.eventId] == nil,
+            answeredElsewhereEmitted[pending.notification.eventID] == nil,
             state.conversations.contains(where: { $0.id == id && $0.status == .ended && $0.ended?.reason == .answeredElsewhere }),
             incomingIntake.projection(id)?.generation == pending.generation else { continue }
       // Claim before host callbacks can reenter. Replacement platform objects
       // still receive their own end report without repeating the SDK event.
       answeredElsewherePending.removeValue(forKey: id)
-      answeredElsewhereEmitted[pending.notification.eventId] = Date()
+      answeredElsewhereEmitted[pending.notification.eventID] = Date()
       emit(.answeredElsewhere, conversationID: id,
-        serverCallID: pending.notification.serverCallId, eventID: pending.notification.eventId)
+        serverCallID: pending.notification.serverCallID, eventID: pending.notification.eventID)
     }
   }
   public func metadata(for id: UUID) -> [String: JSONValue]? {
@@ -515,8 +515,8 @@ public final class ConversationClient {
 
   @discardableResult
   public func receiveCallEnded(_ payload: CallEndedPayload) -> Bool {
-    guard !payload.eventId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          !payload.serverCallId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+    guard !payload.eventID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          !payload.serverCallID.rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
     let accepted = incomingIntake.terminate(payload)
     if accepted { refresh() }
     return accepted
@@ -771,7 +771,7 @@ public final class ConversationClient {
             $0.generation == incoming.generation && $0.object === conversation
           }) else { continue }
           answeredElsewhereClaims[id, default: []].append(.init(generation: incoming.generation, object: conversation))
-          if let notification = terminal.notification, answeredElsewhereEmitted[notification.eventId] == nil {
+          if let notification = terminal.notification, answeredElsewhereEmitted[notification.eventID] == nil {
             answeredElsewherePending[id] = (incoming.generation, notification)
           }
           manager.reportConversationEvent(.conversationEnded(terminal.ended.at, .joinedElsewhere), for: conversation)
@@ -876,7 +876,7 @@ public final class ConversationClient {
     }
   }
   private func emit(_ event: ConversationEvent, conversationID: UUID? = nil,
-                    serverCallID: String? = nil, eventID: String? = nil) {
+                    serverCallID: ServerCallID? = nil, eventID: String? = nil) {
     let context = ConversationEventContext(type: event, conversationID: conversationID, serverCallID: serverCallID, eventID: eventID)
     for callback in Array(eventObservers.values) { callback(context) }
   }
