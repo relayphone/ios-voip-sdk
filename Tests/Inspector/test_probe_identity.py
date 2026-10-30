@@ -48,7 +48,7 @@ import Foundation
 class ProbeIdentityTests(unittest.TestCase):
     def test_receipt_uses_actual_bundle_and_canonical_documents_parent_without_secrets(self):
         session = dict(schemaVersion=1, bundleID='dev.callkitsim.target', runID='probe-identity-test',
-                       pid=2468, profile='ios-27.0')
+                       pid=2468, profile='ios-27.0', controlTransport='directory-watch-v1')
         row = dict(schemaVersion=1, bundleID=session['bundleID'], runID=session['runID'], pid=session['pid'],
                    sequence=1, t_ms=10, event='call.changed', uuid='call-a',
                    connected=True, held=False, ended=False)
@@ -89,6 +89,7 @@ class ProbeIdentityTests(unittest.TestCase):
                                        CFBundlePackageType='APPL'), output)
                 compiled = subprocess.run(['swiftc', '-swift-version', '6', '-parse-as-library',
                     '-module-cache-path', str(work / 'module-cache'), str(model),
+                    *(str(path) for path in sorted((ROOT / 'Sources/CKSimProtocol').glob('*.swift'))),
                     *(str(ROOT / 'Inspector' / name) for name in
                       ('RuntimeEvent.swift', 'RuntimeTimingReferences.swift', 'IncomingFilter.swift')),
                     str(harness), '-o', str(executable)], text=True, capture_output=True, timeout=60)

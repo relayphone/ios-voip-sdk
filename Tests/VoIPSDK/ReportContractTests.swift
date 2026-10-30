@@ -146,8 +146,8 @@ import Foundation
       }
       precondition(actual == pair.1 && manager.reports.last?.0 == id)
     }
-    precondition(PushWire.decodeCallEnded(["eventId": "wire-local", "serverCallId": "wire-server", "reason": "local"])?.reason == .remoteEnded,
-      "The legacy wire fallback remains remote from the receiver's perspective")
+    precondition(PushWire.decodeCallEnded(["eventId": "wire-local", "serverCallId": "wire-server", "reason": "local"]) == nil,
+      "Receiver-local actions are invalid transport terminations")
     let wirePayload = payload("wire")
     let wireID = try await client.reportIncomingConversation(wirePayload)
     precondition(!client.receiveCallEnded(.init(eventId: "typed-end", serverCallId: wirePayload.serverCallId, reason: .local)))
