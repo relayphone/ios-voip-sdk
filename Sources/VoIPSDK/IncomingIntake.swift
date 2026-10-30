@@ -119,16 +119,16 @@ final class IncomingIntake: @unchecked Sendable {
   /// predecessor: each delivery receives its own actual report attempt.
   func reserve(_ payload: IncomingCallPayload, source: IncomingReportSource,
                now: Date = Date()) throws(IncomingConversationError) -> Reservation {
-    guard !payload.eventId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          !payload.serverCallId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+    guard !payload.eventID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          !payload.serverCallID.rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
           !payload.caller.value.isEmpty else {
       throw IncomingConversationError.invalidPayload
     }
     lock.lock()
     defer { lock.unlock() }
     entries = entries.filter { $0.value.active || $0.value.hasPending || $0.value.retainedUntil >= now }
-    let registration = invitations.register(eventId: payload.eventId,
-      serverCallId: payload.serverCallId, now: now)
+    let registration = invitations.register(eventID: payload.eventID,
+      serverCallID: payload.serverCallID, now: now)
     let existing = entries[registration.id]
     let entry = existing ?? Entry(payload: payload, now: now)
     entries[registration.id] = entry
@@ -169,7 +169,7 @@ final class IncomingIntake: @unchecked Sendable {
         entry.resetInvalidated = false
         entry.everReported = true
         entry.active = true
-        invitations.markActive(attempt.id, serverCallId: entry.payload.serverCallId, now: now)
+        invitations.markActive(attempt.id, serverCallID: entry.payload.serverCallID, now: now)
         resolutions.append((attempt.ticket, .success(attempt.id)))
       case .alreadyReported(let error), .failed(let error):
         if entry.ownershipKnown { resolutions.append((attempt.ticket, .success(attempt.id))) }
@@ -227,7 +227,7 @@ final class IncomingIntake: @unchecked Sendable {
     if let entry = entries[id], !entry.resetInvalidated {
       entry.everObserved = true
       entry.active = true
-      invitations.markActive(id, serverCallId: entry.payload.serverCallId, now: now)
+      invitations.markActive(id, serverCallID: entry.payload.serverCallID, now: now)
       resolveTickets(entry, id: id, into: &resolutions, retiring: &retiredFailures)
     }
     lock.unlock()
@@ -245,9 +245,9 @@ final class IncomingIntake: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     endEventIDs = endEventIDs.filter { now.timeIntervalSince($0.value) <= 120 }
-    guard endEventIDs[payload.eventId] == nil else { return false }
-    endEventIDs[payload.eventId] = now
-    guard let id = invitations.conversation(serverCallId: payload.serverCallId),
+    guard endEventIDs[payload.eventID] == nil else { return false }
+    endEventIDs[payload.eventID] = now
+    guard let id = invitations.conversation(serverCallID: payload.serverCallID),
           let entry = entries[id] else { return false }
     entry.terminal = Terminal(revision: UUID(), ended: ConversationEnded(at: now, reason: payload.reason), notification: payload)
     entry.terminalPending = true

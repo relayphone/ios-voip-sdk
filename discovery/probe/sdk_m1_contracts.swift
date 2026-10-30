@@ -150,8 +150,8 @@ private enum LifecycleContract {
       start: { _, _ in ContractTrace.log("lifecycle.handler", ["kind": "start", "phase": phase]) },
       end: { _, _ in ContractTrace.log("lifecycle.handler", ["kind": "end", "phase": phase]) },
       hold: { _, _ in ContractTrace.log("lifecycle.handler", ["kind": "hold", "phase": phase]) }))
-    let id = try await client.reportIncomingConversation(.init(eventId: UUID().uuidString,
-      serverCallId: UUID().uuidString, caller: try! Caller(handleType: .generic, value: "native-lifecycle-fixture", displayName: "native-lifecycle-fixture")))
+    let id = try await client.reportIncomingConversation(.init(eventID: UUID().uuidString,
+      serverCallID: .init(rawValue: UUID().uuidString), caller: try! Caller(handleType: .generic, value: "native-lifecycle-fixture", displayName: "native-lifecycle-fixture")))
     phase = "answer"
     try await client.joinConversation(id)
     guard await wait({ adapter.authorized && adapter.activations == 1 }) else { return false }
@@ -229,16 +229,16 @@ private enum RouteContract {
       let native = await AudioSessionQueue.shared.perform { () -> [[AudioRoute]] in
         let session = AVAudioSession.sharedInstance()
         func route(_ port: AVAudioSessionPortDescription) -> AudioRoute {
-          AudioRoute(id: port.uid, name: port.portName, type: port.portType.rawValue)
+          AudioRoute(id: .init(rawValue: port.uid), name: port.portName, type: port.portType.rawValue)
         }
         return [(session.availableInputs ?? []).map(route), session.currentRoute.outputs.map(route)]
       }
       var expected: [AudioRoute] = []
-      for port in native[0] where !expected.contains(where: { $0.id == "input:" + port.id }) {
-        expected.append(.init(id: "input:" + port.id, name: port.name, type: port.type))
+      for port in native[0] where !expected.contains(where: { $0.id.rawValue == "input:" + port.id.rawValue }) {
+        expected.append(.init(id: .init(rawValue: "input:" + port.id.rawValue), name: port.name, type: port.type))
       }
-      expected.append(.init(id: "speaker", name: "Speaker", type: "Speaker"))
-      let current = native[1].first.map { AudioRoute(id: "output:" + $0.id, name: $0.name, type: $0.type) }
+      expected.append(.init(id: .init(rawValue: "speaker"), name: "Speaker", type: "Speaker"))
+      let current = native[1].first.map { AudioRoute(id: .init(rawValue: "output:" + $0.id.rawValue), name: $0.name, type: $0.type) }
       if let current { expected.append(current) }
       let observed = client.audioRoutes
       // Notifications use a debounce. Wait for a coherent OS/cache checkpoint
@@ -246,7 +246,7 @@ private enum RouteContract {
       if observed.routes == expected && observed.current == current {
         let snapshot = try JSONSerialization.jsonObject(with: JSONEncoder().encode(observed))
         func values(_ ports: [AudioRoute]) -> [[String: String]] {
-          ports.map { ["uid": $0.id, "name": $0.name, "type": $0.type] }
+          ports.map { ["uid": $0.id.rawValue, "name": $0.name, "type": $0.type] }
         }
         ContractTrace.log("routes.observed", ["phase": phase, "snapshot": snapshot,
           "inputs": values(native[0]), "outputs": values(native[1])])
@@ -264,14 +264,14 @@ private enum RouteContract {
     ContractTrace.log("contract.owner", ["identity": String(describing: ObjectIdentifier(client)),
       "sharedIdentity": String(describing: ObjectIdentifier(repeated.client)), "warnings": 0])
     client.setConversationHandler(.init(join: { _, _ in }, start: { _, _ in }, end: { _, _ in }))
-    let id = try await client.reportIncomingConversation(.init(eventId: UUID().uuidString,
-      serverCallId: UUID().uuidString, caller: try Caller(handleType: .generic,
+    let id = try await client.reportIncomingConversation(.init(eventID: UUID().uuidString,
+      serverCallID: .init(rawValue: UUID().uuidString), caller: try Caller(handleType: .generic,
         value: "native-route-fixture", displayName: "native-route-fixture")))
     try await client.joinConversation(id)
     guard await LifecycleContract.wait({ adapter.authorized && adapter.activations == 1 && client.audioRoutes.revision > 0 }) else { return false }
     ContractTrace.log("routes.authority", ["conversationID": id.uuidString, "authorized": true])
     do {
-      try await client.selectAudioRoute("speaker")
+      try await client.selectAudioRoute(.init(rawValue: "speaker"))
       ContractTrace.log("routes.command", ["id": "speaker", "succeeded": true])
     } catch let error as AudioRouteError { throw error }
     catch {
@@ -407,7 +407,7 @@ private final class SDKM1ContractsProbe {
   /// CX report completion. This observes compatibility, not NSError wrapper depth
   /// or physical-device behavior. The source tag is not an actual PushKit delivery.
   private func duplicateContract(_ client: ConversationClient) async throws {
-    let payload = IncomingCallPayload(eventId: UUID().uuidString, serverCallId: UUID().uuidString,
+    let payload = IncomingCallPayload(eventID: UUID().uuidString, serverCallID: .init(rawValue: UUID().uuidString),
       caller: try! Caller(handleType: .generic, value: "native-duplicate-wrapper-fixture", displayName: "native-duplicate-wrapper-fixture"))
     let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
     let payloadHash = SHA256.hash(data: try encoder.encode(payload)).map { String(format: "%02x", $0) }.joined()
@@ -484,8 +484,8 @@ private final class SDKM1ContractsProbe {
       ContractTrace.log("contract.snapshot", ["revision": update.revision, "conversations": calls])
     }
     defer { client.removeStateObserver(token) }
-    let id = try await client.reportIncomingConversation(.init(eventId: UUID().uuidString,
-      serverCallId: UUID().uuidString, caller: try! Caller(handleType: .generic, value: "native-policy-fixture", displayName: "native-policy-fixture")))
+    let id = try await client.reportIncomingConversation(.init(eventID: UUID().uuidString,
+      serverCallID: .init(rawValue: UUID().uuidString), caller: try! Caller(handleType: .generic, value: "native-policy-fixture", displayName: "native-policy-fixture")))
     ContractTrace.log("contract.incoming", ["conversationID": id.uuidString])
     let request = Task { @MainActor in
       do { try await client.joinConversation(id); ContractTrace.log("contract.joinResult", ["accepted": true]) }

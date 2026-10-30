@@ -23,8 +23,10 @@ def main():
     assert len(helpers) == 1, 'exactly one production image classifier is required'
     helper = helpers[0]
     engine = (ROOT / 'Sources/Engine/RuntimeEngine.swift').read_text()
-    assert engine.count('private enum ProviderAPIKind:') == engine.count('private struct BehaviorProfile:') == 1
-    policy = engine[engine.index('private enum ProviderAPIKind:'):engine.index('private struct BehaviorProfile:')]
+    provider_api = re.findall(r'^private enum ProviderAPIKind:.*$', engine, re.M)
+    profile_policy = re.findall(r'^private struct FulfilledPostEndUnmutePolicy:.*?^\}', engine, re.M | re.S)
+    assert len(provider_api) == len(profile_policy) == 1, 'exactly one production provider API and settlement policy are required'
+    policy = '\n'.join([provider_api[0], profile_policy[0]])
     checks = []
     with tempfile.TemporaryDirectory(prefix='cksim-lck-policy-') as temporary:
         out = Path(temporary)

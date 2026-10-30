@@ -20,7 +20,7 @@ struct ModelTests {
       capabilities: ConversationCapabilities(hold: false), isMuted: true, isVideo: false,
       connectedAt: timestamp, ended: ConversationEnded(at: timestamp, reason: .remoteEnded),
       payload: IncomingCallPayload(
-        eventId: "event", serverCallId: "server", caller: caller,
+        eventID: "event", serverCallID: .init(rawValue: "server"), caller: caller,
         metadata: ["nested": .array([.null, .bool(true)])]),
       pending: PendingAction(
         id: UUID(), kind: .mute, deadline: timestamp, origin: .app, muted: true))
@@ -37,7 +37,7 @@ struct ModelTests {
   @Test func eventContextPreservesIdentifiers() throws {
     let event = ConversationEventContext(
       type: .answeredElsewhere, conversationID: UUID(),
-      serverCallID: "server", eventID: "event")
+      serverCallID: .init(rawValue: "server"), eventID: "event")
     #expect(
       try JSONDecoder().decode(ConversationEventContext.self, from: JSONEncoder().encode(event))
         == event)

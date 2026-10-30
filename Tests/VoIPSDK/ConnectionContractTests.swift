@@ -13,8 +13,8 @@ import Foundation
       conversation.state = state
       client.conversationManager(manager, conversationChanged: conversation)
     }
-    let incoming = try await client.reportIncomingConversation(.init(eventId: "connection-event",
-      serverCallId: "connection-server", caller: try! Caller(handleType: .generic, value: "connection-caller", displayName: "connection-caller")))
+    let incoming = try await client.reportIncomingConversation(.init(eventID: "connection-event",
+      serverCallID: .init(rawValue: "connection-server"), caller: try! Caller(handleType: .generic, value: "connection-caller", displayName: "connection-caller")))
     precondition(snapshot(incoming).status == .ringing && snapshot(incoming).connectedAt == nil)
     try await client.joinConversation(incoming)
     precondition(snapshot(incoming).status == .connecting && snapshot(incoming).pending == nil &&

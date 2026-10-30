@@ -44,8 +44,12 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "24.22.1"
+          package-manager-cache: false
       - name: Verify selection and aggregate contracts
-        run: scripts/ci/bounded 120 python3 -m unittest discover -s scripts/ci/tests -p 'test_*.py'
+        run: exec node Tools/run-bounded.ts 120 python3 -m unittest discover -s scripts/ci/tests -p 'test_*.py'
       - name: Select critical and affected jobs
         id: select
         run: scripts/ci/bounded 60 python3 scripts/ci/changes.py

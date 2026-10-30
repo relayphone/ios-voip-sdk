@@ -69,7 +69,7 @@ public final class IosVoipSDKModule: Module {
     }
     AsyncFunction("selectAudioRoute") { (id: String, promise: Promise) in
       Self.respond(promise, failureCode: "audio_route", failureMessage: "The system could not select this audio route.") {
-        try await ExpoMediaSupport.startFromBundle().client.selectAudioRoute(id)
+        try await ExpoMediaSupport.startFromBundle().client.selectAudioRoute(.init(rawValue: id))
         return nil
       }
     }

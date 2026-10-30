@@ -26,7 +26,7 @@ import Foundation
   @MainActor static func makeOwner() async throws -> SystemAudioSession {
     AVAudioSession.fixture.configure(inputs: [builtIn], output: receiver)
     let owner = SystemAudioSession()
-    try await wait { owner.routes.snapshot.current?.id == "output:receiver" }
+    try await wait { owner.routes.snapshot.current?.id.rawValue == "output:receiver" }
     AVAudioSession.fixture.resetMetrics()
     return owner
   }
@@ -41,21 +41,21 @@ import Foundation
     NotificationCenter.default.post(name: AVAudioSession.routeChangeNotification, object: nil)
     precondition(AVAudioSession.fixture.metrics().inputs == 0,
       "Notification delivery must schedule a delayed reread rather than perform native work inline")
-    try await wait { owner.routes.snapshot.current?.id == "output:usb-out" }
+    try await wait { owner.routes.snapshot.current?.id.rawValue == "output:usb-out" }
     let reads = await AudioSessionQueue.shared.perform { AVAudioSession.fixture.metrics() }
     precondition(reads.inputs == 1 && reads.current == 1,
       "One synchronous notification burst must coalesce to one native route read")
-    precondition(owner.routes.snapshot.routes.contains { $0.id == "input:usb" },
+    precondition(owner.routes.snapshot.routes.contains { $0.id.rawValue == "input:usb" },
       "Available-input changes must update selection choices")
     // An input-inventory change can occur without any current-route change.
     // A route-only observer must fail this independent notification control.
     AVAudioSession.fixture.resetMetrics()
     AVAudioSession.fixture.configure(inputs: [.init("new-input", "New OS input", "USBAudio")], output: output)
     NotificationCenter.default.post(name: AVAudioSession.availableInputsChangeNotification, object: nil)
-    try await wait { owner.routes.snapshot.routes.contains { $0.id == "input:new-input" } }
+    try await wait { owner.routes.snapshot.routes.contains { $0.id.rawValue == "input:new-input" } }
     let inputReads = await AudioSessionQueue.shared.perform { AVAudioSession.fixture.metrics() }
     precondition(inputReads.inputs == 1 && inputReads.current == 1 &&
-      owner.routes.snapshot.current?.id == "output:usb-out")
+      owner.routes.snapshot.current?.id.rawValue == "output:usb-out")
   }
 
   @MainActor static func staleRead() async throws {
@@ -75,8 +75,8 @@ import Foundation
       output: .init("fresh-out", "New output", "BluetoothHFP"))
     owner.refreshRoutes() // Invalidate an observation already blocked inside the native read.
     gate.unblock()
-    try await wait { owner.routes.snapshot.current?.id == "output:fresh-out" }
-    precondition(!published.contains { snapshot in snapshot.routes.contains { $0.id == "input:stale" } },
+    try await wait { owner.routes.snapshot.current?.id.rawValue == "output:fresh-out" }
+    precondition(!published.contains { snapshot in snapshot.routes.contains { $0.id.rawValue == "input:stale" } },
       "An older blocked read must not publish after a new probe generation")
   }
 
@@ -85,22 +85,22 @@ import Foundation
     owner.setSystemAudioAuthorization(true)
     AVAudioSession.fixture.rejectNextOverride(observing: .init("external", "OS-selected output", "AirPlay"))
     do {
-      try await owner.selectRoute("speaker", isActive: true)
+      try await owner.selectRoute(.init(rawValue: "speaker"), isActive: true)
       throw Failure.expectedSetterError
     } catch AVAudioSession.FixtureError.setterRejected {}
-    precondition(owner.routes.snapshot.current?.id == "output:external" &&
+    precondition(owner.routes.snapshot.current?.id.rawValue == "output:external" &&
       owner.routes.snapshot.current?.type == "AirPlay",
       "A rejected native selection must still reread actual OS output")
     let reads = AVAudioSession.fixture.metrics()
     precondition(reads.inputs == 1 && reads.current == 1 && reads.mutations == [.outputOverride(.speaker)])
     AVAudioSession.fixture.resetMetrics()
-    try await owner.selectRoute("input:built-in", isActive: true)
+    try await owner.selectRoute(.init(rawValue: "input:built-in"), isActive: true)
     precondition(AVAudioSession.fixture.metrics().mutations == [.outputOverride(.none), .input("built-in")],
       "Input selection must clear speaker override and pass the actual available input UID")
-    precondition(owner.routes.snapshot.current?.id == "output:external",
+    precondition(owner.routes.snapshot.current?.id.rawValue == "output:external",
       "A successful input request must still preserve the OS-observed output")
-    try await owner.selectRoute("speaker", isActive: true)
-    precondition(owner.routes.snapshot.current?.id == "output:speaker-output" &&
+    try await owner.selectRoute(.init(rawValue: "speaker"), isActive: true)
+    precondition(owner.routes.snapshot.current?.id.rawValue == "output:speaker-output" &&
       owner.routes.snapshot.current?.name == "Observed speaker" && owner.routes.snapshot.current?.type == "Speaker",
       "Successful speaker selection must publish the observed output UID/name/type, not the command target")
   }
@@ -111,7 +111,7 @@ import Foundation
     let gate = RouteReadGate()
     defer { gate.unblock() }
     AVAudioSession.fixture.blockNextInputRead(gate)
-    let selection = Task { @MainActor in try await owner.selectRoute("input:built-in", isActive: true) }
+    let selection = Task { @MainActor in try await owner.selectRoute(.init(rawValue: "input:built-in"), isActive: true) }
     try await entered(gate)
     owner.setSystemAudioAuthorization(false)
     owner.setSystemAudioAuthorization(true)
@@ -122,19 +122,19 @@ import Foundation
     } catch AudioRouteError.audioSessionInactive {}
     precondition(AVAudioSession.fixture.metrics().mutations.isEmpty,
       "An old admission must not set an override/input after false-to-true reactivation")
-    precondition(owner.routes.snapshot.current?.id == "output:receiver")
+    precondition(owner.routes.snapshot.current?.id.rawValue == "output:receiver")
   }
 
   @MainActor static func currentOutputUsesActualRoute() async throws {
     let owner = try await makeOwner()
     owner.setSystemAudioAuthorization(true)
-    try await owner.selectRoute("output:receiver", isActive: true)
+    try await owner.selectRoute(.init(rawValue: "output:receiver"), isActive: true)
     let reads = AVAudioSession.fixture.metrics()
     precondition(reads.current == 2 && reads.inputs == 1 && reads.mutations.isEmpty,
       "A current-output no-op must validate the OS route and publish its subsequent reread")
     owner.setSystemAudioAuthorization(false)
     do {
-      try await owner.selectRoute("output:receiver", isActive: true)
+      try await owner.selectRoute(.init(rawValue: "output:receiver"), isActive: true)
       throw Failure.expectedRevocation
     } catch AudioRouteError.audioSessionInactive {}
   }
@@ -146,10 +146,10 @@ import Foundation
       output: .init("headphones", "Actual headphones", "Headphones"))
     NotificationCenter.default.post(name: AVAudioSession.routeChangeNotification, object: nil)
     do {
-      try await owner.selectRoute("output:receiver", isActive: true)
+      try await owner.selectRoute(.init(rawValue: "output:receiver"), isActive: true)
       throw Failure.expectedSetterError
     } catch AudioRouteError.unknownRoute {}
-    precondition(owner.routes.snapshot.current?.id == "output:headphones" &&
+    precondition(owner.routes.snapshot.current?.id.rawValue == "output:headphones" &&
       AVAudioSession.fixture.metrics().mutations.isEmpty,
       "A stale cached output must fail before mutation and publish the actual OS output")
   }
@@ -160,7 +160,7 @@ import Foundation
     let gate = RouteReadGate()
     defer { gate.unblock() }
     AVAudioSession.fixture.blockNextCurrentRead(gate)
-    let selection = Task { @MainActor in try await owner.selectRoute("output:receiver", isActive: true) }
+    let selection = Task { @MainActor in try await owner.selectRoute(.init(rawValue: "output:receiver"), isActive: true) }
     try await entered(gate)
     owner.setSystemAudioAuthorization(false)
     owner.setSystemAudioAuthorization(true)

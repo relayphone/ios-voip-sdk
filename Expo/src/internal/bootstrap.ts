@@ -1,6 +1,6 @@
 import { requireNativeModule, type NativeModule } from 'expo';
 
-/** @internal M0 example infrastructure; not part of RFC 0001's API. */
+/** @internal Example infrastructure; not part of RFC 0001's API. */
 export interface BootstrapInfo {
   platform: 'ios';
   simulator: boolean;

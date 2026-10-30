@@ -14,6 +14,20 @@ Changes not yet released are recorded below. Public API changes include migratio
   identity and invalid parameters receive a rejection response; ambiguous or
   foreign identities are discarded. The CLI keeps the existing flat v1 format.
 
+- `IncomingCallPayload` and `CallEndedPayload` now spell their Swift identity
+  properties and initializer labels `eventID` and `serverCallID`. The server ID
+  uses `ServerCallID`, including `ConversationEventContext.serverCallID`.
+  Restore a backend string with `ServerCallID(rawValue:)` and use `id.rawValue`
+  when a string is needed. JSON and Expo retain their existing string values
+  and keys (`eventId`/`serverCallId` for transport payloads). Existing identity
+  validation, deduplication and termination behavior are unchanged.
+
+- `AudioRoute.id`, the route initializer and `ConversationClient.selectAudioRoute(_:)`
+  now use `AudioRoute.ID`. Pass an observed route's `id` directly, or restore a
+  serialized ID with `AudioRoute.ID(rawValue:)`; use `id.rawValue` when a string is
+  needed. Codable and Expo keep their existing string IDs and snapshot shape.
+  Route availability, audio authorization and native selection errors are unchanged.
+
 - The Inspector now decodes the same validated session model as the runtime.
   Custom session fixtures must include `controlTransport: "directory-watch-v1"`,
   schema version 1, a positive process ID, nonempty bundle/profile names and a

@@ -35,7 +35,7 @@ final class ConversationBridge {
     eventObserver = client.observeEvents { [weak self] event in
       var payload: [String: String] = [:]
       if let id = event.conversationID { payload["conversationId"] = id.uuidString }
-      if let id = event.serverCallID { payload["serverCallId"] = id }
+      if let id = event.serverCallID { payload["serverCallId"] = id.rawValue }
       if let id = event.eventID { payload["eventId"] = id }
       self?.emit("conversationEvent", ["type": event.type.rawValue, "payload": payload])
     }

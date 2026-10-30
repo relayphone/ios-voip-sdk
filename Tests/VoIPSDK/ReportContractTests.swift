@@ -39,7 +39,7 @@ import Foundation
     })
     client.setConversationHandler(handler)
     func payload(_ value: String) -> IncomingCallPayload {
-      .init(eventId: "report-event-" + value, serverCallId: "report-server-" + value,
+      .init(eventID: "report-event-" + value, serverCallID: .init(rawValue: "report-server-" + value),
         caller: try! Caller(handleType: .generic, value: "report-fixture", displayName: "report-fixture"))
     }
     func wait(_ condition: @escaping @MainActor () -> Bool) async throws {
@@ -150,8 +150,8 @@ import Foundation
       "Receiver-local actions are invalid transport terminations")
     let wirePayload = payload("wire")
     let wireID = try await client.reportIncomingConversation(wirePayload)
-    precondition(!client.receiveCallEnded(.init(eventId: "typed-end", serverCallId: wirePayload.serverCallId, reason: .local)))
-    precondition(client.receiveCallEnded(.init(eventId: "typed-end", serverCallId: wirePayload.serverCallId, reason: .declinedElsewhere)),
+    precondition(!client.receiveCallEnded(.init(eventID: "typed-end", serverCallID: wirePayload.serverCallID, reason: .local)))
+    precondition(client.receiveCallEnded(.init(eventID: "typed-end", serverCallID: wirePayload.serverCallID, reason: .declinedElsewhere)),
       "Rejecting typed local cannot poison event dedup")
     guard case .conversationEnded(_, .declinedElsewhere) = manager.reports.last?.1 else { preconditionFailure() }
     precondition(manager.reports.last?.0 == wireID)
@@ -167,17 +167,17 @@ import Foundation
       }
     }
     let elsewhereAttempts = manager.performAttempts
-    let elsewhereSignal = CallEndedPayload(eventId: "answered-signal", serverCallId: elsewherePayload.serverCallId,
+    let elsewhereSignal = CallEndedPayload(eventID: "answered-signal", serverCallID: elsewherePayload.serverCallID,
       reason: .answeredElsewhere)
     precondition(client.receiveCallEnded(elsewhereSignal))
     guard case .conversationEnded(_, .joinedElsewhere) = manager.reports.last?.1 else { preconditionFailure() }
     precondition(manager.reports.last?.0 == elsewhereID && manager.performAttempts == elsewhereAttempts)
     precondition(elsewhereEvents.count == 1 && elsewhereEvents[0].conversationID == elsewhereID &&
-      elsewhereEvents[0].serverCallID == elsewherePayload.serverCallId && elsewhereEvents[0].eventID == "answered-signal")
+      elsewhereEvents[0].serverCallID == elsewherePayload.serverCallID && elsewhereEvents[0].eventID == "answered-signal")
     precondition(stateAtElsewhereEvent?.ended?.reason == .answeredElsewhere && stateAtElsewhereEvent?.status == .ended)
     precondition(!client.receiveCallEnded(elsewhereSignal) && elsewhereEvents.count == 1)
-    precondition(!client.receiveCallEnded(.init(eventId: "unknown-answered", serverCallId: "unknown", reason: .answeredElsewhere)))
-    precondition(!client.receiveCallEnded(.init(eventId: "", serverCallId: elsewherePayload.serverCallId, reason: .answeredElsewhere)))
+    precondition(!client.receiveCallEnded(.init(eventID: "unknown-answered", serverCallID: .init(rawValue: "unknown"), reason: .answeredElsewhere)))
+    precondition(!client.receiveCallEnded(.init(eventID: "", serverCallID: elsewherePayload.serverCallID, reason: .answeredElsewhere)))
 
     let pairedA = payload("answered-paired-a"), pairedB = payload("answered-paired-b")
     let pairedAID = try await client.reportIncomingConversation(pairedA)
@@ -186,7 +186,7 @@ import Foundation
     let pairedState = client.observeState { update in
       if !pairedBSignalled && update.conversations.contains(where: { $0.id == pairedAID && $0.status == .ended }) {
         pairedBSignalled = true
-        precondition(client.receiveCallEnded(.init(eventId: "paired-b", serverCallId: pairedB.serverCallId, reason: .answeredElsewhere)))
+        precondition(client.receiveCallEnded(.init(eventID: "paired-b", serverCallID: pairedB.serverCallID, reason: .answeredElsewhere)))
       }
     }
     var pairedEvents: [UUID: Int] = [:]
@@ -196,7 +196,7 @@ import Foundation
         client.incomingIntakeDidChange() // Reenter while another ready event is pending.
       }
     }
-    precondition(client.receiveCallEnded(.init(eventId: "paired-a", serverCallId: pairedA.serverCallId, reason: .answeredElsewhere)))
+    precondition(client.receiveCallEnded(.init(eventID: "paired-a", serverCallID: pairedA.serverCallID, reason: .answeredElsewhere)))
     precondition(pairedBSignalled && pairedEvents == [pairedAID: 1, pairedBID: 1],
       "Reentrant state/event observers cannot drain a pending ownership event twice")
     client.removeStateObserver(pairedState); client.removeEventObserver(pairedObserver)
@@ -207,8 +207,8 @@ import Foundation
     // Model the supported worker-to-intake delivery precisely between the
     // actor's projection read and pending-termination claim at the LCK boundary.
     workerObject.onNextStateRead = {
-      precondition(client.incomingIntake.terminate(.init(eventId: "worker-signal",
-        serverCallId: workerPayload.serverCallId, reason: .answeredElsewhere)))
+      precondition(client.incomingIntake.terminate(.init(eventID: "worker-signal",
+        serverCallID: workerPayload.serverCallID, reason: .answeredElsewhere)))
     }
     client.incomingIntakeDidChange()
     precondition(workerObject.state == .left && elsewhereEvents.filter { $0.conversationID == workerID }.count == 1,
@@ -222,7 +222,7 @@ import Foundation
     let racingReport = Task { @MainActor in try await client.reportIncomingConversation(racingPayload, source: .pushKit) }
     waitStage = "answered elsewhere duplicate report pending"
     try await wait { manager.incomingWork != nil }
-    precondition(client.receiveCallEnded(.init(eventId: "race-answer", serverCallId: racingPayload.serverCallId,
+    precondition(client.receiveCallEnded(.init(eventID: "race-answer", serverCallID: racingPayload.serverCallID,
       reason: .answeredElsewhere)))
     let reportsForA = manager.reports.filter { $0.0 == racingID }.count
     manager.conversations.removeAll { $0.uuid == racingID }
@@ -901,8 +901,8 @@ import Foundation
       try Caller(handleType: .email, value: "caller@example.com", displayName: "Email", hostContactID: "contact-email"),
       try Caller(handleType: .generic, value: "remote-user", displayName: "Generic", hostContactID: "contact-generic")
     ] {
-      let id = try await client.reportIncomingConversation(.init(eventId: UUID().uuidString,
-        serverCallId: UUID().uuidString, caller: caller))
+      let id = try await client.reportIncomingConversation(.init(eventID: UUID().uuidString,
+        serverCallID: .init(rawValue: UUID().uuidString), caller: caller))
       try await client.reportConversation(id, report: .updated(members: nil, video: true))
       guard case .conversationUpdated(let update) = manager.reports.last?.1 else { preconditionFailure() }
       let type: Handle.Kind = caller.handleType == .phone ? .phoneNumber : caller.handleType == .email ? .emailAddress : .generic
