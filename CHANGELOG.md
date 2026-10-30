@@ -1,5 +1,7 @@
 # Changelog
 
+Changes not yet released are recorded below. Public API changes include migration guidance.
+
 ## Unreleased
 
 ### Breaking changes
