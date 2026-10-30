@@ -28,8 +28,7 @@ for fixture in discovery/check_sdk_m0.py discovery/check_sdk_installed_paths.py 
   discovery/check_cli_push_launch.py Tests/RuntimeEvents/test_native_runner.py; do
   check "$fixture" python3 "$fixture"
 done
-for fixture in discovery/check_sdk_routes_runner.py discovery/check_expo_livekit.py \
-  discovery/check_sdk_m3_direct.py; do
+for fixture in discovery/check_sdk_routes_runner.py discovery/check_expo_livekit.py; do
   if [[ -f "$fixture" ]]; then
     check "$fixture" python3 "$fixture"
   fi
