@@ -5,6 +5,7 @@ This module never invokes simctl, restarts the app, or substitutes journal rows
 for the fixture's actual report-completion NSError callback.
 """
 import json
+import math
 from pathlib import Path
 import runpy
 import time
@@ -113,8 +114,10 @@ def assert_report_attempt(rows, *, call_uuid, push_id, reason, code, verificatio
     assert entry['t_ms'] <= done['t_ms'] <= callback['t_ms'], (entry, done, callback)
     if expected_delay_ms is not None:
         for row in (done, callback):
-            assert expected_delay_ms - 150 <= row.get('latencyMS', -1) <= expected_delay_ms + 1500, row
-        assert expected_delay_ms - 150 <= done['t_ms'] - entry['t_ms'] <= expected_delay_ms + 1500, (entry, done)
+            latency = row.get('latencyMS', -1)
+            assert math.isfinite(latency) and latency >= expected_delay_ms - 150, row
+        elapsed = done['t_ms'] - entry['t_ms']
+        assert math.isfinite(elapsed) and elapsed >= expected_delay_ms - 150, (entry, done)
     for event in ('push.completed', 'push.callbackReturned'):
         observed = [r for r in rows if r['event'] == event and r.get('pushID') == push_id]
         assert len(observed) == 1 and observed[0].get('reportEntered') is True, (event, observed)

@@ -14,6 +14,24 @@ The API design is [RFC 0001](https://github.com/relayphone/expo-callkit-telecom/
 
 **Start with the [documentation index](docs/README.md).**
 
+## Install
+
+For Swift Package Manager, pin the SDK source revision in your package manifest:
+
+```swift
+.package(url: "https://github.com/relayphone/ios-voip-sdk.git", revision: "87a6125c18f9ec7018ac056c67baa06e9dbac07c")
+```
+
+Add `.product(name: "VoIPSDK", package: "ios-voip-sdk")` to your target dependencies and use `import VoIPSDK`. This revision pins source; the existing version tags refer to simulator-runtime releases, not SDK releases.
+
+For Expo, install the Git dependency in your app:
+
+```sh
+npm install github:relayphone/ios-voip-sdk#main
+```
+
+Follow the [Expo setup guide](Expo/README.md) to configure the plugin and rebuild the native app. Git installation builds the TypeScript entry point during package preparation.
+
 ## Requirements
 
 - iOS and iPadOS 17.4 or later.
@@ -30,6 +48,17 @@ From a clean checkout, run `npm ci`, `npm run build`, then `npm exec --workspace
 **Qualified in CI:** the Expo 58 Release example runs without injection on iOS 27.0, including bootstrap, conversation, contract, system-action and cold-push journeys. Device Release inspection checks that simulator implementation and direct CallKit linkage are excluded. Typed caller identity and answered-elsewhere dismissal are covered by the [current acceptance run](https://github.com/relayphone/ios-voip-sdk/actions/runs/40693437174).
 
 The module's peer ranges retain Expo 55–58 compatibility. The example and development tools pin Expo 58 for its native scene lifecycle. Expo 58 is covered by CI; Expo 55 has historical build evidence, while runtime compatibility with Expo 55–57 remains unqualified.
+
+## Testing
+
+Run `swift test` on macOS 13 or later with the Xcode toolchain above. The Swift
+Testing suites cover caller validation, push decoding, models, and the test clock
+without a simulator. Native calling and media acceptance run separately in CI.
+
+Tests in consuming apps can add the `VoIPSDKTesting` library product to their test
+target and import `VoIPSDKTesting`. Its `TestClock` conforms to `Clock<Duration>`;
+use `waitForSleepers(count:)` to await registration, then `advance(by:)` or `run()`
+to resume pending sleeps without waiting for wall time to pass.
 
 ## License
 

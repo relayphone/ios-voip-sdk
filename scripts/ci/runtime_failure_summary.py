@@ -17,9 +17,6 @@ PHASES = (
     ('cleanup', 'Delete the owned simulator'),
 )
 LABEL = re.compile(r'^- `(infra:[A-Za-z0-9_.:-]{1,80})`: (.*)$')
-TIMEOUT = re.compile(r'^- `measurement:simctl-timeout`: ([A-Za-z_]+)$')
-OPERATIONS = frozenset(('create', 'boot', 'bootstatus', 'install', 'launch', 'terminate',
-                        'io', 'shutdown', 'delete', 'list', 'privacy', 'spawn', 'get_app_container'))
 
 
 def render(outcomes, receipts):
@@ -33,11 +30,8 @@ def render(outcomes, receipts):
         if outcome == 'cancelled':
             lines.append(f'- {title}: cancelled')
             continue
-        labels, operations = [], []
+        labels = []
         for line in receipts.get(key, '').splitlines():
-            timeout = TIMEOUT.fullmatch(line)
-            if timeout and timeout.group(1) in OPERATIONS and timeout.group(1) not in operations:
-                operations.append(timeout.group(1))
             match = LABEL.fullmatch(line)
             if not match:
                 continue
@@ -50,8 +44,6 @@ def render(outcomes, receipts):
                 labels.append(label)
         reason = ', '.join('`' + label + '`' for label in labels)
         detail = 'observed infrastructure labels: ' + reason if reason else 'no infrastructure label recorded'
-        if operations:
-            detail += '; observed simctl timeouts: ' + ', '.join('`' + op + '`' for op in operations)
         lines.append(f'- {title}: {detail}')
     if not failed:
         lines.append('- No tracked Runtime phase failure or cancellation was recorded.')

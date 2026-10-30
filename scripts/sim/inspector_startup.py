@@ -240,7 +240,7 @@ def _supervise_launch(command, *, env, log, observe, bridge_alive, host_timeout,
                 if ((headers and headers != expected) or process.returncode == 0 and headers != expected):
                     raise RuntimeError('Inspector native and host PID acknowledgements conflict')
             keys = ('inspectorPID', 'startedWallTimeMS', 'session')
-            post_deadline = min(deadline, time.monotonic() + 25 - (time.time() * 1000 - ready['startedWallTimeMS']) / 1000)
+            post_deadline = deadline
             if consumer_deadline is not None:
                 post_deadline = min(post_deadline, consumer_deadline)
             while True:
