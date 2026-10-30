@@ -86,8 +86,8 @@ enum Conversation {
 private enum FixtureMetadata {
   static func validate(_ projection: IncomingIntake.Projection, id: UUID) {
     precondition(projection.id == id)
-    precondition(projection.payload.eventId == "main-stall-event")
-    precondition(projection.payload.serverCallId == "main-stall-server")
+    precondition(projection.payload.eventID == "main-stall-event")
+    precondition(projection.payload.serverCallID == ServerCallID(rawValue: "main-stall-server"))
     precondition(projection.payload.caller == (try! Caller(handleType: .generic, value: "main-stall-caller", displayName: "main-stall-caller")))
     precondition(!projection.payload.hasVideo)
     precondition(projection.payload.startedAt == nil && projection.payload.metadata == nil)

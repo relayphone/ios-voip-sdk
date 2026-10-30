@@ -113,8 +113,8 @@ import Foundation
       client.conversationManagerDidReset(manager)
       client.setConversationHandler(.init(join: { _, _ in }, start: { _, _ in }, end: { _, _ in }))
       activate()
-      let id = try await client.reportIncomingConversation(.init(eventId: "observer-" + trigger.rawValue,
-        serverCallId: "observer-" + trigger.rawValue, caller: try! Caller(handleType: .generic, value: "host-audio-caller", displayName: "host-audio-caller")))
+      let id = try await client.reportIncomingConversation(.init(eventID: "observer-" + trigger.rawValue,
+        serverCallID: .init(rawValue: "observer-" + trigger.rawValue), caller: try! Caller(handleType: .generic, value: "host-audio-caller", displayName: "host-audio-caller")))
       try await client.joinConversation(id)
       let original = manager.conversations.first { $0.uuid == id }!
       var replacement: Conversation?
@@ -176,8 +176,8 @@ import Foundation
           }
           try await withCheckedThrowingContinuation { pending = $0 }
         }))
-      let id = try await client.reportIncomingConversation(.init(eventId: "reentrant-" + suffix,
-        serverCallId: "reentrant-" + suffix, caller: try! Caller(handleType: .generic, value: "host-audio-caller", displayName: "host-audio-caller")))
+      let id = try await client.reportIncomingConversation(.init(eventID: "reentrant-" + suffix,
+        serverCallID: .init(rawValue: "reentrant-" + suffix), caller: try! Caller(handleType: .generic, value: "host-audio-caller", displayName: "host-audio-caller")))
       callID = id
       // Keep modeled LCK authority through setup, so scheduler delay cannot
       // race the watchdog before its cancellation observer exists.

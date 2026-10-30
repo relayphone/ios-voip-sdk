@@ -104,10 +104,33 @@ public struct Caller: Codable, Sendable, Equatable {
   }
 }
 
+/// A backend's opaque call identity, distinct from local conversation and event identifiers.
+public struct ServerCallID: RawRepresentable, Codable, Sendable, Hashable {
+  /// The exact backend value used in transport and JavaScript payloads.
+  public let rawValue: String
+
+  /// Restores a backend identity without changing its spelling.
+  /// Incoming payload validation still requires a nonempty, non-whitespace value.
+  public init(rawValue: String) { self.rawValue = rawValue }
+
+  /// Decodes the existing string representation of a backend call identity.
+  public init(from decoder: any Decoder) throws {
+    rawValue = try decoder.singleValueContainer().decode(String.self)
+  }
+
+  /// Encodes the identity as a string, preserving the existing wire format.
+  public func encode(to encoder: any Encoder) throws {
+    var value = encoder.singleValueContainer()
+    try value.encode(rawValue)
+  }
+}
+
 /// A validated transport invitation with a typed caller and optional timestamp and metadata.
 public struct IncomingCallPayload: Codable, Sendable, Equatable {
-  public var eventId: String
-  public var serverCallId: String
+  /// The backend event identity used to deduplicate invitation deliveries.
+  public var eventID: String
+  /// The backend call identity shared by invitations and termination notifications.
+  public var serverCallID: ServerCallID
   public var caller: Caller
   public var hasVideo: Bool
   /// The transport's RFC3339 timestamp as an instant, when valid.
@@ -115,21 +138,24 @@ public struct IncomingCallPayload: Codable, Sendable, Equatable {
   public var metadata: [String: JSONValue]?
 
   /// Creates an invitation using an already parsed timestamp.
-  public init(eventId: String, serverCallId: String, caller: Caller, hasVideo: Bool = false,
+  public init(eventID: String, serverCallID: ServerCallID, caller: Caller, hasVideo: Bool = false,
               startedAt: Date? = nil, metadata: [String: JSONValue]? = nil) {
-    self.eventId = eventId; self.serverCallId = serverCallId; self.caller = caller
+    self.eventID = eventID; self.serverCallID = serverCallID; self.caller = caller
     self.hasVideo = hasVideo; self.startedAt = startedAt; self.metadata = metadata
   }
 
-  private enum CodingKeys: String, CodingKey { case eventId, serverCallId, caller, hasVideo, startedAt, metadata }
+  private enum CodingKeys: String, CodingKey {
+    case eventID = "eventId", serverCallID = "serverCallId"
+    case caller, hasVideo, startedAt, metadata
+  }
 
   /// Decodes required identity/caller fields and tolerates invalid optional fields.
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
-    eventId = try values.decode(String.self, forKey: .eventId)
-    serverCallId = try values.decode(String.self, forKey: .serverCallId)
-    guard !eventId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          !serverCallId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    eventID = try values.decode(String.self, forKey: .eventID)
+    serverCallID = try values.decode(ServerCallID.self, forKey: .serverCallID)
+    guard !eventID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          !serverCallID.rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Empty invitation identity"))
     }
     caller = try values.decode(Caller.self, forKey: .caller)
@@ -141,8 +167,8 @@ public struct IncomingCallPayload: Codable, Sendable, Equatable {
   /// Encodes timestamps as RFC3339 UTC strings with millisecond precision.
   public func encode(to encoder: any Encoder) throws {
     var values = encoder.container(keyedBy: CodingKeys.self)
-    try values.encode(eventId, forKey: .eventId)
-    try values.encode(serverCallId, forKey: .serverCallId)
+    try values.encode(eventID, forKey: .eventID)
+    try values.encode(serverCallID, forKey: .serverCallID)
     try values.encode(caller, forKey: .caller)
     try values.encode(hasVideo, forKey: .hasVideo)
     try values.encodeIfPresent(startedAt?.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)), forKey: .startedAt)
@@ -191,23 +217,28 @@ private enum PushTimestamp {
 
 /// A backend termination; decoded reasons must describe a remote system outcome.
 public struct CallEndedPayload: Codable, Sendable, Equatable {
-  public var eventId: String
-  public var serverCallId: String
+  /// The backend event identity used to deduplicate termination notifications.
+  public var eventID: String
+  /// The backend call to terminate.
+  public var serverCallID: ServerCallID
   public var reason: ConversationEndedReason
-  public init(eventId: String, serverCallId: String, reason: ConversationEndedReason = .remoteEnded) {
-    self.eventId = eventId; self.serverCallId = serverCallId; self.reason = reason
+  /// Creates a backend termination associated with a typed call identity.
+  public init(eventID: String, serverCallID: ServerCallID, reason: ConversationEndedReason = .remoteEnded) {
+    self.eventID = eventID; self.serverCallID = serverCallID; self.reason = reason
   }
 
-  private enum CodingKeys: String, CodingKey { case eventId, serverCallId, reason }
+  private enum CodingKeys: String, CodingKey {
+    case eventID = "eventId", serverCallID = "serverCallId", reason
+  }
 
   /// Rejects unknown and receiver-local transport reasons; a missing reason defaults to remoteEnded.
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
-    eventId = try values.decode(String.self, forKey: .eventId)
-    serverCallId = try values.decode(String.self, forKey: .serverCallId)
+    eventID = try values.decode(String.self, forKey: .eventID)
+    serverCallID = try values.decode(ServerCallID.self, forKey: .serverCallID)
     reason = try values.decodeIfPresent(ConversationEndedReason.self, forKey: .reason) ?? .remoteEnded
-    guard !eventId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          !serverCallId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+    guard !eventID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          !serverCallID.rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
           reason != .local else {
       throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Invalid transport termination"))
     }
@@ -364,10 +395,11 @@ public struct ConversationEventContext: Codable, Sendable, Equatable {
   public let type: ConversationEvent
   /// Absent for process-wide system callbacks and reset/ownership events.
   public let conversationID: UUID?
-  public let serverCallID: String?
+  /// The backend call associated with this event, when present.
+  public let serverCallID: ServerCallID?
   public let eventID: String?
   public init(type: ConversationEvent, conversationID: UUID? = nil,
-              serverCallID: String? = nil, eventID: String? = nil) {
+              serverCallID: ServerCallID? = nil, eventID: String? = nil) {
     self.type = type; self.conversationID = conversationID
     self.serverCallID = serverCallID; self.eventID = eventID
   }

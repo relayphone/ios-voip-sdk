@@ -27,7 +27,7 @@ struct IncomingIntakeTests {
 
   static func payload(_ event: String = "incoming", server: String = "server",
                       name: String = "First caller") -> IncomingCallPayload {
-    IncomingCallPayload(eventId: event, serverCallId: server,
+    IncomingCallPayload(eventID: event, serverCallID: .init(rawValue: server),
       caller: try! Caller(handleType: .generic, value: "caller", displayName: name),
       metadata: ["first": .string(name)])
   }
@@ -231,7 +231,7 @@ struct IncomingIntakeTests {
   static func terminationAndTombstone() async throws {
     let intake = IncomingIntake()
     let first = try intake.reserve(payload(), source: .pushKit, now: now)
-    let ended = CallEndedPayload(eventId: "ended", serverCallId: "server", reason: .remoteEnded)
+    let ended = CallEndedPayload(eventID: "ended", serverCallID: .init(rawValue: "server"), reason: .remoteEnded)
     precondition(intake.terminate(ended, now: now.addingTimeInterval(1)))
     let terminal = intake.projection(first.id)?.terminal
     precondition(terminal?.ended.reason == .remoteEnded && terminal?.ended.at == now.addingTimeInterval(1))
@@ -269,7 +269,7 @@ struct IncomingIntakeTests {
     let intake = IncomingIntake()
     let first = try intake.reserve(payload(), source: .pushKit, now: now)
     let duplicate = try intake.reserve(payload("duplicate"), source: .pushKit, now: now)
-    let end = CallEndedPayload(eventId: "ended", serverCallId: "server")
+    let end = CallEndedPayload(eventID: "ended", serverCallID: .init(rawValue: "server"))
     precondition(intake.terminate(end, now: now))
     intake.complete(attempt(duplicate), outcome: .alreadyReported(TestError.duplicate), now: now)
     intake.reset()
@@ -312,7 +312,7 @@ struct IncomingIntakeTests {
   static func validation() throws {
     let intake = IncomingIntake()
     var invalid = payload()
-    invalid.eventId = " \n"
+    invalid.eventID = " \n"
     do { _ = try intake.reserve(invalid, source: .pushKit, now: now); preconditionFailure("Invalid reservation accepted") }
     catch { precondition(error == .invalidPayload) }
     let good = try intake.reserve(payload(), source: .foreground, now: now)

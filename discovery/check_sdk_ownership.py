@@ -251,6 +251,8 @@ public func claimOnly() -> Bool {
         models = (ROOT / 'Sources/VoIPSDK/ConversationModels.swift').read_text()
         selected_models = '\n'.join(re.findall(r'public enum (?:UnhandledActionPolicy|VoIPStartupError|PushRegistrationError|ConversationEvent)[^{]+\{.*?\}', models, re.S))
         assert selected_models.count('public enum ') == 4
+        selected_models += '\n' + models[models.index('public struct ServerCallID:'):
+                                         models.index('/// A validated transport invitation')]
         selected_models += '\n' + models[models.index('public struct ConversationEventContext:'):]
         claim = ROOT / 'Sources/VoIPSDK/ProcessSDKOwnership.swift'
         combined = out / 'SDK.swift'

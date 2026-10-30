@@ -35,7 +35,7 @@ final class ConversationClient {
     state = update
     for callback in Array(states.values) { callback(update) }
   }
-  func publish(_ event: ConversationEvent, conversationID: UUID? = nil, serverCallID: String? = nil, eventID: String? = nil) {
+  func publish(_ event: ConversationEvent, conversationID: UUID? = nil, serverCallID: ServerCallID? = nil, eventID: String? = nil) {
     let context = ConversationEventContext(type: event, conversationID: conversationID, serverCallID: serverCallID, eventID: eventID)
     for callback in Array(events.values) { callback(context) }
   }

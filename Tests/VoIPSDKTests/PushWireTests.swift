@@ -15,7 +15,7 @@ struct PushWireTests {
 
   private func payload() throws -> IncomingCallPayload {
     IncomingCallPayload(
-      eventId: "event-1", serverCallId: "server-1",
+      eventID: "event-1", serverCallID: .init(rawValue: "server-1"),
       caller: try Caller(handleType: .generic, value: "caller", displayName: "Fixture"),
       hasVideo: true, startedAt: Date(timeIntervalSince1970: 1_792_627_200.125),
       metadata: ["flag": .bool(true), "nested": .array([.int(1), .string("two")])])
@@ -103,7 +103,7 @@ struct PushWireTests {
     let body = ["eventId": "end-event", "serverCallId": "server-1", "reason": "answeredElsewhere"]
     let encoded = String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
     let ended = CallEndedPayload(
-      eventId: "end-event", serverCallId: "server-1", reason: .answeredElsewhere)
+      eventID: "end-event", serverCallID: .init(rawValue: "server-1"), reason: .answeredElsewhere)
     #expect(
       PushWire.parse(["messageType": "callEnded", "callEnded": encoded]) == .callEnded(ended))
     #expect(PushWire.parse(["messageType": "callEnded", "callEnded": body]) == .malformed)
@@ -124,7 +124,7 @@ struct PushWireTests {
       Issue.record("A required malformed push must attempt an incoming report")
       return
     }
-    #expect(fallback.eventId == id.uuidString)
+    #expect(fallback.eventID == id.uuidString)
     #expect(fallback.caller.value == "unknown")
     #expect(!fallback.hasVideo)
     #expect(ended == nil)
@@ -139,7 +139,7 @@ struct PushWireTests {
 
   @Test func requiredEndStillReportsIncomingAndRetainsTarget() {
     let ended = CallEndedPayload(
-      eventId: "end-event", serverCallId: "server-1", reason: .answeredElsewhere)
+      eventID: "end-event", serverCallID: .init(rawValue: "server-1"), reason: .answeredElsewhere)
     #expect(IncomingPushPolicy.plan(.callEnded(ended), mustReport: false) == .callEnded(ended))
     guard
       case .fallback(_, let target) = IncomingPushPolicy.plan(.callEnded(ended), mustReport: true)
