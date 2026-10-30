@@ -6,6 +6,12 @@ Changes not yet released are recorded below. Public API changes include migratio
 
 ### Breaking changes
 
+- The Inspector now decodes the same validated session model as the runtime.
+  Custom session fixtures must include `controlTransport: "directory-watch-v1"`,
+  schema version 1, a positive process ID, nonempty bundle/profile names and a
+  run ID of 1–64 ASCII letters, digits, underscores or hyphens. Rebuild the
+  Inspector together with the runtime when updating custom integrations.
+
 - `JSONValue.number(Double)` is now `int(Int64)` or `double(Double)`. Update
   constructors and switches; signed 64-bit integers in metadata retain their
   exact value instead of passing through floating point. JavaScript consumers

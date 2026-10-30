@@ -74,6 +74,7 @@ class FilterModelTests(unittest.TestCase):
             model.write_text('\n'.join(source[1:-1]) + '\n')
             harness.write_text(HARNESS)
             compiled = subprocess.run(['swiftc', '-swift-version', '6', '-parse-as-library', str(model),
+                *(str(path) for path in sorted((ROOT / 'Sources/CKSimProtocol').glob('*.swift'))),
                 *(str(ROOT / 'Inspector' / name) for name in ('RuntimeEvent.swift', 'RuntimeTimingReferences.swift', 'IncomingFilter.swift')),
                 str(harness), '-o', str(binary)], text=True, capture_output=True, timeout=60)
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
@@ -83,11 +84,13 @@ class FilterModelTests(unittest.TestCase):
                         self.exercise(binary, mode, kind)
 
     def exercise(self, binary, mode, kind):
-        session = dict(schemaVersion=1, bundleID='fixture', runID='host-test', pid=123, profile='ios-27.0')
+        session = dict(schemaVersion=1, bundleID='fixture', runID='host-test', pid=123, profile='ios-27.0',
+                       controlTransport='directory-watch-v1')
         rows, commands, failures, output = [], [], [], []
         lock = threading.Lock()
         def append(event, **fields):
-            rows.append(dict(session, sequence=len(rows) + 1, t_ms=(len(rows) + 1) * 10, event=event, **fields))
+            rows.append(dict({key: value for key, value in session.items() if key != 'controlTransport'},
+                             sequence=len(rows) + 1, t_ms=(len(rows) + 1) * 10, event=event, **fields))
         def state(reason):
             return dict(reason=reason, code=0 if reason == 'none' else 3,
                         verification='not-applicable' if reason == 'none' else 'verified')

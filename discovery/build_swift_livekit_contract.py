@@ -23,7 +23,7 @@ INPUTS = ('Tests/SwiftLiveKit/Package.swift', 'Tests/SwiftLiveKit/Package.resolv
 PINS = {'client-sdk-swift': '93a7251057bdb6a80a7b1f6d11464d578ebdc09b',
         'webrtc-xcframework': 'a41df9e9bcc7ab1d62131fda75c123ea391e5188',
         'livekit-uniffi-xcframework': '7a9bf91b1601d5c408ae0cac7dc2047b5a4f615e'}
-OBJECTS = ('CKSimRuntimeC', 'CKSimRuntime', 'VoIPPlatform', 'VoIPSDK', 'CLiveKitProto',
+OBJECTS = ('CKSimProtocol', 'CKSimRuntimeC', 'CKSimRuntime', 'VoIPPlatform', 'VoIPSDK', 'CLiveKitProto',
            'LiveKitNanopb', 'LKObjCHelpers', 'LiveKitUniFFI', 'LiveKit', 'LiveKitConsumer')
 
 

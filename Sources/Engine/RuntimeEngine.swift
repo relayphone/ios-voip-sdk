@@ -3,6 +3,7 @@ import Foundation
 import Darwin
 #if SWIFT_PACKAGE
 import CKSimRuntimeC
+import CKSimProtocol
 #endif
 @preconcurrency import CallKit
 @preconcurrency import AVFoundation
@@ -501,10 +502,10 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       watcher.setCancelHandler { close(descriptor) }
       requestWatcher = watcher
       watcher.resume()
-      let session: [String: Any] = ["schemaVersion": 1, "runID": runID, "pid": Int(getpid()),
-        "bundleID": bundleID, "profile": profile.id,
-        "controlTransport": "directory-watch-v1"]
-      let data = try JSONSerialization.data(withJSONObject: session, options: [.sortedKeys])
+      let session = try RuntimeSession(bundleID: bundleID, runID: runID, pid: Int(getpid()), profile: profile.id)
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = .sortedKeys
+      let data = try encoder.encode(session)
       try data.write(to: documents.appendingPathComponent(".callkit-simulator/session.json"), options: .atomic)
     } catch {
       shutdown()
@@ -750,8 +751,8 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       journal = nil
       let session = controlRoot.deletingLastPathComponent().appendingPathComponent("session.json")
       if let data = try? Data(contentsOf: session),
-         let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-         object["runID"] as? String == runID, object["pid"] as? Int == Int(getpid()) {
+         let published = try? JSONDecoder().decode(RuntimeSession.self, from: data),
+         published.runID == runID, published.pid == Int(getpid()) {
         try? FileManager.default.removeItem(at: session)
       }
     }
