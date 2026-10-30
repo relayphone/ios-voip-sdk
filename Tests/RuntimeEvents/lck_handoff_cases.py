@@ -104,6 +104,37 @@ def run_mute_case(j):
                 timingEvidence='controlled fixture clock; not device measurements')
 
 
+def run_resume_case(j):
+    j.pair('delayedResumeEndsActive')
+    handoff_start = len(j.rows())
+    j.composite()
+    j.state(A='paused', B='joined')
+    event(j, 'didActivate', start=handoff_start)
+    j.app('clock')
+    j.app('policy', rules={'Pause': dict(mode='delay', ms=300, nth=1)})
+    resume_start = len(j.rows())
+    j.app('pause', call='A', paused=False)
+    resumed = event(j, 'perform', lambda r: r['kind'] == 'Pause' and r['callUUID'] == j.ids['A'] and r.get('held') is False, start=resume_start)
+    fixture_time(resumed)
+    j.app('advance', ms=299)
+    rows = j.rows()[resume_start:]
+    assert not any(r['event'] == PREFIX + 'settled' and r.get('actionID') == resumed['actionID'] for r in rows), 'Resume settled before its injected delay'
+    assert not any(r['event'] == PREFIX + 'perform' and r.get('kind') == 'End' and r.get('callUUID') == j.ids['B'] for r in rows), 'End B arrived before delayed Resume A settled'
+    j.app('advance', ms=1)
+    settled = event(j, 'settled', lambda r: r.get('actionID') == resumed['actionID'], start=resume_start)
+    assert settled.get('policy') == 'delay' and settled.get('failed') is False
+    fulfillment_delay = fixture_time(settled) - fixture_time(resumed)
+    assert fulfillment_delay == 300, f'controlled Resume fixture delay was {fulfillment_delay}ms'
+    ended = event(j, 'perform', lambda r: r['kind'] == 'End' and r['callUUID'] == j.ids['B'], start=resume_start)
+    assert ended['sequence'] > settled['sequence'], 'system End B arrived before delayed Resume A settled'
+    after_settlement = fixture_time(ended) - fixture_time(settled)
+    assert after_settlement == 0, f'elapsed resume delay was not clamped to zero: {after_settlement}ms'
+    observed_b = [r['kind'] for r in j.rows()[resume_start:] if r['event'] == PREFIX + 'perform' and r['callUUID'] == j.ids['B']]
+    assert observed_b == ['End'], 'resuming A must end active B, without a Pause B'
+    j.state(A='joined', B='left')
+    return fulfillment_delay, after_settlement
+
+
 def run_cases(j):
     j.begin('singleJoinAudio')
     j.app('incoming', call='A')
@@ -128,26 +159,7 @@ def run_cases(j):
     hold_audio_delay = composite_audio(j, 'delayedPauseCompositeAudio', 'hold-and-accept', 'Pause')
     end_audio_delay = composite_audio(j, 'delayedEndCompositeAudio', 'end-and-accept', 'End')
 
-    j.pair('delayedResumeEndsActive')
-    handoff_start = len(j.rows())
-    j.composite()
-    j.state(A='paused', B='joined')
-    event(j, 'didActivate', start=handoff_start)
-    j.app('policy', rules={'Pause': dict(mode='delay', ms=300, nth=1)})
-    resume_start = len(j.rows())
-    j.app('pause', call='A', paused=False)
-    resumed = event(j, 'perform', lambda r: r['kind'] == 'Pause' and r['callUUID'] == j.ids['A'] and r.get('held') is False, start=resume_start)
-    settled = event(j, 'settled', lambda r: r.get('actionID') == resumed['actionID'], start=resume_start)
-    assert settled.get('policy') == 'delay' and settled.get('failed') is False
-    fulfillment_delay = settled['t_ms'] - resumed['t_ms']
-    assert 250 <= fulfillment_delay <= 1500, f'resume fixture delay was {fulfillment_delay}ms'
-    ended = event(j, 'perform', lambda r: r['kind'] == 'End' and r['callUUID'] == j.ids['B'], start=resume_start)
-    assert ended['sequence'] > settled['sequence'], 'system End B arrived before delayed Resume A settled'
-    after_settlement = ended['t_ms'] - settled['t_ms']
-    assert 0 <= after_settlement <= 150, f'elapsed resume delay was not clamped to zero: {after_settlement}ms'
-    observed_b = [r['kind'] for r in j.rows()[resume_start:] if r['event'] == PREFIX + 'perform' and r['callUUID'] == j.ids['B']]
-    assert observed_b == ['End'], 'resuming A must end active B, without a Pause B'
-    j.state(A='joined', B='left')
+    fulfillment_delay, after_settlement = run_resume_case(j)
     print(f'LCK delayed unpause fulfillment: {fulfillment_delay} ms; End B after settlement: {after_settlement} ms', flush=True)
     j.save()
     return dict(singleJoinAudioMS=join_audio_delay, singleStartAudioMS=start_audio_delay,

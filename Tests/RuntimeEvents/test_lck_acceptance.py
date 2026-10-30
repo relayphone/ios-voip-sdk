@@ -36,15 +36,33 @@ class JournalOracleTests(unittest.TestCase):
         rows[1].pop('fixtureTimeMS')
         with self.assertRaisesRegex(AssertionError, 'clock evidence'):
             acceptance.verify_composite_delivery(rows)
-        with self.assertRaisesRegex(AssertionError, 'separated'):
-            acceptance.verify_composite_delivery([dict(t_ms=0), dict(t_ms=100)])
+        with self.assertRaisesRegex(AssertionError, 'regressed'):
+            acceptance.verify_composite_delivery([dict(t_ms=100), dict(t_ms=0)])
 
     def test_timeout_checks_effective_elapsed_and_advertised_deadline_separately(self):
-        delivered = dict(t_ms=1000, advertisedRemainingMS=30000)
-        acceptance.verify_timeout(delivered, dict(t_ms=6330), 'Pause')
-        acceptance.verify_timeout(delivered, dict(t_ms=65000), 'Join')
+        issued = dict(actionID='pending', issuedAtMS=1000)
+        delivered = dict(actionID='pending', advertisedDeadlineMS=31000,
+                         wallTimeMS=3000, advertisedRemainingMS=28000)
+        expired = dict(actionID='pending', wallTimeMS=6330)
+        acceptance.verify_timeout(issued, delivered, expired, 'Pause')
+        acceptance.verify_timeout(issued, delivered, dict(expired, wallTimeMS=65000), 'Join')
         with self.assertRaises(AssertionError):
-            acceptance.verify_timeout(delivered, dict(t_ms=31000), 'Pause')
+            acceptance.verify_timeout(issued, delivered, dict(expired, wallTimeMS=5999), 'Pause')
+        with self.assertRaises(AssertionError):
+            acceptance.verify_timeout(issued, delivered, dict(expired, wallTimeMS=63000), 'Join')
+        with self.assertRaises(AssertionError):
+            acceptance.verify_timeout(issued, delivered, dict(expired, wallTimeMS=float('inf')), 'Pause')
+        with self.assertRaisesRegex(AssertionError, 'identity'):
+            acceptance.verify_timeout(issued, delivered, dict(expired, actionID='foreign'), 'Pause')
+        with self.assertRaisesRegex(AssertionError, 'advertise'):
+            acceptance.verify_timeout(issued, dict(delivered, advertisedDeadlineMS=6000), expired, 'Pause')
+
+    def test_native_timing_accepts_slow_scheduling_after_its_lower_bound(self):
+        acceptance.verify_composite_delivery([dict(t_ms=0), dict(t_ms=900000)])
+        for kind in ('Pause', 'Join'):
+            acceptance.verify_timeout(dict(actionID='pending', issuedAtMS=1000),
+                                      dict(actionID='pending', advertisedDeadlineMS=31000),
+                                      dict(actionID='pending', wallTimeMS=900000), kind)
 
     def test_changed_callback_without_matching_manager_snapshot_is_not_acceptance(self):
         rows = [dict(event='lck.fixture.changed', callUUID='A', state='joined'),
@@ -72,6 +90,68 @@ class JournalOracleTests(unittest.TestCase):
             (journey.channel / 'session.json').write_text(json.dumps(dict(runID='replacement')))
             with self.assertRaisesRegex(AssertionError, 'session changed'):
                 journey.rows()
+
+
+class ResumeClockTests(unittest.TestCase):
+    def run_resume(self, *, early=False, end_early=False, restarted=False, missing_clock=False):
+        class Fixture:
+            def __init__(self):
+                self.now, self.events, self.did_settle = 0, [], False
+                self.ids = dict(A='A', B='B')
+
+            def emit(self, name, **fields):
+                row = dict(event='lck.fixture.' + name, sequence=len(self.events) + 1,
+                           fixtureTimeMS=self.now, t_ms=900000 + len(self.events) * 10000, **fields)
+                if missing_clock:
+                    row.pop('fixtureTimeMS')
+                self.events.append(row)
+
+            def pair(self, name): pass
+            def composite(self): self.emit('didActivate')
+            def state(self, **expected): return self.events
+            def rows(self): return self.events
+
+            def app(self, operation, **fields):
+                if operation == 'pause':
+                    self.emit('perform', kind='Pause', callUUID='A', actionID='resume', held=False)
+                    if end_early:
+                        self.emit('perform', kind='End', callUUID='B')
+                elif operation == 'advance':
+                    self.now += fields['ms']
+                    if self.now >= (299 if early else 300) and not self.did_settle:
+                        self.did_settle = True
+                        self.emit('settled', actionID='resume', policy='delay', failed=False)
+                        if not restarted:
+                            self.emit('perform', kind='End', callUUID='B')
+                elif operation not in ('clock', 'policy'):
+                    raise AssertionError(operation)
+
+            def wait(self, predicate, timeout=12):
+                value = predicate(self.rows())
+                if not value:
+                    raise AssertionError('controlled fixture event missing')
+                return value
+
+        def forbidden(*args):
+            raise AssertionError('host clock must not drive the Resume regression')
+        with patch.object(handoff, 'time', SimpleNamespace(monotonic=forbidden, time=forbidden, sleep=forbidden)):
+            return handoff.run_resume_case(Fixture())
+
+    def test_resume_delay_and_clamped_end_use_only_fixture_time(self):
+        self.assertEqual(self.run_resume(), (300, 0))
+
+    def test_early_settlement_or_end_still_fails(self):
+        for options in (dict(early=True), dict(end_early=True)):
+            with self.subTest(options=options), self.assertRaisesRegex(AssertionError, 'before'):
+                self.run_resume(**options)
+
+    def test_restarted_end_timer_still_fails(self):
+        with self.assertRaisesRegex(AssertionError, 'controlled fixture event missing'):
+            self.run_resume(restarted=True)
+
+    def test_missing_controlled_clock_still_fails(self):
+        with self.assertRaisesRegex(AssertionError, 'clock evidence'):
+            self.run_resume(missing_clock=True)
 
 
 class MuteClockTests(unittest.TestCase):
