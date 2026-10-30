@@ -105,6 +105,7 @@ def compile_model(work, out):
     harness.write_text(MODEL_HARNESS)
     dependencies = [path for path in sorted((ROOT / 'Inspector').glob('*.swift'))
                     if path.name not in ('InspectorApp.swift', 'InspectorModel.swift')]
+    dependencies.extend(sorted((ROOT / 'Sources/CKSimProtocol').glob('*.swift')))
     built = process_with_log(['swiftc', '-swift-version', '6', '-parse-as-library', '-module-cache-path',
                               str(work / 'module-cache'), str(model), *map(str, dependencies), str(harness), '-o', str(binary)],
                              out / 'model-build.log', timeout=90)

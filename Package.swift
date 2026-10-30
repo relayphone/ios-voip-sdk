@@ -19,6 +19,7 @@ let package = Package(
       description: "Compile optional dynamic provider ownership diagnostics in Release builds.")
   ],
   targets: [
+    .target(name: "CKSimProtocol"),
     .target(
       name: "CKSimRuntimeC",
       path: "Sources/Interposition",
@@ -34,7 +35,7 @@ let package = Package(
     ),
     .target(
       name: "CKSimRuntime",
-      dependencies: ["CKSimRuntimeC"],
+      dependencies: ["CKSimRuntimeC", "CKSimProtocol"],
       path: "Sources/Engine",
       exclude: ["Resources"],
       swiftSettings: [
@@ -66,6 +67,7 @@ let package = Package(
     .testTarget(name: "VoIPSDKTests", dependencies: ["VoIPSDK", "VoIPSDKTesting"]),
     .testTarget(name: "VoIPSDKTestingTests", dependencies: ["VoIPSDKTesting"]),
     .testTarget(name: "RuntimeEngineTests", dependencies: ["CKSimRuntime"]),
+    .testTarget(name: "CKSimProtocolTests", dependencies: ["CKSimProtocol"]),
   ],
   swiftLanguageModes: [.v6]
 )
