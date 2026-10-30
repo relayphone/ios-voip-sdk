@@ -1,0 +1,176 @@
+public import Observation
+import Synchronization
+
+/// The app's entry point to the SDK: it presents and controls the app's calls, and tells the app
+/// what happens to them.
+///
+/// Start one client when the app launches, with the calling framework adapter that the app links,
+/// the app's media and, usually, the PushKit adapter. The SDK keeps the state of every call by its
+/// ``CallID`` and performs the user's actions itself, then tells the app through ``events()``.
+/// Read ``calls`` and ``isAudioActive`` from SwiftUI or with Observation.
+@MainActor
+@Observable
+public final class VoIPClient {
+  /// The calls on this device that haven't ended, in the order they began, including call
+  /// previews.
+  public private(set) var calls: [Call] = []
+
+  /// Whether the system activated the audio session for calls.
+  public private(set) var isAudioActive = false
+
+  let engine: CallEngine
+  private let subscribers: Subscribers
+  @ObservationIgnored private var revision: UInt64 = 0
+
+  /// Whether a client is running in this process.
+  private nonisolated static let isRunning = Mutex(false)
+
+  private init(engine: CallEngine, subscribers: Subscribers, snapshots: AsyncStream<Snapshot>) {
+    self.engine = engine
+    self.subscribers = subscribers
+    Task { [weak self] in
+      for await snapshot in snapshots { self?.apply(snapshot) }
+    }
+  }
+
+  deinit {
+    Self.isRunning.withLock { $0 = false }
+  }
+
+  /// Starts the SDK.
+  ///
+  /// A process has one calling framework provider, so it runs at most one client. Keep the client
+  /// for the life of the app; another can start only after it is released.
+  ///
+  /// - Parameters:
+  ///   - framework: The calling framework adapter that presents calls.
+  ///   - media: The app's real-time audio and video transport.
+  ///   - push: The source of the app's VoIP pushes, usually the PushKit adapter.
+  ///   - configuration: How the SDK presents and controls calls.
+  ///   - clock: The clock that times deadlines and retention. Tests pass a `TestClock`.
+  /// - Returns: The running client.
+  /// - Throws: ``StartupError/alreadyStarted`` when another client is running.
+  public static func start(
+    framework: any CallingFramework,
+    media: any CallMedia,
+    push: (any PushSource)? = nil,
+    configuration: VoIPConfiguration = VoIPConfiguration(),
+    clock: any Clock<Duration> = ContinuousClock()
+  ) throws(StartupError) -> VoIPClient {
+    let claimed = isRunning.withLock { isRunning in
+      defer { isRunning = true }
+      return !isRunning
+    }
+    guard claimed else { throw .alreadyStarted }
+    let subscribers = Subscribers()
+    let (snapshots, continuation) = AsyncStream.makeStream(of: Snapshot.self)
+    let engine = CallEngine(
+      framework: framework, media: media, pushSource: push, configuration: configuration,
+      clock: clock, subscribers: subscribers, publish: { continuation.yield($0) })
+    Task { @VoIPActor in engine.attach() }
+    return VoIPClient(engine: engine, subscribers: subscribers, snapshots: snapshots)
+  }
+
+  /// Returns a new stream of everything that happens to calls from now on.
+  ///
+  /// Each call returns a separate stream for one subscriber. Events that happen while nobody
+  /// subscribes are not kept; the SDK performs actions without waiting for the app, and
+  /// ``calls`` holds the current state.
+  public func events() -> AsyncStream<CallEvent> {
+    subscribers.stream()
+  }
+
+  /// Requests an action on a call.
+  ///
+  /// Starting a call creates it; it then waits for the app to place it, which the app confirms
+  /// with ``confirmPlaced(_:)``. Joining a call from its preview waits in the same way. Ending a
+  /// call preview ends it without the calling framework.
+  ///
+  /// - Parameter action: The action to request.
+  /// - Throws: ``ActionError/unknownCall`` when this device doesn't know the call,
+  ///   ``ActionError/notAllowed(_:)`` when the call's status doesn't allow the action,
+  ///   ``ActionError/unsupported`` when the configuration's capabilities don't include it, or
+  ///   ``ActionError/refused`` when the calling framework refuses it. A start that the calling
+  ///   framework refuses ends the call; a join returns to its preview.
+  public func request(_ action: Action) async throws(ActionError) {
+    try await engine.request(action)
+  }
+
+  /// Confirms that the app placed a call it was asked to start or join, after
+  /// ``CallEvent/startRequested(_:)`` or ``CallEvent/joinRequested(_:)``.
+  ///
+  /// The SDK then prepares the call's media and completes the start or join. A call that isn't
+  /// placed before ``Deadlines/placement`` ends with ``CallFailure/notPlaced``, or returns to its
+  /// call preview.
+  ///
+  /// - Parameter id: The call the app placed.
+  public func confirmPlaced(_ id: CallID) async {
+    await engine.confirmPlaced(id)
+  }
+
+  /// Presents an incoming call that the app learned about other than through a VoIP push, such as
+  /// over its own connection.
+  ///
+  /// The call appears as its presentation policy asks. Only a call that rings is reported to the
+  /// calling framework; a call preview, or a call that doesn't appear at all, isn't, and its outcome
+  /// is ``PresentationOutcome/presented`` because it appears exactly as the policy asks. A call
+  /// that would ring beyond ``VoIPConfiguration/maximumCalls`` ends with
+  /// ``CallFailure/atCapacity``. Reporting a call this device already knows doesn't present it
+  /// again; it returns the outcome of the first report.
+  ///
+  /// - Parameter call: The incoming call.
+  /// - Returns: What the system did with the call.
+  public func report(_ call: IncomingCall) async -> PresentationOutcome {
+    await engine.report(call)
+  }
+
+  /// Applies a fact about a call that the app learned from its servers other than through a VoIP
+  /// push.
+  ///
+  /// An event whose ID the SDK has already seen is ignored, so the same event can arrive over
+  /// several channels. An event for a call this device doesn't know yet is kept for
+  /// ``VoIPConfiguration/retention`` and applied when the call arrives.
+  ///
+  /// - Parameters:
+  ///   - event: The server event.
+  ///   - id: The call it concerns.
+  ///   - eventID: The event's identifier.
+  public func receive(_ event: ServerEvent, for id: CallID, eventID: EventID) async {
+    await engine.receive(event, for: id, eventID: eventID)
+  }
+
+  private func apply(_ snapshot: Snapshot) {
+    guard snapshot.revision > revision else { return }
+    revision = snapshot.revision
+    if calls != snapshot.calls { calls = snapshot.calls }
+    if isAudioActive != snapshot.isAudioActive { isAudioActive = snapshot.isAudioActive }
+  }
+}
+
+/// Why the SDK couldn't start.
+public enum StartupError: Error, Hashable, Sendable {
+  /// Another client is running in this process, which has one calling framework provider.
+  case alreadyStarted
+}
+
+/// The streams of everyone who subscribed to call events.
+final class Subscribers: Sendable {
+  private let continuations = Mutex<[Int: AsyncStream<CallEvent>.Continuation]>([:])
+  private let nextKey = Atomic(0)
+
+  func stream() -> AsyncStream<CallEvent> {
+    let (stream, continuation) = AsyncStream.makeStream(of: CallEvent.self)
+    let key = nextKey.add(1, ordering: .relaxed).oldValue
+    continuations.withLock { $0[key] = continuation }
+    continuation.onTermination = { [weak self] _ in
+      _ = self?.continuations.withLock { $0.removeValue(forKey: key) }
+    }
+    return stream
+  }
+
+  func yield(_ event: CallEvent) {
+    for continuation in continuations.withLock({ Array($0.values) }) {
+      continuation.yield(event)
+    }
+  }
+}
