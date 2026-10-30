@@ -60,10 +60,14 @@ LiveCommunicationKit, PushKit or AVFAudio. Two more libraries plug the system in
 receives VoIP pushes and the push token with `PushKitSource`:
 
 ```swift
+VoIPSimulator.activate()  // Debug simulator builds only; elsewhere it does nothing.
 let push = PushKitSource()
 let client = try VoIPClient.start(
   framework: LiveCommunicationKitAdapter(), media: media, push: push)
 ```
+
+`VoIPSimulator` runs the simulator runtime beneath those adapters, so the same code presents
+calls in the iOS Simulator.
 
 Its terms are defined in the [glossary](GLOSSARY.md) and its decisions are recorded in
 [docs/adr](docs/adr).

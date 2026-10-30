@@ -37,6 +37,11 @@ Changes not yet released are recorded below. Public API changes include migratio
   `tokens()` streams the VoIP push token for the app to register with its servers.
 - `VoIPPush(defaultFormat:)` decodes the SDK's existing `incomingCall` and `callEnded` push
   payloads. Only string metadata values are kept.
+- The `VoIPSimulator` library's `VoIPSimulator.activate()` starts the simulator runtime in
+  Debug simulator builds, before `VoIPClient.start`, so the shipping adapters present calls,
+  activate audio and receive VoIP pushes in the iOS Simulator. Elsewhere it does nothing. The
+  runtime now attributes a LiveCommunicationKit report entered while a push callback runs to
+  that push, as LiveCommunicationKit reports from its own queue.
 - `VoIPClient.report(_:)` returns how the call appears on this device: `previewed(_:)` for a
   call preview, including a filtered call that the policy previews, and `notShown` when the
   policy is `none`, instead of `presented`. `PresentationOutcome` adds both cases.

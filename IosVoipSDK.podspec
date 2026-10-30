@@ -33,7 +33,7 @@ Pod::Spec.new do |s|
   # separate Swift modules that the pod doesn't ship yet.
   s.exclude_files = ['Sources/Interposition/CKLoader.m', 'Sources/VoIPCore/**/*', 'Sources/VoIPTesting/**/*',
                      'Sources/VoIPLiveCommunicationKit/**/*', 'Sources/VoIPPushKit/**/*',
-                     'Sources/VoIPPushDelivery/**/*']
+                     'Sources/VoIPPushDelivery/**/*', 'Sources/VoIPSimulator/**/*']
   public_headers = ['Sources/Interposition/include/CKRuntimeBridge.h', 'Sources/VoIPPlatform/include/*.h', 'Expo/apple/IosVoipSDK.h']
   public_headers << 'ExpoMedia/Shared/VSMediaBinding.h' if media_adapter != 'none'
   s.public_header_files = public_headers
