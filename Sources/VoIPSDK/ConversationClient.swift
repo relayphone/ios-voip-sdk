@@ -7,6 +7,21 @@ enum ConversationSystemErrors {
   static func isAtCapacity(_ error: any Error) -> Bool {
     matches(error, domain: "com.apple.CallKit.error.requesttransaction", code: 7)
   }
+  static func action(_ error: any Error) -> ConversationActionError {
+    if let error = error as? ConversationActionError { return error }
+    if error is CancellationError { return .cancelled }
+    if isAtCapacity(error) { return .atCapacity }
+    let native = error as NSError
+    return .systemFailure(domain: native.domain, code: native.code)
+  }
+  static func incoming(_ error: any Error) -> IncomingConversationError {
+    if let error = error as? IncomingConversationError { return error }
+    if case IncomingIntake.IntakeError.managerReset = error { return .providerReset }
+    if error is CancellationError { return .cancelled }
+    if isAlreadyReported(error) { return .alreadyReported }
+    let native = error as NSError
+    return .systemFailure(domain: native.domain, code: native.code)
+  }
   private static func matches(_ error: any Error, domain: String, code: Int) -> Bool {
     var candidate = error as NSError
     for _ in 0..<4 {
@@ -98,17 +113,17 @@ public final class ConversationClient {
 
   private static var instance: ConversationClient?
   static func forApplication(configuration: Configuration, mediaAdapter: (any MediaAdapter)? = nil,
-                             audioPolicy: AudioActivationPolicy = .standard) throws -> ConversationClient {
+                             audioPolicy: AudioActivationPolicy = .standard) throws(VoIPStartupError) -> ConversationClient {
     try ProcessSDKOwnership.claim()
     if let instance {
       guard instance.configuration == configuration, instance.audioPolicy == audioPolicy,
             mediaAdapter == nil || instance.mediaAdapter === mediaAdapter else {
-        throw ConversationClientError.alreadyConfigured
+        throw VoIPStartupError.alreadyConfigured
       }
       return instance
     }
     guard configuration.maximumConversationGroups > 0, configuration.maximumConversationsPerGroup > 0 else {
-      throw ConversationClientError.invalidConfiguration
+      throw VoIPStartupError.invalidConfiguration
     }
     let client = ConversationClient(configuration: configuration,
       mediaAdapter: mediaAdapter ?? NoMediaAdapter(), audioPolicy: audioPolicy)
@@ -342,10 +357,11 @@ public final class ConversationClient {
   public func removeEventObserver(_ token: UUID) { eventObservers.removeValue(forKey: token) }
   public func setConversationHandler(_ handler: ConversationHandler?) { coordinator.setHandler(handler) }
 
+  /// Submits an outgoing request; acceptance does not imply handler fulfillment.
   public func startConversation(to participant: Participant, video: Bool = false,
-                                metadata: [String: JSONValue]? = nil) async throws -> UUID {
+                                metadata: [String: JSONValue]? = nil) async throws(ConversationActionError) -> UUID {
     guard !participant.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      throw ConversationClientError.invalidPayload
+      throw ConversationActionError.invalidParticipant
     }
     let id = UUID()
     // Metadata exists synchronously before perform can deliver its delegate action.
@@ -355,7 +371,7 @@ public final class ConversationClient {
     do { try await perform(.start(id, participant, video)); refresh(); return id }
     catch { if records[id]?.seenInManager != true {
       records.removeValue(forKey: id); outgoingMetadata.removeValue(forKey: id)
-    }; refresh(); throw error }
+    }; refresh(); throw ConversationSystemErrors.action(error) }
   }
   private var outgoingMetadata: [UUID: [String: JSONValue]] = [:]
   private struct IncomingLocalEndClaim {
@@ -419,47 +435,58 @@ public final class ConversationClient {
     return records[id]?.payload?.metadata ?? outgoingMetadata[id]
   }
 
-  public func joinConversation(_ id: UUID) async throws {
+  /// Requests a join; handler fulfillment and backend connection remain separate.
+  public func joinConversation(_ id: UUID) async throws(ConversationActionError) {
     try requireConversation(id); try await perform(.join(id))
   }
-  public func endConversation(_ id: UUID) async throws {
+  /// Requests a local end through the registered handler.
+  public func endConversation(_ id: UUID) async throws(ConversationActionError) {
     try requireConversation(id); try await perform(.end(id))
   }
-  public func setMuted(_ id: UUID, _ muted: Bool) async throws {
+  /// Requests a mute change for an active conversation.
+  public func setMuted(_ id: UUID, _ muted: Bool) async throws(ConversationActionError) {
     try requireConversation(id); try await perform(.mute(id, muted))
   }
-  public func setHeld(_ id: UUID, _ held: Bool) async throws {
+  /// Requests a hold change for an active conversation.
+  public func setHeld(_ id: UUID, _ held: Bool) async throws(ConversationActionError) {
     try requireConversation(id); try await perform(.hold(id, held))
   }
-  public func playTones(_ id: UUID, _ digits: String) async throws {
+  /// Requests DTMF tones after validating the digits and conversation identity.
+  public func playTones(_ id: UUID, _ digits: String) async throws(ConversationActionError) {
     try requireConversation(id)
     guard !digits.isEmpty, digits.allSatisfy({ "0123456789*#ABCDabcd".contains($0) }) else {
-      throw ConversationClientError.invalidDigits
+      throw ConversationActionError.invalidDigits
     }
     try await perform(.tones(id, digits))
   }
-  public func mergeConversations(_ first: UUID, _ second: UUID) async throws {
+  /// Requests a merge of two distinct active conversations.
+  public func mergeConversations(_ first: UUID, _ second: UUID) async throws(ConversationActionError) {
     try requireConversation(first); try requireConversation(second)
-    guard first != second else { throw ConversationClientError.unsupported }
+    guard first != second else { throw ConversationActionError.cannotMergeSameConversation }
     try await perform(.merge(first, second))
   }
 
+  /// Reports an invitation, normalizing platform rejection and pending intake reset.
   public func reportIncomingConversation(_ payload: IncomingCallPayload,
-                                         source: IncomingReportSource = .foreground) async throws -> UUID {
-    let reservation = try incomingIntake.reserve(payload, source: source)
-    hydrateIncoming(reservation.id)
-    switch reservation.disposition {
-    case .reported:
-      refresh()
-      return reservation.id
-    case .join(let ticket):
-      defer { refresh() }
-      return try await ticket.value
-    case .report(let attempt):
-      let outcome = await incomingTransport.report(reservation)
-      incomingIntake.complete(attempt, outcome: outcome)
-      refresh()
-      return try await attempt.ticket.value
+                                         source: IncomingReportSource = .foreground) async throws(IncomingConversationError) -> UUID {
+    do {
+      let reservation = try incomingIntake.reserve(payload, source: source)
+      hydrateIncoming(reservation.id)
+      switch reservation.disposition {
+      case .reported:
+        refresh()
+        return reservation.id
+      case .join(let ticket):
+        defer { refresh() }
+        return try await ticket.value
+      case .report(let attempt):
+        let outcome = await incomingTransport.report(reservation)
+        incomingIntake.complete(attempt, outcome: outcome)
+        refresh()
+        return try await attempt.ticket.value
+      }
+    } catch {
+      throw ConversationSystemErrors.incoming(error)
     }
   }
 
@@ -496,13 +523,14 @@ public final class ConversationClient {
 
   /// Local termination submits the ordinary End action. The await confirms request
   /// acceptance; the handler and terminal snapshot may arrive afterward.
-  public func reportConversation(_ id: UUID, report: ConversationReport) async throws {
+  public func reportConversation(_ id: UUID, report: ConversationReport) async throws(ConversationReportError) {
     if case .ended(.local) = report {
-      try await endConversation(id)
+      do { try await endConversation(id) }
+      catch { throw ConversationReportError.action(error) }
       return
     }
     guard let conversation = manager.conversations.first(where: { $0.uuid == id }), records[id] != nil else {
-      throw ConversationClientError.unknownConversation
+      throw ConversationReportError.unknownConversation
     }
     let now = Date()
     switch report {
@@ -514,13 +542,13 @@ public final class ConversationClient {
       manager.reportConversationEvent(.conversationConnected(now), for: conversation)
     case .updated(let members, let video):
       if let members, members.contains(where: { $0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
-        throw ConversationClientError.invalidPayload
+        throw ConversationReportError.invalidMembers
       }
       if let members { records[id]?.members = members }
       if let video { records[id]?.video = video }
       if let record = records[id] { manager.reportConversationEvent(.conversationUpdated(update(for: record)), for: conversation) }
     case .ended(let reason):
-      guard let nativeReason = endedReason(reason) else { throw ConversationClientError.unsupported }
+      guard let nativeReason = endedReason(reason) else { throw ConversationReportError.unsupportedEndReason }
       records[id]?.ended = .init(at: now, reason: reason)
       if let incoming = incomingIntake.projection(id) {
         incomingIntake.terminate(id, generation: incoming.generation, reason: reason,
@@ -535,7 +563,7 @@ public final class ConversationClient {
     case start(UUID, Participant, Bool), join(UUID), end(UUID), mute(UUID, Bool)
     case hold(UUID, Bool), tones(UUID, String), merge(UUID, UUID)
   }
-  private func perform(_ command: Command) async throws {
+  private func perform(_ command: Command) async throws(ConversationActionError) {
     // Fresh action objects stay local to this submission. Passing a Swift-owned,
     // actor-isolated action array between methods would require an unsafe transfer.
     let action: ConversationAction
@@ -562,13 +590,12 @@ public final class ConversationClient {
     do { try await manager.perform([action]) }
     catch {
       appActions.removeValue(forKey: id)
-      if ConversationSystemErrors.isAtCapacity(error) { throw ConversationClientError.atCapacity }
-      throw error
+      throw ConversationSystemErrors.action(error)
     }
   }
-  private func requireConversation(_ id: UUID) throws {
+  private func requireConversation(_ id: UUID) throws(ConversationActionError) {
     guard manager.conversations.contains(where: { $0.uuid == id && $0.state != .left }) else {
-      throw ConversationClientError.unknownConversation
+      throw ConversationActionError.unknownConversation
     }
   }
   private func makeRecord(direction: ConversationDirection, members: [Participant], video: Bool) -> Record {

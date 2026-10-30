@@ -70,9 +70,12 @@ import Foundation
         preconditionFailure("A refused request cannot start a conversation")
       } catch let actual {
         if isCapacity {
-          precondition((actual as? ConversationClientError) == .atCapacity,
+          precondition(actual == .atCapacity,
             "Only requesttransaction/7 must become the typed capacity error")
-        } else { precondition((actual as NSError) === error, "Other platform errors must remain unchanged") }
+        } else {
+          precondition(actual == .systemFailure(domain: error.domain, code: error.code),
+            "Other platform failures must retain their diagnostic domain and code")
+        }
       }
       await Task.yield()
       precondition(client.snapshots.map(\.id) == before && startCalls.isEmpty,
@@ -110,7 +113,10 @@ import Foundation
     do {
       try await client.reportConversation(requestFailure, report: .ended(.local))
       preconditionFailure("A rejected command request must reject the report await")
-    } catch PlatformFailure.rejected {}
+    } catch ConversationReportError.action(.systemFailure(let domain, let code)) {
+      let expected = PlatformFailure.rejected as NSError
+      precondition(domain == expected.domain && code == expected.code)
+    }
     precondition(snapshot(requestFailure)?.ended == nil && manager.reports.count == reportsBefore)
     try await client.reportConversation(requestFailure, report: .ended(.local))
     let retriedAction = manager.appActions.last!
@@ -127,7 +133,7 @@ import Foundation
     do {
       try await client.reportConversation(UUID(), report: .ended(.local))
       preconditionFailure("Unknown local request must reject")
-    } catch ConversationClientError.unknownConversation {}
+    } catch ConversationReportError.action(.unknownConversation) {}
 
     let reasons: [(ConversationEndedReason, Conversation.EndedReason)] = [
       (.remoteEnded, .remoteEnded), (.failed, .failed), (.unanswered, .unanswered),

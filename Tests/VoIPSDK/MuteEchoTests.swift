@@ -75,7 +75,10 @@ final class MuteControls {
   }
   func rejected(_ task: Task<Void, any Error>) async {
     do { try await task.value; preconditionFailure("Platform action should fail") }
-    catch PlatformFailure.rejected {}
+    catch ConversationActionError.systemFailure(let domain, let code) {
+      let expected = PlatformFailure.rejected as NSError
+      precondition(domain == expected.domain && code == expected.code)
+    }
     catch { preconditionFailure("Unexpected host boundary error") }
   }
   func genuineAfterCleanup(_ id: UUID, stale: UUID) async throws {

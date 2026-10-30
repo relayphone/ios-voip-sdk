@@ -118,11 +118,11 @@ final class IncomingIntake: @unchecked Sendable {
   /// Reserve synchronously before scheduling reporting. PushKit never joins a
   /// predecessor: each delivery receives its own actual report attempt.
   func reserve(_ payload: IncomingCallPayload, source: IncomingReportSource,
-               now: Date = Date()) throws -> Reservation {
+               now: Date = Date()) throws(IncomingConversationError) -> Reservation {
     guard !payload.eventId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
           !payload.serverCallId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
           !payload.caller.value.isEmpty else {
-      throw ConversationClientError.invalidPayload
+      throw IncomingConversationError.invalidPayload
     }
     lock.lock()
     defer { lock.unlock() }

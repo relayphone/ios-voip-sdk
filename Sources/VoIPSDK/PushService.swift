@@ -69,12 +69,27 @@ public final class PushService {
     transport = client.incomingTransport
   }
 
-  public func start() throws {
-    let receiver = receiver ?? PushReceiverProxy(service: self)
-    let owner = try PushRegistryOwner.shared(receiver: receiver)
-    self.receiver = receiver
-    try owner.start()
-    self.owner = owner
+  /// Registers the native receiver, preserving its identity across failed retries.
+  public func start() throws(PushRegistrationError) {
+    do {
+      let receiver = receiver ?? PushReceiverProxy(service: self)
+      let owner = try PushRegistryOwner.shared(receiver: receiver)
+      self.receiver = receiver
+      try owner.start()
+      self.owner = owner
+    } catch {
+      let native = error as NSError
+      guard native.domain == "VoIPSDK.PushRegistration" else {
+        throw PushRegistrationError.systemFailure(domain: native.domain, code: native.code)
+      }
+      switch native.code {
+      case 1: throw PushRegistrationError.wrongExecutor
+      case 2: throw PushRegistrationError.invalidReceiver
+      case 3: throw PushRegistrationError.receiverAlreadyRegistered
+      case 4: throw PushRegistrationError.registryUnavailable
+      default: throw PushRegistrationError.systemFailure(domain: native.domain, code: native.code)
+      }
+    }
   }
   @discardableResult
   public func observeToken(_ callback: @escaping @MainActor (PushTokenState) -> Void) -> UUID {

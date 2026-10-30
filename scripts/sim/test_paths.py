@@ -54,7 +54,7 @@ def make_capture(root, bundle=BUNDLE, scenario='sdk-m1-contract-audio-lifecycle'
     journal.write_text(json.dumps(dict(event='host-only-journal', pid=PID, runID=RUN_ID, bundleID=bundle)) + '\n')
     session = runtime / 'session.json'
     write_json(session, dict(schemaVersion=1, runID=RUN_ID, pid=PID, bundleID=bundle,
-                            notification='dev.callkitsim.control.' + str(PID)))
+                            controlTransport='directory-watch-v1'))
     return dict(receipt=receipt, trace=trace, devices_root=devices, simulator=SIMULATOR,
                 run_id=RUN_ID, bundle=bundle, container=container, journal=journal, session=session, home=home)
 
@@ -139,7 +139,7 @@ class CompletedContainerTests(unittest.TestCase):
     def test_stale_or_malformed_session_cannot_match(self):
         original = self.fixture['session'].read_text()
         cases = (dict(runID='old-run'), dict(pid=PID + 1), dict(pid=True), dict(bundleID='dev.foreign'),
-                 dict(schemaVersion=True), dict(schemaVersion=2), dict(notification='wrong'))
+                 dict(schemaVersion=True), dict(schemaVersion=2), dict(controlTransport='wrong'))
         for update in cases:
             with self.subTest(update=update):
                 self.fixture['session'].write_text(original)
