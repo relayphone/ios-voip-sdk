@@ -170,13 +170,11 @@ class NativeWorld:
         self.test.assertTrue(bridge_alive(), 'foreground phases require the live current consumer bridge')
         self.test.assertEqual(consumer_started_wall_ms, self.active_probe['identity']['startedWallTimeMS'])
         self.test.assertIs(type(consumer_started_wall_ms), int)
-        self.test.assertLessEqual(deadline, self.active_probe['started'] + 25)
         expected = self.fixture_identity if identity['bundleID'] == FIXTURE else self.active_probe['identity']
         self.test.assertEqual(identity, expected)
         self.test.assertRegex(phase, r'^\d{2}-(fixture|inspector)$')
         self.test.assertEqual(log, self.active_probe['path'].parents[2] / ('foreground-' + phase + '.log'))
-        budget = min(deadline - self.elapsed,
-                     25 - (self.clock.time() * 1000 - consumer_started_wall_ms) / 1000)
+        budget = deadline - self.elapsed
         if budget <= 0:
             raise RuntimeError('modeled native foreground timed out inside consumer budget')
         output = self.rpc('xcrun', 'simctl', 'launch', device, identity['bundleID'], timeout=budget)
@@ -271,7 +269,7 @@ class NativeWorld:
         out = log.parent
         self.test.assertEqual(command, ['xcrun', 'simctl', 'launch',
                                        '--terminate-running-process', 'device', INSPECTOR])
-        self.test.assertEqual((host_timeout, consumer_timeout, bundle), (180, 25, INSPECTOR))
+        self.test.assertEqual((host_timeout, consumer_timeout, bundle), (180, None, INSPECTOR))
         self.test.assertTrue(bridge_alive())
         self.test.assertEqual(self.actor, FIXTURE, 'foreground fixture before starting a new consumer')
         baseline = json.loads((out / 'case-baseline.json').read_text())
@@ -286,7 +284,7 @@ class NativeWorld:
         pid = 30400 + len(self.launches)
         self.native_receipt(nonce, pid, started, out)
         self.launches.append(dict(nonce=nonce, pid=30400 + len(self.launches), out=out,
-                                  started=started, deadline=started + 25, before=self.filter))
+                                  started=started, deadline=started + 180, before=self.filter))
         self.actor = INSPECTOR
         self.advance(3.9055)
         self.publish()
@@ -298,7 +296,7 @@ class NativeWorld:
             raise RuntimeError(self.active_probe.get('error') or 'Native projection unavailable')
         self.test.assertTrue(value['online'])
         self.test.assertEqual(value['inspectorPID'], pid)
-        return value, started + 25
+        return value, None
 
     def patches(self):
         self.connection = self.make_connection('base')
@@ -350,18 +348,21 @@ class FilterCaseTests(unittest.TestCase):
             try:
                 probe, deadline = launch(world.connection, 'device', 'cold-native', world.session,
                                          world.channel, out, True)
-                self.assertAlmostEqual(deadline - started, 25)
+                self.assertAlmostEqual(deadline - world.elapsed, 180)
                 self.assertEqual(probe.pid, 30400)
                 return world.elapsed - started
             finally:
                 self.assertEqual(spawn.call_count, 1)
                 self.assertEqual(reaped, [True])
 
-    def test_authenticated_cold_launch_ack_after20_stays_inside_original25(self):
+    def test_authenticated_cold_launch_keeps_native_identity(self):
         self.assertLess(self.cold_launch(22), 25)
 
-    def test_cold_launch_without_authenticated_ack_before25_is_terminal(self):
-        for delay in (None, 25, 26):
+    def test_authenticated_cold_launch_after_twenty_five_seconds(self):
+        self.assertGreaterEqual(self.cold_launch(35), 35)
+
+    def test_cold_launch_without_authenticated_ack_before_host_bound_is_terminal(self):
+        for delay in (None, 180, 181):
             with self.subTest(ack_delay=delay):
                 with self.assertRaisesRegex(RuntimeError, 'timed out'):
                     self.cold_launch(delay)
@@ -377,7 +378,7 @@ class FilterCaseTests(unittest.TestCase):
         classified.assert_called_once()
         label, reason = classified.call_args.args
         self.assertEqual(label, 'infra:startup')
-        for detail in ('Inspector', 'timeout', 'host=180s', 'consumer=25s', 'never replayed'):
+        for detail in ('Inspector', 'timeout', 'host=180s', 'never replayed'):
             self.assertIn(detail, reason)
 
     def test_stale_post_reap_publication_is_not_an_infrastructure_timeout(self):
@@ -399,7 +400,7 @@ class FilterCaseTests(unittest.TestCase):
         self.assertEqual(len({row['pid'] for row in world.launches}), 2)
         self.assertGreater(world.elapsed, 25)
         for row in world.launches:
-            self.assertAlmostEqual(row['deadline'] - row['started'], 25)
+            self.assertAlmostEqual(row['deadline'] - row['started'], 180)
         self.assertEqual(world.filter, 'none')
         self.assertEqual([entry[2] for entry in world.calls if entry[:2] == ('control', 'incoming-filter')],
                          ['do-not-disturb', 'none'])
@@ -413,6 +414,19 @@ class FilterCaseTests(unittest.TestCase):
         self.assertEqual(len(world.closed_contexts), 2)
         self.assertTrue(all(not connection.is_alive() for connection in world.closed_contexts))
         self.assertTrue(world.connection.is_alive(), 'the caller still owns the original base context')
+
+    def test_answer_journey_crosses_twenty_five_seconds_without_restarting_consumer(self):
+        world = NativeWorld(self)
+        world.foreground_costs = (8, 12, 8, 12)
+        with world.patches():
+            result = RUNNER['journal_journey']([], 'device', 'basic-consumer', world.session,
+                world.out, 180, world.channel, probe=world.probe, connection=world.connection)
+        self.assertIs(result['success'], True)
+        self.assertGreater(world.elapsed, 40)
+        self.assertEqual(world.launches, [])
+        self.assertEqual(world.probe.pid, 30378)
+        self.assertEqual(world.probe.started, 1000000)
+        self.assertEqual((world.channel / 'session.json').read_bytes(), world.session_bytes)
 
     def test_reused_advanced_shipping_bridge_rejects_new_consumer_cursor_zero(self):
         world = NativeWorld(self)
@@ -443,8 +457,8 @@ class FilterCaseTests(unittest.TestCase):
                 activate('device', FIXTURE, world.session['pid'], deadline=25)
             self.assertAlmostEqual(world.elapsed, 25)
             world.advance(.001)
-            with self.assertRaisesRegex(RuntimeError, 'background budget expired'):
-                world.probe.read()
+            with self.assertRaisesRegex(RuntimeError, 'host wait budget expired'):
+                RUNNER['remaining_budget'](25)
         self.assertEqual(world.rpc_count, 7, 'an exhausted consumer must not be replayed')
 
     def test_case_baseline_hashes_original_bytes_before_any_new_consumer(self):
@@ -476,7 +490,7 @@ class FilterCaseTests(unittest.TestCase):
         self.assertEqual(probe.pid, 30400)
         self.assertEqual(probe.nonce, 'fresh-native')
         self.assertEqual(probe.container, probe.path.parent.parent)
-        self.assertAlmostEqual(deadline - world.launches[0]['started'], 25)
+        self.assertAlmostEqual(deadline - world.elapsed, 180)
         self.assertTrue((out / 'case-baseline.json').exists())
 
     def test_native_launch_owner_rejects_changed_session_before_supervisor(self):
@@ -550,7 +564,7 @@ class FilterCaseTests(unittest.TestCase):
     def test_native_timeout_aborts_filter_plan_without_retry(self):
         world = NativeWorld(self)
         # Setup is healthy. The first entered consumer's foreground RPC stalls.
-        world.foreground_costs = (1, 30)
+        world.foreground_costs = (1, 181)
         with world.patches():
             with self.assertRaisesRegex(RuntimeError, 'foreground timed out'):
                 RUNNER['run_filter_cases']([], 'device', world.connection,
@@ -561,14 +575,14 @@ class FilterCaseTests(unittest.TestCase):
         self.assertEqual(len(world.closed_contexts), 1)
         self.assertFalse(world.closed_contexts[0].is_alive())
 
-    def test_filter_wait_cannot_reset_the_native_process_start_deadline(self):
+    def test_filter_wait_cannot_reset_the_callers_host_deadline(self):
         world = NativeWorld(self)
         world.elapsed = 24
         world.publish()
         with world.patches():
             with self.assertRaisesRegex(RuntimeError, 'foreground timed out'):
                 RUNNER['filter_journey']([], 'device', 'basic-consumer', world.session,
-                    world.out, 100, world.channel, world.probe, before='none',
+                    world.out, 25, world.channel, world.probe, before='none',
                     reason='do-not-disturb', code=3, verification='verified', connection=world.connection)
         self.assertAlmostEqual(world.elapsed, 25)
         self.assertAlmostEqual(world.calls[-1][-1], 1)
