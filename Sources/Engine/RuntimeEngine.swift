@@ -17,12 +17,8 @@ private struct FulfilledPostEndUnmutePolicy: Decodable {
     switch api { case .callkit: callkit; case .livecommunicationkit: livecommunicationkit }
   }
 }
-private enum IncomingFilterReason: String, CaseIterable, Sendable {
-  case none
-  case doNotDisturb = "do-not-disturb"
-  case restrictedSharingMode = "restricted-sharing-mode"
-  case callIsProtected = "call-is-protected"
-  case sensitiveParticipants = "sensitive-participants"
+private typealias IncomingFilterReason = ControlRequest.FilterReason
+private extension ControlRequest.FilterReason {
   var code: Int {
     switch self {
     case .none: 0
@@ -242,11 +238,15 @@ private struct Faults: Codable {
   var reportCallbackDelayMS: Int?
   var invalidateDuringHandoff: Bool?
   var incomingErrorCode: Int?
-  mutating func apply(_ update: Faults) {
-    if let value = update.staleAudio { staleAudio = value }
-    if let value = update.reportCallbackDelayMS { reportCallbackDelayMS = value }
-    if let value = update.invalidateDuringHandoff { invalidateDuringHandoff = value }
-    if let code = update.incomingErrorCode { incomingErrorCode = code }
+  mutating func apply(_ changes: [ControlRequest.FaultChange]) {
+    for change in changes {
+      switch change {
+      case .staleAudio(let value): staleAudio = value
+      case .reportCallbackDelayMS(let value): reportCallbackDelayMS = value
+      case .invalidateDuringHandoff(let value): invalidateDuringHandoff = value
+      case .incomingErrorCode(let value): incomingErrorCode = value
+      }
+    }
   }
 }
 // Objective-C clients supply blocks without Swift Sendable annotations. The
@@ -254,24 +254,6 @@ private struct Faults: Codable {
 private final class Completion: @unchecked Sendable {
   let invoke: (Error?) -> Void
   init(_ invoke: @escaping (Error?) -> Void) { self.invoke = invoke }
-}
-private struct Command: Decodable {
-  let id: UUID
-  let runID: String
-  let pid: Int
-  let bundleID: String
-  let operation: String
-  var callUUID: UUID?
-  var activeCallUUID: UUID?
-  var heldCallUUID: UUID?
-  var groupWithCallUUID: UUID?
-  var applicationRequest: Bool?
-  var held: Bool?
-  var muted: Bool?
-  var digits: String?
-  var mustReport: Bool?
-  var faults: Faults?
-  var reason: String?
 }
 
 // RuntimeEngine's serial state queue owns this value. An ambiguous same-UUID
@@ -1455,75 +1437,63 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       var remove = true
       defer { if remove { try? FileManager.default.removeItem(at: file) } }
       guard let bytes = try? Data(contentsOf: file), bytes.count <= 65_536,
-            let command = try? JSONDecoder().decode(Command.self, from: bytes),
-            command.runID == runID, command.pid == Int(getpid()), command.bundleID == bundleID,
-            UUID(uuidString: file.deletingPathExtension().lastPathComponent) == command.id else { continue }
-      let responseURL = controlRoot.appendingPathComponent("responses/\(command.id.uuidString).json")
+            let header = try? ControlRequest.Header.decode(bytes),
+            header.target.runID == runID, header.target.pid == Int(getpid()), header.target.bundleID == bundleID,
+            UUID(uuidString: file.deletingPathExtension().lastPathComponent) == header.id else { continue }
+      let responseURL = controlRoot.appendingPathComponent("responses/\(header.id.uuidString).json")
       if FileManager.default.fileExists(atPath: responseURL.path) { continue }
-      var response: [String: Any] = ["id": command.id.uuidString, "runID": runID, "pid": Int(getpid()), "bundleID": bundleID]
-      if let cached = commandResults[command.id] { response = cached }
+      var response: [String: Any] = ["id": header.id.uuidString, "runID": runID, "pid": Int(getpid()), "bundleID": bundleID]
+      if let cached = commandResults[header.id] { response = cached }
       else { do {
-        let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] ?? [:]
-        response["result"] = try execute(command, object)
+        response["result"] = try execute(ControlRequest.decode(bytes))
         response["success"] = true
       } catch {
         response["success"] = false; response["error"] = String(describing: error)
-        record(event: "control.rejected", fields: ["requestID": command.id.uuidString,
-          "operation": command.operation, "error": String(describing: error)])
+        record(event: "control.rejected", fields: ["requestID": header.id.uuidString,
+          "operation": header.operationName, "error": String(describing: error)])
       }
-      commandResults[command.id] = response
+      commandResults[header.id] = response
       }
       do {
         let data = try JSONSerialization.data(withJSONObject: response, options: [.sortedKeys])
         try data.write(to: responseURL, options: .atomic)
       } catch {
         remove = false
-        record(event: "control.responseWriteFailed", fields: ["commandID": command.id.uuidString])
+        record(event: "control.responseWriteFailed", fields: ["commandID": header.id.uuidString])
       }
     }
   }
-  private func execute(_ command: Command, _ object: [String: Any]) throws -> [String: Any] {
-    if command.applicationRequest == true {
-      guard selected?.apiKind == .livecommunicationkit, ["hold", "merge", "unmerge"].contains(command.operation) else {
-        throw ControlError.invalid("applicationRequest requires an LCK hold, merge or unmerge control")
-      }
-    }
-    let origin: ActionOrigin = command.applicationRequest == true ? .application : .system
+  private func execute(_ command: ControlRequest) throws -> [String: Any] {
     switch command.operation {
-    case "status": return ["calls": calls.values.map(callJSON), "pending": pendingActions.values.filter { !$0.settled }.count,
+    case .status: return ["calls": calls.values.map(callJSON), "pending": pendingActions.values.filter { !$0.settled }.count,
       "audioActive": audioActive, "sequence": journalWriter.sequence, "incomingErrorCode": faults.incomingErrorCode ?? 0,
       "incomingFilter": incomingFilter.snapshot(policy: profile.incomingFilterPolicies[incomingFilter.rawValue]),
       "providerConfigurations": providers.values.sorted { providerID($0.provider) < providerID($1.provider) }.map(providerConfigurationJSON)]
-    case "events": return ["events": (try? String(contentsOf: controlRoot.appendingPathComponent("events.jsonl"), encoding: .utf8)) ?? ""]
-    case "inspect-adapter":
+    case .events: return ["events": (try? String(contentsOf: controlRoot.appendingPathComponent("events.jsonl"), encoding: .utf8)) ?? ""]
+    case .inspectAdapter:
       let name = "CallKitVoIPPushDelegate"
       let selector = NSSelectorFromString("pushRegistry:didReceiveIncomingVoIPPushWithPayload:metadata:withCompletionHandler:")
       guard let cls = NSClassFromString(name) else { throw ControlError.invalid("adapter class missing") }
       return ["metadataSelector": class_getInstanceMethod(cls, selector) != nil]
-    case "incoming-filter":
-      guard let rawReason = command.reason, let reason = IncomingFilterReason(rawValue: rawReason) else {
-        throw ControlError.invalid("valid incoming filter reason required")
-      }
+    case .incomingFilter(let reason):
       incomingFilter = reason
       let snapshot = reason.snapshot(policy: profile.incomingFilterPolicies[reason.rawValue])
       var fields = snapshot
       fields["requestID"] = command.id.uuidString
       record(event: "incomingFilter.configured", fields: fields)
       return ["incomingFilter": snapshot]
-    case "faults":
-      guard let value = command.faults, (0...120_000).contains(value.reportCallbackDelayMS ?? 0),
-        [0, 4].contains(value.incomingErrorCode ?? 0) else { throw ControlError.invalid("invalid faults") }
-      faults.apply(value)
+    case .faults(let changes):
+      faults.apply(changes)
       let code = faults.incomingErrorCode ?? 0
       record(event: "faults.configured", fields: ["requestID": command.id.uuidString, "incomingErrorCode": code])
       return ["configured": true, "incomingErrorCode": code]
-    case "push":
-      guard let payload = object["payload"] as? [String: Any], let mustReport = command.mustReport else { throw ControlError.invalid("payload and explicit mustReport required") }
-      let bytes = try JSONSerialization.data(withJSONObject: payload)
-      guard bytes.count <= 5120 else { throw ControlError.invalid("payload too large") }
+    case .push(let applicationPayload, let mustReport):
+      // PushKit's Objective-C seam requires NSDictionary; only application data is bridged.
+      let bytes = try JSONEncoder().encode(applicationPayload)
+      guard let payload = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { throw ControlError.invalid("payload object required") }
       CKSimInjectPush(payload, mustReport, command.id.uuidString)
       return ["scheduled": true, "pushID": command.id.uuidString]
-    case "reset":
+    case .reset:
       // Explicit selected-provider fault. This does not model invalidation of
       // an older provider (R3) or change provider-selection behavior.
       guard let provider = selected, provider.valid else { throw ControlError.invalid("no selected provider") }
@@ -1542,51 +1512,51 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       reconcileAudio(provider: provider, delay: 0)
       callback(provider) { $0.providerDidReset(provider.provider) }
       return ["reset": true, "provider": providerID(provider.provider)]
-    default:
-      guard let provider = selected, provider.valid, let uuid = command.callUUID, let call = calls[uuid] else { throw ControlError.invalid("unknown call or provider") }
+    case .call(let control):
+      if control.origin == .application && selected?.apiKind != .livecommunicationkit {
+        throw ControlError.invalid("applicationRequest requires an LCK hold, merge or unmerge control")
+      }
+      let origin: ActionOrigin = control.origin == .application ? .application : .system
+      let uuid = control.callID
+      guard let provider = selected, provider.valid, let call = calls[uuid] else { throw ControlError.invalid("unknown call or provider") }
       let actions: [CXAction]
-      switch command.operation {
-      case "answer": actions = [CXAnswerCallAction(call: uuid)]
-      case "decline", "end": actions = [CXEndCallAction(call: uuid)]
-      case "hold":
-        guard let held = command.held else { throw ControlError.invalid("held required") }
+      switch control {
+      case .answer: actions = [CXAnswerCallAction(call: uuid)]
+      case .decline, .end: actions = [CXEndCallAction(call: uuid)]
+      case .hold(_, let held, _):
         actions = [CXSetHeldCallAction(call: uuid, onHold: held)]
-      case "merge", "unmerge":
+      case .merge(_, let target, _):
         guard provider.apiKind == .livecommunicationkit else { throw ControlError.invalid("unmeasured CallKit group control") }
-        if command.operation == "merge" {
-          guard let target = command.groupWithCallUUID else { throw ControlError.invalid("groupWithCallUUID required") }
-          actions = [CXSetGroupCallAction(call: uuid, callUUIDToGroupWith: target)]
-        } else { actions = [CXSetGroupCallAction(call: uuid, callUUIDToGroupWith: nil)] }
-      case "mute":
-        guard let muted = command.muted else { throw ControlError.invalid("muted required") }
+        actions = [CXSetGroupCallAction(call: uuid, callUUIDToGroupWith: target)]
+      case .unmerge:
+        guard provider.apiKind == .livecommunicationkit else { throw ControlError.invalid("unmeasured CallKit group control") }
+        actions = [CXSetGroupCallAction(call: uuid, callUUIDToGroupWith: nil)]
+      case .mute(_, let muted):
         actions = [CXSetMutedCallAction(call: uuid, muted: muted)]
-      case "tones":
-        guard let digits = command.digits, (1...64).contains(digits.count),
-              digits.allSatisfy({ "0123456789*#ABCDabcd".contains($0) }) else {
-          throw ControlError.invalid("invalid DTMF digits")
-        }
+      case .tones(_, let digits):
         actions = [CXPlayDTMFCallAction(call: uuid, digits: digits, type: .singleTone)]
-      case "hold-and-accept", "end-and-accept", "end-held-and-accept":
-        guard let active = command.activeCallUUID, active != uuid, calls[active]?.connected == true else { throw ControlError.invalid("activeCallUUID required") }
+      case .holdAndAccept(_, let active), .endAndAccept(_, let active), .endHeldAndAccept(_, let active, _):
+        guard calls[active]?.connected == true else { throw ControlError.invalid("activeCallUUID required") }
         if provider.apiKind == .livecommunicationkit,
            calls[active]?.reporter !== call.reporter || calls[active]?.held != false { throw ControlError.invalid("activeCallUUID must identify the joined call") }
-        if provider.apiKind == .livecommunicationkit && !availableChoices(call).contains(command.operation) {
+        if provider.apiKind == .livecommunicationkit && !availableChoices(call).contains(control.name) {
           throw ControlError.invalid("system choice unavailable")
         }
-        if command.operation == "end-held-and-accept" {
-          guard provider.apiKind == .livecommunicationkit, let held = command.heldCallUUID,
-                held != active, held != uuid, let heldCall = calls[held], heldCall.connected,
+        if case .endHeldAndAccept(_, _, let held) = control {
+          guard provider.apiKind == .livecommunicationkit, let heldCall = calls[held], heldCall.connected,
                 heldCall.held, heldCall.reporter === call.reporter else { throw ControlError.invalid("heldCallUUID required") }
           // #85 third-end-held-accept briefly reports the held conversation joined first.
           heldCall.held = false; changed(heldCall)
           actions = [CXSetHeldCallAction(call: active, onHold: true), CXEndCallAction(call: held), CXAnswerCallAction(call: uuid)]
         } else {
-          actions = [command.operation == "hold-and-accept" ? CXSetHeldCallAction(call: active, onHold: true) : CXEndCallAction(call: active), CXAnswerCallAction(call: uuid)]
+          let relinquish: CXAction
+          if case .holdAndAccept = control { relinquish = CXSetHeldCallAction(call: active, onHold: true) }
+          else { relinquish = CXEndCallAction(call: active) }
+          actions = [relinquish, CXAnswerCallAction(call: uuid)]
         }
-      default: throw ControlError.invalid("unsupported operation")
       }
       if let error = validate(actions, origin: origin) { throw error }
-      if command.operation == "hold-and-accept" || command.operation == "end-and-accept" || command.operation == "end-held-and-accept" {
+      if actions.count > 1 {
         // The old call relinquishes audio before the new call acquires it.
         handoffPending = true
         lckHandoff = LCKMultiCallPolicy.Handoff()

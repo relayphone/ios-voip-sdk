@@ -6,6 +6,14 @@ Changes not yet released are recorded below. Public API changes include migratio
 
 ### Breaking changes
 
+- Runtime mailbox requests now reject parameters belonging to other controls,
+  duplicate JSON fields and empty fault updates. Custom clients must provide
+  ordinary integer tokens for integer fields and distinct UUIDs for multi-call
+  controls. Push integers outside the signed/unsigned 64-bit range must be strings;
+  floating values must fit a finite Double without underflow. Requests with a valid current
+  identity and invalid parameters receive a rejection response; ambiguous or
+  foreign identities are discarded. The CLI keeps the existing flat v1 format.
+
 - `IncomingCallPayload` and `CallEndedPayload` now spell their Swift identity
   properties and initializer labels `eventID` and `serverCallID`. The server ID
   uses `ServerCallID`, including `ConversationEventContext.serverCallID`.
