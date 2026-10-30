@@ -6,6 +6,9 @@ Changes not yet released are recorded below. Public API changes include migratio
 
 ### Breaking changes
 
+- `Participant.avatarUrl` is removed from Swift and TypeScript. The SDK never
+  read or displayed it; keep avatar URLs in your own contact model.
+
 - Merging is removed. `ConversationClient.mergeConversations(_:_:)`, the Expo
   `mergeConversations` function, `ConversationCapabilities.merge`, the `merge`
   and `unmerge` action kinds and `ConversationActionError.cannotMergeSameConversation`

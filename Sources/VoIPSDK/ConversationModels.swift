@@ -36,14 +36,11 @@ public enum JSONValue: Codable, Sendable, Equatable {
 public struct Participant: Codable, Sendable, Equatable {
   public var id: String
   public var displayName: String?
-  public var avatarUrl: String?
   public var phoneNumber: String?
   public var email: String?
 
-  public init(id: String, displayName: String? = nil, avatarUrl: String? = nil,
-              phoneNumber: String? = nil, email: String? = nil) {
-    self.id = id; self.displayName = displayName; self.avatarUrl = avatarUrl
-    self.phoneNumber = phoneNumber; self.email = email
+  public init(id: String, displayName: String? = nil, phoneNumber: String? = nil, email: String? = nil) {
+    self.id = id; self.displayName = displayName; self.phoneNumber = phoneNumber; self.email = email
   }
 }
 

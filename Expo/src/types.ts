@@ -32,7 +32,6 @@ export function isConversationCommandError(
 export interface Participant {
   id: string;
   displayName?: string;
-  avatarUrl?: string;
   phoneNumber?: string;
   email?: string;
 }
