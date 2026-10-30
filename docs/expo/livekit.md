@@ -31,8 +31,7 @@ The fixture measures local demand, availability and running state, not Room
 signaling or media quality. Both journeys and Release inspection must pass on the exact change before
 qualification; API/facade compilation alone does not satisfy it.
 
-For the prepared iPhone 13 session, this simulator fixture supplies the local
-media lifecycle baseline: demand stays live while native authorization starts,
+The simulator fixture supplies a local media lifecycle baseline: demand stays live while native authorization starts,
 holds, resumes and stops the existing engine. It adds no device measurement path
 for natural subsecond cold answer, locked-screen controls, two-way Room/RTP or
 Settings/Siri dispatch. Those require real push/system UI delivery and, for

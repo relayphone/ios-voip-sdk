@@ -1,16 +1,16 @@
-# M1 TypeScript bridge
+# TypeScript API
 
-**Status:** the public bridge and M1 native simulator journeys pass
+**Status:** the public bridge and native simulator journeys pass
 [SDK acceptance](https://github.com/relayphone/ios-voip-sdk/actions/runs/40693437174).
 The portable controls cover immutable state, handler settlement/cancellation,
 replacement, reentrancy and subscription cleanup. The
-[M-Stable checkpoint](../docs/progress/2026-10-28-m-stable.md) separates these
+[review checkpoint](../progress/2026-10-28-m-stable.md) separates these
 results from remaining media, default-calling and device acceptance work.
 
 The public entry exports state hooks, imperative snapshots, handlers, commands,
-reports, push-token and lifecycle-event hooks, and audio routes. The M0 internal
+reports, push-token and lifecycle-event hooks, and audio routes. The internal
 `ios-voip-sdk/internal/bootstrap` entry remains diagnostic infrastructure.
-Watchdog and audio-route producers are implemented; `dialRequest` is produced by the native [default-calling entry points](M3-default-calling.md). Genuine activation, deactivation, reset and answered-elsewhere events are
+Watchdog and audio-route producers are implemented; `dialRequest` is produced by the native [default-calling entry points](../../Expo/M3-default-calling.md). Genuine activation, deactivation, reset and answered-elsewhere events are
 forwarded from the shared native client.
 
 RFC 0001 omits formal definitions for `Participant`, `IncomingCallPayload` and
@@ -37,7 +37,7 @@ Native captures the delivery time once, selects the earlier of the advertised
 for join. It reserves 3 seconds for final audio configuration on start/join,
 and 1.5 seconds for other action kinds. Other kinds use the advertised deadline
 minus their margin. These conservative application caps
-come from the [iOS 27 multi-call observations](../docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md);
+come from the [iOS 27 multi-call observations](../research/callkit-simulator-probe/livecommunicationkit/multicall/README.md);
 they do not extend an earlier advertised deadline or claim measured bounds on
 every supported OS. The raw advertised deadline remains diagnostic data. Native
 applies the policy at the effective deadline, cancels running work, and refuses
@@ -60,7 +60,7 @@ End identifies a UUID without its native object identity. If several already-end
 generations reuse it with no current object, SDK policy uses the latest accepted
 terminal input.
 Other held calls remain held: the application chooses whether to resume or end
-them. These semantics follow the [measured failure cases](../docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md);
+them. These semantics follow the [measured failure cases](../research/callkit-simulator-probe/livecommunicationkit/multicall/README.md);
 the metadata window is SDK policy, not a measured system deadline.
 
 `useConversation(id)` returns `undefined` when the system has no matching live
@@ -106,19 +106,17 @@ Within one JS context the runtime survives Fast Refresh under a global symbol,
 so subscriptions, handler generations and pending signals are not duplicated.
 Only one active JS context may own the process's native handler bridge.
 
-These API details resolve gaps in the draft RFC and need review with the combined
-M1 implementation. They do not claim device qualification, media integration or
-device default-calling dispatch acceptance.
+These API details resolve gaps in the draft RFC. They do not claim device qualification, media integration or device default-calling dispatch acceptance.
 
 ## Capacity rejection
 
 A system request rejected with `com.apple.CallKit.error.requesttransaction` code 7
 becomes Swift `ConversationClientError.atCapacity` and Expo `at_capacity`.
-The platform domain/code was measured in the [iPhone 13/iOS 27.0 capacity trace](../docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x1.jsonl).
+The platform domain/code was measured in the [iPhone 13/iOS 27.0 capacity trace](../research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x1.jsonl).
 Unrelated errors, including incoming-call filtering errors, retain their existing behavior.
 Use `isConversationCommandError` to narrow the rejection. The SDK does not infer
 available system call groups from its local conversation count.
 
-Incoming callers use the validated [Caller contract](CALLER.md), shared by Swift, pushes and Expo reports.
+Incoming callers use the validated [Caller contract](../../Expo/CALLER.md), shared by Swift, pushes and Expo reports.
 
-Hosts can send an explicit [answered-elsewhere ownership signal](ANSWERED-ELSEWHERE.md) to stop a known incoming ring.
+Hosts can send an explicit [answered-elsewhere ownership signal](../../Expo/ANSWERED-ELSEWHERE.md) to stop a known incoming ring.

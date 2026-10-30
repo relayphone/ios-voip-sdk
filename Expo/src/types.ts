@@ -167,7 +167,7 @@ export interface AudioRoutes {
   readonly current: AudioRoute | null;
 }
 
-/** M2 supplies watchdog signals; M3 supplies dial requests. */
+/** Events emitted by the calling service and native platform. */
 export interface ConversationEventMap {
   audioActivated: { conversationId?: string };
   audioDeactivated: { conversationId?: string };
