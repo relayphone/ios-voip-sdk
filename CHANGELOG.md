@@ -6,6 +6,11 @@ Changes not yet released are recorded below. Public API changes include migratio
 
 ### Breaking changes
 
+- The process-wide duplicate linkage claim is removed, together with
+  `VoIPStartupError.duplicateSDKLinkage` and the Expo `duplicate_sdk_linkage`
+  rejection code. Link either the Swift package or the Expo pod in a process,
+  not both. Remove switches over the deleted case and code.
+
 - The provider ownership monitor is removed. Delete uses of
   `ConversationClient.Configuration.providerOwnershipMonitoring` and
   `defaultProviderOwnershipMonitoring`, the `ProviderOwnershipDiagnostics`

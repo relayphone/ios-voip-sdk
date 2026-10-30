@@ -102,7 +102,6 @@ public final class ConversationClient {
   private static var instance: ConversationClient?
   static func forApplication(configuration: Configuration, mediaAdapter: (any MediaAdapter)? = nil,
                              audioPolicy: AudioActivationPolicy = .standard) throws(VoIPStartupError) -> ConversationClient {
-    try ProcessSDKOwnership.claim()
     if let instance {
       guard instance.configuration == configuration, instance.audioPolicy == audioPolicy,
             mediaAdapter == nil || instance.mediaAdapter === mediaAdapter else {

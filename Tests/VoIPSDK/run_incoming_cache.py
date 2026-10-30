@@ -22,14 +22,11 @@ INPUTS = [
     'Sources/VoIPSDK/IncomingIntake.swift',
     'Sources/VoIPSDK/PushWire.swift',
     'Sources/VoIPSDK/SimulatorSupport.swift',
-    'Sources/VoIPSDK/ProcessSDKOwnership.swift',
     'Sources/VoIPSDK/AudioActivation.swift',
     'Sources/VoIPSDK/AudioRoutes.swift',
     'Sources/VoIPSDK/AudioAdapterOperations.swift',
     'Sources/VoIPSDK/AudioSessionQueue.swift',
     'Sources/VoIPSDK/MediaAdapter.swift',
-    'Sources/VoIPPlatform/VSProcessSDKOwnership.m',
-    'Sources/VoIPPlatform/include/VSProcessSDKOwnership.h',
     'Tests/VoIPSDK/IncomingCachePlatform.swift',
     'Tests/VoIPSDK/IncomingCacheTests.swift',
     'Tests/VoIPSDK/run_incoming_cache.py',
@@ -52,7 +49,7 @@ def host_boundary(source, audio=False):
 
 def run(out):
     sources = {name: (ROOT / name).read_bytes() for name in INPUTS}
-    receipt = dict(success=False, classification='host whole-client cache contracts with actual Swift/ObjC ownership; modeled LCK timing, no device run',
+    receipt = dict(success=False, classification='host whole-client cache contracts; modeled LCK timing, no device run',
                    sourceSHA256={name: sha(data) for name, data in sources.items()}, commands=[], results=[])
 
     def command(label, argv, timeout):
@@ -78,19 +75,9 @@ def run(out):
         (out / 'MediaAdapter.swift').write_text(adapter.replace(adapter_guard, '#if true', 1).replace('import AVFAudio', '', 1))
         compile_inputs = [str(ROOT / name) for name in INPUTS if name.endswith('.swift') and not
                           name.endswith(('/ConversationClient.swift', '/IncomingReportTransport.swift', '/MediaAdapter.swift'))]
-        # Ownership uses Foundation only, so compile the real gate rather than
-        # adding another modeled process-claim implementation to the facade.
-        owner_object = out / 'VSProcessSDKOwnership.o'
-        code, _, stderr = command('compile-ownership', ['xcrun', 'clang', '-fobjc-arc', '-fmodules',
-            '-c', str(ROOT / 'Sources/VoIPPlatform/VSProcessSDKOwnership.m'),
-            '-o', str(owner_object)], 30)
-        if code != 0:
-            raise RuntimeError('ownership host compile failed: ' + str(code) + '; ' + stderr.decode(errors='replace'))
         code, _, stderr = command('compile', ['xcrun', 'swiftc', '-swift-version', '6', '-warnings-as-errors',
-            '-parse-as-library', '-import-objc-header',
-            str(ROOT / 'Sources/VoIPPlatform/include/VSProcessSDKOwnership.h'),
-            *compile_inputs, str(out / 'ConversationClient.swift'),
-            str(out / 'IncomingReportTransport.swift'), str(out / 'MediaAdapter.swift'), str(owner_object),
+            '-parse-as-library', *compile_inputs, str(out / 'ConversationClient.swift'),
+            str(out / 'IncomingReportTransport.swift'), str(out / 'MediaAdapter.swift'),
             '-o', str(out / 'IncomingCacheTests')], 90)
         if code != 0:
             raise RuntimeError('whole-client cache compile failed: ' + str(code) + '; ' + stderr.decode(errors='replace'))

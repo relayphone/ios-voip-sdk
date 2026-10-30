@@ -203,7 +203,7 @@ jobs:
           bash Tests/DialRequests/run.sh
           python3 discovery/check_expo_bridge.py | tee "$SDK_M0_BUILD_LOGS/expo-relay-controls.json"
           python3 discovery/check_platform_shims.py | tee "$SDK_M0_BUILD_LOGS/platform-controls.json"
-          python3 discovery/check_sdk_ownership.py | tee "$SDK_M0_BUILD_LOGS/ownership-controls.json"
+          python3 discovery/check_sdk_startup.py | tee "$SDK_M0_BUILD_LOGS/startup-controls.json"
           python3 discovery/check_push_delivery.py | tee "$SDK_M0_BUILD_LOGS/push-delivery-controls.json"
           python3 discovery/check_push_report_entry.py | tee "$SDK_M0_BUILD_LOGS/push-entry-controls.json"
           python3 Tests/VoIPSDK/run_incoming_delivery.py | tee "$SDK_M0_BUILD_LOGS/push-main-stall-controls.json"

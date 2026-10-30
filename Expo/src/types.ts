@@ -9,8 +9,7 @@ export type ConversationErrorCode =
   | 'unknown_conversation'
   | 'unsupported'
   | 'at_capacity'
-  | 'conversation'
-  | 'duplicate_sdk_linkage';
+  | 'conversation';
 
 export interface ConversationCommandError extends Error {
   readonly code: ConversationErrorCode;
@@ -26,7 +25,6 @@ export function isConversationCommandError(
     value.code === 'unknown_conversation' ||
     value.code === 'unsupported' ||
     value.code === 'at_capacity' ||
-    value.code === 'duplicate_sdk_linkage' ||
     value.code === 'conversation'
   );
 }

@@ -314,8 +314,6 @@ public enum VoIPStartupError: Error, Sendable, Equatable {
   case alreadyConfigured
   /// A configuration value has an invalid type or range.
   case invalidConfiguration
-  /// More than one linked SDK image attempted to own the process.
-  case duplicateSDKLinkage
   /// Simulator activation already occurred with a different configuration.
   case simulatorAlreadyActivated
   /// The configured services could not register their native push receiver.

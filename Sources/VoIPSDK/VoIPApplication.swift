@@ -92,7 +92,6 @@ public final class VoIPApplication {
   @discardableResult
   public static func start(configuration: Configuration = .init(), mediaAdapter: (any MediaAdapter)? = nil,
                            audioPolicy: AudioActivationPolicy = .standard) throws(VoIPStartupError) -> VoIPApplication {
-    try ProcessSDKOwnership.claim()
     if let current {
       guard current.configuration == configuration else { throw VoIPStartupError.alreadyConfigured }
       _ = try ConversationClient.forApplication(configuration: configuration.client,

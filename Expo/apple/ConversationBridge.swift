@@ -186,8 +186,6 @@ enum BridgeJSON {
       return ("unknown_conversation", "The conversation is no longer active.")
     case ConversationActionError.cannotMergeSameConversation, ConversationReportError.unsupportedEndReason:
       return ("unsupported", "This conversation operation is unsupported.")
-    case VoIPStartupError.duplicateSDKLinkage:
-      return ("duplicate_sdk_linkage", "Link one VoIP SDK product in this process; both SwiftPM and the Expo pod were loaded.")
     case ConversationActionError.atCapacity:
       return ("at_capacity", "The system has reached its conversation capacity.")
     case ConversationReportError.action(let action):

@@ -84,7 +84,6 @@ struct BridgeTests {
       (ConversationActionError.atCapacity, "at_capacity"),
       (ConversationActionError.unknownConversation, "unknown_conversation"),
       (ConversationActionError.cannotMergeSameConversation, "unsupported"),
-      (VoIPStartupError.duplicateSDKLinkage, "duplicate_sdk_linkage"),
       (IncomingConversationError.invalidPayload, "invalid_arguments"),
       (ConversationActionError.invalidDigits, "invalid_arguments"),
       (ConversationActionError.invalidParticipant, "invalid_arguments"),
