@@ -14,6 +14,24 @@ The API design is [RFC 0001](https://github.com/relayphone/expo-callkit-telecom/
 
 **Start with the [documentation index](docs/README.md).**
 
+## Install
+
+For Swift Package Manager, pin the SDK source revision in your package manifest:
+
+```swift
+.package(url: "https://github.com/relayphone/ios-voip-sdk.git", revision: "87a6125c18f9ec7018ac056c67baa06e9dbac07c")
+```
+
+Add `.product(name: "VoIPSDK", package: "ios-voip-sdk")` to your target dependencies and use `import VoIPSDK`. This revision pins source; the existing version tags refer to simulator-runtime releases, not SDK releases.
+
+For Expo, install the Git dependency in your app:
+
+```sh
+npm install github:relayphone/ios-voip-sdk#main
+```
+
+Follow the [Expo setup guide](Expo/README.md) to configure the plugin and rebuild the native app. Git installation builds the TypeScript entry point during package preparation.
+
 ## Requirements
 
 - iOS and iPadOS 17.4 or later.
