@@ -7,8 +7,9 @@
   /// The provider's delegate, which passes on everything CallKit tells it to the adapter.
   ///
   /// The provider calls its delegate on `VoIPActor.queue`, so the delegate runs on `VoIPActor`
-  /// and the adapter hears of the system's actions without hopping. It holds the adapter weakly,
-  /// as the provider holds it; an action that arrives once the adapter is gone fails.
+  /// and the adapter hears of the system's actions without hopping. The provider holds its
+  /// delegate weakly, so the adapter keeps it, and the delegate holds the adapter weakly: an
+  /// action that arrives once the adapter is gone fails.
   @VoIPActor
   final class ProviderDelegate: NSObject, @preconcurrency CXProviderDelegate {
     private weak var adapter: CallKitAdapter?
