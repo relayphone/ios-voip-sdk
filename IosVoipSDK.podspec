@@ -29,9 +29,11 @@ Pod::Spec.new do |s|
     media_sources += ['ExpoMedia/Shared/VSMediaBinding.h', 'ExpoMedia/Shared/QueuedMediaAdapter.swift']
   end
   s.source_files = ['Sources/**/*.{swift,h,m}', 'Expo/apple/**/*.{swift,h}', *media_sources]
-  # The external DYLD loader is not part of the embedded SDK. VoIPCore and VoIPTesting are
+  # The external DYLD loader is not part of the embedded SDK. The call core and its adapters are
   # separate Swift modules that the pod doesn't ship yet.
-  s.exclude_files = ['Sources/Interposition/CKLoader.m', 'Sources/VoIPCore/**/*', 'Sources/VoIPTesting/**/*']
+  s.exclude_files = ['Sources/Interposition/CKLoader.m', 'Sources/VoIPCore/**/*', 'Sources/VoIPTesting/**/*',
+                     'Sources/VoIPLiveCommunicationKit/**/*', 'Sources/VoIPPushKit/**/*',
+                     'Sources/VoIPPushDelivery/**/*']
   public_headers = ['Sources/Interposition/include/CKRuntimeBridge.h', 'Sources/VoIPPlatform/include/*.h', 'Expo/apple/IosVoipSDK.h']
   public_headers << 'ExpoMedia/Shared/VSMediaBinding.h' if media_adapter != 'none'
   s.public_header_files = public_headers
