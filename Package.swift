@@ -20,7 +20,7 @@ let package = Package(
   platforms: [.iOS(.v26), .macOS(.v26)],
   products: [
     .library(name: "VoIPSDK", targets: ["VoIPSDK"]),
-    .library(name: "VoIPSDKTesting", targets: ["VoIPSDKTesting"]),
+    .library(name: "VoIPTesting", targets: ["VoIPTesting"]),
   ],
   targets: [
     .target(name: "CKSimProtocol", swiftSettings: strictSwift),
@@ -52,11 +52,10 @@ let package = Package(
         .define("DEBUG", to: "1", .when(configuration: .debug))
       ],
       swiftSettings: strictSwift),
-    .target(name: "VoIPSDKTesting", swiftSettings: strictSwift),
+    .target(name: "VoIPTesting", swiftSettings: strictSwift),
+    .testTarget(name: "VoIPSDKTests", dependencies: ["VoIPSDK"], swiftSettings: strictSwift),
     .testTarget(
-      name: "VoIPSDKTests", dependencies: ["VoIPSDK", "VoIPSDKTesting"], swiftSettings: strictSwift),
-    .testTarget(
-      name: "VoIPSDKTestingTests", dependencies: ["VoIPSDKTesting"], swiftSettings: strictSwift),
+      name: "VoIPTestingTests", dependencies: ["VoIPTesting"], swiftSettings: strictSwift),
     .testTarget(
       name: "RuntimeEngineTests", dependencies: ["CKSimRuntime"], swiftSettings: strictSwift),
     .testTarget(

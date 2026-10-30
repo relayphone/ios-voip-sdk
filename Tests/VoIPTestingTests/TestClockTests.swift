@@ -1,5 +1,5 @@
 import Testing
-import VoIPSDKTesting
+import VoIPTesting
 
 @Suite(.timeLimit(.minutes(1)))
 struct TestClockTests {

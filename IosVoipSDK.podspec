@@ -30,7 +30,7 @@ Pod::Spec.new do |s|
   end
   s.source_files = ['Sources/**/*.{swift,h,m}', 'Expo/apple/**/*.{swift,h}', *media_sources]
   # The external DYLD loader is not part of the embedded SDK.
-  s.exclude_files = ['Sources/Interposition/CKLoader.m', 'Sources/VoIPSDKTesting/**/*']
+  s.exclude_files = ['Sources/Interposition/CKLoader.m', 'Sources/VoIPTesting/**/*']
   public_headers = ['Sources/Interposition/include/CKRuntimeBridge.h', 'Sources/VoIPPlatform/include/*.h', 'Expo/apple/IosVoipSDK.h']
   public_headers << 'ExpoMedia/Shared/VSMediaBinding.h' if media_adapter != 'none'
   s.public_header_files = public_headers

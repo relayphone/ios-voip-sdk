@@ -55,8 +55,8 @@ Run `swift test` on macOS 26 or later with the Xcode toolchain above. The Swift
 Testing suites cover caller validation, push decoding, models, and the test clock
 without a simulator. Native calling and media acceptance run separately in CI.
 
-Tests in consuming apps can add the `VoIPSDKTesting` library product to their test
-target and import `VoIPSDKTesting`. Its `TestClock` conforms to `Clock<Duration>`;
+Tests in consuming apps can add the `VoIPTesting` library product to their test
+target and import `VoIPTesting`. Its `TestClock` conforms to `Clock<Duration>`;
 use `waitForSleepers(count:)` to await registration, then `advance(by:)` or `run()`
 to resume pending sleeps without waiting for wall time to pass.
 
