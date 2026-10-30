@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+- The Inspector now decodes the same validated session model as the runtime.
+  Custom session fixtures must include `controlTransport: "directory-watch-v1"`,
+  schema version 1, a positive process ID, nonempty bundle/profile names and a
+  run ID of 1–64 ASCII letters, digits, underscores or hyphens. Rebuild the
+  Inspector together with the runtime when updating custom integrations.
+
 - Simulator runtime packages no longer include `cksim-notify`, and sessions no
   longer publish a `notification` key. Controls use `directory-watch-v1`; rebuild
   runtime packages and relaunch apps before using the updated CLI with older

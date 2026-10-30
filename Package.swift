@@ -13,6 +13,7 @@ let package = Package(
   traits: [.trait(name: "ProviderOwnershipDiagnostics",
                   description: "Compile optional dynamic provider ownership diagnostics in Release builds.")],
   targets: [
+    .target(name: "CKSimProtocol"),
     .target(
       name: "CKSimRuntimeC",
       path: "Sources/Interposition",
@@ -26,7 +27,7 @@ let package = Package(
     ),
     .target(
       name: "CKSimRuntime",
-      dependencies: ["CKSimRuntimeC"],
+      dependencies: ["CKSimRuntimeC", "CKSimProtocol"],
       path: "Sources/Engine",
       exclude: ["Resources"],
       swiftSettings: [.define("VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", .when(traits: ["ProviderOwnershipDiagnostics"]))]
@@ -38,7 +39,8 @@ let package = Package(
             cSettings: [.define("DEBUG", to: "1", .when(configuration: .debug)),
                         .define("VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", to: "1", .when(traits: ["ProviderOwnershipDiagnostics"]))],
             swiftSettings: [.define("VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", .when(traits: ["ProviderOwnershipDiagnostics"]))]),
-    .testTarget(name: "RuntimeEngineTests", dependencies: ["CKSimRuntime"])
+    .testTarget(name: "RuntimeEngineTests", dependencies: ["CKSimRuntime"]),
+    .testTarget(name: "CKSimProtocolTests", dependencies: ["CKSimProtocol"])
   ],
   swiftLanguageModes: [.v6]
 )

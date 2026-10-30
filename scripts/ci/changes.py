@@ -35,11 +35,13 @@ def select(paths, full=False):
             sdk |= name in ('sdk-m0.yml', 'ci-changes.yml')
             runtime |= name in ('runtime-m4.yml', 'ci-changes.yml')
             helper |= name in ('sim-infrastructure.yml', 'ci-changes.yml')
+        elif path.startswith('Tests/CKSimProtocolTests/'):
+            runtime = True
         elif path.startswith(('Tests/RuntimeEvents/', 'Tests/Inspector/')):
             runtime = helper = True
         elif path.startswith('Inspector/') or path == 'scripts/build-inspector.sh':
             runtime = True
-        elif path.startswith(('Sources/Engine/', 'Sources/Interposition/', 'Tools/')) or path == 'scripts/build-runtime.sh':
+        elif path.startswith(('Sources/Engine/', 'Sources/Interposition/', 'Sources/CKSimProtocol/', 'Tools/')) or path == 'scripts/build-runtime.sh':
             sdk = runtime = True
         elif path.startswith('discovery/'):
             sdk = True
@@ -60,7 +62,7 @@ def select(paths, full=False):
     jobs['expo-livekit-native'] = sdk and (shared or any('expo_livekit' in p or p in EXPO_JOURNEY_INPUTS or p in NATIVE_INPUTS or p in DEVICE_BUILDERS
         or p.startswith(('Expo/', 'ExpoMedia/', 'example/', 'Tests/ExpoMedia/', 'scripts/sim/')) for p in paths))
     jobs['swift-livekit-native'] = sdk and any('swift_livekit' in p or p.startswith(
-        ('Sources/VoIPSDK/', 'Sources/VoIPPlatform/', 'Integrations/LiveKit/',
+        ('Sources/VoIPSDK/', 'Sources/VoIPPlatform/', 'Sources/CKSimProtocol/', 'Integrations/LiveKit/',
          'Tests/SwiftLiveKit/', 'scripts/sim/')) or p in ('Package.swift',
          'discovery/run_scenario.py') for p in paths)
     jobs['legacy-audio-lifecycle'] = sdk and (shared or any('m1_contract' in p
@@ -95,7 +97,7 @@ def select(paths, full=False):
 
 SDK_INPUTS = {'Package.swift', 'VERSION', 'IosVoipSDK.podspec', 'expo-module.config.json',
               'package.json', 'package-lock.json', 'tsconfig.json', 'app.plugin.js'}
-COMPILED_SDK = ('Sources/VoIPSDK/', 'Sources/VoIPPlatform/', 'Sources/Engine/', 'Sources/Interposition/')
+COMPILED_SDK = ('Sources/VoIPSDK/', 'Sources/VoIPPlatform/', 'Sources/Engine/', 'Sources/Interposition/', 'Sources/CKSimProtocol/')
 NATIVE_INPUTS = {'Package.swift', 'IosVoipSDK.podspec', 'expo-module.config.json',
                  'package.json', 'package-lock.json', 'app.plugin.js'}
 DEVICE_BUILDERS = {'discovery/build_sdk_device_release.py', 'discovery/device_oracles.py',
