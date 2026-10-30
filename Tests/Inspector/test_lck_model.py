@@ -83,6 +83,7 @@ class LCKModelTests(unittest.TestCase):
             model.write_text('\n'.join(source[1:-1]) + '\n')
             harness.write_text(HARNESS)
             dependencies = [path for path in sorted((ROOT / 'Inspector').glob('*.swift')) if path.name not in ('InspectorApp.swift', 'InspectorModel.swift')]
+            dependencies.extend(sorted((ROOT / 'Sources/CKSimProtocol').glob('*.swift')))
             compiled = subprocess.run(['swiftc', '-swift-version', '6', '-parse-as-library', str(model),
                                       *map(str, dependencies), str(harness), '-o', str(binary)],
                                      text=True, capture_output=True, timeout=60)
@@ -90,7 +91,8 @@ class LCKModelTests(unittest.TestCase):
             self.exercise(binary)
 
     def exercise(self, binary):
-        session = dict(schemaVersion=1, bundleID='fixture', runID='host-lck', pid=123, profile='ios-27.0')
+        session = dict(schemaVersion=1, bundleID='fixture', runID='host-lck', pid=123, profile='ios-27.0',
+                       controlTransport='directory-watch-v1')
         rows, commands, failures, output = [], [], [], []
         lock = threading.Lock()
         calls = {identifier: dict(uuid=identifier, connected=identifier != WAITING, ringing=identifier == WAITING,
@@ -98,7 +100,8 @@ class LCKModelTests(unittest.TestCase):
                                  availableSystemChoices=['end-held-and-accept'] if identifier == WAITING else [])
                  for identifier in (ACTIVE, HELD, WAITING)}
         def append(event, **fields):
-            rows.append(dict(session, sequence=len(rows) + 1, t_ms=(len(rows) + 1) * 10, event=event, **fields))
+            rows.append(dict({key: value for key, value in session.items() if key != 'controlTransport'},
+                             sequence=len(rows) + 1, t_ms=(len(rows) + 1) * 10, event=event, **fields))
         append('provider.created', provider='p1', maximumCallGroups=2, maximumCallsPerCallGroup=1)
         append('provider.apiKind', provider='p1', apiKind='livecommunicationkit')
         for call in calls.values(): append('call.changed', **call)

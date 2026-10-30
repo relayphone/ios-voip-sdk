@@ -204,17 +204,6 @@ def bounded(command, timeout, *, env=None):
         except BaseException:
             pass  # Metadata cannot replace the original exception identity.
         raise primary
-    if (result is not None and result.timed_out and
-            os.environ.get('CKSIM_RECORD_TIMEOUT_OPERATIONS') == '1' and
-            command[:2] == ['xcrun', 'simctl'] and len(command) > 2 and
-            command[2] in ('create', 'boot', 'bootstatus', 'install', 'launch', 'terminate',
-                           'io', 'shutdown', 'delete', 'list', 'privacy', 'spawn', 'get_app_container')):
-        try:
-            summary('measurement:simctl-timeout', command[2])
-        except Interrupted:
-            raise  # Cancellation must retain its normal behavior.
-        except Exception:
-            pass  # Diagnostic failure must not replace the native outcome.
     return result
 
 

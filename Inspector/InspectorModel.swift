@@ -1,14 +1,9 @@
 #if targetEnvironment(simulator)
 import Foundation
 import Combine
-
-struct RuntimeSession: Codable, Equatable {
-  let schemaVersion: Int
-  let bundleID: String
-  let runID: String
-  let pid: Int
-  let profile: String
-}
+#if SWIFT_PACKAGE
+import CKSimProtocol
+#endif
 private struct EventBatch: Decodable {
   let session: RuntimeSession
   let events: [RuntimeEvent]
@@ -147,7 +142,7 @@ final class InspectorModel: ObservableObject {
     while !Task.isCancelled {
       do {
         let batch = try JSONDecoder().decode(EventBatch.self, from: await request("/events?after=\(cursor)"))
-        guard batch.session.schemaVersion == 1, session == nil || session == batch.session,
+        guard session == nil || session == batch.session,
               batch.cursor == cursor + batch.events.count else { throw URLError(.cannotParseResponse) }
         for (offset, row) in batch.events.enumerated() {
           guard row.schemaVersion == 1, row.sequence == cursor + offset + 1,

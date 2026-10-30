@@ -9,10 +9,17 @@ let runtimeVersion = try String(contentsOf: root.appendingPathComponent("VERSION
 let package = Package(
   name: "VoIPSDK",
   platforms: [.iOS("17.4"), .macOS(.v13)],
-  products: [.library(name: "VoIPSDK", targets: ["VoIPSDK"])],
-  traits: [.trait(name: "ProviderOwnershipDiagnostics",
-                  description: "Compile optional dynamic provider ownership diagnostics in Release builds.")],
+  products: [
+    .library(name: "VoIPSDK", targets: ["VoIPSDK"]),
+    .library(name: "VoIPSDKTesting", targets: ["VoIPSDKTesting"]),
+  ],
+  traits: [
+    .trait(
+      name: "ProviderOwnershipDiagnostics",
+      description: "Compile optional dynamic provider ownership diagnostics in Release builds.")
+  ],
   targets: [
+    .target(name: "CKSimProtocol"),
     .target(
       name: "CKSimRuntimeC",
       path: "Sources/Interposition",
@@ -20,25 +27,47 @@ let package = Package(
       publicHeadersPath: "include",
       cSettings: [
         .define("CKSIM_SDK_SOURCE", to: "1"),
-        .define("VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", to: "1", .when(traits: ["ProviderOwnershipDiagnostics"])),
-        .define("CKSIM_RUNTIME_VERSION", to: "\"\(runtimeVersion)\"")
+        .define(
+          "VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", to: "1",
+          .when(traits: ["ProviderOwnershipDiagnostics"])),
+        .define("CKSIM_RUNTIME_VERSION", to: "\"\(runtimeVersion)\""),
       ]
     ),
     .target(
       name: "CKSimRuntime",
-      dependencies: ["CKSimRuntimeC"],
+      dependencies: ["CKSimRuntimeC", "CKSimProtocol"],
       path: "Sources/Engine",
       exclude: ["Resources"],
-      swiftSettings: [.define("VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", .when(traits: ["ProviderOwnershipDiagnostics"]))]
+      swiftSettings: [
+        .define(
+          "VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", .when(traits: ["ProviderOwnershipDiagnostics"]))
+      ]
     ),
-    .target(name: "VoIPPlatform", path: "Sources/VoIPPlatform", publicHeadersPath: "include",
-            cSettings: [.define("DEBUG", to: "1", .when(configuration: .debug)),
-                        .define("VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", to: "1", .when(traits: ["ProviderOwnershipDiagnostics"]))]),
-    .target(name: "VoIPSDK", dependencies: ["CKSimRuntime", "VoIPPlatform"], path: "Sources/VoIPSDK",
-            cSettings: [.define("DEBUG", to: "1", .when(configuration: .debug)),
-                        .define("VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", to: "1", .when(traits: ["ProviderOwnershipDiagnostics"]))],
-            swiftSettings: [.define("VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", .when(traits: ["ProviderOwnershipDiagnostics"]))]),
-    .testTarget(name: "RuntimeEngineTests", dependencies: ["CKSimRuntime"])
+    .target(
+      name: "VoIPPlatform", path: "Sources/VoIPPlatform", publicHeadersPath: "include",
+      cSettings: [
+        .define("DEBUG", to: "1", .when(configuration: .debug)),
+        .define(
+          "VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", to: "1",
+          .when(traits: ["ProviderOwnershipDiagnostics"])),
+      ]),
+    .target(
+      name: "VoIPSDK", dependencies: ["CKSimRuntime", "VoIPPlatform"], path: "Sources/VoIPSDK",
+      cSettings: [
+        .define("DEBUG", to: "1", .when(configuration: .debug)),
+        .define(
+          "VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", to: "1",
+          .when(traits: ["ProviderOwnershipDiagnostics"])),
+      ],
+      swiftSettings: [
+        .define(
+          "VSSDK_ENABLE_PROVIDER_DIAGNOSTICS", .when(traits: ["ProviderOwnershipDiagnostics"]))
+      ]),
+    .target(name: "VoIPSDKTesting"),
+    .testTarget(name: "VoIPSDKTests", dependencies: ["VoIPSDK", "VoIPSDKTesting"]),
+    .testTarget(name: "VoIPSDKTestingTests", dependencies: ["VoIPSDKTesting"]),
+    .testTarget(name: "RuntimeEngineTests", dependencies: ["CKSimRuntime"]),
+    .testTarget(name: "CKSimProtocolTests", dependencies: ["CKSimProtocol"]),
   ],
   swiftLanguageModes: [.v6]
 )

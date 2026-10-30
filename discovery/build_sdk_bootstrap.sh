@@ -33,7 +33,7 @@ for source in CKInterposition CKPushDelivery CKPushLaunch; do
     -c "Sources/Interposition/$source.m" -o "$WORK/$source.o"
 done
 xcrun --sdk iphonesimulator swiftc -target "$TARGET" -sdk "$SDK" -swift-version 6 -parse-as-library \
-  -import-objc-header Sources/Interposition/CKRuntimeSeam.h Sources/Engine/RuntimeEngine.swift \
+  -import-objc-header Sources/Interposition/CKRuntimeSeam.h Sources/CKSimProtocol/*.swift Sources/Engine/RuntimeEngine.swift \
   Sources/VoIPSDK/SimulatorSupport.swift discovery/probe/sdk_bootstrap.swift "$WORK/CKInterposition.o" "$WORK/CKPushDelivery.o" "$WORK/CKPushLaunch.o" \
   -o "$APP/SDKBootstrap"
 codesign -s - --force "$APP"

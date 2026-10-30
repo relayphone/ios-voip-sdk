@@ -2,15 +2,15 @@
 
 The package root exports the public conversation API: state and push-token hooks,
 handlers, commands, reports, audio routes, typed incoming callers and
-`receiveCallEnded` for backend ownership signals. Read the [API contract](M1-API.md)
+`receiveCallEnded` for backend ownership signals. Read the [API contract](../docs/expo/api.md)
 and [answered-elsewhere guide](ANSWERED-ELSEWHERE.md) for application behavior.
 
 The API design follows [RFC 0001](https://github.com/relayphone/expo-callkit-telecom/blob/rfc/v2-conversations-api/rfcs/0001-v2-conversations-api.md).
 
 The Expo 58 example, native conversation/PushKit journeys, selected LiveKit Release
 build and device-code exclusions pass [SDK CI](https://github.com/relayphone/ios-voip-sdk/actions/runs/40693437174).
-The [LiveKit runtime journeys](M2-LIVEKIT.md) exercise healthy hold/resume/end and
-stale-audio watchdog cleanup on the existing React Native audio engine. Native [default-calling requests](M3-default-calling.md) deliver `tel:` URLs and resolved start-call intents to the public `dialRequest` hook, with native buffering until a listener attaches. Device Settings/Siri dispatch remains to be measured. The [M-Stable checkpoint](../docs/progress/2026-10-28-m-stable.md)
+The [LiveKit runtime journeys](../docs/expo/livekit.md) exercise healthy hold/resume/end and
+stale-audio watchdog cleanup on the existing React Native audio engine. Native [default-calling requests](M3-default-calling.md) deliver `tel:` URLs and resolved start-call intents to the public `dialRequest` hook, with native buffering until a listener attaches. Device Settings/Siri dispatch remains to be measured. The [review checkpoint](../docs/progress/2026-10-28-m-stable.md)
 records the remaining acceptance and device-measurement limits.
 
 ## Shared native sources and startup

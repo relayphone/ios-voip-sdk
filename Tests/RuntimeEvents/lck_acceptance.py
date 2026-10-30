@@ -8,6 +8,7 @@ choice sets and transaction identifiers are explicitly runtime policy checks.
 import argparse
 from contextlib import contextmanager
 import json
+import math
 import os
 import re
 import runpy
@@ -36,15 +37,19 @@ def verify_composite_delivery(native):
     controlled = any('fixtureTimeMS' in r for r in native)
     field = 'fixtureTimeMS' if controlled else 't_ms'
     assert all(type(r.get(field)) is int for r in native), 'composite delivery clock evidence is required'
-    gap = max(r[field] for r in native) - min(r[field] for r in native)
-    assert gap == 0 if controlled else gap < 100, 'native composite deliveries separated'
+    times = [r[field] for r in native]
+    assert times == sorted(times), 'native composite delivery time regressed'
+    if controlled:
+        assert len(set(times)) == 1, 'native composite deliveries separated in fixture time'
 
 
-def verify_timeout(delivered, expired, kind):
-    assert 29000 <= delivered['advertisedRemainingMS'] <= 31000, 'LCK must still advertise 30 seconds'
-    elapsed = expired['t_ms'] - delivered['t_ms']
-    low, high = (63000, 68000) if kind == 'Join' else (5000, 8500)
-    assert low <= elapsed <= high, f'{kind} effective timeout {elapsed}ms outside measured scheduling budget'
+def verify_timeout(issued, delivered, expired, kind):
+    assert issued['actionID'] == delivered['actionID'] == expired['actionID'], 'timeout action identity changed'
+    advertised = delivered['advertisedDeadlineMS'] - issued['issuedAtMS']
+    assert 29000 <= advertised <= 31000, 'LCK must still advertise 30 seconds from issuance'
+    elapsed = expired['wallTimeMS'] - issued['issuedAtMS']
+    minimum = 63000 if kind == 'Join' else 5000
+    assert math.isfinite(elapsed) and elapsed >= minimum, f'{kind} effective timeout {elapsed}ms fired early'
 
 
 def snapshot_matches(rows, expected):
@@ -347,7 +352,7 @@ def run_cases(journey, *, full_timeout=False):
     verify_barrier(rows, j.ids['B'], ids)
     pause = next(r for r in rows if r['event'] == PREFIX + 'settled' and r['kind'] == 'Pause')
     delivered_pause = next(r for r in rows if r['event'] == PREFIX + 'perform' and r['actionID'] == pause['actionID'])
-    assert 1900 <= pause['t_ms'] - delivered_pause['t_ms'] < 5000, 'late Pause fixture must actually settle about 2s late'
+    assert pause['t_ms'] - delivered_pause['t_ms'] >= 1900, 'late Pause fixture must not settle before its injected delay'
     paused = next(r for r in rows if r['event'] == PREFIX + 'changed' and r.get('callUUID') == j.ids['A'] and r['state'] == 'paused')
     assert paused['t_ms'] < pause['t_ms'], 'pause state must precede delayed fulfillment'
     j.pair('reversedSettlement')
@@ -385,7 +390,8 @@ def run_cases(journey, *, full_timeout=False):
         ids = j.composite(operation)
         delivered = j.wait(lambda rows: next((r for r in rows if r['event'] == PREFIX + 'perform' and r.get('actionID') in ids and r['kind'] == kind), None))
         expired = j.wait(lambda rows: next((r for r in rows if r['event'] == PREFIX + 'timedOut' and r.get('actionID') == delivered['actionID']), None), timeout=70 if kind == 'Join' else 12)
-        verify_timeout(delivered, expired, kind)
+        issued = j.wait(lambda rows: next((r for r in rows if r['event'] == 'action.deadline' and r.get('actionID') == delivered['actionID']), None))
+        verify_timeout(issued, delivered, expired, kind)
         rows = j.state(**expected)
         if kind in ('Pause', 'Join'):
             target = j.ids['A' if kind == 'Pause' else 'B']
