@@ -112,14 +112,17 @@ public final class VoIPClient {
   /// over its own connection.
   ///
   /// The call appears as its presentation policy asks. Only a call that rings is reported to the
-  /// calling framework; a call preview, or a call that doesn't appear at all, isn't, and its outcome
-  /// is ``PresentationOutcome/presented`` because it appears exactly as the policy asks. A call
+  /// calling framework: a call preview returns ``PresentationOutcome/previewed(_:)`` with
+  /// ``PreviewReason/policy``, and a call that doesn't appear returns
+  /// ``PresentationOutcome/notShown``. A call that the system filtered returns
+  /// ``PresentationOutcome/previewed(_:)`` with ``PreviewReason/filtered(_:)`` when the policy
+  /// previews filtered calls, and ``PresentationOutcome/filtered(_:)`` when it ended. A call
   /// that would ring beyond ``VoIPConfiguration/maximumCalls`` ends with
   /// ``CallFailure/atCapacity``. Reporting a call this device already knows doesn't present it
   /// again; it returns the outcome of the first report.
   ///
   /// - Parameter call: The incoming call.
-  /// - Returns: What the system did with the call.
+  /// - Returns: How the call appears on this device.
   public func report(_ call: IncomingCall) async -> PresentationOutcome {
     await engine.report(call)
   }

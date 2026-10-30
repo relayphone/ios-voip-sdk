@@ -37,6 +37,12 @@ public struct VoIPConfiguration: Hashable, Sendable {
   /// The kinds of handle that the app can call. Defaults to every kind.
   public var supportedHandleTypes: Set<Handle.Kind>
 
+  /// Whether the app's calls can include video, so that the system offers video on its call
+  /// screen and in Recents. Defaults to `false`.
+  ///
+  /// Whether one call has video is ``Call/hasVideo``.
+  public var supportsVideo: Bool
+
   /// Whether the system lists the app's calls in Recents. Defaults to `true`.
   ///
   /// LiveCommunicationKit calls this including conversations in Recents.
@@ -69,6 +75,7 @@ public struct VoIPConfiguration: Hashable, Sendable {
   ///   - presentationPolicy: How incoming calls appear on this device.
   ///   - maximumCalls: The most calls this device presents at once.
   ///   - supportedHandleTypes: The kinds of handle that the app can call.
+  ///   - supportsVideo: Whether the app's calls can include video.
   ///   - includesCallsInRecents: Whether the system lists the app's calls in Recents.
   ///   - ringtoneSound: The name of a sound file that plays while a call rings.
   ///   - iconTemplateImageData: PNG data for the app's icon on the system's call screen.
@@ -79,6 +86,7 @@ public struct VoIPConfiguration: Hashable, Sendable {
     presentationPolicy: PresentationPolicy = PresentationPolicy(),
     maximumCalls: Int = 2,
     supportedHandleTypes: Set<Handle.Kind> = Set(Handle.Kind.allCases),
+    supportsVideo: Bool = false,
     includesCallsInRecents: Bool = true,
     ringtoneSound: String? = nil,
     iconTemplateImageData: Data? = nil,
@@ -89,6 +97,7 @@ public struct VoIPConfiguration: Hashable, Sendable {
     self.presentationPolicy = presentationPolicy
     self.maximumCalls = maximumCalls
     self.supportedHandleTypes = supportedHandleTypes
+    self.supportsVideo = supportsVideo
     self.includesCallsInRecents = includesCallsInRecents
     self.ringtoneSound = ringtoneSound
     self.iconTemplateImageData = iconTemplateImageData

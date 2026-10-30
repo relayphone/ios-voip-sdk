@@ -338,6 +338,17 @@ jobs:
           bash discovery/build_sdk_device_probe.sh "$SDK_M0_BUILD_ROOT/device" 2>&1 | tee "$SDK_M0_BUILD_LOGS/device-probe-build.log"
           scripts/ci/bounded 60 python3 scripts/ci/sdk_artifacts.py compact-spm core "$SDK_M0_BUILD_ROOT"
           scripts/ci/bounded 120 python3 scripts/ci/sdk_artifacts.py pack core "$SDK_M0_BUILD_ROOT" "$RUNNER_TEMP/sdk-transfer"
+      - name: Build the call core and its adapters for iOS
+        run: |
+          set -euo pipefail
+          source scripts/ci/sdk_paths.sh
+          for scheme in VoIPCore VoIPLiveCommunicationKit VoIPPushKit VoIPTesting; do
+            for destination in 'generic/platform=iOS' 'generic/platform=iOS Simulator'; do
+              xcodebuild -scheme "$scheme" -configuration Release -destination "$destination" \
+                -derivedDataPath "$SDK_M0_BUILD_ROOT/call-core" CODE_SIGNING_ALLOWED=NO \
+                COMPILER_INDEX_STORE_ENABLE=NO build 2>&1 | tee -a "$SDK_M0_BUILD_LOGS/call-core-ios.log"
+            done
+          done
       - uses: ./.github/actions/upload-transfer
         timeout-minutes: 8
         with:

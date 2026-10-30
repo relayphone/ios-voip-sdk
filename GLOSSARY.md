@@ -67,7 +67,7 @@ Telling the system about an incoming call so that it can be presented to the use
 _Avoid_: Post, show, display
 
 **Presentation outcome**:
-What the system did with a reported incoming call: presented it, filtered it, or refused it.
+How an incoming call appears on this device once it has been presented as its presentation policy asks: it rings, it is a call preview, it isn't shown, or the system filtered or refused it. A calling framework itself only presents, filters or refuses a call.
 _Avoid_: Report result
 
 **Call preview**:

@@ -55,8 +55,16 @@ The `VoIPCore` library is the start of a smaller core that keeps its own state f
 call and treats CallKit and LiveCommunicationKit as presentation surfaces. It holds the call
 values, the call state machine and `VoIPClient`, which runs them behind small seams for the
 calling framework, the app's media and VoIP pushes. It imports no UIKit, CallKit,
-LiveCommunicationKit, PushKit or AVFAudio, and doesn't present calls yet; the calling-framework
-and PushKit adapters follow.
+LiveCommunicationKit, PushKit or AVFAudio. Two more libraries plug the system into those seams:
+`VoIPLiveCommunicationKit` presents calls with `LiveCommunicationKitAdapter`, and `VoIPPushKit`
+receives VoIP pushes and the push token with `PushKitSource`:
+
+```swift
+let push = PushKitSource()
+let client = try VoIPClient.start(
+  framework: LiveCommunicationKitAdapter(), media: media, push: push)
+```
+
 Its terms are defined in the [glossary](GLOSSARY.md) and its decisions are recorded in
 [docs/adr](docs/adr).
 
