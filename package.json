@@ -1,6 +1,6 @@
 {
   "name": "ios-voip-sdk",
-  "version": "0.0.0",
+  "version": "0.1.1",
   "private": true,
   "description": "LiveCommunicationKit-first calling for iOS and Expo.",
   "license": "UNLICENSED",
@@ -35,8 +35,10 @@
   ],
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "typecheck": "tsc --noEmit --project tsconfig.json && npm run typecheck --workspace ios-voip-sdk-example",
-    "format:check": "prettier --check package.json tsconfig.json expo-module.config.json .prettierrc.json 'Expo/**/*.{ts,md}' 'example/*.{ts,tsx,js,json,md}'"
+    "typecheck": "tsc --noEmit --project tsconfig.json && npm run typecheck --workspace ios-voip-sdk-example && npm run test:version",
+    "format:check": "prettier --check package.json tsconfig.json expo-module.config.json .prettierrc.json 'Expo/**/*.{ts,md}' 'example/*.{ts,tsx,js,json,md}'",
+    "prepare": "tsc -p tsconfig.json",
+    "test:version": "node --test Expo/tests/version.test.mts"
   },
   "peerDependencies": {
     "expo": ">=55.0.0 <59.0.0",
