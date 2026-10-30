@@ -145,6 +145,9 @@ private struct Step {
       }
     case (.refused(let failure), nil):
       end(.failed(failure), reportingEnd: false)
+    case (.previewed, nil), (.notShown, nil):
+      // A calling framework never completes a report this way, and didn't present the call.
+      end(.failed(.refused), reportingEnd: false)
     }
   }
 

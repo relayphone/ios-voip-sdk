@@ -24,7 +24,7 @@ final class CallEngine {
   private(set) var states: [CallID: CallMachine.State] = [:]
   /// The known calls in the order they began.
   private var order: [CallID] = []
-  /// What the calling framework did with each incoming call's first report.
+  /// How each incoming call appeared after its first report.
   private var outcomes: [CallID: PresentationOutcome] = [:]
   /// Callbacks waiting for an incoming call's first report to complete.
   private var reportWaiters: [CallID: [@VoIPActor (PresentationOutcome) -> Void]] = [:]
@@ -222,10 +222,10 @@ final class CallEngine {
     case .ring:
       return .reporting
     case .preview:
-      outcomes[incoming.id] = .presented
-      return .settled(.presented)
+      outcomes[incoming.id] = .previewed(.policy)
+      return .settled(.previewed(.policy))
     case .none:
-      return .settled(.presented)
+      return .settled(.notShown)
     }
   }
 
@@ -320,9 +320,13 @@ final class CallEngine {
   }
 
   private func reportCompleted(_ id: CallID, _ outcome: PresentationOutcome) {
-    if outcomes[id] == nil { outcomes[id] = outcome }
     handle(id, .reportCompleted(outcome))
-    for waiter in reportWaiters.removeValue(forKey: id) ?? [] { waiter(outcome) }
+    // The policy may preview a call that the system filtered, or that was answered elsewhere
+    // while it was being reported.
+    let appearance: PresentationOutcome =
+      if case .previewing(let reason) = states[id]?.phase { .previewed(reason) } else { outcome }
+    if outcomes[id] == nil { outcomes[id] = appearance }
+    for waiter in reportWaiters.removeValue(forKey: id) ?? [] { waiter(appearance) }
   }
 
   /// Carries out a transition's effects in order.

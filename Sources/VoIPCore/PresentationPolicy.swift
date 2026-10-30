@@ -54,13 +54,29 @@ public struct PresentationPolicy: Hashable, Sendable {
   }
 }
 
-/// What the system did with an incoming call the SDK reported to it.
+/// How an incoming call appears on this device after the SDK presented it as its presentation
+/// policy asks.
+///
+/// A calling framework completes a report with ``presented``, ``filtered(_:)`` or
+/// ``refused(_:)``: what the system did with the call. ``VoIPClient/report(_:)`` returns where
+/// the call ended up, which also covers calls that the calling framework never sees: a call
+/// preview is ``previewed(_:)``, including a filtered call that the policy previews, and a call
+/// that doesn't appear is ``notShown``.
 public enum PresentationOutcome: Hashable, Sendable {
-  /// The system presented the call, and it rings.
+  /// The calling framework presented the call, and it rings.
   case presented
+  /// The call appears as a call preview and never rings. The reason says why: the presentation
+  /// policy asks for a preview, or the system filtered the call, or it was answered elsewhere
+  /// while it was being reported, and the policy previews such calls.
+  case previewed(PreviewReason)
+  /// The call doesn't appear on this device, because its presentation policy is
+  /// ``PresentationPolicy/Presentation/none``.
+  case notShown
   /// The system didn't present the call because of the user's Do Not Disturb, Focus or block
-  /// list.
+  /// list. When ``VoIPClient/report(_:)`` returns it, the call ended, because the presentation
+  /// policy doesn't preview filtered calls.
   case filtered(FilterCause)
-  /// The calling framework refused the call.
+  /// The calling framework refused the call, or this device already had as many calls as the
+  /// app allows. The call ended.
   case refused(CallFailure)
 }

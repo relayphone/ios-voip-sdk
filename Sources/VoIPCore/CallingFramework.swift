@@ -28,7 +28,9 @@ public protocol CallingFramework: Sendable {
   ///
   /// - Parameters:
   ///   - call: The call to report.
-  ///   - completion: Called once with what the system did with the call.
+  ///   - completion: Called once with what the system did with the call:
+  ///     ``PresentationOutcome/presented``, ``PresentationOutcome/filtered(_:)`` or
+  ///     ``PresentationOutcome/refused(_:)``.
   func reportIncoming(
     _ call: Call, completion: @escaping @VoIPActor (PresentationOutcome) -> Void)
 

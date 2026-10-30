@@ -98,7 +98,7 @@ extension EngineTests {
     func joinFromPreview(reason: PreviewReason) async throws {
       let h = try Harness()
       if reason == .policy {
-        #expect(await h.client.report(incoming(callID, .preview)) == .presented)
+        #expect(await h.client.report(incoming(callID, .preview)) == .previewed(.policy))
       } else {
         try await h.ring()
         await h.client.receive(.answeredElsewhere, for: callID, eventID: e2)
@@ -298,17 +298,46 @@ extension EngineTests {
       let h = try Harness()
       let framework = h.framework
       await onVoIPActor { framework.presentationOutcome = .filtered(.blockList) }
-      #expect(await h.client.report(ringingCall) == .filtered(.blockList))
+      #expect(await h.client.report(ringingCall) == .previewed(.filtered(.blockList)))
       #expect(try await h.next() == .previewStarted(callID, .filtered(.blockList)))
       await onVoIPActor { framework.presentationOutcome = .presented }
-      #expect(await h.client.report(ringingCall) == .filtered(.blockList))
+      #expect(await h.client.report(ringingCall) == .previewed(.filtered(.blockList)))
 
       // A call preview, and a call that doesn't appear, aren't reported to the framework.
-      #expect(await h.client.report(incoming(otherCallID, .preview)) == .presented)
+      #expect(await h.client.report(incoming(otherCallID, .preview)) == .previewed(.policy))
       #expect(try await h.next() == .previewStarted(otherCallID, .policy))
-      #expect(await h.client.report(incoming(CallID(rawValue: "call-3"), .none)) == .presented)
+      #expect(await h.client.report(incoming(otherCallID, .ring)) == .previewed(.policy))
+      #expect(await h.client.report(incoming(CallID(rawValue: "call-3"), .none)) == .notShown)
       try await h.expectNoEvents()
       #expect(await h.reported() == [.report(callID)])
+    }
+
+    @Test(arguments: [
+      (PresentationOutcome.presented, true, PresentationOutcome.presented),
+      (.filtered(.doNotDisturb), true, .previewed(.filtered(.doNotDisturb))),
+      (.filtered(.doNotDisturb), false, .filtered(.doNotDisturb)),
+      (.refused(.refused), true, .refused(.refused)),
+    ])
+    func reportReturnsHowTheCallAppears(
+      system: PresentationOutcome, previewsFilteredCalls: Bool, expected: PresentationOutcome
+    ) async throws {
+      let policy = PresentationPolicy(previewsFilteredCalls: previewsFilteredCalls)
+      let h = try Harness(configuration: VoIPConfiguration(presentationPolicy: policy))
+      let framework = h.framework
+      await onVoIPActor { framework.presentationOutcome = system }
+      #expect(await h.client.report(ringingCall) == expected)
+    }
+
+    @Test func reportOfACallAnsweredElsewhereWhileReportingReturnsAPreview() async throws {
+      let h = try Harness()
+      let framework = h.framework
+      await onVoIPActor { framework.presentationOutcome = nil }
+      await h.deliver(.incoming(ringingCall, eventID: e1))
+      await h.client.receive(.answeredElsewhere, for: callID, eventID: e2)
+      async let outcome = h.client.report(ringingCall)
+      await onVoIPActor { framework.completeReports(of: callID, with: .presented) }
+      #expect(await outcome == .previewed(.answeredElsewhere))
+      #expect(try await h.next() == .previewStarted(callID, .answeredElsewhere))
     }
 
     @Test func reportWaitsForTheFirstReport() async throws {
@@ -330,7 +359,8 @@ extension EngineTests {
       #expect(try await h.next() == .ended(otherCallID, .failed(.atCapacity)))
       // Call previews don't count, and aren't limited.
       #expect(
-        await h.client.report(incoming(CallID(rawValue: "call-3"), .preview)) == .presented)
+        await h.client.report(incoming(CallID(rawValue: "call-3"), .preview))
+          == .previewed(.policy))
       #expect(await h.reported() == [.report(callID)])
     }
   }
