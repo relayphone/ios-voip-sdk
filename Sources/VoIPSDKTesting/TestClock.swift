@@ -1,4 +1,4 @@
-import os
+import Synchronization
 
 /// A manually advanced clock for testing time-dependent code without elapsed wall time.
 ///
@@ -23,7 +23,7 @@ public final class TestClock: Clock, Sendable {
       [(sequence: UInt64, count: Int, continuation: CheckedContinuation<Void, any Error>)] = []
   }
 
-  private let state = OSAllocatedUnfairLock(initialState: State())
+  private let state = Mutex(State())
 
   /// Creates an independent clock starting at the current continuous instant.
   public init() {}

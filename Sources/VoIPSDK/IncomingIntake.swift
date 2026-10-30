@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// The shared identity and metadata ledger for foreground and PushKit reports.
 /// The lock protects only value changes; platform calls and continuation resumes
@@ -14,30 +15,32 @@ final class IncomingIntake: @unchecked Sendable {
     case failed(any Error)
   }
 
-  final class Ticket: @unchecked Sendable {
-    private let lock = NSLock()
-    private var result: Result<UUID, any Error>?
-    private var waiters: [CheckedContinuation<UUID, any Error>] = []
+  final class Ticket: Sendable {
+    private struct State {
+      var result: Result<UUID, any Error>?
+      var waiters: [CheckedContinuation<UUID, any Error>] = []
+    }
+    private let state = Mutex(State())
 
     var value: UUID {
       get async throws {
         try await withCheckedThrowingContinuation { continuation in
-          lock.lock()
-          let result = self.result
-          if result == nil { waiters.append(continuation) }
-          lock.unlock()
+          let result = state.withLock { state in
+            if state.result == nil { state.waiters.append(continuation) }
+            return state.result
+          }
           if let result { continuation.resume(with: result) }
         }
       }
     }
 
     fileprivate func resolve(_ result: Result<UUID, any Error>) {
-      lock.lock()
-      guard self.result == nil else { lock.unlock(); return }
-      self.result = result
-      let waiters = self.waiters
-      self.waiters.removeAll()
-      lock.unlock()
+      let waiters = state.withLock { state -> [CheckedContinuation<UUID, any Error>] in
+        guard state.result == nil else { return [] }
+        state.result = result
+        defer { state.waiters.removeAll() }
+        return state.waiters
+      }
       for waiter in waiters { waiter.resume(with: result) }
     }
   }

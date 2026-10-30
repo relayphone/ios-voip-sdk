@@ -1,6 +1,7 @@
 #if os(iOS) && targetEnvironment(simulator)
 public import Foundation
 import Darwin
+import Synchronization
 #if SWIFT_PACKAGE
 import CKSimRuntimeC
 import CKSimProtocol
@@ -344,26 +345,20 @@ private struct PushReportingObligations {
 /// One private serial queue owns all state. App code always executes elsewhere.
 @objc(CKSimulatorEngine)
 final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendable {
-  private static let storage = RuntimeStorage()
+  private static let storage = Mutex<RuntimeEngine?>(nil)
 
   static func prepare() throws {
-    storage.lock.lock()
-    defer { storage.lock.unlock() }
-    if storage.engine == nil { storage.engine = try RuntimeEngine(prepared: ()) }
+    try storage.withLock { engine in
+      if engine == nil { engine = try RuntimeEngine(prepared: ()) }
+    }
   }
 
   static func existing() -> RuntimeEngine? {
-    storage.lock.lock()
-    defer { storage.lock.unlock() }
-    return storage.engine
+    storage.withLock { $0 }
   }
 
   static func releasePrepared() {
-    storage.lock.lock()
-    let engine = storage.engine
-    storage.engine = nil
-    storage.lock.unlock()
-    engine?.shutdown()
+    storage.withLock { $0.take() }?.shutdown()
   }
   private let state = DispatchQueue(label: "dev.callkitsim.engine", qos: .userInitiated)
   private let stateKey = DispatchSpecificKey<Bool>()
@@ -1645,10 +1640,6 @@ public enum RuntimeBootstrap {
   }
 }
 
-private final class RuntimeStorage: @unchecked Sendable {
-  let lock = NSLock()
-  var engine: RuntimeEngine?
-}
 private enum BootstrapError: Error { case invalid(String) }
 #endif
 

@@ -1,6 +1,6 @@
 import Dispatch
 import Foundation
-import os
+import Synchronization
 #if canImport(VoIPPlatform)
 import VoIPPlatform
 #endif
@@ -48,7 +48,7 @@ public actor AudioSessionQueue {
 /// originating action/recovery cancellation into that block without extending
 /// the action's lifetime or sending a framework object across actors.
 final class AudioPreparationPermit: Sendable {
-  private let current = OSAllocatedUnfairLock(initialState: true)
+  private let current = Mutex(true)
   func cancel() { current.withLock { $0 = false } }
   func check() throws { if !current.withLock({ $0 }) { throw CancellationError() } }
 }
