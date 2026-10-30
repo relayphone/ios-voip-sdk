@@ -565,13 +565,61 @@ jobs:
         if: always()
         run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/sdk-m0-build"
 
+  simulator-journeys:
+    name: Call journeys on the simulator
+    needs: [changes, nightly-coverage]
+    if: needs.nightly-coverage.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.changes.outputs.sdk == 'true'
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: sudo xcode-select -s /Applications/Xcode_27.1.app
+      - name: Create a simulator for the journeys
+        id: simulator
+        run: |
+          set -euo pipefail
+          udid=$(scripts/ci/bounded 60 xcrun simctl create "call-journeys-$GITHUB_RUN_ID" \
+            com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: Run the call journeys through LiveCommunicationKit and PushKit
+        env:
+          SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/call-journeys-logs"
+          xcodebuild test -scheme VoIPSDK-Package -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath "$RUNNER_TEMP/call-journeys" -resultBundlePath "$RUNNER_TEMP/call-journeys-logs/journeys.xcresult" \
+            -only-testing:VoIPJourneyTests CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \
+            2>&1 | tee "$RUNNER_TEMP/call-journeys-logs/xcodebuild.log"
+      - name: Delete the journeys' simulator
+        if: always() && steps.simulator.outputs.udid != ''
+        env:
+          SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          scripts/ci/bounded 60 xcrun simctl shutdown "$SIMULATOR_ID" || true
+          scripts/ci/bounded 60 xcrun simctl delete "$SIMULATOR_ID"
+      - uses: ./.github/actions/upload-transfer
+        timeout-minutes: 8
+        if: failure()
+        with:
+          name: call-journeys-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/call-journeys-logs
+          if-no-files-found: warn
+          retention-days: 3
+          compression-level: 6
+      - name: Remove this job's build outputs
+        if: always()
+        run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/call-journeys" "$RUNNER_TEMP/call-journeys-logs"
+
   plain-simulator:
     name: plain-simulator
     permissions:
       contents: read
       actions: read
     if: always() && (github.event_name != 'schedule' || needs.nightly-coverage.outputs.skip != 'true') && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
-    needs: [changes, nightly-coverage, offline-controls, apple-host-controls, sdk-example, sdk-core, sdk-fixtures, device-release, journeys, legacy-audio-lifecycle, swift-livekit-native, expo-livekit-native, routes-duo]
+    needs: [changes, nightly-coverage, offline-controls, apple-host-controls, sdk-example, sdk-core, sdk-fixtures, device-release, journeys, simulator-journeys, legacy-audio-lifecycle, swift-livekit-native, expo-livekit-native, routes-duo]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

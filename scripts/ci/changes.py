@@ -10,7 +10,7 @@ import sys
 SDK_JOBS = ('sdk-native', 'legacy-audio-lifecycle', 'swift-livekit-native',
             'expo-livekit-native', 'routes-duo')
 SDK_NATIVE_JOBS = ('offline-controls', 'apple-host-controls', 'sdk-example', 'sdk-core',
-                   'sdk-fixtures', 'device-release', 'journeys')
+                   'sdk-fixtures', 'device-release', 'journeys', 'simulator-journeys')
 GROUPS = {'m1': dict(group='m1', m1='1', part='journeys', system='0'),
           'contracts': dict(group='contracts', m1='1', part='contracts', system='0'),
           'push-entry': dict(group='push-entry', m1='1', part='push-entry', system='0'),
