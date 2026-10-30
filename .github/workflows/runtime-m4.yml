@@ -93,12 +93,18 @@ jobs:
         run: |
           runtime_original_summary="$GITHUB_STEP_SUMMARY"
           export GITHUB_STEP_SUMMARY="$RUNNER_TEMP/runtime-phase-watch.md"
-          trap 'if [ -f "$GITHUB_STEP_SUMMARY" ]; then cat "$GITHUB_STEP_SUMMARY" >> "$runtime_original_summary" || :; fi' EXIT
+          trap 'if [ -n "${mailbox_container:-}" ]; then ditto "$mailbox_container/Documents/.callkit-simulator" "$RUNNER_TEMP/m4-events/runtime-journal" || :; fi; if [ -f "$GITHUB_STEP_SUMMARY" ]; then cat "$GITHUB_STEP_SUMMARY" >> "$runtime_original_summary" || :; fi' EXIT
           set -o pipefail
           python3 Tests/RuntimeEvents/run.py --package "$RUNNER_TEMP/runtime" \
             --app "$RUNNER_TEMP/fixture/RuntimeEventFixture.app" --out "$RUNNER_TEMP/m4-events" \
             --runtime "$CKSIM_TEST_RUNTIME" --simulator "$CKSIM_TEST_SIMULATOR" \
             2>&1 | tee "$RUNNER_TEMP/m4-build/runtime-acceptance.log"
+          mailbox_simulator="$(cat "$RUNNER_TEMP/m4-simulator-id")"
+          mailbox_container="$(scripts/ci/bounded 60 xcrun simctl get_app_container "$mailbox_simulator" dev.callkitsim.eventfixture data)"
+          CKSIM_NATIVE_CHANNEL="$mailbox_container/Documents/.callkit-simulator" swift test \
+            --scratch-path "$RUNNER_TEMP/runtime-host-tests" --filter ControlResponseNativeTests \
+            2>&1 | tee "$RUNNER_TEMP/m4-build/mailbox-tests.log"
+          [[ "$(cat "$RUNNER_TEMP/m4-build/mailbox-tests.log")" == *"Typed mailbox verification passed"* ]]
       - name: Verify genuine LCK report and explicit code-4 fault
         id: lck
         run: |
