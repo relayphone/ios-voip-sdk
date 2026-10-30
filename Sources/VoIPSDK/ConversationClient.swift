@@ -343,7 +343,8 @@ public final class ConversationClient {
     systemAudio.routes.observe(callback)
   }
   public func removeAudioRoutesObserver(_ token: UUID) { systemAudio.routes.removeObserver(token) }
-  public func selectAudioRoute(_ id: String) async throws { try await systemAudio.selectRoute(id, isActive: audio.isActive) }
+  /// Selects an available route using its identity from an audio-routes snapshot.
+  public func selectAudioRoute(_ id: AudioRoute.ID) async throws { try await systemAudio.selectRoute(id, isActive: audio.isActive) }
 
   @discardableResult
   public func observeState(_ callback: @escaping @MainActor (ConversationStateUpdate) -> Void) -> UUID {

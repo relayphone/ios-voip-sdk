@@ -123,7 +123,7 @@ final class SystemAudioSession {
     publish(observation)
   }
 
-  func selectRoute(_ id: String, isActive: Bool) async throws {
+  func selectRoute(_ id: AudioRoute.ID, isActive: Bool) async throws {
     let selection = try routes.selection(id, isActive: isActive)
     let generation = try authorization.withLock { state in
       guard state.active else { throw AudioRouteError.audioSessionInactive }
