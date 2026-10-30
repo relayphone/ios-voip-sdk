@@ -1,5 +1,5 @@
 #if canImport(Intents)
-import Intents
+public import Intents
 
 extension DialRequest {
   /// The RFC carries one destination; ambiguous or unresolved recipients stay

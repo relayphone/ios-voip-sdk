@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// A validated version-one runtime mailbox request with operation-specific parameters.
 public struct ControlRequest: Codable, Equatable, Sendable {

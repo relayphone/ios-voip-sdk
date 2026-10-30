@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// Cooperative cancellation also covers handlers that do not inspect Task cancellation.
 @MainActor

@@ -1,5 +1,5 @@
 #if canImport(AVFAudio) && (os(iOS) || os(watchOS))
-import AVFAudio
+public import AVFAudio
 
 /// Native backend operations follow genuine LCK callbacks; they never activate the system session.
 /// Implementations must enqueue potentially blocking engine work away from MainActor, preserve

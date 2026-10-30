@@ -1,4 +1,9 @@
+// Public declarations that use Foundation types compile only on iOS and watchOS.
+#if os(iOS) || os(watchOS)
+public import Foundation
+#else
 import Foundation
+#endif
 
 /// The config plugin's plist schema, decoded before any platform services start.
 struct VoIPBundleConfiguration: Decodable {

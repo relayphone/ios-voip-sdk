@@ -6,6 +6,15 @@ let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let runtimeVersion = try String(contentsOf: root.appendingPathComponent("VERSION"), encoding: .utf8)
   .trimmingCharacters(in: .whitespacesAndNewlines)
 
+/// Applied to every Swift target. SwiftPM ignores warning settings for remote dependencies.
+let strictSwift: [SwiftSetting] = [
+  .treatAllWarnings(as: .error),
+  .enableUpcomingFeature("ExistentialAny"),
+  .enableUpcomingFeature("InternalImportsByDefault"),
+  .enableUpcomingFeature("MemberImportVisibility"),
+]
+let strictC: [CSetting] = [.treatAllWarnings(as: .error)]
+
 let package = Package(
   name: "VoIPSDK",
   platforms: [.iOS(.v26), .macOS(.v26)],
@@ -14,13 +23,13 @@ let package = Package(
     .library(name: "VoIPSDKTesting", targets: ["VoIPSDKTesting"]),
   ],
   targets: [
-    .target(name: "CKSimProtocol"),
+    .target(name: "CKSimProtocol", swiftSettings: strictSwift),
     .target(
       name: "CKSimRuntimeC",
       path: "Sources/Interposition",
       exclude: ["CKLoader.m"],
       publicHeadersPath: "include",
-      cSettings: [
+      cSettings: strictC + [
         .define("CKSIM_SDK_SOURCE", to: "1"),
         .define("CKSIM_RUNTIME_VERSION", to: "\"\(runtimeVersion)\""),
       ]
@@ -29,23 +38,29 @@ let package = Package(
       name: "CKSimRuntime",
       dependencies: ["CKSimRuntimeC", "CKSimProtocol"],
       path: "Sources/Engine",
-      exclude: ["Resources"]
+      exclude: ["Resources"],
+      swiftSettings: strictSwift
     ),
     .target(
       name: "VoIPPlatform", path: "Sources/VoIPPlatform", publicHeadersPath: "include",
-      cSettings: [
+      cSettings: strictC + [
         .define("DEBUG", to: "1", .when(configuration: .debug))
       ]),
     .target(
       name: "VoIPSDK", dependencies: ["CKSimRuntime", "VoIPPlatform"], path: "Sources/VoIPSDK",
       cSettings: [
         .define("DEBUG", to: "1", .when(configuration: .debug))
-      ]),
-    .target(name: "VoIPSDKTesting"),
-    .testTarget(name: "VoIPSDKTests", dependencies: ["VoIPSDK", "VoIPSDKTesting"]),
-    .testTarget(name: "VoIPSDKTestingTests", dependencies: ["VoIPSDKTesting"]),
-    .testTarget(name: "RuntimeEngineTests", dependencies: ["CKSimRuntime"]),
-    .testTarget(name: "CKSimProtocolTests", dependencies: ["CKSimProtocol"]),
+      ],
+      swiftSettings: strictSwift),
+    .target(name: "VoIPSDKTesting", swiftSettings: strictSwift),
+    .testTarget(
+      name: "VoIPSDKTests", dependencies: ["VoIPSDK", "VoIPSDKTesting"], swiftSettings: strictSwift),
+    .testTarget(
+      name: "VoIPSDKTestingTests", dependencies: ["VoIPSDKTesting"], swiftSettings: strictSwift),
+    .testTarget(
+      name: "RuntimeEngineTests", dependencies: ["CKSimRuntime"], swiftSettings: strictSwift),
+    .testTarget(
+      name: "CKSimProtocolTests", dependencies: ["CKSimProtocol"], swiftSettings: strictSwift),
   ],
   swiftLanguageModes: [.v6]
 )

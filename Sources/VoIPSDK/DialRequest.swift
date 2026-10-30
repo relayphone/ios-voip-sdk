@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// A request to present an outgoing destination. The app decides whether to dial.
 public struct DialRequest: Codable, Sendable, Equatable {

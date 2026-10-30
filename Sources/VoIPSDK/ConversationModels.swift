@@ -1,4 +1,4 @@
-import Foundation
+public import Foundation
 
 /// JSON without untyped, non-Sendable dictionaries at the native/JavaScript boundary.
 public enum JSONValue: Codable, Sendable, Equatable {

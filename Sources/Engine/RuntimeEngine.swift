@@ -1,5 +1,5 @@
 #if os(iOS) && targetEnvironment(simulator)
-import Foundation
+public import Foundation
 import Darwin
 #if SWIFT_PACKAGE
 import CKSimRuntimeC
@@ -252,8 +252,8 @@ private struct Faults: Codable {
 // Objective-C clients supply blocks without Swift Sendable annotations. The
 // immutable block is transferred once and invoked only on its designated queue.
 private final class Completion: @unchecked Sendable {
-  let invoke: (Error?) -> Void
-  init(_ invoke: @escaping (Error?) -> Void) { self.invoke = invoke }
+  let invoke: ((any Error)?) -> Void
+  init(_ invoke: @escaping ((any Error)?) -> Void) { self.invoke = invoke }
 }
 
 // RuntimeEngine's serial state queue owns this value. An ambiguous same-UUID
@@ -1011,7 +1011,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     }
     return nil
   }
-  func request(transaction: CXTransaction, controller: CXCallController, completion: @escaping (Error?) -> Void) {
+  func request(transaction: CXTransaction, controller: CXCallController, completion: @escaping ((any Error)?) -> Void) {
     let reply = Completion(completion)
     let actions = transaction.actions.map { $0.copy() as! CXAction }
     let requestID = transaction.uuid
@@ -1287,7 +1287,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
       }
     }
   }
-  func incoming(provider: CXProvider, uuid: UUID, update: CXCallUpdate, completion: @escaping (Error?) -> Void) {
+  func incoming(provider: CXProvider, uuid: UUID, update: CXCallUpdate, completion: @escaping ((any Error)?) -> Void) {
     let reply = Completion(completion)
     let synchronousPushID = CKSimCurrentPushID()
     withState {
@@ -1653,7 +1653,10 @@ private enum BootstrapError: Error { case invalid(String) }
 #endif
 
 #if os(macOS) || (os(iOS) && targetEnvironment(simulator))
-  import Foundation
+  #if os(macOS)
+    // The simulator build already imports Foundation publicly above.
+    import Foundation
+  #endif
   // Access is serialized by the engine's state queue.
   struct RuntimeJournalWriter {
     private(set) var sequence: UInt64 = 0

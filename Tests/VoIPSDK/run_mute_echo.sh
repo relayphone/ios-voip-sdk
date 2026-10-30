@@ -21,8 +21,8 @@ for name in ('ConversationClient.swift', 'IncomingReportTransport.swift'):
     Path(sys.argv[1], name).write_text(source)
 adapter = Path('Sources/VoIPSDK/MediaAdapter.swift').read_text()
 adapter_guard = '#if canImport(AVFAudio) && (os(iOS) || os(watchOS))'
-assert adapter.count(adapter_guard) == adapter.count('import AVFAudio') == 1
-Path(sys.argv[1], 'MediaAdapter.swift').write_text(adapter.replace(adapter_guard, '#if true', 1).replace('import AVFAudio', '', 1))
+assert adapter.count(adapter_guard) == adapter.count('public import AVFAudio') == 1
+Path(sys.argv[1], 'MediaAdapter.swift').write_text(adapter.replace(adapter_guard, '#if true', 1).replace('public import AVFAudio', '', 1))
 PY
 for TEST_CASE in MuteEchoTests WatchdogIntakeTests AudioAuthorityTests; do
   swiftc -swift-version 6 -warnings-as-errors -parse-as-library \

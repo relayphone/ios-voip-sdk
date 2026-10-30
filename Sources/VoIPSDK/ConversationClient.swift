@@ -1,4 +1,9 @@
+// Public declarations that use Foundation types compile only on iOS and watchOS.
+#if os(iOS) || os(watchOS)
+public import Foundation
+#else
 import Foundation
+#endif
 
 enum ConversationSystemErrors {
   static func isAlreadyReported(_ error: any Error) -> Bool {
@@ -551,7 +556,7 @@ public final class ConversationClient {
     }
     appActions = appActions.filter { $0.value > Date() }
     appActions[id] = action.timeoutDate
-    do { try await manager.perform([action]) }
+    do { try await ActionSubmission(manager: manager).perform([action]) }
     catch {
       appActions.removeValue(forKey: id)
       throw ConversationSystemErrors.action(error)
@@ -943,6 +948,17 @@ extension ConversationClient {
     // Publish only after the authorization and ordered native work are installed;
     // event observers may synchronously reset or deliver an opposite callback.
     audio.didDeactivate()
+  }
+}
+
+/// LCK's `perform` is `@concurrent` on a manager without concurrency annotations, so
+/// calling it from MainActor would send the actor-owned manager. This boundary keeps
+/// the call on the caller's actor until the framework itself hops; each submission
+/// sends only its own fresh actions and no other manager operation leaves MainActor.
+private struct ActionSubmission: @unchecked Sendable {
+  let manager: ConversationManager
+  nonisolated(nonsending) func perform(_ actions: sending [ConversationAction]) async throws {
+    try await manager.perform(actions)
   }
 }
 

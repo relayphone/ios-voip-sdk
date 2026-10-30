@@ -71,8 +71,8 @@ def run(out):
             (out / filename).write_text(host_boundary(source, audio=filename == 'ConversationClient.swift'))
         adapter = sources['Sources/VoIPSDK/MediaAdapter.swift'].decode()
         adapter_guard = '#if canImport(AVFAudio) && (os(iOS) || os(watchOS))'
-        assert adapter.count(adapter_guard) == adapter.count('import AVFAudio') == 1
-        (out / 'MediaAdapter.swift').write_text(adapter.replace(adapter_guard, '#if true', 1).replace('import AVFAudio', '', 1))
+        assert adapter.count(adapter_guard) == adapter.count('public import AVFAudio') == 1
+        (out / 'MediaAdapter.swift').write_text(adapter.replace(adapter_guard, '#if true', 1).replace('public import AVFAudio', '', 1))
         compile_inputs = [str(ROOT / name) for name in INPUTS if name.endswith('.swift') and not
                           name.endswith(('/ConversationClient.swift', '/IncomingReportTransport.swift', '/MediaAdapter.swift'))]
         code, _, stderr = command('compile', ['xcrun', 'swiftc', '-swift-version', '6', '-warnings-as-errors',
