@@ -56,7 +56,8 @@ let package = Package(
     .target(name: "VoIPCore", swiftSettings: strictSwift),
     .target(name: "VoIPTesting", dependencies: ["VoIPCore"], swiftSettings: strictSwift),
     .testTarget(name: "VoIPSDKTests", dependencies: ["VoIPSDK"], swiftSettings: strictSwift),
-    .testTarget(name: "VoIPCoreTests", dependencies: ["VoIPCore"], swiftSettings: strictSwift),
+    .testTarget(
+      name: "VoIPCoreTests", dependencies: ["VoIPCore", "VoIPTesting"], swiftSettings: strictSwift),
     .testTarget(
       name: "VoIPTestingTests", dependencies: ["VoIPTesting"], swiftSettings: strictSwift),
     .testTarget(
