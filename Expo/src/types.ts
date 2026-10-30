@@ -1,7 +1,9 @@
 export type JSONValue =
   null | boolean | number | string | JSONValue[] | { [key: string]: JSONValue };
 
-/** Rejection codes emitted by native conversation commands. */
+/** Rejection codes projected from native startup, action and reporting errors.
+ * Unknown system failures retain the generic conversation code and message.
+ */
 export type ConversationErrorCode =
   | 'invalid_arguments'
   | 'unknown_conversation'
