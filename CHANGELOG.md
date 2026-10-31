@@ -123,6 +123,22 @@ Changes not yet released are recorded below. Public API changes include migratio
   English text, and `events()` reports what was posted, withdrawn or refused. `VoIPTesting` adds
   `FakeCallNotificationCenter`, and the CocoaPods spec adds the `Notifications` subspec, which
   `Testing` includes.
+- `UserNotificationsAdapter` is `CallNotifier`'s notification center on iOS, and `CallNotifier()`
+  uses it. For each notification it donates an incoming `INInteraction` whose `INStartCallIntent`
+  has the caller as its only contact, an `INPerson` made of the party's handles and display name,
+  then updates the content from the intent with `UNNotificationContent.updating(from:)`. The
+  request identifier is the Call ID, so a missed-call notification replaces the incoming one.
+  `content(for:updating:)` builds the same content in a notification service extension, and
+  `category(joinTitle:)` is the incoming call's category, with a Join action. The app needs the
+  Communication Notifications capability, `INStartCallIntent` in `NSUserActivityTypes` and the
+  user's permission for notifications.
+- `CallNotifier.handle(_:)` routes a `CallNotificationResponse`, read from a
+  `UNNotificationResponse`, or a `StartCallRequest`, read from the `INStartCallIntent` that Recents
+  and Siri send. When a call preview with the call or the party is live here, it requests the join
+  and returns `CallNotificationRoute.joining(_:)`; otherwise it returns `callBack(_:hasVideo:)`, and
+  the app calls the party with a Call ID of its own. `Options.joinsOnTap` (default `true`) joins
+  on a tap as well as on the Join action. The `Notifications` subspec links UserNotifications and
+  Intents, and the example app previews a call with a call notification.
 
 ### Changed
 
@@ -173,8 +189,9 @@ Changes not yet released are recorded below. Public API changes include migratio
   | `pod 'IosVoipSDK'` (`ExpoModule`) and `import IosVoipSDK` | The `Core`, `Audio`, `LiveCommunicationKit`, `PushKit` and `Simulator` subspecs, still imported as `IosVoipSDK` |
   | The Expo module from `github:relayphone/ios-voip-sdk` | expo-callkit-telecom v2 |
 
-  The call core doesn't yet handle `tel:` URLs and `INStartCallIntent`s, or donate calls to Siri
-  and Recents. Keep doing these in the app until it does.
+  The call core doesn't yet handle `tel:` URLs, or donate calls to Siri and Recents. Keep doing
+  these in the app until it does. `StartCallRequest` in `VoIPNotifications` reads the
+  `INStartCallIntent`s that Recents and Siri send.
 
 - The `VoIPCallKit` library, its `CallKitAdapter` and the `CallKit` CocoaPods subspec are
   removed: LiveCommunicationKit is the SDK's only calling framework. Apps that used them depend

@@ -2,6 +2,7 @@ import SwiftUI
 import VoIPAudio
 import VoIPCore
 import VoIPFocus
+import VoIPNotifications
 
 /// The push token, the calls with their actions, the audio routes, and what happened to calls.
 struct ContentView: View {
@@ -17,8 +18,16 @@ struct ContentView: View {
           Button("Report an incoming call") {
             Task { await calls.reportIncomingCall() }
           }
+          Button("Preview an incoming call") {
+            Task { await calls.previewIncomingCall() }
+          }
           ForEach(calls.client.calls) { call in
             CallRow(call: call, calls: calls)
+          }
+        }
+        Section("Call notifications") {
+          Button("Allow notifications") {
+            Task { await calls.allowNotifications() }
           }
         }
         Section("Audio route") {
@@ -41,6 +50,11 @@ struct ContentView: View {
       }
       .navigationTitle("Calls")
     }
+    // The system calls from Recents and Siri with an `INStartCallIntent`.
+    .onContinueUserActivity("INStartCallIntent") { activity in
+      guard let request = StartCallRequest(activity) else { return }
+      Task { await calls.start(request) }
+    }
   }
 }
 
@@ -56,6 +70,9 @@ struct CallRow: View {
       HStack {
         if call.status == .ringing {
           button("Answer", .answer(call.id))
+        }
+        if case .previewing = call.status {
+          button("Join", .join(call.id))
         }
         if call.status == .connecting || call.status == .connected {
           button(call.isMuted ? "Unmute" : "Mute", .mute(call.id, muted: !call.isMuted))

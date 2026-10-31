@@ -80,10 +80,12 @@ Pod::Spec.new do |s|
     ss.frameworks = 'PushKit'
   end
 
-  # `CallNotifier`, which posts a communication notification for each call that a Focus filters.
+  # `CallNotifier`, which posts a communication notification for each call that a Focus filters,
+  # with `UserNotificationsAdapter`.
   s.subspec 'Notifications' do |ss|
     ss.dependency 'IosVoipSDK/Core'
     ss.source_files = 'Sources/VoIPNotifications/**/*.swift'
+    ss.frameworks = 'UserNotifications', 'Intents'
   end
 
   # `VoIPSimulator`, which presents calls in the iOS Simulator. Call `VoIPSimulator.activate()`

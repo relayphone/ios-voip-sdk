@@ -263,15 +263,85 @@ for await state in CallSettings.store.states() {
 The state says what the filter asked for, not whether a Focus is on: a Focus without the filter
 still filters the app's calls. Neither the filter nor the store needs a permission.
 
+## Call notifications
+
+When a Focus doesn't allow the app, the system filters its incoming calls, even from the people
+the Focus allows. `CallNotifier`, in `VoIPNotifications`, posts a communication notification for
+each such call, which the system shows as coming from the caller: at once for the people the Focus
+allows, and quietly in Notification Center for everyone else. It never rings: the notification is
+passive or active, with the default sound or none
+([ADR 0009](docs/adr/0009-call-notifications-never-ring.md)).
+
+Give the app:
+
+- the Communication Notifications capability, which is the
+  `com.apple.developer.usernotifications.communication` entitlement;
+- `INStartCallIntent` in the `NSUserActivityTypes` array of its Info.plist;
+- the user's permission for notifications, which the app asks for. The SDK never asks.
+
+Then pass a notifier to `start` as an observer:
+
+```swift
+import VoIPNotifications
+
+let notifier = CallNotifier()
+let client = try VoIPClient.start(
+  framework: LiveCommunicationKitAdapter(), media: AppMedia(), push: push, observers: [notifier])
+```
+
+The notifier posts once per call, when the call becomes a call preview because Do Not Disturb or a
+Focus filtered it. When the call is joined here, it withdraws the notification. When the call ends
+without being joined here, it replaces the notification with a missed-call notification.
+`CallNotifier.Options` changes this: `triggers` adds the calls that the presentation policy shows
+as call previews, `endedWithoutJoining` keeps or removes the notification instead, and `customize`
+localizes the English text or drops a notification.
+
+Add the category with the Join action, and pass the user's responses and the system's requests to
+call someone to the notifier:
+
+```swift
+UNUserNotificationCenter.current().setNotificationCategories(
+  appCategories.union([UserNotificationsAdapter.category()]))
+
+// In the app's UNUserNotificationCenterDelegate:
+func userNotificationCenter(
+  _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
+) async {
+  guard let response = CallNotificationResponse(response) else { return }  // Not a call's.
+  _ = try? await notifier.handle(response)  // Joins the call if it is live here.
+}
+
+// From Recents and Siri:
+.onContinueUserActivity("INStartCallIntent") { activity in
+  guard let request = StartCallRequest(activity) else { return }
+  Task {
+    if case .callBack(let party, let hasVideo)? = try? await notifier.handle(request) {
+      let call = OutgoingCall(
+        id: CallID(rawValue: UUID().uuidString), parties: [party], hasVideo: hasVideo)
+      try await client.request(.start(call))
+    }
+  }
+}
+```
+
+When a call preview with the party is live here, the notifier joins it and returns `.joining`;
+otherwise it returns `.callBack`, and the app calls the party with a Call ID of its own. When the
+app's servers send a call notification as an alert push instead, a notification service extension
+builds the same content with `UserNotificationsAdapter().content(for:updating:)`. Set the push's
+`apns-collapse-id` to the call ID, so that a notification that the app posts later for the call
+replaces it.
+
 ## Example
 
 [`Examples/CallExample`](Examples/CallExample) is a SwiftUI app that puts the quick start
 together: it shows the VoIP push token and the audio routes, reports an incoming call, and
 answers, mutes and ends it, with a `CallMedia` that does nothing. Its App Intents extension has
-a Focus filter, whose state the app shows. Open
-`Examples/CallExample/CallExample.xcodeproj` and run the `CallExample` scheme on an iOS 27
-simulator; it uses the package from this checkout. The Focus filter needs a signed build with
-your team's App Group in place of `group.com.example.CallExample`.
+a Focus filter, whose state the app shows. It also previews a call with a call notification,
+which joins the call when tapped. Open `Examples/CallExample/CallExample.xcodeproj` and run the
+`CallExample` scheme on an iOS 27 simulator; it uses the package from this checkout. The Focus
+filter needs a signed build with your team's App Group in place of
+`group.com.example.CallExample`, and call notifications need one with the Communication
+Notifications capability.
 
 ## Why LiveCommunicationKit
 
@@ -281,8 +351,9 @@ it, and unlike CallKit it can be active in apps on the China mainland storefront
 
 When a Focus doesn't allow the app, LiveCommunicationKit filters an incoming call, even one from a
 person the Focus allows, and the SDK reports it as a filtered call. The app can still reach the
-user: a call communication notification gets through a Focus for the people it allows, and a Live
-Activity can show the call silently as a call preview. CarPlay calling is documented only for
+user: a call communication notification gets through a Focus for the people it allows (see
+[Call notifications](#call-notifications)), and a Live Activity can show the call silently as a
+call preview. CarPlay calling is documented only for
 CallKit. [ADR 0002](docs/adr/0002-one-calling-framework-per-build.md) records the decision and its
 consequences.
 

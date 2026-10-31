@@ -12,14 +12,19 @@
 ///
 /// Create the notifier when the app launches, and pass it to
 /// `VoIPClient.start(framework:media:push:audio:observers:configuration:clock:)` as an observer,
-/// so that it sees the call of the VoIP push that cold-launched the app:
+/// so that it sees the call of the VoIP push that cold-launched the app. On iOS it posts with
+/// ``UserNotificationsAdapter`` by default:
 ///
 /// ```swift
-/// let notifier = CallNotifier(center: center)
+/// let notifier = CallNotifier()
 /// let client = try VoIPClient.start(
 ///   framework: LiveCommunicationKitAdapter(), media: AppMedia(), push: PushKitSource(),
 ///   observers: [notifier])
 /// ```
+///
+/// The app needs the Communication Notifications capability, `INStartCallIntent` in its
+/// `NSUserActivityTypes`, and the user's permission for notifications; see
+/// ``UserNotificationsAdapter``.
 ///
 /// ## When it posts
 ///
@@ -48,6 +53,14 @@
 ///   ``Options/endedWithoutJoining`` can keep or remove it instead.
 ///
 /// Follow what happens to the notifications with ``events()``.
+///
+/// ## Routing the user's responses
+///
+/// Pass the responses to call notifications that the app's `UNUserNotificationCenterDelegate`
+/// receives to ``handle(_:)-(CallNotificationResponse)``, and the `INStartCallIntent`s that the
+/// system sends from Recents or Siri to ``handle(_:)-(StartCallRequest)``. When the call is live
+/// in a call preview on this device, the notifier requests to join it; otherwise the route is to
+/// call the party back, which the app does with a Call ID of its own.
 @MainActor
 public final class CallNotifier: CallObserver {
   /// What makes the notifier post a notification for a call.
@@ -96,6 +109,13 @@ public final class CallNotifier: CallObserver {
     /// device. Defaults to `true`.
     public var withdrawsWhenJoined: Bool
 
+    /// Whether tapping the notification of a call that is live in a call preview joins the call,
+    /// as its Join action does. Defaults to `true`.
+    ///
+    /// It applies to the responses that the app routes with
+    /// ``CallNotifier/handle(_:)-(CallNotificationResponse)``.
+    public var joinsOnTap: Bool
+
     /// Decides what happens to a call's notification when the call ends without being joined on
     /// this device. It receives the ended call, whose status holds the end reason. Defaults to
     /// ``EndedCallNotification/missedCall``.
@@ -118,6 +138,8 @@ public final class CallNotifier: CallObserver {
     ///   - playsSound: Whether the notifications play the default notification sound.
     ///   - withdrawsWhenJoined: Whether the notifier withdraws a call's notification when the call
     ///     is joined on this device.
+    ///   - joinsOnTap: Whether tapping the notification of a call that is live in a call preview
+    ///     joins the call.
     ///   - endedWithoutJoining: Decides what happens to a call's notification when the call ends
     ///     without being joined on this device.
     ///   - customize: Changes each notification before the notifier posts it.
@@ -126,6 +148,7 @@ public final class CallNotifier: CallObserver {
       interruptionLevel: CallNotification.InterruptionLevel = .active,
       playsSound: Bool = true,
       withdrawsWhenJoined: Bool = true,
+      joinsOnTap: Bool = true,
       endedWithoutJoining: @escaping @MainActor (Call) -> EndedCallNotification = { _ in
         .missedCall
       },
@@ -137,6 +160,7 @@ public final class CallNotifier: CallObserver {
       self.interruptionLevel = interruptionLevel
       self.playsSound = playsSound
       self.withdrawsWhenJoined = withdrawsWhenJoined
+      self.joinsOnTap = joinsOnTap
       self.endedWithoutJoining = endedWithoutJoining
       self.customize = customize
     }
@@ -156,6 +180,9 @@ public final class CallNotifier: CallObserver {
   public let options: Options
 
   private let center: any CallNotificationCenter
+  /// The client whose calls the notifier follows, which it keeps weakly so that the client can be
+  /// released.
+  private(set) weak var client: (any NotifierClient)?
   private let subscribers = NotifierEventStreams<Event>()
   /// The live calls the notifier made a notification for.
   private var notified: [CallID: Notified] = [:]
@@ -178,7 +205,7 @@ public final class CallNotifier: CallObserver {
   ///
   /// - Parameter client: The client that is starting.
   public func attach(to client: VoIPClient) {
-    follow(client.events())
+    follow(client.events(), client: client)
   }
 
   /// Returns a new stream of what happens to the notifier's notifications from now on.
@@ -189,10 +216,11 @@ public final class CallNotifier: CallObserver {
   }
 
   /// Handles each call event in order, so that a notification is posted before it is replaced or
-  /// withdrawn.
-  func follow(_ events: AsyncStream<CallEvent>) {
+  /// withdrawn, and routes responses to the client.
+  func follow(_ events: AsyncStream<CallEvent>, client: (any NotifierClient)? = nil) {
     task?.cancel()
     notified = [:]
+    self.client = client
     task = Task { [weak self] in
       for await event in events {
         // A stream buffers events, which a cancelled task still receives.
