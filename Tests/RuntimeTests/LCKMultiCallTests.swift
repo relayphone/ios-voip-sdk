@@ -9,8 +9,7 @@
     /// LiveCommunicationKit exposes neither.
     @Suite @MainActor struct LCKMultiCall {
       @Test func aLatePauseHoldsBackTheJoin() async throws {
-        try await exclusively {
-          let session = try await LCKSession()
+        try await withLCKSession { session in
           try await session.pair()
           #expect(
             try await session.choices("B") == ["hold-and-accept", "end-and-accept", "decline"])
@@ -30,13 +29,11 @@
                 && $0.state == "paused"
             })
           #expect(paused.time < settled.time, "A pauses before its Pause is fulfilled")
-          try await session.finish()
         }
       }
 
       @Test func actionsSettledInReverseStillJoinOnce() async throws {
-        try await exclusively {
-          let session = try await LCKSession()
+        try await withLCKSession { session in
           try await session.pair()
           session.app.settle("Pause", .reverse(milliseconds: 630))
           session.app.settle("Join", .reverse(milliseconds: 630))
@@ -47,7 +44,6 @@
             $0.event == "lck.fixture.settled" && actions.contains($0.actionID ?? "")
           }
           #expect(settled.map(\.kind) == ["Join", "Pause"])
-          try await session.finish()
         }
       }
 
@@ -60,8 +56,7 @@
       func aFailedActionEndsItsConversation(
         control: String, failing: String, a: String, b: String
       ) async throws {
-        try await exclusively {
-          let session = try await LCKSession()
+        try await withLCKSession { session in
           try await session.pair()
           session.app.settle(failing, .fail, nth: 1)
           let actions = try await session.composite(control)
@@ -78,7 +73,6 @@
             #expect(
               session.app.state("A") == "paused", "A failed Join doesn't resume the held call")
           }
-          try await session.finish()
         }
       }
 
@@ -90,8 +84,7 @@
       func aPendingActionExpiresAfterTheMeasuredTimeNotTheAdvertisedOne(
         control: String, pending: String, a: String, b: String
       ) async throws {
-        try await exclusively {
-          let session = try await LCKSession()
+        try await withLCKSession { session in
           try await session.pair()
           session.app.settle(pending, .pending, nth: 1)
           let actions = try await session.composite(control)
@@ -117,26 +110,22 @@
             }
           }
           if b == "joined" { try session.expectJoinedAfterEveryAction(actions) }
-          try await session.finish()
         }
       }
 
       @Test func capabilitiesDontLimitTheChoicesOrThePause() async throws {
-        try await exclusively {
-          let session = try await LCKSession(capabilities: [])
+        try await withLCKSession(capabilities: []) { session in
           try await session.pair()
           #expect(try await session.choices("B").contains("hold-and-accept"))
           _ = try await session.composite()
           try await session.expect(["A": "paused", "B": "joined"])
           try await session.app.pause("B", true)
           try await session.expect(["A": "paused", "B": "paused"])
-          try await session.finish()
         }
       }
 
       @Test func removingCapabilitiesDuringACallChangesNothing() async throws {
-        try await exclusively {
-          let session = try await LCKSession()
+        try await withLCKSession { session in
           try await session.pair()
           try session.app.update("A", capabilities: [])
           #expect(try await session.choices("B").contains("hold-and-accept"))
@@ -145,7 +134,6 @@
           try session.app.update("B", capabilities: [])
           try await session.app.pause("B", true)
           try await session.expect(["A": "paused", "B": "paused"])
-          try await session.finish()
         }
       }
 
@@ -172,8 +160,7 @@
       }
 
       @Test func mergingAndUnmergingChangeNoStateAndAFullGroupLimitsTheChoices() async throws {
-        try await exclusively {
-          let session = try await LCKSession(perGroup: 2)
+        try await withLCKSession(perGroup: 2) { session in
           try await session.pair()
           _ = try await session.composite()
           try await session.expect(["A": "paused", "B": "joined"])
@@ -197,39 +184,33 @@
           #expect(error.domain == "com.apple.CallKit.error.requesttransaction" && error.code == 7)
           _ = try await session.composite("end-held-and-accept", call: "C", active: "B", held: "A")
           try await session.expect(["A": "left", "B": "paused", "C": "joined"])
-          try await session.finish()
         }
       }
 
       @Test func endAndAcceptWithACallOnHold() async throws {
-        try await exclusively {
-          let session = try await LCKSession()
+        try await withLCKSession { session in
           try await session.pair()
           _ = try await session.composite()
           try await session.expect(["A": "paused", "B": "joined"])
           try await session.app.reportIncoming("C")
           _ = try await session.composite("end-and-accept", call: "C", active: "B")
           try await session.expect(["A": "paused", "B": "left", "C": "joined"])
-          try await session.finish()
         }
       }
 
       @Test func unmergingASingleConversationChangesNothing() async throws {
-        try await exclusively {
-          let session = try await LCKSession(perGroup: 2)
+        try await withLCKSession(perGroup: 2) { session in
           try await session.app.reportIncoming("A")
           try await session.system { .answer($0.id("A")) }
           try await session.expect(["A": "joined"])
           try await expectUnchanged(session, "Unmerge", ["A": "joined"]) {
             try await session.app.unmerge("A")
           }
-          try await session.finish()
         }
       }
 
       @Test func resumingTheHeldCallEndsTheActiveOne() async throws {
-        try await exclusively {
-          let session = try await LCKSession()
+        try await withLCKSession { session in
           try await session.pair()
           _ = try await session.composite()
           try await session.expect(["A": "paused", "B": "joined"])
@@ -241,25 +222,21 @@
             $0.event == "lck.fixture.perform" && $0.callUUID == b
           }
           #expect(actions.map(\.kind) == ["End"], "B ends rather than pausing")
-          try await session.finish()
         }
       }
 
       @Test(arguments: [1, 2])
       func withOneGroupTheSystemCanOnlyEndAndAccept(perGroup: Int) async throws {
-        try await exclusively {
-          let session = try await LCKSession(groups: 1, perGroup: perGroup)
+        try await withLCKSession(groups: 1, perGroup: perGroup) { session in
           try await session.pair()
           #expect(try await session.choices("B") == ["end-and-accept", "decline"])
           let error = try #require(await capture { try await session.app.start("C") })
           #expect(error.domain == "com.apple.CallKit.error.requesttransaction" && error.code == 7)
-          try await session.finish()
         }
       }
 
       @Test func anInjectedErrorFailsTheReportUntilItIsCleared() async throws {
-        try await exclusively {
-          let session = try await LCKSession()
+        try await withLCKSession { session in
           let handle = "+15555550199"
           try await session.app.reportIncoming("normal", handle: handle)
           try await session.system { .answer($0.id("normal")) }
@@ -274,7 +251,6 @@
           try await session.app.reportIncoming("cleared", handle: handle)
           try await session.system { .answer($0.id("cleared")) }
           try await session.expect(["cleared": "joined"])
-          try await session.finish()
         }
       }
     }

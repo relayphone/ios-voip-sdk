@@ -19,8 +19,7 @@
       }
 
       @Test func aJoinActivatesAudioAfterItSettles() async throws {
-        try await exclusively {
-          let session = try await LCKSession()
+        try await withLCKSession { session in
           try await session.app.reportIncoming("A")
           let actions = try await session.system { .answer($0.id("A")) }
           #expect(actions.count == 1)
@@ -29,26 +28,22 @@
           }
           try await session.expect(["A": "joined"])
           try await expectAudio(session, after: settled, by: 290)
-          try await session.finish()
         }
       }
 
       @Test func aStartActivatesAudioAfterItSettles() async throws {
-        try await exclusively {
-          let session = try await LCKSession()
+        try await withLCKSession { session in
           try await session.app.start("A")
           let started = try await session.callback("perform") {
             $0.kind == "Start" && $0.callUUID == session.app.id("A").uuidString
           }
           let settled = try await session.callback("settled") { $0.actionID == started.actionID }
           try await expectAudio(session, after: settled, by: 230)
-          try await session.finish()
         }
       }
 
       @Test func aMuteDuringAPendingJoinActivatesAudioOnce() async throws {
-        try await exclusively {
-          let session = try await LCKSession()
+        try await withLCKSession { session in
           try await session.app.reportIncoming("A")
           let answer = try await session.system { .answer($0.id("A")) }
           let joined = try await session.callback("settled") {
@@ -64,7 +59,6 @@
           let rows = try session.entries()
           #expect(rows.count { $0.event == "lck.fixture.didActivate" } == 1)
           #expect(!rows.contains { $0.event == "lck.fixture.didDeactivate" })
-          try await session.finish()
         }
       }
 
@@ -72,8 +66,7 @@
       func aCompositeMovesAudioAfterItsLastActionSettles(
         control: String, delayed: String, a: String
       ) async throws {
-        try await exclusively {
-          let session = try await LCKSession()
+        try await withLCKSession { session in
           try await session.pair()
           session.app.settle(delayed, .delay(milliseconds: 2000), nth: 1)
           let start = try session.runtime.cursor()
@@ -108,13 +101,11 @@
             },
             "Audio deactivates before it activates for B")
           #expect(activated.time - late.time >= 113)
-          try await session.finish()
         }
       }
 
       @Test func aLateResumeEndsTheActiveCallOnceItSettles() async throws {
-        try await exclusively {
-          let session = try await LCKSession()
+        try await withLCKSession { session in
           try await session.pair()
           let handoff = try session.runtime.cursor()
           _ = try await session.composite()
@@ -142,7 +133,6 @@
           }
           #expect(actions.map(\.kind) == ["End"])
           try await session.expect(["A": "joined", "B": "left"])
-          try await session.finish()
         }
       }
     }

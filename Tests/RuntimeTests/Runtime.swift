@@ -26,13 +26,25 @@
     await RuntimeTurn.shared.pass()
   }
 
-  /// Runs a test with the runtime to itself and a new CallKit app, which stops afterwards.
+  /// Runs a test with the runtime to itself and a new CallKit app, which stops afterwards. If the
+  /// test fails, its calls end first, so that the next test starts without them.
   @MainActor
   func withCallKitApp(_ body: @MainActor (CallKitApp) async throws -> Void) async throws {
     try await exclusively {
       let app = CallKitApp()
       defer { app.stop() }
-      try await body(app)
+      do {
+        try await body(app)
+      } catch {
+        // End what the test left while the app can still settle the actions.
+        if let runtime = try? Runtime.shared() {
+          try? await runtime.clearSettings()
+          if let calls = try? await runtime.status().calls.map(\.state.uuid) {
+            try? await runtime.end(calls)
+          }
+        }
+        throw error
+      }
     }
   }
 
