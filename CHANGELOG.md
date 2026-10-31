@@ -77,8 +77,9 @@ Changes not yet released are recorded below. Public API changes include migratio
   `PushKit`.
 - `Examples/CallExample` is a SwiftUI app that starts `VoIPClient` with the LiveCommunicationKit
   adapter, the PushKit source and the audio session adapter, shows the VoIP push token and the
-  audio routes, and reports, answers, mutes and ends a call, with `CallMedia` as a stub. CI
-  builds it for the simulator and for devices.
+  audio routes, and reports, answers, mutes and ends a call, with `CallMedia` as a stub. It
+  handles call events in a `CallObserver`, so that it also handles the call of the VoIP push that
+  launched it. CI builds it for the simulator and for devices.
 - `VoIPClient.confirmNotPlaced(_:)` tells the SDK that the app couldn't place a call it was
   asked to start or join, after `CallEvent.startRequested(_:)` or `joinRequested(_:)`. The SDK
   fails the start or join in the calling framework at once, without waiting for
@@ -93,6 +94,11 @@ Changes not yet released are recorded below. Public API changes include migratio
   `start` returns can miss. `observers` defaults to none, so existing calls to `start` don't
   change. `FakePushSource(pending:)` delivers pushes as soon as the client attaches, as PushKit
   delivers the push that cold-launched the app.
+- `Deadlines.mediaPreparation` (2 seconds) is how long the SDK holds an answer, start or join
+  while `CallMedia.prepare(_:)` runs; when it passes, the call ends with `CallFailure.media`, or a
+  call being joined returns to its call preview. Its documentation describes what the user sees
+  meanwhile and the system's own limit on actions, and recommends around 15 to 20 seconds for
+  media that claims and joins a room over the network after a cold launch.
 - The `VoIPFocus` library records the Focus filter state: what the app's Focus filter last asked
   for, `FocusFilterState.unknown`, `inactive(since:)` or `active(_:since:)` with the app's own
   settings type. `FocusFilterStore(appGroup:)` shares it between the app and its extensions

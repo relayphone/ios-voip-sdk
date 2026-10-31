@@ -46,14 +46,14 @@ final class Calls {
   /// Shows call previews as Live Activities, and follows those the app's servers start.
   let previews = CallPreviewActivities()
 
+  /// What happened to calls, newest first.
+  let history = History()
+
   /// The VoIP push token, as hexadecimal, for the app's servers.
   private(set) var pushToken = "None yet"
 
   /// The push-to-start token, as hexadecimal, with which the app's servers start call previews.
   private(set) var pushToStartToken = "None yet"
-
-  /// What happened to calls, newest first.
-  private(set) var history: [String] = []
 
   /// What the Focus filter last asked for, which its extension records while the app may not be
   /// running.
@@ -69,7 +69,7 @@ final class Calls {
     do {
       client = try VoIPClient.start(
         framework: LiveCommunicationKitAdapter(), media: NoMedia(), push: push, audio: audio,
-        observers: [notifier, previews])
+        observers: [CallEventHandler(history: history), notifier, previews])
     } catch {
       fatalError("A process runs one VoIPClient: \(error)")
     }
@@ -78,10 +78,6 @@ final class Calls {
       for await token in push.tokens() {
         self?.pushToken = token?.map { String(format: "%02x", $0) }.joined() ?? "Invalidated"
       }
-    }
-    let events = client.events()
-    Task { [weak self] in
-      for await event in events { await self?.handle(event) }
     }
     Task { [weak self] in
       // Send the state to your servers here too, as the extension may not have reached them.
@@ -99,17 +95,17 @@ final class Calls {
     Task { [previews, weak self] in
       // Send each preview's push token to your servers, which update and end the preview with it.
       for await token in previews.pushTokens() {
-        self?.history.insert("Preview push token for \(token.callID.rawValue)", at: 0)
+        self?.history.add("Preview push token for \(token.callID.rawValue)")
       }
     }
     Task { [previews, weak self] in
       for await event in previews.events() {
-        self?.history.insert("Live Activity: \(event)", at: 0)
+        self?.history.add("Live Activity: \(event)")
       }
     }
     let notices = notifier.events()
     Task { [weak self] in
-      for await notice in notices { self?.history.insert("Notification \(notice)", at: 0) }
+      for await notice in notices { self?.history.add("Notification \(notice)") }
     }
     // Set the delegate while the app launches, so that it receives the tap that launched the app.
     let responses = NotificationResponses(calls: self)
@@ -124,9 +120,9 @@ final class Calls {
     center.setNotificationCategories([UserNotificationsAdapter.category()])
     do {
       let allowed = try await center.requestAuthorization(options: [.alert, .sound])
-      history.insert("Notifications allowed: \(allowed)", at: 0)
+      history.add("Notifications allowed: \(allowed)")
     } catch {
-      history.insert("Notifications not allowed: \(error)", at: 0)
+      history.add("Notifications not allowed: \(error)")
     }
   }
 
@@ -141,9 +137,9 @@ final class Calls {
         id: CallID(rawValue: UUID().uuidString), parties: [caller],
         presentationPolicy: PresentationPolicy(incoming: .preview))
       let outcome = await client.report(call)
-      history.insert("Reported: \(outcome)", at: 0)
+      history.add("Reported: \(outcome)")
     } catch {
-      history.insert("Invalid caller: \(error)", at: 0)
+      history.add("Invalid caller: \(error)")
     }
   }
 
@@ -151,14 +147,14 @@ final class Calls {
   func respond(to response: CallNotificationResponse) async {
     do {
       switch try await notifier.handle(response) {
-      case .joining(let id): history.insert("Joining \(id.rawValue)", at: 0)
+      case .joining(let id): history.add("Joining \(id.rawValue)")
       case .callBack(let party, _):
         // A notification of a call that is over: show the caller, from whom the user can call back.
-        history.insert("Tapped a missed call from \(party.presentedHandle.value)", at: 0)
+        history.add("Tapped a missed call from \(party.presentedHandle.value)")
       case nil: break
       }
     } catch {
-      history.insert("Couldn't join: \(error)", at: 0)
+      history.add("Couldn't join: \(error)")
     }
   }
 
@@ -173,7 +169,7 @@ final class Calls {
         id: CallID(rawValue: UUID().uuidString), parties: [party], hasVideo: hasVideo)
       try await client.request(.start(call))
     } catch {
-      history.insert("Couldn't call: \(error)", at: 0)
+      history.add("Couldn't call: \(error)")
     }
   }
 
@@ -184,9 +180,9 @@ final class Calls {
         handle: try Handle(kind: .phoneNumber, value: "+14155550123"), displayName: "Alice")
       let call = IncomingCall(id: CallID(rawValue: UUID().uuidString), parties: [caller])
       let outcome = await client.report(call)
-      history.insert("Reported: \(outcome)", at: 0)
+      history.add("Reported: \(outcome)")
     } catch {
-      history.insert("Invalid caller: \(error)", at: 0)
+      history.add("Invalid caller: \(error)")
     }
   }
 
@@ -195,7 +191,7 @@ final class Calls {
     do {
       try await client.request(action)
     } catch {
-      history.insert("Refused: \(error)", at: 0)
+      history.add("Refused: \(error)")
     }
   }
 
@@ -204,28 +200,66 @@ final class Calls {
     do {
       try await audio.selectRoute(id)
     } catch {
-      history.insert("Route refused: \(error)", at: 0)
+      history.add("Route refused: \(error)")
+    }
+  }
+}
+
+/// What happened to calls, newest first.
+@MainActor
+@Observable
+final class History {
+  private(set) var entries: [String] = []
+
+  /// Records what happened.
+  func add(_ entry: String) {
+    entries.insert(entry, at: 0)
+  }
+}
+
+/// Places the calls that the user starts or joins, connects answered calls, and records what
+/// happens to calls.
+///
+/// It's an observer, so it subscribes to the client's events while the client starts and also
+/// handles the call of the VoIP push that launched the app. A stream that the app creates after
+/// `start` returns can miss that call's first events.
+@MainActor
+final class CallEventHandler: CallObserver {
+  private let history: History
+  /// Weak, because the client keeps its observers.
+  private weak var client: VoIPClient?
+  private var task: Task<Void, Never>?
+
+  init(history: History) {
+    self.history = history
+  }
+
+  func attach(to client: VoIPClient) {
+    self.client = client
+    let events = client.events()  // Subscribes before any push can arrive.
+    task = Task { [weak self] in
+      for await event in events { await self?.handle(event) }
     }
   }
 
   private func handle(_ event: CallEvent) async {
     switch event {
-    case .presented(let call): history.insert("Ringing: \(call.id.rawValue)", at: 0)
-    case .previewStarted(let call): history.insert("Previewing: \(call.status)", at: 0)
+    case .presented(let call): history.add("Ringing: \(call.id.rawValue)")
+    case .previewStarted(let call): history.add("Previewing: \(call.status)")
     case .startRequested(let call), .joinRequested(let call):
       // The app places the call with its servers, then confirms it.
-      await client.confirmPlaced(call.id)
+      await client?.confirmPlaced(call.id)
     case .performed(let action, let call):
-      history.insert("Performed \(action) → \(call.status)", at: 0)
+      history.add("Performed \(action) → \(call.status)")
       if case .answer(let id) = action {
         // Your servers tell the app when the call's media connects. This example connects at once.
-        await client.receive(.connected, for: id, eventID: EventID(rawValue: UUID().uuidString))
+        await client?.receive(.connected, for: id, eventID: EventID(rawValue: UUID().uuidString))
       }
-    case .audioActivated: history.insert("Audio activated", at: 0)
-    case .audioDeactivated: history.insert("Audio deactivated", at: 0)
-    case .audioInterrupted(let reason): history.insert("Audio interrupted: \(reason)", at: 0)
-    case .mediaServicesReset: history.insert("Media services reset", at: 0)
-    case .ended(let call): history.insert("Ended: \(call.status)", at: 0)
+    case .audioActivated: history.add("Audio activated")
+    case .audioDeactivated: history.add("Audio deactivated")
+    case .audioInterrupted(let reason): history.add("Audio interrupted: \(reason)")
+    case .mediaServicesReset: history.add("Media services reset")
+    case .ended(let call): history.add("Ended: \(call.status)")
     }
   }
 }

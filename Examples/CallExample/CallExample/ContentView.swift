@@ -50,7 +50,7 @@ struct ContentView: View {
           Text("Add the Incoming calls filter to a Focus in Settings > Focus.")
         }
         Section("Events") {
-          ForEach(Array(calls.history.enumerated()), id: \.offset) { entry in
+          ForEach(Array(calls.history.entries.enumerated()), id: \.offset) { entry in
             Text(entry.element).font(.footnote)
           }
         }

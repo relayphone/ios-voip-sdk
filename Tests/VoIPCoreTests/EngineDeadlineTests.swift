@@ -92,6 +92,55 @@ extension EngineTests {
       }
     }
 
+    /// An action that waits for the call's media.
+    enum Preparing: String, CaseIterable, Sendable, CustomTestStringConvertible {
+      case answer
+      case join
+
+      var testDescription: String { rawValue }
+    }
+
+    /// An app whose media joins a room over the network sets a longer media preparation deadline,
+    /// for which the SDK holds the answer or join.
+    @Test(arguments: Preparing.allCases)
+    func mediaPreparationWaitsForTheConfiguredDeadline(_ preparing: Preparing) async throws {
+      let deadline = Duration.seconds(20)
+      let h = try Harness(
+        configuration: VoIPConfiguration(deadlines: Deadlines(mediaPreparation: deadline)))
+      let media = h.media
+      await onVoIPActor { media.preparation = .wait }
+      let action: ActionID
+      switch preparing {
+      case .answer:
+        try await h.ring()
+        action = await h.framework.perform(.answer(callID))
+      case .join:
+        _ = await h.client.report(incoming(callID, .preview))
+        #expect(try await h.next() == .previewStarted(callID, .policy))
+        try await h.client.request(.join(callID))
+        #expect(try await h.next() == .joinRequested(callID))
+        action = try await h.lastActionID()
+        await h.client.confirmPlaced(callID)
+      }
+
+      // The default deadline passes, and the call still waits for its media.
+      let standard = Deadlines().mediaPreparation
+      h.clock.advance(by: standard)
+      try await h.expectNoEvents()
+      h.clock.advance(by: deadline - standard - .milliseconds(1))
+      try await h.expectNoEvents()
+      #expect(await !h.records.contains(.fail(action)))
+
+      h.clock.advance(by: .milliseconds(1))
+      let expected: Seen =
+        switch preparing {
+        case .answer: .ended(callID, .failed(.media))
+        case .join: .previewStarted(callID, .policy)
+        }
+      #expect(try await h.next() == expected)
+      #expect(await h.records.suffix(2) == [.fail(action), .reportEnded(callID, .failed(.media))])
+    }
+
     @Test func disarmedDeadlinesNeverFire() async throws {
       let h = try Harness()
       try await h.connect()

@@ -155,11 +155,16 @@ final class Harness {
   }
 
   /// Expects that no event is waiting, by sending one that is known and reading it next.
+  ///
+  /// It then waits until the client's ``VoIPClient/calls`` include the call it sent, so that a
+  /// test can read the client's state afterwards: the client applies the engine's state in a task
+  /// of its own, which may not have run when the test reads an event.
   func expectNoEvents(sourceLocation: SourceLocation = #_sourceLocation) async throws {
     markers += 1
     let marker = CallID(rawValue: "marker-\(markers)")
     _ = await client.report(incoming(marker, .preview))
     #expect(try await next() == .previewStarted(marker, .policy), sourceLocation: sourceLocation)
+    await until { client in client.calls.contains { $0.id == marker } }
   }
 
   /// Everything the engine asked of the calling framework.
