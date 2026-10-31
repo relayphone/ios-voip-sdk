@@ -1,6 +1,6 @@
 # Calling
 
-The vocabulary of the iOS calling SDK: how an app's real-time calls are presented, controlled and connected on a device. Terms follow Apple's CallKit and LiveCommunicationKit wording wherever Apple has a word. Where the two frameworks differ, the entry names both.
+The vocabulary of the iOS calling SDK: how an app's real-time calls are presented, controlled and connected on a device. Terms follow Apple's calling vocabulary wherever Apple has a word. Where LiveCommunicationKit uses a different word, the entry names it.
 
 ## Language
 
@@ -11,7 +11,7 @@ A real-time voice or video interaction as this device knows it: ringing here, ta
 _Avoid_: Conversation (outside LiveCommunicationKit), session, connection
 
 **Call ID**:
-The app's identifier for a call, the same on every device that rings for it. It is distinct from the per-device UUID that CallKit and LiveCommunicationKit assign.
+The app's identifier for a call, the same on every device that rings for it. It is distinct from the per-device UUID that the calling framework uses.
 _Avoid_: UUID, conversation ID
 
 **Party**:
@@ -127,5 +127,5 @@ The app's real-time audio and video transport for a call.
 _Avoid_: Room, stream, connection
 
 **Calling framework**:
-The Apple system framework that presents calls to the user on a device: LiveCommunicationKit or CallKit.
+The Apple system framework that presents calls to the user on a device: LiveCommunicationKit.
 _Avoid_: Provider (as a domain term), backend

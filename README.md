@@ -1,16 +1,14 @@
 # ios-voip-sdk
 
 A VoIP calling SDK for iOS. It keeps the state of every call, presents calls with
-**LiveCommunicationKit**, Apple's successor to CallKit's provider API, or with CallKit, and
-receives VoIP pushes with PushKit. Calls also work in the iOS Simulator during development,
-without a device.
+**LiveCommunicationKit**, Apple's successor to CallKit's provider API, and receives VoIP pushes
+with PushKit. Calls also work in the iOS Simulator during development, without a device.
 
 | Library | What it holds |
 | --- | --- |
 | `VoIPCore` | `VoIPClient`, the call values and the call state machine. It imports no calling framework. |
 | `VoIPAudio` | `AudioSessionAdapter`, which configures the audio session for calls, reports its interruptions and lists its audio routes. |
-| `VoIPLiveCommunicationKit` | `LiveCommunicationKitAdapter`, which presents calls with LiveCommunicationKit. The default. |
-| `VoIPCallKit` | `CallKitAdapter`, which presents calls with CallKit. |
+| `VoIPLiveCommunicationKit` | `LiveCommunicationKitAdapter`, which presents calls with LiveCommunicationKit. |
 | `VoIPPushKit` | `PushKitSource`, which receives VoIP pushes and the VoIP push token. |
 | `VoIPSimulator` | `VoIPSimulator.activate()`, which presents calls in the iOS Simulator in Debug builds. |
 | `VoIPTesting` | Fakes and a test clock that run `VoIPClient` in your tests without the system. |
@@ -43,9 +41,8 @@ Add the package to your manifest, or in Xcode with File > Add Package Dependenci
 .package(url: "https://github.com/relayphone/ios-voip-sdk.git", revision: "<revision>")
 ```
 
-Then add the libraries your app uses to its target: `VoIPCore`, exactly one of
-`VoIPLiveCommunicationKit` and `VoIPCallKit`, and usually `VoIPPushKit`, `VoIPAudio` and
-`VoIPSimulator`.
+Then add the libraries your app uses to its target: `VoIPCore`, `VoIPLiveCommunicationKit`, and
+usually `VoIPPushKit`, `VoIPAudio` and `VoIPSimulator`.
 
 ```swift
 .target(
@@ -61,8 +58,8 @@ Then add the libraries your app uses to its target: `VoIPCore`, exactly one of
 
 ### CocoaPods
 
-`pod 'IosVoipSDK'` installs `Core`, `LiveCommunicationKit` and `PushKit`. Name the subspecs to
-choose CallKit or to add audio and the simulator:
+`pod 'IosVoipSDK'` installs `Core`, `LiveCommunicationKit` and `PushKit`. Name the subspecs to add
+audio and the simulator:
 
 ```ruby
 pod 'IosVoipSDK', :git => 'https://github.com/relayphone/ios-voip-sdk.git', :commit => '<revision>',
@@ -74,14 +71,12 @@ pod 'IosVoipSDK', :git => 'https://github.com/relayphone/ios-voip-sdk.git', :com
 | `Core`                 | `VoIPCore`                 |
 | `Audio`                | `VoIPAudio`                |
 | `LiveCommunicationKit` | `VoIPLiveCommunicationKit` |
-| `CallKit`              | `VoIPCallKit`              |
 | `PushKit`              | `VoIPPushKit`              |
 | `Simulator`            | `VoIPSimulator`            |
 | `Testing`              | `VoIPTesting`              |
 
-Each adapter subspec includes `Core`. Choose exactly one of `LiveCommunicationKit` and `CallKit`.
-CocoaPods builds every subspec into one module, so import `IosVoipSDK` instead of the libraries'
-modules.
+Each adapter subspec includes `Core`. CocoaPods builds every subspec into one module, so import
+`IosVoipSDK` instead of the libraries' modules.
 
 `VoIPSimulator` can stay in Release builds with either package manager: `activate()` starts the
 runtime only in Debug builds for the simulator, and the runtime isn't compiled for devices.
@@ -196,21 +191,18 @@ answers, mutes and ends it, with a `CallMedia` that does nothing. Open
 `Examples/CallExample/CallExample.xcodeproj` and run the `CallExample` scheme on an iOS 27
 simulator; it uses the package from this checkout.
 
-## LiveCommunicationKit or CallKit
+## Why LiveCommunicationKit
 
-An app links one calling framework adapter, and `VoIPClient` works the same with either.
-Use `VoIPLiveCommunicationKit` unless you need something only CallKit has been measured to do.
-LiveCommunicationKit is the default, as Apple's successor to CallKit's provider API.
+The SDK presents calls with LiveCommunicationKit only. Measured on an iPhone 13 running iOS 27.1,
+it showed an incoming call about a second sooner than CallKit. Apple asks CallKit apps to move to
+it, and unlike CallKit it can be active in apps on the China mainland storefront.
 
-`VoIPCallKit` is for apps that depend on CallKit's measured behaviour. For example, on an
-iPhone 13 with iOS 27.0, a Focus that left the app out but allowed the caller in its People let
-a CallKit call ring, where LiveCommunicationKit filtered the call. That was a single sample.
-With CallKit, the system presents only the first party's handle, and Recents and Siri open the
-app to start a call rather than starting it through the adapter.
-
-Apps distributed in China mainland can't present calls with CallKit, so they need
-`VoIPLiveCommunicationKit`. [ADR 0002](docs/adr/0002-one-calling-framework-per-build.md), still
-a proposal, records why an app links one adapter per build.
+When a Focus doesn't allow the app, LiveCommunicationKit filters an incoming call, even one from a
+person the Focus allows, and the SDK reports it as a filtered call. The app can still reach the
+user: a call communication notification gets through a Focus for the people it allows, and a Live
+Activity can show the call silently as a call preview. CarPlay calling is documented only for
+CallKit. [ADR 0002](docs/adr/0002-one-calling-framework-per-build.md) records the decision and its
+consequences.
 
 ## Testing your app
 
@@ -231,14 +223,14 @@ xcodebuild test -scheme VoIPSDK-Package -destination 'platform=iOS Simulator,nam
 ```
 
 `swift test` covers the call values, push decoding, the call state machine, the call engine, the
-adapters' conversions, the audio session adapter on a fake session and the test clock, as well as
-the simulator runtime's policies against the device measurements, `cksim` and the Inspector's
-model. The simulator run adds the call journeys, which run the client with the PushKit source on
-the simulator runtime acting as the system: a VoIP push, answer, audio, connect and remote end;
-decline; answered elsewhere and filtered calls as previews; an outgoing call; and mute, hold and
-tones from the call screen, each through both the LiveCommunicationKit and the CallKit adapter. It
-also runs the runtime's own tests, which drive CallKit and LiveCommunicationKit calls through the
-runtime as the system does.
+LiveCommunicationKit adapter's conversions, the audio session adapter on a fake session and the test
+clock, as well as the simulator runtime's policies against the device measurements, `cksim` and the
+Inspector's model. The simulator run adds the call journeys, which run the client with the
+LiveCommunicationKit adapter and the PushKit source on the simulator runtime acting as the system: a
+VoIP push, answer, audio, connect and remote end; decline; answered elsewhere and filtered calls as
+previews; an outgoing call; and mute, hold and tones from the call screen. It also runs the
+runtime's own tests, which drive CallKit and LiveCommunicationKit calls through the runtime as the
+system does.
 
 ## License
 

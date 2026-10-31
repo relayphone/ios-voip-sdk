@@ -1,8 +1,7 @@
 /// An address at which a party can be reached: a phone number, an email address, or a generic
 /// value such as an app account, as in Apple's handle types.
 public struct Handle: Hashable, Sendable {
-  /// The kind of address a handle holds, matching CallKit's and LiveCommunicationKit's handle
-  /// types.
+  /// The kind of address a handle holds, matching LiveCommunicationKit's handle types.
   public enum Kind: Hashable, Sendable, CaseIterable {
     /// A phone number in E.164 format, such as `+14155550123`.
     case phoneNumber

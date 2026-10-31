@@ -4,7 +4,7 @@ import Foundation
 #endif
 
 /// A calling framework that records what the SDK asks of it and answers as the test scripts, so
-/// that the SDK can be tested without CallKit or LiveCommunicationKit.
+/// that the SDK can be tested without LiveCommunicationKit.
 ///
 /// Like the system, it asks the SDK to perform each action that the app requests. Use
 /// ``perform(_:)`` and ``send(_:)`` to act as the user on the system's calling surfaces, or as the

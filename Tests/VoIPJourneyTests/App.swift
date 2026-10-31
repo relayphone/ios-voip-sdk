@@ -2,35 +2,13 @@
   import CKSimProtocol
   import Foundation
   import Testing
-  import VoIPCallKit
   import VoIPCore
   import VoIPLiveCommunicationKit
   import VoIPPushKit
   import VoIPSimulator
   import VoIPTesting
 
-  /// A shipping calling framework adapter that the journeys run through.
-  enum Framework: CaseIterable, CustomTestStringConvertible {
-    case liveCommunicationKit
-    case callKit
-
-    /// A new adapter.
-    func adapter() -> any CallingFramework {
-      switch self {
-      case .liveCommunicationKit: LiveCommunicationKitAdapter()
-      case .callKit: CallKitAdapter()
-      }
-    }
-
-    var testDescription: String {
-      switch self {
-      case .liveCommunicationKit: "LiveCommunicationKit"
-      case .callKit: "CallKit"
-      }
-    }
-  }
-
-  /// An app as a journey runs it: the client with a shipping calling framework adapter and the
+  /// An app as a journey runs it: the client with the LiveCommunicationKit adapter and the
   /// PushKit source on the simulator runtime, and media that records what the SDK asks of it.
   @MainActor
   final class App {
@@ -46,18 +24,14 @@
 
     /// Starts the app on the simulator runtime.
     ///
-    /// - Parameters:
-    ///   - framework: The calling framework that presents the app's calls.
-    ///   - launch: What the system does before the app starts the client, such as delivering the
-    ///     VoIP push that launched it.
-    init(
-      _ framework: Framework, launch: (SimulatedSystem) async throws -> Void = { _ in }
-    ) async throws {
+    /// - Parameter launch: What the system does before the app starts the client, such as
+    ///   delivering the VoIP push that launched it.
+    init(launch: (SimulatedSystem) async throws -> Void = { _ in }) async throws {
       try #require(VoIPSimulator.activate(), "The simulator runtime didn't activate")
       system = try SimulatedSystem()
       try await launch(system)
       client = try VoIPClient.start(
-        framework: framework.adapter(), media: media, push: PushKitSource())
+        framework: LiveCommunicationKitAdapter(), media: media, push: PushKitSource())
       let stream = client.events()
       listener = Task { [weak self] in
         for await event in stream { self?.events.append(event) }

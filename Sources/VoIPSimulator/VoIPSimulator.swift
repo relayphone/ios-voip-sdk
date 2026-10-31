@@ -5,7 +5,7 @@
 /// Calls in the iOS Simulator, which has no call service of its own.
 ///
 /// The simulator runtime stands in for the system's call service beneath CallKit,
-/// LiveCommunicationKit and PushKit, so that the calling framework adapters run unchanged: calls
+/// LiveCommunicationKit and PushKit, so that the SDK's adapters run unchanged: calls
 /// are reported, ring, are answered and activate audio as on a device, and the runtime can
 /// deliver VoIP pushes. It follows measurements from a device, but it uses private simulator
 /// interfaces, so it only runs in Debug builds for the simulator.

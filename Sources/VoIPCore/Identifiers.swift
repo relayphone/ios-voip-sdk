@@ -2,7 +2,7 @@ public import Foundation
 
 /// The app's identifier for a call, the same on every device that rings for it.
 ///
-/// CallKit and LiveCommunicationKit give each call a per-device UUID. The SDK derives that UUID
+/// LiveCommunicationKit gives each call a per-device UUID. The SDK derives that UUID
 /// from the call ID with ``deviceUUID(for:)`` and never shows it to the app, so answered
 /// elsewhere, declined elsewhere, push deduplication and server events all refer to the same call.
 public struct CallID: RawRepresentable, Hashable, Sendable {
@@ -30,7 +30,7 @@ public struct EventID: RawRepresentable, Hashable, Sendable {
 /// Identifies one action that the calling framework asked the SDK to perform, so that the SDK can
 /// fulfil or fail it.
 public struct ActionID: RawRepresentable, Hashable, Sendable {
-  /// The identifier of the system's action, such as a CallKit action's UUID.
+  /// The identifier of the system's action, such as a LiveCommunicationKit action's UUID.
   public let rawValue: UUID
 
   /// Creates an action ID from the system action's identifier.

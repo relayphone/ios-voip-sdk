@@ -9,18 +9,16 @@ runtime_version = File.read(File.join(__dir__, 'VERSION')).strip
 # | Core                 | VoIPCore                 |
 # | Audio                | VoIPAudio                |
 # | LiveCommunicationKit | VoIPLiveCommunicationKit |
-# | CallKit              | VoIPCallKit              |
 # | PushKit              | VoIPPushKit              |
 # | Simulator            | VoIPSimulator            |
 # | Testing              | VoIPTesting              |
 #
-# An app depends on Core, exactly one of LiveCommunicationKit and CallKit, and usually PushKit and
-# Audio.
+# An app depends on Core and LiveCommunicationKit, and usually PushKit and Audio.
 # `pod 'IosVoipSDK'` without a subspec installs Core, LiveCommunicationKit and PushKit.
 Pod::Spec.new do |s|
   s.name = 'IosVoipSDK'
   s.version = runtime_version
-  s.summary = 'Calls for iOS apps through LiveCommunicationKit or CallKit, with PushKit and the iOS Simulator.'
+  s.summary = 'Calls for iOS apps through LiveCommunicationKit, with PushKit and the iOS Simulator.'
   s.homepage = 'https://github.com/relayphone/ios-voip-sdk'
   s.author = { 'Hamza Zia' => 'https://github.com/ziahamza' }
   s.license = { :type => 'UNLICENSED' }
@@ -58,19 +56,11 @@ Pod::Spec.new do |s|
     ss.frameworks = 'AVFAudio'
   end
 
-  # `LiveCommunicationKitAdapter`, the default calling framework adapter.
+  # `LiveCommunicationKitAdapter`, which presents calls with LiveCommunicationKit.
   s.subspec 'LiveCommunicationKit' do |ss|
     ss.dependency 'IosVoipSDK/Core'
     ss.source_files = 'Sources/VoIPLiveCommunicationKit/**/*.swift'
     ss.frameworks = 'LiveCommunicationKit', 'AVFAudio'
-  end
-
-  # `CallKitAdapter`, for apps that need CallKit's measured behaviour. Not for apps distributed in
-  # China mainland.
-  s.subspec 'CallKit' do |ss|
-    ss.dependency 'IosVoipSDK/Core'
-    ss.source_files = 'Sources/VoIPCallKit/**/*.swift'
-    ss.frameworks = 'CallKit', 'AVFAudio'
   end
 
   # `PushKitSource`, with the Objective-C wrapper that completes each push once.

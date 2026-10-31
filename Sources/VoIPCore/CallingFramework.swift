@@ -1,10 +1,9 @@
-/// The Apple system framework that presents calls to the user on this device: LiveCommunicationKit
-/// or CallKit.
+/// The Apple system framework that presents calls to the user on this device: LiveCommunicationKit.
 ///
-/// An app links exactly one adapter that conforms to this protocol. The SDK keeps every call's
-/// state itself and uses the calling framework only to present calls and to learn what the user
-/// does on the system's calling surfaces. Adapters name each call to the system by
-/// ``deviceUUID(for:)``.
+/// `LiveCommunicationKitAdapter` conforms to this protocol in apps, and `FakeCallingFramework` in
+/// tests. The SDK keeps every call's state itself and uses the calling framework only to present
+/// calls and to learn what the user does on the system's calling surfaces. Adapters name each call
+/// to the system by ``deviceUUID(for:)``.
 @VoIPActor
 public protocol CallingFramework: Sendable {
   /// Starts the calling framework with the app's configuration.
