@@ -55,9 +55,10 @@ The `VoIPCore` library is the start of a smaller core that keeps its own state f
 call and treats CallKit and LiveCommunicationKit as presentation surfaces. It holds the call
 values, the call state machine and `VoIPClient`, which runs them behind small seams for the
 calling framework, the app's media and VoIP pushes. It imports no UIKit, CallKit,
-LiveCommunicationKit, PushKit or AVFAudio. Two more libraries plug the system into those seams:
-`VoIPLiveCommunicationKit` presents calls with `LiveCommunicationKitAdapter`, and `VoIPPushKit`
-receives VoIP pushes and the push token with `PushKitSource`:
+LiveCommunicationKit, PushKit or AVFAudio. Other libraries plug the system into those seams:
+`VoIPLiveCommunicationKit` presents calls with `LiveCommunicationKitAdapter`, `VoIPCallKit`
+presents them with `CallKitAdapter`, and `VoIPPushKit` receives VoIP pushes and the push token
+with `PushKitSource`:
 
 ```swift
 VoIPSimulator.activate()  // Debug simulator builds only; elsewhere it does nothing.
@@ -71,6 +72,23 @@ calls in the iOS Simulator.
 
 Its terms are defined in the [glossary](GLOSSARY.md) and its decisions are recorded in
 [docs/adr](docs/adr).
+
+### LiveCommunicationKit or CallKit
+
+An app links one calling framework adapter, and `VoIPClient` works the same with either.
+Use `VoIPLiveCommunicationKit` unless you need something only CallKit has been measured to do.
+LiveCommunicationKit is the default, as Apple's successor to CallKit's provider API.
+
+`VoIPCallKit` is for apps that depend on CallKit's measured behaviour. For example, on an
+iPhone 13 with iOS 27.0, a Focus that left the app out but allowed the caller in its People let
+a CallKit call ring, where LiveCommunicationKit filtered the call. That was a single sample; see
+[Focus breakthrough](docs/research/focus/app-breakthrough.md). With CallKit, the system
+presents only the first party's handle, and Recents and Siri open the app to start a call
+rather than starting it through the adapter.
+
+Apps distributed in China mainland can't present calls with CallKit, so they need
+`VoIPLiveCommunicationKit`. [ADR 0002](docs/adr/0002-one-calling-framework-per-build.md), still
+a proposal, records why an app links one adapter per build.
 
 ## Testing
 
@@ -86,13 +104,15 @@ to resume pending sleeps without waiting for wall time to pass. `FakeCallingFram
 `FakeMedia` and `FakePushSource` stand in for the system and the app's media, so a
 `VoIPClient` started with them and a `TestClock` runs every call path on the host.
 
-The call journeys run the client with the LiveCommunicationKit adapter and the PushKit
-source on the simulator runtime, which acts as the system: a VoIP push, answer, audio,
-connect and remote end; decline; answered elsewhere and filtered calls as previews; an
-outgoing call; and mute, hold and tones from the call screen. Run them on an iOS 27 simulator:
+The call journeys run the client with the PushKit source on the simulator runtime, which
+acts as the system: a VoIP push, answer, audio, connect and remote end; decline; answered
+elsewhere and filtered calls as previews; an outgoing call; and mute, hold and tones from the
+call screen. Each journey runs once with the LiveCommunicationKit adapter and once with the
+CallKit adapter. Run them, with the CallKit adapter's tests, on an iOS 27 simulator:
 
 ```sh
-xcodebuild test -scheme VoIPSDK-Package -only-testing:VoIPJourneyTests \
+xcodebuild test -scheme VoIPSDK-Package \
+  -only-testing:VoIPJourneyTests -only-testing:VoIPCallKitTests \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=27.0'
 ```
 
