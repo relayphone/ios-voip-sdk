@@ -15,7 +15,7 @@ for source in CKInterposition CKPushDelivery CKPushLaunch; do
     -c "Sources/Interposition/$source.m" -o "$OUT/$source.o"
 done
 xcrun --sdk iphonesimulator swiftc -target "$TARGET" -sdk "$SDK" -swift-version 6 -parse-as-library \
-  -DCKSIM_SDK_SOURCE -import-objc-header Sources/Interposition/CKRuntimeSeam.h Sources/CKSimProtocol/*.swift Sources/Engine/RuntimeEngine.swift \
+  -DCKSIM_SDK_SOURCE -import-objc-header Sources/Interposition/CKRuntimeSeam.h Sources/CKSimProtocol/*.swift Sources/Engine/*.swift \
   Inspector/ForegroundPhaseProbe.swift Tests/RuntimeEvents/Fixture.swift \
   "$OUT/CKInterposition.o" "$OUT/CKPushDelivery.o" "$OUT/CKPushLaunch.o" -o "$APP/RuntimeEventFixture"
 python3 - "$APP/Info.plist" <<'PY'

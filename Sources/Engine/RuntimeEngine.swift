@@ -9,148 +9,6 @@ import CKSimProtocol
 @preconcurrency import CallKit
 @preconcurrency import AVFoundation
 
-private enum ProviderAPIKind: String { case callkit, livecommunicationkit }
-private struct FulfilledPostEndUnmutePolicy: Decodable {
-  enum Settlement: String, Decodable { case timeout, complete }
-  let callkit: Settlement
-  let livecommunicationkit: Settlement
-  func settlement(for api: ProviderAPIKind) -> Settlement {
-    switch api { case .callkit: callkit; case .livecommunicationkit: livecommunicationkit }
-  }
-}
-private typealias IncomingFilterReason = ControlRequest.FilterReason
-private extension ControlRequest.FilterReason {
-  var code: Int {
-    switch self {
-    case .none: 0
-    case .doNotDisturb: 3
-    case .restrictedSharingMode: 5
-    case .callIsProtected: 6
-    case .sensitiveParticipants: 7
-    }
-  }
-  func snapshot(policy: IncomingFilterPolicy?) -> [String: Any] {
-    ["reason": rawValue, "code": code, "verification": policy?.verification ?? "not-applicable"]
-  }
-}
-private struct IncomingFilterPolicy: Decodable, Sendable {
-  let code: Int
-  let delaySeconds: Double
-  let verification: String
-  let evidence: [String]
-}
-// Immutable per-report decision: later filter/fault commands cannot change an
-// entered report. Duplicate UUID errors retain their existing code-2 priority.
-private struct IncomingReportOutcome: Sendable {
-  let code: Int
-  let domain: String
-  let filterReason: String
-  let verification: String
-  let delaySeconds: Double
-  var error: NSError? { code == 0 ? nil : NSError(domain: domain, code: code) }
-  init(reason: IncomingFilterReason, duplicate: Bool, policy: IncomingFilterPolicy?, normalDelaySeconds: Double, extraDelaySeconds: Double, incomingErrorCode: Int = 0) {
-    if duplicate {
-      code = 2; filterReason = "none"; verification = "not-applicable"
-      delaySeconds = normalDelaySeconds + extraDelaySeconds
-    } else if incomingErrorCode == 4 {
-      code = 4; filterReason = "none"; verification = "injected-fault"
-      delaySeconds = normalDelaySeconds + extraDelaySeconds
-    } else if reason != .none, let policy {
-      code = reason.code; filterReason = reason.rawValue; verification = policy.verification
-      delaySeconds = policy.delaySeconds + extraDelaySeconds
-    } else {
-      code = 0; filterReason = "none"; verification = "not-applicable"
-      delaySeconds = normalDelaySeconds + extraDelaySeconds
-    }
-    domain = code == 0 ? "" : "com.apple.CallKit.error.incomingcall"
-  }
-}
-// iPhone 13 / iOS 27.0, #85. LCK exposes no group membership or transaction IDs.
-private struct LCKMultiCallPolicy {
-  enum Kind { case join, pause, resume, end, merge, other }
-  enum Failure { case endWithCleanup, endRegardless, none }
-  static func failure(_ kind: Kind) -> Failure {
-    switch kind { case .join, .pause: .endWithCleanup; case .end: .endRegardless; default: .none }
-  }
-  static func choices(established: Int, held: Int, active: Int, maximumGroups: Int) -> [String] {
-    if established == 0 { return ["answer", "decline"] }
-    guard active == 1 else { return [] } // This configuration was not measured.
-    var result = ["end-and-accept", "decline"]
-    if maximumGroups >= 2 && established < maximumGroups { result.insert("hold-and-accept", at: 0) }
-    if held > 0 { result.append("end-held-and-accept") }
-    return result
-  }
-  static func canStart(established: Int, reservedStarts: Int, maximumGroups: Int) -> Bool {
-    established + reservedStarts < maximumGroups
-  }
-  static func shouldEndActiveOnResume(maximumGroups: Int, maximumPerGroup: Int) -> Bool {
-    maximumGroups == 2 && maximumPerGroup == 1
-  }
-  static func resumeEndDelay(nominal: Double, elapsedSinceIssued: Double) -> Double {
-    max(0, nominal - elapsedSinceIssued)
-  }
-  static func usesCompositeBarrier(system: Bool, actionCount: Int, joiningCount: Int) -> Bool {
-    system && actionCount > 1 && joiningCount > 0
-  }
-  struct Handoff {
-    private var gapElapsed = false
-    private var joined = false
-    mutating func markGapElapsed() -> Bool { gapElapsed = true; return joined }
-    mutating func markJoined() -> Bool { joined = true; return gapElapsed }
-  }
-  struct Barrier {
-    private var remaining: Set<UUID>
-    private let joining: [UUID: UUID]
-    private var failed = Set<UUID>()
-    init(actions: [UUID], joining: [UUID: UUID]) { remaining = Set(actions); self.joining = joining }
-    mutating func settle(_ action: UUID, fulfilled: Bool) -> [UUID]? {
-      guard remaining.remove(action) != nil else { return nil }
-      if !fulfilled { failed.insert(action) }
-      guard remaining.isEmpty else { return nil }
-      return joining.filter { !failed.contains($0.key) }.map(\.value)
-    }
-  }
-}
-private struct LCKMultiCallProfile: Decodable {
-  let pauseEndExpirySeconds: Double
-  let joinExpirySeconds: Double
-  let cleanupEndExpirySeconds: Double
-  let pausedAfterDeliverySeconds: Double
-  let joinedAfterSettlementSeconds: Double
-  let audioHandoffGapSeconds: Double
-  let audioDeactivationAfterDeliverySeconds: Double
-  let appResumeEndDelaySeconds: Double
-}
-private struct BehaviorProfile: Decodable {
-  let id: String
-  let schemaVersion: Int
-  let answerExpirySeconds: Double
-  let ringTimeoutSeconds: Double
-  let unknownProviderSeconds: Double
-  let actionTimeoutSeconds: Double
-  let startDeadlineSeconds: Double
-  let answerDeadlineSeconds: Double
-  let ordinaryDeadlineSeconds: Double
-  let lckActionDeadlineSeconds: Double
-  let lckMultiCall: LCKMultiCallProfile
-  let reportLatencySeconds: Double
-  let pushReportDeadlineSeconds: Double
-  let incomingFilterPolicies: [String: IncomingFilterPolicy]
-  let muteEchoSeconds: Double
-  let postEndUnmuteSeconds: Double
-  let fulfilledPostEndUnmutePolicy: FulfilledPostEndUnmutePolicy
-
-  func timing(api: ProviderAPIKind, answer: Bool, start: Bool, pauseOrEnd: Bool = false) -> (deadline: Double, expiry: Double) {
-    if api == .livecommunicationkit {
-      return (lckActionDeadlineSeconds, answer ? lckMultiCall.joinExpirySeconds :
-        pauseOrEnd ? lckMultiCall.pauseEndExpirySeconds : lckActionDeadlineSeconds)
-    }
-    if answer { return (answerDeadlineSeconds, answerExpirySeconds) }
-    if start { return (startDeadlineSeconds, startDeadlineSeconds) }
-    return (ordinaryDeadlineSeconds, actionTimeoutSeconds)
-  }
-}
-
 private final class ProviderRegistration: @unchecked Sendable {
   let provider: CXProvider
   weak var delegate: (any CXProviderDelegate)?
@@ -234,22 +92,6 @@ private final class ObserverRegistration: @unchecked Sendable {
   }
 }
 
-private struct Faults: Codable {
-  var staleAudio: Bool?
-  var reportCallbackDelayMS: Int?
-  var invalidateDuringHandoff: Bool?
-  var incomingErrorCode: Int?
-  mutating func apply(_ changes: [ControlRequest.FaultChange]) {
-    for change in changes {
-      switch change {
-      case .staleAudio(let value): staleAudio = value
-      case .reportCallbackDelayMS(let value): reportCallbackDelayMS = value
-      case .invalidateDuringHandoff(let value): invalidateDuringHandoff = value
-      case .incomingErrorCode(let value): incomingErrorCode = value
-      }
-    }
-  }
-}
 // Objective-C clients supply blocks without Swift Sendable annotations. The
 // immutable block is transferred once and invoked only on its designated queue.
 private final class Completion: @unchecked Sendable {
@@ -382,7 +224,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
   private var audioRevision: UInt64 = 0
   private var handoffPending = false
   private var lckHandoff = LCKMultiCallPolicy.Handoff()
-  private var faults = Faults()
+  private var faults = RuntimeFaults()
   private var incomingFilter: IncomingFilterReason = .none
   private let runID: String
   private let bundleID: String
@@ -435,24 +277,7 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     let profileID = env["CKSIM_PROFILE"].flatMap { $0.isEmpty ? nil : $0 } ?? "ios-27.0"
     guard profileID == "ios-27.0" else { throw BootstrapError.invalid("unsupported behavior profile") }
     profile = try JSONDecoder().decode(BehaviorProfile.self, from: Self.profileData(profileID))
-    let durations = [profile.answerExpirySeconds, profile.ringTimeoutSeconds, profile.unknownProviderSeconds,
-      profile.actionTimeoutSeconds, profile.startDeadlineSeconds, profile.answerDeadlineSeconds,
-      profile.ordinaryDeadlineSeconds, profile.lckActionDeadlineSeconds, profile.pushReportDeadlineSeconds, profile.reportLatencySeconds, profile.muteEchoSeconds, profile.postEndUnmuteSeconds,
-      profile.lckMultiCall.pauseEndExpirySeconds, profile.lckMultiCall.joinExpirySeconds,
-      profile.lckMultiCall.cleanupEndExpirySeconds, profile.lckMultiCall.pausedAfterDeliverySeconds,
-      profile.lckMultiCall.joinedAfterSettlementSeconds, profile.lckMultiCall.audioHandoffGapSeconds,
-      profile.lckMultiCall.audioDeactivationAfterDeliverySeconds, profile.lckMultiCall.appResumeEndDelaySeconds]
-    guard profile.schemaVersion == 1 && profile.id == profileID && durations.allSatisfy({ $0.isFinite && $0 > 0 }) else {
-      throw BootstrapError.invalid("invalid behavior profile")
-    }
-    let filteredReasons = IncomingFilterReason.allCases.filter { $0 != .none }
-    let filterPolicies = profile.incomingFilterPolicies
-    guard Set(filterPolicies.keys) == Set(filteredReasons.map(\.rawValue)),
-      filteredReasons.allSatisfy({ reason in
-        guard let policy = filterPolicies[reason.rawValue] else { return false }
-        return policy.code == reason.code && policy.delaySeconds.isFinite && policy.delaySeconds > 0 &&
-          policy.verification == (reason == .doNotDisturb ? "verified" : "unverified") && !policy.evidence.isEmpty
-      }) else { throw BootstrapError.invalid("invalid incoming filter profile") }
+    if let refusal = profile.refusal(as: profileID) { throw BootstrapError.invalid(refusal) }
     let requestedRun = env["CKSIM_RUN_ID"].flatMap { $0.isEmpty ? nil : $0 } ?? UUID().uuidString
     guard requestedRun.range(of: "^[A-Za-z0-9_-]{1,64}$", options: .regularExpression) != nil else {
       throw BootstrapError.invalid("invalid simulator run identifier")
@@ -499,189 +324,12 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
 
   private static func profileData(_ profileID: String) throws -> Data {
     #if SWIFT_PACKAGE || CKSIM_SDK_SOURCE
-    // SDK simulator builds embed the canonical profile under this file's simulator
-    // guard. No SwiftPM/CocoaPods resource bundle reaches a device build. The host
-    // exclusion control checks this JSON against the standalone profile source.
-    return Data(embeddedProfileJSON.utf8)
+    // SDK simulator builds embed the canonical profile; see EmbeddedProfile.swift.
+    return Data(BehaviorProfile.embeddedJSON.utf8)
     #else
     return try Data(contentsOf: profileURL(profileID))
     #endif
   }
-
-  #if SWIFT_PACKAGE || CKSIM_SDK_SOURCE
-  private static let embeddedProfileJSON = #"""
-{
-  "id": "ios-27.0",
-  "schemaVersion": 1,
-  "reference": "iPhone 13 / iOS 27.0 (24A5355q)",
-  "answerExpirySeconds": 59.58,
-  "ringTimeoutSeconds": 60.1,
-  "unknownProviderSeconds": 10.6,
-  "actionTimeoutSeconds": 5.2,
-  "startDeadlineSeconds": 600,
-  "answerDeadlineSeconds": 60,
-  "ordinaryDeadlineSeconds": 5,
-  "reportLatencySeconds": 1.1,
-  "muteEchoSeconds": 0.015,
-  "providerRouting": "newest-created",
-  "waitingAnswer": "system-only",
-  "transactionIdentity": "fresh-transaction-preserved-actions",
-  "scope": "Measured iOS 27.0 behavior; not a guarantee for other iOS releases.",
-  "postEndUnmuteSeconds": 0.08,
-  "fulfilledPostEndUnmutePolicy": {
-    "callkit": "timeout",
-    "livecommunicationkit": "complete"
-  },
-  "fulfilledPostEndUnmuteEvidence": {
-    "callkit": "Measured fulfilled post-end unmute still times out in 5.0\u20135.9 s.",
-    "livecommunicationkit": "Measured no timeout through 5.542 s after fulfilled post-end unmute; terminal settlement follows public fulfill/complete semantics, not a measured infinite observation."
-  },
-  "lckActionDeadlineSeconds": 30,
-  "lckActionDeadlineEvidence": {
-    "measured": "24 lck.perform timeoutDate samples are 30 seconds. cx-after has no LCK deliveries; its later CX provider owns the actions.",
-    "expiryPolicy": "The advertised LCK timeoutDate remains 30 seconds. #85 measured effective Pause/End expiry near 5.3 s and Join expiry near 64 s in system waiting-call composites; see lckMultiCall. Runtime expiry at 30 s for other LCK action kinds remains unverified.",
-    "captures": {
-      "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-basic.jsonl": {
-        "sha256": "9fd5e48b62a826af7e62388de87119ab431fe2019a7d40445cdd9b528dde4bf7",
-        "samples": 10
-      },
-      "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-cx-after.jsonl": {
-        "sha256": "96d6e968c2cba8e098ec18872882f7a480476dd90611d5ae4cb5dc2dde78692b",
-        "samples": 0
-      },
-      "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-lck-after.jsonl": {
-        "sha256": "7b29c543492904cd1121c047d3fce125c4b0a16f1adc76240c80d6c091a15c89",
-        "samples": 10
-      },
-      "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-two-managers.jsonl": {
-        "sha256": "23ab443e1fd8623140e95cc7d34157d5fd8aa7d13b6321f90e1812825f65a042",
-        "samples": 4
-      }
-    }
-  },
-  "lckMultiCall": {
-    "pauseEndExpirySeconds": 5.3,
-    "joinExpirySeconds": 64,
-    "cleanupEndExpirySeconds": 5.2,
-    "pausedAfterDeliverySeconds": 0.11,
-    "joinedAfterSettlementSeconds": 0.115,
-    "audioHandoffGapSeconds": 0.213,
-    "audioDeactivationAfterDeliverySeconds": 0.12,
-    "appResumeEndDelaySeconds": 0.091,
-    "apiKind": "livecommunicationkit",
-    "verification": "measured",
-    "reference": "#85; iPhone 13 / iOS 27.0 (24A5355q); October 24, 2026",
-    "source": "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md",
-    "timingInterpretation": "Representative runtime samples and aggregate medians, not minimum delays or guaranteed bounds. Join median 115 ms (9\u2013239 ms); audio gap median 213 ms (151\u2013404 ms without delayed constituents). Pause 110 ms and deactivation 120 ms are representative delivery-relative samples; generated End 91 ms is relative to unpause delivery.",
-    "evidence": {
-      "systemComposite": "Constituents of 28 system waiting-call composites arrived within 0\u20133 ms. Accepted Join followed every constituent terminal settlement; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-delay-pause.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-reverse.jsonl.",
-      "pauseBeforeFulfillment": "Pause state appeared about 110 ms after delivery while Pause remained unfulfilled for 2 s; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-delay-pause.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-pending-pause.jsonl.",
-      "effectiveExpiry": "timeoutDate advertised 30 s; Pause/End timedOut near 5.3 s, Join near 64 s; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-pending-pause.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ea-pending-end.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-pending-join.jsonl.",
-      "failedPause": "Failed Pause ended A and delivered cleanup End A; B joined; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-fail-pause.jsonl.",
-      "failedJoin": "Failed Join ended B and delivered cleanup End B while A stayed paused; End & Accept lost both calls; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-fail-join.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ea-fail-join.jsonl.",
-      "failedEnd": "Failed End was ignored: A left and B joined, without retry. Pending End expiry was terminal too; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ea-fail-end.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ea-pending-end.jsonl.",
-      "cleanupEnd": "Cleanup End arrived after the conversation had left. Immediate fulfillment still produced timedOut about 5.2 s later; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-fail-pause.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-pending-join.jsonl.",
-      "noAutomaticResume": "Ending B left A paused until the application acted; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/hold-accept.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-fail-join.jsonl.",
-      "choices": "Hold & Accept required maximumConversationGroups >= 2 and a free group. Full groups offered End & Accept, Decline and End Held & Accept; merging did not free a group. End Held & Accept delivered Pause B, End A and Join C; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x1.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x2.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-2x2.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/third-end-held-accept.jsonl.",
-      "outgoingCapacity": "Outgoing Start at capacity returned com.apple.CallKit.error.requesttransaction 7 after 11\u2013206 ms; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x1.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x2.jsonl.",
-      "capabilities": "No capabilities, or removing pausing mid-call, gated neither waiting choices nor app Pause; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/caps-none.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/caps-toggle.jsonl.",
-      "mergeAndUnmerge": "App Merge/Unmerge were accepted and delivered without conversation state changes, including singleton Unmerge and Merge into a ringing target. LCK exposes no group membership; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/merge-b-into-a.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/merge-a-into-b.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/unmerge-singleton.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-2x1.jsonl.",
-      "appResume": "With 2x1, the app unpaused A into joined state, then a distinct generated End B arrived 91 ms after unpause delivery. Shared transaction composition was not observable; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/swap-app.jsonl.",
-      "audioAndQueue": "Callbacks arrived on main; normal composites deactivated then activated audio with aggregate median 213 ms. The 120 ms deactivation sample is representative, not an aggregate median; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-delay-pause.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/hold-accept.jsonl."
-    },
-    "unverified": [
-      "Genuine CallKit multi-call state, choices, capability gating, failures and capacity behavior; these LCK measurements must not replace CallKit policy.",
-      "Concrete CXTransaction identifiers and action grouping; LCK exposes neither transaction identifiers nor group membership.",
-      "Application-authored composite pause/unpause transactions and system UI Swap.",
-      "Per-group application-owned media/group membership effects, and capacity admission errors beyond the measured outgoing Start code 7.",
-      "Expiry of LCK actions other than Pause, End and Join; 30 s remains a proposed expiry for those kinds.",
-      "Delayed or failed app unpause ordering and generated-End timing beyond the immediately fulfilled 2x1 swap-app capture; runtime scheduling remains gated on successful settlement."
-    ],
-    "captureSHA256": {
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/hold-accept.jsonl": "4699c4f9140d9956bcaef84cb2f6075e4af7c6e643bc971f3a25551ecf01c802",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-delay-pause.jsonl": "a4395a1f5541f33b8d2b586cd59e93a5fbcdbe305a91c38d4b0ae7735758523b",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-reverse.jsonl": "e6f97e8e97fd397b265ec4c4bd59968904af61ac1b6c4b95b4bcad14d122ac61",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-fail-pause.jsonl": "31c9c2b054d8121c13488a50073988cd5a18de4a617751756ac8e46b97074a9e",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-fail-join.jsonl": "96836e3ab962169664179b7edc24855a4e79383e0ed1b97ddbe1858e69f70868",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-pending-pause.jsonl": "d30c7ae4c6c44b27c53fb640c22abbd61d8275417f9a5c0463a3b18393c2ada0",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-pending-join.jsonl": "97fb4cfb4fc42f80f4a452703ebffdb5b2fcb6a8ed41b2adbf88bf4b044bbb86",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ea-fail-end.jsonl": "f7a4a400406e8b7fcd34da575434856c6e8bd6e418e08232266fcc39a50a9344",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ea-pending-end.jsonl": "5d7282b8e932fc2f74a8971eaf16c2f51a0117fdf79e67afe9ca4f83f49cea43",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x1.jsonl": "6ea3e1ef43ea4d8e02f832004d4fd67915a9ec9f86f91b8c2e9a2c4083b6bcc9",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x2.jsonl": "d96893e01c93b31f1a23c343d83b3f37ffb9839a367b55dc5b3f4f53bc5a2264",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-2x2.jsonl": "e048fb999dddfd6bbd6898c0e4ebf140b8d3e34845f6de74ba43b92022f52159",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/caps-none.jsonl": "a7df6193aa821cfddecb01846f9b648d0328b251a65296f2a7610c6b81623902",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/caps-toggle.jsonl": "8a9777bf1fa181e1ca23f1c25cd97f8a6b91882a7175bc1b86cf8524042190fe",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/merge-b-into-a.jsonl": "92dfd7c2422e4ff546e094b1a314b67b75014d6f37267b50216867c98968cf4b",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/unmerge-singleton.jsonl": "9ebf6219bc1cddace70deac8d8bea0d55c7e54800e9a20909809dccb41afcd22",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/swap-app.jsonl": "512067c785291b5ac6215be88bc701a75242e0499c74947ee3ec0fc683547d7b",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/third-end-held-accept.jsonl": "c9f52d5d003d8f23ca7b96199adee56f720f46eb4a8d99413bf43aa4647d8eb6"
-    }
-  },
-  "pushReportDeadlineSeconds": 4.4,
-  "pushReportDeadlineEvidence": {
-    "measured": "Approximate 4.4 s termination and PKPushRegistry crash attribution from the device pass writeup; raw late-5s trace ends alive at4.200 s without a kill event.",
-    "reference": "docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md",
-    "captures": {
-      "docs/research/callkit-simulator-probe/livecommunicationkit/push/2026-10-23-iphone13-ios27-late-report-3s.jsonl": "1ed65280b43ebe27ab8b52535bb7b1df15b301e4eb9ab6d690cc9c8690ef36cf",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/push/2026-10-23-iphone13-ios27-late-report-5s.jsonl": "65aa587060ac3a2e5a898d97675e0c902dba70d7c8bf0b2d7dad0ab8ad29da2c"
-    }
-  },
-  "incomingFilterPolicies": {
-    "do-not-disturb": {
-      "code": 3,
-      "delaySeconds": 2.07,
-      "verification": "verified",
-      "evidence": [
-        "docs/research/callkit-simulator-probe/livecommunicationkit/push/2026-10-23-iphone13-ios27-d3-cold-unlocked-entered.jsonl",
-        "docs/research/callkit-simulator-probe/livecommunicationkit/push/2026-10-23-iphone13-ios27-d3-cold-unlocked-entered-repeat.jsonl",
-        "docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md"
-      ],
-      "scope": "D3 report errors measured at 2.081 s and 2.070 s. Same-number repeat at 69 s and process survival are documented in the device writeup; the two captures are separate cold launches."
-    },
-    "restricted-sharing-mode": {
-      "code": 5,
-      "delaySeconds": 2.07,
-      "verification": "unverified",
-      "evidence": [
-        "docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md"
-      ],
-      "scope": "Unverified on device. NSError code follows the public incoming-call error identity; 2.07 s is explicit simulator policy borrowed from measured DND timing, not a measurement for this reason."
-    },
-    "call-is-protected": {
-      "code": 6,
-      "delaySeconds": 2.07,
-      "verification": "unverified",
-      "evidence": [
-        "docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md"
-      ],
-      "scope": "Unverified on device. NSError code follows the public incoming-call error identity; 2.07 s is explicit simulator policy borrowed from measured DND timing, not a measurement for this reason."
-    },
-    "sensitive-participants": {
-      "code": 7,
-      "delaySeconds": 2.07,
-      "verification": "unverified",
-      "evidence": [
-        "docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md"
-      ],
-      "scope": "Unverified on device. NSError code follows the public incoming-call error identity; 2.07 s is explicit simulator policy borrowed from measured DND timing, not a measurement for this reason."
-    }
-  },
-  "lckBlockedNumberEvidence": {
-    "verification": "measured-negative",
-    "sourceIssue": 85,
-    "incomingErrorCode": 0,
-    "repeatAfterSeconds": 66,
-    "ringTimeoutSeconds": 60,
-    "captures": {
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/filter-block.jsonl": "c52e5be2086fd2c14ec3ef4ae1d580ebd9594486d08aeba16d28be7d96229719",
-      "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/filter-block-check.jsonl": "b41172c83eea3febb80c8d0f1172348fb4ad399aadda09a9342b2c4ed8c91828"
-    },
-    "scope": "The blocked number reported successfully and rang. Code 4 is not produced by iOS 27.0 for LCK in these measurements; runtime code 4 is an explicit injectable fault only."
-  }
-}
-"""#
-  #endif
 
   private static func profileURL(_ profileID: String) throws -> URL {
     #if SWIFT_PACKAGE
@@ -970,14 +618,12 @@ final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendabl
     case is CXSetGroupCallAction: kind = "group"
     default: kind = NSStringFromClass(type(of: item.action))
     }
-    let issuedAtMS = Int64(item.issuedAt.timeIntervalSince1970 * 1000)
+    let times = ActionJournalTimes(issuedAt: item.issuedAt, deadlineSeconds: timing.deadline, expirySeconds: timing.expiry)
     var fields: [String: Any] = ["actionID": item.action.uuid.uuidString, "kind": kind,
       "callUUID": (item.action as? CXCallAction)?.callUUID.uuidString ?? "",
       "transactionID": item.transaction.uuid.uuidString, "origin": item.origin.rawValue,
       "provider": providerID(item.provider.provider), "apiKind": item.apiKind.rawValue,
-      "issuedAtMS": issuedAtMS,
-      "deadlineMS": Int64(item.issuedAt.addingTimeInterval(timing.deadline).timeIntervalSince1970 * 1000),
-      "expiryMS": issuedAtMS + Int64(timing.expiry * 1000),
+      "issuedAtMS": times.issuedAtMS, "deadlineMS": times.deadlineMS, "expiryMS": times.expiryMS,
       "deadlineSeconds": timing.deadline, "expirySeconds": timing.expiry,
       "latencyMS": Double(DispatchTime.now().uptimeNanoseconds - item.issuedUptime) / 1_000_000]
     if let hold = item.action as? CXSetHeldCallAction { fields["held"] = hold.isOnHold }
