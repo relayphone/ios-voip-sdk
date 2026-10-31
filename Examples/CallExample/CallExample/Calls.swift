@@ -1,9 +1,11 @@
 import Foundation
 import Observation
+import UserNotifications
 import VoIPAudio
 import VoIPCore
 import VoIPFocus
 import VoIPLiveCommunicationKit
+import VoIPNotifications
 import VoIPPushKit
 import VoIPSimulator
 
@@ -32,6 +34,14 @@ final class Calls {
   /// The audio session for calls. Its `routes` hold the audio routes the user can pick.
   let audio: AudioSessionAdapter
 
+  /// Posts a call notification for each call that a Focus filters, and for each call that the app
+  /// shows as a call preview, and routes the user's taps.
+  let notifier = CallNotifier(
+    options: CallNotifier.Options(triggers: [.filtered, .previewedByPolicy]))
+
+  /// Passes the user's responses to call notifications to the notifier.
+  private var notificationResponses: NotificationResponses?
+
   /// The VoIP push token, as hexadecimal, for the app's servers.
   private(set) var pushToken = "None yet"
 
@@ -51,7 +61,8 @@ final class Calls {
     self.audio = audio
     do {
       client = try VoIPClient.start(
-        framework: LiveCommunicationKitAdapter(), media: NoMedia(), push: push, audio: audio)
+        framework: LiveCommunicationKitAdapter(), media: NoMedia(), push: push, audio: audio,
+        observers: [notifier])
     } catch {
       fatalError("A process runs one VoIPClient: \(error)")
     }
@@ -70,6 +81,73 @@ final class Calls {
       for await state in FocusSettings.store.states() {
         self?.focusFilterState = state
       }
+    }
+    let notices = notifier.events()
+    Task { [weak self] in
+      for await notice in notices { self?.history.insert("Notification \(notice)", at: 0) }
+    }
+    // Set the delegate while the app launches, so that it receives the tap that launched the app.
+    let responses = NotificationResponses(calls: self)
+    UNUserNotificationCenter.current().delegate = responses
+    notificationResponses = responses
+  }
+
+  /// Asks the user to allow notifications, and adds the call notification's category with its Join
+  /// action.
+  func allowNotifications() async {
+    let center = UNUserNotificationCenter.current()
+    center.setNotificationCategories([UserNotificationsAdapter.category()])
+    do {
+      let allowed = try await center.requestAuthorization(options: [.alert, .sound])
+      history.insert("Notifications allowed: \(allowed)", at: 0)
+    } catch {
+      history.insert("Notifications not allowed: \(error)", at: 0)
+    }
+  }
+
+  /// Presents an incoming call only as a call preview, which the notifier posts a notification
+  /// for, as it does for a call that a Focus filters.
+  func previewIncomingCall() async {
+    do {
+      let caller = Party(
+        handle: try Handle(kind: .phoneNumber, value: "+14155550123"), displayName: "Alice")
+      let call = IncomingCall(
+        id: CallID(rawValue: UUID().uuidString), parties: [caller],
+        presentationPolicy: PresentationPolicy(incoming: .preview))
+      let outcome = await client.report(call)
+      history.insert("Reported: \(outcome)", at: 0)
+    } catch {
+      history.insert("Invalid caller: \(error)", at: 0)
+    }
+  }
+
+  /// Joins the call of a tapped notification when it is live here.
+  func respond(to response: CallNotificationResponse) async {
+    do {
+      switch try await notifier.handle(response) {
+      case .joining(let id): history.insert("Joining \(id.rawValue)", at: 0)
+      case .callBack(let party, _):
+        // A notification of a call that is over: show the caller, from whom the user can call back.
+        history.insert("Tapped a missed call from \(party.presentedHandle.value)", at: 0)
+      case nil: break
+      }
+    } catch {
+      history.insert("Couldn't join: \(error)", at: 0)
+    }
+  }
+
+  /// Joins a call preview with the party, or calls the party, when the user calls from Recents or
+  /// Siri.
+  func start(_ request: StartCallRequest) async {
+    do {
+      guard
+        case .callBack(let party, let hasVideo) = try await notifier.handle(request)
+      else { return }
+      let call = OutgoingCall(
+        id: CallID(rawValue: UUID().uuidString), parties: [party], hasVideo: hasVideo)
+      try await client.request(.start(call))
+    } catch {
+      history.insert("Couldn't call: \(error)", at: 0)
     }
   }
 
@@ -123,5 +201,30 @@ final class Calls {
     case .mediaServicesReset: history.insert("Media services reset", at: 0)
     case .ended(let call): history.insert("Ended: \(call.status)", at: 0)
     }
+  }
+}
+
+/// The app's notification center delegate, which passes the user's responses to call
+/// notifications to the notifier.
+final class NotificationResponses: NSObject, UNUserNotificationCenterDelegate {
+  /// Weak, because the calls keep their delegate.
+  private weak let calls: Calls?
+
+  init(calls: Calls) {
+    self.calls = calls
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
+  ) async {
+    guard let response = CallNotificationResponse(response) else { return }  // Not a call's.
+    await calls?.respond(to: response)
+  }
+
+  /// Shows notifications while the app is in the foreground too.
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter, willPresent notification: UNNotification
+  ) async -> UNNotificationPresentationOptions {
+    [.banner, .list, .sound]
   }
 }

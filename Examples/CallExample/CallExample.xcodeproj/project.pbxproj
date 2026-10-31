@@ -13,6 +13,7 @@
 		C0A1000000000000000000B4 /* VoIPSimulator in Frameworks */ = {isa = PBXBuildFile; productRef = C0A1000000000000000000D4 /* VoIPSimulator */; };
 		C0A1000000000000000000B5 /* VoIPAudio in Frameworks */ = {isa = PBXBuildFile; productRef = C0A1000000000000000000D5 /* VoIPAudio */; };
 		C0A1000000000000000000B6 /* VoIPFocus in Frameworks */ = {isa = PBXBuildFile; productRef = C0A1000000000000000000D6 /* VoIPFocus */; };
+		C0A100000000000000004EB1 /* VoIPNotifications in Frameworks */ = {isa = PBXBuildFile; productRef = C0A100000000000000004ED1 /* VoIPNotifications */; };
 		C0A1000000000000000000B7 /* VoIPFocus in Frameworks */ = {isa = PBXBuildFile; productRef = C0A1000000000000000000D7 /* VoIPFocus */; };
 		C0A1000000000000000000B8 /* FocusFilter.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = C0A100000000000000000014 /* FocusFilter.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -79,6 +80,7 @@
 				C0A1000000000000000000B4 /* VoIPSimulator in Frameworks */,
 				C0A1000000000000000000B5 /* VoIPAudio in Frameworks */,
 				C0A1000000000000000000B6 /* VoIPFocus in Frameworks */,
+				C0A100000000000000004EB1 /* VoIPNotifications in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -145,6 +147,7 @@
 				C0A1000000000000000000D4 /* VoIPSimulator */,
 				C0A1000000000000000000D5 /* VoIPAudio */,
 				C0A1000000000000000000D6 /* VoIPFocus */,
+				C0A100000000000000004ED1 /* VoIPNotifications */,
 			);
 			productName = CallExample;
 			productReference = C0A100000000000000000011 /* CallExample.app */;
@@ -488,6 +491,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C0A1000000000000000000C1 /* XCLocalSwiftPackageReference "../.." */;
 			productName = VoIPFocus;
+		};
+		C0A100000000000000004ED1 /* VoIPNotifications */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0A1000000000000000000C1 /* XCLocalSwiftPackageReference "../.." */;
+			productName = VoIPNotifications;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

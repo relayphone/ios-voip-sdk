@@ -43,12 +43,15 @@ final class Harness {
   private var iterator: AsyncStream<CallNotifier.Event>.Iterator
   private var markers = 0
 
+  /// The client to which the notifier routes the user's responses.
+  let client = FakeClient()
+
   init(options: CallNotifier.Options = CallNotifier.Options()) {
     notifier = CallNotifier(options: options, center: center)
     let (events, input) = AsyncStream.makeStream(of: CallEvent.self)
     self.input = input
     iterator = notifier.events().makeAsyncIterator()
-    notifier.follow(events)
+    notifier.follow(events, client: client)
   }
 
   /// Sends the notifier a call event, as the client does.
@@ -81,5 +84,19 @@ final class Harness {
       return
     }
     #expect(posted.callID == marker, sourceLocation: sourceLocation)
+  }
+}
+
+/// A client whose calls the test sets, and which records the actions requested of it.
+@MainActor
+final class FakeClient: NotifierClient {
+  var calls: [Call] = []
+  private(set) var requests: [Action] = []
+  /// The error with which the client refuses each request, or `nil` to accept it.
+  var error: ActionError?
+
+  func request(_ action: Action) async throws(ActionError) {
+    requests.append(action)
+    if let error { throw error }
   }
 }

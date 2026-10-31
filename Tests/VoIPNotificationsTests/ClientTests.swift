@@ -52,6 +52,32 @@ struct ClientTests {
     #expect(center.delivered.isEmpty)
   }
 
+  @Test func tapOnAFilteredCallsNotificationJoinsItThroughTheClient() async throws {
+    let notifier = CallNotifier(center: FakeCallNotificationCenter())
+    var notices = notifier.events().makeAsyncIterator()
+    let framework = FakeCallingFramework()
+    await onVoIPActor { framework.presentationOutcome = .filtered(.doNotDisturb) }
+    let client = try VoIPClient.start(
+      framework: framework, media: FakeMedia(), observers: [notifier], clock: TestClock())
+    var events = client.events().makeAsyncIterator()
+    _ = await client.report(IncomingCall(id: callID, parties: [alice]))
+    #expect(await notices.next(isolation: #isolation) == .posted(notification(.incoming)))
+    #expect(await events.next(isolation: #isolation).map(\.isPreviewStarted) == true)
+
+    let tap = CallNotificationResponse(callID: callID, caller: alice, action: .open)
+    #expect(try await notifier.handle(tap) == .joining(callID))
+    guard case .joinRequested(let call)? = await events.next(isolation: #isolation) else {
+      Issue.record("The client didn't ask the app to place the join")
+      return
+    }
+    #expect(call.id == callID)
+
+    // Once the call is joined, the user can't join it again from the notification.
+    await client.confirmPlaced(callID)
+    #expect(await notices.next(isolation: #isolation) == .withdrawn(callID))
+    #expect(try await notifier.handle(tap) == nil)
+  }
+
   @Test func ringingCallGetsNoNotification() async throws {
     let center = FakeCallNotificationCenter()
     let notifier = CallNotifier(center: center)
@@ -68,6 +94,12 @@ struct ClientTests {
     #expect(
       await notices.next(isolation: #isolation) == .posted(notification(.incoming, otherCallID)))
     #expect(center.records == [.post(notification(.incoming, otherCallID))])
+  }
+}
+
+extension CallEvent {
+  var isPreviewStarted: Bool {
+    if case .previewStarted = self { true } else { false }
   }
 }
 
