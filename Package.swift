@@ -19,7 +19,6 @@ let package = Package(
   name: "VoIPSDK",
   platforms: [.iOS(.v26), .macOS(.v26)],
   products: [
-    .library(name: "VoIPSDK", targets: ["VoIPSDK"]),
     .library(name: "VoIPCore", targets: ["VoIPCore"]),
     .library(name: "VoIPCallKit", targets: ["VoIPCallKit"]),
     .library(name: "VoIPLiveCommunicationKit", targets: ["VoIPLiveCommunicationKit"]),
@@ -46,17 +45,6 @@ let package = Package(
       exclude: ["Resources"],
       swiftSettings: strictSwift
     ),
-    .target(
-      name: "VoIPPlatform", path: "Sources/VoIPPlatform", publicHeadersPath: "include",
-      cSettings: strictC + [
-        .define("DEBUG", to: "1", .when(configuration: .debug))
-      ]),
-    .target(
-      name: "VoIPSDK", dependencies: ["CKSimRuntime", "VoIPPlatform"], path: "Sources/VoIPSDK",
-      cSettings: [
-        .define("DEBUG", to: "1", .when(configuration: .debug))
-      ],
-      swiftSettings: strictSwift),
     .target(name: "VoIPCore", swiftSettings: strictSwift),
     .target(name: "VoIPCallKit", dependencies: ["VoIPCore"], swiftSettings: strictSwift),
     .target(
@@ -67,7 +55,6 @@ let package = Package(
       swiftSettings: strictSwift),
     .target(name: "VoIPSimulator", dependencies: ["CKSimRuntime"], swiftSettings: strictSwift),
     .target(name: "VoIPTesting", dependencies: ["VoIPCore"], swiftSettings: strictSwift),
-    .testTarget(name: "VoIPSDKTests", dependencies: ["VoIPSDK"], swiftSettings: strictSwift),
     .testTarget(
       name: "VoIPCoreTests", dependencies: ["VoIPCore", "VoIPTesting"], swiftSettings: strictSwift),
     .testTarget(

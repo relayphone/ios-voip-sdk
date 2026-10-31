@@ -21,15 +21,16 @@ function required(text: string) {
     return names;
   } finally { rmSync(directory, { recursive: true, force: true }); }
 }
-test('coverage follows acceptance dependencies, job names and full journey matrix', () => {
+test('coverage follows acceptance dependencies and job names', () => {
   const names = required(workflow);
-  assert.ok(names.includes('Pinned Expo LiveKit runtime and Release acceptance'));
-  for (const name of ['m1', 'contracts', 'push-entry', 'system']) assert.ok(names.includes(`SDK journey (${name})`));
+  for (const name of ['apple-host-controls', 'sdk-example', 'sdk-core', 'Call journeys on the simulator']) {
+    assert.ok(names.includes(name));
+  }
   assert.ok(!names.includes('offline-controls'));
-  const changed = workflow.replace('Pinned Expo LiveKit runtime and Release acceptance', 'Renamed native acceptance');
+  const changed = workflow.replace('Call journeys on the simulator', 'Renamed native acceptance');
   assert.ok(required(changed).includes('Renamed native acceptance'));
-  assert.ok(!required(changed).includes('Pinned Expo LiveKit runtime and Release acceptance'));
-  const expanded = workflow.replace('expo-livekit-native, routes-duo]', 'expo-livekit-native, routes-duo, new-native]') +
+  assert.ok(!required(changed).includes('Call journeys on the simulator'));
+  const expanded = workflow.replace('sdk-core, simulator-journeys]', 'sdk-core, simulator-journeys, new-native]') +
     '\n  new-native:\n    runs-on: macos-26\n';
   assert.ok(required(expanded).includes('new-native'));
   assert.throws(() => required(workflow.replace('runs-on: xcode-27', 'runs-on: ${{ matrix.runner }}')));

@@ -14,8 +14,7 @@ REQUIRED = {
 
 
 def sdk_required(path):
-    """Resolve native jobs from the acceptance gate and its full matrix."""
-    from changes import GROUPS
+    """Resolve native jobs from the acceptance gate."""
     text = Path(path).read_text(encoding='utf-8').split('\njobs:\n', 1)[1]
     blocks = re.split(r'(?m)^  ([a-z][a-z0-9-]*):\s*$', text)
     jobs = dict(zip(blocks[1::2], blocks[2::2]))
@@ -37,17 +36,11 @@ def sdk_required(path):
             raise ValueError('Unsupported runner for ' + job)
         name = re.search(r'(?m)^    name: (.+)$', block)
         display = name.group(1) if name else job
-        if 'matrix.' in display:
-            if display != 'SDK journey (${{ matrix.group }})' or 'matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}' not in block:
-                raise ValueError('Unsupported matrix for ' + job)
-            names = {display.replace('${{ matrix.group }}', group) for group in GROUPS}
-        else:
-            if '${{' in display or re.search(r'(?m)^    strategy:', block):
-                raise ValueError('Unsupported job name or matrix for ' + job)
-            names = {display}
-        if required.intersection(names):
+        if '${{' in display or re.search(r'(?m)^    strategy:', block):
+            raise ValueError('Unsupported job name or matrix for ' + job)
+        if display in required:
             raise ValueError('Duplicate native job name')
-        required.update(names)
+        required.add(display)
     if not required:
         raise ValueError('Empty native acceptance dependencies')
     return required

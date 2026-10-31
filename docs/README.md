@@ -1,8 +1,7 @@
 # Documentation
 
-- [Getting started](../README.md)
-- [Swift package](../README.md)
-- [Expo module](../Expo/README.md): [API](expo/api.md), [configuration](expo/configuration.md), [LiveKit](expo/livekit.md), and [WebRTC](expo/webrtc.md)
-- [Simulator runtime](simulator-runtime.md)
-- [Architecture and process ownership](sdk-process-ownership.md)
+- [Getting started](../README.md): install, quick start and the [example app](../Examples/CallExample)
+- [Migrating from the old core and the Expo module](../CHANGELOG.md)
 - [Glossary](../GLOSSARY.md) and [architecture decisions](adr)
+- [Simulator runtime](simulator-runtime.md) and [its releases](runtime-releases.md)
+- [CI jobs](ci/sdk-jobs.md) and [CI selection](ci/selection.md)

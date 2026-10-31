@@ -7,7 +7,7 @@ repo_root=$("$bounded" 15 git rev-parse --show-toplevel)
 cd "$repo_root"
 prepush_logs=$(mktemp -d "${TMPDIR:-/tmp}/ci-prepush.XXXXXX")
 trap '"$bounded" 15 rm -rf "$prepush_logs"' EXIT
-export CI=1 EXPO_NO_TELEMETRY=1 SDK_M1_ACCEPTANCE=1 SDK_SYSTEM_ACCEPTANCE=1
+export CI=1
 check() {
   local name=$1
   shift
@@ -22,21 +22,14 @@ check() {
 if [[ -d scripts/ci/tests ]]; then
   check ci-policy python3 -m unittest discover -s scripts/ci/tests -p 'test_*.py'
 fi
-for fixture in discovery/check_sdk_m0.py discovery/check_sdk_installed_paths.py \
-  discovery/check_sdk_m1.py discovery/check_sdk_m1_container_capture.py \
-  discovery/check_sdk_system.py discovery/check_cli_controls.py \
-  discovery/check_cli_push_launch.py Tests/RuntimeEvents/test_native_runner.py; do
+for fixture in discovery/check_cli_controls.py discovery/check_cli_push_launch.py \
+  Tests/RuntimeEvents/test_native_runner.py; do
   check "$fixture" python3 "$fixture"
-done
-for fixture in discovery/check_sdk_routes_runner.py discovery/check_expo_livekit.py; do
-  if [[ -f "$fixture" ]]; then
-    check "$fixture" python3 "$fixture"
-  fi
 done
 if [[ -f Tests/RuntimeEvents/test_fixture_inventory.py ]]; then
   check cached-inventory python3 Tests/RuntimeEvents/test_fixture_inventory.py
 fi
-for fixture in test_runtime_cached_control.py test_runtime_install_adapter.py test_failure_summary.py 'test_sdk*.py'; do
+for fixture in test_runtime_cached_control.py test_runtime_install_adapter.py test_failure_summary.py; do
   check "$fixture" python3 -m unittest discover -s scripts/sim -p "$fixture"
 done
 for script in scripts/sim/sim.sh discovery/run*.sh; do

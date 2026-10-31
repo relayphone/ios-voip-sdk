@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -11,7 +12,7 @@ class TimingGateTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[3]
         workflow = (root / '.github/workflows/sdk-m0.yml').read_text()
         section = workflow.split('      - name: Require every selected acceptance group\n', 1)[1]
-        script = textwrap.dedent(section.split('        run: |\n', 1)[1].split('\n  legacy-audio-lifecycle:', 1)[0])
+        script = textwrap.dedent(re.split(r'\n  [A-Za-z_][\w-]*:\n', section.split('        run: |\n', 1)[1], maxsplit=1)[0])
         with tempfile.TemporaryDirectory(prefix='ci-gate-timing-') as temporary:
             temp = Path(temporary)
             bounded = temp / 'scripts/ci/bounded'
