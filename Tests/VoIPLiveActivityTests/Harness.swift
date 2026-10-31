@@ -5,7 +5,8 @@ import VoIPTesting
 
 @testable import VoIPLiveActivity
 
-/// A client whose call events the test sends, and which records the actions it is asked for.
+/// A client whose call events the test sends, and which records the actions and reports it is
+/// asked for.
 ///
 /// A process runs one `VoIPClient` at a time, and the host's test suites run in parallel, so the
 /// observer's tests script the client rather than start one.
@@ -17,12 +18,26 @@ final class ScriptedClient: CallPreviewClient {
   /// The actions the observer requested, in order.
   private(set) var requests: [Action] = []
 
+  /// The incoming calls the observer reported, in order.
+  private(set) var reports: [IncomingCall] = []
+
+  /// An error that each request throws, or `nil` to accept it.
+  var requestError: ActionError?
+
+  /// The calls that the client knows: those it reported, or that the test sent as previews.
+  private var known: Set<CallID> = []
+
   init() {
     (stream, continuation) = AsyncStream.makeStream(of: CallEvent.self)
   }
 
   /// Sends a call event, as the client does.
   func send(_ event: CallEvent) {
+    switch event {
+    case .previewStarted(let call): known.insert(call.id)
+    case .ended(let call): known.remove(call.id)
+    default: break
+    }
     continuation.yield(event)
   }
 
@@ -30,8 +45,22 @@ final class ScriptedClient: CallPreviewClient {
     stream
   }
 
+  /// Records the action, then accepts it for a call the client knows, as the client does.
   func request(_ action: Action) async throws(ActionError) {
     requests.append(action)
+    if let requestError { throw requestError }
+    guard known.contains(action.callID) else { throw .unknownCall }
+  }
+
+  /// Records the report, and shows the call as a call preview, as its policy asks.
+  func report(_ call: IncomingCall) async -> PresentationOutcome {
+    reports.append(call)
+    send(
+      .previewStarted(
+        Call(
+          id: call.id, isIncoming: true, parties: call.parties, status: .previewing(.policy),
+          hasVideo: call.hasVideo, metadata: call.metadata)))
+    return .previewed(.policy)
   }
 }
 
@@ -41,6 +70,7 @@ final class Harness {
   let center: FakeLiveActivityCenter
   let client = ScriptedClient()
   let previews: CallPreviewActivities
+  private let startsActivities: Bool
   private var iterator: AsyncStream<CallPreviewActivities.Event>.Iterator
 
   /// Creates the observer and attaches it to the client.
@@ -53,6 +83,7 @@ final class Harness {
     center: FakeLiveActivityCenter = FakeLiveActivityCenter()
   ) {
     self.center = center
+    startsActivities = options.startsActivities
     previews = CallPreviewActivities(options: options, center: center)
     iterator = previews.events().makeAsyncIterator()
     previews.attach(client)
@@ -80,11 +111,18 @@ final class Harness {
   }
 
   /// Expects that no event is waiting, by starting a preview that is known and reading it next.
+  ///
+  /// When the observer starts previews, the marker is a call event, so the observer has also
+  /// handled every call event sent before.
   func expectNoEvents(sourceLocation: SourceLocation = #_sourceLocation) async throws {
     let marker = Call(
       id: CallID(rawValue: "marker-\(UUID())"), isIncoming: true, parties: [alice],
       status: .previewing(.policy))
-    try previews.start(marker)
+    if startsActivities {
+      send(.previewStarted(marker))
+    } else {
+      try previews.start(marker)
+    }
     #expect(try await next() == .started(marker.id), sourceLocation: sourceLocation)
   }
 }

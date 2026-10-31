@@ -66,11 +66,12 @@ Pod::Spec.new do |s|
     ss.frameworks = 'AppIntents'
   end
 
-  # `CallPreviewAttributes`, the type of a call preview's Live Activity.
+  # `CallPreviewActivities`, which shows call previews as Live Activities, with their
+  # `CallPreviewAttributes`, the Join intent and the default views.
   s.subspec 'LiveActivity' do |ss|
     ss.dependency 'IosVoipSDK/Core'
     ss.source_files = 'Sources/VoIPLiveActivity/**/*.swift'
-    ss.frameworks = 'ActivityKit'
+    ss.frameworks = 'ActivityKit', 'AppIntents', 'SwiftUI', 'WidgetKit'
   end
 
   # `LiveCommunicationKitAdapter`, which presents calls with LiveCommunicationKit.

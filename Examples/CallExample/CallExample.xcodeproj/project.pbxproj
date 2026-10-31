@@ -16,6 +16,9 @@
 		C0A100000000000000004EB1 /* VoIPNotifications in Frameworks */ = {isa = PBXBuildFile; productRef = C0A100000000000000004ED1 /* VoIPNotifications */; };
 		C0A1000000000000000000B7 /* VoIPFocus in Frameworks */ = {isa = PBXBuildFile; productRef = C0A1000000000000000000D7 /* VoIPFocus */; };
 		C0A1000000000000000000B8 /* FocusFilter.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = C0A100000000000000000014 /* FocusFilter.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C0A10000000000000000A001 /* VoIPLiveActivity in Frameworks */ = {isa = PBXBuildFile; productRef = C0A10000000000000000A021 /* VoIPLiveActivity */; };
+		C0A10000000000000000A002 /* VoIPLiveActivity in Frameworks */ = {isa = PBXBuildFile; productRef = C0A10000000000000000A022 /* VoIPLiveActivity */; };
+		C0A10000000000000000A003 /* CallExampleWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C0A10000000000000000A011 /* CallExampleWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -25,6 +28,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = C0A100000000000000000052;
 			remoteInfo = FocusFilter;
+		};
+		C0A10000000000000000A043 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C0A100000000000000000071 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C0A10000000000000000A041;
+			remoteInfo = CallExampleWidgets;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -40,6 +50,17 @@
 			name = "Embed ExtensionKit Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0A10000000000000000A032 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				C0A10000000000000000A003 /* CallExampleWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +70,8 @@
 		C0A100000000000000000014 /* FocusFilter.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = FocusFilter.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0A100000000000000000015 /* FocusFilter-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "FocusFilter-Info.plist"; sourceTree = "<group>"; };
 		C0A100000000000000000016 /* FocusFilter.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FocusFilter.entitlements; sourceTree = "<group>"; };
+		C0A10000000000000000A011 /* CallExampleWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CallExampleWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0A10000000000000000A012 /* CallExampleWidgets-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "CallExampleWidgets-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -67,6 +90,16 @@
 			path = Shared;
 			sourceTree = "<group>";
 		};
+		C0A10000000000000000A013 /* CallExampleWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CallExampleWidgets;
+			sourceTree = "<group>";
+		};
+		C0A10000000000000000A014 /* CallPreview */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CallPreview;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -81,6 +114,7 @@
 				C0A1000000000000000000B5 /* VoIPAudio in Frameworks */,
 				C0A1000000000000000000B6 /* VoIPFocus in Frameworks */,
 				C0A100000000000000004EB1 /* VoIPNotifications in Frameworks */,
+				C0A10000000000000000A001 /* VoIPLiveActivity in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -89,6 +123,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				C0A1000000000000000000B7 /* VoIPFocus in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0A10000000000000000A031 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0A10000000000000000A002 /* VoIPLiveActivity in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -101,10 +143,13 @@
 				C0A100000000000000000021 /* CallExample */,
 				C0A100000000000000000023 /* Shared */,
 				C0A100000000000000000022 /* FocusFilter */,
+				C0A10000000000000000A013 /* CallExampleWidgets */,
+				C0A10000000000000000A014 /* CallPreview */,
 				C0A100000000000000000012 /* Info.plist */,
 				C0A100000000000000000013 /* CallExample.entitlements */,
 				C0A100000000000000000015 /* FocusFilter-Info.plist */,
 				C0A100000000000000000016 /* FocusFilter.entitlements */,
+				C0A10000000000000000A012 /* CallExampleWidgets-Info.plist */,
 				C0A100000000000000000042 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -114,6 +159,7 @@
 			children = (
 				C0A100000000000000000011 /* CallExample.app */,
 				C0A100000000000000000014 /* FocusFilter.appex */,
+				C0A10000000000000000A011 /* CallExampleWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -129,15 +175,18 @@
 				C0A100000000000000000031 /* Frameworks */,
 				C0A100000000000000000062 /* Resources */,
 				C0A100000000000000000033 /* Embed ExtensionKit Extensions */,
+				C0A10000000000000000A032 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				C0A1000000000000000000F1 /* PBXTargetDependency */,
+				C0A10000000000000000A042 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C0A100000000000000000021 /* CallExample */,
 				C0A100000000000000000023 /* Shared */,
+				C0A10000000000000000A014 /* CallPreview */,
 			);
 			name = CallExample;
 			packageProductDependencies = (
@@ -148,6 +197,7 @@
 				C0A1000000000000000000D5 /* VoIPAudio */,
 				C0A1000000000000000000D6 /* VoIPFocus */,
 				C0A100000000000000004ED1 /* VoIPNotifications */,
+				C0A10000000000000000A021 /* VoIPLiveActivity */,
 			);
 			productName = CallExample;
 			productReference = C0A100000000000000000011 /* CallExample.app */;
@@ -177,6 +227,30 @@
 			productReference = C0A100000000000000000014 /* FocusFilter.appex */;
 			productType = "com.apple.product-type.extensionkit-extension";
 		};
+		C0A10000000000000000A041 /* CallExampleWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0A10000000000000000A051 /* Build configuration list for PBXNativeTarget "CallExampleWidgets" */;
+			buildPhases = (
+				C0A10000000000000000A033 /* Sources */,
+				C0A10000000000000000A031 /* Frameworks */,
+				C0A10000000000000000A034 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C0A10000000000000000A013 /* CallExampleWidgets */,
+				C0A10000000000000000A014 /* CallPreview */,
+			);
+			name = CallExampleWidgets;
+			packageProductDependencies = (
+				C0A10000000000000000A022 /* VoIPLiveActivity */,
+			);
+			productName = CallExampleWidgets;
+			productReference = C0A10000000000000000A011 /* CallExampleWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -191,6 +265,9 @@
 						CreatedOnToolsVersion = 27.1;
 					};
 					C0A100000000000000000052 = {
+						CreatedOnToolsVersion = 27.1;
+					};
+					C0A10000000000000000A041 = {
 						CreatedOnToolsVersion = 27.1;
 					};
 				};
@@ -214,6 +291,7 @@
 			targets = (
 				C0A100000000000000000051 /* CallExample */,
 				C0A100000000000000000052 /* FocusFilter */,
+				C0A10000000000000000A041 /* CallExampleWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -227,6 +305,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C0A100000000000000000064 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0A10000000000000000A034 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -250,6 +335,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0A10000000000000000A033 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -257,6 +349,11 @@
 			isa = PBXTargetDependency;
 			target = C0A100000000000000000052 /* FocusFilter */;
 			targetProxy = C0A1000000000000000000E1 /* PBXContainerItemProxy */;
+		};
+		C0A10000000000000000A042 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C0A10000000000000000A041 /* CallExampleWidgets */;
+			targetProxy = C0A10000000000000000A043 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -417,6 +514,58 @@
 			};
 			name = Release;
 		};
+		C0A10000000000000000A052 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "CallExampleWidgets-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = CallExampleWidgets;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.CallExample.Widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C0A10000000000000000A053 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "CallExampleWidgets-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = CallExampleWidgets;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.CallExample.Widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -443,6 +592,15 @@
 			buildConfigurations = (
 				C0A100000000000000000095 /* Debug */,
 				C0A100000000000000000096 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C0A10000000000000000A051 /* Build configuration list for PBXNativeTarget "CallExampleWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0A10000000000000000A052 /* Debug */,
+				C0A10000000000000000A053 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -496,6 +654,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C0A1000000000000000000C1 /* XCLocalSwiftPackageReference "../.." */;
 			productName = VoIPNotifications;
+		};
+		C0A10000000000000000A021 /* VoIPLiveActivity */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0A1000000000000000000C1 /* XCLocalSwiftPackageReference "../.." */;
+			productName = VoIPLiveActivity;
+		};
+		C0A10000000000000000A022 /* VoIPLiveActivity */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0A1000000000000000000C1 /* XCLocalSwiftPackageReference "../.." */;
+			productName = VoIPLiveActivity;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

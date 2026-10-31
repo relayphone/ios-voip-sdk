@@ -30,6 +30,10 @@ public import Observation
 /// ``Options/endedDismissal`` when the call ends. It keeps one Live Activity per call: when the
 /// servers start a second, it ends the newer one at once.
 ///
+/// The Join button of ``CallPreviewView`` performs the app's ``JoinCallPreviewIntent``, which
+/// calls ``join(_:)``. A preview that the servers started before the app ran has a call that the
+/// client doesn't know yet, so joining reports it to the client first, as a call preview.
+///
 /// Send the app's servers everything they need to start, update and end call previews:
 ///
 /// ```swift
@@ -131,6 +135,8 @@ public final class CallPreviewActivities: CallObserver {
   @ObservationIgnored private var previews: [CallID: Preview] = [:]
   @ObservationIgnored private var callIDs: [LiveActivityID: CallID] = [:]
   @ObservationIgnored private var pushToStartToken: Data?
+  /// The calls that joining reported to the client, which end with their previews.
+  @ObservationIgnored private var adopted: Set<CallID> = []
   @ObservationIgnored private var listener: Task<Void, Never>?
   private let eventUpdates = Broadcast<Event>()
   private let pushTokenUpdates = Broadcast<CallPreviewPushToken>()
@@ -252,7 +258,8 @@ public final class CallPreviewActivities: CallObserver {
   /// Ends a call preview's Live Activity, showing that its call ended until the system removes it.
   ///
   /// The observer ends previews itself when this device joins their call or the call ends. Ending
-  /// a preview leaves its call as it is.
+  /// a preview leaves its call as it is, unless joining reported the call to the client, which
+  /// then ends it.
   ///
   /// - Parameters:
   ///   - id: The call whose preview to end. Nothing happens when no Live Activity previews it.
@@ -260,6 +267,51 @@ public final class CallPreviewActivities: CallObserver {
   public func end(_ id: CallID, dismissal: CallPreviewDismissal = .immediate) async {
     guard let preview = previews[id] else { return }
     await finish(id, state: Self.ended(preview.state), dismissal: dismissal)
+  }
+
+  /// Joins a call from its preview on this device, as the preview's Join button does.
+  ///
+  /// The client asks the app to place the join with `CallEvent.joinRequested(_:)`, as for any
+  /// join, and the observer ends the preview's Live Activity once the call joined. A call that
+  /// the client doesn't know, because the app's servers started its preview before the app ran,
+  /// is first reported to the client from the Live Activity's attributes, as a call preview with
+  /// the presentation policy `preview`; it ends when its preview ends without being joined.
+  ///
+  /// - Parameter id: The call to join.
+  /// - Throws: ``CallPreviewError/notAttached`` when no client attached the observer,
+  ///   ``CallPreviewError/unknownCall`` when neither the client nor a Live Activity knows the
+  ///   call, or ``CallPreviewError/join(_:)`` when the client refuses the join, for example
+  ///   because the call ended.
+  public func join(_ id: CallID) async throws(CallPreviewError) {
+    guard let client else { throw .notAttached }
+    do throws(ActionError) {
+      try await client.request(.join(id))
+      return
+    } catch .unknownCall {
+      // The servers started the preview before the app ran.
+    } catch {
+      throw .join(error)
+    }
+    guard let attributes = previews[id]?.attributes else { throw .unknownCall }
+    adopted.insert(id)
+    _ = await client.report(
+      IncomingCall(
+        id: id, parties: attributes.parties, hasVideo: attributes.hasVideo,
+        metadata: attributes.metadata, presentationPolicy: PresentationPolicy(incoming: .preview)))
+    do throws(ActionError) {
+      try await client.request(.join(id))
+    } catch {
+      throw .join(error)
+    }
+  }
+
+  /// The observer that the running client attached, whose ``join(_:)`` the Join intent calls.
+  private(set) static weak var current: CallPreviewActivities?
+
+  /// Joins a call with the observer that the running client attached.
+  static func join(_ id: CallID) async throws(CallPreviewError) {
+    guard let current else { throw .notAttached }
+    try await current.join(id)
   }
 
   // MARK: CallObserver
@@ -276,6 +328,7 @@ public final class CallPreviewActivities: CallObserver {
   /// Starts following a client's calls.
   func attach(_ client: any CallPreviewClient) {
     self.client = client
+    Self.current = self
     let events = client.events()
     listener = Task { [weak self] in
       for await event in events {
@@ -290,13 +343,20 @@ public final class CallPreviewActivities: CallObserver {
   private func handle(_ event: CallEvent) async {
     switch event {
     case .previewStarted(let call):
-      guard options.startsActivities, previews[call.id] == nil else { return }
-      // A failure is sent as an event.
-      try? start(call)
+      guard previews[call.id] == nil else { return }
+      if adopted.contains(call.id) {
+        // A join that failed after the preview ended returns to a preview that nothing shows.
+        try? await client?.request(.end(call.id))
+      } else if options.startsActivities {
+        // A failure is sent as an event.
+        try? start(call)
+      }
     case .performed(.join(let id), _):
+      adopted.remove(id)
       // The system's call screen takes over from the preview.
       await finish(id, state: nil, dismissal: .immediate)
     case .ended(let call):
+      adopted.remove(call.id)
       guard let preview = previews[call.id] else { return }
       await finish(
         call.id, state: Self.ended(preview.state), dismissal: .after(options.endedDismissal))
@@ -312,6 +372,13 @@ public final class CallPreviewActivities: CallObserver {
     guard let preview = forget(id) else { return }
     await center.end(preview.activity, state: state, dismissal: dismissal)
     eventUpdates.send(.ended(id))
+    await endAdopted(id)
+  }
+
+  /// Ends a call that joining reported to the client, once its preview ended without a join.
+  private func endAdopted(_ id: CallID) async {
+    guard adopted.contains(id) else { return }
+    try? await client?.request(.end(id))
   }
 
   /// Stops following a call's preview, and tells the app that its push token is gone.
@@ -343,6 +410,7 @@ public final class CallPreviewActivities: CallObserver {
     case .ended(let activity):
       guard let id = callIDs[activity], forget(id) != nil else { return }
       eventUpdates.send(.ended(id))
+      Task { await endAdopted(id) }
     case .pushToStartTokenChanged(let token):
       pushToStartToken = token
       pushToStartTokenUpdates.send(token)
@@ -403,6 +471,13 @@ public enum CallPreviewError: Error, Hashable, Sendable {
   case refused
   /// No Live Activity previews the call.
   case notStarted
+  /// Neither the client nor a Live Activity knows the call.
+  case unknownCall
+  /// No client attached the observer: create it as the app launches and pass it to
+  /// `VoIPClient.start` as an observer.
+  case notAttached
+  /// The client refused to join the call.
+  case join(ActionError)
 }
 
 /// What ``CallPreviewActivities`` needs of `VoIPClient`, so that tests can script it.
@@ -410,6 +485,7 @@ public enum CallPreviewError: Error, Hashable, Sendable {
 protocol CallPreviewClient: AnyObject {
   func events() -> AsyncStream<CallEvent>
   func request(_ action: Action) async throws(ActionError)
+  func report(_ call: IncomingCall) async -> PresentationOutcome
 }
 
 extension VoIPClient: CallPreviewClient {}
