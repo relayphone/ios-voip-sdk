@@ -1,381 +1,330 @@
-#if targetEnvironment(simulator)
-  import Foundation
-  import Combine
-  #if SWIFT_PACKAGE
-    import CKSimProtocol
-  #endif
-  private struct EventBatch: Decodable {
-    let session: RuntimeSession
-    let events: [RuntimeEvent]
-    let cursor: Int
-  }
-  private struct BridgeError: Decodable { let error: String }
-  private struct InspectorProbeSnapshot: Encodable {
-    struct TimelinePresentation: Encodable {
-      let sequence: Int
-      let title: String
-      let detail: String
-    }
-    let nonce: String
-    let inspectorPID: Int32
-    // CI readiness requires nonempty native identity; unbundled host fixtures have no bundle ID.
-    let inspectorBundleID: String?
-    let inspectorDataContainer: String
-    let wallTimeMS: Int64
-    let startedWallTimeMS: Int64
-    let session: RuntimeSession?
-    let cursor: Int
-    let incoming: RuntimeEvent?
-    let conversations: [RuntimeEvent]
-    let providerConfigurations: [RuntimeEvent]
-    let pending: [RuntimeEvent]
-    let timeline: [RuntimeEvent]
-    let timelinePresentation: [TimelinePresentation]
-    let timingReferences: [RuntimeTimingReadout]
-    let audioActive: Bool
-    let incomingFilter: InspectorIncomingFilter
-    let incomingErrorCode: Int
-    let online: Bool
-    let error: String?
-  }
+import Combine
+import Foundation
 
-  @MainActor
-  final class InspectorModel: ObservableObject {
-    private enum ConfigurationAcknowledgement: Hashable {
-      case incomingFilter(UUID, InspectorIncomingFilter)
-      case incomingError(UUID, Int)
-    }
-    @Published var session: RuntimeSession?
-    @Published var conversations: [String: RuntimeEvent] = [:]
-    @Published var pending: [String: RuntimeEvent] = [:]
-    @Published var timeline: [RuntimeEvent] = []
-    @Published var audioActive = false
-    @Published var online = false
-    @Published var busy = false
-    @Published var error: String?
-    @Published var commandError: String?
-    @Published var incomingFilter: InspectorIncomingFilter = .none
-    @Published var incomingErrorCode = 0
-    @Published private var providerRows: [String: RuntimeEvent] = [:]
-    private var transactionCalls: [String: Set<String>] = [:]
-    private var transactionOrder: [String] = []
-    private var cursor = 0
-    private var acknowledgedActions = Set<UUID>()
-    private var actionOrder: [UUID] = []
-    private var configurationAcknowledgements = Set<ConfigurationAcknowledgement>()
-    private var configurationOrder: [ConfigurationAcknowledgement] = []
-    private let endpoint: URL?
-    private let token: String
-    private let client = URLSession(configuration: .ephemeral)
-    private let probe: (nonce: String, startedWallTimeMS: Int64)?
-    #if canImport(UIKit)
-      private let phaseProbe: ForegroundPhaseProbe?
-    #endif
-
-    init(environment: [String: String] = ProcessInfo.processInfo.environment) {
-      endpoint = environment["CKSIM_INSPECTOR_URL"].flatMap(URL.init(string:))
-      token = environment["CKSIM_INSPECTOR_TOKEN"] ?? ""
-      if let nonce = environment["CKSIM_INSPECTOR_PROBE_NONCE"], UUID(uuidString: nonce) != nil {
-        let started = Int64(Date().timeIntervalSince1970 * 1000)
-        probe = (nonce, started)
-        #if canImport(UIKit)
-          phaseProbe = ForegroundPhaseProbe(nonce: nonce, startedWallTimeMS: started)
-        #endif
-      } else {
-        probe = nil
-        #if canImport(UIKit)
-          phaseProbe = nil
-        #endif
-      }
-    }
-    var incoming: RuntimeEvent? {
-      conversations.values.filter { $0.ringing == true && $0.ended != true }.sorted {
-        $0.sequence < $1.sequence
-      }.first
-    }
-    var timingReferences: [RuntimeTimingReadout] { RuntimeTimingReferences.project(timeline) }
-    var providerConfigurations: [RuntimeEvent] {
-      providerRows.values.sorted { $0.sequence < $1.sequence }
-    }
-    func targets(excluding call: RuntimeEvent, held: Bool? = nil) -> [RuntimeEvent] {
-      conversations.values.filter {
-        $0.uuid != call.uuid && $0.ended != true
-          && (held == nil || ($0.connected == true && $0.held == held))
-      }.sorted { $0.sequence < $1.sequence }
-    }
-    func active(excluding id: String?) -> RuntimeEvent? {
-      conversations.values.filter {
-        $0.uuid != id && $0.connected == true && $0.held != true && $0.ended != true
-      }
-      .sorted { $0.sequence < $1.sequence }.first
-    }
-    func isPending(_ call: RuntimeEvent) -> Bool {
-      guard let id = call.uuid else { return false }
-      return pending.values.contains {
-        $0.callUUID == id || $0.groupTargetUUID == id
-          || $0.transactionID.flatMap { transactionCalls[$0]?.contains(id) } == true
-      }
-    }
-
-    private func request(_ path: String, body: [String: String]? = nil) async throws -> Data {
-      guard let endpoint, endpoint.host == "127.0.0.1", endpoint.scheme == "http", !token.isEmpty
-      else {
-        throw NSError(
-          domain: "Inspector", code: 1,
-          userInfo: [
-            NSLocalizedDescriptionKey: "Start this app with cksim inspect to connect to a runtime."
-          ])
-      }
-      let target = URL(string: path, relativeTo: endpoint)!
-      var request = URLRequest(url: target)
-      request.timeoutInterval = body == nil ? 3 : 20
-      request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
-      if let body {
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(body)
-      }
-      let (data, response) = try await client.data(for: request)
-      guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-        let message =
-          (try? JSONDecoder().decode(BridgeError.self, from: data).error)
-          ?? "Inspector connection rejected. Restart cksim inspect."
-        throw NSError(domain: "Inspector", code: 2, userInfo: [NSLocalizedDescriptionKey: message])
-      }
-      return data
-    }
-    private func controlResponse(_ body: [String: String]) async throws -> ControlResponse {
-      let response = try JSONDecoder().decode(
-        ControlResponse.self, from: await request("/command", body: body))
-      guard let session, response.target.runID == session.runID, response.target.pid == session.pid,
-        response.target.bundleID == session.bundleID
-      else { throw URLError(.cannotParseResponse) }
-      return response
-    }
-    func follow() async {
-      while !Task.isCancelled {
-        do {
-          let batch = try JSONDecoder().decode(
-            EventBatch.self, from: await request("/events?after=\(cursor)"))
-          guard session == nil || session == batch.session,
-            batch.cursor == cursor + batch.events.count
-          else { throw URLError(.cannotParseResponse) }
-          for (offset, row) in batch.events.enumerated() {
-            guard row.schemaVersion == 1, row.sequence == cursor + offset + 1,
-              row.runID == batch.session.runID, row.pid == batch.session.pid,
-              row.bundleID == batch.session.bundleID
-            else { throw URLError(.cannotParseResponse) }
-          }
-          session = batch.session
-          for row in batch.events { consume(row) }
-          cursor = batch.cursor
-          online = true
-          error = nil
-        } catch {
-          if Task.isCancelled { return }
-          online = false
-          self.error = error.localizedDescription
-        }
-        writeProbe()
-        try? await Task.sleep(for: .milliseconds(250))
-      }
-    }
-    private func writeProbe() {
-      guard let probe else { return }
-      guard
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-      else { return }
-      do {
-        try FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
-        guard let canonicalDocuments = realpath(documents.path, nil) else {
-          throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-        }
-        defer { free(canonicalDocuments) }
-        let snapshot = InspectorProbeSnapshot(
-          nonce: probe.nonce, inspectorPID: ProcessInfo.processInfo.processIdentifier,
-          inspectorBundleID: Bundle.main.bundleIdentifier,
-          inspectorDataContainer: (String(cString: canonicalDocuments) as NSString)
-            .deletingLastPathComponent,
-          wallTimeMS: Int64(Date().timeIntervalSince1970 * 1000),
-          startedWallTimeMS: probe.startedWallTimeMS,
-          session: session, cursor: cursor, incoming: incoming,
-          conversations: conversations.values.sorted { $0.sequence < $1.sequence },
-          providerConfigurations: providerConfigurations,
-          pending: pending.values.sorted { $0.sequence < $1.sequence }, timeline: timeline,
-          timelinePresentation: timeline.map {
-            .init(sequence: $0.sequence, title: $0.title, detail: $0.detail)
-          },
-          timingReferences: timingReferences,
-          audioActive: audioActive, incomingFilter: incomingFilter,
-          incomingErrorCode: incomingErrorCode, online: online, error: error)
-        try JSONEncoder().encode(snapshot).write(
-          to: documents.appendingPathComponent("cksim-inspector-results.json"), options: .atomic)
-        #if canImport(UIKit)
-          if let session {
-            phaseProbe?.sample(
-              session: .init(
-                schemaVersion: session.schemaVersion, bundleID: session.bundleID,
-                runID: session.runID, pid: session.pid, profile: session.profile))
-          }
-        #endif
-      } catch { NSLog("Inspector probe receipt failed: %@", String(describing: error)) }
-    }
-    private func consume(_ row: RuntimeEvent) {
-      timeline.append(row)
-      if timeline.count > 300 { timeline.removeFirst(timeline.count - 300) }
-      if row.event == "provider.created", let id = row.provider { providerRows[id] = row }
-      if row.event == "provider.apiKind", let id = row.provider, var value = providerRows[id] {
-        value.apiKind = row.apiKind
-        providerRows[id] = value
-      }
-      if row.event == "transaction.delivered", let id = row.transactionID,
-        let calls = row.callUUIDs, calls.count == row.actionIDs?.count, !calls.isEmpty
-      {
-        if transactionCalls[id] == nil { transactionOrder.append(id) }
-        transactionCalls[id] = Set(calls)
-        trimTransactions(protecting: id)
-      }
-      if row.event == "call.changed", let id = row.uuid {
-        conversations[id] = row
-        let ended = conversations.values.filter { $0.ended == true }.sorted {
-          $0.sequence > $1.sequence
-        }
-        for old in ended.dropFirst(5) {
-          if let id = old.uuid { conversations.removeValue(forKey: id) }
-        }
-      }
-      if let state = InspectorIncomingFilterState(event: row), let rawID = row.requestID,
-        let id = UUID(uuidString: rawID)
-      {
-        incomingFilter = state.reason
-        acknowledgeConfiguration(.incomingFilter(id, state.reason))
-      }
-      if row.event == "faults.configured", let code = row.incomingErrorCode, [0, 4].contains(code),
-        let rawID = row.requestID, let id = UUID(uuidString: rawID)
-      {
-        incomingErrorCode = code
-        acknowledgeConfiguration(.incomingError(id, code))
-      }
-      if let id = row.actionID {
-        acknowledge(id)
-        if row.event == "action.deadline" { pending[id] = row }
-        if ["action.settled", "action.expired", "action.timeout", "action.cancelled"].contains(
-          row.event)
-        {
-          pending.removeValue(forKey: id)
-          trimTransactions()
-        }
-      }
-      if row.event == "audio.activated" { audioActive = true }
-      if row.event == "audio.deactivated" { audioActive = false }
-    }
-    private func trimTransactions(protecting id: String? = nil) {
-      let active = Set(pending.values.compactMap(\.transactionID))
-      while transactionOrder.count > 100 {
-        guard let index = transactionOrder.firstIndex(where: { $0 != id && !active.contains($0) })
-        else { return }
-        transactionCalls.removeValue(forKey: transactionOrder.remove(at: index))
-      }
-    }
-    private func acknowledge(_ rawID: String) {
-      guard let id = UUID(uuidString: rawID) else { return }
-      if acknowledgedActions.insert(id).inserted {
-        actionOrder.append(id)
-        if actionOrder.count > 1000 { acknowledgedActions.remove(actionOrder.removeFirst()) }
-      }
-    }
-    private func acknowledgeConfiguration(_ value: ConfigurationAcknowledgement) {
-      if configurationAcknowledgements.insert(value).inserted {
-        configurationOrder.append(value)
-        if configurationOrder.count > 1000 {
-          configurationAcknowledgements.remove(configurationOrder.removeFirst())
-        }
-      }
-    }
-    func configureIncomingFilter(_ reason: InspectorIncomingFilter) {
-      submitConfiguration(
-        ["operation": "incoming-filter", "reason": reason.rawValue],
-        acknowledgement: { .incomingFilter($0, reason) },
-        accepting: {
-          if case .incomingFilter(let state) = $0 {
-            return state.reason.rawValue == reason.rawValue
-          }
-          return false
-        })
-    }
-    func configureIncomingError(_ code: Int) {
-      guard [0, 4].contains(code) else { return }
-      submitConfiguration(
-        ["operation": "faults", "incomingErrorCode": String(code)],
-        acknowledgement: { .incomingError($0, code) },
-        accepting: {
-          if case .faults(let applied) = $0 { return applied == code }
-          return false
-        })
-    }
-    private func submitConfiguration(
-      _ body: [String: String],
-      acknowledgement: @escaping (UUID) -> ConfigurationAcknowledgement,
-      accepting: @escaping (ControlResult) -> Bool
-    ) {
-      guard !busy, online else { return }
-      busy = true
-      Task {
-        defer { busy = false }
-        do {
-          let response = try await controlResponse(body)
-          guard accepting(try response.get()) else { throw URLError(.cannotParseResponse) }
-          let deadline = Date().addingTimeInterval(3)
-          while !configurationAcknowledgements.contains(acknowledgement(response.id)) {
-            guard Date() < deadline else {
-              throw NSError(
-                domain: "Inspector", code: 6,
-                userInfo: [
-                  NSLocalizedDescriptionKey:
-                    "Configuration accepted, but its journal confirmation has not arrived. Check the timeline before retrying."
-                ])
-            }
-            try await Task.sleep(for: .milliseconds(25))
-          }
-        } catch { commandError = error.localizedDescription }
-      }
-    }
-    func send(
-      _ operation: String, call: RuntimeEvent, active: RuntimeEvent? = nil,
-      heldCall: RuntimeEvent? = nil, held: Bool? = nil, groupTarget: RuntimeEvent? = nil,
-      applicationRequest: Bool = false
-    ) {
-      guard !busy, online, let id = call.uuid, !isPending(call),
-        [active, heldCall, groupTarget].compactMap({ $0 }).allSatisfy({ !isPending($0) })
-      else { return }
-      busy = true
-      Task {
-        defer { busy = false }
-        do {
-          var command = ["operation": operation, "callUUID": id]
-          if applicationRequest { command["applicationRequest"] = "true" }
-          if let activeID = active?.uuid { command["activeCallUUID"] = activeID }
-          if let heldID = heldCall?.uuid { command["heldCallUUID"] = heldID }
-          if let held { command["held"] = held ? "true" : "false" }
-          if let groupID = groupTarget?.uuid { command["groupWithCallUUID"] = groupID }
-          let response = try await controlResponse(command)
-          guard case .actions(let ids, _) = try response.get() else {
-            throw URLError(.cannotParseResponse)
-          }
-          let deadline = Date().addingTimeInterval(3)
-          while !Set(ids).isSubset(of: acknowledgedActions) {
-            guard Date() < deadline else {
-              throw NSError(
-                domain: "Inspector", code: 4,
-                userInfo: [
-                  NSLocalizedDescriptionKey:
-                    "The control was accepted but its events have not arrived. Its outcome is unknown; check the timeline before retrying."
-                ])
-            }
-            try await Task.sleep(for: .milliseconds(25))
-          }
-        } catch { self.commandError = error.localizedDescription }
-      }
-    }
-  }
+#if SWIFT_PACKAGE
+  import CKSimProtocol
 #endif
+
+/// The connection to the bridge that `cksim inspect` serves for one target app.
+protocol InspectorBridge: Sendable {
+  /// The target's session and its journal entries after `cursor`, as the bridge's JSON batch.
+  func events(after cursor: Int) async throws -> Data
+  /// Sends one control and returns the runtime's response.
+  func command(_ body: [String: String]) async throws -> Data
+}
+
+/// The bridge on the host's loopback interface, which `cksim inspect` passes to the app in its
+/// launch environment.
+struct HTTPInspectorBridge: InspectorBridge {
+  private struct BridgeError: Decodable { let error: String }
+  private let endpoint: URL?
+  private let token: String
+  private let client = URLSession(configuration: .ephemeral)
+
+  init(environment: [String: String]) {
+    endpoint = environment["CKSIM_INSPECTOR_URL"].flatMap(URL.init(string:))
+    token = environment["CKSIM_INSPECTOR_TOKEN"] ?? ""
+  }
+
+  func events(after cursor: Int) async throws -> Data {
+    try await request("/events?after=\(cursor)")
+  }
+
+  func command(_ body: [String: String]) async throws -> Data {
+    try await request("/command", body: body)
+  }
+
+  private func request(_ path: String, body: [String: String]? = nil) async throws -> Data {
+    guard let endpoint, endpoint.host == "127.0.0.1", endpoint.scheme == "http", !token.isEmpty,
+      let target = URL(string: path, relativeTo: endpoint)
+    else {
+      throw NSError(
+        domain: "Inspector", code: 1,
+        userInfo: [
+          NSLocalizedDescriptionKey: "Start this app with cksim inspect to connect to a runtime."
+        ])
+    }
+    var request = URLRequest(url: target)
+    request.timeoutInterval = body == nil ? 3 : 20
+    request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+    if let body {
+      request.httpMethod = "POST"
+      request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+      request.httpBody = try JSONEncoder().encode(body)
+    }
+    let (data, response) = try await client.data(for: request)
+    guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+      let message =
+        (try? JSONDecoder().decode(BridgeError.self, from: data).error)
+        ?? "Inspector connection rejected. Restart cksim inspect."
+      throw NSError(domain: "Inspector", code: 2, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+    return data
+  }
+}
+
+private struct EventBatch: Decodable {
+  let session: RuntimeSession
+  let events: [RuntimeEvent]
+  let cursor: Int
+}
+
+@MainActor
+final class InspectorModel: ObservableObject {
+  private enum ConfigurationAcknowledgement: Hashable {
+    case incomingFilter(UUID, InspectorIncomingFilter)
+    case incomingError(UUID, Int)
+  }
+  @Published var session: RuntimeSession?
+  @Published var conversations: [String: RuntimeEvent] = [:]
+  @Published var pending: [String: RuntimeEvent] = [:]
+  @Published var timeline: [RuntimeEvent] = []
+  @Published var audioActive = false
+  @Published var online = false
+  @Published var busy = false
+  @Published var error: String?
+  @Published var commandError: String?
+  @Published var incomingFilter: InspectorIncomingFilter = .none
+  @Published var incomingErrorCode = 0
+  @Published private var providerRows: [String: RuntimeEvent] = [:]
+  private var transactionCalls: [String: Set<String>] = [:]
+  private var transactionOrder: [String] = []
+  private var cursor = 0
+  private var acknowledgedActions = Set<UUID>()
+  private var actionOrder: [UUID] = []
+  private var configurationAcknowledgements = Set<ConfigurationAcknowledgement>()
+  private var configurationOrder: [ConfigurationAcknowledgement] = []
+  private let bridge: any InspectorBridge
+  private let pollInterval: Duration
+
+  /// Connects to the bridge named in the app's launch environment.
+  convenience init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+    self.init(bridge: HTTPInspectorBridge(environment: environment))
+  }
+
+  init(bridge: any InspectorBridge, pollInterval: Duration = .milliseconds(250)) {
+    self.bridge = bridge
+    self.pollInterval = pollInterval
+  }
+  var incoming: RuntimeEvent? {
+    conversations.values.filter { $0.ringing == true && $0.ended != true }.sorted {
+      $0.sequence < $1.sequence
+    }.first
+  }
+  var timingReferences: [RuntimeTimingReadout] { RuntimeTimingReferences.project(timeline) }
+  var providerConfigurations: [RuntimeEvent] {
+    providerRows.values.sorted { $0.sequence < $1.sequence }
+  }
+  func targets(excluding call: RuntimeEvent, held: Bool? = nil) -> [RuntimeEvent] {
+    conversations.values.filter {
+      $0.uuid != call.uuid && $0.ended != true
+        && (held == nil || ($0.connected == true && $0.held == held))
+    }.sorted { $0.sequence < $1.sequence }
+  }
+  func active(excluding id: String?) -> RuntimeEvent? {
+    conversations.values.filter {
+      $0.uuid != id && $0.connected == true && $0.held != true && $0.ended != true
+    }
+    .sorted { $0.sequence < $1.sequence }.first
+  }
+  func isPending(_ call: RuntimeEvent) -> Bool {
+    guard let id = call.uuid else { return false }
+    return pending.values.contains {
+      $0.callUUID == id || $0.groupTargetUUID == id
+        || $0.transactionID.flatMap { transactionCalls[$0]?.contains(id) } == true
+    }
+  }
+
+  private func controlResponse(_ body: [String: String]) async throws -> ControlResponse {
+    let response = try JSONDecoder().decode(
+      ControlResponse.self, from: await bridge.command(body))
+    guard let session, response.target.runID == session.runID, response.target.pid == session.pid,
+      response.target.bundleID == session.bundleID
+    else { throw URLError(.cannotParseResponse) }
+    return response
+  }
+  func follow() async {
+    while !Task.isCancelled {
+      do {
+        let batch = try JSONDecoder().decode(
+          EventBatch.self, from: await bridge.events(after: cursor))
+        guard session == nil || session == batch.session,
+          batch.cursor == cursor + batch.events.count
+        else { throw URLError(.cannotParseResponse) }
+        for (offset, row) in batch.events.enumerated() {
+          guard row.schemaVersion == 1, row.sequence == cursor + offset + 1,
+            row.runID == batch.session.runID, row.pid == batch.session.pid,
+            row.bundleID == batch.session.bundleID
+          else { throw URLError(.cannotParseResponse) }
+        }
+        session = batch.session
+        for row in batch.events { consume(row) }
+        cursor = batch.cursor
+        online = true
+        error = nil
+      } catch {
+        if Task.isCancelled { return }
+        online = false
+        self.error = error.localizedDescription
+      }
+      try? await Task.sleep(for: pollInterval)
+    }
+  }
+  private func consume(_ row: RuntimeEvent) {
+    timeline.append(row)
+    if timeline.count > 300 { timeline.removeFirst(timeline.count - 300) }
+    if row.event == "provider.created", let id = row.provider { providerRows[id] = row }
+    if row.event == "provider.apiKind", let id = row.provider, var value = providerRows[id] {
+      value.apiKind = row.apiKind
+      providerRows[id] = value
+    }
+    if row.event == "transaction.delivered", let id = row.transactionID,
+      let calls = row.callUUIDs, calls.count == row.actionIDs?.count, !calls.isEmpty
+    {
+      if transactionCalls[id] == nil { transactionOrder.append(id) }
+      transactionCalls[id] = Set(calls)
+      trimTransactions(protecting: id)
+    }
+    if row.event == "call.changed", let id = row.uuid {
+      conversations[id] = row
+      let ended = conversations.values.filter { $0.ended == true }.sorted {
+        $0.sequence > $1.sequence
+      }
+      for old in ended.dropFirst(5) {
+        if let id = old.uuid { conversations.removeValue(forKey: id) }
+      }
+    }
+    if let state = InspectorIncomingFilterState(event: row), let rawID = row.requestID,
+      let id = UUID(uuidString: rawID)
+    {
+      incomingFilter = state.reason
+      acknowledgeConfiguration(.incomingFilter(id, state.reason))
+    }
+    if row.event == "faults.configured", let code = row.incomingErrorCode, [0, 4].contains(code),
+      let rawID = row.requestID, let id = UUID(uuidString: rawID)
+    {
+      incomingErrorCode = code
+      acknowledgeConfiguration(.incomingError(id, code))
+    }
+    if let id = row.actionID {
+      acknowledge(id)
+      if row.event == "action.deadline" { pending[id] = row }
+      if ["action.settled", "action.expired", "action.timeout", "action.cancelled"].contains(
+        row.event)
+      {
+        pending.removeValue(forKey: id)
+        trimTransactions()
+      }
+    }
+    if row.event == "audio.activated" { audioActive = true }
+    if row.event == "audio.deactivated" { audioActive = false }
+  }
+  private func trimTransactions(protecting id: String? = nil) {
+    let active = Set(pending.values.compactMap(\.transactionID))
+    while transactionOrder.count > 100 {
+      guard let index = transactionOrder.firstIndex(where: { $0 != id && !active.contains($0) })
+      else { return }
+      transactionCalls.removeValue(forKey: transactionOrder.remove(at: index))
+    }
+  }
+  private func acknowledge(_ rawID: String) {
+    guard let id = UUID(uuidString: rawID) else { return }
+    if acknowledgedActions.insert(id).inserted {
+      actionOrder.append(id)
+      if actionOrder.count > 1000 { acknowledgedActions.remove(actionOrder.removeFirst()) }
+    }
+  }
+  private func acknowledgeConfiguration(_ value: ConfigurationAcknowledgement) {
+    if configurationAcknowledgements.insert(value).inserted {
+      configurationOrder.append(value)
+      if configurationOrder.count > 1000 {
+        configurationAcknowledgements.remove(configurationOrder.removeFirst())
+      }
+    }
+  }
+  func configureIncomingFilter(_ reason: InspectorIncomingFilter) {
+    submitConfiguration(
+      ["operation": "incoming-filter", "reason": reason.rawValue],
+      acknowledgement: { .incomingFilter($0, reason) },
+      accepting: {
+        if case .incomingFilter(let state) = $0 {
+          return state.reason.rawValue == reason.rawValue
+        }
+        return false
+      })
+  }
+  func configureIncomingError(_ code: Int) {
+    guard [0, 4].contains(code) else { return }
+    submitConfiguration(
+      ["operation": "faults", "incomingErrorCode": String(code)],
+      acknowledgement: { .incomingError($0, code) },
+      accepting: {
+        if case .faults(let applied) = $0 { return applied == code }
+        return false
+      })
+  }
+  private func submitConfiguration(
+    _ body: [String: String],
+    acknowledgement: @escaping (UUID) -> ConfigurationAcknowledgement,
+    accepting: @escaping (ControlResult) -> Bool
+  ) {
+    guard !busy, online else { return }
+    busy = true
+    Task {
+      defer { busy = false }
+      do {
+        let response = try await controlResponse(body)
+        guard accepting(try response.get()) else { throw URLError(.cannotParseResponse) }
+        let deadline = Date().addingTimeInterval(3)
+        while !configurationAcknowledgements.contains(acknowledgement(response.id)) {
+          guard Date() < deadline else {
+            throw NSError(
+              domain: "Inspector", code: 6,
+              userInfo: [
+                NSLocalizedDescriptionKey:
+                  "Configuration accepted, but its journal confirmation has not arrived. Check the timeline before retrying."
+              ])
+          }
+          try await Task.sleep(for: .milliseconds(25))
+        }
+      } catch { commandError = error.localizedDescription }
+    }
+  }
+  func send(
+    _ operation: String, call: RuntimeEvent, active: RuntimeEvent? = nil,
+    heldCall: RuntimeEvent? = nil, held: Bool? = nil, groupTarget: RuntimeEvent? = nil,
+    applicationRequest: Bool = false
+  ) {
+    guard !busy, online, let id = call.uuid, !isPending(call),
+      [active, heldCall, groupTarget].compactMap({ $0 }).allSatisfy({ !isPending($0) })
+    else { return }
+    busy = true
+    Task {
+      defer { busy = false }
+      do {
+        var command = ["operation": operation, "callUUID": id]
+        if applicationRequest { command["applicationRequest"] = "true" }
+        if let activeID = active?.uuid { command["activeCallUUID"] = activeID }
+        if let heldID = heldCall?.uuid { command["heldCallUUID"] = heldID }
+        if let held { command["held"] = held ? "true" : "false" }
+        if let groupID = groupTarget?.uuid { command["groupWithCallUUID"] = groupID }
+        let response = try await controlResponse(command)
+        guard case .actions(let ids, _) = try response.get() else {
+          throw URLError(.cannotParseResponse)
+        }
+        let deadline = Date().addingTimeInterval(3)
+        while !Set(ids).isSubset(of: acknowledgedActions) {
+          guard Date() < deadline else {
+            throw NSError(
+              domain: "Inspector", code: 4,
+              userInfo: [
+                NSLocalizedDescriptionKey:
+                  "The control was accepted but its events have not arrived. Its outcome is unknown; check the timeline before retrying."
+              ])
+          }
+          try await Task.sleep(for: .milliseconds(25))
+        }
+      } catch { self.commandError = error.localizedDescription }
+    }
+  }
+}

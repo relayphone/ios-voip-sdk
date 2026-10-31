@@ -1,5 +1,5 @@
-#import "CKPushLaunch.h"
-#if (TARGET_OS_SIMULATOR && TARGET_OS_IOS) || CKSIM_PUSH_LAUNCH_HOST_TEST
+#import "CKRuntimeSeam.h"
+#if TARGET_OS_SIMULATOR && TARGET_OS_IOS
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
