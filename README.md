@@ -162,6 +162,11 @@ for await event in client.events() {
 }
 ```
 
+A stream from `events()` starts when the app subscribes, so it can miss the first events of a
+cold launch: the SDK reports the call of the VoIP push that launched the app as soon as PushKit
+delivers it. Code that must see every event is a `CallObserver`, passed to `start` as
+`observers`, which subscribes in `attach(to:)` before the client attaches the push source.
+
 ## Audio
 
 `AudioSessionAdapter` sets the audio session to the play-and-record category in voice chat mode

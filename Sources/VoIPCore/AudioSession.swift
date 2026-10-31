@@ -7,8 +7,8 @@
 /// when the SDK completes the answer, start or join after which the system activates audio.
 ///
 /// `AudioSessionAdapter`, in the `VoIPAudio` library, is the audio session that apps pass to
-/// ``VoIPClient/start(framework:media:push:audio:configuration:clock:)``. Without one, the app
-/// configures `AVAudioSession` for calls itself.
+/// ``VoIPClient/start(framework:media:push:audio:observers:configuration:clock:)``. Without one,
+/// the app configures `AVAudioSession` for calls itself.
 @VoIPActor
 public protocol AudioSession: Sendable {
   /// Starts watching the audio session.
