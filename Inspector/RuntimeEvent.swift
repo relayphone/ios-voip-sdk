@@ -16,13 +16,13 @@ enum RuntimeEventError: Codable {
     return nil
   }
 
-  init(from decoder: Decoder) throws {
+  init(from decoder: any Decoder) throws {
     let value = try decoder.singleValueContainer()
     if let code = try? value.decode(Int.self) { self = .code(code) }
     else { self = .message(try value.decode(String.self)) }
   }
 
-  func encode(to encoder: Encoder) throws {
+  func encode(to encoder: any Encoder) throws {
     var value = encoder.singleValueContainer()
     switch self {
     case .code(let code): try value.encode(code)

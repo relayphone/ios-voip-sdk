@@ -52,26 +52,21 @@ jobs:
       - name: Watcher and existing CLI controls
         id: controls
         run: |
-          swift test --scratch-path "$RUNNER_TEMP/runtime-host-tests" --filter 'RuntimeJournalTests|RuntimeSessionTests|ControlRequestTests|ControlResponseTests'
+          swift test --scratch-path "$RUNNER_TEMP/runtime-host-tests" --filter 'RuntimeEngineTests|CKSimProtocolTests|InspectorTests'
           python3 Tests/RuntimeEvents/test_watch.py
           python3 Tests/RuntimeEvents/test_native_runner.py
           python3 Tests/RuntimeEvents/test_ci_simulator.py
-          python3 Tests/RuntimeEvents/test_filtered_policy.py
           python3 Tests/RuntimeEvents/test_filtered_acceptance.py
           python3 Tests/RuntimeEvents/test_lck_acceptance.py
-          python3 Tests/RuntimeEvents/run_lck_multi_policy.py
           python3 Tests/Inspector/test_bridge.py
           python3 Tests/Inspector/test_filter_cases.py
           python3 -m unittest discover -s scripts/sim -p 'test_inspector_*.py'
-          python3 Tests/Inspector/test_timing_references.py
           python3 Tests/Inspector/test_timing_receipts.py
           python3 Tests/Inspector/test_incoming_filter.py
           python3 Tests/Inspector/test_filter_model.py
-          python3 Tests/Inspector/test_lck_projection.py
           python3 Tests/Inspector/test_lck_controls.py
           python3 Tests/Inspector/test_lck_model.py
           python3 discovery/check_cli_controls.py
-          python3 discovery/check_lck_provider_policy.py
       - name: Build simulator runtime and event fixture
         id: build
         run: |

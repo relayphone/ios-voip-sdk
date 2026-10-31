@@ -46,6 +46,14 @@ let package = Package(
       exclude: ["Resources"],
       swiftSettings: strictSwift
     ),
+    // The Inspector app's model. `tools/build-inspector.ts` builds the app itself.
+    .target(
+      name: "CKSimInspector",
+      dependencies: ["CKSimProtocol"],
+      path: "Inspector",
+      exclude: ["InspectorApp.swift"],
+      swiftSettings: strictSwift
+    ),
     .target(name: "VoIPCore", swiftSettings: strictSwift),
     .target(name: "VoIPAudio", dependencies: ["VoIPCore"], swiftSettings: strictSwift),
     .target(name: "VoIPCallKit", dependencies: ["VoIPCore"], swiftSettings: strictSwift),
@@ -82,6 +90,8 @@ let package = Package(
       name: "RuntimeEngineTests", dependencies: ["CKSimRuntime"], swiftSettings: strictSwift),
     .testTarget(
       name: "CKSimProtocolTests", dependencies: ["CKSimProtocol"], swiftSettings: strictSwift),
+    .testTarget(
+      name: "InspectorTests", dependencies: ["CKSimInspector"], swiftSettings: strictSwift),
   ],
   swiftLanguageModes: [.v6]
 )

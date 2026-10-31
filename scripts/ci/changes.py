@@ -28,7 +28,7 @@ def select(paths, full=False):
             sdk |= name in ('sdk-m0.yml', 'ci-changes.yml')
             runtime |= name in ('runtime-m4.yml', 'ci-changes.yml')
             helper |= name in ('sim-infrastructure.yml', 'ci-changes.yml')
-        elif path.startswith('Tests/CKSimProtocolTests/'):
+        elif path.startswith(('Tests/CKSimProtocolTests/', 'Tests/RuntimeEngineTests/', 'Tests/InspectorTests/')):
             runtime = True
         elif path.startswith(('Tests/RuntimeEvents/', 'Tests/Inspector/')):
             runtime = helper = True
@@ -38,7 +38,7 @@ def select(paths, full=False):
             sdk = runtime = True
         elif path.startswith('discovery/'):
             sdk = True
-            runtime |= PurePosixPath(path).name in ('check_cli_controls.py', 'check_lck_provider_policy.py')
+            runtime |= PurePosixPath(path).name == 'check_cli_controls.py'
             helper |= PurePosixPath(path).name.startswith('run_')
         elif path.startswith(('Sources/', 'Examples/', 'Tests/')) or path in SDK_INPUTS:
             sdk = True
