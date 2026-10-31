@@ -196,6 +196,7 @@
     let printed = Mutex([String]())
     var tool = Tool()
     tool.simctl = simulator.simctl
+    tool.environment = [:]
     tool.write = { line in printed.withLock { $0.append(line) } }
     if let stateDirectory { tool.stateDirectory = stateDirectory }
     if let executableDirectory { tool.executableDirectory = executableDirectory }

@@ -61,7 +61,7 @@
       throw CKSimError("Uninstall the other simulator runtime before launching this release.")
     }
     let inherited =
-      try ProcessInfo.processInfo.environment["SIMCTL_CHILD_DYLD_INSERT_LIBRARIES"]
+      try Tool.current.environment["SIMCTL_CHILD_DYLD_INSERT_LIBRARIES"]
       ?? simctl.environment(device, "DYLD_INSERT_LIBRARIES")
     for entry in (inherited ?? "").split(separator: ":").map(String.init) {
       let url = URL(filePath: entry)
@@ -72,7 +72,7 @@
           "Another CallKit Simulator release is already injected; uninstall it first.")
       }
     }
-    let environment = ProcessInfo.processInfo.environment.merging([
+    let environment = Tool.current.environment.merging([
       "SIMCTL_CHILD_DYLD_INSERT_LIBRARIES": [inherited, library.path(percentEncoded: false)]
         .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ":"),
       "SIMCTL_CHILD_CKSIM_ENABLED": "1", "SIMCTL_CHILD_CKSIM_PROFILE": "ios-27.0",
