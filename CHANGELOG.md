@@ -30,15 +30,8 @@ Changes not yet released are recorded below. Public API changes include migratio
   SDK, and starts a VoIP push's report before the push callback returns. It never links CallKit.
   `VoIPConfiguration.supportsVideo` (default `false`) tells the system whether calls can have
   video.
-- The `VoIPCallKit` library's `CallKitAdapter` presents calls with CallKit, for apps that need
-  CallKit's measured behaviour; `LiveCommunicationKitAdapter` stays the default, and an app
-  links one of the two. It reports the first party's presented handle and display name, maps the
-  SDK's actions and end reasons to CallKit's, passes audio activation, action timeouts and resets
-  to the SDK, and reports a call that Do Not Disturb, a Focus or the block list filtered as
-  `PresentationOutcome.filtered(_:)`. Its provider calls the SDK on `VoIPActor`. The call
-  journeys now run through both adapters.
 - `VoIPActor.assumeIsolated(_:file:line:)` runs a system callback that arrives on
-  `VoIPActor.queue`, such as a CallKit report's completion, on the actor without hopping, and
+  `VoIPActor.queue`, such as a PushKit callback, on the actor without hopping, and
   stops the app when the callback arrives elsewhere.
 - The `VoIPPushKit` library's `PushKitSource` receives VoIP pushes from PushKit on `VoIPActor`,
   with the `mustReport` metadata on iOS 26.4 and later, and finishes each push exactly once,
@@ -78,7 +71,7 @@ Changes not yet released are recorded below. Public API changes include migratio
   the new cases. See [ADR 0007](docs/adr/0007-sdk-configures-audio-session.md).
 - `VoIPTesting` adds `FakeAudioSession`.
 - The CocoaPods spec ships the call core as subspecs that mirror the Swift package's products:
-  `Core`, `Audio`, `LiveCommunicationKit`, `CallKit`, `PushKit`, `Simulator` and `Testing`.
+  `Core`, `Audio`, `LiveCommunicationKit`, `PushKit`, `Simulator` and `Testing`.
   CocoaPods builds them into the one `IosVoipSDK` module, so code that uses them imports
   `IosVoipSDK`. `pod 'IosVoipSDK'` without a subspec installs `Core`, `LiveCommunicationKit` and
   `PushKit`.
@@ -114,7 +107,7 @@ Changes not yet released are recorded below. Public API changes include migratio
 
   | Old core | Call core |
   | --- | --- |
-  | `VoIPApplication.start(configuration:mediaAdapter:audioPolicy:)`, `startFromBundle(_:mediaAdapter:audioPolicy:)` | `VoIPClient.start(framework:media:push:audio:configuration:clock:)` with `LiveCommunicationKitAdapter()` or `CallKitAdapter()`, and `PushKitSource()` |
+  | `VoIPApplication.start(configuration:mediaAdapter:audioPolicy:)`, `startFromBundle(_:mediaAdapter:audioPolicy:)` | `VoIPClient.start(framework:media:push:audio:configuration:clock:)` with `LiveCommunicationKitAdapter()` and `PushKitSource()` |
   | `ConversationClient.Configuration` | `VoIPConfiguration`: `maximumConversationGroups` becomes `maximumCalls`, `ringtoneName` becomes `ringtoneSound`, `includesConversationInRecents` becomes `includesCallsInRecents` |
   | `ConversationSnapshot`, `snapshots`, `observeState(_:)` | `Call` and `VoIPClient.calls`, which SwiftUI and Observation track |
   | `observeEvents(_:)`, `ConversationEventContext` | `VoIPClient.events()` and `CallEvent` |
@@ -132,11 +125,18 @@ Changes not yet released are recorded below. Public API changes include migratio
   | `observeAudioRoutes(_:)`, `selectAudioRoute(_:)`, `AudioRoutesSnapshot` | `AudioSessionAdapter.routes` and `selectRoute(_:)` in `VoIPAudio` |
   | `AudioActivationPolicy` | `Deadlines.audioActivation` and `audioRecovery` |
   | `SimulatorSupport.activateIfNeeded()` | `VoIPSimulator.activate()` |
-  | `pod 'IosVoipSDK'` (`ExpoModule`) and `import IosVoipSDK` | The `Core`, `Audio`, `LiveCommunicationKit` or `CallKit`, `PushKit` and `Simulator` subspecs, still imported as `IosVoipSDK` |
+  | `pod 'IosVoipSDK'` (`ExpoModule`) and `import IosVoipSDK` | The `Core`, `Audio`, `LiveCommunicationKit`, `PushKit` and `Simulator` subspecs, still imported as `IosVoipSDK` |
   | The Expo module from `github:relayphone/ios-voip-sdk` | expo-callkit-telecom v2 |
 
   The call core doesn't yet handle `tel:` URLs and `INStartCallIntent`s, or donate calls to Siri
   and Recents. Keep doing these in the app until it does.
+
+- The `VoIPCallKit` library, its `CallKitAdapter` and the `CallKit` CocoaPods subspec are
+  removed: LiveCommunicationKit is the SDK's only calling framework. Apps that used them depend
+  on `VoIPLiveCommunicationKit`, or the `LiveCommunicationKit` subspec, and start the client with
+  `LiveCommunicationKitAdapter()`; the rest of the API is unchanged. A Focus that doesn't allow
+  the app now filters its calls even from people the Focus allows, and the SDK reports them as
+  filtered calls. See [ADR 0002](docs/adr/0002-one-calling-framework-per-build.md).
 
 - The `VoIPSDKTesting` product is now `VoIPTesting`. Depend on
   `.product(name: "VoIPTesting", package: "ios-voip-sdk")` and `import VoIPTesting`;

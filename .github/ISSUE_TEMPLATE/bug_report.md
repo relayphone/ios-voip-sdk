@@ -14,7 +14,7 @@ about: Report behavior that does not match the documentation
 - SDK revision:
 - iOS or simulator version:
 - Xcode version:
-- Calling framework adapter (LiveCommunicationKit or CallKit) and package manager:
+- Package manager (Swift Package Manager or CocoaPods):
 
 ## Additional context
 

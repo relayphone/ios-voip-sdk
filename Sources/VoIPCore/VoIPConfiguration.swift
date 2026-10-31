@@ -30,8 +30,8 @@ public struct VoIPConfiguration: Hashable, Sendable {
   /// The most calls this device presents at once, ringing or taking part. Defaults to 2.
   ///
   /// Call previews don't count. An incoming call that would ring beyond this ends with
-  /// ``CallFailure/atCapacity``. CallKit and LiveCommunicationKit receive it as their maximum
-  /// number of call groups.
+  /// ``CallFailure/atCapacity``. LiveCommunicationKit receives it as its maximum number of
+  /// conversation groups.
   public var maximumCalls: Int
 
   /// The kinds of handle that the app can call. Defaults to every kind.

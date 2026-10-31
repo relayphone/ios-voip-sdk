@@ -1,7 +1,7 @@
 import CryptoKit
 public import Foundation
 
-/// The UUID that CallKit and LiveCommunicationKit use for a call on this device.
+/// The UUID that LiveCommunicationKit uses for a call on this device.
 ///
 /// The UUID is derived from the call ID alone, so reporting or starting the same call again uses
 /// the same UUID, and no table maps one to the other. It is the first 16 bytes of the SHA-256

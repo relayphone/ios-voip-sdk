@@ -12,7 +12,7 @@ public actor VoIPActor {
 
   /// The serial queue that runs the actor's work.
   ///
-  /// Adapters pass it to the system as a delegate queue, so that PushKit and CallKit callbacks
+  /// Adapters pass it to the system as a delegate queue, so that callbacks such as PushKit's
   /// arrive on the actor and can use ``assumeIsolated(_:file:line:)``.
   public static let queue = DispatchSerialQueue(label: "VoIPCore.VoIPActor", qos: .userInitiated)
 
@@ -22,7 +22,7 @@ public actor VoIPActor {
   }
 
   /// Runs work on the actor from a synchronous callback that the system makes on ``queue``, such
-  /// as the completion of a CallKit report, without hopping.
+  /// as a PushKit callback, without hopping.
   ///
   /// Like `MainActor.assumeIsolated(_:file:line:)`, it stops the app when the caller isn't
   /// running on ``queue``.
