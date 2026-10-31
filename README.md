@@ -32,6 +32,24 @@ npm install github:relayphone/ios-voip-sdk#main
 
 Follow the [Expo setup guide](Expo/README.md) to configure the plugin and rebuild the native app. Git installation builds the TypeScript entry point during package preparation.
 
+For CocoaPods, depend on the call core's subspecs at a source revision:
+
+```ruby
+pod 'IosVoipSDK', :git => 'https://github.com/relayphone/ios-voip-sdk.git', :commit => '<revision>',
+                  :subspecs => ['LiveCommunicationKit', 'PushKit']
+```
+
+| Subspec                | Swift package product      |
+| ---------------------- | -------------------------- |
+| `Core`                 | `VoIPCore`                 |
+| `LiveCommunicationKit` | `VoIPLiveCommunicationKit` |
+| `CallKit`              | `VoIPCallKit`              |
+| `PushKit`              | `VoIPPushKit`              |
+| `Simulator`            | `VoIPSimulator`            |
+| `Testing`              | `VoIPTesting`              |
+
+Each adapter subspec includes `Core`. Choose exactly one of `LiveCommunicationKit` and `CallKit`. CocoaPods builds every subspec into one module, so import `IosVoipSDK` instead of the product modules. `Simulator` can stay in Release builds: `VoIPSimulator.activate()` only starts the runtime in Debug builds for the simulator, and the runtime isn't compiled for devices. `pod 'IosVoipSDK'` without subspecs installs the Expo module described above, as before; don't combine it with the call core's subspecs.
+
 ## Requirements
 
 - iOS and iPadOS 26 or later.

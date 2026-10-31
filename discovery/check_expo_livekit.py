@@ -149,9 +149,11 @@ def fixture(root):
         UIBackgroundModes=['voip', 'audio'], NSMicrophoneUsageDescription='Local fixture capture.')))
     (build / gate.APP_FILES[-1]).write_bytes(plistlib.dumps(dict(CFBundleIdentifier='io.livekit.LiveKitWebRTC', CFBundleExecutable='LiveKitWebRTC')))
     write(build / 'Podfile.properties.json', {'ios-voip-sdk.mediaAdapter': 'livekit'})
-    write(build / 'IosVoipSDK.podspec.json', dict(source_files=['Sources/**/*.{swift,h,m}', 'Expo/apple/**/*.{swift,h}',
+    write(build / 'IosVoipSDK.podspec.json', dict(default_subspecs='ExpoModule', subspecs=[dict(name='ExpoModule',
+        source_files=['Sources/VoIPPlatform/**/*.{h,m}', 'Sources/VoIPSDK/**/*.swift', 'Expo/apple/**/*.{swift,h}',
         'ExpoMedia/Shared/ExpoMediaSupport.swift', 'ExpoMedia/LiveKit/**/*.{swift,h,m}', 'ExpoMedia/Shared/VSMediaBinding.h',
-        'ExpoMedia/Shared/QueuedMediaAdapter.swift'], dependencies={'ExpoModulesCore': [], 'React-Core': [], 'livekit-react-native-webrtc': ['= 150.1.0']}))
+        'ExpoMedia/Shared/QueuedMediaAdapter.swift'], dependencies={'IosVoipSDK/SimulatorRuntime': [], 'ExpoModulesCore': [],
+        'React-Core': [], 'livekit-react-native-webrtc': ['= 150.1.0']})]))
     (build / 'Podfile.lock').write_text('PODS:\n  - livekit-react-native (3.1.0):\n  - livekit-react-native-webrtc (150.1.0):\n  - LiveKitWebRTC (150.7871.03)\n')
     write(build / 'build.json', dict(schemaVersion=1, product='expo-livekit', configuration='Release', sourceBefore=IDENTITY,
         sourceAfter=IDENTITY, sdkVersion='27.1', files=gate.product_files(build), versions=gate.VERSIONS))

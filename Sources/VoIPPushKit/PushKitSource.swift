@@ -1,8 +1,10 @@
 #if os(iOS)
   public import Foundation
   import PushKit
-  public import VoIPCore
-  import VoIPPushDelivery
+  #if SWIFT_PACKAGE
+    public import VoIPCore
+    import VoIPPushDelivery
+  #endif
 
   /// A push source that receives the app's VoIP pushes from PushKit.
   ///

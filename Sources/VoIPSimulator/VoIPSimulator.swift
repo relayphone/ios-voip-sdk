@@ -1,4 +1,4 @@
-#if DEBUG && os(iOS) && targetEnvironment(simulator)
+#if DEBUG && os(iOS) && targetEnvironment(simulator) && SWIFT_PACKAGE
   import CKSimRuntime
 #endif
 

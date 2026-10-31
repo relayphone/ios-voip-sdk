@@ -76,11 +76,13 @@ def validate_build(build, source_root=ROOT, require_source=True):
     require(read(build, 'Podfile.properties.json').get('ios-voip-sdk.mediaAdapter') == 'livekit',
             'generated adapter selection differs')
     spec = read(build, 'IosVoipSDK.podspec.json')
-    require(spec.get('source_files') == ['Sources/**/*.{swift,h,m}', 'Expo/apple/**/*.{swift,h}',
-            'ExpoMedia/Shared/ExpoMediaSupport.swift', 'ExpoMedia/LiveKit/**/*.{swift,h,m}',
+    module = {subspec.get('name'): subspec for subspec in spec.get('subspecs', [])}.get('ExpoModule', {})
+    require(spec.get('default_subspecs') == 'ExpoModule' and
+            module.get('source_files') == ['Sources/VoIPPlatform/**/*.{h,m}', 'Sources/VoIPSDK/**/*.swift',
+            'Expo/apple/**/*.{swift,h}', 'ExpoMedia/Shared/ExpoMediaSupport.swift', 'ExpoMedia/LiveKit/**/*.{swift,h,m}',
             'ExpoMedia/Shared/VSMediaBinding.h', 'ExpoMedia/Shared/QueuedMediaAdapter.swift'] and
-            spec.get('dependencies') == {'ExpoModulesCore': [], 'React-Core': [],
-                                       'livekit-react-native-webrtc': ['= 150.1.0']},
+            module.get('dependencies') == {'IosVoipSDK/SimulatorRuntime': [], 'ExpoModulesCore': [], 'React-Core': [],
+                                         'livekit-react-native-webrtc': ['= 150.1.0']},
             'Podspec does not select only the pinned LiveKit branch')
     lock = (build / 'Podfile.lock').read_text()
     for pod, version in (('livekit-react-native', '3.1.0'), ('livekit-react-native-webrtc', '150.1.0'),

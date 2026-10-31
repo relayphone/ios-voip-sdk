@@ -28,7 +28,12 @@ def check_packaging(out):
         shutil.copyfile(ROOT / name, out / name)
     (out / 'Podfile.properties.json').write_text('{}')
     spec = json.loads(run(['pod', 'ipc', 'spec', str(out / 'IosVoipSDK.podspec')], cwd=out).stdout)
-    assert 'CallKit' not in spec['frameworks']
+    # `pod 'IosVoipSDK'` installs the Expo module and the simulator runtime it depends on.
+    subspecs = {subspec['name']: subspec for subspec in spec['subspecs']}
+    assert spec['default_subspecs'] == 'ExpoModule'
+    assert subspecs['ExpoModule']['dependencies']['IosVoipSDK/SimulatorRuntime'] == []
+    for name in ('ExpoModule', 'SimulatorRuntime'):
+        assert 'CallKit' not in subspecs[name].get('frameworks', [])
 
 def main():
     inputs = [ROOT / name for name in (

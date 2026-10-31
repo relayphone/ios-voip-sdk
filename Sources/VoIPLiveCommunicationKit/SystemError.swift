@@ -1,5 +1,7 @@
 import Foundation
-import VoIPCore
+#if SWIFT_PACKAGE
+  import VoIPCore
+#endif
 
 /// The errors LiveCommunicationKit passes on from the call service.
 ///
