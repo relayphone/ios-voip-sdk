@@ -97,7 +97,9 @@ struct RuntimePolicyTests {
   }
 
   // This issue time once rounded a Pause's expiry to 5,299 ms.
-  @Test(arguments: [(5.3, Int64(1_792_940_005_308)), (64, 1_792_940_064_008), (5.2, 1_792_940_005_208)])
+  @Test(arguments: [
+    (5.3, Int64(1_792_940_005_308)), (64, 1_792_940_064_008), (5.2, 1_792_940_005_208),
+  ])
   func actionExpiriesAreAnchoredToTheJournalsIssueTime(expiry: Double, expiryMS: Int64) {
     let times = ActionJournalTimes(
       issuedAt: Date(timeIntervalSince1970: 1_792_940_000.008), deadlineSeconds: 30,

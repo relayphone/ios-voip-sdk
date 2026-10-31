@@ -52,7 +52,8 @@ struct MeasuredCaptureTests {
 
   @Test func theHeldCallPausesBeforeAPauseIsFulfilled() throws {
     let rows = try multiCallCapture("ha-delay-pause")
-    let join = try #require(rows.first { $0.event == "lckmulti.perform" && $0.kind == "Join" && $0.conv == "B" })
+    let join = try #require(
+      rows.first { $0.event == "lckmulti.perform" && $0.kind == "Join" && $0.conv == "B" })
     let pause = try #require(
       rows.first {
         $0.event == "lckmulti.perform" && $0.kind == "Pause" && abs($0.monoMS - join.monoMS) <= 3
@@ -62,7 +63,8 @@ struct MeasuredCaptureTests {
     let settled = try #require(rows.first { $0.isTerminal && $0.action == pause.action })
     #expect(paused.monoMS < settled.monoMS)
     let profile = try behaviorProfile().lckMultiCall
-    #expect(abs(Double(paused.monoMS - pause.monoMS) / 1000 - profile.pausedAfterDeliverySeconds) < 0.05)
+    #expect(
+      abs(Double(paused.monoMS - pause.monoMS) / 1000 - profile.pausedAfterDeliverySeconds) < 0.05)
   }
 
   @Test func capabilitiesDontGateThePause() throws {
@@ -74,7 +76,8 @@ struct MeasuredCaptureTests {
   @Test(arguments: ["cap-1x1", "cap-1x2"])
   func anOutgoingCallAtCapacityFailsWithCodeSeven(capture: String) throws {
     let failure = try #require(
-      multiCallCapture(capture).first { $0.event == "lckmulti.requestResult" && $0.kind == "Start" })
+      multiCallCapture(capture).first { $0.event == "lckmulti.requestResult" && $0.kind == "Start" }
+    )
     #expect(failure.code == 7 && failure.domain == "com.apple.CallKit.error.requesttransaction")
   }
 
@@ -90,7 +93,9 @@ struct MeasuredCaptureTests {
     #expect(before == after)
   }
 
-  @Test(arguments: [("ha-pending-pause", "Pause"), ("ha-pending-join", "Join"), ("ea-pending-end", "End")])
+  @Test(arguments: [
+    ("ha-pending-pause", "Pause"), ("ha-pending-join", "Join"), ("ea-pending-end", "End"),
+  ])
   func pendingActionsExpireLongBeforeTheirAdvertisedTimeout(capture: String, kind: String) throws {
     let rows = try multiCallCapture(capture)
     let timeout = try #require(rows.first { $0.event == "lckmulti.timedOut" && $0.kind == kind })

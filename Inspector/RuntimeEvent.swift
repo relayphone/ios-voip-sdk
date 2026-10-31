@@ -18,8 +18,11 @@ enum RuntimeEventError: Codable {
 
   init(from decoder: any Decoder) throws {
     let value = try decoder.singleValueContainer()
-    if let code = try? value.decode(Int.self) { self = .code(code) }
-    else { self = .message(try value.decode(String.self)) }
+    if let code = try? value.decode(Int.self) {
+      self = .code(code)
+    } else {
+      self = .message(try value.decode(String.self))
+    }
   }
 
   func encode(to encoder: any Encoder) throws {
@@ -38,6 +41,8 @@ struct RuntimeEvent: Codable, Identifiable {
   let pid: Int
   let bundleID: String
   let event: String
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  /// Milliseconds since the runtime started, under the journal's own field name.
   let t_ms: Double
   var uuid: String?
   var callUUID: String?
@@ -84,7 +89,9 @@ struct RuntimeEvent: Codable, Identifiable {
     return false
   }
   var id: Int { sequence }
-  var caller: String { [callerName, handle].compactMap { $0 }.first { !$0.isEmpty } ?? "Unknown caller" }
+  var caller: String {
+    [callerName, handle].compactMap { $0 }.first { !$0.isEmpty } ?? "Unknown caller"
+  }
   var status: String {
     if apiKind == "livecommunicationkit" {
       if ended == true { return "left" }
@@ -98,25 +105,43 @@ struct RuntimeEvent: Codable, Identifiable {
     return ringing == true ? "Incoming call" : "Connecting"
   }
   var title: String {
-    if let state = InspectorIncomingFilterState(event: self) { return "Incoming filter · \(state.reason.title)" }
-    if event == "faults.configured", let incomingErrorCode, [0, 4].contains(incomingErrorCode) {
-      return incomingErrorCode == 4 ? "Injected incoming error 4" : "Incoming error injection cleared"
+    if let state = InspectorIncomingFilterState(event: self) {
+      return "Incoming filter · \(state.reason.title)"
     }
-    if event == "report.completed", let code, code != 0 { return "Incoming report rejected · code \(code)" }
+    if event == "faults.configured", let incomingErrorCode, [0, 4].contains(incomingErrorCode) {
+      return incomingErrorCode == 4
+        ? "Injected incoming error 4" : "Incoming error injection cleared"
+    }
+    if event == "report.completed", let code, code != 0 {
+      return "Incoming report rejected · code \(code)"
+    }
     if event == "call.changed" { return "\(caller) · \(status)" }
-    if event == "action.settled" { return "\(kind?.capitalized ?? "Action") \(fulfilled == true ? "fulfilled" : "failed")" }
+    if event == "action.settled" {
+      return "\(kind?.capitalized ?? "Action") \(fulfilled == true ? "fulfilled" : "failed")"
+    }
     if event == "action.deadline" { return "\(kind?.capitalized ?? "Action") delivered" }
     return event
   }
   var detail: String {
     var parts = [origin, apiKind].compactMap { $0 }
-    if let latencyMS, event != "action.deadline" { parts.append(String(format: "%.1f ms", latencyMS)) }
-    if let deadlineSeconds { parts.append(String(format: "%.0f s %@", deadlineSeconds, apiKind == "livecommunicationkit" ? "reported timeoutDate" : "profile budget")) }
+    if let latencyMS, event != "action.deadline" {
+      parts.append(String(format: "%.1f ms", latencyMS))
+    }
+    if let deadlineSeconds {
+      parts.append(
+        String(
+          format: "%.0f s %@", deadlineSeconds,
+          apiKind == "livecommunicationkit" ? "reported timeoutDate" : "profile budget"))
+    }
     if let expirySeconds { parts.append(String(format: "%.1f s effective expiry", expirySeconds)) }
-    if let transactionID { parts.append("Simulator transaction \(transactionID) · modeled; unverified on LCK") }
+    if let transactionID {
+      parts.append("Simulator transaction \(transactionID) · modeled; unverified on LCK")
+    }
     if let domain, !domain.isEmpty, let code { parts.append("\(domain) \(code)") }
     if verification == "unverified" { parts.append("Unverified on device") }
-    if event == "faults.configured", incomingErrorCode == 4 { parts.append("Not produced by iOS 27.0 for LCK") }
+    if event == "faults.configured", incomingErrorCode == 4 {
+      parts.append("Not produced by iOS 27.0 for LCK")
+    }
     return parts.joined(separator: " · ")
   }
 }

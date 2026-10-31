@@ -75,6 +75,8 @@ jobs:
         with:
           persist-credentials: false
       - run: sudo xcode-select -s /Applications/Xcode_27.1.app
+      - name: Check the Swift formatting
+        run: swift format lint --strict --recursive --parallel Package.swift Sources Tests Examples Inspector
       - name: Swift tests and the runtime's push launch controls
         run: |
           set -euo pipefail

@@ -25,7 +25,9 @@ enum InspectorIncomingFilter: String, Codable, CaseIterable, Identifiable {
     case .sensitiveParticipants: "Sensitive participants"
     }
   }
-  var verification: String { self == .none ? "not-applicable" : self == .doNotDisturb ? "verified" : "unverified" }
+  var verification: String {
+    self == .none ? "not-applicable" : self == .doNotDisturb ? "verified" : "unverified"
+  }
 }
 
 struct InspectorIncomingFilterState: Codable, Equatable {
@@ -35,9 +37,12 @@ struct InspectorIncomingFilterState: Codable, Equatable {
   var isValid: Bool { code == reason.code && verification == reason.verification }
   init?(event: RuntimeEvent) {
     guard event.event == "incomingFilter.configured", let raw = event.reason?.messageValue,
-          let reason = InspectorIncomingFilter(rawValue: raw), let code = event.code,
-          let verification = event.verification, event.requestID?.isEmpty == false else { return nil }
-    self.reason = reason; self.code = code; self.verification = verification
+      let reason = InspectorIncomingFilter(rawValue: raw), let code = event.code,
+      let verification = event.verification, event.requestID?.isEmpty == false
+    else { return nil }
+    self.reason = reason
+    self.code = code
+    self.verification = verification
     guard isValid else { return nil }
   }
 }

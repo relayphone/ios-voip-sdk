@@ -12,7 +12,11 @@ Run the host tests from the repository root:
 
 ```sh
 swift test
+swift format lint --strict --recursive --parallel Package.swift Sources Tests Examples Inspector
 ```
+
+`swift format --in-place --recursive --parallel` with the same paths fixes most formatting
+findings.
 
 The call journeys need an iOS 27 simulator; the [README](README.md#testing) shows how to run them. The [SDK acceptance workflow](.github/workflows/sdk-m0.yml) defines the CI builds, the journeys and the device build inspection.
 

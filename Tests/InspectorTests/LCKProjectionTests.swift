@@ -49,9 +49,10 @@ struct LCKProjectionTests {
     #expect(InspectorLCKProjection.systemChoices(for: callKit) == nil)
   }
 
-  @Test(arguments: [
-    (["connected": true], "joined"), (["held": true], "paused"), (["ended": true], "left"),
-  ] as [([String: Bool], String)])
+  @Test(
+    arguments: [
+      (["connected": true], "joined"), (["held": true], "paused"), (["ended": true], "left"),
+    ] as [([String: Bool], String)])
   func conversationStatesUseLiveCommunicationKitNames(fields: [String: Bool], status: String)
     throws
   {
@@ -65,7 +66,8 @@ struct LCKProjectionTests {
   }
 
   @Test func appMergeAcceptsARingingTargetWithoutCapabilities() throws {
-    let ringingTarget = try call(2, ["uuid": "ringing-target", "ringing": true, "capabilities": []])
+    let ringingTarget = try call(
+      2, ["uuid": "ringing-target", "ringing": true, "capabilities": []])
     let endedTarget = try call(3, ["uuid": "ended-target", "ended": true])
     let staleTarget = try call(1, ["uuid": "ended-target", "connected": true])
     let targets = InspectorLCKProjection.appMergeTargets(
