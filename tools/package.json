@@ -1,0 +1,17 @@
+{
+  "name": "ios-voip-sdk-tools",
+  "private": true,
+  "description": "Host tools that build, package and check the simulator runtime.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test",
+    "typecheck": "tsc --project ."
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3"
+  }
+}

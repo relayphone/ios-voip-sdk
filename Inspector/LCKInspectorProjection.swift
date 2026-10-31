@@ -12,7 +12,7 @@ struct InspectorActionTiming {
 enum InspectorLCKProjection {
   static let provenance = "Measured #85 · LCK · iPhone 13 · iOS 27.0 · Oct 24, 2026"
   static let sourcePath =
-    "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md"
+    "Tests/Fixtures/LiveCommunicationKit/multicall/README.md"
 
   static func systemChoices(for call: RuntimeEvent) -> [String]? {
     guard call.apiKind == "livecommunicationkit", let choices = call.availableSystemChoices else {

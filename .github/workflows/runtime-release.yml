@@ -5,30 +5,39 @@ on:
   pull_request:
     paths:
       - "VERSION"
+      - "Package.swift"
+      - "Package.resolved"
       - "Sources/**"
-      - "Tools/**"
-      - "profiles/**"
-      - "scripts/**"
-      - "discovery/**"
+      - "tools/**"
       - ".github/workflows/runtime-release.yml"
 permissions:
   contents: read
 concurrency:
   group: runtime-release-${{ github.ref }}
   cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
 jobs:
   release-controls:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: python3 discovery/check_release_controls.py
-      - run: python3 discovery/check_image_identity.py
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "24.22.1"
+          package-manager-cache: false
+      - name: Test the release, packaging and smoke test tools
+        working-directory: tools
+        run: node --test release.test.ts runtime-package.test.ts simulator-app.test.ts
   release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: release-controls
-    runs-on: macos-26
-    timeout-minutes: 45
+    runs-on: xcode-27
+    timeout-minutes: 60
     permissions:
       contents: write
       id-token: write
@@ -40,35 +49,47 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "24.22.1"
+          package-manager-cache: false
+      - run: sudo xcode-select -s /Applications/Xcode_27.1.app
       - name: Require an annotated version tag merged into main
-        run: python3 scripts/check-runtime-release.py "$RELEASE_TAG"
-      - name: Select the compiler and simulator host
-        run: sudo xcode-select -s /Applications/Xcode_26.6.app
-      - name: Run all discovery acceptance against the CI-built distribution
+        run: node tools/release.ts check "$RELEASE_TAG"
+      - name: Build the runtime package for both simulator architectures
+        run: node tools/build-runtime.ts "$RUNNER_TEMP/runtime"
+      - name: Run the host tests
+        run: swift test --scratch-path "$RUNNER_TEMP/host-tests"
+      - name: Create a simulator for the runtime tests
+        id: simulator
+        run: >-
+          echo "udid=$(xcrun simctl create "runtime-release-$GITHUB_RUN_ID"
+          com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-0)"
+          >> "$GITHUB_OUTPUT"
+      - name: Run the runtime tests on the simulator
         env:
-          COMPILER_DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+          SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
+        run: >-
+          xcodebuild test -scheme VoIPSDK-Package
+          -destination "platform=iOS Simulator,id=$SIMULATOR_ID"
+          -derivedDataPath "$RUNNER_TEMP/runtime-tests" -only-testing:RuntimeTests
+          CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO
+      - name: Answer and end a call with the package's own runtime and cksim
+        env:
+          SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
+        run: node tools/runtime-smoke.ts "$RUNNER_TEMP/runtime" --simulator "$SIMULATOR_ID"
+      - name: Delete the simulator
+        if: always() && steps.simulator.outputs.udid != ''
+        env:
+          SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
+        run: xcrun simctl shutdown "$SIMULATOR_ID" || true; xcrun simctl delete "$SIMULATOR_ID"
+      - name: Package the tested runtime
         run: |
-          python3 discovery/check_harness.py
-          OUT="$RUNNER_TEMP/out" discovery/run.sh
-      - name: Package the exact qualified distribution
-        run: |
-          python3 scripts/check-runtime-release.py "$RELEASE_TAG" --package "$RUNNER_TEMP/out/runtime-dist" > "$RUNNER_TEMP/out/release-check.json"
-          bash scripts/package-runtime.sh "$RUNNER_TEMP/out/runtime-dist" "$RUNNER_TEMP/release"
-          python3 - <<'PYQUALIFY'
-          import json,os,pathlib
-          root=pathlib.Path(os.environ['RUNNER_TEMP'])
-          out=root/'out'
-          checks={p.name:json.loads(p.read_text()) for p in sorted(out.glob('*conformance*.json'))}
-          for name in ('summary.json','image-identity-checks.json'):
-              checks[name]=json.loads((out/name).read_text())
-          evidence=dict(release=json.loads((out/'release-check.json').read_text()),
-                        manifest=json.loads((out/'manifest.json').read_text()),checks=checks,
-                        workflowRun=f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}")
-          (root/'release/qualification.json').write_text(json.dumps(evidence,indent=2,sort_keys=True)+'\n')
-          PYQUALIFY
-          cd "$RUNNER_TEMP/release"
-          shasum -a 256 -c SHA256SUMS
-      - name: Attest archive, checksums and qualification
+          node tools/package-runtime.ts "$RUNNER_TEMP/runtime" "$RUNNER_TEMP/release"
+          node tools/release.ts record "$RELEASE_TAG" --package "$RUNNER_TEMP/runtime" \
+            --release "$RUNNER_TEMP/release" --notes "$RUNNER_TEMP/release-notes.md"
+          (cd "$RUNNER_TEMP/release" && shasum -a 256 -c SHA256SUMS)
+      - name: Attest the archive, checksums and qualification
         id: provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -84,24 +105,17 @@ jobs:
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/runtime-release.yml" \
             --source-ref "$GITHUB_REF" --source-digest "$GITHUB_SHA" \
             --deny-self-hosted-runners --bundle "$BUNDLE_PATH"
-      - name: Publish the CI artifacts as a prerelease
-        run: |
-          python3 - <<'PY'
-          import os,pathlib
-          tag=os.environ['RELEASE_TAG']
-          url=f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
-          text=f"Measured: the CI-built runtime passed the full discovery acceptance before packaging. Source: `{os.environ['GITHUB_SHA']}`. [Run and evidence]({url}).\n\nThe `ios-27.0` profile's device reference and the measured simulator/compiler coverage are recorded in the run manifest. See docs/runtime-releases.md for attestation verification.\n"
-          (pathlib.Path(os.environ['RUNNER_TEMP'])/'release-notes.md').write_text(text)
-          PY
-          gh release create "$RELEASE_TAG" "$RUNNER_TEMP/release/"* --verify-tag --prerelease \
-            --title "CallKit Simulator $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
-      - name: Preserve measured release evidence
+      - name: Publish the release as a prerelease
+        run: >-
+          gh release create "$RELEASE_TAG" "$RUNNER_TEMP/release/"* --verify-tag --prerelease
+          --title "CallKit Simulator $RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+      - name: Keep the package and release
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: runtime-release-${{ github.ref_name }}
           path: |
-            ${{ runner.temp }}/out
+            ${{ runner.temp }}/runtime
             ${{ runner.temp }}/release
           if-no-files-found: error
           retention-days: 90

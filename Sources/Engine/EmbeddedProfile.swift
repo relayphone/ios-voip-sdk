@@ -36,19 +36,19 @@
           "measured": "24 lck.perform timeoutDate samples are 30 seconds. cx-after has no LCK deliveries; its later CX provider owns the actions.",
           "expiryPolicy": "The advertised LCK timeoutDate remains 30 seconds. #85 measured effective Pause/End expiry near 5.3 s and Join expiry near 64 s in system waiting-call composites; see lckMultiCall. Runtime expiry at 30 s for other LCK action kinds remains unverified.",
           "captures": {
-            "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-basic.jsonl": {
+            "Tests/Fixtures/LiveCommunicationKit/2026-10-21-iphone13-ios27-lck-basic.jsonl": {
               "sha256": "9fd5e48b62a826af7e62388de87119ab431fe2019a7d40445cdd9b528dde4bf7",
               "samples": 10
             },
-            "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-cx-after.jsonl": {
+            "Tests/Fixtures/LiveCommunicationKit/2026-10-21-iphone13-ios27-lck-cx-after.jsonl": {
               "sha256": "96d6e968c2cba8e098ec18872882f7a480476dd90611d5ae4cb5dc2dde78692b",
               "samples": 0
             },
-            "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-lck-after.jsonl": {
+            "Tests/Fixtures/LiveCommunicationKit/2026-10-21-iphone13-ios27-lck-lck-after.jsonl": {
               "sha256": "7b29c543492904cd1121c047d3fce125c4b0a16f1adc76240c80d6c091a15c89",
               "samples": 10
             },
-            "docs/research/callkit-simulator-probe/livecommunicationkit/2026-10-21-iphone13-ios27-lck-two-managers.jsonl": {
+            "Tests/Fixtures/LiveCommunicationKit/2026-10-21-iphone13-ios27-lck-two-managers.jsonl": {
               "sha256": "23ab443e1fd8623140e95cc7d34157d5fd8aa7d13b6321f90e1812825f65a042",
               "samples": 4
             }
@@ -66,23 +66,23 @@
           "apiKind": "livecommunicationkit",
           "verification": "measured",
           "reference": "#85; iPhone 13 / iOS 27.0 (24A5355q); October 24, 2026",
-          "source": "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md",
+          "source": "Tests/Fixtures/LiveCommunicationKit/multicall/README.md",
           "timingInterpretation": "Representative runtime samples and aggregate medians, not minimum delays or guaranteed bounds. Join median 115 ms (9\u2013239 ms); audio gap median 213 ms (151\u2013404 ms without delayed constituents). Pause 110 ms and deactivation 120 ms are representative delivery-relative samples; generated End 91 ms is relative to unpause delivery.",
           "evidence": {
-            "systemComposite": "Constituents of 28 system waiting-call composites arrived within 0\u20133 ms. Accepted Join followed every constituent terminal settlement; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-delay-pause.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-reverse.jsonl.",
-            "pauseBeforeFulfillment": "Pause state appeared about 110 ms after delivery while Pause remained unfulfilled for 2 s; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-delay-pause.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-pending-pause.jsonl.",
-            "effectiveExpiry": "timeoutDate advertised 30 s; Pause/End timedOut near 5.3 s, Join near 64 s; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-pending-pause.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ea-pending-end.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-pending-join.jsonl.",
-            "failedPause": "Failed Pause ended A and delivered cleanup End A; B joined; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-fail-pause.jsonl.",
-            "failedJoin": "Failed Join ended B and delivered cleanup End B while A stayed paused; End & Accept lost both calls; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-fail-join.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ea-fail-join.jsonl.",
-            "failedEnd": "Failed End was ignored: A left and B joined, without retry. Pending End expiry was terminal too; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ea-fail-end.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ea-pending-end.jsonl.",
-            "cleanupEnd": "Cleanup End arrived after the conversation had left. Immediate fulfillment still produced timedOut about 5.2 s later; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-fail-pause.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-pending-join.jsonl.",
-            "noAutomaticResume": "Ending B left A paused until the application acted; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/hold-accept.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-fail-join.jsonl.",
-            "choices": "Hold & Accept required maximumConversationGroups >= 2 and a free group. Full groups offered End & Accept, Decline and End Held & Accept; merging did not free a group. End Held & Accept delivered Pause B, End A and Join C; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x1.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x2.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-2x2.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/third-end-held-accept.jsonl.",
-            "outgoingCapacity": "Outgoing Start at capacity returned com.apple.CallKit.error.requesttransaction 7 after 11\u2013206 ms; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x1.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x2.jsonl.",
-            "capabilities": "No capabilities, or removing pausing mid-call, gated neither waiting choices nor app Pause; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/caps-none.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/caps-toggle.jsonl.",
-            "mergeAndUnmerge": "App Merge/Unmerge were accepted and delivered without conversation state changes, including singleton Unmerge and Merge into a ringing target. LCK exposes no group membership; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/merge-b-into-a.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/merge-a-into-b.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/unmerge-singleton.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-2x1.jsonl.",
-            "appResume": "With 2x1, the app unpaused A into joined state, then a distinct generated End B arrived 91 ms after unpause delivery. Shared transaction composition was not observable; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/swap-app.jsonl.",
-            "audioAndQueue": "Callbacks arrived on main; normal composites deactivated then activated audio with aggregate median 213 ms. The 120 ms deactivation sample is representative, not an aggregate median; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/README.md; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-delay-pause.jsonl; docs/research/callkit-simulator-probe/livecommunicationkit/multicall/hold-accept.jsonl."
+            "systemComposite": "Constituents of 28 system waiting-call composites arrived within 0\u20133 ms. Accepted Join followed every constituent terminal settlement; Tests/Fixtures/LiveCommunicationKit/multicall/README.md; Tests/Fixtures/LiveCommunicationKit/multicall/ha-delay-pause.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ha-reverse.jsonl.",
+            "pauseBeforeFulfillment": "Pause state appeared about 110 ms after delivery while Pause remained unfulfilled for 2 s; Tests/Fixtures/LiveCommunicationKit/multicall/ha-delay-pause.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ha-pending-pause.jsonl.",
+            "effectiveExpiry": "timeoutDate advertised 30 s; Pause/End timedOut near 5.3 s, Join near 64 s; Tests/Fixtures/LiveCommunicationKit/multicall/ha-pending-pause.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ea-pending-end.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ha-pending-join.jsonl.",
+            "failedPause": "Failed Pause ended A and delivered cleanup End A; B joined; Tests/Fixtures/LiveCommunicationKit/multicall/ha-fail-pause.jsonl.",
+            "failedJoin": "Failed Join ended B and delivered cleanup End B while A stayed paused; End & Accept lost both calls; Tests/Fixtures/LiveCommunicationKit/multicall/ha-fail-join.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ea-fail-join.jsonl.",
+            "failedEnd": "Failed End was ignored: A left and B joined, without retry. Pending End expiry was terminal too; Tests/Fixtures/LiveCommunicationKit/multicall/ea-fail-end.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ea-pending-end.jsonl.",
+            "cleanupEnd": "Cleanup End arrived after the conversation had left. Immediate fulfillment still produced timedOut about 5.2 s later; Tests/Fixtures/LiveCommunicationKit/multicall/ha-fail-pause.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ha-pending-join.jsonl.",
+            "noAutomaticResume": "Ending B left A paused until the application acted; Tests/Fixtures/LiveCommunicationKit/multicall/hold-accept.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ha-fail-join.jsonl.",
+            "choices": "Hold & Accept required maximumConversationGroups >= 2 and a free group. Full groups offered End & Accept, Decline and End Held & Accept; merging did not free a group. End Held & Accept delivered Pause B, End A and Join C; Tests/Fixtures/LiveCommunicationKit/multicall/cap-1x1.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/cap-1x2.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/cap-2x2.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/third-end-held-accept.jsonl.",
+            "outgoingCapacity": "Outgoing Start at capacity returned com.apple.CallKit.error.requesttransaction 7 after 11\u2013206 ms; Tests/Fixtures/LiveCommunicationKit/multicall/cap-1x1.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/cap-1x2.jsonl.",
+            "capabilities": "No capabilities, or removing pausing mid-call, gated neither waiting choices nor app Pause; Tests/Fixtures/LiveCommunicationKit/multicall/caps-none.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/caps-toggle.jsonl.",
+            "mergeAndUnmerge": "App Merge/Unmerge were accepted and delivered without conversation state changes, including singleton Unmerge and Merge into a ringing target. LCK exposes no group membership; Tests/Fixtures/LiveCommunicationKit/multicall/merge-b-into-a.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/merge-a-into-b.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/unmerge-singleton.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/cap-2x1.jsonl.",
+            "appResume": "With 2x1, the app unpaused A into joined state, then a distinct generated End B arrived 91 ms after unpause delivery. Shared transaction composition was not observable; Tests/Fixtures/LiveCommunicationKit/multicall/swap-app.jsonl.",
+            "audioAndQueue": "Callbacks arrived on main; normal composites deactivated then activated audio with aggregate median 213 ms. The 120 ms deactivation sample is representative, not an aggregate median; Tests/Fixtures/LiveCommunicationKit/multicall/README.md; Tests/Fixtures/LiveCommunicationKit/multicall/ha-delay-pause.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/hold-accept.jsonl."
           },
           "unverified": [
             "Genuine CallKit multi-call state, choices, capability gating, failures and capacity behavior; these LCK measurements must not replace CallKit policy.",
@@ -93,33 +93,33 @@
             "Delayed or failed app unpause ordering and generated-End timing beyond the immediately fulfilled 2x1 swap-app capture; runtime scheduling remains gated on successful settlement."
           ],
           "captureSHA256": {
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/hold-accept.jsonl": "4699c4f9140d9956bcaef84cb2f6075e4af7c6e643bc971f3a25551ecf01c802",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-delay-pause.jsonl": "a4395a1f5541f33b8d2b586cd59e93a5fbcdbe305a91c38d4b0ae7735758523b",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-reverse.jsonl": "e6f97e8e97fd397b265ec4c4bd59968904af61ac1b6c4b95b4bcad14d122ac61",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-fail-pause.jsonl": "31c9c2b054d8121c13488a50073988cd5a18de4a617751756ac8e46b97074a9e",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-fail-join.jsonl": "96836e3ab962169664179b7edc24855a4e79383e0ed1b97ddbe1858e69f70868",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-pending-pause.jsonl": "d30c7ae4c6c44b27c53fb640c22abbd61d8275417f9a5c0463a3b18393c2ada0",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ha-pending-join.jsonl": "97fb4cfb4fc42f80f4a452703ebffdb5b2fcb6a8ed41b2adbf88bf4b044bbb86",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ea-fail-end.jsonl": "f7a4a400406e8b7fcd34da575434856c6e8bd6e418e08232266fcc39a50a9344",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/ea-pending-end.jsonl": "5d7282b8e932fc2f74a8971eaf16c2f51a0117fdf79e67afe9ca4f83f49cea43",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x1.jsonl": "6ea3e1ef43ea4d8e02f832004d4fd67915a9ec9f86f91b8c2e9a2c4083b6bcc9",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-1x2.jsonl": "d96893e01c93b31f1a23c343d83b3f37ffb9839a367b55dc5b3f4f53bc5a2264",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/cap-2x2.jsonl": "e048fb999dddfd6bbd6898c0e4ebf140b8d3e34845f6de74ba43b92022f52159",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/caps-none.jsonl": "a7df6193aa821cfddecb01846f9b648d0328b251a65296f2a7610c6b81623902",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/caps-toggle.jsonl": "8a9777bf1fa181e1ca23f1c25cd97f8a6b91882a7175bc1b86cf8524042190fe",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/merge-b-into-a.jsonl": "92dfd7c2422e4ff546e094b1a314b67b75014d6f37267b50216867c98968cf4b",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/unmerge-singleton.jsonl": "9ebf6219bc1cddace70deac8d8bea0d55c7e54800e9a20909809dccb41afcd22",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/swap-app.jsonl": "512067c785291b5ac6215be88bc701a75242e0499c74947ee3ec0fc683547d7b",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/third-end-held-accept.jsonl": "c9f52d5d003d8f23ca7b96199adee56f720f46eb4a8d99413bf43aa4647d8eb6"
+            "Tests/Fixtures/LiveCommunicationKit/multicall/hold-accept.jsonl": "4699c4f9140d9956bcaef84cb2f6075e4af7c6e643bc971f3a25551ecf01c802",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/ha-delay-pause.jsonl": "a4395a1f5541f33b8d2b586cd59e93a5fbcdbe305a91c38d4b0ae7735758523b",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/ha-reverse.jsonl": "e6f97e8e97fd397b265ec4c4bd59968904af61ac1b6c4b95b4bcad14d122ac61",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/ha-fail-pause.jsonl": "31c9c2b054d8121c13488a50073988cd5a18de4a617751756ac8e46b97074a9e",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/ha-fail-join.jsonl": "96836e3ab962169664179b7edc24855a4e79383e0ed1b97ddbe1858e69f70868",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/ha-pending-pause.jsonl": "d30c7ae4c6c44b27c53fb640c22abbd61d8275417f9a5c0463a3b18393c2ada0",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/ha-pending-join.jsonl": "97fb4cfb4fc42f80f4a452703ebffdb5b2fcb6a8ed41b2adbf88bf4b044bbb86",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/ea-fail-end.jsonl": "f7a4a400406e8b7fcd34da575434856c6e8bd6e418e08232266fcc39a50a9344",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/ea-pending-end.jsonl": "5d7282b8e932fc2f74a8971eaf16c2f51a0117fdf79e67afe9ca4f83f49cea43",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/cap-1x1.jsonl": "6ea3e1ef43ea4d8e02f832004d4fd67915a9ec9f86f91b8c2e9a2c4083b6bcc9",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/cap-1x2.jsonl": "d96893e01c93b31f1a23c343d83b3f37ffb9839a367b55dc5b3f4f53bc5a2264",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/cap-2x2.jsonl": "e048fb999dddfd6bbd6898c0e4ebf140b8d3e34845f6de74ba43b92022f52159",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/caps-none.jsonl": "a7df6193aa821cfddecb01846f9b648d0328b251a65296f2a7610c6b81623902",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/caps-toggle.jsonl": "8a9777bf1fa181e1ca23f1c25cd97f8a6b91882a7175bc1b86cf8524042190fe",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/merge-b-into-a.jsonl": "92dfd7c2422e4ff546e094b1a314b67b75014d6f37267b50216867c98968cf4b",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/unmerge-singleton.jsonl": "9ebf6219bc1cddace70deac8d8bea0d55c7e54800e9a20909809dccb41afcd22",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/swap-app.jsonl": "512067c785291b5ac6215be88bc701a75242e0499c74947ee3ec0fc683547d7b",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/third-end-held-accept.jsonl": "c9f52d5d003d8f23ca7b96199adee56f720f46eb4a8d99413bf43aa4647d8eb6"
           }
         },
         "pushReportDeadlineSeconds": 4.4,
         "pushReportDeadlineEvidence": {
           "measured": "Approximate 4.4 s termination and PKPushRegistry crash attribution from the device pass writeup; raw late-5s trace ends alive at4.200 s without a kill event.",
-          "reference": "docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md",
+          "reference": "Tests/Fixtures/LiveCommunicationKit/push/README.md",
           "captures": {
-            "docs/research/callkit-simulator-probe/livecommunicationkit/push/2026-10-23-iphone13-ios27-late-report-3s.jsonl": "1ed65280b43ebe27ab8b52535bb7b1df15b301e4eb9ab6d690cc9c8690ef36cf",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/push/2026-10-23-iphone13-ios27-late-report-5s.jsonl": "65aa587060ac3a2e5a898d97675e0c902dba70d7c8bf0b2d7dad0ab8ad29da2c"
+            "Tests/Fixtures/LiveCommunicationKit/push/2026-10-23-iphone13-ios27-late-report-3s.jsonl": "1ed65280b43ebe27ab8b52535bb7b1df15b301e4eb9ab6d690cc9c8690ef36cf",
+            "Tests/Fixtures/LiveCommunicationKit/push/2026-10-23-iphone13-ios27-late-report-5s.jsonl": "65aa587060ac3a2e5a898d97675e0c902dba70d7c8bf0b2d7dad0ab8ad29da2c"
           }
         },
         "incomingFilterPolicies": {
@@ -128,9 +128,9 @@
             "delaySeconds": 2.07,
             "verification": "verified",
             "evidence": [
-              "docs/research/callkit-simulator-probe/livecommunicationkit/push/2026-10-23-iphone13-ios27-d3-cold-unlocked-entered.jsonl",
-              "docs/research/callkit-simulator-probe/livecommunicationkit/push/2026-10-23-iphone13-ios27-d3-cold-unlocked-entered-repeat.jsonl",
-              "docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md"
+              "Tests/Fixtures/LiveCommunicationKit/push/2026-10-23-iphone13-ios27-d3-cold-unlocked-entered.jsonl",
+              "Tests/Fixtures/LiveCommunicationKit/push/2026-10-23-iphone13-ios27-d3-cold-unlocked-entered-repeat.jsonl",
+              "Tests/Fixtures/LiveCommunicationKit/push/README.md"
             ],
             "scope": "D3 report errors measured at 2.081 s and 2.070 s. Same-number repeat at 69 s and process survival are documented in the device writeup; the two captures are separate cold launches."
           },
@@ -139,7 +139,7 @@
             "delaySeconds": 2.07,
             "verification": "unverified",
             "evidence": [
-              "docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md"
+              "Tests/Fixtures/LiveCommunicationKit/push/README.md"
             ],
             "scope": "Unverified on device. NSError code follows the public incoming-call error identity; 2.07 s is explicit simulator policy borrowed from measured DND timing, not a measurement for this reason."
           },
@@ -148,7 +148,7 @@
             "delaySeconds": 2.07,
             "verification": "unverified",
             "evidence": [
-              "docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md"
+              "Tests/Fixtures/LiveCommunicationKit/push/README.md"
             ],
             "scope": "Unverified on device. NSError code follows the public incoming-call error identity; 2.07 s is explicit simulator policy borrowed from measured DND timing, not a measurement for this reason."
           },
@@ -157,7 +157,7 @@
             "delaySeconds": 2.07,
             "verification": "unverified",
             "evidence": [
-              "docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md"
+              "Tests/Fixtures/LiveCommunicationKit/push/README.md"
             ],
             "scope": "Unverified on device. NSError code follows the public incoming-call error identity; 2.07 s is explicit simulator policy borrowed from measured DND timing, not a measurement for this reason."
           }
@@ -169,8 +169,8 @@
           "repeatAfterSeconds": 66,
           "ringTimeoutSeconds": 60,
           "captures": {
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/filter-block.jsonl": "c52e5be2086fd2c14ec3ef4ae1d580ebd9594486d08aeba16d28be7d96229719",
-            "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/filter-block-check.jsonl": "b41172c83eea3febb80c8d0f1172348fb4ad399aadda09a9342b2c4ed8c91828"
+            "Tests/Fixtures/LiveCommunicationKit/multicall/filter-block.jsonl": "c52e5be2086fd2c14ec3ef4ae1d580ebd9594486d08aeba16d28be7d96229719",
+            "Tests/Fixtures/LiveCommunicationKit/multicall/filter-block-check.jsonl": "b41172c83eea3febb80c8d0f1172348fb4ad399aadda09a9342b2c4ed8c91828"
           },
           "scope": "The blocked number reported successfully and rang. Code 4 is not produced by iOS 27.0 for LCK in these measurements; runtime code 4 is an explicit injectable fault only."
         }

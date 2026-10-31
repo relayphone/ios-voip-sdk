@@ -1,5 +1,0 @@
-{
-  "kind": "synthetic-regression-fixture",
-  "semanticSource": "local-4e4c544",
-  "note": "Derived from saved v2 events; run/simulator/receipt binding and group-target fields are synthetic test inputs, not historical provenance."
-}

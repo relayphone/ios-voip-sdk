@@ -84,6 +84,15 @@ Changes not yet released are recorded below. Public API changes include migratio
   audio routes, and reports, answers, mutes and ends a call, with `CallMedia` as a stub. CI
   builds it for the simulator and for devices.
 
+### Changed
+
+- `cksim` is a Swift command-line tool, built from the package's `cksim` product, and no longer
+  needs Python. Its commands and options are the same, and shared options may still come before
+  the command. Its JSON output sorts keys, and a usage error now exits with status 64. Build the
+  standalone runtime with `node tools/build-runtime.ts <output>` (Node.js 24), which replaces
+  `scripts/build-runtime.sh`; `CKSIM_BUILD_ARCHS=arm64` becomes `--archs arm64`. The Inspector
+  is built with `node tools/build-inspector.ts <output>`.
+
 ### Breaking changes
 
 - The old core is removed: the `VoIPSDK` product and its `ConversationClient`,

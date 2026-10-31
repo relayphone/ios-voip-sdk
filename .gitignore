@@ -32,9 +32,6 @@ playground.xcworkspace
 .build/
 node_modules/
 __pycache__/
-discovery/build/
-discovery/out/
-discovery/device/*.xcodeproj/
 
 # Local APNs credentials and push tokens
 .env/

@@ -1,7 +1,0 @@
-== genuine: events=96 didActivate=0 systemEnds=5 timedOut=0 pushes=0 mic=[]
-   incoming-a=ok, incoming-a-duplicate=incomingcall:2, answer-a=requesttransaction:4, mute-a=requesttransaction:4, dtmf-a=requesttransaction:4, hold-a=requesttransaction:4, unhold-a=requesttransaction:4, incoming-b=ok, hold-a-answer-b=requesttransaction:4, merge-a-b=requesttransaction:4, end-b=requesttransaction:4, start-c=ok, end-c=requesttransaction:4, answer-unknown=requesttransaction:4, end-unknown=requesttransaction:4, empty-transaction=requesttransaction:1, incoming-d=ok, answer-d-never=ok, incoming-e=ok, decline-e=requesttransaction:4
-== runtime: events=121 didActivate=3 systemEnds=4 timedOut=0 pushes=0 mic=['after-answer:48000', 'after-outgoing:48000']
-   incoming-a=ok, incoming-a-duplicate=incomingcall:2, answer-a=ok, mute-a=ok, dtmf-a=ok, hold-a=ok, unhold-a=ok, incoming-b=ok, hold-a-answer-b=requesttransaction:6, merge-a-b=ok, end-b=ok, start-c=ok, end-c=ok, answer-unknown=requesttransaction:4, end-unknown=requesttransaction:4, empty-transaction=requesttransaction:1, incoming-d=ok, answer-d-never=ok, incoming-e=ok, decline-e=ok
-== push: events=14 didActivate=0 systemEnds=1 timedOut=0 pushes=1 mic=[]
-   cleanup=ok
-== callservicesd: no-UI disconnects=7 audio activation errors=2

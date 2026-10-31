@@ -37,7 +37,6 @@ static NSHashTable<PKPushRegistry *> *registries;
 static NSMapTable<PKPushRegistry *, dispatch_queue_t> *registryQueues;
 static NSMutableArray<NSDictionary *> *waiting;
 static atomic_bool pushHooksActive;
-static int fixtureNotificationToken = NOTIFY_TOKEN_INVALID;
 static IMP originalInit, originalDelegate, originalTypes;
 typedef id (*QueueInitializer)(id __attribute__((ns_consumed)), SEL, dispatch_queue_t) __attribute__((ns_returns_retained));
 static NSString *const contextKey=@"dev.callkitsim.push-context";
@@ -54,8 +53,6 @@ static void deliver(PKPushRegistry *registry, NSDictionary *item) {
     CKRuntimePayload *payload=[CKRuntimePayload new]; payload.contents=item[@"payload"];
     void (^completion)(void)=^{
       CKSimEmit(@"push.completed",@{@"pushID":identifier,@"api":api});
-      NSString *receipt=NSProcessInfo.processInfo.environment[@"CKSIM_PUSH_COMPLETION_NOTIFICATION"];
-      if (receipt.length) { notify_post(receipt.UTF8String); notify_post([[receipt stringByAppendingFormat:@".%@",api] UTF8String]); }
     };
     SEL metadata=NSSelectorFromString(@"pushRegistry:didReceiveIncomingVoIPPushWithPayload:metadata:withCompletionHandler:");
     #if CKSIM_HAS_VOIP_METADATA
@@ -113,10 +110,6 @@ static void setTypes(PKPushRegistry *self,SEL selector,NSSet *types) { ((void (*
 NSString *CKSimInstallPushHooks(void) {
   Class concrete;
   Class sampleClass=PKPushRegistry.class;
-  #if CKSIM_ABI_TESTING
-  Class testClass=NSClassFromString(NSProcessInfo.processInfo.environment[@"CKSIM_TEST_PUSH_REGISTRY_CLASS"]);
-  if (testClass && [testClass isSubclassOfClass:PKPushRegistry.class]) sampleClass=testClass;
-  #endif
   @try { concrete=object_getClass([[sampleClass alloc] initWithQueue:dispatch_get_main_queue()]); }
   @catch(NSException *exception) { return [NSString stringWithFormat:@"PKPushRegistry preflight: %@: %@",exception.name,exception.reason]; }
   if (!concrete) return @"PKPushRegistry initializer returned nil";
@@ -161,21 +154,9 @@ NSString *CKSimInstallPushHooks(void) {
       @"expiresAtMS":launched[@"expiresAtMS"],@"mustReport":launched[@"mustReport"],@"envelopeSHA256":launched[@"envelopeSHA256"]});
     CKSimInjectPush(launched[@"payload"],[launched[@"mustReport"] boolValue],launched[@"id"]);
   } else if(reason) CKSimEmit(@"push.launchRefused",@{@"reason":reason});
-  void (^fixture)(void)=^{
-    CKSimInjectPush(@{@"aps":@{},@"from":@"+15555550142",@"callId":@"synthetic-1"},[env[@"CKSIM_PUSH_MUST_REPORT"] isEqual:@"1"],NSUUID.UUID.UUIDString);
-  };
-  if ([env[@"CKSIM_PUSH_TRIGGER_NOTIFICATION"] length]) {
-    notify_register_dispatch([env[@"CKSIM_PUSH_TRIGGER_NOTIFICATION"] UTF8String],&fixtureNotificationToken,dispatch_get_main_queue(),^(int t){fixture();});
-  } else if ([env[@"CKSIM_PUSH_AFTER"] length]) {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)([env[@"CKSIM_PUSH_AFTER"] doubleValue]*NSEC_PER_SEC)),dispatch_get_main_queue(),fixture);
-  }
   return nil;
 }
 void CKSimReleasePushHooks(void) {
   pushHooksActive=false;
-  if (fixtureNotificationToken != NOTIFY_TOKEN_INVALID) {
-    notify_cancel(fixtureNotificationToken);
-    fixtureNotificationToken=NOTIFY_TOKEN_INVALID;
-  }
 }
 #endif
