@@ -88,8 +88,9 @@ public final class VoIPClient {
   /// Requests an action on a call.
   ///
   /// Starting a call creates it; it then waits for the app to place it, which the app confirms
-  /// with ``confirmPlaced(_:)``. Joining a call from its preview waits in the same way. Ending a
-  /// call preview ends it without the calling framework.
+  /// with ``confirmPlaced(_:)``, or with ``confirmNotPlaced(_:)`` when it can't. Joining a call
+  /// from its preview waits in the same way. Ending a call preview ends it without the calling
+  /// framework.
   ///
   /// - Parameter action: The action to request.
   /// - Throws: ``ActionError/unknownCall`` when this device doesn't know the call,
@@ -111,6 +112,32 @@ public final class VoIPClient {
   /// - Parameter id: The call the app placed.
   public func confirmPlaced(_ id: CallID) async {
     await engine.confirmPlaced(id)
+  }
+
+  /// Confirms that the app couldn't place a call it was asked to start or join, after
+  /// ``CallEvent/startRequested(_:)`` or ``CallEvent/joinRequested(_:)``.
+  ///
+  /// Use it when placing the call fails, for example because the app's servers refused it,
+  /// rather than waiting for ``Deadlines/placement`` to pass. The SDK fails the start or join in
+  /// the calling framework at once: an outgoing call ends with ``CallFailure/notPlaced``, and a
+  /// call being joined returns to its call preview. A call that the app already confirmed with
+  /// ``confirmPlaced(_:)``, or that isn't being started or joined, is unaffected.
+  ///
+  /// ```swift
+  /// for await event in client.events() {
+  ///   guard case .startRequested(let call) = event else { continue }
+  ///   do {
+  ///     try await server.place(call)
+  ///     await client.confirmPlaced(call.id)
+  ///   } catch {
+  ///     await client.confirmNotPlaced(call.id)
+  ///   }
+  /// }
+  /// ```
+  ///
+  /// - Parameter id: The call the app couldn't place.
+  public func confirmNotPlaced(_ id: CallID) async {
+    await engine.confirmNotPlaced(id)
   }
 
   /// Presents an incoming call that the app learned about other than through a VoIP push, such as

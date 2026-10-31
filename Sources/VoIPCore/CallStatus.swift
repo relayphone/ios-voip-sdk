@@ -67,7 +67,8 @@ public enum CallFailure: Hashable, Sendable {
   case refused
   /// This device already had as many calls as the app allows.
   case atCapacity
-  /// The app didn't place an outgoing call, or join a call, before the placement deadline.
+  /// The app didn't place an outgoing call, or join a call: it confirmed that it couldn't, or the
+  /// placement deadline passed first.
   case notPlaced
   /// The call's media couldn't be prepared before the media preparation deadline.
   case media

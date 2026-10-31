@@ -118,6 +118,8 @@ enum CallMachine {
     case requestFailed(Action)
     /// The app placed the call it was asked to start or join.
     case placed
+    /// The app couldn't place the call it was asked to start or join.
+    case notPlaced
     /// The call's media is prepared.
     case mediaPrepared
     /// The call's media couldn't be prepared.

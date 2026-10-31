@@ -170,7 +170,7 @@ private struct EventSource {
   var nextAction: UInt16 = 100
 
   mutating func event(for state: State) -> Event {
-    switch Int.random(in: 0..<19, using: &random) {
+    switch Int.random(in: 0..<20, using: &random) {
     case 0, 1: return .performed(freshAction(), pick(allActions))
     case 2, 3: return .requested(pick(allActions))
     case 4: return .requestFailed(pick(allActions))
@@ -196,6 +196,7 @@ private struct EventSource {
     case 15: return .audioConfigurationFailed
     case 16: return .audioInterruptionEnded
     case 17: return .mediaServicesReset
+    case 18: return .notPlaced
     default: return .server(pick([.connecting, .connected]))
     }
   }

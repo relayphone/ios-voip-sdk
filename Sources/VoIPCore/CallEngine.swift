@@ -135,6 +135,11 @@ final class CallEngine {
     exclusively { handle(id, .placed) }
   }
 
+  /// Records that the app couldn't place a call that it was asked to start or join.
+  func confirmNotPlaced(_ id: CallID) {
+    exclusively { handle(id, .notPlaced) }
+  }
+
   /// Applies a server event that the app learned about outside a VoIP push.
   func receive(_ event: ServerEvent, for id: CallID, eventID: EventID) {
     exclusively { serverEvent(event, for: id, eventID: eventID) }
