@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import VoIPAudio
 import VoIPCore
+import VoIPFocus
 import VoIPLiveCommunicationKit
 import VoIPPushKit
 import VoIPSimulator
@@ -37,6 +38,10 @@ final class Calls {
   /// What happened to calls, newest first.
   private(set) var history: [String] = []
 
+  /// What the Focus filter last asked for, which its extension records while the app may not be
+  /// running.
+  private(set) var focusFilterState: FocusFilterState<FocusSettings> = .unknown
+
   init() {
     // In Debug simulator builds, this presents calls in the iOS Simulator. Elsewhere it does
     // nothing.
@@ -59,6 +64,12 @@ final class Calls {
     let events = client.events()
     Task { [weak self] in
       for await event in events { await self?.handle(event) }
+    }
+    Task { [weak self] in
+      // Send the state to your servers here too, as the extension may not have reached them.
+      for await state in FocusSettings.store.states() {
+        self?.focusFilterState = state
+      }
     }
   }
 

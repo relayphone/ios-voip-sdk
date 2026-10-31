@@ -5,7 +5,7 @@ import Synchronization
 
 /// What a calling app's Focus filter asks for: who may ring this device.
 struct CallSettings: Codable, Hashable, Sendable {
-  enum Ringing: String, Codable, Hashable, Sendable {
+  enum Ringing: String, CaseIterable, Codable, Hashable, Sendable {
     case everyone
     case favorites
     case nobody
