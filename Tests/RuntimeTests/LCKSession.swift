@@ -61,7 +61,14 @@
     ) async throws {
       let description = states.map { "\($0.key) \($0.value)" }.joined(separator: ", ")
       try await runtime.until(description, sourceLocation: sourceLocation) {
-        states.allSatisfy { app.state($0.key) == $0.value } ? true : nil
+        // The manager changes a conversation's state before it tells its delegate, which records
+        // the change; wait for both.
+        let changes = try entries().filter { $0.event == "lck.fixture.changed" }
+        return states.allSatisfy { name, state in
+          app.state(name) == state
+            && (state == "left"
+              || changes.last { $0.callUUID == app.id(name).uuidString }?.state == state)
+        } ? true : nil
       }
     }
 
@@ -145,6 +152,15 @@
         joined.sequence > terminal.map(\.sequence).max() ?? .max, sourceLocation: sourceLocation)
     }
 
+    /// Settles every action at once again, clears the settings and ends the app's calls.
+    func recover() async {
+      for kind in ["Join", "Start", "Pause", "End", "Merge", "Unmerge"] {
+        app.settle(kind, .immediate)
+      }
+      try? await runtime.clearSettings()
+      try? await runtime.end(app.ids.values)
+    }
+
     /// Checks that the app's callbacks arrived on the main queue, then ends the app's calls.
     func finish() async throws {
       #expect(
@@ -154,6 +170,27 @@
       }
       try await runtime.clearSettings()
       try await runtime.end(app.ids.values)
+    }
+  }
+
+  /// Runs a test with the runtime to itself and a new LiveCommunicationKit app, whose calls end
+  /// afterwards even if the test fails, so that the next test starts without them.
+  @MainActor
+  func withLCKSession(
+    groups: Int = 2, perGroup: Int = 1,
+    capabilities: Conversation.Capabilities = [.pausing, .merging, .unmerging],
+    _ body: @MainActor (LCKSession) async throws -> Void
+  ) async throws {
+    try await exclusively {
+      let session = try await LCKSession(
+        groups: groups, perGroup: perGroup, capabilities: capabilities)
+      do {
+        try await body(session)
+      } catch {
+        await session.recover()
+        throw error
+      }
+      try await session.finish()
     }
   }
 #endif

@@ -159,8 +159,7 @@
       }
 
       @Test func theInspectorControlsLiveCommunicationKitCalls() async throws {
-        try await exclusively {
-          let session = try await LCKSession()
+        try await withLCKSession { session in
           let runtime = session.runtime
           try await session.pair()
           _ = try await session.composite()
@@ -220,7 +219,6 @@
             model.conversations[a]?.connected == true && model.conversations[a]?.held == false
               && model.conversations[b]?.ended == true ? true : nil
           }
-          try await session.finish()
         }
       }
     }
