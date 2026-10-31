@@ -139,6 +139,23 @@ extension EngineTests {
       try await h.expectNoEvents()
     }
 
+    @Test func pushMetadataReachesTheCall() async throws {
+      let h = try Harness()
+      let payload = #"""
+        {"incomingCall":{"eventId":"event-1","serverCallId":"call-1",
+        "caller":{"handleType":"phone","value":"+14155550123","displayName":"Alice"},
+        "metadata":{"room":"room-1","route":{"region":"eu","hops":["sip",2,false,null]}}}}
+        """#
+      await h.deliver(VoIPPush(defaultFormat: Data(payload.utf8)))
+      #expect(try await h.next() == .presented(callID))
+
+      await h.until { !$0.calls.isEmpty }
+      let expected: [String: JSONValue] = [
+        "room": "room-1", "route": ["region": "eu", "hops": ["sip", 2, false, .null]],
+      ]
+      #expect(h.client.calls.map(\.metadata) == [expected])
+    }
+
     @Test func repeatedPushWhileTheFirstReportWaits() async throws {
       let h = try Harness()
       let framework = h.framework

@@ -17,9 +17,21 @@
       let id = newCallID("answer")
       var pushID = UUID()
       // The push waits for the app's PushKit registry, as when a VoIP push launches the app.
-      let app = try await App(framework) { pushID = try await $0.pushIncomingCall(id) }
+      let app = try await App(framework) {
+        pushID = try await $0.pushIncomingCall(
+          id,
+          metadata: [
+            "room": .string("room-1"),
+            "route": .object(["attempt": .integer(2), "hops": .array([.string("sip"), .null])]),
+          ])
+      }
       defer { app.stop() }
       try await app.expect([.presented(id)])
+      try await app.until("the call to appear") { app.call(id) != nil }
+      #expect(
+        app.call(id)?.metadata == [
+          "room": "room-1", "route": ["attempt": 2, "hops": ["sip", .null]],
+        ])
       let uuid = deviceUUID(for: id)
       #expect(try await app.system.calls().map(\.uuid) == [uuid])
 

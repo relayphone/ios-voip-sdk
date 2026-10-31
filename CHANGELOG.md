@@ -45,7 +45,10 @@ Changes not yet released are recorded below. Public API changes include migratio
   within 4 seconds. `init(decode:)` takes the app's decoder for its push payloads, and
   `tokens()` streams the VoIP push token for the app to register with its servers.
 - `VoIPPush(defaultFormat:)` decodes the SDK's existing `incomingCall` and `callEnded` push
-  payloads. Only string metadata values are kept.
+  payloads, keeping every JSON value in an incoming call's `metadata` object.
+- `JSONValue` is a JSON value: `null`, `bool(_:)`, `number(_:)`, `string(_:)`, `array(_:)` or
+  `object(_:)`, written with literals. `Call`, `IncomingCall` and `OutgoingCall` carry the app's
+  `metadata` as `[String: JSONValue]`.
 - The `VoIPSimulator` library's `VoIPSimulator.activate()` starts the simulator runtime in
   Debug simulator builds, before `VoIPClient.start`, so the shipping adapters present calls,
   activate audio and receive VoIP pushes in the iOS Simulator. Elsewhere it does nothing. The
@@ -124,7 +127,7 @@ Changes not yet released are recorded below. Public API changes include migratio
   | `ServerCallID` and the conversation `UUID` | `CallID`; the SDK derives the per-device UUID and never exposes it |
   | `PushService`, `observeToken(_:)` | `PushKitSource` and `tokens()` |
   | `PushWire`, `PushService.receiveRemoteMessage(_:)` | `VoIPPush(defaultFormat:)`, or a decoder passed to `PushKitSource(decode:)`; apply a push from another channel with `report(_:)` or `receive(_:for:eventID:)` |
-  | `JSONValue` metadata | `[String: String]` metadata |
+  | `JSONValue` metadata | `[String: JSONValue]` metadata, which is never `nil`; `int(_:)` and `double(_:)` become `number(_:)` |
   | `MediaAdapter`, `NoMediaAdapter`, `Integrations/LiveKit` | Your own `CallMedia` |
   | `observeAudioRoutes(_:)`, `selectAudioRoute(_:)`, `AudioRoutesSnapshot` | `AudioSessionAdapter.routes` and `selectRoute(_:)` in `VoIPAudio` |
   | `AudioActivationPolicy` | `Deadlines.audioActivation` and `audioRecovery` |

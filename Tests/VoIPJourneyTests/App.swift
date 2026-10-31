@@ -163,9 +163,10 @@
   extension SimulatedSystem {
     /// Delivers a VoIP push for an incoming call, in the SDK's default format.
     @discardableResult
-    func pushIncomingCall(_ id: CallID, from number: String = "+14155550123") async throws
-      -> UUID
-    {
+    func pushIncomingCall(
+      _ id: CallID, from number: String = "+14155550123",
+      metadata: [String: PushPayload.Value] = [:]
+    ) async throws -> UUID {
       try await push([
         "aps": .object([:]),
         "incomingCall": .object([
@@ -175,6 +176,7 @@
             "handleType": .string("phone"), "value": .string(number),
             "displayName": .string("Alice"),
           ]),
+          "metadata": .object(metadata),
         ]),
       ])
     }

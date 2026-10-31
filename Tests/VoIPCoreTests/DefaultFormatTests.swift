@@ -23,7 +23,27 @@ import VoIPCore
         caller: caller("phone", "+1 (415) 555-0123"),
         extra: #","hasVideo":true,"metadata":{"room":"room-1","attempt":2}"#))
     let expected = IncomingCall(
-      id: callID, parties: [alice], hasVideo: true, metadata: ["room": "room-1"])
+      id: callID, parties: [alice], hasVideo: true, metadata: ["room": "room-1", "attempt": 2])
+    #expect(push == .incoming(expected, eventID: EventID(rawValue: "event-1")))
+  }
+
+  @Test func keepsNestedMetadata() {
+    let push = decode(
+      incoming(
+        caller: caller("phone", "+14155550123"),
+        extra: #","metadata":{"route":{"region":"eu","hops":["sip",2.5,true,null]},"empty":{}}"#))
+    let metadata: [String: JSONValue] = [
+      "route": ["region": "eu", "hops": ["sip", 2.5, true, .null]], "empty": [:],
+    ]
+    let expected = IncomingCall(id: callID, parties: [alice], metadata: metadata)
+    #expect(push == .incoming(expected, eventID: EventID(rawValue: "event-1")))
+  }
+
+  @Test(arguments: [#""room-1""#, "null", "[1]", "2"])
+  func ignoresMetadataThatIsNotAnObject(_ metadata: String) {
+    let push = decode(
+      incoming(caller: caller("phone", "+14155550123"), extra: #","metadata":\#(metadata)"#))
+    let expected = IncomingCall(id: callID, parties: [alice])
     #expect(push == .incoming(expected, eventID: EventID(rawValue: "event-1")))
   }
 

@@ -12,7 +12,7 @@ extension VoIPPush {
   ///     "serverCallId": "call-1",
   ///     "caller": { "handleType": "phone", "value": "+14155550123", "displayName": "Alice" },
   ///     "hasVideo": false,
-  ///     "metadata": { "room": "room-1" }
+  ///     "metadata": { "room": "room-1", "route": { "region": "eu", "attempt": 2 } }
   ///   }
   /// }
   /// ```
@@ -20,7 +20,8 @@ extension VoIPPush {
   /// The server call ID becomes the ``CallID`` and the event ID the ``EventID``. The caller's
   /// `handleType` is `phone`, `email` or `generic`. A phone number may contain spaces,
   /// parentheses, hyphens and periods, which are removed; it must then be in E.164 format.
-  /// `hasVideo` and `metadata` are optional, and only metadata values that are strings are kept.
+  /// `hasVideo` and `metadata` are optional. `metadata` is an object of any JSON values, which
+  /// becomes the call's ``IncomingCall/metadata``; a `metadata` that isn't an object is ignored.
   /// The older `incoming_call` key is accepted too.
   ///
   /// A server event is a `callEnded` message whose body is a JSON string:
@@ -85,11 +86,10 @@ private struct IncomingCallBody: Decodable {
     eventID = try EventID(rawValue: values.decodeIdentifier(forKey: .eventID))
     let callID = try CallID(rawValue: values.decodeIdentifier(forKey: .serverCallID))
     let caller = try values.decode(CallerBody.self, forKey: .caller)
-    let metadata = (try? values.decode([String: StringValue].self, forKey: .metadata)) ?? [:]
     incoming = IncomingCall(
       id: callID, parties: [caller.party],
       hasVideo: (try? values.decode(Bool.self, forKey: .hasVideo)) ?? false,
-      metadata: metadata.compactMapValues(\.value))
+      metadata: (try? values.decode([String: JSONValue].self, forKey: .metadata)) ?? [:])
   }
 }
 
@@ -160,15 +160,6 @@ private struct CallEndedBody: Decodable {
       case .answeredElsewhere: .answeredElsewhere
       case .declinedElsewhere: .declinedElsewhere
       }
-  }
-}
-
-/// A metadata value, kept only when it is a string.
-private struct StringValue: Decodable {
-  let value: String?
-
-  init(from decoder: any Decoder) throws {
-    value = try? decoder.singleValueContainer().decode(String.self)
   }
 }
 
