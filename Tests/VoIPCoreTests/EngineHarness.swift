@@ -109,17 +109,28 @@ enum Reported: Hashable, Sendable {
 final class Harness {
   let framework = FakeCallingFramework()
   let media = FakeMedia()
-  let push = FakePushSource()
+  let push: FakePushSource
   let audio = FakeAudioSession()
   let clock = TestClock()
   let client: VoIPClient
   private var iterator: AsyncStream<CallEvent>.Iterator?
   private var markers = 0
 
-  init(configuration: VoIPConfiguration = VoIPConfiguration(), subscribe: Bool = true) throws {
+  /// Starts the client.
+  ///
+  /// - Parameters:
+  ///   - configuration: The client's configuration.
+  ///   - subscribe: Whether to subscribe to events as soon as the client starts.
+  ///   - pending: VoIP pushes that arrive before the client attaches, as on a cold launch.
+  ///   - observers: The client's observers.
+  init(
+    configuration: VoIPConfiguration = VoIPConfiguration(), subscribe: Bool = true,
+    pending: [VoIPPush] = [], observers: [any CallObserver] = []
+  ) throws {
+    push = FakePushSource(pending: pending)
     client = try VoIPClient.start(
-      framework: framework, media: media, push: push, audio: audio, configuration: configuration,
-      clock: clock)
+      framework: framework, media: media, push: push, audio: audio, observers: observers,
+      configuration: configuration, clock: clock)
     if subscribe { self.subscribe() }
   }
 

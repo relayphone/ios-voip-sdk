@@ -9,9 +9,16 @@ public final class FakePushSource: PushSource {
   public private(set) var finished: [VoIPPush] = []
 
   private var onPush: (@VoIPActor (VoIPPush, PushCompletion) -> Void)?
+  private var pending: [VoIPPush]
 
   /// Creates a fake push source.
-  public nonisolated init() {}
+  ///
+  /// - Parameter pending: Pushes that arrived before the SDK attached, such as the VoIP push that
+  ///   cold-launched the app. The source delivers them in order, each one required to be reported
+  ///   as a call, as soon as the SDK attaches, as PushKit does once the app registers.
+  public nonisolated init(pending: [VoIPPush] = []) {
+    self.pending = pending
+  }
 
   /// Delivers a VoIP push to the SDK, returning when the SDK's push callback returns.
   ///
@@ -26,8 +33,11 @@ public final class FakePushSource: PushSource {
 
   // MARK: PushSource
 
-  /// Starts delivering pushes to the SDK.
+  /// Starts delivering pushes to the SDK, beginning with the pending ones.
   public func attach(onPush: @escaping @VoIPActor (VoIPPush, PushCompletion) -> Void) {
     self.onPush = onPush
+    let pending = self.pending
+    self.pending = []
+    for push in pending { deliver(push) }
   }
 }

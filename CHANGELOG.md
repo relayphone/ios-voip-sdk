@@ -12,11 +12,11 @@ Changes not yet released are recorded below. Public API changes include migratio
   `CallEvent` and `VoIPConfiguration` with `Deadlines`. It has no system framework dependencies.
 
 - `VoIPClient` runs the call core on the `VoIPActor` global actor. Start it once with
-  `start(framework:media:push:audio:configuration:clock:)`, observe `calls` and `isAudioActive`,
-  subscribe with `events()`, and drive calls with `request(_:)`, `confirmPlaced(_:)`,
-  `report(_:)` and `receive(_:for:eventID:)`. It reports a VoIP push's call before the push
-  callback returns, recognises repeated pushes and server events by event ID and call ID, and
-  remembers ended calls and early server events for `VoIPConfiguration.retention`.
+  `start(framework:media:push:audio:observers:configuration:clock:)`, observe `calls` and
+  `isAudioActive`, subscribe with `events()`, and drive calls with `request(_:)`,
+  `confirmPlaced(_:)`, `report(_:)` and `receive(_:for:eventID:)`. It reports a VoIP push's call
+  before the push callback returns, recognises repeated pushes and server events by event ID and
+  call ID, and remembers ended calls and early server events for `VoIPConfiguration.retention`.
 - The seams for calling-framework adapters and the app's media: `CallingFramework` with
   `FrameworkEvent`, `CallMedia`, `PushSource` with `VoIPPush` and `PushCompletion`, `ActionID`
   and `deviceUUID(for:)`. `VoIPConfiguration` adds `maximumCalls`, `supportedHandleTypes`,
@@ -85,6 +85,14 @@ Changes not yet released are recorded below. Public API changes include migratio
   `Deadlines.placement`: an outgoing call ends with `CallFailure.notPlaced`, and a call being
   joined returns to its call preview. An app that ended such a call as a server failure, with
   `receive(.failed, for:eventID:)`, calls `confirmNotPlaced(_:)` instead.
+- `CallObserver` follows calls from the moment the client starts. Pass observers to
+  `VoIPClient.start` as `observers`: the client calls each one's `attach(to:)`, in order, before
+  it attaches the calling framework, the audio session and the push source, and keeps them for
+  its life. An observer that subscribes to `events()` in `attach(to:)` receives every event,
+  including those of the VoIP push that cold-launched the app, which a stream created after
+  `start` returns can miss. `observers` defaults to none, so existing calls to `start` don't
+  change. `FakePushSource(pending:)` delivers pushes as soon as the client attaches, as PushKit
+  delivers the push that cold-launched the app.
 
 ### Changed
 
@@ -114,7 +122,7 @@ Changes not yet released are recorded below. Public API changes include migratio
 
   | Old core | Call core |
   | --- | --- |
-  | `VoIPApplication.start(configuration:mediaAdapter:audioPolicy:)`, `startFromBundle(_:mediaAdapter:audioPolicy:)` | `VoIPClient.start(framework:media:push:audio:configuration:clock:)` with `LiveCommunicationKitAdapter()` and `PushKitSource()` |
+  | `VoIPApplication.start(configuration:mediaAdapter:audioPolicy:)`, `startFromBundle(_:mediaAdapter:audioPolicy:)` | `VoIPClient.start(framework:media:push:audio:observers:configuration:clock:)` with `LiveCommunicationKitAdapter()` and `PushKitSource()` |
   | `ConversationClient.Configuration` | `VoIPConfiguration`: `maximumConversationGroups` becomes `maximumCalls`, `ringtoneName` becomes `ringtoneSound`, `includesConversationInRecents` becomes `includesCallsInRecents` |
   | `ConversationSnapshot`, `snapshots`, `observeState(_:)` | `Call` and `VoIPClient.calls`, which SwiftUI and Observation track |
   | `observeEvents(_:)`, `ConversationEventContext` | `VoIPClient.events()` and `CallEvent` |

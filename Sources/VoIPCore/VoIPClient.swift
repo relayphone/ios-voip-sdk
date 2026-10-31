@@ -8,6 +8,10 @@ import Synchronization
 /// the app's media and, usually, the PushKit adapter. The SDK keeps the state of every call by its
 /// ``CallID`` and performs the user's actions itself, then tells the app through ``events()``.
 /// Read ``calls`` and ``isAudioActive`` from SwiftUI or with Observation.
+///
+/// Code that must see every event from the moment the client starts, including those of the VoIP
+/// push that cold-launched the app, is a ``CallObserver`` passed to
+/// ``start(framework:media:push:audio:observers:configuration:clock:)``.
 @MainActor
 @Observable
 public final class VoIPClient {
@@ -20,14 +24,20 @@ public final class VoIPClient {
 
   let engine: CallEngine
   private let subscribers: Subscribers
+  /// The observers that follow calls, which the client keeps for its life.
+  private let observers: [any CallObserver]
   @ObservationIgnored private var revision: UInt64 = 0
 
   /// Whether a client is running in this process.
   private nonisolated static let isRunning = Mutex(false)
 
-  private init(engine: CallEngine, subscribers: Subscribers, snapshots: AsyncStream<Snapshot>) {
+  private init(
+    engine: CallEngine, subscribers: Subscribers, observers: [any CallObserver],
+    snapshots: AsyncStream<Snapshot>
+  ) {
     self.engine = engine
     self.subscribers = subscribers
+    self.observers = observers
     Task { [weak self] in
       for await snapshot in snapshots { self?.apply(snapshot) }
     }
@@ -49,6 +59,9 @@ public final class VoIPClient {
   ///   - audio: The app's audio session, usually `AudioSessionAdapter`, which the SDK configures
   ///     for each call and watches for interruptions. Without one, the app configures
   ///     `AVAudioSession` for calls itself.
+  ///   - observers: Objects that follow calls from the moment the client starts. The client
+  ///     attaches each one, in order, before it attaches the calling framework, the audio session
+  ///     and the push source, and keeps them for its life.
   ///   - configuration: How the SDK presents and controls calls.
   ///   - clock: The clock that times deadlines and retention. Tests pass a `TestClock`.
   /// - Returns: The running client.
@@ -58,6 +71,7 @@ public final class VoIPClient {
     media: any CallMedia,
     push: (any PushSource)? = nil,
     audio: (any AudioSession)? = nil,
+    observers: [any CallObserver] = [],
     configuration: VoIPConfiguration = VoIPConfiguration(),
     clock: any Clock<Duration> = ContinuousClock()
   ) throws(StartupError) -> VoIPClient {
@@ -72,8 +86,13 @@ public final class VoIPClient {
       framework: framework, media: media, audio: audio, pushSource: push,
       configuration: configuration, clock: clock, subscribers: subscribers,
       publish: { continuation.yield($0) })
+    let client = VoIPClient(
+      engine: engine, subscribers: subscribers, observers: observers, snapshots: snapshots)
+    // The push source may deliver the push that cold-launched the app as soon as it attaches, so
+    // observers subscribe first.
+    for observer in observers { observer.attach(to: client) }
     Task { @VoIPActor in engine.attach() }
-    return VoIPClient(engine: engine, subscribers: subscribers, snapshots: snapshots)
+    return client
   }
 
   /// Returns a new stream of everything that happens to calls from now on.
@@ -81,6 +100,12 @@ public final class VoIPClient {
   /// Each call returns a separate stream for one subscriber. Events that happen while nobody
   /// subscribes are not kept; the SDK performs actions without waiting for the app, and
   /// ``calls`` holds the current state.
+  ///
+  /// A stream created after ``start(framework:media:push:audio:observers:configuration:clock:)``
+  /// returns can miss the first events of a cold launch, because the SDK may report the call of
+  /// the VoIP push that launched the app before the app subscribes. To receive every event from
+  /// the start, create the stream in the ``CallObserver/attach(to:)`` of an observer passed to
+  /// `start`, which the client calls before it attaches the push source.
   public func events() -> AsyncStream<CallEvent> {
     subscribers.stream()
   }
