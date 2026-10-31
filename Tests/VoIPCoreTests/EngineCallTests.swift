@@ -156,6 +156,84 @@ extension EngineTests {
         await h.records == [.fulfill(start), .reportOutgoing(callID, connected: false)])
     }
 
+    @Test(arguments: [false, true])
+    func outgoingCallTheAppCannotPlaceEnds(startedFromSystem: Bool) async throws {
+      let h = try Harness()
+      if startedFromSystem {
+        await h.framework.perform(.start(outgoing))
+      } else {
+        try await h.client.request(.start(outgoing))
+      }
+      #expect(try await h.next() == .startRequested(callID))
+      let start = try await h.lastActionID()
+
+      await h.client.confirmNotPlaced(callID)
+      #expect(try await h.next() == .ended(callID, .failed(.notPlaced)))
+      #expect(
+        await h.records.suffix(2) == [.fail(start), .reportEnded(callID, .failed(.notPlaced))])
+      #expect(await h.media.records.isEmpty)
+      await h.until { $0.calls.isEmpty }
+
+      // The placement deadline was disarmed with the call.
+      #expect(h.clock.pendingSleepCount == 0)
+      h.clock.advance(by: Deadlines().placement)
+      try await h.expectNoEvents()
+    }
+
+    @Test func callTheAppCannotJoinReturnsToItsPreview() async throws {
+      let h = try Harness()
+      _ = await h.client.report(incoming(callID, .preview))
+      #expect(try await h.next() == .previewStarted(callID, .policy))
+      try await h.client.request(.join(callID))
+      #expect(try await h.next() == .joinRequested(callID))
+      let join = try await h.lastActionID()
+
+      await h.client.confirmNotPlaced(callID)
+      #expect(try await h.next() == .previewStarted(callID, .policy))
+      #expect(
+        await h.records.suffix(2) == [.fail(join), .reportEnded(callID, .failed(.notPlaced))])
+      #expect(await h.media.records.isEmpty)
+      await h.until { $0.calls.map(\.status) == [.previewing(.policy)] }
+
+      // The user can join again from the preview.
+      try await h.client.request(.join(callID))
+      #expect(try await h.next() == .joinRequested(callID))
+    }
+
+    @Test func appCanGiveUpBeforeTheSystemPerformsTheStart() async throws {
+      let h = try Harness()
+      let framework = h.framework
+      await onVoIPActor { framework.requestResult = .accept }
+      try await h.client.request(.start(outgoing))
+
+      await h.client.confirmNotPlaced(callID)
+      #expect(try await h.next() == .ended(callID, .failed(.notPlaced)))
+      #expect(await h.records.last == .reportEnded(callID, .failed(.notPlaced)))
+
+      // The system performs the start late, and the SDK fails it.
+      let start = await h.framework.perform(.start(outgoing))
+      #expect(await h.records.last == .fail(start))
+      try await h.expectNoEvents()
+    }
+
+    @Test func confirmingNotPlacedLeavesOtherCallsAlone() async throws {
+      let h = try Harness()
+      await h.client.confirmNotPlaced(callID)
+      try await h.client.request(.start(outgoing))
+      #expect(try await h.next() == .startRequested(callID))
+      await h.client.confirmPlaced(callID)
+      #expect(try await h.next() == .performed(.start(outgoing), .dialing))
+      let before = await h.records
+
+      // A call the app placed, and a call this device doesn't know, are unaffected.
+      await h.client.confirmNotPlaced(callID)
+      await h.client.confirmNotPlaced(otherCallID)
+      try await h.expectNoEvents()
+      #expect(await h.records == before)
+      let engine = h.client.engine
+      #expect(await onVoIPActor { engine.states[callID]?.call.status } == .dialing)
+    }
+
     @Test func appEndsConnectedCall() async throws {
       let h = try Harness()
       try await h.connect()

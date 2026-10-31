@@ -118,6 +118,7 @@ private struct Step {
     case .requested(let action): request(action)
     case .requestFailed(let action): requestFailed(action)
     case .placed: placed()
+    case .notPlaced: notPlaced()
     case .mediaPrepared: mediaPrepared()
     case .mediaPreparationFailed:
       if case .preparing = state.phase { abandon(.media) }
@@ -248,6 +249,14 @@ private struct Step {
     enter(.preparing(held))
     arm(.mediaPreparation)
     output(.prepareMedia(state.call))
+  }
+
+  /// The app couldn't place the call, which fails as when the placement deadline passes.
+  private mutating func notPlaced() {
+    switch state.phase {
+    case .requesting, .placing: abandon(.notPlaced)
+    default: break
+    }
   }
 
   private mutating func mediaPrepared() {

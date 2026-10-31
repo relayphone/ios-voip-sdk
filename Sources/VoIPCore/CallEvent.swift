@@ -8,9 +8,11 @@ public enum CallEvent: Hashable, Sendable {
   /// it was filtered or answered elsewhere and the presentation policy previews it, or joining it
   /// failed. The call's status holds the reason.
   case previewStarted(Call)
-  /// The calling framework started an outgoing call. The app places it, then confirms it.
+  /// The calling framework started an outgoing call. The app places it, then confirms it with
+  /// ``VoIPClient/confirmPlaced(_:)``, or with ``VoIPClient/confirmNotPlaced(_:)`` when it can't.
   case startRequested(Call)
-  /// The user asked to join the call from its preview. The app joins it, then confirms it.
+  /// The user asked to join the call from its preview. The app joins it, then confirms it with
+  /// ``VoIPClient/confirmPlaced(_:)``, or with ``VoIPClient/confirmNotPlaced(_:)`` when it can't.
   case joinRequested(Call)
   /// The SDK performed an action on the call.
   case performed(Action, Call)

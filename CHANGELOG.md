@@ -79,6 +79,12 @@ Changes not yet released are recorded below. Public API changes include migratio
   adapter, the PushKit source and the audio session adapter, shows the VoIP push token and the
   audio routes, and reports, answers, mutes and ends a call, with `CallMedia` as a stub. CI
   builds it for the simulator and for devices.
+- `VoIPClient.confirmNotPlaced(_:)` tells the SDK that the app couldn't place a call it was
+  asked to start or join, after `CallEvent.startRequested(_:)` or `joinRequested(_:)`. The SDK
+  fails the start or join in the calling framework at once, without waiting for
+  `Deadlines.placement`: an outgoing call ends with `CallFailure.notPlaced`, and a call being
+  joined returns to its call preview. An app that ended such a call as a server failure, with
+  `receive(.failed, for:eventID:)`, calls `confirmNotPlaced(_:)` instead.
 
 ### Changed
 
@@ -103,7 +109,8 @@ Changes not yet released are recorded below. Public API changes include migratio
 
   The call core keeps each call's state by its `CallID` and performs the user's actions itself,
   then tells the app, so there are no action handlers to register. Only starting or joining a
-  call waits for the app, which places it and then calls `confirmPlaced(_:)`. Migrate as follows:
+  call waits for the app, which places it and then calls `confirmPlaced(_:)`, or
+  `confirmNotPlaced(_:)` when it can't. Migrate as follows:
 
   | Old core | Call core |
   | --- | --- |
@@ -111,7 +118,7 @@ Changes not yet released are recorded below. Public API changes include migratio
   | `ConversationClient.Configuration` | `VoIPConfiguration`: `maximumConversationGroups` becomes `maximumCalls`, `ringtoneName` becomes `ringtoneSound`, `includesConversationInRecents` becomes `includesCallsInRecents` |
   | `ConversationSnapshot`, `snapshots`, `observeState(_:)` | `Call` and `VoIPClient.calls`, which SwiftUI and Observation track |
   | `observeEvents(_:)`, `ConversationEventContext` | `VoIPClient.events()` and `CallEvent` |
-  | `ConversationHandler` and `setConversationHandler(_:)` | `CallEvent.performed(_:_:)` after the SDK performs an action; `CallEvent.startRequested(_:)` and `joinRequested(_:)`, then `confirmPlaced(_:)` |
+  | `ConversationHandler` and `setConversationHandler(_:)` | `CallEvent.performed(_:_:)` after the SDK performs an action; `CallEvent.startRequested(_:)` and `joinRequested(_:)`, then `confirmPlaced(_:)` or `confirmNotPlaced(_:)` |
   | `startConversation(to:video:metadata:)` | `request(.start(OutgoingCall(id:parties:hasVideo:metadata:)))` |
   | `joinConversation(_:)`, `endConversation(_:)`, `setMuted(_:_:)`, `setHeld(_:_:)`, `playTones(_:_:)` | `request(_:)` with `.answer(_:)` (or `.join(_:)` from a call preview), `.end(_:)`, `.mute(_:muted:)`, `.hold(_:onHold:)` and `.playTones(_:digits:)` |
   | `reportIncomingConversation(_:source:)` with `IncomingCallPayload` | `report(_:)` with `IncomingCall`, which returns a `PresentationOutcome` |

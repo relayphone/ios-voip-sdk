@@ -146,13 +146,18 @@ await client.receive(.connected, for: call.id, eventID: EventID(rawValue: eventI
 ```
 
 Read `client.calls` and `client.isAudioActive` from SwiftUI, and follow everything that happens
-with `client.events()`. Only an outgoing call waits for the app, which places it and confirms:
+with `client.events()`. Only an outgoing call waits for the app, which places it and confirms.
+When the app can't place it, it says so, and the call ends with `CallFailure.notPlaced`:
 
 ```swift
 for await event in client.events() {
   if case .startRequested(let call) = event {
-    try await server.place(call)
-    await client.confirmPlaced(call.id)
+    do {
+      try await server.place(call)
+      await client.confirmPlaced(call.id)
+    } catch {
+      await client.confirmNotPlaced(call.id)
+    }
   }
 }
 ```

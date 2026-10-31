@@ -172,6 +172,7 @@ let transitionRows: [TransitionRow] = [
   .init(.previewing, .event(.server(.partiesChanged([alice]))), .previewing(.policy), []),
   .init(.previewing, .event(.server(.connected)), .previewing(.policy), []),
   .init(.previewing, .event(.frameworkReset), .previewing(.policy), []),
+  .init(.previewing, .event(.notPlaced), .previewing(.policy), []),
 
   // MARK: Requesting a start
   .init(
@@ -195,6 +196,9 @@ let transitionRows: [TransitionRow] = [
     [.disarm(.placement), .reportEnded(.endedRemotely), .ended(.endedRemotely)]),
   .init(.requestingStart, .event(.placed), .requesting(startAction), []),
   .init(
+    .requestingStart, .event(.notPlaced), .ended(.failed(.notPlaced)),
+    [.disarm(.placement), .reportEnded(.failed(.notPlaced)), .ended(.failed(.notPlaced))]),
+  .init(
     .requestingStart, .event(.frameworkReset), .ended(.failed(.frameworkReset)),
     [.disarm(.placement), .ended(.failed(.frameworkReset))]),
 
@@ -207,6 +211,9 @@ let transitionRows: [TransitionRow] = [
   .init(
     .requestingJoin, .expiry(.placement), .previewing(.policy),
     [.reportEnded(.failed(.notPlaced)), .previewStarted]),
+  .init(
+    .requestingJoin, .event(.notPlaced), .previewing(.policy),
+    [.disarm(.placement), .reportEnded(.failed(.notPlaced)), .previewStarted]),
   .init(.requestingJoin, .event(.server(.answeredElsewhere)), .requesting(join), []),
   .init(
     .requestingJoin, .event(.server(.endedRemotely)), .ended(.endedRemotely),
@@ -222,6 +229,12 @@ let transitionRows: [TransitionRow] = [
   .init(
     .placingStart, .expiry(.placement), .ended(.failed(.notPlaced)),
     [.fail(a1), .reportEnded(.failed(.notPlaced)), .ended(.failed(.notPlaced))]),
+  .init(
+    .placingStart, .event(.notPlaced), .ended(.failed(.notPlaced)),
+    [
+      .fail(a1), .disarm(.placement), .reportEnded(.failed(.notPlaced)),
+      .ended(.failed(.notPlaced)),
+    ]),
   .init(
     .placingStart, .event(.performed(a2, end)), .ended(.endedHere),
     [.fail(a1), .fulfill(a2), .disarm(.placement), .performed(end), .ended(.endedHere)]),
@@ -252,6 +265,9 @@ let transitionRows: [TransitionRow] = [
   .init(
     .placingJoin, .expiry(.placement), .previewing(.policy),
     [.fail(a1), .reportEnded(.failed(.notPlaced)), .previewStarted]),
+  .init(
+    .placingJoin, .event(.notPlaced), .previewing(.policy),
+    [.fail(a1), .disarm(.placement), .reportEnded(.failed(.notPlaced)), .previewStarted]),
   .init(
     .placingJoin, .event(.performed(a2, end)), .previewing(.policy),
     [.fail(a1), .fulfill(a2), .disarm(.placement), .previewStarted]),
@@ -311,6 +327,7 @@ let transitionRows: [TransitionRow] = [
     ]),
   .init(
     .preparingStart, .event(.server(.answeredElsewhere)), .preparing(held(a1, startAction)), []),
+  .init(.preparingStart, .event(.notPlaced), .preparing(held(a1, startAction)), []),
   .init(
     .preparingStartConnected, .event(.mediaPrepared), .connected,
     [
@@ -355,6 +372,7 @@ let transitionRows: [TransitionRow] = [
       .ended(.unanswered),
     ]),
   .init(.dialing, .event(.server(.answeredElsewhere)), .dialing, []),
+  .init(.dialing, .event(.notPlaced), .dialing, []),
   .init(
     .dialing, .event(.performed(a2, end)), .ended(.endedHere),
     [
