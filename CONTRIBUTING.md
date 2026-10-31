@@ -8,17 +8,23 @@ Use macOS 26 or later with Xcode 27.1 (Swift 6.4) and the iOS 27 SDK; the SDK su
 
 ## Checks
 
-Run the host tests from the repository root:
+Run the tests as the [README](README.md#running-the-tests) shows, and check the formatting:
 
 ```sh
-swift test
 swift format lint --strict --recursive --parallel Package.swift Sources Tests Examples Inspector tools/smoke
 ```
 
-`swift format --in-place --recursive --parallel` with the same paths fixes most formatting
-findings.
+`swift format --in-place --recursive --parallel` with the same paths fixes most findings.
 
-The call journeys need an iOS 27 simulator; the [README](README.md#testing) shows how to run them. The [SDK acceptance workflow](.github/workflows/sdk-m0.yml) defines the CI builds, the journeys and the device build inspection.
+The TypeScript tools in `tools/` build, package and smoke-test the standalone simulator runtime.
+They run with Node.js 24 and need no build step; `npm ci`, `npx tsc --project .` and `node --test`
+in `tools/` check them.
+
+The [CI workflow](.github/workflows/ci.yml) runs all of these, builds every library and the
+example for devices and the simulator, checks that the example's device build leaves out the
+simulator runtime and CallKit, builds the documentation and the Inspector, and smoke-tests a
+built runtime package. The [runtime release workflow](.github/workflows/runtime-release.yml)
+qualifies and publishes the standalone runtime.
 
 ## Pull requests
 

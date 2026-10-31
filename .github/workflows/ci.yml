@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**"]
+  pull_request:
+    paths-ignore: ["**.md", "docs/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  tools:
+    name: TypeScript tools
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tools
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          xcode: "false"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npx tsc --project .
+      - run: node --test
+
+  host-tests:
+    name: Swift tests and formatting
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: swift format lint --strict --recursive --parallel Package.swift Sources Tests Examples Inspector tools/smoke
+      - run: swift test --scratch-path "$RUNNER_TEMP/host-tests"
+
+  builds:
+    name: Builds of the libraries, the example and the Inspector
+    runs-on: xcode-27
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Evaluate the CocoaPods spec
+        run: pod ipc spec IosVoipSDK.podspec > /dev/null
+      - name: Build every library for devices and the simulator
+        run: |
+          for scheme in VoIPCore VoIPAudio VoIPCallKit VoIPLiveCommunicationKit VoIPPushKit VoIPSimulator VoIPTesting; do
+            for destination in 'generic/platform=iOS' 'generic/platform=iOS Simulator'; do
+              xcodebuild -scheme "$scheme" -configuration Release -destination "$destination" \
+                -derivedDataPath "$RUNNER_TEMP/libraries" CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build
+            done
+          done
+      - name: Build the example for the simulator and for devices
+        run: |
+          for build in 'Debug|generic/platform=iOS Simulator' 'Release|generic/platform=iOS'; do
+            xcodebuild -project Examples/CallExample/CallExample.xcodeproj -scheme CallExample \
+              -configuration "${build%%|*}" -destination "${build#*|}" \
+              -derivedDataPath "$RUNNER_TEMP/example" CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build
+          done
+      - name: Check that the example's device build leaves out the simulator runtime and CallKit
+        run: |
+          app="$RUNNER_TEMP/example/Build/Products/Release-iphoneos/CallExample.app/CallExample"
+          if nm "$app" | grep -q CKSimRuntime; then
+            echo "::error::The Release device build contains the simulator runtime."; exit 1
+          fi
+          if otool -L "$app" | grep -q CallKit.framework; then
+            echo "::error::The Release device build of a LiveCommunicationKit app links CallKit."; exit 1
+          fi
+      - name: Build the Inspector app
+        run: node tools/build-inspector.ts "$RUNNER_TEMP/inspector"
+
+  simulator-tests:
+    name: Simulator tests
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Create a simulator for this job
+        id: simulator
+        run: >-
+          echo "udid=$(xcrun simctl create "ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-0)"
+          >> "$GITHUB_OUTPUT"
+      - name: Run the call journeys, the runtime tests and every other suite on the simulator
+        env:
+          SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
+        run: >-
+          xcodebuild test -scheme VoIPSDK-Package -destination "platform=iOS Simulator,id=$SIMULATOR_ID"
+          -derivedDataPath "$RUNNER_TEMP/tests" -resultBundlePath "$RUNNER_TEMP/results/tests.xcresult"
+          CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO
+      - name: Answer and end a call with the standalone runtime and cksim
+        env:
+          SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          node tools/build-runtime.ts "$RUNNER_TEMP/runtime" --archs "$(uname -m)"
+          node tools/runtime-smoke.ts "$RUNNER_TEMP/runtime" --simulator "$SIMULATOR_ID"
+      - name: Delete the simulator
+        if: always() && steps.simulator.outputs.udid != ''
+        env:
+          SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
+        run: xcrun simctl shutdown "$SIMULATOR_ID" || true; xcrun simctl delete "$SIMULATOR_ID"
+      - name: Keep the test results
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: simulator-tests-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/results
+          if-no-files-found: ignore
+          retention-days: 3
+
+  documentation:
+    name: Documentation
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Build every library's documentation, failing on warnings
+        run: |
+          for scheme in VoIPCore VoIPAudio VoIPCallKit VoIPLiveCommunicationKit VoIPPushKit VoIPSimulator VoIPTesting; do
+            xcodebuild docbuild -scheme "$scheme" -destination 'generic/platform=iOS' \
+              -derivedDataPath "$RUNNER_TEMP/documentation" COMPILER_INDEX_STORE_ENABLE=NO \
+              OTHER_DOCC_FLAGS=--warnings-as-errors
+          done
