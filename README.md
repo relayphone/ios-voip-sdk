@@ -8,7 +8,7 @@ with PushKit. Calls also work in the iOS Simulator during development, without a
 | --- | --- |
 | `VoIPCore` | `VoIPClient`, the call values and the call state machine. It imports no calling framework. |
 | `VoIPAudio` | `AudioSessionAdapter`, which configures the audio session for calls, reports its interruptions and lists its audio routes. |
-| `VoIPFocus` | `FocusFilterStore`, which shares the Focus filter state between the app and its extensions through an App Group. It doesn't depend on `VoIPCore`. |
+| `VoIPFocus` | `CallFocusFilter`, the app's Focus filter, and `FocusFilterStore`, which shares the Focus filter state between the app and its extensions through an App Group. It doesn't depend on `VoIPCore`. |
 | `VoIPLiveCommunicationKit` | `LiveCommunicationKitAdapter`, which presents calls with LiveCommunicationKit. |
 | `VoIPPushKit` | `PushKitSource`, which receives VoIP pushes and the VoIP push token. |
 | `VoIPSimulator` | `VoIPSimulator.activate()`, which presents calls in the iOS Simulator in Debug builds. |
@@ -195,13 +195,81 @@ ForEach(audio.routes.available) { route in
 A device that only plays audio, such as AirPlay or a Bluetooth A2DP speaker, is listed while it's
 the current route; offer `AVRoutePickerView` to choose one.
 
+## Focus
+
+When a Focus doesn't allow the app, the system filters its incoming calls, so the app's servers
+choose how each call appears on this device: a VoIP push that rings, or a call preview. To know
+what the user wants in each Focus, they need the Focus filter state: what the app's Focus filter
+last asked for. The `VoIPFocus` library records it.
+
+Declare the app's Focus filter, a `CallFocusFilter`, in an App Intents extension: the system runs
+it each time a Focus that has it turns on or off, without launching the app. Its parameters, and
+the settings they make, are the app's own. Keep the settings and their store in a file that both
+the app and the extension compile:
+
+```swift
+import VoIPFocus
+
+struct CallSettings: Codable, Hashable, Sendable {
+  var ringing = Ringing.everyone  // Everyone, favorites or nobody.
+
+  static let store = FocusFilterStore<CallSettings>(appGroup: "group.com.example.calls")
+}
+```
+
+Then declare the filter in the extension only:
+
+```swift
+import AppIntents
+import VoIPFocus
+
+struct CallsFocusFilter: CallFocusFilter {
+  static let title: LocalizedStringResource = "Incoming calls"
+  static let store = CallSettings.store
+
+  @Parameter(title: "Ring for", default: .everyone)
+  var ringing: Ringing  // `Ringing` conforms to `AppEnum` in the extension.
+
+  var displayRepresentation: DisplayRepresentation {
+    DisplayRepresentation(title: "Ring for \(ringing.rawValue)")
+  }
+
+  var settings: CallSettings { CallSettings(ringing: ringing) }
+
+  func didRecord(_ state: FocusFilterState<CallSettings>) async {
+    await server.updateFocusFilterState(state)
+  }
+}
+```
+
+The filter's `perform()` records the state in `store`, then calls `didRecord(_:)` in the
+extension, where the app sends the state to its servers. When a Focus turns off, the system runs
+the filter again with every parameter reset to its default, so the state is `active(_:since:)`
+with the settings, or `inactive(since:)` when they equal the defaults: make the defaults what the
+app does outside a Focus. Until the filter first runs, the state is `unknown`.
+[ADR 0008](docs/adr/0008-focus-filter-defaults-are-inactive.md) records why.
+
+Give the app and the extension the same App Group. The app follows the same store, and sends
+the state to its servers too, in case the extension didn't reach them:
+
+```swift
+for await state in CallSettings.store.states() {
+  await server.updateFocusFilterState(state)
+}
+```
+
+The state says what the filter asked for, not whether a Focus is on: a Focus without the filter
+still filters the app's calls. Neither the filter nor the store needs a permission.
+
 ## Example
 
 [`Examples/CallExample`](Examples/CallExample) is a SwiftUI app that puts the quick start
 together: it shows the VoIP push token and the audio routes, reports an incoming call, and
-answers, mutes and ends it, with a `CallMedia` that does nothing. Open
+answers, mutes and ends it, with a `CallMedia` that does nothing. Its App Intents extension has
+a Focus filter, whose state the app shows. Open
 `Examples/CallExample/CallExample.xcodeproj` and run the `CallExample` scheme on an iOS 27
-simulator; it uses the package from this checkout.
+simulator; it uses the package from this checkout. The Focus filter needs a signed build with
+your team's App Group in place of `group.com.example.CallExample`.
 
 ## Why LiveCommunicationKit
 
@@ -235,8 +303,8 @@ xcodebuild test -scheme VoIPSDK-Package -destination 'platform=iOS Simulator,nam
 ```
 
 `swift test` covers the call values, push decoding, the call state machine, the call engine, the
-LiveCommunicationKit adapter's conversions, the audio session adapter on a fake session and the test
-clock, as well as the simulator runtime's policies against the device measurements, `cksim` and the
+LiveCommunicationKit adapter's conversions, the audio session adapter on a fake session, the Focus
+filter and its store, and the test clock, as well as the simulator runtime's policies against the device measurements, `cksim` and the
 Inspector's model. The simulator run adds the call journeys, which run the client with the
 LiveCommunicationKit adapter and the PushKit source on the simulator runtime acting as the system: a
 VoIP push, answer, audio, connect and remote end; decline; answered elsewhere and filtered calls as

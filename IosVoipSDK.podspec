@@ -57,10 +57,11 @@ Pod::Spec.new do |s|
     ss.frameworks = 'AVFAudio'
   end
 
-  # `FocusFilterStore`, which shares the Focus filter state between the app and its extensions
-  # through an App Group. It doesn't depend on Core.
+  # `CallFocusFilter`, the app's Focus filter, and `FocusFilterStore`, which shares the Focus filter
+  # state between the app and its extensions through an App Group. It doesn't depend on Core.
   s.subspec 'Focus' do |ss|
     ss.source_files = 'Sources/VoIPFocus/**/*.swift'
+    ss.frameworks = 'AppIntents'
   end
 
   # `LiveCommunicationKitAdapter`, which presents calls with LiveCommunicationKit.

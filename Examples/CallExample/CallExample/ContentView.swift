@@ -1,6 +1,7 @@
 import SwiftUI
 import VoIPAudio
 import VoIPCore
+import VoIPFocus
 
 /// The push token, the calls with their actions, the audio routes, and what happened to calls.
 struct ContentView: View {
@@ -24,6 +25,13 @@ struct ContentView: View {
           ForEach(calls.audio.routes.available) { route in
             RouteRow(route: route, calls: calls)
           }
+        }
+        Section {
+          FocusFilterRow(state: calls.focusFilterState)
+        } header: {
+          Text("Focus filter")
+        } footer: {
+          Text("Add the Incoming calls filter to a Focus in Settings > Focus.")
         }
         Section("Events") {
           ForEach(Array(calls.history.enumerated()), id: \.offset) { entry in
@@ -62,6 +70,26 @@ struct CallRow: View {
     Button(title) {
       Task { await calls.request(action) }
     }
+  }
+}
+
+/// What the Focus filter last asked for, and since when.
+struct FocusFilterRow: View {
+  let state: FocusFilterState<FocusSettings>
+
+  var body: some View {
+    switch state {
+    case .unknown:
+      Text("Unknown: the filter hasn't run yet")
+    case .inactive(let since):
+      Text("Inactive since \(time(since))")
+    case .active(let settings, let since):
+      Text("Ring for \(settings.ringing.rawValue) since \(time(since))")
+    }
+  }
+
+  private func time(_ date: Date) -> String {
+    date.formatted(date: .omitted, time: .shortened)
   }
 }
 

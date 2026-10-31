@@ -101,8 +101,14 @@ Changes not yet released are recorded below. Public API changes include migratio
   them when the Focus turns off; `state` reads it, and `states()` follows changes from any
   process through a Darwin notification. Until the filter first runs, or when the state can't be
   read, it is unknown. The state encodes to JSON for the app's servers. The library imports only
-  Foundation and doesn't depend on `VoIPCore`; CocoaPods ships it as the `Focus` subspec. See
-  [ADR 0008](docs/adr/0008-focus-filter-defaults-are-inactive.md).
+  Foundation and AppIntents and doesn't depend on `VoIPCore`; CocoaPods ships it as the `Focus`
+  subspec. See [ADR 0008](docs/adr/0008-focus-filter-defaults-are-inactive.md).
+- `CallFocusFilter` is the app's Focus filter: a `SetFocusFilterIntent` with the app's
+  `settings`, a `store` and `didRecord(_:)`. Its default `perform()` records the state that the
+  settings ask for, then calls `didRecord(_:)`, where the app sends the state to its servers.
+  Declare it in an App Intents extension, which the system runs on each Focus change without
+  launching the app. The example app's `FocusFilter` extension declares one and the app shows its
+  state.
 
 ### Changed
 
