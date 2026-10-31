@@ -8,6 +8,7 @@ runtime_version = File.read(File.join(__dir__, 'VERSION')).strip
 # |----------------------|--------------------------|
 # | Core                 | VoIPCore                 |
 # | Audio                | VoIPAudio                |
+# | Focus                | VoIPFocus                |
 # | LiveCommunicationKit | VoIPLiveCommunicationKit |
 # | PushKit              | VoIPPushKit              |
 # | Simulator            | VoIPSimulator            |
@@ -54,6 +55,12 @@ Pod::Spec.new do |s|
     ss.dependency 'IosVoipSDK/Core'
     ss.source_files = 'Sources/VoIPAudio/**/*.swift'
     ss.frameworks = 'AVFAudio'
+  end
+
+  # `FocusFilterStore`, which shares the Focus filter state between the app and its extensions
+  # through an App Group. It doesn't depend on Core.
+  s.subspec 'Focus' do |ss|
+    ss.source_files = 'Sources/VoIPFocus/**/*.swift'
   end
 
   # `LiveCommunicationKitAdapter`, which presents calls with LiveCommunicationKit.

@@ -63,7 +63,7 @@ jobs:
         run: pod ipc spec IosVoipSDK.podspec > /dev/null
       - name: Build every library for devices and the simulator
         run: |
-          for scheme in VoIPCore VoIPAudio VoIPLiveCommunicationKit VoIPPushKit VoIPSimulator VoIPTesting; do
+          for scheme in VoIPCore VoIPAudio VoIPFocus VoIPLiveCommunicationKit VoIPPushKit VoIPSimulator VoIPTesting; do
             for destination in 'generic/platform=iOS' 'generic/platform=iOS Simulator'; do
               xcodebuild -scheme "$scheme" -configuration Release -destination "$destination" \
                 -derivedDataPath "$RUNNER_TEMP/libraries" CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build
@@ -141,7 +141,7 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Build every library's documentation, failing on warnings
         run: |
-          for scheme in VoIPCore VoIPAudio VoIPLiveCommunicationKit VoIPPushKit VoIPSimulator VoIPTesting; do
+          for scheme in VoIPCore VoIPAudio VoIPFocus VoIPLiveCommunicationKit VoIPPushKit VoIPSimulator VoIPTesting; do
             xcodebuild docbuild -scheme "$scheme" -destination 'generic/platform=iOS' \
               -derivedDataPath "$RUNNER_TEMP/documentation" COMPILER_INDEX_STORE_ENABLE=NO \
               OTHER_DOCC_FLAGS=--warnings-as-errors
