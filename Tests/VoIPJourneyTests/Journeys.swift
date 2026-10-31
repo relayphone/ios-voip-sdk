@@ -1,7 +1,9 @@
 #if os(iOS) && targetEnvironment(simulator)
+  import AVFAudio
   import CKSimProtocol
   import Foundation
   import Testing
+  import VoIPAudio
   import VoIPCore
   import VoIPTesting
 
@@ -143,6 +145,28 @@
       app.expectNoMoreEvents()
     }
 
+    @Test func outgoingCallTheAppCannotPlaceFails() async throws {
+      let app = try await App()
+      defer { app.stop() }
+      let id = newCallID("not-placed")
+      let bob = try Party(handle: Handle(kind: .phoneNumber, value: "+442071838750"))
+      try await app.client.request(.start(OutgoingCall(id: id, parties: [bob])))
+      try await app.expect([.startRequested(id)])
+
+      // The app's servers refuse the call, so the app fails it rather than waiting for the
+      // placement deadline, and the system's start fails with it.
+      await app.client.confirmNotPlaced(id)
+      try await app.expect([.ended(id, .failed(.notPlaced))])
+      try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
+      let uuid = deviceUUID(for: id).uuidString
+      let starts = try await app.system.journal().filter {
+        $0.event == "action.settled" && $0.kind == "start" && $0.callUUID == uuid
+      }
+      #expect(starts.map(\.fulfilled) == [false])
+      #expect(await app.media.records.isEmpty)
+      app.expectNoMoreEvents()
+    }
+
     @Test func muteHoldAndTonesFromTheCallScreen() async throws {
       let id = newCallID("controls")
       let app = try await App()
@@ -189,6 +213,192 @@
       ])
       try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
       app.expectNoMoreEvents()
+    }
+
+    @Test func holdAndAcceptAWaitingCall() async throws {
+      let app = try await App()
+      defer { app.stop() }
+      let (active, waiting) = (newCallID("held"), newCallID("waiting"))
+      let pushIDs = try await answerAndConnect(active, thenRing: waiting, in: app)
+
+      // The system holds the active call and answers the waiting one in one transaction. The
+      // held call gives up audio before the answered one takes it.
+      try await app.system.perform(
+        .holdAndAccept(deviceUUID(for: waiting), active: deviceUUID(for: active)))
+      try await app.expect(
+        interleaving: [
+          .performed(.hold(active, onHold: true), .connected),
+          .performed(.answer(waiting), .connecting),
+        ], [.audioDeactivated, .audioActivated])
+      await app.client.receive(
+        .connected, for: waiting, eventID: EventID(rawValue: "connected-\(waiting)"))
+      try await app.until("the answered call to connect") {
+        app.call(waiting)?.status == .connected
+      }
+      try await app.until("the system to hold one call and connect the other") {
+        let calls = try await app.system.calls().filter(\.connected)
+        return Dictionary(uniqueKeysWithValues: calls.map { ($0.uuid, $0.held) }) == [
+          deviceUUID(for: active): true, deviceUUID(for: waiting): false,
+        ]
+      }
+
+      // Ending the answered call leaves the held one on hold until the user takes it off hold.
+      try await app.system.perform(.end(deviceUUID(for: waiting)))
+      try await app.expect([
+        .performed(.end(waiting), .ended(.endedHere)), .ended(waiting, .endedHere),
+        .audioDeactivated,
+      ])
+      #expect(app.call(active)?.isOnHold == true)
+      try await app.system.perform(.hold(deviceUUID(for: active), held: false, origin: .system))
+      try await app.expect([.performed(.hold(active, onHold: false), .connected), .audioActivated])
+
+      await app.client.receive(
+        .endedRemotely, for: active, eventID: EventID(rawValue: "end-\(active)"))
+      try await app.expect([.ended(active, .endedRemotely), .audioDeactivated])
+      try await app.until("the system to end the calls") { try await app.system.calls().isEmpty }
+      #expect(
+        await app.media.records.map(\.kind).filter { $0 != .prepare } == [
+          .activate, .deactivate, .activate, .deactivate, .activate, .deactivate,
+        ])
+      try await app.expectPushesFinished(pushIDs)
+      app.expectNoMoreEvents()
+    }
+
+    @Test func endAndAcceptAWaitingCall() async throws {
+      let app = try await App()
+      defer { app.stop() }
+      let (active, waiting) = (newCallID("ended"), newCallID("waiting"))
+      let pushIDs = try await answerAndConnect(active, thenRing: waiting, in: app)
+
+      // The system ends the active call and answers the waiting one in one transaction.
+      try await app.system.perform(
+        .endAndAccept(deviceUUID(for: waiting), active: deviceUUID(for: active)))
+      try await app.expect(
+        interleaving: [
+          .performed(.end(active), .ended(.endedHere)), .ended(active, .endedHere),
+          .performed(.answer(waiting), .connecting),
+        ], [.audioDeactivated, .audioActivated])
+      await app.client.receive(
+        .connected, for: waiting, eventID: EventID(rawValue: "connected-\(waiting)"))
+      try await app.until("the answered call to connect") {
+        app.call(waiting)?.status == .connected
+      }
+      try await app.until("the system to keep only the answered call") {
+        try await app.system.calls().map(\.uuid) == [deviceUUID(for: waiting)]
+      }
+
+      await app.client.receive(
+        .endedRemotely, for: waiting, eventID: EventID(rawValue: "end-\(waiting)"))
+      try await app.expect([.ended(waiting, .endedRemotely), .audioDeactivated])
+      try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
+      #expect(
+        await app.media.records.map(\.kind).filter { $0 != .prepare } == [
+          .activate, .deactivate, .activate, .deactivate,
+        ])
+      try await app.expectPushesFinished(pushIDs)
+      app.expectNoMoreEvents()
+    }
+
+    @Test func frameworkResetEndsEveryCall() async throws {
+      let app = try await App()
+      defer { app.stop() }
+      let (active, waiting) = (newCallID("reset-active"), newCallID("reset-waiting"))
+      var pushIDs = try await answerAndConnect(active, thenRing: waiting, in: app)
+
+      // The system's call service restarts, which ends every call it presents and its audio.
+      try await app.system.resetCallingFramework()
+      try await app.expect(
+        interleaving: [
+          .ended(active, .failed(.frameworkReset)), .ended(waiting, .failed(.frameworkReset)),
+        ], [.audioDeactivated])
+      #expect(try await app.system.calls().isEmpty)
+      try await app.until("the calls to end") { app.client.calls.isEmpty }
+
+      // Calls ring again after the reset.
+      let next = newCallID("after-reset")
+      pushIDs.append(try await app.system.pushIncomingCall(next))
+      try await app.expect([.presented(next)])
+      try await app.system.perform(.decline(deviceUUID(for: next)))
+      try await app.expect([.performed(.end(next), .ended(.endedHere)), .ended(next, .endedHere)])
+      try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
+      try await app.expectPushesFinished(pushIDs)
+      app.expectNoMoreEvents()
+    }
+
+    /// A media services reset after which the system doesn't activate audio again.
+    ///
+    /// The runtime can't restart the media services, so the journey posts the notification that
+    /// the system posts, which carries nothing else. Audio interruptions aren't covered: from
+    /// iOS 27 the system reports them with a deactivation context that only it can create.
+    @Test func callWhoseAudioDoesNotRecoverFromAMediaServicesResetFails() async throws {
+      let app = try await App(
+        audio: AudioSessionAdapter(),
+        configuration: VoIPConfiguration(deadlines: Deadlines(audioRecovery: .seconds(2))))
+      defer { app.stop() }
+      let id = newCallID("media-reset")
+      let pushID = try await app.system.pushIncomingCall(id)
+      try await app.expect([.presented(id)])
+      try await app.system.perform(.answer(deviceUUID(for: id)))
+      try await app.expect([.performed(.answer(id), .connecting), .audioActivated])
+      await app.client.receive(.connected, for: id, eventID: EventID(rawValue: "connected-\(id)"))
+      try await app.until("the call to connect") { app.call(id)?.status == .connected }
+
+      NotificationCenter.default.post(
+        name: AVAudioSession.mediaServicesWereResetNotification,
+        object: AVAudioSession.sharedInstance())
+      try await app.expect([
+        .mediaServicesReset, .ended(id, .failed(.audioRecoveryTimedOut)), .audioDeactivated,
+      ])
+      try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
+      #expect(await app.media.records.map(\.kind) == [.prepare, .activate, .deactivate])
+      try await app.expectPushesFinished([pushID])
+      app.expectNoMoreEvents()
+    }
+
+    @Test func coldLaunchFromAPushAnswersBeforeTheAppListens() async throws {
+      let id = newCallID("cold")
+      var pushID = UUID()
+      // A VoIP push launches the app, and the user answers before the app's own code listens for
+      // events, as when its JavaScript is still loading.
+      let app = try await App(listening: false) {
+        pushID = try await $0.pushIncomingCall(id)
+      }
+      defer { app.stop() }
+      try await app.until("the call to ring") { app.call(id)?.status == .ringing }
+      try await app.expectPushesFinished([pushID])
+      try await app.system.perform(.answer(deviceUUID(for: id)))
+      try await app.until("the system to activate audio") { app.client.isAudioActive }
+      #expect(app.call(id)?.status == .connecting)
+      #expect(await app.media.records.map(\.kind) == [.prepare, .activate])
+      #expect(try await app.system.calls().map(\.connected) == [true])
+
+      // Once its code has loaded, the app listens and finds the call in progress.
+      app.listen()
+      await app.client.receive(.connected, for: id, eventID: EventID(rawValue: "connected-\(id)"))
+      try await app.until("the call to connect") { app.call(id)?.status == .connected }
+      await app.client.receive(.endedRemotely, for: id, eventID: EventID(rawValue: "end-\(id)"))
+      try await app.expect([.ended(id, .endedRemotely), .audioDeactivated])
+      try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
+      app.expectNoMoreEvents()
+    }
+
+    /// Answers a pushed call from the call screen and connects it, then pushes another call,
+    /// which waits.
+    ///
+    /// - Returns: The pushes' identifiers.
+    private func answerAndConnect(
+      _ active: CallID, thenRing waiting: CallID, in app: App
+    ) async throws -> [UUID] {
+      let first = try await app.system.pushIncomingCall(active)
+      try await app.expect([.presented(active)])
+      try await app.system.perform(.answer(deviceUUID(for: active)))
+      try await app.expect([.performed(.answer(active), .connecting), .audioActivated])
+      await app.client.receive(
+        .connected, for: active, eventID: EventID(rawValue: "connected-\(active)"))
+      try await app.until("the call to connect") { app.call(active)?.status == .connected }
+      let second = try await app.system.pushIncomingCall(waiting, from: "+14155550199")
+      try await app.expect([.presented(waiting)])
+      return [first, second]
     }
   }
 

@@ -40,6 +40,14 @@
       _ = try await send(.call(control))
     }
 
+    /// Resets the calling framework, as when the system's call service restarts, which ends every
+    /// call it presents.
+    func resetCallingFramework() async throws {
+      guard case .reset = try await send(.reset) else {
+        throw JourneyError("The runtime didn't reset the calling framework")
+      }
+    }
+
     /// Makes the system filter incoming calls, as Do Not Disturb does, or stop filtering them.
     func filterIncomingCalls(_ reason: ControlRequest.FilterReason) async throws {
       _ = try await send(.incomingFilter(reason))
@@ -90,9 +98,15 @@
     let pushID: String?
     /// Why the runtime recorded a diagnostic.
     let reason: String?
+    /// The kind of a system action, such as `start`.
+    let kind: String?
+    /// The UUID of the call an action applies to.
+    let callUUID: String?
+    /// Whether a settled action was fulfilled.
+    let fulfilled: Bool?
 
     private enum CodingKeys: String, CodingKey {
-      case event, pushID, reason
+      case event, pushID, reason, kind, callUUID, fulfilled
     }
 
     init(from decoder: any Decoder) throws {
@@ -101,6 +115,9 @@
       pushID = try? values.decodeIfPresent(String.self, forKey: .pushID)
       // Other events use the field for numeric codes.
       reason = try? values.decodeIfPresent(String.self, forKey: .reason)
+      kind = try? values.decodeIfPresent(String.self, forKey: .kind)
+      callUUID = try? values.decodeIfPresent(String.self, forKey: .callUUID)
+      fulfilled = try? values.decodeIfPresent(Bool.self, forKey: .fulfilled)
     }
   }
 
