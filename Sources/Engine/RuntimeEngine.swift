@@ -119,43 +119,6 @@
     init(_ invoke: @escaping ((any Error)?) -> Void) { self.invoke = invoke }
   }
 
-  // RuntimeEngine's serial state queue owns this value. An ambiguous same-UUID
-  // overlap remains unbound instead of assigning a different push's identifier.
-  private struct IncomingPushAssociations {
-    enum Resolution: Equatable {
-      case absent
-      case associated(String)
-      case ambiguous
-    }
-    private struct Entry {
-      var identifiers: Set<String>
-      var ambiguous = false
-    }
-    private var pending: [UUID: Entry] = [:]
-    mutating func associate(_ id: UUID, pushID: String) -> Bool {
-      guard !pushID.isEmpty else { return false }
-      var entry = pending[id] ?? Entry(identifiers: [])
-      entry.identifiers.insert(pushID)
-      entry.ambiguous = entry.ambiguous || entry.identifiers.count > 1
-      pending[id] = entry
-      return !entry.ambiguous
-    }
-    mutating func consume(_ id: UUID) -> Resolution {
-      guard let entry = pending[id] else { return .absent }
-      guard !entry.ambiguous, let identifier = entry.identifiers.first else { return .ambiguous }
-      pending.removeValue(forKey: id)
-      return .associated(identifier)
-    }
-    mutating func finish(_ id: UUID, pushID: String) {
-      guard var entry = pending[id], entry.identifiers.remove(pushID) != nil else { return }
-      pending[id] = entry.identifiers.isEmpty ? nil : entry
-    }
-    mutating func complete(pushID: String) {
-      guard !pushID.isEmpty else { return }
-      for id in Array(pending.keys) { finish(id, pushID: pushID) }
-    }
-  }
-
   // A report counts only when the interposed genuine provider report is entered.
   // This is simulator policy, not a synthetic SDK "about to await" signal.
   private struct PushReportingObligations {
@@ -252,7 +215,6 @@
     private var selected: ProviderRegistration?
     private let controllerQueues = NSMapTable<CXCallController, DispatchQueue>.weakToStrongObjects()
     private var calls: [UUID: CallState] = [:]
-    private var incomingPushAssociations = IncomingPushAssociations()
     private var pushReportingObligations = PushReportingObligations()
     private var pendingActions: [UUID: RuntimePendingAction] = [:]
     private let deadlines = NSMapTable<CXAction, NSDate>.weakToStrongObjects()
@@ -467,7 +429,6 @@
             row["mustReport"] = observation.required
             row["reportEntered"] = observation.reportEntered
             pushViolation = observation.violation
-            if event == "push.completed" { incomingPushAssociations.complete(pushID: pushID) }
           default: break
           }
         }
@@ -1168,14 +1129,9 @@
       let reply = Completion(completion)
       let synchronousPushID = CKSimCurrentPushID()
       withState {
-        let pushID: String
-        switch incomingPushAssociations.consume(uuid) {
-        case .absent where synchronousPushID.isEmpty:
-          pushID = pushReportingObligations.runningDeliveryAwaitingReport() ?? ""
-        case .absent: pushID = synchronousPushID
-        case .associated(let identifier): pushID = identifier
-        case .ambiguous: pushID = ""
-        }
+        let pushID =
+          synchronousPushID.isEmpty
+          ? pushReportingObligations.runningDeliveryAwaitingReport() ?? "" : synchronousPushID
         let owner = registration(provider)
         if !owner.valid {
           owner.generation += 1
@@ -1225,20 +1181,6 @@
             reply.invoke(error)
           }
         }
-      }
-    }
-    func associateIncomingReport(_ id: UUID, pushID: String) {
-      withState {
-        guard !stopped, !pushID.isEmpty else { return }
-        if !incomingPushAssociations.associate(id, pushID: pushID) {
-          record(event: "diagnostic.ambiguousIncomingPush", fields: ["callUUID": id.uuidString])
-        }
-      }
-    }
-    func finishIncomingReport(_ id: UUID, pushID: String) {
-      withState {
-        guard !stopped else { return }
-        incomingPushAssociations.finish(id, pushID: pushID)
       }
     }
     func updated(provider: CXProvider, uuid: UUID, update: CXCallUpdate) {
@@ -1616,22 +1558,6 @@
   public enum RuntimeBootstrap {
     @discardableResult
     public static func activate() -> Bool { CKSimActivateRuntime() }
-
-    public nonisolated static var currentPushIdentifier: String? {
-      guard CKSimRuntimeIsActive() else { return nil }
-      let identifier = CKSimCurrentPushID()
-      return identifier.isEmpty ? nil : identifier
-    }
-
-    public nonisolated static func associateIncomingReport(_ id: UUID, pushID: String) {
-      guard CKSimRuntimeIsActive() else { return }
-      RuntimeEngine.existing()?.associateIncomingReport(id, pushID: pushID)
-    }
-
-    public nonisolated static func finishIncomingReport(_ id: UUID, pushID: String) {
-      guard CKSimRuntimeIsActive() else { return }
-      RuntimeEngine.existing()?.finishIncomingReport(id, pushID: pushID)
-    }
   }
 
   private enum BootstrapError: Error { case invalid(String) }
