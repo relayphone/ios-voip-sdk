@@ -121,6 +121,28 @@ public struct Deadlines: Hashable, Sendable {
 
   /// How long the SDK waits for the call's media to be prepared before it completes an answer,
   /// start or join. Defaults to 2 seconds.
+  ///
+  /// The SDK holds the system's answer, start or join action while ``CallMedia/prepare(_:)``
+  /// runs. Meanwhile the system shows the call as connecting, and the SDK's call is
+  /// ``CallStatus/connecting``, or ``CallStatus/dialing`` for a start. There's no audio yet: the
+  /// system activates the audio session only once the SDK completes the action.
+  ///
+  /// When the deadline passes first, the SDK fails the action and cancels the preparation. The
+  /// call ends with ``CallFailure/media``, or a call being joined returns to its call preview.
+  ///
+  /// The system also stops waiting for an action after a time of its own: LiveCommunicationKit
+  /// advertises 30 seconds, and a Join was measured to wait about 64 seconds on iOS 27. When the
+  /// system stops waiting first, the call ends with ``CallFailure/actionTimedOut``, or a call
+  /// being joined returns to its call preview. Keep the deadline below the system's time.
+  ///
+  /// The default suits media that is ready at once. An app whose media claims a room from its
+  /// servers and joins it over the network, which takes longest after a cold launch, needs more:
+  /// around 15 to 20 seconds.
+  ///
+  /// ```swift
+  /// let configuration = VoIPConfiguration(
+  ///   deadlines: Deadlines(mediaPreparation: .seconds(20)))
+  /// ```
   public var mediaPreparation: Duration
 
   /// How long the SDK waits for the system to activate audio after an answer, start or join

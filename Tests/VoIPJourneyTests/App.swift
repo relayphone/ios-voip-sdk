@@ -18,9 +18,9 @@
     let client: VoIPClient
     let media = FakeMedia()
     let system: SimulatedSystem
-    private var events: [CallEvent] = []
+    private let log = EventLog()
+    private var events: [CallEvent] { log.events }
     private var cursor = 0
-    private var listener: Task<Void, Never>?
 
     /// Starts the app on the simulator runtime.
     ///
@@ -28,8 +28,9 @@
     ///   - audio: The app's audio session. Without one, the app configures it itself.
     ///   - observers: Objects that follow the client's calls from the moment it starts.
     ///   - configuration: How the SDK presents and controls calls.
-    ///   - listening: Whether the app listens for call events from the start. An app whose code
-    ///     is still loading starts listening later, with ``listen()``.
+    ///   - listening: Whether the app listens for call events from the moment the client starts,
+    ///     as an observer. An app whose code is still loading starts listening later, with
+    ///     ``listen()``.
     ///   - launch: What the system does before the app starts the client, such as
     ///     delivering the VoIP push that launched it.
     init(
@@ -44,22 +45,19 @@
       try await launch(system)
       client = try VoIPClient.start(
         framework: LiveCommunicationKitAdapter(), media: media, push: PushKitSource(),
-        audio: audio, observers: observers, configuration: configuration)
-      if listening { listen() }
+        audio: audio, observers: (listening ? [log] : []) + observers,
+        configuration: configuration)
     }
 
-    /// Starts listening for call events. Events from before are lost, as they are for an app.
+    /// Starts listening for call events after the client started, as an app whose code is still
+    /// loading does. Events from before are lost.
     func listen() {
-      guard listener == nil else { return }
-      let stream = client.events()
-      listener = Task { [weak self] in
-        for await event in stream { self?.events.append(event) }
-      }
+      log.follow(client.events())
     }
 
     /// Stops listening, so that the client is released when the journey ends.
     func stop() {
-      listener?.cancel()
+      log.stop()
     }
 
     /// Waits for the next events and checks them against what the journey expects.
@@ -128,6 +126,33 @@
         $0.event.hasPrefix("diagnostic.push") && ids.contains($0.pushID ?? "")
       }
       #expect(violations.map { $0.reason ?? $0.event } == [], sourceLocation: sourceLocation)
+    }
+  }
+
+  /// The call events that the app receives, in order.
+  ///
+  /// As an observer, it subscribes while the client starts, before the VoIP push that launched the
+  /// app can arrive, so it records that call's first events too.
+  @MainActor
+  final class EventLog: CallObserver {
+    private(set) var events: [CallEvent] = []
+    private var task: Task<Void, Never>?
+
+    func attach(to client: VoIPClient) {
+      follow(client.events())
+    }
+
+    /// Records the events of a stream, unless the log already records another.
+    func follow(_ stream: AsyncStream<CallEvent>) {
+      guard task == nil else { return }
+      task = Task { [weak self] in
+        for await event in stream { self?.events.append(event) }
+      }
+    }
+
+    /// Stops recording.
+    func stop() {
+      task?.cancel()
     }
   }
 
