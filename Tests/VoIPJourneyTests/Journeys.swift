@@ -160,6 +160,39 @@
       app.expectNoMoreEvents()
     }
 
+    @Test func joinsAPreviewThatTheServersStartedBeforeTheAppRan() async throws {
+      let id = newCallID("joined")
+      let center = FakeLiveActivityCenter()
+      let caller = try Party(
+        handle: Handle(kind: .phoneNumber, value: "+14155550123"), displayName: "Alice")
+      let activity = center.startFromPush(
+        CallPreviewAttributes(callID: id, parties: [caller], metadata: ["room": "room-1"]),
+        state: CallPreviewAttributes.ContentState(
+          status: .policy, startedAt: .now, statusText: "Your assistant is answering",
+          isJoinable: true))
+      let previews = CallPreviewActivities(center: center)
+      let app = try await App(observers: [previews])
+      defer { app.stop() }
+
+      // The client doesn't know the call, so joining reports it first, as a call preview.
+      try await previews.join(id)
+      try await app.expect([.previewStarted(id, .policy), .joinRequested(id)])
+      try await app.until("the call to carry its metadata") {
+        app.call(id)?.metadata == ["room": "room-1"]
+      }
+      await app.client.confirmPlaced(id)
+      try await app.expect([.performed(.join(id), .connecting), .audioActivated])
+      try await app.until("the preview to end") { center.activities.isEmpty }
+      #expect(center.records == [.end(activity, nil, .immediate)])
+
+      try await app.client.request(.end(id))
+      try await app.expect([
+        .performed(.end(id), .ended(.endedHere)), .ended(id, .endedHere), .audioDeactivated,
+      ])
+      try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
+      app.expectNoMoreEvents()
+    }
+
     @Test func outgoingCallConnectsAndEndsHere() async throws {
       let app = try await App()
       defer { app.stop() }

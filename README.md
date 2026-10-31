@@ -9,7 +9,7 @@ with PushKit. Calls also work in the iOS Simulator during development, without a
 | `VoIPCore` | `VoIPClient`, the call values and the call state machine. It imports no calling framework. |
 | `VoIPAudio` | `AudioSessionAdapter`, which configures the audio session for calls, reports its interruptions and lists its audio routes. |
 | `VoIPFocus` | `CallFocusFilter`, the app's Focus filter, and `FocusFilterStore`, which shares the Focus filter state between the app and its extensions through an App Group. It doesn't depend on `VoIPCore`. |
-| `VoIPLiveActivity` | `CallPreviewAttributes`, the type of a call preview's Live Activity, whose JSON the app's servers send ([contract](docs/call-preview-activity.md)). |
+| `VoIPLiveActivity` | `CallPreviewActivities`, which shows call previews as Live Activities, with their type `CallPreviewAttributes`, whose JSON the app's servers send ([contract](docs/call-preview-activity.md)), the Join intent and the default views. |
 | `VoIPLiveCommunicationKit` | `LiveCommunicationKitAdapter`, which presents calls with LiveCommunicationKit. |
 | `VoIPPushKit` | `PushKitSource`, which receives VoIP pushes and the VoIP push token. |
 | `VoIPNotifications` | `CallNotifier`, which posts a communication notification for each call that Do Not Disturb or a Focus filters, so that the people the Focus allows still reach the user. |
@@ -333,13 +333,84 @@ builds the same content with `UserNotificationsAdapter().content(for:updating:)`
 `apns-collapse-id` to the call ID, so that a notification that the app posts later for the call
 replaces it.
 
+## Call previews
+
+A call that the system filters because of a Focus, that is answered elsewhere, or that the app's
+presentation policy previews becomes a call preview: it never rings, and the user can join it.
+The `VoIPLiveActivity` library shows call previews as Live Activities on the Lock Screen and in
+the Dynamic Island. Pass `CallPreviewActivities` to `start` as an observer:
+
+```swift
+import VoIPLiveActivity
+
+let previews = CallPreviewActivities()
+let client = try VoIPClient.start(
+  framework: LiveCommunicationKitAdapter(), media: AppMedia(), push: push, audio: audio,
+  observers: [previews])
+```
+
+The system lets an app start a Live Activity only in the foreground, so the app's servers usually
+start call previews with ActivityKit push notifications. Their type is the SDK's
+`CallPreviewAttributes`, whose JSON is a [contract](docs/call-preview-activity.md). Send the
+servers the push-to-start token, each preview's push token and whether the user allows Live
+Activities:
+
+```swift
+Task {
+  for await token in previews.pushToStartTokens() {
+    await server.updatePushToStartToken(token, authorization: previews.authorization)
+  }
+}
+Task {
+  for await token in previews.pushTokens() {
+    await server.updateCallPreviewPushToken(token.token, for: token.callID)
+  }
+}
+```
+
+In the foreground, the observer starts a preview's Live Activity itself. It ends the Live
+Activity at once when this device joins the call, and shows the final state for two minutes when
+the call ends.
+
+Give the app `NSSupportsLiveActivities` in its Info.plist, and
+`NSSupportsLiveActivitiesFrequentUpdates` for frequent updates, and the Push Notifications
+capability. Show the previews from a widget extension with the SDK's views, and declare the Join
+button's intent in a file that both the app and the extension compile:
+
+```swift
+struct JoinCall: JoinCallPreviewIntent {
+  static let title: LocalizedStringResource = "Join Call"
+  static let supportedModes: IntentModes = .foreground(.immediate)
+
+  @Parameter(title: "Call ID")
+  var callID: String
+}
+
+struct CallPreviewWidget: Widget {
+  var body: some WidgetConfiguration {
+    ActivityConfiguration(for: CallPreviewAttributes.self) { context in
+      CallPreviewView(context, join: JoinCall.self)
+    } dynamicIsland: { context in
+      CallPreviewView.dynamicIsland(context, join: JoinCall.self)
+    }
+  }
+}
+```
+
+Join opens the app and joins the call: the client sends `joinRequested(_:)`, and the app places
+the call as for any join. A preview that the servers started before the app ran has a call that
+the client doesn't know yet, so joining reports it to the client first, as a call preview.
+[ADR 0010](docs/adr/0010-call-preview-activity-is-sdk-type.md) records why the SDK defines the
+type and the servers start the previews.
+
 ## Example
 
 [`Examples/CallExample`](Examples/CallExample) is a SwiftUI app that puts the quick start
 together: it shows the VoIP push token and the audio routes, reports an incoming call, and
 answers, mutes and ends it, with a `CallMedia` that does nothing. Its App Intents extension has
 a Focus filter, whose state the app shows. It also previews a call with a call notification,
-which joins the call when tapped. Open `Examples/CallExample/CallExample.xcodeproj` and run the
+which joins the call when tapped, and its widget extension shows the preview's Live Activity with
+the SDK's views and Join; run it on an iPhone 17 Pro simulator to see the Dynamic Island. Open `Examples/CallExample/CallExample.xcodeproj` and run the
 `CallExample` scheme on an iOS 27 simulator; it uses the package from this checkout. The Focus
 filter needs a signed build with your team's App Group in place of
 `group.com.example.CallExample`, and call notifications need one with the Communication
@@ -367,7 +438,8 @@ in for the system and the app's media, so a `VoIPClient` started with them and a
 every call path on the host. `FakeCallNotificationCenter` keeps a `CallNotifier`'s notifications
 as the system does. `TestClock` conforms to `Clock<Duration>`; use
 `waitForSleepers(count:)` to await registration, then `advance(by:)` or `run()` to resume pending
-sleeps without waiting for wall time to pass.
+sleeps without waiting for wall time to pass. `FakeLiveActivityCenter` stands in for ActivityKit
+under `CallPreviewActivities`, and acts as the app's servers starting call previews.
 
 ## Running the tests
 

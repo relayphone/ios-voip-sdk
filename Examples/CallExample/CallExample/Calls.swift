@@ -4,6 +4,7 @@ import UserNotifications
 import VoIPAudio
 import VoIPCore
 import VoIPFocus
+import VoIPLiveActivity
 import VoIPLiveCommunicationKit
 import VoIPNotifications
 import VoIPPushKit
@@ -42,8 +43,14 @@ final class Calls {
   /// Passes the user's responses to call notifications to the notifier.
   private var notificationResponses: NotificationResponses?
 
+  /// Shows call previews as Live Activities, and follows those the app's servers start.
+  let previews = CallPreviewActivities()
+
   /// The VoIP push token, as hexadecimal, for the app's servers.
   private(set) var pushToken = "None yet"
+
+  /// The push-to-start token, as hexadecimal, with which the app's servers start call previews.
+  private(set) var pushToStartToken = "None yet"
 
   /// What happened to calls, newest first.
   private(set) var history: [String] = []
@@ -62,7 +69,7 @@ final class Calls {
     do {
       client = try VoIPClient.start(
         framework: LiveCommunicationKitAdapter(), media: NoMedia(), push: push, audio: audio,
-        observers: [notifier])
+        observers: [notifier, previews])
     } catch {
       fatalError("A process runs one VoIPClient: \(error)")
     }
@@ -80,6 +87,24 @@ final class Calls {
       // Send the state to your servers here too, as the extension may not have reached them.
       for await state in FocusSettings.store.states() {
         self?.focusFilterState = state
+      }
+    }
+    Task { [previews, weak self] in
+      // Send it to your servers with `previews.authorization`, so that they start call previews
+      // only where the user allows Live Activities.
+      for await token in previews.pushToStartTokens() {
+        self?.pushToStartToken = token.map { String(format: "%02x", $0) }.joined()
+      }
+    }
+    Task { [previews, weak self] in
+      // Send each preview's push token to your servers, which update and end the preview with it.
+      for await token in previews.pushTokens() {
+        self?.history.insert("Preview push token for \(token.callID.rawValue)", at: 0)
+      }
+    }
+    Task { [previews, weak self] in
+      for await event in previews.events() {
+        self?.history.insert("Live Activity: \(event)", at: 0)
       }
     }
     let notices = notifier.events()
@@ -106,7 +131,8 @@ final class Calls {
   }
 
   /// Presents an incoming call only as a call preview, which the notifier posts a notification
-  /// for, as it does for a call that a Focus filters.
+  /// for, as it does for a call that a Focus filters. In the foreground, the SDK also shows it as
+  /// a Live Activity, from which the user can join.
   func previewIncomingCall() async {
     do {
       let caller = Party(

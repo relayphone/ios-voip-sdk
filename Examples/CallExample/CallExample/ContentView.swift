@@ -2,6 +2,7 @@ import SwiftUI
 import VoIPAudio
 import VoIPCore
 import VoIPFocus
+import VoIPLiveActivity
 import VoIPNotifications
 
 /// The push token, the calls with their actions, the audio routes, and what happened to calls.
@@ -24,6 +25,12 @@ struct ContentView: View {
           ForEach(calls.client.calls) { call in
             CallRow(call: call, calls: calls)
           }
+        }
+        Section("Live Activities") {
+          LabeledContent(
+            "Call previews",
+            value: calls.previews.authorization.areActivitiesEnabled ? "Allowed" : "Off")
+          Text(calls.pushToStartToken).font(.footnote.monospaced()).textSelection(.enabled)
         }
         Section("Call notifications") {
           Button("Allow notifications") {
