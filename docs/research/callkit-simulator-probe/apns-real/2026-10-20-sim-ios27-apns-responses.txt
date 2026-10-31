@@ -1,8 +1,0 @@
-e1-foreground-genuine HTTP/2 200  apns-id: BFC5B7ED-A33E-48C4-2F42-4A3AC43FA6F8 
-e2-background-genuine HTTP/2 200  apns-id: 1A577F7C-35ED-F4A0-639E-C7E368E627EF 
-e2b-background-genuine HTTP/2 200  apns-id: 849C9F46-E83B-5E98-3438-AC976FDDD803 
-e3-background-noreport HTTP/2 200  apns-id: 5F521E82-4DB6-97CD-9ED6-B836E1CA4CAC 
-e4-runtime-noshadow HTTP/2 200  apns-id: 378C0621-C48D-C189-3AA4-769E2D210419 
-e5-runtime-shadow HTTP/2 200  apns-id: 30C6BD4E-B61E-DBF8-E305-6E51F8CF4600 
-e6a-cold-genuine HTTP/2 200  apns-id: 71139143-4AF4-E184-985D-FA210E6A3BA1 
-e6b-cold-runtime-shadow HTTP/2 200  apns-id: 513BA672-3C3F-0BA1-0E83-9BBEC75C9084 

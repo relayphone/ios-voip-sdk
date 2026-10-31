@@ -1,4 +1,0 @@
-# 2026-10-21 real sandbox APNs to the iOS 27.0 simulator (Phone VoIP topic); probe with no-report set
-e7-active-noreport: HTTP 200 apns-id: 8C7C246E-10F2-5B94-CA03-32B78B76A09D
-e8b-background-noreport: HTTP 200 apns-id: E3AF3977-AE06-E9B8-557C-F8EA0B6FDE3B
-e9-background-noreport: HTTP 200 apns-id: 477DD324-8C83-EEA7-1DD0-8A94DA5DEF2B

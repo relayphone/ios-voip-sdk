@@ -63,7 +63,7 @@ class WorkflowWiringTests(unittest.TestCase):
     def test_every_pr_native_job_is_gated_and_ready_event_is_enabled(self):
         import re
         root = Path(__file__).resolve().parents[3] / '.github/workflows'
-        for name in ('sdk-m0.yml', 'runtime-m4.yml', 'spike-expo-modules-2.yml'):
+        for name in ('sdk-m0.yml', 'runtime-m4.yml'):
             text = (root / name).read_text()
             self.assertIn('ready_for_review', text)
             self.assertIn('converted_to_draft', text)
@@ -73,7 +73,7 @@ class WorkflowWiringTests(unittest.TestCase):
             self.assertTrue(native)
             for block in native:
                 self.assertIn("github.event_name != 'pull_request' || !github.event.pull_request.draft", block)
-        for name in ('sdk-m0.yml', 'runtime-m4.yml', 'simulator-discovery.yml'):
+        for name in ('sdk-m0.yml', 'runtime-m4.yml'):
             text = (root / name).read_text()
             self.assertIn('needs.nightly-coverage.outputs.skip', text)
             self.assertIn('python3 scripts/ci/nightly_coverage.py ' + name, text)

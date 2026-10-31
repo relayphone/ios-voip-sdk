@@ -204,10 +204,9 @@ LiveCommunicationKit is the default, as Apple's successor to CallKit's provider 
 
 `VoIPCallKit` is for apps that depend on CallKit's measured behaviour. For example, on an
 iPhone 13 with iOS 27.0, a Focus that left the app out but allowed the caller in its People let
-a CallKit call ring, where LiveCommunicationKit filtered the call. That was a single sample; see
-[Focus breakthrough](docs/research/focus/app-breakthrough.md). With CallKit, the system
-presents only the first party's handle, and Recents and Siri open the app to start a call
-rather than starting it through the adapter.
+a CallKit call ring, where LiveCommunicationKit filtered the call. That was a single sample.
+With CallKit, the system presents only the first party's handle, and Recents and Siri open the
+app to start a call rather than starting it through the adapter.
 
 Apps distributed in China mainland can't present calls with CallKit, so they need
 `VoIPLiveCommunicationKit`. [ADR 0002](docs/adr/0002-one-calling-framework-per-build.md), still
