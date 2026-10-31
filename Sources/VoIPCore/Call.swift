@@ -34,7 +34,17 @@ public struct Call: Identifiable, Hashable, Sendable {
   public var connectedAt: Date?
 
   /// Values the app attached to the call, which the SDK passes through unchanged.
-  public var metadata: [String: String]
+  ///
+  /// For an incoming call, it is the ``IncomingCall/metadata`` from its VoIP push or from
+  /// ``VoIPClient/report(_:)``; for an outgoing call, the ``OutgoingCall/metadata`` it started
+  /// with. Read a value by matching its case:
+  ///
+  /// ```swift
+  /// if case .string(let room)? = call.metadata["room"] {
+  ///   try await server.join(room: room)
+  /// }
+  /// ```
+  public var metadata: [String: JSONValue]
 
   /// Creates a call.
   ///
@@ -59,7 +69,7 @@ public struct Call: Identifiable, Hashable, Sendable {
     hasVideo: Bool = false,
     answeredAt: Date? = nil,
     connectedAt: Date? = nil,
-    metadata: [String: String] = [:]
+    metadata: [String: JSONValue] = [:]
   ) {
     self.id = id
     self.isIncoming = isIncoming
@@ -86,7 +96,7 @@ public struct IncomingCall: Hashable, Sendable {
   public var hasVideo: Bool
 
   /// Values the app attaches to the call, which the SDK passes through unchanged.
-  public var metadata: [String: String]
+  public var metadata: [String: JSONValue]
 
   /// How this call appears on this device, replacing the configuration's
   /// ``VoIPConfiguration/presentationPolicy`` when set.
@@ -105,7 +115,7 @@ public struct IncomingCall: Hashable, Sendable {
     id: CallID,
     parties: [Party],
     hasVideo: Bool = false,
-    metadata: [String: String] = [:],
+    metadata: [String: JSONValue] = [:],
     presentationPolicy: PresentationPolicy? = nil
   ) {
     self.id = id
@@ -128,7 +138,7 @@ public struct OutgoingCall: Hashable, Sendable {
   public var hasVideo: Bool
 
   /// Values the app attaches to the call, which the SDK passes through unchanged.
-  public var metadata: [String: String]
+  public var metadata: [String: JSONValue]
 
   /// Creates an outgoing call.
   ///
@@ -141,7 +151,7 @@ public struct OutgoingCall: Hashable, Sendable {
     id: CallID,
     parties: [Party],
     hasVideo: Bool = false,
-    metadata: [String: String] = [:]
+    metadata: [String: JSONValue] = [:]
   ) {
     self.id = id
     self.parties = parties
