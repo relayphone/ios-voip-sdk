@@ -24,14 +24,31 @@
 
     /// Starts the app on the simulator runtime.
     ///
-    /// - Parameter launch: What the system does before the app starts the client, such as
-    ///   delivering the VoIP push that launched it.
-    init(launch: (SimulatedSystem) async throws -> Void = { _ in }) async throws {
+    /// - Parameters:
+    ///   - audio: The app's audio session. Without one, the app configures it itself.
+    ///   - configuration: How the SDK presents and controls calls.
+    ///   - listening: Whether the app listens for call events from the start. An app whose code
+    ///     is still loading starts listening later, with ``listen()``.
+    ///   - launch: What the system does before the app starts the client, such as
+    ///     delivering the VoIP push that launched it.
+    init(
+      audio: (any AudioSession)? = nil,
+      configuration: VoIPConfiguration = VoIPConfiguration(),
+      listening: Bool = true,
+      launch: (SimulatedSystem) async throws -> Void = { _ in }
+    ) async throws {
       try #require(VoIPSimulator.activate(), "The simulator runtime didn't activate")
       system = try SimulatedSystem()
       try await launch(system)
       client = try VoIPClient.start(
-        framework: LiveCommunicationKitAdapter(), media: media, push: PushKitSource())
+        framework: LiveCommunicationKitAdapter(), media: media, push: PushKitSource(),
+        audio: audio, configuration: configuration)
+      if listening { listen() }
+    }
+
+    /// Starts listening for call events. Events from before are lost, as they are for an app.
+    func listen() {
+      guard listener == nil else { return }
       let stream = client.events()
       listener = Task { [weak self] in
         for await event in stream { self?.events.append(event) }
@@ -53,6 +70,23 @@
       let seen = events[cursor..<cursor + expected.count].map(Seen.init)
       cursor += expected.count
       #expect(seen == expected, sourceLocation: sourceLocation)
+    }
+
+    /// Waits for the next events and checks them against sequences that happen independently,
+    /// such as the calls' events and the system's audio activation, which the simulated system
+    /// interleaves in real time. Each sequence keeps its own order.
+    func expect(
+      interleaving sequences: [Seen]..., sourceLocation: SourceLocation = #_sourceLocation
+    ) async throws {
+      let count = sequences.map(\.count).reduce(0, +)
+      try await until("\(sequences) to happen") {
+        events.count - cursor >= count
+      }
+      let seen = events[cursor..<cursor + count].map(Seen.init)
+      cursor += count
+      for sequence in sequences {
+        #expect(seen.filter { sequence.contains($0) } == sequence, sourceLocation: sourceLocation)
+      }
     }
 
     /// Checks that nothing else happened to calls.
