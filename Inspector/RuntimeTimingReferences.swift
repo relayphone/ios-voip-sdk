@@ -234,6 +234,6 @@ enum RuntimeTimingReferences {
       startSequence: interval?.start.sequence, endSequence: interval?.end.sequence,
       deviceValue: deviceValue,
       deviceProvenance: "LCK · iPhone 13 · iOS 27.0 · Oct 23, 2026 · \(context)",
-      sourcePath: "docs/research/callkit-simulator-probe/livecommunicationkit/push/README.md")
+      sourcePath: "Tests/Fixtures/LiveCommunicationKit/push/README.md")
   }
 }

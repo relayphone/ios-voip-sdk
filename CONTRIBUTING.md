@@ -12,7 +12,7 @@ Run the host tests from the repository root:
 
 ```sh
 swift test
-swift format lint --strict --recursive --parallel Package.swift Sources Tests Examples Inspector
+swift format lint --strict --recursive --parallel Package.swift Sources Tests Examples Inspector tools/smoke
 ```
 
 `swift format --in-place --recursive --parallel` with the same paths fixes most formatting

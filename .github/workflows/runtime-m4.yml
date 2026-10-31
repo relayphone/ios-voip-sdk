@@ -39,17 +39,18 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "24.22.1"
+          package-manager-cache: false
       - run: sudo xcode-select -s /Applications/Xcode_27.1.app
-      - name: Host tests of the runtime, its protocol and the Inspector, and the CLI controls
-        run: |
-          set -euo pipefail
-          swift test --scratch-path "$RUNNER_TEMP/runtime-host-tests" --filter 'RuntimeEngineTests|CKSimProtocolTests|InspectorTests'
-          python3 discovery/check_cli_controls.py
+      - name: Host tests of the runtime, its protocol, cksim and the Inspector
+        run: swift test --scratch-path "$RUNNER_TEMP/runtime-host-tests" --filter 'RuntimeEngineTests|CKSimProtocolTests|CKSimToolTests|InspectorTests'
       - name: Build the standalone runtime and the Inspector app
         run: |
           set -euo pipefail
-          CKSIM_BUILD_ARCHS="$(uname -m)" bash scripts/build-runtime.sh "$RUNNER_TEMP/runtime"
-          bash scripts/build-inspector.sh "$RUNNER_TEMP/inspector"
+          node tools/build-runtime.ts "$RUNNER_TEMP/runtime" --archs "$(uname -m)"
+          node tools/build-inspector.ts "$RUNNER_TEMP/inspector"
       - name: Create a simulator for the runtime tests
         id: simulator
         run: |
@@ -67,6 +68,10 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/runtime-tests" -resultBundlePath "$RUNNER_TEMP/runtime-tests-logs/runtime.xcresult" \
             -only-testing:RuntimeTests CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \
             2>&1 | tee "$RUNNER_TEMP/runtime-tests-logs/xcodebuild.log"
+      - name: Answer and end a call with the standalone runtime and cksim
+        env:
+          SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
+        run: node tools/runtime-smoke.ts "$RUNNER_TEMP/runtime" --simulator "$SIMULATOR_ID"
       - name: Delete the runtime tests' simulator
         if: always() && steps.simulator.outputs.udid != ''
         env:

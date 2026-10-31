@@ -18,7 +18,7 @@ static NSMapTable<CXProvider *, dispatch_queue_t> *providerQueues;
 static NSMapTable<CXCallController *, dispatch_queue_t> *controllerQueues;
 bool CKSimRuntimeIsActive(void) { return installed; }
 #ifndef CKSIM_RUNTIME_VERSION
-#error Build with scripts/build-runtime.sh to supply the runtime version.
+#error Build with tools/build-runtime.ts to supply the runtime version.
 #endif
 const char *CKSimRuntimeVersion(void) { return CKSIM_RUNTIME_VERSION; }
 static id<CKRuntimeEngineProtocol> Engine(void) { return (__bridge_transfer id)CKSimGetEngine(); }
@@ -287,11 +287,6 @@ static void bindHook(Class cls, Hook hook, BOOL captureOriginal) {
   if (refusalReason) return;
   #endif
   Method method = class_getInstanceMethod(cls, hook.selector);
-  #if CKSIM_ABI_TESTING
-  // Fault the lookup seam, so the production missing-method guard and fallback
-  // encoding run. This branch is absent from distributed runtime builds.
-  if ([NSProcessInfo.processInfo.environment[@"CKSIM_TEST_MISSING_SELECTOR"] isEqual:NSStringFromSelector(hook.selector)]) method = NULL;
-  #endif
   if (!method) refuse([NSString stringWithFormat:@"%@ missing selector %@", NSStringFromClass(cls), NSStringFromSelector(hook.selector)]);
   #if CKSIM_SDK_SOURCE
   if (!method) return;
@@ -435,12 +430,6 @@ static void installHooks(void) {
         [[CXSetHeldCallAction alloc] initWithCallUUID:uuid onHold:NO], [[CXSetMutedCallAction alloc] initWithCallUUID:uuid muted:NO],
         [[CXSetGroupCallAction alloc] initWithCallUUID:uuid callUUIDToGroupWith:nil],
         [[CXPlayDTMFCallAction alloc] initWithCallUUID:uuid digits:@"1" type:CXPlayDTMFCallActionTypeSingleTone]];
-      #if CKSIM_ABI_TESTING
-      for (NSString *name in [NSProcessInfo.processInfo.environment[@"CKSIM_TEST_ACTION_CLASSES"] componentsSeparatedByString:@","]) {
-        Class cls = NSClassFromString(name);
-        if (cls && [cls isSubclassOfClass:CXAction.class]) actions = [actions arrayByAddingObject:[cls new]];
-      }
-      #endif
     } @catch (NSException *exception) {
       refuse([NSString stringWithFormat:@"CallKit concrete-class preflight: %@: %@", exception.name, exception.reason]);
     }
@@ -495,11 +484,6 @@ static void installHooks(void) {
     if (refusalReason) return;
     NSString *pushFailure = CKSimInstallPushHooks();
     if (pushFailure) { refuse(pushFailure); return; }
-    #if CKSIM_ABI_TESTING
-    if ([NSProcessInfo.processInfo.environment[@"CKSIM_TEST_FAILURE"] isEqual:@"push-after-install"]) {
-      refuse(@"ABI test failure after PushKit hook installation"); return;
-    }
-    #endif
     installed = true;
     CKSimEmit(@"runtime.installed",@{@"version":@(CKSimRuntimeVersion())});
   }

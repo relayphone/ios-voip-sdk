@@ -63,10 +63,10 @@ struct CaptureRow: Decodable {
   var succeeded: Bool { event == "lckmulti.settled" && failed != true }
 }
 
-/// The rows of `docs/research/callkit-simulator-probe/livecommunicationkit/multicall/<name>.jsonl`.
+/// The rows of `Tests/Fixtures/LiveCommunicationKit/multicall/<name>.jsonl`.
 func multiCallCapture(_ name: String) throws -> [CaptureRow] {
   let file = repository.appending(
-    path: "docs/research/callkit-simulator-probe/livecommunicationkit/multicall/\(name).jsonl")
+    path: "Tests/Fixtures/LiveCommunicationKit/multicall/\(name).jsonl")
   return try String(contentsOf: file, encoding: .utf8).split(separator: "\n").map {
     try JSONDecoder().decode(CaptureRow.self, from: Data($0.utf8))
   }

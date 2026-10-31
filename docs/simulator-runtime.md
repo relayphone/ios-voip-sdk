@@ -24,19 +24,20 @@ Standalone release provenance and verification are described in [runtime release
 
 ## Build and run
 
-Requirements: macOS, Xcode with an iOS simulator runtime, and Python 3.9 or newer.
-Install and boot your app in a simulator first.
+Requirements: macOS with Xcode 27.1 and an iOS simulator runtime, and Node.js 24 to
+build the package. Install and boot your app in a simulator first.
 
 ```sh
-bash scripts/build-runtime.sh /tmp/callkit-runtime
+node tools/build-runtime.ts /tmp/callkit-runtime
 /tmp/callkit-runtime/cksim --simulator SIMULATOR_UUID --bundle com.example.app launch
 /tmp/callkit-runtime/cksim --simulator SIMULATOR_UUID --bundle com.example.app status
 ```
 
-Builds contain arm64 and x86_64 simulator slices by default, a signed loader and
-notifier, the CLI, profile data and a checksummed `build-info.json`. An output
-directory is published only after the package is complete. For a local build on
-one architecture, set `CKSIM_BUILD_ARCHS=arm64` or `x86_64`.
+Builds contain arm64 and x86_64 simulator slices by default, a signed loader, the
+`cksim` command-line tool for the Mac, profile data and a checksummed
+`build-info.json`. An output directory is published only after the package is
+complete. For a local build on one architecture, pass `--archs arm64` or
+`--archs x86_64`. `swift run cksim` runs the tool from a checkout.
 
 ## Apps without the SDK: load in the test host by default
 
@@ -96,10 +97,10 @@ Installation records its original and applied values in
 before it starts writing. Uninstall restores the environment when the recorded
 values still match. If another injector appends a library, an installation stops
 partway through, or the package was already deleted, run a current copy of the
-CLI (the repository's `Tools/cksim` also works):
+CLI (`swift run cksim` in a checkout also works):
 
 ```sh
-python3 /absolute/ios-voip-sdk/Tools/cksim --simulator SIMULATOR_UUID repair
+cksim --simulator SIMULATOR_UUID repair
 ```
 
 Repair needs neither `--bundle` nor the old package. It removes only the saved
@@ -172,9 +173,9 @@ Errors use `com.apple.CallKit.error.incomingcall`. Each report snapshots the
 selected filter and callback delay when it enters; later settings affect future
 reports. Filtered reports create no call, ring timer or audio activation. Codes
 5–7 currently reuse the 2.07 s delay as explicitly unverified simulator policy.
-The [device capture](research/callkit-simulator-probe/livecommunicationkit/push/README.md)
+The [device capture](../Tests/Fixtures/LiveCommunicationKit/push/README.md)
 is the reference for code 3; filtering never grants a repeated-caller exception.
-The [blocked-number LCK measurements](research/callkit-simulator-probe/livecommunicationkit/multicall/README.md)
+The [blocked-number LCK measurements](../Tests/Fixtures/LiveCommunicationKit/multicall/README.md)
 ([#85](https://github.com/relayphone/ios-voip-sdk/pull/85)) succeeded and rang; a repeat
 66 seconds later also succeeded, with the unanswered call ending at about 60 s.
 Code 4 is not produced by iOS 27.0 for LCK in these measurements. It is available
@@ -198,7 +199,7 @@ The iPhone 13 / iOS 27.0 LCK-only captures in
 [#85](https://github.com/relayphone/ios-voip-sdk/pull/85) cover system Hold/End/End Held
 & Accept, delayed or failed constituents, configuration-dependent choices, successful
 application unpause, merge/unmerge pass-through and lock-screen behavior. The
-[multi-call report](research/callkit-simulator-probe/livecommunicationkit/multicall/README.md)
+[multi-call report](../Tests/Fixtures/LiveCommunicationKit/multicall/README.md)
 contains the observations; the cases below remain unverified.
 
 LCK exposes neither concrete transaction IDs nor group membership. Simulator IDs
@@ -230,27 +231,20 @@ public LCK observation, genuine CallKit observation or simulator policy.
 ## Verification
 
 ```sh
-python3 discovery/check_harness.py
-bash discovery/run.sh
+swift test
+xcodebuild test -scheme VoIPSDK-Package -only-testing:RuntimeTests \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=27.0'
+node tools/runtime-smoke.ts /tmp/callkit-runtime
 ```
 
-The runtime release workflow runs this discovery acceptance against the
-CI-built distribution before packaging it.
-**Measured:** [hosted run 39680771297](https://github.com/relayphone/ios-voip-sdk/actions/runs/39680771297)
-used the iOS **26.5 (23F77)** simulator against the `ios-27.0` behavior profile.
-That profile names the iPhone measurements being reproduced; it is separate
-from the simulator OS and selected compiler. This CI run does not qualify
-iOS 27.0 or LiveCommunicationKit.
-
-Fresh shipping runs record the selected runtime ID, exact OS version/build and
-selected Xcode version/build in `manifest.json`, bind them to saved runtime
-inventory/compiler output, and report all three identities in the summary.
-Missing or inconsistent metadata fails qualification. Historical trace replays
-are labelled separately. The runner owns and
-removes its simulator, compares genuine behavior with the Swift runtime, replays
-the eight measured provider scenarios, and exercises the shipped CLI. Trace,
-process, run and build identities are checked together. The prototype and raw
-device measurements remain under `docs/research` as reference evidence.
+`RuntimeEngineTests` checks the runtime's policies against the profile and replays
+the iPhone 13 captures in `Tests/Fixtures/LiveCommunicationKit`; `CKSimToolTests`
+covers `cksim` against a fake simulator and mailbox. `RuntimeTests` activates the
+runtime in the test process and drives CallKit and genuine LiveCommunicationKit
+calls through its mailbox. The smoke test launches an app that doesn't link the
+runtime with a built package's runtime injected, then answers and ends a pushed
+call with that package's `cksim`. The release workflow runs all three against the
+package it publishes.
 
 CallX and GetStream's mock are not dependencies and no code was copied from them.
 
@@ -291,12 +285,12 @@ policies retain the measured/proposed qualifications in the profile source.
 ### SwiftUI call inspector
 
 Build the separate simulator app with
-`bash scripts/build-inspector.sh discovery/out/inspector`. With the target app
+`node tools/build-inspector.ts /tmp/inspector`. With the target app
 running in its simulator, start:
 
 ```sh
-Tools/cksim --simulator <target-UUID> --bundle <app.bundle.id> \
-  --runtime-dir <runtime-package> inspect --app discovery/out/inspector/CKSimInspector.app
+cksim --simulator <target-UUID> --bundle <app.bundle.id> \
+  --runtime-dir <runtime-package> inspect --app /tmp/inspector/CKSimInspector.app
 ```
 
 The inspector creates its own disposable display simulator with the target's

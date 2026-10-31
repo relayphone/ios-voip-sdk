@@ -27,8 +27,25 @@ let package = Package(
     .library(name: "VoIPSimulator", targets: ["VoIPSimulator"]),
     .library(name: "VoIPTesting", targets: ["VoIPTesting"]),
   ],
+  dependencies: [
+    // For the `cksim` tool only.
+    .package(url: "https://github.com/apple/swift-argument-parser", from: "1.7.0")
+  ],
   targets: [
     .target(name: "CKSimProtocol", swiftSettings: strictSwift),
+    // `cksim`, which controls the standalone runtime from the host. The library holds the tool so
+    // that its tests can import it.
+    .target(
+      name: "CKSimTool",
+      dependencies: [
+        "CKSimProtocol",
+        .product(
+          name: "ArgumentParser", package: "swift-argument-parser",
+          condition: .when(platforms: [.macOS])),
+      ],
+      swiftSettings: strictSwift
+    ),
+    .executableTarget(name: "cksim", dependencies: ["CKSimTool"], swiftSettings: strictSwift),
     .target(
       name: "CKSimRuntimeC",
       path: "Sources/Interposition",
@@ -92,6 +109,15 @@ let package = Package(
       name: "CKSimProtocolTests", dependencies: ["CKSimProtocol"], swiftSettings: strictSwift),
     .testTarget(
       name: "InspectorTests", dependencies: ["CKSimInspector"], swiftSettings: strictSwift),
+    .testTarget(
+      name: "CKSimToolTests",
+      dependencies: [
+        "CKSimTool", "CKSimProtocol",
+        .product(
+          name: "ArgumentParser", package: "swift-argument-parser",
+          condition: .when(platforms: [.macOS])),
+      ],
+      swiftSettings: strictSwift),
     .testTarget(
       name: "RuntimeTests",
       dependencies: ["CKSimRuntime", "CKSimRuntimeC", "CKSimProtocol", "CKSimInspector"],

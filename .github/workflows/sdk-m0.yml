@@ -53,17 +53,12 @@ jobs:
         with:
           node-version: "24.22.1"
           package-manager-cache: false
-      - name: Portable harness and runtime CLI controls
+      - name: Simulator helper, CI policy and tool tests
         run: |
           set -euo pipefail
           python3 -m unittest discover -s scripts/sim -p 'test_*.py'
           python3 -m unittest discover -s scripts/ci/tests -p 'test_*.py'
-          node --test Tools/nightly-coverage.test.ts
-          node --test Tools/run-bounded.test.ts
-          python3 discovery/check_inherited_launcher_group.py
-          python3 discovery/check_cli_controls.py
-          python3 discovery/check_cli_push_launch.py
-          python3 discovery/check_console_stop.py
+          (cd tools && node --test)
 
   apple-host-controls:
     needs: [changes, nightly-coverage]
@@ -76,7 +71,7 @@ jobs:
           persist-credentials: false
       - run: sudo xcode-select -s /Applications/Xcode_27.1.app
       - name: Check the Swift formatting
-        run: swift format lint --strict --recursive --parallel Package.swift Sources Tests Examples Inspector
+        run: swift format lint --strict --recursive --parallel Package.swift Sources Tests Examples Inspector tools/smoke
       - name: Swift tests
         run: swift test --scratch-path "$RUNNER_TEMP/swift-tests"
       - name: Remove this job's build outputs

@@ -1,7 +1,0 @@
-ProductName:		macOS
-ProductVersion:		15.7.9
-BuildVersion:		24G830
-Xcode 26.3
-Build version 17C529
-arm64
-runtime=com.apple.CoreSimulator.SimRuntime.iOS-26-2 devicetype=com.apple.CoreSimulator.SimDeviceType.iPhone-11-Pro
