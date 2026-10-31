@@ -125,10 +125,10 @@ private func allowedDeadlines(_ phase: Phase) -> Set<Deadline> {
   case .ringing: [.ring]
   case .requesting, .placing: [.placement]
   case .preparing: [.mediaPreparation]
-  case .dialing: [.ring, .audioActivation]
-  case .connecting: [.connect, .audioActivation]
-  case .connected: [.audioActivation]
-  case .reconnecting: [.reconnect, .audioActivation]
+  case .dialing: [.ring, .audioActivation, .audioRecovery]
+  case .connecting: [.connect, .audioActivation, .audioRecovery]
+  case .connected: [.audioActivation, .audioRecovery]
+  case .reconnecting: [.reconnect, .audioActivation, .audioRecovery]
   case .reporting, .previewing, .ended: []
   }
 }
@@ -170,7 +170,7 @@ private struct EventSource {
   var nextAction: UInt16 = 100
 
   mutating func event(for state: State) -> Event {
-    switch Int.random(in: 0..<16, using: &random) {
+    switch Int.random(in: 0..<19, using: &random) {
     case 0, 1: return .performed(freshAction(), pick(allActions))
     case 2, 3: return .requested(pick(allActions))
     case 4: return .requestFailed(pick(allActions))
@@ -193,6 +193,9 @@ private struct EventSource {
     case 12: return .audioActivated
     case 13: return .frameworkReset
     case 14: return .actionTimedOut(state.phase.held?.id ?? freshAction())
+    case 15: return .audioConfigurationFailed
+    case 16: return .audioInterruptionEnded
+    case 17: return .mediaServicesReset
     default: return .server(pick([.connecting, .connected]))
     }
   }

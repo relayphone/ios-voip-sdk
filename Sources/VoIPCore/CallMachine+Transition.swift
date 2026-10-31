@@ -109,7 +109,11 @@ private struct Step {
     case .performed(let id, let action): perform(id, action)
     case .actionTimedOut(let id):
       if state.phase.held?.id == id { abandon(.actionTimedOut) }
-    case .audioActivated: disarm(.audioActivation)
+    case .audioActivated:
+      disarm(.audioActivation)
+      disarm(.audioRecovery)
+    case .audioConfigurationFailed: audioConfigurationFailed()
+    case .audioInterruptionEnded, .mediaServicesReset: awaitAudioRecovery()
     case .frameworkReset: frameworkReset()
     case .requested(let action): request(action)
     case .requestFailed(let action): requestFailed(action)
@@ -176,6 +180,8 @@ private struct Step {
     where state.phase.isActive && capabilities.contains(.holding):
       fulfill(id)
       state.call.isOnHold = onHold
+      // A call on hold doesn't wait for audio.
+      if onHold { disarm(.audioRecovery) }
       emit(.performed(action, state.call))
     case (_, .mute(_, let muted)) where state.phase.isActive:
       fulfill(id)
@@ -342,9 +348,29 @@ private struct Step {
     case .placement: abandon(.notPlaced)
     case .mediaPreparation: abandon(.media)
     case .audioActivation: end(.failed(.audioActivationTimedOut), reportingEnd: true)
+    case .audioRecovery: end(.failed(.audioRecoveryTimedOut), reportingEnd: true)
     case .connect: end(.failed(.connectTimedOut), reportingEnd: true)
     case .reconnect: end(.failed(.reconnectTimedOut), reportingEnd: true)
     }
+  }
+
+  /// The audio session refused the call's configuration: before the call took part, or after the
+  /// media services reset while it took part.
+  private mutating func audioConfigurationFailed() {
+    switch state.phase {
+    case .preparing: abandon(.audioSession)
+    case let phase where phase.isTakingPart: end(.failed(.audioSession), reportingEnd: true)
+    default: break
+    }
+  }
+
+  /// The system can activate audio again, after an interruption ended or the media services
+  /// reset. A call that takes part and isn't on hold waits for it until the recovery deadline,
+  /// unless it still waits for its first activation.
+  private mutating func awaitAudioRecovery() {
+    guard state.phase.isTakingPart, !state.call.isOnHold, state.armed[.audioActivation] == nil
+    else { return }
+    arm(.audioRecovery)
   }
 
   private mutating func frameworkReset() {

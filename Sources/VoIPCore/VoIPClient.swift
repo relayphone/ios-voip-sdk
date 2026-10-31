@@ -46,6 +46,9 @@ public final class VoIPClient {
   ///   - framework: The calling framework adapter that presents calls.
   ///   - media: The app's real-time audio and video transport.
   ///   - push: The source of the app's VoIP pushes, usually the PushKit adapter.
+  ///   - audio: The app's audio session, usually `AudioSessionAdapter`, which the SDK configures
+  ///     for each call and watches for interruptions. Without one, the app configures
+  ///     `AVAudioSession` for calls itself.
   ///   - configuration: How the SDK presents and controls calls.
   ///   - clock: The clock that times deadlines and retention. Tests pass a `TestClock`.
   /// - Returns: The running client.
@@ -54,6 +57,7 @@ public final class VoIPClient {
     framework: any CallingFramework,
     media: any CallMedia,
     push: (any PushSource)? = nil,
+    audio: (any AudioSession)? = nil,
     configuration: VoIPConfiguration = VoIPConfiguration(),
     clock: any Clock<Duration> = ContinuousClock()
   ) throws(StartupError) -> VoIPClient {
@@ -65,8 +69,9 @@ public final class VoIPClient {
     let subscribers = Subscribers()
     let (snapshots, continuation) = AsyncStream.makeStream(of: Snapshot.self)
     let engine = CallEngine(
-      framework: framework, media: media, pushSource: push, configuration: configuration,
-      clock: clock, subscribers: subscribers, publish: { continuation.yield($0) })
+      framework: framework, media: media, audio: audio, pushSource: push,
+      configuration: configuration, clock: clock, subscribers: subscribers,
+      publish: { continuation.yield($0) })
     Task { @VoIPActor in engine.attach() }
     return VoIPClient(engine: engine, subscribers: subscribers, snapshots: snapshots)
   }

@@ -8,6 +8,7 @@ without a device.
 | Library | What it holds |
 | --- | --- |
 | `VoIPCore` | `VoIPClient`, the call values and the call state machine. It imports no calling framework. |
+| `VoIPAudio` | `AudioSessionAdapter`, which configures the audio session for calls, reports its interruptions and lists its audio routes. |
 | `VoIPLiveCommunicationKit` | `LiveCommunicationKitAdapter`, which presents calls with LiveCommunicationKit. The default. |
 | `VoIPCallKit` | `CallKitAdapter`, which presents calls with CallKit. |
 | `VoIPPushKit` | `PushKitSource`, which receives VoIP pushes and the VoIP push token. |
@@ -43,7 +44,8 @@ Add the package to your manifest, or in Xcode with File > Add Package Dependenci
 ```
 
 Then add the libraries your app uses to its target: `VoIPCore`, exactly one of
-`VoIPLiveCommunicationKit` and `VoIPCallKit`, and usually `VoIPPushKit` and `VoIPSimulator`.
+`VoIPLiveCommunicationKit` and `VoIPCallKit`, and usually `VoIPPushKit`, `VoIPAudio` and
+`VoIPSimulator`.
 
 ```swift
 .target(
@@ -52,6 +54,7 @@ Then add the libraries your app uses to its target: `VoIPCore`, exactly one of
     .product(name: "VoIPCore", package: "ios-voip-sdk"),
     .product(name: "VoIPLiveCommunicationKit", package: "ios-voip-sdk"),
     .product(name: "VoIPPushKit", package: "ios-voip-sdk"),
+    .product(name: "VoIPAudio", package: "ios-voip-sdk"),
     .product(name: "VoIPSimulator", package: "ios-voip-sdk"),
   ])
 ```
@@ -59,16 +62,17 @@ Then add the libraries your app uses to its target: `VoIPCore`, exactly one of
 ### CocoaPods
 
 `pod 'IosVoipSDK'` installs `Core`, `LiveCommunicationKit` and `PushKit`. Name the subspecs to
-choose CallKit or to add the simulator:
+choose CallKit or to add audio and the simulator:
 
 ```ruby
 pod 'IosVoipSDK', :git => 'https://github.com/relayphone/ios-voip-sdk.git', :commit => '<revision>',
-                  :subspecs => ['LiveCommunicationKit', 'PushKit', 'Simulator']
+                  :subspecs => ['LiveCommunicationKit', 'PushKit', 'Audio', 'Simulator']
 ```
 
 | Subspec                | Swift package library      |
 | ---------------------- | -------------------------- |
 | `Core`                 | `VoIPCore`                 |
+| `Audio`                | `VoIPAudio`                |
 | `LiveCommunicationKit` | `VoIPLiveCommunicationKit` |
 | `CallKit`              | `VoIPCallKit`              |
 | `PushKit`              | `VoIPPushKit`              |
@@ -89,6 +93,7 @@ the Push Notifications capability. Start one client when the app launches, befor
 can arrive:
 
 ```swift
+import VoIPAudio
 import VoIPCore
 import VoIPLiveCommunicationKit
 import VoIPPushKit
@@ -96,13 +101,14 @@ import VoIPSimulator
 
 VoIPSimulator.activate()  // Debug simulator builds only; elsewhere it does nothing.
 let push = PushKitSource()
+let audio = AudioSessionAdapter()
 let client = try VoIPClient.start(
-  framework: LiveCommunicationKitAdapter(), media: AppMedia(), push: push)
+  framework: LiveCommunicationKitAdapter(), media: AppMedia(), push: push, audio: audio)
 ```
 
 `AppMedia` is your real-time transport, such as WebRTC, behind `CallMedia`. The SDK prepares a
 call's media before it completes an answer or a start, then starts and stops audio as the system
-activates and deactivates the audio session:
+activates, deactivates or interrupts the audio session:
 
 ```swift
 @VoIPActor
@@ -156,12 +162,39 @@ for await event in client.events() {
 }
 ```
 
+## Audio
+
+`AudioSessionAdapter` sets the audio session to the play-and-record category in voice chat mode
+before the SDK completes an answer, start or join, with Bluetooth hands-free and A2DP devices,
+and the speaker by default for calls with video. Change these with `AudioSessionConfiguration`.
+Only the system activates the session for calls; the adapter never does.
+
+When the system interrupts the audio, for Siri or another app, the SDK stops the media and sends
+`audioInterrupted(_:)`. When the system's media services reset, it sends `mediaServicesReset`
+and configures the session again; recreate the media's audio objects before the next
+`activate()`. Once the interruption ends, or after the reset, a call that takes part and isn't on
+hold ends with `audioRecoveryTimedOut` unless the system activates audio again within
+`Deadlines.audioRecovery`. [ADR 0007](docs/adr/0007-sdk-configures-audio-session.md) records why.
+
+Show the routes in the call screen from `audio.routes`, and route calls with
+`selectRoute(_:)`:
+
+```swift
+ForEach(audio.routes.available) { route in
+  Button(route.name) { Task { try await audio.selectRoute(route.id) } }
+}
+```
+
+A device that only plays audio, such as AirPlay or a Bluetooth A2DP speaker, is listed while it's
+the current route; offer `AVRoutePickerView` to choose one.
+
 ## Example
 
 [`Examples/CallExample`](Examples/CallExample) is a SwiftUI app that puts the quick start
-together: it shows the VoIP push token, reports an incoming call, and answers, mutes and ends it,
-with a `CallMedia` that does nothing. Open `Examples/CallExample/CallExample.xcodeproj` and run
-the `CallExample` scheme on an iOS 27 simulator; it uses the package from this checkout.
+together: it shows the VoIP push token and the audio routes, reports an incoming call, and
+answers, mutes and ends it, with a `CallMedia` that does nothing. Open
+`Examples/CallExample/CallExample.xcodeproj` and run the `CallExample` scheme on an iOS 27
+simulator; it uses the package from this checkout.
 
 ## LiveCommunicationKit or CallKit
 
@@ -183,15 +216,15 @@ a proposal, records why an app links one adapter per build.
 ## Testing
 
 Run `swift test` on macOS 26 or later with Xcode 27.1. The Swift Testing suites cover the call
-values, push decoding, the call state machine, the call engine, the adapters' conversions and the
-test clock without a simulator.
+values, push decoding, the call state machine, the call engine, the adapters' conversions, the
+audio session adapter on a fake session, and the test clock without a simulator.
 
 Tests in your app can add the `VoIPTesting` library product to their test target and import
-`VoIPTesting`. `FakeCallingFramework`, `FakeMedia` and `FakePushSource` stand in for the system
-and the app's media, so a `VoIPClient` started with them and a `TestClock` runs every call path
-on the host. `TestClock` conforms to `Clock<Duration>`; use `waitForSleepers(count:)` to await
-registration, then `advance(by:)` or `run()` to resume pending sleeps without waiting for wall
-time to pass.
+`VoIPTesting`. `FakeCallingFramework`, `FakeMedia`, `FakePushSource` and `FakeAudioSession` stand
+in for the system and the app's media, so a `VoIPClient` started with them and a `TestClock` runs
+every call path on the host. `TestClock` conforms to `Clock<Duration>`; use
+`waitForSleepers(count:)` to await registration, then `advance(by:)` or `run()` to resume pending
+sleeps without waiting for wall time to pass.
 
 The call journeys run the client with the PushKit source on the simulator runtime, which acts as
 the system: a VoIP push, answer, audio, connect and remote end; decline; answered elsewhere and

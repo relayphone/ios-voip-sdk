@@ -84,6 +84,7 @@ enum Start: String, CaseIterable, Sendable, CustomTestStringConvertible {
   case connectingStart
   case connectingJoin
   case connected
+  case recoveringAudio
   case reconnecting
   case ended
 
@@ -116,6 +117,7 @@ enum Start: String, CaseIterable, Sendable, CustomTestStringConvertible {
       case .connectingStart: (.dialing, [.server(.connecting)])
       case .connectingJoin: (.preparingJoin, [.mediaPrepared])
       case .connected: (.connectingAnswer, [.audioActivated, .server(.connected)])
+      case .recoveringAudio: (.connected, [.audioInterruptionEnded])
       case .reconnecting: (.connected, [.server(.reconnecting)])
       default: (.ringing, [.server(.endedRemotely)])
       }
@@ -157,6 +159,8 @@ enum Shape: Hashable, Sendable {
   case performed(Action)
   case audioActivated
   case audioDeactivated
+  case audioInterrupted(AudioInterruptionReason)
+  case mediaServicesReset
   case ended(EndReason?)
 
   init(_ effect: Effect) {
@@ -181,6 +185,8 @@ enum Shape: Hashable, Sendable {
       case .performed(let action, _): self = .performed(action)
       case .audioActivated: self = .audioActivated
       case .audioDeactivated: self = .audioDeactivated
+      case .audioInterrupted(let reason): self = .audioInterrupted(reason)
+      case .mediaServicesReset: self = .mediaServicesReset
       case .ended(let call):
         if case .ended(let reason) = call.status {
           self = .ended(reason)
@@ -202,7 +208,7 @@ extension Effect {
       case .presented(let call), .previewStarted(let call), .startRequested(let call),
         .joinRequested(let call), .performed(_, let call), .ended(let call):
         [call]
-      case .audioActivated, .audioDeactivated: []
+      case .audioActivated, .audioDeactivated, .audioInterrupted, .mediaServicesReset: []
       }
     default: []
     }

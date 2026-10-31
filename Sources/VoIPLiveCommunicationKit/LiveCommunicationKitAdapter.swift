@@ -10,7 +10,7 @@
   /// The calling framework that presents calls with LiveCommunicationKit, Apple's framework for
   /// presenting VoIP calls on the system's call screen, in Recents and on connected devices.
   ///
-  /// Pass it to `VoIPClient.start(framework:media:push:configuration:clock:)`. The adapter
+  /// Pass it to `VoIPClient.start(framework:media:push:audio:configuration:clock:)`. The adapter
   /// creates the app's one `ConversationManager`, names each call to the system by
   /// `deviceUUID(for:)`, and maps between the SDK's calls and LiveCommunicationKit's
   /// conversations:

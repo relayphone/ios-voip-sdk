@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import VoIPAudio
 import VoIPCore
 import VoIPLiveCommunicationKit
 import VoIPPushKit
@@ -27,6 +28,9 @@ final class Calls {
   /// The SDK's client. Its `calls` hold every call that hasn't ended.
   let client: VoIPClient
 
+  /// The audio session for calls. Its `routes` hold the audio routes the user can pick.
+  let audio: AudioSessionAdapter
+
   /// The VoIP push token, as hexadecimal, for the app's servers.
   private(set) var pushToken = "None yet"
 
@@ -38,9 +42,11 @@ final class Calls {
     // nothing.
     VoIPSimulator.activate()
     let push = PushKitSource()
+    let audio = AudioSessionAdapter()
+    self.audio = audio
     do {
       client = try VoIPClient.start(
-        framework: LiveCommunicationKitAdapter(), media: NoMedia(), push: push)
+        framework: LiveCommunicationKitAdapter(), media: NoMedia(), push: push, audio: audio)
     } catch {
       fatalError("A process runs one VoIPClient: \(error)")
     }
@@ -78,6 +84,15 @@ final class Calls {
     }
   }
 
+  /// Routes calls' audio to the route the user picked.
+  func selectRoute(_ id: AudioRoute.ID) async {
+    do {
+      try await audio.selectRoute(id)
+    } catch {
+      history.insert("Route refused: \(error)", at: 0)
+    }
+  }
+
   private func handle(_ event: CallEvent) async {
     switch event {
     case .presented(let call): history.insert("Ringing: \(call.id.rawValue)", at: 0)
@@ -93,6 +108,8 @@ final class Calls {
       }
     case .audioActivated: history.insert("Audio activated", at: 0)
     case .audioDeactivated: history.insert("Audio deactivated", at: 0)
+    case .audioInterrupted(let reason): history.insert("Audio interrupted: \(reason)", at: 0)
+    case .mediaServicesReset: history.insert("Media services reset", at: 0)
     case .ended(let call): history.insert("Ended: \(call.status)", at: 0)
     }
   }

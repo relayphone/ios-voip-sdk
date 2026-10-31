@@ -18,6 +18,21 @@ public enum CallEvent: Hashable, Sendable {
   case audioActivated
   /// The system deactivated the audio session.
   case audioDeactivated
+  /// The system interrupted the active audio session, which deactivated it, and microphone and
+  /// speaker use for calls stopped.
+  ///
+  /// When the interruption ends, a call that takes part and isn't on hold ends with
+  /// ``CallFailure/audioRecoveryTimedOut`` unless the system activates audio again within
+  /// ``Deadlines/audioRecovery``.
+  case audioInterrupted(AudioInterruptionReason)
+  /// The system's media services reset, which ends every audio object in the app. Microphone and
+  /// speaker use for calls stopped; recreate the media's audio objects before the next
+  /// ``audioActivated``.
+  ///
+  /// The SDK configures the audio session again. A call that takes part and isn't on hold ends
+  /// with ``CallFailure/audioRecoveryTimedOut`` unless the system activates audio again within
+  /// ``Deadlines/audioRecovery``.
+  case mediaServicesReset
   /// The call ended on this device. Its status holds the end reason.
   case ended(Call)
 }

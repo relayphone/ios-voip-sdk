@@ -442,6 +442,46 @@ let transitionRows: [TransitionRow] = [
     .connected, .event(.frameworkReset), .ended(.failed(.frameworkReset)),
     [.ended(.failed(.frameworkReset))]),
 
+  // MARK: The audio session
+  .init(
+    .preparingAnswer, .event(.audioConfigurationFailed), .ended(.failed(.audioSession)),
+    [
+      .fail(a1), .disarm(.mediaPreparation), .reportEnded(.failed(.audioSession)),
+      .ended(.failed(.audioSession)),
+    ]),
+  .init(
+    .preparingJoin, .event(.audioConfigurationFailed), .previewing(.policy),
+    [
+      .fail(a1), .disarm(.mediaPreparation), .reportEnded(.failed(.audioSession)),
+      .previewStarted,
+    ]),
+  .init(
+    .connected, .event(.audioConfigurationFailed), .ended(.failed(.audioSession)),
+    [.reportEnded(.failed(.audioSession)), .ended(.failed(.audioSession))]),
+  .init(.ringing, .event(.audioConfigurationFailed), .ringing, []),
+  .init(.connected, .event(.audioInterruptionEnded), .connected, [.arm(.audioRecovery)]),
+  .init(.connected, .event(.mediaServicesReset), .connected, [.arm(.audioRecovery)]),
+  .init(.reconnecting, .event(.mediaServicesReset), .reconnecting, [.arm(.audioRecovery)]),
+  // A call that still waits for its first activation keeps that deadline.
+  .init(.connectingAnswer, .event(.audioInterruptionEnded), .connecting, []),
+  .init(.dialing, .event(.mediaServicesReset), .dialing, []),
+  .init(.ringing, .event(.mediaServicesReset), .ringing, []),
+  .init(
+    .preparingAnswer, .event(.mediaServicesReset), .preparing(held(a1, answer)), []),
+  .init(.recoveringAudio, .event(.audioActivated), .connected, [.disarm(.audioRecovery)]),
+  .init(
+    .recoveringAudio, .expiry(.audioRecovery), .ended(.failed(.audioRecoveryTimedOut)),
+    [.reportEnded(.failed(.audioRecoveryTimedOut)), .ended(.failed(.audioRecoveryTimedOut))]),
+  .init(
+    .recoveringAudio, .event(.performed(a2, holdOn)), .connected,
+    [.fulfill(a2), .disarm(.audioRecovery), .performed(holdOn)]),
+  .init(
+    .recoveringAudio, .event(.audioInterruptionEnded), .connected,
+    [.disarm(.audioRecovery), .arm(.audioRecovery)]),
+  .init(
+    .recoveringAudio, .event(.server(.endedRemotely)), .ended(.endedRemotely),
+    [.disarm(.audioRecovery), .reportEnded(.endedRemotely), .ended(.endedRemotely)]),
+
   // MARK: Reconnecting
   .init(.reconnecting, .event(.server(.connected)), .connected, [.disarm(.reconnect)]),
   .init(

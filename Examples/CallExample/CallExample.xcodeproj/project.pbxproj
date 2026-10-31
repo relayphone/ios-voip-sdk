@@ -11,6 +11,7 @@
 		C0A1000000000000000000B2 /* VoIPLiveCommunicationKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0A1000000000000000000D2 /* VoIPLiveCommunicationKit */; };
 		C0A1000000000000000000B3 /* VoIPPushKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0A1000000000000000000D3 /* VoIPPushKit */; };
 		C0A1000000000000000000B4 /* VoIPSimulator in Frameworks */ = {isa = PBXBuildFile; productRef = C0A1000000000000000000D4 /* VoIPSimulator */; };
+		C0A1000000000000000000B5 /* VoIPAudio in Frameworks */ = {isa = PBXBuildFile; productRef = C0A1000000000000000000D5 /* VoIPAudio */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +37,7 @@
 				C0A1000000000000000000B2 /* VoIPLiveCommunicationKit in Frameworks */,
 				C0A1000000000000000000B3 /* VoIPPushKit in Frameworks */,
 				C0A1000000000000000000B4 /* VoIPSimulator in Frameworks */,
+				C0A1000000000000000000B5 /* VoIPAudio in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -84,6 +86,7 @@
 				C0A1000000000000000000D2 /* VoIPLiveCommunicationKit */,
 				C0A1000000000000000000D3 /* VoIPPushKit */,
 				C0A1000000000000000000D4 /* VoIPSimulator */,
+				C0A1000000000000000000D5 /* VoIPAudio */,
 			);
 			productName = CallExample;
 			productReference = C0A100000000000000000011 /* CallExample.app */;
@@ -297,6 +300,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C0A1000000000000000000C1 /* XCLocalSwiftPackageReference "../.." */;
 			productName = VoIPSimulator;
+		};
+		C0A1000000000000000000D5 /* VoIPAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0A1000000000000000000C1 /* XCLocalSwiftPackageReference "../.." */;
+			productName = VoIPAudio;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

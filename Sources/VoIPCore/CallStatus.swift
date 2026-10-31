@@ -73,6 +73,11 @@ public enum CallFailure: Hashable, Sendable {
   case media
   /// The system didn't activate audio for the call before the audio activation deadline.
   case audioActivationTimedOut
+  /// The audio session couldn't be configured for the call.
+  case audioSession
+  /// The system didn't activate audio again before the audio recovery deadline, after an
+  /// interruption ended or the media services reset.
+  case audioRecoveryTimedOut
   /// The call didn't connect before the connect deadline.
   case connectTimedOut
   /// The call didn't reconnect before the reconnect deadline.
