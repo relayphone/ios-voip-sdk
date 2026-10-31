@@ -5,6 +5,7 @@
   import Testing
   import VoIPAudio
   import VoIPCore
+  import VoIPLiveActivity
   import VoIPTesting
 
   /// Call journeys through the LiveCommunicationKit adapter and the PushKit source, with the
@@ -114,6 +115,47 @@
       #expect(try await app.system.calls().isEmpty)
       #expect(app.call(id)?.status == .previewing(.filtered(.doNotDisturb)))
       #expect(await app.media.records.isEmpty)
+      try await app.expectPushesFinished([pushID])
+      app.expectNoMoreEvents()
+    }
+
+    @Test func filteredCallStartsACallPreviewsLiveActivity() async throws {
+      let center = FakeLiveActivityCenter()
+      let previews = CallPreviewActivities(center: center)
+      var activityEvents = previews.events().makeAsyncIterator()
+      let app = try await App(observers: [previews])
+      defer { app.stop() }
+      try await app.system.filterIncomingCalls(.doNotDisturb)
+      let id = newCallID("previewed")
+      let pushID: UUID
+      do {
+        pushID = try await app.system.pushIncomingCall(id, metadata: ["room": .string("room-1")])
+        try await app.expect([.previewStarted(id, .filtered(.doNotDisturb))])
+      } catch {
+        try await app.system.filterIncomingCalls(.none)
+        throw error
+      }
+      try await app.system.filterIncomingCalls(.none)
+      #expect(await activityEvents.next() == .started(id))
+      guard case .request(_, let attributes, let state, _)? = center.records.first else {
+        Issue.record("The observer didn't start a Live Activity")
+        return
+      }
+      #expect(attributes.callID == id)
+      #expect(attributes.parties.map(\.displayName) == ["Alice"])
+      #expect(attributes.metadata == ["room": "room-1"])
+      #expect(state.status == .filtered)
+      #expect(state.isJoinable)
+
+      await app.client.receive(.endedRemotely, for: id, eventID: EventID(rawValue: "end-\(id)"))
+      try await app.expect([.ended(id, .endedRemotely)])
+      #expect(await activityEvents.next() == .ended(id))
+      #expect(center.activities.isEmpty)
+      guard case .end(_, let final?, .after(.seconds(120)))? = center.records.last else {
+        Issue.record("The observer didn't end the Live Activity with its final state")
+        return
+      }
+      #expect(final.status == .ended)
       try await app.expectPushesFinished([pushID])
       app.expectNoMoreEvents()
     }

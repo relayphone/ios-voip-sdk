@@ -146,6 +146,18 @@ Changes not yet released are recorded below. Public API changes include migratio
   dates as Unix timestamps in seconds, and `docs/contracts/call-preview-activity.json` holds its
   test vectors. A snippet is shortened to 240 characters. The CocoaPods `LiveActivity` subspec
   ships it. See [ADR 0010](docs/adr/0010-call-preview-activity-is-sdk-type.md).
+- `CallPreviewActivities` is a `CallObserver` that shows call previews as Live Activities. Pass
+  it to `VoIPClient.start` as an observer. When a call becomes a call preview in the foreground,
+  it starts a Live Activity, which stays current for `Options.staleAfter` (2 minutes); in the
+  background, where the system refuses, it sends `startFailed(_:_:)` with
+  `CallPreviewError.notInForeground`, and the app's servers start the preview with the
+  push-to-start token. It follows the Live Activities that the servers start, keeps one per call,
+  ends a preview at once when this device joins its call, and shows the final state for
+  `Options.endedDismissal` (2 minutes) when the call ends. `pushToStartTokens()`, `pushTokens()`
+  and `authorization` with `authorizationUpdates()` give the app what its servers need;
+  `start(_:state:)`, `update(_:_:)` and `end(_:dismissal:)` let the app manage previews itself.
+  `ActivityKitAdapter` is its `LiveActivityCenter` on iOS, and `VoIPTesting` adds
+  `FakeLiveActivityCenter`, so the CocoaPods `Testing` subspec now includes `LiveActivity`.
 
 ### Changed
 

@@ -108,6 +108,7 @@ Pod::Spec.new do |s|
   s.subspec 'Testing' do |ss|
     ss.dependency 'IosVoipSDK/Core'
     ss.dependency 'IosVoipSDK/Notifications'
+    ss.dependency 'IosVoipSDK/LiveActivity'
     ss.source_files = 'Sources/VoIPTesting/**/*.swift'
   end
 end

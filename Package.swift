@@ -86,7 +86,7 @@ let package = Package(
     .target(name: "VoIPNotifications", dependencies: ["VoIPCore"], swiftSettings: strictSwift),
     .target(name: "VoIPSimulator", dependencies: ["CKSimRuntime"], swiftSettings: strictSwift),
     .target(
-      name: "VoIPTesting", dependencies: ["VoIPCore", "VoIPNotifications"],
+      name: "VoIPTesting", dependencies: ["VoIPCore", "VoIPLiveActivity", "VoIPNotifications"],
       swiftSettings: strictSwift),
     .testTarget(
       name: "VoIPCoreTests", dependencies: ["VoIPCore", "VoIPTesting"], swiftSettings: strictSwift),
@@ -94,7 +94,7 @@ let package = Package(
       name: "VoIPAudioTests", dependencies: ["VoIPAudio", "VoIPCore"], swiftSettings: strictSwift),
     .testTarget(name: "VoIPFocusTests", dependencies: ["VoIPFocus"], swiftSettings: strictSwift),
     .testTarget(
-      name: "VoIPLiveActivityTests", dependencies: ["VoIPLiveActivity", "VoIPCore"],
+      name: "VoIPLiveActivityTests", dependencies: ["VoIPLiveActivity", "VoIPCore", "VoIPTesting"],
       swiftSettings: strictSwift),
     .testTarget(
       name: "VoIPLiveCommunicationKitTests", dependencies: ["VoIPLiveCommunicationKit"],
@@ -102,8 +102,8 @@ let package = Package(
     .testTarget(
       name: "VoIPJourneyTests",
       dependencies: [
-        "VoIPCore", "VoIPAudio", "VoIPLiveCommunicationKit", "VoIPPushKit", "VoIPSimulator",
-        "VoIPTesting", "CKSimProtocol", "VoIPNotifications",
+        "VoIPCore", "VoIPAudio", "VoIPLiveActivity", "VoIPLiveCommunicationKit", "VoIPPushKit",
+        "VoIPSimulator", "VoIPTesting", "CKSimProtocol", "VoIPNotifications",
       ],
       swiftSettings: strictSwift),
     .testTarget(

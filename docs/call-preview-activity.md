@@ -22,8 +22,15 @@ Send each payload to APNs as an ActivityKit push notification: the `apns-push-ty
 | End | The Live Activity's push token | `end` | Shows the final state, then removes the preview at `dismissal-date`. |
 
 The app sends its servers the push-to-start token, each Live Activity's push token with its call
-ID, and whether the user allows Live Activities and frequent updates. Don't start a preview on a
-device whose user turned Live Activities off.
+ID, and whether the user allows Live Activities and frequent updates, all of which
+`CallPreviewActivities` provides. Don't start a preview on a device whose user turned Live
+Activities off.
+
+When a call becomes a call preview while the app is in the foreground, the SDK starts its Live
+Activity itself, and the app sends its servers that Live Activity's push token. In the background,
+where the system refuses, the app can ask its servers to start one. The SDK keeps one preview per
+call: when a second Live Activity starts for a call that already has one, it ends the newer one at
+once.
 
 ### Start
 
@@ -104,6 +111,8 @@ date instead of a snippet that looks live.
 End the preview on every device when the call ends, with a `dismissal-date` two minutes later, as
 the SDK does for the previews it ends. When the user joins the call on a device, the SDK there
 removes that device's preview at once; update or end the previews on the user's other devices.
+The SDK also ends a preview that it follows when its call ends on the device, for example after a
+server event.
 
 ## Attributes
 
