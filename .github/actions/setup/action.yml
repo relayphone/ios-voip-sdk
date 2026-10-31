@@ -1,0 +1,16 @@
+name: Set up Xcode and Node.js
+description: Select Xcode 27.1 on macOS runners and install Node.js 24 for the TypeScript tools.
+inputs:
+  xcode:
+    description: Whether to select Xcode, on a macOS runner.
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - if: inputs.xcode == 'true'
+      shell: bash
+      run: sudo xcode-select -s /Applications/Xcode_27.1.app
+    - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+      with:
+        node-version: "24.22.1"
+        package-manager-cache: false

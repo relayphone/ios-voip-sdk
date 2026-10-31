@@ -4,4 +4,4 @@
 - [Migrating from the old core and the Expo module](../CHANGELOG.md)
 - [Glossary](../GLOSSARY.md) and [architecture decisions](adr)
 - [Simulator runtime](simulator-runtime.md) and [its releases](runtime-releases.md)
-- [CI jobs](ci/sdk-jobs.md) and [CI selection](ci/selection.md)
+- [Contributing](../CONTRIBUTING.md): the checks and the CI workflows

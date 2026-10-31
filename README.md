@@ -212,11 +212,7 @@ Apps distributed in China mainland can't present calls with CallKit, so they nee
 `VoIPLiveCommunicationKit`. [ADR 0002](docs/adr/0002-one-calling-framework-per-build.md), still
 a proposal, records why an app links one adapter per build.
 
-## Testing
-
-Run `swift test` on macOS 26 or later with Xcode 27.1. The Swift Testing suites cover the call
-values, push decoding, the call state machine, the call engine, the adapters' conversions, the
-audio session adapter on a fake session, and the test clock without a simulator.
+## Testing your app
 
 Tests in your app can add the `VoIPTesting` library product to their test target and import
 `VoIPTesting`. `FakeCallingFramework`, `FakeMedia`, `FakePushSource` and `FakeAudioSession` stand
@@ -225,17 +221,24 @@ every call path on the host. `TestClock` conforms to `Clock<Duration>`; use
 `waitForSleepers(count:)` to await registration, then `advance(by:)` or `run()` to resume pending
 sleeps without waiting for wall time to pass.
 
-The call journeys run the client with the PushKit source on the simulator runtime, which acts as
-the system: a VoIP push, answer, audio, connect and remote end; decline; answered elsewhere and
-filtered calls as previews; an outgoing call; and mute, hold and tones from the call screen. Each
-journey runs once with the LiveCommunicationKit adapter and once with the CallKit adapter. Run
-them, with the CallKit adapter's tests, on an iOS 27 simulator:
+## Running the tests
+
+On macOS 26 or later with Xcode 27.1, run the host tests, then every suite on an iOS 27 simulator:
 
 ```sh
-xcodebuild test -scheme VoIPSDK-Package \
-  -only-testing:VoIPJourneyTests -only-testing:VoIPCallKitTests \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=27.0'
+swift test
+xcodebuild test -scheme VoIPSDK-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=27.0'
 ```
+
+`swift test` covers the call values, push decoding, the call state machine, the call engine, the
+adapters' conversions, the audio session adapter on a fake session and the test clock, as well as
+the simulator runtime's policies against the device measurements, `cksim` and the Inspector's
+model. The simulator run adds the call journeys, which run the client with the PushKit source on
+the simulator runtime acting as the system: a VoIP push, answer, audio, connect and remote end;
+decline; answered elsewhere and filtered calls as previews; an outgoing call; and mute, hold and
+tones from the call screen, each through both the LiveCommunicationKit and the CallKit adapter. It
+also runs the runtime's own tests, which drive CallKit and LiveCommunicationKit calls through the
+runtime as the system does.
 
 ## License
 
