@@ -139,6 +139,13 @@ Changes not yet released are recorded below. Public API changes include migratio
   the app calls the party with a Call ID of its own. `Options.joinsOnTap` (default `true`) joins
   on a tap as well as on the Join action. The `Notifications` subspec links UserNotifications and
   Intents, and the example app previews a call with a call notification.
+- The `VoIPLiveActivity` library's `CallPreviewAttributes`, with its `ContentState` and
+  `CallPreviewStatus`, is the type of a call preview's Live Activity. Its JSON is a contract with
+  the app's servers, which start, update and end call previews with ActivityKit push
+  notifications: [the contract](docs/call-preview-activity.md) describes every payload, with
+  dates as Unix timestamps in seconds, and `docs/contracts/call-preview-activity.json` holds its
+  test vectors. A snippet is shortened to 240 characters. The CocoaPods `LiveActivity` subspec
+  ships it. See [ADR 0010](docs/adr/0010-call-preview-activity-is-sdk-type.md).
 
 ### Changed
 

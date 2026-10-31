@@ -9,6 +9,7 @@ with PushKit. Calls also work in the iOS Simulator during development, without a
 | `VoIPCore` | `VoIPClient`, the call values and the call state machine. It imports no calling framework. |
 | `VoIPAudio` | `AudioSessionAdapter`, which configures the audio session for calls, reports its interruptions and lists its audio routes. |
 | `VoIPFocus` | `CallFocusFilter`, the app's Focus filter, and `FocusFilterStore`, which shares the Focus filter state between the app and its extensions through an App Group. It doesn't depend on `VoIPCore`. |
+| `VoIPLiveActivity` | `CallPreviewAttributes`, the type of a call preview's Live Activity, whose JSON the app's servers send ([contract](docs/call-preview-activity.md)). |
 | `VoIPLiveCommunicationKit` | `LiveCommunicationKitAdapter`, which presents calls with LiveCommunicationKit. |
 | `VoIPPushKit` | `PushKitSource`, which receives VoIP pushes and the VoIP push token. |
 | `VoIPNotifications` | `CallNotifier`, which posts a communication notification for each call that Do Not Disturb or a Focus filters, so that the people the Focus allows still reach the user. |
@@ -73,6 +74,7 @@ pod 'IosVoipSDK', :git => 'https://github.com/relayphone/ios-voip-sdk.git', :com
 | `Core`                 | `VoIPCore`                 |
 | `Audio`                | `VoIPAudio`                |
 | `Focus`                | `VoIPFocus`                |
+| `LiveActivity`         | `VoIPLiveActivity`         |
 | `LiveCommunicationKit` | `VoIPLiveCommunicationKit` |
 | `PushKit`              | `VoIPPushKit`              |
 | `Notifications`        | `VoIPNotifications`        |

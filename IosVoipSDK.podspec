@@ -9,6 +9,7 @@ runtime_version = File.read(File.join(__dir__, 'VERSION')).strip
 # | Core                 | VoIPCore                 |
 # | Audio                | VoIPAudio                |
 # | Focus                | VoIPFocus                |
+# | LiveActivity         | VoIPLiveActivity         |
 # | LiveCommunicationKit | VoIPLiveCommunicationKit |
 # | PushKit              | VoIPPushKit              |
 # | Notifications        | VoIPNotifications        |
@@ -63,6 +64,13 @@ Pod::Spec.new do |s|
   s.subspec 'Focus' do |ss|
     ss.source_files = 'Sources/VoIPFocus/**/*.swift'
     ss.frameworks = 'AppIntents'
+  end
+
+  # `CallPreviewAttributes`, the type of a call preview's Live Activity.
+  s.subspec 'LiveActivity' do |ss|
+    ss.dependency 'IosVoipSDK/Core'
+    ss.source_files = 'Sources/VoIPLiveActivity/**/*.swift'
+    ss.frameworks = 'ActivityKit'
   end
 
   # `LiveCommunicationKitAdapter`, which presents calls with LiveCommunicationKit.

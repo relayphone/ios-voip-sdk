@@ -1,0 +1,530 @@
+{
+  "schemaVersion": 1,
+  "attributesType": "CallPreviewAttributes",
+  "notes": [
+    "payloads are bodies of APNs requests with the apns-push-type header liveactivity and the topic <bundle ID>.push-type.liveactivity.",
+    "Send start to a push-to-start token, and update and end to the Live Activity's push token.",
+    "Dates in attributes and content-state are Unix timestamps in seconds, like aps.timestamp, stale-date and dismissal-date.",
+    "Each vector's json decodes to the same value as its canonical form, which is what the SDK writes. A vector without canonical fails to decode."
+  ],
+  "payloads": {
+    "start": {
+      "aps": {
+        "timestamp": 1800000000,
+        "event": "start",
+        "input-push-token": 1,
+        "stale-date": 1800000120,
+        "attributes-type": "CallPreviewAttributes",
+        "attributes": {
+          "callId": "call-1",
+          "parties": [
+            {
+              "handleType": "phone",
+              "value": "+14155550123",
+              "displayName": "Alice"
+            }
+          ],
+          "hasVideo": false,
+          "metadata": {
+            "room": "room-1"
+          }
+        },
+        "content-state": {
+          "status": "filtered",
+          "startedAt": 1799999990,
+          "statusText": "Your assistant is answering",
+          "isJoinable": true
+        },
+        "alert": {
+          "title": "Alice",
+          "body": "Call in progress"
+        }
+      }
+    },
+    "update": {
+      "aps": {
+        "timestamp": 1800000030,
+        "event": "update",
+        "stale-date": 1800000150,
+        "content-state": {
+          "status": "filtered",
+          "startedAt": 1799999990,
+          "statusText": "Your assistant is answering",
+          "snippet": "They asked whether you can call back after six.",
+          "isJoinable": true
+        }
+      }
+    },
+    "end": {
+      "aps": {
+        "timestamp": 1800000090,
+        "event": "end",
+        "dismissal-date": 1800000210,
+        "content-state": {
+          "status": "ended",
+          "startedAt": 1799999990,
+          "statusText": "Call ended",
+          "snippet": "They asked whether you can call back after six.",
+          "isJoinable": false
+        }
+      }
+    }
+  },
+  "attributes": [
+    {
+      "name": "minimal",
+      "json": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "+14155550123",
+            "displayName": "Alice"
+          }
+        ]
+      },
+      "canonical": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "+14155550123",
+            "displayName": "Alice"
+          }
+        ],
+        "hasVideo": false,
+        "metadata": {}
+      }
+    },
+    {
+      "name": "full",
+      "json": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "+14155550123",
+            "displayName": "Alice"
+          }
+        ],
+        "hasVideo": true,
+        "metadata": {
+          "room": "room-1",
+          "route": {
+            "region": "eu",
+            "hops": [
+              "sip",
+              2,
+              true,
+              null
+            ]
+          }
+        }
+      },
+      "canonical": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "+14155550123",
+            "displayName": "Alice"
+          }
+        ],
+        "hasVideo": true,
+        "metadata": {
+          "room": "room-1",
+          "route": {
+            "region": "eu",
+            "hops": [
+              "sip",
+              2,
+              true,
+              null
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "formatted-phone-number",
+      "json": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": " +1 (415) 555-0123 ",
+            "displayName": "Alice"
+          }
+        ]
+      },
+      "canonical": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "+14155550123",
+            "displayName": "Alice"
+          }
+        ],
+        "hasVideo": false,
+        "metadata": {}
+      }
+    },
+    {
+      "name": "no-display-name",
+      "json": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "generic",
+            "value": "user-42",
+            "displayName": "  "
+          }
+        ]
+      },
+      "canonical": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "generic",
+            "value": "user-42"
+          }
+        ],
+        "hasVideo": false,
+        "metadata": {}
+      }
+    },
+    {
+      "name": "several-handles",
+      "json": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "+14155550123",
+            "displayName": "Alice",
+            "additionalHandles": [
+              {
+                "handleType": "email",
+                "value": "alice@example.com"
+              },
+              {
+                "handleType": "generic",
+                "value": "user-42"
+              }
+            ]
+          }
+        ]
+      },
+      "canonical": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "+14155550123",
+            "displayName": "Alice",
+            "additionalHandles": [
+              {
+                "handleType": "email",
+                "value": "alice@example.com"
+              },
+              {
+                "handleType": "generic",
+                "value": "user-42"
+              }
+            ]
+          }
+        ],
+        "hasVideo": false,
+        "metadata": {}
+      }
+    },
+    {
+      "name": "several-parties",
+      "json": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "+14155550123",
+            "displayName": "Alice"
+          },
+          {
+            "handleType": "email",
+            "value": "bob@example.com",
+            "displayName": "Bob"
+          }
+        ]
+      },
+      "canonical": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "+14155550123",
+            "displayName": "Alice"
+          },
+          {
+            "handleType": "email",
+            "value": "bob@example.com",
+            "displayName": "Bob"
+          }
+        ],
+        "hasVideo": false,
+        "metadata": {}
+      }
+    },
+    {
+      "name": "no-parties",
+      "json": {
+        "callId": "call-1",
+        "parties": []
+      },
+      "canonical": {
+        "callId": "call-1",
+        "parties": [],
+        "hasVideo": false,
+        "metadata": {}
+      }
+    },
+    {
+      "name": "unknown-keys-ignored",
+      "json": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "+14155550123",
+            "displayName": "Alice"
+          }
+        ],
+        "ringtone": "bell"
+      },
+      "canonical": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "+14155550123",
+            "displayName": "Alice"
+          }
+        ],
+        "hasVideo": false,
+        "metadata": {}
+      }
+    },
+    {
+      "name": "missing-call-id",
+      "json": {
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "+14155550123",
+            "displayName": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "blank-call-id",
+      "json": {
+        "callId": " ",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "+14155550123",
+            "displayName": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing-parties",
+      "json": {
+        "callId": "call-1"
+      }
+    },
+    {
+      "name": "phone-number-not-e164",
+      "json": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "4155550123"
+          }
+        ]
+      }
+    },
+    {
+      "name": "invalid-email-address",
+      "json": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "email",
+            "value": "alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "blank-generic-handle",
+      "json": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "generic",
+            "value": " "
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown-handle-type",
+      "json": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "fax",
+            "value": "+14155550123"
+          }
+        ]
+      }
+    },
+    {
+      "name": "metadata-not-an-object",
+      "json": {
+        "callId": "call-1",
+        "parties": [
+          {
+            "handleType": "phone",
+            "value": "+14155550123",
+            "displayName": "Alice"
+          }
+        ],
+        "metadata": "room-1"
+      }
+    }
+  ],
+  "contentStates": [
+    {
+      "name": "minimal",
+      "json": {
+        "status": "policy",
+        "startedAt": 1799999990,
+        "isJoinable": true
+      },
+      "canonical": {
+        "status": "policy",
+        "startedAt": 1799999990,
+        "isJoinable": true
+      }
+    },
+    {
+      "name": "full",
+      "json": {
+        "status": "filtered",
+        "startedAt": 1799999990,
+        "statusText": "Your assistant is answering",
+        "snippet": "They asked whether you can call back after six.",
+        "isJoinable": true
+      },
+      "canonical": {
+        "status": "filtered",
+        "startedAt": 1799999990,
+        "statusText": "Your assistant is answering",
+        "snippet": "They asked whether you can call back after six.",
+        "isJoinable": true
+      }
+    },
+    {
+      "name": "answered-elsewhere",
+      "json": {
+        "status": "answeredElsewhere",
+        "startedAt": 1799999990,
+        "isJoinable": true
+      },
+      "canonical": {
+        "status": "answeredElsewhere",
+        "startedAt": 1799999990,
+        "isJoinable": true
+      }
+    },
+    {
+      "name": "ended",
+      "json": {
+        "status": "ended",
+        "startedAt": 1799999990,
+        "statusText": "Call ended",
+        "snippet": "They asked whether you can call back after six.",
+        "isJoinable": false
+      },
+      "canonical": {
+        "status": "ended",
+        "startedAt": 1799999990,
+        "statusText": "Call ended",
+        "snippet": "They asked whether you can call back after six.",
+        "isJoinable": false
+      }
+    },
+    {
+      "name": "fractional-seconds",
+      "json": {
+        "status": "filtered",
+        "startedAt": 1799999990.25,
+        "isJoinable": true
+      },
+      "canonical": {
+        "status": "filtered",
+        "startedAt": 1799999990.25,
+        "isJoinable": true
+      }
+    },
+    {
+      "name": "long-snippet-shortened",
+      "json": {
+        "status": "filtered",
+        "startedAt": 1799999990,
+        "snippet": "They asked whether you can call back after six, and said it is about the delivery that was meant to arrive this morning. They asked whether you can call back after six, and said it is about the delivery that was meant to arrive this morning. They asked whether you can call back after six, and said it is about the delivery that was meant to arrive this morning.",
+        "isJoinable": true
+      },
+      "canonical": {
+        "status": "filtered",
+        "startedAt": 1799999990,
+        "snippet": "They asked whether you can call back after six, and said it is about the delivery that was meant to arrive this morning. They asked whether you can call back after six, and said it is about the delivery that was meant to arrive this mornin…",
+        "isJoinable": true
+      }
+    },
+    {
+      "name": "unknown-status",
+      "json": {
+        "status": "ringing",
+        "startedAt": 1799999990,
+        "isJoinable": true
+      }
+    },
+    {
+      "name": "missing-started-at",
+      "json": {
+        "status": "filtered",
+        "isJoinable": true
+      }
+    },
+    {
+      "name": "started-at-as-text",
+      "json": {
+        "status": "filtered",
+        "startedAt": "2027-01-15T08:00:00Z",
+        "isJoinable": true
+      }
+    },
+    {
+      "name": "missing-is-joinable",
+      "json": {
+        "status": "filtered",
+        "startedAt": 1799999990
+      }
+    }
+  ]
+}
