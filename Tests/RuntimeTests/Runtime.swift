@@ -5,11 +5,60 @@
   import Foundation
   import Testing
 
-  /// The suites that share this process's simulator runtime. They run one at a time, because the
-  /// runtime is the process's call service: one provider presents calls, and audio is shared.
-  @Suite(.serialized, .timeLimit(.minutes(3)))
+  /// The suites that share this process's simulator runtime. Their tests take turns with
+  /// `exclusively(_:)`, because the runtime is the process's call service: the newest provider
+  /// presents calls, and audio is shared.
+  @Suite(.serialized, .timeLimit(.minutes(10)))
   @MainActor
   enum RuntimeSuites {}
+
+  /// Runs a test with the runtime to itself. A serialized suite alone doesn't keep the cases of a
+  /// parameterized test from overlapping other tests.
+  @MainActor
+  func exclusively(_ body: @MainActor () async throws -> Void) async throws {
+    await RuntimeTurn.shared.take()
+    do {
+      try await body()
+    } catch {
+      await RuntimeTurn.shared.pass()
+      throw error
+    }
+    await RuntimeTurn.shared.pass()
+  }
+
+  /// Runs a test with the runtime to itself and a new CallKit app, which stops afterwards.
+  @MainActor
+  func withCallKitApp(_ body: @MainActor (CallKitApp) async throws -> Void) async throws {
+    try await exclusively {
+      let app = CallKitApp()
+      defer { app.stop() }
+      try await body(app)
+    }
+  }
+
+  /// Whose turn it is to use the runtime.
+  actor RuntimeTurn {
+    static let shared = RuntimeTurn()
+
+    private var taken = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    func take() async {
+      guard taken else {
+        taken = true
+        return
+      }
+      await withCheckedContinuation { waiting.append($0) }
+    }
+
+    func pass() {
+      if waiting.isEmpty {
+        taken = false
+      } else {
+        waiting.removeFirst().resume()
+      }
+    }
+  }
 
   /// The simulator runtime activated in this test process. Tests act as the system through its
   /// control mailbox, as the `cksim` tool does, and observe it through its journal.

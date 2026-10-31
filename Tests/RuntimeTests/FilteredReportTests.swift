@@ -9,11 +9,9 @@
     @Suite @MainActor struct FilteredReports {
       private static let domain = "com.apple.CallKit.error.incomingcall"
       private let runtime: Runtime
-      private let app: CallKitApp
 
       init() throws {
         runtime = try Runtime.shared()
-        app = CallKitApp()
       }
 
       /// Selects a filter and checks the runtime's acknowledgement.
@@ -139,78 +137,83 @@
       func unverifiedFiltersRejectTheReportAfterTheMeasuredDelay(
         reason: ControlRequest.FilterReason, code: Int
       ) async throws {
-        defer { app.stop() }
-        try await runtime.clearSettings()
-        try await filter(reason)
-        try await expect(
-          report(), code: code, filterReason: reason.rawValue, verification: "unverified",
-          delayMS: 2070)
-        try await expectIdle(filter: reason)
-        try await runtime.clearSettings()
+        try await withCallKitApp { app in
+          try await runtime.clearSettings()
+          try await filter(reason)
+          try await expect(
+            report(), code: code, filterReason: reason.rawValue, verification: "unverified",
+            delayMS: 2070)
+          try await expectIdle(filter: reason)
+          try await runtime.clearSettings()
+        }
       }
 
       @Test func doNotDisturbFiltersEveryCallFromTheSameNumberAndTheAppSurvives() async throws {
-        defer { app.stop() }
-        try await runtime.clearSettings()
-        try await filter(.doNotDisturb)
-        let first = try await expect(
-          report(), code: 3, filterReason: "do-not-disturb", verification: "verified",
-          delayMS: 2070)
-        // Past PushKit's deadline for reporting, the same process still answers its mailbox.
-        try await Task.sleep(for: .milliseconds(4600))
-        try await expectIdle(filter: .doNotDisturb)
-        // Filtering grants no repeated-caller exception.
-        let repeated = try await expect(
-          report(), code: 3, filterReason: "do-not-disturb", verification: "verified",
-          delayMS: 2070)
-        #expect(repeated.time - first.time >= 4600)
-        try await expectIdle(filter: .doNotDisturb)
-        try await runtime.clearSettings()
+        try await withCallKitApp { app in
+          try await runtime.clearSettings()
+          try await filter(.doNotDisturb)
+          let first = try await expect(
+            report(), code: 3, filterReason: "do-not-disturb", verification: "verified",
+            delayMS: 2070)
+          // Past PushKit's deadline for reporting, the same process still answers its mailbox.
+          try await Task.sleep(for: .milliseconds(4600))
+          try await expectIdle(filter: .doNotDisturb)
+          // Filtering grants no repeated-caller exception.
+          let repeated = try await expect(
+            report(), code: 3, filterReason: "do-not-disturb", verification: "verified",
+            delayMS: 2070)
+          #expect(repeated.time - first.time >= 4600)
+          try await expectIdle(filter: .doNotDisturb)
+          try await runtime.clearSettings()
+        }
       }
 
       @Test func aReportKeepsTheSettingsItEnteredWith() async throws {
-        defer { app.stop() }
-        try await runtime.clearSettings()
-        try await runtime.control(.faults([.incomingErrorCode(4), .reportCallbackDelayMS(5000)]))
-        let attempt = try await report()
-        let entered = try await runtime.entry("the report to enter", after: attempt.cursor) {
-          $0.event == "report.incoming" && $0.pushID == attempt.push.uuidString
+        try await withCallKitApp { app in
+          try await runtime.clearSettings()
+          try await runtime.control(.faults([.incomingErrorCode(4), .reportCallbackDelayMS(5000)]))
+          let attempt = try await report()
+          let entered = try await runtime.entry("the report to enter", after: attempt.cursor) {
+            $0.event == "report.incoming" && $0.pushID == attempt.push.uuidString
+          }
+          // Changes while the report is pending apply only to later reports.
+          let filterRequest = try await runtime.send(.incomingFilter(.restrictedSharingMode))
+          let faultRequest = try await runtime.send(
+            .faults([.incomingErrorCode(0), .reportCallbackDelayMS(1000)]))
+          #expect(try faultRequest.get() == .faults(incomingErrorCode: 0))
+          try await expect(
+            attempt, code: 4, filterReason: "none", verification: "injected-fault", delayMS: 5020)
+          let rows = try runtime.entries(after: attempt.cursor)
+          let done = try #require(
+            rows.first { $0.event == "report.completed" && $0.reportID == entered.reportID })
+          for (event, request) in [
+            ("incomingFilter.configured", filterRequest.id), ("faults.configured", faultRequest.id),
+          ] {
+            let change = try #require(
+              rows.first { $0.event == event && $0.requestID == request.uuidString })
+            #expect(entered.sequence < change.sequence && change.sequence < done.sequence)
+          }
+          try await runtime.clearSettings()
+          try await expectIdle()
         }
-        // Changes while the report is pending apply only to later reports.
-        let filterRequest = try await runtime.send(.incomingFilter(.restrictedSharingMode))
-        let faultRequest = try await runtime.send(
-          .faults([.incomingErrorCode(0), .reportCallbackDelayMS(1000)]))
-        #expect(try faultRequest.get() == .faults(incomingErrorCode: 0))
-        try await expect(
-          attempt, code: 4, filterReason: "none", verification: "injected-fault", delayMS: 5020)
-        let rows = try runtime.entries(after: attempt.cursor)
-        let done = try #require(
-          rows.first { $0.event == "report.completed" && $0.reportID == entered.reportID })
-        for (event, request) in [
-          ("incomingFilter.configured", filterRequest.id), ("faults.configured", faultRequest.id),
-        ] {
-          let change = try #require(
-            rows.first { $0.event == event && $0.requestID == request.uuidString })
-          #expect(entered.sequence < change.sequence && change.sequence < done.sequence)
-        }
-        try await runtime.clearSettings()
-        try await expectIdle()
       }
 
       @Test func clearingTheFilterAdmitsCallsAndADuplicateStillFailsWithCodeTwo() async throws {
-        defer { app.stop() }
-        try await runtime.clearSettings()
-        let admitted = try await report()
-        try await expect(admitted, code: 0, filterReason: "none", verification: "not-applicable")
-        try await runtime.until("the admitted call") {
-          try await runtime.status().calls.contains { $0.state.uuid == admitted.call } ? true : nil
+        try await withCallKitApp { app in
+          try await runtime.clearSettings()
+          let admitted = try await report()
+          try await expect(admitted, code: 0, filterReason: "none", verification: "not-applicable")
+          try await runtime.until("the admitted call") {
+            try await runtime.status().calls.contains { $0.state.uuid == admitted.call }
+              ? true : nil
+          }
+          try await filter(.doNotDisturb)
+          let duplicate = try await report(admitted.call)
+          try await expect(duplicate, code: 2, filterReason: "none", verification: "not-applicable")
+          #expect(try await runtime.status().calls.map(\.state.uuid) == [admitted.call])
+          try await runtime.clearSettings()
+          try await runtime.end([admitted.call])
         }
-        try await filter(.doNotDisturb)
-        let duplicate = try await report(admitted.call)
-        try await expect(duplicate, code: 2, filterReason: "none", verification: "not-applicable")
-        #expect(try await runtime.status().calls.map(\.state.uuid) == [admitted.call])
-        try await runtime.clearSettings()
-        try await runtime.end([admitted.call])
       }
     }
   }
