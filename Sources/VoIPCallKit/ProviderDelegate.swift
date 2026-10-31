@@ -2,7 +2,9 @@
   import AVFAudio
   import CallKit
   import Foundation
-  import VoIPCore
+  #if SWIFT_PACKAGE
+    import VoIPCore
+  #endif
 
   /// The provider's delegate, which passes on everything CallKit tells it to the adapter.
   ///

@@ -1,6 +1,8 @@
 #if os(iOS)
   import CallKit
-  import VoIPCore
+  #if SWIFT_PACKAGE
+    import VoIPCore
+  #endif
 
   /// The errors CallKit completes reports and requests with, as the SDK reads them.
   enum SystemError {

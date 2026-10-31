@@ -55,6 +55,11 @@ Changes not yet released are recorded below. Public API changes include migratio
 - `VoIPClient.report(_:)` returns how the call appears on this device: `previewed(_:)` for a
   call preview, including a filtered call that the policy previews, and `notShown` when the
   policy is `none`, instead of `presented`. `PresentationOutcome` adds both cases.
+- The CocoaPods spec ships the call core as subspecs that mirror the Swift package's products:
+  `Core`, `LiveCommunicationKit`, `CallKit`, `PushKit`, `Simulator` and `Testing`. CocoaPods
+  builds them into the one `IosVoipSDK` module, so code that uses them imports `IosVoipSDK`.
+  `pod 'IosVoipSDK'` without a subspec still installs the existing Expo module, which is now the
+  default `ExpoModule` subspec.
 
 ### Breaking changes
 

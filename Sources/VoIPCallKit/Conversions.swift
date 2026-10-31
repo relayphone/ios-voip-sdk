@@ -1,7 +1,9 @@
 #if os(iOS)
   import CallKit
   import Foundation
-  import VoIPCore
+  #if SWIFT_PACKAGE
+    import VoIPCore
+  #endif
 
   extension CXProviderConfiguration {
     /// The provider's configuration for the app's configuration.

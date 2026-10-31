@@ -1,4 +1,6 @@
-public import VoIPCore
+#if SWIFT_PACKAGE
+  public import VoIPCore
+#endif
 
 /// A push source that delivers VoIP pushes when the test says, as PushKit does.
 @VoIPActor

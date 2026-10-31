@@ -3,7 +3,9 @@
   import Foundation
   import LiveCommunicationKit
   import os
-  public import VoIPCore
+  #if SWIFT_PACKAGE
+    public import VoIPCore
+  #endif
 
   /// The calling framework that presents calls with LiveCommunicationKit, Apple's framework for
   /// presenting VoIP calls on the system's call screen, in Recents and on connected devices.

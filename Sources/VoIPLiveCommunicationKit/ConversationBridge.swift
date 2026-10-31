@@ -2,7 +2,9 @@
   import AVFAudio
   import Foundation
   import LiveCommunicationKit
-  import VoIPCore
+  #if SWIFT_PACKAGE
+    import VoIPCore
+  #endif
 
   /// LiveCommunicationKit's conversation manager, which has no concurrency annotations.
   ///

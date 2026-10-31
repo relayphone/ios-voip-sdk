@@ -1,5 +1,7 @@
 import Foundation
-public import VoIPCore
+#if SWIFT_PACKAGE
+  public import VoIPCore
+#endif
 
 /// A calling framework that records what the SDK asks of it and answers as the test scripts, so
 /// that the SDK can be tested without CallKit or LiveCommunicationKit.

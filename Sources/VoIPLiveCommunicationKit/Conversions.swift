@@ -1,10 +1,21 @@
 #if os(iOS)
   import Foundation
   import LiveCommunicationKit
-  import VoIPCore
+  #if SWIFT_PACKAGE
+    import VoIPCore
+  #endif
 
   /// A LiveCommunicationKit handle, which shares its name with the SDK's handle.
   typealias SystemHandle = LiveCommunicationKit.Handle
+
+  #if SWIFT_PACKAGE
+    /// The SDK's handle, which shares its name with LiveCommunicationKit's handle.
+    typealias SDKHandle = VoIPCore.Handle
+  #else
+    /// The SDK's handle. CocoaPods builds the SDK as one module, whose own handle shadows
+    /// LiveCommunicationKit's.
+    typealias SDKHandle = Handle
+  #endif
 
   extension ConversationManager.Configuration {
     /// The manager's configuration for the app's configuration.
@@ -53,7 +64,7 @@
   }
 
   extension SystemHandle.Kind {
-    init(_ kind: VoIPCore.Handle.Kind) {
+    init(_ kind: SDKHandle.Kind) {
       self =
         switch kind {
         case .phoneNumber: .phoneNumber
@@ -63,7 +74,7 @@
     }
   }
 
-  extension VoIPCore.Handle.Kind {
+  extension SDKHandle.Kind {
     init(_ kind: SystemHandle.Kind) {
       self =
         switch kind {
@@ -93,10 +104,10 @@
     /// A value that isn't valid for its kind, such as a phone number that isn't in E.164 format,
     /// becomes a generic handle.
     init?(_ handle: SystemHandle) {
-      let kind = VoIPCore.Handle.Kind(handle.type)
+      let kind = SDKHandle.Kind(handle.type)
       guard
-        let presented = (try? VoIPCore.Handle(kind: kind, value: handle.value))
-          ?? (try? VoIPCore.Handle(kind: .generic, value: handle.value))
+        let presented = (try? SDKHandle(kind: kind, value: handle.value))
+          ?? (try? SDKHandle(kind: .generic, value: handle.value))
       else { return nil }
       self.init(
         handle: presented, displayName: handle.displayName.isEmpty ? nil : handle.displayName)

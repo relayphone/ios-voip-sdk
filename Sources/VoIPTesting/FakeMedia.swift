@@ -1,4 +1,6 @@
-public import VoIPCore
+#if SWIFT_PACKAGE
+  public import VoIPCore
+#endif
 
 /// Media that records what the SDK asks of it and prepares calls as the test scripts.
 @VoIPActor

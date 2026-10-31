@@ -1,7 +1,9 @@
 #if os(iOS)
   import CallKit
   import Foundation
-  public import VoIPCore
+  #if SWIFT_PACKAGE
+    public import VoIPCore
+  #endif
 
   /// The calling framework that presents calls with CallKit, Apple's earlier framework for
   /// presenting VoIP calls on the system's call screen and in Recents.
