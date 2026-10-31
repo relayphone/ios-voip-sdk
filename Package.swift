@@ -22,6 +22,7 @@ let package = Package(
     .library(name: "VoIPCore", targets: ["VoIPCore"]),
     .library(name: "VoIPAudio", targets: ["VoIPAudio"]),
     .library(name: "VoIPFocus", targets: ["VoIPFocus"]),
+    .library(name: "VoIPLiveActivity", targets: ["VoIPLiveActivity"]),
     .library(name: "VoIPLiveCommunicationKit", targets: ["VoIPLiveCommunicationKit"]),
     .library(name: "VoIPPushKit", targets: ["VoIPPushKit"]),
     .library(name: "VoIPNotifications", targets: ["VoIPNotifications"]),
@@ -75,6 +76,7 @@ let package = Package(
     .target(name: "VoIPCore", swiftSettings: strictSwift),
     .target(name: "VoIPAudio", dependencies: ["VoIPCore"], swiftSettings: strictSwift),
     .target(name: "VoIPFocus", swiftSettings: strictSwift),
+    .target(name: "VoIPLiveActivity", dependencies: ["VoIPCore"], swiftSettings: strictSwift),
     .target(
       name: "VoIPLiveCommunicationKit", dependencies: ["VoIPCore"], swiftSettings: strictSwift),
     .target(name: "VoIPPushDelivery", cSettings: strictC),
@@ -91,6 +93,9 @@ let package = Package(
     .testTarget(
       name: "VoIPAudioTests", dependencies: ["VoIPAudio", "VoIPCore"], swiftSettings: strictSwift),
     .testTarget(name: "VoIPFocusTests", dependencies: ["VoIPFocus"], swiftSettings: strictSwift),
+    .testTarget(
+      name: "VoIPLiveActivityTests", dependencies: ["VoIPLiveActivity", "VoIPCore"],
+      swiftSettings: strictSwift),
     .testTarget(
       name: "VoIPLiveCommunicationKitTests", dependencies: ["VoIPLiveCommunicationKit"],
       swiftSettings: strictSwift),
