@@ -26,7 +26,8 @@ SDK's repository describes in `docs/call-preview-activity.md`.
 3. Send the app's servers the tokens from ``CallPreviewActivities/pushToStartTokens()`` and
    ``CallPreviewActivities/pushTokens()``, with ``CallPreviewActivities/authorization``.
 4. Declare a ``JoinCallPreviewIntent`` in a file that both the app and its widget extension
-   compile, and show the previews from the extension with ``CallPreviewView``.
+   compile, with its `supportedModes` and `isDiscoverable`, and show the previews from the
+   extension with ``CallPreviewView``.
 
 The SDK never asks for permission: the system asks the user the first time one of the app's Live
 Activities appears, and the user can turn them off in Settings. Read
