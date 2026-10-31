@@ -71,8 +71,16 @@ How an incoming call appears on this device once it has been presented as its pr
 _Avoid_: Report result
 
 **Call preview**:
-A live, non-ringing view of a call on a device that isn't taking part in it, such as a Live Activity, from which the user can join.
+A live, non-ringing view of a call on a device that isn't taking part in it, such as a Live Activity, from which the user can join. The app's servers usually start it.
 _Avoid_: Live notification, silent call
+
+**Live Activity**:
+A view of an ongoing event that the system shows on the Lock Screen and in the Dynamic Island, and that the app or its servers keep up to date.
+_Avoid_: Widget, live notification
+
+**Push-to-start token**:
+The token with which the app's servers start a Live Activity on a device. Each Live Activity then has its own push token, with which they update and end it.
+_Avoid_: Live Activity token
 
 **Presentation policy**:
 The app's choice of how an incoming call appears on a device: ring, preview, or not at all.
@@ -85,6 +93,24 @@ _Avoid_: Silenced call, rejected call, failed call
 **Cold launch**:
 The system starting the app from not running because a VoIP push arrived.
 _Avoid_: Background launch, wake-up
+
+### Focus
+
+**Focus**:
+A user setting that silences calls and notifications except from the people and apps it allows. Do Not Disturb is a Focus.
+_Avoid_: DND mode, quiet hours
+
+**Focus filter**:
+The app's settings for one Focus, which the system applies when that Focus turns on and resets to their defaults when it turns off.
+_Avoid_: Focus status (Apple's separate shared flag), Focus mode settings
+
+**Focus filter state**:
+What the app's Focus filter last asked for: unknown, inactive, or active with the filter's settings. Inactive doesn't mean that no Focus is on.
+_Avoid_: Focus status, DND state
+
+**Communication notification**:
+A notification that the system shows as coming from a person, because it is about a call or a message from them. A Focus lets it through only for the people it allows.
+_Avoid_: Call banner, contact notification
 
 ### Control
 
