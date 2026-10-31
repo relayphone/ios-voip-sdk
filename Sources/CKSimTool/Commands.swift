@@ -32,6 +32,8 @@
     @TaskLocal static var current = Tool()
 
     var simctl = Simctl.live
+    /// The environment `cksim` runs in, which `launch` passes on to the app.
+    var environment = ProcessInfo.processInfo.environment
     var stateDirectory = FileManager.default.homeDirectoryForCurrentUser.appending(
       path: ".local/state/callkit-simulator")
     /// Where `cksim` itself is, which is a runtime package unless `--runtime-dir` says otherwise.
