@@ -1,6 +1,7 @@
 #if os(iOS) && targetEnvironment(simulator)
   import CKSimProtocol
   import CKSimRuntime
+  import Darwin
   import Foundation
   import Testing
 
@@ -70,13 +71,16 @@
       return try await until("the response to \(id)") { try? Data(contentsOf: response) }
     }
 
-    /// Publishes raw request bytes under `id` without waiting for a response.
+    /// Publishes raw request bytes under `id` without waiting for a response, replacing a request
+    /// with the same identifier that the runtime kept.
     func stage(_ bytes: Data, id: UUID) throws {
       let staged = mailbox.appending(path: "\(id.uuidString).staged")
       try bytes.write(to: staged)
       // The runtime watches for the rename into its requests directory.
-      try FileManager.default.moveItem(
-        at: staged, to: mailbox.appending(path: "requests/\(id.uuidString).json"))
+      let request = mailbox.appending(path: "requests/\(id.uuidString).json")
+      guard rename(staged.path(), request.path()) == 0 else {
+        throw RuntimeTestError("Can't publish \(id): \(String(cString: strerror(errno)))")
+      }
     }
 
     /// The runtime's current status.

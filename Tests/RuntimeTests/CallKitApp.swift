@@ -3,6 +3,7 @@
   import CKSimRuntimeC
   import Foundation
   @preconcurrency import PushKit
+  import Synchronization
 
   /// An app that presents calls with CallKit directly, as apps without the SDK do: a provider, a
   /// call controller and a PushKit registry on the main queue.
@@ -11,6 +12,18 @@
   /// push whose `operation` is `outgoing` also starts an outgoing call. The app fulfills every
   /// action after 120 ms, except that it fails tones. It records each report's completion in the
   /// runtime's journal as `fixture.reportCompleted`.
+  /// How many times one report's completion was called.
+  private final class Replies: Sendable {
+    private let count = Mutex(0)
+
+    func next() -> Int {
+      count.withLock {
+        $0 += 1
+        return $0
+      }
+    }
+  }
+
   @MainActor
   final class CallKitApp: NSObject, @preconcurrency CXProviderDelegate,
     @preconcurrency PKPushRegistryDelegate
@@ -20,7 +33,6 @@
     let provider: CXProvider
     let controller = CXCallController(queue: .main)
     private let registry = PKPushRegistry(queue: .main)
-    private var replies: [UUID: Int] = [:]
 
     override init() {
       let configuration = CXProviderConfiguration()
@@ -40,35 +52,30 @@
       provider.invalidate()
     }
 
-    /// Reports an incoming call and records the completion.
+    /// Reports an incoming call and records the completion, with how many times this report's
+    /// completion was called.
     func ring(_ uuid: UUID = UUID()) {
       let entered = ContinuousClock.now
       let update = CXCallUpdate()
       update.localizedCallerName = "Alex Morgan"
       update.remoteHandle = CXHandle(type: .phoneNumber, value: Self.handle)
       update.supportsHolding = true
+      let replies = Replies()
       provider.reportNewIncomingCall(with: uuid, update: update) { error in
         let observed = error as NSError?
         let main = Thread.isMainThread
         let latency = entered.duration(to: .now) / .milliseconds(1)
+        let count = replies.next()
         Task { @MainActor in
-          self.recordReply(
-            uuid, domain: observed?.domain ?? "", code: observed?.code ?? 0, main: main,
-            latency: latency)
+          CKSimEmit(
+            "fixture.reportCompleted",
+            [
+              "callUUID": uuid.uuidString, "handle": Self.handle,
+              "domain": observed?.domain ?? "", "code": observed?.code ?? 0, "replyCount": count,
+              "main": main, "latencyMS": latency,
+            ])
         }
       }
-    }
-
-    private func recordReply(
-      _ uuid: UUID, domain: String, code: Int, main: Bool, latency: Double
-    ) {
-      replies[uuid, default: 0] += 1
-      CKSimEmit(
-        "fixture.reportCompleted",
-        [
-          "callUUID": uuid.uuidString, "handle": Self.handle, "domain": domain, "code": code,
-          "replyCount": replies[uuid] ?? 0, "main": main, "latencyMS": latency,
-        ])
     }
 
     func providerDidReset(_ provider: CXProvider) {}
