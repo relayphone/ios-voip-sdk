@@ -34,7 +34,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_pr_routing_follows_product_and_infrastructure_boundaries(self):
         examples = [
-            ('Tests/RuntimeEvents/run.py', False, True, True),
+            ('Tests/RuntimeTests/Runtime.swift', False, True, False),
             ('Tests/CKSimProtocolTests/RuntimeSessionTests.swift', False, True, False),
             ('Inspector/App.swift', False, True, False),
             ('Sources/Engine/RuntimeEngine.swift', True, True, False),

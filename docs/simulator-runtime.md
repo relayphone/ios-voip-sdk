@@ -183,8 +183,9 @@ The Inspector labels it separately as an injected error. Its callback uses the
 normal configured delay, not the measured DND delay. Journals identify it with
 `verification: injected-fault` and `filterReason: none`. Duplicate UUID code 2
 still takes priority. Each entered report retains its fault/filter snapshot.
-The native acceptance checks actual completion NSError callbacks for filters
-3/5–7 and injected fault 4, live mailbox survival beyond 4.4 s, and a 69-second repeat.
+`RuntimeTests` checks the app's actual completion errors for filters 3/5–7 and
+injected fault 4, that the app's mailbox still answers beyond 4.4 s, and that a
+repeated call from the same number is filtered too.
 
 For direct launch customization, the process environment accepts `CKSIM_RUN_ID`,
 `CKSIM_PROFILE=ios-27.0` and `CKSIM_LATENCY=device`. `CKSIM_SHADOW=1` additionally
@@ -287,7 +288,7 @@ Compare action latency to its advertised budget: the measured profile has LCK
 not a measured device benchmark for the application's handler. Profile expiry
 policies retain the measured/proposed qualifications in the profile source.
 
-### SwiftUI call inspector (M4 MVP)
+### SwiftUI call inspector
 
 Build the separate simulator app with
 `bash scripts/build-inspector.sh discovery/out/inspector`. With the target app
@@ -330,75 +331,9 @@ errors disable controls. A control timeout means its outcome is unknown: inspect
 the timeline before retrying. No inspector transport or app code is linked into
 the SDK or device builds.
 
-On relevant PRs and main, runtime CI builds the inspector, tests the bridge,
-checks the shared channel through the shipping watcher, and automatically runs
-live Inspector acceptance. The workflow owns one disposable iPhone 17 Pro for
-both native and Inspector acceptance. It starts a fresh fixture session for each
-stage, without reinstalling the fixture between them, and always deletes that
-simulator.
-
-The event and LCK fixtures capture their canonical simulator paths before installation.
-Its owner repeats that preparation for a replacement device before replaying
-installs, collecting inventory once per device. After installation it validates
-the final device's cached application directory locally, then checkpoints before
-launch. Event fixture launch has a 180-second host bound per attempt and one timeout-only
-re-attempt after confirmed host cleanup. Each attempt uses a fresh journal identity;
-the first stimulus waits for the final process and channel to be validated.
-Installation and inventory occur once before these event fixture startup attempts.
-Journal discovery uses the cached directory without another inventory
-RPC. Pre-install inventory has its own 180-second bound per query and one
-timeout-only re-attempt across the entire install preparation, including
-replacement callbacks. `infra:inventory` distinguishes a timeout, recovery or
-exhaustion. Non-timeout failures, uncertain host cleanup, stale ownership and
-checkpoint evidence prevent re-attempt; cancellation propagates. The shared
-installation recovery budget, product deadlines and native acceptance checks
-remain unchanged. Other inventory lookups retain their existing bounds.
-The LCK fixture uses a separate 120-second host-launch bound and a 20-second
-fresh-journal discovery bound, without replaying its launch.
-
-The automatic `--driver journal` journey uses `cksim` to inject an incoming call
-and issue one system-origin Answer. It foregrounds the fixture for controls and
-the real SwiftUI Inspector for observations. An opt-in Inspector receipt records
-its actual consumed model and timeline presentation; the host pins the nonce,
-process, target session and cursor, rejects stale data, and matches incoming,
-connected, audio and fulfilled-answer projections against the original runtime
-journal. One 25-second deadline bounds the Inspector journey. Screenshots remain
-diagnostics. Optional `--driver xctest` acceptance checks banner expansion,
-buttons and full-screen navigation on a separate display simulator.
-
-Current runtime sessions watch atomic command-mailbox publication, so controls
-do not need a `simctl spawn` wake helper. The Inspector reuses its validated
-container path for subsequent reads and controls. Older runtime packages retain
-a bounded notifier fallback. Normal Inspector launches do not write acceptance
-receipts; the test enables them with a unique launch nonce.
-
-Inspector startup uses a 180-second host-launch bound. A shared consumer keeps
-its original 25-second deadline from launch issuance, including startup; Inspector
-receipts must also fit that native process's 25-second lifetime. Authenticated
-readiness still needs a fresh publication after host reap. A missing or late
-acknowledgement fails without replaying the launch.
-Recorded startup timeouts are classified as `infra:startup`; diagnostic failures
-preserve the original exception. Already classified terminal transport outcomes
-retain their reason without spending the shared preparation recovery budget.
-
-Within the journey, the driver issues a fresh foreground challenge tied to
-the process, startup identity, target session and canonical data container. UIKit
-must report the app active. After cleaning up its owned launcher, the driver
-requires another fresh active publication. The current Inspector consumer
-deadline applies to both apps; the fixture's actual, potentially older startup identity is
-validated separately. Background, stale or late evidence, conflicting process
-headers, nonzero exits, cancellation and uncertain cleanup remain failures.
-
-**Measured:** [automatic native and GUI run](https://github.com/relayphone/ios-voip-sdk/actions/runs/40067131951)
-passed automatic native and live Inspector acceptance
-on iOS 27.0 after the complete transport and simulator-lifecycle fix. Initial
-fixture stimulus is sent only after the host observes the fresh session, so slow
-launch transport cannot consume the initial ring. The workflow can also be
-dispatched for investigation.
-
-Runtime/inspector CI uses the `xcode-27` runner with Xcode 27.1 and explicitly
-requires the iOS 27.0 simulator runtime; it refuses to substitute another OS.
-Artifacts include the compiler/runtime inventory, build logs, original runtime
-journal, Inspector receipts and foreground-phase diagnostics on success or
-failure. Failed journeys also attempt bounded simulator logs and screenshots
-before deleting their simulator.
+`InspectorTests` covers the Inspector's model on the host: its timing references,
+its LiveCommunicationKit projection, and that a control or setting changes nothing
+until the journal confirms it. `RuntimeTests` runs the same model against the
+runtime's real journal on the simulator, under `xcodebuild test`: it follows and
+answers a CallKit call, sets the incoming filter and the injected error, and controls
+LiveCommunicationKit calls with system and application origin.

@@ -80,9 +80,6 @@
     let lckComposite: LCKRuntimeComposite?
     let issuedAt = Date()
     let issuedUptime = DispatchTime.now().uptimeNanoseconds
-    #if CKSIM_FIXTURE_CLOCK
-      var issuedFixtureTimeMS: Int?
-    #endif
     var expired = false
     var settled = false
     init(
@@ -276,44 +273,6 @@
     private var stopped = false
     private var commandResults: [UUID: ControlResponse] = [:]
     private var timers: [UUID: any DispatchSourceTimer] = [:]
-    #if CKSIM_FIXTURE_CLOCK
-      private var fixtureClock: RuntimeFixtureClock?
-      private var fixtureCallbacks = 0
-      func startFixtureClock() -> Bool {
-        withState {
-          guard !stopped, fixtureClock == nil else { return false }
-          fixtureClock = RuntimeFixtureClock()
-          return true
-        }
-      }
-      func stepFixtureClock(toward target: Int) -> Bool? {
-        withState {
-          guard !stopped, let fixtureClock, target >= fixtureClock.nowMS,
-            target - fixtureClock.nowMS <= 60000
-          else { return nil }
-          return fixtureClock.step(toward: target)
-        }
-      }
-      func scheduleFixtureWork(_ seconds: Double, _ body: @escaping @MainActor @Sendable () -> Void)
-        -> Bool
-      {
-        withState {
-          guard !stopped, let fixtureClock else { return false }
-          fixtureClock.schedule(seconds) { [weak self] in
-            guard let self, !self.stopped else { return }
-            self.fixtureCallbacks += 1
-            DispatchQueue.main.async {
-              defer { self.withState { self.fixtureCallbacks -= 1 } }
-              guard self.withState({ !self.stopped }) else { return }
-              body()
-            }
-          }
-          return true
-        }
-      }
-      func fixtureTimeMS() -> Int? { withState { fixtureClock?.nowMS } }
-      func fixtureCallbacksPending() -> Bool { withState { fixtureCallbacks != 0 } }
-    #endif
 
     private init(prepared: Void) throws {
       let env = ProcessInfo.processInfo.environment
@@ -432,10 +391,6 @@
         guard !stopped else { return }
         stopped = true
         audioRevision += 1
-        #if CKSIM_FIXTURE_CLOCK
-          fixtureClock?.cancelAll()
-          fixtureClock = nil
-        #endif
         for timer in timers.values {
           timer.setEventHandler(handler: nil)
           timer.cancel()
@@ -468,26 +423,12 @@
       return state.sync(execute: body)
     }
     private func elapsedSinceIssued(_ item: RuntimePendingAction) -> Double {
-      #if CKSIM_FIXTURE_CLOCK
-        if let issued = item.issuedFixtureTimeMS, let fixtureClock {
-          return Double(fixtureClock.nowMS - issued) / 1000
-        }
-      #endif
       return Double(DispatchTime.now().uptimeNanoseconds - item.issuedUptime) / 1_000_000_000
     }
     private func after(
       _ seconds: Double, from start: DispatchTime = .now(), _ body: @escaping @Sendable () -> Void
     ) {
       guard !stopped else { return }
-      #if CKSIM_FIXTURE_CLOCK
-        if let fixtureClock {
-          fixtureClock.schedule(seconds) { [weak self] in
-            guard let self, !self.stopped else { return }
-            body()
-          }
-          return
-        }
-      #endif
       let id = UUID()
       let timer = DispatchSource.makeTimerSource(flags: .strict, queue: state)
       timers[id] = timer
@@ -631,13 +572,7 @@
     ) {
       guard let delegate = provider.delegate else { return }
       let generation = provider.generation
-      #if CKSIM_FIXTURE_CLOCK
-        withState { fixtureCallbacks += 1 }
-      #endif
       (provider.queue ?? .main).async {
-        #if CKSIM_FIXTURE_CLOCK
-          defer { self.withState { self.fixtureCallbacks -= 1 } }
-        #endif
         guard
           self.withState({ !self.stopped && provider.valid && provider.generation == generation })
         else { return }
@@ -944,9 +879,6 @@
           call: (action as? CXCallAction).flatMap { calls[$0.callUUID] },
           groupTarget: (action as? CXSetGroupCallAction)?.callUUIDToGroupWith.flatMap { calls[$0] },
           lckComposite: composite)
-        #if CKSIM_FIXTURE_CLOCK
-          pending.issuedFixtureTimeMS = fixtureClock?.nowMS
-        #endif
         let issued = pending.issuedAt
         let deadline = issued.addingTimeInterval(timing.deadline)
         deadlines.setObject(deadline as NSDate, forKey: action)
@@ -1413,13 +1345,7 @@
         record(event: "fault.audioSuppressed", fields: [:])
         return
       }
-      #if CKSIM_FIXTURE_CLOCK
-        fixtureCallbacks += 1
-      #endif
       DispatchQueue.main.async {
-        #if CKSIM_FIXTURE_CLOCK
-          defer { self.withState { self.fixtureCallbacks -= 1 } }
-        #endif
         guard self.withState({ !self.stopped && self.audioRevision == revision }) else { return }
         do {
           try AVAudioSession.sharedInstance().setActive(

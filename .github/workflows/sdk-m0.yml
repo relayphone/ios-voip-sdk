@@ -77,11 +77,8 @@ jobs:
       - run: sudo xcode-select -s /Applications/Xcode_27.1.app
       - name: Check the Swift formatting
         run: swift format lint --strict --recursive --parallel Package.swift Sources Tests Examples Inspector
-      - name: Swift tests and the runtime's push launch controls
-        run: |
-          set -euo pipefail
-          swift test --scratch-path "$RUNNER_TEMP/swift-tests"
-          bash Tests/PushLaunch/run.sh
+      - name: Swift tests
+        run: swift test --scratch-path "$RUNNER_TEMP/swift-tests"
       - name: Remove this job's build outputs
         if: always()
         run: scripts/ci/bounded 60 rm -rf "$RUNNER_TEMP/swift-tests"

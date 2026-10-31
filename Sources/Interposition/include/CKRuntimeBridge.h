@@ -50,6 +50,13 @@ void CKSimPerform(id<CXProviderDelegate> delegate, CXProvider *provider, CXTrans
 NSString * _Nullable CKSimInstallPushHooks(void);
 void CKSimReleasePushHooks(void);
 NSString *CKSimCurrentPushID(void);
+// Consumes the push that `cksim push --launch` staged in `directory` for this launch, after checking
+// the directory's and file's owner and modes, the run, the bundle and the expiry at `now`. The caller
+// supplies its own path, clock and uid; none come from the payload. Returns nil, with a reason when
+// a staged push was refused, if there is nothing to deliver.
+NSDictionary *_Nullable CKSimConsumeLaunchPush(
+    NSString *directory, NSString *runID, NSString *bundleID, NSTimeInterval now, uid_t owner,
+    NSString *_Nullable *_Nullable reason);
 NSString *CKSimResourceDirectory(void);
 BOOL CKSimDelegateUsesLiveCommunicationKit(id _Nullable delegate);
 NS_ASSUME_NONNULL_END

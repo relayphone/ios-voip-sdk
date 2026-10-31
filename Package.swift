@@ -92,6 +92,10 @@ let package = Package(
       name: "CKSimProtocolTests", dependencies: ["CKSimProtocol"], swiftSettings: strictSwift),
     .testTarget(
       name: "InspectorTests", dependencies: ["CKSimInspector"], swiftSettings: strictSwift),
+    .testTarget(
+      name: "RuntimeTests",
+      dependencies: ["CKSimRuntime", "CKSimRuntimeC", "CKSimProtocol", "CKSimInspector"],
+      swiftSettings: strictSwift),
   ],
   swiftLanguageModes: [.v6]
 )

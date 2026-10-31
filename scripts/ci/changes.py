@@ -28,10 +28,9 @@ def select(paths, full=False):
             sdk |= name in ('sdk-m0.yml', 'ci-changes.yml')
             runtime |= name in ('runtime-m4.yml', 'ci-changes.yml')
             helper |= name in ('sim-infrastructure.yml', 'ci-changes.yml')
-        elif path.startswith(('Tests/CKSimProtocolTests/', 'Tests/RuntimeEngineTests/', 'Tests/InspectorTests/')):
+        elif path.startswith(('Tests/CKSimProtocolTests/', 'Tests/RuntimeEngineTests/', 'Tests/InspectorTests/',
+                              'Tests/RuntimeTests/')):
             runtime = True
-        elif path.startswith(('Tests/RuntimeEvents/', 'Tests/Inspector/')):
-            runtime = helper = True
         elif path.startswith('Inspector/') or path == 'scripts/build-inspector.sh':
             runtime = True
         elif path.startswith(('Sources/Engine/', 'Sources/Interposition/', 'Sources/CKSimProtocol/', 'Tools/')) or path == 'scripts/build-runtime.sh':
