@@ -74,8 +74,7 @@ Other test tools should likewise set the environment only on the app they launch
 
 App-hosted XCTest integration can use a generated `.xctestrun` and an allowlist
 without global simulator environment changes. Each host still needs its own
-ring/join acceptance run; see the
-[integration constraints](design/2026-10-21-v01-review.md).
+ring/join acceptance run.
 
 ## Optional simulator-wide loader and recovery
 
@@ -231,23 +230,16 @@ public LCK observation, genuine CallKit observation or simulator policy.
 
 ```sh
 python3 discovery/check_harness.py
-python3 discovery/check_environment.py
-python3 discovery/check_cli_repair.py
 bash discovery/run.sh
 ```
 
-Legacy discovery compiles with Xcode 26.6 and 26.3 on macOS 26. It runs nightly
-at 02:20 UTC or by manual dispatch, outside the PR/main acceptance gate. Hosted
-simulator migration/startup continued to time out after the agreed hardening
-time-box. Nightly failures remain visible alongside the separate SDK acceptance.
-SDK M0/M1 is a separate required PR/main workflow, including Release device
-exclusion checks. Changes to either workflow trigger that SDK acceptance.
+The runtime release workflow runs this discovery acceptance against the
+CI-built distribution before packaging it.
 **Measured:** [hosted run 39680771297](https://github.com/relayphone/ios-voip-sdk/actions/runs/39680771297)
 used the iOS **26.5 (23F77)** simulator against the `ios-27.0` behavior profile.
 That profile names the iPhone measurements being reproduced; it is separate
 from the simulator OS and selected compiler. This CI run does not qualify
-iOS 27.0 or LiveCommunicationKit. The [verification index](verification/README.md)
-links current workflows and historical environment captures.
+iOS 27.0 or LiveCommunicationKit.
 
 Fresh shipping runs record the selected runtime ID, exact OS version/build and
 selected Xcode version/build in `manifest.json`, bind them to saved runtime

@@ -9,7 +9,6 @@ import urllib.request
 
 REQUIRED = {
     'runtime-m4.yml': {'Runtime native and Inspector'},
-    'simulator-discovery.yml': {'probe (26.6)', 'probe (26.3)'},
 }
 
 

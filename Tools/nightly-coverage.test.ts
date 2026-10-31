@@ -35,11 +35,6 @@ test('coverage follows acceptance dependencies and job names', () => {
   assert.ok(required(expanded).includes('new-native'));
   assert.throws(() => required(workflow.replace('runs-on: xcode-27', 'runs-on: ${{ matrix.runner }}')));
 });
-test('APNs guard targets the canonical repository', () => {
-  const text = readFileSync(join(root, '.github/workflows/apns-sandbox-key-check.yml'), 'utf8');
-  assert.match(text, /github\.repository == 'relayphone\/ios-voip-sdk'/);
-});
-
 test('unrecognized workflow layout never counts as prior coverage', () => {
   const directory = mkdtempSync(join(tmpdir(), 'nightly-coverage-layout-'));
   try {

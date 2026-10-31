@@ -1,4 +1,0 @@
-2026-10-21 21:50:44.697 E  callservicesd[747:2724cb] [com.apple.calls.callkit:Default] Attempt to retrieve application record for bundle identifier <private> failed with error: Error Domain=NSOSStatusErrorDomain Code=-10814 UserInfo={_LSLine=1975, _LSFunction=
-2026-10-21 21:50:44.697 E  callservicesd[747:2724cb] [com.apple.calls.callkit:Default] Denying creation of CXXPCCallSource with identifier: <private> bundleIdentifier: (null) bundleURL: (null) hasVoIPBackgroundMode: 0 capabilities: <private> connection: <priva
-2026-10-21 21:50:45.757 E  callservicesd[747:2724cb] [com.apple.calls.callkit:Default] Attempt to retrieve application record for bundle identifier <private> failed with error: Error Domain=NSOSStatusErrorDomain Code=-10814 UserInfo={_LSLine=1975, _LSFunction=
-2026-10-21 21:50:45.758 E  callservicesd[747:272d26] [com.apple.calls.callkit:Default] Connection is not permitted to issue transaction requests: <private>

@@ -33,17 +33,12 @@ job used Xcode **26.6 (17F113)** on macOS **26.6.2 (25G83)**. The compiler
 matrix does not establish additional simulator OS coverage. This run does not
 qualify iOS 27.0 or LiveCommunicationKit; LCK acceptance is the next work item
 in the [simulator runtime documentation](../docs/simulator-runtime.md).
-The [verification index](../docs/verification/README.md) links current workflows
-and historical environment captures. Future runs select the newest available iOS simulator
+Future runs select the newest available iOS simulator
 runtime and record its exact version/build; they fail if that metadata is absent.
 The earlier macOS 15.7.9 / iOS 26.2 attempt compiled successfully but produced no
 app trace before its launch deadline and remains unqualified. It is not a CallKit
 behavior measurement. App-entry markers, launcher PIDs and bounded container-trace
 recovery now help distinguish startup failure from console attachment failure.
-
-`python3 discovery/check_environment.py` runs offline corruption controls at the
-shipping identity seam, including profile/OS confusion, changed OS/compiler
-builds, missing source files, and unavailable or ambiguous runtime selection.
 
 Normal microphone probes wait for CallKit's audio activation callback before
 constructing an audio engine. The explicit `PROBE_MODE=audio` experiment can

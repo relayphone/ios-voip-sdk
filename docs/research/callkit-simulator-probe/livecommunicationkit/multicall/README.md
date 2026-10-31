@@ -5,12 +5,11 @@
 - The probe is `../../lckmulti.swift`. It uses LiveCommunicationKit (LCK) only; **no `CXProvider` is ever created** (D13).
 - Each row is a script in `Documents/lck-multi.json`. The probe reports incoming conversations locally while it's frontmost, and runs app-initiated actions.
 - Each action kind gets a fulfillment policy: immediate, delayed, failed, left pending, or reversed.
-- `MultiCallUITests.swift` operates the **genuine** system UI with no human taps:
+- A UI test operated the **genuine** system UI with no human taps:
   - the SpringBoard banner;
   - InCallService's call-waiting choices;
   - the lock-screen in-call controls.
-- `rows.py` defines every row's script and UI steps.
-- `run.sh` runs one `xcodebuild test-without-building` per row on the iPhone 13 only, then fetches `<row>.jsonl`. `summarize.py <row>.jsonl` prints a row.
+- Each row ran as one `xcodebuild test-without-building` on the iPhone 13, which produced `<row>.jsonl`.
 - Every trace row has:
   - `mono_ms` (device uptime) and `wall_ms`;
   - full conversation and action UUIDs;
@@ -91,7 +90,7 @@ A = first call (answered from the banner); B = second; C/D = later calls. "Same 
 
 ## Block list steps (October 24)
 
-Hamza authorized these steps; nothing else in Settings changed. `MultiCallUITests` did them in Contacts:
+Nothing else in Settings changed. The UI test did these steps in Contacts:
 
 1. Tapped **Add**, set the first name to `LCK Block Probe`, added the phone number `+15555550199` and tapped **Done**.
 2. Tapped **Block Caller**, then **Block Contact**.
