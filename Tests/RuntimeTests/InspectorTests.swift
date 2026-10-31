@@ -97,120 +97,131 @@
       }
 
       @Test func theInspectorFollowsAndAnswersACallKitCall() async throws {
-        let runtime = try Runtime.shared()
-        let app = CallKitApp()
-        defer { app.stop() }
-        try await runtime.clearSettings()
-        let (model, task) = try await inspect(runtime)
-        defer { task.cancel() }
-        let call = UUID()
-        try await runtime.push([
-          "operation": .string("incoming"), "callUUID": .string(call.uuidString),
-        ])
-        let incoming = try await runtime.until("the Inspector to show the incoming call") {
-          model.incoming?.uuid == call.uuidString ? model.incoming : nil
+        try await exclusively {
+          let runtime = try Runtime.shared()
+          let app = CallKitApp()
+          defer { app.stop() }
+          try await runtime.clearSettings()
+          let (model, task) = try await inspect(runtime)
+          defer { task.cancel() }
+          let call = UUID()
+          try await runtime.push([
+            "operation": .string("incoming"), "callUUID": .string(call.uuidString),
+          ])
+          let incoming = try await runtime.until("the Inspector to show the incoming call") {
+            model.incoming?.uuid == call.uuidString ? model.incoming : nil
+          }
+          #expect(incoming.caller == "Alex Morgan" && incoming.status == "Incoming call")
+          try await submit(model, runtime, "the answer") { model.send("answer", call: incoming) }
+          try await runtime.until("the Inspector to show the call connected with audio") {
+            model.conversations[call.uuidString]?.status == "Connected" && model.audioActive
+              ? true : nil
+          }
+          #expect(
+            model.timeline.contains {
+              $0.event == "action.settled" && $0.kind == "answer" && $0.fulfilled == true
+                && $0.callUUID == call.uuidString
+            })
+          let answerAudio = try #require(model.timingReferences.first { $0.id == "answerAudio" })
+          #expect(answerAudio.actualMS != nil, "The Inspector measures answer to audio")
+          let connected = try #require(model.conversations[call.uuidString])
+          try await submit(model, runtime, "the end") { model.send("end", call: connected) }
+          try await runtime.until("the Inspector to show the call ended") {
+            model.conversations[call.uuidString]?.ended == true && !model.audioActive ? true : nil
+          }
+          try await runtime.end([call])
         }
-        #expect(incoming.caller == "Alex Morgan" && incoming.status == "Incoming call")
-        try await submit(model, runtime, "the answer") { model.send("answer", call: incoming) }
-        try await runtime.until("the Inspector to show the call connected with audio") {
-          model.conversations[call.uuidString]?.status == "Connected" && model.audioActive
-            ? true : nil
-        }
-        #expect(
-          model.timeline.contains {
-            $0.event == "action.settled" && $0.kind == "answer" && $0.fulfilled == true
-              && $0.callUUID == call.uuidString
-          })
-        let answerAudio = try #require(model.timingReferences.first { $0.id == "answerAudio" })
-        #expect(answerAudio.actualMS != nil, "The Inspector measures answer to audio")
-        let connected = try #require(model.conversations[call.uuidString])
-        try await submit(model, runtime, "the end") { model.send("end", call: connected) }
-        try await runtime.until("the Inspector to show the call ended") {
-          model.conversations[call.uuidString]?.ended == true && !model.audioActive ? true : nil
-        }
-        try await runtime.end([call])
       }
 
       @Test func theInspectorConfiguresFiltersAndTheInjectedError() async throws {
-        let runtime = try Runtime.shared()
-        try await runtime.clearSettings()
-        let (model, task) = try await inspect(runtime)
-        defer { task.cancel() }
-        for filter in [InspectorIncomingFilter.doNotDisturb, .none] {
-          model.configureIncomingFilter(filter)
-          try await runtime.until("the filter \(filter)") {
-            !model.busy && model.incomingFilter == filter ? true : nil
+        try await exclusively {
+          let runtime = try Runtime.shared()
+          try await runtime.clearSettings()
+          let (model, task) = try await inspect(runtime)
+          defer { task.cancel() }
+          for filter in [InspectorIncomingFilter.doNotDisturb, .none] {
+            model.configureIncomingFilter(filter)
+            try await runtime.until("the filter \(filter)") {
+              !model.busy && model.incomingFilter == filter ? true : nil
+            }
+            #expect(model.commandError == nil)
+            #expect(try await runtime.status().incomingFilter.reason.rawValue == filter.rawValue)
           }
-          #expect(model.commandError == nil)
-          #expect(try await runtime.status().incomingFilter.reason.rawValue == filter.rawValue)
-        }
-        for code in [4, 0] {
-          model.configureIncomingError(code)
-          try await runtime.until("the injected error \(code)") {
-            !model.busy && model.incomingErrorCode == code ? true : nil
+          for code in [4, 0] {
+            model.configureIncomingError(code)
+            try await runtime.until("the injected error \(code)") {
+              !model.busy && model.incomingErrorCode == code ? true : nil
+            }
+            #expect(model.commandError == nil)
+            #expect(try await runtime.status().incomingErrorCode == code)
           }
-          #expect(model.commandError == nil)
-          #expect(try await runtime.status().incomingErrorCode == code)
         }
       }
 
       @Test func theInspectorControlsLiveCommunicationKitCalls() async throws {
-        let session = try await LCKSession()
-        let runtime = session.runtime
-        try await session.pair()
-        _ = try await session.composite()
-        try await session.expect(["A": "paused", "B": "joined"])
-        let (model, task) = try await inspect(runtime)
-        defer { task.cancel() }
-        let a = session.app.id("A").uuidString
-        let b = session.app.id("B").uuidString
-        try await runtime.until("both calls in the Inspector") {
-          model.conversations[a]?.held == true && model.conversations[b]?.held == false ? true : nil
-        }
-        let callA = try #require(model.conversations[a])
-        let callB = try #require(model.conversations[b])
+        try await exclusively {
+          let session = try await LCKSession()
+          let runtime = session.runtime
+          try await session.pair()
+          _ = try await session.composite()
+          try await session.expect(["A": "paused", "B": "joined"])
+          let (model, task) = try await inspect(runtime)
+          defer { task.cancel() }
+          let a = session.app.id("A").uuidString
+          let b = session.app.id("B").uuidString
+          try await runtime.until("both calls in the Inspector") {
+            model.conversations[a]?.held == true && model.conversations[b]?.held == false
+              ? true : nil
+          }
+          let callA = try #require(model.conversations[a])
+          let callB = try #require(model.conversations[b])
 
-        // The Inspector's ordinary controls act as the system, which resumes A without ending B.
-        try await submit(model, runtime, "the system's resume of A") {
-          model.send("hold", call: callA, held: false)
-        }
-        try await runtime.until("A to resume") {
-          model.conversations[a]?.held == false ? true : nil
-        }
-        try await Task.sleep(for: .milliseconds(250))
-        #expect(model.conversations[b]?.ended != true, "The system's resume doesn't end B")
-        try await submit(model, runtime, "the system's pause of A") {
-          model.send("hold", call: callA, held: true)
-        }
-        try await runtime.until("A to pause") { model.conversations[a]?.held == true ? true : nil }
+          // The Inspector's ordinary controls act as the system, which resumes A without ending B.
+          try await submit(model, runtime, "the system's resume of A") {
+            model.send("hold", call: callA, held: false)
+          }
+          try await runtime.until("A to resume") {
+            model.conversations[a]?.held == false ? true : nil
+          }
+          try await Task.sleep(for: .milliseconds(250))
+          #expect(model.conversations[b]?.ended != true, "The system's resume doesn't end B")
+          try await submit(model, runtime, "the system's pause of A") {
+            model.send("hold", call: callA, held: true)
+          }
+          try await runtime.until("A to pause") {
+            model.conversations[a]?.held == true ? true : nil
+          }
 
-        try await submit(model, runtime, "the app's merge of B into A") {
-          model.send("merge", call: callB, groupTarget: callA, applicationRequest: true)
+          try await submit(model, runtime, "the app's merge of B into A") {
+            model.send("merge", call: callB, groupTarget: callA, applicationRequest: true)
+          }
+          #expect(model.conversations[a]?.held == true && model.conversations[b]?.held == false)
+          try await submit(model, runtime, "the app's unmerge of B") {
+            model.send("unmerge", call: callB, applicationRequest: true)
+          }
+          #expect(model.conversations[a]?.held == true && model.conversations[b]?.held == false)
+          try await submit(model, runtime, "the app's pause of B") {
+            model.send("hold", call: callB, held: true, applicationRequest: true)
+          }
+          try await runtime.until("B to pause") {
+            model.conversations[b]?.held == true ? true : nil
+          }
+          try await submit(model, runtime, "the app's resume of B") {
+            model.send("hold", call: callB, held: false, applicationRequest: true)
+          }
+          try await runtime.until("B to resume") {
+            model.conversations[b]?.held == false ? true : nil
+          }
+          // The app's own resume of A ends B, as the measured device does.
+          try await submit(model, runtime, "the app's resume of A") {
+            model.send("hold", call: callA, held: false, applicationRequest: true)
+          }
+          try await runtime.until("A to join and B to end") {
+            model.conversations[a]?.connected == true && model.conversations[a]?.held == false
+              && model.conversations[b]?.ended == true ? true : nil
+          }
+          try await session.finish()
         }
-        #expect(model.conversations[a]?.held == true && model.conversations[b]?.held == false)
-        try await submit(model, runtime, "the app's unmerge of B") {
-          model.send("unmerge", call: callB, applicationRequest: true)
-        }
-        #expect(model.conversations[a]?.held == true && model.conversations[b]?.held == false)
-        try await submit(model, runtime, "the app's pause of B") {
-          model.send("hold", call: callB, held: true, applicationRequest: true)
-        }
-        try await runtime.until("B to pause") { model.conversations[b]?.held == true ? true : nil }
-        try await submit(model, runtime, "the app's resume of B") {
-          model.send("hold", call: callB, held: false, applicationRequest: true)
-        }
-        try await runtime.until("B to resume") {
-          model.conversations[b]?.held == false ? true : nil
-        }
-        // The app's own resume of A ends B, as the measured device does.
-        try await submit(model, runtime, "the app's resume of A") {
-          model.send("hold", call: callA, held: false, applicationRequest: true)
-        }
-        try await runtime.until("A to join and B to end") {
-          model.conversations[a]?.connected == true && model.conversations[a]?.held == false
-            && model.conversations[b]?.ended == true ? true : nil
-        }
-        try await session.finish()
       }
     }
   }
