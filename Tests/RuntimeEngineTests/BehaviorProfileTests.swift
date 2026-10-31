@@ -26,8 +26,9 @@ struct BehaviorProfileTests {
   @Test(arguments: timings, ["0", "-1", "\"Infinity\"", "\"-Infinity\"", "\"NaN\""])
   func theRuntimeRefusesATimingThatIsntPositiveAndFinite(key: String, value: String) throws {
     var profile = try profileObject()
-    let replacement = try JSONSerialization.jsonObject(
-      with: Data("[\(value)]".utf8), options: []) as? [Any]
+    let replacement =
+      try JSONSerialization.jsonObject(
+        with: Data("[\(value)]".utf8), options: []) as? [Any]
     let parts = key.split(separator: ".").map(String.init)
     if parts.count == 1 {
       profile[key] = replacement?.first

@@ -30,7 +30,10 @@ final class InspectorUITests: XCTestCase {
     app.buttons["Show timeline"].tap()
     XCTAssertEqual(app.staticTexts["audio-state"].label, "Audio active")
     app.swipeUp()
-    let latency = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "Answer fulfilled", "profile budget")).firstMatch
+    let latency = app.staticTexts.matching(
+      NSPredicate(
+        format: "label CONTAINS %@ AND label CONTAINS %@", "Answer fulfilled", "profile budget")
+    ).firstMatch
     XCTAssertTrue(latency.waitForExistence(timeout: 5))
     capture("live-timeline")
   }

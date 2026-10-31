@@ -29,7 +29,8 @@ struct TimingReferenceTests {
       InspectorLCKProjection.sourcePath
     ])
     for source in sources {
-      #expect(FileManager.default.fileExists(atPath: root.appending(path: source).path()), "\(source)")
+      #expect(
+        FileManager.default.fileExists(atPath: root.appending(path: source).path()), "\(source)")
     }
   }
 
@@ -98,7 +99,8 @@ struct TimingReferenceTests {
     let id = name == "report.completed" ? "pushReport" : "unreportedPush"
     let pushed = try event(1, 100, "push.received", ["pushID": "p1", "mustReport": true])
     let unrelated: [(Double, [String: Any])] = [
-      (290, ["pushID": "other"]), (90, ["pushID": "p1"]), (290, ["pushID": "p1", "runID": "other"]),
+      (290, ["pushID": "other"]), (90, ["pushID": "p1"]),
+      (290, ["pushID": "p1", "runID": "other"]),
       (290, ["pushID": "p1", "pid": 999]),
     ]
     for (time, fields) in unrelated {
@@ -125,7 +127,8 @@ struct TimingReferenceTests {
       try metric("pushReport", [pushed, filtered]).actualMS == nil,
       "A filtered report isn't compared with the successful device report")
     #expect(
-      try metric("pushReport", [pushed, report]).actualMS == nil, "An unknown outcome is unavailable")
+      try metric("pushReport", [pushed, report]).actualMS == nil,
+      "An unknown outcome is unavailable")
     let controlFailure = try event(3, 300, "control.completed", ["error": "Rejected command"])
     #expect(controlFailure.title == "control.completed", "String errors stay decodable")
   }
@@ -146,7 +149,8 @@ struct TimingReferenceTests {
       ["origin": "system"], ["actionID": ""], ["transactionID": ""],
     ]
     for change in changes {
-      let wrongEcho = try event(2, 615, "action.deadline", baseEcho.merging(change) { _, new in new })
+      let wrongEcho = try event(
+        2, 615, "action.deadline", baseEcho.merging(change) { _, new in new })
       #expect(try metric("muteEcho", [fulfilled, wrongEcho]).actualMS == nil)
     }
     let pending = try event(1, 500, "action.deadline", app)

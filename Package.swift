@@ -46,7 +46,7 @@ let package = Package(
       exclude: ["Resources"],
       swiftSettings: strictSwift
     ),
-    // The Inspector app's model. `tools/build-inspector.ts` builds the app itself.
+    // The Inspector app's model: everything but the app's entry point.
     .target(
       name: "CKSimInspector",
       dependencies: ["CKSimProtocol"],
