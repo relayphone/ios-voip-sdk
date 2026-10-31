@@ -8,6 +8,7 @@ with PushKit. Calls also work in the iOS Simulator during development, without a
 | --- | --- |
 | `VoIPCore` | `VoIPClient`, the call values and the call state machine. It imports no calling framework. |
 | `VoIPAudio` | `AudioSessionAdapter`, which configures the audio session for calls, reports its interruptions and lists its audio routes. |
+| `VoIPFocus` | `FocusFilterStore`, which shares the Focus filter state between the app and its extensions through an App Group. It doesn't depend on `VoIPCore`. |
 | `VoIPLiveCommunicationKit` | `LiveCommunicationKitAdapter`, which presents calls with LiveCommunicationKit. |
 | `VoIPPushKit` | `PushKitSource`, which receives VoIP pushes and the VoIP push token. |
 | `VoIPSimulator` | `VoIPSimulator.activate()`, which presents calls in the iOS Simulator in Debug builds. |
@@ -70,13 +71,14 @@ pod 'IosVoipSDK', :git => 'https://github.com/relayphone/ios-voip-sdk.git', :com
 | ---------------------- | -------------------------- |
 | `Core`                 | `VoIPCore`                 |
 | `Audio`                | `VoIPAudio`                |
+| `Focus`                | `VoIPFocus`                |
 | `LiveCommunicationKit` | `VoIPLiveCommunicationKit` |
 | `PushKit`              | `VoIPPushKit`              |
 | `Simulator`            | `VoIPSimulator`            |
 | `Testing`              | `VoIPTesting`              |
 
-Each adapter subspec includes `Core`. CocoaPods builds every subspec into one module, so import
-`IosVoipSDK` instead of the libraries' modules.
+Each adapter subspec includes `Core`; `Focus` doesn't need it. CocoaPods builds every subspec into
+one module, so import `IosVoipSDK` instead of the libraries' modules.
 
 `VoIPSimulator` can stay in Release builds with either package manager: `activate()` starts the
 runtime only in Debug builds for the simulator, and the runtime isn't compiled for devices.

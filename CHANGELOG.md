@@ -93,6 +93,16 @@ Changes not yet released are recorded below. Public API changes include migratio
   `start` returns can miss. `observers` defaults to none, so existing calls to `start` don't
   change. `FakePushSource(pending:)` delivers pushes as soon as the client attaches, as PushKit
   delivers the push that cold-launched the app.
+- The `VoIPFocus` library records the Focus filter state: what the app's Focus filter last asked
+  for, `FocusFilterState.unknown`, `inactive(since:)` or `active(_:since:)` with the app's own
+  settings type. `FocusFilterStore(appGroup:)` shares it between the app and its extensions
+  through the App Group's `UserDefaults`: `record(_:defaults:)` records the settings that the
+  filter runs with, inactive when they equal its defaults, since the system resets the filter to
+  them when the Focus turns off; `state` reads it, and `states()` follows changes from any
+  process through a Darwin notification. Until the filter first runs, or when the state can't be
+  read, it is unknown. The state encodes to JSON for the app's servers. The library imports only
+  Foundation and doesn't depend on `VoIPCore`; CocoaPods ships it as the `Focus` subspec. See
+  [ADR 0008](docs/adr/0008-focus-filter-defaults-are-inactive.md).
 
 ### Changed
 
