@@ -112,6 +112,10 @@ _Avoid_: Focus status, DND state
 A notification that the system shows as coming from a person, because it is about a call or a message from them. A Focus lets it through only for the people it allows.
 _Avoid_: Call banner, contact notification
 
+**Call notification**:
+A communication notification about a call that the system filtered or that the app shows only as a call preview: an incoming call that the user can join, or a missed call once it ends without being joined on this device. It never rings.
+_Avoid_: Missed-call push, call alert
+
 ### Control
 
 **Action**:

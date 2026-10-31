@@ -109,6 +109,20 @@ Changes not yet released are recorded below. Public API changes include migratio
   Declare it in an App Intents extension, which the system runs on each Focus change without
   launching the app. The example app's `FocusFilter` extension declares one and the app shows its
   state.
+- The `VoIPNotifications` library's `CallNotifier` is a `CallObserver` that posts a
+  `CallNotification`, a communication notification, for each call that Do Not Disturb or a Focus
+  filtered, through a `CallNotificationCenter`. It posts once per call, when the call becomes a
+  call preview, or ends at once as filtered when the presentation policy doesn't preview filtered
+  calls; with the `previewedByPolicy` trigger it also posts for calls that the policy previews.
+  It never posts for a call that rings or a block-listed caller. Its notifications are passive or
+  active, with the default sound or none, and never ring (see
+  [ADR 0009](docs/adr/0009-call-notifications-never-ring.md)). When the call is joined here, it
+  withdraws the notification; when the call ends without being joined here, it replaces the
+  notification with a missed-call notification, unless `Options.endedWithoutJoining` keeps or
+  removes it. `Options.customize` changes or drops each notification, for example to localize its
+  English text, and `events()` reports what was posted, withdrawn or refused. `VoIPTesting` adds
+  `FakeCallNotificationCenter`, and the CocoaPods spec adds the `Notifications` subspec, which
+  `Testing` includes.
 
 ### Changed
 
