@@ -31,10 +31,6 @@ playground.xcworkspace
 
 .build/
 node_modules/
-/build/
-example/.expo/
-example/ios/
-example/android/
 __pycache__/
 discovery/build/
 discovery/out/

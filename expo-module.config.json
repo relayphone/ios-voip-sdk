@@ -1,8 +1,0 @@
-{
-  "platforms": ["apple"],
-  "apple": {
-    "modules": ["IosVoipSDKModule"],
-    "appDelegateSubscribers": ["VoIPAppDelegateSubscriber"],
-    "podspecPath": "IosVoipSDK.podspec"
-  }
-}

@@ -1,29 +1,20 @@
 # Contributing
 
-Thanks for contributing. Before starting a large change, open an issue to discuss the behavior and scope. For bugs, include a minimal reproduction and the versions of iOS, Xcode, Node and Expo that apply. Do not include push tokens, credentials, contact information or private call data.
+Thanks for contributing. Before starting a large change, open an issue to discuss the behavior and scope. For bugs, include a minimal reproduction and the versions of iOS and Xcode that apply. Do not include push tokens, credentials, contact information or private call data.
 
 ## Setup
 
-Use macOS 26 or later with Xcode 27.1 (Swift 6.4) and the iOS 27 SDK for native builds; the SDK supports iOS 26 and later. The Expo example uses Node 24 and CocoaPods. Install JavaScript dependencies from the repository root:
-
-```sh
-npm ci --ignore-scripts --no-audit --no-fund
-npm run build
-```
-
-The root package and example share the npm workspace. See the [example guide](example/README.md) for generating the iOS project and running it in a simulator.
+Use macOS 26 or later with Xcode 27.1 (Swift 6.4) and the iOS 27 SDK; the SDK supports iOS 26 and later. The [example app](Examples/CallExample) builds against this checkout; open `Examples/CallExample/CallExample.xcodeproj` and run it in an iOS 27 simulator.
 
 ## Checks
 
-Run the fast JavaScript and configuration checks from the repository root:
+Run the host tests from the repository root:
 
 ```sh
-npm run typecheck
-npm run format:check
-node --test Expo/tests/m1-runtime.test.cjs
+swift test
 ```
 
-Native SDK builds and simulator journeys require Xcode and an installed iOS simulator runtime. The [SDK acceptance workflow](.github/workflows/sdk-m0.yml) defines the CI builds and device-code inspections; the [Expo guide](Expo/README.md#validation) lists additional local checks. These JavaScript checks alone do not establish that native calling works. Some tests still use dedicated fixtures and scripts; `swift test` is not yet the complete test suite.
+The call journeys need an iOS 27 simulator; the [README](README.md#testing) shows how to run them. The [SDK acceptance workflow](.github/workflows/sdk-m0.yml) defines the CI builds, the journeys and the device build inspection.
 
 ## Pull requests
 

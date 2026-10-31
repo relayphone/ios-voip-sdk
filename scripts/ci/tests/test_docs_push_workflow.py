@@ -50,10 +50,7 @@ class DocsPushWorkflowTests(unittest.TestCase):
         self.assertFalse(any(plan['sdk_plan'].values()))
 
         reusable = (ROOT / '.github/workflows/ci-changes.yml').read_text()
-        flags = {'sdk', 'runtime', 'helper', 'sdk_plan', 'runtime_plan', 'swift', 'expo', 'legacy'}
-        if 'routes-duo' in SDK_JOBS:
-            flags.add('routes')
-        for flag in flags:
+        for flag in ('sdk', 'runtime', 'helper', 'sdk_plan', 'runtime_plan'):
             with self.subTest(output=flag):
                 self.assertRegex(reusable, r'(?m)^      ' + flag + r':\n        value: \$\{\{ jobs\.detect\.outputs\.' + flag + r' \}\}$')
                 self.assertRegex(reusable, r'(?m)^      ' + flag + r': \$\{\{ steps\.select\.outputs\.' + flag + r' \}\}$')
@@ -65,17 +62,14 @@ class DocsPushWorkflowTests(unittest.TestCase):
                 self.assertIn('uses: ./.github/workflows/ci-changes.yml', blocks['changes'])
 
         sdk = job_blocks(ROOT / '.github/workflows/sdk-m0.yml')
-        optional = {'legacy-audio-lifecycle': 'legacy', 'swift-livekit-native': 'swift',
-                    'expo-livekit-native': 'expo', 'routes-duo': 'routes'}
         expected_native = set(SDK_NATIVE_JOBS) | (set(SDK_JOBS) - {'sdk-native'})
         actual_native = {name for name, block in sdk.items()
                          if re.search(r'^    runs-on: (?:xcode-27|macos-26)\s*$', block, re.M)}
         self.assertEqual(actual_native, expected_native - {'offline-controls'})
         self.assertIn('runs-on: ubuntu-latest', sdk['offline-controls'])
         for name in expected_native:
-            flag = optional.get(name, 'sdk')
             with self.subTest(job=name):
-                self.assertIn("needs.changes.outputs." + flag + " == 'true'", sdk[name])
+                self.assertIn("needs.changes.outputs.sdk == 'true'", sdk[name])
                 if name != 'offline-controls':
                     self.assertIn("needs.nightly-coverage.outputs.skip != 'true'", sdk[name])
                     self.assertIn("!github.event.pull_request.draft", sdk[name])

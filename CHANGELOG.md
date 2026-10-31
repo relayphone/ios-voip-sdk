@@ -9,8 +9,7 @@ Changes not yet released are recorded below. Public API changes include migratio
 - The `VoIPCore` library holds the values of the new call core: `Call`,
   `CallID`, `Handle` (phone numbers must be E.164), `Party`, `CallStatus` with
   `PreviewReason` and `EndReason`, `Action`, `ServerEvent`, `PresentationPolicy`,
-  `CallEvent` and `VoIPConfiguration` with `Deadlines`. It has no system framework dependencies and
-  doesn't present calls yet. The existing `VoIPSDK` product is unchanged.
+  `CallEvent` and `VoIPConfiguration` with `Deadlines`. It has no system framework dependencies.
 
 - `VoIPClient` runs the call core on the `VoIPActor` global actor. Start it once with
   `start(framework:media:push:configuration:clock:)`, observe `calls` and `isAudioActive`,
@@ -58,10 +57,51 @@ Changes not yet released are recorded below. Public API changes include migratio
 - The CocoaPods spec ships the call core as subspecs that mirror the Swift package's products:
   `Core`, `LiveCommunicationKit`, `CallKit`, `PushKit`, `Simulator` and `Testing`. CocoaPods
   builds them into the one `IosVoipSDK` module, so code that uses them imports `IosVoipSDK`.
-  `pod 'IosVoipSDK'` without a subspec still installs the existing Expo module, which is now the
-  default `ExpoModule` subspec.
+  `pod 'IosVoipSDK'` without a subspec installs `Core`, `LiveCommunicationKit` and `PushKit`.
+- `Examples/CallExample` is a SwiftUI app that starts `VoIPClient` with the LiveCommunicationKit
+  adapter and the PushKit source, shows the VoIP push token, and reports, answers, mutes and ends
+  a call, with `CallMedia` as a stub. CI builds it for the simulator and for devices.
 
 ### Breaking changes
+
+- The old core is removed: the `VoIPSDK` product and its `ConversationClient`,
+  `ConversationHandler`, `VoIPApplication`, `PushService`, `PushWire`, `MediaAdapter`,
+  `SimulatorSupport`, audio routes, `DialRequest` and `VoIPSystemEntryPoints`, together with
+  the Expo module, its config plugin and npm package, the `Integrations/LiveKit` media adapter
+  and the Expo example. The call core replaces them. React Native and Expo apps use
+  [expo-callkit-telecom](https://github.com/relayphone/expo-callkit-telecom) v2, whose iOS module
+  runs on the call core. `pod 'IosVoipSDK'` without a subspec now installs `Core`,
+  `LiveCommunicationKit` and `PushKit` instead of the `ExpoModule` subspec, which no longer
+  exists.
+
+  The call core keeps each call's state by its `CallID` and performs the user's actions itself,
+  then tells the app, so there are no action handlers to register. Only starting or joining a
+  call waits for the app, which places it and then calls `confirmPlaced(_:)`. Migrate as follows:
+
+  | Old core | Call core |
+  | --- | --- |
+  | `VoIPApplication.start(configuration:mediaAdapter:audioPolicy:)`, `startFromBundle(_:mediaAdapter:audioPolicy:)` | `VoIPClient.start(framework:media:push:configuration:clock:)` with `LiveCommunicationKitAdapter()` or `CallKitAdapter()`, and `PushKitSource()` |
+  | `ConversationClient.Configuration` | `VoIPConfiguration`: `maximumConversationGroups` becomes `maximumCalls`, `ringtoneName` becomes `ringtoneSound`, `includesConversationInRecents` becomes `includesCallsInRecents` |
+  | `ConversationSnapshot`, `snapshots`, `observeState(_:)` | `Call` and `VoIPClient.calls`, which SwiftUI and Observation track |
+  | `observeEvents(_:)`, `ConversationEventContext` | `VoIPClient.events()` and `CallEvent` |
+  | `ConversationHandler` and `setConversationHandler(_:)` | `CallEvent.performed(_:_:)` after the SDK performs an action; `CallEvent.startRequested(_:)` and `joinRequested(_:)`, then `confirmPlaced(_:)` |
+  | `startConversation(to:video:metadata:)` | `request(.start(OutgoingCall(id:parties:hasVideo:metadata:)))` |
+  | `joinConversation(_:)`, `endConversation(_:)`, `setMuted(_:_:)`, `setHeld(_:_:)`, `playTones(_:_:)` | `request(_:)` with `.answer(_:)` (or `.join(_:)` from a call preview), `.end(_:)`, `.mute(_:muted:)`, `.hold(_:onHold:)` and `.playTones(_:digits:)` |
+  | `reportIncomingConversation(_:source:)` with `IncomingCallPayload` | `report(_:)` with `IncomingCall`, which returns a `PresentationOutcome` |
+  | `receiveCallEnded(_:)`, `reportConversation(_:report:)` | `receive(_:for:eventID:)` with a `ServerEvent` |
+  | `Caller`, `Participant` | `Party` with one or more `Handle`s; phone numbers must be E.164 |
+  | `ServerCallID` and the conversation `UUID` | `CallID`; the SDK derives the per-device UUID and never exposes it |
+  | `PushService`, `observeToken(_:)` | `PushKitSource` and `tokens()` |
+  | `PushWire`, `PushService.receiveRemoteMessage(_:)` | `VoIPPush(defaultFormat:)`, or a decoder passed to `PushKitSource(decode:)`; apply a push from another channel with `report(_:)` or `receive(_:for:eventID:)` |
+  | `JSONValue` metadata | `[String: String]` metadata |
+  | `MediaAdapter`, `NoMediaAdapter`, `Integrations/LiveKit` | Your own `CallMedia` |
+  | `SimulatorSupport.activateIfNeeded()` | `VoIPSimulator.activate()` |
+  | `pod 'IosVoipSDK'` (`ExpoModule`) and `import IosVoipSDK` | The `Core`, `LiveCommunicationKit` or `CallKit`, `PushKit` and `Simulator` subspecs, still imported as `IosVoipSDK` |
+  | The Expo module from `github:relayphone/ios-voip-sdk` | expo-callkit-telecom v2 |
+
+  The call core doesn't yet list or select audio routes, configure the audio session category,
+  handle `tel:` URLs and `INStartCallIntent`s, or donate calls to Siri and Recents. Keep doing
+  these in the app until it does.
 
 - The `VoIPSDKTesting` product is now `VoIPTesting`. Depend on
   `.product(name: "VoIPTesting", package: "ios-voip-sdk")` and `import VoIPTesting`;
@@ -69,33 +109,7 @@ Changes not yet released are recorded below. Public API changes include migratio
 
 - The SDK now requires iOS 26, macOS 26 for host tests, and Swift tools 6.4
   (Xcode 27.1) in the Swift 6 language mode. The Swift package, the CocoaPods
-  spec and the example app declare iOS 26. Raise your app's deployment target;
-  Expo apps set it through `expo-build-properties`.
-
-- `Participant.avatarUrl` is removed from Swift and TypeScript. The SDK never
-  read or displayed it; keep avatar URLs in your own contact model.
-
-- Merging is removed. `ConversationClient.mergeConversations(_:_:)`, the Expo
-  `mergeConversations` function, `ConversationCapabilities.merge`, the `merge`
-  and `unmerge` action kinds and `ConversationActionError.cannotMergeSameConversation`
-  no longer exist. Conversations no longer advertise merging to the system, and a
-  merge or unmerge action that still arrives fails instead of being fulfilled:
-  the SDK cannot mix media, so fulfilling one would report a conference that does
-  not exist. Hold and mute are unchanged.
-
-- The process-wide duplicate linkage claim is removed, together with
-  `VoIPStartupError.duplicateSDKLinkage` and the Expo `duplicate_sdk_linkage`
-  rejection code. Link either the Swift package or the Expo pod in a process,
-  not both. Remove switches over the deleted case and code.
-
-- The provider ownership monitor is removed. Delete uses of
-  `ConversationClient.Configuration.providerOwnershipMonitoring` and
-  `defaultProviderOwnershipMonitoring`, the `ProviderOwnershipDiagnostics`
-  package trait, the `ios-voip-sdk.providerOwnershipMonitoring` Podfile property
-  and the config plugin's `providerOwnershipMonitoring` option, which is now
-  rejected as unsupported. The `providerOwnershipLost` event no longer exists in
-  Swift or TypeScript. Its best-effort coverage could not detect every competing
-  provider, so it could not be relied on.
+  spec and the example app declare iOS 26. Raise your app's deployment target.
 
 - Inspector controls now validate complete runtime responses before awaiting
   journal confirmation. Custom bridges must return the existing runtime identity,
@@ -111,72 +125,13 @@ Changes not yet released are recorded below. Public API changes include migratio
   identity and invalid parameters receive a rejection response; ambiguous or
   foreign identities are discarded. The CLI keeps the existing flat v1 format.
 
-- `IncomingCallPayload` and `CallEndedPayload` now spell their Swift identity
-  properties and initializer labels `eventID` and `serverCallID`. The server ID
-  uses `ServerCallID`, including `ConversationEventContext.serverCallID`.
-  Restore a backend string with `ServerCallID(rawValue:)` and use `id.rawValue`
-  when a string is needed. JSON and Expo retain their existing string values
-  and keys (`eventId`/`serverCallId` for transport payloads). Existing identity
-  validation, deduplication and termination behavior are unchanged.
-
-- `AudioRoute.id`, the route initializer and `ConversationClient.selectAudioRoute(_:)`
-  now use `AudioRoute.ID`. Pass an observed route's `id` directly, or restore a
-  serialized ID with `AudioRoute.ID(rawValue:)`; use `id.rawValue` when a string is
-  needed. Codable and Expo keep their existing string IDs and snapshot shape.
-  Route availability, audio authorization and native selection errors are unchanged.
-
 - The Inspector now decodes the same validated session model as the runtime.
   Custom session fixtures must include `controlTransport: "directory-watch-v1"`,
   schema version 1, a positive process ID, nonempty bundle/profile names and a
   run ID of 1–64 ASCII letters, digits, underscores or hyphens. Rebuild the
   Inspector together with the runtime when updating custom integrations.
 
-- `JSONValue.number(Double)` is now `int(Int64)` or `double(Double)`. Update
-  constructors and switches; signed 64-bit integers in metadata retain their
-  exact value instead of passing through floating point. JavaScript consumers
-  still use JavaScript numbers and their existing precision limits.
-- `IncomingCallPayload.startedAt` is now `Date?`. Supply an instant from Swift;
-  Codable and Expo continue to use RFC3339 strings, normalized to UTC with
-  milliseconds when encoded. Invalid optional timestamps remain absent.
-- Push and foreground invitation decoding now share their Codable validation.
-  Unknown or receiver-local `callEnded` reasons are rejected instead of being
-  silently converted to `remoteEnded`; an absent reason still defaults to
-  `remoteEnded`. Required malformed pushes retain their incoming-report fallback.
-- Info.plist configuration uses typed property-list decoding. Boolean fields
-  require plist booleans, and conversation limits must be positive integers;
-  the full native `Int` range is accepted without a floating-point conversion.
-
-- Conversation action/reporting and application startup APIs now use typed throws. Replace catches of
-  `ConversationClientError` with the error type for the API you call:
-  `VoIPStartupError` for application startup and bundle configuration,
-  `ConversationActionError` for outgoing/action requests,
-  `IncomingConversationError` for incoming reports, and
-  `ConversationReportError` for backend state reports. `PushService.start()`
-  throws `PushRegistrationError`; application startup wraps it in
-  `VoIPStartupError.pushRegistration`.
-  The former `invalidPayload` action failure is now `invalidParticipant`, while
-  invalid updated members use `ConversationReportError.invalidMembers`.
-  The former `unsupported` failures become `cannotMergeSameConversation` for
-  self-merges and `unsupportedEndReason` for backend termination reports.
-  A local-end report wraps request failures in `ConversationReportError.action`.
-  A pending incoming report interrupted by manager reset now throws the public
-  `IncomingConversationError.providerReset`. An unowned duplicate UUID throws
-  `alreadyReported`; known owned duplicates still succeed. System cancellation
-  maps to `cancelled`. Other native failures expose `systemFailure(domain:code:)`
-  instead of leaking an `NSError`, internal error or its user info. Switch on
-  these cases instead of downcasting errors from the platform.
-  Expo keeps its existing rejection code strings and generic system-failure
-  messages; callers using `ConversationErrorCode` need no type migration.
-
 - Simulator runtime packages no longer include `cksim-notify`, and sessions no
   longer publish a `notification` key. Controls use `directory-watch-v1`; rebuild
   runtime packages and relaunch apps before using the updated CLI with older
   runtime sessions.
-
-- `ConversationClient` and `PushService` are Swift classes and no longer inherit
-  from `NSObject` or conform to the platform delegate protocols. Native callbacks
-  are private implementation details. Use conversation actions and registered
-  handlers instead of calling `conversationManager` methods directly. Observe
-  `PushService.tokenState` through `observeToken(_:)` instead of injecting push
-  tokens or calling the native VoIP push callback. Remote-message forwarding
-  through `receiveRemoteMessage(_:)` remains available.

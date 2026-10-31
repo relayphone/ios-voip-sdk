@@ -1625,7 +1625,7 @@ func prepareRuntimeEngine() -> Bool {
 @_cdecl("CKSimReleaseEngine")
 func releaseRuntimeEngine() { RuntimeEngine.releasePrepared() }
 
-/// Shared bootstrap for the Swift package and the Expo pod's unified module.
+/// Shared bootstrap for the Swift package and the CocoaPods module.
 @MainActor
 public enum RuntimeBootstrap {
   @discardableResult

@@ -14,7 +14,7 @@ about: Report behavior that does not match the documentation
 - SDK revision:
 - iOS or simulator version:
 - Xcode version:
-- Expo and React Native versions, if applicable:
+- Calling framework adapter (LiveCommunicationKit or CallKit) and package manager:
 
 ## Additional context
 

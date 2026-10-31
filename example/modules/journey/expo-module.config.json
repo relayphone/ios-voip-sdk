@@ -1,8 +1,0 @@
-{
-  "platforms": ["apple"],
-  "apple": {
-    "modules": ["VoIPExampleJourneyModule"],
-    "appDelegateSubscribers": ["VoIPExampleAppDelegateSubscriber"],
-    "podspecPath": "VoIPExampleJourney.podspec"
-  }
-}

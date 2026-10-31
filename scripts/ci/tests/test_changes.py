@@ -7,7 +7,7 @@ from pathlib import Path
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from changes import select, gate, changed_paths, workflow_optional_changes
+from changes import select, gate, changed_paths
 
 
 class SelectionTests(unittest.TestCase):
@@ -18,13 +18,14 @@ class SelectionTests(unittest.TestCase):
         self.assertFalse(plan['helper'])
         self.assertFalse(any(plan['sdk_plan'].values()))
 
-    def test_sdk_javascript_pr_keeps_critical_journey_without_runtime(self):
-        plan = select(['Expo/src/ConversationClient.ts'])
-        self.assertTrue(plan['sdk'])
-        self.assertFalse(plan['runtime'])
-        self.assertTrue(plan['sdk_plan']['sdk-native'])
-        self.assertTrue(plan['sdk_plan']['expo-livekit-native'])
-        self.assertFalse(plan['sdk_plan']['legacy-audio-lifecycle'])
+    def test_sdk_source_pr_selects_the_native_group_without_runtime(self):
+        for path in ('Sources/VoIPCore/VoIPClient.swift', 'Examples/CallExample/CallExample/ContentView.swift',
+                     'Tests/VoIPJourneyTests/Journeys.swift', 'IosVoipSDK.podspec'):
+            with self.subTest(path=path):
+                plan = select([path])
+                self.assertTrue(plan['sdk'])
+                self.assertFalse(plan['runtime'])
+                self.assertEqual(plan['sdk_plan'], {'sdk-native': True})
 
     def test_main_and_nightly_keep_every_original_job_even_for_docs(self):
         plan = select(['README.md'], full=True)
@@ -38,14 +39,14 @@ class SelectionTests(unittest.TestCase):
             ('Inspector/App.swift', False, True, False),
             ('Sources/Engine/RuntimeEngine.swift', True, True, False),
             ('Sources/CKSimProtocol/RuntimeSession.swift', True, True, False),
-            ('Sources/VoIPSDK/ConversationClient.swift', True, False, False),
+            ('Sources/VoIPCore/VoIPClient.swift', True, False, False),
             ('docs/research/callkit-simulator-probe/livecommunicationkit/multicall/Probe.swift', True, True, False),
             ('.github/workflows/sdk-m0.yml', True, False, False),
             ('.github/workflows/runtime-m4.yml', False, True, False),
             ('scripts/sim/sim.py', True, True, True),
             ('scripts/ci/changes.py', True, True, True),
-            ('scripts/ci/sdk_artifacts.py', True, False, True),
-            ('discovery/run_sdk_m0.sh', True, False, True),
+            ('scripts/ci/sdk_build.sh', True, False, True),
+            ('discovery/run_scenario.py', True, False, True),
             ('new/native-entry.cc', True, True, True),
             ('.github/ISSUE_TEMPLATE/bug.yml', False, False, False),
         ]
@@ -55,46 +56,12 @@ class SelectionTests(unittest.TestCase):
                 self.assertEqual((plan['sdk'], plan['runtime'], plan['helper']),
                                  (sdk, runtime, helper))
 
-    def test_serial_native_and_legacy_follow_shared_and_contract_inputs(self):
-        examples = [('Sources/VoIPSDK/ConversationClient.swift', True),
-                    ('discovery/probe/push_report_entry.swift', False),
-                    ('Sources/Engine/RuntimeEngine.swift', True),
-                    ('Sources/CKSimProtocol/RuntimeSession.swift', True),
-                    ('discovery/probe/sdk_m1_contracts.swift', True),
-                    ('discovery/sdk_m2_audio_lifecycle.py', True)]
-        for path, legacy in examples:
-            with self.subTest(path=path):
-                plan = select([path])
-                self.assertTrue(plan['sdk_plan']['sdk-native'])
-                self.assertEqual(plan['sdk_plan']['legacy-audio-lifecycle'], legacy)
-
-    def test_native_dependency_changes_select_device_backends(self):
-        plan = select(['package-lock.json'])
-        self.assertTrue(plan['sdk_plan']['sdk-native'])
-        self.assertTrue(plan['sdk_plan']['expo-livekit-native'])
-        self.assertFalse(plan['sdk_plan']['legacy-audio-lifecycle'])
-        self.assertTrue(select(['IosVoipSDK.podspec'])['sdk_plan']['expo-livekit-native'])
-
-    def test_audio_contract_changes_select_the_legacy_decoder(self):
-        self.assertTrue(select(['Tests/AudioLifecycle/Controls.m'])['sdk_plan']['legacy-audio-lifecycle'])
-
-    def test_native_fixture_and_device_builder_changes_select_their_consumers(self):
-        for path in ('Tests/SwiftLiveKit/NativeJourney.swift', 'Tests/SwiftLiveKit/Package.resolved'):
-            with self.subTest(path=path):
-                self.assertTrue(select([path])['sdk_plan']['swift-livekit-native'])
-        self.assertTrue(select(['discovery/sdk_m2_audio_lifecycle.py'])['sdk_plan']['legacy-audio-lifecycle'])
-        for path in ('discovery/build_sdk_device_release.py', 'discovery/device_oracles.py'):
-            with self.subTest(path=path):
-                plan = select([path])['sdk_plan']
-                self.assertTrue(plan['sdk-native'])
-                self.assertTrue(plan['expo-livekit-native'])
-
     def test_docs_do_not_hide_code_changes(self):
         plan = select(['docs/ci/README.md', 'Sources/Engine/RuntimeEngine.swift'])
         self.assertTrue(plan['sdk'] and plan['runtime'])
 
     def test_example_assets_are_sdk_inputs(self):
-        self.assertTrue(select(['example/assets/icon.png'])['sdk'])
+        self.assertTrue(select(['Examples/CallExample/CallExample/Assets.xcassets/Contents.json'])['sdk'])
 
 
 class GateTests(unittest.TestCase):
@@ -121,87 +88,19 @@ class GateTests(unittest.TestCase):
              {'journeys': True})
 
 
-class WorkflowChangeTests(unittest.TestCase):
-    BEFORE = '''name: SDK
-env:
-  PLAIN: ""
-jobs:
-  swift-livekit-native:
-    runs-on: xcode-27
-    steps:
-      - run: echo swift
-  expo-livekit-native:
-    runs-on: xcode-27
-    steps:
-      - run: echo expo
-  legacy-audio-lifecycle:
-    needs: plain-simulator
-    runs-on: macos-26
-    steps:
-      - run: echo legacy
-'''
-    AFTER = '''name: SDK
-env:
-  PLAIN: ""
-jobs:
-  changes:
-    uses: ./.github/workflows/ci-changes.yml
-  swift-livekit-native:
-    needs: changes
-    if: needs.changes.outputs.swift == 'true'
-    runs-on: xcode-27
-    steps:
-      - run: echo swift
-  expo-livekit-native:
-    needs: changes
-    if: needs.changes.outputs.expo == 'true'
-    runs-on: xcode-27
-    steps:
-      - run: echo expo
-  legacy-audio-lifecycle:
-    needs: [changes, sdk-native]
-    if: needs.changes.outputs.legacy == 'true'
-    runs-on: macos-26
-    steps:
-      - run: echo legacy
-'''
-
-    def test_execution_edit_selects_only_affected_optional_job(self):
-        changed = self.AFTER.replace('echo swift', 'echo changed-swift')
-        self.assertEqual(workflow_optional_changes(self.BEFORE, changed), {'swift-livekit-native'})
-
-    def test_canonical_migration_keeps_critical_pr_policy(self):
-        self.assertEqual(workflow_optional_changes(self.BEFORE, self.AFTER), set())
-
-    def test_changed_guard_cannot_hide_its_job(self):
-        changed = self.AFTER.replace("needs.changes.outputs.swift == 'true'", 'false')
-        self.assertEqual(workflow_optional_changes(self.AFTER, changed), {'swift-livekit-native'})
-
-    def test_inherited_execution_environment_selects_all_optional_jobs(self):
-        changed = self.AFTER.replace('PLAIN: ""', 'PLAIN: custom')
-        self.assertEqual(workflow_optional_changes(self.AFTER, changed),
-                         {'swift-livekit-native', 'expo-livekit-native', 'legacy-audio-lifecycle'})
-
-    def test_missing_job_or_unreadable_format_fails_closed(self):
-        for changed in ('jobs: {}', self.AFTER.replace('  swift-livekit-native:', '  renamed:'),
-                        self.AFTER + 'defaults:\n  run:\n    working-directory: example\n'):
-            with self.subTest(changed=changed), self.assertRaises(ValueError):
-                workflow_optional_changes(self.AFTER, changed)
-
-
 class GitChangesTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix='ci-selection-')
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.git('init')
-        (self.root / 'Expo').mkdir()
-        (self.root / 'Expo/client.ts').write_text('source fixture\n')
+        (self.root / 'Sources').mkdir()
+        (self.root / 'Sources/client.swift').write_text('source fixture\n')
         self.git('add', '.')
         self.git('commit', '-m', 'fixture base')
         self.base = self.git('rev-parse', 'HEAD').strip()
         (self.root / 'docs').mkdir()
-        (self.root / 'Expo/client.ts').rename(self.root / 'docs/moved.md')
+        (self.root / 'Sources/client.swift').rename(self.root / 'docs/moved.md')
         self.git('add', '.')
         self.git('commit', '-m', 'fixture rename')
         self.head = self.git('rev-parse', 'HEAD').strip()
@@ -213,7 +112,7 @@ class GitChangesTests(unittest.TestCase):
 
     def test_rename_keeps_the_deleted_source_path_in_selection(self):
         paths = changed_paths(self.base, self.head, self.root)
-        self.assertEqual(set(paths), {'Expo/client.ts', 'docs/moved.md'})
+        self.assertEqual(set(paths), {'Sources/client.swift', 'docs/moved.md'})
         self.assertTrue(select(paths)['sdk'])
 
     def invoke(self, event_name, payload, *args, extra=None):
@@ -320,25 +219,6 @@ class GitChangesTests(unittest.TestCase):
             'CI_NEEDS_JSON': json.dumps({'changes': {'result': 'success'}, 'journeys': {'result': 'skipped'}}),
             'CI_EXPECTED_JSON': json.dumps({'journeys': True})})
         self.assertNotEqual(result.returncode, 0)
-
-    def test_workflow_job_edit_is_selected_through_the_real_git_cli(self):
-        workflow = self.root / '.github/workflows/sdk-m0.yml'
-        workflow.parent.mkdir(parents=True)
-        workflow.write_text(WorkflowChangeTests.BEFORE)
-        self.git('add', '.')
-        self.git('commit', '-m', 'workflow base')
-        base = self.git('rev-parse', 'HEAD').strip()
-        workflow.write_text(WorkflowChangeTests.AFTER.replace('echo expo', 'echo new-expo'))
-        self.git('add', '.')
-        self.git('commit', '-m', 'workflow edit')
-        head = self.git('rev-parse', 'HEAD').strip()
-        result, output = self.invoke('pull_request', {'pull_request': {
-            'base': {'sha': base}, 'head': {'sha': head}}})
-        self.assertEqual(result.returncode, 0, result.stderr)
-        values = dict(line.split('=', 1) for line in output.read_text().splitlines())
-        jobs = json.loads(values['sdk_plan'])
-        self.assertTrue(jobs['expo-livekit-native'])
-        self.assertFalse(jobs['swift-livekit-native'])
 
 
 if __name__ == '__main__':
