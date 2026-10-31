@@ -26,6 +26,7 @@
     ///
     /// - Parameters:
     ///   - audio: The app's audio session. Without one, the app configures it itself.
+    ///   - observers: Objects that follow the client's calls from the moment it starts.
     ///   - configuration: How the SDK presents and controls calls.
     ///   - listening: Whether the app listens for call events from the start. An app whose code
     ///     is still loading starts listening later, with ``listen()``.
@@ -33,6 +34,7 @@
     ///     delivering the VoIP push that launched it.
     init(
       audio: (any AudioSession)? = nil,
+      observers: [any CallObserver] = [],
       configuration: VoIPConfiguration = VoIPConfiguration(),
       listening: Bool = true,
       launch: (SimulatedSystem) async throws -> Void = { _ in }
@@ -42,7 +44,7 @@
       try await launch(system)
       client = try VoIPClient.start(
         framework: LiveCommunicationKitAdapter(), media: media, push: PushKitSource(),
-        audio: audio, configuration: configuration)
+        audio: audio, observers: observers, configuration: configuration)
       if listening { listen() }
     }
 

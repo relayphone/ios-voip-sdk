@@ -11,6 +11,7 @@ runtime_version = File.read(File.join(__dir__, 'VERSION')).strip
 # | Focus                | VoIPFocus                |
 # | LiveCommunicationKit | VoIPLiveCommunicationKit |
 # | PushKit              | VoIPPushKit              |
+# | Notifications        | VoIPNotifications        |
 # | Simulator            | VoIPSimulator            |
 # | Testing              | VoIPTesting              |
 #
@@ -79,6 +80,12 @@ Pod::Spec.new do |s|
     ss.frameworks = 'PushKit'
   end
 
+  # `CallNotifier`, which posts a communication notification for each call that a Focus filters.
+  s.subspec 'Notifications' do |ss|
+    ss.dependency 'IosVoipSDK/Core'
+    ss.source_files = 'Sources/VoIPNotifications/**/*.swift'
+  end
+
   # `VoIPSimulator`, which presents calls in the iOS Simulator. Call `VoIPSimulator.activate()`
   # only in Debug builds: it does nothing in Release builds and on devices, where the runtime isn't
   # compiled in.
@@ -90,6 +97,7 @@ Pod::Spec.new do |s|
   # Fakes and a test clock that run `VoIPClient` without the system, for the app's tests.
   s.subspec 'Testing' do |ss|
     ss.dependency 'IosVoipSDK/Core'
+    ss.dependency 'IosVoipSDK/Notifications'
     ss.source_files = 'Sources/VoIPTesting/**/*.swift'
   end
 end

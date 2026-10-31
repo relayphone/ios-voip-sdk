@@ -11,6 +11,7 @@ with PushKit. Calls also work in the iOS Simulator during development, without a
 | `VoIPFocus` | `CallFocusFilter`, the app's Focus filter, and `FocusFilterStore`, which shares the Focus filter state between the app and its extensions through an App Group. It doesn't depend on `VoIPCore`. |
 | `VoIPLiveCommunicationKit` | `LiveCommunicationKitAdapter`, which presents calls with LiveCommunicationKit. |
 | `VoIPPushKit` | `PushKitSource`, which receives VoIP pushes and the VoIP push token. |
+| `VoIPNotifications` | `CallNotifier`, which posts a communication notification for each call that Do Not Disturb or a Focus filters, so that the people the Focus allows still reach the user. |
 | `VoIPSimulator` | `VoIPSimulator.activate()`, which presents calls in the iOS Simulator in Debug builds. |
 | `VoIPTesting` | Fakes and a test clock that run `VoIPClient` in your tests without the system. |
 
@@ -74,6 +75,7 @@ pod 'IosVoipSDK', :git => 'https://github.com/relayphone/ios-voip-sdk.git', :com
 | `Focus`                | `VoIPFocus`                |
 | `LiveCommunicationKit` | `VoIPLiveCommunicationKit` |
 | `PushKit`              | `VoIPPushKit`              |
+| `Notifications`        | `VoIPNotifications`        |
 | `Simulator`            | `VoIPSimulator`            |
 | `Testing`              | `VoIPTesting`              |
 
@@ -289,7 +291,8 @@ consequences.
 Tests in your app can add the `VoIPTesting` library product to their test target and import
 `VoIPTesting`. `FakeCallingFramework`, `FakeMedia`, `FakePushSource` and `FakeAudioSession` stand
 in for the system and the app's media, so a `VoIPClient` started with them and a `TestClock` runs
-every call path on the host. `TestClock` conforms to `Clock<Duration>`; use
+every call path on the host. `FakeCallNotificationCenter` keeps a `CallNotifier`'s notifications
+as the system does. `TestClock` conforms to `Clock<Duration>`; use
 `waitForSleepers(count:)` to await registration, then `advance(by:)` or `run()` to resume pending
 sleeps without waiting for wall time to pass.
 
