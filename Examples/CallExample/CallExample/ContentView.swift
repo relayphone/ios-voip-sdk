@@ -1,7 +1,8 @@
 import SwiftUI
+import VoIPAudio
 import VoIPCore
 
-/// The push token, the calls with their actions, and what happened to them.
+/// The push token, the calls with their actions, the audio routes, and what happened to calls.
 struct ContentView: View {
   let calls: Calls
 
@@ -17,6 +18,11 @@ struct ContentView: View {
           }
           ForEach(calls.client.calls) { call in
             CallRow(call: call, calls: calls)
+          }
+        }
+        Section("Audio route") {
+          ForEach(calls.audio.routes.available) { route in
+            RouteRow(route: route, calls: calls)
           }
         }
         Section("Events") {
@@ -55,6 +61,35 @@ struct CallRow: View {
   private func button(_ title: String, _ action: Action) -> some View {
     Button(title) {
       Task { await calls.request(action) }
+    }
+  }
+}
+
+/// An audio route the user can pick, checked while calls use it.
+struct RouteRow: View {
+  let route: AudioRoute
+  let calls: Calls
+
+  var body: some View {
+    Button {
+      Task { await calls.selectRoute(route.id) }
+    } label: {
+      HStack {
+        Text(title)
+        Spacer()
+        if route.id == calls.audio.routes.current?.id {
+          Image(systemName: "checkmark")
+        }
+      }
+    }
+  }
+
+  /// Built-in routes are named by their kind; others by the system's name for the device.
+  private var title: String {
+    switch route.kind {
+    case .builtInReceiver: "iPhone"
+    case .builtInSpeaker: "Speaker"
+    default: route.name
     }
   }
 }

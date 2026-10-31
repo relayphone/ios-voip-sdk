@@ -7,13 +7,15 @@ runtime_version = File.read(File.join(__dir__, 'VERSION')).strip
 # | Subspec              | Swift package product    |
 # |----------------------|--------------------------|
 # | Core                 | VoIPCore                 |
+# | Audio                | VoIPAudio                |
 # | LiveCommunicationKit | VoIPLiveCommunicationKit |
 # | CallKit              | VoIPCallKit              |
 # | PushKit              | VoIPPushKit              |
 # | Simulator            | VoIPSimulator            |
 # | Testing              | VoIPTesting              |
 #
-# An app depends on Core, exactly one of LiveCommunicationKit and CallKit, and usually PushKit.
+# An app depends on Core, exactly one of LiveCommunicationKit and CallKit, and usually PushKit and
+# Audio.
 # `pod 'IosVoipSDK'` without a subspec installs Core, LiveCommunicationKit and PushKit.
 Pod::Spec.new do |s|
   s.name = 'IosVoipSDK'
@@ -46,6 +48,14 @@ Pod::Spec.new do |s|
   # The call's values, state machine and `VoIPClient`. Imports no calling framework.
   s.subspec 'Core' do |ss|
     ss.source_files = 'Sources/VoIPCore/**/*.swift'
+  end
+
+  # `AudioSessionAdapter`, which configures `AVAudioSession` for calls, reports its interruptions and
+  # lists its audio routes.
+  s.subspec 'Audio' do |ss|
+    ss.dependency 'IosVoipSDK/Core'
+    ss.source_files = 'Sources/VoIPAudio/**/*.swift'
+    ss.frameworks = 'AVFAudio'
   end
 
   # `LiveCommunicationKitAdapter`, the default calling framework adapter.

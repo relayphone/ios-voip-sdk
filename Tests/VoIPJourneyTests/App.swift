@@ -130,6 +130,8 @@
     case performed(Action, CallStatus)
     case audioActivated
     case audioDeactivated
+    case audioInterrupted(AudioInterruptionReason)
+    case mediaServicesReset
     case ended(CallID, EndReason)
 
     init(_ event: CallEvent) {
@@ -145,6 +147,8 @@
       case .performed(let action, let call): self = .performed(action, call.status)
       case .audioActivated: self = .audioActivated
       case .audioDeactivated: self = .audioDeactivated
+      case .audioInterrupted(let reason): self = .audioInterrupted(reason)
+      case .mediaServicesReset: self = .mediaServicesReset
       case .ended(let call):
         guard case .ended(let reason) = call.status else {
           preconditionFailure("An ended call has an ended status")

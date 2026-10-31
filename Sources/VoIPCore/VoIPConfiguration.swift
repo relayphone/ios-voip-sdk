@@ -127,6 +127,11 @@ public struct Deadlines: Hashable, Sendable {
   /// completes. Defaults to 10 seconds.
   public var audioActivation: Duration
 
+  /// How long the SDK waits for the system to activate audio again after an interruption ends or
+  /// the media services reset, before a call that takes part and isn't on hold ends. Defaults to
+  /// 5 seconds.
+  public var audioRecovery: Duration
+
   /// How long an answered or joined call may take to connect. Defaults to 30 seconds.
   public var connect: Duration
 
@@ -140,6 +145,8 @@ public struct Deadlines: Hashable, Sendable {
   ///   - placement: How long the app has to place or join a call.
   ///   - mediaPreparation: How long the SDK waits for media to be prepared.
   ///   - audioActivation: How long the SDK waits for the system to activate audio.
+  ///   - audioRecovery: How long the SDK waits for the system to activate audio again after an
+  ///     interruption or a media services reset.
   ///   - connect: How long a call may take to connect.
   ///   - reconnect: How long a call may take to reconnect.
   public init(
@@ -147,6 +154,7 @@ public struct Deadlines: Hashable, Sendable {
     placement: Duration = .seconds(10),
     mediaPreparation: Duration = .seconds(2),
     audioActivation: Duration = .seconds(10),
+    audioRecovery: Duration = .seconds(5),
     connect: Duration = .seconds(30),
     reconnect: Duration = .seconds(65)
   ) {
@@ -154,6 +162,7 @@ public struct Deadlines: Hashable, Sendable {
     self.placement = placement
     self.mediaPreparation = mediaPreparation
     self.audioActivation = audioActivation
+    self.audioRecovery = audioRecovery
     self.connect = connect
     self.reconnect = reconnect
   }

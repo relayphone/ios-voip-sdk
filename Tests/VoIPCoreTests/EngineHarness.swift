@@ -42,6 +42,8 @@ enum Seen: Hashable, Sendable, CustomTestStringConvertible {
   case performed(Action, CallStatus)
   case audioActivated
   case audioDeactivated
+  case audioInterrupted(AudioInterruptionReason)
+  case mediaServicesReset
   case ended(CallID, EndReason)
 
   init(_ event: CallEvent) {
@@ -57,6 +59,8 @@ enum Seen: Hashable, Sendable, CustomTestStringConvertible {
     case .performed(let action, let call): self = .performed(action, call.status)
     case .audioActivated: self = .audioActivated
     case .audioDeactivated: self = .audioDeactivated
+    case .audioInterrupted(let reason): self = .audioInterrupted(reason)
+    case .mediaServicesReset: self = .mediaServicesReset
     case .ended(let call):
       guard case .ended(let reason) = call.status else {
         preconditionFailure("An ended call has an ended status")
@@ -106,6 +110,7 @@ final class Harness {
   let framework = FakeCallingFramework()
   let media = FakeMedia()
   let push = FakePushSource()
+  let audio = FakeAudioSession()
   let clock = TestClock()
   let client: VoIPClient
   private var iterator: AsyncStream<CallEvent>.Iterator?
@@ -113,7 +118,8 @@ final class Harness {
 
   init(configuration: VoIPConfiguration = VoIPConfiguration(), subscribe: Bool = true) throws {
     client = try VoIPClient.start(
-      framework: framework, media: media, push: push, configuration: configuration, clock: clock)
+      framework: framework, media: media, push: push, audio: audio, configuration: configuration,
+      clock: clock)
     if subscribe { self.subscribe() }
   }
 

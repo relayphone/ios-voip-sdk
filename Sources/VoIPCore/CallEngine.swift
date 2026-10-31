@@ -14,6 +14,7 @@ import Foundation
 final class CallEngine {
   private let framework: any CallingFramework
   private let media: any CallMedia
+  private let audio: (any AudioSession)?
   private let pushSource: (any PushSource)?
   private let configuration: VoIPConfiguration
   private let clock: EngineClock
@@ -37,6 +38,9 @@ final class CallEngine {
   private var timers: [TimerKey: Timer] = [:]
   private var preparations: [CallID: Task<Void, Never>] = [:]
   private var isAudioActive = false
+  /// Whether the system interrupted active audio, and hasn't activated it again or ended the
+  /// interruption.
+  private var isAudioInterrupted = false
   private var backlog: [@VoIPActor () -> Void] = []
   private var isBusy = false
   private var published = Snapshot(revision: 0, calls: [], isAudioActive: false)
@@ -44,6 +48,7 @@ final class CallEngine {
   nonisolated init(
     framework: any CallingFramework,
     media: any CallMedia,
+    audio: (any AudioSession)?,
     pushSource: (any PushSource)?,
     configuration: VoIPConfiguration,
     clock: any Clock<Duration>,
@@ -52,6 +57,7 @@ final class CallEngine {
   ) {
     self.framework = framework
     self.media = media
+    self.audio = audio
     self.pushSource = pushSource
     self.configuration = configuration
     self.clock = EngineClock(clock)
@@ -59,11 +65,15 @@ final class CallEngine {
     self.publish = publish
   }
 
-  /// Attaches the calling framework and the push source.
+  /// Attaches the calling framework, the audio session and the push source.
   func attach() {
     framework.attach(configuration: configuration) { [weak self] event in
       guard let self else { return }
       serially { self.frameworkEvent(event) }
+    }
+    audio?.attach { [weak self] event in
+      guard let self else { return }
+      serially { self.audioSessionEvent(event) }
     }
     pushSource?.attach { [weak self] push, completion in
       guard let self else { return completion.finish() }
@@ -269,12 +279,13 @@ final class CallEngine {
       for id in liveCalls { handle(id, .actionTimedOut(actionID)) }
     case .audioActivated:
       isAudioActive = true
+      isAudioInterrupted = false
       media.activate()
       for id in liveCalls { handle(id, .audioActivated) }
       subscribers.yield(.audioActivated)
     case .audioDeactivated:
-      isAudioActive = false
-      media.deactivate()
+      // An interruption or a media services reset may have stopped the media already.
+      stopAudio()
       subscribers.yield(.audioDeactivated)
     case .reset:
       for id in liveCalls { handle(id, .frameworkReset) }
@@ -283,6 +294,53 @@ final class CallEngine {
 
   private var liveCalls: [CallID] {
     order.filter { states[$0]?.phase.isEnded == false }
+  }
+
+  /// Marks audio inactive, and stops the media when it was using audio.
+  private func stopAudio() {
+    guard isAudioActive else { return }
+    isAudioActive = false
+    media.deactivate()
+  }
+
+  // MARK: The audio session
+
+  private func audioSessionEvent(_ event: AudioSessionEvent) {
+    switch event {
+    case .interruptionBegan(let reason):
+      // Only an interruption of active audio concerns calls.
+      guard isAudioActive else { return }
+      stopAudio()
+      isAudioInterrupted = true
+      subscribers.yield(.audioInterrupted(reason))
+    case .interruptionEnded:
+      guard isAudioInterrupted else { return }
+      isAudioInterrupted = false
+      for id in liveCalls { handle(id, .audioInterruptionEnded) }
+    case .mediaServicesReset:
+      stopAudio()
+      isAudioInterrupted = false
+      subscribers.yield(.mediaServicesReset)
+      configureAfterReset()
+    }
+  }
+
+  /// Configures the audio session again after the media services reset, for the newest call that
+  /// takes part and isn't on hold, then waits for the system to activate audio again. When the
+  /// session refuses, every call it was configured for ends.
+  private func configureAfterReset() {
+    let configured = liveCalls.compactMap { id in
+      states[id].flatMap { $0.phase.hasAudioConfiguration ? $0.call : nil }
+    }
+    if let audio, let call = configured.last(where: { !$0.isOnHold }) ?? configured.last {
+      do throws(AudioSessionError) {
+        try audio.configure(for: call)
+      } catch {
+        for call in configured { handle(call.id, .audioConfigurationFailed) }
+        return
+      }
+    }
+    for id in liveCalls { handle(id, .mediaServicesReset) }
   }
 
   // MARK: Transitions
@@ -376,8 +434,18 @@ final class CallEngine {
     timers[key] = Timer(generation: generation, task: task)
   }
 
+  /// Configures the audio session for the call, then prepares its media.
   private func prepare(_ call: Call) {
-    preparations[call.id]?.cancel()
+    preparations.removeValue(forKey: call.id)?.cancel()
+    if let audio {
+      do throws(AudioSessionError) {
+        try audio.configure(for: call)
+      } catch {
+        // The transition that asked for the preparation finishes first.
+        serially { self.handle(call.id, .audioConfigurationFailed) }
+        return
+      }
+    }
     preparations[call.id] = Task { [weak self, media] in
       let event: CallMachine.Event
       do {

@@ -12,7 +12,7 @@ Changes not yet released are recorded below. Public API changes include migratio
   `CallEvent` and `VoIPConfiguration` with `Deadlines`. It has no system framework dependencies.
 
 - `VoIPClient` runs the call core on the `VoIPActor` global actor. Start it once with
-  `start(framework:media:push:configuration:clock:)`, observe `calls` and `isAudioActive`,
+  `start(framework:media:push:audio:configuration:clock:)`, observe `calls` and `isAudioActive`,
   subscribe with `events()`, and drive calls with `request(_:)`, `confirmPlaced(_:)`,
   `report(_:)` and `receive(_:for:eventID:)`. It reports a VoIP push's call before the push
   callback returns, recognises repeated pushes and server events by event ID and call ID, and
@@ -54,13 +54,35 @@ Changes not yet released are recorded below. Public API changes include migratio
 - `VoIPClient.report(_:)` returns how the call appears on this device: `previewed(_:)` for a
   call preview, including a filtered call that the policy previews, and `notShown` when the
   policy is `none`, instead of `presented`. `PresentationOutcome` adds both cases.
+- The `VoIPAudio` library's `AudioSessionAdapter` is the audio session for calls; pass it to
+  `VoIPClient.start` as `audio`. Before the SDK completes an answer, start or join, it sets
+  `AVAudioSession` to the play-and-record category in voice chat mode with Bluetooth hands-free
+  and A2DP, and the speaker by default for calls with video; `AudioSessionConfiguration`
+  changes these. It never activates the session. It reads interruptions from
+  `didBecomeInactiveNotification` and `resumptionRecommendationNotification` on iOS 27, and
+  from `interruptionNotification` before, and passes them and media services resets to the SDK.
+  Its `routes`, an observable `AudioRoutes`, list the `AudioRoute`s that calls can use and the
+  current one, and `selectRoute(_:)` picks one.
+- `VoIPCore` adds the `AudioSession` seam with `AudioSessionEvent`, `AudioInterruptionReason`
+  and `AudioSessionError`, and `VoIPClient.start` takes `audio`. When the system interrupts
+  active audio, the SDK stops the media and sends `CallEvent.audioInterrupted(_:)`. After a media
+  services reset it sends `CallEvent.mediaServicesReset` and configures the session again. Once
+  the interruption ends, or after the reset, a call that takes part and isn't on hold ends with
+  `CallFailure.audioRecoveryTimedOut` unless the system activates audio within
+  `Deadlines.audioRecovery` (5 seconds). A call whose audio session can't be configured ends with
+  `CallFailure.audioSession`, or a join returns to its call preview. `CallMedia.deactivate()`
+  now follows `activate()` once per activation. Switches over `CallEvent` and `CallFailure` need
+  the new cases. See [ADR 0007](docs/adr/0007-sdk-configures-audio-session.md).
+- `VoIPTesting` adds `FakeAudioSession`.
 - The CocoaPods spec ships the call core as subspecs that mirror the Swift package's products:
-  `Core`, `LiveCommunicationKit`, `CallKit`, `PushKit`, `Simulator` and `Testing`. CocoaPods
-  builds them into the one `IosVoipSDK` module, so code that uses them imports `IosVoipSDK`.
-  `pod 'IosVoipSDK'` without a subspec installs `Core`, `LiveCommunicationKit` and `PushKit`.
+  `Core`, `Audio`, `LiveCommunicationKit`, `CallKit`, `PushKit`, `Simulator` and `Testing`.
+  CocoaPods builds them into the one `IosVoipSDK` module, so code that uses them imports
+  `IosVoipSDK`. `pod 'IosVoipSDK'` without a subspec installs `Core`, `LiveCommunicationKit` and
+  `PushKit`.
 - `Examples/CallExample` is a SwiftUI app that starts `VoIPClient` with the LiveCommunicationKit
-  adapter and the PushKit source, shows the VoIP push token, and reports, answers, mutes and ends
-  a call, with `CallMedia` as a stub. CI builds it for the simulator and for devices.
+  adapter, the PushKit source and the audio session adapter, shows the VoIP push token and the
+  audio routes, and reports, answers, mutes and ends a call, with `CallMedia` as a stub. CI
+  builds it for the simulator and for devices.
 
 ### Breaking changes
 
@@ -80,7 +102,7 @@ Changes not yet released are recorded below. Public API changes include migratio
 
   | Old core | Call core |
   | --- | --- |
-  | `VoIPApplication.start(configuration:mediaAdapter:audioPolicy:)`, `startFromBundle(_:mediaAdapter:audioPolicy:)` | `VoIPClient.start(framework:media:push:configuration:clock:)` with `LiveCommunicationKitAdapter()` or `CallKitAdapter()`, and `PushKitSource()` |
+  | `VoIPApplication.start(configuration:mediaAdapter:audioPolicy:)`, `startFromBundle(_:mediaAdapter:audioPolicy:)` | `VoIPClient.start(framework:media:push:audio:configuration:clock:)` with `LiveCommunicationKitAdapter()` or `CallKitAdapter()`, and `PushKitSource()` |
   | `ConversationClient.Configuration` | `VoIPConfiguration`: `maximumConversationGroups` becomes `maximumCalls`, `ringtoneName` becomes `ringtoneSound`, `includesConversationInRecents` becomes `includesCallsInRecents` |
   | `ConversationSnapshot`, `snapshots`, `observeState(_:)` | `Call` and `VoIPClient.calls`, which SwiftUI and Observation track |
   | `observeEvents(_:)`, `ConversationEventContext` | `VoIPClient.events()` and `CallEvent` |
@@ -95,13 +117,14 @@ Changes not yet released are recorded below. Public API changes include migratio
   | `PushWire`, `PushService.receiveRemoteMessage(_:)` | `VoIPPush(defaultFormat:)`, or a decoder passed to `PushKitSource(decode:)`; apply a push from another channel with `report(_:)` or `receive(_:for:eventID:)` |
   | `JSONValue` metadata | `[String: String]` metadata |
   | `MediaAdapter`, `NoMediaAdapter`, `Integrations/LiveKit` | Your own `CallMedia` |
+  | `observeAudioRoutes(_:)`, `selectAudioRoute(_:)`, `AudioRoutesSnapshot` | `AudioSessionAdapter.routes` and `selectRoute(_:)` in `VoIPAudio` |
+  | `AudioActivationPolicy` | `Deadlines.audioActivation` and `audioRecovery` |
   | `SimulatorSupport.activateIfNeeded()` | `VoIPSimulator.activate()` |
-  | `pod 'IosVoipSDK'` (`ExpoModule`) and `import IosVoipSDK` | The `Core`, `LiveCommunicationKit` or `CallKit`, `PushKit` and `Simulator` subspecs, still imported as `IosVoipSDK` |
+  | `pod 'IosVoipSDK'` (`ExpoModule`) and `import IosVoipSDK` | The `Core`, `Audio`, `LiveCommunicationKit` or `CallKit`, `PushKit` and `Simulator` subspecs, still imported as `IosVoipSDK` |
   | The Expo module from `github:relayphone/ios-voip-sdk` | expo-callkit-telecom v2 |
 
-  The call core doesn't yet list or select audio routes, configure the audio session category,
-  handle `tel:` URLs and `INStartCallIntent`s, or donate calls to Siri and Recents. Keep doing
-  these in the app until it does.
+  The call core doesn't yet handle `tel:` URLs and `INStartCallIntent`s, or donate calls to Siri
+  and Recents. Keep doing these in the app until it does.
 
 - The `VoIPSDKTesting` product is now `VoIPTesting`. Depend on
   `.product(name: "VoIPTesting", package: "ios-voip-sdk")` and `import VoIPTesting`;

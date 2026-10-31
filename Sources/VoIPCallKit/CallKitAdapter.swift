@@ -12,7 +12,7 @@
   /// measured behaviour is what the app needs; an app links one of the two. Apps distributed in
   /// China mainland can't present calls with CallKit.
   ///
-  /// Pass it to `VoIPClient.start(framework:media:push:configuration:clock:)`. The adapter
+  /// Pass it to `VoIPClient.start(framework:media:push:audio:configuration:clock:)`. The adapter
   /// creates the app's one `CXProvider` and a `CXCallController`, names each call to the system
   /// by `deviceUUID(for:)`, and maps between the SDK's calls and CallKit's:
   ///

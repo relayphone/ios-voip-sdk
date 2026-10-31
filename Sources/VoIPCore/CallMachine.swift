@@ -64,6 +64,7 @@ enum CallMachine {
     case placement
     case mediaPreparation
     case audioActivation
+    case audioRecovery
     case connect
     case reconnect
   }
@@ -103,6 +104,12 @@ enum CallMachine {
     case actionTimedOut(ActionID)
     /// The system activated the audio session.
     case audioActivated
+    /// The audio session couldn't be configured for the call.
+    case audioConfigurationFailed
+    /// An interruption of active audio ended, and audio is still inactive.
+    case audioInterruptionEnded
+    /// The media services reset, and the audio session was configured again.
+    case mediaServicesReset
     /// The calling framework reset, ending every call it presents.
     case frameworkReset
     /// The app requested an action.
@@ -195,6 +202,21 @@ extension CallMachine.Phase {
     default: false
     }
   }
+
+  /// Whether the call takes part on this device: its answer, start or join completed, so the
+  /// system activates audio for it.
+  var isTakingPart: Bool {
+    switch self {
+    case .dialing, .connecting, .connected, .reconnecting: true
+    default: false
+    }
+  }
+
+  /// Whether the audio session is configured for the call: it is preparing its media, or it
+  /// takes part.
+  var hasAudioConfiguration: Bool {
+    if case .preparing = self { true } else { isTakingPart }
+  }
 }
 
 extension Action {
@@ -218,6 +240,7 @@ extension Deadlines {
     case .placement: placement
     case .mediaPreparation: mediaPreparation
     case .audioActivation: audioActivation
+    case .audioRecovery: audioRecovery
     case .connect: connect
     case .reconnect: reconnect
     }

@@ -98,9 +98,29 @@ _Avoid_: Remote update, call update
 
 ### Audio and media
 
+**Audio session**:
+The app's `AVAudioSession` as calls use it. The SDK configures it for each call before audio activation; only the system activates and deactivates it for calls.
+_Avoid_: Audio context, audio engine
+
 **Audio activation**:
 The system activating the audio session for a call. Microphone and speaker use for the call may start only after it.
 _Avoid_: Call audio, audio start
+
+**Audio interruption**:
+The system deactivating an active audio session for something else, such as Siri, another app's audio or a muted built-in microphone. The call's audio returns only with a new audio activation.
+_Avoid_: Audio loss, audio drop
+
+**Media services reset**:
+The system restarting its media services, which ends every audio object in the app and loses the audio session's configuration.
+_Avoid_: Media server crash, audio reset
+
+**Audio recovery**:
+The audio activation that a call waits for after an audio interruption ends or the media services reset. A call that takes part and isn't on hold ends with reason failed if it doesn't come in time.
+_Avoid_: Audio resume, reactivation
+
+**Audio route**:
+Where calls' audio plays and records: the built-in receiver or speaker, wired headphones, a Bluetooth device, AirPlay or CarPlay.
+_Avoid_: Audio device, audio output (as a domain term)
 
 **Media**:
 The app's real-time audio and video transport for a call.
