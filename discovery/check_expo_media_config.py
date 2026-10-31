@@ -36,17 +36,20 @@ def main():
             spec = json.loads(result.stdout)
             selected = adapter or 'webrtc'
             directory = {'webrtc': 'WebRTC', 'livekit': 'LiveKit', 'none': 'None'}[selected]
-            expected = ['Sources/**/*.{swift,h,m}', 'Expo/apple/**/*.{swift,h}',
+            # The media selection applies to the default ExpoModule subspec.
+            assert spec['default_subspecs'] == 'ExpoModule'
+            module = {subspec['name']: subspec for subspec in spec['subspecs']}['ExpoModule']
+            expected = ['Sources/VoIPPlatform/**/*.{h,m}', 'Sources/VoIPSDK/**/*.swift', 'Expo/apple/**/*.{swift,h}',
                         'ExpoMedia/Shared/ExpoMediaSupport.swift', f'ExpoMedia/{directory}/**/*.{{swift,h,m}}']
             if selected != 'none':
                 expected += ['ExpoMedia/Shared/VSMediaBinding.h', 'ExpoMedia/Shared/QueuedMediaAdapter.swift']
-            assert spec['source_files'] == expected
-            dependencies = spec['dependencies']
-            expected_dependencies = {'ExpoModulesCore': []}
+            assert module['source_files'] == expected
+            dependencies = module['dependencies']
+            expected_dependencies = {'IosVoipSDK/SimulatorRuntime': [], 'ExpoModulesCore': []}
             if selected == 'livekit':
                 expected_dependencies.update({'React-Core': [], 'livekit-react-native-webrtc': ['= 150.1.0']})
             assert dependencies == expected_dependencies
-            assert ('ExpoMedia/Shared/VSMediaBinding.h' in spec['public_header_files']) == (selected != 'none')
+            assert ('ExpoMedia/Shared/VSMediaBinding.h' in module['public_header_files']) == (selected != 'none')
             assert spec['platforms'] == {'ios': '26.0'}
             checks.append(f'{adapter or "default"}-one-source-and-dependency-selection')
     assert 'ExpoMedia' in json.loads((ROOT / 'package.json').read_text())['files']

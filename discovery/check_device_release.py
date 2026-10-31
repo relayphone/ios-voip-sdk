@@ -79,9 +79,18 @@ class Controls(unittest.TestCase):
         pod = subprocess.run(['pod', 'ipc', 'spec', 'IosVoipSDK.podspec'], cwd=ROOT,
                              capture_output=True, text=True, timeout=30, check=True)
         spec = json.loads(pod.stdout)
-        self.assertNotIn('CallKit', spec['frameworks'])
-        self.assertFalse(spec.get('resource_bundles'))
-        self.assertNotIn('Sources/Interposition/CKRuntimeSeam.h', spec['public_header_files'])
+        # `pod 'IosVoipSDK'` installs the Expo module and the simulator runtime it depends on.
+        subspecs = {subspec['name']: subspec for subspec in spec['subspecs']}
+        self.assertEqual(spec['default_subspecs'], 'ExpoModule')
+        installed = [subspecs['ExpoModule'], subspecs['SimulatorRuntime']]
+        headers = [header for subspec in installed for header in (
+            [subspec['public_header_files']] if isinstance(subspec['public_header_files'], str)
+            else subspec['public_header_files'])]
+        for subspec in installed:
+            self.assertNotIn('CallKit', subspec.get('frameworks', []))
+        self.assertFalse(any(subspec.get('resource_bundles') for subspec in [spec, *spec['subspecs']]))
+        self.assertIn('Sources/Interposition/include/CKRuntimeBridge.h', headers)
+        self.assertNotIn('Sources/Interposition/CKRuntimeSeam.h', headers)
         package = subprocess.run(['swift', 'package', 'dump-package'], cwd=ROOT,
                                  capture_output=True, text=True, timeout=60, check=True)
         targets = {target['name']: target for target in json.loads(package.stdout)['targets']}
