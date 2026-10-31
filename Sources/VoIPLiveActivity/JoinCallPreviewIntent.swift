@@ -18,6 +18,7 @@
   /// struct JoinCall: JoinCallPreviewIntent {
   ///   static let title: LocalizedStringResource = "Join Call"
   ///   static let supportedModes: IntentModes = .foreground(.immediate)
+  ///   static let isDiscoverable = false
   ///
   ///   @Parameter(title: "Call ID")
   ///   var callID: String
@@ -32,8 +33,14 @@
   /// Declare `supportedModes` as above, so that the system opens the app before it joins the
   /// call. A Live Activity's intent otherwise runs with the app in the background, and
   /// LiveCommunicationKit's documentation doesn't say that an app may start a call from there.
-  /// Opening the app also shows the call as it starts. The metadata holds only what the type
-  /// itself declares, so the SDK can't declare it for the app.
+  /// Opening the app also shows the call as it starts.
+  ///
+  /// Declare `isDiscoverable` as `false` too, so that only the Join button performs the intent.
+  /// Otherwise Shortcuts and Spotlight offer Join Call as one of the app's actions, asking the user
+  /// for a call ID as free text.
+  ///
+  /// The metadata holds only what the type itself declares, so the SDK can't declare either for
+  /// the app.
   public protocol JoinCallPreviewIntent: LiveActivityIntent {
     /// The raw value of the `CallID` of the call to join. Declare it as an `@Parameter`.
     var callID: String { get set }

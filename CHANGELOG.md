@@ -168,9 +168,10 @@ Changes not yet released are recorded below. Public API changes include migratio
   `Action.join(_:)`, and a call that the client doesn't know, because the servers started its
   preview before the app ran, is first reported as a call preview from the Live Activity's
   attributes; it ends with its preview unless it is joined. The app declares a
-  `JoinCallPreviewIntent`, a `LiveActivityIntent` of three lines, in a file that the app and its
+  `JoinCallPreviewIntent`, a `LiveActivityIntent` of four lines, in a file that the app and its
   widget extension both compile, with `supportedModes` set to `.foreground(.immediate)` so that
-  the system opens the app before the join. `CallPreviewView` is the default Lock Screen
+  the system opens the app before the join, and `isDiscoverable` set to `false` so that Shortcuts
+  and Spotlight don't offer Join Call with a free-text call ID. `CallPreviewView` is the default Lock Screen
   presentation, and `CallPreviewView.dynamicIsland(_:join:)` the compact, minimal and expanded
   ones. `CallPreviewError` adds `unknownCall`, `notAttached` and `join(_:)`. The CocoaPods
   `LiveActivity` subspec links AppIntents, SwiftUI and WidgetKit, and the example app previews a

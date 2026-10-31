@@ -6,6 +6,8 @@ import VoIPLiveActivity
 struct JoinCall: JoinCallPreviewIntent {
   static let title: LocalizedStringResource = "Join Call"
   static let supportedModes: IntentModes = .foreground(.immediate)
+  /// Only the Join button performs it: Shortcuts and Spotlight would ask for a call ID as text.
+  static let isDiscoverable = false
 
   @Parameter(title: "Call ID")
   var callID: String

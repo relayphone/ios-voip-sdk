@@ -381,6 +381,7 @@ button's intent in a file that both the app and the extension compile:
 struct JoinCall: JoinCallPreviewIntent {
   static let title: LocalizedStringResource = "Join Call"
   static let supportedModes: IntentModes = .foreground(.immediate)
+  static let isDiscoverable = false
 
   @Parameter(title: "Call ID")
   var callID: String
@@ -398,7 +399,9 @@ struct CallPreviewWidget: Widget {
 ```
 
 Join opens the app and joins the call: the client sends `joinRequested(_:)`, and the app places
-the call as for any join. A preview that the servers started before the app ran has a call that
+the call as for any join. `isDiscoverable` keeps Join Call, which asks for a call ID as free
+text, out of Shortcuts and Spotlight; the system reads it from the app's type, so the app
+declares it. A preview that the servers started before the app ran has a call that
 the client doesn't know yet, so joining reports it to the client first, as a call preview.
 [ADR 0010](docs/adr/0010-call-preview-activity-is-sdk-type.md) records why the SDK defines the
 type and the servers start the previews.
@@ -415,6 +418,12 @@ the SDK's views and Join; run it on an iPhone 17 Pro simulator to see the Dynami
 filter needs a signed build with your team's App Group in place of
 `group.com.example.CallExample`, and call notifications need one with the Communication
 Notifications capability.
+
+Assign the App Group to the App IDs of both the app and its Focus filter extension, in the
+developer portal or in Xcode's Signing & Capabilities. Building from the command line with
+`-allowProvisioningUpdates` registers the App IDs and enables the App Groups capability, but
+leaves the provisioning profiles' list of groups empty, so the build fails until the group is
+assigned.
 
 ## Why LiveCommunicationKit
 
