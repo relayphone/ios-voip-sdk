@@ -110,7 +110,9 @@ extension CallNotifier {
   /// Isolate the app's `UNUserNotificationCenterDelegate` and its conformance to the main actor.
   /// The system expects the completion handlers behind the delegate's `async` methods on the main
   /// thread, and stops the app when a delegate that isn't isolated to the main actor finishes one
-  /// on another thread.
+  /// on another thread. Return from the delegate's method at once and route the response in a
+  /// task: the app may only become active once the delegate returns, and the notifier waits for it
+  /// to be active before it joins.
   ///
   /// ```swift
   /// @MainActor
@@ -119,8 +121,10 @@ extension CallNotifier {
   ///     _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
   ///   ) async {
   ///     guard let response = CallNotificationResponse(response) else { return }
-  ///     if case .callBack(let party, let hasVideo)? = try? await notifier.handle(response) {
-  ///       showCallBack(party, hasVideo: hasVideo)
+  ///     Task { @MainActor in
+  ///       if case .callBack(let party, let hasVideo)? = try? await notifier.handle(response) {
+  ///         showCallBack(party, hasVideo: hasVideo)
+  ///       }
   ///     }
   ///   }
   /// }
@@ -155,12 +159,13 @@ extension CallNotifier {
   /// notifier requests to join it, the newest first. Otherwise the route is to call the party.
   ///
   /// As for a response to a call notification, the notifier requests the join once the app is
-  /// active, waiting for up to 2 seconds for it to become active.
+  /// active, waiting for up to 2 seconds for it to become active. Route the request in a task, so
+  /// that the handler returns at once: the app may only become active once it returns.
   ///
   /// ```swift
   /// .onContinueUserActivity("INStartCallIntent") { activity in
   ///   guard let request = StartCallRequest(activity) else { return }
-  ///   Task {
+  ///   Task { @MainActor in
   ///     if case .callBack(let party, let hasVideo)? = try? await notifier.handle(request) {
   ///       try await client.request(
   ///         .start(OutgoingCall(id: CallID(rawValue: UUID().uuidString), parties: [party],

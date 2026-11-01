@@ -335,14 +335,16 @@ final class NotificationDelegate: NSObject, @MainActor UNUserNotificationCenterD
     _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
   ) async {
     guard let response = CallNotificationResponse(response) else { return }  // Not a call's.
-    _ = try? await notifier.handle(response)  // Joins the call if it is live here.
+    Task { @MainActor in
+      _ = try? await notifier.handle(response)  // Joins the call if it is live here.
+    }
   }
 }
 
 // From Recents and Siri:
 .onContinueUserActivity("INStartCallIntent") { activity in
   guard let request = StartCallRequest(activity) else { return }
-  Task {
+  Task { @MainActor in
     if case .callBack(let party, let hasVideo)? = try? await notifier.handle(request) {
       let call = OutgoingCall(
         id: CallID(rawValue: UUID().uuidString), parties: [party], hasVideo: hasVideo)
@@ -354,7 +356,9 @@ final class NotificationDelegate: NSObject, @MainActor UNUserNotificationCenterD
 
 Isolate the delegate and its conformance to the main actor: the system expects the completion
 handlers behind its `async` methods on the main thread, and stops the app when a method finishes
-on another thread.
+on another thread. Return from the delegate's method at once and route the response in a task: the
+app may only become active once the delegate returns, and the notifier waits for it to be active
+before it joins.
 
 When a call preview with the party is live here, the notifier joins it and returns `.joining`;
 otherwise it returns `.callBack`, and the app calls the party with a Call ID of its own. The
