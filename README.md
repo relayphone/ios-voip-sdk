@@ -16,10 +16,10 @@ with PushKit. Calls also work in the iOS Simulator during development, without a
 | `VoIPSimulator` | `VoIPSimulator.activate()`, which presents calls in the iOS Simulator in Debug builds. |
 | `VoIPTesting` | Fakes and a test clock that run `VoIPClient` in your tests without the system. |
 
-The [simulator runtime](docs/simulator-runtime.md) beneath `VoIPSimulator` also ships on its own
-([v0.1](https://github.com/relayphone/ios-voip-sdk/releases/tag/v0.1)). The SDK's terms are defined
-in the [glossary](GLOSSARY.md) and its decisions are recorded in [docs/adr](docs/adr). Start with
-the [documentation index](docs/README.md).
+Each [release](docs/runtime-releases.md) also publishes a package of the
+[simulator runtime](docs/simulator-runtime.md) beneath `VoIPSimulator`, for apps that don't use the
+SDK. The SDK's terms are defined in the [glossary](GLOSSARY.md) and its decisions are recorded in
+[docs/adr](docs/adr). Start with the [documentation index](docs/README.md).
 
 **React Native and Expo:** use [expo-callkit-telecom](https://github.com/relayphone/expo-callkit-telecom)
 v2, whose iOS module runs on this SDK. This repository no longer ships an Expo module; see the
@@ -33,15 +33,16 @@ v2, whose iOS module runs on this SDK. This repository no longer ships an Expo m
 
 ## Install
 
-There are no SDK releases yet: the existing version tags are simulator runtime releases. Pin a
-source revision.
+Releases are tagged `vX.Y.Z` and listed under
+[Releases](https://github.com/relayphone/ios-voip-sdk/releases). The API may still change before
+1.0; the [changelog](CHANGELOG.md) records each release's changes.
 
 ### Swift Package Manager
 
 Add the package to your manifest, or in Xcode with File > Add Package Dependencies:
 
 ```swift
-.package(url: "https://github.com/relayphone/ios-voip-sdk.git", revision: "<revision>")
+.package(url: "https://github.com/relayphone/ios-voip-sdk.git", from: "0.2.0")
 ```
 
 Then add the libraries your app uses to its target: `VoIPCore`, `VoIPLiveCommunicationKit`, and
@@ -61,11 +62,12 @@ usually `VoIPPushKit`, `VoIPAudio` and `VoIPSimulator`.
 
 ### CocoaPods
 
-`pod 'IosVoipSDK'` installs `Core`, `LiveCommunicationKit` and `PushKit`. Name the subspecs to add
-audio and the simulator:
+The pod isn't on the CocoaPods trunk, so install it from the release's tag. `pod 'IosVoipSDK'`
+installs `Core`, `LiveCommunicationKit` and `PushKit`. Name the subspecs to add audio and the
+simulator:
 
 ```ruby
-pod 'IosVoipSDK', :git => 'https://github.com/relayphone/ios-voip-sdk.git', :commit => '<revision>',
+pod 'IosVoipSDK', :git => 'https://github.com/relayphone/ios-voip-sdk.git', :tag => 'v0.2.0',
                   :subspecs => ['LiveCommunicationKit', 'PushKit', 'Audio', 'Simulator']
 ```
 

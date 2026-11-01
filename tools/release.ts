@@ -1,5 +1,5 @@
-// Checks that a runtime release comes from an annotated version tag merged into main, and writes
-// the release's qualification record and notes.
+// Checks that a release comes from an annotated version tag merged into main, and writes the
+// release's qualification record and notes.
 //
 // Usage:
 //   node tools/release.ts check <tag> [--main-ref origin/main] [--package <runtime package>]
@@ -84,9 +84,10 @@ export function check(tag: string, source: Source, mainRef = 'origin/main', info
   return { version, tag, sourceCommit: commit, mainRef, packageVerified: info !== undefined };
 }
 
-/** The release notes, which link the workflow run that built and tested the release. */
-export function notes(sourceCommit: string, run: string): string {
+/** The release notes, which link the changelog at the tag and the run that built and tested it. */
+export function notes(tag: string, sourceCommit: string, run: string): string {
   return (
+    `Changes: [CHANGELOG.md](https://github.com/relayphone/ios-voip-sdk/blob/${tag}/CHANGELOG.md)\n\n` +
     'The CI-built runtime passed the runtime tests and a smoke test of this package before ' +
     `packaging. Source: \`${sourceCommit}\`. [Run and evidence](${run}).\n\n` +
     'The `ios-27.0` profile names the device measurements it reproduces; `build-info.json` ' +
@@ -115,7 +116,7 @@ if (isMain(import.meta.url)) {
         join(resolve(release), 'qualification.json'),
         `${JSON.stringify({ release: result, manifest: info, workflowRun }, null, 2)}\n`,
       );
-      writeFileSync(resolve(notesFile), notes(result.sourceCommit, workflowRun));
+      writeFileSync(resolve(notesFile), notes(result.tag, result.sourceCommit, workflowRun));
       return;
     }
     throw new Error('Usage: node tools/release.ts check <tag> [--main-ref <ref>] [--package <dir>] | ' +

@@ -25,7 +25,7 @@ Pod::Spec.new do |s|
   s.homepage = 'https://github.com/relayphone/ios-voip-sdk'
   s.author = { 'Hamza Zia' => 'https://github.com/ziahamza' }
   s.license = { :type => 'UNLICENSED' }
-  s.source = { :git => 'https://github.com/relayphone/ios-voip-sdk.git', :commit => '87a6125c18f9ec7018ac056c67baa06e9dbac07c' }
+  s.source = { :git => 'https://github.com/relayphone/ios-voip-sdk.git', :tag => "v#{s.version}" }
   s.platform = :ios, '26.0'
   s.swift_version = '6.0'
   s.static_framework = true

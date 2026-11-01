@@ -1,6 +1,6 @@
 # Security policy
 
-The SDK is under active development and has not reached beta. Security fixes are made on the current default branch; released runtime artifacts may not include later fixes.
+The SDK is under active development and has not reached beta. Security fixes are made on the current default branch; released versions may not include later fixes.
 
 ## Reporting a vulnerability
 

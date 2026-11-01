@@ -1,4 +1,4 @@
-# Simulator runtime (v0.1)
+# Simulator runtime
 
 This is the runtime formerly published as "CallKit Simulator". It now lives in `ios-voip-sdk`, and the SDK will activate it in-process (see the [documentation index](README.md)). The standalone loader below still serves apps that don't use the SDK.
 
@@ -14,13 +14,13 @@ deliver synthetic VoIP pushes and issue system call-waiting transactions.
 
 This is experimental test infrastructure. It uses private simulator ABI and must
 never be embedded in a device or App Store build. Both native layers reject device
-compilation. There is no system call-screen app in v0.1; use the CLI or your app's
+compilation. There is no system call-screen app; use the CLI or your app's
 UI. Synthetic pushes do not establish APNs delivery or iOS reporting enforcement.
 State and arbitration are per application process; calls in other apps are outside
 this version's scope. The runtime activates the app's real audio session; it does not provide signaling,
 WebRTC transport, network peers or audio samples for a silent CI microphone.
 
-Standalone release provenance and verification are described in [runtime releases](https://github.com/relayphone/ios-voip-sdk/blob/main/docs/runtime-releases.md).
+Each SDK release publishes this runtime's package; its provenance and verification are described in [releases](https://github.com/relayphone/ios-voip-sdk/blob/main/docs/runtime-releases.md).
 
 ## Build and run
 

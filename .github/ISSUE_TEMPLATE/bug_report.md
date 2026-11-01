@@ -11,7 +11,7 @@ about: Report behavior that does not match the documentation
 
 ## Environment
 
-- SDK revision:
+- SDK version or revision:
 - iOS or simulator version:
 - Xcode version:
 - Package manager (Swift Package Manager or CocoaPods):
