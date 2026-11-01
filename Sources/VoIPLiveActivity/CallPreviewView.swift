@@ -63,8 +63,9 @@
             .background(.green.opacity(0.2), in: .circle)
           VStack(alignment: .leading, spacing: 2) {
             CallerName(display: display).font(.headline)
-            StatusLine(display: display).font(.subheadline)
+            StatusLines(display: display).font(.subheadline)
           }
+          .layoutPriority(1)
           Spacer(minLength: 8)
           JoinButton<Join>(callID: callID, display: display)
         }
@@ -98,7 +99,7 @@
         DynamicIslandExpandedRegion(.center) {
           VStack(alignment: .leading, spacing: 2) {
             CallerName(display: display).font(.headline)
-            StatusLine(display: display).font(.subheadline)
+            StatusLines(display: display).font(.subheadline)
           }
           .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -148,22 +149,31 @@
     }
   }
 
-  /// What is happening, with the time since the call started.
-  private struct StatusLine: View {
+  /// What is happening, and below it the time since the call started.
+  ///
+  /// Each has a line of its own: a timer takes all the width it is offered, and beside it and
+  /// Join the status was cut short on an iPhone 13. The status may also shrink a little before it
+  /// is cut.
+  private struct StatusLines: View {
     let display: CallPreviewDisplay
 
     var body: some View {
-      HStack(spacing: 4) {
-        switch display.status {
-        case .text(let text): Text(verbatim: text)
-        case .described(let description): Text(description)
+      Group {
+        Group {
+          switch display.status {
+          case .text(let text): Text(verbatim: text)
+          case .described(let description): Text(description)
+          }
         }
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
         if let start = display.timerStart {
-          Text(verbatim: "·").accessibilityHidden(true)
-          Text(start, style: .timer).monospacedDigit()
+          Text(start, style: .timer)
+            .monospacedDigit()
+            .lineLimit(1)
+            .multilineTextAlignment(.leading)
         }
       }
-      .lineLimit(1)
       .foregroundStyle(.secondary)
     }
   }

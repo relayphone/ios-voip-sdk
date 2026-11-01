@@ -114,9 +114,30 @@ import VoIPTesting
     let activity = center.startFromPush(CallPreviewAttributes(filtered), state: firstState)
     center.send(.pushTokenChanged(activity, Data([1])))
     let h = Harness(center: center)
+    #expect(try await h.next() == .started(callID))
     var tokens = h.previews.pushTokens().makeAsyncIterator()
     #expect(await tokens.next() == CallPreviewPushToken(callID: callID, token: Data([1])))
     try await h.previews.update(callID, firstState)
+  }
+
+  @Test func eventsStartWithThePreviewsThatRun() async throws {
+    let center = FakeLiveActivityCenter()
+    let other = CallID(rawValue: "call-2")
+    let second = Call(
+      id: other, isIncoming: true, parties: [alice], status: .previewing(.filtered(.doNotDisturb)))
+    center.startFromPush(CallPreviewAttributes(filtered), state: firstState)
+    let ended = center.startFromPush(CallPreviewAttributes(second), state: firstState)
+    let h = Harness(center: center)
+    h.center.send(.ended(ended))
+    h.center.startFromPush(CallPreviewAttributes(second), state: firstState)
+
+    // A stream that starts later replays the previews that run, in the order they started, then
+    // yields each new event.
+    var events = h.previews.events().makeAsyncIterator()
+    #expect(await events.next() == .started(callID))
+    #expect(await events.next() == .started(other))
+    await h.previews.end(callID)
+    #expect(await events.next() == .ended(callID))
   }
 
   @Test func endsASecondLiveActivityForTheSameCall() async throws {

@@ -120,6 +120,7 @@ struct ClientTests {
     let center = FakeLiveActivityCenter()
     let activity = center.startFromPush(CallPreviewAttributes(filtered), state: firstState)
     let app = try await App(center: center)
+    #expect(try await app.nextPreviewEvent() == .started(callID))
     try await app.joinAndPlace(callID)
     let call = try #require(app.client.calls.first { $0.id == callID })
     #expect(call.parties == [alice])

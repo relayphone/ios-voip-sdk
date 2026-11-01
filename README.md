@@ -381,9 +381,14 @@ Task {
 }
 ```
 
-In the foreground, the observer starts a preview's Live Activity itself. It ends the Live
+In the foreground, the observer starts a preview's Live Activity itself; in the background it
+reports `startFailed(_:_:)` with `notInForeground` without asking the system. It ends the Live
 Activity at once when this device joins the call, and shows the final state for two minutes when
-the call ends.
+the call ends. `events()` starts with the previews that already run, such as one that the servers
+started before the app ran. The first preview that the servers start gets its push token only
+once the user answers the system's second question about the app's Live Activities, so until then
+the servers can't update or end it; [the contract](docs/call-preview-activity.md) says how to
+handle that.
 
 Give the app `NSSupportsLiveActivities` in its Info.plist, and
 `NSSupportsLiveActivitiesFrequentUpdates` for frequent updates, and the Push Notifications
