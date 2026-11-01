@@ -68,8 +68,7 @@
       if ["CKSimRuntime.dylib", "CKSimLoader.dylib"].contains(url.lastPathComponent),
         url.deletingLastPathComponent().resolvingSymlinksInPath().path() != package.path()
       {
-        throw CKSimError(
-          "Another CallKit Simulator release is already injected; uninstall it first.")
+        throw CKSimError("Another simulator runtime is already injected; uninstall it first.")
       }
     }
     let environment = Tool.current.environment.merging([

@@ -1,8 +1,11 @@
 # Changelog
 
-Changes not yet released are recorded below. Public API changes include migration guidance.
+Each release's changes are recorded below, newest first, with unreleased changes at the top.
+Public API changes include migration guidance.
 
 ## Unreleased
+
+## 0.2.0 (2026-11-01)
 
 ### Added
 

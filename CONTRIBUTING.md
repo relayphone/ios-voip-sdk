@@ -23,8 +23,8 @@ in `tools/` check them.
 The [CI workflow](.github/workflows/ci.yml) runs all of these, builds every library and the
 example for devices and the simulator, checks that the example's device build leaves out the
 simulator runtime and CallKit, builds the documentation and the Inspector, and smoke-tests a
-built runtime package. The [runtime release workflow](.github/workflows/runtime-release.yml)
-qualifies and publishes the standalone runtime.
+built runtime package. The [release workflow](.github/workflows/runtime-release.yml)
+qualifies the simulator runtime package and publishes it with each release.
 
 ## Pull requests
 
