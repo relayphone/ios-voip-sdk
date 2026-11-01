@@ -1,6 +1,7 @@
 #if os(iOS)
   public import Foundation
   import PushKit
+  import os
   #if SWIFT_PACKAGE
     public import VoIPCore
     import VoIPPushDelivery
@@ -12,6 +13,13 @@
   /// `VoIPClient.start(framework:media:push:audio:observers:configuration:clock:)`, which attaches
   /// it before any push can arrive. PushKit delivers pushes on `VoIPActor`, so the SDK reports a
   /// push's call before the push callback returns, as Apple requires.
+  ///
+  /// From iOS 26.4, PushKit says whether the system requires each push to be reported. The source
+  /// trusts a push that needn't be reported only while the app is active, in the foreground: it
+  /// requires a report for every push that arrives while the app isn't active, whatever the system
+  /// says (see `PushCompletion.init(systemRequiresReport:appIsActive:finish:)`). It follows the
+  /// app's activity from UIKit's notifications, from when it is created, and counts the app as
+  /// inactive until UIKit says that it became active, so create it when the app launches.
   ///
   /// Register the push token with your servers from ``tokens()``:
   ///
@@ -34,8 +42,13 @@
     /// completes.
     static let watchdog: TimeInterval = 4
 
+    /// The source's log, which records each push that the SDK reports although the system said
+    /// that it needn't be reported.
+    private nonisolated static let log = Logger(subsystem: "VoIPPushKit", category: "source")
+
     private let decode: @Sendable (Data) -> VoIPPush
     private let tokenUpdates = TokenUpdates()
+    private let activity = AppActivity()
     private var registry: PKPushRegistry?
     private var delegate: RegistryDelegate?
 
@@ -72,7 +85,7 @@
     }
 
     fileprivate func receive(
-      _ payload: PKPushPayload, mustReport: Bool, completion: @escaping () -> Void,
+      _ payload: PKPushPayload, systemRequiresReport: Bool, completion: @escaping () -> Void,
       onPush: @VoIPActor (VoIPPush, PushCompletion) -> Void
     ) {
       let delivery = VSPushCompletion(completion: completion, watchdog: Self.watchdog)
@@ -83,7 +96,15 @@
         } else {
           VoIPPush.unrecognized
         }
-      onPush(push, PushCompletion(mustReport: mustReport) { delivery.finish() })
+      let pushCompletion = PushCompletion(
+        systemRequiresReport: systemRequiresReport, appIsActive: activity.isActive
+      ) { delivery.finish() }
+      if pushCompletion.mustReport, !systemRequiresReport {
+        Self.log.notice(
+          "The system said that a VoIP push needn't be reported, but the app isn't active, so the SDK reports it"
+        )
+      }
+      onPush(push, pushCompletion)
     }
 
     fileprivate func tokenChanged(_ token: Data?) {
@@ -119,7 +140,7 @@
       for type: PKPushType, completion: @escaping () -> Void
     ) {
       // Before iOS 26.4, every VoIP push must be reported as a call.
-      deliver(payload, mustReport: true, completion: completion)
+      deliver(payload, systemRequiresReport: true, completion: completion)
     }
 
     @available(iOS 26.4, *)
@@ -127,14 +148,16 @@
       _ registry: PKPushRegistry, didReceiveIncomingVoIPPushWith payload: PKPushPayload,
       metadata: PKVoIPPushMetadata, withCompletionHandler completion: @escaping () -> Void
     ) {
-      deliver(payload, mustReport: metadata.mustReport, completion: completion)
+      deliver(payload, systemRequiresReport: metadata.mustReport, completion: completion)
     }
 
     private func deliver(
-      _ payload: PKPushPayload, mustReport: Bool, completion: @escaping () -> Void
+      _ payload: PKPushPayload, systemRequiresReport: Bool, completion: @escaping () -> Void
     ) {
       guard let source else { return completion() }
-      source.receive(payload, mustReport: mustReport, completion: completion, onPush: onPush)
+      source.receive(
+        payload, systemRequiresReport: systemRequiresReport, completion: completion,
+        onPush: onPush)
     }
   }
 #endif

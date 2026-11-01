@@ -22,8 +22,9 @@ public protocol CallingFramework: Sendable {
   ///
   /// The adapter hands the report to the system before it returns: the SDK reports a VoIP push's
   /// call before the push callback returns, as Apple requires. A push that brings no new call to
-  /// present, such as a server event, is satisfied with a throwaway call under a UUID of its own,
-  /// which the SDK reports and ends at once, rather than with the push's call reported again.
+  /// present, such as a server event, and must be reported is satisfied with a throwaway call
+  /// under a UUID of its own, which the SDK reports and ends at once, rather than with the push's
+  /// call reported again.
   ///
   /// - Parameters:
   ///   - call: The call to report.

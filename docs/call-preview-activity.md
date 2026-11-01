@@ -120,10 +120,13 @@ date instead of a snippet that looks live.
 End the preview on every device when the call ends, with a `dismissal-date` two minutes later, as
 the SDK does for the previews it ends. Tell the app that the call ended over its own connection or
 with a regular push, not a VoIP push: the device didn't present a call that it previews, and a
-VoIP push about it costs a throwaway call report (see `VoIPPush`). When the user joins the call on a device, the SDK there
-removes that device's preview at once; update or end the previews on the user's other devices.
-The SDK also ends a preview that it follows when its call ends on the device, for example after a
-server event.
+VoIP push about it costs a throwaway call report while the app isn't active, which can show
+briefly on the call screen. The system terminates an app that doesn't report a VoIP push, and on
+an iPhone 13, after three terminations in 21 minutes, it stopped delivering VoIP pushes to the app
+until the app was reinstalled (see `VoIPPush`). When the user joins the call on a device, the SDK
+there removes that device's preview at once; update or end the previews on the user's other
+devices. The SDK also ends a preview that it follows when its call ends on the device, for
+example after a server event.
 
 ## Attributes
 
