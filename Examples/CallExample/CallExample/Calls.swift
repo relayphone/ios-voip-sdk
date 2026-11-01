@@ -283,7 +283,9 @@ final class NotificationResponses: NSObject, @MainActor UNUserNotificationCenter
     _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
   ) async {
     guard let response = CallNotificationResponse(response) else { return }  // Not a call's.
-    await calls?.respond(to: response)
+    // Returns at once: the app may only become active once this method returns, and the notifier
+    // waits for it to be active before it joins.
+    Task { @MainActor in await calls?.respond(to: response) }
   }
 
   /// Shows notifications while the app is in the foreground too.
