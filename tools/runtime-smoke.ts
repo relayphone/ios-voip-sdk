@@ -36,6 +36,23 @@ async function until<T>(description: string, seconds: number, check: () => T | u
   throw new Error(`Timed out waiting for ${description}${reason}`);
 }
 
+/**
+ * Launches the app with `launch`, once more if the first launch timed out reading the simulator's
+ * environment. On a busy host, the first `simctl spawn` after the simulator boots can take longer
+ * than `cksim`'s minute; `cksim` reads the environment before it changes anything.
+ */
+export function launchToleratingASlowSimulator(launch: () => string): string {
+  try {
+    return launch();
+  } catch (error) {
+    if (!(error instanceof Error) || !/Reading simulator environment key \S+ timed out/.test(error.message)) {
+      throw error;
+    }
+    console.warn(`Launching again: ${error.message}`);
+    return launch();
+  }
+}
+
 export async function smoke(packagePath: string, requestedSimulator?: string): Promise<string[]> {
   const work = mkdtempSync(join(tmpdir(), 'runtime-smoke-'));
   let created: string | undefined;
@@ -60,7 +77,7 @@ export async function smoke(packagePath: string, requestedSimulator?: string): P
     const cksim = (...args: string[]) =>
       run(join(packagePath, 'cksim'), ['--simulator', simulator, '--bundle', bundle, ...args], { timeout: 120 });
     const calls = (): Call[] => JSON.parse(cksim('status')).result.calls as Call[];
-    cksim('launch');
+    launchToleratingASlowSimulator(() => cksim('launch'));
     await until('the runtime to start in the app', 120, () => (calls() ? true : undefined));
     const payload = join(work, 'push.json');
     writeFileSync(payload, JSON.stringify({ operation: 'incoming' }));
