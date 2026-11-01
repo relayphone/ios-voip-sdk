@@ -52,6 +52,11 @@
 ///   notification with a missed-call notification, of kind ``CallNotification/Kind/missed``.
 ///   ``Options/endedWithoutJoining`` can keep or remove it instead.
 ///
+/// A call that the user tried to join counts as joined, even when the join failed, whether the
+/// user joined from a notification, a call preview's Live Activity or the app: the notifier
+/// withdraws its notification as for a join, and posts nothing more for the call. The call
+/// returns to its preview without a new notification, and ends without a missed-call one.
+///
 /// Follow what happens to the notifications with ``events()``.
 ///
 /// ## Routing the user's responses
@@ -184,7 +189,7 @@ public final class CallNotifier: CallObserver {
   /// released.
   private(set) weak var client: (any NotifierClient)?
   private let subscribers = NotifierEventStreams<Event>()
-  /// The live calls the notifier made a notification for.
+  /// The live calls the notifier made a notification for, or that the user tried to join.
   private var notified: [CallID: Notified] = [:]
   private var task: Task<Void, Never>?
 
@@ -241,11 +246,12 @@ public final class CallNotifier: CallObserver {
       notified[call.id]?.isPosted = await post(.incoming, for: call)
     case .performed(.join(let id), _):
       guard notified[id] != nil else { return }
-      notified[id]?.isJoined = true
-      if options.withdrawsWhenJoined, notified[id]?.isPosted == true {
-        notified[id]?.isPosted = false
-        await withdraw(id)
-      }
+      await joined(id)
+    case .joinFailed(let call):
+      // The user asked to join the call, so it isn't news to them: it returns to its preview and
+      // ends without a notification.
+      if notified[call.id] == nil { notified[call.id] = Notified() }
+      await joined(call.id)
     case .ended(let call):
       if let entry = notified.removeValue(forKey: call.id) {
         guard !entry.isJoined else { return }
@@ -267,6 +273,15 @@ public final class CallNotifier: CallObserver {
       }
     default:
       break
+    }
+  }
+
+  /// Records that the user joined a call, or tried to, and withdraws its notification.
+  private func joined(_ id: CallID) async {
+    notified[id]?.isJoined = true
+    if options.withdrawsWhenJoined, notified[id]?.isPosted == true {
+      notified[id]?.isPosted = false
+      await withdraw(id)
     }
   }
 
@@ -304,10 +319,10 @@ public final class CallNotifier: CallObserver {
   }
 }
 
-/// A live call that the notifier made a notification for.
+/// A live call that the notifier made a notification for, or that the user tried to join.
 private struct Notified {
   /// Whether the center holds the call's notification.
   var isPosted = false
-  /// Whether the call was joined on this device.
+  /// Whether the call was joined on this device, or the user tried to join it.
   var isJoined = false
 }

@@ -61,6 +61,7 @@ extension EngineTests {
       try await h.client.request(.join(callID))
       #expect(try await h.next() == .joinRequested(callID))
       await h.client.confirmPlaced(callID)
+      #expect(try await h.next() == .joinFailed(callID, .policy))
       #expect(try await h.next() == .previewStarted(callID, .policy))
       #expect(await h.records.last == .reportEnded(callID, .failed(.audioSession)))
       #expect(await h.media.records.isEmpty)

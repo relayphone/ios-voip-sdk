@@ -102,6 +102,12 @@ Changes not yet released are recorded below. Public API changes include migratio
   `Deadlines.placement`: an outgoing call ends with `CallFailure.notPlaced`, and a call being
   joined returns to its call preview. An app that ended such a call as a server failure, with
   `receive(.failed, for:eventID:)`, calls `confirmNotPlaced(_:)` instead.
+- `CallEvent.joinFailed(_:)` tells observers that joining a call ended before the call took part
+  here: the calling framework refused or dropped the join, the app didn't place it, its media or
+  audio failed, or the user ended it on the system's call screen. The call returned to its
+  preview, and `previewStarted(_:)` follows. Observers learn of a failed join wherever it
+  started, so the call notifier can tell the preview from one the user hasn't seen. Switches over
+  `CallEvent` need the new case.
 - `CallObserver` follows calls from the moment the client starts. Pass observers to
   `VoIPClient.start` as `observers`: the client calls each one's `attach(to:)`, in order, before
   it attaches the calling framework, the audio session and the push source, and keeps them for
@@ -141,8 +147,12 @@ Changes not yet released are recorded below. Public API changes include migratio
   [ADR 0009](docs/adr/0009-call-notifications-never-ring.md)). When the call is joined here, it
   withdraws the notification; when the call ends without being joined here, it replaces the
   notification with a missed-call notification, unless `Options.endedWithoutJoining` keeps or
-  removes it. `Options.customize` changes or drops each notification, for example to localize its
-  English text, and `events()` reports what was posted, withdrawn or refused. `VoIPTesting` adds
+  removes it. A call that the user tried to join counts as joined, even when the system refused
+  the join or it failed later, from a notification, a call preview's Live Activity or the app:
+  the notifier withdraws its notification as for a join, and posts nothing when the call returns
+  to its preview or ends. On an iPhone 13, a refused join from a call preview's Lock Screen card
+  posted "incoming", then "missed" when the call ended. `Options.customize` changes or drops each
+  notification, for example to localize its English text, and `events()` reports what was posted, withdrawn or refused. `VoIPTesting` adds
   `FakeCallNotificationCenter`, and the CocoaPods spec adds the `Notifications` subspec, which
   `Testing` includes.
 - `UserNotificationsAdapter` is `CallNotifier`'s notification center on iOS, and `CallNotifier()`

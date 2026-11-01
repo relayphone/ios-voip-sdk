@@ -6,7 +6,7 @@ public enum CallEvent: Hashable, Sendable {
   case presented(Call)
   /// This device started following the call in a call preview: the call was presented as one, or
   /// it was filtered or answered elsewhere and the presentation policy previews it, or joining it
-  /// failed. The call's status holds the reason.
+  /// failed, after ``joinFailed(_:)``. The call's status holds the reason.
   case previewStarted(Call)
   /// The calling framework started an outgoing call. The app places it, then confirms it with
   /// ``VoIPClient/confirmPlaced(_:)``, or with ``VoIPClient/confirmNotPlaced(_:)`` when it can't.
@@ -14,6 +14,14 @@ public enum CallEvent: Hashable, Sendable {
   /// The user asked to join the call from its preview. The app joins it, then confirms it with
   /// ``VoIPClient/confirmPlaced(_:)``, or with ``VoIPClient/confirmNotPlaced(_:)`` when it can't.
   case joinRequested(Call)
+  /// Joining the call ended before the call took part on this device, and the call returned to
+  /// its preview, which ``previewStarted(_:)`` follows. The calling framework refused or dropped
+  /// the join, the app didn't place it, its media or audio failed, or the user ended it on the
+  /// system's call screen. The call's status holds the preview's reason.
+  ///
+  /// The user asked to join the call, from any surface, so a ``CallObserver`` such as the call
+  /// notifier can tell this preview from one that the user hasn't seen.
+  case joinFailed(Call)
   /// The SDK performed an action on the call.
   case performed(Action, Call)
   /// The system activated the audio session. Microphone and speaker use for calls may start now.

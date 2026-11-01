@@ -207,20 +207,20 @@ let transitionRows: [TransitionRow] = [
   .init(.requestingJoin, .event(.performed(a2, startAction)), .requesting(join), [.fail(a2)]),
   .init(
     .requestingJoin, .event(.requestFailed(join)), .previewing(.policy),
-    [.disarm(.placement), .previewStarted]),
+    [.disarm(.placement), .joinFailed, .previewStarted]),
   .init(
     .requestingJoin, .expiry(.placement), .previewing(.policy),
-    [.reportEnded(.failed(.notPlaced)), .previewStarted]),
+    [.reportEnded(.failed(.notPlaced)), .joinFailed, .previewStarted]),
   .init(
     .requestingJoin, .event(.notPlaced), .previewing(.policy),
-    [.disarm(.placement), .reportEnded(.failed(.notPlaced)), .previewStarted]),
+    [.disarm(.placement), .reportEnded(.failed(.notPlaced)), .joinFailed, .previewStarted]),
   .init(.requestingJoin, .event(.server(.answeredElsewhere)), .requesting(join), []),
   .init(
     .requestingJoin, .event(.server(.endedRemotely)), .ended(.endedRemotely),
     [.disarm(.placement), .reportEnded(.endedRemotely), .ended(.endedRemotely)]),
   .init(
     .requestingJoin, .event(.frameworkReset), .previewing(.policy),
-    [.disarm(.placement), .previewStarted]),
+    [.disarm(.placement), .joinFailed, .previewStarted]),
 
   // MARK: Placing a started call
   .init(
@@ -264,19 +264,25 @@ let transitionRows: [TransitionRow] = [
     [.disarm(.placement), .arm(.mediaPreparation), .prepareMedia]),
   .init(
     .placingJoin, .expiry(.placement), .previewing(.policy),
-    [.fail(a1), .reportEnded(.failed(.notPlaced)), .previewStarted]),
+    [.fail(a1), .reportEnded(.failed(.notPlaced)), .joinFailed, .previewStarted]),
   .init(
     .placingJoin, .event(.notPlaced), .previewing(.policy),
-    [.fail(a1), .disarm(.placement), .reportEnded(.failed(.notPlaced)), .previewStarted]),
+    [
+      .fail(a1), .disarm(.placement), .reportEnded(.failed(.notPlaced)), .joinFailed,
+      .previewStarted,
+    ]),
   .init(
     .placingJoin, .event(.performed(a2, end)), .previewing(.policy),
-    [.fail(a1), .fulfill(a2), .disarm(.placement), .previewStarted]),
+    [.fail(a1), .fulfill(a2), .disarm(.placement), .joinFailed, .previewStarted]),
   .init(
     .placingJoin, .event(.frameworkReset), .previewing(.policy),
-    [.fail(a1), .disarm(.placement), .previewStarted]),
+    [.fail(a1), .disarm(.placement), .joinFailed, .previewStarted]),
   .init(
     .placingJoin, .event(.actionTimedOut(a1)), .previewing(.policy),
-    [.fail(a1), .disarm(.placement), .reportEnded(.failed(.actionTimedOut)), .previewStarted]),
+    [
+      .fail(a1), .disarm(.placement), .reportEnded(.failed(.actionTimedOut)), .joinFailed,
+      .previewStarted,
+    ]),
   .init(
     .placingJoin, .event(.server(.endedRemotely)), .ended(.endedRemotely),
     [.fail(a1), .disarm(.placement), .reportEnded(.endedRemotely), .ended(.endedRemotely)]),
@@ -344,10 +350,13 @@ let transitionRows: [TransitionRow] = [
     ]),
   .init(
     .preparingJoin, .event(.mediaPreparationFailed), .previewing(.policy),
-    [.fail(a1), .disarm(.mediaPreparation), .reportEnded(.failed(.media)), .previewStarted]),
+    [
+      .fail(a1), .disarm(.mediaPreparation), .reportEnded(.failed(.media)), .joinFailed,
+      .previewStarted,
+    ]),
   .init(
     .preparingJoin, .expiry(.mediaPreparation), .previewing(.policy),
-    [.fail(a1), .reportEnded(.failed(.media)), .previewStarted]),
+    [.fail(a1), .reportEnded(.failed(.media)), .joinFailed, .previewStarted]),
 
   // MARK: Dialing
   .init(.dialing, .event(.server(.connecting)), .connecting, [.disarm(.ring), .arm(.connect)]),
@@ -470,7 +479,7 @@ let transitionRows: [TransitionRow] = [
   .init(
     .preparingJoin, .event(.audioConfigurationFailed), .previewing(.policy),
     [
-      .fail(a1), .disarm(.mediaPreparation), .reportEnded(.failed(.audioSession)),
+      .fail(a1), .disarm(.mediaPreparation), .reportEnded(.failed(.audioSession)), .joinFailed,
       .previewStarted,
     ]),
   .init(

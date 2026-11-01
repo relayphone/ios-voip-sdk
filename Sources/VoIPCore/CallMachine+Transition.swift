@@ -427,7 +427,7 @@ private struct Step {
   /// Moves the call to a call preview, removing it from the calling framework.
   private mutating func preview(
     _ reason: PreviewReason, reportingEnd endReason: EndReason?,
-    fulfilling endAction: ActionID? = nil
+    fulfilling endAction: ActionID? = nil, afterJoin: Bool = false
   ) {
     if let held = state.phase.held { fail(held.id) }
     if let endAction { fulfill(endAction) }
@@ -438,6 +438,7 @@ private struct Step {
     state.call.isMuted = false
     state.call.isOnHold = false
     enter(.previewing(reason))
+    if afterJoin { emit(.joinFailed(state.call)) }
     emit(.previewStarted(state.call))
   }
 
@@ -446,7 +447,9 @@ private struct Step {
     reportingEnd endReason: EndReason? = nil, fulfilling endAction: ActionID? = nil
   ) {
     // A call can only join from a preview, so the reason is always known here.
-    preview(state.previewReason ?? .policy, reportingEnd: endReason, fulfilling: endAction)
+    preview(
+      state.previewReason ?? .policy, reportingEnd: endReason, fulfilling: endAction,
+      afterJoin: true)
   }
 
   /// Ends the call. This is the only way into ``CallMachine/Phase/ended(_:)``.
