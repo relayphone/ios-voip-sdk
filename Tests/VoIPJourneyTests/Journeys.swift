@@ -73,16 +73,38 @@
       let invite = try await app.system.pushIncomingCall(id)
       try await app.expect([.presented(id)])
 
-      // The server tells this device with another VoIP push, which the SDK reports again
-      // under the call's own UUID.
+      // The server tells this device with another VoIP push, which the SDK reports with a
+      // throwaway call that it ends at once.
       let ended = try await app.system.pushCallEnded(id, reason: "answeredElsewhere")
       try await app.expect([.previewStarted(id, .answeredElsewhere)])
-      try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
+      try await app.until("the system to end the calls") { try await app.system.calls().isEmpty }
       try await app.until("the call to become a preview") {
         app.call(id)?.status == .previewing(.answeredElsewhere)
       }
       #expect(await app.media.records.isEmpty)
       try await app.expectPushesFinished([invite, ended])
+      try await app.expectReportedWithAThrowawayCall(ended, notAs: id)
+      app.expectNoMoreEvents()
+    }
+
+    @Test func endedPushForAConnectedCallIsReportedWithAThrowawayCall() async throws {
+      let app = try await App()
+      defer { app.stop() }
+      let id = newCallID("connected")
+      let invite = try await app.system.pushIncomingCall(id)
+      try await app.expect([.presented(id)])
+      try await app.system.perform(.answer(deviceUUID(for: id)))
+      try await app.expect([.performed(.answer(id), .connecting), .audioActivated])
+      await app.client.receive(.connected, for: id, eventID: EventID(rawValue: "connected-\(id)"))
+      try await app.until("the call to connect") { app.call(id)?.status == .connected }
+
+      // The push must be reported, as in the background, although it brings no call to present.
+      let ended = try await app.system.pushCallEnded(id, reason: "remoteEnded")
+      try await app.expect([.ended(id, .endedRemotely), .audioDeactivated])
+      try await app.until("the system to end the calls") { try await app.system.calls().isEmpty }
+      #expect(await app.media.records.map(\.kind) == [.prepare, .activate, .deactivate])
+      try await app.expectPushesFinished([invite, ended])
+      try await app.expectReportedWithAThrowawayCall(ended, notAs: id)
       app.expectNoMoreEvents()
     }
 

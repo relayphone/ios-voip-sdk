@@ -96,19 +96,23 @@ extension EngineTests {
         func throwaway(_ parties: [Party], _ reason: EndReason) -> [Reported] {
           mustReport ? [.throwaway(parties: parties), .throwawayEnded(reason)] : []
         }
+        // A push for a call that the system presents is reported with a throwaway call too: the
+        // system doesn't count a second report of a call it has.
         switch self {
         case .newCall, .endedCallAfterRetention:
           return [.report(callID)]
-        case .repeatedEventID, .repeatedCallID, .repeatedServerEvent:
-          return mustReport ? [.report(callID)] : []
-        case .callInPreview, .endedCall, .previewPolicy, .nonePolicy:
+        case .repeatedEventID, .repeatedCallID, .callInPreview, .endedCall, .previewPolicy,
+          .nonePolicy:
           return throwaway([alice], .failed(.server))
+        case .repeatedServerEvent:
+          // With the parties the call has when the push arrives.
+          return throwaway([bob], .failed(.server))
         case .beyondCapacity:
           return throwaway([alice], .failed(.atCapacity))
         case .unrecognized, .serverEventForUnknownCall:
           return throwaway([], .failed(.server))
         case .serverEventForRingingCall:
-          return (mustReport ? [.report(callID)] : []) + [.ended(callID, .answeredElsewhere)]
+          return throwaway([alice], .failed(.server)) + [.ended(callID, .answeredElsewhere)]
         }
       }
 
@@ -160,14 +164,23 @@ extension EngineTests {
       let h = try Harness()
       let framework = h.framework
       await onVoIPActor { framework.presentationOutcome = nil }
-      await h.deliver(.incoming(ringingCall, eventID: e1))
-      await h.deliver(.incoming(ringingCall, eventID: e2))
-      #expect(await h.reported() == [.report(callID), .report(callID)])
+      let first = VoIPPush.incoming(ringingCall, eventID: e1)
+      let repeated = VoIPPush.incoming(ringingCall, eventID: e2)
+      await h.deliver(first)
+      await h.deliver(repeated)
+      #expect(
+        await h.reported() == [
+          .report(callID), .throwaway(parties: [alice]), .throwawayEnded(.failed(.server)),
+        ])
       #expect(await h.push.finished.isEmpty)
 
+      // Each push finishes when the system answers its own report.
       await onVoIPActor { framework.completeReports(of: callID, with: .presented) }
-      #expect(await h.push.finished.count == 2)
+      #expect(await h.push.finished == [first])
       #expect(try await h.next() == .presented(callID))
+      let throwaway = try #require(await framework.waitingCalls.first)
+      await onVoIPActor { framework.completeReports(of: throwaway.id, with: .presented) }
+      #expect(await h.push.finished == [first, repeated])
       try await h.expectNoEvents()
     }
 
@@ -185,6 +198,63 @@ extension EngineTests {
       h.clock.advance(by: VoIPConfiguration().retention)
       try await h.ring()
       try await h.expectNoEvents()
+    }
+
+    /// A device joined a call preview, then received a VoIP push that the call ended. With the
+    /// app in the background, the system requires a report for the push, and doesn't count a
+    /// second report of the joined call.
+    @Test(arguments: [true, false])
+    func endedPushForAJoinedCall(mustReport: Bool) async throws {
+      let h = try Harness()
+      _ = await h.client.report(incoming(callID, .preview))
+      #expect(try await h.next() == .previewStarted(callID, .policy))
+      try await h.client.request(.join(callID))
+      #expect(try await h.next() == .joinRequested(callID))
+      await h.client.confirmPlaced(callID)
+      #expect(try await h.next() == .performed(.join(callID), .connecting))
+      await h.framework.send(.audioActivated)
+      #expect(try await h.next() == .audioActivated)
+      let before = await h.records.count
+
+      let ended = VoIPPush.serverEvent(.endedRemotely, for: callID, eventID: e2)
+      await h.deliver(ended, mustReport: mustReport)
+      #expect(try await h.next() == .ended(callID, .endedRemotely))
+      let throwaway: [Reported] =
+        mustReport ? [.throwaway(parties: [alice]), .throwawayEnded(.failed(.server))] : []
+      #expect(await h.reported(after: before) == throwaway + [.ended(callID, .endedRemotely)])
+      #expect(await h.push.finished == [ended])
+      try await h.expectNoEvents()
+    }
+
+    @Test func pushForAConnectedCallLeavesTheCallItsAudioAndItsMediaAlone() async throws {
+      let h = try Harness()
+      try await h.connect()
+      await h.until { $0.calls.map(\.status) == [.connected] && $0.isAudioActive }
+      let before = await h.records.count
+      let media = await h.media.records
+
+      await h.deliver(.serverEvent(.reconnecting, for: callID, eventID: e2))
+      await h.until { $0.calls.map(\.status) == [.reconnecting] }
+      #expect(
+        await h.reported(after: before) == [
+          .throwaway(parties: [alice]), .throwawayEnded(.failed(.server)),
+        ])
+      #expect(await h.push.finished.count == 2)
+      #expect(await h.media.records == media)
+      #expect(h.client.isAudioActive)
+
+      // The SDK fails what the system asks of the throwaway call, such as an answer from a user
+      // who tapped it before it ended.
+      let records = await h.records
+      let throwaway = try #require(
+        records.dropFirst(before).lazy.compactMap { record -> CallID? in
+          if case .reportIncoming(let call) = record { call.id } else { nil }
+        }.first)
+      let answer = await h.framework.perform(.answer(throwaway))
+      #expect(await h.records.last == .fail(answer))
+      try await h.expectNoEvents()
+      #expect(h.client.calls.first { $0.id == callID }?.status == .reconnecting)
+      #expect(await h.media.records == media)
     }
 
     @Test func repeatedServerEventIsIgnored() async throws {

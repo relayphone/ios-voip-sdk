@@ -133,8 +133,14 @@ Task {
 
 `PushKitSource` decodes pushes in the SDK's default format, described by
 `VoIPPush(defaultFormat:)`, or with your own decoder: `PushKitSource(decode:)`. The SDK reports
-each push's call before the push callback returns, as Apple requires. Present a call that the
-app learns about some other way with `report(_:)`:
+each push's call before the push callback returns, as Apple requires. When the system requires a
+report for a push that brings no new call to present, such as a server event, the SDK reports a
+throwaway call and ends it at once, which can show briefly on the call screen. So once a device
+has answered or joined a call, don't send it VoIP pushes about that call: tell the app what
+happens to it, such as that it ended, over the app's own connection to your servers or with a
+regular push, and pass it on with `receive(_:for:eventID:)`, as below.
+
+Present a call that the app learns about some other way with `report(_:)`:
 
 ```swift
 let caller = Party(handle: try Handle(kind: .phoneNumber, value: "+14155550123"), displayName: "Alice")

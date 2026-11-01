@@ -187,9 +187,11 @@ public final class VoIPClient {
   /// Applies a fact about a call that the app learned from its servers other than through a VoIP
   /// push.
   ///
-  /// An event whose ID the SDK has already seen is ignored, so the same event can arrive over
-  /// several channels. An event for a call this device doesn't know yet is kept for
-  /// ``VoIPConfiguration/retention`` and applied when the call arrives.
+  /// Use it for every event about a call that this device has answered or joined, such as the
+  /// call ending, which the app's servers send over the app's own connection or with a regular
+  /// push rather than a VoIP push. An event whose ID the SDK has already seen is ignored, so the
+  /// same event can arrive over several channels. An event for a call this device doesn't know
+  /// yet is kept for ``VoIPConfiguration/retention`` and applied when the call arrives.
   ///
   /// - Parameters:
   ///   - event: The server event.

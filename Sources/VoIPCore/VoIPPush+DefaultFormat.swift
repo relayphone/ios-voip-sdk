@@ -34,7 +34,9 @@ extension VoIPPush {
   /// ```
   ///
   /// Its `reason` is `remoteEnded` (the default), `failed`, `unanswered`, `answeredElsewhere` or
-  /// `declinedElsewhere`.
+  /// `declinedElsewhere`. Send it for a call that the device hasn't answered or joined, such as a
+  /// ringing call that was answered elsewhere. For a call in progress on the device, tell the app
+  /// over its own connection or with a regular push instead; see ``VoIPPush``.
   ///
   /// - Parameter payload: The push's JSON payload.
   public init(defaultFormat payload: Data) {

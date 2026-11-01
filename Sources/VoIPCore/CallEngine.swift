@@ -164,7 +164,7 @@ final class CallEngine {
       let isRepeated = seenEvents[eventID] != nil || states[incoming.id] != nil
       if seenEvents[eventID] == nil { seenEvents[eventID] = clock.now() }
       if isRepeated {
-        return satisfy(completion, for: incoming.id, parties: incoming.parties)
+        return satisfy(completion, parties: incoming.parties)
       }
       switch admit(incoming) {
       case .reporting:
@@ -178,32 +178,30 @@ final class CallEngine {
         completion.finish()
       }
     case .serverEvent(let event, let id, let eventID):
-      // Report first, so that a call the system still presents is reported under its own UUID.
-      satisfy(completion, for: id, parties: states[id]?.call.parties ?? [])
+      // Report at once, as for every push, then apply the event.
+      satisfy(completion, parties: states[id]?.call.parties ?? [])
       serverEvent(event, for: id, eventID: eventID)
     case .unrecognized:
-      satisfy(completion, for: nil, parties: [])
+      satisfy(completion, parties: [])
     }
   }
 
   /// Completes a push that brings no new call to present.
   ///
-  /// When the system presents the call, reporting it again under its own UUID presents nothing
-  /// new. Otherwise the SDK reports a throwaway call and ends it at once.
-  private func satisfy(_ completion: PushCompletion, for id: CallID?, parties: [Party]) {
+  /// When the system requires a report, the SDK reports a throwaway call under a new UUID and ends
+  /// it at once, even when the push concerns a call that the system presents. The system doesn't
+  /// count a second report of a call it already has as reporting the push, and terminates the app
+  /// for it.
+  private func satisfy(_ completion: PushCompletion, parties: [Party]) {
     guard completion.mustReport else { return completion.finish() }
-    if let id, let state = states[id], state.phase.isWithFramework {
-      framework.reportIncoming(state.call) { [weak self] _ in
-        guard let self else { return completion.finish() }
-        serially { completion.finish() }
-      }
-    } else {
-      reportThrowaway(parties: parties, reason: .failed(.server), then: completion.finish)
-    }
+    reportThrowaway(parties: parties, reason: .failed(.server), then: completion.finish)
   }
 
   /// Reports a call under a new UUID and ends it at once, so that a VoIP push is reported without
   /// presenting anything.
+  ///
+  /// The SDK doesn't keep the throwaway call, so the app hears nothing of it, and the SDK fails
+  /// any action the system asks it to perform on the call. Other calls are left as they are.
   private func reportThrowaway(
     parties: [Party], reason: EndReason, then finish: @escaping @VoIPActor () -> Void
   ) {
@@ -567,13 +565,5 @@ extension CallMachine.Phase {
 
   fileprivate var isPreparing: Bool {
     if case .preparing = self { true } else { false }
-  }
-
-  /// Whether the calling framework has the call under its UUID.
-  fileprivate var isWithFramework: Bool {
-    switch self {
-    case .reporting, .ringing: true
-    default: isActive
-    }
   }
 }
