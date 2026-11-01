@@ -127,6 +127,20 @@
       }
       #expect(violations.map { $0.reason ?? $0.event } == [], sourceLocation: sourceLocation)
     }
+
+    /// Checks that the SDK reported a push with one call of its own, rather than with the call
+    /// that the push concerns, which the system doesn't count.
+    func expectReportedWithAThrowawayCall(
+      _ pushID: UUID, notAs id: CallID, sourceLocation: SourceLocation = #_sourceLocation
+    ) async throws {
+      let reports = try await system.journal().filter {
+        $0.event == "report.incoming" && $0.pushID == pushID.uuidString
+      }
+      #expect(reports.count == 1, sourceLocation: sourceLocation)
+      #expect(
+        reports.allSatisfy { $0.callUUID != deviceUUID(for: id).uuidString },
+        sourceLocation: sourceLocation)
+    }
   }
 
   /// The call events that the app receives, in order.

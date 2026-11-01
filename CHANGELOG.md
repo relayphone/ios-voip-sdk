@@ -17,6 +17,12 @@ Changes not yet released are recorded below. Public API changes include migratio
   `confirmPlaced(_:)`, `report(_:)` and `receive(_:for:eventID:)`. It reports a VoIP push's call
   before the push callback returns, recognises repeated pushes and server events by event ID and
   call ID, and remembers ended calls and early server events for `VoIPConfiguration.retention`.
+  When the system requires a report for a push that brings no new call to present, such as a
+  repeated push or a server event, the SDK reports a throwaway call under a new UUID and ends it
+  at once, even when the push concerns a call in progress: the system doesn't count a second
+  report of a call it already presents, and terminates the app, as it did after a server event
+  push for a joined call in the background. Servers should tell a device about a call it
+  answered or joined over the app's own connection or with a regular push, not a VoIP push.
 - The seams for calling-framework adapters and the app's media: `CallingFramework` with
   `FrameworkEvent`, `CallMedia`, `PushSource` with `VoIPPush` and `PushCompletion`, `ActionID`
   and `deviceUUID(for:)`. `VoIPConfiguration` adds `maximumCalls`, `supportedHandleTypes`,

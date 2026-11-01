@@ -16,9 +16,17 @@ public protocol PushSource: Sendable {
 /// A VoIP push, decoded by the app.
 ///
 /// Apple requires every VoIP push to be reported as a call, so a server that wants a call to
-/// appear only as a call preview sends a Live Activity push instead. When a VoIP push brings
-/// nothing to present, the SDK satisfies the rule without presenting anything: it reports a call
-/// and ends it at once.
+/// appear only as a call preview sends a Live Activity push instead. When a VoIP push brings no
+/// new call to present, such as a repeated push or a server event, and the system requires a
+/// report (see ``PushCompletion/mustReport``), the SDK satisfies the rule with a throwaway call: it
+/// reports a call under a new UUID and ends it at once, which can show briefly on the call screen.
+/// It does so even when the push concerns a call that the system presents, because the system
+/// doesn't count a second report of a call it already has, and terminates the app.
+///
+/// Once a device has answered or joined a call, don't send it VoIP pushes about that call. Tell
+/// the app what happens to the call, such as that it ended, over the app's own connection to your
+/// servers or with a regular push, and pass it to ``VoIPClient/receive(_:for:eventID:)``, as Apple
+/// recommends.
 public enum VoIPPush: Hashable, Sendable {
   /// A push announcing an incoming call.
   case incoming(IncomingCall, eventID: EventID)
