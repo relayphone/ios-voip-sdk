@@ -85,9 +85,9 @@ export function check(tag: string, source: Source, mainRef = 'origin/main', info
 }
 
 /** The release notes, which link the changelog at the tag and the run that built and tested it. */
-export function notes(tag: string, sourceCommit: string, run: string): string {
+export function notes(tag: string, sourceCommit: string, repository: string, run: string): string {
   return (
-    `Changes: [CHANGELOG.md](https://github.com/relayphone/ios-voip-sdk/blob/${tag}/CHANGELOG.md)\n\n` +
+    `Changes: [CHANGELOG.md](${repository}/blob/${tag}/CHANGELOG.md)\n\n` +
     'The CI-built runtime passed the runtime tests and a smoke test of this package before ' +
     `packaging. Source: \`${sourceCommit}\`. [Run and evidence](${run}).\n\n` +
     'The `ios-27.0` profile names the device measurements it reproduces; `build-info.json` ' +
@@ -110,13 +110,14 @@ if (isMain(import.meta.url)) {
     const notesFile = option(process.argv, 'notes');
     if (command === 'record' && tag && info && release && notesFile) {
       const result = check(tag, gitSource(), option(process.argv, 'main-ref'), info);
-      const workflowRun = `${process.env.GITHUB_SERVER_URL ?? 'https://github.com'}/` +
-        `${process.env.GITHUB_REPOSITORY ?? ''}/actions/runs/${process.env.GITHUB_RUN_ID ?? ''}`;
+      const repository = `${process.env.GITHUB_SERVER_URL ?? 'https://github.com'}/` +
+        `${process.env.GITHUB_REPOSITORY ?? ''}`;
+      const workflowRun = `${repository}/actions/runs/${process.env.GITHUB_RUN_ID ?? ''}`;
       writeFileSync(
         join(resolve(release), 'qualification.json'),
         `${JSON.stringify({ release: result, manifest: info, workflowRun }, null, 2)}\n`,
       );
-      writeFileSync(resolve(notesFile), notes(result.tag, result.sourceCommit, workflowRun));
+      writeFileSync(resolve(notesFile), notes(result.tag, result.sourceCommit, repository, workflowRun));
       return;
     }
     throw new Error('Usage: node tools/release.ts check <tag> [--main-ref <ref>] [--package <dir>] | ' +

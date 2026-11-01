@@ -42,8 +42,11 @@ Releases are tagged `vX.Y.Z` and listed under
 Add the package to your manifest, or in Xcode with File > Add Package Dependencies:
 
 ```swift
-.package(url: "https://github.com/relayphone/ios-voip-sdk.git", from: "0.2.0")
+.package(url: "https://github.com/relayphone/ios-voip-sdk.git", .upToNextMinor(from: "0.2.0"))
 ```
+
+Before 1.0, a minor version may change the API, so pin the minor version and move to the next one
+with its changelog.
 
 Then add the libraries your app uses to its target: `VoIPCore`, `VoIPLiveCommunicationKit`, and
 usually `VoIPPushKit`, `VoIPAudio` and `VoIPSimulator`.
