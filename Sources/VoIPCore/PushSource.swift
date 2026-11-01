@@ -23,10 +23,19 @@ public protocol PushSource: Sendable {
 /// It does so even when the push concerns a call that the system presents, because the system
 /// doesn't count a second report of a call it already has, and terminates the app.
 ///
-/// Once a device has answered or joined a call, don't send it VoIP pushes about that call. Tell
-/// the app what happens to the call, such as that it ended, over the app's own connection to your
-/// servers or with a regular push, and pass it to ``VoIPClient/receive(_:for:eventID:)``, as Apple
-/// recommends.
+/// So send a device VoIP pushes about a call only while the call may ring on it. Once the device
+/// has answered or joined the call, or didn't present it, don't send it VoIP pushes about that
+/// call. Tell the app what happens to the call, such as that it ended, over the app's own
+/// connection to your servers or with a regular push, and pass it to
+/// ``VoIPClient/receive(_:for:eventID:)``, as Apple recommends.
+///
+/// A device didn't present a call that Do Not Disturb or a Focus filtered, or that it shows as a
+/// call preview. The app learns of it from ``CallEvent/previewStarted(_:)`` with
+/// ``PreviewReason/filtered(_:)`` or ``PreviewReason/policy``, or when the call ends as
+/// ``EndReason/filtered(_:)``, and can tell your servers. On an iPhone 13 with a Focus on, the
+/// system terminated an app in the background for not reporting a call, about 8 seconds after the
+/// third of three `callEnded` VoIP pushes for calls that the Focus had filtered, sent a few
+/// seconds apart, although the SDK had reported a throwaway call for each push within a second.
 public enum VoIPPush: Hashable, Sendable {
   /// A push announcing an incoming call.
   case incoming(IncomingCall, eventID: EventID)

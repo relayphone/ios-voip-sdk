@@ -135,10 +135,19 @@ Task {
 `VoIPPush(defaultFormat:)`, or with your own decoder: `PushKitSource(decode:)`. The SDK reports
 each push's call before the push callback returns, as Apple requires. When the system requires a
 report for a push that brings no new call to present, such as a server event, the SDK reports a
-throwaway call and ends it at once, which can show briefly on the call screen. So once a device
-has answered or joined a call, don't send it VoIP pushes about that call: tell the app what
+throwaway call and ends it at once, which can show briefly on the call screen. So send a device
+VoIP pushes about a call only while the call may ring on it. Once the device has answered or
+joined a call, or didn't present it, don't send it VoIP pushes about that call: tell the app what
 happens to it, such as that it ended, over the app's own connection to your servers or with a
 regular push, and pass it on with `receive(_:for:eventID:)`, as below.
+
+A device didn't present a call that Do Not Disturb or a Focus filtered, or that it shows as a
+call preview; the app learns of it from `previewStarted(_:)` with `PreviewReason.filtered(_:)` or
+`.policy`, or when the call ends as `EndReason.filtered(_:)`, and can tell your servers. Each VoIP
+push about such a call costs a throwaway report. On an iPhone 13 with a Focus on, the system
+terminated an app in the background for not reporting a call, about 8 seconds after the third of
+three `callEnded` VoIP pushes for filtered calls sent a few seconds apart, although the SDK had
+reported a throwaway call for each push within a second.
 
 Present a call that the app learns about some other way with `report(_:)`:
 
