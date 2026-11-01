@@ -215,8 +215,8 @@ final class CallEngine {
 
   /// Completes a push that brings no new call to present.
   ///
-  /// When the system requires a report, the SDK reports a throwaway call under a new UUID and ends
-  /// it at once, even when the push concerns a call that the system presents. The system doesn't
+  /// When the push must be reported, the SDK reports a throwaway call under a new UUID and ends it
+  /// at once, even when the push concerns a call that the system presents. The system doesn't
   /// count a second report of a call it already has as reporting the push, and terminates the app
   /// for it.
   private func satisfy(_ completion: PushCompletion, parties: [Party]) {

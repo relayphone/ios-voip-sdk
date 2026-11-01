@@ -24,11 +24,36 @@ public final class FakePushSource: PushSource {
   ///
   /// - Parameters:
   ///   - push: The push to deliver.
-  ///   - mustReport: Whether the system requires the push to be reported as a call.
+  ///   - mustReport: Whether the SDK must report the push as a call.
   public func deliver(_ push: VoIPPush, mustReport: Bool = true) {
+    deliver(push, PushCompletion(mustReport: mustReport, finish: finisher(for: push)))
+  }
+
+  /// Delivers a VoIP push to the SDK as the PushKit source does from iOS 26.4, returning when the
+  /// SDK's push callback returns.
+  ///
+  /// The SDK must report the push when the system requires it or the app isn't active; see
+  /// `PushCompletion.init(systemRequiresReport:appIsActive:finish:)`.
+  ///
+  /// - Parameters:
+  ///   - push: The push to deliver.
+  ///   - systemRequiresReport: Whether the system requires the push to be reported as a call.
+  ///   - appIsActive: Whether the app is active, in the foreground.
+  public func deliver(_ push: VoIPPush, systemRequiresReport: Bool, appIsActive: Bool) {
+    deliver(
+      push,
+      PushCompletion(
+        systemRequiresReport: systemRequiresReport, appIsActive: appIsActive,
+        finish: finisher(for: push)))
+  }
+
+  private func deliver(_ push: VoIPPush, _ completion: PushCompletion) {
     guard let onPush else { preconditionFailure("The SDK hasn't attached the push source") }
-    onPush(
-      push, PushCompletion(mustReport: mustReport) { [weak self] in self?.finished.append(push) })
+    onPush(push, completion)
+  }
+
+  private func finisher(for push: VoIPPush) -> @VoIPActor @Sendable () -> Void {
+    { [weak self] in self?.finished.append(push) }
   }
 
   // MARK: PushSource

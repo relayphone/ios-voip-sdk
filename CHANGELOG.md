@@ -17,16 +17,20 @@ Changes not yet released are recorded below. Public API changes include migratio
   `confirmPlaced(_:)`, `report(_:)`, `join(_:)` and `receive(_:for:eventID:)`. It reports a VoIP push's call
   before the push callback returns, recognises repeated pushes and server events by event ID and
   call ID, and remembers ended calls and early server events for `VoIPConfiguration.retention`.
-  When the system requires a report for a push that brings no new call to present, such as a
-  repeated push or a server event, the SDK reports a throwaway call under a new UUID and ends it
-  at once, even when the push concerns a call in progress: the system doesn't count a second
-  report of a call it already presents, and terminates the app, as it did after a server event
-  push for a joined call in the background. Servers should send VoIP pushes about a call only
-  while it may ring on a device, and tell a device about a call it answered or joined, or didn't
-  present because Do Not Disturb or a Focus filtered it or it shows as a call preview, over the
-  app's own connection or with a regular push. On an iPhone 13 with a Focus on, three `callEnded`
-  VoIP pushes for filtered calls, sent a few seconds apart, ended with the system terminating the
-  app in the background for not reporting a call, although each push had its throwaway report.
+  When a push that brings no new call to present, such as a repeated push or a server event,
+  must be reported, the SDK reports a throwaway call under a new UUID and ends it at once, even
+  when the push concerns a call in progress: the system doesn't count a second report of a call it
+  already presents, and terminates the app, as it did after a server event push for a joined call
+  in the background. Servers should send VoIP pushes about a call only while it may ring on a
+  device, and tell a device about a call it answered or joined, or didn't present because Do Not
+  Disturb or a Focus filtered it or it shows as a call preview, over the app's own connection or
+  with a regular push. On an iPhone 13 with iOS 27.1 and a Focus on, the system said that
+  `callEnded` VoIP pushes for filtered calls needn't be reported while the app was in the
+  background, so the SDK reported nothing for them, and the system terminated the app for not
+  reporting a call about 8 seconds after such a push, 6 times in four runs. After three
+  terminations in 21 minutes, it stopped delivering VoIP pushes to the app, even once the user
+  opened it, until the app was reinstalled. The SDK now reports every push that arrives while the
+  app isn't active.
 - The seams for calling-framework adapters and the app's media: `CallingFramework` with
   `FrameworkEvent`, `CallMedia`, `PushSource` with `VoIPPush` and `PushCompletion`, `ActionID`
   and `deviceUUID(for:)`. `VoIPConfiguration` adds `maximumCalls`, `supportedHandleTypes`,
@@ -50,9 +54,17 @@ Changes not yet released are recorded below. Public API changes include migratio
   `VoIPActor.queue`, such as a PushKit callback, on the actor without hopping, and
   stops the app when the callback arrives elsewhere.
 - The `VoIPPushKit` library's `PushKitSource` receives VoIP pushes from PushKit on `VoIPActor`,
-  with the `mustReport` metadata on iOS 26.4 and later, and finishes each push exactly once,
-  within 4 seconds. `init(decode:)` takes the app's decoder for its push payloads, and
-  `tokens()` streams the VoIP push token for the app to register with its servers.
+  and finishes each push exactly once, within 4 seconds. On iOS 26.4 and later it reads the
+  `mustReport` metadata, but trusts a push that the system says needn't be reported only while
+  the app is active: it requires a report for every push that arrives while the app isn't active.
+  It follows the app's activity from UIKit's notifications, from when it is created, and counts
+  the app as inactive until UIKit says that it became active. It logs, under the subsystem
+  `VoIPPushKit`, each push that it requires a report for although the system said it needn't.
+  `PushCompletion(systemRequiresReport:appIsActive:finish:)` applies the same rule for other push
+  sources, and `FakePushSource.deliver(_:systemRequiresReport:appIsActive:)` delivers a push as
+  the PushKit source does. `init(decode:)` takes the app's decoder for its push payloads, and
+  `tokens()` streams the VoIP push token for the app to register with its servers. The CocoaPods
+  `PushKit` subspec links UIKit.
 - `VoIPPush(defaultFormat:)` decodes the SDK's existing `incomingCall` and `callEnded` push
   payloads, keeping every JSON value in an incoming call's `metadata` object.
 - `JSONValue` is a JSON value: `null`, `bool(_:)`, `number(_:)`, `string(_:)`, `array(_:)` or

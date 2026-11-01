@@ -226,6 +226,29 @@ extension EngineTests {
       try await h.expectNoEvents()
     }
 
+    /// A Focus filtered a pushed call, then a `callEnded` VoIP push for it arrived. On an iPhone 13
+    /// with iOS 27.1, the system said in the background that the push needn't be reported, then
+    /// terminated the app for not reporting a call. The SDK reports it unless the app is active.
+    @Test(arguments: [false, true])
+    func endedPushForAFilteredCall(appIsActive: Bool) async throws {
+      let h = try Harness()
+      let framework = h.framework
+      await onVoIPActor { framework.presentationOutcome = .filtered(.doNotDisturb) }
+      let pushed = VoIPPush.incoming(ringingCall, eventID: e1)
+      await h.push.deliver(pushed, systemRequiresReport: true, appIsActive: false)
+      #expect(try await h.next() == .previewStarted(callID, .filtered(.doNotDisturb)))
+      let before = await h.records.count
+
+      let ended = VoIPPush.serverEvent(.endedRemotely, for: callID, eventID: e2)
+      await h.push.deliver(ended, systemRequiresReport: false, appIsActive: appIsActive)
+      #expect(try await h.next() == .ended(callID, .endedRemotely))
+      let throwaway: [Reported] =
+        appIsActive ? [] : [.throwaway(parties: [alice]), .throwawayEnded(.failed(.server))]
+      #expect(await h.reported(after: before) == throwaway)
+      #expect(await h.push.finished == [pushed, ended])
+      try await h.expectNoEvents()
+    }
+
     @Test func pushForAConnectedCallLeavesTheCallItsAudioAndItsMediaAlone() async throws {
       let h = try Harness()
       try await h.connect()
@@ -266,6 +289,25 @@ extension EngineTests {
       #expect(await h.reported().count == 2)
       await h.until { $0.calls.first?.parties == [bob] }
     }
+  }
+}
+
+/// Whether the SDK must report a VoIP push, from whether the system requires it and whether the
+/// app is active.
+@Suite struct PushReportRuleTests {
+  @Test(arguments: [
+    (systemRequiresReport: true, appIsActive: false, mustReport: true),
+    (systemRequiresReport: true, appIsActive: true, mustReport: true),
+    (systemRequiresReport: false, appIsActive: false, mustReport: true),
+    (systemRequiresReport: false, appIsActive: true, mustReport: false),
+  ])
+  func aPushIsReportedUnlessTheAppIsActiveAndTheSystemDoesNotRequireIt(
+    systemRequiresReport: Bool, appIsActive: Bool, mustReport: Bool
+  ) {
+    let completion = PushCompletion(
+      systemRequiresReport: systemRequiresReport, appIsActive: appIsActive
+    ) {}
+    #expect(completion.mustReport == mustReport)
   }
 }
 

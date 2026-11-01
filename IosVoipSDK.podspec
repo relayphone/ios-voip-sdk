@@ -81,12 +81,13 @@ Pod::Spec.new do |s|
     ss.frameworks = 'LiveCommunicationKit', 'AVFAudio'
   end
 
-  # `PushKitSource`, with the Objective-C wrapper that completes each push once.
+  # `PushKitSource`, with the Objective-C wrapper that completes each push once. It follows whether
+  # the app is active from UIKit's notifications.
   s.subspec 'PushKit' do |ss|
     ss.dependency 'IosVoipSDK/Core'
     ss.source_files = ['Sources/VoIPPushKit/**/*.swift', 'Sources/VoIPPushDelivery/**/*.{h,m}']
     ss.public_header_files = 'Sources/VoIPPushDelivery/include/*.h'
-    ss.frameworks = 'PushKit'
+    ss.frameworks = 'PushKit', 'UIKit'
   end
 
   # `CallNotifier`, which posts a communication notification for each call that a Focus filters,
