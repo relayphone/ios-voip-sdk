@@ -184,6 +184,25 @@ public final class VoIPClient {
     await engine.report(call)
   }
 
+  /// Joins a call from its call preview, first creating the call when this device doesn't know
+  /// it, such as a call whose preview the app's servers started before the app ran.
+  ///
+  /// A call that this device knows is joined as with ``request(_:)`` and ``Action/join(_:)``.
+  /// Otherwise the call begins as a call preview with reason ``PreviewReason/policy``, without
+  /// ``CallEvent/previewStarted(_:)``, because the user is joining it already, and the client asks
+  /// the app to place the join with ``CallEvent/joinRequested(_:)``. Server events that arrived
+  /// for the call before apply first: joining a call that already ended throws
+  /// ``ActionError/notAllowed(_:)`` with its ended status. When the join fails, the call returns
+  /// to its preview, with ``CallEvent/previewStarted(_:)``.
+  ///
+  /// - Parameter call: The call to join, with the details that the device knows of it. Its
+  ///   presentation policy decides what happens if the call is answered elsewhere.
+  /// - Throws: ``ActionError/notAllowed(_:)`` when the call can't be joined in its status, such
+  ///   as a call that ended, or ``ActionError/refused`` when the calling framework refuses.
+  public func join(_ call: IncomingCall) async throws(ActionError) {
+    try await engine.join(call)
+  }
+
   /// Applies a fact about a call that the app learned from its servers other than through a VoIP
   /// push.
   ///

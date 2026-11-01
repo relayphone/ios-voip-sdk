@@ -559,6 +559,10 @@ let beginRows: [BeginRow] = [
     origin: .outgoing(outgoing),
     phase: .requesting(startAction), effects: [.arm(.placement), .request(startAction)]),
   BeginRow(
+    name: "joining a call that this device didn't know previews it without telling the app",
+    origin: .joining(incoming(.preview, policy: PresentationPolicy())),
+    phase: .previewing(.policy), effects: []),
+  BeginRow(
     name: "the system starts an outgoing call",
     origin: .systemStart(a1, outgoing),
     phase: .placing(held(a1, startAction)), effects: [.arm(.placement), .startRequested]),

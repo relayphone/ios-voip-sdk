@@ -23,6 +23,10 @@ enum CallMachine {
     /// The calling framework started an outgoing call from a system surface, such as Recents,
     /// without a request from the app.
     case systemStart(ActionID, OutgoingCall)
+    /// The user is joining a call that this device didn't know, such as one whose call preview
+    /// the app's servers started. It begins as a call preview without telling the app, because
+    /// the join follows at once.
+    case joining(IncomingCall)
   }
 
   /// A framework action that the machine holds until the call can take part.

@@ -5,7 +5,7 @@ import VoIPTesting
 
 @testable import VoIPLiveActivity
 
-/// A client whose call events the test sends, and which records the actions and reports it is
+/// A client whose call events the test sends, and which records the actions and joins it is
 /// asked for.
 ///
 /// A process runs one `VoIPClient` at a time, and the host's test suites run in parallel, so the
@@ -18,13 +18,16 @@ final class ScriptedClient: CallPreviewClient {
   /// The actions the observer requested, in order.
   private(set) var requests: [Action] = []
 
-  /// The incoming calls the observer reported, in order.
-  private(set) var reports: [IncomingCall] = []
+  /// The calls the observer joined from their details, in order.
+  private(set) var joins: [IncomingCall] = []
 
   /// An error that each request throws, or `nil` to accept it.
   var requestError: ActionError?
 
-  /// The calls that the client knows: those it reported, or that the test sent as previews.
+  /// An error that each join of a call from its details throws, or `nil` to accept it.
+  var joinError: ActionError?
+
+  /// The calls that the client knows: those it joined, or that the test sent as previews.
   private var known: Set<CallID> = []
 
   init() {
@@ -52,15 +55,12 @@ final class ScriptedClient: CallPreviewClient {
     guard known.contains(action.callID) else { throw .unknownCall }
   }
 
-  /// Records the report, and shows the call as a call preview, as its policy asks.
-  func report(_ call: IncomingCall) async -> PresentationOutcome {
-    reports.append(call)
-    send(
-      .previewStarted(
-        Call(
-          id: call.id, isIncoming: true, parties: call.parties, status: .previewing(.policy),
-          hasVideo: call.hasVideo, metadata: call.metadata)))
-    return .previewed(.policy)
+  /// Records the join, then accepts it for a call the client knows already or creates, as the
+  /// client does, without a call event for the new call.
+  func join(_ call: IncomingCall) async throws(ActionError) {
+    joins.append(call)
+    if let joinError { throw joinError }
+    known.insert(call.id)
   }
 }
 

@@ -14,7 +14,7 @@ Changes not yet released are recorded below. Public API changes include migratio
 - `VoIPClient` runs the call core on the `VoIPActor` global actor. Start it once with
   `start(framework:media:push:audio:observers:configuration:clock:)`, observe `calls` and
   `isAudioActive`, subscribe with `events()`, and drive calls with `request(_:)`,
-  `confirmPlaced(_:)`, `report(_:)` and `receive(_:for:eventID:)`. It reports a VoIP push's call
+  `confirmPlaced(_:)`, `report(_:)`, `join(_:)` and `receive(_:for:eventID:)`. It reports a VoIP push's call
   before the push callback returns, recognises repeated pushes and server events by event ID and
   call ID, and remembers ended calls and early server events for `VoIPConfiguration.retention`.
   When the system requires a report for a push that brings no new call to present, such as a
@@ -180,8 +180,13 @@ Changes not yet released are recorded below. Public API changes include migratio
   CocoaPods `Testing` subspec now includes `LiveActivity`.
 - Joining from a call preview's Live Activity: `CallPreviewActivities.join(_:)` requests
   `Action.join(_:)`, and a call that the client doesn't know, because the servers started its
-  preview before the app ran, is first reported as a call preview from the Live Activity's
-  attributes; it ends with its preview unless it is joined. The app declares a
+  preview before the app ran, is joined with the new `VoIPClient.join(_:)` from the Live
+  Activity's attributes; it ends with its preview unless it is joined. `VoIPClient.join(_:)`
+  creates a call that the client doesn't know without `CallEvent.previewStarted(_:)`, so that a
+  `CallNotifier` doesn't post and withdraw a notification for a join that the user started, and
+  applies the server events that arrived for the call first, so that joining a call that already
+  ended throws `ActionError.notAllowed(_:)` with its ended status instead of posting a
+  notification and a missed-call one. The app declares a
   `JoinCallPreviewIntent`, a `LiveActivityIntent` of four lines, in a file that the app and its
   widget extension both compile, with `supportedModes` set to `.foreground(.immediate)` so that
   the system opens the app before the join, and `isDiscoverable` set to `false` so that Shortcuts

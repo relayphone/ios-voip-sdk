@@ -32,7 +32,7 @@ public import Observation
 ///
 /// The Join button of ``CallPreviewView`` performs the app's ``JoinCallPreviewIntent``, which
 /// calls ``join(_:)``. A preview that the servers started before the app ran has a call that the
-/// client doesn't know yet, so joining reports it to the client first, as a call preview.
+/// client doesn't know yet, so joining creates the call in the client from the preview.
 ///
 /// Send the app's servers everything they need to start, update and end call previews:
 ///
@@ -137,7 +137,7 @@ public final class CallPreviewActivities: CallObserver {
   @ObservationIgnored private var order: [CallID] = []
   @ObservationIgnored private var callIDs: [LiveActivityID: CallID] = [:]
   @ObservationIgnored private var pushToStartToken: Data?
-  /// The calls that joining reported to the client, which end with their previews.
+  /// The calls that joining created in the client, which end with their previews.
   @ObservationIgnored private var adopted: Set<CallID> = []
   @ObservationIgnored private var listener: Task<Void, Never>?
   private let eventUpdates = Broadcast<Event>()
@@ -268,7 +268,7 @@ public final class CallPreviewActivities: CallObserver {
   /// Ends a call preview's Live Activity, showing that its call ended until the system removes it.
   ///
   /// The observer ends previews itself when this device joins their call or the call ends. Ending
-  /// a preview leaves its call as it is, unless joining reported the call to the client, which
+  /// a preview leaves its call as it is, unless joining created the call in the client, which
   /// then ends it.
   ///
   /// - Parameters:
@@ -284,14 +284,16 @@ public final class CallPreviewActivities: CallObserver {
   /// The client asks the app to place the join with `CallEvent.joinRequested(_:)`, as for any
   /// join, and the observer ends the preview's Live Activity once the call joined. A call that
   /// the client doesn't know, because the app's servers started its preview before the app ran,
-  /// is first reported to the client from the Live Activity's attributes, as a call preview with
-  /// the presentation policy `preview`; it ends when its preview ends without being joined.
+  /// is joined with `VoIPClient.join(_:)` from the Live Activity's attributes: the client creates
+  /// it without `CallEvent.previewStarted(_:)`, so that a call notifier posts nothing for a join
+  /// that the user started. It ends when its preview ends without being joined.
   ///
   /// - Parameter id: The call to join.
   /// - Throws: ``CallPreviewError/notAttached`` when no client attached the observer,
   ///   ``CallPreviewError/unknownCall`` when neither the client nor a Live Activity knows the
-  ///   call, or ``CallPreviewError/join(_:)`` when the client refuses the join, for example
-  ///   because the call ended.
+  ///   call, or ``CallPreviewError/join(_:)`` when the client refuses the join, for example with
+  ///   `ActionError.notAllowed(_:)` and the ended status of a call that the app's servers said
+  ///   was over.
   public func join(_ id: CallID) async throws(CallPreviewError) {
     guard let client else { throw .notAttached }
     do throws(ActionError) {
@@ -304,12 +306,12 @@ public final class CallPreviewActivities: CallObserver {
     }
     guard let attributes = previews[id]?.attributes else { throw .unknownCall }
     adopted.insert(id)
-    _ = await client.report(
-      IncomingCall(
-        id: id, parties: attributes.parties, hasVideo: attributes.hasVideo,
-        metadata: attributes.metadata, presentationPolicy: PresentationPolicy(incoming: .preview)))
     do throws(ActionError) {
-      try await client.request(.join(id))
+      try await client.join(
+        IncomingCall(
+          id: id, parties: attributes.parties, hasVideo: attributes.hasVideo,
+          metadata: attributes.metadata,
+          presentationPolicy: PresentationPolicy(incoming: .preview)))
     } catch {
       throw .join(error)
     }
@@ -385,7 +387,7 @@ public final class CallPreviewActivities: CallObserver {
     await endAdopted(id)
   }
 
-  /// Ends a call that joining reported to the client, once its preview ended without a join.
+  /// Ends a call that joining created in the client, once its preview ended without a join.
   private func endAdopted(_ id: CallID) async {
     guard adopted.contains(id) else { return }
     try? await client?.request(.end(id))
@@ -497,7 +499,7 @@ public enum CallPreviewError: Error, Hashable, Sendable {
 protocol CallPreviewClient: AnyObject {
   func events() -> AsyncStream<CallEvent>
   func request(_ action: Action) async throws(ActionError)
-  func report(_ call: IncomingCall) async -> PresentationOutcome
+  func join(_ call: IncomingCall) async throws(ActionError)
 }
 
 extension VoIPClient: CallPreviewClient {}
