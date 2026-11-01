@@ -106,10 +106,22 @@ jobs:
       - name: Run the call journeys, the runtime tests and every other suite on the simulator
         env:
           SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
-        run: >-
-          xcodebuild test -scheme VoIPSDK-Package -destination "platform=iOS Simulator,id=$SIMULATOR_ID"
-          -derivedDataPath "$RUNNER_TEMP/tests" -resultBundlePath "$RUNNER_TEMP/results/tests.xcresult"
-          CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO
+        run: |
+          suites() {
+            xcodebuild test -scheme VoIPSDK-Package -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+              -derivedDataPath "$RUNNER_TEMP/tests" -resultBundlePath "$RUNNER_TEMP/results/$1.xcresult" \
+              CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO 2>&1 | tee "$RUNNER_TEMP/results/$1.log"
+          }
+          mkdir -p "$RUNNER_TEMP/results"
+          suites tests && exit 0
+          # The simulator's test runner sometimes hangs before it connects, after every test that ran
+          # passed. Only then do the suites run once more; a failed test fails the step.
+          grep -q "hung before establishing connection" "$RUNNER_TEMP/results/tests.log" || exit 1
+          summary=$(xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/results/tests.xcresult" --compact)
+          [[ $summary == *'"failedTests":0'* && $summary != *'"failedTests":'[1-9]* ]] || exit 1
+          echo "::warning::The simulator's test runner hung before it connected. Running the suites again."
+          xcrun simctl shutdown "$SIMULATOR_ID" || true
+          suites tests-again
       - name: Answer and end a call with the standalone runtime and cksim
         env:
           SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
