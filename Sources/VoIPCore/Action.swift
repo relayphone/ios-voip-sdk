@@ -44,6 +44,7 @@ public enum ActionError: Error, Hashable, Sendable {
   case unsupported
   /// This device doesn't know the call the action applies to.
   case unknownCall
-  /// The calling framework refused the action.
-  case refused
+  /// The calling framework refused the action, with the error it gave, which says why, or `nil`
+  /// when it gave none.
+  case refused(FrameworkError?)
 }

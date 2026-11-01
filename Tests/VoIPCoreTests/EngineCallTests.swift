@@ -396,8 +396,8 @@ extension EngineTests {
     @Test func refusedStartEndsTheCall() async throws {
       let h = try Harness()
       let framework = h.framework
-      await onVoIPActor { framework.requestResult = .refuse(.refused) }
-      await #expect(throws: ActionError.refused) {
+      await onVoIPActor { framework.requestResult = .refuse(.refused(nil)) }
+      await #expect(throws: ActionError.refused(nil)) {
         try await h.client.request(.start(outgoing))
       }
       #expect(try await h.next() == .ended(callID, .failed(.refused)))
@@ -408,8 +408,11 @@ extension EngineTests {
       _ = await h.client.report(incoming(callID, .preview))
       #expect(try await h.next() == .previewStarted(callID, .policy))
       let framework = h.framework
-      await onVoIPActor { framework.requestResult = .refuse(.refused) }
-      await #expect(throws: ActionError.refused) {
+      // The app sees why the system refused.
+      let refusal = ActionError.refused(
+        FrameworkError(domain: "com.apple.CallKit.error.requesttransaction", code: 1))
+      await onVoIPActor { framework.requestResult = .refuse(refusal) }
+      await #expect(throws: refusal) {
         try await h.client.request(.join(callID))
       }
       #expect(try await h.next() == .previewStarted(callID, .policy))

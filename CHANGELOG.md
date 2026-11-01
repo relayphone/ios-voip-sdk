@@ -27,13 +27,19 @@ Changes not yet released are recorded below. Public API changes include migratio
   `FrameworkEvent`, `CallMedia`, `PushSource` with `VoIPPush` and `PushCompletion`, `ActionID`
   and `deviceUUID(for:)`. `VoIPConfiguration` adds `maximumCalls`, `supportedHandleTypes`,
   `includesCallsInRecents`, `ringtoneSound`, `iconTemplateImageData` and `retention`, and
-  `ActionError` adds `unknownCall` and `refused`.
+  `ActionError` adds `unknownCall` and `refused(_:)`. A refusal carries the calling framework's
+  error as a `FrameworkError`, with its domain, its code and the errors it wraps, such as the
+  call service's `com.apple.CallKit.error.requesttransaction` code, so that the app can tell why
+  the system refused; before, the SDK dropped it. Write `ActionError.refused(nil)` for a refusal
+  without an error, and match either with `case .refused:`.
 - `VoIPTesting` adds `FakeCallingFramework`, `FakeMedia` and `FakePushSource`, which run the
   client on the macOS host with `TestClock`.
 - The `VoIPLiveCommunicationKit` library's `LiveCommunicationKitAdapter` presents calls with
   LiveCommunicationKit. It reports every handle of every party, maps the SDK's actions and end
   reasons to LiveCommunicationKit's, passes audio activation, action timeouts and resets to the
   SDK, and starts a VoIP push's report before the push callback returns. It never links CallKit.
+  It logs, under the subsystem `VoIPLiveCommunicationKit`, the system's error for every refused
+  action and every report that the system didn't present, and how long each report took.
   `VoIPConfiguration.supportsVideo` (default `false`) tells the system whether calls can have
   video.
 - `VoIPActor.assumeIsolated(_:file:line:)` runs a system callback that arrives on

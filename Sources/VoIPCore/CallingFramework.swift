@@ -42,8 +42,8 @@ public protocol CallingFramework: Sendable {
   ///   - action: The action the app requested.
   ///   - call: The call as the SDK knows it, with the details that starting it needs, such as its
   ///     parties and whether it has video. A join names only the call in its action.
-  /// - Throws: ``ActionError/refused`` when the system refuses the action, or
-  ///   ``ActionError/unknownCall`` when the system doesn't know the call.
+  /// - Throws: ``ActionError/refused(_:)`` with the system's error when the system refuses the
+  ///   action, or ``ActionError/unknownCall`` when the system doesn't know the call.
   func request(_ action: Action, for call: Call) async throws(ActionError)
 
   /// Completes an action the system asked the SDK to perform.

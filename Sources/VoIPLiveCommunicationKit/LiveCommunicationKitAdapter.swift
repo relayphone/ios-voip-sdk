@@ -38,7 +38,10 @@
     /// How long ``reportIncoming(_:completion:)`` waits for the system to answer a report.
     static let reportWaitLimit: DispatchTimeInterval = .seconds(2)
 
-    private static let log = Logger(subsystem: "VoIPLiveCommunicationKit", category: "adapter")
+    /// The adapter's log, which records why the system refused a report or an action, with the
+    /// system's error domain and code, so that they can be read in Console or a sysdiagnose.
+    private nonisolated static let log = Logger(
+      subsystem: "VoIPLiveCommunicationKit", category: "adapter")
 
     private var configuration = VoIPConfiguration()
     private var onEvent: (@VoIPActor (FrameworkEvent) -> Void)?
@@ -91,7 +94,8 @@
     /// LiveCommunicationKit's report is asynchronous, but the system terminates an app whose
     /// VoIP push callback returns before the report has started (FB16655952). The report runs in
     /// its own task, which doesn't need `VoIPActor`, and the push callback returns once the
-    /// system has answered it, or when the wait ends.
+    /// system has answered it, or when the wait ends. The adapter logs how long the system took
+    /// to answer, and the system's error when it didn't present the call.
     public func reportIncoming(
       _ call: Call, completion: @escaping @VoIPActor (PresentationOutcome) -> Void
     ) {
@@ -104,12 +108,18 @@
       reporting.insert(uuid)
       let answered = DispatchSemaphore(value: 0)
       Task.detached(priority: .userInitiated) { [weak self] in
+        let start = ContinuousClock.now
         let outcome: PresentationOutcome
         do {
           try await manager.reportNewIncomingConversation(uuid: uuid, update: update)
           outcome = .presented
+          Self.log.info("The system presented an incoming report after \(start.milliseconds) ms")
         } catch {
           outcome = SystemError.presentationOutcome(for: error)
+          let detail = FrameworkError(error)
+          Self.log.notice(
+            "The system answered an incoming report after \(start.milliseconds) ms with \(detail, privacy: .public)"
+          )
         }
         answered.signal()
         if let self {
@@ -124,8 +134,11 @@
     }
 
     /// Asks the system to perform an action the app requested.
+    ///
+    /// When the system refuses, the adapter throws `ActionError.refused(_:)` with the system's
+    /// error, and logs it.
     public func request(_ action: Action, for call: Call) async throws(ActionError) {
-      guard let manager else { throw .refused }
+      guard let manager else { throw .refused(nil) }
       let uuid = uuid(for: action.callID)
       let systemAction: ConversationAction
       switch action {
@@ -158,6 +171,9 @@
         try await manager.perform(systemAction)
       } catch {
         if requested[uuid] == action { requested[uuid] = nil }
+        let detail = FrameworkError(error)
+        Self.log.error(
+          "The system refused \(action.name, privacy: .public): \(detail, privacy: .public)")
         throw SystemError.actionError(for: error)
       }
     }
@@ -272,6 +288,30 @@
     private func report(_ event: Conversation.Event, for uuid: UUID) {
       guard let bridge else { return }
       DispatchQueue.main.async { bridge.report(event, for: uuid) }
+    }
+  }
+
+  extension Action {
+    /// The action's name for the log, without its call or parties.
+    fileprivate var name: String {
+      switch self {
+      case .start: "a start"
+      case .answer: "an answer"
+      case .join: "a join"
+      case .end: "an end"
+      case .hold: "a hold"
+      case .mute: "a mute"
+      case .playTones: "tones"
+      case .merge: "a merge"
+      case .unmerge: "an unmerge"
+      }
+    }
+  }
+
+  extension ContinuousClock.Instant {
+    /// The whole milliseconds since this instant.
+    fileprivate var milliseconds: Int {
+      Int((duration(to: .now) / .milliseconds(1)).rounded())
     }
   }
 #endif
