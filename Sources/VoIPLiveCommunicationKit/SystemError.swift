@@ -1,4 +1,5 @@
 import Foundation
+
 #if SWIFT_PACKAGE
   import VoIPCore
 #endif
@@ -33,10 +34,10 @@ enum SystemError {
     }
   }
 
-  /// Why the system refused an action that the app requested.
+  /// Why the system refused an action that the app requested, keeping the system's error.
   static func actionError(for error: any Error) -> ActionError {
     code(of: error, in: RequestTransaction.domain) == RequestTransaction.unknownCallUUID
-      ? .unknownCall : .refused
+      ? .unknownCall : .refused(FrameworkError(error))
   }
 
   /// The error's code in a domain, looking through a few levels of underlying errors, where

@@ -121,8 +121,9 @@ public final class VoIPClient {
   /// - Throws: ``ActionError/unknownCall`` when this device doesn't know the call,
   ///   ``ActionError/notAllowed(_:)`` when the call's status doesn't allow the action,
   ///   ``ActionError/unsupported`` when the configuration's capabilities don't include it, or
-  ///   ``ActionError/refused`` when the calling framework refuses it. A start that the calling
-  ///   framework refuses ends the call; a join returns to its preview.
+  ///   ``ActionError/refused(_:)`` with the system's error when the calling framework refuses
+  ///   it. A start that the calling framework refuses ends the call; a join returns to its
+  ///   preview.
   public func request(_ action: Action) async throws(ActionError) {
     try await engine.request(action)
   }
@@ -198,7 +199,8 @@ public final class VoIPClient {
   /// - Parameter call: The call to join, with the details that the device knows of it. Its
   ///   presentation policy decides what happens if the call is answered elsewhere.
   /// - Throws: ``ActionError/notAllowed(_:)`` when the call can't be joined in its status, such
-  ///   as a call that ended, or ``ActionError/refused`` when the calling framework refuses.
+  ///   as a call that ended, or ``ActionError/refused(_:)`` with the system's error when the
+  ///   calling framework refuses.
   public func join(_ call: IncomingCall) async throws(ActionError) {
     try await engine.join(call)
   }

@@ -42,12 +42,27 @@ import VoIPCore
         == .refused(.refused))
   }
 
-  @Test(arguments: [(4, ActionError.unknownCall), (7, .refused), (0, .refused)])
-  func mapsActionErrors(_ code: Int, _ error: ActionError) {
-    #expect(SystemError.actionError(for: wrapped(Self.requestTransaction, code)) == error)
+  /// The error that ``wrapped(_:_:depth:)`` makes, as the SDK keeps it.
+  private func kept(_ domain: String, _ code: Int) -> FrameworkError {
+    FrameworkError(
+      domain: "LiveCommunicationKit.wrapper0", code: 1,
+      underlyingErrors: [FrameworkError(domain: domain, code: code)])
+  }
+
+  @Test func mapsAnUnknownCall() {
+    #expect(SystemError.actionError(for: wrapped(Self.requestTransaction, 4)) == .unknownCall)
+  }
+
+  @Test(arguments: [7, 1, 0])
+  func keepsTheSystemsErrorInARefusal(_ code: Int) {
+    #expect(
+      SystemError.actionError(for: wrapped(Self.requestTransaction, code))
+        == .refused(kept(Self.requestTransaction, code)))
   }
 
   @Test func refusesActionErrorsFromOtherDomains() {
-    #expect(SystemError.actionError(for: wrapped(Self.incomingCall, 4)) == .refused)
+    #expect(
+      SystemError.actionError(for: wrapped(Self.incomingCall, 4))
+        == .refused(kept(Self.incomingCall, 4)))
   }
 }
