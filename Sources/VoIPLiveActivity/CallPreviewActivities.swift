@@ -133,6 +133,8 @@ public final class CallPreviewActivities: CallObserver {
   private let center: any LiveActivityCenter
   @ObservationIgnored private weak var client: (any CallPreviewClient)?
   @ObservationIgnored private var previews: [CallID: Preview] = [:]
+  /// The calls whose previews the observer follows, in the order their Live Activities started.
+  @ObservationIgnored private var order: [CallID] = []
   @ObservationIgnored private var callIDs: [LiveActivityID: CallID] = [:]
   @ObservationIgnored private var pushToStartToken: Data?
   /// The calls that joining reported to the client, which end with their previews.
@@ -167,14 +169,18 @@ public final class CallPreviewActivities: CallObserver {
     /// Creates an observer that shows call previews with ActivityKit.
     ///
     /// - Parameter options: How the observer shows call previews.
+    @available(iOSApplicationExtension, unavailable)
     public convenience init(options: Options = Options()) {
       self.init(options: options, center: ActivityKitAdapter())
     }
   #endif
 
-  /// Returns a new stream of what happens to call previews' Live Activities from now on.
+  /// Returns a new stream of what happens to call previews' Live Activities.
+  ///
+  /// The stream starts with ``Event/started(_:)`` for each preview that a Live Activity shows,
+  /// such as one that the app's servers started before the app ran, then yields each new event.
   public func events() -> AsyncStream<Event> {
-    eventUpdates.stream()
+    eventUpdates.stream(startingWith: order.map { .started($0) })
   }
 
   /// Returns a new stream of the push tokens of call previews' Live Activities, with which the
@@ -182,10 +188,14 @@ public final class CallPreviewActivities: CallObserver {
   ///
   /// The stream starts with the token of each preview that has one, then yields each new token.
   /// It yields a `nil` token when a preview ends; stop sending its pushes then.
+  ///
+  /// The system gives the first preview that the app's servers start a token only once the user
+  /// answers the system's second question about the app's Live Activities, which can take
+  /// minutes. Until then the servers can't update or end that preview.
   public func pushTokens() -> AsyncStream<CallPreviewPushToken> {
     pushTokenUpdates.stream(
-      startingWith: previews.values.compactMap { preview in
-        preview.pushToken.map { CallPreviewPushToken(callID: preview.attributes.callID, token: $0) }
+      startingWith: order.compactMap { id in
+        previews[id]?.pushToken.map { CallPreviewPushToken(callID: id, token: $0) }
       })
   }
 
@@ -384,6 +394,7 @@ public final class CallPreviewActivities: CallObserver {
   /// Stops following a call's preview, and tells the app that its push token is gone.
   private func forget(_ id: CallID) -> Preview? {
     guard let preview = previews.removeValue(forKey: id) else { return nil }
+    order.removeAll { $0 == id }
     callIDs[preview.activity] = nil
     pushTokenUpdates.send(CallPreviewPushToken(callID: id, token: nil))
     return preview
@@ -433,6 +444,7 @@ public final class CallPreviewActivities: CallObserver {
       return
     }
     previews[id] = Preview(activity: activity, attributes: attributes, state: state)
+    order.append(id)
     callIDs[activity] = id
     eventUpdates.send(.started(id))
   }

@@ -156,14 +156,19 @@ Changes not yet released are recorded below. Public API changes include migratio
   it to `VoIPClient.start` as an observer. When a call becomes a call preview in the foreground,
   it starts a Live Activity, which stays current for `Options.staleAfter` (2 minutes); in the
   background, where the system refuses, it sends `startFailed(_:_:)` with
-  `CallPreviewError.notInForeground`, and the app's servers start the preview with the
+  `CallPreviewError.notInForeground` without asking ActivityKit, which once blocked the main
+  thread for 7.5 seconds before refusing, and the app's servers start the preview with the
   push-to-start token. It follows the Live Activities that the servers start, keeps one per call,
   ends a preview at once when this device joins its call, and shows the final state for
-  `Options.endedDismissal` (2 minutes) when the call ends. `pushToStartTokens()`, `pushTokens()`
-  and `authorization` with `authorizationUpdates()` give the app what its servers need;
-  `start(_:state:)`, `update(_:_:)` and `end(_:dismissal:)` let the app manage previews itself.
-  `ActivityKitAdapter` is its `LiveActivityCenter` on iOS, and `VoIPTesting` adds
-  `FakeLiveActivityCenter`, so the CocoaPods `Testing` subspec now includes `LiveActivity`.
+  `Options.endedDismissal` (2 minutes) when the call ends. `events()` starts with `started(_:)`
+  for each preview that already runs, as `pushTokens()` starts with their tokens.
+  `pushToStartTokens()`, `pushTokens()` and `authorization` with `authorizationUpdates()` give the
+  app what its servers need; `start(_:state:)`, `update(_:_:)` and `end(_:dismissal:)` let the app
+  manage previews itself. The first preview that the servers start gets its push token only once
+  the user answers the system's second question about the app's Live Activities, which the
+  documentation and the server contract explain. `ActivityKitAdapter` is its `LiveActivityCenter`
+  on iOS, unavailable in app extensions, and `VoIPTesting` adds `FakeLiveActivityCenter`, so the
+  CocoaPods `Testing` subspec now includes `LiveActivity`.
 - Joining from a call preview's Live Activity: `CallPreviewActivities.join(_:)` requests
   `Action.join(_:)`, and a call that the client doesn't know, because the servers started its
   preview before the app ran, is first reported as a call preview from the Live Activity's
@@ -173,9 +178,10 @@ Changes not yet released are recorded below. Public API changes include migratio
   the system opens the app before the join, and `isDiscoverable` set to `false` so that Shortcuts
   and Spotlight don't offer Join Call with a free-text call ID. `CallPreviewView` is the default Lock Screen
   presentation, and `CallPreviewView.dynamicIsland(_:join:)` the compact, minimal and expanded
-  ones. `CallPreviewError` adds `unknownCall`, `notAttached` and `join(_:)`. The CocoaPods
-  `LiveActivity` subspec links AppIntents, SwiftUI and WidgetKit, and the example app previews a
-  call and shows it from a widget extension.
+  ones. They show the status and the timer on lines of their own, so that the status isn't cut
+  short beside Join. `CallPreviewError` adds `unknownCall`, `notAttached` and `join(_:)`. The
+  CocoaPods `LiveActivity` subspec links AppIntents, SwiftUI, UIKit and WidgetKit, and the example
+  app previews a call and shows it from a widget extension.
 
 ### Changed
 

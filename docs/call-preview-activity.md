@@ -32,6 +32,15 @@ where the system refuses, the app can ask its servers to start one. The SDK keep
 call: when a second Live Activity starts for a call that already has one, it ends the newer one at
 once.
 
+The system asks the user about the app's Live Activities twice: on the first one that appears,
+and again on the first one that a push starts, which asks whether to continue to allow them. The
+system gives that push-started preview its push token only once the user answers the second
+question, so until then the servers can't update or end it. On an iPhone 13 running iOS 27 the
+token arrived 168 seconds after the start push, less than a second after the user tapped Always
+Allow; later push-started previews got theirs at once. Give every start a `stale-date`, so that a
+preview without updates shows that it is out of date, and end a preview as soon as its push token
+arrives if its call is already over.
+
 ### Start
 
 ```json

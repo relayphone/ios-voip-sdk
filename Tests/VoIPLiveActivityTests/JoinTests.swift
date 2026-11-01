@@ -7,11 +7,14 @@ import VoIPTesting
 
 @MainActor
 @Suite struct JoinTests {
-  /// A harness whose center holds a preview that the servers started before the app ran.
-  private func harnessWithPushedPreview() -> (Harness, LiveActivityID) {
+  /// A harness whose center holds a preview that the servers started before the app ran, after
+  /// reading the event that the observer replays for it.
+  private func harnessWithPushedPreview() async throws -> (Harness, LiveActivityID) {
     let center = FakeLiveActivityCenter()
     let activity = center.startFromPush(CallPreviewAttributes(filtered), state: firstState)
-    return (Harness(center: center), activity)
+    let h = Harness(center: center)
+    #expect(try await h.next() == .started(callID))
+    return (h, activity)
   }
 
   /// The call that joining reports for a preview that the client doesn't know.
@@ -35,7 +38,7 @@ import VoIPTesting
   }
 
   @Test func reportsAPreviewThatTheServersStartedBeforeJoiningIt() async throws {
-    let (h, activity) = harnessWithPushedPreview()
+    let (h, activity) = try await harnessWithPushedPreview()
     try await h.previews.join(callID)
     #expect(h.client.reports == [adopted])
     #expect(h.client.requests == [.join(callID), .join(callID)])
@@ -53,7 +56,7 @@ import VoIPTesting
   }
 
   @Test func endsAReportedCallWhenItsPreviewEnds() async throws {
-    let (h, activity) = harnessWithPushedPreview()
+    let (h, activity) = try await harnessWithPushedPreview()
     try await h.previews.join(callID)
     h.center.send(.ended(activity))
     #expect(try await h.next() == .ended(callID))
@@ -61,7 +64,7 @@ import VoIPTesting
   }
 
   @Test func endsAReportedCallWhenTheAppEndsItsPreview() async throws {
-    let (h, activity) = harnessWithPushedPreview()
+    let (h, activity) = try await harnessWithPushedPreview()
     try await h.previews.join(callID)
     await h.previews.end(callID)
     #expect(try await h.next() == .ended(callID))
@@ -70,7 +73,7 @@ import VoIPTesting
   }
 
   @Test func endsAReportedCallThatReturnsToAPreviewThatNothingShows() async throws {
-    let (h, activity) = harnessWithPushedPreview()
+    let (h, activity) = try await harnessWithPushedPreview()
     try await h.previews.join(callID)
     // The observer handles the report's preview while the Live Activity runs.
     try await h.expectNoEvents()

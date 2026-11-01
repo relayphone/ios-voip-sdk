@@ -71,7 +71,7 @@ Pod::Spec.new do |s|
   s.subspec 'LiveActivity' do |ss|
     ss.dependency 'IosVoipSDK/Core'
     ss.source_files = 'Sources/VoIPLiveActivity/**/*.swift'
-    ss.frameworks = 'ActivityKit', 'AppIntents', 'SwiftUI', 'WidgetKit'
+    ss.frameworks = 'ActivityKit', 'AppIntents', 'SwiftUI', 'UIKit', 'WidgetKit'
   end
 
   # `LiveCommunicationKitAdapter`, which presents calls with LiveCommunicationKit.

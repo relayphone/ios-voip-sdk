@@ -3,6 +3,7 @@
   // the main actor and calls only its own asynchronous methods, as ActivityKit expects.
   @preconcurrency import ActivityKit
   import Foundation
+  import UIKit
 
   /// The system's Live Activities through ActivityKit.
   ///
@@ -13,8 +14,10 @@
   ///
   /// The app declares `NSSupportsLiveActivities`, and `NSSupportsLiveActivitiesFrequentUpdates`
   /// for frequent updates, in its Info.plist, has the Push Notifications capability, and shows the
-  /// Live Activities with a widget extension.
+  /// Live Activities with a widget extension. Only the app uses the adapter: it reads the app's
+  /// state, which app extensions can't.
   @MainActor
+  @available(iOSApplicationExtension, unavailable)
   public final class ActivityKitAdapter: LiveActivityCenter {
     private let info = ActivityAuthorizationInfo()
     private var activities: [LiveActivityID: Activity<CallPreviewAttributes>] = [:]
@@ -68,10 +71,14 @@
 
     /// Starts a Live Activity with `Activity.request(attributes:content:pushType:)` and a push
     /// token.
+    ///
+    /// In the background, where the system refuses, it throws ``CallPreviewError/notInForeground``
+    /// without asking ActivityKit, which can block the main thread for seconds before it refuses.
     public func request(
       _ attributes: CallPreviewAttributes, state: CallPreviewAttributes.ContentState,
       staleAfter: Duration?
     ) throws(CallPreviewError) -> LiveActivityID {
+      guard UIApplication.shared.applicationState != .background else { throw .notInForeground }
       let activity: Activity<CallPreviewAttributes>
       do {
         activity = try Activity.request(
