@@ -176,6 +176,7 @@
     case previewStarted(CallID, PreviewReason)
     case startRequested(CallID)
     case joinRequested(CallID)
+    case joinFailed(CallID, PreviewReason)
     case performed(Action, CallStatus)
     case audioActivated
     case audioDeactivated
@@ -193,6 +194,11 @@
         self = .previewStarted(call.id, reason)
       case .startRequested(let call): self = .startRequested(call.id)
       case .joinRequested(let call): self = .joinRequested(call.id)
+      case .joinFailed(let call):
+        guard case .previewing(let reason) = call.status else {
+          preconditionFailure("A failed join returns to a preview")
+        }
+        self = .joinFailed(call.id, reason)
       case .performed(let action, let call): self = .performed(action, call.status)
       case .audioActivated: self = .audioActivated
       case .audioDeactivated: self = .audioDeactivated

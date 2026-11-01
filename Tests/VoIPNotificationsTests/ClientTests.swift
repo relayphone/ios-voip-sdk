@@ -121,6 +121,44 @@ struct ClientTests {
     #expect(center.records == [.post(notification(.incoming, otherCallID))])
   }
 
+  /// The user tried to join a call from its notification or its call preview, and the system
+  /// refused: the call returns to its preview, then ends, without another notification.
+  @Test(arguments: [false, true])
+  func aRefusedJoinPostsNothingMore(knownCall: Bool) async throws {
+    let center = FakeCallNotificationCenter()
+    let notifier = CallNotifier(
+      options: CallNotifier.Options(triggers: [.filtered, .previewedByPolicy]), center: center)
+    var notices = notifier.events().makeAsyncIterator()
+    let framework = FakeCallingFramework()
+    await onVoIPActor { framework.requestResult = .refuse(.unknownCall) }
+    let client = try VoIPClient.start(
+      framework: framework, media: FakeMedia(), observers: [notifier], clock: TestClock())
+    let previewed = IncomingCall(
+      id: callID, parties: [alice], presentationPolicy: PresentationPolicy(incoming: .preview))
+
+    if knownCall {
+      // A tap on the call's notification.
+      _ = await client.report(previewed)
+      #expect(await notices.next(isolation: #isolation) == .posted(notification(.incoming)))
+      await #expect(throws: ActionError.self) { try await client.request(.join(callID)) }
+      #expect(await notices.next(isolation: #isolation) == .withdrawn(callID))
+    } else {
+      // Join on a call preview that the app's servers started.
+      await #expect(throws: ActionError.self) { try await client.join(previewed) }
+    }
+    await client.receive(.endedRemotely, for: callID, eventID: EventID(rawValue: "e1"))
+    // A call that the policy previews afterwards is the next that the notifier posts for.
+    _ = await client.report(
+      IncomingCall(
+        id: otherCallID, parties: [alice],
+        presentationPolicy: PresentationPolicy(incoming: .preview)))
+    #expect(
+      await notices.next(isolation: #isolation) == .posted(notification(.incoming, otherCallID)))
+    let before: [FakeCallNotificationCenter.Record] =
+      knownCall ? [.post(notification(.incoming)), .withdraw(callID)] : []
+    #expect(center.records == before + [.post(notification(.incoming, otherCallID))])
+  }
+
   @Test func ringingCallGetsNoNotification() async throws {
     let center = FakeCallNotificationCenter()
     let notifier = CallNotifier(center: center)

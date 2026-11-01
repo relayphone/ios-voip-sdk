@@ -246,6 +246,7 @@ final class CallEventHandler: CallObserver {
     switch event {
     case .presented(let call): history.add("Ringing: \(call.id.rawValue)")
     case .previewStarted(let call): history.add("Previewing: \(call.status)")
+    case .joinFailed(let call): history.add("Join failed: \(call.id.rawValue)")
     case .startRequested(let call), .joinRequested(let call):
       // The app places the call with its servers, then confirms it.
       await client?.confirmPlaced(call.id)

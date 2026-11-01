@@ -144,6 +144,46 @@ struct CallNotifierTests {
     #expect(h.center.delivered.first == notification(.incoming))
   }
 
+  /// The user tried to join the call from its notification, and the join failed, so the call
+  /// returns to its preview. The user knows about the call: it gets no notification again, and
+  /// no missed-call one when it ends.
+  @Test func aFailedJoinWithdrawsTheNotificationAndPostsNothingMore() async throws {
+    let h = Harness()
+    h.send(.previewStarted(call(.previewing(dnd))))
+    #expect(try await h.next() == .posted(notification(.incoming)))
+    h.send(.joinFailed(call(.previewing(dnd))))
+    #expect(try await h.next() == .withdrawn(callID))
+    h.send(.previewStarted(call(.previewing(dnd))))
+    h.send(.ended(call(.ended(.endedRemotely))))
+    try await h.expectNothingElse()
+    #expect(h.center.records.prefix(2) == [.post(notification(.incoming)), .withdraw(callID)])
+    #expect(h.center.records.count == 3)  // With the marker's.
+  }
+
+  /// Joining a call that the client didn't know, such as from a call preview that the app's
+  /// servers started, creates it without a preview event. When the join fails, the call's first
+  /// preview event follows the failure, and the notifier posts nothing for it.
+  @Test func aFailedJoinOfACallItHadNotSeenPostsNothing() async throws {
+    let h = Harness(options: CallNotifier.Options(triggers: [.filtered, .previewedByPolicy]))
+    h.send(.joinFailed(call(.previewing(.policy))))
+    h.send(.previewStarted(call(.previewing(.policy))))
+    h.send(.ended(call(.ended(.endedRemotely))))
+    try await h.expectNothingElse()
+    #expect(h.center.records.count == 1)  // The marker's.
+  }
+
+  @Test func aFailedJoinCanKeepTheNotification() async throws {
+    let h = Harness(options: CallNotifier.Options(withdrawsWhenJoined: false))
+    h.send(.previewStarted(call(.previewing(dnd))))
+    #expect(try await h.next() == .posted(notification(.incoming)))
+    h.send(.joinFailed(call(.previewing(dnd))))
+    h.send(.previewStarted(call(.previewing(dnd))))
+    h.send(.ended(call(.ended(.endedRemotely))))
+    try await h.expectNothingElse()
+    #expect(h.center.records.count == 2)  // With the marker's.
+    #expect(h.center.delivered.first == notification(.incoming))
+  }
+
   /// When the presentation policy doesn't preview filtered calls, a filtered call ends at once.
   @Test(arguments: [
     (CallNotifier.EndedCallNotification.missedCall, CallNotification.Kind?.some(.missed)),
