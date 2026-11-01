@@ -266,7 +266,11 @@ final class CallEventHandler: CallObserver {
 
 /// The app's notification center delegate, which passes the user's responses to call
 /// notifications to the notifier.
-final class NotificationResponses: NSObject, UNUserNotificationCenterDelegate {
+///
+/// It and its conformance are isolated to the main actor, so that its `async` methods finish on
+/// the main thread, where the system expects their completion handlers to be called.
+@MainActor
+final class NotificationResponses: NSObject, @MainActor UNUserNotificationCenterDelegate {
   /// Weak, because the calls keep their delegate.
   private weak let calls: Calls?
 

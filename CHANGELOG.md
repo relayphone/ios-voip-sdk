@@ -150,7 +150,10 @@ Changes not yet released are recorded below. Public API changes include migratio
   and returns `CallNotificationRoute.joining(_:)`; otherwise it returns `callBack(_:hasVideo:)`, and
   the app calls the party with a Call ID of its own. `Options.joinsOnTap` (default `true`) joins
   on a tap as well as on the Join action. The `Notifications` subspec links UserNotifications and
-  Intents, and the example app previews a call with a call notification.
+  Intents, and the example app previews a call with a call notification. The documentation and
+  the example isolate the app's `UNUserNotificationCenterDelegate` and its conformance to the main
+  actor: the system stopped the example on every routed tap when its delegate's `async` method
+  finished on another thread.
 - The `VoIPLiveActivity` library's `CallPreviewAttributes`, with its `ContentState` and
   `CallPreviewStatus`, is the type of a call preview's Live Activity. Its JSON is a contract with
   the app's servers, which start, update and end call previews with ActivityKit push
