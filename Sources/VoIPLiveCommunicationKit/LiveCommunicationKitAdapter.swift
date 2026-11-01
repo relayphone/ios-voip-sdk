@@ -36,7 +36,11 @@
   @VoIPActor
   public final class LiveCommunicationKitAdapter: CallingFramework {
     /// How long ``reportIncoming(_:completion:)`` waits for the system to answer a report.
-    static let reportWaitLimit: DispatchTimeInterval = .seconds(2)
+    ///
+    /// On an iPhone 13 with iOS 27.1, the system answered each of 16 reports of calls that a Focus
+    /// filtered after 2,095 to 2,170 ms, so a 2-second wait always ended first. The wait outlasts
+    /// that, and still ends before the PushKit source's 4-second watchdog finishes the push.
+    static let reportWaitLimit: DispatchTimeInterval = .seconds(3)
 
     /// The adapter's log, which records why the system refused a report or an action, with the
     /// system's error domain and code, so that they can be read in Console or a sysdiagnose.
@@ -88,7 +92,7 @@
       }
     }
 
-    /// Reports an incoming call, and waits until the system answers the report, for at most 2
+    /// Reports an incoming call, and waits until the system answers the report, for at most 3
     /// seconds.
     ///
     /// LiveCommunicationKit's report is asynchronous, but the system terminates an app whose
@@ -129,7 +133,7 @@
         }
       }
       if answered.wait(timeout: .now() + Self.reportWaitLimit) == .timedOut {
-        Self.log.notice("The system hadn't answered an incoming report after 2 seconds")
+        Self.log.notice("The system hadn't answered an incoming report after 3 seconds")
       }
     }
 

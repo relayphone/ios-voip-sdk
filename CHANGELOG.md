@@ -41,7 +41,9 @@ Changes not yet released are recorded below. Public API changes include migratio
 - The `VoIPLiveCommunicationKit` library's `LiveCommunicationKitAdapter` presents calls with
   LiveCommunicationKit. It reports every handle of every party, maps the SDK's actions and end
   reasons to LiveCommunicationKit's, passes audio activation, action timeouts and resets to the
-  SDK, and starts a VoIP push's report before the push callback returns. It never links CallKit.
+  SDK, and starts a VoIP push's report before the push callback returns. The push callback then
+  waits until the system answers the report, for at most 3 seconds: on an iPhone 13, the system
+  answered reports of calls that a Focus filtered after about 2.1 seconds. It never links CallKit.
   It logs, under the subsystem `VoIPLiveCommunicationKit`, the system's error for every refused
   action and every report that the system didn't present, and how long each report took.
   `VoIPConfiguration.supportsVideo` (default `false`) tells the system whether calls can have
