@@ -95,7 +95,7 @@ Pod::Spec.new do |s|
   s.subspec 'Notifications' do |ss|
     ss.dependency 'IosVoipSDK/Core'
     ss.source_files = 'Sources/VoIPNotifications/**/*.swift'
-    ss.frameworks = 'UserNotifications', 'Intents'
+    ss.frameworks = 'UserNotifications', 'Intents', 'UIKit'
   end
 
   # `VoIPSimulator`, which presents calls in the iOS Simulator. Call `VoIPSimulator.activate()`

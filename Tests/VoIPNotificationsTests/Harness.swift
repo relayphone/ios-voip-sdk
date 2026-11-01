@@ -46,8 +46,16 @@ final class Harness {
   /// The client to which the notifier routes the user's responses.
   let client = FakeClient()
 
-  init(options: CallNotifier.Options = CallNotifier.Options()) {
-    notifier = CallNotifier(options: options, center: center)
+  /// Whether the app is active, which a join waits for.
+  let activity: FakeActivity
+
+  /// The clock that times the wait for the app to become active.
+  let clock = TestClock()
+
+  /// Creates a notifier with the options, in an app that is active unless `isActive` is `false`.
+  init(options: CallNotifier.Options = CallNotifier.Options(), isActive: Bool = true) {
+    activity = FakeActivity(isActive: isActive)
+    notifier = CallNotifier(options: options, center: center, activity: activity, clock: clock)
     let (events, input) = AsyncStream.makeStream(of: CallEvent.self)
     self.input = input
     iterator = notifier.events().makeAsyncIterator()
@@ -98,5 +106,28 @@ final class FakeClient: NotifierClient {
   func request(_ action: Action) async throws(ActionError) {
     requests.append(action)
     if let error { throw error }
+  }
+}
+
+/// The app's activity, which the test sets.
+@MainActor
+final class FakeActivity: NotifierAppActivity {
+  private(set) var isActive: Bool
+  private var continuations: [AsyncStream<Void>.Continuation] = []
+
+  init(isActive: Bool) {
+    self.isActive = isActive
+  }
+
+  func activations() -> AsyncStream<Void> {
+    let (activations, continuation) = AsyncStream.makeStream(of: Void.self)
+    continuations.append(continuation)
+    return activations
+  }
+
+  /// Makes the app active, as when it has come to the foreground.
+  func becomeActive() {
+    isActive = true
+    for continuation in continuations { continuation.yield() }
   }
 }

@@ -357,11 +357,13 @@ handlers behind its `async` methods on the main thread, and stops the app when a
 on another thread.
 
 When a call preview with the party is live here, the notifier joins it and returns `.joining`;
-otherwise it returns `.callBack`, and the app calls the party with a Call ID of its own. When the
-app's servers send a call notification as an alert push instead, a notification service extension
-builds the same content with `UserNotificationsAdapter().content(for:updating:)`. Set the push's
-`apns-collapse-id` to the call ID, so that a notification that the app posts later for the call
-replaces it.
+otherwise it returns `.callBack`, and the app calls the party with a Call ID of its own. The
+notifier requests the join once the app is active, waiting up to 2 seconds for it: the system
+refuses a join that the app requests while a tap or Join is still bringing it to the foreground.
+When the app's servers send a call notification as an alert push instead, a notification service
+extension builds the same content with `UserNotificationsAdapter().content(for:updating:)`. Set
+the push's `apns-collapse-id` to the call ID, so that a notification that the app posts later for
+the call replaces it.
 
 ## Call previews
 

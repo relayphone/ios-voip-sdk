@@ -1,8 +1,9 @@
 import Observation
 import Testing
 import VoIPCore
-import VoIPNotifications
 import VoIPTesting
+
+@testable import VoIPNotifications
 
 /// The notifier as an observer of a client running on the fakes. They run one at a time because a
 /// process runs at most one client.
@@ -54,7 +55,10 @@ struct ClientTests {
   }
 
   @Test func tapOnAFilteredCallsNotificationJoinsItThroughTheClient() async throws {
-    let notifier = CallNotifier(center: FakeCallNotificationCenter())
+    // The tests don't run in an app whose state the notifier could wait for.
+    let notifier = CallNotifier(
+      center: FakeCallNotificationCenter(), activity: FakeActivity(isActive: true),
+      clock: TestClock())
     var notices = notifier.events().makeAsyncIterator()
     let framework = FakeCallingFramework()
     await onVoIPActor { framework.presentationOutcome = .filtered(.doNotDisturb) }

@@ -64,8 +64,9 @@
 /// Pass the responses to call notifications that the app's `UNUserNotificationCenterDelegate`
 /// receives to ``handle(_:)-(CallNotificationResponse)``, and the `INStartCallIntent`s that the
 /// system sends from Recents or Siri to ``handle(_:)-(StartCallRequest)``. When the call is live
-/// in a call preview on this device, the notifier requests to join it; otherwise the route is to
-/// call the party back, which the app does with a Call ID of its own.
+/// in a call preview on this device, the notifier requests to join it once the app is active,
+/// since the system refuses a join while the app is still coming to the foreground; otherwise the
+/// route is to call the party back, which the app does with a Call ID of its own.
 @MainActor
 public final class CallNotifier: CallObserver {
   /// What makes the notifier post a notification for a call.
@@ -188,6 +189,10 @@ public final class CallNotifier: CallObserver {
   /// The client whose calls the notifier follows, which it keeps weakly so that the client can be
   /// released.
   private(set) weak var client: (any NotifierClient)?
+  /// Whether the app is active, which a join waits for, or `nil` for the app's own state.
+  let activity: (any NotifierAppActivity)?
+  /// The clock that times the wait for the app to become active.
+  let clock: any Clock<Duration>
   private let subscribers = NotifierEventStreams<Event>()
   /// The live calls the notifier made a notification for, or that the user tried to join.
   private var notified: [CallID: Notified] = [:]
@@ -198,9 +203,20 @@ public final class CallNotifier: CallObserver {
   /// - Parameters:
   ///   - options: How the notifier chooses and makes notifications.
   ///   - center: Where the notifier posts notifications.
-  public init(options: Options = Options(), center: any CallNotificationCenter) {
+  public convenience init(options: Options = Options(), center: any CallNotificationCenter) {
+    self.init(options: options, center: center, activity: nil, clock: ContinuousClock())
+  }
+
+  /// Creates a notifier that learns whether the app is active from `activity`, and times the wait
+  /// for it with `clock`. Tests pass fakes.
+  init(
+    options: Options = Options(), center: any CallNotificationCenter,
+    activity: (any NotifierAppActivity)?, clock: any Clock<Duration>
+  ) {
     self.options = options
     self.center = center
+    self.activity = activity
+    self.clock = clock
   }
 
   /// Starts following the client's calls. The client calls it once, while it starts.

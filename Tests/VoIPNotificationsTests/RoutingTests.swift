@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import VoIPCore
+import VoIPTesting
 
 @testable import VoIPNotifications
 
@@ -111,6 +112,78 @@ struct RoutingTests {
     await #expect(throws: ActionError.unknownCall) {
       try await h.notifier.handle(StartCallRequest(party: alice))
     }
+  }
+
+  // MARK: Joining once the app is active
+
+  /// A join that a response or a request leads to.
+  enum Join: CaseIterable, Sendable {
+    /// The Join action on the call's notification.
+    case response
+    /// The system's request to call the caller, from Recents or Siri.
+    case request
+  }
+
+  /// Routes a join of Alice's call.
+  private func route(_ join: Join, with h: Harness) async throws -> CallNotificationRoute? {
+    switch join {
+    case .response:
+      try await h.notifier.handle(
+        CallNotificationResponse(callID: callID, caller: alice, action: .join))
+    case .request: try await h.notifier.handle(StartCallRequest(party: alice))
+    }
+  }
+
+  @Test(arguments: Join.allCases)
+  func joinIsRequestedAtOnceWhenTheAppIsActive(_ join: Join) async throws {
+    let h = Harness(isActive: true)
+    h.client.calls = [call(.previewing(dnd))]
+    let start = h.clock.now
+    // Nothing advances the clock or activates the app: a join that waited would never return.
+    #expect(try await route(join, with: h) == .joining(callID))
+    #expect(h.client.requests == [.join(callID)])
+    #expect(h.clock.now == start)
+  }
+
+  @Test(arguments: Join.allCases)
+  func joinIsRequestedOnceTheAppBecomesActive(_ join: Join) async throws {
+    let h = Harness(isActive: false)
+    h.client.calls = [call(.previewing(dnd))]
+    let routing = Task { try await route(join, with: h) }
+    try await h.clock.waitForSleepers()
+    h.clock.advance(by: .seconds(1))
+    #expect(h.client.requests.isEmpty)
+
+    h.activity.becomeActive()
+    #expect(try await routing.value == .joining(callID))
+    #expect(h.client.requests == [.join(callID)])
+    #expect(h.clock.pendingSleepCount == 0)
+  }
+
+  @Test(arguments: Join.allCases)
+  func joinIsRequestedAfterTwoSecondsWhenTheAppStaysInactive(_ join: Join) async throws {
+    let h = Harness(isActive: false)
+    h.client.calls = [call(.previewing(dnd))]
+    let routing = Task { try await route(join, with: h) }
+    try await h.clock.waitForSleepers()
+    h.clock.advance(by: .seconds(2) - .milliseconds(1))
+    #expect(h.clock.pendingSleepCount == 1)
+    #expect(h.client.requests.isEmpty)
+
+    h.clock.advance(by: .milliseconds(1))
+    #expect(try await routing.value == .joining(callID))
+    #expect(h.client.requests == [.join(callID)])
+  }
+
+  @Test func routesWithoutAJoinDontWaitForTheApp() async throws {
+    let h = Harness(isActive: false)
+    h.client.calls = [call(.previewing(dnd), id: otherCallID)]
+    let response = CallNotificationResponse(callID: callID, caller: alice, action: .join)
+    #expect(try await h.notifier.handle(response) == .callBack(alice, hasVideo: false))
+    #expect(
+      try await h.notifier.handle(StartCallRequest(party: bob)) == .callBack(bob, hasVideo: false))
+    #expect(h.client.requests.isEmpty)
+    #expect(h.clock.pendingSleepCount == 0)
   }
 
   // MARK: The notification's payload
