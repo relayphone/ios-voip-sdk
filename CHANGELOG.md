@@ -182,12 +182,20 @@ Changes not yet released are recorded below. Public API changes include migratio
   `UNNotificationResponse`, or a `StartCallRequest`, read from the `INStartCallIntent` that Recents
   and Siri send. When a call preview with the call or the party is live here, it requests the join
   and returns `CallNotificationRoute.joining(_:)`; otherwise it returns `callBack(_:hasVideo:)`, and
-  the app calls the party with a Call ID of its own. `Options.joinsOnTap` (default `true`) joins
-  on a tap as well as on the Join action. The `Notifications` subspec links UserNotifications and
-  Intents, and the example app previews a call with a call notification. The documentation and
-  the example isolate the app's `UNUserNotificationCenterDelegate` and its conformance to the main
-  actor: the system stopped the example on every routed tap when its delegate's `async` method
-  finished on another thread.
+  the app calls the party with a Call ID of its own. It requests the join once the app is active:
+  when the app isn't active yet, it waits up to 2 seconds for it to become active, then requests
+  the join anyway. On an iPhone 13, LiveCommunicationKit refused 4 of 4 joins that a call
+  notification's tap or Join action requested while the app was still coming to the foreground,
+  with the call service's `com.apple.CallKit.error.requesttransaction` code 6 (`invalidAction`);
+  two of them were requested 84 and 233 ms after the response, about half a second before the app
+  became active. Joins from a call preview's Lock Screen card, which the system performs once the
+  app is in the foreground, succeeded 4 of 4. `handle(_:)` is unavailable in app extensions, which
+  can't read the app's state. `Options.joinsOnTap` (default `true`) joins on a tap as well as on
+  the Join action. The `Notifications` subspec links UserNotifications, Intents and UIKit, and the
+  example app previews a call with a call notification. The documentation and the example isolate
+  the app's `UNUserNotificationCenterDelegate` and its conformance to the main actor: the system
+  stopped the example on every routed tap when its delegate's `async` method finished on another
+  thread.
 - The `VoIPLiveActivity` library's `CallPreviewAttributes`, with its `ContentState` and
   `CallPreviewStatus`, is the type of a call preview's Live Activity. Its JSON is a contract with
   the app's servers, which start, update and end call previews with ActivityKit push
