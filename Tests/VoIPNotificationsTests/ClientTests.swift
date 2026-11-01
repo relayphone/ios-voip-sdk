@@ -1,3 +1,4 @@
+import Observation
 import Testing
 import VoIPCore
 import VoIPNotifications
@@ -63,6 +64,10 @@ struct ClientTests {
     _ = await client.report(IncomingCall(id: callID, parties: [alice]))
     #expect(await notices.next(isolation: #isolation) == .posted(notification(.incoming)))
     #expect(await events.next(isolation: #isolation).map(\.isPreviewStarted) == true)
+    // The notifier routes a tap by the client's calls.
+    await until(client) { client in
+      client.calls.first { $0.id == callID }?.status == .previewing(dnd)
+    }
 
     let tap = CallNotificationResponse(callID: callID, caller: alice, action: .open)
     #expect(try await notifier.handle(tap) == .joining(callID))
@@ -75,6 +80,7 @@ struct ClientTests {
     // Once the call is joined, the user can't join it again from the notification.
     await client.confirmPlaced(callID)
     #expect(await notices.next(isolation: #isolation) == .withdrawn(callID))
+    await until(client) { client in client.calls.first { $0.id == callID }?.status == .connecting }
     #expect(try await notifier.handle(tap) == nil)
   }
 
@@ -101,6 +107,18 @@ extension CallEvent {
   var isPreviewStarted: Bool {
     if case .previewStarted = self { true } else { false }
   }
+}
+
+/// Waits until the client's observable state satisfies a condition.
+///
+/// The client applies the engine's state in a task of its own, which may not have run when a test
+/// reads an event, so a test waits with this before it reads ``VoIPClient/calls``.
+@MainActor
+func until(
+  _ client: VoIPClient, _ condition: @escaping @MainActor @Sendable (VoIPClient) -> Bool
+) async {
+  let observations = Observations { @MainActor [weak client] in client.map(condition) ?? true }
+  for await satisfied in observations where satisfied { return }
 }
 
 /// Runs a closure on `VoIPActor` in one job.

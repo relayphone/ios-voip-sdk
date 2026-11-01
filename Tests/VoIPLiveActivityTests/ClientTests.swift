@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Testing
 import VoIPCore
 import VoIPTesting
@@ -62,6 +63,10 @@ struct ClientTests {
     }
 
     /// Joins the call as the Join button does, and places the join as the app does.
+    ///
+    /// It then waits until the client's ``VoIPClient/calls`` show the call connecting, so that a
+    /// test can read the client's state afterwards: the client applies the engine's state in a
+    /// task of its own, which may not have run when the test reads an event.
     func joinAndPlace(_ id: CallID) async throws {
       try await previews.join(id)
       _ = try await nextCallEvent { if case .joinRequested = $0 { true } else { false } }
@@ -71,6 +76,13 @@ struct ClientTests {
       }
       guard case .performed(_, let call) = performed else { return }
       #expect(call.status == .connecting)
+      await until { client in client.calls.contains { $0.id == id && $0.status == .connecting } }
+    }
+
+    /// Waits until the client's observable state satisfies a condition.
+    func until(_ condition: @escaping @MainActor @Sendable (VoIPClient) -> Bool) async {
+      let observations = Observations { @MainActor [weak client] in client.map(condition) ?? true }
+      for await satisfied in observations where satisfied { return }
     }
   }
 
