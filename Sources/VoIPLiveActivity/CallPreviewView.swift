@@ -48,9 +48,17 @@
     ///   - context: The Live Activity, as `ActivityConfiguration` passes it.
     ///   - join: The app's intent that joins the call.
     public init(_ context: ActivityViewContext<CallPreviewAttributes>, join: Join.Type) {
-      callID = context.attributes.callID.rawValue
-      display = CallPreviewDisplay(
-        attributes: context.attributes, state: context.state, isStale: context.isStale)
+      self.init(
+        callID: context.attributes.callID,
+        display: CallPreviewDisplay(
+          attributes: context.attributes, state: context.state, isStale: context.isStale))
+    }
+
+    /// Creates the Lock Screen presentation from what it shows, which tests can make without a
+    /// Live Activity.
+    init(callID: CallID, display: CallPreviewDisplay) {
+      self.callID = callID.rawValue
+      self.display = display
     }
 
     /// The Lock Screen presentation.
@@ -197,7 +205,11 @@
   }
 
   /// Join, while the state is joinable.
-  private struct JoinButton<Join: JoinCallPreviewIntent>: View {
+  ///
+  /// The button keeps the size of its title and symbol. Beside a long status, which the card lays
+  /// out first, it was otherwise squeezed to its symbol in a pill as tall as the card, without the
+  /// title or the accessibility label that VoiceOver and UI tests find it by.
+  struct JoinButton<Join: JoinCallPreviewIntent>: View {
     let callID: String
     let display: CallPreviewDisplay
 
@@ -205,10 +217,13 @@
       if display.showsJoin {
         Button(intent: Join(callID: CallID(rawValue: callID))) {
           Label("Join", systemImage: display.symbol)
+            .labelStyle(.titleAndIcon)
         }
         .buttonStyle(.borderedProminent)
         .buttonBorderShape(.capsule)
         .tint(.green)
+        .fixedSize()
+        .accessibilityLabel(Text("Join"))
       }
     }
   }

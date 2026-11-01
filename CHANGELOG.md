@@ -193,7 +193,9 @@ Changes not yet released are recorded below. Public API changes include migratio
   and Spotlight don't offer Join Call with a free-text call ID. `CallPreviewView` is the default Lock Screen
   presentation, and `CallPreviewView.dynamicIsland(_:join:)` the compact, minimal and expanded
   ones. They show the status and the timer on lines of their own, so that the status isn't cut
-  short beside Join. `CallPreviewError` adds `unknownCall`, `notAttached` and `join(_:)`. The
+  short beside Join, and Join keeps the size of its title and symbol, so that a long status
+  doesn't squeeze it to its symbol without the "Join" title and accessibility label.
+  `CallPreviewError` adds `unknownCall`, `notAttached` and `join(_:)`. The
   CocoaPods `LiveActivity` subspec links AppIntents, SwiftUI, UIKit and WidgetKit, and the example
   app previews a call and shows it from a widget extension.
 
