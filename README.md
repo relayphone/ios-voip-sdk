@@ -305,12 +305,15 @@ call someone to the notifier:
 UNUserNotificationCenter.current().setNotificationCategories(
   appCategories.union([UserNotificationsAdapter.category()]))
 
-// In the app's UNUserNotificationCenterDelegate:
-func userNotificationCenter(
-  _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
-) async {
-  guard let response = CallNotificationResponse(response) else { return }  // Not a call's.
-  _ = try? await notifier.handle(response)  // Joins the call if it is live here.
+// The app's notification center delegate, on the main actor:
+@MainActor
+final class NotificationDelegate: NSObject, @MainActor UNUserNotificationCenterDelegate {
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
+  ) async {
+    guard let response = CallNotificationResponse(response) else { return }  // Not a call's.
+    _ = try? await notifier.handle(response)  // Joins the call if it is live here.
+  }
 }
 
 // From Recents and Siri:
@@ -325,6 +328,10 @@ func userNotificationCenter(
   }
 }
 ```
+
+Isolate the delegate and its conformance to the main actor: the system expects the completion
+handlers behind its `async` methods on the main thread, and stops the app when a method finishes
+on another thread.
 
 When a call preview with the party is live here, the notifier joins it and returns `.joining`;
 otherwise it returns `.callBack`, and the app calls the party with a Call ID of its own. When the

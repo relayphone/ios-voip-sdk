@@ -87,13 +87,21 @@ extension CallNotifier {
   /// the Join action, and for a tap when ``Options/joinsOnTap`` is on. When the call is over, the
   /// route is to call the party back.
   ///
+  /// Isolate the app's `UNUserNotificationCenterDelegate` and its conformance to the main actor.
+  /// The system expects the completion handlers behind the delegate's `async` methods on the main
+  /// thread, and stops the app when a delegate that isn't isolated to the main actor finishes one
+  /// on another thread.
+  ///
   /// ```swift
-  /// func userNotificationCenter(
-  ///   _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
-  /// ) async {
-  ///   guard let response = CallNotificationResponse(response) else { return }
-  ///   if case .callBack(let party, let hasVideo)? = try? await notifier.handle(response) {
-  ///     showCallBack(party, hasVideo: hasVideo)
+  /// @MainActor
+  /// final class NotificationDelegate: NSObject, @MainActor UNUserNotificationCenterDelegate {
+  ///   func userNotificationCenter(
+  ///     _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
+  ///   ) async {
+  ///     guard let response = CallNotificationResponse(response) else { return }
+  ///     if case .callBack(let party, let hasVideo)? = try? await notifier.handle(response) {
+  ///       showCallBack(party, hasVideo: hasVideo)
+  ///     }
   ///   }
   /// }
   /// ```
