@@ -78,7 +78,9 @@
       let ended = try await app.system.pushCallEnded(id, reason: "answeredElsewhere")
       try await app.expect([.previewStarted(id, .answeredElsewhere)])
       try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
-      #expect(app.call(id)?.status == .previewing(.answeredElsewhere))
+      try await app.until("the call to become a preview") {
+        app.call(id)?.status == .previewing(.answeredElsewhere)
+      }
       #expect(await app.media.records.isEmpty)
       try await app.expectPushesFinished([invite, ended])
       app.expectNoMoreEvents()
@@ -93,7 +95,7 @@
       try await app.until("the system to end the reported call") {
         try await app.system.calls().isEmpty
       }
-      #expect(app.client.calls.isEmpty)
+      try await app.until("the call to end") { app.client.calls.isEmpty }
       app.expectNoMoreEvents()
     }
 
@@ -113,7 +115,9 @@
       }
       try await app.system.filterIncomingCalls(.none)
       #expect(try await app.system.calls().isEmpty)
-      #expect(app.call(id)?.status == .previewing(.filtered(.doNotDisturb)))
+      try await app.until("the call to become a preview") {
+        app.call(id)?.status == .previewing(.filtered(.doNotDisturb))
+      }
       #expect(await app.media.records.isEmpty)
       try await app.expectPushesFinished([pushID])
       app.expectNoMoreEvents()
@@ -256,12 +260,12 @@
 
       try await app.system.perform(.mute(uuid, muted: true))
       try await app.expect([.performed(.mute(id, muted: true), .connected)])
-      #expect(app.call(id)?.isMuted == true)
+      try await app.until("the call to be muted") { app.call(id)?.isMuted == true }
       // With its only call on hold, the system deactivates audio, and activates it again when
       // the call resumes.
       try await app.system.perform(.hold(uuid, held: true, origin: .system))
       try await app.expect([.performed(.hold(id, onHold: true), .connected), .audioDeactivated])
-      #expect(app.call(id)?.isOnHold == true)
+      try await app.until("the call to be on hold") { app.call(id)?.isOnHold == true }
       try await app.system.perform(.hold(uuid, held: false, origin: .system))
       try await app.expect([.performed(.hold(id, onHold: false), .connected), .audioActivated])
       #expect(
@@ -323,6 +327,7 @@
         .performed(.end(waiting), .ended(.endedHere)), .ended(waiting, .endedHere),
         .audioDeactivated,
       ])
+      try await app.until("the answered call to end") { app.call(waiting) == nil }
       #expect(app.call(active)?.isOnHold == true)
       try await app.system.perform(.hold(deviceUUID(for: active), held: false, origin: .system))
       try await app.expect([.performed(.hold(active, onHold: false), .connected), .audioActivated])
