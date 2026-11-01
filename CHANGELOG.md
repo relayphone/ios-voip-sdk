@@ -21,8 +21,12 @@ Changes not yet released are recorded below. Public API changes include migratio
   repeated push or a server event, the SDK reports a throwaway call under a new UUID and ends it
   at once, even when the push concerns a call in progress: the system doesn't count a second
   report of a call it already presents, and terminates the app, as it did after a server event
-  push for a joined call in the background. Servers should tell a device about a call it
-  answered or joined over the app's own connection or with a regular push, not a VoIP push.
+  push for a joined call in the background. Servers should send VoIP pushes about a call only
+  while it may ring on a device, and tell a device about a call it answered or joined, or didn't
+  present because Do Not Disturb or a Focus filtered it or it shows as a call preview, over the
+  app's own connection or with a regular push. On an iPhone 13 with a Focus on, three `callEnded`
+  VoIP pushes for filtered calls, sent a few seconds apart, ended with the system terminating the
+  app in the background for not reporting a call, although each push had its throwaway report.
 - The seams for calling-framework adapters and the app's media: `CallingFramework` with
   `FrameworkEvent`, `CallMedia`, `PushSource` with `VoIPPush` and `PushCompletion`, `ActionID`
   and `deviceUUID(for:)`. `VoIPConfiguration` adds `maximumCalls`, `supportedHandleTypes`,
