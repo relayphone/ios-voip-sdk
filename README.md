@@ -420,7 +420,9 @@ Join opens the app and joins the call: the client sends `joinRequested(_:)`, and
 the call as for any join. `isDiscoverable` keeps Join Call, which asks for a call ID as free
 text, out of Shortcuts and Spotlight; the system reads it from the app's type, so the app
 declares it. A preview that the servers started before the app ran has a call that
-the client doesn't know yet, so joining reports it to the client first, as a call preview.
+the client doesn't know yet, so joining creates the call from the preview with
+`VoIPClient.join(_:)`. It doesn't become a call preview first, so a `CallNotifier` posts nothing
+for it, and joining a call that the servers said was over fails with its ended status.
 [ADR 0010](docs/adr/0010-call-preview-activity-is-sdk-type.md) records why the SDK defines the
 type and the servers start the previews.
 

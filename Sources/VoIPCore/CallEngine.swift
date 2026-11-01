@@ -118,14 +118,41 @@ final class CallEngine {
       } else {
         throw .unknownCall
       }
-      if let rejection = reply.rejection { throw rejection }
-      return reply.request == nil ? nil : states[id]?.call
+      return try requested(reply, for: id)
     }
+    try await send(action, for: call)
+  }
+
+  /// Joins a call, first creating it as a call preview when this device doesn't know it.
+  ///
+  /// Server events that arrived for the call before apply first, so a call that already ended
+  /// can't be joined.
+  func join(_ incoming: IncomingCall) async throws(ActionError) {
+    let id = incoming.id
+    let action = Action.join(id)
+    let call = try exclusively { () throws(ActionError) -> Call? in
+      if states[id] == nil { begin(.joining(incoming)) }
+      guard states[id] != nil else { throw .unknownCall }
+      return try requested(handle(id, .requested(action)), for: id)
+    }
+    try await send(action, for: call)
+  }
+
+  /// The call whose request the calling framework must accept, or `nil` when the SDK handled the
+  /// request itself.
+  private func requested(_ reply: Reply, for id: CallID) throws(ActionError) -> Call? {
+    if let rejection = reply.rejection { throw rejection }
+    return reply.request == nil ? nil : states[id]?.call
+  }
+
+  /// Asks the calling framework to accept a request, and returns the call to where it was if it
+  /// refuses.
+  private func send(_ action: Action, for call: Call?) async throws(ActionError) {
     guard let call else { return }
     do throws(ActionError) {
       try await framework.request(action, for: call)
     } catch {
-      serially { self.handle(id, .requestFailed(action)) }
+      serially { self.handle(call.id, .requestFailed(action)) }
       throw error
     }
   }

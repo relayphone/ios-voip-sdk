@@ -17,7 +17,7 @@ import VoIPTesting
     return (h, activity)
   }
 
-  /// The call that joining reports for a preview that the client doesn't know.
+  /// The call that joining creates for a preview that the client doesn't know.
   private let adopted = IncomingCall(
     id: callID, parties: [alice], metadata: ["room": "room-1"],
     presentationPolicy: PresentationPolicy(incoming: .preview))
@@ -27,7 +27,7 @@ import VoIPTesting
     let activity = try await h.preview()
     try await h.previews.join(callID)
     #expect(h.client.requests == [.join(callID)])
-    #expect(h.client.reports.isEmpty)
+    #expect(h.client.joins.isEmpty)
 
     var connecting = filtered
     connecting.status = .connecting
@@ -37,12 +37,12 @@ import VoIPTesting
     #expect(h.client.requests == [.join(callID)])
   }
 
-  @Test func reportsAPreviewThatTheServersStartedBeforeJoiningIt() async throws {
+  @Test func joinsAPreviewThatTheServersStartedFromItsDetails() async throws {
     let (h, activity) = try await harnessWithPushedPreview()
     try await h.previews.join(callID)
-    #expect(h.client.reports == [adopted])
-    #expect(h.client.requests == [.join(callID), .join(callID)])
-    // Reporting the call doesn't start a second Live Activity.
+    #expect(h.client.joins == [adopted])
+    #expect(h.client.requests == [.join(callID)])
+    // Joining the call doesn't start a second Live Activity.
     try await h.expectNoEvents()
     #expect(h.center.records.count { $0.isRequest } == 1)  // The marker's.
 
@@ -55,7 +55,7 @@ import VoIPTesting
     #expect(!h.client.requests.contains(.end(callID)))
   }
 
-  @Test func endsAReportedCallWhenItsPreviewEnds() async throws {
+  @Test func endsACreatedCallWhenItsPreviewEnds() async throws {
     let (h, activity) = try await harnessWithPushedPreview()
     try await h.previews.join(callID)
     h.center.send(.ended(activity))
@@ -63,7 +63,7 @@ import VoIPTesting
     try await until { h.client.requests.last == .end(callID) }
   }
 
-  @Test func endsAReportedCallWhenTheAppEndsItsPreview() async throws {
+  @Test func endsACreatedCallWhenTheAppEndsItsPreview() async throws {
     let (h, activity) = try await harnessWithPushedPreview()
     try await h.previews.join(callID)
     await h.previews.end(callID)
@@ -72,10 +72,9 @@ import VoIPTesting
     #expect(h.client.requests.last == .end(callID))
   }
 
-  @Test func endsAReportedCallThatReturnsToAPreviewThatNothingShows() async throws {
+  @Test func endsACreatedCallThatReturnsToAPreviewThatNothingShows() async throws {
     let (h, activity) = try await harnessWithPushedPreview()
     try await h.previews.join(callID)
-    // The observer handles the report's preview while the Live Activity runs.
     try await h.expectNoEvents()
     h.center.send(.ended(activity))
     #expect(try await h.next() == .ended(callID))
@@ -88,7 +87,17 @@ import VoIPTesting
     #expect(h.center.records.count { $0.isRequest } == 2)  // The markers'.
   }
 
-  @Test func leavesACallItDidNotReportWhenItsPreviewEnds() async throws {
+  @Test func joiningAPreviewWhoseCallEndedFailsWithItsStatus() async throws {
+    let (h, _) = try await harnessWithPushedPreview()
+    // The app's servers said that the call ended before the app knew it.
+    h.client.joinError = .notAllowed(.ended(.endedRemotely))
+    await #expect(throws: CallPreviewError.join(.notAllowed(.ended(.endedRemotely)))) {
+      try await h.previews.join(callID)
+    }
+    #expect(h.client.joins == [adopted])
+  }
+
+  @Test func leavesACallItDidNotCreateWhenItsPreviewEnds() async throws {
     let h = Harness()
     let activity = try await h.preview()
     try await h.previews.join(callID)
@@ -102,7 +111,7 @@ import VoIPTesting
     let h = Harness()
     await #expect(throws: CallPreviewError.unknownCall) { try await h.previews.join(callID) }
     #expect(h.client.requests == [.join(callID)])
-    #expect(h.client.reports.isEmpty)
+    #expect(h.client.joins.isEmpty)
   }
 
   @Test func passesOnTheClientsRefusal() async throws {
@@ -112,7 +121,7 @@ import VoIPTesting
     await #expect(throws: CallPreviewError.join(.notAllowed(.ended(.endedRemotely)))) {
       try await h.previews.join(callID)
     }
-    #expect(h.client.reports.isEmpty)
+    #expect(h.client.joins.isEmpty)
   }
 
   @Test func needsAClient() async {

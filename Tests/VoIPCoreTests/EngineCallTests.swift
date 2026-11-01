@@ -127,6 +127,49 @@ extension EngineTests {
       await h.until { $0.calls.map(\.status) == [.connected] }
     }
 
+    /// A call that the device didn't know, such as one whose preview the app's servers started,
+    /// is joined without becoming a call preview first.
+    @Test func joinCreatesAnUnknownCallWithoutAPreview() async throws {
+      let h = try Harness()
+      try await h.client.join(incoming(callID, .preview))
+      #expect(try await h.next() == .joinRequested(callID))
+      await h.client.confirmPlaced(callID)
+      #expect(try await h.next() == .performed(.join(callID), .connecting))
+      let request = try #require(await h.records.first?.requestedCall)
+      #expect(await h.records.first?.requested == .join(callID))
+      #expect(request.parties == [alice])
+      try await h.expectNoEvents()
+    }
+
+    @Test func joinOfAKnownPreviewRequestsTheJoin() async throws {
+      let h = try Harness()
+      _ = await h.client.report(incoming(callID, .preview))
+      #expect(try await h.next() == .previewStarted(callID, .policy))
+      try await h.client.join(incoming(callID, .preview))
+      #expect(try await h.next() == .joinRequested(callID))
+      #expect(await h.records.compactMap(\.requested) == [.join(callID)])
+    }
+
+    @Test func joinOfACallThatEndedBeforeThisDeviceKnewItFails() async throws {
+      let h = try Harness()
+      await h.client.receive(.endedRemotely, for: callID, eventID: e2)
+      await #expect(throws: ActionError.notAllowed(.ended(.endedRemotely))) {
+        try await h.client.join(incoming(callID, .preview))
+      }
+      #expect(try await h.next() == .ended(callID, .endedRemotely))
+      #expect(await h.records.isEmpty)
+      try await h.expectNoEvents()
+    }
+
+    @Test func joinOfARingingCallIsNotAllowed() async throws {
+      let h = try Harness()
+      try await h.ring()
+      await #expect(throws: ActionError.notAllowed(.ringing)) {
+        try await h.client.join(incoming(callID, .preview))
+      }
+      try await h.expectNoEvents()
+    }
+
     @Test func outgoingCallIsPlacedAndConnects() async throws {
       let h = try Harness()
       try await h.client.request(.start(outgoing))

@@ -40,6 +40,15 @@ extension CallMachine {
       step.arm(.placement)
       step.output(.request(action))
       return step.result
+    case .joining(let incoming):
+      let call = Call(
+        id: incoming.id, isIncoming: true, parties: incoming.parties, status: .ringing,
+        hasVideo: incoming.hasVideo, metadata: incoming.metadata)
+      let step = Step(
+        call: call, phase: .previewing(.policy),
+        policy: incoming.presentationPolicy ?? configuration.presentationPolicy,
+        configuration: configuration, now: now)
+      return step.result
     case .systemStart(let id, let outgoing):
       let held = HeldAction(id: id, action: .start(outgoing))
       var step = Step(

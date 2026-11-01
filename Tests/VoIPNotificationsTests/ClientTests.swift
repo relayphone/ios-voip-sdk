@@ -84,6 +84,43 @@ struct ClientTests {
     #expect(try await notifier.handle(tap) == nil)
   }
 
+  /// Joining a call that the client didn't know, such as from a call preview that the app's
+  /// servers started, posts nothing: the user started the join.
+  @Test(arguments: [false, true])
+  func joiningAnUnknownCallPostsNothing(callEnded: Bool) async throws {
+    let center = FakeCallNotificationCenter()
+    let notifier = CallNotifier(
+      options: CallNotifier.Options(triggers: [.filtered, .previewedByPolicy]), center: center)
+    var notices = notifier.events().makeAsyncIterator()
+    let framework = FakeCallingFramework()
+    let client = try VoIPClient.start(
+      framework: framework, media: FakeMedia(), observers: [notifier], clock: TestClock())
+    var events = client.events().makeAsyncIterator()
+    let joined = IncomingCall(
+      id: callID, parties: [alice], presentationPolicy: PresentationPolicy(incoming: .preview))
+
+    if callEnded {
+      await client.receive(.endedRemotely, for: callID, eventID: EventID(rawValue: "e1"))
+      await #expect(throws: ActionError.notAllowed(.ended(.endedRemotely))) {
+        try await client.join(joined)
+      }
+    } else {
+      try await client.join(joined)
+      while let event = await events.next(isolation: #isolation) {
+        if case .joinRequested = event { break }
+      }
+      await client.confirmPlaced(callID)
+    }
+    // A call that the policy previews afterwards is the first that the notifier posts for.
+    _ = await client.report(
+      IncomingCall(
+        id: otherCallID, parties: [alice],
+        presentationPolicy: PresentationPolicy(incoming: .preview)))
+    #expect(
+      await notices.next(isolation: #isolation) == .posted(notification(.incoming, otherCallID)))
+    #expect(center.records == [.post(notification(.incoming, otherCallID))])
+  }
+
   @Test func ringingCallGetsNoNotification() async throws {
     let center = FakeCallNotificationCenter()
     let notifier = CallNotifier(center: center)

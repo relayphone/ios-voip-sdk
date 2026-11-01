@@ -200,9 +200,10 @@
       let app = try await App(observers: [previews])
       defer { app.stop() }
 
-      // The client doesn't know the call, so joining reports it first, as a call preview.
+      // The client doesn't know the call, so joining creates it from the preview, without a
+      // call preview event for a call notifier to post for.
       try await previews.join(id)
-      try await app.expect([.previewStarted(id, .policy), .joinRequested(id)])
+      try await app.expect([.joinRequested(id)])
       try await app.until("the call to carry its metadata") {
         app.call(id)?.metadata == ["room": "room-1"]
       }

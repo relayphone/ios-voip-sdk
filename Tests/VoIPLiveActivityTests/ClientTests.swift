@@ -70,6 +70,12 @@ struct ClientTests {
     func joinAndPlace(_ id: CallID) async throws {
       try await previews.join(id)
       _ = try await nextCallEvent { if case .joinRequested = $0 { true } else { false } }
+      try await place(id)
+    }
+
+    /// Places a join that the client asked for, as the app does, and waits until the client's
+    /// ``VoIPClient/calls`` show the call connecting.
+    func place(_ id: CallID) async throws {
       await client.confirmPlaced(id)
       let performed = try await nextCallEvent {
         if case .performed(.join, _) = $0 { true } else { false }
@@ -116,12 +122,20 @@ struct ClientTests {
     #expect(app.center.activities.isEmpty)
   }
 
-  @Test func joiningAPreviewThatTheServersStartedReportsItsCall() async throws {
+  @Test func joiningAPreviewThatTheServersStartedCreatesItsCall() async throws {
     let center = FakeLiveActivityCenter()
     let activity = center.startFromPush(CallPreviewAttributes(filtered), state: firstState)
     let app = try await App(center: center)
     #expect(try await app.nextPreviewEvent() == .started(callID))
-    try await app.joinAndPlace(callID)
+    try await app.previews.join(callID)
+    // The call isn't a call preview first, which a call notifier would post for.
+    let first = try await app.nextCallEvent { _ in true }
+    guard case .joinRequested(let requested) = first else {
+      Issue.record("The client's first event was \(first), not joinRequested")
+      return
+    }
+    #expect(requested.id == callID)
+    try await app.place(callID)
     let call = try #require(app.client.calls.first { $0.id == callID })
     #expect(call.parties == [alice])
     #expect(call.metadata == ["room": "room-1"])
@@ -131,6 +145,21 @@ struct ClientTests {
     // The joined call is the app's: it outlives its preview.
     try await app.client.request(.end(callID))
     _ = try await app.nextCallEvent { if case .ended = $0 { true } else { false } }
+  }
+
+  @Test func joiningAPreviewWhoseCallEndedFailsAndShowsTheEnd() async throws {
+    let center = FakeLiveActivityCenter()
+    let activity = center.startFromPush(CallPreviewAttributes(filtered), state: firstState)
+    let app = try await App(center: center)
+    #expect(try await app.nextPreviewEvent() == .started(callID))
+    // The servers said that the call ended before the app knew it.
+    await app.client.receive(.endedRemotely, for: callID, eventID: EventID(rawValue: "end"))
+    await #expect(throws: CallPreviewError.join(.notAllowed(.ended(.endedRemotely)))) {
+      try await app.previews.join(callID)
+    }
+    #expect(await app.framework.records.isEmpty)
+    #expect(try await app.nextPreviewEvent() == .ended(callID))
+    #expect(center.records == [.end(activity, .ended(firstState), .after(.seconds(120)))])
   }
 
   @Test func callThatEndsElsewhereLeavesItsFinalState() async throws {
