@@ -107,7 +107,7 @@ let package = Package(
       ],
       swiftSettings: strictSwift),
     .testTarget(
-      name: "VoIPPushKitTests", dependencies: ["VoIPPushKit", "VoIPPushDelivery"],
+      name: "VoIPPushKitTests", dependencies: ["VoIPPushKit", "VoIPPushDelivery", "VoIPTesting"],
       swiftSettings: strictSwift),
     .testTarget(
       name: "VoIPNotificationsTests",

@@ -63,6 +63,10 @@
 ///
 /// Follow what happens to the notifications with ``events()``.
 ///
+/// On iOS, each post and withdrawal holds its own UIKit background task until the notification
+/// center returns, or the system expires it. This also covers notifications posted long after
+/// the VoIP push that announced the call has completed.
+///
 /// ## Routing the user's responses
 ///
 /// Pass the responses to call notifications that the app's `UNUserNotificationCenterDelegate`
@@ -198,6 +202,7 @@ public final class CallNotifier: CallObserver {
   public let options: Options
 
   private let center: any CallNotificationCenter
+  private let backgroundExecution: (any NotifierBackgroundExecution)?
   /// The client whose calls the notifier follows, which it keeps weakly so that the client can be
   /// released.
   private(set) weak var client: (any NotifierClient)?
@@ -215,18 +220,29 @@ public final class CallNotifier: CallObserver {
   /// - Parameters:
   ///   - options: How the notifier chooses and makes notifications.
   ///   - center: Where the notifier posts notifications.
+  @available(iOSApplicationExtension, unavailable)
   public convenience init(options: Options = Options(), center: any CallNotificationCenter) {
-    self.init(options: options, center: center, activity: nil, clock: ContinuousClock())
+    #if os(iOS)
+      let backgroundExecution: (any NotifierBackgroundExecution)? =
+        UIKitNotifierBackgroundExecution()
+    #else
+      let backgroundExecution: (any NotifierBackgroundExecution)? = nil
+    #endif
+    self.init(
+      options: options, center: center, activity: nil, clock: ContinuousClock(),
+      backgroundExecution: backgroundExecution)
   }
 
   /// Creates a notifier that learns whether the app is active from `activity`, and times the wait
   /// for it with `clock`. Tests pass fakes.
   init(
     options: Options = Options(), center: any CallNotificationCenter,
-    activity: (any NotifierAppActivity)?, clock: any Clock<Duration>
+    activity: (any NotifierAppActivity)?, clock: any Clock<Duration>,
+    backgroundExecution: (any NotifierBackgroundExecution)? = nil
   ) {
     self.options = options
     self.center = center
+    self.backgroundExecution = backgroundExecution
     self.activity = activity
     self.clock = clock
   }
@@ -331,6 +347,8 @@ public final class CallNotifier: CallObserver {
       callID: call.id, kind: kind, caller: caller, hasVideo: call.hasVideo,
       interruptionLevel: options.interruptionLevel, playsSound: options.playsSound)
     guard let notification = options.customize(made, call) else { return false }
+    let endBackgroundTask = backgroundExecution?.begin()
+    defer { endBackgroundTask?() }
     do {
       try await center.post(notification)
       subscribers.yield(.posted(notification))
@@ -342,6 +360,8 @@ public final class CallNotifier: CallObserver {
   }
 
   private func withdraw(_ id: CallID) async {
+    let endBackgroundTask = backgroundExecution?.begin()
+    defer { endBackgroundTask?() }
     await center.withdraw(id)
     subscribers.yield(.withdrawn(id))
   }

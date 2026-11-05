@@ -15,6 +15,18 @@ Public API changes include migration guidance.
   `CallNotifier.Options(endedWithoutJoining: { _ in .missedCall })`. The option's type and ability
   to override the decision are unchanged.
 
+### Fixed
+
+- Keep the app running briefly after each VoIP push so that event observers can start their
+  push-triggered work. On an iPhone 13 with iOS 27.1 and a Focus on, `CallNotifier` posted an
+  incoming call notification 33 seconds late, only when the next push woke the app: iOS suspended
+  it after the filtered call's push completed, before the notifier's main-actor task ran.
+  `PushKitSource` now holds a UIKit background task from arrival through completion plus a
+  two-second settle period, bounded by expiration and ten seconds from arrival. `CallNotifier`
+  also holds a background task for each post and withdrawal until its notification center
+  returns. Apps doing their own push-triggered work, such as reporting a ring outcome to their
+  servers, should wrap it in their own background task.
+
 ## 0.2.0 (2026-11-01)
 
 ### Added
