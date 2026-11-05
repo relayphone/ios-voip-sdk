@@ -5,6 +5,8 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+## 0.2.1 (2026-11-05)
+
 ### Changed
 
 - `CallNotifier.Options.endedWithoutJoining` now chooses its default from the call's end reason:
