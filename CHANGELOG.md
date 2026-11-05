@@ -5,6 +5,16 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+### Changed
+
+- `CallNotifier.Options.endedWithoutJoining` now chooses its default from the call's end reason:
+  `.endedRemotely` and `.unanswered` post a missed-call notification; `.endedHere`,
+  `.answeredElsewhere` and `.declinedElsewhere` remove it; failures and all other reasons keep it.
+  Previews ended on the device previously posted "missed" in 3 of 3 checks on an iPhone 13.
+  Apps that want the previous behavior, a missed-call notification for every end reason, pass
+  `CallNotifier.Options(endedWithoutJoining: { _ in .missedCall })`. The option's type and ability
+  to override the decision are unchanged.
+
 ## 0.2.0 (2026-11-01)
 
 ### Added

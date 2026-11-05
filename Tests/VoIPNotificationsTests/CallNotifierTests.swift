@@ -75,6 +75,67 @@ struct CallNotifierTests {
 
   // MARK: After it posts
 
+  @Test(arguments: [EndReason.endedRemotely, .unanswered])
+  func remoteEndOrUnansweredCallGetsAMissedCallNotification(_ reason: EndReason) async throws {
+    let h = Harness()
+    h.send(.previewStarted(call(.previewing(dnd))))
+    #expect(try await h.next() == .posted(notification(.incoming)))
+    h.send(.ended(call(.ended(reason))))
+    #expect(try await h.next() == .posted(notification(.missed)))
+    #expect(h.center.records == [.post(notification(.incoming)), .post(notification(.missed))])
+    #expect(h.center.delivered == [notification(.missed)])
+  }
+
+  @Test(arguments: [EndReason.endedHere, .answeredElsewhere, .declinedElsewhere])
+  func handledCallRemovesItsNotification(_ reason: EndReason) async throws {
+    let h = Harness()
+    h.send(.previewStarted(call(.previewing(dnd))))
+    #expect(try await h.next() == .posted(notification(.incoming)))
+    h.send(.ended(call(.ended(reason))))
+    #expect(try await h.next() == .withdrawn(callID))
+    #expect(h.center.records == [.post(notification(.incoming)), .withdraw(callID)])
+    #expect(h.center.delivered.isEmpty)
+  }
+
+  @Test(arguments: [
+    EndReason.failed(.refused), .failed(.atCapacity), .failed(.notPlaced), .failed(.media),
+    .failed(.audioActivationTimedOut), .failed(.audioSession), .failed(.audioRecoveryTimedOut),
+    .failed(.connectTimedOut), .failed(.reconnectTimedOut), .failed(.actionTimedOut),
+    .failed(.frameworkReset), .failed(.server),
+    .filtered(.doNotDisturb), .filtered(.blockList), .filtered(.unspecified),
+  ])
+  func otherEndReasonsKeepTheIncomingNotification(_ reason: EndReason) async throws {
+    let h = Harness()
+    h.send(.previewStarted(call(.previewing(dnd))))
+    #expect(try await h.next() == .posted(notification(.incoming)))
+    h.send(.ended(call(.ended(reason))))
+    try await h.expectNothingElse()
+    #expect(h.center.records.first == .post(notification(.incoming)))
+    #expect(h.center.records.count == 2)  // With the marker's.
+    #expect(h.center.delivered.first == notification(.incoming))
+  }
+
+  @Test func filteredCallThatEndsAtOnceKeepsAnIncomingNotificationByDefault() async throws {
+    let h = Harness()
+    h.send(.ended(call(.ended(.filtered(.doNotDisturb)))))
+    #expect(try await h.next() == .posted(notification(.incoming)))
+    #expect(h.center.records == [.post(notification(.incoming))])
+    #expect(h.center.delivered == [notification(.incoming)])
+  }
+
+  @Test(arguments: [
+    EndReason.endedHere, .answeredElsewhere, .declinedElsewhere, .failed(.server),
+    .filtered(.doNotDisturb),
+  ])
+  func appsCanKeepThePreviousMissedCallBehavior(_ reason: EndReason) async throws {
+    let h = Harness(options: CallNotifier.Options(endedWithoutJoining: { _ in .missedCall }))
+    h.send(.previewStarted(call(.previewing(dnd))))
+    #expect(try await h.next() == .posted(notification(.incoming)))
+    h.send(.ended(call(.ended(reason))))
+    #expect(try await h.next() == .posted(notification(.missed)))
+    #expect(h.center.delivered == [notification(.missed)])
+  }
+
   @Test(arguments: [false, true])
   func callThatEndsWithoutBeingJoinedGetsAMissedCallNotification(hasVideo: Bool) async throws {
     let h = Harness()
