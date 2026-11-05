@@ -21,6 +21,12 @@
   /// app's activity from UIKit's notifications, from when it is created, and counts the app as
   /// inactive until UIKit says that it became active, so create it when the app launches.
   ///
+  /// Each VoIP push holds a UIKit background task from arrival until two seconds after its
+  /// completion returns, bounded by system expiration and ten seconds from arrival. This gives
+  /// event observers time to start their work before iOS suspends the app. Apps doing their own
+  /// push-triggered work, such as reporting a ring outcome to their servers, should hold their
+  /// own background task until that work finishes.
+  ///
   /// Register the push token with your servers from ``tokens()``:
   ///
   /// ```swift
@@ -34,6 +40,7 @@
   /// }
   /// ```
   @VoIPActor
+  @available(iOSApplicationExtension, unavailable)
   public final class PushKitSource: PushSource {
     /// How long PushKit waits for the SDK to finish a push before the source finishes it anyway.
     ///
@@ -42,6 +49,9 @@
     /// completes.
     static let watchdog: TimeInterval = 4
 
+    /// How long observers may settle after the push completes, within the ten-second cap.
+    nonisolated static let backgroundSettle: Duration = .seconds(2)
+
     /// The source's log, which records each push that the SDK reports although the system said
     /// that it needn't be reported.
     private nonisolated static let log = Logger(subsystem: "VoIPPushKit", category: "source")
@@ -49,6 +59,10 @@
     private let decode: @Sendable (Data) -> VoIPPush
     private let tokenUpdates = TokenUpdates()
     private let activity = AppActivity()
+    private let backgroundExecution: Task<any PushBackgroundExecution, Never>
+    private let clock: any Clock<Duration>
+    private let settle: Duration
+    private var isAttaching = false
     private var registry: PKPushRegistry?
     private var delegate: RegistryDelegate?
 
@@ -62,6 +76,21 @@
       decode: @escaping @Sendable (Data) -> VoIPPush = VoIPPush.init(defaultFormat:)
     ) {
       self.decode = decode
+      backgroundExecution = Task { @MainActor in UIKitPushBackgroundExecution() }
+      clock = ContinuousClock()
+      settle = Self.backgroundSettle
+    }
+
+    /// Creates a source with background execution and time controlled by tests.
+    nonisolated init(
+      decode: @escaping @Sendable (Data) -> VoIPPush = VoIPPush.init(defaultFormat:),
+      backgroundExecution: any PushBackgroundExecution, clock: any Clock<Duration>,
+      backgroundSettle: Duration
+    ) {
+      self.decode = decode
+      self.backgroundExecution = Task { backgroundExecution }
+      self.clock = clock
+      settle = backgroundSettle
     }
 
     /// Returns a new stream of the VoIP push token, which the app registers with its servers.
@@ -75,21 +104,29 @@
 
     /// Registers for VoIP pushes and delivers each one to the SDK.
     public func attach(onPush: @escaping @VoIPActor (VoIPPush, PushCompletion) -> Void) {
-      guard registry == nil else { return }
-      let delegate = RegistryDelegate(source: self, onPush: onPush)
-      let registry = PKPushRegistry(queue: VoIPActor.queue)
-      registry.delegate = delegate
-      registry.desiredPushTypes = [.voIP]
-      self.delegate = delegate
-      self.registry = registry
+      guard !isAttaching else { return }
+      isAttaching = true
+      Task {
+        // Resolve UIKit on the main actor before registering, so every push can begin its
+        // background task synchronously without delaying the required call report.
+        let execution = await backgroundExecution.value
+        let delegate = RegistryDelegate(source: self, execution: execution, onPush: onPush)
+        let registry = PKPushRegistry(queue: VoIPActor.queue)
+        registry.delegate = delegate
+        registry.desiredPushTypes = [.voIP]
+        self.delegate = delegate
+        self.registry = registry
+      }
     }
 
     fileprivate func receive(
       _ payload: PKPushPayload, systemRequiresReport: Bool, completion: @escaping () -> Void,
+      execution: any PushBackgroundExecution,
       onPush: @VoIPActor (VoIPPush, PushCompletion) -> Void
     ) {
-      let delivery = VSPushCompletion(completion: completion, watchdog: Self.watchdog)
-      guard payload.type == .voIP else { return delivery.finish() }
+      guard payload.type == .voIP else { return completion() }
+      let background = PushBackgroundTask(execution: execution, clock: clock, settle: settle)
+      let delivery = background.delivery(finishing: completion, watchdog: Self.watchdog)
       let push =
         if let json = try? JSONSerialization.data(withJSONObject: payload.dictionaryPayload) {
           decode(json)
@@ -114,12 +151,18 @@
 
   /// Receives PushKit's callbacks on `VoIPActor`, the registry's queue.
   @VoIPActor
+  @available(iOSApplicationExtension, unavailable)
   private final class RegistryDelegate: NSObject, @preconcurrency PKPushRegistryDelegate {
     private weak var source: PushKitSource?
     private let onPush: @VoIPActor (VoIPPush, PushCompletion) -> Void
+    private let execution: any PushBackgroundExecution
 
-    init(source: PushKitSource, onPush: @escaping @VoIPActor (VoIPPush, PushCompletion) -> Void) {
+    init(
+      source: PushKitSource, execution: any PushBackgroundExecution,
+      onPush: @escaping @VoIPActor (VoIPPush, PushCompletion) -> Void
+    ) {
       self.source = source
+      self.execution = execution
       self.onPush = onPush
     }
 
@@ -157,7 +200,7 @@
       guard let source else { return completion() }
       source.receive(
         payload, systemRequiresReport: systemRequiresReport, completion: completion,
-        onPush: onPush)
+        execution: execution, onPush: onPush)
     }
   }
 #endif

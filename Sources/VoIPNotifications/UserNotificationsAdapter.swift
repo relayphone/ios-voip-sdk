@@ -178,6 +178,7 @@
     /// Creates a notifier that posts with ``UserNotificationsAdapter``.
     ///
     /// - Parameter options: How the notifier chooses and makes notifications.
+    @available(iOSApplicationExtension, unavailable)
     public convenience init(options: Options = Options()) {
       self.init(options: options, center: UserNotificationsAdapter())
     }

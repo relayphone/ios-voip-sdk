@@ -149,6 +149,14 @@ VoIP pushes about that call: tell the app what happens to it, such as that it en
 app's own connection to your servers or with a regular push, and pass it on with
 `receive(_:for:eventID:)`, as below.
 
+`PushKitSource` holds a background task from each VoIP push's arrival until two seconds after
+its completion returns, bounded by system expiration and ten seconds from arrival. This gives
+event observers time to start before iOS suspends the app. If your app does its own push-triggered
+work, such as reporting a ring outcome from `previewStarted` or `presented` to your servers,
+wrap that work in a UIKit background task and end it when the work finishes or the task expires.
+`CallNotifier` holds its own background task for each notification post and withdrawal, including
+those made after the push's settle period. See [ADR 0011](docs/adr/0011-background-time-after-pushes.md).
+
 A device didn't present a call that Do Not Disturb or a Focus filtered, or that it shows as a
 call preview; the app learns of it from `previewStarted(_:)` with `PreviewReason.filtered(_:)` or
 `.policy`, or when the call ends as `EndReason.filtered(_:)`, and can tell your servers. Each VoIP
