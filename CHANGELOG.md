@@ -26,6 +26,9 @@ Public API changes include migration guidance.
   also holds a background task for each post and withdrawal until its notification center
   returns. Apps doing their own push-triggered work, such as reporting a ring outcome to their
   servers, should wrap it in their own background task.
+  `PushKitSource`'s initializer now runs on the main actor; apps create it at launch on the main
+  thread, as documented. Push registration remains synchronous when the client attaches it on
+  `VoIPActor`.
 
 ## 0.2.0 (2026-11-01)
 

@@ -1,3 +1,4 @@
+import Dispatch
 import Testing
 import VoIPTesting
 
@@ -8,6 +9,16 @@ extension EngineTests {
   @Suite("Observers")
   @MainActor
   struct Observers {
+    @Test func startupAttachesThePushSourceOnTheVoIPQueue() async throws {
+      let (attachments, attached) = AsyncStream.makeStream(of: Bool.self)
+      let source = QueueCheckingPushSource(attached: attached)
+      let client = try VoIPClient.start(
+        framework: FakeCallingFramework(), media: FakeMedia(), push: source, clock: TestClock())
+      var iterator = attachments.makeAsyncIterator()
+      #expect(await iterator.next() == true)
+      withExtendedLifetime(client) {}
+    }
+
     /// The VoIP push that cold-launched the app arrives as soon as the SDK attaches the push
     /// source, which can be before the app's own code runs again.
     @Test func observerSeesTheFirstEventOfAColdLaunch() async throws {
@@ -66,6 +77,21 @@ extension EngineTests {
       #expect(observer.client == nil)
       withExtendedLifetime(running) {}
     }
+  }
+}
+
+/// Checks the executor on the real startup path before signaling that attachment finished.
+@VoIPActor
+private final class QueueCheckingPushSource: PushSource {
+  private let attached: AsyncStream<Bool>.Continuation
+
+  nonisolated init(attached: AsyncStream<Bool>.Continuation) {
+    self.attached = attached
+  }
+
+  func attach(onPush: @escaping @VoIPActor (VoIPPush, PushCompletion) -> Void) {
+    dispatchPrecondition(condition: .onQueue(VoIPActor.queue))
+    attached.yield(true)
   }
 }
 

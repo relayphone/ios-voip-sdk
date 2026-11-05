@@ -9,7 +9,7 @@
 
   /// A push source that receives the app's VoIP pushes from PushKit.
   ///
-  /// Create it when the app launches and pass it to
+  /// Create it on the main actor when the app launches and pass it to
   /// `VoIPClient.start(framework:media:push:audio:observers:configuration:clock:)`, which attaches
   /// it before any push can arrive. PushKit delivers pushes on `VoIPActor`, so the SDK reports a
   /// push's call before the push callback returns, as Apple requires.
@@ -59,24 +59,26 @@
     private let decode: @Sendable (Data) -> VoIPPush
     private let tokenUpdates = TokenUpdates()
     private let activity = AppActivity()
-    private let backgroundExecution: Task<any PushBackgroundExecution, Never>
+    private let backgroundExecution: any PushBackgroundExecution
     private let clock: any Clock<Duration>
     private let settle: Duration
-    private var isAttaching = false
-    private var registry: PKPushRegistry?
+    private(set) var registry: PKPushRegistry?
     private var delegate: RegistryDelegate?
 
     /// Creates a push source that decodes pushes with the given function.
+    ///
+    /// Create it at launch on the main thread, where it resolves UIKit background execution
+    /// synchronously before the client attaches the source on `VoIPActor`.
     ///
     /// - Parameter decode: Decodes a push's JSON payload. It runs on `VoIPActor`
     ///   before the SDK reports the push's call, so it must return quickly. Return
     ///   `VoIPPush.unrecognized` for a payload it can't decode. Defaults to the SDK's
     ///   format, `VoIPPush.init(defaultFormat:)`.
-    public nonisolated init(
+    @MainActor public init(
       decode: @escaping @Sendable (Data) -> VoIPPush = VoIPPush.init(defaultFormat:)
     ) {
       self.decode = decode
-      backgroundExecution = Task { @MainActor in UIKitPushBackgroundExecution() }
+      backgroundExecution = UIKitPushBackgroundExecution()
       clock = ContinuousClock()
       settle = Self.backgroundSettle
     }
@@ -88,7 +90,7 @@
       backgroundSettle: Duration
     ) {
       self.decode = decode
-      self.backgroundExecution = Task { backgroundExecution }
+      self.backgroundExecution = backgroundExecution
       self.clock = clock
       settle = backgroundSettle
     }
@@ -104,19 +106,13 @@
 
     /// Registers for VoIP pushes and delivers each one to the SDK.
     public func attach(onPush: @escaping @VoIPActor (VoIPPush, PushCompletion) -> Void) {
-      guard !isAttaching else { return }
-      isAttaching = true
-      Task {
-        // Resolve UIKit on the main actor before registering, so every push can begin its
-        // background task synchronously without delaying the required call report.
-        let execution = await backgroundExecution.value
-        let delegate = RegistryDelegate(source: self, execution: execution, onPush: onPush)
-        let registry = PKPushRegistry(queue: VoIPActor.queue)
-        registry.delegate = delegate
-        registry.desiredPushTypes = [.voIP]
-        self.delegate = delegate
-        self.registry = registry
-      }
+      guard registry == nil else { return }
+      let delegate = RegistryDelegate(source: self, execution: backgroundExecution, onPush: onPush)
+      let registry = PKPushRegistry(queue: VoIPActor.queue)
+      registry.delegate = delegate
+      registry.desiredPushTypes = [.voIP]
+      self.delegate = delegate
+      self.registry = registry
     }
 
     fileprivate func receive(
