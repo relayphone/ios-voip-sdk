@@ -37,7 +37,7 @@
 ///
 /// When the presentation policy doesn't preview filtered calls, a call that Do Not Disturb or a
 /// Focus filtered ends at once as `EndReason.filtered(.doNotDisturb)`. The notifier then posts only
-/// what ``Options/endedWithoutJoining`` asks for: a missed-call notification by default.
+/// what ``Options/endedWithoutJoining`` asks for: an incoming call notification by default.
 ///
 /// It never posts for a call that rings, a call that the system filtered because the caller is on
 /// the block list or without saying why, or a call answered elsewhere. Its notifications never
@@ -48,9 +48,13 @@
 ///
 /// - When the call is joined on this device, the notifier withdraws the call's notification,
 ///   unless ``Options/withdrawsWhenJoined`` is off.
-/// - When the call ends without being joined on this device, the notifier replaces the
-///   notification with a missed-call notification, of kind ``CallNotification/Kind/missed``.
-///   ``Options/endedWithoutJoining`` can keep or remove it instead.
+/// - When the call ends remotely or goes unanswered without being joined on this device, the
+///   notifier replaces the notification with a missed-call notification, of kind
+///   ``CallNotification/Kind/missed``.
+/// - When the call ends here, or is answered or declined elsewhere, it removes the notification.
+///   For a failure or any other end reason, it keeps the notification.
+///   ``Options/endedWithoutJoining`` can override this; pass `{ _ in .missedCall }` to keep the
+///   behavior before 0.2.1, which posted a missed-call notification for every end reason.
 ///
 /// A call that the user tried to join counts as joined, even when the join failed, whether the
 /// user joined from a notification, a call preview's Live Activity or the app: the notifier
@@ -123,8 +127,12 @@ public final class CallNotifier: CallObserver {
     public var joinsOnTap: Bool
 
     /// Decides what happens to a call's notification when the call ends without being joined on
-    /// this device. It receives the ended call, whose status holds the end reason. Defaults to
-    /// ``EndedCallNotification/missedCall``.
+    /// this device. It receives the ended call, whose status holds the end reason.
+    ///
+    /// The default posts a missed-call notification for `EndReason.endedRemotely` and
+    /// `EndReason.unanswered`, removes the notification for `EndReason.endedHere`,
+    /// `EndReason.answeredElsewhere` and `EndReason.declinedElsewhere`, and keeps it for a failure
+    /// or any other reason. To keep the behavior before 0.2.1, pass `{ _ in .missedCall }`.
     public var endedWithoutJoining: @MainActor (Call) -> EndedCallNotification
 
     /// Changes each notification before the notifier posts it, for example to localize its body
@@ -155,8 +163,12 @@ public final class CallNotifier: CallObserver {
       playsSound: Bool = true,
       withdrawsWhenJoined: Bool = true,
       joinsOnTap: Bool = true,
-      endedWithoutJoining: @escaping @MainActor (Call) -> EndedCallNotification = { _ in
-        .missedCall
+      endedWithoutJoining: @escaping @MainActor (Call) -> EndedCallNotification = { call in
+        switch call.status {
+        case .ended(.endedRemotely), .ended(.unanswered): .missedCall
+        case .ended(.endedHere), .ended(.answeredElsewhere), .ended(.declinedElsewhere): .remove
+        default: .keep
+        }
       },
       customize: @escaping @MainActor (CallNotification, Call) -> CallNotification? = {
         notification, _ in notification

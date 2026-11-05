@@ -319,12 +319,16 @@ let client = try VoIPClient.start(
 
 The notifier posts once per call, when the call becomes a call preview because Do Not Disturb or a
 Focus filtered it. When the call is joined here, it withdraws the notification. When the call ends
-without being joined here, it replaces the notification with a missed-call notification. A call
-that the user tried to join counts as joined, even when the join failed: the call returns to its
-preview and ends without another notification.
+remotely or goes unanswered without being joined here, it replaces the notification with a
+missed-call notification. When it ends here, or is answered or declined elsewhere, it removes the
+notification. For a failure or any other end reason, it keeps the notification. A call that the
+user tried to join counts as joined, even when the join failed: the call returns to its preview
+and ends without another notification.
 `CallNotifier.Options` changes this: `triggers` adds the calls that the presentation policy shows
-as call previews, `endedWithoutJoining` keeps or removes the notification instead, and `customize`
-localizes the English text or drops a notification.
+as call previews, `endedWithoutJoining` chooses what happens when the call ends, and `customize`
+localizes the English text or drops a notification. Before 0.2.1, the default posted a missed-call
+notification for every end reason. To keep that behavior, pass
+`CallNotifier.Options(endedWithoutJoining: { _ in .missedCall })`.
 
 Add the category with the Join action, and pass the user's responses and the system's requests to
 call someone to the notifier:
