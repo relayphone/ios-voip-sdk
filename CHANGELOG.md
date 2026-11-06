@@ -5,6 +5,11 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+### Documentation
+
+- Clarify that iOS can withhold a push-started call preview's update token until Live Activities
+  consent, with Apple guidance, delayed-token coverage and advice for servers awaiting a token.
+
 ## 0.2.1 (2026-11-05)
 
 ### Changed

@@ -32,14 +32,22 @@ where the system refuses, the app can ask its servers to start one. The SDK keep
 call: when a second Live Activity starts for a call that already has one, it ends the newer one at
 once.
 
-The system asks the user about the app's Live Activities twice: on the first one that appears,
-and again on the first one that a push starts, which asks whether to continue to allow them. The
-system gives that push-started preview its push token only once the user answers the second
-question, so until then the servers can't update or end it. On an iPhone 13 running iOS 27 the
-token arrived 168 seconds after the start push, less than a second after the user tapped Always
-Allow; later push-started previews got theirs at once. Give every start a `stale-date`, so that a
-preview without updates shows that it is out of date, and end a preview as soon as its push token
-arrives if its call is already over.
+For a preview started by push, iOS can withhold the update token until the user allows the app's
+Live Activities on the Lock Screen. Apple DTS confirms that
+["the update token will come with user acceptance"](https://developer.apple.com/forums/thread/818467).
+`areActivitiesEnabled` being true, receiving `Event.started`, or receiving a push-to-start token
+doesn't establish that the per-activity update token is available. The SDK follows every
+server-started preview and publishes its token with the call ID when ActivityKit supplies it.
+Token creation is asynchronous; keep listening to `pushTokens()` for late tokens and rotations,
+as [Apple's push notification documentation](https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications)
+describes. There is no fixed delivery deadline. An absent token alone doesn't prove that consent
+is pending.
+
+Until the token arrives, the servers can't update or end that preview. Give every start a
+`stale-date`, so that a preview without updates shows that it is out of date, and end a preview
+as soon as its push token arrives if its call is already over. The start payload must request
+the update token with `"input-push-token": 1`; the push-to-start token starts activities and
+isn't a substitute for their update tokens.
 
 ### Start
 
