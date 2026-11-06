@@ -6,4 +6,5 @@
 - [Call preview Live Activity](call-preview-activity.md): the JSON that the app's servers send
 - [Simulator runtime](simulator-runtime.md)
 - [Releases](runtime-releases.md): versions, the simulator runtime package and its verification
+- [Roadmap](roadmap.md): the work toward 1.0, in priority order
 - [Contributing](../CONTRIBUTING.md): the checks and the CI workflows
