@@ -120,6 +120,38 @@ import VoIPTesting
     try await h.previews.update(callID, firstState)
   }
 
+  @Test(arguments: [false, true])
+  func publishesDelayedTokensForEveryServerStartedPreview(beforeLaunch: Bool) async throws {
+    let center = FakeLiveActivityCenter()
+    let second = Call(
+      id: CallID(rawValue: "second-server-call"), isIncoming: true, parties: [alice],
+      status: .previewing(.policy))
+    let firstActivity = center.startFromPush(CallPreviewAttributes(filtered), state: firstState)
+    var secondActivity: LiveActivityID?
+    if beforeLaunch {
+      secondActivity = center.startFromPush(CallPreviewAttributes(second), state: firstState)
+    }
+    let h = Harness(options: .init(startsActivities: false), center: center)
+    var tokens = h.previews.pushTokens().makeAsyncIterator()
+    #expect(try await h.next() == .started(callID))
+    if !beforeLaunch {
+      secondActivity = center.startFromPush(CallPreviewAttributes(second), state: firstState)
+    }
+    #expect(try await h.next() == .started(second.id))
+    let secondID = try #require(secondActivity)
+
+    // Activity discovery doesn't require a token. Tokens can arrive later, in either order.
+    center.send(.pushTokenChanged(secondID, Data([2])))
+    center.send(.pushTokenChanged(firstActivity, Data([1])))
+    #expect(await tokens.next() == CallPreviewPushToken(callID: second.id, token: Data([2])))
+    #expect(await tokens.next() == CallPreviewPushToken(callID: callID, token: Data([1])))
+    center.send(.pushTokenChanged(secondID, Data([3])))
+    #expect(await tokens.next() == CallPreviewPushToken(callID: second.id, token: Data([3])))
+    center.send(.ended(firstActivity))
+    #expect(await tokens.next() == CallPreviewPushToken(callID: callID, token: nil))
+    #expect(center.records.isEmpty)
+  }
+
   @Test func eventsStartWithThePreviewsThatRun() async throws {
     let center = FakeLiveActivityCenter()
     let other = CallID(rawValue: "call-2")

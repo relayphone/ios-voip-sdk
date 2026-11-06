@@ -22,6 +22,10 @@ Device testing on iOS 27.1 left two observations that tests haven't yet explaine
 - **Push tokens of call previews started by push.** A call preview Live Activity that a
   push-to-start push created didn't deliver its push token to the app, through
   `CallPreviewActivities.pushTokens()`, within several minutes. Previews that the app started did.
+  Apple [confirms that update tokens come with user acceptance](https://developer.apple.com/forums/thread/818467)
+  for push-started activities. Tests cover discovery before and after launch, delayed tokens and
+  call ID mapping. This establishes a platform limitation; the missing token alone doesn't prove
+  consent was pending in that run. See the [server contract](call-preview-activity.md#pushes).
 - **Focus filter state.** With a Focus on whose filter was set for the app, the app read no Focus
   filter state from `FocusFilterStore`.
 
