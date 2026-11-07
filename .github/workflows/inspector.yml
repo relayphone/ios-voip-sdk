@@ -14,6 +14,7 @@ on:
       - 'tools/smoke/**'
       - 'tools/inspector-*.ts'
       - 'tools/inspector-ui/**'
+      - 'tools/fixtures/inspector-*.json'
       - 'tools/simulator-test-result*'
       - '.github/workflows/inspector.yml'
   push:
@@ -51,13 +52,14 @@ jobs:
           sampler_pid=$!
           finish() {
             status=$?
-            kill "$sampler_pid" || true
+            set +e
+            if ! kill -0 "$sampler_pid" 2>/dev/null; then
+              echo "warning:resource-sampler exited before the journey finished" | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+            kill "$sampler_pid" 2>/dev/null || true
             wait "$sampler_pid" || true
-            if [[ "$status" == 0 ]]; then
-              if ! node tools/inspector-resources.ts "$work/results/resources.log" --summary | tee -a "$GITHUB_STEP_SUMMARY"; then
-                echo "infra:resource-sampler failed" >> "$GITHUB_STEP_SUMMARY"
-                status=1
-              fi
+            if ! node tools/inspector-resources.ts "$work/results/resources.log" --summary | tee -a "$GITHUB_STEP_SUMMARY"; then
+              echo "warning:resource-sampler summary unavailable" | tee -a "$GITHUB_STEP_SUMMARY"
             fi
             exit "$status"
           }

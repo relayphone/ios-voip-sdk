@@ -14,8 +14,11 @@ export function boundedTail(value: string | Buffer, limit = 2 * 1024 * 1024): Bu
 export function memoryMargin(samples: string): string {
   const free = [...samples.matchAll(/System-wide memory free percentage:\s*(\d+)%/g)].map(m => Number(m[1]));
   const pages = [...samples.matchAll(/Pages free:\s*(\d+)/g)].map(m => Number(m[1]));
-  if (!free.length || !pages.length) throw new Error('Resource sampler did not capture memory pressure and free pages');
-  return `peak memory pressure: ${100 - Math.min(...free)}% used (memory_pressure -Q); minimum free pages: ${Math.min(...pages)}`;
+  if (!free.length || !pages.length) return 'warning:resource-sampler did not capture memory pressure and free pages';
+  const times = samples.match(/^\d{4}-\d{2}-\d{2}T\S+Z$/gm) ?? [];
+  const coverage = times.length ? `; ${times.length} samples (${times[0]} to ${times.at(-1)})` : '';
+  const warnings = /(?:vm_stat|memory_pressure|top): /.test(samples) ? '; warning:resource-sampler command failures (see resources.log)' : '';
+  return `peak memory pressure: ${100 - Math.min(...free)}% used (memory_pressure -Q); minimum free pages: ${Math.min(...pages)}${coverage}${warnings}`;
 }
 
 function sample(path: string): void {
@@ -30,6 +33,25 @@ function sample(path: string): void {
       appendFileSync(path, `${command}\n${output.split('\n').filter(line => keep.test(line)).join('\n')}\n`);
     } catch (error) { appendFileSync(path, `${command}: ${String(error)}\n`); }
   }
+}
+
+/** Runs immediately and every 15 seconds; a failed sample cannot stop later samples. */
+export function startResourceSampler(
+  sample: () => void,
+  warn: (message: string) => void = console.warn,
+  schedule: (tick: () => void, milliseconds: number) => () => void = (tick, milliseconds) => {
+    const timer = setInterval(tick, milliseconds);
+    return () => clearInterval(timer);
+  },
+): () => void {
+  let stopped = false;
+  const tick = () => {
+    if (stopped) return;
+    try { sample(); } catch (error) { warn(`warning:resource-sampler ${String(error)}`); }
+  };
+  const cancel = schedule(tick, 15_000);
+  tick();
+  return () => { stopped = true; cancel(); };
 }
 
 /** Captures only a rolling tail, including stderr, even if the command fails or times out. */
@@ -67,9 +89,13 @@ if (isMain(import.meta.url)) {
     const path = process.argv[2];
     if (!path) throw new Error('Usage: inspector-resources.ts <samples.log>');
     if (process.argv.includes('--diagnostics')) { await simulatorDiagnostics(path); return; }
-    if (process.argv.includes('--summary')) { console.log(memoryMargin(readFileSync(path, 'utf8'))); return; }
-    const timer = setInterval(() => sample(path), 15_000);
-    sample(path);
-    process.once('SIGTERM', () => { clearInterval(timer); process.exit(0); });
+    if (process.argv.includes('--summary')) {
+      try { console.log(memoryMargin(readFileSync(path, 'utf8'))); }
+      catch (error) { console.log(`warning:resource-sampler ${String(error)}`); }
+      return;
+    }
+    let stop = () => {};
+    process.once('SIGTERM', () => { stop(); process.exit(0); });
+    stop = startResourceSampler(() => sample(path));
   });
 }

@@ -1,0 +1,34 @@
+{
+  "runtimes": [
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      "isAvailable": true,
+      "supportedDeviceTypes": [
+        {
+          "bundlePath": "/Library/Developer/CoreSimulator/Profiles/DeviceTypes/iPhone 18 Pro.simdevicetype",
+          "name": "iPhone 18 Pro",
+          "productFamily": "iPhone",
+          "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro"
+        },
+        {
+          "bundlePath": "/Library/Developer/CoreSimulator/Profiles/DeviceTypes/iPhone 17e.simdevicetype",
+          "name": "iPhone 17e",
+          "productFamily": "iPhone",
+          "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17e"
+        },
+        {
+          "bundlePath": "/Library/Developer/CoreSimulator/Profiles/DeviceTypes/iPhone SE (3rd generation).simdevicetype",
+          "name": "iPhone SE (3rd generation)",
+          "productFamily": "iPhone",
+          "identifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation"
+        },
+        {
+          "bundlePath": "/Library/Developer/CoreSimulator/Profiles/DeviceTypes/iPad mini (A17 Pro).simdevicetype",
+          "name": "iPad mini (A17 Pro)",
+          "productFamily": "iPad",
+          "identifier": "com.apple.CoreSimulator.SimDeviceType.iPad-mini-A17-Pro"
+        }
+      ]
+    }
+  ]
+}
