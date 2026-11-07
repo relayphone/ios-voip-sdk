@@ -20,6 +20,20 @@ defaults:
     shell: bash
 
 jobs:
+  api-compatibility:
+    name: Public API compatibility
+    if: github.event_name == 'pull_request'
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Compare iOS library APIs with the release in VERSION
+        run: node tools/api-compatibility.ts
+
   tools:
     name: TypeScript tools
     runs-on: ubuntu-latest
