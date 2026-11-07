@@ -2,6 +2,9 @@ import Dispatch
 import Foundation
 import Synchronization
 import notify
+import os
+
+private let storageLog = Logger(subsystem: "VoIPFocus", category: "store")
 
 /// Where a store keeps the encoded state, and how it hears that the state changed. App Group
 /// `UserDefaults` is behind it in apps, and tests use a fake.
@@ -55,7 +58,12 @@ struct DefaultsStorage: StateStorage {
   }
 
   func read() -> Data? {
-    defaults.data(forKey: Self.key)
+    guard let value = defaults.object(forKey: Self.key) else { return nil }
+    guard let data = value as? Data else {
+      storageLog.error("Store read failed: stored value is not data; returning unknown")
+      return nil
+    }
+    return data
   }
 
   func write(_ data: Data) throws(FocusFilterStoreError) {
@@ -72,7 +80,8 @@ struct DefaultsStorage: StateStorage {
 /// refuses every write.
 struct UnavailableStorage: StateStorage {
   func read() -> Data? {
-    nil
+    storageLog.error("Store read failed: App Group unavailable; returning unknown")
+    return nil
   }
 
   func write(_ data: Data) throws(FocusFilterStoreError) {

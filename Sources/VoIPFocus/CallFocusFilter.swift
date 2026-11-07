@@ -1,4 +1,7 @@
 public import AppIntents
+import os
+
+private let filterLog = Logger(subsystem: "VoIPFocus", category: "filter")
 
 /// The app's Focus filter, which records the Focus filter state each time the system runs it.
 ///
@@ -78,9 +81,20 @@ extension CallFocusFilter {
   ///   the store's App Group, or ``FocusFilterStoreError/encodingFailed`` when the settings can't
   ///   be encoded as JSON.
   public func perform() async throws -> some IntentResult {
-    let state = try Self.store.record(settings, defaults: Self().settings)
-    await didRecord(state)
-    return .result()
+    filterLog.info("perform entered")
+    let settings = settings
+    let defaults = Self().settings
+    let stateName = settings == defaults ? "inactive" : "active"
+    filterLog.info("perform state=\(stateName, privacy: .public)")
+    do {
+      let state = try Self.store.record(settings, defaults: defaults)
+      filterLog.info("perform store record succeeded")
+      await didRecord(state)
+      return .result()
+    } catch {
+      filterLog.info("perform store record failed")
+      throw error
+    }
   }
 
   /// Does nothing.

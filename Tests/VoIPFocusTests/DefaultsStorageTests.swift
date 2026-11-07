@@ -6,6 +6,16 @@ import Testing
 /// The store on real `UserDefaults`, with the in-process signal and with Darwin notifications.
 @Suite(.timeLimit(.minutes(1)))
 struct DefaultsStorageTests {
+  @Test func aValueOfTheWrongTypeReadsAsUnknownAndCanBeReplaced() async throws {
+    try await withScratchDefaults { defaults, _ in
+      defaults.set("invalid", forKey: DefaultsStorage.key)
+      let store = FocusFilterStore<CallSettings>(userDefaults: defaults)
+      #expect(store.state == .unknown)
+      let recorded = try store.record(CallSettings(ringing: .favorites), defaults: CallSettings())
+      #expect(store.state == recorded)
+    }
+  }
+
   @Test func storeInUserDefaultsRecordsAndFollowsItsOwnChanges() async throws {
     try await withScratchDefaults { defaults, _ in
       let store = FocusFilterStore<CallSettings>(userDefaults: defaults)

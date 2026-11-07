@@ -81,6 +81,15 @@ import Testing
 
   // MARK: Errors
 
+  @Test func unreadableStateCanBeReplacedByAValidRecord() throws {
+    storage.writeFromAnotherProcess("not JSON")
+    #expect(store.state == .unknown)
+    let favorites = CallSettings(ringing: .favorites)
+    let recorded = try store.record(favorites, defaults: CallSettings())
+    #expect(recorded == .active(favorites, since: dates.now))
+    #expect(store.state == recorded)
+  }
+
   @Test func withoutTheAppGroupItRecordsNothing() {
     let store = FocusFilterStore<CallSettings>(storage: UnavailableStorage(), now: { Date() })
     #expect(throws: FocusFilterStoreError.appGroupUnavailable) {
