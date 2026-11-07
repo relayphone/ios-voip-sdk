@@ -331,3 +331,10 @@ until the journal confirms it. `RuntimeTests` runs the same model against the
 runtime's real journal on the simulator, under `xcodebuild test`: it follows and
 answers a CallKit call, sets the incoming filter and the injected error, and controls
 LiveCommunicationKit calls with system and application origin.
+
+The `Inspector GUI` CI workflow drives the real Inspector with XCUITest on a separate
+simulator: expand an incoming banner, answer, end the call, then change an incoming-report
+filter. It checks the target journal for the ordered report, fulfilled answer and end
+actions, connected and ended snapshots, and confirmed filter setting. Screenshots are
+diagnostic only: on failure, the workflow uploads XCUITest attachments and final screenshots
+of both simulators in an `inspector-journey` artifact, retained for seven days.

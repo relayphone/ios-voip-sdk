@@ -387,7 +387,8 @@
               Button("Dismiss error") { model.commandError = nil }
             }
             Button(call.ended == true ? "Done" : "Show timeline", action: dismiss).frame(
-              minHeight: 44)
+              minHeight: 44
+            ).accessibilityIdentifier("dismiss-call")
           }.padding(24).frame(maxWidth: 520)
             .frame(maxWidth: .infinity)
         }
