@@ -51,14 +51,21 @@ export async function settleHost(
 }
 
 /** Best-effort optimization, scoped to the CI-created simulator and one service. */
-export function stopIntelligenceService(device: string, log: (message: string) => void): void {
+export function stopIntelligenceService(
+  device: string,
+  log: (message: string) => void,
+  execute: typeof run = run,
+  capture: (output: string) => void = () => {},
+): void {
   try {
-    const label = intelligenceService(run('xcrun', ['simctl', 'spawn', device, 'launchctl', 'list'], { timeout: 30 }));
+    const output = execute('xcrun', ['simctl', 'spawn', device, '/bin/launchctl', 'list'], { timeout: 30 });
+    capture(output);
+    const label = intelligenceService(output);
     if (!label) { log('intelligencetasksd: service not found; continuing'); return; }
     log(`intelligencetasksd: found ${label}`);
-    for (const operation of ['bootout', 'disable']) {
+    for (const operation of ['disable', 'bootout']) {
       try {
-        run('xcrun', ['simctl', 'spawn', device, 'launchctl', operation, `system/${label}`], { timeout: 30 });
+        execute('xcrun', ['simctl', 'spawn', device, '/bin/launchctl', operation, `system/${label}`], { timeout: 30 });
         log(`intelligencetasksd: ${operation} ${label} succeeded`);
       } catch (error) { log(`warning:intelligencetasksd ${operation} ${label}: ${String(error)}`); }
     }
