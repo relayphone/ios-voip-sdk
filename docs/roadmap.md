@@ -35,6 +35,11 @@ Device testing on iOS 27.1 left two observations:
 The Focus question is parked until a device is available. If the SDK is at fault, the fix ships
 in a patch release with a test.
 
+Separately, a Focus's Allowed People and Repeated Calls don't make a LiveCommunicationKit call
+ring, while they do for CallKit ([ADR 0002](adr/0002-one-calling-framework-per-build.md)). This is
+reported to Apple as FB25479437. Until it changes, a call communication notification reaches the
+people a Focus allows.
+
 ### 3. Reliable simulator tests in CI
 
 The simulator journeys and runtime tests are what let an app test calls without a device, so they
@@ -59,20 +64,39 @@ observe the difference.
 - **Done: the Inspector's GUI journey** runs as an automatic CI check on changes to the runtime or the
   Inspector. It asserts on the runtime's event journal, with screenshots for diagnosis only.
 
-### 5. 1.0
+### 5. The React Native package
+
+The SDK ships its own React Native package, as decided in
+[ADR 0012](adr/0012-react-native-package.md): an iOS Expo module in `expo/`, released at the SDK's
+version from the same tag. Its Swift API gets a second real consumer before 1.0 freezes it.
+
+- **The package:** the TypeScript conversations API and the iOS module on `VoIPClient`, with
+  conversations identified by their call ID and audio routes from `AudioSessionAdapter`.
+- **Simulator journeys from JavaScript:** an incoming call answered, held and ended; an outgoing
+  call; joining a preview; a call answered elsewhere; and a filtered call. The example app drives
+  them through the package on the simulator runtime in CI.
+- **Documentation:** installation, the config plugin's options, the API, media and identity.
+
+### 6. 1.0
 
 1.0 freezes the public API. It ships once a minor release has run in production without needing
 a breaking change, and after a review of the public names, documentation and deprecations.
 
 ## After 1.0
 
+- **Calling features documented only for CallKit:** CarPlay calling needs a device check with
+  LiveCommunicationKit. For caller identification, apps use Live Caller ID Lookup instead of a
+  Call Directory extension. The SDK adds a CallKit-based module only for a capability that has no other
+  route.
 - **Apple Watch:** research how calls, pushes and audio work on watchOS, and which media options
   exist there, then add a CI build of `VoIPCore` for watchOS. `VoIPCore` already imports no UIKit
   or calling framework.
-- **Mac Catalyst.**
+- **Mac Catalyst:** the macOS SDK in Xcode 27.2 lacks LiveCommunicationKit's audio session
+  callbacks, so this waits for an SDK that has them.
 
 ## React Native, Expo and Android
 
-[expo-callkit-telecom](https://github.com/relayphone/expo-callkit-telecom) v2 is the React Native
-and Expo library. Its iOS module runs on this SDK, and its Android module runs on Core-Telecom. Its
-roadmap lives in that repository.
+This repository's package (step 5) is the iOS module and the definition of the TypeScript
+conversations API. [expo-callkit-telecom](https://github.com/relayphone/expo-callkit-telecom) v2
+will use it for iOS and implement the same API on Android with Core-Telecom. Its roadmap lives in
+that repository.
