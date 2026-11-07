@@ -26,6 +26,19 @@ simulator runtime and CallKit, builds the documentation and the Inspector, and s
 built runtime package. The [release workflow](.github/workflows/runtime-release.yml)
 qualifies the simulator runtime package and publishes it with each release.
 
+## Simulator tests
+
+CI boots its simulator and waits for boot completion before running the tests. If the test
+runner hangs before connecting and the result bundle reports zero failed tests, CI deletes the
+simulator and runs the suites once more on a fresh, fully booted simulator. Failed tests are
+never retried. The standalone runtime check uses the simulator on which the suites passed, and
+cleanup runs even after a failure.
+
+The job summary says `ok` for a first-attempt pass, `infra:runner-hang (retried, passed)` or
+`infra:runner-hang (retried, failed)` for a qualifying hang, or `product:tests (<n> failed)` for
+a test failure. If the failed run has no readable test count, the count is `unknown` and it is
+not retried. A successful infrastructure retry leaves the job green while preserving its label.
+
 ## Pull requests
 
 Keep changes focused, describe the behavior and include the checks you ran. Add or update tests and documentation where appropriate. For public API changes, add migration notes to [CHANGELOG.md](CHANGELOG.md). Do not commit generated native projects, credentials or private device traces.

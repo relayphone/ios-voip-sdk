@@ -97,42 +97,72 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: Create a simulator for this job
-        id: simulator
-        run: >-
-          echo "udid=$(xcrun simctl create "ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-0)"
-          >> "$GITHUB_OUTPUT"
       - name: Run the call journeys, the runtime tests and every other suite on the simulator
-        env:
-          SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
+        id: simulator
         run: |
+          create_simulator() {
+            name="ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$1"
+            # Record the name before creation so cleanup can find it even if creation is interrupted.
+            touch "$RUNNER_TEMP/ci-simulators/$name"
+            SIMULATOR_ID=$(xcrun simctl create "$name" \
+              com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+            echo "udid=$SIMULATOR_ID" >> "$GITHUB_OUTPUT"
+            xcrun simctl boot "$SIMULATOR_ID"
+            xcrun simctl bootstatus "$SIMULATOR_ID" -b
+          }
           suites() {
             xcodebuild test -scheme VoIPSDK-Package -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
               -derivedDataPath "$RUNNER_TEMP/tests" -resultBundlePath "$RUNNER_TEMP/results/$1.xcresult" \
               CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO 2>&1 | tee "$RUNNER_TEMP/results/$1.log"
           }
-          mkdir -p "$RUNNER_TEMP/results"
-          suites tests && exit 0
+          mkdir -p "$RUNNER_TEMP/results" "$RUNNER_TEMP/ci-simulators"
+          create_simulator first
+          label='product:tests (unknown failed)'
+          trap 'echo "$label" >> "$GITHUB_STEP_SUMMARY"' EXIT
+          if suites tests; then
+            label=ok
+            exit 0
+          fi
+          summary=$(xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/results/tests.xcresult" --compact)
+          failed=$(node -e '
+            const count = JSON.parse(process.argv[1]).failedTests;
+            if (!Number.isSafeInteger(count) || count < 0) process.exit(1);
+            console.log(count);
+          ' "$summary")
+          label="product:tests ($failed failed)"
           # The simulator's test runner sometimes hangs before it connects, after every test that ran
           # passed. Only then do the suites run once more; a failed test fails the step.
+          [[ "$failed" == 0 ]] || exit 1
           grep -q "hung before establishing connection" "$RUNNER_TEMP/results/tests.log" || exit 1
-          summary=$(xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/results/tests.xcresult" --compact)
-          [[ $summary == *'"failedTests":0'* && $summary != *'"failedTests":'[1-9]* ]] || exit 1
+          label='infra:runner-hang (retried, failed)'
           echo "::warning::The simulator's test runner hung before it connected. Running the suites again."
           xcrun simctl shutdown "$SIMULATOR_ID" || true
+          xcrun simctl delete "$SIMULATOR_ID"
+          rm "$RUNNER_TEMP/ci-simulators/$name"
+          create_simulator retry
           suites tests-again
+          label='infra:runner-hang (retried, passed)'
       - name: Answer and end a call with the standalone runtime and cksim
         env:
           SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
         run: |
           node tools/build-runtime.ts "$RUNNER_TEMP/runtime" --archs "$(uname -m)"
           node tools/runtime-smoke.ts "$RUNNER_TEMP/runtime" --simulator "$SIMULATOR_ID"
-      - name: Delete the simulator
-        if: always() && steps.simulator.outputs.udid != ''
-        env:
-          SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
-        run: xcrun simctl shutdown "$SIMULATOR_ID" || true; xcrun simctl delete "$SIMULATOR_ID"
+      - name: Delete the simulators
+        if: always()
+        run: |
+          status=0
+          for marker in "$RUNNER_TEMP/ci-simulators/"*; do
+            [[ -f "$marker" ]] || continue
+            name="${marker##*/}"
+            xcrun simctl shutdown "$name" || true
+            if xcrun simctl delete "$name"; then
+              rm "$marker"
+            else
+              status=1
+            fi
+          done
+          exit "$status"
       - name: Keep the test results
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
