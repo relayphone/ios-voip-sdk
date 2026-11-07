@@ -284,21 +284,32 @@ policies retain the measured/proposed qualifications in the profile source.
 
 ### SwiftUI call inspector
 
-Build the separate simulator app with
-`node tools/build-inspector.ts /tmp/inspector`. With the target app
-running in its simulator, start:
+The Inspector runs as a native Mac app or in a separate display simulator.
+The Mac app is recommended: it is lighter and stays beside the target simulator.
+Build it for macOS 26 or later, then connect to the running target:
 
 ```sh
+node tools/build-inspector.ts /tmp/inspector-mac --platform macos
 cksim --simulator <target-UUID> --bundle <app.bundle.id> \
-  --runtime-dir <runtime-package> inspect --app /tmp/inspector/CKSimInspector.app
+  --runtime-dir <runtime-package> inspect --app /tmp/inspector-mac/CKSimInspector.app
 ```
 
-The inspector creates its own disposable display simulator with the target's
+`cksim inspect` detects the Mac bundle, launches it with the authenticated bridge
+environment, and closes it on Ctrl-C. To run the iOS Inspector instead, use the
+default simulator build:
+
+```sh
+node tools/build-inspector.ts /tmp/inspector-ios
+cksim --simulator <target-UUID> --bundle <app.bundle.id> \
+  --runtime-dir <runtime-package> inspect --app /tmp/inspector-ios/CKSimInspector.app
+```
+
+For an iOS bundle, the inspector creates a disposable display simulator with the target's
 runtime and device type. Keeping the target app foregrounded avoids suspension
 while the inspector is visible. Ctrl-C closes the local bridge and deletes that
 display simulator. To reuse a separate, already booted simulator, pass
 `inspect --app <path> --inspector-simulator <display-UUID>`; that simulator is
-never deleted by the command. The inspector is iPhone-only for this MVP.
+never deleted by the command.
 
 The incoming banner expands to a full call screen. Answer and Decline handle a
 single incoming call. Call waiting options follows the runtime's available choices,
@@ -331,3 +342,11 @@ until the journal confirms it. `RuntimeTests` runs the same model against the
 runtime's real journal on the simulator, under `xcodebuild test`: it follows and
 answers a CallKit call, sets the incoming filter and the injected error, and controls
 LiveCommunicationKit calls with system and application origin.
+
+The `Inspector GUI` CI workflow drives the Mac Inspector with macOS XCUITest beside one
+target simulator: expand an incoming banner, answer, end the call, then change an incoming-report
+filter. It checks the target journal for the ordered report, fulfilled answer and end
+actions, connected and ended snapshots, and confirmed filter setting. The incoming push
+waits until XCUITest has activated the Inspector, so runner startup does not consume the ring timeout. Screenshots are
+diagnostic only: on failure, the workflow uploads XCUITest attachments and a final screenshot
+of the target simulator in an `inspector-journey` artifact, retained for seven days.
