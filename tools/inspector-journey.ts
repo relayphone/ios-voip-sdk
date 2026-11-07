@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isMain, main, repository, run } from './command.ts';
 import { displayDevice } from './inspector-devices.ts';
+import { settleHost, stopIntelligenceService } from './inspector-settle.ts';
 import { simulatorDiagnostics } from './inspector-resources.ts';
 import { launchToleratingASlowSimulator } from './runtime-smoke.ts';
 import { assertInspectorJournal } from './inspector-journal.ts';
@@ -96,7 +97,7 @@ export async function journey(work: string): Promise<void> {
     const prefix = join(results, `attempt-${attempt + 1}`);
     let check = 'setup';
     try {
-      const create = (role: string): string => {
+      const create = async (role: string): Promise<string> => {
         const name = `inspector-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}-${attempt}-${role}`;
         names.push(name);
         writeFileSync(join(markers, name), '');
@@ -107,15 +108,24 @@ export async function journey(work: string): Promise<void> {
           run('xcrun', ['simctl', 'boot', device], { timeout: 120 });
           run('xcrun', ['simctl', 'bootstatus', device, '-b'], { timeout: 300 });
         });
+        stopIntelligenceService(device, message => summary(`Attempt ${attempt + 1} ${role}: ${message}`));
+        const started = Date.now();
+        try {
+          const duration = await settleHost();
+          summary(`Attempt ${attempt + 1} ${role} settle: ${(duration / 1000).toFixed(1)}s`);
+        } catch (error) {
+          summary(`Attempt ${attempt + 1} ${role} settle: ${((Date.now() - started) / 1000).toFixed(1)}s (failed)`);
+          throw new InfrastructureFailure('settle', error);
+        }
         return device;
       };
-      const target = create('target');
+      const target = await create('target');
       const cksim = (...args: string[]) => run(join(runtime, 'cksim'),
         ['--simulator', target, '--bundle', bundle, ...args], { timeout: 180 });
       infrastructure('install', () => run('xcrun', ['simctl', 'install', target, app], { timeout: 180 }));
       infrastructure('launch', () => launchToleratingASlowSimulator(() => cksim('launch')));
       infrastructure('bridge-connect', () => cksim('status'));
-      const display = create('display');
+      const display = await create('display');
       infrastructure('install', () => run('xcrun', ['simctl', 'install', display, inspector], { timeout: 180 }));
       const log = `${prefix}-bridge.log`;
       const fd = openSync(log, 'w');
@@ -131,6 +141,7 @@ export async function journey(work: string): Promise<void> {
       check = 'ui';
       const result = `${prefix}.xcresult`;
       const uiLog = `${prefix}-ui.log`;
+      appendFileSync(join(results, 'resources.log'), `\nUI test started ${new Date().toISOString()}\n`);
       try {
         const output = run('xcodebuild', ['test', '-project', 'tools/inspector-ui/InspectorJourney.xcodeproj',
           '-scheme', 'InspectorJourney', '-destination', `platform=iOS Simulator,id=${display}`,
@@ -147,6 +158,8 @@ export async function journey(work: string): Promise<void> {
           if (runnerHungBeforeConnecting(report, output)) throw new InfrastructureFailure('runner-hang', error);
         }
         throw error;
+      } finally {
+        appendFileSync(join(results, 'resources.log'), `\nUI test ended ${new Date().toISOString()}\n`);
       }
       check = 'journal';
       const journal = cksim('watch', '--json', '--duration', '1');
