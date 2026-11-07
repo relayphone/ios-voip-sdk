@@ -11,19 +11,18 @@ final class InspectorJourney: XCTestCase {
     XCTAssertTrue(banner.waitForExistence(timeout: 30))
     banner.click()
     attach(app, name: "Incoming call")
-    let answer = app.buttons["answer"]
+    let sheet = app.sheets.firstMatch
+    let answer = sheet.buttons["answer"]
     XCTAssertTrue(answer.waitForExistence(timeout: 10))
     clickWhenEnabled(answer)
-    let status = app.staticTexts["call-status"]
+    let status = sheet.staticTexts["call-status"]
     XCTAssertTrue(status.waitForExistence(timeout: 10))
-    XCTAssertTrue(
-      NSPredicate(format: "label == %@", "Connected").evaluate(with: status)
-        || wait(status, label: "Connected"))
+    XCTAssertTrue(wait(status, value: "Connected"))
     attach(app, name: "Connected call")
-    clickWhenEnabled(app.buttons["end"])
-    XCTAssertTrue(wait(status, label: "Ended"))
+    clickWhenEnabled(sheet.buttons["end"])
+    XCTAssertTrue(wait(status, value: "Ended"))
     attach(app, name: "Ended call")
-    app.buttons["dismiss-call"].click()
+    sheet.buttons["dismiss-call"].click()
     let filter = app.checkBoxes["incoming-filter-do-not-disturb"]
     for _ in 0..<12 {
       if filter.exists && filter.isHittable { break }
@@ -39,11 +38,11 @@ final class InspectorJourney: XCTestCase {
     attach(app, name: "Filter confirmed")
   }
 
-  private func wait(_ element: XCUIElement, label: String) -> Bool {
+  private func wait(_ element: XCUIElement, value: String) -> Bool {
     XCTWaiter.wait(
       for: [
         XCTNSPredicateExpectation(
-          predicate: NSPredicate(format: "label == %@", label), object: element)
+          predicate: NSPredicate(format: "value == %@", value), object: element)
       ],
       timeout: 20) == .completed
   }
@@ -53,6 +52,10 @@ final class InspectorJourney: XCTestCase {
     attachment.name = name
     attachment.lifetime = .keepAlways
     add(attachment)
+    let hierarchy = XCTAttachment(string: app.debugDescription)
+    hierarchy.name = "\(name) hierarchy"
+    hierarchy.lifetime = .keepAlways
+    add(hierarchy)
   }
 
   private func clickWhenEnabled(_ element: XCUIElement) {
