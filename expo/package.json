@@ -1,0 +1,79 @@
+{
+  "name": "@relayphone/ios-voip-sdk",
+  "version": "0.2.1",
+  "description": "iOS calls for Expo and React Native through LiveCommunicationKit and PushKit.",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "default": "./build/index.js"
+    },
+    "./app.plugin": "./app.plugin.js",
+    "./app.plugin.js": "./app.plugin.js",
+    "./package.json": "./package.json",
+    "./types": {
+      "types": "./build/conversations/index.d.ts",
+      "default": "./build/conversations/index.js"
+    }
+  },
+  "scripts": {
+    "build": "expo-module build && expo-module build plugin",
+    "build:plugin": "expo-module build plugin",
+    "typecheck": "npm run build && tsc -p tsconfig.contract.json && tsc -p tsconfig.test.json",
+    "test": "npm run build:plugin && node --test test/contracts/*.test.ts plugin/src/__tests__/*.test.ts",
+    "prepack": "npm run build && node scripts/prepare-package.ts",
+    "expo-module": "expo-module"
+  },
+  "keywords": [
+    "livecommunicationkit",
+    "expo-module",
+    "react-native",
+    "expo",
+    "pushkit",
+    "voip",
+    "webrtc"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/relayphone/ios-voip-sdk.git",
+    "directory": "expo"
+  },
+  "bugs": {
+    "url": "https://github.com/relayphone/ios-voip-sdk/issues"
+  },
+  "author": {
+    "name": "Michael Fairley",
+    "url": "https://github.com/mfairley"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/relayphone/ios-voip-sdk",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@types/react": "~19.2.14",
+    "expo": "57.0.24",
+    "expo-module-scripts": "56.0.3",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "typescript": "~6.0.3"
+  },
+  "peerDependencies": {
+    "expo": ">=57.0.0",
+    "react": "*",
+    "react-native": "*",
+    "expo-notifications": "*"
+  },
+  "files": [
+    "build",
+    "ios",
+    "plugin/build",
+    "app.plugin.js",
+    "expo-module.config.json"
+  ],
+  "peerDependenciesMeta": {
+    "expo-notifications": {
+      "optional": true
+    }
+  }
+}

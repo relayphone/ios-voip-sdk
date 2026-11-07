@@ -1,0 +1,5 @@
+module VoIPConversationsWebRTC {
+  header "RTCAudioSession.h"
+  header "RTCAudioSessionConfiguration.h"
+  export *
+}

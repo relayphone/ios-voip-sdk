@@ -1,0 +1,7 @@
+build/
+plugin/build/
+ios/Vendor/
+*.tgz
+example/client/ios/
+example/client/.expo/
+*.tsbuildinfo

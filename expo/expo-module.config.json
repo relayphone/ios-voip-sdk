@@ -1,0 +1,13 @@
+{
+  "platforms": [
+    "apple"
+  ],
+  "apple": {
+    "modules": [
+      "VoIPConversationsModule"
+    ],
+    "appDelegateSubscribers": [
+      "VoIPConversationsAppDelegateSubscriber"
+    ]
+  }
+}
