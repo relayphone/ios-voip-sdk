@@ -35,6 +35,42 @@ test('CocoaPods discovers every expected SDK source from the synchronized copy',
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
+test('the Swift driver accepts the sources discovered by every CocoaPods subspec', t => {
+  const root = fixture(t);
+  rmSync(join(root, 'Sources'), { recursive: true });
+  for (const target of sdkTargets) {
+    cpSync(join(packageRoot, '../Sources', target), join(root, 'Sources', target), { recursive: true });
+  }
+  cpSync(join(packageRoot, 'ios'), join(root, 'expo/ios'), {
+    recursive: true, filter: path => path !== join(packageRoot, 'ios/Vendor'),
+  });
+  preparePackage(root);
+  const discoverySpec = join(root, 'VoIPConversations.podspec');
+  const sourcesPath = join(root, 'sources.json');
+  writeFileSync(discoverySpec, `
+    path = ENV.fetch('VOIP_TEST_PODSPEC')
+    spec = Pod::Specification.from_file(path)
+    files = spec.recursive_subspecs.flat_map do |subspec|
+      Pod::Sandbox::FileAccessor.new(Pathname(path).dirname, subspec.consumer(:ios)).source_files
+    end
+    File.write(ENV.fetch('VOIP_TEST_SOURCES'), JSON.generate(files.map(&:to_s).select { |file| File.extname(file) == '.swift' }.uniq))
+    spec
+  `);
+  const discovered = spawnSync('pod', ['ipc', 'spec', discoverySpec], {
+    encoding: 'utf8', timeout: 15_000, env: {
+      ...process.env, VOIP_TEST_PODSPEC: join(root, 'expo/ios/VoIPConversations.podspec'),
+      VOIP_TEST_SOURCES: sourcesPath,
+    },
+  });
+  assert.equal(discovered.status, 0, discovered.stdout + discovered.stderr);
+  const sources: unknown = JSON.parse(readFileSync(sourcesPath, 'utf8'));
+  assert.ok(Array.isArray(sources) && sources.length > 0 && sources.every(path => typeof path === 'string'));
+  const result = spawnSync('xcrun', ['swiftc', '-driver-print-jobs', '-module-name', 'VoIPConversations', ...sources], {
+    encoding: 'utf8', timeout: 15_000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+});
+
 for (const change of ['missing', 'extra'] as const) {
   test(`CocoaPods rejects ${change} SDK sources before compilation`, t => {
     const root = fixture(t);
