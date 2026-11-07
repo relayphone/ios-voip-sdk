@@ -25,6 +25,7 @@
     /// Starts the app on the simulator runtime.
     ///
     /// - Parameters:
+    ///   - framework: The calling framework. Defaults to the LiveCommunicationKit adapter.
     ///   - audio: The app's audio session. Without one, the app configures it itself.
     ///   - observers: Objects that follow the client's calls from the moment it starts.
     ///   - configuration: How the SDK presents and controls calls.
@@ -34,6 +35,7 @@
     ///   - launch: What the system does before the app starts the client, such as
     ///     delivering the VoIP push that launched it.
     init(
+      framework: any CallingFramework = LiveCommunicationKitAdapter(),
       audio: (any AudioSession)? = nil,
       observers: [any CallObserver] = [],
       configuration: VoIPConfiguration = VoIPConfiguration(),
@@ -44,7 +46,7 @@
       system = try SimulatedSystem()
       try await launch(system)
       client = try VoIPClient.start(
-        framework: LiveCommunicationKitAdapter(), media: media, push: PushKitSource(),
+        framework: framework, media: media, push: PushKitSource(),
         audio: audio, observers: (listening ? [log] : []) + observers,
         configuration: configuration)
     }
@@ -176,7 +178,7 @@
     case previewStarted(CallID, PreviewReason)
     case startRequested(CallID)
     case joinRequested(CallID)
-    case joinFailed(CallID, PreviewReason)
+    case joinFailed(CallID, PreviewReason, JoinFailure)
     case performed(Action, CallStatus)
     case audioActivated
     case audioDeactivated
@@ -194,11 +196,11 @@
         self = .previewStarted(call.id, reason)
       case .startRequested(let call): self = .startRequested(call.id)
       case .joinRequested(let call): self = .joinRequested(call.id)
-      case .joinFailed(let call):
+      case .joinFailed(let call, let failure):
         guard case .previewing(let reason) = call.status else {
           preconditionFailure("A failed join returns to a preview")
         }
-        self = .joinFailed(call.id, reason)
+        self = .joinFailed(call.id, reason, failure)
       case .performed(let action, let call): self = .performed(action, call.status)
       case .audioActivated: self = .audioActivated
       case .audioDeactivated: self = .audioDeactivated

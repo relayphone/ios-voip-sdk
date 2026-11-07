@@ -156,7 +156,7 @@ enum Shape: Hashable, Sendable {
   case previewStarted
   case startRequested
   case joinRequested
-  case joinFailed
+  case joinFailed(JoinFailure)
   case performed(Action)
   case audioActivated
   case audioDeactivated
@@ -183,7 +183,7 @@ enum Shape: Hashable, Sendable {
       case .previewStarted: self = .previewStarted
       case .startRequested: self = .startRequested
       case .joinRequested: self = .joinRequested
-      case .joinFailed: self = .joinFailed
+      case .joinFailed(_, let failure): self = .joinFailed(failure)
       case .performed(let action, _): self = .performed(action)
       case .audioActivated: self = .audioActivated
       case .audioDeactivated: self = .audioDeactivated
@@ -208,7 +208,7 @@ extension Effect {
     case .emit(let event):
       switch event {
       case .presented(let call), .previewStarted(let call), .startRequested(let call),
-        .joinRequested(let call), .joinFailed(let call), .performed(_, let call),
+        .joinRequested(let call), .joinFailed(let call, _), .performed(_, let call),
         .ended(let call):
         [call]
       case .audioActivated, .audioDeactivated, .audioInterrupted, .mediaServicesReset: []

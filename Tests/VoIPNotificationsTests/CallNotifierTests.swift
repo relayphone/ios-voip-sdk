@@ -212,7 +212,7 @@ struct CallNotifierTests {
     let h = Harness()
     h.send(.previewStarted(call(.previewing(dnd))))
     #expect(try await h.next() == .posted(notification(.incoming)))
-    h.send(.joinFailed(call(.previewing(dnd))))
+    h.send(.joinFailed(call(.previewing(dnd)), .refused))
     #expect(try await h.next() == .withdrawn(callID))
     h.send(.previewStarted(call(.previewing(dnd))))
     h.send(.ended(call(.ended(.endedRemotely))))
@@ -226,7 +226,7 @@ struct CallNotifierTests {
   /// preview event follows the failure, and the notifier posts nothing for it.
   @Test func aFailedJoinOfACallItHadNotSeenPostsNothing() async throws {
     let h = Harness(options: CallNotifier.Options(triggers: [.filtered, .previewedByPolicy]))
-    h.send(.joinFailed(call(.previewing(.policy))))
+    h.send(.joinFailed(call(.previewing(.policy)), .refused))
     h.send(.previewStarted(call(.previewing(.policy))))
     h.send(.ended(call(.ended(.endedRemotely))))
     try await h.expectNothingElse()
@@ -237,7 +237,7 @@ struct CallNotifierTests {
     let h = Harness(options: CallNotifier.Options(withdrawsWhenJoined: false))
     h.send(.previewStarted(call(.previewing(dnd))))
     #expect(try await h.next() == .posted(notification(.incoming)))
-    h.send(.joinFailed(call(.previewing(dnd))))
+    h.send(.joinFailed(call(.previewing(dnd)), .refused))
     h.send(.previewStarted(call(.previewing(dnd))))
     h.send(.ended(call(.ended(.endedRemotely))))
     try await h.expectNothingElse()

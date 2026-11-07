@@ -232,7 +232,7 @@ extension EngineTests {
       let join = try await h.lastActionID()
 
       await h.client.confirmNotPlaced(callID)
-      #expect(try await h.next() == .joinFailed(callID, .policy))
+      #expect(try await h.next() == .joinFailed(callID, .policy, .failed(.notPlaced)))
       #expect(try await h.next() == .previewStarted(callID, .policy))
       #expect(
         await h.records.suffix(2) == [.fail(join), .reportEnded(callID, .failed(.notPlaced))])
@@ -345,7 +345,8 @@ extension EngineTests {
       await h.framework.send(.reset)
       #expect(
         try await h.next(3) == [
-          .ended(callID, .failed(.frameworkReset)), .joinFailed(otherCallID, .policy),
+          .ended(callID, .failed(.frameworkReset)),
+          .joinFailed(otherCallID, .policy, .frameworkReset),
           .previewStarted(otherCallID, .policy),
         ])
       try await h.expectNoEvents()
@@ -417,7 +418,7 @@ extension EngineTests {
       await #expect(throws: refusal) {
         try await h.client.request(.join(callID))
       }
-      #expect(try await h.next() == .joinFailed(callID, .policy))
+      #expect(try await h.next() == .joinFailed(callID, .policy, .refused))
       #expect(try await h.next() == .previewStarted(callID, .policy))
     }
 

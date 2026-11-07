@@ -291,7 +291,7 @@ public final class CallNotifier: CallObserver {
     case .performed(.join(let id), _):
       guard notified[id] != nil else { return }
       await joined(id)
-    case .joinFailed(let call):
+    case .joinFailed(let call, _):
       // The user asked to join the call, so it isn't news to them: it returns to its preview and
       // ends without a notification.
       if notified[call.id] == nil { notified[call.id] = Notified() }

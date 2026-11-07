@@ -207,20 +207,23 @@ let transitionRows: [TransitionRow] = [
   .init(.requestingJoin, .event(.performed(a2, startAction)), .requesting(join), [.fail(a2)]),
   .init(
     .requestingJoin, .event(.requestFailed(join)), .previewing(.policy),
-    [.disarm(.placement), .joinFailed, .previewStarted]),
+    [.disarm(.placement), .joinFailed(.refused), .previewStarted]),
   .init(
     .requestingJoin, .expiry(.placement), .previewing(.policy),
-    [.reportEnded(.failed(.notPlaced)), .joinFailed, .previewStarted]),
+    [.reportEnded(.failed(.notPlaced)), .joinFailed(.failed(.notPlaced)), .previewStarted]),
   .init(
     .requestingJoin, .event(.notPlaced), .previewing(.policy),
-    [.disarm(.placement), .reportEnded(.failed(.notPlaced)), .joinFailed, .previewStarted]),
+    [
+      .disarm(.placement), .reportEnded(.failed(.notPlaced)), .joinFailed(.failed(.notPlaced)),
+      .previewStarted,
+    ]),
   .init(.requestingJoin, .event(.server(.answeredElsewhere)), .requesting(join), []),
   .init(
     .requestingJoin, .event(.server(.endedRemotely)), .ended(.endedRemotely),
     [.disarm(.placement), .reportEnded(.endedRemotely), .ended(.endedRemotely)]),
   .init(
     .requestingJoin, .event(.frameworkReset), .previewing(.policy),
-    [.disarm(.placement), .joinFailed, .previewStarted]),
+    [.disarm(.placement), .joinFailed(.frameworkReset), .previewStarted]),
 
   // MARK: Placing a started call
   .init(
@@ -264,23 +267,28 @@ let transitionRows: [TransitionRow] = [
     [.disarm(.placement), .arm(.mediaPreparation), .prepareMedia]),
   .init(
     .placingJoin, .expiry(.placement), .previewing(.policy),
-    [.fail(a1), .reportEnded(.failed(.notPlaced)), .joinFailed, .previewStarted]),
+    [
+      .fail(a1), .reportEnded(.failed(.notPlaced)), .joinFailed(.failed(.notPlaced)),
+      .previewStarted,
+    ]),
   .init(
     .placingJoin, .event(.notPlaced), .previewing(.policy),
     [
-      .fail(a1), .disarm(.placement), .reportEnded(.failed(.notPlaced)), .joinFailed,
+      .fail(a1), .disarm(.placement), .reportEnded(.failed(.notPlaced)),
+      .joinFailed(.failed(.notPlaced)),
       .previewStarted,
     ]),
   .init(
     .placingJoin, .event(.performed(a2, end)), .previewing(.policy),
-    [.fail(a1), .fulfill(a2), .disarm(.placement), .joinFailed, .previewStarted]),
+    [.fail(a1), .fulfill(a2), .disarm(.placement), .joinFailed(.ended), .previewStarted]),
   .init(
     .placingJoin, .event(.frameworkReset), .previewing(.policy),
-    [.fail(a1), .disarm(.placement), .joinFailed, .previewStarted]),
+    [.fail(a1), .disarm(.placement), .joinFailed(.frameworkReset), .previewStarted]),
   .init(
     .placingJoin, .event(.actionTimedOut(a1)), .previewing(.policy),
     [
-      .fail(a1), .disarm(.placement), .reportEnded(.failed(.actionTimedOut)), .joinFailed,
+      .fail(a1), .disarm(.placement), .reportEnded(.failed(.actionTimedOut)),
+      .joinFailed(.failed(.actionTimedOut)),
       .previewStarted,
     ]),
   .init(
@@ -351,12 +359,13 @@ let transitionRows: [TransitionRow] = [
   .init(
     .preparingJoin, .event(.mediaPreparationFailed), .previewing(.policy),
     [
-      .fail(a1), .disarm(.mediaPreparation), .reportEnded(.failed(.media)), .joinFailed,
+      .fail(a1), .disarm(.mediaPreparation), .reportEnded(.failed(.media)),
+      .joinFailed(.failed(.media)),
       .previewStarted,
     ]),
   .init(
     .preparingJoin, .expiry(.mediaPreparation), .previewing(.policy),
-    [.fail(a1), .reportEnded(.failed(.media)), .joinFailed, .previewStarted]),
+    [.fail(a1), .reportEnded(.failed(.media)), .joinFailed(.failed(.media)), .previewStarted]),
 
   // MARK: Dialing
   .init(.dialing, .event(.server(.connecting)), .connecting, [.disarm(.ring), .arm(.connect)]),
@@ -479,7 +488,8 @@ let transitionRows: [TransitionRow] = [
   .init(
     .preparingJoin, .event(.audioConfigurationFailed), .previewing(.policy),
     [
-      .fail(a1), .disarm(.mediaPreparation), .reportEnded(.failed(.audioSession)), .joinFailed,
+      .fail(a1), .disarm(.mediaPreparation), .reportEnded(.failed(.audioSession)),
+      .joinFailed(.failed(.audioSession)),
       .previewStarted,
     ]),
   .init(
