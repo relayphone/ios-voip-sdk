@@ -138,16 +138,9 @@ jobs:
             exit 0
           fi
           summary=$(xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/results/tests.xcresult" --compact)
-          failed=$(node -e '
-            const count = JSON.parse(process.argv[1]).failedTests;
-            if (!Number.isSafeInteger(count) || count < 0) process.exit(1);
-            console.log(count);
-          ' "$summary")
-          label="product:tests ($failed failed)"
-          # The simulator's test runner sometimes hangs before it connects, after every test that ran
-          # passed. Only then do the suites run once more; a failed test fails the step.
-          [[ "$failed" == 0 ]] || exit 1
-          grep -q "hung before establishing connection" "$RUNNER_TEMP/results/tests.log" || exit 1
+          echo "$summary" > "$RUNNER_TEMP/results/summary.json"
+          label='product:tests'
+          node tools/simulator-test-result.ts "$RUNNER_TEMP/results/summary.json" "$RUNNER_TEMP/results/tests.log" || exit 1
           label='infra:runner-hang (retried, failed)'
           echo "::warning::The simulator's test runner hung before it connected. Running the suites again."
           xcrun simctl shutdown "$SIMULATOR_ID" || true

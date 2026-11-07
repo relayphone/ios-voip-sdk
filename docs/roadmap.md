@@ -51,12 +51,12 @@ connects, and a red run then says nothing about the SDK.
 The [simulator runtime](simulator-runtime.md) should behave like a device wherever an app can
 observe the difference.
 
-- **Measure, or keep labelled as unverified:**
+- **Unverified (needs a device):**
   - the filtered-call codes 5–7 (restricted sharing mode, protected call, sensitive participants);
   - the multi-call cases.
-- **Device reference values** in the Inspector, next to each simulator measurement: push to
+- **Done: device reference values** in the Inspector, next to each simulator measurement: push to
   report, join to audio activation, mute echo, and the PushKit termination delay.
-- **The Inspector's GUI journey** runs as an automatic CI check on changes to the runtime or the
+- **Done: the Inspector's GUI journey** runs as an automatic CI check on changes to the runtime or the
   Inspector. It asserts on the runtime's event journal, with screenshots for diagnosis only.
 
 ### 5. 1.0
