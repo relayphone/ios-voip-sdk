@@ -189,10 +189,9 @@ public final class CallPreviewActivities: CallObserver {
   /// The stream starts with the token of each preview that has one, then yields each new token.
   /// It yields a `nil` token when a preview ends; stop sending its pushes then.
   ///
-  /// For a preview started by push, iOS can withhold the update token until the user allows the
-  /// app's Live Activities on the Lock Screen, even when ``authorization`` says activities are
-  /// enabled. Apple confirms that the update token comes with user acceptance in its
-  /// [ActivityKit guidance](https://developer.apple.com/forums/thread/818467).
+  /// In device testing on iOS 27, the system gave a push-started preview its update token only
+  /// once the user answered the system's question about the app's Live Activities on the Lock
+  /// Screen, which could take minutes, even when ``authorization`` said activities were enabled.
   /// ``Event/started(_:)`` can arrive before the token; keep listening, without a fixed timeout.
   /// Until the token arrives, the servers can't update or end that preview. Include a
   /// `stale-date` in the start push, and end the preview when its token arrives if its call

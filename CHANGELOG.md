@@ -7,8 +7,9 @@ Public API changes include migration guidance.
 
 ### Documentation
 
-- Clarify that iOS can withhold a push-started call preview's update token until Live Activities
-  consent, with Apple guidance, delayed-token coverage and advice for servers awaiting a token.
+- Document the observed iOS 27 behavior of delivering a push-started call preview's update token
+  after the user answers the Live Activities question, with delayed-token coverage and advice
+  for servers awaiting a token.
 
 ## 0.2.1 (2026-11-05)
 
