@@ -44,13 +44,22 @@ async function stopBridge(bridge: ChildProcess | undefined): Promise<void> {
   try { await exited; } finally { clearTimeout(timer); }
 }
 
-/** Runs the Mac UI test once; failures are handled by the caller without test repetition. */
-export function runInspectorUITest(work: string, result: string, execute: typeof run = run): string {
-  return execute('xcodebuild', ['test', '-project', 'tools/inspector-ui/InspectorJourney.xcodeproj',
+function uiBuildArguments(work: string): string[] {
+  return ['-project', 'tools/inspector-ui/InspectorJourney.xcodeproj',
     '-scheme', 'InspectorJourney', '-destination', 'platform=macOS',
-    '-parallel-testing-enabled', 'NO',
-    '-derivedDataPath', join(work, 'ui-build'), '-resultBundlePath', result,
-    'CODE_SIGNING_ALLOWED=NO', 'COMPILER_INDEX_STORE_ENABLE=NO'], { timeout: 600 });
+    '-derivedDataPath', join(work, 'ui-build'),
+    'CODE_SIGNING_ALLOWED=NO', 'COMPILER_INDEX_STORE_ENABLE=NO'];
+}
+
+/** Builds before any target simulator or time-limited incoming call is created. */
+export function buildInspectorUITests(work: string, execute: typeof run = run): string {
+  return execute('xcodebuild', ['build-for-testing', ...uiBuildArguments(work)], { timeout: 600 });
+}
+
+/** Runs the prebuilt Mac UI test once, without rebuilding while the incoming call rings. */
+export function runInspectorUITest(work: string, result: string, execute: typeof run = run): string {
+  return execute('xcodebuild', ['test-without-building', ...uiBuildArguments(work),
+    '-parallel-testing-enabled', 'NO', '-resultBundlePath', result], { timeout: 600 });
 }
 
 /** Deletes owned devices and restarts the service before creating a fresh target. */
@@ -95,6 +104,14 @@ export async function journey(work: string): Promise<void> {
   const markers = join(work, 'simulators');
   mkdirSync(results, { recursive: true });
   mkdirSync(markers, { recursive: true });
+  try {
+    writeFileSync(join(results, 'ui-build.log'), buildInspectorUITests(work));
+    summary('product:ui-build passed');
+  } catch (error) {
+    writeFileSync(join(results, 'ui-build.log'), String(error));
+    summary('product:ui-build failed');
+    throw error;
+  }
   writeFileSync(join(work, 'push.json'), JSON.stringify({ operation: 'incoming' }));
   const type = infrastructure('device-selection', simulatorDevice);
   summary(`Target simulator: ${type.name} (${type.identifier}); Inspector: Mac; settle gate: disabled`);
