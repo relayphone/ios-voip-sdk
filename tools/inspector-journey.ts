@@ -97,35 +97,47 @@ export async function journey(work: string): Promise<void> {
     const prefix = join(results, `attempt-${attempt + 1}`);
     let check = 'setup';
     try {
-      const create = async (role: string): Promise<string> => {
+      const register = (role: string): string => {
         const name = `inspector-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}-${attempt}-${role}`;
         names.push(name);
         writeFileSync(join(markers, name), '');
-        const device = infrastructure('create', () => run('xcrun', ['simctl', 'create', name,
-          type.identifier, 'com.apple.CoreSimulator.SimRuntime.iOS-27-0'], { timeout: 120 }));
-        devices.push(device);
+        return name;
+      };
+      const boot = async (device: string, phase: string): Promise<void> => {
+        summary(`Attempt ${attempt + 1}: booting ${phase} (${device})`);
         infrastructure('boot', () => {
           run('xcrun', ['simctl', 'boot', device], { timeout: 120 });
           run('xcrun', ['simctl', 'bootstatus', device, '-b'], { timeout: 300 });
         });
-        stopIntelligenceService(device, message => summary(`Attempt ${attempt + 1} ${role}: ${message}`));
         const started = Date.now();
         try {
           const duration = await settleHost();
-          summary(`Attempt ${attempt + 1} ${role} settle: ${(duration / 1000).toFixed(1)}s`);
+          summary(`Attempt ${attempt + 1} ${phase} settle: ${(duration / 1000).toFixed(1)}s`);
         } catch (error) {
-          summary(`Attempt ${attempt + 1} ${role} settle: ${((Date.now() - started) / 1000).toFixed(1)}s (failed)`);
+          summary(`Attempt ${attempt + 1} ${phase} settle: ${((Date.now() - started) / 1000).toFixed(1)}s (failed)`);
           throw new InfrastructureFailure('settle', error);
         }
-        return device;
       };
-      const target = await create('target');
+      // Reuse the initialized source as the target; clone while it is shut down.
+      const targetName = register('target');
+      const target = infrastructure('create', () => run('xcrun', ['simctl', 'create', targetName,
+        type.identifier, 'com.apple.CoreSimulator.SimRuntime.iOS-27-0'], { timeout: 120 }));
+      devices.push(target);
+      await boot(target, 'cold source');
+      stopIntelligenceService(target, message => summary(`Attempt ${attempt + 1} cold source: ${message}`),
+        run, output => writeFileSync(`${prefix}-launchctl-list.log`, output));
+      infrastructure('shutdown', () => run('xcrun', ['simctl', 'shutdown', target], { timeout: 30 }));
+      const displayName = register('display');
+      const display = infrastructure('clone', () => run('xcrun', ['simctl', 'clone', target, displayName], { timeout: 120 }));
+      devices.push(display);
+      summary(`Attempt ${attempt + 1}: cloned display ${display} from cold source ${target}`);
+      await boot(target, 'warm target');
       const cksim = (...args: string[]) => run(join(runtime, 'cksim'),
         ['--simulator', target, '--bundle', bundle, ...args], { timeout: 180 });
       infrastructure('install', () => run('xcrun', ['simctl', 'install', target, app], { timeout: 180 }));
       infrastructure('launch', () => launchToleratingASlowSimulator(() => cksim('launch')));
       infrastructure('bridge-connect', () => cksim('status'));
-      const display = await create('display');
+      await boot(display, 'warm display');
       infrastructure('install', () => run('xcrun', ['simctl', 'install', display, inspector], { timeout: 180 }));
       const log = `${prefix}-bridge.log`;
       const fd = openSync(log, 'w');
