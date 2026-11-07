@@ -1,5 +1,5 @@
 import AppIntents
-import VoIPConversations
+internal import VoIPConversations
 
 /// What the example's Focus filter asks for in one Focus: which incoming calls ring this device.
 /// The module gives JavaScript these settings as JSON: `{ "ringing": "favorites" }`.
