@@ -105,7 +105,7 @@ final class HandlerActions {
     _ kind: Kind, call: CallID, conversation: JSONValue, origin: Origin, placement: Duration
   ) {
     cancel(call, reason: "handlerReplaced")
-    let seconds = Double(placement.components.seconds)
+    let seconds = placement / .seconds(1)
     let deadline = Date.now.addingTimeInterval(max(0, seconds - Self.placementMargin))
     let actionID = UUID().uuidString.lowercased()
     let expiry = Task { [weak self] in

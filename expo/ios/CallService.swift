@@ -409,7 +409,7 @@ final class CallService {
 
   private func handle(_ event: CallEvent) {
     defer {
-      for waiter in waiters where waiter.isCarriedOut(by: event) { waiter.finish() }
+      for waiter in waiters { waiter.receive(event) }
     }
     switch event {
     case .presented(let call):
@@ -417,10 +417,6 @@ final class CallService {
     case .joinFailed(let call, let failure):
       handlers.cancel(call.id, reason: "joinFailed")
       requested.cancelPlacement(for: call.id)
-      for waiter in waiters where waiter.places(call.id) && waiter.failure == nil {
-        waiter.failure = CommandError(
-          code: .conversation, message: "The conversation could not be joined")
-      }
       emitConversationEvent("joinFailed", ConversationEncoding.joinFailed(call, failure))
     case .previewStarted(let call):
       // A join that failed returns to the preview.
@@ -583,21 +579,20 @@ final class CallService {
     let client = try running()
     requested.append(action)
     // The SDK's event can arrive before the request returns.
-    let waiter = ActionWaiter(action)
+    let waiter = ActionWaiter(action, deadlines: settings.configuration.deadlines)
     waiters.append(waiter)
+    defer {
+      waiters.removeAll { $0 === waiter }
+      publish()
+    }
     do {
       try await client.request(action)
     } catch {
       requested.withdraw(action)
-      waiters.removeAll { $0 === waiter }
-      publish()
       // The calling framework may refuse a start that the module already failed.
       throw waiter.failure ?? CommandError(error)
     }
-    await waiter.wait()
-    waiters.removeAll { $0 === waiter }
-    publish()
-    if let failure = waiter.failure { throw failure }
+    try await waiter.wait()
   }
 
   private func receive(_ event: ServerEvent, for id: CallID) async {
@@ -727,64 +722,6 @@ private final class EventSubscription: CallObserver {
     let events = client.events()
     task = Task { [handle] in
       for await event in events { handle(event) }
-    }
-  }
-}
-
-/// A request that waits for the SDK's event that carries it out.
-@MainActor
-private final class ActionWaiter {
-  /// How long a request waits at most. The SDK's own deadlines end a call that stalls.
-  private static let limit = Duration.seconds(10)
-
-  let action: Action
-  /// Why the command fails although the SDK carried out its request.
-  var failure: CommandError?
-  private var isFinished = false
-  private var continuation: CheckedContinuation<Void, Never>?
-
-  init(_ action: Action) {
-    self.action = action
-  }
-
-  /// Whether the request starts or joins the call, and so waits for the app to place it.
-  func places(_ id: CallID) -> Bool {
-    switch action {
-    case .start(let outgoing): outgoing.id == id
-    case .join(let joined): joined == id
-    default: false
-    }
-  }
-
-  /// Whether the event carries out the request. The SDK performs a start once the app placed the
-  /// call and its media is prepared; the start it performs is matched by its call.
-  func isCarriedOut(by event: CallEvent) -> Bool {
-    switch event {
-    case .performed(.start(let started), _):
-      if case .start(let outgoing) = action { outgoing.id == started.id } else { false }
-    case .performed(let performed, _): performed == action
-    case .ended(let call), .previewStarted(let call), .joinFailed(let call, _):
-      call.id == action.callID
-    case .presented, .startRequested, .joinRequested, .audioActivated, .audioDeactivated,
-      .audioInterrupted, .mediaServicesReset:
-      false
-    }
-  }
-
-  func finish() {
-    isFinished = true
-    continuation?.resume()
-    continuation = nil
-  }
-
-  func wait() async {
-    guard !isFinished else { return }
-    await withCheckedContinuation { continuation in
-      self.continuation = continuation
-      Task { [weak self] in
-        try? await Task.sleep(for: Self.limit)
-        self?.finish()
-      }
     }
   }
 }
