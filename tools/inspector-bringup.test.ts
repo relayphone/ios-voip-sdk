@@ -2,7 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { selectIPhone } from './inspector-devices.ts';
-import { boundedTail, captureTail, memoryMargin, startResourceSampler } from './inspector-resources.ts';
+import { boundedTail, captureTail, memoryMargin, startResourceSampler, uiPeakLoad } from './inspector-resources.ts';
+
+test('UI peak load excludes bring-up and cleanup and includes retry UI windows', () => {
+  assert.equal(uiPeakLoad('Load Avg: 900, 2, 3\nUI test started now\nLoad Avg: 24.5, 2, 3\n'
+    + 'Load Avg: 37, 2, 3\nUI test ended now\nLoad Avg: 800, 2, 3'),
+  'UI test peak observed one-minute load: 37 (2 samples)');
+  assert.match(uiPeakLoad('Load Avg: 900'), /unavailable/);
+});
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8');
 test('selects a preferred iPhone from the recorded runtime supported-device list', () => {

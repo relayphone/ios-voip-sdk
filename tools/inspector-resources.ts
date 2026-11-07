@@ -23,6 +23,20 @@ export function memoryMargin(samples: string): string {
   return `peak memory pressure: ${100 - Math.min(...free)}% used (memory_pressure -Q); minimum free pages: ${Math.min(...pages)}${coverage}${warnings}`;
 }
 
+/** Reports observed one-minute host load only while XCUITest was running. */
+export function uiPeakLoad(samples: string): string {
+  let active = false;
+  const loads: number[] = [];
+  for (const line of samples.split('\n')) {
+    if (line.startsWith('UI test started ')) active = true;
+    if (line.startsWith('UI test ended ')) active = false;
+    const load = /^Load Avg:\s*([\d.]+)/.exec(line);
+    if (active && load) loads.push(Number(load[1]));
+  }
+  return loads.length ? `UI test peak observed one-minute load: ${Math.max(...loads)} (${loads.length} samples)`
+    : 'UI test peak load unavailable (no samples in UI window)';
+}
+
 function sample(path: string, crashes: CrashTracker): void {
   appendFileSync(path, `\n${new Date().toISOString()}\n`);
   for (const [command, args, keep] of [
@@ -97,7 +111,11 @@ if (isMain(import.meta.url)) {
     if (!path) throw new Error('Usage: inspector-resources.ts <samples.log>');
     if (process.argv.includes('--diagnostics')) { await simulatorDiagnostics(path); return; }
     if (process.argv.includes('--summary')) {
-      try { console.log(memoryMargin(readFileSync(path, 'utf8'))); }
+      try {
+        const samples = readFileSync(path, 'utf8');
+        console.log(memoryMargin(samples));
+        console.log(uiPeakLoad(samples));
+      }
       catch (error) { console.log(`warning:resource-sampler ${String(error)}`); }
       return;
     }
