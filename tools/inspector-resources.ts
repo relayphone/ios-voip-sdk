@@ -1,6 +1,8 @@
 // Resource diagnostics run in a separate process, independent of blocking simulator commands.
 import { spawn } from 'node:child_process';
-import { dirname } from 'node:path';
+import { homedir } from 'node:os';
+import { CrashTracker, processSummary } from './inspector-processes.ts';
+import { dirname, join } from 'node:path';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { isMain, main, run } from './command.ts';
 
@@ -17,22 +19,27 @@ export function memoryMargin(samples: string): string {
   if (!free.length || !pages.length) return 'warning:resource-sampler did not capture memory pressure and free pages';
   const times = samples.match(/^\d{4}-\d{2}-\d{2}T\S+Z$/gm) ?? [];
   const coverage = times.length ? `; ${times.length} samples (${times[0]} to ${times.at(-1)})` : '';
-  const warnings = /(?:vm_stat|memory_pressure|top): /.test(samples) ? '; warning:resource-sampler command failures (see resources.log)' : '';
+  const warnings = /(?:vm_stat|memory_pressure|top|ps|crash reports): /.test(samples) ? '; warning:resource-sampler command failures (see resources.log)' : '';
   return `peak memory pressure: ${100 - Math.min(...free)}% used (memory_pressure -Q); minimum free pages: ${Math.min(...pages)}${coverage}${warnings}`;
 }
 
-function sample(path: string): void {
+function sample(path: string, crashes: CrashTracker): void {
   appendFileSync(path, `\n${new Date().toISOString()}\n`);
   for (const [command, args, keep] of [
     ['vm_stat', [], /page size|Pages (free|active|inactive|speculative|wired down)|compressor/],
     ['memory_pressure', ['-Q'], /System-wide memory free percentage/],
-    ['top', ['-l', '1', '-o', 'mem', '-n', '10'], /Processes:|Load Avg:|CPU usage:|PhysMem:|VM:|^PID|^\s*\d+\s/],
+    ['top', ['-l', '1', '-n', '0'], /Processes:|Load Avg:|CPU usage:|PhysMem:|VM:/],
   ] as const) {
     try {
       const output = run(command, args, { timeout: 5 });
       appendFileSync(path, `${command}\n${output.split('\n').filter(line => keep.test(line)).join('\n')}\n`);
     } catch (error) { appendFileSync(path, `${command}: ${String(error)}\n`); }
   }
+  try {
+    appendFileSync(path, processSummary(run('ps', ['-axo', 'pid,ppid,stat,%cpu,etime,comm', '-r'], { timeout: 5 })) + '\n');
+  } catch (error) { appendFileSync(path, `ps: ${String(error)}\n`); }
+  try { appendFileSync(path, crashes.sample() + '\n'); }
+  catch (error) { appendFileSync(path, `crash reports: ${String(error)}\n`); }
 }
 
 /** Runs immediately and every 15 seconds; a failed sample cannot stop later samples. */
@@ -96,6 +103,8 @@ if (isMain(import.meta.url)) {
     }
     let stop = () => {};
     process.once('SIGTERM', () => { stop(); process.exit(0); });
-    stop = startResourceSampler(() => sample(path));
+    const crashes = new CrashTracker([join(homedir(), 'Library/Logs/DiagnosticReports'),
+      join(homedir(), 'Library/Logs/CoreSimulator')]);
+    stop = startResourceSampler(() => sample(path, crashes));
   });
 }

@@ -30,6 +30,7 @@ concurrency:
 
 jobs:
   journey:
+    if: false # Temporarily paused while collecting the two-phase CPU diagnostic.
     name: Inspector GUI journey
     runs-on: xcode-27
     timeout-minutes: 40
@@ -68,7 +69,8 @@ jobs:
       - name: Capture simulator state and CoreSimulator logs
         if: failure()
         run: node tools/inspector-resources.ts "$RUNNER_TEMP/inspector-journey/results/final" --diagnostics
-      - name: Delete every created simulator and temporary build
+      - &simulator-cleanup
+        name: Delete every created simulator and temporary build
         if: always()
         run: |
           status=0
@@ -91,6 +93,31 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: inspector-journey-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/inspector-journey/results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  cpu-diagnostic:
+    name: Simulator CPU diagnostic
+    runs-on: xcode-27
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Build the runtime and Inspector
+        run: |
+          node tools/build-runtime.ts "$RUNNER_TEMP/inspector-journey/runtime" --archs "$(uname -m)"
+          node tools/build-inspector.ts "$RUNNER_TEMP/inspector-journey/inspector"
+      - name: Observe one simulator then two without a bridge
+        run: node tools/inspector-diagnostic.ts "$RUNNER_TEMP/inspector-journey"
+      - *simulator-cleanup
+      - name: Keep CPU diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: simulator-cpu-diagnostic-${{ github.run_id }}
           path: ${{ runner.temp }}/inspector-journey/results
           if-no-files-found: ignore
           retention-days: 7
