@@ -94,4 +94,3 @@ jobs:
           path: ${{ runner.temp }}/inspector-journey/results
           if-no-files-found: ignore
           retention-days: 7
-
