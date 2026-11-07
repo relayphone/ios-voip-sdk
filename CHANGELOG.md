@@ -5,6 +5,8 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+## 0.3.0 (2026-11-08)
+
 ### Breaking
 
 - `CallEvent.joinFailed` now carries a `JoinFailure` explaining why the call returned to its
