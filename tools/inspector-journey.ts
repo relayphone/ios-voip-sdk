@@ -44,6 +44,15 @@ async function stopBridge(bridge: ChildProcess | undefined): Promise<void> {
   try { await exited; } finally { clearTimeout(timer); }
 }
 
+/** Runs the Mac UI test once; failures are handled by the caller without test repetition. */
+export function runInspectorUITest(work: string, result: string, execute: typeof run = run): string {
+  return execute('xcodebuild', ['test', '-project', 'tools/inspector-ui/InspectorJourney.xcodeproj',
+    '-scheme', 'InspectorJourney', '-destination', 'platform=macOS',
+    '-parallel-testing-enabled', 'NO', '-test-iterations', '1',
+    '-derivedDataPath', join(work, 'ui-build'), '-resultBundlePath', result,
+    'CODE_SIGNING_ALLOWED=NO', 'COMPILER_INDEX_STORE_ENABLE=NO'], { timeout: 600 });
+}
+
 /** Deletes owned devices and restarts the service before creating a fresh target. */
 async function recover(names: readonly string[], markers: string): Promise<void> {
   for (const name of names) {
@@ -127,11 +136,7 @@ export async function journey(work: string): Promise<void> {
       const uiLog = `${prefix}-ui.log`;
       appendFileSync(join(results, 'resources.log'), `\nUI test started ${new Date().toISOString()}\n`);
       try {
-        const output = run('xcodebuild', ['test', '-project', 'tools/inspector-ui/InspectorJourney.xcodeproj',
-          '-scheme', 'InspectorJourney', '-destination', 'platform=macOS',
-          '-parallel-testing-enabled', 'NO', '-retry-tests-on-failure', 'NO',
-          '-derivedDataPath', join(work, 'ui-build'), '-resultBundlePath', result,
-          'CODE_SIGNING_ALLOWED=NO', 'COMPILER_INDEX_STORE_ENABLE=NO'], { timeout: 600 });
+        const output = runInspectorUITest(work, result);
         writeFileSync(uiLog, output);
       } catch (error) {
         const output = error instanceof Error ? error.message : String(error);
