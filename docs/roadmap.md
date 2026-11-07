@@ -15,22 +15,25 @@ VoIP pushes, presentation with LiveCommunicationKit, the audio session, and its 
 after a push, missed-call notifications for calls that weren't missed, and native media without a
 configured audio session.
 
-### 2. Two open questions from device testing
+### 2. Follow-up from device testing
 
-Device testing on iOS 27.1 left two observations that tests haven't yet explained:
+Device testing on iOS 27.1 left two observations:
 
-- **Push tokens of call previews started by push.** A call preview Live Activity that a
+- **Resolved: push tokens of call previews started by push.** A call preview Live Activity that a
   push-to-start push created didn't deliver its push token to the app, through
   `CallPreviewActivities.pushTokens()`, within several minutes. Previews that the app started did.
-  Apple [confirms that update tokens come with user acceptance](https://developer.apple.com/forums/thread/818467)
-  for push-started activities. Tests cover discovery before and after launch, delayed tokens and
-  call ID mapping. This establishes a platform limitation; the missing token alone doesn't prove
-  consent was pending in that run. See the [server contract](call-preview-activity.md#pushes).
-- **Focus filter state.** With a Focus on whose filter was set for the app, the app read no Focus
-  filter state from `FocusFilterStore`.
+  In device testing on iOS 27, the system gave a push-started preview its update token only once
+  the user answered the system's question about the app's Live Activities on the Lock Screen,
+  which could take minutes. This is platform behavior. Tests cover discovery before and after
+  launch, delayed tokens and call ID mapping. See the
+  [server contract](call-preview-activity.md#pushes) for handling a late token.
+- **Open: Focus filter state.** With a Focus on whose filter was set for the app, the app read no
+  Focus filter state from `FocusFilterStore`. This needs one device observation: turn the filter
+  on, bring the app to the front, and read the `VoIPFocus` log. Diagnostics report whether the
+  filter ran, its state, store read and write failures, and the state sent to JavaScript.
 
-Each one is reproduced in tests or the simulator first. If the SDK is at fault, the fix ships in a
-patch release with a test. If not, this section records why.
+The Focus question is parked until a device is available. If the SDK is at fault, the fix ships
+in a patch release with a test.
 
 ### 3. Reliable simulator tests in CI
 

@@ -32,16 +32,14 @@ where the system refuses, the app can ask its servers to start one. The SDK keep
 call: when a second Live Activity starts for a call that already has one, it ends the newer one at
 once.
 
-For a preview started by push, iOS can withhold the update token until the user allows the app's
-Live Activities on the Lock Screen. Apple DTS confirms that
-["the update token will come with user acceptance"](https://developer.apple.com/forums/thread/818467).
+In device testing on iOS 27, the system gave a push-started preview its update token only once
+the user answered the system's question about the app's Live Activities on the Lock Screen,
+which could take minutes.
 `areActivitiesEnabled` being true, receiving `Event.started`, or receiving a push-to-start token
 doesn't establish that the per-activity update token is available. The SDK follows every
 server-started preview and publishes its token with the call ID when ActivityKit supplies it.
-Token creation is asynchronous; keep listening to `pushTokens()` for late tokens and rotations,
-as [Apple's push notification documentation](https://developer.apple.com/documentation/activitykit/starting-and-updating-live-activities-with-activitykit-push-notifications)
-describes. There is no fixed delivery deadline. An absent token alone doesn't prove that consent
-is pending.
+Keep listening to `pushTokens()` for late tokens and rotations, without a fixed timeout.
+An absent token alone doesn't prove that consent is pending.
 
 Until the token arrives, the servers can't update or end that preview. Give every start a
 `stale-date`, so that a preview without updates shows that it is out of date, and end a preview
