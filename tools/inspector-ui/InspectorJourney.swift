@@ -21,7 +21,6 @@ final class InspectorJourney: XCTestCase {
     let banner = app.buttons["expand-call"]
     XCTAssertTrue(banner.waitForExistence(timeout: 30))
     banner.click()
-    attach(app, name: "Incoming call")
     let sheet = app.sheets.firstMatch
     let answer = sheet.buttons["answer"]
     XCTAssertTrue(answer.waitForExistence(timeout: 10))
