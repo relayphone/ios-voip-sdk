@@ -1,5 +1,8 @@
 public import Foundation
 import Synchronization
+import os
+
+private let storeLog = Logger(subsystem: "VoIPFocus", category: "store")
 
 /// The Focus filter state, shared by the app and its extensions through an App Group.
 ///
@@ -118,18 +121,27 @@ public final class FocusFilterStore<Settings: Codable & Hashable & Sendable>: Se
       // The state as every reader decodes it, with its date as precise as its JSON number.
       recorded = try JSONDecoder().decode(FocusFilterState<Settings>.self, from: data)
     } catch {
+      storeLog.error("Store write failed: state could not be encoded and decoded")
       throw .encodingFailed
     }
-    try storage.write(data)
+    do {
+      try storage.write(data)
+    } catch {
+      storeLog.error("Store write failed: storage rejected the state")
+      throw error
+    }
     return recorded
   }
 
   /// The state that the storage holds, or unknown when it holds none or can't be decoded.
   private static func state(in storage: any StateStorage) -> FocusFilterState<Settings> {
-    guard let data = storage.read(),
-      let state = try? JSONDecoder().decode(FocusFilterState<Settings>.self, from: data)
-    else { return .unknown }
-    return state
+    guard let data = storage.read() else { return .unknown }
+    do {
+      return try JSONDecoder().decode(FocusFilterState<Settings>.self, from: data)
+    } catch {
+      storeLog.error("Store read failed: state could not be decoded; returning unknown")
+      return .unknown
+    }
   }
 }
 

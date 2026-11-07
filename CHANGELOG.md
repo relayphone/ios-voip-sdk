@@ -11,6 +11,12 @@ Public API changes include migration guidance.
   after the user answers the Live Activities question, with delayed-token coverage and advice
   for servers awaiting a token.
 
+### Diagnostics
+
+- Log Focus filter invocation, active or inactive state, and store record success or failure at
+  info level under the `VoIPFocus` subsystem. Observable store read and write failures log at
+  error level. Logs include no settings, timestamps, identifiers or underlying error payloads.
+
 ## 0.2.1 (2026-11-05)
 
 ### Changed
