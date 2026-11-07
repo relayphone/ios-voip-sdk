@@ -13,14 +13,17 @@ conditions << 'VOIP_CONVERSATIONS_NOTIFICATIONS' if enabled.call('callNotificati
 conditions << 'VOIP_CONVERSATIONS_LIVE_ACTIVITY' if enabled.call('callPreviewActivities')
 conditions << 'VOIP_CONVERSATIONS_FOCUS' if enabled.call('focusFilter')
 
-# The checkout uses the original sources; npm packs an identical copy in Vendor.
-sdk = File.directory?(File.join(__dir__, '../../Sources/VoIPCore')) ? '../../Sources' : 'Vendor'
+# Both checkout installs and npm distributions use the same synchronized sources.
+sdk = 'Vendor'
+manifest_path = File.join(__dir__, sdk, 'sources.json')
+raise 'SDK sources are missing; run npm run sync:sources in the Expo package' unless File.file?(manifest_path)
+manifest = JSON.parse(File.read(manifest_path))
 runtime = %w[CKSimProtocol Engine Interposition VoIPSimulator]
 runtime_files = runtime.flat_map do |target|
   Dir.glob(File.join(__dir__, sdk, target, '**', '*.{swift,m}')).map { |path| File.basename(path) }
 end.join(' ')
 
-Pod::Spec.new do |s|
+specification = Pod::Spec.new do |s|
   s.name = 'VoIPConversations'
   s.version = package['version']
   s.summary = package['description']
@@ -32,6 +35,16 @@ Pod::Spec.new do |s|
   s.swift_version = '6.0'
   s.static_framework = true
   s.default_subspecs = 'Module'
+  s.script_phase = {
+    :name => 'Verify bundled SDK sources',
+    :execution_position => :before_compile,
+    :script => <<~SCRIPT
+      set -e
+      if [ -f "$PODS_ROOT/../.xcode.env" ]; then . "$PODS_ROOT/../.xcode.env"; fi
+      if [ -f "$PODS_ROOT/../.xcode.env.local" ]; then . "$PODS_ROOT/../.xcode.env.local"; fi
+      "${NODE_BINARY:-node}" "$PODS_TARGET_SRCROOT/../build-scripts/prepare-package.mjs" --check
+    SCRIPT
+  }
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'SWIFT_ACTIVE_COMPILATION_CONDITIONS' => "$(inherited) #{conditions.join(' ')}",
@@ -109,3 +122,24 @@ Pod::Spec.new do |s|
     ss.private_header_files = "#{sdk}/Interposition/**/*.h"
   end
 end
+
+# Count the files CocoaPods actually discovered, rather than trusting filesystem globs.
+{
+  'Core' => %w[VoIPCore],
+  'Audio' => %w[VoIPAudio],
+  'LiveCommunicationKit' => %w[VoIPLiveCommunicationKit],
+  'PushKit' => %w[VoIPPushKit VoIPPushDelivery],
+  'Notifications' => %w[VoIPNotifications],
+  'LiveActivity' => %w[VoIPLiveActivity],
+  'Focus' => %w[VoIPFocus],
+  'Simulator' => runtime,
+}.each do |name, targets|
+  expected = manifest.fetch('files').keys.count { |path| targets.include?(path.split('/').first) }
+  consumer = specification.subspec_by_name("VoIPConversations/#{name}").consumer(:ios)
+  actual = Pod::Sandbox::FileAccessor.new(Pathname(__dir__), consumer).source_files.length
+  unless expected.positive? && actual == expected
+    raise "CocoaPods discovered #{actual} SDK files for #{name}; expected #{expected}. Run npm run sync:sources."
+  end
+end
+
+specification

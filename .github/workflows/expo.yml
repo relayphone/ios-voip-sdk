@@ -47,7 +47,9 @@ jobs:
           npm ci --prefix expo --ignore-scripts --no-audit --no-fund
           npm run typecheck --prefix expo
           npm test --prefix expo
+          npm run sync:sources --prefix expo
           node tools/expo-package.ts
+          pod ipc spec expo/ios/VoIPConversations.podspec > /dev/null
           swift format lint --strict --recursive --parallel expo/ios expo/example/client/focus
       - name: Pack the source distribution
         working-directory: expo
@@ -58,9 +60,10 @@ jobs:
           cd "$RUNNER_TEMP/expo-example"
           npm install --no-audit --no-fund "$RUNNER_TEMP/"*.tgz
           npm run typecheck
-          npx expo prebuild --platform ios --no-install
+          npm run prebuild -- --no-install
           cd ios
           pod install --repo-update
+          pod ipc spec ../node_modules/@relayphone/ios-voip-sdk/ios/VoIPConversations.podspec > /dev/null
       - name: Build the packed example for the simulator and devices
         working-directory: ${{ runner.temp }}/expo-example
         run: |

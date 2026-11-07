@@ -1,10 +1,12 @@
 import { fileURLToPath } from 'node:url';
-import { checkVersion } from '../expo/scripts/prepare-package.ts';
+import { checkVendor, checkVersion } from '../expo/scripts/prepare-package.mts';
 import { isMain, main } from './command.ts';
 
 if (isMain(import.meta.url)) {
   await main(() => {
-    checkVersion(fileURLToPath(new URL('..', import.meta.url)));
-    console.log('The Expo package version equals VERSION.');
+    const repository = fileURLToPath(new URL('..', import.meta.url));
+    checkVersion(repository);
+    checkVendor(repository);
+    console.log('The Expo package version and existing Vendor sources match the SDK.');
   });
 }

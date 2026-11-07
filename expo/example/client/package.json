@@ -4,8 +4,8 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "prebuild": "expo prebuild --platform ios",
-    "ios": "expo run:ios",
+    "prebuild": "node sync-sdk.mts && expo prebuild --platform ios",
+    "ios": "node sync-sdk.mts && expo run:ios",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

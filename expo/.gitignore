@@ -5,3 +5,4 @@ ios/Vendor/
 example/client/ios/
 example/client/.expo/
 *.tsbuildinfo
+build-scripts/

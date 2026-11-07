@@ -12,7 +12,9 @@
   "include": [
     "test/**/*.ts",
     "plugin/src/**/*.ts",
-    "scripts/**/*.ts"
+    "scripts/**/*.ts",
+    "scripts/**/*.mts",
+    "example/client/sync-sdk.mts"
   ],
   "exclude": []
 }
