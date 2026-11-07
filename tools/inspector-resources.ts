@@ -1,0 +1,75 @@
+// Resource diagnostics run in a separate process, independent of blocking simulator commands.
+import { spawn } from 'node:child_process';
+import { dirname } from 'node:path';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { isMain, main, run } from './command.ts';
+
+/** Retains the tail of a log with a hard byte limit. */
+export function boundedTail(value: string | Buffer, limit = 2 * 1024 * 1024): Buffer {
+  const bytes = typeof value === 'string' ? Buffer.from(value) : value;
+  return bytes.subarray(Math.max(0, bytes.length - limit));
+}
+
+/** Summarizes the highest used-memory percentage and lowest free-page count observed. */
+export function memoryMargin(samples: string): string {
+  const free = [...samples.matchAll(/System-wide memory free percentage:\s*(\d+)%/g)].map(m => Number(m[1]));
+  const pages = [...samples.matchAll(/Pages free:\s*(\d+)/g)].map(m => Number(m[1]));
+  if (!free.length || !pages.length) throw new Error('Resource sampler did not capture memory pressure and free pages');
+  return `peak memory pressure: ${100 - Math.min(...free)}% used (memory_pressure -Q); minimum free pages: ${Math.min(...pages)}`;
+}
+
+function sample(path: string): void {
+  appendFileSync(path, `\n${new Date().toISOString()}\n`);
+  for (const [command, args, keep] of [
+    ['vm_stat', [], /page size|Pages (free|active|inactive|speculative|wired down)|compressor/],
+    ['memory_pressure', ['-Q'], /System-wide memory free percentage/],
+    ['top', ['-l', '1', '-o', 'mem', '-n', '10'], /Processes:|Load Avg:|CPU usage:|PhysMem:|VM:|^PID|^\s*\d+\s/],
+  ] as const) {
+    try {
+      const output = run(command, args, { timeout: 5 });
+      appendFileSync(path, `${command}\n${output.split('\n').filter(line => keep.test(line)).join('\n')}\n`);
+    } catch (error) { appendFileSync(path, `${command}: ${String(error)}\n`); }
+  }
+}
+
+/** Captures only a rolling tail, including stderr, even if the command fails or times out. */
+export async function captureTail(command: string, args: readonly string[], limit = 2 * 1024 * 1024): Promise<Buffer> {
+  return new Promise(resolve => {
+    let tail: Buffer = Buffer.alloc(0);
+    const append = (chunk: Buffer) => { tail = boundedTail(Buffer.concat([tail, chunk]), limit); };
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout.on('data', append);
+    child.stderr.on('data', append);
+    const timer = setTimeout(() => {
+      append(Buffer.from('\nDiagnostic command timed out after 60s\n'));
+      child.kill('SIGKILL');
+    }, 60_000);
+    child.once('error', error => append(Buffer.from(String(error))));
+    child.once('close', () => { clearTimeout(timer); resolve(tail); });
+  });
+}
+
+/** Saves simulator state and the latest CoreSimulator messages without masking the original failure. */
+export async function simulatorDiagnostics(prefix: string): Promise<void> {
+  mkdirSync(dirname(prefix), { recursive: true });
+  for (const [name, command, args] of [
+    ['devices', 'xcrun', ['simctl', 'list', 'devices']],
+    ['coresimulator', '/usr/bin/log', ['show', '--last', '15m', '--style', 'compact', '--predicate',
+      'subsystem BEGINSWITH "com.apple.CoreSimulator" OR process == "CoreSimulatorService" OR process == "launchd_sim"']],
+  ] as const) {
+    try { writeFileSync(`${prefix}-${name}.log`, await captureTail(command, args)); }
+    catch (error) { writeFileSync(`${prefix}-${name}.log`, boundedTail(String(error))); }
+  }
+}
+
+if (isMain(import.meta.url)) {
+  await main(async () => {
+    const path = process.argv[2];
+    if (!path) throw new Error('Usage: inspector-resources.ts <samples.log>');
+    if (process.argv.includes('--diagnostics')) { await simulatorDiagnostics(path); return; }
+    if (process.argv.includes('--summary')) { console.log(memoryMargin(readFileSync(path, 'utf8'))); return; }
+    const timer = setInterval(() => sample(path), 15_000);
+    sample(path);
+    process.once('SIGTERM', () => { clearInterval(timer); process.exit(0); });
+  });
+}

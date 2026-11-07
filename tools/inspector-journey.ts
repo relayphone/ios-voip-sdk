@@ -1,9 +1,12 @@
 // Runs the Inspector GUI on a display simulator, keeping the injected target foregrounded.
 import { spawn, type ChildProcess } from 'node:child_process';
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isMain, main, repository, run } from './command.ts';
+import { displayDevice } from './inspector-devices.ts';
+import { simulatorDiagnostics } from './inspector-resources.ts';
+import { launchToleratingASlowSimulator } from './runtime-smoke.ts';
 import { assertInspectorJournal } from './inspector-journal.ts';
 import { buildSimulatorApp } from './simulator-app.ts';
 import { runnerHungBeforeConnecting } from './simulator-test-result.ts';
@@ -22,7 +25,7 @@ function infrastructure<T>(step: string, body: () => T): T {
 async function connected(bridge: ChildProcess, log: string): Promise<void> {
   const deadline = Date.now() + 240_000;
   while (Date.now() < deadline) {
-    if (bridge.exitCode !== null) throw new InfrastructureFailure('bridge-connect', 'Bridge exited');
+    if (!bridge.pid || bridge.exitCode !== null || bridge.signalCode !== null) throw new InfrastructureFailure('bridge-connect', 'Bridge exited');
     if (readFileSync(log, 'utf8').includes('Ctrl-C to disconnect.')) return;
     await sleep(500);
   }
@@ -31,6 +34,43 @@ async function connected(bridge: ChildProcess, log: string): Promise<void> {
 function summary(message: string): void {
   console.log(message);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${message}\n`);
+}
+
+async function stopBridge(bridge: ChildProcess | undefined): Promise<void> {
+  if (!bridge?.pid || bridge.exitCode !== null || bridge.signalCode !== null) return;
+  const exited = new Promise<void>(resolve => bridge.once('exit', () => resolve()));
+  bridge.kill('SIGINT');
+  const timer = setTimeout(() => bridge.kill('SIGKILL'), 10_000);
+  try { await exited; } finally { clearTimeout(timer); }
+}
+
+/** Deletes owned devices and restarts the service before creating a fresh pair. */
+async function recover(names: readonly string[], markers: string): Promise<void> {
+  for (const name of names) {
+    try { run('xcrun', ['simctl', 'shutdown', name], { timeout: 30 }); } catch { /* May be stopped. */ }
+    try { run('xcrun', ['simctl', 'delete', name], { timeout: 120 }); }
+    catch (error) { console.warn(String(error)); }
+  }
+  try { run('xcrun', ['simctl', 'shutdown', 'all'], { timeout: 120 }); }
+  catch (error) { console.warn(String(error)); }
+  try { run('killall', ['-9', 'com.apple.CoreSimulator.CoreSimulatorService'], { timeout: 30 }); }
+  catch (error) { console.warn(String(error)); }
+  const deadline = Date.now() + 120_000;
+  while (true) {
+    try {
+      const state = JSON.parse(run('xcrun', ['simctl', 'list', 'devices', '--json'], { timeout: 15 })) as {
+        devices: Record<string, { name: string; udid: string }[]>;
+      };
+      for (const device of Object.values(state.devices).flat().filter(d => names.includes(d.name))) {
+        run('xcrun', ['simctl', 'delete', device.udid], { timeout: 30 });
+      }
+      for (const name of names) rmSync(join(markers, name), { force: true });
+      return;
+    } catch (error) {
+      if (Date.now() >= deadline) throw new InfrastructureFailure('service-restart', error);
+      await sleep(1000);
+    }
+  }
 }
 
 /** Runs at most two attempts; only infrastructure errors allow the second pair of simulators. */
@@ -47,31 +87,35 @@ export async function journey(work: string): Promise<void> {
   mkdirSync(results, { recursive: true });
   mkdirSync(markers, { recursive: true });
   writeFileSync(join(work, 'push.json'), JSON.stringify({ operation: 'incoming' }));
+  const type = infrastructure('device-selection', displayDevice);
+  summary(`Simulator device for target and display: ${type.name} (${type.identifier})`);
   for (let attempt = 0; attempt < 2; attempt++) {
     const devices: string[] = [];
+    const names: string[] = [];
     let bridge: ChildProcess | undefined;
     const prefix = join(results, `attempt-${attempt + 1}`);
     let check = 'setup';
     try {
-      for (const role of ['target', 'display']) {
+      const create = (role: string): string => {
         const name = `inspector-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}-${attempt}-${role}`;
-        // Record names before creation, so always() cleanup also covers interrupted creation.
+        names.push(name);
         writeFileSync(join(markers, name), '');
         const device = infrastructure('create', () => run('xcrun', ['simctl', 'create', name,
-          'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro',
-          'com.apple.CoreSimulator.SimRuntime.iOS-27-0'], { timeout: 120 }));
+          type.identifier, 'com.apple.CoreSimulator.SimRuntime.iOS-27-0'], { timeout: 120 }));
         devices.push(device);
         infrastructure('boot', () => {
           run('xcrun', ['simctl', 'boot', device], { timeout: 120 });
           run('xcrun', ['simctl', 'bootstatus', device, '-b'], { timeout: 300 });
         });
-      }
-      const [target, display] = devices as [string, string];
+        return device;
+      };
+      const target = create('target');
       const cksim = (...args: string[]) => run(join(runtime, 'cksim'),
         ['--simulator', target, '--bundle', bundle, ...args], { timeout: 180 });
       infrastructure('install', () => run('xcrun', ['simctl', 'install', target, app], { timeout: 180 }));
-      infrastructure('launch', () => cksim('launch'));
+      infrastructure('launch', () => launchToleratingASlowSimulator(() => cksim('launch')));
       infrastructure('bridge-connect', () => cksim('status'));
+      const display = create('display');
       infrastructure('install', () => run('xcrun', ['simctl', 'install', display, inspector], { timeout: 180 }));
       const log = `${prefix}-bridge.log`;
       const fd = openSync(log, 'w');
@@ -111,22 +155,31 @@ export async function journey(work: string): Promise<void> {
       summary(`product:ui passed; product:journal passed; infrastructure retries used: ${attempt}`);
       return;
     } catch (error) {
+      writeFileSync(`${prefix}-failure.log`, `${new Date().toISOString()}\n${String(error)}\n${error instanceof Error ? String(error.cause ?? '') : ''}`);
+      console.error(`${new Date().toISOString()} ${String(error)}`);
+      await simulatorDiagnostics(prefix);
       for (const [index, device] of devices.entries()) {
         try { run('xcrun', ['simctl', 'io', device, 'screenshot', `${prefix}-${index}.png`], { timeout: 30 }); }
         catch { /* Preserve the original failure if a simulator cannot take a screenshot. */ }
       }
       if (error instanceof InfrastructureFailure) {
-        summary(`infra:${error.step} (${attempt === 0 ? 'retrying on fresh simulators' : 'retry exhausted'})`);
+        summary(`infra:${error.step} (${attempt === 0 ? 'retrying after CoreSimulator restart' : 'retry exhausted'})`);
         console.error(error.cause);
-        if (attempt === 0) continue;
+        if (attempt === 0) {
+          await stopBridge(bridge);
+          bridge = undefined;
+          try { await recover(names, markers); }
+          catch (recoveryError) {
+            summary('infra:service-restart failed');
+            await simulatorDiagnostics(`${prefix}-recovery`);
+            throw recoveryError;
+          }
+          continue;
+        }
       } else { summary(`product:${check} failed; infrastructure retries used: ${attempt}`); }
       throw error;
     } finally {
-      bridge?.kill('SIGINT');
-      for (const device of devices) {
-        try { run('xcrun', ['simctl', 'shutdown', device], { timeout: 120 }); } catch { /* May be stopped. */ }
-        // Keep markers: the workflow's always() step verifies deletion, including partial creates.
-      }
+      await stopBridge(bridge);
     }
   }
 }

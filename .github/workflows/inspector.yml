@@ -43,7 +43,29 @@ jobs:
           node tools/build-runtime.ts "$RUNNER_TEMP/inspector-journey/runtime" --archs "$(uname -m)"
           node tools/build-inspector.ts "$RUNNER_TEMP/inspector-journey/inspector"
       - name: Drive the GUI and assert on the target journal
-        run: node tools/inspector-journey.ts "$RUNNER_TEMP/inspector-journey"
+        run: |
+          set -o pipefail
+          work="$RUNNER_TEMP/inspector-journey"
+          mkdir -p "$work/results"
+          node tools/inspector-resources.ts "$work/results/resources.log" &
+          sampler_pid=$!
+          finish() {
+            status=$?
+            kill "$sampler_pid" || true
+            wait "$sampler_pid" || true
+            if [[ "$status" == 0 ]]; then
+              if ! node tools/inspector-resources.ts "$work/results/resources.log" --summary | tee -a "$GITHUB_STEP_SUMMARY"; then
+                echo "infra:resource-sampler failed" >> "$GITHUB_STEP_SUMMARY"
+                status=1
+              fi
+            fi
+            exit "$status"
+          }
+          trap finish EXIT
+          node tools/inspector-journey.ts "$work"
+      - name: Capture simulator state and CoreSimulator logs
+        if: failure()
+        run: node tools/inspector-resources.ts "$RUNNER_TEMP/inspector-journey/results/final" --diagnostics
       - name: Delete every created simulator and temporary build
         if: always()
         run: |
