@@ -48,7 +48,7 @@ async function stopBridge(bridge: ChildProcess | undefined): Promise<void> {
 export function runInspectorUITest(work: string, result: string, execute: typeof run = run): string {
   return execute('xcodebuild', ['test', '-project', 'tools/inspector-ui/InspectorJourney.xcodeproj',
     '-scheme', 'InspectorJourney', '-destination', 'platform=macOS',
-    '-parallel-testing-enabled', 'NO', '-test-iterations', '1',
+    '-parallel-testing-enabled', 'NO',
     '-derivedDataPath', join(work, 'ui-build'), '-resultBundlePath', result,
     'CODE_SIGNING_ALLOWED=NO', 'COMPILER_INDEX_STORE_ENABLE=NO'], { timeout: 600 });
 }

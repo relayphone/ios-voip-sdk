@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { runInspectorUITest } from './inspector-journey.ts';
 
-test('the Mac UI invocation runs one iteration without either retry switch', () => {
+test('the Mac UI invocation uses the default single run without repetition controls', () => {
   let invocations = 0;
   const output = runInspectorUITest('/fixture/work', '/fixture/result.xcresult', (command, args, options) => {
     invocations++;
@@ -11,7 +11,8 @@ test('the Mac UI invocation runs one iteration without either retry switch', () 
     assert.equal(args[args.indexOf('-destination') + 1], 'platform=macOS');
     assert.equal(args.includes('-retry-tests-on-failure'), false);
     assert.equal(args.includes('-run-tests-until-failure'), false);
-    assert.equal(args[args.indexOf('-test-iterations') + 1], '1');
+    assert.equal(args.includes('-test-iterations'), false);
+    assert.equal(args.includes('-test-repetition-relaunch-enabled'), false);
     assert.equal(args[args.indexOf('-resultBundlePath') + 1], '/fixture/result.xcresult');
     assert.equal(options?.timeout, 600);
     return 'test output';
