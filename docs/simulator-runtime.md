@@ -346,6 +346,7 @@ LiveCommunicationKit calls with system and application origin.
 The `Inspector GUI` CI workflow drives the Mac Inspector with macOS XCUITest beside one
 target simulator: expand an incoming banner, answer, end the call, then change an incoming-report
 filter. It checks the target journal for the ordered report, fulfilled answer and end
-actions, connected and ended snapshots, and confirmed filter setting. Screenshots are
+actions, connected and ended snapshots, and confirmed filter setting. The incoming push
+waits until XCUITest has activated the Inspector, so runner startup does not consume the ring timeout. Screenshots are
 diagnostic only: on failure, the workflow uploads XCUITest attachments and a final screenshot
 of the target simulator in an `inspector-journey` artifact, retained for seven days.

@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildInspectorUITests, runInspectorUITest } from './inspector-journey.ts';
 
-test('builds the UI runner separately and reuses its products for test execution', () => {
+test('builds the UI runner separately and reuses its products for test execution', async () => {
   const calls: string[][] = [];
   const execute = (_command: string, args: readonly string[]) => {
     calls.push([...args]);
     return '';
   };
   buildInspectorUITests('/fixture/work', execute);
-  runInspectorUITest('/fixture/work', '/fixture/result.xcresult', execute);
+  await runInspectorUITest('/fixture/work', '/fixture/result.xcresult', () => {}, async (command, args) => execute(command, args));
   assert.deepEqual(calls.map(args => args[0]), ['build-for-testing', 'test-without-building']);
   for (const args of calls) {
     assert.equal(args[args.indexOf('-derivedDataPath') + 1], '/fixture/work/ui-build');
@@ -18,9 +18,9 @@ test('builds the UI runner separately and reuses its products for test execution
   assert.equal(calls[0]!.includes('-resultBundlePath'), false);
 });
 
-test('the Mac UI invocation uses the default single run without repetition controls', () => {
+test('the Mac UI invocation uses the default single run without repetition controls', async () => {
   let invocations = 0;
-  const output = runInspectorUITest('/fixture/work', '/fixture/result.xcresult', (command, args, options) => {
+  const output = await runInspectorUITest('/fixture/work', '/fixture/result.xcresult', () => {}, async (command, args, options) => {
     invocations++;
     assert.equal(command, 'xcodebuild');
     assert.equal(args[0], 'test-without-building');
@@ -37,10 +37,10 @@ test('the Mac UI invocation uses the default single run without repetition contr
   assert.equal(invocations, 1);
 });
 
-test('the Mac UI invocation propagates a failed test without another execution', () => {
+test('the Mac UI invocation propagates a failed test without another execution', async () => {
   let invocations = 0;
   const failure = new Error('UI assertion failed');
-  assert.throws(() => runInspectorUITest('/fixture/work', '/fixture/result.xcresult', () => {
+  await assert.rejects(runInspectorUITest('/fixture/work', '/fixture/result.xcresult', () => {}, async () => {
     invocations++;
     throw failure;
   }), error => error === failure);

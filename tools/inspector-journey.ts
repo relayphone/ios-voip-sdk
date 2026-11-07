@@ -10,6 +10,7 @@ import { launchToleratingASlowSimulator } from './runtime-smoke.ts';
 import { assertInspectorJournal } from './inspector-journal.ts';
 import { buildSimulatorApp } from './simulator-app.ts';
 import { runnerHungBeforeConnecting } from './simulator-test-result.ts';
+import { runReadyUITest } from './inspector-ui-run.ts';
 
 const bundle = 'dev.callkitsim.smoke';
 class InfrastructureFailure extends Error {
@@ -56,10 +57,12 @@ export function buildInspectorUITests(work: string, execute: typeof run = run): 
   return execute('xcodebuild', ['build-for-testing', ...uiBuildArguments(work)], { timeout: 600 });
 }
 
-/** Runs the prebuilt Mac UI test once, without rebuilding while the incoming call rings. */
-export function runInspectorUITest(work: string, result: string, execute: typeof run = run): string {
+/** Runs the prebuilt Mac UI test once and pushes only after it activates the Inspector. */
+export function runInspectorUITest(work: string, result: string, push: () => void, execute: typeof runReadyUITest = runReadyUITest): Promise<string> {
   return execute('xcodebuild', ['test-without-building', ...uiBuildArguments(work),
-    '-parallel-testing-enabled', 'NO', '-resultBundlePath', result], { timeout: 600 });
+    '-parallel-testing-enabled', 'NO', '-resultBundlePath', result], {
+    timeout: 600, readyPath: `${result}.ready`, ready: push,
+  });
 }
 
 /** Deletes owned devices and restarts the service before creating a fresh target. */
@@ -146,14 +149,16 @@ export async function journey(work: string): Promise<void> {
         bridge.on('error', error => appendFileSync(log, String(error)));
       } finally { closeSync(fd); }
       await connected(bridge, log);
-      check = 'push';
-      cksim('push', '--payload-file', join(work, 'push.json'), '--must-report', 'true');
       check = 'ui';
       const result = `${prefix}.xcresult`;
       const uiLog = `${prefix}-ui.log`;
       appendFileSync(join(results, 'resources.log'), `\nUI test started ${new Date().toISOString()}\n`);
       try {
-        const output = runInspectorUITest(work, result);
+        const output = await runInspectorUITest(work, result, () => {
+          check = 'push';
+          cksim('push', '--payload-file', join(work, 'push.json'), '--must-report', 'true');
+          check = 'ui';
+        });
         writeFileSync(uiLog, output);
       } catch (error) {
         const output = error instanceof Error ? error.message : String(error);

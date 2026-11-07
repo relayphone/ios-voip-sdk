@@ -13,11 +13,14 @@ final class InspectorJourney: XCTestCase {
     XCTAssertFalse(filterConfirmation.evaluate(with: CheckboxSnapshot(value: 1, enabled: false)))
   }
 
-  func testIncomingCallAndFilter() {
+  func testIncomingCallAndFilter() throws {
     continueAfterFailure = false
     let app = XCUIApplication(bundleIdentifier: "dev.callkitsim.inspector")
     // The app is already running with the bridge credentials supplied by cksim inspect.
     app.activate()
+    let readyPath = try XCTUnwrap(
+      ProcessInfo.processInfo.environment["CKSIM_INSPECTOR_READY_FILE"])
+    try Data().write(to: URL(fileURLWithPath: readyPath), options: .atomic)
     let banner = app.buttons["expand-call"]
     XCTAssertTrue(banner.waitForExistence(timeout: 30))
     banner.click()
