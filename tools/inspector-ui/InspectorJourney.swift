@@ -2,6 +2,17 @@ import XCTest
 
 @MainActor
 final class InspectorJourney: XCTestCase {
+  private var filterConfirmation: NSPredicate {
+    NSPredicate(format: "value == 1 AND enabled == true")
+  }
+
+  func testFilterConfirmationRequiresCheckedAndEnabled() {
+    XCTAssertTrue(filterConfirmation.evaluate(with: CheckboxSnapshot(value: 1, enabled: true)))
+    XCTAssertFalse(filterConfirmation.evaluate(with: CheckboxSnapshot(value: 0, enabled: true)))
+    XCTAssertFalse(filterConfirmation.evaluate(with: CheckboxSnapshot(value: 2, enabled: true)))
+    XCTAssertFalse(filterConfirmation.evaluate(with: CheckboxSnapshot(value: 1, enabled: false)))
+  }
+
   func testIncomingCallAndFilter() {
     continueAfterFailure = false
     let app = XCUIApplication(bundleIdentifier: "dev.callkitsim.inspector")
@@ -30,10 +41,10 @@ final class InspectorJourney: XCTestCase {
     }
     XCTAssertTrue(filter.isHittable)
     clickWhenEnabled(filter)
-    let confirmed = NSPredicate(format: "value == %@ AND enabled == true", "1")
     XCTAssertEqual(
       XCTWaiter.wait(
-        for: [XCTNSPredicateExpectation(predicate: confirmed, object: filter)], timeout: 15),
+        for: [XCTNSPredicateExpectation(predicate: filterConfirmation, object: filter)], timeout: 15
+      ),
       .completed)
     attach(app, name: "Filter confirmed")
   }
@@ -63,5 +74,15 @@ final class InspectorJourney: XCTestCase {
       predicate: NSPredicate(format: "enabled == true"), object: element)
     XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed)
     element.click()
+  }
+}
+
+private final class CheckboxSnapshot: NSObject {
+  @objc let value: Int
+  @objc let enabled: Bool
+
+  init(value: Int, enabled: Bool) {
+    self.value = value
+    self.enabled = enabled
   }
 }
