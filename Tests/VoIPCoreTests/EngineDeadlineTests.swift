@@ -49,7 +49,7 @@ extension EngineTests {
         #expect(try await h.next() == .joinRequested(callID))
         let join = try await h.lastActionID()
         h.clock.advance(by: deadlines.placement)
-        #expect(try await h.next() == .joinFailed(callID, .policy))
+        #expect(try await h.next() == .joinFailed(callID, .policy, .failed(.notPlaced)))
         #expect(try await h.next() == .previewStarted(callID, .policy))
         #expect(
           await h.records.suffix(2) == [
@@ -137,7 +137,7 @@ extension EngineTests {
       case .answer:
         #expect(try await h.next() == .ended(callID, .failed(.media)))
       case .join:
-        #expect(try await h.next() == .joinFailed(callID, .policy))
+        #expect(try await h.next() == .joinFailed(callID, .policy, .failed(.media)))
         #expect(try await h.next() == .previewStarted(callID, .policy))
       }
       #expect(await h.records.suffix(2) == [.fail(action), .reportEnded(callID, .failed(.media))])

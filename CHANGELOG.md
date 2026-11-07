@@ -5,6 +5,14 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+### Breaking
+
+- `CallEvent.joinFailed` now carries a `JoinFailure` explaining why the call returned to its
+  preview: it was ended, refused by the calling framework, interrupted by a framework reset,
+  or failed with a `CallFailure`.
+  Migrate `case .joinFailed(let call)` to `case .joinFailed(let call, _)`, or match on the reason
+  to handle each failure.
+
 ### Documentation
 
 - Document the observed iOS 27 behavior of delivering a push-started call preview's update token

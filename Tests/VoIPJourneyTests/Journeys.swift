@@ -186,6 +186,69 @@
       app.expectNoMoreEvents()
     }
 
+    @Test(arguments: [
+      JoinFailure.ended, .refused, .frameworkReset, .failed(.media),
+    ])
+    func failedJoinReturnsToPreviewWithItsCause(_ failure: JoinFailure) async throws {
+      let resetFramework = FakeCallingFramework()
+      let app: App
+      if failure == .frameworkReset {
+        // The runtime's reset control requires no pending actions. Use the framework fake
+        // to deliver a reset while the join action is still pending.
+        app = try await App(framework: resetFramework)
+      } else {
+        app = try await App(configuration: VoIPConfiguration(maximumCalls: 1))
+      }
+      defer { app.stop() }
+      let id = newCallID("join-failure")
+      let caller = try Party(handle: Handle(kind: .generic, value: "alice"))
+      _ = await app.client.report(
+        IncomingCall(
+          id: id, parties: [caller],
+          presentationPolicy: PresentationPolicy(incoming: .preview)))
+      try await app.expect([.previewStarted(id, .policy)])
+
+      if failure == .refused {
+        // An outgoing call reserves the only conversation group, so the framework refuses
+        // another start request (including a join).
+        let busy = newCallID("busy")
+        try await app.client.request(.start(OutgoingCall(id: busy, parties: [caller])))
+        try await app.expect([.startRequested(busy)])
+        await #expect(throws: ActionError.self) {
+          try await app.client.request(.join(id))
+        }
+        try await app.expect([.joinFailed(id, .policy, failure), .previewStarted(id, .policy)])
+        await app.client.confirmNotPlaced(busy)
+        try await app.expect([.ended(busy, .failed(.notPlaced))])
+      } else {
+        try await app.client.request(.join(id))
+        try await app.expect([.joinRequested(id)])
+        switch failure {
+        case .ended:
+          try await app.client.request(.end(id))
+        case .frameworkReset:
+          await resetFramework.send(.reset)
+        case .failed:
+          await setPreparationToFail(app.media)
+          await app.client.confirmPlaced(id)
+        case .refused:
+          Issue.record("Refusal is handled before the join is performed")
+        }
+        try await app.expect([.joinFailed(id, .policy, failure), .previewStarted(id, .policy)])
+      }
+      try await app.until("the call to return to its preview") {
+        app.call(id)?.status == .previewing(.policy)
+      }
+      try await app.until("the system to remove the calls") { try await app.system.calls().isEmpty }
+      #expect(await app.media.records.allSatisfy { $0.kind == .prepare })
+      app.expectNoMoreEvents()
+    }
+
+    @VoIPActor
+    private func setPreparationToFail(_ media: FakeMedia) {
+      media.preparation = .fail
+    }
+
     @Test func joinsAPreviewThatTheServersStartedBeforeTheAppRan() async throws {
       let id = newCallID("joined")
       let center = FakeLiveActivityCenter()

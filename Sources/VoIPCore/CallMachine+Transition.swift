@@ -182,7 +182,7 @@ private struct Step {
       emit(action.isStart ? .startRequested(state.call) : .joinRequested(state.call))
     case (_, .end) where state.phase == .ringing || state.phase.isActive:
       if state.phase.isJoining {
-        returnToPreview(fulfilling: id)
+        returnToPreview(.ended, fulfilling: id)
       } else {
         end(.endedHere, reportingEnd: false, fulfilling: id, performed: action)
       }
@@ -246,7 +246,7 @@ private struct Step {
   private mutating func requestFailed(_ action: Action) {
     guard case .requesting(let requested) = state.phase, requested == action else { return }
     if action.isJoin {
-      returnToPreview()
+      returnToPreview(.refused)
     } else {
       end(.failed(.refused), reportingEnd: false)
     }
@@ -396,7 +396,7 @@ private struct Step {
     case .previewing, .ended:
       break
     case let phase where phase.isJoining:
-      returnToPreview()
+      returnToPreview(.frameworkReset)
     default:
       end(.failed(.frameworkReset), reportingEnd: false)
     }
@@ -418,7 +418,7 @@ private struct Step {
   /// call ends.
   private mutating func abandon(_ failure: CallFailure) {
     if state.phase.isJoining {
-      returnToPreview(reportingEnd: .failed(failure))
+      returnToPreview(.failed(failure), reportingEnd: .failed(failure))
     } else {
       end(.failed(failure), reportingEnd: true)
     }
@@ -427,7 +427,7 @@ private struct Step {
   /// Moves the call to a call preview, removing it from the calling framework.
   private mutating func preview(
     _ reason: PreviewReason, reportingEnd endReason: EndReason?,
-    fulfilling endAction: ActionID? = nil, afterJoin: Bool = false
+    fulfilling endAction: ActionID? = nil, afterJoin failure: JoinFailure? = nil
   ) {
     if let held = state.phase.held { fail(held.id) }
     if let endAction { fulfill(endAction) }
@@ -438,18 +438,19 @@ private struct Step {
     state.call.isMuted = false
     state.call.isOnHold = false
     enter(.previewing(reason))
-    if afterJoin { emit(.joinFailed(state.call)) }
+    if let failure { emit(.joinFailed(state.call, failure)) }
     emit(.previewStarted(state.call))
   }
 
   /// Returns a call that was joining to the preview it was joined from.
   private mutating func returnToPreview(
-    reportingEnd endReason: EndReason? = nil, fulfilling endAction: ActionID? = nil
+    _ failure: JoinFailure, reportingEnd endReason: EndReason? = nil,
+    fulfilling endAction: ActionID? = nil
   ) {
     // A call can only join from a preview, so the reason is always known here.
     preview(
       state.previewReason ?? .policy, reportingEnd: endReason, fulfilling: endAction,
-      afterJoin: true)
+      afterJoin: failure)
   }
 
   /// Ends the call. This is the only way into ``CallMachine/Phase/ended(_:)``.
