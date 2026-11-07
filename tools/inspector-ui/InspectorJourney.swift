@@ -36,6 +36,7 @@ final class InspectorJourney: XCTestCase {
     XCTAssertTrue(wait(status, value: "Ended"))
     attach(app, name: "Ended call")
     sheet.buttons["dismiss-call"].click()
+    XCTAssertTrue(sheet.waitForNonExistence(timeout: 10))
     let filter = app.checkBoxes["incoming-filter-do-not-disturb"]
     for _ in 0..<12 {
       if filter.exists && filter.isHittable { break }
