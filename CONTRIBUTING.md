@@ -26,6 +26,12 @@ simulator runtime and CallKit, builds the documentation and the Inspector, and s
 built runtime package. The [release workflow](.github/workflows/runtime-release.yml)
 qualifies the simulator runtime package and publishes it with each release.
 
+On pull requests, the Public API compatibility job runs
+`swift package diagnose-api-breaking-changes` against the `v`-prefixed release tag in `VERSION`
+for the iOS library products. Its summary lists API breaks. Before 1.0, an intentional break
+requires a `### Breaking` heading under `## Unreleased` in `CHANGELOG.md`, with migration notes;
+otherwise the job fails. Build and comparison-tool errors always fail, even with that heading.
+
 ## Simulator tests
 
 CI boots its simulator and waits for boot completion before running the tests. If the test
