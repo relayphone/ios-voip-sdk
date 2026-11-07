@@ -82,7 +82,7 @@
     ]
   }
 
-  /// Serves the bridge and runs the Inspector app on a display simulator until Ctrl-C.
+  /// Serves the bridge and runs the Inspector on the Mac or a display simulator until Ctrl-C.
   func inspect(
     target: Target, timeout: Duration, app: URL, display requested: String?, allowShared: Bool
   ) async throws {
@@ -91,8 +91,9 @@
       isDirectory.boolValue, app.pathExtension == "app"
     else {
       throw CKSimError(
-        "Build the simulator inspector first and pass inspect --app <CKSimInspector.app>.")
+        "Build the Inspector first and pass inspect --app <CKSimInspector.app>.")
     }
+    let application = try InspectorApplication(bundle: app)
     let simctl = target.simctl
     func say(_ message: String) { FileHandle.standardError.write(Data("\(message)\n".utf8)) }
     say("Inspector: locating target runtime.")
@@ -102,6 +103,31 @@
     let interrupted = Interrupt()
     let server = try await InspectorServer(bridge: bridge)
     defer { server.stop() }
+    if application.platform == .macOS {
+      guard requested == nil else {
+        throw CKSimError("--inspector-simulator is only supported for an iOS Inspector bundle.")
+      }
+      let process = Process()
+      process.executableURL = application.executable
+      process.environment = application.environment(
+        url: server.url, token: server.token, inherited: Tool.current.environment)
+      say("Inspector: launching Mac app.")
+      try process.run()
+      defer { if process.isRunning { process.terminate() } }
+      let session = await bridge.session
+      Tool.current.write(
+        "Inspector on Mac, connected to \(target.bundle) (\(session.runID)). Ctrl-C to disconnect.")
+      while !interrupted.happened {
+        guard process.isRunning else {
+          if process.terminationStatus != 0 {
+            throw CKSimError("Mac Inspector exited unsuccessfully.")
+          }
+          return
+        }
+        try await Task.sleep(for: .milliseconds(200))
+      }
+      return
+    }
     var display: String?
     let owned = requested == nil
     defer {
@@ -143,10 +169,8 @@
     say("Inspector: installing app on display simulator.")
     try simctl("install", display, app.standardizedFileURL.path(percentEncoded: false))
     say("Inspector: launching app on display simulator.")
-    let environment = ProcessInfo.processInfo.environment.merging([
-      "SIMCTL_CHILD_CKSIM_INSPECTOR_URL": server.url,
-      "SIMCTL_CHILD_CKSIM_INSPECTOR_TOKEN": server.token,
-    ]) { $1 }
+    let environment = application.environment(
+      url: server.url, token: server.token, inherited: Tool.current.environment)
     try simctl(
       "launch", "--terminate-running-process", display, "dev.callkitsim.inspector",
       environment: environment, timeout: .seconds(display == target.device ? 20 : 180))
@@ -160,14 +184,17 @@
   /// Records Ctrl-C instead of exiting, so that a command can clean up first.
   final class Interrupt: Sendable {
     private let signalled = Mutex(false)
-    private let source: any DispatchSourceSignal
+    private let sources: [any DispatchSourceSignal]
 
     init() {
-      signal(SIGINT, SIG_IGN)
-      let source = DispatchSource.makeSignalSource(signal: SIGINT)
-      self.source = source
-      source.setEventHandler { [weak self] in self?.signalled.withLock { $0 = true } }
-      source.resume()
+      sources = [SIGINT, SIGTERM].map { number in
+        signal(number, SIG_IGN)
+        return DispatchSource.makeSignalSource(signal: number)
+      }
+      for source in sources {
+        source.setEventHandler { [weak self] in self?.signalled.withLock { $0 = true } }
+        source.resume()
+      }
     }
 
     var happened: Bool { signalled.withLock { $0 } }
