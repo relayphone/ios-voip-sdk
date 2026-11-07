@@ -15,7 +15,8 @@ Public API changes include migration guidance.
 
 ### Documentation
 
-- Explain main-actor media preparation, ordered audio commands and attempt tokens in `CallMedia`,
+- Explain main-actor media preparation, ordered audio commands and attempt tokens in an article
+  linked from `CallMedia`,
   with a compiled example and tests for command ordering and stale attempts.
 - Document the observed iOS 27 behavior of delivering a push-started call preview's update token
   after the user answers the Live Activities question, with delayed-token coverage and advice
