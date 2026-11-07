@@ -1,11 +1,10 @@
-// Runs the Inspector GUI on a display simulator, keeping the injected target foregrounded.
+// Runs the Mac Inspector GUI beside one injected target simulator.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isMain, main, repository, run } from './command.ts';
-import { displayDevice } from './inspector-devices.ts';
-import { settleHost, stopIntelligenceService } from './inspector-settle.ts';
+import { simulatorDevice } from './inspector-devices.ts';
 import { simulatorDiagnostics } from './inspector-resources.ts';
 import { launchToleratingASlowSimulator } from './runtime-smoke.ts';
 import { assertInspectorJournal } from './inspector-journal.ts';
@@ -45,7 +44,7 @@ async function stopBridge(bridge: ChildProcess | undefined): Promise<void> {
   try { await exited; } finally { clearTimeout(timer); }
 }
 
-/** Deletes owned devices and restarts the service before creating a fresh pair. */
+/** Deletes owned devices and restarts the service before creating a fresh target. */
 async function recover(names: readonly string[], markers: string): Promise<void> {
   for (const name of names) {
     try { run('xcrun', ['simctl', 'shutdown', name], { timeout: 30 }); } catch { /* May be stopped. */ }
@@ -74,7 +73,7 @@ async function recover(names: readonly string[], markers: string): Promise<void>
   }
 }
 
-/** Runs at most two attempts; only infrastructure errors allow the second pair of simulators. */
+/** Runs at most two attempts; only infrastructure errors allow a fresh target simulator. */
 export async function journey(work: string): Promise<void> {
   const runtime = join(work, 'runtime');
   const inspector = join(work, 'inspector/CKSimInspector.app');
@@ -88,8 +87,8 @@ export async function journey(work: string): Promise<void> {
   mkdirSync(results, { recursive: true });
   mkdirSync(markers, { recursive: true });
   writeFileSync(join(work, 'push.json'), JSON.stringify({ operation: 'incoming' }));
-  const type = infrastructure('device-selection', displayDevice);
-  summary(`Simulator device for target and display: ${type.name} (${type.identifier})`);
+  const type = infrastructure('device-selection', simulatorDevice);
+  summary(`Target simulator: ${type.name} (${type.identifier}); Inspector: Mac; settle gate: disabled`);
   for (let attempt = 0; attempt < 2; attempt++) {
     const devices: string[] = [];
     const names: string[] = [];
@@ -97,53 +96,26 @@ export async function journey(work: string): Promise<void> {
     const prefix = join(results, `attempt-${attempt + 1}`);
     let check = 'setup';
     try {
-      const register = (role: string): string => {
-        const name = `inspector-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}-${attempt}-${role}`;
-        names.push(name);
-        writeFileSync(join(markers, name), '');
-        return name;
-      };
-      const boot = async (device: string, phase: string): Promise<void> => {
-        summary(`Attempt ${attempt + 1}: booting ${phase} (${device})`);
-        infrastructure('boot', () => {
-          run('xcrun', ['simctl', 'boot', device], { timeout: 120 });
-          run('xcrun', ['simctl', 'bootstatus', device, '-b'], { timeout: 300 });
-        });
-        const started = Date.now();
-        try {
-          const duration = await settleHost();
-          summary(`Attempt ${attempt + 1} ${phase} settle: ${(duration / 1000).toFixed(1)}s`);
-        } catch (error) {
-          summary(`Attempt ${attempt + 1} ${phase} settle: ${((Date.now() - started) / 1000).toFixed(1)}s (failed)`);
-          throw new InfrastructureFailure('settle', error);
-        }
-      };
-      // Reuse the initialized source as the target; clone while it is shut down.
-      const targetName = register('target');
+      const targetName = `inspector-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}-${attempt}-target`;
+      names.push(targetName);
+      writeFileSync(join(markers, targetName), '');
       const target = infrastructure('create', () => run('xcrun', ['simctl', 'create', targetName,
         type.identifier, 'com.apple.CoreSimulator.SimRuntime.iOS-27-0'], { timeout: 120 }));
       devices.push(target);
-      await boot(target, 'cold source');
-      stopIntelligenceService(target, message => summary(`Attempt ${attempt + 1} cold source: ${message}`),
-        run, output => writeFileSync(`${prefix}-launchctl-list.log`, output));
-      infrastructure('shutdown', () => run('xcrun', ['simctl', 'shutdown', target], { timeout: 30 }));
-      const displayName = register('display');
-      const display = infrastructure('clone', () => run('xcrun', ['simctl', 'clone', target, displayName], { timeout: 120 }));
-      devices.push(display);
-      summary(`Attempt ${attempt + 1}: cloned display ${display} from cold source ${target}`);
-      await boot(target, 'warm target');
+      infrastructure('boot', () => {
+        run('xcrun', ['simctl', 'boot', target], { timeout: 120 });
+        run('xcrun', ['simctl', 'bootstatus', target, '-b'], { timeout: 300 });
+      });
       const cksim = (...args: string[]) => run(join(runtime, 'cksim'),
         ['--simulator', target, '--bundle', bundle, ...args], { timeout: 180 });
       infrastructure('install', () => run('xcrun', ['simctl', 'install', target, app], { timeout: 180 }));
       infrastructure('launch', () => launchToleratingASlowSimulator(() => cksim('launch')));
       infrastructure('bridge-connect', () => cksim('status'));
-      await boot(display, 'warm display');
-      infrastructure('install', () => run('xcrun', ['simctl', 'install', display, inspector], { timeout: 180 }));
       const log = `${prefix}-bridge.log`;
       const fd = openSync(log, 'w');
       try {
         bridge = spawn(join(runtime, 'cksim'), ['--simulator', target, '--bundle', bundle,
-          'inspect', '--app', inspector, '--inspector-simulator', display], { stdio: ['ignore', fd, fd],
+          'inspect', '--app', inspector], { stdio: ['ignore', fd, fd],
           env: { ...process.env, NSUnbufferedIO: 'YES' } });
         bridge.on('error', error => appendFileSync(log, String(error)));
       } finally { closeSync(fd); }
@@ -156,7 +128,7 @@ export async function journey(work: string): Promise<void> {
       appendFileSync(join(results, 'resources.log'), `\nUI test started ${new Date().toISOString()}\n`);
       try {
         const output = run('xcodebuild', ['test', '-project', 'tools/inspector-ui/InspectorJourney.xcodeproj',
-          '-scheme', 'InspectorJourney', '-destination', `platform=iOS Simulator,id=${display}`,
+          '-scheme', 'InspectorJourney', '-destination', 'platform=macOS',
           '-parallel-testing-enabled', 'NO', '-retry-tests-on-failure', 'NO',
           '-derivedDataPath', join(work, 'ui-build'), '-resultBundlePath', result,
           'CODE_SIGNING_ALLOWED=NO', 'COMPILER_INDEX_STORE_ENABLE=NO'], { timeout: 600 });

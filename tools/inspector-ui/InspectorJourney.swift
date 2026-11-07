@@ -9,28 +9,28 @@ final class InspectorJourney: XCTestCase {
     app.activate()
     let banner = app.buttons["expand-call"]
     XCTAssertTrue(banner.waitForExistence(timeout: 30))
-    banner.tap()
+    banner.click()
     attach(app, name: "Incoming call")
     let answer = app.buttons["answer"]
     XCTAssertTrue(answer.waitForExistence(timeout: 10))
-    tapWhenEnabled(answer)
+    clickWhenEnabled(answer)
     let status = app.staticTexts["call-status"]
     XCTAssertTrue(status.waitForExistence(timeout: 10))
     XCTAssertTrue(
       NSPredicate(format: "label == %@", "Connected").evaluate(with: status)
         || wait(status, label: "Connected"))
     attach(app, name: "Connected call")
-    tapWhenEnabled(app.buttons["end"])
+    clickWhenEnabled(app.buttons["end"])
     XCTAssertTrue(wait(status, label: "Ended"))
     attach(app, name: "Ended call")
-    app.buttons["dismiss-call"].tap()
-    let filter = app.switches["incoming-filter-do-not-disturb"]
+    app.buttons["dismiss-call"].click()
+    let filter = app.checkBoxes["incoming-filter-do-not-disturb"]
     for _ in 0..<12 {
       if filter.exists && filter.isHittable { break }
-      app.swipeUp()
+      app.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -400)
     }
     XCTAssertTrue(filter.isHittable)
-    tapWhenEnabled(filter)
+    clickWhenEnabled(filter)
     let confirmed = NSPredicate(format: "value == %@ AND enabled == true", "1")
     XCTAssertEqual(
       XCTWaiter.wait(
@@ -55,10 +55,10 @@ final class InspectorJourney: XCTestCase {
     add(attachment)
   }
 
-  private func tapWhenEnabled(_ element: XCUIElement) {
+  private func clickWhenEnabled(_ element: XCUIElement) {
     let enabled = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "enabled == true"), object: element)
     XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed)
-    element.tap()
+    element.click()
   }
 }

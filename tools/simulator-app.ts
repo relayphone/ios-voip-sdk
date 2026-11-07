@@ -51,15 +51,15 @@ export function infoPlist(app: SimulatorApp): string {
 }
 
 /** Compiles the sources into a signed simulator app. */
-export function buildSimulatorApp(app: SimulatorApp): void {
+export function buildSimulatorApp(app: SimulatorApp, execute: typeof run = run): void {
   mkdirSync(app.bundle, { recursive: false });
-  const sdk = run('xcrun', ['--sdk', 'iphonesimulator', '--show-sdk-path']);
-  run('xcrun', [
+  const sdk = execute('xcrun', ['--sdk', 'iphonesimulator', '--show-sdk-path']);
+  execute('xcrun', [
     '--sdk', 'iphonesimulator', 'swiftc',
     '-target', `${simulatorArchitecture()}-apple-ios${app.minimumOS}-simulator`,
     '-sdk', sdk, '-swift-version', '6', '-parse-as-library',
     ...app.sources, '-o', join(app.bundle, app.executable),
   ]);
   writeFileSync(join(app.bundle, 'Info.plist'), infoPlist(app));
-  run('codesign', ['-s', '-', '--force', app.bundle]);
+  execute('codesign', ['-s', '-', '--force', app.bundle]);
 }

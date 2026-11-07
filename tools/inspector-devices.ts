@@ -23,7 +23,7 @@ export function selectIPhone(json: string): DeviceType {
 }
 
 /** Queries the runtime itself; device profile internals are not part of this interface. */
-export function displayDevice(): DeviceType {
+export function simulatorDevice(): DeviceType {
   const json = run('xcrun', ['simctl', 'list', 'runtimes', '-j'], { timeout: 120 });
   const device = selectIPhone(json);
   console.log(`Selected runtime-supported device: ${device.name} (${device.identifier})`);
