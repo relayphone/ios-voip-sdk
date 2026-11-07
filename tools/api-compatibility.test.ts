@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assess, hasBreakingHeading, releaseTag, summary } from './api-compatibility.ts';
+import { assess, baseline, hasBreakingHeading, releaseTag, summary } from './api-compatibility.ts';
 
 const documented = '# Changelog\n\n## Unreleased\n\n### Breaking\n\n- Explain the migration.\n';
 const breakage = '/checkout/CallEvent.swift:25: error: API breakage: enum case joinFailed(_:) has been removed';
@@ -63,4 +63,25 @@ test('SwiftPM warning and final summary diagnostics are deduplicated', () => {
   const output = `/checkout/CallEvent.swift:25:8: warning: ${diagnostic} [#api-digester-breaking-change]\n` +
     `1 breaking change detected in VoIPCore:\n  💔 ${diagnostic}\n`;
   assert.deepEqual(assess(1, output, documented, '0.2.1').breaks, [diagnostic]);
+});
+
+test('a release PR compares with the newest earlier release and reads its own section', () => {
+  const tags = ['v0.1.1', 'v0.2.0', 'v0.2.1', 'v0.10.0-rc', 'v0.1'];
+  assert.deepEqual(baseline('0.2.1\n', tags), { tag: 'v0.2.1', section: 'Unreleased' });
+  assert.deepEqual(baseline('0.3.0\n', tags), { tag: 'v0.2.1', section: '0.3.0' });
+  assert.deepEqual(baseline('0.3.0', [...tags, 'v0.4.0']), { tag: 'v0.2.1', section: '0.3.0' });
+  assert.deepEqual(baseline('0.10.0', ['v0.9.0', 'v0.2.1']), { tag: 'v0.9.0', section: '0.10.0' });
+  assert.throws(() => baseline('0.1.0', tags), /No release tag precedes v0.1.0/);
+});
+
+test('a release documents its breaks under its own dated heading', () => {
+  const release = '# Changelog\n\n## Unreleased\n\n## 0.3.0 (2026-11-08)\n\n### Breaking\n\n- Migrate.\n';
+  assert.equal(hasBreakingHeading(release, '0.3.0'), true);
+  assert.equal(hasBreakingHeading(release), false);
+  assert.equal(hasBreakingHeading(release, '0.3'), false);
+  assert.equal(hasBreakingHeading('## 0.3.0 (2026-11-08)\n### Breaking\n', '0.3.1'), false);
+  const result = assess(1, breakage, release, '0.3.0', '0.3.0');
+  assert.equal(result.kind, 'documented');
+  assert.match(summary('v0.2.1', result, '0.3.0'), /0\.3\.0 Breaking heading/);
+  assert.equal(assess(1, breakage, release, '0.3.0').kind, 'undocumented');
 });
