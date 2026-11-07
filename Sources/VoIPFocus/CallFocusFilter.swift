@@ -81,18 +81,18 @@ extension CallFocusFilter {
   ///   the store's App Group, or ``FocusFilterStoreError/encodingFailed`` when the settings can't
   ///   be encoded as JSON.
   public func perform() async throws -> some IntentResult {
-    filterLog.info("perform entered")
+    filterLog.notice("perform entered")
     let settings = settings
     let defaults = Self().settings
     let stateName = settings == defaults ? "inactive" : "active"
-    filterLog.info("perform state=\(stateName, privacy: .public)")
+    filterLog.notice("perform state=\(stateName, privacy: .public)")
     do {
       let state = try Self.store.record(settings, defaults: defaults)
-      filterLog.info("perform store record succeeded")
+      filterLog.notice("perform store record succeeded")
       await didRecord(state)
       return .result()
     } catch {
-      filterLog.info("perform store record failed")
+      filterLog.error("perform store record failed")
       throw error
     }
   }
