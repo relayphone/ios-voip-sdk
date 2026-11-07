@@ -13,8 +13,9 @@ Public API changes include migration guidance.
 
 ### Diagnostics
 
-- Log Focus filter invocation, active or inactive state, and store record success or failure at
-  info level under the `VoIPFocus` subsystem. Observable store read and write failures log at
+- Log Focus filter invocation, active or inactive state, and store record success at notice
+  level, and store record failure at error level, under the `VoIPFocus` subsystem, so the system
+  keeps them for later reading. Observable store read and write failures log at
   error level. Logs include no settings, timestamps, identifiers or underlying error payloads.
 
 ## 0.2.1 (2026-11-05)
