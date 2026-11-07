@@ -42,7 +42,7 @@ jobs:
         run: |
           trap 'if [[ $? != 0 ]]; then echo "product:build failed" >> "$GITHUB_STEP_SUMMARY"; fi' EXIT
           node tools/build-runtime.ts "$RUNNER_TEMP/inspector-journey/runtime" --archs "$(uname -m)"
-          node tools/build-inspector.ts "$RUNNER_TEMP/inspector-journey/inspector"
+          node tools/build-inspector.ts "$RUNNER_TEMP/inspector-journey/inspector" --platform macos
       - name: Drive the GUI and assert on the target journal
         run: |
           set -o pipefail

@@ -222,7 +222,7 @@
 
     struct Inspect: AsyncParsableCommand {
       static let configuration = CommandConfiguration(
-        abstract: "Launch the separate SwiftUI simulator inspector.")
+        abstract: "Launch the SwiftUI Inspector on the Mac or a display simulator.")
       @OptionGroup var options: GlobalOptions
       @Option(help: "The built CKSimInspector.app.") var app: String
       @Option(help: "Reuse a separate booted simulator instead of creating a disposable display.")

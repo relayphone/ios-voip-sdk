@@ -13,6 +13,12 @@ Public API changes include migration guidance.
   Migrate `case .joinFailed(let call)` to `case .joinFailed(let call, _)`, or match on the reason
   to handle each failure.
 
+### Added
+
+- Run the SwiftUI call Inspector as a native macOS 26 app beside the target simulator.
+  Build with `node tools/build-inspector.ts <output> --platform macos` and pass the app to
+  `cksim inspect --app`. The default iOS simulator build remains available.
+
 ### Documentation
 
 - Explain main-actor media preparation, ordered audio commands and attempt tokens in an article

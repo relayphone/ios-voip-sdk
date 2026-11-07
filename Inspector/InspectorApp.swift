@@ -1,11 +1,17 @@
-#if targetEnvironment(simulator)
+#if targetEnvironment(simulator) || os(macOS)
   import SwiftUI
 
   @main
   struct InspectorApp: App {
     @StateObject private var model = InspectorModel()
     var body: some Scene {
-      WindowGroup { InspectorView(model: model).task { await model.follow() } }
+      #if os(macOS)
+        Window("Call Inspector", id: "inspector") {
+          InspectorView(model: model).task { await model.follow() }
+        }.defaultSize(width: 430, height: 860)
+      #else
+        WindowGroup { InspectorView(model: model).task { await model.follow() } }
+      #endif
     }
   }
   struct InspectorView: View {
@@ -215,13 +221,24 @@
           }
         }
         .navigationTitle("Call Inspector")
-        .fullScreenCover(
-          isPresented: Binding(get: { expanded != nil }, set: { if !$0 { expanded = nil } })
-        ) {
-          if let id = expanded, let call = model.conversations[id] {
-            CallScreen(model: model, call: call) { expanded = nil }
+        #if os(iOS)
+          .fullScreenCover(
+            isPresented: Binding(get: { expanded != nil }, set: { if !$0 { expanded = nil } })
+          ) {
+            if let id = expanded, let call = model.conversations[id] {
+              CallScreen(model: model, call: call) { expanded = nil }
+            }
           }
-        }
+        #else
+          .sheet(
+            isPresented: Binding(get: { expanded != nil }, set: { if !$0 { expanded = nil } })
+          ) {
+            if let id = expanded, let call = model.conversations[id] {
+              CallScreen(model: model, call: call) { expanded = nil }
+              .frame(width: 430, height: 700)
+            }
+          }
+        #endif
       }
     }
   }
@@ -392,11 +409,21 @@
           }.padding(24).frame(maxWidth: 520)
             .frame(maxWidth: .infinity)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
+        #if os(iOS)
+          .background(Color(uiColor: .systemGroupedBackground))
+        #else
+          .background(Color(nsColor: .windowBackgroundColor))
+        #endif
         .toolbar {
-          ToolbarItem(placement: .topBarTrailing) {
-            Button("Minimize", systemImage: "chevron.down", action: dismiss)
-          }
+          #if os(iOS)
+            ToolbarItem(placement: .topBarTrailing) {
+              Button("Minimize", systemImage: "chevron.down", action: dismiss)
+            }
+          #else
+            ToolbarItem(placement: .confirmationAction) {
+              Button("Minimize", systemImage: "chevron.down", action: dismiss)
+            }
+          #endif
         }
       }
     }
