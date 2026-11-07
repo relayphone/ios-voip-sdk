@@ -42,7 +42,7 @@ Releases are tagged `vX.Y.Z` and listed under
 Add the package to your manifest, or in Xcode with File > Add Package Dependencies:
 
 ```swift
-.package(url: "https://github.com/relayphone/ios-voip-sdk.git", .upToNextMinor(from: "0.2.1"))
+.package(url: "https://github.com/relayphone/ios-voip-sdk.git", .upToNextMinor(from: "0.3.0"))
 ```
 
 Before 1.0, a minor version may change the API, so pin the minor version and move to the next one
@@ -70,7 +70,7 @@ installs `Core`, `LiveCommunicationKit` and `PushKit`. Name the subspecs to add 
 simulator:
 
 ```ruby
-pod 'IosVoipSDK', :git => 'https://github.com/relayphone/ios-voip-sdk.git', :tag => 'v0.2.1',
+pod 'IosVoipSDK', :git => 'https://github.com/relayphone/ios-voip-sdk.git', :tag => 'v0.3.0',
                   :subspecs => ['LiveCommunicationKit', 'PushKit', 'Audio', 'Simulator']
 ```
 
