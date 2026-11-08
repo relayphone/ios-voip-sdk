@@ -20,7 +20,7 @@ extension EngineTests {
         await h.framework.send(.audioDeactivated)
         #expect(try await h.next() == .audioDeactivated)
       }
-      let records = await h.media.records
+      let records = await h.media.lifecycleRecords
       let releasedCalls = records.compactMap(\.releasedCall)
       #expect(releasedCalls.count == 1)
       let released = try #require(releasedCalls.first)
@@ -30,7 +30,7 @@ extension EngineTests {
           == (endsFirst ? [.release(released), .deactivate] : [.deactivate, .release(released)]))
       await h.framework.send(.audioDeactivated)
       #expect(try await h.next() == .audioDeactivated)
-      #expect(await h.media.records.compactMap(\.releasedCall).count == 1)
+      #expect(await h.media.lifecycleRecords.compactMap(\.releasedCall).count == 1)
     }
 
     @Test func answeredElsewhereReleasesBeforeARejoinOfTheSameCall() async throws {
@@ -40,7 +40,7 @@ extension EngineTests {
       await h.client.receive(.answeredElsewhere, for: callID, eventID: e2)
       #expect(try await h.next() == .previewStarted(callID, .answeredElsewhere))
       #expect(
-        await h.media.records.compactMap(\.releasedCall).map(\.status) == [
+        await h.media.lifecycleRecords.compactMap(\.releasedCall).map(\.status) == [
           .previewing(.answeredElsewhere)
         ])
       try await h.client.request(.join(callID))
@@ -49,7 +49,7 @@ extension EngineTests {
       #expect(try await h.next() == .performed(.join(callID), .connecting))
       await h.client.receive(.endedRemotely, for: callID, eventID: e3)
       #expect(try await h.next() == .ended(callID, .endedRemotely))
-      #expect(await h.media.records.compactMap(\.releasedCall).count == 2)
+      #expect(await h.media.lifecycleRecords.compactMap(\.releasedCall).count == 2)
     }
 
     @Test func failedJoinPreparationNeverReleases() async throws {
@@ -63,7 +63,7 @@ extension EngineTests {
       await h.client.confirmPlaced(callID)
       #expect(try await h.next() == .joinFailed(callID, .policy, .failed(.media)))
       #expect(try await h.next() == .previewStarted(callID, .policy))
-      #expect(await media.records.compactMap(\.releasedCall).isEmpty)
+      #expect(await media.lifecycleRecords.compactMap(\.releasedCall).isEmpty)
     }
 
     @Test func cancelledPreparationNeverReleases() async throws {
@@ -76,7 +76,7 @@ extension EngineTests {
       await h.client.receive(.answeredElsewhere, for: callID, eventID: e2)
       #expect(try await h.next() == .previewStarted(callID, .answeredElsewhere))
       await media.finishPreparing(callID, succeeded: true)
-      #expect(await media.records.compactMap(\.releasedCall).isEmpty)
+      #expect(await media.lifecycleRecords.compactMap(\.releasedCall).isEmpty)
     }
 
     @Test func aSuccessfulJoinThatLaterFailsReleases() async throws {
@@ -89,7 +89,7 @@ extension EngineTests {
       #expect(try await h.next() == .performed(.join(callID), .connecting))
       h.clock.advance(by: Deadlines().audioActivation)
       #expect(try await h.next() == .ended(callID, .failed(.audioActivationTimedOut)))
-      #expect(await h.media.records.compactMap(\.releasedCall).count == 1)
+      #expect(await h.media.lifecycleRecords.compactMap(\.releasedCall).count == 1)
     }
 
     @Test @VoIPActor func aConformerCanUseTheDefaultRelease() {
@@ -109,7 +109,7 @@ private struct LegacyMedia: CallMedia {
   func deactivate() {}
 }
 
-extension FakeMedia.Record {
+extension FakeMedia.LifecycleRecord {
   fileprivate var releasedCall: Call? {
     if case .release(let call) = self { call } else { nil }
   }

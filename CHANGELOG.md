@@ -18,6 +18,8 @@ Public API changes include migration guidance.
 
 - `CallMedia.release(_:)`, a synchronous notification when a successfully prepared call ends or
   returns to a preview. Its default implementation does nothing, so existing conformers compile.
+- `FakeMedia.lifecycleRecords` records releases alongside preparation and audio requests;
+  the existing `records` property and `Record` cases retain their original behavior.
 - `@relayphone/ios-voip-sdk/plugin`, a config plugin entry with typed
   `VoIPConversationsPluginProps` and a default plugin export for wrappers and typed app configs.
 - `@relayphone/ios-voip-sdk`, an iOS Expo module in `expo/`, with a TypeScript conversations API,

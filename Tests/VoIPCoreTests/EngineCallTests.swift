@@ -26,7 +26,7 @@ extension EngineTests {
         await h.reported() == [
           .report(callID), .other(.fulfill(answer)), .ended(callID, .endedRemotely),
         ])
-      let media = await h.media.records
+      let media = await h.media.lifecycleRecords
       #expect(media.count == 3)
       #expect(media.first.flatMap(\.preparedCall)?.id == callID)
       #expect(media.dropLast().last == .activate)
@@ -511,7 +511,7 @@ extension FakeCallingFramework.Record {
   }
 }
 
-extension FakeMedia.Record {
+extension FakeMedia.LifecycleRecord {
   var preparedCall: Call? {
     if case .prepare(let call) = self { call } else { nil }
   }

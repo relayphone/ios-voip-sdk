@@ -13,6 +13,16 @@ public final class FakeMedia: CallMedia {
     case activate
     /// The SDK stopped audio.
     case deactivate
+  }
+
+  /// A media request, including the release of a prepared call.
+  public enum LifecycleRecord: Hashable, Sendable {
+    /// The SDK asked to prepare a call's media.
+    case prepare(Call)
+    /// The SDK started audio.
+    case activate
+    /// The SDK stopped audio.
+    case deactivate
     /// The SDK released a successfully prepared call.
     case release(Call)
   }
@@ -30,8 +40,11 @@ public final class FakeMedia: CallMedia {
   /// The error the fake throws when preparing fails.
   public struct PreparationFailed: Error, Hashable, Sendable {}
 
-  /// Everything the SDK asked of the media, in order.
+  /// Preparation and audio requests, in order. For releases too, use ``lifecycleRecords``.
   public private(set) var records: [Record] = []
+
+  /// Everything the SDK asked of the media, including releases, in order.
+  public private(set) var lifecycleRecords: [LifecycleRecord] = []
 
   /// How the fake prepares each call's media. Defaults to ``Preparation/succeed``.
   public var preparation = Preparation.succeed
@@ -69,6 +82,7 @@ public final class FakeMedia: CallMedia {
   /// Records the request, then prepares as ``preparation`` says.
   public func prepare(_ call: Call) async throws {
     records.append(.prepare(call))
+    lifecycleRecords.append(.prepare(call))
     switch preparation {
     case .succeed:
       return
@@ -95,16 +109,18 @@ public final class FakeMedia: CallMedia {
   /// Records that audio started.
   public func activate() {
     records.append(.activate)
+    lifecycleRecords.append(.activate)
   }
 
   /// Records that audio stopped.
   public func deactivate() {
     records.append(.deactivate)
+    lifecycleRecords.append(.deactivate)
   }
 
   /// Records that the call no longer takes part on this device.
   public func release(_ call: Call) {
-    records.append(.release(call))
+    lifecycleRecords.append(.release(call))
   }
 
   private func cancel(_ id: UInt64) {
