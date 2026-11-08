@@ -5,6 +5,12 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+### Fixed
+
+- The Expo WebRTC media adapter resolves LiveKit's `LK`-prefixed audio classes at runtime,
+  with a fallback to unprefixed WebRTC builds. Missing classes fail media preparation instead
+  of preventing the app from linking.
+
 ### Added
 
 - `@relayphone/ios-voip-sdk/plugin`, a config plugin entry with typed

@@ -10,24 +10,23 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-// Only the subset expo-callkit-telecom calls. The implementation comes from whichever
+// Only the subset ios-voip-sdk calls. The implementation comes from whichever
 // WebRTC framework the app links; see README.md in this directory.
+
+#pragma once
 
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
 
+#import "RTCAudioSessionConfiguration.h"
+
 NS_ASSUME_NONNULL_BEGIN
 
-@class RTCAudioSessionConfiguration;
-
-@interface RTCAudioSession : NSObject
+@protocol VoIPRTCAudioSession <NSObject>
 
 @property(nonatomic, readonly) BOOL isActive;
 @property(nonatomic, assign) BOOL useManualAudio;
 @property(nonatomic, assign) BOOL isAudioEnabled;
-
-- (instancetype)init NS_UNAVAILABLE;
-+ (instancetype)sharedInstance;
 
 - (void)lockForConfiguration;
 - (void)unlockForConfiguration;
@@ -37,9 +36,18 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (BOOL)overrideOutputAudioPort:(AVAudioSessionPortOverride)portOverride
                           error:(NSError **)outError;
-- (BOOL)setConfiguration:(RTCAudioSessionConfiguration *)configuration
+- (BOOL)setConfiguration:(id<VoIPRTCAudioSessionConfiguration>)configuration
                    error:(NSError **)outError;
 
 @end
+
+/// Class messages are dispatched dynamically; neither WebRTC class is linked by this module.
+@protocol VoIPRTCAudioSessionClass <NSObject>
++ (id<VoIPRTCAudioSession>)sharedInstance;
+@end
+
+static inline id<VoIPRTCAudioSession> VoIPRTCAudioSessionSharedInstance(Class type) {
+  return [(Class<VoIPRTCAudioSessionClass>)type sharedInstance];
+}
 
 NS_ASSUME_NONNULL_END
