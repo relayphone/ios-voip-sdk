@@ -19,10 +19,13 @@
     /// Puts WebRTC in manual audio mode with its configuration for audio calls, before the app's
     /// JavaScript can create a peer connection.
     nonisolated init() {
-      let session = RTCAudioSession.sharedInstance()
+      guard let session = try? Self.session(),
+        let configurationClass = try? WebRTCClass.configuration.resolve(),
+        let configuration = try? Self.configuration(hasVideo: false)
+      else { return }
       session.useManualAudio = true
       session.isAudioEnabled = false
-      RTCAudioSessionConfiguration.setWebRTC(Self.configuration(hasVideo: false))
+      VoIPRTCAudioSessionConfigurationSetWebRTC(configurationClass, configuration)
     }
 
     func rememberConfiguration() {
@@ -32,25 +35,25 @@
 
     func prepare(_ call: Call) async throws {
       rememberConfiguration()
-      let session = RTCAudioSession.sharedInstance()
+      let session = try Self.session()
       session.lockForConfiguration()
       defer { session.unlockForConfiguration() }
       try session.setConfiguration(Self.configuration(hasVideo: call.hasVideo))
     }
 
     func activate() {
-      let session = RTCAudioSession.sharedInstance()
+      guard let session = try? Self.session() else { return }
       session.audioSessionDidActivate(AVAudioSession.sharedInstance())
       session.isAudioEnabled = true
     }
 
     func deactivate() {
-      let session = RTCAudioSession.sharedInstance()
+      guard let session = try? Self.session() else { return }
       session.isAudioEnabled = false
       session.audioSessionDidDeactivate(AVAudioSession.sharedInstance())
       guard let (category, mode, options) = earlier else { return }
       earlier = nil
-      let configuration = RTCAudioSessionConfiguration()
+      guard let configuration = try? Self.configuration(hasVideo: false) else { return }
       configuration.category = category.rawValue
       configuration.mode = mode.rawValue
       configuration.categoryOptions = options
@@ -59,9 +62,17 @@
       try? session.setConfiguration(configuration)
     }
 
+    private nonisolated static func session() throws(WebRTCClass.Missing) -> any VoIPRTCAudioSession
+    {
+      VoIPRTCAudioSessionSharedInstance(try WebRTCClass.audioSession.resolve())
+    }
+
     /// WebRTC's configuration for a call: voice chat, or video chat on the speaker.
-    private nonisolated static func configuration(hasVideo: Bool) -> RTCAudioSessionConfiguration {
-      let configuration = RTCAudioSessionConfiguration()
+    private nonisolated static func configuration(hasVideo: Bool) throws(WebRTCClass.Missing)
+      -> any VoIPRTCAudioSessionConfiguration
+    {
+      let configuration = VoIPRTCAudioSessionConfigurationCreate(
+        try WebRTCClass.configuration.resolve())
       configuration.category = AVAudioSession.Category.playAndRecord.rawValue
       configuration.categoryOptions =
         hasVideo

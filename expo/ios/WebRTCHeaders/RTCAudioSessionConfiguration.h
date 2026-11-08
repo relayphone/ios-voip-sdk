@@ -10,24 +10,36 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-// Only the subset expo-callkit-telecom calls. The implementation comes from whichever
+// Only the subset ios-voip-sdk calls. The implementation comes from whichever
 // WebRTC framework the app links; see README.md in this directory.
+
+#pragma once
 
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface RTCAudioSessionConfiguration : NSObject
+@protocol VoIPRTCAudioSessionConfiguration <NSObject>
 
 @property(nonatomic, strong) NSString *category;
 @property(nonatomic, assign) AVAudioSessionCategoryOptions categoryOptions;
 @property(nonatomic, strong) NSString *mode;
 
-- (instancetype)init NS_DESIGNATED_INITIALIZER;
-
-+ (void)setWebRTCConfiguration:(RTCAudioSessionConfiguration *)configuration;
-
 @end
+
+@protocol VoIPRTCAudioSessionConfigurationClass <NSObject>
++ (void)setWebRTCConfiguration:(id<VoIPRTCAudioSessionConfiguration>)configuration;
+@end
+
+static inline id<VoIPRTCAudioSessionConfiguration>
+VoIPRTCAudioSessionConfigurationCreate(Class type) {
+  return [[type alloc] init];
+}
+
+static inline void VoIPRTCAudioSessionConfigurationSetWebRTC(
+    Class type, id<VoIPRTCAudioSessionConfiguration> configuration) {
+  [(Class<VoIPRTCAudioSessionConfigurationClass>)type setWebRTCConfiguration:configuration];
+}
 
 NS_ASSUME_NONNULL_END
