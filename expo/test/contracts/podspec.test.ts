@@ -66,7 +66,7 @@ test('the Swift driver accepts the sources discovered by every CocoaPods subspec
   const sources: unknown = JSON.parse(readFileSync(sourcesPath, 'utf8'));
   assert.ok(Array.isArray(sources) && sources.length > 0 && sources.every(path => typeof path === 'string'));
   const result = spawnSync('xcrun', ['swiftc', '-driver-print-jobs', '-module-name', 'VoIPConversations', ...sources], {
-    encoding: 'utf8', timeout: 15_000,
+    encoding: 'utf8', timeout: 15_000, stdio: ['ignore', 'ignore', 'pipe'],
   });
   assert.equal(result.status, 0, result.stderr);
 });
