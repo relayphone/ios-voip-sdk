@@ -7,12 +7,17 @@ Public API changes include migration guidance.
 
 ### Fixed
 
+- The Expo WebRTC adapter keeps held calls configured, reapplies their audio configuration on
+  activation, and restores the app's earlier configuration only after all prepared calls are
+  released and audio is inactive.
 - The Expo WebRTC media adapter resolves LiveKit's `LK`-prefixed audio classes at runtime,
   with a fallback to unprefixed WebRTC builds. Missing classes fail media preparation instead
   of preventing the app from linking.
 
 ### Added
 
+- `CallMedia.release(_:)`, a synchronous notification when a successfully prepared call ends or
+  returns to a preview. Its default implementation does nothing, so existing conformers compile.
 - `@relayphone/ios-voip-sdk/plugin`, a config plugin entry with typed
   `VoIPConversationsPluginProps` and a default plugin export for wrappers and typed app configs.
 - `@relayphone/ios-voip-sdk`, an iOS Expo module in `expo/`, with a TypeScript conversations API,

@@ -1,8 +1,14 @@
 import Testing
+
 @testable import VoIPCore
 
 @MainActor
 private final class MainActorTransportFake: MainActorTransport {
+  enum Event: Equatable {
+    case audio(Bool)
+    case release(CallID)
+  }
+  var events: [Event] = []
   var audio: [Bool] = []
   var attempts: [UInt64] = []
   var waiting: CheckedContinuation<Void, Never>?
@@ -16,8 +22,11 @@ private final class MainActorTransportFake: MainActorTransport {
     }
   }
 
+  func release(_ call: Call, attempt: UInt64) { events.append(.release(call.id)) }
+
   func setAudioActive(_ active: Bool) {
     audio.append(active)
+    events.append(.audio(active))
   }
 }
 
@@ -29,6 +38,22 @@ private final class MainActorTransportFake: MainActorTransport {
     await sendAudioCommands(media)
     await media.finish()
     #expect(transport.audio == [false, true, false, true, false])
+  }
+
+  @Test @MainActor func releaseSharesTheAudioCommandStream() async throws {
+    let transport = MainActorTransportFake()
+    let media = await MainActorMedia(transport: transport)
+    let call = try Start.preparingAnswer.state().call
+    try await media.prepare(call)
+    await sendReleaseCommands(media, call: call)
+    await media.finish()
+    #expect(transport.events == [.audio(false), .audio(true), .release(call.id), .audio(false)])
+  }
+
+  @VoIPActor private func sendReleaseCommands(_ media: MainActorMedia, call: Call) {
+    media.activate()
+    media.release(call)
+    media.deactivate()
   }
 
   @VoIPActor
@@ -66,6 +91,7 @@ private final class MainActorTransportFake: MainActorTransport {
     commands.yield(.init(attempt: 1, active: true))
     try await consumer.prepare(call, attempt: 2)
     commands.yield(.init(attempt: 1, active: false))
+    commands.yield(.init(attempt: 1, releasing: call))
     commands.yield(.init(attempt: 2, active: true))
     commands.yield(.init(attempt: 1, active: false))
     commands.yield(.init(attempt: 2, active: false))
@@ -73,6 +99,7 @@ private final class MainActorTransportFake: MainActorTransport {
     await consumer.consume(stream)
     #expect(transport.audio == [false, true, false])
     #expect(!consumer.audioActive)
+    #expect(!transport.events.contains(.release(call.id)))
     await #expect(throws: CancellationError.self) {
       try await consumer.prepare(call, attempt: 1)
     }

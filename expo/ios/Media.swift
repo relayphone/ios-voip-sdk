@@ -10,8 +10,8 @@
   /// WebRTC runs in manual audio mode, so it never activates the audio session itself: the
   /// calling framework does. Before a call takes part, the audio session gets WebRTC's voice or
   /// video chat configuration; when the system activates it, WebRTC starts its audio unit, and
-  /// when the system deactivates it, WebRTC stops and the session's earlier configuration
-  /// returns. The app's JavaScript connects the call's room or peer connection as before.
+  /// when the system deactivates it, WebRTC stops. Held calls keep their configuration;
+  /// the earlier configuration returns after all prepared calls are released and audio is inactive. The app's JavaScript connects the call's room or peer connection as before.
   @VoIPActor
   final class RTCAudioSessionMedia: CallMedia {
     private nonisolated static let log = Logger(subsystem: "VoIPConversations", category: "media")
@@ -20,7 +20,7 @@
     /// The audio session's configuration before the first call prepared it.
     private lazy var configuration = CallAudioConfiguration<
       (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions)
-    >(restore: Self.restore)
+    >(apply: Self.apply)
 
     /// Puts WebRTC in manual audio mode with its configuration for audio calls, before the app's
     /// JavaScript can create a peer connection.
@@ -44,10 +44,19 @@
 
     func prepare(_ call: Call) async throws {
       rememberConfiguration()
-      let session = try Self.session()
-      session.lockForConfiguration()
-      defer { session.unlockForConfiguration() }
-      try session.setConfiguration(Self.configuration(hasVideo: call.hasVideo))
+      do {
+        let session = try Self.session()
+        session.lockForConfiguration()
+        defer { session.unlockForConfiguration() }
+        try session.setConfiguration(Self.configuration(hasVideo: call.hasVideo))
+        try Task.checkCancellation()
+        let audio = AVAudioSession.sharedInstance()
+        configuration.prepared(
+          call.id, configuration: (audio.category, audio.mode, audio.categoryOptions))
+      } catch {
+        configuration.restoreIfIdle()
+        throw error
+      }
     }
 
     func activate() {
@@ -55,6 +64,7 @@
         Self.warnAboutMissingWebRTC()
         return
       }
+      configuration.activate()
       session.audioSessionDidActivate(AVAudioSession.sharedInstance())
       session.isAudioEnabled = true
     }
@@ -69,7 +79,9 @@
       configuration.deactivate()
     }
 
-    private static func restore(
+    func release(_ call: Call) { configuration.release(call.id) }
+
+    private static func apply(
       _ earlier: (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions)
     ) {
       guard let session = try? Self.session() else {

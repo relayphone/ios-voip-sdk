@@ -13,6 +13,8 @@ public final class FakeMedia: CallMedia {
     case activate
     /// The SDK stopped audio.
     case deactivate
+    /// The SDK released a successfully prepared call.
+    case release(Call)
   }
 
   /// How the fake prepares a call's media.
@@ -98,6 +100,11 @@ public final class FakeMedia: CallMedia {
   /// Records that audio stopped.
   public func deactivate() {
     records.append(.deactivate)
+  }
+
+  /// Records that the call no longer takes part on this device.
+  public func release(_ call: Call) {
+    records.append(.release(call))
   }
 
   private func cancel(_ id: UInt64) {

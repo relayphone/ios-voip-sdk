@@ -37,6 +37,7 @@ final class CallEngine {
   private var earlyEvents: [CallID: [EarlyEvent]] = [:]
   private var timers: [TimerKey: Timer] = [:]
   private var preparations: [CallID: Task<Void, Never>] = [:]
+  private var preparedCalls: Set<CallID> = []
   private var isAudioActive = false
   /// Whether the system interrupted active audio, and hasn't activated it again or ended the
   /// interruption.
@@ -402,6 +403,11 @@ final class CallEngine {
     let (next, effects) = CallMachine.transition(
       state, event, configuration: configuration, now: clock.date())
     states[id] = next
+    if next.phase.isEnded || next.phase.isPreviewing,
+      preparedCalls.remove(id) != nil
+    {
+      media.release(next.call)
+    }
     let reply = run(effects, for: id)
     settle(id)
     return reply
@@ -485,7 +491,10 @@ final class CallEngine {
         event = .mediaPreparationFailed
       }
       guard let self, !Task.isCancelled else { return }
-      serially { self.handle(call.id, event) }
+      serially {
+        if case .mediaPrepared = event { self.preparedCalls.insert(call.id) }
+        self.handle(call.id, event)
+      }
     }
   }
 

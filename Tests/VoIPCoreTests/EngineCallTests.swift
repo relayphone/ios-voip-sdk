@@ -27,9 +27,14 @@ extension EngineTests {
           .report(callID), .other(.fulfill(answer)), .ended(callID, .endedRemotely),
         ])
       let media = await h.media.records
-      #expect(media.count == 2)
+      #expect(media.count == 3)
       #expect(media.first.flatMap(\.preparedCall)?.id == callID)
-      #expect(media.last == .activate)
+      #expect(media.dropLast().last == .activate)
+      if case .release(let released) = media.last {
+        #expect(released.status == .ended(.endedRemotely))
+      } else {
+        Issue.record("Ended calls release their prepared media")
+      }
       await h.until { $0.calls.isEmpty }
       #expect(await h.framework.configuration == VoIPConfiguration())
     }

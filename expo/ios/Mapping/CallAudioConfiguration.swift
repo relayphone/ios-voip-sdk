@@ -2,21 +2,46 @@
   import VoIPCore
 #endif
 
-/// The audio configuration to restore when WebRTC deactivates its session.
+/// Keeps call audio configured until every prepared call is released and audio is inactive.
 @VoIPActor
 final class CallAudioConfiguration<Value: Sendable> {
   private var earlier: Value?
-  private let restore: @VoIPActor @Sendable (Value) -> Void
+  private var calls: [CallID: Value] = [:]
+  private var order: [CallID] = []
+  private var isActive = false
+  private let apply: @VoIPActor @Sendable (Value) -> Void
 
-  init(restore: @escaping @VoIPActor @Sendable (Value) -> Void) { self.restore = restore }
+  init(apply: @escaping @VoIPActor @Sendable (Value) -> Void) { self.apply = apply }
 
   func remember(_ value: @autoclosure () -> Value) {
     if earlier == nil { earlier = value() }
   }
 
+  func prepared(_ id: CallID, configuration: Value) {
+    calls[id] = configuration
+    order.removeAll { $0 == id }
+    order.append(id)
+  }
+
+  func activate() {
+    if let id = order.last, let configuration = calls[id] { apply(configuration) }
+    isActive = true
+  }
+
   func deactivate() {
-    guard let earlier else { return }
+    isActive = false
+    restoreIfIdle()
+  }
+
+  func release(_ id: CallID) {
+    calls[id] = nil
+    order.removeAll { $0 == id }
+    restoreIfIdle()
+  }
+
+  func restoreIfIdle() {
+    guard calls.isEmpty, !isActive, let earlier else { return }
     self.earlier = nil
-    restore(earlier)
+    apply(earlier)
   }
 }
