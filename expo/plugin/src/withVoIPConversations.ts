@@ -7,6 +7,7 @@ import { withVoIPConversationsIos } from "./withVoIPConversationsIos.ts";
 
 import type { MediaAdapter } from "../../build/conversations/types";
 
+/** iOS options for the config plugin exported by `@relayphone/ios-voip-sdk/plugin`. */
 export type VoIPConversationsPluginProps = {
   /** WebRTC audio session integration, also used by LiveKit React Native. Defaults to webrtc. */
   mediaAdapter?: MediaAdapter;

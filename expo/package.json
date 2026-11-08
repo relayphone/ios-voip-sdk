@@ -11,6 +11,10 @@
     },
     "./app.plugin": "./app.plugin.js",
     "./app.plugin.js": "./app.plugin.js",
+    "./plugin": {
+      "types": "./plugin/build/withVoIPConversations.d.ts",
+      "default": "./plugin/build/withVoIPConversations.js"
+    },
     "./package.json": "./package.json",
     "./types": {
       "types": "./build/conversations/index.d.ts",

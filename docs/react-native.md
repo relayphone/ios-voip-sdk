@@ -49,6 +49,18 @@ or Swift package to the same app. Rebuild the native app after changing plugin o
 
 ## Config plugin
 
+Wrappers and typed app configs can import the plugin's options and function type from
+`@relayphone/ios-voip-sdk/plugin`. This entry loads the config plugin without loading the native
+bridge; the default export is the same plugin used by `app.plugin`:
+
+```ts
+import type withVoIPConversations from "@relayphone/ios-voip-sdk/plugin";
+import type { VoIPConversationsPluginProps } from "@relayphone/ios-voip-sdk/plugin";
+
+type IOSPlugin = typeof withVoIPConversations;
+const iosOptions = { mediaAdapter: "webrtc" } satisfies VoIPConversationsPluginProps;
+```
+
 For an app without WebRTC media, start with this `app.config.ts`:
 
 ```ts
