@@ -54,14 +54,36 @@ const facts = [
   { event: 'push.received', mustReport: true },
   { event: 'report.incoming', callUUID: 'filtered', code: 3, filterReason: 'do-not-disturb' },
 ];
-const journal = (rows: readonly object[] = facts) => rows.map((row, index) => JSON.stringify({
+// Fixed vectors from the SDK's public deviceUUID(for:) mapping for run-<name>.
+const systemUUIDs: Record<string, string> = {
+  incoming: '18B2E95A-B69B-847A-BE6F-1327665424E9',
+  outgoing: '584FD139-138F-8291-BC7C-C4D58B26B31E',
+  preview: '66C3D439-09B3-8427-BC9E-A9F41D007908',
+  elsewhere: '6743C347-097A-82C4-9888-2AC2848652BE',
+  filtered: 'B41A8F37-2DA7-89CC-B2A6-1ABD9E2EFD60',
+};
+const journal = (rows: readonly Record<string, unknown>[] = facts) => rows.map((row, index) => JSON.stringify({
   schemaVersion: 1, runID: 'runtime-run', pid: 123, bundleID: 'com.example.voipconversations', profile: 'ios-27.0', sequence: index + 1,
   ...row,
+  ...(typeof row.callUUID === 'string' ? { callUUID: systemUUIDs[row.callUUID] ?? row.callUUID } : {}),
+  ...(typeof row.uuid === 'string' ? { uuid: systemUUIDs[row.uuid] ?? row.uuid } : {}),
 })).join('\n');
 
 test('accepts the five JavaScript journeys and matching ordered runtime evidence', () => {
   assertJavaScriptResults(result(), 'run');
   assertExpoJournal(journal(), 'run');
+});
+test('LiveCommunicationKit journal identities use device UUIDs even when caller handles are empty', () => {
+  assertExpoJournal(journal(facts.map(row => row.event === 'call.changed' ? { ...row, handle: '' } : row)), 'run');
+});
+test('rejects a consistently substituted system UUID for every journey, even with matching caller handles', () => {
+  for (const name of Object.keys(systemUUIDs)) {
+    const foreignUUID = '00000000-0000-8000-8000-000000000000';
+    assert.throws(() => assertExpoJournal(journal(facts.map(row => ({ ...row,
+      ...(row.callUUID === name ? { callUUID: foreignUUID } : {}),
+      ...(row.uuid === name ? { uuid: foreignUUID } : {}),
+    }))), 'run'), `substituted ${name} UUID`);
+  }
 });
 test('rejects stale, incomplete and failed app results', () => {
   for (const replacement of [{ runID: 'stale' }, { stage: 'failed' }, { completed: [] }, { snapshots: [] }, { handlers: [] },

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { journeyIDs } from '../expo/example/client/journeys/results.ts';
 
 function object(value: unknown): Record<string, unknown> {
@@ -8,6 +9,15 @@ function object(value: unknown): Record<string, unknown> {
 function rows(value: unknown): Record<string, unknown>[] {
   assert.ok(Array.isArray(value), 'Expected an array');
   return value.map(object);
+}
+
+/** The SDK's deviceUUID(for:) contract: SHA-256 prefix with UUID version 8 and RFC variant bits. */
+function deviceUUID(id: string): string {
+  const bytes = createHash('sha256').update(id, 'utf8').digest().subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x80;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString('hex').toUpperCase();
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 /** Checks observable JS state, placement callbacks and native events, independently of completion labels. */
@@ -67,6 +77,8 @@ export function assertExpoJournal(journal: string, runID: string): void {
   }
   const reports = events.filter(row => row.event === 'report.incoming');
   assert.deepEqual(reports.map(row => row.code), [0, 3, 0, 3]);
+  assert.deepEqual(reports.map(row => row.callUUID), ['incoming', 'preview', 'elsewhere', 'filtered']
+    .map(name => deviceUUID(`${runID}-${name}`)), 'Incoming journal UUIDs must name the JavaScript calls');
   const [incoming, preview, elsewhere, filtered] = reports.map(row => row.callUUID);
   assert.ok(reports.every(row => typeof row.callUUID === 'string' && row.callUUID.length > 0));
   assert.equal(new Set(reports.map(row => row.callUUID)).size, 4);
@@ -84,11 +96,12 @@ export function assertExpoJournal(journal: string, runID: string): void {
   const report = (call: unknown) => next('incoming report', row => row.event === 'report.incoming' && row.callUUID === call);
   const filter = (reason: string) => next(`filter ${reason}`, row => row.event === 'incomingFilter.configured' && row.reason === reason);
   event('runtime.installed'); event('push.received'); report(incoming);
-  assert.equal(changed(incoming, 'ringing').handle, `${runID}-incoming`);
+  changed(incoming, 'ringing');
   settled(incoming, 'answer'); changed(incoming, 'connected');
   settled(incoming, 'hold'); changed(incoming, 'held');
   settled(incoming, 'end'); changed(incoming, 'ended');
   const outgoing = next('outgoing start', row => row.event === 'action.settled' && row.kind === 'start').callUUID;
+  assert.equal(outgoing, deviceUUID(`${runID}-outgoing`), 'Outgoing journal UUID must name the JavaScript call');
   assert.ok(typeof outgoing === 'string' && !reports.some(row => row.callUUID === outgoing), 'Outgoing call identity collided');
   assert.equal(changed(outgoing, 'connected').outgoing, true);
   settled(outgoing, 'end'); changed(outgoing, 'ended');
@@ -96,7 +109,7 @@ export function assertExpoJournal(journal: string, runID: string): void {
   settled(preview, 'start'); changed(preview, 'connected'); settled(preview, 'end'); changed(preview, 'ended');
   filter('none');
   event('push.received'); report(elsewhere);
-  assert.equal(changed(elsewhere, 'ringing').handle, `${runID}-elsewhere`);
+  changed(elsewhere, 'ringing');
   event('push.received'); next('server end', row => row.event === 'report.ended' && row.callUUID === elsewhere);
   changed(elsewhere, 'ended');
   filter('do-not-disturb'); event('push.received'); report(filtered);
