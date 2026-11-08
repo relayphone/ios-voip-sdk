@@ -13,8 +13,9 @@
   @VoIPActor
   final class RTCAudioSessionMedia: CallMedia {
     /// The audio session's configuration before the first call prepared it.
-    private var earlier:
-      (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions)?
+    private lazy var configuration = CallAudioConfiguration<
+      (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions)
+    >(restore: Self.restore)
 
     /// Puts WebRTC in manual audio mode with its configuration for audio calls, before the app's
     /// JavaScript can create a peer connection.
@@ -30,7 +31,7 @@
 
     func rememberConfiguration() {
       let audio = AVAudioSession.sharedInstance()
-      if earlier == nil { earlier = (audio.category, audio.mode, audio.categoryOptions) }
+      configuration.remember((audio.category, audio.mode, audio.categoryOptions))
     }
 
     func prepare(_ call: Call) async throws {
@@ -51,8 +52,14 @@
       guard let session = try? Self.session() else { return }
       session.isAudioEnabled = false
       session.audioSessionDidDeactivate(AVAudioSession.sharedInstance())
-      guard let (category, mode, options) = earlier else { return }
-      earlier = nil
+      configuration.deactivate()
+    }
+
+    private static func restore(
+      _ earlier: (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions)
+    ) {
+      guard let session = try? Self.session() else { return }
+      let (category, mode, options) = earlier
       guard let configuration = try? Self.configuration(hasVideo: false) else { return }
       configuration.category = category.rawValue
       configuration.mode = mode.rawValue

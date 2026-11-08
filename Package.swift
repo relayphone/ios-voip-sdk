@@ -94,7 +94,8 @@ let package = Package(
     .testTarget(
       name: "VoIPCoreTests", dependencies: ["VoIPCore", "VoIPTesting"], swiftSettings: strictSwift),
     .testTarget(
-      name: "VoIPAudioTests", dependencies: ["VoIPAudio", "VoIPCore"], swiftSettings: strictSwift),
+      name: "VoIPAudioTests", dependencies: ["VoIPAudio", "VoIPCore", "VoIPTesting"],
+      swiftSettings: strictSwift),
     .testTarget(
       name: "VoIPConversationsMappingTests",
       dependencies: ["VoIPConversationsMapping", "VoIPCore", "VoIPAudio", "VoIPTesting"],

@@ -1,5 +1,6 @@
 import Testing
 import VoIPCore
+import VoIPTesting
 
 @testable import VoIPAudio
 
@@ -57,5 +58,32 @@ struct ConfigurationTests {
         .setCategory([.allowBluetoothHFP, .allowBluetoothA2DP]),
       ])
     #expect(attached.events.isEmpty)
+  }
+
+  @Test @MainActor func nativeAudioKeepsItsConfigurationAcrossHoldAndResume() async throws {
+    let session = FakeSession()
+    let adapter = AudioSessionAdapter(
+      configuration: AudioSessionConfiguration(), session: session,
+      notifications: FakeNotifications())
+    let framework = FakeCallingFramework()
+    let client = try VoIPClient.start(framework: framework, media: FakeMedia(), audio: adapter)
+    var events = client.events().makeAsyncIterator()
+    let id = CallID(rawValue: "native-held")
+    _ = await client.report(IncomingCall(id: id, parties: []))
+    _ = await events.next()
+    await framework.perform(.answer(id))
+    _ = await events.next()
+    await framework.send(.audioActivated)
+    _ = await events.next()
+    await framework.perform(.hold(id, onHold: true))
+    _ = await events.next()
+    await framework.send(.audioDeactivated)
+    _ = await events.next()
+    #expect(await session.records == [.setCategory([.allowBluetoothHFP, .allowBluetoothA2DP])])
+    await framework.perform(.hold(id, onHold: false))
+    _ = await events.next()
+    await framework.send(.audioActivated)
+    _ = await events.next()
+    #expect(await session.records == [.setCategory([.allowBluetoothHFP, .allowBluetoothA2DP])])
   }
 }
