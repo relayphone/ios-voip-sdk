@@ -7,6 +7,8 @@ Public API changes include migration guidance.
 
 ### Added
 
+- `@relayphone/ios-voip-sdk/plugin`, a config plugin entry with typed
+  `VoIPConversationsPluginProps` and a default plugin export for wrappers and typed app configs.
 - `@relayphone/ios-voip-sdk`, an iOS Expo module in `expo/`, with a TypeScript conversations API,
   React hooks, a config plugin and the SDK's Swift sources. Incoming and outgoing conversation
   IDs preserve the app's call ID; handlers place only outgoing starts and joins from previews.
