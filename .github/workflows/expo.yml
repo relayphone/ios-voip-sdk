@@ -1,0 +1,101 @@
+name: React Native package
+
+on:
+  push:
+    branches: [main]
+    paths: &paths
+      - "expo/**"
+      - "Sources/VoIPCore/**"
+      - "Sources/VoIPAudio/**"
+      - "Sources/VoIPLiveCommunicationKit/**"
+      - "Sources/VoIPPushKit/**"
+      - "Sources/VoIPPushDelivery/**"
+      - "Sources/VoIPNotifications/**"
+      - "Sources/VoIPLiveActivity/**"
+      - "Sources/VoIPFocus/**"
+      - "Sources/VoIPSimulator/**"
+      - "Sources/CKSimProtocol/**"
+      - "Sources/Engine/**"
+      - "Sources/Interposition/**"
+      - "VERSION"
+      - "tools/expo-package*"
+      - ".github/actions/setup/**"
+      - ".github/workflows/expo.yml"
+  pull_request:
+    paths: *paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: expo-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  package:
+    name: TypeScript and packed iOS example
+    runs-on: xcode-27
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Check TypeScript, the plugin and package versions
+        run: |
+          npm ci --prefix expo --ignore-scripts --no-audit --no-fund
+          npm run typecheck --prefix expo
+          npm test --prefix expo
+          npm run sync:sources --prefix expo
+          node tools/expo-package.ts
+          pod ipc spec expo/ios/VoIPConversations.podspec > /dev/null
+          swift format lint --strict --recursive --parallel expo/ios expo/example/client/focus
+      - name: Pack the source distribution
+        working-directory: expo
+        run: npm pack --pack-destination "$RUNNER_TEMP"
+      - name: Install the tarball into an isolated copy of the example
+        run: |
+          cp -R expo/example/client "$RUNNER_TEMP/expo-example"
+          cd "$RUNNER_TEMP/expo-example"
+          npm install --no-audit --no-fund "$RUNNER_TEMP/"*.tgz
+          npm run typecheck
+          npm run prebuild -- --no-install
+          cd ios
+          pod install --repo-update
+          pod ipc spec ../node_modules/@relayphone/ios-voip-sdk/ios/VoIPConversations.podspec > /dev/null
+      - name: Build the packed example for the simulator and devices
+        working-directory: ${{ runner.temp }}/expo-example
+        run: |
+          for build in 'Debug|generic/platform=iOS Simulator' 'Release|generic/platform=iOS'; do
+            xcodebuild -workspace ios/VoIPExample.xcworkspace -scheme VoIPExample \
+              -configuration "${build%%|*}" -destination "${build#*|}" \
+              -derivedDataPath "$RUNNER_TEMP/expo-build" CODE_SIGNING_ALLOWED=NO \
+              COMPILER_INDEX_STORE_ENABLE=NO build > "$RUNNER_TEMP/expo-${build%%|*}.log" 2>&1 || {
+                tail -100 "$RUNNER_TEMP/expo-${build%%|*}.log"; exit 1;
+              }
+          done
+      - name: Check that the device build leaves out the simulator runtime and CallKit
+        run: |
+          app="$RUNNER_TEMP/expo-build/Build/Products/Release-iphoneos/VoIPExample.app/VoIPExample"
+          nm "$app" > "$RUNNER_TEMP/expo-symbols.txt"
+          otool -L "$app" > "$RUNNER_TEMP/expo-links.txt"
+          if grep -q CKSimRuntime "$RUNNER_TEMP/expo-symbols.txt"; then
+            echo "::error::The Release device build contains the simulator runtime."; exit 1
+          fi
+          if grep -q CallKit.framework "$RUNNER_TEMP/expo-links.txt"; then
+            echo "::error::The Release device build of a LiveCommunicationKit app links CallKit."; exit 1
+          fi
+      - name: Keep build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: expo-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/expo-*.log
+            ${{ runner.temp }}/expo-example/ios/Podfile.lock
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Delete build outputs
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/expo-build" "$RUNNER_TEMP/expo-example"
