@@ -5,6 +5,15 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+### Added
+
+- `@relayphone/ios-voip-sdk`, an iOS Expo module in `expo/`, with a TypeScript conversations API,
+  React hooks, a config plugin and the SDK's Swift sources. Incoming and outgoing conversation
+  IDs preserve the app's call ID; handlers place only outgoing starts and joins from previews.
+- Five JavaScript simulator journeys in the Expo example: incoming answer/hold/end, outgoing
+  start/connect/end, preview join, answered elsewhere and a filtered call. They verify both the
+  app's results and the simulator runtime's journal.
+
 ## 0.3.0 (2026-11-08)
 
 ### Breaking

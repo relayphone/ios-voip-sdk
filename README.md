@@ -21,9 +21,13 @@ Each [release](docs/runtime-releases.md) also publishes a package of the
 SDK. The SDK's terms are defined in the [glossary](GLOSSARY.md) and its decisions are recorded in
 [docs/adr](docs/adr). Start with the [documentation index](docs/README.md).
 
-**React Native and Expo:** use [expo-callkit-telecom](https://github.com/relayphone/expo-callkit-telecom)
-v2, whose iOS module runs on this SDK. This repository no longer ships an Expo module; see the
-[changelog](CHANGELOG.md) to migrate from it or from `ConversationClient`.
+## React Native and Expo
+
+The iOS package, `@relayphone/ios-voip-sdk`, lives in [`expo/`](expo). See the
+[React Native guide](docs/react-native.md) for installation, the config plugin and the
+TypeScript API. It is versioned with the SDK and isn't on npm yet.
+[expo-callkit-telecom](https://github.com/relayphone/expo-callkit-telecom) v2 will use this
+package for iOS and provide its Android implementation alongside it.
 
 ## Requirements
 
