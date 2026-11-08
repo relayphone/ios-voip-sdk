@@ -3,12 +3,18 @@ import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isMain, main, run } from './command.ts';
 import { simulatorDevice } from './inspector-devices.ts';
-import { simulatorDiagnostics } from './inspector-resources.ts';
+import { captureTail, simulatorDiagnostics } from './inspector-resources.ts';
 import { launchToleratingASlowSimulator } from './runtime-smoke.ts';
 import { assertExpoJournal, assertJavaScriptResults } from './expo-journey-results.ts';
 import { journeyIDs, type JourneyStage } from '../expo/example/client/journeys/results.ts';
 
 const bundle = 'com.example.voipconversations';
+
+/** Launches the source-activated app and retains its startup output. */
+export function launchBundledExample(simulator: string, prefix: string, execute: typeof run = run): string {
+  return launchToleratingASlowSimulator(() => execute('xcrun', ['simctl', 'launch',
+    `--stdout=${prefix}-stdout.log`, `--stderr=${prefix}-stderr.log`, simulator, bundle], { timeout: 180 }));
+}
 
 export class InfrastructureFailure extends Error {
   readonly step: string;
@@ -92,8 +98,7 @@ export async function expoJourney(work: string, app: string): Promise<void> {
         ['--simulator', simulator, '--bundle', bundle, '--app-container', container, ...args], { timeout: 180 });
       captureJournal = () => cksim('watch', '--json', '--duration', '1');
       // The SDK activates its compiled-in runtime; cksim launch would inject a second runtime.
-      infrastructure('launch', () => launchToleratingASlowSimulator(() => run('xcrun',
-        ['simctl', 'launch', simulator, bundle], { timeout: 180 })));
+      infrastructure('launch', () => launchBundledExample(simulator, prefix));
       check = 'javascript-start';
       const ready = join(container, 'Documents/javascript-journeys-ready.json');
       await until('JavaScript bootstrap', 120, () => existsSync(ready) ? true : undefined);
@@ -136,6 +141,13 @@ export async function expoJourney(work: string, app: string): Promise<void> {
       writeFileSync(`${prefix}-failure.log`, `${String(error)}\n${error instanceof Error ? String(error.cause ?? '') : ''}`);
       if (output && existsSync(output)) copyFileSync(output, `${prefix}-app.json`);
       try { if (captureJournal) writeFileSync(`${prefix}-events.jsonl`, captureJournal()); } catch { /* Retain the first failure. */ }
+      if (target) {
+        try { writeFileSync(`${prefix}-app.log`, await captureTail('xcrun', ['simctl', 'spawn', target,
+          'log', 'show', '--last', '5m', '--style', 'compact', '--predicate', 'process == "VoIPExample"'])); }
+        catch { /* Retain the first failure. */ }
+        try { run('xcrun', ['simctl', 'io', target, 'screenshot', `${prefix}-screen.png`], { timeout: 30 }); }
+        catch { /* An unavailable screenshot cannot replace the journey failure. */ }
+      }
       await simulatorDiagnostics(prefix);
       throw error;
     } finally {

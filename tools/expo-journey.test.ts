@@ -3,7 +3,18 @@ import { test } from 'node:test';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { deleteJourneySimulator, InfrastructureFailure, withInfrastructureRetry } from './expo-journey.ts';
+import { deleteJourneySimulator, InfrastructureFailure, launchBundledExample, withInfrastructureRetry } from './expo-journey.ts';
+
+test('launching the bundled app preserves both standard streams for startup failures', () => {
+  const output = launchBundledExample('simulator', '/fixture/attempt-1', (command, args, options) => {
+    assert.equal(command, 'xcrun');
+    assert.deepEqual(args, ['simctl', 'launch', '--stdout=/fixture/attempt-1-stdout.log',
+      '--stderr=/fixture/attempt-1-stderr.log', 'simulator', 'com.example.voipconversations']);
+    assert.equal(options?.timeout, 180);
+    return 'com.example.voipconversations: 123';
+  });
+  assert.equal(output, 'com.example.voipconversations: 123');
+});
 
 test('first success reports zero infrastructure retries', async () => {
   const attempts: number[] = []; const summaries: string[] = [];
