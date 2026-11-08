@@ -1,9 +1,79 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { deleteJourneySimulator, InfrastructureFailure, launchBundledExample, withInfrastructureRetry } from './expo-journey.ts';
+import { run } from './command.ts';
+import { deleteJourneySimulator, InfrastructureFailure, launchBundledExample, openJourneyLink, withInfrastructureRetry } from './expo-journey.ts';
+
+test('the journey link is approved for the owned simulator before opening it without a UI prompt', t => {
+  const root = mkdtempSync(join(tmpdir(), 'expo-journey-link-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const plist = join(root, 'Library/Preferences/com.apple.launchservices.schemeapproval.plist');
+  mkdirSync(join(root, 'Library/Preferences'), { recursive: true });
+  const commands: { command: string; args: readonly string[] }[] = [];
+  openJourneyLink('owned', 'run-1', (command, args, options) => {
+    commands.push({ command, args });
+    assert.equal(options?.timeout, 120);
+    return JSON.stringify({ devices: { runtime: [{ udid: 'unrelated', dataPath: '/unrelated' }, { udid: 'owned', dataPath: root }] } });
+  });
+  assert.deepEqual(commands, [
+    { command: 'xcrun', args: ['simctl', 'list', 'devices', '--json'] },
+    { command: 'plutil', args: ['-create', 'binary1', plist] },
+    { command: 'plutil', args: ['-replace', String.raw`com\.apple\.CoreSimulator\.CoreSimulatorBridge-->conversations-example`, '-string', 'com.example.voipconversations', plist] },
+    { command: 'xcrun', args: ['simctl', 'openurl', 'owned', 'conversations-example://journey?runID=run-1'] },
+  ]);
+});
+
+for (const existing of [false, true]) {
+  test(`scheme approval ${existing ? 'preserves other binary plist entries' : 'creates a missing binary plist'}`,
+    { skip: process.platform !== 'darwin' }, t => {
+      const root = mkdtempSync(join(tmpdir(), 'expo-journey-link-'));
+      t.after(() => rmSync(root, { recursive: true, force: true }));
+      const plist = join(root, 'Library/Preferences/com.apple.launchservices.schemeapproval.plist');
+      mkdirSync(join(root, 'Library/Preferences'), { recursive: true });
+      const key = 'com.apple.CoreSimulator.CoreSimulatorBridge-->conversations-example';
+      if (existing) {
+        writeFileSync(plist, JSON.stringify({ 'other.scheme': 'other.app', [key]: 'previous.app' }));
+        run('plutil', ['-convert', 'binary1', plist]);
+      }
+      let opens = 0;
+      openJourneyLink('owned', 'run-1', (command, args, options) => {
+        if (command === 'xcrun' && args[1] === 'list') {
+          return JSON.stringify({ devices: { runtime: [{ udid: 'owned', dataPath: root }] } });
+        }
+        if (command === 'xcrun' && args[1] === 'openurl') {
+          opens++;
+          assert.deepEqual(JSON.parse(run('plutil', ['-convert', 'json', '-o', '-', plist])), {
+            ...(existing ? { 'other.scheme': 'other.app' } : {}), [key]: 'com.example.voipconversations',
+          });
+          return '';
+        }
+        return run(command, args, options);
+      });
+      assert.equal(opens, 1);
+    });
+}
+
+test('approval failures never dispatch the journey link or retry the failed command', t => {
+  const root = mkdtempSync(join(tmpdir(), 'expo-journey-link-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  let replacements = 0;
+  assert.throws(() => openJourneyLink('owned', 'run-1', (command, args) => {
+    assert.ok(!(command === 'xcrun' && args[1] === 'openurl'), 'Link dispatched after approval failed');
+    if (command === 'plutil' && args[0] === '-replace') {
+      replacements++;
+      throw new Error('Approval write failed');
+    }
+    return JSON.stringify({ devices: { runtime: [{ udid: 'owned', dataPath: root }] } });
+  }), /Approval write failed/);
+  assert.equal(replacements, 1);
+  assert.throws(() => openJourneyLink('missing', 'run-1', (command, args) => {
+    assert.equal(command, 'xcrun');
+    assert.deepEqual(args, ['simctl', 'list', 'devices', '--json']);
+    return JSON.stringify({ devices: { runtime: [{ udid: 'unrelated', dataPath: root }] } });
+  }), /Missing data path for journey simulator missing/);
+});
 
 test('launching the bundled app preserves both standard streams for startup failures', () => {
   const output = launchBundledExample('simulator', '/fixture/attempt-1', (command, args, options) => {

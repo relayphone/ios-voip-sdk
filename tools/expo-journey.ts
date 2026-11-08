@@ -16,6 +16,20 @@ export function launchBundledExample(simulator: string, prefix: string, execute:
     `--stdout=${prefix}-stdout.log`, `--stderr=${prefix}-stderr.log`, simulator, bundle], { timeout: 180 }));
 }
 
+/** Approves the explicit journey link on the owned simulator, as Expo CLI does. */
+export function openJourneyLink(simulator: string, runID: string, execute: typeof run = run): void {
+  const inventory = JSON.parse(execute('xcrun', ['simctl', 'list', 'devices', '--json'], { timeout: 120 })) as {
+    devices: Record<string, { udid: string; dataPath: string }[]>;
+  };
+  const device = Object.values(inventory.devices).flat().find(device => device.udid === simulator);
+  if (!device?.dataPath) throw new Error(`Missing data path for journey simulator ${simulator}`);
+  const plist = join(device.dataPath, 'Library/Preferences/com.apple.launchservices.schemeapproval.plist');
+  if (!existsSync(plist)) execute('plutil', ['-create', 'binary1', plist], { timeout: 120 });
+  execute('plutil', ['-replace', String.raw`com\.apple\.CoreSimulator\.CoreSimulatorBridge-->conversations-example`,
+    '-string', bundle, plist], { timeout: 120 });
+  execute('xcrun', ['simctl', 'openurl', simulator, `conversations-example://journey?runID=${runID}`], { timeout: 120 });
+}
+
 export class InfrastructureFailure extends Error {
   readonly step: string;
   constructor(step: string, cause: unknown) { super(`infra:${step}`, { cause }); this.step = step; }
@@ -104,7 +118,7 @@ export async function expoJourney(work: string, app: string): Promise<void> {
       await until('JavaScript bootstrap', 120, () => existsSync(ready) ? true : undefined);
       cksim('status');
       output = join(container, 'Documents/javascript-journeys.json');
-      run('xcrun', ['simctl', 'openurl', simulator, `conversations-example://journey?runID=${runID}`], { timeout: 120 });
+      openJourneyLink(simulator, runID);
       const stage = async (expected: JourneyStage) => until(`JS stage ${expected}`, 120, () => {
         if (!existsSync(output!)) return undefined;
         let value: unknown;
