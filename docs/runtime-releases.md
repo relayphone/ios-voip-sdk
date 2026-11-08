@@ -5,15 +5,17 @@ a GitHub prerelease titled "iOS VoIP SDK vX.Y.Z" with the simulator runtime pack
 GitHub lists them under [Releases](https://github.com/relayphone/ios-voip-sdk/releases). v0.1 and
 v0.1.1 were releases of the simulator runtime alone, named "CallKit Simulator".
 
-`VERSION` is the release's version, which the CocoaPods spec and the simulator runtime also
-carry. The build embeds it in `CKSimRuntimeVersion()`, copies it into the runtime package and
+`VERSION` is the release's version, which the CocoaPods spec, simulator runtime and React Native
+package also carry. `expo/package.json` must have the same version; `tools/expo-package.ts`
+checks it. The build embeds it in `CKSimRuntimeVersion()`, copies it into the runtime package and
 records it in `build-info.json`; `cksim` requires the package's values to match.
 
 ## Making a release
 
 In one pull request, move the changelog's Unreleased section under a new heading with the version
 and date, such as `## 0.2.0 (2026-11-01)`, leaving an empty Unreleased section above it, and set
-`VERSION` to that version.
+`VERSION` to that version. Update `expo/package.json` and its lockfile to the same version in
+that pull request.
 
 After that pull request is merged and main's CI is green, create an **annotated** tag named `v`
 followed by `VERSION` on the merged commit and push it. From a clean checkout of that commit:
@@ -42,6 +44,21 @@ the Mach-O compilation or signing reproducible. `build-info.json` records the Xc
 Clang versions, the simulator SDK, the architectures, the source commit, whether the checkout was
 dirty, and a digest of the sources. The package and release stay available as the run's artifact
 for 90 days. A release never uploads artifacts packed on a developer machine.
+
+## React Native package
+
+`@relayphone/ios-voip-sdk` is versioned with `VERSION` and released from the same `vX.Y.Z` tag
+as the SDK. Pack it from that tag's full checkout: its `prepack` builds the JavaScript and
+config plugin, then copies the SDK targets from `Sources/` into the package. The tarball
+contains those sources, so an installed app needs no SDK git pin in its Podfile.
+
+The package is **not on npm yet**. Publishing waits until the repository's license is chosen;
+until then, keep `expo/package.json` marked `private: true`. Once publishing is enabled, publish
+only after the shared SDK tag is created and its checks pass. The existing release workflow
+publishes the simulator runtime assets; it does not publish to npm.
+
+The existing `v0.3.0` tag predates `expo/`. Use the checkout installation in the
+[React Native guide](react-native.md) until a later SDK tag includes the package.
 
 ## Verifying a release
 
