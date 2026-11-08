@@ -4,6 +4,7 @@ import VoIPCore
 @MainActor
 protocol MainActorTransport: Sendable {
   func prepare(_ call: Call, attempt: UInt64) async throws
+  func release(_ call: Call, attempt: UInt64)
   func setAudioActive(_ active: Bool)
 }
 
@@ -12,7 +13,20 @@ protocol MainActorTransport: Sendable {
 final class MainActorMedia: CallMedia {
   struct AudioCommand: Sendable {
     let attempt: UInt64
-    let active: Bool
+    enum Kind: Sendable {
+      case audio(Bool)
+      case release(Call)
+    }
+    let kind: Kind
+
+    init(attempt: UInt64, active: Bool) {
+      self.attempt = attempt
+      kind = .audio(active)
+    }
+    init(attempt: UInt64, releasing call: Call) {
+      self.attempt = attempt
+      kind = .release(call)
+    }
   }
 
   @MainActor
@@ -43,8 +57,12 @@ final class MainActorMedia: CallMedia {
     func consume(_ stream: AsyncStream<AudioCommand>) async {
       for await command in stream {
         guard command.attempt == attempt else { continue }
-        audioActive = command.active
-        transport.setAudioActive(audioActive)
+        switch command.kind {
+        case .audio(let active):
+          audioActive = active
+          transport.setAudioActive(active)
+        case .release(let call): transport.release(call, attempt: command.attempt)
+        }
       }
     }
   }
@@ -78,6 +96,10 @@ final class MainActorMedia: CallMedia {
 
   func deactivate() {
     commands.yield(AudioCommand(attempt: attempt, active: false))
+  }
+
+  func release(_ call: Call) {
+    commands.yield(AudioCommand(attempt: attempt, releasing: call))
   }
 
   /// Drain the stream when the owner is finished with the adapter.

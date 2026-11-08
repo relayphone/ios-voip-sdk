@@ -26,10 +26,15 @@ extension EngineTests {
         await h.reported() == [
           .report(callID), .other(.fulfill(answer)), .ended(callID, .endedRemotely),
         ])
-      let media = await h.media.records
-      #expect(media.count == 2)
+      let media = await h.media.lifecycleRecords
+      #expect(media.count == 3)
       #expect(media.first.flatMap(\.preparedCall)?.id == callID)
-      #expect(media.last == .activate)
+      #expect(media.dropLast().last == .activate)
+      if case .release(let released) = media.last {
+        #expect(released.status == .ended(.endedRemotely))
+      } else {
+        Issue.record("Ended calls release their prepared media")
+      }
       await h.until { $0.calls.isEmpty }
       #expect(await h.framework.configuration == VoIPConfiguration())
     }
@@ -506,7 +511,7 @@ extension FakeCallingFramework.Record {
   }
 }
 
-extension FakeMedia.Record {
+extension FakeMedia.LifecycleRecord {
   var preparedCall: Call? {
     if case .prepare(let call) = self { call } else { nil }
   }

@@ -110,6 +110,7 @@ final class RegisteredMedia: CallMedia {
 
   func prepare(_ call: Call) async throws {
     try await media.prepare(call)
+    try Task.checkCancellation()
     Self.prepared.withLock { _ = $0.insert(call.id) }
     Task { @MainActor [changed] in changed() }
   }
@@ -120,5 +121,11 @@ final class RegisteredMedia: CallMedia {
 
   func deactivate() {
     media.deactivate()
+  }
+
+  func release(_ call: Call) {
+    media.release(call)
+    Self.prepared.withLock { _ = $0.remove(call.id) }
+    Task { @MainActor [changed] in changed() }
   }
 }

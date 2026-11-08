@@ -1,5 +1,7 @@
 #if VOIP_CONVERSATIONS_WEBRTC
   import AVFAudio
+  import Synchronization
+  import os
   internal import VoIPConversationsWebRTC
 
   /// Call media for apps whose real-time media is WebRTC: react-native-webrtc, LiveKit React
@@ -8,13 +10,17 @@
   /// WebRTC runs in manual audio mode, so it never activates the audio session itself: the
   /// calling framework does. Before a call takes part, the audio session gets WebRTC's voice or
   /// video chat configuration; when the system activates it, WebRTC starts its audio unit, and
-  /// when the system deactivates it, WebRTC stops and the session's earlier configuration
-  /// returns. The app's JavaScript connects the call's room or peer connection as before.
+  /// when the system deactivates it, WebRTC stops. Held calls keep their configuration;
+  /// the earlier configuration returns after all prepared calls are released and audio is inactive. The app's JavaScript connects the call's room or peer connection as before.
   @VoIPActor
   final class RTCAudioSessionMedia: CallMedia {
+    private nonisolated static let log = Logger(subsystem: "VoIPConversations", category: "media")
+    private nonisolated static let warnedAboutMissingWebRTC = Mutex(false)
+
     /// The audio session's configuration before the first call prepared it.
-    private var earlier:
-      (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions)?
+    private lazy var configuration = CallAudioConfiguration<
+      (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions)
+    >(apply: Self.apply)
 
     /// Puts WebRTC in manual audio mode with its configuration for audio calls, before the app's
     /// JavaScript can create a peer connection.
@@ -22,7 +28,10 @@
       guard let session = try? Self.session(),
         let configurationClass = try? WebRTCClass.configuration.resolve(),
         let configuration = try? Self.configuration(hasVideo: false)
-      else { return }
+      else {
+        Self.warnAboutMissingWebRTC()
+        return
+      }
       session.useManualAudio = true
       session.isAudioEnabled = false
       VoIPRTCAudioSessionConfigurationSetWebRTC(configurationClass, configuration)
@@ -30,30 +39,60 @@
 
     func rememberConfiguration() {
       let audio = AVAudioSession.sharedInstance()
-      if earlier == nil { earlier = (audio.category, audio.mode, audio.categoryOptions) }
+      configuration.remember((audio.category, audio.mode, audio.categoryOptions))
     }
 
     func prepare(_ call: Call) async throws {
       rememberConfiguration()
-      let session = try Self.session()
-      session.lockForConfiguration()
-      defer { session.unlockForConfiguration() }
-      try session.setConfiguration(Self.configuration(hasVideo: call.hasVideo))
+      do {
+        let session = try Self.session()
+        session.lockForConfiguration()
+        defer { session.unlockForConfiguration() }
+        try session.setConfiguration(Self.configuration(hasVideo: call.hasVideo))
+        try Task.checkCancellation()
+        let audio = AVAudioSession.sharedInstance()
+        configuration.prepared(
+          call.id, configuration: (audio.category, audio.mode, audio.categoryOptions))
+      } catch {
+        configuration.restoreIfIdle()
+        throw error
+      }
     }
 
     func activate() {
-      guard let session = try? Self.session() else { return }
+      guard let session = try? Self.session() else {
+        Self.warnAboutMissingWebRTC()
+        return
+      }
+      configuration.activate()
       session.audioSessionDidActivate(AVAudioSession.sharedInstance())
       session.isAudioEnabled = true
     }
 
     func deactivate() {
-      guard let session = try? Self.session() else { return }
+      guard let session = try? Self.session() else {
+        Self.warnAboutMissingWebRTC()
+        return
+      }
       session.isAudioEnabled = false
       session.audioSessionDidDeactivate(AVAudioSession.sharedInstance())
-      guard let (category, mode, options) = earlier else { return }
-      earlier = nil
-      guard let configuration = try? Self.configuration(hasVideo: false) else { return }
+      configuration.deactivate()
+    }
+
+    func release(_ call: Call) { configuration.release(call.id) }
+
+    private static func apply(
+      _ earlier: (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions)
+    ) {
+      guard let session = try? Self.session() else {
+        Self.warnAboutMissingWebRTC()
+        return
+      }
+      let (category, mode, options) = earlier
+      guard let configuration = try? Self.configuration(hasVideo: false) else {
+        Self.warnAboutMissingWebRTC()
+        return
+      }
       configuration.category = category.rawValue
       configuration.mode = mode.rawValue
       configuration.categoryOptions = options
@@ -65,6 +104,18 @@
     private nonisolated static func session() throws(WebRTCClass.Missing) -> any VoIPRTCAudioSession
     {
       VoIPRTCAudioSessionSharedInstance(try WebRTCClass.audioSession.resolve())
+    }
+
+    private nonisolated static func warnAboutMissingWebRTC() {
+      let shouldWarn = warnedAboutMissingWebRTC.withLock { warned in
+        guard !warned else { return false }
+        warned = true
+        return true
+      }
+      if shouldWarn {
+        log.warning(
+          "WebRTC audio classes are unavailable; link a WebRTC build or use mediaAdapter: none")
+      }
     }
 
     /// WebRTC's configuration for a call: voice chat, or video chat on the speaker.

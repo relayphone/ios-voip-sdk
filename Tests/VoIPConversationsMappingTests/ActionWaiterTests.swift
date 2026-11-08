@@ -4,91 +4,94 @@ import VoIPTesting
 
 @testable import VoIPConversationsMapping
 
-@Suite(.serialized, .timeLimit(.minutes(1)))
-@MainActor
-struct ActionWaiterTests {
-  @Test
-  func latePlacementAndLongPreparationWaitForThePerformedEvent() async throws {
-    let h = try Harness()
-    await prepare(h.media, with: .wait)
-    let waiter = ActionWaiter(h.action, deadlines: h.deadlines, clock: h.clock)
-    try await h.client.request(h.action)
-    guard case .startRequested = try await h.next() else {
-      Issue.record("The SDK asks the handler to place the outgoing call")
-      return
+extension MappingClientTests {
+  @Suite
+  @MainActor
+  struct ActionWaiterTests {
+    @Test
+    func latePlacementAndLongPreparationWaitForThePerformedEvent() async throws {
+      let h = try Harness()
+      await prepare(h.media, with: .wait)
+      let waiter = ActionWaiter(h.action, deadlines: h.deadlines, clock: h.clock)
+      try await h.client.request(h.action)
+      guard case .startRequested = try await h.next() else {
+        Issue.record("The SDK asks the handler to place the outgoing call")
+        return
+      }
+      let result = Resolution()
+      let request = Task { await result.wait(for: waiter) }
+      try await h.clock.waitForSleepers(count: 2)
+      h.clock.advance(by: .milliseconds(8900))
+      await h.client.confirmPlaced(h.id)
+      try await h.clock.waitForSleepers(count: 2)
+      try await waitForPreparation(h.media, of: h.id)
+      h.clock.advance(by: .seconds(11))
+      #expect(h.clock.pendingSleepCount == 2)
+      #expect(result.value == nil)
+      await h.media.finishPreparing(h.id, succeeded: true)
+      let event = try await h.next()
+      guard case .performed(.start, _) = event else {
+        Issue.record("A prepared start produces the SDK's performed event")
+        return
+      }
+      waiter.receive(event)
+      await request.value
+      guard case .success = result.value else {
+        Issue.record("The command succeeds only after the SDK performs the start")
+        return
+      }
+      try await h.clock.waitForSleepers(count: 2)
+      #expect(h.clock.pendingSleepCount == 2)
     }
-    let result = Resolution()
-    let request = Task { await result.wait(for: waiter) }
-    try await h.clock.waitForSleepers(count: 2)
-    h.clock.advance(by: .milliseconds(8900))
-    await h.client.confirmPlaced(h.id)
-    try await h.clock.waitForSleepers(count: 2)
-    try await waitForPreparation(h.media, of: h.id)
-    h.clock.advance(by: .seconds(11))
-    #expect(h.clock.pendingSleepCount == 2)
-    #expect(result.value == nil)
-    await h.media.finishPreparing(h.id, succeeded: true)
-    let event = try await h.next()
-    guard case .performed(.start, _) = event else {
-      Issue.record("A prepared start produces the SDK's performed event")
-      return
+
+    @Test
+    func failedMediaPreparationRejectsTheStartEvenBeforeWaitBegins() async throws {
+      let h = try Harness()
+      await prepare(h.media, with: .fail)
+      let waiter = ActionWaiter(h.action, deadlines: h.deadlines, clock: h.clock)
+      try await h.client.request(h.action)
+      _ = try await h.next()
+      await h.client.confirmPlaced(h.id)
+      let event = try await h.next()
+      guard case .ended(let call) = event else {
+        Issue.record("Failed preparation ends the outgoing call")
+        return
+      }
+      #expect(call.status == .ended(.failed(.media)))
+      waiter.receive(event)
+      do {
+        try await waiter.wait()
+        Issue.record("A failed start must reject the command")
+      } catch {
+        #expect(error.code == .conversation)
+      }
     }
-    waiter.receive(event)
-    await request.value
-    guard case .success = result.value else {
-      Issue.record("The command succeeds only after the SDK performs the start")
-      return
+
+    @Test
+    func aMissingOutcomeRejectsAtTheConfiguredBound() async throws {
+      let clock = TestClock()
+      let deadlines = Deadlines(placement: .seconds(10.5), mediaPreparation: .seconds(20.25))
+      let waiter = ActionWaiter(
+        .start(OutgoingCall(id: CallID(rawValue: "no-outcome"), parties: [])),
+        deadlines: deadlines, clock: clock)
+      let result = Resolution()
+      let request = Task { await result.wait(for: waiter) }
+      try await clock.waitForSleepers()
+      clock.advance(by: .seconds(35.75) - .nanoseconds(1))
+      #expect(clock.pendingSleepCount == 1)
+      #expect(result.value == nil)
+      clock.advance(by: .nanoseconds(1))
+      await request.value
+      guard case .failure(let error) = result.value else {
+        Issue.record("A request without an outcome rejects instead of resolving successfully")
+        return
+      }
+      #expect(error.code == .deadlineExceeded)
+      #expect(error.message == "The SDK didn't carry out the request in time")
+      #expect(clock.pendingSleepCount == 0)
     }
-    try await h.clock.waitForSleepers(count: 2)
-    #expect(h.clock.pendingSleepCount == 2)
   }
 
-  @Test
-  func failedMediaPreparationRejectsTheStartEvenBeforeWaitBegins() async throws {
-    let h = try Harness()
-    await prepare(h.media, with: .fail)
-    let waiter = ActionWaiter(h.action, deadlines: h.deadlines, clock: h.clock)
-    try await h.client.request(h.action)
-    _ = try await h.next()
-    await h.client.confirmPlaced(h.id)
-    let event = try await h.next()
-    guard case .ended(let call) = event else {
-      Issue.record("Failed preparation ends the outgoing call")
-      return
-    }
-    #expect(call.status == .ended(.failed(.media)))
-    waiter.receive(event)
-    do {
-      try await waiter.wait()
-      Issue.record("A failed start must reject the command")
-    } catch {
-      #expect(error.code == .conversation)
-    }
-  }
-
-  @Test
-  func aMissingOutcomeRejectsAtTheConfiguredBound() async throws {
-    let clock = TestClock()
-    let deadlines = Deadlines(placement: .seconds(10.5), mediaPreparation: .seconds(20.25))
-    let waiter = ActionWaiter(
-      .start(OutgoingCall(id: CallID(rawValue: "no-outcome"), parties: [])),
-      deadlines: deadlines, clock: clock)
-    let result = Resolution()
-    let request = Task { await result.wait(for: waiter) }
-    try await clock.waitForSleepers()
-    clock.advance(by: .seconds(35.75) - .nanoseconds(1))
-    #expect(clock.pendingSleepCount == 1)
-    #expect(result.value == nil)
-    clock.advance(by: .nanoseconds(1))
-    await request.value
-    guard case .failure(let error) = result.value else {
-      Issue.record("A request without an outcome rejects instead of resolving successfully")
-      return
-    }
-    #expect(error.code == .deadlineExceeded)
-    #expect(error.message == "The SDK didn't carry out the request in time")
-    #expect(clock.pendingSleepCount == 0)
-  }
 }
 
 @VoIPActor
