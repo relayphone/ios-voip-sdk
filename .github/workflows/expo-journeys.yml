@@ -59,7 +59,7 @@ jobs:
           npm run prebuild -- --no-install
           cd ios
           pod install --repo-update
-          printf 'unset SKIP_BUNDLING\nexport FORCE_BUNDLING=1\n' > .xcode.env.updates
+          node "$GITHUB_WORKSPACE/tools/expo-journey-bundle.ts" "$PWD"
           cd ..
           xcodebuild -workspace ios/VoIPExample.xcworkspace -scheme VoIPExample \
             -configuration Debug -destination 'generic/platform=iOS Simulator' \
