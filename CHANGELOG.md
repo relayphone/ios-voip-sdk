@@ -16,6 +16,8 @@ Public API changes include migration guidance.
 
 ### Added
 
+- Distribute the React Native package as a GitHub release tarball, with a SHA256 checksum and
+  attestation, for installation by a versioned asset URL.
 - `CallMedia.release(_:)`, a synchronous notification when a successfully prepared call ends or
   returns to a preview. Its default implementation does nothing, so existing conformers compile.
 - `FakeMedia.lifecycleRecords` records releases alongside preparation and audio requests;

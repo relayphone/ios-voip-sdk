@@ -8,6 +8,7 @@ on:
       - "Package.swift"
       - "Package.resolved"
       - "Sources/**"
+      - "expo/**"
       - "tools/**"
       - ".github/workflows/runtime-release.yml"
       - ".github/actions/setup/**"
@@ -32,7 +33,11 @@ jobs:
           xcode: "false"
       - name: Test the release, packaging and smoke test tools
         working-directory: tools
-        run: node --test release.test.ts runtime-package.test.ts simulator-app.test.ts
+        run: node --test release.test.ts runtime-package.test.ts expo-package.test.ts package-expo.test.ts simulator-app.test.ts
+      - name: Pack and verify the React Native release asset
+        run: node tools/package-expo.ts "$RUNNER_TEMP/package-release"
+      - name: Verify the package checksum
+        run: (cd "$RUNNER_TEMP/package-release" && sha256sum -c SHA256SUMS)
   release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: release-controls
@@ -82,10 +87,11 @@ jobs:
       - name: Package the tested runtime
         run: |
           node tools/package-runtime.ts "$RUNNER_TEMP/runtime" "$RUNNER_TEMP/release"
+          node tools/package-expo.ts "$RUNNER_TEMP/release"
           node tools/release.ts record "$RELEASE_TAG" --package "$RUNNER_TEMP/runtime" \
             --release "$RUNNER_TEMP/release" --notes "$RUNNER_TEMP/release-notes.md"
           (cd "$RUNNER_TEMP/release" && shasum -a 256 -c SHA256SUMS)
-      - name: Attest the archive, checksums and qualification
+      - name: Attest the archives, checksums and qualification
         id: provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -97,6 +103,11 @@ jobs:
         run: |
           cp "$BUNDLE_PATH" "$RUNNER_TEMP/release/attestation.sigstore.json"
           gh attestation verify "$RUNNER_TEMP/release/callkit-simulator-$RELEASE_TAG-macos.tar.gz" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/runtime-release.yml" \
+            --source-ref "$GITHUB_REF" --source-digest "$GITHUB_SHA" \
+            --deny-self-hosted-runners --bundle "$BUNDLE_PATH"
+          gh attestation verify "$RUNNER_TEMP/release/relayphone-ios-voip-sdk-$(cat VERSION).tgz" \
             --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/runtime-release.yml" \
             --source-ref "$GITHUB_REF" --source-digest "$GITHUB_SHA" \

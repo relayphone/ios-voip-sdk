@@ -5,17 +5,29 @@ LiveCommunicationKit, receives VoIP pushes with PushKit, and exposes call state,
 events to JavaScript. Its version follows the repository's `VERSION`, and future package
 releases come from the same tag as the Swift SDK.
 
-The package is **not on npm yet**. It remains private until the repository's license is chosen.
-The package first ships in the next SDK release. The existing `v0.3.0` tag predates `expo/`;
-it cannot be used to pack this module. Until the next release, pack `main` for evaluation.
+The package is distributed as a GitHub release asset, with no npm registry token required.
+It first ships in the next SDK release; the existing `v0.3.0` tag predates `expo/`.
+`private: true` prevents accidental npm publication and still permits tarball installation.
 
-## Install from a checkout
+## Install from a release
 
 Use macOS with Xcode 27.1 or later, iOS 26 or later, and Node.js 26 for the commands below.
 The example uses Expo 57, React Native 0.86.3 and React 19.2.3. The package requires Expo 57 or
 later and a development build containing its native module; it doesn't run in Expo Go.
 
-From a full checkout of `main`, build and pack the module:
+Choose a released version that includes the package and replace `X.Y.Z` below. Install the
+asset pinned to that tag in your Expo app:
+
+```sh
+npm install https://github.com/relayphone/ios-voip-sdk/releases/download/vX.Y.Z/relayphone-ios-voip-sdk-X.Y.Z.tgz
+npx expo install expo-build-properties
+```
+
+The release includes checksums and an attestation; see [release verification](runtime-releases.md#verifying-a-release).
+
+### Evaluate unreleased changes
+
+Until the next release, or to evaluate changes on `main`, pack a full checkout:
 
 ```sh
 git clone --branch main https://github.com/relayphone/ios-voip-sdk.git
@@ -24,18 +36,13 @@ npm ci
 npm pack
 ```
 
-This produces `relayphone-ios-voip-sdk-<version>.tgz`, where `<version>` is that checkout's
-`VERSION`. This tarball is for evaluation, not an SDK release. Keep the full repository while packing:
-`prepack` builds the TypeScript API and config plugin and copies the SDK's Swift sources from
-`Sources/` into `expo/ios/Vendor/`. Copying only `expo/` before packing doesn't provide those
-sources. The resulting tarball is self-contained.
+This produces `relayphone-ios-voip-sdk-<version>.tgz` using that checkout's `VERSION`.
+Keep the full repository while packing: `prepack` builds the API and config plugin and copies
+the SDK sources from `Sources/` into `expo/ios/Vendor/`. The tarball is self-contained.
+Install it in your app with `npm install /path/to/relayphone-ios-voip-sdk-<version>.tgz` and
+install `expo-build-properties` as above. A tarball packed from `main` is for evaluation.
 
-In an Expo app, install the tarball using its actual path, replacing `<version>` with its version:
-
-```sh
-npm install "/path/to/ios-voip-sdk/expo/relayphone-ios-voip-sdk-<version>.tgz"
-npx expo install expo-build-properties
-```
+### Build the app
 
 Configure the plugin as below, then generate and build the native app:
 

@@ -67,6 +67,7 @@ test('the notes link the changelog at the tag and the run that built the release
   const [changes, qualification] = text.split('\n\n');
   assert.equal(changes, 'Changes: [CHANGELOG.md](https://github.com/example/repo/blob/v0.1.2/CHANGELOG.md)');
   assert.match(qualification ?? '', /^The CI-built runtime passed the runtime tests/);
+  assert.match(text, /React Native package is included as a tarball with its checksum and attestation/);
   assert.match(text, new RegExp(commit));
   assert.match(text, /\(https:\/\/github\.com\/example\/repo\/actions\/runs\/1\)/);
 });
