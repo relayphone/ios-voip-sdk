@@ -6,8 +6,8 @@ events to JavaScript. Its version follows the repository's `VERSION`, and future
 releases come from the same tag as the Swift SDK.
 
 The package is **not on npm yet**. It remains private until the repository's license is chosen.
-The existing `v0.3.0` tag predates `expo/`; it cannot be used to pack this module. Until a later
-SDK tag includes it, use the checkout pinned below, whose package and SDK versions are both 0.3.0.
+The package first ships in the next SDK release. The existing `v0.3.0` tag predates `expo/`;
+it cannot be used to pack this module. Until the next release, pack `main` for evaluation.
 
 ## Install from a checkout
 
@@ -15,26 +15,25 @@ Use macOS with Xcode 27.1 or later, iOS 26 or later, and Node.js 26 for the comm
 The example uses Expo 57, React Native 0.86.3 and React 19.2.3. The package requires Expo 57 or
 later and a development build containing its native module; it doesn't run in Expo Go.
 
-From the merged package checkout, build and pack the module:
+From a full checkout of `main`, build and pack the module:
 
 ```sh
-git clone https://github.com/relayphone/ios-voip-sdk.git
-cd ios-voip-sdk
-git checkout af3d54fbfaae2775ccf31afb02c9b62209eefd6c
-cd expo
+git clone --branch main https://github.com/relayphone/ios-voip-sdk.git
+cd ios-voip-sdk/expo
 npm ci
 npm pack
 ```
 
-This produces `relayphone-ios-voip-sdk-0.3.0.tgz`. Keep the full repository while packing:
+This produces `relayphone-ios-voip-sdk-<version>.tgz`, where `<version>` is that checkout's
+`VERSION`. This tarball is for evaluation, not an SDK release. Keep the full repository while packing:
 `prepack` builds the TypeScript API and config plugin and copies the SDK's Swift sources from
 `Sources/` into `expo/ios/Vendor/`. Copying only `expo/` before packing doesn't provide those
 sources. The resulting tarball is self-contained.
 
-In an Expo app, install the tarball using its actual path:
+In an Expo app, install the tarball using its actual path, replacing `<version>` with its version:
 
 ```sh
-npm install /path/to/ios-voip-sdk/expo/relayphone-ios-voip-sdk-0.3.0.tgz
+npm install "/path/to/ios-voip-sdk/expo/relayphone-ios-voip-sdk-<version>.tgz"
 npx expo install expo-build-properties
 ```
 
@@ -89,7 +88,7 @@ permission messages. Provision the app for Push Notifications to receive real Vo
 | `microphonePermission` | `"Allow $(PRODUCT_NAME) to access your microphone"` | Permission message; `false` skips adding it. |
 | `cameraPermission` | `"Allow $(PRODUCT_NAME) to access your camera"` | Permission message; `false` skips adding it. |
 
-CallKit is allowed only inside the simulator runtime in Debug iOS Simulator builds; the wrapper
+CallKit is allowed only inside the simulator runtime in Debug iOS Simulator builds; the module
 uses LiveCommunicationKit, and device and Release builds exclude the runtime and do not link CallKit.
 
 ## Identity and state
@@ -149,9 +148,13 @@ export async function mediaConnected(id: ConversationId): Promise<void> {
 }
 ```
 
-`startConversation` resolves with the supplied ID once the handler places the call; it doesn't
-wait for media to connect. The handler must not wait for that command's promise. Report
-`connecting` and `connected` separately as transport facts; reports made inside a handler are
+`startConversation` resolves with the supplied ID once the handler places the call and the SDK
+starts it, after the media's `prepare` completes. For a preview, `joinConversation` likewise
+resolves once the join handler places the call and the SDK carries out the join, after `prepare`
+completes. Neither command waits for the transport to connect. Both reject if placement fails,
+media preparation fails, or the SDK doesn't carry out the action within its deadlines
+(`deadline_exceeded`). The handler must not wait for its command's promise. Report `connecting`
+and `connected` separately as transport facts; reports made inside a handler are
 held until placement completes. With the default policy, an app start without a handler fails
 immediately, and other unhandled placement actions fail by their deadline.
 
