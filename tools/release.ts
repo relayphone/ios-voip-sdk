@@ -92,7 +92,9 @@ export function notes(tag: string, sourceCommit: string, repository: string, run
     `packaging. Source: \`${sourceCommit}\`. [Run and evidence](${run}).\n\n` +
     'The `ios-27.0` profile names the device measurements it reproduces; `build-info.json` ' +
     'records the compiler and simulator SDK. See docs/runtime-releases.md for attestation ' +
-    'verification.\n'
+    'verification.\n\n' +
+    'The React Native package is included as a tarball with its checksum and attestation. ' +
+    'Install the release asset by URL; see docs/react-native.md.\n'
   );
 }
 

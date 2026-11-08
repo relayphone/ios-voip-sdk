@@ -1,7 +1,7 @@
 # Releases
 
 One version covers the whole repository. Each `vX.Y.Z` tag is a release of the SDK, published as
-a GitHub prerelease titled "iOS VoIP SDK vX.Y.Z" with the simulator runtime package as its assets.
+a GitHub prerelease titled "iOS VoIP SDK vX.Y.Z" with simulator runtime and React Native package assets.
 GitHub lists them under [Releases](https://github.com/relayphone/ios-voip-sdk/releases). v0.1 and
 v0.1.1 were releases of the simulator runtime alone, named "CallKit Simulator".
 
@@ -33,9 +33,11 @@ version mismatches, dirty checkouts and commits that aren't on `origin/main`
 2. runs `swift test`, then `RuntimeTests` on an iOS 27.0 simulator;
 3. launches an app that doesn't link the runtime with the package's runtime injected, and
    answers and ends a pushed call with the package's own `cksim` (`tools/runtime-smoke.ts`);
-4. archives exactly that package (`tools/package-runtime.ts`) and records `qualification.json`;
-5. attests the archive, `SHA256SUMS` and `qualification.json`, verifies the archive's
-   attestation, and publishes the prerelease with the Sigstore bundle as
+4. archives exactly that runtime (`tools/package-runtime.ts`), packs `expo/` with `npm ci` and
+   `npm pack` including `prepack` (`tools/package-expo.ts`), and records `qualification.json`;
+5. verifies the packed package version against `VERSION` and its vendored SDK sources, adds
+   both archives to `SHA256SUMS`, attests both archives, checksums and qualification, verifies
+   both archives' attestations, and publishes the prerelease with the Sigstore bundle as
    `attestation.sigstore.json`. Its notes open with a link to the changelog at the tag.
 
 The archive sorts its entries and normalizes owners to 0, modes to 0755 or 0644 and times to the
@@ -53,10 +55,11 @@ its `prepack` builds the JavaScript and config plugin, then copies the SDK targe
 `Sources/` into the package. The tarball
 contains those sources, so an installed app needs no SDK git pin in its Podfile.
 
-The package is **not on npm yet**. Publishing waits until the repository's license is chosen;
-until then, keep `expo/package.json` marked `private: true`. Once publishing is enabled, publish
-only after the shared SDK tag is created and its checks pass. The existing release workflow
-publishes the simulator runtime assets; it does not publish to npm.
+The workflow attaches `relayphone-ios-voip-sdk-X.Y.Z.tgz` to the GitHub prerelease, includes
+it in `SHA256SUMS` and the attestation, and never publishes to npm. Keep `expo/package.json`
+marked `private: true` to prevent accidental npm publication. Apps install the release asset
+by URL as shown in the [React Native guide](react-native.md). Pull requests run the same packing
+and verification steps in `release-controls`, without creating a tag or release.
 
 The existing `v0.3.0` tag predates `expo/`. Until the next release, pack `main` for evaluation,
 following the [React Native guide](react-native.md). The tarball's version is that checkout's
@@ -76,7 +79,8 @@ gh attestation verify "callkit-simulator-v$VERSION-macos.tar.gz" \
   --deny-self-hosted-runners --bundle attestation.sigstore.json
 ```
 
-Run the same command for `SHA256SUMS` and `qualification.json`. v0.1.1 was built before the
+Run the same command for `relayphone-ios-voip-sdk-$VERSION.tgz`, `SHA256SUMS` and
+`qualification.json`. v0.1.1 was built before the
 repository moved to `relayphone`, so its signer workflow is
 `ziahamza/ios-voip-sdk/.github/workflows/runtime-release.yml`.
 
