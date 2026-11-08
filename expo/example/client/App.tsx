@@ -7,6 +7,7 @@ import {
 import { useRef, useState } from "react";
 import { Button, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { Journeys } from "./journeys/Journeys";
 
 // Attach before React mounts. The example accepts local signaling without a media server.
 setConversationHandler({ join() {}, start() {} });
@@ -30,6 +31,7 @@ export default function App() {
     finally { running.current = false; setBusy(false); }
   }
   return <SafeAreaProvider><SafeAreaView style={styles.screen}>
+    <Journeys />
     <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.title}>VoIP Conversations</Text>
       <Text>Local signaling example. No media room is connected.</Text>

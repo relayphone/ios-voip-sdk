@@ -48,6 +48,14 @@ const evaluateInfoPlist = (props: VoIPConversationsPluginProps) =>
   evaluateMod(props, "infoPlist");
 
 describe("withVoIPConversationsIos Info.plist configuration", () => {
+  it("registers the unified call intent and preserves the app's other activities", async () => {
+    assert.deepStrictEqual((await evaluateInfoPlist({})).NSUserActivityTypes, ["INStartCallIntent"]);
+    const plist = await evaluateMod({}, "infoPlist", {
+      NSUserActivityTypes: ["com.example.activity", "INStartAudioCallIntent", "INStartCallIntent", "INStartVideoCallIntent"],
+    });
+    assert.deepStrictEqual(plist.NSUserActivityTypes, ["com.example.activity", "INStartCallIntent"]);
+  });
+
   it("defaults VoIPConversationsIncludesCallsInRecents to true when the prop is omitted", async () => {
     const plist = await evaluateInfoPlist({});
     assert.strictEqual(plist.VoIPConversationsIncludesCallsInRecents, true);

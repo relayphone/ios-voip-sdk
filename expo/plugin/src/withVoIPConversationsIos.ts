@@ -29,15 +29,9 @@ const MICROPHONE_USAGE = "Allow $(PRODUCT_NAME) to access your microphone";
 // - audio: keep call audio playing and recording while the app is in the background
 const BACKGROUND_MODES = ["voip", "audio"];
 
-// SiriKit intents for voice-activated calls
-// INStartCallIntent: Unified intent for iOS 13+ (recommended)
-// INStartAudioCallIntent/INStartVideoCallIntent: Deprecated in iOS 13, but still
-// sent by the system in some cases (e.g., redialing from call history)
-const SIRI_INTENTS = [
-  "INStartCallIntent",
-  "INStartAudioCallIntent",
-  "INStartVideoCallIntent",
-];
+// iOS 26+ sends the unified intent for audio and video calls, including redial from Recents.
+// CallService.continueCall handles this intent.
+const SIRI_INTENTS = ["INStartCallIntent"];
 
 /**
  * Configures camera and microphone permissions for VoIP and video calls.
@@ -93,7 +87,8 @@ const withSiriIntents: ConfigPlugin = (config) => {
   return withInfoPlist(config, (config) => {
     const existingIntents = config.modResults.NSUserActivityTypes;
     const intents = Array.isArray(existingIntents)
-      ? (existingIntents as string[])
+      ? (existingIntents as string[]).filter((intent) =>
+          intent !== "INStartAudioCallIntent" && intent !== "INStartVideoCallIntent")
       : [];
 
     const newIntents = new Set([...intents, ...SIRI_INTENTS]);
