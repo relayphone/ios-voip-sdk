@@ -91,11 +91,19 @@ struct RouteTests {
     #expect(Set(list.routes.map(\.id)).count == list.routes.count, "Each route is listed once")
   }
 
-  @Test func routesKeepTheSystemsNames() {
+  @Test func builtInRoutesHaveFixedNamesAndOtherRoutesKeepTheSystemsNames() {
     let list = RouteList(
       SessionPorts(inputs: [.builtInMic, .airPodsHFP], outputs: [.airPodsHFP]),
       defaultsToSpeaker: false)
-    #expect(list.routes.map(\.name) == ["iPhone Microphone", "Speaker", "AirPods Pro"])
+    #expect(list.routes.map(\.name) == ["iPhone", "Speaker", "AirPods Pro"])
+  }
+
+  @Test func aReceiverWithoutAnAvailableInputHasTheFixedName() {
+    let receiver = Port(uid: "receiver", name: "Custom Receiver Name", type: .builtInReceiver)
+    let list = RouteList(
+      SessionPorts(inputs: [], outputs: [receiver]), defaultsToSpeaker: false)
+    #expect(list.routes.map(\.name) == ["Speaker", "iPhone"])
+    #expect(list.current?.name == "iPhone")
   }
 
   // MARK: Selection
