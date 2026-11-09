@@ -8,6 +8,8 @@ Public API changes include migration guidance.
 ### Fixed
 
 - The built-in receiver audio route is named "iPhone" instead of "iPhone Microphone".
+- Retain up to 16 incoming conversation outcomes until JavaScript listens, delivering them in
+  arrival order so cold-launch push results reach the app.
 - The Expo WebRTC adapter keeps held calls configured, reapplies their audio configuration on
   activation, and restores the app's earlier configuration only after all prepared calls are
   released and audio is inactive.
