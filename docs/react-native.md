@@ -2,11 +2,11 @@
 
 `@relayphone/ios-voip-sdk` is the SDK's iOS Expo module. It presents calls through
 LiveCommunicationKit, receives VoIP pushes with PushKit, and exposes call state, commands and
-events to JavaScript. Its version follows the repository's `VERSION`, and future package
-releases come from the same tag as the Swift SDK.
+events to JavaScript. Its version follows the repository's `VERSION`, and each package
+release comes from the same tag as the Swift SDK.
 
 The package is distributed as a GitHub release asset, with no npm registry token required.
-It first ships in the next SDK release; the existing `v0.3.0` tag predates `expo/`.
+It first shipped with SDK 0.4.0; earlier tags predate `expo/`.
 `private: true` prevents accidental npm publication and still permits tarball installation.
 
 ## Install from a release
@@ -15,8 +15,8 @@ Use macOS with Xcode 27.1 or later, iOS 26 or later, and Node.js 26 for the comm
 The example uses Expo 57, React Native 0.86.3 and React 19.2.3. The package requires Expo 57 or
 later and a development build containing its native module; it doesn't run in Expo Go.
 
-Choose a released version that includes the package and replace `X.Y.Z` below. Install the
-asset pinned to that tag in your Expo app:
+Use version 0.4.0 or later, and replace `X.Y.Z` below. Install the asset pinned to that tag
+in your Expo app:
 
 ```sh
 npm install https://github.com/relayphone/ios-voip-sdk/releases/download/vX.Y.Z/relayphone-ios-voip-sdk-X.Y.Z.tgz
@@ -27,7 +27,7 @@ The release includes checksums and an attestation; see [release verification](ru
 
 ### Evaluate unreleased changes
 
-Until the next release, or to evaluate changes on `main`, pack a full checkout:
+To evaluate changes on `main`, pack a full checkout:
 
 ```sh
 git clone --branch main https://github.com/relayphone/ios-voip-sdk.git

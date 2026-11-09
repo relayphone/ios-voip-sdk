@@ -49,7 +49,7 @@ for 90 days. A release never uploads artifacts packed on a developer machine.
 
 ## React Native package
 
-`@relayphone/ios-voip-sdk` first ships in the next SDK release. Its version follows `VERSION`,
+`@relayphone/ios-voip-sdk` first shipped with 0.4.0. Its version follows `VERSION`,
 and it is released from the same `vX.Y.Z` tag as the SDK. Pack it from that tag's full checkout:
 its `prepack` builds the JavaScript and config plugin, then copies the SDK targets from
 `Sources/` into the package. The tarball
@@ -61,8 +61,8 @@ marked `private: true` to prevent accidental npm publication. Apps install the r
 by URL as shown in the [React Native guide](react-native.md). Pull requests run the same packing
 and verification steps in `release-controls`, without creating a tag or release.
 
-The existing `v0.3.0` tag predates `expo/`. Until the next release, pack `main` for evaluation,
-following the [React Native guide](react-native.md). The tarball's version is that checkout's
+Earlier tags predate `expo/`. To evaluate unreleased changes, pack `main`, following the
+[React Native guide](react-native.md). The tarball's version is that checkout's
 `VERSION`; `relayphone-ios-voip-sdk-<version>.tgz` built from `main` is not an SDK release.
 
 ## Verifying a release

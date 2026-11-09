@@ -1,6 +1,6 @@
 {
   "name": "@relayphone/ios-voip-sdk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "iOS calls for Expo and React Native through LiveCommunicationKit and PushKit.",
   "main": "build/index.js",
   "types": "build/index.d.ts",

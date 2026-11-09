@@ -5,6 +5,8 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+## 0.4.0 (2026-11-09)
+
 ### Fixed
 
 - The built-in receiver audio route is named "iPhone" instead of "iPhone Microphone".

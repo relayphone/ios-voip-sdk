@@ -66,6 +66,9 @@ observe the difference.
 
 ### 5. The React Native package
 
+**Done in 0.4.0.** The package, its JavaScript simulator journeys and its documentation shipped,
+and it passed its first run on a physical iPhone.
+
 The SDK ships its own React Native package, as decided in
 [ADR 0012](adr/0012-react-native-package.md): an iOS Expo module in `expo/`, released at the SDK's
 version from the same tag. Its Swift API gets a second real consumer before 1.0 freezes it.
