@@ -90,7 +90,7 @@ export type EndedFailureKind =
   | "server";
 
 /**
- * The native cause of a failed conversation, or, on iOS, `filtered` with its cause when the
+ * The native cause of a failed conversation, or `filtered` with its cause when the
  * system filtered an incoming call that ended instead of becoming a call preview.
  * @category State
  */

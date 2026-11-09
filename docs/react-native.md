@@ -219,6 +219,9 @@ the [SDK quick start](../README.md#quick-start) for push reporting and server-ev
 Phone handles require an international `+` country code and normalize to E.164; email and
 generic handles keep their values.
 
+`incomingConversationOutcome` retains the most recent 16 outcomes while JavaScript has no
+listener, dropping the oldest if full. The first listener receives them once in arrival order.
+
 `useConversationEvent(name, listener)` subscribes to lifecycle signals. In addition to
 `joinFailed` and `actionPerformed`, events include `incomingConversationOutcome`,
 `answeredElsewhere`, `dialRequest`, `providerReset`, audio activation/deactivation and

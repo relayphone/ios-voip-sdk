@@ -80,6 +80,7 @@ final class CallService {
   /// Conversation events that the user's actions caused before JavaScript listened, the latest
   /// of each type, which the first listener receives.
   private var waiting: [(type: String, payload: JSONValue)] = []
+  private var incomingOutcomes = IncomingOutcomeBuffer()
 
   private init() {}
 
@@ -373,6 +374,9 @@ final class CallService {
     let waiting = self.waiting
     self.waiting = []
     for event in waiting { emitConversationEvent(event.type, event.payload) }
+    for outcome in incomingOutcomes.flush() {
+      emitConversationEvent("incomingConversationOutcome", outcome)
+    }
   }
 
   /// The user asked to call someone from Recents, Siri or Contacts.
@@ -653,15 +657,15 @@ final class CallService {
   }
 
   private func emitIncomingOutcome(payload: JSONValue, outcome: JSONValue) {
-    emit(
-      "conversationEvent",
-      .object([
-        "type": .string("incomingConversationOutcome"),
-        "payload": .object([
-          "eventId": payload["eventId"] ?? .null, "serverCallId": payload["serverCallId"] ?? .null,
-          "outcome": outcome,
-        ]),
-      ]))
+    let event = JSONValue.object([
+      "eventId": payload["eventId"] ?? .null, "serverCallId": payload["serverCallId"] ?? .null,
+      "outcome": outcome,
+    ])
+    for outcome in incomingOutcomes.receive(
+      event, listenerAttached: observesConversationEvents && send != nil)
+    {
+      emitConversationEvent("incomingConversationOutcome", outcome)
+    }
   }
 
   /// Tells JavaScript how a call that a VoIP push brought appeared, once.
