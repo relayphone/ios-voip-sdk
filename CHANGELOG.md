@@ -7,6 +7,7 @@ Public API changes include migration guidance.
 
 ### Fixed
 
+- The built-in receiver audio route is named "iPhone" instead of "iPhone Microphone".
 - The Expo WebRTC adapter keeps held calls configured, reapplies their audio configuration on
   activation, and restores the app's earlier configuration only after all prepared calls are
   released and audio is inactive.

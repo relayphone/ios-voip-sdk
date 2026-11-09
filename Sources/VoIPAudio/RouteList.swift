@@ -46,7 +46,8 @@ struct RouteList: Hashable, Sendable {
       let kind = AudioRoute.Kind(input.type)
       if kind == .builtInReceiver, !hasReceiver { continue }
       let route = AudioRoute(
-        id: AudioRoute.ID(rawValue: "input:\(input.uid)"), kind: kind, name: input.name)
+        id: AudioRoute.ID(rawValue: "input:\(input.uid)"), kind: kind,
+        name: kind == .builtInReceiver ? "iPhone" : input.name)
       selections[route.id] = .input(uid: input.uid)
       if kind == .builtInReceiver { builtIn.append(route) } else { others.append(route) }
     }
@@ -60,7 +61,7 @@ struct RouteList: Hashable, Sendable {
     } else {
       let route = AudioRoute(
         id: AudioRoute.ID(rawValue: "output:\(output.uid)"), kind: AudioRoute.Kind(output.type),
-        name: output.name)
+        name: output.type == .builtInReceiver ? "iPhone" : output.name)
       routes.append(route)
       selections[route.id] = .current
       currentID = route.id
