@@ -5,6 +5,10 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+### Added
+
+- An experimental package in `exact/` that runs Exact's `@exact/calls` on iOS through the SDK.
+
 ## 0.4.0 (2026-11-09)
 
 ### Fixed
