@@ -67,3 +67,8 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+# Exact package, written when it is packed
+exact/Vendor/
+exact/exact.json
+exact/*.tgz

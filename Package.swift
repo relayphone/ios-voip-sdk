@@ -78,6 +78,9 @@ let package = Package(
     .target(
       name: "VoIPConversationsMapping", dependencies: ["VoIPCore", "VoIPAudio"],
       path: "expo/ios/Mapping", swiftSettings: strictSwift),
+    .target(
+      name: "VoIPExactBridge", dependencies: ["VoIPCore"], path: "exact/apple/Bridge",
+      swiftSettings: strictSwift),
     .target(name: "VoIPFocus", swiftSettings: strictSwift),
     .target(name: "VoIPLiveActivity", dependencies: ["VoIPCore"], swiftSettings: strictSwift),
     .target(
@@ -99,6 +102,9 @@ let package = Package(
     .testTarget(
       name: "VoIPConversationsMappingTests",
       dependencies: ["VoIPConversationsMapping", "VoIPCore", "VoIPAudio", "VoIPTesting"],
+      swiftSettings: strictSwift),
+    .testTarget(
+      name: "VoIPExactBridgeTests", dependencies: ["VoIPExactBridge", "VoIPCore", "VoIPTesting"],
       swiftSettings: strictSwift),
     .testTarget(name: "VoIPFocusTests", dependencies: ["VoIPFocus"], swiftSettings: strictSwift),
     .testTarget(

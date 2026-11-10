@@ -61,8 +61,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - run: swift format lint --strict --recursive --parallel Package.swift Sources Tests Examples Inspector tools/smoke
+      - run: swift format lint --strict --recursive --parallel Package.swift Sources Tests Examples Inspector tools/smoke exact/apple
       - run: swift test --scratch-path "$RUNNER_TEMP/host-tests"
+      - name: Compile the Exact package with Exact's flags
+        run: node tools/package-exact.ts --compile
 
   builds:
     name: Builds of the libraries, the example and the Inspector

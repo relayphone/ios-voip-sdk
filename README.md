@@ -29,6 +29,11 @@ TypeScript API. It is versioned with the SDK and isn't on npm yet.
 [expo-callkit-telecom](https://github.com/relayphone/expo-callkit-telecom) v2 will use this
 package for iOS and provide its Android implementation alongside it.
 
+## Exact
+
+[`exact/`](exact) is an experimental package that runs [Exact](https://github.com/expo/exact)'s
+`@exact/calls` on iOS through this SDK. See its [README](exact/README.md).
+
 ## Requirements
 
 - iOS and iPadOS 26 or later.

@@ -11,7 +11,7 @@ Use macOS 26 or later with Xcode 27.1 (Swift 6.4) and the iOS 27 SDK; the SDK su
 Run the tests as the [README](README.md#running-the-tests) shows, and check the formatting:
 
 ```sh
-swift format lint --strict --recursive --parallel Package.swift Sources Tests Examples Inspector tools/smoke
+swift format lint --strict --recursive --parallel Package.swift Sources Tests Examples Inspector tools/smoke exact/apple
 ```
 
 `swift format --in-place --recursive --parallel` with the same paths fixes most findings.

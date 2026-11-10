@@ -1,0 +1,10 @@
+{
+  "name": "@relayphone/exact-voip",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Exact's @exact/calls on iOS through LiveCommunicationKit and PushKit.",
+  "license": "UNLICENSED",
+  "exports": { ".": "./exact.json" },
+  "files": ["exact.json", "apple", "Vendor", "README.md"],
+  "scripts": { "prepack": "node ../tools/package-exact.ts" }
+}
