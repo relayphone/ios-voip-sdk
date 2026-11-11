@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExpoConfig } from "expo/config";
-import { IOSConfig, type ModConfig } from "expo/config-plugins.js";
+import { createRequire } from "node:module";
+import type { ModConfig } from "expo/config-plugins";
 import { mkdtempSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -9,6 +10,10 @@ import { join } from "path";
 import type { VoIPConversationsPluginProps } from "../../build/withVoIPConversations.js";
 import { withVoIPConversationsIos } from "../../build/withVoIPConversationsIos.js";
 import { addFocusFilterSources } from "../../build/withFocusFilter.js";
+
+// Load config-plugins values the way the shipped CommonJS plugin does, so these tests resolve
+// `expo/config-plugins` on Expo releases with and without a package exports map.
+const { IOSConfig } = createRequire(import.meta.url)("expo/config-plugins") as typeof import("expo/config-plugins");
 
 const app: ExpoConfig = { name: "test-app", slug: "test-app" };
 const focusFilter = { appGroup: "group.com.example.calls" };

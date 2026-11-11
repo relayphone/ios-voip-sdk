@@ -9,6 +9,12 @@ Public API changes include migration guidance.
 
 - An experimental package in `exact/` that runs Exact's `@exact/calls` on iOS through the SDK.
 
+### Fixed
+
+- The config plugin loads on Expo 58. It imported `expo/config-plugins.js`, which Expo 58 no longer
+  exports; it now imports `expo/config-plugins`, which Expo 57 and 58 both resolve. Release checks
+  install the packed package beside Expo 57 and 58 and run its config plugin.
+
 ## 0.4.0 (2026-11-09)
 
 ### Fixed

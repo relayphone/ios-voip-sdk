@@ -4,11 +4,8 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { ExpoConfig } from "expo/config";
-import {
-  IOSConfig,
-  type ModConfig,
-  type XcodeProject,
-} from "expo/config-plugins.js";
+import { createRequire } from "node:module";
+import type { ModConfig, XcodeProject } from "expo/config-plugins";
 import { join } from "path";
 
 import {
@@ -20,6 +17,10 @@ import {
 } from "../../build/withCallPreviewActivities.js";
 import type { VoIPConversationsPluginProps } from "../../build/withVoIPConversations.js";
 import { withVoIPConversationsIos } from "../../build/withVoIPConversationsIos.js";
+
+// Load config-plugins values the way the shipped CommonJS plugin does, so these tests resolve
+// `expo/config-plugins` on Expo releases with and without a package exports map.
+const { IOSConfig } = createRequire(import.meta.url)("expo/config-plugins") as typeof import("expo/config-plugins");
 
 const app: ExpoConfig = {
   name: "test-app",

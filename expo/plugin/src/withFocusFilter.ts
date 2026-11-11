@@ -5,7 +5,7 @@ import {
   withInfoPlist,
   withXcodeProject,
   type XcodeProject,
-} from "expo/config-plugins.js";
+} from "expo/config-plugins";
 import { copyFileSync, existsSync, mkdirSync } from "fs";
 import { basename, join, resolve } from "path";
 

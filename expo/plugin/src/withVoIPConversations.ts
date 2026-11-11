@@ -1,4 +1,4 @@
-import { type ConfigPlugin, createRunOncePlugin } from "expo/config-plugins.js";
+import { type ConfigPlugin, createRunOncePlugin } from "expo/config-plugins";
 
 import pkg from "../../package.json";
 import type { CallPreviewActivitiesOption } from "./withCallPreviewActivities.ts";
