@@ -38,6 +38,8 @@ jobs:
         run: node tools/package-expo.ts "$RUNNER_TEMP/package-release"
       - name: Verify the package checksum
         run: (cd "$RUNNER_TEMP/package-release" && sha256sum -c SHA256SUMS)
+      - name: Load the packed config plugin on Expo 57 and 58
+        run: node tools/expo-plugin-load.ts "$RUNNER_TEMP/package-release/relayphone-ios-voip-sdk-$(cat VERSION).tgz"
   release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: release-controls

@@ -5,7 +5,7 @@ import {
   withInfoPlist,
   withPodfileProperties,
   withXcodeProject,
-} from "expo/config-plugins.js";
+} from "expo/config-plugins";
 import { copyFileSync, existsSync } from "fs";
 import { basename, resolve } from "path";
 

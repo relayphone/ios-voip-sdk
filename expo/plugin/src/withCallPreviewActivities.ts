@@ -6,7 +6,7 @@ import {
   withPodfile,
   withXcodeProject,
   type XcodeProject,
-} from "expo/config-plugins.js";
+} from "expo/config-plugins";
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 

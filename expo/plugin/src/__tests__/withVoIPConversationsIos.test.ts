@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExpoConfig } from "expo/config";
-import type { ModConfig } from "expo/config-plugins.js";
+import type { ModConfig } from "expo/config-plugins";
 
 import type { VoIPConversationsPluginProps } from "../../build/withVoIPConversations.js";
 import {
