@@ -5,6 +5,8 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+## 0.5.0 (2026-11-13)
+
 ### Added
 
 - Ended failures with an `EndedFailureKind` can carry the optional `platformCallRemaining: true`.
