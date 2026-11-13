@@ -77,6 +77,32 @@ WAV header. Each implementation must reproduce both vectors.
 | 8000 Hz | 5760 | `7305be4e1d4ba73d2f2f876869fa5cb27c12bb91450081452139f41262f7c003` |
 | 48000 Hz | 34560 | `82f79efb9f1b24a5c839cd500f5c9ad291ef5969348c3d68b775fcef6f8fa3b4` |
 
+Every source uses **`emissionSamples(marker, rate, count, offset)`** to emit a repeating
+**1020 ms** cycle: a 150 ms 400 Hz pre-roll, the unchanged 720 ms marker, and a 150 ms
+400 Hz post-roll. Both rolls have amplitude 0.2; their phase starts at zero. Only the first
+5 ms of the pre-roll and last 5 ms of the post-roll use raised-cosine fades. The inner roll
+edges are not faded. The marker bytes, profile, detector and thresholds remain unchanged.
+Offsets address the entire repeating emission, so chunking must not restart its pre-roll.
+
+For precise cross-platform sampling, cycle length is `rate / 50 * 51`, pre-roll length is
+`round(rate * 3 / 20)`, and marker length is `rate / 50 * 36`. Post-roll consumes the remaining
+cycle samples. For uncommon supported rates with half-sample roll boundaries, the pre-roll is
+rounded to the nearest sample (ties upward); the total cycle stays exactly 1020 ms. For roll
+sample `n`, use the same raised-cosine formula above with `u = min(1, n/(rate*0.005))` on
+pre-roll and `u = min(1, (postLength-n)/(rate*0.005))` on post-roll, multiplying a 400 Hz sine.
+
+Emission parity vectors use `createMarker("parity-v2")`, 1020 ms and the same PCM16 LE conversion:
+
+| Rate | Samples | Emission PCM16 LE SHA-256 |
+| --- | --- | --- |
+| 8000 Hz | 8160 | `e339576ee90e3d72ef65c7a5e44ab4a74345be472fdcd39b8f25072448a5fbab` |
+| 48000 Hz | 48960 | `0a79ca1399b4fc018584bcf8e90be7c476618fab47f903b9670ce1282eafbaa1` |
+
+Capture windows must include the post-roll so the last marker slot is not the last received
+audio. The unchanged detector checks only the twelve marker slots: a truncated post-roll can
+still yield a marker when every slot passes, and can never excuse a missing or wrong slot.
+The generator does not establish capture coverage; platform fixtures must measure it.
+
 This is a content marker, not a cryptographic identity. PCM gaps do not establish RTP packet
 loss. RMS/peak silence limits remain 0.003/0.01. Transition-settling, missing-slot, wrong-tone,
 low-energy and parity controls exercise the profile; real processing/Opus qualification is a

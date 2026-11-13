@@ -7,6 +7,11 @@ Public API changes include migration guidance.
 
 ### Added
 
+- The shared testing API exports `emissionSamples`, wrapping `tones-v2` in 150 ms 400 Hz
+  pre-roll and post-roll with raised-cosine outer edges. Sources must use the full emission;
+  capture windows must include post-roll. Marker detection, confidence and marker parity are
+  unchanged. Emission PCM16 parity vectors are listed in `docs/media-testing.md`.
+
 - The unreleased shared media marker uses guarded `tones-v2`: twelve 60 ms slots, raised-cosine
   fades and central 20 ms scoring. Receipts require the `tones-v2` profile. Adapter authors must
   update generators, detectors and receipt producers together; see `docs/media-testing.md` for

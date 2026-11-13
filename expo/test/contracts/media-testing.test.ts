@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
-  createMediaTest, createMarker, markerSamples, detectMarker, validateMediaReceipt, MediaTestError,
+  createMediaTest, createMarker, markerSamples, emissionSamples, detectMarker, validateMediaReceipt, MediaTestError,
   type MediaCapability, type MediaReadRequest, type MediaReceipt, type MediaTestAdapter, type MediaObservation,
 } from "../../src/testing/index.ts";
 
@@ -76,6 +76,49 @@ test("tones-v2 PCM16 LE parity vectors match at 8 and 48 kHz", () => {
     pcm.forEach((value, index) => bytes.writeInt16LE(Math.round(value * 32767), index * 2));
     assert.equal(createHash("sha256").update(bytes).digest("hex"), expected);
   }
+});
+
+test("1020 ms emission PCM16 LE parity vectors match at 8 and 48 kHz", () => {
+  for (const [rate, expected] of [
+    [8000, "e339576ee90e3d72ef65c7a5e44ab4a74345be472fdcd39b8f25072448a5fbab"],
+    [48000, "0a79ca1399b4fc018584bcf8e90be7c476618fab47f903b9670ce1282eafbaa1"],
+  ] as const) {
+    const pcm = emissionSamples(createMarker("parity-v2"), rate, rate / 50 * 51);
+    const bytes = Buffer.alloc(pcm.length * 2);
+    pcm.forEach((value, index) => bytes.writeInt16LE(Math.round(value * 32767), index * 2));
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), expected);
+  }
+});
+
+test("emission preserves the marker bytes and chunk continuity across both rolls", () => {
+  const marker = createMarker("emission");
+  for (const rate of [8000, 8050, 44100, 48000]) {
+    const cycle = rate / 50 * 51, pre = Math.round(rate * 3 / 20), length = rate / 50 * 36;
+    const pcm = emissionSamples(marker, rate, cycle * 2);
+    assert.deepEqual(pcm.slice(pre, pre + length), markerSamples(marker, rate, length));
+    assert.deepEqual(pcm.slice(cycle), pcm.slice(0, cycle));
+    const split = new Float32Array(pcm.length);
+    for (let offset = 0; offset < pcm.length; offset += 137)
+      split.set(emissionSamples(marker, rate, Math.min(137, pcm.length - offset), offset), offset);
+    assert.deepEqual(split, pcm);
+    assert.ok(pcm.slice(0, pre).some(value => Math.abs(value) > 0.19));
+    assert.ok(pcm.slice(pre + length, cycle).some(value => Math.abs(value) > 0.19));
+    assert.equal(pcm[0], 0);
+  }
+  assert.throws(() => emissionSamples(marker, 7999, 10), code("invalid_arguments"));
+  assert.throws(() => emissionSamples(marker, 8000, 10, Number.MAX_SAFE_INTEGER), code("invalid_arguments"));
+});
+
+test("a truncated post-roll cannot excuse a missing or corrupted marker slot", () => {
+  const rate = 48000, marker = createMarker("truncated-emission");
+  const pcm = emissionSamples(marker, rate, rate * 0.97); // Last 50 ms of post-roll absent.
+  assert.ok(detectMarker(pcm, rate, marker)!.confidence >= 0.8);
+  const missing = pcm.slice();
+  missing.fill(0, rate * 0.81, rate * 0.87); // The final marker slot, including its scored center.
+  assert.equal(detectMarker(missing, rate, marker), null);
+  const wrong = pcm.slice();
+  for (let i = rate * 0.81; i < rate * 0.87; i++) wrong[i] = 0.2 * Math.sin(2 * Math.PI * 2300 * i / rate);
+  assert.equal(detectMarker(wrong, rate, marker), null);
 });
 
 test("twenty-millisecond transition smear passes through the scoring guards", () => {
@@ -245,8 +288,9 @@ test("unresponsive adapters have a bounded deadline", async t => {
 });
 test("the built testing subpath loads without a native or LiveKit runtime", () => {
   const script = [
-    "import { createMarker, createMediaTest } from '@relayphone/ios-voip-sdk/testing';",
+    "import { createMarker, createMediaTest, emissionSamples } from '@relayphone/ios-voip-sdk/testing';",
     "console.log(createMarker('export-check').profile);",
+    "if (emissionSamples(createMarker('export-check'), 8000, 8160).length !== 8160) throw new Error('emission export');",
     "try { await createMediaTest({conversationId:'call',fixtureId:'fixture'}); }",
     "catch(error) { console.log(error.code); }",
   ].join("\n");
