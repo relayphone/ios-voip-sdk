@@ -9,6 +9,7 @@ const codes = new Set<ConversationErrorCode>([
   "duplicate_sdk_linkage",
   "deadline_exceeded",
   "handler_failed",
+  "refused",
 ]);
 
 /** Decode sanitized native details without assuming every caught value came from this library. */

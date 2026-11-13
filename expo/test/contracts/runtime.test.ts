@@ -189,6 +189,25 @@ describe("handler generation and cancellation", () => {
 
 import { commandError, withCommandErrors } from '../../src/conversations/errors.ts';
 
+describe("command rejection reasons", () => {
+  for (const code of ["refused", "handler_failed", "deadline_exceeded"] as const) {
+    test(code + " preserves the platform's message", async () => {
+      const message = "Please finish the current call";
+      const native = withCommandErrors({
+        async endConversation() {
+          throw new Error("expo-conversation:" + JSON.stringify({ code, message }));
+        },
+      });
+      await assert.rejects(native.endConversation(), (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal(error.message, message);
+        assert.partialDeepStrictEqual({ ...error }, { code });
+        return true;
+      });
+    });
+  }
+});
+
 test('native command errors preserve typed code and platform details', () => {
   const error = commandError(new Error('Native call rejected: expo-conversation:{"code":"conversation","message":"Control failed","nativeDomain":"LCKErrorDomain","nativeCode":4}'));
   assert.ok(error instanceof Error);

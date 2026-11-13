@@ -270,7 +270,13 @@ export type ConversationReport =
 /** Known incoming filtering reasons; unknown native values use other. @category Reports */
 export type IncomingFilterReason = "doNotDisturb" | "blockList" | "other";
 
-/** Rejection codes shared with the SDK; native details remain available. @category Core */
+/**
+ * Rejection codes shared with the SDK; native details remain available.
+ * Platforms whose handlers can deliberately refuse report refused with the app's refusal message.
+ * iOS has no distinct handler refusal path: handler failures use handler_failed, and timeouts
+ * use deadline_exceeded.
+ * @category Core
+ */
 export type ConversationErrorCode =
   | "invalid_arguments"
   | "unknown_conversation"
@@ -278,7 +284,8 @@ export type ConversationErrorCode =
   | "conversation"
   | "duplicate_sdk_linkage"
   | "deadline_exceeded"
-  | "handler_failed";
+  | "handler_failed"
+  | "refused";
 
 /** Serializable failure, also suitable for rejected command error fields. @category Core */
 export interface ConversationFailure {
