@@ -146,7 +146,7 @@ test("receipt profile and full 720 ms marker are mandatory", () => {
     marker: detectMarker(markerSamples(query.marker, 48000, 34560), 48000, query.marker) };
   assert.equal(validateMediaReceipt(exact, { ...query, durationMs: 720 }).expectation, "audio");
   assert.throws(() => validateMediaReceipt(exact, { ...query, durationMs: 719 }), code("audio_missing"));
-  assert.throws(() => validateMediaReceipt({ ...exact, sampleCount: 34559 }, query), code("audio_missing"));
+  assert.throws(() => validateMediaReceipt({ ...exact, sampleCount: 34559 }, query), code("invalid_receipt"));
   for (const profile of ["tones-v1", "other", undefined]) {
     assert.throws(() => validateMediaReceipt({ ...receipt, profile }, query), code("invalid_receipt"));
     assert.throws(() => validateMediaReceipt({ ...evidence(request("silence"), true), profile }, request("silence")), code("invalid_receipt"));
@@ -183,7 +183,8 @@ test("streamed sample chunks preserve the same marker waveform", () => {
 });
 test("receipt validation uses matching observer clocks and a complete marker", () => {
   const query = request(), original = evidence(query);
-  const receipt = { ...original, marker: { ...original.marker!, offsetSamples: 480 } };
+  const receipt = { ...original, marker: { ...original.marker!, offsetSamples: 480,
+    slotStarts: original.marker!.slotStarts.map(start => start + 480) } };
   assert.equal(validateMediaReceipt(receipt, query).firstAudioAfterPhaseMs, 10);
   assert.ok(Object.isFrozen(validateMediaReceipt(receipt, query).receipt));
   assert.throws(() => validateMediaReceipt({ ...receipt, marker: { ...receipt.marker!, confidence: 0.2 } }, query), code("audio_missing"));
@@ -373,4 +374,63 @@ test("maximum accepted identities remain usable after phase JSON escaping", asyn
     assert.ok(phase.id.length > 1024);
     await media.expectAudio({ direction: "toDevice", within: 1000 });
   } finally { await media.close(); }
+});
+
+test("unstretched emissions have zero relative slot drift and receipts keep alignment", () => {
+  for (const rate of [8000, 48000]) {
+    const marker = createMarker("zero-drift"), found = detectMarker(emissionSamples(marker, rate, rate * 1.02), rate, marker)!;
+    assert.ok(found);
+    assert.deepEqual(found.slotStarts.map((start, index) => start - found.offsetSamples - index * rate * 0.06), Array(12).fill(0));
+    assert.ok(Object.isFrozen(found.slotStarts));
+  }
+  const query = request(), receipt = evidence(query);
+  const checked = validateMediaReceipt(receipt, query).receipt.marker!;
+  assert.deepEqual(checked.slotStarts, receipt.marker!.slotStarts);
+  assert.ok(Object.isFrozen(checked.slotStarts));
+  for (const slotStarts of [undefined, [], receipt.marker!.slotStarts.slice(1),
+    receipt.marker!.slotStarts.map((start, index) => start + (index === 5 ? 800 : 0)),
+    receipt.marker!.slotStarts.map((start, index) => start + index * 300)])
+    assert.throws(() => validateMediaReceipt({ ...receipt, marker: { ...receipt.marker!, slotStarts } }, query), code("invalid_receipt"));
+});
+
+test("wrong profile tones in any slot, arbitrary 400 Hz and seeded noise never detect", () => {
+  const rate = 8000, marker = createMarker("wrong-each-slot"), pre = rate * 0.15;
+  for (let slot = 0; slot < 12; slot++) {
+    const pcm = emissionSamples(marker, rate, rate * 1.02);
+    const frequency = [650, 950, 1350, 1850].find(value => value !== marker.frequencies[slot])!;
+    for (let index = pre + slot * 480; index < pre + (slot + 1) * 480; index++)
+      pcm[index] = 0.2 * Math.sin(2 * Math.PI * frequency * index / rate);
+    assert.equal(detectMarker(pcm, rate, marker), null, `wrong slot ${slot}`);
+  }
+  let seed = 12345;
+  const noise = Float32Array.from({ length: rate * 2 }, () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return (seed / 2 ** 32 - 0.5) * 0.4; });
+  const tone = Float32Array.from({ length: rate * 2 }, (_, i) => 0.2 * Math.sin(2 * Math.PI * 400 * i / rate));
+  assert.equal(detectMarker(noise, rate, marker), null);
+  assert.equal(detectMarker(tone, rate, marker), null);
+});
+
+test("elastic timing tracks either direction and rejects cumulative alignment beyond the cap", () => {
+  const rate = 8000, marker = createMarker("parity-v2"), pre = rate * 0.15;
+  for (const scale of [0.8, 0.92, 1.08, 1.2]) {
+    const count = Math.round(rate * 0.72 * scale), pcm = new Float32Array(pre + count + pre);
+    const baseline = emissionSamples(marker, rate, rate * 1.02);
+    pcm.set(baseline.subarray(0, pre));
+    pcm.set(baseline.subarray(pre + rate * 0.72), pre + count);
+    for (let index = 0; index < count; index++) {
+      const slot = Math.min(11, Math.floor(index / (rate * 0.06 * scale)));
+      const local = index - slot * rate * 0.06 * scale;
+      const source = local / scale;
+      const fade = Math.min(1, Math.min(source, rate * 0.06 - source) / (rate * 0.005));
+      pcm[pre + index] = 0.2 * 0.5 * (1 - Math.cos(Math.PI * fade)) *
+        Math.sin(2 * Math.PI * marker.frequencies[slot]! * local / rate);
+    }
+    const found = detectMarker(pcm, rate, marker);
+    if (scale === 0.8 || scale === 1.2) assert.equal(found, null);
+    else {
+      assert.ok(found);
+      const drift = found.slotStarts.at(-1)! - found.offsetSamples - 11 * rate * 0.06;
+      assert.ok(scale < 1 ? drift < 0 : drift > 0);
+      assert.ok(Math.abs(drift) <= rate * 0.06);
+    }
+  }
 });

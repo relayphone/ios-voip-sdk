@@ -60,12 +60,21 @@ let `u = min(1, min(n, L - n) / (rate * 0.005))`. The Float32 sample is
 Detection scores only the central 20 ms, with 20 ms guards on both sides, using normalized
 Goertzel confidence and the unchanged mean-square energy floor of 0.0001. **Every slot must
 score at least 0.8; the complete marker is required.** The search advances by approximately
-1 ms, keeps the first complete detection, and improves its confidence within one slot of that
-candidate. Guard time makes the marker-start estimate uncertain by up to 20 ms; it is not a
+1 ms and keeps the first complete detection, improving its minimum confidence within one slot
+of that candidate. Slot zero starts that candidate. Each later slot chooses the best central
+20 ms score within ±15 ms of the previous chosen start plus 60 ms, in 1 ms steps. The final
+chosen start may drift at most ±60 ms from slot zero plus 11×60 ms. Confidence differences at
+most 1e-12 count as numerical ties: prefer no local shift, then the smaller absolute shift,
+then the earlier start. The >=0.8 acceptance threshold never uses that tolerance.
+
+`MarkerDetection.slotStarts` contains all twelve absolute sample offsets within the captured
+PCM; its first value equals `offsetSamples`. Receipts preserve a frozen copy and reject missing
+starts, out-of-capture slots, local shifts beyond ±15 ms and final drift beyond ±60 ms. The
+last aligned start plus 60 ms determines the received marker end, including deadline validation.
+Chosen scoring starts expose alignment changes; they are not physical tone-onset measurements. Guard time makes the marker-start estimate uncertain by up to 20 ms; it is not a
 physical onset measurement. Neither energy alone nor a partial identity establishes audio.
 Receipts carry `profile: "tones-v2"`; validation rejects absent/other receipt profiles and
-incompatible requested marker shapes, including on silence assertions. The entire 720 ms
-window must fit in the capture and deadline.
+incompatible requested marker shapes, including on silence assertions. Every aligned slot must fit in the capture, and the final aligned slot end must fit the deadline.
 
 These are the SHA-256 parity vectors for **`createMarker("parity-v2")`**, one 720 ms cycle.
 Convert the returned Float32 samples to signed PCM16 with `Math.round(sample * 32767)` (nearest,

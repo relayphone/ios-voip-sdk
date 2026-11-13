@@ -27,7 +27,7 @@ export function validateMediaReceipt(value: unknown, request: MediaReadRequest):
       request.marker.frequencies.length !== expected.frequencies.length ||
       request.marker.frequencies.some((tone, index) => tone !== expected.frequencies[index]))
     invalid("Unsupported marker profile");
-  const markerMs = expected.frequencies.length * expected.slotMs;
+  const slotMs = expected.slotMs;
   const data = object(value), clock = object(data.clock);
   if (data.profile !== expected.profile) invalid("Unsupported receipt marker profile");
   for (const key of ["conversationId", "fixtureId", "direction", "stage"] as const)
@@ -43,6 +43,7 @@ export function validateMediaReceipt(value: unknown, request: MediaReadRequest):
   const sampleRate = integer(data.sampleRate, "sampleRate", 8000);
   if (sampleRate > 96000 || sampleRate % 50 !== 0) invalid("Unsupported sample rate");
   const sampleCount = integer(data.sampleCount, "sampleCount");
+  const slotSamples = sampleRate * slotMs / 1000;
   const frameCount = integer(data.frameCount, "frameCount");
   const overflowFrames = integer(data.overflowFrames, "overflowFrames");
   const monitorTicks = integer(data.monitorTicks, "monitorTicks", 1);
@@ -61,7 +62,21 @@ export function validateMediaReceipt(value: unknown, request: MediaReadRequest):
     const offsetSamples = integer(detection.offsetSamples, "offsetSamples");
     const confidence = number(detection.confidence, "confidence");
     if (offsetSamples >= sampleCount || confidence < 0 || confidence > 1) invalid("Invalid marker observation");
-    marker = Object.freeze({ id: text(detection.id, "marker id", 4096), offsetSamples, confidence });
+    if (!Array.isArray(detection.slotStarts) || detection.slotStarts.length !== expected.frequencies.length)
+      invalid("A complete ordered slot alignment is required");
+    const slotStarts = detection.slotStarts.map((value, index) => {
+      const start = integer(value, "slot start");
+      if (start + slotSamples > sampleCount || index === 0 && start !== offsetSamples)
+        invalid("Slot alignment exceeds capture or disagrees with marker start");
+      return start;
+    });
+    for (let index = 1; index < slotStarts.length; index++)
+      if (Math.abs(slotStarts[index]! - slotStarts[index - 1]! - slotSamples) > Math.ceil(sampleRate * 0.015))
+        invalid("Slot alignment exceeds local drift limit");
+    if (Math.abs(slotStarts.at(-1)! - offsetSamples - slotSamples * (slotStarts.length - 1)) > slotSamples)
+      invalid("Slot alignment exceeds cumulative drift limit");
+    marker = Object.freeze({ id: text(detection.id, "marker id", 4096), offsetSamples, confidence,
+      slotStarts: Object.freeze(slotStarts) });
   }
   const target: MediaObservation = request.direction === "toDevice"
     ? { direction: request.direction, stage: request.stage } : { direction: request.direction, stage: request.stage };
@@ -74,8 +89,10 @@ export function validateMediaReceipt(value: unknown, request: MediaReadRequest):
   const firstAudioAfterPhaseMs = marker && marker.id === request.marker.id && marker.confidence >= 0.8
     ? startedAtMs - anchor.atMs + marker.offsetSamples / sampleRate * 1000 : null;
   if (request.expectation === "audio") {
+    const markerEnd = marker ? marker.slotStarts.at(-1)! + slotSamples : Infinity;
+    const markerMs = marker ? (markerEnd - marker.offsetSamples) / sampleRate * 1000 : Infinity;
     if (firstAudioAfterPhaseMs === null || firstAudioAfterPhaseMs + markerMs > request.durationMs ||
-        marker!.offsetSamples + markerMs / 1000 * sampleRate > sampleCount)
+        markerEnd > sampleCount)
       throw new MediaTestError("audio_missing", "No complete current-phase marker arrived within the deadline");
   } else {
     if (startedAtMs !== anchor.atMs || measuredMs < request.durationMs || endedAtMs - anchor.atMs < request.durationMs)

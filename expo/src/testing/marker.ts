@@ -82,27 +82,57 @@ function toneConfidence(pcm: Float32Array, start: number, count: number, frequen
   return Math.min(1, Math.max(0, 2 * (previous * previous + beforePrevious * beforePrevious -
     coefficient * previous * beforePrevious) / (count * energy)));
 }
-/** Find a complete phase-coded marker rather than accepting audio energy alone. Resolution: 1 ms. */
+/** Complete ordered marker with local slot alignment; signal and confidence threshold are unchanged. */
 export function detectMarker(pcm: Float32Array, sampleRate: number, marker: MediaMarker): MarkerDetection | null {
   validRate(sampleRate); validMarker(marker);
   if (pcm.length > sampleRate * 60) throw new MediaTestError("invalid_arguments", "Capture exceeds 60 seconds");
   const slotSamples = sampleRate / 50 * 3;
   const length = slotSamples * marker.frequencies.length;
+  // Cache actual 20 ms scores. Neighboring candidate paths reuse the same windows.
+  const cache = new Map<number, Map<number, number>>();
+  const score = (millisecond: number, frequency: number): number => {
+    const start = Math.floor(millisecond * sampleRate / 1000);
+    if (start < 0 || start + slotSamples > pcm.length) return -1;
+    let values = cache.get(frequency);
+    if (!values) { values = new Map(); cache.set(frequency, values); }
+    const cached = values.get(millisecond);
+    if (cached !== undefined) return cached;
+    const result = toneConfidence(pcm, start + sampleRate / 50, sampleRate / 50, frequency, sampleRate);
+    values.set(millisecond, result);
+    return result;
+  };
+  const shifts = [0, ...Array.from({ length: 15 }, (_, index) => [-index - 1, index + 1]).flat()];
+  // Pure tones can differ by floating-point roundoff. Ties favor the smallest local shift.
+  const epsilon = 1e-12;
   let best: MarkerDetection | null = null;
   let searchEnd = Infinity;
-  for (let millisecond = 0; ; millisecond++) {
-    const offset = Math.floor(millisecond * sampleRate / 1000);
-    if (offset + length > pcm.length || offset > searchEnd) break;
-    let confidence = 1;
-    for (const [slot, frequency] of marker.frequencies.entries()) {
-      confidence = Math.min(confidence, toneConfidence(pcm, offset + slot * slotSamples + sampleRate / 50, sampleRate / 50, frequency, sampleRate));
+  for (let firstMs = 0; ; firstMs++) {
+    const offset = Math.floor(firstMs * sampleRate / 1000);
+    if (offset + length > pcm.length || firstMs > searchEnd) break;
+    let confidence = score(firstMs, marker.frequencies[0]!);
+    if (confidence < 0.8) continue;
+    const starts = [offset];
+    let previousMs = firstMs;
+    for (const frequency of marker.frequencies.slice(1)) {
+      const expectedMs = previousMs + marker.slotMs;
+      let chosenMs = expectedMs, chosenScore = -1;
+      for (const shift of shifts) {
+        const candidateMs = expectedMs + shift, candidateScore = score(candidateMs, frequency);
+        if (candidateScore > chosenScore + epsilon || chosenScore < 0.8 && candidateScore >= 0.8) {
+          chosenMs = candidateMs; chosenScore = candidateScore;
+        }
+        if (chosenScore >= 1 - epsilon) break;
+      }
+      confidence = Math.min(confidence, chosenScore);
       if (confidence < 0.8) break;
+      starts.push(Math.floor(chosenMs * sampleRate / 1000));
+      previousMs = chosenMs;
     }
-    if (confidence >= 0.8) {
-      if (!best) searchEnd = offset + slotSamples;
-      if (!best || confidence > best.confidence)
-        best = Object.freeze({ id: marker.id, offsetSamples: offset, confidence });
-    }
+    if (confidence < 0.8 || starts.length !== marker.frequencies.length ||
+        Math.abs(starts.at(-1)! - offset - slotSamples * (starts.length - 1)) > slotSamples) continue;
+    if (!best) searchEnd = firstMs + marker.slotMs;
+    if (!best || confidence > best.confidence + epsilon)
+      best = Object.freeze({ id: marker.id, offsetSamples: offset, confidence, slotStarts: Object.freeze(starts) });
   }
   return best;
 }
