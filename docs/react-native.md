@@ -120,8 +120,12 @@ redelivery can be recognized.
 `useConversations()` observes the immutable current list; `useConversation(id)` observes one
 conversation; `getConversations()` reads the list outside React. State includes direction,
 members, capabilities, mute/video flags, optional incoming payload and pending start/join.
-Statuses are `ringing`, `previewing`, `dialing`, `connecting`, `connected`, `held`, `ending` and
+Statuses are `ringing`, `previewing`, `dialing`, `connecting`, `connected`, `reconnecting`, `held`, `ending` and
 `ended`. An ended conversation appears briefly with `ended.reason` and, on failure, its cause.
+
+A `reconnecting` conversation retains its original `connectedAt` and returns to `connected`
+with that same timestamp when transport recovers. Hold and end rules are unchanged. Exhaustive
+switches on `status` must handle `reconnecting`.
 
 A `previewing` conversation follows a call without ringing or opening audio. Its
 `previewReason.type` is `filtered`, `answeredElsewhere` or `policy`; a filtered preview also

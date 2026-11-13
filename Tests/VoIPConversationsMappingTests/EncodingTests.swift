@@ -61,6 +61,36 @@ struct EncodingTests {
   }
 
   @Test
+  func reconnectAndRecoveryKeepTheOriginalTimestamp() throws {
+    let connected = Date(timeIntervalSince1970: 1_800_000_000)
+    var call = Call(
+      id: CallID(rawValue: "reconnect"), isIncoming: false, parties: [],
+      status: .connected, connectedAt: connected)
+    for (status, expected) in [
+      (CallStatus.connected, "connected"), (.reconnecting, "reconnecting"),
+      (.connected, "connected"),
+    ] {
+      call.status = status
+      let snapshot = ConversationEncoding.conversation(
+        call, members: [], capabilities: capabilities)
+      #expect(snapshot["status"] == .string(expected))
+      #expect(snapshot["connectedAt"] == .date(connected))
+      #expect(JSONValue(snapshot.foundationObject) == snapshot)
+      #expect(try JSONDecoder().decode(JSONValue.self, from: snapshot.data()) == snapshot)
+    }
+    call.status = .reconnecting
+    call.isOnHold = true
+    #expect(
+      ConversationEncoding.conversation(call, members: [], capabilities: capabilities)["status"]
+        == .string("held"))
+    call.status = .ended(.failed(.reconnectTimedOut))
+    let ended = ConversationEncoding.conversation(call, members: [], capabilities: capabilities)
+    #expect(ended["status"] == .string("ended"))
+    #expect(ended["ended"]?["failure"]?["kind"] == .string("reconnectTimedOut"))
+    #expect(ended["connectedAt"] == .date(connected))
+  }
+
+  @Test
   func previewAndFailureReasonsSurviveEncoding() {
     var call = Call(
       id: CallID(rawValue: "call"), isIncoming: true, parties: [],

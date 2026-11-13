@@ -7,6 +7,9 @@ Public API changes include migration guidance.
 
 ### Added
 
+- Conversations expose `reconnecting`, retaining the original `connectedAt` through recovery
+  to `connected`. Migration: exhaustive switches on `status` must handle `reconnecting`.
+
 - An experimental package in `exact/` that runs Exact's `@exact/calls` on iOS through the SDK.
 
 ### Fixed

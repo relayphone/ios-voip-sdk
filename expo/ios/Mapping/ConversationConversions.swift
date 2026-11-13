@@ -191,8 +191,7 @@ extension PresentationOutcome {
 extension CallStatus {
   /// The fields of a TypeScript `Conversation` that its status determines.
   ///
-  /// A call on hold is `held`. The TypeScript API has no reconnecting status, and its reports
-  /// can't make a call reconnect, so a reconnecting call is `connecting`.
+  /// A call on hold is `held`; termination takes precedence over hold and transport progress.
   func fields(isOnHold: Bool, endedAt: Date) -> [String: JSONValue] {
     switch self {
     case .ringing:
@@ -205,8 +204,10 @@ extension CallStatus {
       ["status": .string("held")]
     case .dialing:
       ["status": .string("dialing")]
-    case .connecting, .reconnecting:
+    case .connecting:
       ["status": .string("connecting")]
+    case .reconnecting:
+      ["status": .string("reconnecting")]
     case .connected:
       ["status": .string("connected")]
     }

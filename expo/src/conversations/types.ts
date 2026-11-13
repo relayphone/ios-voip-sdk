@@ -191,12 +191,17 @@ export type Conversation = ConversationBase &
     | { readonly status: "dialing"; readonly direction: "outgoing" }
     | { readonly status: "connecting" }
     | { readonly status: "connected"; readonly connectedAt: string }
+    | { readonly status: "reconnecting"; readonly connectedAt: string }
     | { readonly status: "held" }
     | { readonly status: "ending" }
     | { readonly status: "ended" }
   );
 
-/** All derived statuses, matching ios-voip-sdk. @category State */
+/**
+ * All derived statuses, matching ios-voip-sdk. Reconnecting retains the original connectedAt;
+ * recovery returns to connected. Hold and termination override transport progress.
+ * @category State
+ */
 export type ConversationStatus = Conversation["status"];
 
 /**

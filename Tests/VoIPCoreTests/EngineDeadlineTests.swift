@@ -86,7 +86,11 @@ extension EngineTests {
 
       case .reconnect:
         try await h.connect()
+        await h.until { $0.calls.first?.status == .connected }
+        let connectedAt = try #require(h.client.calls.first?.connectedAt)
         await h.client.receive(.reconnecting, for: callID, eventID: e2)
+        await h.until { $0.calls.first?.status == .reconnecting }
+        #expect(h.client.calls.first?.connectedAt == connectedAt)
         h.clock.advance(by: deadlines.reconnect)
         #expect(try await h.next() == .ended(callID, .failed(.reconnectTimedOut)))
         #expect(await h.records.last == .reportEnded(callID, .failed(.reconnectTimedOut)))
@@ -149,6 +153,24 @@ extension EngineTests {
       await h.until { $0.calls.map(\.status) == [.connected] }
       #expect(h.clock.pendingSleepCount == 0)
       h.clock.advance(by: .seconds(3600))
+      try await h.expectNoEvents()
+      #expect(h.client.calls.first?.status == .connected)
+    }
+
+    @Test func reconnectRecoveryPreservesConnectedAt() async throws {
+      let h = try Harness()
+      try await h.connect()
+      await h.until { $0.calls.first?.status == .connected }
+      let connectedAt = try #require(h.client.calls.first?.connectedAt)
+      h.clock.advance(by: .seconds(10))
+      await h.client.receive(.reconnecting, for: callID, eventID: e1)
+      await h.until { $0.calls.first?.status == .reconnecting }
+      #expect(h.client.calls.first?.connectedAt == connectedAt)
+      h.clock.advance(by: .seconds(10))
+      await h.client.receive(.connected, for: callID, eventID: e2)
+      await h.until { $0.calls.first?.status == .connected }
+      #expect(h.client.calls.first?.connectedAt == connectedAt)
+      h.clock.advance(by: Deadlines().reconnect)
       try await h.expectNoEvents()
       #expect(h.client.calls.first?.status == .connected)
     }
