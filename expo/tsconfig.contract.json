@@ -7,7 +7,9 @@
   },
   "include": [
     "src/conversations/**/*.ts",
-    "src/__tests__/conversations.types.ts"
+    "src/__tests__/conversations.types.ts",
+    "src/testing/**/*.ts",
+    "src/__tests__/testing.types.ts"
   ],
   "exclude": []
 }
