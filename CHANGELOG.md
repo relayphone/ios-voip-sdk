@@ -7,6 +7,9 @@ Public API changes include migration guidance.
 
 ### Added
 
+- Ended failures with an `EndedFailureKind` can carry the optional `platformCallRemaining: true`.
+  Android only: the system may still show this call; the app should ask the person to end it
+  from the system UI. iOS never sets it. Existing failures without the flag remain valid.
 - Conversations expose `reconnecting`, retaining the original `connectedAt` through recovery
   to `connected`. Migration: exhaustive switches on `status` must handle `reconnecting`.
 

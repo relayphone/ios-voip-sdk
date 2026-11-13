@@ -95,7 +95,14 @@ export type EndedFailureKind =
  * @category State
  */
 export type EndedFailure =
-  | { readonly kind: EndedFailureKind }
+  | {
+      readonly kind: EndedFailureKind;
+      /**
+       * Android only: the system may still show this call; the app should ask the person to end
+       * it from the system UI. iOS never sets it.
+       */
+      readonly platformCallRemaining?: true;
+    }
   | { readonly kind: "filtered"; readonly cause: IncomingFilterReason };
 
 /**
