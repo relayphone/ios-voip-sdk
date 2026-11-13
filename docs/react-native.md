@@ -15,7 +15,7 @@ Use macOS with Xcode 27.1 or later, iOS 26 or later, and Node.js 26 for the comm
 The example uses Expo 57, React Native 0.86.3 and React 19.2.3. The package requires Expo 57 or
 later and a development build containing its native module; it doesn't run in Expo Go.
 
-Use version 0.4.0 or later, and replace `X.Y.Z` below. Install the asset pinned to that tag
+Use version 0.5.0 for `X.Y.Z` below. Install the asset pinned to that tag
 in your Expo app:
 
 ```sh
