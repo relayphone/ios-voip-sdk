@@ -123,6 +123,10 @@ members, capabilities, mute/video flags, optional incoming payload and pending s
 Statuses are `ringing`, `previewing`, `dialing`, `connecting`, `connected`, `reconnecting`, `held`, `ending` and
 `ended`. An ended conversation appears briefly with `ended.reason` and, on failure, its cause.
 
+An ended failure with an `EndedFailureKind` may carry `platformCallRemaining: true`.
+Android only: the system may still show this call; the app should ask the person to end it from
+the system UI. iOS never sets it. The flag is optional and does not appear on filtered failures.
+
 A `reconnecting` conversation retains its original `connectedAt` and returns to `connected`
 with that same timestamp when transport recovers. Hold and end rules are unchanged. Exhaustive
 switches on `status` must handle `reconnecting`.

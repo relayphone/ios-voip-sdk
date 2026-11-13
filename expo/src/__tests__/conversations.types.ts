@@ -77,9 +77,15 @@ if (conversation.ended?.reason === "failed") {
   if (failure?.kind === "filtered") {
     const cause: IncomingFilterReason = failure.cause;
     void cause;
+    // @ts-expect-error Filtered failures have no remaining platform call flag.
+    void failure.platformCallRemaining;
   } else if (failure) {
     const kind: EndedFailureKind = failure.kind;
+    const remaining: true | undefined = failure.platformCallRemaining;
     void kind;
+    void remaining;
+    // @ts-expect-error Failure state is immutable.
+    failure.platformCallRemaining = true;
   }
 } else if (conversation.ended) {
   // @ts-expect-error Only a failed conversation carries a native failure.
@@ -97,6 +103,21 @@ const nativeFailure: ConversationEnd = {
   failure: { kind: "audioActivationTimedOut" },
 };
 void nativeFailure;
+const platformFailure: ConversationEnd = {
+  at: "2026-11-13T00:00:00.000Z",
+  reason: "failed",
+  failure: { kind: "refused", platformCallRemaining: true },
+};
+void platformFailure;
+// @ts-expect-error The remaining platform call flag is true or omitted, never false.
+const falseRemaining: EndedFailure = { kind: "refused", platformCallRemaining: false };
+void falseRemaining;
+// @ts-expect-error The remaining platform call flag is not a string.
+const stringRemaining: EndedFailure = { kind: "refused", platformCallRemaining: "true" };
+void stringRemaining;
+// @ts-expect-error Filtered failures cannot carry the remaining platform call flag.
+const filteredRemaining: EndedFailure = { kind: "filtered", cause: "other", platformCallRemaining: true };
+void filteredRemaining;
 // @ts-expect-error A filtered failure carries the filter's cause.
 const filteredWithoutCause: EndedFailure = { kind: "filtered" };
 void filteredWithoutCause;
