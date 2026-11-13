@@ -59,13 +59,14 @@ let `u = min(1, min(n, L - n) / (rate * 0.005))`. The Float32 sample is
 `0.2 * (1 - cos(π*u)) / 2 * sin(2*π*frequency*n/rate)`; slots occupy `[0, L)`.
 Detection scores only the central 20 ms, with 20 ms guards on both sides, using normalized
 Goertzel confidence and the unchanged mean-square energy floor of 0.0001. **Every slot must
-score at least 0.8; the complete marker is required.** The search advances by approximately
-1 ms and keeps the first complete detection, improving its minimum confidence within one slot
-of that candidate. Slot zero starts that candidate. Each later slot chooses the best central
-20 ms score within ±15 ms of the previous chosen start plus 60 ms, in 1 ms steps. The final
-chosen start may drift at most ±60 ms from slot zero plus 11×60 ms. Confidence differences at
-most 1e-12 count as numerical ties: prefer no local shift, then the smaller absolute shift,
-then the earlier start. The >=0.8 acceptance threshold never uses that tolerance.
+score at least 0.8; the complete marker is required.** The search advances by approximately 1 ms. For slot zero, find the first passing sync window,
+then select its best score within one 60 ms neighbourhood **before** aligning later slots.
+Do not move this anchor after a failed drift cap; continue searching after that neighbourhood.
+This prevents an over-cap waveform from passing by moving slot zero later. Each later slot
+chooses the best central 20 ms score within ±15 ms of the previous chosen start plus 60 ms.
+The final chosen start may drift at most ±60 ms from slot zero plus 11×60 ms. Confidence
+differences at most 1e-12 count as numerical ties: prefer no local shift, then the smaller
+absolute shift, then the earlier start. The >=0.8 threshold never uses that tolerance.
 
 `MarkerDetection.slotStarts` contains all twelve absolute sample offsets within the captured
 PCM; its first value equals `offsetSamples`. Receipts preserve a frozen copy and reject missing
@@ -111,6 +112,45 @@ Capture windows must include the post-roll so the last marker slot is not the la
 audio. The unchanged detector checks only the twelve marker slots: a truncated post-roll can
 still yield a marker when every slot passes, and can never excuse a missing or wrong slot.
 The generator does not establish capture coverage; platform fixtures must measure it.
+
+### Pitch-preserving detection vectors
+
+The reference generator is `expo/test/contracts/detection-vectors.ts`, using `parity-v2`.
+It edits the full Float32 emission without resampling, then encodes PCM16 LE with the same
+conversion as the parity vectors. Detection runs on PCM16 decoded as `sample / 32768`.
+
+All edits occur **45 ms after the original start of the indicated zero-based marker slot**,
+after its central [20,40) ms scoring window. For ±40 ms use slots `[2,5,8,10]`, at original
+emission times `[315,495,675,795]` ms. For +80 ms use slots `[1,2,3,4,5,6,8,10]`, at
+`[255,315,375,435,495,555,675,795]` ms. Adjust subsequent positions by accumulated edits.
+Insertion copies the immediately preceding 10 ms; deletion removes the next 10 ms.
+
+At the join, blend the first `F = rate/400` incoming samples in place with the unedited
+continuation: `out[p+i] = (1-w)*before[p+i] + w*out[p+i]`, where `w = i/(F-1)`.
+Each assignment rounds to Float32. The 2.5 ms linear crossfade removes no samples, so each
+edit changes length by exactly 10 ms. An insertion's second join already has identical
+continuation on both sides; its crossfade is a no-op. No original central scoring window is
+edited. The generator fixes all sample positions and arithmetic for other implementations.
+
+| Rate | Edit | Samples | Input PCM16 LE SHA-256 | Expected |
+| --- | --- | --- | --- | --- |
+| 8000 | +40 ms | 8480 | `8cc156f34b514ad4f15d11420771678c3e0f1e443281e8d374ef86e70839370b` | Detect |
+| 8000 | -40 ms | 7840 | `cb31a159001ca9041fe6f1068bec30b77c3941ab467c39587616a4e140d8bdd5` | Detect |
+| 8000 | +80 ms | 8800 | `4e1daed9aa5681e48fe244f491ba5cea969ed971a06126cc8557275f49b7f124` | Reject cap |
+| 48000 | +40 ms | 50880 | `9df61e48608381ae9a50b8a297884397c72a18e603d3317926b0fb43d73b176a` | Detect |
+| 48000 | -40 ms | 47040 | `02030079b20fcd511fec09037b09d4852ff30fdcd9ca30f86f920d945e95a939` | Detect |
+| 48000 | +80 ms | 52800 | `62459596128b7f8e181c8ef1edd5a69039f37fdfa89a03e4f29e12d55aad7c14` | Reject cap |
+
+Chosen per-slot drifts in milliseconds relative to slot zero plus `k*60` are identical at both
+rates. The first slot offset is 135 ms (1080/6480 samples):
+
+- +40 ms: `[0,0,0,10,10,10,20,20,20,30,30,40]`.
+- -40 ms: `[0,0,0,0,0,0,0,0,0,0,-10,-10]`.
+- +80 ms rejected alignment: `[0,0,10,20,30,40,50,60,60,70,70,80]`; no detection is returned.
+
+These are chosen scoring starts, not the physical edit counts: guards can absorb some
+compression without moving the scoring window. The over-cap alignment has all twelve tones
+but exceeds the cap; receipts reject it too. Unstretched emissions retain twelve zero drifts.
 
 This is a content marker, not a cryptographic identity. PCM gaps do not establish RTP packet
 loss. RMS/peak silence limits remain 0.003/0.01. Transition-settling, missing-slot, wrong-tone,

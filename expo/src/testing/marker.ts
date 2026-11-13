@@ -104,15 +104,22 @@ export function detectMarker(pcm: Float32Array, sampleRate: number, marker: Medi
   const shifts = [0, ...Array.from({ length: 15 }, (_, index) => [-index - 1, index + 1]).flat()];
   // Pure tones can differ by floating-point roundoff. Ties favor the smallest local shift.
   const epsilon = 1e-12;
-  let best: MarkerDetection | null = null;
-  let searchEnd = Infinity;
   for (let firstMs = 0; ; firstMs++) {
     const offset = Math.floor(firstMs * sampleRate / 1000);
-    if (offset + length > pcm.length || firstMs > searchEnd) break;
+    if (offset + length > pcm.length) break;
     let confidence = score(firstMs, marker.frequencies[0]!);
     if (confidence < 0.8) continue;
-    const starts = [offset];
-    let previousMs = firstMs;
+    const searchEnd = firstMs + marker.slotMs;
+    let anchorMs = firstMs;
+    // Choose slot zero before evaluating later slots. A failed drift cap cannot move the anchor.
+    for (let candidate = firstMs + 1; candidate <= searchEnd; candidate++) {
+      if (Math.floor(candidate * sampleRate / 1000) + length > pcm.length) break;
+      const candidateScore = score(candidate, marker.frequencies[0]!);
+      if (candidateScore > confidence + epsilon) { anchorMs = candidate; confidence = candidateScore; }
+    }
+    const anchor = Math.floor(anchorMs * sampleRate / 1000);
+    const starts = [anchor];
+    let previousMs = anchorMs;
     for (const frequency of marker.frequencies.slice(1)) {
       const expectedMs = previousMs + marker.slotMs;
       let chosenMs = expectedMs, chosenScore = -1;
@@ -128,11 +135,10 @@ export function detectMarker(pcm: Float32Array, sampleRate: number, marker: Medi
       starts.push(Math.floor(chosenMs * sampleRate / 1000));
       previousMs = chosenMs;
     }
-    if (confidence < 0.8 || starts.length !== marker.frequencies.length ||
-        Math.abs(starts.at(-1)! - offset - slotSamples * (starts.length - 1)) > slotSamples) continue;
-    if (!best) searchEnd = firstMs + marker.slotMs;
-    if (!best || confidence > best.confidence + epsilon)
-      best = Object.freeze({ id: marker.id, offsetSamples: offset, confidence, slotStarts: Object.freeze(starts) });
+    if (confidence >= 0.8 && starts.length === marker.frequencies.length &&
+        Math.abs(starts.at(-1)! - anchor - slotSamples * (starts.length - 1)) <= slotSamples)
+      return Object.freeze({ id: marker.id, offsetSamples: anchor, confidence, slotStarts: Object.freeze(starts) });
+    firstMs = searchEnd;
   }
-  return best;
+  return null;
 }

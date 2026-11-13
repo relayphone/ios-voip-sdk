@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createHash } from "node:crypto";
+import { detectionVector, pcm16LE, decodedPCM16, detectionVectors,
+  insertedDrifts, deletedDrifts, overCapDrifts } from "./detection-vectors.ts";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
@@ -433,4 +435,29 @@ test("elastic timing tracks either direction and rejects cumulative alignment be
       assert.ok(Math.abs(drift) <= rate * 0.06);
     }
   }
+});
+
+test("published pitch-preserving splice vectors match hashes and chosen slot drifts", () => {
+  for (const vector of detectionVectors) {
+    const bytes = pcm16LE(detectionVector(vector.rate, vector.changeMs));
+    assert.equal(bytes.length / 2, vector.samples);
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), vector.sha256);
+    const found = detectMarker(decodedPCM16(bytes), vector.rate, createMarker("parity-v2"));
+    if (vector.changeMs === 80) assert.equal(found, null, "the original slot-zero anchor cannot slide to hide +80 ms");
+    else {
+      assert.ok(found && found.confidence >= 0.8);
+      assert.equal(found.offsetSamples, vector.rate * 0.135);
+      assert.deepEqual(found.slotStarts.map((start, index) =>
+        (start - found.offsetSamples - index * vector.rate * 0.06) / vector.rate * 1000),
+        vector.changeMs === 40 ? insertedDrifts : deletedDrifts);
+    }
+  }
+});
+
+test("a high-confidence over-cap vector alignment is rejected by receipts", () => {
+  const query = request(), receipt = evidence(query), offsetSamples = 6480;
+  const slotStarts = overCapDrifts.map((drift, index) => offsetSamples + index * 2880 + drift * 48);
+  assert.throws(() => validateMediaReceipt({ ...receipt,
+    marker: { id: query.marker.id, confidence: 1, offsetSamples, slotStarts } }, query),
+    error => code("invalid_receipt")(error) && /cumulative/.test((error as Error).message));
 });
