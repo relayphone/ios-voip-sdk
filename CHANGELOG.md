@@ -5,6 +5,13 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+### Added
+
+- A shared `/testing` TypeScript entry point for software-audio test adapters, with phase-scoped
+  audio/silence assertions, explicit capability failures, marker detection and receipt validation.
+  Platform adapters supply the actual capture/output observations; no media runtime is imported
+  by the contract.
+
 ## 0.5.0 (2026-11-13)
 
 ### Added
