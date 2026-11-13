@@ -22,6 +22,8 @@ import type {
   FocusFilterState,
   ConversationEventMap,
   ConversationEnd,
+  ConversationErrorCode,
+  ConversationFailure,
   EndedFailure,
   EndedFailureKind,
   EndedReason,
@@ -31,6 +33,14 @@ import type {
 } from "../conversations";
 
 declare const api: ConversationsApi;
+const refusalCode: ConversationErrorCode = "refused";
+const refusal: ConversationFailure = { code: refusalCode, message: "Please finish the current call" };
+void refusal;
+// @ts-expect-error Command failures remain immutable.
+refusal.code = "handler_failed";
+// @ts-expect-error A refusal must carry a message.
+const refusalWithoutMessage: ConversationFailure = { code: "refused" };
+void refusalWithoutMessage;
 declare const conversation: Conversation;
 declare const id: ConversationId;
 declare const snapshot: ConversationsSnapshot;

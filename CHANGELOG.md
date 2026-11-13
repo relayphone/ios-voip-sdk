@@ -12,6 +12,9 @@ Public API changes include migration guidance.
   from the system UI. iOS never sets it. Existing failures without the flag remain valid.
 - Conversations expose `reconnecting`, retaining the original `connectedAt` through recovery
   to `connected`. Migration: exhaustive switches on `status` must handle `reconnecting`.
+- The shared command-rejection code `refused` preserves the app's refusal message on platforms
+  whose handlers can deliberately refuse. iOS has no distinct handler refusal path; its handler
+  failures remain `handler_failed` and timeouts remain `deadline_exceeded`.
 
 - An experimental package in `exact/` that runs Exact's `@exact/calls` on iOS through the SDK.
 

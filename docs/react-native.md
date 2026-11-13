@@ -240,7 +240,10 @@ are in [`conversations/types.ts`](../expo/src/conversations/types.ts).
 
 Commands reject with errors whose `code` and `message` describe the failure and whose optional
 `nativeDomain` and `nativeCode` preserve native details. Placement rejection uses
-`handler_failed`; missing its deadline uses `deadline_exceeded`. Incoming reports return a
+`handler_failed`; missing its deadline uses `deadline_exceeded`. Platforms whose handlers can
+deliberately refuse an action report `refused` with the app's refusal message. iOS has no distinct
+handler refusal path and continues to use `handler_failed` for rejected handlers.
+Incoming reports return a
 typed `IncomingConversationOutcome` instead of inventing a conversation ID on failure.
 
 ## Media and audio routes
