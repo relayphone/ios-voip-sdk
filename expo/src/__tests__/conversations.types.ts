@@ -58,6 +58,16 @@ if (conversation.status === "connected") {
   const connectedAt: string = conversation.connectedAt;
   void connectedAt;
 }
+if (conversation.status === "reconnecting") {
+  const connectedAt: string = conversation.connectedAt;
+  void connectedAt;
+  // @ts-expect-error Reconnecting timestamps are immutable.
+  conversation.connectedAt = "replacement";
+}
+type Reconnecting = Extract<Conversation, { readonly status: "reconnecting" }>;
+// @ts-expect-error Reconnecting requires the original connection timestamp.
+const missingReconnectTime: Reconnecting = { ...conversation, status: "reconnecting", connectedAt: undefined };
+void missingReconnectTime;
 if (conversation.status === "ringing") {
   const incoming: "incoming" = conversation.direction;
   void incoming;
