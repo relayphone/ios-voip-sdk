@@ -40,6 +40,35 @@ export function markerSamples(marker: MediaMarker, sampleRate: number, count: nu
   }
   return pcm;
 }
+/** Repeating 1020 ms emission: 150 ms of 400 Hz, the unchanged marker, then 150 ms of 400 Hz. */
+export function emissionSamples(marker: MediaMarker, sampleRate: number, count: number, offset = 0): Float32Array {
+  validRate(sampleRate); validMarker(marker);
+  if (!Number.isSafeInteger(count) || count < 0 || count > sampleRate * 60 ||
+      !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(offset + count))
+    throw new MediaTestError("invalid_arguments", "Invalid emission sample range");
+  const pcm = new Float32Array(count);
+  const pre = Math.round(sampleRate * 3 / 20);
+  const markerLength = sampleRate / 50 * 36;
+  const post = pre + markerLength;
+  const cycle = sampleRate / 50 * 51;
+  for (let written = 0; written < count;) {
+    const position = (offset + written) % cycle;
+    const inMarker = position >= pre && position < post;
+    const end = position < pre ? pre : inMarker ? post : cycle;
+    const length = Math.min(count - written, end - position);
+    if (inMarker) pcm.set(markerSamples(marker, sampleRate, length, position - pre), written);
+    else for (let i = 0; i < length; i++) {
+      const local = position + i - (position < pre ? 0 : post);
+      const edge = position < pre ? local : cycle - position - i;
+      const fade = Math.min(1, edge / (sampleRate / 200));
+      const envelope = 0.5 * (1 - Math.cos(Math.PI * fade));
+      pcm[written + i] = 0.2 * envelope * Math.sin(2 * Math.PI * 400 * local / sampleRate);
+    }
+    written += length;
+  }
+  return pcm;
+}
+
 function toneConfidence(pcm: Float32Array, start: number, count: number, frequency: number, rate: number): number {
   const coefficient = 2 * Math.cos(2 * Math.PI * frequency / rate);
   let previous = 0, beforePrevious = 0, energy = 0;
