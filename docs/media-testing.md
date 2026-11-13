@@ -47,13 +47,40 @@ producer's `passed` flag. Assertions are serialized; `close` cancels reads and i
 Open/phase acknowledgements and cleanup have 3-second delivery bounds; read waits are bounded by
 the requested duration. These delivery bounds do not extend the receipt's phase deadline.
 
-`createMarker`, `markerSamples` and `detectMarker` implement `tones-v1`: normalized mono PCM,
-20 ms tone slots, four synchronization frequencies (650/950/1350/1850 Hz), then sixteen slots
-encoding a 32-bit FNV-1a hash of the UTF-8 phase ID. A full cycle is 400 ms. Generate chunks from
-absolute sample offsets so pacing does not restart the signal. Detection checks every slot,
-requires at least 0.8 tone confidence and scans at approximately 1 ms resolution. This is a
-content marker, not a cryptographic identity. Marker and silence thresholds are versioned here;
-RMS/peak silence limits are 0.003/0.01. PCM gaps do not establish RTP packet loss.
+`createMarker`, `markerSamples` and `detectMarker` implement **`tones-v2`**, replacing the
+unreleased `tones-v1`. Four sync slots (650/950/1350/1850 Hz) precede eight identity slots:
+the low 16 bits of FNV-1a 32 over the UTF-8 ID, read two bits at a time, low bits first, mapped
+onto those four tones. Each slot is 60 ms; all twelve slots form a **720 ms** marker.
+Amplitude is 0.2 and phase restarts at each slot boundary. Rates must be 8000–96000 Hz and
+divisible by 50. Generate chunks from absolute offsets to preserve the waveform.
+
+Each slot has 5 ms raised-cosine fades. For sample `n` within an `L = rate * 0.060` sample slot,
+let `u = min(1, min(n, L - n) / (rate * 0.005))`. The Float32 sample is
+`0.2 * (1 - cos(π*u)) / 2 * sin(2*π*frequency*n/rate)`; slots occupy `[0, L)`.
+Detection scores only the central 20 ms, with 20 ms guards on both sides, using normalized
+Goertzel confidence and the unchanged mean-square energy floor of 0.0001. **Every slot must
+score at least 0.8; the complete marker is required.** The search advances by approximately
+1 ms, keeps the first complete detection, and improves its confidence within one slot of that
+candidate. Guard time makes the marker-start estimate uncertain by up to 20 ms; it is not a
+physical onset measurement. Neither energy alone nor a partial identity establishes audio.
+Receipts carry `profile: "tones-v2"`; validation rejects absent/other receipt profiles and
+incompatible requested marker shapes, including on silence assertions. The entire 720 ms
+window must fit in the capture and deadline.
+
+These are the SHA-256 parity vectors for **`createMarker("parity-v2")`**, one 720 ms cycle.
+Convert the returned Float32 samples to signed PCM16 with `Math.round(sample * 32767)` (nearest,
+half toward positive infinity), then write little-endian. Hash exactly those bytes, without a
+WAV header. Each implementation must reproduce both vectors.
+
+| Rate | Samples | PCM16 LE SHA-256 |
+| --- | --- | --- |
+| 8000 Hz | 5760 | `7305be4e1d4ba73d2f2f876869fa5cb27c12bb91450081452139f41262f7c003` |
+| 48000 Hz | 34560 | `82f79efb9f1b24a5c839cd500f5c9ad291ef5969348c3d68b775fcef6f8fa3b4` |
+
+This is a content marker, not a cryptographic identity. PCM gaps do not establish RTP packet
+loss. RMS/peak silence limits remain 0.003/0.01. Transition-settling, missing-slot, wrong-tone,
+low-energy and parity controls exercise the profile; real processing/Opus qualification is a
+separate platform requirement.
 
 Adapters implement `MediaTestAdapter` and `MediaTestConnection`. They own permissions, test-build
 exclusion, capture taps, receipt production, cancellation and native cleanup. `read` receives the

@@ -27,8 +27,8 @@ export interface MediaPhase {
 }
 export interface MediaMarker {
   readonly id: string;
-  readonly profile: "tones-v1";
-  readonly slotMs: 20;
+  readonly profile: "tones-v2";
+  readonly slotMs: 60;
   readonly frequencies: readonly number[];
 }
 export interface MarkerDetection {
@@ -40,6 +40,7 @@ export interface MarkerDetection {
 /** Measurements for one continuous, unmodified capture window; no inferred silence. */
 export type MediaReceipt = MediaTestOptions & MediaObservation & {
   readonly schemaVersion: 1;
+  readonly profile: "tones-v2";
   readonly phaseId: string;
   readonly clock: MediaClock;
   readonly tap: "active" | "missing";

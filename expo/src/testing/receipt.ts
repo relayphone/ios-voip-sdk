@@ -1,3 +1,4 @@
+import { createMarker } from "./marker.ts";
 import { MediaTestError } from "./errors.ts";
 import type { MediaReadRequest, MediaReceipt, MediaTestResult, MediaObservation } from "./types.ts";
 
@@ -21,7 +22,14 @@ function text(value: unknown, label: string, maximum = 256): string {
 }
 /** Validate serialized evidence independently of any producer's passed flag. */
 export function validateMediaReceipt(value: unknown, request: MediaReadRequest): MediaTestResult {
+  const expected = createMarker(request.marker.id);
+  if (request.marker.profile !== expected.profile || request.marker.slotMs !== expected.slotMs ||
+      request.marker.frequencies.length !== expected.frequencies.length ||
+      request.marker.frequencies.some((tone, index) => tone !== expected.frequencies[index]))
+    invalid("Unsupported marker profile");
+  const markerMs = expected.frequencies.length * expected.slotMs;
   const data = object(value), clock = object(data.clock);
+  if (data.profile !== expected.profile) invalid("Unsupported receipt marker profile");
   for (const key of ["conversationId", "fixtureId", "direction", "stage"] as const)
     if (data[key] !== request[key]) invalid(`Mismatched ${key}`);
   if (data.schemaVersion !== 1 || data.phaseId !== request.phase.id) invalid("Stale or unsupported receipt");
@@ -58,7 +66,7 @@ export function validateMediaReceipt(value: unknown, request: MediaReadRequest):
   const target: MediaObservation = request.direction === "toDevice"
     ? { direction: request.direction, stage: request.stage } : { direction: request.direction, stage: request.stage };
   const receipt: MediaReceipt = Object.freeze({ ...target,
-    schemaVersion: 1, conversationId: request.conversationId, fixtureId: request.fixtureId,
+    schemaVersion: 1, profile: expected.profile, conversationId: request.conversationId, fixtureId: request.fixtureId,
     phaseId: request.phase.id,
     clock: Object.freeze({ domain: anchor.clock.domain, id: anchor.clock.id }), tap: "active",
     startedAtMs, endedAtMs, sampleRate, sampleCount, frameCount, overflowFrames, monitorTicks, maxGapMs, rms, peak, marker,
@@ -66,7 +74,6 @@ export function validateMediaReceipt(value: unknown, request: MediaReadRequest):
   const firstAudioAfterPhaseMs = marker && marker.id === request.marker.id && marker.confidence >= 0.8
     ? startedAtMs - anchor.atMs + marker.offsetSamples / sampleRate * 1000 : null;
   if (request.expectation === "audio") {
-    const markerMs = request.marker.frequencies.length * request.marker.slotMs;
     if (firstAudioAfterPhaseMs === null || firstAudioAfterPhaseMs + markerMs > request.durationMs ||
         marker!.offsetSamples + markerMs / 1000 * sampleRate > sampleCount)
       throw new MediaTestError("audio_missing", "No complete current-phase marker arrived within the deadline");

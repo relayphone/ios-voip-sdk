@@ -7,6 +7,12 @@ Public API changes include migration guidance.
 
 ### Added
 
+- The unreleased shared media marker uses guarded `tones-v2`: twelve 60 ms slots, raised-cosine
+  fades and central 20 ms scoring. Receipts require the `tones-v2` profile. Adapter authors must
+  update generators, detectors and receipt producers together; see `docs/media-testing.md` for
+  the cross-platform PCM16 parity vectors. Complete markers and per-slot confidence >=0.8 remain
+  mandatory.
+
 - A shared `/testing` TypeScript entry point for software-audio test adapters, with phase-scoped
   audio/silence assertions, explicit capability failures, marker detection and receipt validation.
   Platform adapters supply the actual capture/output observations; no media runtime is imported
