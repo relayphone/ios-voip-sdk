@@ -6,9 +6,20 @@ import { fileURLToPath } from 'node:url';
 /** SDK targets compiled by the package's optional CocoaPods subspecs. */
 export const sdkTargets = [
   'VoIPCore', 'VoIPAudio', 'VoIPLiveCommunicationKit', 'VoIPPushKit', 'VoIPPushDelivery',
-  'VoIPNotifications', 'VoIPLiveActivity', 'VoIPFocus', 'VoIPSimulator', 'VoIPMediaTesting',
+  'VoIPNotifications', 'VoIPLiveActivity', 'VoIPFocus', 'VoIPSimulator', 'MediaTesting',
   'CKSimProtocol', 'Engine', 'Interposition',
 ] as const;
+
+/** Source directory for a vendored target, including the optional nested package. */
+export function sdkSourceDirectory(repository: string, target: string): string {
+  return target === 'MediaTesting' ? join(repository, 'MediaTesting/Sources/VoIPMediaTesting')
+    : join(repository, 'Sources', target);
+}
+
+function sourceFile(repository: string, path: string): string {
+  const [target, ...parts] = path.split('/');
+  return join(sdkSourceDirectory(repository, target!), ...parts);
+}
 
 const manifestName = 'sources.json';
 interface SourceManifest {
@@ -43,14 +54,13 @@ function digest(path: string): string {
 }
 
 function sourceManifest(repository: string): SourceManifest {
-  const sources = join(repository, 'Sources');
   const files: Record<string, string> = {};
   for (const target of sdkTargets) {
-    const directory = join(sources, target);
+    const directory = sdkSourceDirectory(repository, target);
     if (!existsSync(directory)) throw new Error(`Missing SDK target: ${target}`);
-    const paths = filesIn(directory).map(path => relative(sources, path)).filter(ships).sort();
+    const paths = filesIn(directory).map(path => join(target, relative(directory, path))).filter(ships).sort();
     if (paths.length === 0) throw new Error(`Empty SDK target: ${target}`);
-    for (const path of paths) files[path] = digest(join(sources, path));
+    for (const path of paths) files[path] = digest(sourceFile(repository, path));
   }
   return { version: packageVersion(join(repository, 'expo')), files };
 }
@@ -132,7 +142,7 @@ export function preparePackage(repository: string): void {
   for (const path of Object.keys(manifest.files)) {
     const destination = join(vendor, path);
     mkdirSync(dirname(destination), { recursive: true });
-    copyFileSync(join(repository, 'Sources', path), destination);
+    copyFileSync(sourceFile(repository, path), destination);
   }
   writeFileSync(join(vendor, manifestName), `${JSON.stringify(manifest, null, 2)}\n`);
   checkVendor(repository);

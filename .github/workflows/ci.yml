@@ -20,9 +20,22 @@ defaults:
     shell: bash
 
 jobs:
+  package-isolation:
+    name: Production package dependency isolation
+    runs-on: ubuntu-latest
+    container: swift:6.4@sha256:0384f00cf80f81064a907c249a0ad56a1648906f65075a95b1827e88de666e21
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/setup
+        with:
+          xcode: "false"
+      - run: node tools/check-package-isolation.ts production
+
   api-compatibility:
     name: Public API compatibility
     if: github.event_name == 'pull_request'
+    needs: package-isolation
     runs-on: xcode-27
     timeout-minutes: 20
     steps:
@@ -54,6 +67,7 @@ jobs:
 
   host-tests:
     name: Swift tests and formatting
+    needs: package-isolation
     runs-on: xcode-27
     timeout-minutes: 20
     steps:
@@ -61,13 +75,14 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - run: swift format lint --strict --recursive --parallel Package.swift Sources Tests Examples Inspector tools/smoke exact/apple
+      - run: swift format lint --strict --recursive --parallel Package.swift Sources Tests MediaTesting tools/fixtures/production-consumer Examples Inspector tools/smoke exact/apple
       - run: swift test --scratch-path "$RUNNER_TEMP/host-tests"
       - name: Compile the Exact package with Exact's flags
         run: node tools/package-exact.ts --compile
 
   builds:
     name: Builds of the libraries, the example and the Inspector
+    needs: package-isolation
     runs-on: xcode-27
     timeout-minutes: 40
     steps:
@@ -106,6 +121,7 @@ jobs:
 
   simulator-tests:
     name: Simulator tests
+    needs: package-isolation
     runs-on: xcode-27
     timeout-minutes: 45
     steps:
@@ -183,6 +199,7 @@ jobs:
 
   documentation:
     name: Documentation
+    needs: package-isolation
     runs-on: xcode-27
     timeout-minutes: 20
     steps:

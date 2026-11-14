@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { preparePackage, sdkTargets } from '../expo/scripts/prepare-package.mts';
+import { preparePackage, sdkTargets, sdkSourceDirectory } from '../expo/scripts/prepare-package.mts';
 import { run } from './command.ts';
 import { packageExpo, verifyExpoArchive } from './package-expo.ts';
 import { sha256 } from './runtime-package.ts';
@@ -15,8 +15,8 @@ function fixture(t: { after: (cleanup: () => void) => void }): string {
   mkdirSync(join(root, 'expo'), { recursive: true });
   writeFileSync(join(root, 'VERSION'), '0.3.1\n');
   for (const target of sdkTargets) {
-    mkdirSync(join(root, 'Sources', target), { recursive: true });
-    writeFileSync(join(root, 'Sources', target, 'Example.swift'), `// ${target}\n`);
+    mkdirSync(sdkSourceDirectory(root, target), { recursive: true });
+    writeFileSync(join(sdkSourceDirectory(root, target), 'Example.swift'), `// ${target}\n`);
   }
   const script = fileURLToPath(new URL('../expo/scripts/prepare-package.mts', import.meta.url));
   const prepack = `node --input-type=module -e 'import { preparePackage } from ${JSON.stringify(script)}; preparePackage(${JSON.stringify(root)})'`;

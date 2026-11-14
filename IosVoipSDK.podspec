@@ -116,7 +116,7 @@ Pod::Spec.new do |s|
 
   # Optional Debug Simulator media hooks; never part of the default installation.
   s.subspec 'MediaTesting' do |ss|
-    ss.source_files = 'Sources/VoIPMediaTesting/**/*.swift'
+    ss.source_files = 'MediaTesting/Sources/VoIPMediaTesting/**/*.swift'
     ss.dependency 'LiveKitClient', '= 2.19.0'
     ss.frameworks = 'AVFAudio'
   end

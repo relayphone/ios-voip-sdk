@@ -6,6 +6,34 @@ media; a second test room cannot stand in for it. Calling `createMediaTest` with
 rejects with `MediaTestError` code `unavailable`. Native media hooks and a far-end peer are
 separate integrations.
 
+## Installing the optional iOS hooks
+
+The root Swift package contains the production SDK and resolves no LiveKit dependency.
+For media tests, check out this repository and add `MediaTesting/` as a **local Swift package**.
+SwiftPM cannot select a nested package using the repository URL alone. The nested package
+depends on the root checkout by relative path and pins LiveKit Swift to 2.19.0:
+
+```swift
+dependencies: [
+  .package(name: "VoIPMediaTesting", path: "../ios-voip-sdk/MediaTesting")
+],
+targets: [
+  .testTarget(name: "AppMediaTests", dependencies: [
+    .product(name: "VoIPMediaTesting", package: "VoIPMediaTesting")
+  ])
+]
+```
+
+Use that same local root checkout for any SDK products selected by the test consumer.
+Import `VoIPMediaTesting` only under `#if DEBUG && os(iOS) && targetEnvironment(simulator)`;
+the hooks are excluded from Release and physical-device builds.
+
+CocoaPods continues to offer the optional `pod 'IosVoipSDK/MediaTesting'` subspec;
+it is not part of the default installation. Expo's native reference example selects
+`VoIPConversations/MediaTesting`, which vendors the same sources. Neither default CocoaPods
+installation adds LiveKit. The `/testing` TypeScript contract is independent of both native
+installation choices.
+
 ```ts
 import { createMediaTest } from '@relayphone/ios-voip-sdk/testing';
 

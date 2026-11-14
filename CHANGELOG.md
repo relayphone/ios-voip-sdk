@@ -5,6 +5,15 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+### Fixed
+
+- Production SwiftPM consumers no longer resolve LiveKit or its binary artifacts. The optional
+  `VoIPMediaTesting` product now lives in the nested `MediaTesting/Package.swift`: add that
+  directory from a local repository checkout and select `VoIPMediaTesting` for media tests.
+  CocoaPods still uses the optional `IosVoipSDK/MediaTesting` or Expo
+  `VoIPConversations/MediaTesting` subspec. Default subspecs are unchanged. See
+  `docs/media-testing.md` for setup.
+
 ### Added
 
 - `cksim push` can delay, drop and duplicate deliveries with independent journal
