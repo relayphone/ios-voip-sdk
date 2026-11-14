@@ -17,6 +17,21 @@ import { monitorReceiver } from './peer-window.ts';
 const [simulator, app, binary, output] = process.argv.slice(2);
 const processing = "synthetic";
 assert.ok(simulator && app && binary && output, 'Usage: feasibility.ts <simulator> <app> <livekit-server> <result>');
+// Report only phase names and timing, never command arguments, tokens or server config.
+const fixtureStarted = performance.now();
+async function phase<T>(name: string, operation: () => Promise<T>): Promise<T> {
+  const started = performance.now();
+  const report = (state: "started" | "succeeded" | "failed") => {
+    const progress = { kind: "fixture-progress", phase: name, state,
+      elapsedMs: performance.now() - fixtureStarted, phaseMs: performance.now() - started };
+    console.log(JSON.stringify(progress));
+    writeFileSync(output + '.progress.json', JSON.stringify(progress));
+  };
+  report("started");
+  try { const value = await operation(); report("succeeded"); return value; }
+  catch (error) { report("failed"); throw error; }
+}
+console.log(JSON.stringify({ kind: "fixture-progress", phase: "moduleLoaded", at: new Date().toISOString() }));
 const fixtureId = randomBytes(16).toString('hex');
 const uplink = createMarker(`${fixtureId}:fromDevice`), downlink = createMarker(`${fixtureId}:toDevice`);
 const bundle = 'com.example.voipconversations';
@@ -28,7 +43,7 @@ function token(identity: string): string {
     exp: Math.floor(Date.now() / 1000) + 180, video: { roomJoin: true, room: roomName, canPublish: true, canSubscribe: true } });
   return data + '.' + createHmac('sha256', secret).update(data).digest('base64url');
 }
-const simctl = (...args: string[]) => command('xcrun', ['simctl', ...args]);
+const simctl = (...args: string[]) => phase(`simulator.${args[0]}`, () => command('xcrun', ['simctl', ...args]));
 // Finish simulator setup before connecting either participant; never block its packet clock.
 try { await simctl('terminate', simulator, bundle); } catch { /* First launch has no running app. */ }
 await simctl('install', simulator, app);
@@ -78,12 +93,14 @@ const control = createServer(async (request, response) => {
 });
 let publish: Promise<void> | undefined;
 try {
-  let ready = false;
-  for (let attempt = 0; attempt < 100 && !ready; attempt++) {
-    ready = await fetch(serverURL, { signal: AbortSignal.timeout(1000) }).then(value => value.ok, () => false);
-    if (!ready) await delay(100);
-  }
-  assert.ok(ready, 'Local LiveKit server unavailable');
+  await phase('server.ready', async () => {
+    let ready = false;
+    for (let attempt = 0; attempt < 100 && !ready; attempt++) {
+      ready = await fetch(serverURL, { signal: AbortSignal.timeout(1000) }).then(value => value.ok, () => false);
+      if (!ready) await delay(100);
+    }
+    assert.ok(ready, 'Local LiveKit server unavailable');
+  });
   await deadline(5000, 'Control listener', () => new Promise<void>(resolve => control.listen(0, '127.0.0.1', resolve)));
   const controlAddress = control.address();
   assert.ok(controlAddress && typeof controlAddress !== 'string');
@@ -105,10 +122,10 @@ try {
       }
     })().catch(() => { readerFailed = true; readerLive = false; }));
   });
-  await deadline(30_000, 'Peer connect', () => peer.connect(roomURL, token('far-end')));
+  await phase('peer.connect', () => deadline(30_000, 'Peer connect', () => peer.connect(roomURL, token('far-end'))));
   const track = LocalAudioTrack.createAudioTrack('marker', source);
   const options = new TrackPublishOptions(); options.source = TrackSource.SOURCE_MICROPHONE;
-  await deadline(15_000, 'Peer publish', () => peer.localParticipant!.publishTrack(track, options));
+  await phase('peer.publish', () => deadline(15_000, 'Peer publish', () => peer.localParticipant!.publishTrack(track, options)));
   const emission = Int16Array.from(emissionSamples(downlink, 48_000, 48_000 / 50 * 51), value => Math.round(value * 32767));
   publish = (async () => {
     let sample = 0;
@@ -125,8 +142,10 @@ try {
     profile: "tones-v2", uplinkFrequencies: uplink.frequencies,
   }), { mode: 0o600 });
   await simctl('launch', '--terminate-running-process', simulator, bundle);
-  for (let attempt = 0; attempt < 300 && !existsSync(result); attempt++) await delay(100);
-  assert.ok(existsSync(result), 'Example produced no result');
+  await phase('example.result', async () => {
+    for (let attempt = 0; attempt < 300 && !existsSync(result); attempt++) await delay(100);
+    assert.ok(existsSync(result), 'Example produced no result');
+  });
   const evidence: unknown = JSON.parse(readFileSync(result, 'utf8'));
   uplinkCapture ??= { sampleRate: 48_000, channels: [received.slice()], formatChanged: false };
   uplinkEvidence ??= await measureMarkerAsync(uplinkCapture, uplink);

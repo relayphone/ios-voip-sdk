@@ -101,6 +101,19 @@ audio-processing survival.
 The fixed synthetic configuration uses AEC/AGC on and NS off. See
 [the shared test scope](media-testing.md#synthetic-capture-configuration).
 
+### Startup diagnostics at 04c2c7da
+
+The [next run](https://github.com/relayphone/ios-voip-sdk/actions/runs/43551344143)
+exited 124 during startup before producing native results or PCM. The peer connect callback
+arrived at 03:41:50 UTC and the outer 300-second fixture deadline fired at 03:41:57.
+The build passed; there are no per-slot measurements for this run.
+
+The fixture now records named simulator, server-ready, peer-connect/publish and result-wait
+phases with elapsed times. A separate progress artifact survives the outer deadline and cannot
+serve as a media receipt. Phase logs contain no command arguments, credentials or server
+configuration. A module-loaded timestamp also distinguishes module startup from later phases.
+All deadlines, media gates, AEC/AGC settings and the NS-off configuration remain unchanged.
+
 ## NS-off measurements at 9f505db, attempt 2
 
 [CI run](https://github.com/relayphone/ios-voip-sdk/actions/runs/43544862403/attempts/2) failed at publicationGate. Software AEC/AGC were requested and active; NS was requested off and inactive. Both RTP directions used Opus. The source generated 411648 samples; the connected live receiver observed 184800 samples with RMS 0.113664. Uplink failed complete detection; decoded and output downlink passed with post-roll coverage. Mute validation did not complete.
