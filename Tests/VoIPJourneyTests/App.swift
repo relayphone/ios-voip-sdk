@@ -222,20 +222,21 @@
     @discardableResult
     func pushIncomingCall(
       _ id: CallID, from number: String = "+14155550123",
-      metadata: [String: PushPayload.Value] = [:]
+      metadata: [String: PushPayload.Value] = [:], delivery: PushDeliveryFaults = .none
     ) async throws -> UUID {
-      try await push([
-        "aps": .object([:]),
-        "incomingCall": .object([
-          "eventId": .string("invite-\(id.rawValue)"),
-          "serverCallId": .string(id.rawValue),
-          "caller": .object([
-            "handleType": .string("phone"), "value": .string(number),
-            "displayName": .string("Alice"),
+      try await push(
+        [
+          "aps": .object([:]),
+          "incomingCall": .object([
+            "eventId": .string("invite-\(id.rawValue)"),
+            "serverCallId": .string(id.rawValue),
+            "caller": .object([
+              "handleType": .string("phone"), "value": .string(number),
+              "displayName": .string("Alice"),
+            ]),
+            "metadata": .object(metadata),
           ]),
-          "metadata": .object(metadata),
-        ]),
-      ])
+        ], delivery: delivery)
     }
 
     /// Delivers a VoIP push that tells the app the call ended elsewhere, in the SDK's default

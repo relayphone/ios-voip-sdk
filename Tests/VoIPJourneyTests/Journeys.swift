@@ -118,6 +118,61 @@
       app.expectNoMoreEvents()
     }
 
+    @Test func delayedDuplicateInvitesRingOnceAndReportEveryCopy() async throws {
+      let app = try await App()
+      defer { app.stop() }
+      let id = newCallID("delivery-faults")
+      let request = try await app.system.pushIncomingCall(
+        id, delivery: PushDeliveryFaults(delayMS: 100, duplicate: 2, spacingMS: 100))
+      try await app.expect([.presented(id)])
+      let scheduled = try await app.system.journal().filter {
+        $0.event == "push.scheduled" && $0.requestID == request.uuidString
+      }
+      let ids = try scheduled.map { try #require($0.pushID.flatMap(UUID.init(uuidString:))) }
+      #expect(ids.count == 3 && Set(ids).count == 3)
+      try await app.expectPushesFinished(ids)
+      for repeated in ids.dropFirst() {
+        try await app.expectReportedWithAThrowawayCall(repeated, notAs: id)
+      }
+      #expect(try await app.system.calls().map(\.uuid) == [deviceUUID(for: id)])
+      #expect(app.call(id)?.status == .ringing)
+      #expect(await app.media.records.isEmpty)
+      try await app.system.perform(.decline(deviceUUID(for: id)))
+      try await app.expect([.performed(.end(id), .ended(.endedHere)), .ended(id, .endedHere)])
+      try await app.until("the call to leave the call screen") {
+        try await app.system.calls().isEmpty
+      }
+      app.expectNoMoreEvents()
+    }
+
+    @Test func aSecondCallIDFromTheSameCallerLeavesNoGhostCall() async throws {
+      let app = try await App()
+      defer { app.stop() }
+      let first = newCallID("first-invite")
+      let second = newCallID("second-invite")
+      let invite = try await app.system.pushIncomingCall(first)
+      try await app.expect([.presented(first)])
+      // Same caller, different server call ID: this is another call, not a repeat of the first.
+      let another = try await app.system.pushIncomingCall(second)
+      try await app.expect([.presented(second)])
+      let firstEnded = try await app.system.pushCallEnded(first, reason: "remoteEnded")
+      try await app.expect([.ended(first, .endedRemotely)])
+      try await app.until("only the second call to remain on the call screen") {
+        try await app.system.calls().map(\.uuid) == [deviceUUID(for: second)]
+      }
+      #expect(app.call(second)?.status == .ringing)
+      let secondEnded = try await app.system.pushCallEnded(second, reason: "remoteEnded")
+      try await app.expect([.ended(second, .endedRemotely)])
+      try await app.until("all calls to leave the call screen") {
+        try await app.system.calls().isEmpty
+      }
+      try await app.expectPushesFinished([invite, another, firstEnded, secondEnded])
+      try await app.expectReportedWithAThrowawayCall(firstEnded, notAs: first)
+      try await app.expectReportedWithAThrowawayCall(secondEnded, notAs: second)
+      #expect(await app.media.records.isEmpty)
+      app.expectNoMoreEvents()
+    }
+
     @Test func unrecognizedPushIsReportedAndEndedAtOnce() async throws {
       let app = try await App()
       defer { app.stop() }

@@ -9,6 +9,32 @@
 
   /// `cksim`'s commands against a fake simulator and a fake runtime mailbox.
   struct CommandTests {
+    @Test func pushDeliveryFlagsDescribeOneValidatedSchedule() throws {
+      let command = try #require(
+        CKSim.parseAsRoot([
+          "push", "--payload-file", "p.json", "--must-report", "true", "--delay-ms", "5000",
+          "--drop", "--duplicate", "3", "--spacing-ms", "700",
+        ]) as? CKSim.Push)
+      #expect(
+        try command.delivery
+          == PushDeliveryFaults(
+            delayMS: 5000, drop: true, duplicate: 3, spacingMS: 700))
+    }
+
+    @Test(arguments: [
+      ["--delay-ms", "-1"], ["--delay-ms", "120001"], ["--duplicate", "101"],
+      ["--spacing-ms", "1"], ["--duplicate", "2", "--spacing-ms", "70000"],
+      ["--launch", "--run-id", "test", "--launch-receipt", "r.json", "--drop"],
+    ])
+    func invalidPushSchedulesNeverReachTheSimulator(flags: [String]) async throws {
+      let simulator = FakeSimulator()
+      let result = await run(
+        ["--bundle", bundle, "push", "--payload-file", "p.json", "--must-report", "true"] + flags,
+        simulator: simulator)
+      #expect(result.status == ExitCode.validationFailure.rawValue)
+      #expect(simulator.calls.isEmpty)
+    }
+
     @Test func sharedOptionsMayComeBeforeTheCommand() {
       #expect(
         CKSim.arguments(["--simulator", device, "--bundle=x", "--timeout", "2", "status", "--json"])

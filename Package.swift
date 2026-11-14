@@ -131,7 +131,8 @@ let package = Package(
     .testTarget(
       name: "VoIPTestingTests", dependencies: ["VoIPTesting"], swiftSettings: strictSwift),
     .testTarget(
-      name: "RuntimeEngineTests", dependencies: ["CKSimRuntime"], swiftSettings: strictSwift),
+      name: "RuntimeEngineTests", dependencies: ["CKSimRuntime", "VoIPTesting"],
+      swiftSettings: strictSwift),
     .testTarget(
       name: "CKSimProtocolTests", dependencies: ["CKSimProtocol"], swiftSettings: strictSwift),
     .testTarget(

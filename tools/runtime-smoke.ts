@@ -25,6 +25,7 @@ interface PushEvent {
   event: string;
   t_ms: number;
   pushID?: string;
+  requestID?: string;
   api?: string;
   mustReport?: boolean;
   reason?: string;
@@ -40,13 +41,27 @@ async function reportingEnforcement(packagePath: string, simulator: string, work
   const cksim = (...args: string[]) => run(join(packagePath, 'cksim'),
     ['--simulator', simulator, '--bundle', bundle, ...args], { timeout: 120 });
   const payload = join(work, 'reporting-push.json');
-  const cases = [
+  const cases: {
+    name: string; metadata: boolean; required: boolean; dies: boolean;
+    report?: string; delayMS?: number; duplicate?: boolean; withCall?: boolean;
+    faults?: string[]; copies?: number; dropped?: boolean; freshUUIDs?: boolean; deliveryDelay?: number;
+  }[] = [
     { name: 'missing legacy report', metadata: false, required: false, report: 'skip', dies: true },
     { name: 'missing metadata report', metadata: true, required: true, report: 'skip', dies: true },
     { name: 'report at 3.15 seconds', metadata: true, required: true, delayMS: 3150, dies: false },
     { name: 'report due at 5 seconds', metadata: true, required: true, delayMS: 5000, dies: true },
     { name: 'existing UUID report', metadata: true, required: true, duplicate: true, dies: true },
     { name: 'optional push with a live call', metadata: true, required: false, report: 'skip', withCall: true, dies: false },
+    { name: 'delayed required delivery', metadata: true, required: true, dies: false,
+      deliveryDelay: 5000, faults: ['--delay-ms', '5000'] },
+    { name: 'dropped required copies', metadata: true, required: true, report: 'skip', dies: false,
+      dropped: true, copies: 3, faults: ['--drop', '--duplicate', '2', '--spacing-ms', '100'] },
+    { name: 'duplicate fresh reports', metadata: true, required: true, dies: false, freshUUIDs: true,
+      copies: 3, faults: ['--duplicate', '2', '--spacing-ms', '700'] },
+    { name: 'duplicate existing UUID fails', metadata: true, required: true, dies: true,
+      copies: 2, faults: ['--duplicate', '1', '--spacing-ms', '700'] },
+    { name: 'optional duplicate deliveries', metadata: true, required: false, report: 'skip', dies: false,
+      copies: 3, faults: ['--duplicate', '2', '--spacing-ms', '700'] },
   ];
   for (const scenario of cases) {
     launchToleratingASlowSimulator(() => run(join(packagePath, 'cksim'),
@@ -75,11 +90,35 @@ async function reportingEnforcement(packagePath: string, simulator: string, work
         return calls.some(call => call.uuid.toLowerCase() === callUUID) ? true : undefined;
       });
     }
-    writeFileSync(payload, JSON.stringify({ callUUID, report: scenario.report, delayMS: scenario.delayMS }));
-    const push = JSON.parse(cksim('push', '--payload-file', payload,
-      '--must-report', String(scenario.required))).result.pushID as string;
+    writeFileSync(payload, JSON.stringify({ callUUID: scenario.freshUUIDs ? undefined : callUUID,
+      report: scenario.report, delayMS: scenario.delayMS }));
+    const requestID = JSON.parse(cksim('push', '--payload-file', payload,
+      '--must-report', String(scenario.required), ...(scenario.faults ?? []))).result.pushID as string;
+    const scheduled = entries().filter(row => row.event === 'push.scheduled' && row.requestID === requestID);
+    const ids = scheduled.map(row => row.pushID!);
+    assert.equal(ids.length, scenario.copies ?? 1, scenario.name);
+    assert.equal(new Set(ids).size, ids.length, scenario.name);
+    assert.equal(ids[0], requestID, scenario.name);
+    if (scenario.dropped) {
+      await until('all copies to be dropped', 10, () =>
+        entries().filter(row => row.event === 'push.dropped' && row.requestID === requestID).length === ids.length
+          ? true : undefined);
+      assert.deepEqual(entries().filter(row => row.event === 'push.dropped' && row.requestID === requestID)
+        .map(row => row.pushID), ids, scenario.name);
+      await sleep(4700);
+      assert.ok(running(), scenario.name);
+      cksim('status');
+      assert.ok(!entries().some(row => ids.includes(row.pushID ?? '') &&
+        ['push.received', 'push.reportDeadline', 'runtime.processTerminated'].includes(row.event)));
+      continue;
+    }
+    // Check survival or expiry past the final copy's own reporting window.
+    const push = ids.at(-1)!;
     const received = await until('push delivery', 10, () =>
       entries().find(row => row.event === 'push.received' && row.pushID === push));
+    if (scenario.deliveryDelay) {
+      assert.ok(received.t_ms - scheduled[0]!.t_ms >= scenario.deliveryDelay - 1);
+    }
     assert.equal(received.api, scenario.metadata ? 'metadata' : 'legacy', scenario.name);
     assert.equal(received.mustReport, scenario.metadata ? scenario.required : true, scenario.name);
     if (scenario.dies) {
@@ -96,10 +135,13 @@ async function reportingEnforcement(packagePath: string, simulator: string, work
       await sleep(4700);
       assert.ok(running(), scenario.name);
       cksim('status'); // The same process must still serve controls after the reporting deadline.
-      const rows = entries().filter(row => row.pushID === push);
-      assert.ok(!rows.some(row => row.event === 'runtime.processTerminated'), scenario.name);
-      assert.equal(rows.some(row => row.event === 'push.reportSatisfied'), scenario.required);
-      if (!scenario.required) assert.ok(!rows.some(row => row.event === 'push.reportDeadline'));
+      for (const id of ids) {
+        const rows = entries().filter(row => row.pushID === id);
+        assert.equal(rows.filter(row => row.event === 'push.received').length, 1, scenario.name);
+        assert.ok(!rows.some(row => row.event === 'runtime.processTerminated'), scenario.name);
+        assert.equal(rows.some(row => row.event === 'push.reportSatisfied'), scenario.required);
+        if (!scenario.required) assert.ok(!rows.some(row => row.event === 'push.reportDeadline'));
+      }
     }
   }
 }
