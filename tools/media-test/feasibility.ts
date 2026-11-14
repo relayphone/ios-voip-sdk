@@ -51,6 +51,7 @@ const cancelReaders: (() => Promise<void>)[] = [];
 const source = new AudioSource(48_000, 1, 100);
 let received: number[] = [];
 let uplinkEvidence: ReturnType<typeof measureMarker> | null = null;
+let uplinkCapture: PCMCapture | null = null;
 const controls = { leakControlCaught: false, publicationSilent: false };
 const control = createServer(async (request, response) => {
   try {
@@ -67,7 +68,8 @@ const control = createServer(async (request, response) => {
         await monitorReceiver(() => ({ connected: peer.connectionState === ConnectionState.CONN_CONNECTED,
           readerLive: readerLive && !readerFailed, trackAvailable }));
       }
-      uplinkEvidence = await measureMarkerAsync({ sampleRate: 48_000, channels: [received], formatChanged: false }, uplink);
+      uplinkCapture = { sampleRate: 48_000, channels: [received.slice()], formatChanged: false };
+      uplinkEvidence = await measureMarkerAsync(uplinkCapture, uplink);
       assert.ok(uplinkEvidence.complete && uplinkEvidence.postRollObserved, 'Complete unmuted tones-v2 marker and post-roll were not received');
       controls.leakControlCaught = true;
     } else { assert.ok(rms < 0.001, 'Muted publication leaked PCM'); controls.publicationSilent = true; }
@@ -126,14 +128,20 @@ try {
   for (let attempt = 0; attempt < 300 && !existsSync(result); attempt++) await delay(100);
   assert.ok(existsSync(result), 'Example produced no result');
   const evidence: unknown = JSON.parse(readFileSync(result, 'utf8'));
-  uplinkEvidence ??= await measureMarkerAsync({ sampleRate: 48_000, channels: [received], formatChanged: false }, uplink);
-  const downlinkEvidence = Object.fromEntries(await Promise.all(['decoded', 'output'].map(async (stage): Promise<[string, ReturnType<typeof measureMarker> | { complete: false; error: string } | null]> => {
+  uplinkCapture ??= { sampleRate: 48_000, channels: [received.slice()], formatChanged: false };
+  uplinkEvidence ??= await measureMarkerAsync(uplinkCapture, uplink);
+  const downlinkCaptures: Partial<Record<"decoded" | "output", PCMCapture>> = {};
+  const downlinkEvidence = Object.fromEntries(await Promise.all((['decoded', 'output'] as const).map(async (stage): Promise<[string, ReturnType<typeof measureMarker> | { complete: false; error: string } | null]> => {
     const file = join(container, `Documents/media-${stage}.json`);
     try {
-      return [stage, existsSync(file) ? await measureMarkerAsync(JSON.parse(readFileSync(file, 'utf8')) as PCMCapture, downlink) : null];
+      if (!existsSync(file)) return [stage, null];
+      const capture = JSON.parse(readFileSync(file, 'utf8')) as PCMCapture;
+      downlinkCaptures[stage] = capture;
+      return [stage, await measureMarkerAsync(capture, downlink)];
     } catch (error) { return [stage, { complete: false, error: String(error) }]; }
   })));
   writeFileSync(output, JSON.stringify({ processing, native: evidence, farEnd: controls,
+    pcm: { fromDevice: uplinkCapture, toDevice: downlinkCaptures },
     receiver: { connected: peer.connectionState === ConnectionState.CONN_CONNECTED, readerLive, trackAvailable,
       readerFailed, receivedSamples, rms: receivedSamples ? Math.sqrt(energy / receivedSamples) : null },
     markers: { fromDevice: uplinkEvidence, toDevice: downlinkEvidence } }, null, 2));

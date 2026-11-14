@@ -98,10 +98,75 @@ audio-processing survival.
 
 ## Current pipeline evidence
 
-The fixed synthetic configuration uses AEC/AGC on and NS off. Native results for this
-configuration are pending CI. The earlier processing-matrix evidence below predates that
-decision and does not qualify the new configuration. Failures still retain per-slot evidence;
-AEC stays enabled. See [the shared test scope](media-testing.md#synthetic-capture-configuration).
+The fixed synthetic configuration uses AEC/AGC on and NS off. See
+[the shared test scope](media-testing.md#synthetic-capture-configuration).
+
+## NS-off measurements at 9f505db, attempt 2
+
+[CI run](https://github.com/relayphone/ios-voip-sdk/actions/runs/43544862403/attempts/2) failed at publicationGate. Software AEC/AGC were requested and active; NS was requested off and inactive. Both RTP directions used Opus. The source generated 411648 samples; the connected live receiver observed 184800 samples with RMS 0.113664. Uplink failed complete detection; decoded and output downlink passed with post-roll coverage. Mute validation did not complete.
+
+### Uplink / far end
+
+Alignment: fixed-grid diagnostic; minimum 0.000003; final drift 0 ms; post-roll coverage false.
+
+| Slot | Hz | Start samples | Drift ms | Confidence | Margin |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 650 | 42768 | 0 | 0.530827 | -0.269173 |
+| 1 | 950 | 45648 | 0 | 0.001804 | -0.798196 |
+| 2 | 1350 | 48528 | 0 | 0.921221 | 0.121221 |
+| 3 | 1850 | 51408 | 0 | 0.000049 | -0.799951 |
+| 4 | 1850 | 54288 | 0 | 0.001601 | -0.798399 |
+| 5 | 650 | 57168 | 0 | 0.000250 | -0.799750 |
+| 6 | 650 | 60048 | 0 | 0.004584 | -0.795416 |
+| 7 | 1350 | 62928 | 0 | 0.000005 | -0.799995 |
+| 8 | 1350 | 65808 | 0 | 0.000003 | -0.799997 |
+| 9 | 1350 | 68688 | 0 | 0.000004 | -0.799996 |
+| 10 | 1350 | 71568 | 0 | 0.000010 | -0.799990 |
+| 11 | 1350 | 74448 | 0 | 0.002608 | -0.797392 |
+
+### Downlink / decoded
+
+Alignment: elastic; minimum 0.998706; final drift -55 ms; post-roll coverage true.
+
+| Slot | Hz | Start samples | Drift ms | Confidence | Margin |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 650 | 73008 | 0 | 0.999986 | 0.199986 |
+| 1 | 950 | 75312 | -12 | 0.999928 | 0.199928 |
+| 2 | 1350 | 78336 | -9 | 0.999951 | 0.199951 |
+| 3 | 1850 | 81552 | -2 | 0.999886 | 0.199886 |
+| 4 | 1350 | 83712 | -17 | 0.998706 | 0.198706 |
+| 5 | 1850 | 86976 | -9 | 0.999934 | 0.199934 |
+| 6 | 650 | 89136 | -24 | 0.999981 | 0.199981 |
+| 7 | 1350 | 91392 | -37 | 0.999915 | 0.199915 |
+| 8 | 950 | 94992 | -22 | 0.999952 | 0.199952 |
+| 9 | 950 | 97728 | -25 | 0.999978 | 0.199978 |
+| 10 | 650 | 99888 | -40 | 0.999981 | 0.199981 |
+| 11 | 1850 | 102048 | -55 | 0.999921 | 0.199921 |
+
+### Downlink / output
+
+Alignment: elastic; minimum 0.998463; final drift -55 ms; post-roll coverage true.
+
+| Slot | Hz | Start samples | Drift ms | Confidence | Margin |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 650 | 73632 | 0 | 0.999986 | 0.199986 |
+| 1 | 950 | 75888 | -13 | 0.999933 | 0.199933 |
+| 2 | 1350 | 78912 | -10 | 0.999951 | 0.199951 |
+| 3 | 1850 | 82176 | -2 | 0.999886 | 0.199886 |
+| 4 | 1350 | 84336 | -17 | 0.998463 | 0.198463 |
+| 5 | 1850 | 87552 | -10 | 0.999934 | 0.199934 |
+| 6 | 650 | 89760 | -24 | 0.999982 | 0.199982 |
+| 7 | 1350 | 92064 | -36 | 0.999915 | 0.199915 |
+| 8 | 950 | 95664 | -21 | 0.999964 | 0.199964 |
+| 9 | 950 | 98352 | -25 | 0.999978 | 0.199978 |
+| 10 | 650 | 100512 | -40 | 0.999976 | 0.199976 |
+| 11 | 1850 | 102672 | -55 | 0.999909 | 0.199909 |
+
+The uplink starts and zero drifts are fixed-grid diagnostics, not accepted elastic timing. No processing effect is identified as the cause by these observations alone. AEC/AGC remain enabled. The next run retains the bounded PCM used for each measurement, so failed slots can be inspected without regenerating or modifying the signal.
+
+### Earlier processing matrix
+
+The following evidence predates the NS-off decision and does not qualify the fixed configuration.
 
 The [elastic run at 25915cd](https://github.com/relayphone/ios-voip-sdk/actions/runs/43530306294)
 failed all five modes. Every uplink slot scored zero (margin -0.8); all receivers stayed connected
