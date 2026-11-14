@@ -431,3 +431,27 @@ actions, connected and ended snapshots, and confirmed filter setting. The incomi
 waits until XCUITest has activated the Inspector, so runner startup does not consume the ring timeout. Screenshots are
 diagnostic only: on failure, the workflow uploads XCUITest attachments and a final screenshot
 of the target simulator in an `inspector-journey` artifact, retained for seven days.
+
+### Optional packet observations
+
+`CallMedia.transportEvents()` returns typed `MediaTransportEvent` observations, with a `CallID`,
+`firstPacketReceived` or `firstPacketSent`, and a `SuspendingClock.Instant`. Existing media
+implementations compile unchanged and return an empty stream. Missing directions mean unknown.
+Media implementations return an independent stream per subscriber, and emit each direction at
+most once per preparation. Subscribe before preparing media to observe its earliest packets.
+The SDK subscribes before attaching the calling framework and push source.
+
+The LiveKit native example reads actual `inbound-rtp.packetsReceived` and
+`outbound-rtp.packetsSent` counters greater than zero. It checks unresolved directions every
+250 ms for at most 30 seconds after preparation, stopping when both are observed, or on release,
+failure or teardown. Its timestamps identify when sampling first observed the counter; they do
+not claim the packet's arrival/send time. Statistics may update less often than the sampler.
+Adapters without packet counters keep the default empty stream. Preparation, connection and
+activation never stand in for packet observations. No raw transport statistics are public events.
+
+With an embedded Debug simulator runtime, the journal records `sdk.firstPacketReceived` and
+`sdk.firstPacketSent`, each with `callID`, `callUUID` and `observedAtMS` on the journal's runtime
+epoch. `t_ms` remains the journal receipt time; `observedAtMS` preserves the earlier observation.
+The suspending monotonic clock matches the journal's uptime clock across host sleep. Observations
+before runtime startup or with future timestamps are discarded. Packet journal instrumentation is
+absent in device and Release builds. This stream does not change call state or action settlement.

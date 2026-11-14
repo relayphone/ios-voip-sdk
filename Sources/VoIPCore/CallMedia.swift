@@ -9,6 +9,13 @@
 /// See <doc:MainActorMedia> for preparation, ordered audio commands and attempt tokens.
 @VoIPActor
 public protocol CallMedia: Sendable {
+  /// Subscribes to optional packet observations before any calls are prepared.
+  ///
+  /// Return an independent stream per subscriber. Emit each direction at most once per
+  /// preparation, using actual packet evidence. Unsupported directions remain absent; never
+  /// infer them from preparation, connection or activation. The default finishes silently.
+  func transportEvents() -> AsyncStream<MediaTransportEvent>
+
   /// Prepares a call's media, such as connecting to its room, before the call takes part on this
   /// device.
   ///
@@ -46,6 +53,11 @@ public protocol CallMedia: Sendable {
 }
 
 extension CallMedia {
+  /// Media without packet telemetry produces no observations.
+  public func transportEvents() -> AsyncStream<MediaTransportEvent> {
+    AsyncStream { $0.finish() }
+  }
+
   /// Keeps media that needs no per-call cleanup source compatible.
   public func release(_ call: Call) {}
 }

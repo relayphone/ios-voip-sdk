@@ -38,7 +38,8 @@ extension EngineTests {
     /// before; `calls` still holds the call.
     @Test func streamCreatedAfterStartMissesTheFirstEventOfAColdLaunch() async throws {
       let h = try Harness(subscribe: false, pending: [.incoming(ringingCall, eventID: e1)])
-      await onVoIPActor {}
+      // Wait for the cold-launch call itself, rather than assuming task enqueue order.
+      await h.until { $0.calls.contains { $0.id == callID } }
       h.subscribe()
 
       _ = await h.client.report(incoming(otherCallID, .preview))

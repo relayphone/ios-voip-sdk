@@ -5,6 +5,13 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+### Added
+
+- `CallMedia.transportEvents()` optionally reports the first received and sent packet for a call,
+  with a monotonic observation time. Existing media implementations remain silent by default.
+  The LiveKit native example samples actual RTP packet counters for up to 30 seconds.
+  Debug simulator runtimes journal these events without inferring them from connection state.
+
 ### Fixed
 
 - Include timed processing-state and engine-transition diagnostics in native media feasibility receipts, and report the earliest native failure directly.
