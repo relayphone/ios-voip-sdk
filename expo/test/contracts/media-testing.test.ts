@@ -389,7 +389,8 @@ test("unstretched emissions have zero relative slot drift and receipts keep alig
   const checked = validateMediaReceipt(receipt, query).receipt.marker!;
   assert.deepEqual(checked.slotStarts, receipt.marker!.slotStarts);
   assert.ok(Object.isFrozen(checked.slotStarts));
-  for (const slotStarts of [undefined, [], receipt.marker!.slotStarts.slice(1),
+  for (const slotStarts of [undefined, [], Array(12), receipt.marker!.slotStarts.slice(1),
+    Object.assign(Array(12), { 0: receipt.marker!.offsetSamples, 11: receipt.marker!.slotStarts[11] }),
     receipt.marker!.slotStarts.map((start, index) => start + (index === 5 ? 800 : 0)),
     receipt.marker!.slotStarts.map((start, index) => start + index * 300)])
     assert.throws(() => validateMediaReceipt({ ...receipt, marker: { ...receipt.marker!, slotStarts } }, query), code("invalid_receipt"));

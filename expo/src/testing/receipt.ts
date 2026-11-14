@@ -64,7 +64,7 @@ export function validateMediaReceipt(value: unknown, request: MediaReadRequest):
     if (offsetSamples >= sampleCount || confidence < 0 || confidence > 1) invalid("Invalid marker observation");
     if (!Array.isArray(detection.slotStarts) || detection.slotStarts.length !== expected.frequencies.length)
       invalid("A complete ordered slot alignment is required");
-    const slotStarts = detection.slotStarts.map((value, index) => {
+    const slotStarts = Array.from(detection.slotStarts, (value, index) => {
       const start = integer(value, "slot start");
       if (start + slotSamples > sampleCount || index === 0 && start !== offsetSamples)
         invalid("Slot alignment exceeds capture or disagrees with marker start");
