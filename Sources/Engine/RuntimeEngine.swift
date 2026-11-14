@@ -119,77 +119,6 @@
     init(_ invoke: @escaping ((any Error)?) -> Void) { self.invoke = invoke }
   }
 
-  // A report counts only when the interposed genuine provider report is entered.
-  // This is simulator policy, not a synthetic SDK "about to await" signal.
-  private struct PushReportingObligations {
-    struct Observation {
-      let required: Bool
-      let reportEntered: Bool
-      let violation: String?
-    }
-    private struct Delivery {
-      let required: Bool
-      let token = UUID()
-      var reportEntered = false
-      var returned = false
-      var completed = false
-    }
-    private var deliveries: [String: Delivery] = [:]
-    mutating func receive(_ id: String, required: Bool) -> Bool {
-      guard !id.isEmpty, deliveries[id] == nil else { return false }
-      deliveries[id] = Delivery(required: required)
-      return true
-    }
-    mutating func entered(_ id: String) {
-      guard !id.isEmpty else { return }
-      deliveries[id]?.reportEntered = true
-      if let delivery = deliveries[id], delivery.returned && delivery.completed {
-        deliveries.removeValue(forKey: id)
-      }
-    }
-    func deadlineToken(_ id: String) -> UUID? { deliveries[id]?.token }
-    /// LiveCommunicationKit reports from its own queue, so its report carries no thread-local push
-    /// context. A report entered while exactly one required callback is still running belongs to it.
-    func runningDeliveryAwaitingReport() -> String? {
-      let running = deliveries.filter {
-        $0.value.required && !$0.value.returned && !$0.value.reportEntered
-      }
-      return running.count == 1 ? running.first?.key : nil
-    }
-    mutating func expire(_ id: String, token: UUID) -> Bool {
-      guard let delivery = deliveries[id], delivery.token == token, delivery.required,
-        !delivery.reportEntered
-      else { return false }
-      deliveries.removeValue(forKey: id)
-      return true
-    }
-    mutating func returned(_ id: String) -> Observation {
-      observe(id, completion: false)
-    }
-    mutating func completed(_ id: String) -> Observation {
-      observe(id, completion: true)
-    }
-    private mutating func observe(_ id: String, completion: Bool) -> Observation {
-      guard var delivery = deliveries[id] else {
-        return Observation(required: false, reportEntered: false, violation: "unknown-delivery")
-      }
-      let repeated = completion ? delivery.completed : delivery.returned
-      if completion { delivery.completed = true } else { delivery.returned = true }
-      let violation =
-        repeated
-        ? "repeated-" + (completion ? "completion" : "callback-return")
-        : delivery.required && !delivery.reportEntered
-          ? "required-report-missing-at-" + (completion ? "completion" : "callback-return") : nil
-      if delivery.completed && delivery.returned && (!delivery.required || delivery.reportEntered) {
-        deliveries.removeValue(forKey: id)
-      } else {
-        deliveries[id] = delivery
-      }
-      return Observation(
-        required: delivery.required, reportEntered: delivery.reportEntered, violation: violation)
-    }
-  }
-
   /// One private serial queue owns all state. App code always executes elsewhere.
   @objc(CKSimulatorEngine)
   final class RuntimeEngine: NSObject, CKRuntimeEngineProtocol, @unchecked Sendable {
@@ -215,6 +144,7 @@
     private var selected: ProviderRegistration?
     private let controllerQueues = NSMapTable<CXCallController, DispatchQueue>.weakToStrongObjects()
     private var calls: [UUID: CallState] = [:]
+    private let applicationActivity = RuntimeApplicationActivity()
     private var pushReportingObligations = PushReportingObligations()
     private var pendingActions: [UUID: RuntimePendingAction] = [:]
     private let deadlines = NSMapTable<CXAction, NSDate>.weakToStrongObjects()
@@ -352,6 +282,7 @@
       withState {
         guard !stopped else { return }
         stopped = true
+        applicationActivity.stop()
         audioRevision += 1
         for timer in timers.values {
           timer.setEventHandler(handler: nil)
@@ -404,23 +335,33 @@
       }
       timer.resume()
     }
+    private var monotonicTime: Duration {
+      .nanoseconds(DispatchTime.now().uptimeNanoseconds - epoch)
+    }
     func record(event: String, fields: [String: Any]) {
       withState {
         guard !stopped else { return }
         let observed = DispatchTime.now()
         var row = fields
         var pushViolation: String?
-        var pushDeadline: (String, UUID, DispatchTime)?
+        var pushDeadline: (String, UUID, DispatchTime, PushReportingProfile.Rule)?
         if let pushID = fields["pushID"] as? String, !pushID.isEmpty {
           switch event {
           case "push.received":
             let required = fields["mustReport"] as? Bool ?? true
-            if !pushReportingObligations.receive(pushID, required: required) {
+            let activity = applicationActivity.state
+            let joined = calls.values.contains { $0.connected && !$0.ended }
+            let rule = profile.pushReporting.rule(application: activity, joinedCall: joined)
+            row["applicationState"] = activity.rawValue
+            row["joinedCall"] = joined
+            if !pushReportingObligations.receive(
+              pushID, required: required, now: .nanoseconds(observed.uptimeNanoseconds - epoch),
+              budget: .seconds(rule.seconds))
+            {
               pushViolation = "repeated-delivery"
             } else if required, let token = pushReportingObligations.deadlineToken(pushID) {
-              pushDeadline = (pushID, token, observed)
+              pushDeadline = (pushID, token, observed, rule)
             }
-          case "report.incoming": pushReportingObligations.entered(pushID)
           case "push.completed", "push.callbackReturned":
             let observation =
               event == "push.completed"
@@ -444,21 +385,25 @@
           ]) { _, new in new }
           return try row.mapValues(RuntimeJournalValue.init(legacyValue:))
         }
-        if let (pushID, token, receivedAt) = pushDeadline {
+        if let (pushID, token, receivedAt, rule) = pushDeadline {
           record(
             event: "push.reportDeadline",
-            fields: ["pushID": pushID, "seconds": profile.pushReportDeadlineSeconds])
-          after(profile.pushReportDeadlineSeconds, from: receivedAt) { [weak self] in
-            guard let self, self.pushReportingObligations.expire(pushID, token: token) else {
-              return
-            }
-            self.record(
-              event: "diagnostic.pushReportExpired",
-              fields: [
-                "pushID": pushID, "severity": "error",
-                "seconds": self.profile.pushReportDeadlineSeconds, "exitCode": 78,
-              ])
-            Darwin._exit(78)
+            fields: [
+              "pushID": pushID, "seconds": rule.seconds,
+              "verification": rule.verification.rawValue, "evidence": rule.evidence,
+            ])
+          after(rule.seconds, from: receivedAt) { [weak self] in
+            guard let self,
+              self.pushReportingObligations.expire(pushID, token: token, now: self.monotonicTime)
+            else { return }
+            let fields: [String: Any] = [
+              "pushID": pushID, "severity": "error", "seconds": rule.seconds,
+              "reason": "required-new-call-report-missing", "signal": SIGABRT,
+            ]
+            self.record(event: "diagnostic.pushReportExpired", fields: fields)
+            self.record(event: "runtime.processTerminated", fields: fields)
+            try? self.journal?.synchronize()
+            Darwin.abort()
           }
         }
         if let pushViolation {
@@ -1131,7 +1076,7 @@
       withState {
         let pushID =
           synchronousPushID.isEmpty
-          ? pushReportingObligations.runningDeliveryAwaitingReport() ?? "" : synchronousPushID
+          ? pushReportingObligations.awaitingReport() ?? "" : synchronousPushID
         let owner = registration(provider)
         if !owner.valid {
           owner.generation += 1
@@ -1148,12 +1093,19 @@
           extraDelaySeconds: Double(faults.reportCallbackDelayMS ?? 0) / 1000,
           incomingErrorCode: faults.incomingErrorCode ?? 0)
         let error = outcome.error
+        let qualifies = pushReportingObligations.entered(
+          pushID, call: uuid, alreadyKnown: calls[uuid] != nil, now: monotonicTime)
         let fields: [String: Any] = [
           "reportID": reportID, "callUUID": uuid.uuidString, "pushID": pushID,
           "domain": outcome.domain, "code": outcome.code, "filterReason": outcome.filterReason,
-          "verification": outcome.verification, "latencyMS": 0,
+          "verification": outcome.verification, "latencyMS": 0, "qualifyingReport": qualifies,
         ]
         record(event: "report.incoming", fields: fields)
+        if qualifies {
+          record(
+            event: "push.reportSatisfied",
+            fields: ["pushID": pushID, "callUUID": uuid.uuidString, "reportID": reportID])
+        }
         if error == nil {
           let call = CallState(uuid, owner)
           call.update = update.copy() as? CXCallUpdate

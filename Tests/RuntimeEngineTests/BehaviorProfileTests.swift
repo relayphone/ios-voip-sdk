@@ -21,6 +21,8 @@ struct BehaviorProfileTests {
     "lckMultiCall.cleanupEndExpirySeconds", "lckMultiCall.pausedAfterDeliverySeconds",
     "lckMultiCall.joinedAfterSettlementSeconds", "lckMultiCall.audioHandoffGapSeconds",
     "lckMultiCall.audioDeactivationAfterDeliverySeconds", "lckMultiCall.appResumeEndDelaySeconds",
+    "pushReporting.foregroundOrLaunch.seconds", "pushReporting.backgroundJoinedCall.seconds",
+    "pushReporting.fallback.seconds",
   ]
 
   @Test(arguments: timings, ["0", "-1", "\"Infinity\"", "\"-Infinity\"", "\"NaN\""])
@@ -30,13 +32,18 @@ struct BehaviorProfileTests {
       try JSONSerialization.jsonObject(
         with: Data("[\(value)]".utf8), options: []) as? [Any]
     let parts = key.split(separator: ".").map(String.init)
-    if parts.count == 1 {
-      profile[key] = replacement?.first
-    } else {
-      var nested = try #require(profile[parts[0]] as? [String: Any])
-      nested[parts[1]] = replacement?.first
-      profile[parts[0]] = nested
+    func replacing(_ object: [String: Any], path: ArraySlice<String>) throws -> [String: Any] {
+      var result = object
+      let field = try #require(path.first)
+      if path.count == 1 {
+        result[field] = replacement?.first
+      } else {
+        result[field] = try replacing(
+          #require(object[field] as? [String: Any]), path: path.dropFirst())
+      }
+      return result
     }
+    profile = try replacing(profile, path: parts[...])
     let decoder = JSONDecoder()
     decoder.nonConformingFloatDecodingStrategy = .convertFromString(
       positiveInfinity: "Infinity", negativeInfinity: "-Infinity", nan: "NaN")

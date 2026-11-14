@@ -7,6 +7,11 @@ Public API changes include migration guidance.
 
 ### Added
 
+- The simulator runtime's `ios-27.0` profile enforces fresh-UUID reporting for required
+  VoIP pushes, using the iPhone 13 / iOS 27.0 and 27.1 reporting budgets. Missing, late
+  and duplicate reports terminate the simulator app with a correlated journal reason.
+  Metadata `mustReport: false` creates no reporting deadline. Device builds are unaffected.
+
 - Media marker detection aligns each subsequent slot within ±15 ms and caps final drift at
   ±60 ms. Detections and receipts retain all twelve slot starts. Adapters must preserve these
   starts in their receipts; the signal, parity, energy floor and every-slot 0.8 rule are unchanged.

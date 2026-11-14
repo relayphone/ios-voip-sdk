@@ -208,8 +208,15 @@
               ? true : nil
           }
           try await filter(.doNotDisturb)
-          let duplicate = try await report(admitted.call)
-          try await expect(duplicate, code: 2, filterReason: "none", verification: "not-applicable")
+          // Exercise duplicate-report errors directly. A required push re-reported with this
+          // UUID now intentionally terminates the process, covered by the standalone smoke app.
+          let cursor = try runtime.cursor()
+          app.ring(admitted.call)
+          let duplicate = try await runtime.entry("the duplicate report's error", after: cursor) {
+            $0.event == "fixture.reportCompleted" && $0.callUUID == admitted.call.uuidString
+          }
+          #expect(duplicate.code == 2 && duplicate.domain == Self.domain)
+          #expect(duplicate.replyCount == 1)
           #expect(try await runtime.status().calls.map(\.state.uuid) == [admitted.call])
           try await runtime.clearSettings()
           try await runtime.end([admitted.call])

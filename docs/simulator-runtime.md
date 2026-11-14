@@ -15,7 +15,7 @@ deliver synthetic VoIP pushes and issue system call-waiting transactions.
 This is experimental test infrastructure. It uses private simulator ABI and must
 never be embedded in a device or App Store build. Both native layers reject device
 compilation. There is no system call-screen app; use the CLI or your app's
-UI. Synthetic pushes do not establish APNs delivery or iOS reporting enforcement.
+UI. Synthetic pushes reproduce the profile's reporting enforcement, but do not establish APNs delivery.
 State and arbitration are per application process; calls in other apps are outside
 this version's scope. The runtime activates the app's real audio session; it does not provide signaling,
 WebRTC transport, network peers or audio samples for a silent CI microphone.
@@ -139,10 +139,44 @@ Payloads go through the app's actual registered PushKit delegate. Metadata-capab
 delegates receive the explicit `mustReport` flag; legacy delegates always have a
 reporting obligation. The runtime records the actual callback API and completion.
 Each push has a correlation ID. Synchronous incoming reports inherit it; later
-end reports use the call's stored binding. LiveCommunicationKit reports from its
-own queue, so a report entered on another thread while exactly one required push
-callback is still running is attributed to that push. Reports made after the
-push callback returned have no inferred push correlation.
+end reports use the call's stored binding. Reports without thread-local push context,
+including LiveCommunicationKit reports on its own queue and late reports after callback
+return, satisfy the oldest outstanding obligation. This FIFO attribution is unverified
+simulator policy when several pushes overlap. One new UUID satisfies at most one push.
+
+### Push reporting enforcement
+
+The `ios-27.0` profile enforces reporting by default. Legacy delegates always owe a
+report; metadata-capable delegates owe one exactly when `mustReport` is true.
+Completion and callback return do not satisfy or cancel an obligation. An incoming
+report must **enter under a new call UUID** before its delivery-relative deadline.
+Reporting an existing call again does not count, including when the report fails
+with duplicate UUID code 2 ([#247](https://github.com/relayphone/ios-voip-sdk/pull/247)).
+A filtered report under a fresh UUID counts even when its completion returns an error.
+The runtime remembers incoming-report UUIDs for the process; reuse after a call ends also
+does not count, an explicitly unverified simulator policy.
+
+| Delivery context | Reporting budget | Qualification |
+| --- | --- | --- |
+| Foreground without a joined call, or newly launched | 4.4 s | iPhone 13 / iOS 27.0 and 27.1: termination about 4.4 s after delivery; a report started at 3.15 s survived, one due at 5 s did not |
+| Background with a joined call | 30 s | iPhone 13 / iOS 27.0 and 27.1: a `callEnded` push re-reported against the live call terminated about 30 s after delivery; applying that budget to other required pushes in this context is unverified |
+| Foreground with a call, `mustReport: false` | No deadline | iPhone 13 / iOS 27.0 and 27.1: PushKit did not require reporting and the process survived |
+| Other required-push contexts | 4.4 s | Unverified fallback: background without a joined call, foreground with a call when explicitly required, or unknown activity |
+
+The [push captures](../Tests/Fixtures/LiveCommunicationKit/push/README.md) and
+[#247](https://github.com/relayphone/ios-voip-sdk/pull/247) describe the measurements.
+The runtime snapshots UIKit activity and joined-call state at delivery; later changes
+do not move the deadline. It models neither lock state nor background suspension.
+It always honors metadata `mustReport: false`, including contexts where iOS 27.1 was
+observed to contradict that flag; those contradictions are outside this rule.
+
+`push.reportDeadline` records the budget, verification and evidence. `report.incoming`
+includes `qualifyingReport`, and `push.reportSatisfied` binds a qualifying UUID to its
+push. On expiry the runtime appends `diagnostic.pushReportExpired` and
+`runtime.processTerminated`, with `pushID`, reason `required-new-call-report-missing`
+and `signal: 6`, flushes the journal and aborts the app with SIGABRT, as the measured
+PushKit failure did. The host can read the journal after the process exits. There is
+no enforcement opt-out; tests of report errors can report directly without a push.
 
 `faults --report-delay-ms 1500` delays incoming-report completion so tests can
 answer or decline before it returns. `faults --stale-audio` suppresses activation
@@ -245,6 +279,9 @@ calls through its mailbox. The smoke test launches an app that doesn't link the
 runtime with a built package's runtime injected, then answers and ends a pushed
 call with that package's `cksim`. The release workflow runs all three against the
 package it publishes.
+The smoke app also verifies actual process termination near 4.4 s for missing, late
+and duplicate reports, survival of a report entered at 3.15 s, and unreported optional
+metadata pushes. These intentional terminations run outside the test runner.
 
 CallX and GetStream's mock are not dependencies and no code was copied from them.
 

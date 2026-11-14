@@ -161,6 +161,7 @@
     let lckMultiCall: LCKMultiCallProfile
     let reportLatencySeconds: Double
     let pushReportDeadlineSeconds: Double
+    let pushReporting: PushReportingProfile
     let incomingFilterPolicies: [String: IncomingFilterPolicy]
     let muteEchoSeconds: Double
     let postEndUnmuteSeconds: Double
@@ -198,6 +199,9 @@
       else {
         return "invalid behavior profile"
       }
+      guard pushReporting.valid,
+        pushReporting.foregroundOrLaunch.seconds == pushReportDeadlineSeconds
+      else { return "invalid push reporting profile" }
       let filteredReasons = IncomingFilterReason.allCases.filter { $0 != .none }
       let filterPolicies = incomingFilterPolicies
       guard Set(filterPolicies.keys) == Set(filteredReasons.map(\.rawValue)),
