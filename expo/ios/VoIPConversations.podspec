@@ -81,7 +81,7 @@ specification = Pod::Spec.new do |s|
   end
 
   s.subspec 'MediaTesting' do |ss|
-    ss.source_files = "#{sdk}/VoIPMediaTesting/**/*.swift"
+    ss.source_files = "#{sdk}/MediaTesting/**/*.swift"
     ss.dependency 'LiveKitClient', '= 2.19.0'
     ss.frameworks = 'AVFAudio'
   end
@@ -131,6 +131,7 @@ end
 
 # Count the files CocoaPods actually discovered, rather than trusting filesystem globs.
 {
+  'MediaTesting' => %w[MediaTesting],
   'Core' => %w[VoIPCore],
   'Audio' => %w[VoIPAudio],
   'LiveCommunicationKit' => %w[VoIPLiveCommunicationKit],

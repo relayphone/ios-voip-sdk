@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { checkDistribution, checkVendor, checkVersion, preparePackage, sdkTargets } from '../expo/scripts/prepare-package.mts';
+import { checkDistribution, checkVendor, checkVersion, preparePackage, sdkTargets, sdkSourceDirectory } from '../expo/scripts/prepare-package.mts';
 
 function fixture(t: { after: (cleanup: () => void) => void }): string {
   const root = mkdtempSync(join(tmpdir(), 'voip-expo-'));
@@ -17,8 +17,8 @@ function fixture(t: { after: (cleanup: () => void) => void }): string {
 function sourceFixture(t: { after: (cleanup: () => void) => void }): string {
   const root = fixture(t);
   for (const target of sdkTargets) {
-    mkdirSync(join(root, 'Sources', target), { recursive: true });
-    writeFileSync(join(root, 'Sources', target, 'Example.swift'), `// ${target}\n`);
+    mkdirSync(sdkSourceDirectory(root, target), { recursive: true });
+    writeFileSync(join(sdkSourceDirectory(root, target), 'Example.swift'), `// ${target}\n`);
   }
   return root;
 }

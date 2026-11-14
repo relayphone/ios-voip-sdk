@@ -1,7 +1,7 @@
 name: Media hook feasibility
 on:
   pull_request:
-    paths: ['Sources/VoIPMediaTesting/**', 'Tests/VoIPMediaTestingTests/**', 'tools/media-test/**', 'expo/example/client/**', 'expo/ios/**', 'Package.*', '.github/workflows/media-feasibility.yml']
+    paths: ['MediaTesting/**', 'tools/media-test/**', 'expo/example/client/**', 'expo/ios/**', 'Package.*', '.github/workflows/media-feasibility.yml']
 permissions:
   contents: read
 concurrency:
@@ -14,12 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: ./.github/actions/setup
+      - name: Resolve the optional media package
+        run: node tools/check-package-isolation.ts media
       - name: Compile excluded configurations without LiveKit
         run: |
           xcrun --sdk iphoneos swiftc -DDEBUG -target arm64-apple-ios26.0 -parse-as-library \
-            -emit-module -module-name VoIPMediaTesting -emit-module-path "$RUNNER_TEMP/excluded-device.swiftmodule" Sources/VoIPMediaTesting/*.swift
+            -emit-module -module-name VoIPMediaTesting -emit-module-path "$RUNNER_TEMP/excluded-device.swiftmodule" MediaTesting/Sources/VoIPMediaTesting/*.swift
           xcrun --sdk iphonesimulator swiftc -target arm64-apple-ios26.0-simulator -parse-as-library \
-            -emit-module -module-name VoIPMediaTesting -emit-module-path "$RUNNER_TEMP/excluded-release.swiftmodule" Sources/VoIPMediaTesting/*.swift
+            -emit-module -module-name VoIPMediaTesting -emit-module-path "$RUNNER_TEMP/excluded-release.swiftmodule" MediaTesting/Sources/VoIPMediaTesting/*.swift
       - name: Build the bundled native-media example
         run: |
           npm ci --prefix expo --ignore-scripts --no-audit --no-fund
@@ -34,6 +36,12 @@ jobs:
           perl -e 'alarm 900; exec @ARGV' xcodebuild -workspace VoIPExample.xcworkspace -scheme VoIPExample -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/media-build" \
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build > "$RUNNER_TEMP/build.log" 2>&1
+      - name: Test the optional Swift package on the same simulator
+        run: |
+          cd MediaTesting
+          perl -e 'alarm 600; exec @ARGV' xcodebuild build-for-testing -scheme VoIPMediaTesting \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/media-package" \
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO > "$RUNNER_TEMP/media-package-build.log" 2>&1
       - name: Prepare the pinned peer and local server
         run: |
           npm ci --prefix tools/media-test --no-audit --no-fund
@@ -67,6 +75,10 @@ jobs:
           echo "$id" > "$RUNNER_TEMP/media-simulator"
           perl -e 'alarm 120; exec @ARGV' xcrun simctl boot "$id"
           perl -e 'alarm 300; exec @ARGV' xcrun simctl bootstatus "$id" -b
+          (cd MediaTesting && perl -e 'alarm 300; exec @ARGV' xcodebuild test-without-building \
+            -scheme VoIPMediaTesting -destination "platform=iOS Simulator,id=$id" \
+            -derivedDataPath "$RUNNER_TEMP/media-package" -only-testing:VoIPMediaTestingTests \
+            CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/media-package-tests.log" 2>&1)
           perl -e 'alarm 300; exec @ARGV' node tools/media-test/feasibility.ts "$id" \
             "$RUNNER_TEMP/media-build/Build/Products/Debug-iphonesimulator/VoIPExample.app" \
             "$RUNNER_TEMP/livekit-server" "$RUNNER_TEMP/media-result-synthetic.json"
@@ -78,7 +90,7 @@ jobs:
             perl -e 'alarm 120; exec @ARGV' xcrun simctl shutdown "$id" || true
             perl -e 'alarm 120; exec @ARGV' xcrun simctl delete "$id"
           fi
-          rm -rf "$RUNNER_TEMP/media-build"
+          rm -rf "$RUNNER_TEMP/media-build" "$RUNNER_TEMP/media-package"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -86,3 +98,4 @@ jobs:
           path: |
             ${{ runner.temp }}/media-result-*.json
             ${{ runner.temp }}/build.log
+            ${{ runner.temp }}/media-package-*.log

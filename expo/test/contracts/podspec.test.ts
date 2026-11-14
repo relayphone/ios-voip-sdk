@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { preparePackage, sdkTargets } from '../../scripts/prepare-package.mts';
+import { preparePackage, sdkTargets, sdkSourceDirectory } from '../../scripts/prepare-package.mts';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -19,9 +19,9 @@ function fixture(t: { after: (cleanup: () => void) => void }): string {
     homepage: 'https://github.com/relayphone/ios-voip-sdk', author: 'Relayphone', license: 'MIT',
   }));
   for (const target of sdkTargets) {
-    mkdirSync(join(root, 'Sources', target), { recursive: true });
+    mkdirSync(sdkSourceDirectory(root, target), { recursive: true });
     const file = target === 'VoIPPushDelivery' ? 'Example.h' : 'Example.swift';
-    writeFileSync(join(root, 'Sources', target, file), '// source fixture\n');
+    writeFileSync(join(sdkSourceDirectory(root, target), file), '// source fixture\n');
   }
   copyFileSync(join(packageRoot, 'ios/VoIPConversations.podspec'), join(root, 'expo/ios/VoIPConversations.podspec'));
   preparePackage(root);
@@ -39,7 +39,7 @@ test('the Swift driver accepts the sources discovered by every CocoaPods subspec
   const root = fixture(t);
   rmSync(join(root, 'Sources'), { recursive: true });
   for (const target of sdkTargets) {
-    cpSync(join(packageRoot, '../Sources', target), join(root, 'Sources', target), { recursive: true });
+    cpSync(sdkSourceDirectory(resolve(packageRoot, '..'), target), sdkSourceDirectory(root, target), { recursive: true });
   }
   cpSync(join(packageRoot, 'ios'), join(root, 'expo/ios'), {
     recursive: true, filter: path => path !== join(packageRoot, 'ios/Vendor'),

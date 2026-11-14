@@ -1,6 +1,6 @@
 # Native media hook feasibility
 
-`VoIPMediaTesting` is optional: select the Swift package product or the CocoaPods `MediaTesting`
+`VoIPMediaTesting` is optional: select the nested `MediaTesting/` Swift package product or the CocoaPods `MediaTesting`
 subspec. The implementation exists only in Debug iOS Simulator builds. It is absent on devices,
 on macOS and in Release builds. LiveKit is not a dependency of the core SDK products.
 
