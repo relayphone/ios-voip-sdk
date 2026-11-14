@@ -384,6 +384,7 @@
             case .failed(let failure): reason = "failed.\(failure)"
             }
           }
+          if phase != .ended { callTimeline.beginIfEnded(uuid) }
           callTimeline.update(uuid, now: now, reported: false) {
             if $0.callID == nil { $0.connectedAtMS = nil }
             $0.callID = call.id.rawValue
@@ -1194,6 +1195,7 @@
             fields: ["pushID": pushID, "callUUID": uuid.uuidString, "reportID": reportID])
         }
         if error == nil {
+          callTimeline.beginIfEnded(uuid)
           let call = CallState(uuid, owner)
           call.update = update.copy() as? CXCallUpdate
           call.pushID = pushID
@@ -1429,7 +1431,7 @@
               $0.uuid.uuidString < $1.uuid.uuidString
             }))
       case .answerAfter(let uuid, let offset):
-        guard let call = calls[uuid], call.ringing,
+        guard let call = calls[uuid], call.ringing, callTimeline.isAwaitingAnswer(uuid),
           let report = callTimeline.calls[uuid]?.reportedAtMS
         else {
           throw ControlError.invalid("call is not ringing")
@@ -1447,7 +1449,8 @@
           self?.withState {
             guard let self, !self.stopped else { return }
             let fields = ["callUUID": uuid.uuidString, "requestID": command.id.uuidString]
-            guard self.calls[uuid] === call, call.ringing else {
+            guard self.calls[uuid] === call, call.ringing, self.callTimeline.isAwaitingAnswer(uuid)
+            else {
               self.record(event: "answer.cancelled", fields: fields)
               return
             }

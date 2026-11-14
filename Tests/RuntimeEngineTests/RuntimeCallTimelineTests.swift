@@ -5,6 +5,29 @@ import Testing
 @testable import CKSimRuntime
 
 struct RuntimeCallTimelineTests {
+  @Test func acceptedAnswerStopsWaitingBeforeMediaHasConnected() {
+    var history = RuntimeCallTimeline()
+    let id = UUID()
+    history.update(id, now: 10) { $0.state = .ringing }
+    #expect(history.isAwaitingAnswer(id))
+    history.update(id, now: 20) { $0.answeredAtMS = 20 }
+    #expect(history.calls[id]?.connectedAtMS == nil)
+    #expect(!history.isAwaitingAnswer(id))
+  }
+  @Test func reuseAfterEndStartsANewTimestampHistory() {
+    var history = RuntimeCallTimeline()
+    let id = UUID()
+    history.update(id, now: 10) {
+      $0.state = .ended
+      $0.answeredAtMS = 20
+      $0.endedAtMS = 30
+    }
+    history.beginIfEnded(id)
+    history.update(id, now: 100) { $0.state = .ringing }
+    #expect(history.calls[id]?.reportedAtMS == 100)
+    #expect(history.calls[id]?.answeredAtMS == nil)
+    #expect(history.isAwaitingAnswer(id))
+  }
   @Test func previewWithoutAFrameworkReportHasNoReportTimestamp() {
     var history = RuntimeCallTimeline()
     let id = UUID()

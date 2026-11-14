@@ -6,6 +6,13 @@
 
   struct RuntimeCallTimeline {
     private(set) var calls: [UUID: RetainedCall] = [:]
+    mutating func beginIfEnded(_ uuid: UUID) {
+      if calls[uuid]?.state == .ended { calls.removeValue(forKey: uuid) }
+    }
+    func isAwaitingAnswer(_ uuid: UUID) -> Bool {
+      guard let call = calls[uuid] else { return false }
+      return call.answeredAtMS == nil && call.endedAtMS == nil
+    }
     mutating func update(
       _ uuid: UUID, now: UInt64, reported: Bool = true, _ change: (inout RetainedCall) -> Void
     ) {
