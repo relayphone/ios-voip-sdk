@@ -22,7 +22,7 @@ jobs:
             -emit-module -module-name VoIPMediaTesting -emit-module-path "$RUNNER_TEMP/excluded-device.swiftmodule" MediaTesting/Sources/VoIPMediaTesting/*.swift
           xcrun --sdk iphonesimulator swiftc -target arm64-apple-ios26.0-simulator -parse-as-library \
             -emit-module -module-name VoIPMediaTesting -emit-module-path "$RUNNER_TEMP/excluded-release.swiftmodule" MediaTesting/Sources/VoIPMediaTesting/*.swift
-      - name: Build the bundled native-media example
+      - name: Prepare the example and resolve CocoaPods
         run: |
           npm ci --prefix expo --ignore-scripts --no-audit --no-fund
           npm run build --prefix expo
@@ -31,16 +31,53 @@ jobs:
           npm install --no-audit --no-fund
           npm run prebuild -- --no-install
           cd ios
-          pod install
+          perl -e 'alarm 300; exec @ARGV' pod install
           node "$GITHUB_WORKSPACE/tools/expo-journey-bundle.ts" "$PWD"
+      - name: Set the daily package cache scope
+        id: package-cache-scope
+        run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      # Limit reuse to one day; GitHub evicts caches after seven inactive days.
+      - name: Restore SwiftPM checkouts and binary artifacts
+        id: packages
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ${{ runner.temp }}/media-source-packages
+            ${{ runner.temp }}/media-example-source-packages
+          key: media-swiftpm-v1-${{ runner.os }}-${{ runner.arch }}-xcode27.1-${{ steps.package-cache-scope.outputs.day }}-${{ hashFiles('MediaTesting/Package.resolved', 'expo/package-lock.json', 'expo/example/client/package-lock.json', 'expo/example/client/ios/Podfile.lock') }}
+      - name: Resolve optional Swift package dependencies
+        working-directory: MediaTesting
+        run: |
+          perl -e 'alarm 300; exec @ARGV' xcodebuild -resolvePackageDependencies -scheme VoIPMediaTesting \
+            -derivedDataPath "$RUNNER_TEMP/media-package" -clonedSourcePackagesDirPath "$RUNNER_TEMP/media-source-packages" \
+            -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates > "$RUNNER_TEMP/media-package-resolution.log" 2>&1
+      - name: Resolve example Swift package dependencies
+        working-directory: expo/example/client/ios
+        run: |
+          perl -e 'alarm 300; exec @ARGV' xcodebuild -resolvePackageDependencies -workspace VoIPExample.xcworkspace -scheme VoIPExample \
+            -derivedDataPath "$RUNNER_TEMP/media-build" -clonedSourcePackagesDirPath "$RUNNER_TEMP/media-example-source-packages" \
+            -skipPackageUpdates > "$RUNNER_TEMP/media-example-resolution.log" 2>&1
+      - name: Save resolved SwiftPM checkouts and binary artifacts
+        if: steps.packages.outputs.cache-hit != 'true'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ${{ runner.temp }}/media-source-packages
+            ${{ runner.temp }}/media-example-source-packages
+          key: ${{ steps.packages.outputs.cache-primary-key }}
+      - name: Build the bundled native-media example
+        working-directory: expo/example/client/ios
+        run: |
           perl -e 'alarm 900; exec @ARGV' xcodebuild -workspace VoIPExample.xcworkspace -scheme VoIPExample -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/media-build" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/media-example-source-packages" -disableAutomaticPackageResolution -skipPackageUpdates \
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build > "$RUNNER_TEMP/build.log" 2>&1
       - name: Test the optional Swift package on the same simulator
         run: |
           cd MediaTesting
           perl -e 'alarm 600; exec @ARGV' xcodebuild build-for-testing -scheme VoIPMediaTesting \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/media-package" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/media-source-packages" -disableAutomaticPackageResolution -skipPackageUpdates \
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO > "$RUNNER_TEMP/media-package-build.log" 2>&1
       - name: Prepare the pinned peer and local server
         run: |
@@ -77,7 +114,9 @@ jobs:
           perl -e 'alarm 300; exec @ARGV' xcrun simctl bootstatus "$id" -b
           (cd MediaTesting && perl -e 'alarm 300; exec @ARGV' xcodebuild test-without-building \
             -scheme VoIPMediaTesting -destination "platform=iOS Simulator,id=$id" \
-            -derivedDataPath "$RUNNER_TEMP/media-package" -only-testing:VoIPMediaTestingTests \
+            -derivedDataPath "$RUNNER_TEMP/media-package" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/media-source-packages" -disableAutomaticPackageResolution -skipPackageUpdates \
+            -only-testing:VoIPMediaTestingTests \
             CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/media-package-tests.log" 2>&1)
           perl -e 'alarm 300; exec @ARGV' node tools/media-test/feasibility.ts "$id" \
             "$RUNNER_TEMP/media-build/Build/Products/Debug-iphonesimulator/VoIPExample.app" \
@@ -90,7 +129,7 @@ jobs:
             perl -e 'alarm 120; exec @ARGV' xcrun simctl shutdown "$id" || true
             perl -e 'alarm 120; exec @ARGV' xcrun simctl delete "$id"
           fi
-          rm -rf "$RUNNER_TEMP/media-build" "$RUNNER_TEMP/media-package"
+          rm -rf "$RUNNER_TEMP/media-build" "$RUNNER_TEMP/media-package" "$RUNNER_TEMP/media-source-packages" "$RUNNER_TEMP/media-example-source-packages"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -99,3 +138,4 @@ jobs:
             ${{ runner.temp }}/media-result-*.json
             ${{ runner.temp }}/build.log
             ${{ runner.temp }}/media-package-*.log
+            ${{ runner.temp }}/media-example-resolution.log
