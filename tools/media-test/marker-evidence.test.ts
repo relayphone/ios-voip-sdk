@@ -59,7 +59,7 @@ test('fixture scores and margins follow the published chosen starts in either dr
     const result = measureMarker({ sampleRate: 48000, channels: [Array.from(pcm)], formatChanged: false }, createMarker('parity-v2'));
     assert.ok(result.complete);
     assert.equal(result.channels[0]!.alignment, 'elastic');
-    assert.deepEqual(result.channels[0]!.slots.map(slot => slot.driftMs), change === 40 ? insertedDrifts : deletedDrifts);
+    assert.deepEqual(result.channels[0]!.slots.map(slot => slot.driftMs), (change === 40 ? insertedDrifts : deletedDrifts)[48000]);
     assert.ok(result.channels[0]!.slots.every(slot => slot.confidence >= 0.8 && slot.margin >= 0));
   }
 });

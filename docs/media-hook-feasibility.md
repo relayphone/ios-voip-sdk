@@ -59,13 +59,17 @@ never establishes audio. The unreleased profile replaces tones-v1 as specified b
 and complete-marker requirement are unchanged.
 
 The synthetic capture enters after Apple's hardware voice-processing node. For this Debug-only
-reference fixture, capture explicitly requests **WebRTC software** AEC and AGC, with NS disabled. The injected
-signal traverses AEC and AGC; synthetic tones do not qualify noise-suppression fidelity. Runtime requested/active state and the actual RTP codec (Opus,
-including RED encapsulation) are required in the receipt. The Node peer publishes raw PCM without
-a capture APM: `fromDevice` covers iOS capture AEC/AGC then Opus; `toDevice` covers peer Opus, iOS
-decoding and post-output. This does not claim a physical microphone or a Node capture APM test.
+reference fixture, capture explicitly requests **WebRTC software** AGC with AEC and NS disabled.
+There is no acoustic path from the speaker to the synthetic microphone; echo suppression can
+mistake near-end tones shared with the render signal for echo. Noise suppression can remove
+the non-speech tones too. Echo cancellation and noise suppression fidelity remain device and
+speech QA. Runtime requested/active processing state and the actual RTP codec (Opus, including
+RED encapsulation) are required in the receipt. The Node peer publishes raw PCM without a
+capture APM: `fromDevice` covers iOS software AGC then Opus; `toDevice` covers peer Opus, iOS
+decoding and post-output. The kit verifies audio flow each way, mute, hold and reconnect gates,
+and software timing; this does not claim physical microphone or Node capture APM coverage.
 
-CI runs the fixed `synthetic` configuration (AEC/AGC on, NS off) on one simulator.
+CI uses the fixed `synthetic` configuration (AGC on, AEC/NS off) on one simulator.
 Each result retains every slot's confidence and signed
 margin above 0.8, including the best rejected complete candidate when detection fails. The job
 summary lists all channels and slots; `media-result-synthetic.json` preserves full precision.
@@ -76,12 +80,15 @@ detection. Three-second native captures and the three-second far-end positive wi
 at any emission phase. A truncated emission may still detect its complete marker while failing
 this separate coverage gate.
 
-Elastic alignment is supplied by [#296](https://github.com/relayphone/ios-voip-sdk/pull/296).
+Elastic alignment is supplied by [#296](https://github.com/relayphone/ios-voip-sdk/pull/296)
+and complete-path selection by [#298](https://github.com/relayphone/ios-voip-sdk/pull/298).
 Measurements score each slot at the detector's chosen start and retain its sample offset,
 relative drift, confidence and margin. Tail coverage is measured after the last aligned slot,
 not after a fixed 720 ms grid. Rejected fixed-grid diagnostics are labelled and cannot count as
-accepted elastic evidence. All twelve slots still require confidence >=0.8; final drift stays
-within ±60 ms and local alignment within ±15 ms.
+accepted elastic evidence. All twelve slots still require confidence >=0.8; drift stays
+within ±60 ms at every slot and each transition step within ±15 ms. Equal expected tones
+retain equal drift. Selection prefers least total movement, then greatest confidence sum
+(ties within 1e-9), then earliest starts.
 
 Both sources precompute the byte-identical emission outside their capture/publish loops.
 Marker analysis runs in an owned Node worker with a 20-second deadline and bounded termination,
@@ -96,9 +103,10 @@ energy floor and the 0.8 complete-marker rule remain fixed. A failed matrix rema
 Duplex qualification remains incomplete; generator-only controls do not establish codec or
 audio-processing survival.
 
-## Current pipeline evidence
+## Historical pipeline evidence
 
-The fixed synthetic configuration uses AEC/AGC on and NS off. See
+The runs below used AEC/AGC on and NS off, before the complete-path detector and the
+current AGC-on, AEC/NS-off configuration. They do not qualify the current configuration. See
 [the shared test scope](media-testing.md#synthetic-capture-configuration).
 
 ### Startup diagnostics at 04c2c7da

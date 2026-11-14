@@ -123,12 +123,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       try await room.connect(url: fixture.url, token: fixture.token)
       let publication = try await room.localParticipant.setMicrophone(
         enabled: true,
-        captureOptions: AudioCaptureOptions(
-          echoCancellation: true,
-          autoGainControl: true,
-          noiseSuppression: false,
-          echoCancellationMode: .software, autoGainControlMode: .software,
-          noiseSuppressionMode: .software))
+        captureOptions: MarkerAudioEngine.syntheticCaptureOptions)
       localTrack = publication?.track as? LocalAudioTrack
       await localTrack?.set(reportStatistics: true)
       inactiveEngineStayedStopped =
@@ -196,7 +191,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             "agcActive": state.autoGainControl.software.isActive,
           ]
           let expected = [
-            "aec": true,
+            "aec": false,
             "ns": false,
             "agc": true,
           ]

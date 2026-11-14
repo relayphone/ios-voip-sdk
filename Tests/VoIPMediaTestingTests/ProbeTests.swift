@@ -4,11 +4,32 @@
   import Foundation
   import Testing
   import VoIPTesting
+  import LiveKit
 
   @testable import VoIPMediaTesting
 
   @Suite("Media observation evidence")
   struct ProbeTests {
+    @Test
+    func syntheticProcessingDoesNotChangeOrdinaryCaptureDefaults() {
+      let before = AudioCaptureOptions()
+      let synthetic = MarkerAudioEngine.syntheticCaptureOptions
+      #expect(!synthetic.echoCancellation)
+      #expect(!synthetic.noiseSuppression)
+      #expect(synthetic.autoGainControl)
+      #expect(synthetic.echoCancellationMode == .software)
+      #expect(synthetic.autoGainControlMode == .software)
+      #expect(synthetic.noiseSuppressionMode == .software)
+      let after = AudioCaptureOptions()
+      #expect(before == after)
+      #expect(after.echoCancellation)
+      #expect(after.noiseSuppression)
+      #expect(after.autoGainControl)
+      #expect(after.echoCancellationMode == .automatic)
+      #expect(after.autoGainControlMode == .automatic)
+      #expect(after.noiseSuppressionMode == .automatic)
+    }
+
     @Test
     func captureRetainsSilentInputClockAndReleasesOwnedNodes() throws {
       let engine = AVAudioEngine()

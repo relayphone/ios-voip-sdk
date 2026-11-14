@@ -49,16 +49,17 @@ the requested duration. These delivery bounds do not extend the receipt's phase 
 
 ## Synthetic capture configuration
 
-The media test kit keeps **AEC and AGC enabled and noise suppression disabled** for synthetic
-capture on both platforms: Debug iOS Simulator builds and Android `emulatorTest` builds only.
-The iOS fixture explicitly requests WebRTC software processing and verifies the requested and
-active AEC/AGC state, plus inactive NS, in its receipt. Production media configuration is unchanged.
+The media test kit keeps **AGC enabled, with AEC and noise suppression disabled** for
+synthetic capture on both platforms: Debug iOS Simulator and Android `emulatorTest` builds only.
+The iOS fixture explicitly requests software processing and verifies active AGC plus inactive
+AEC/NS, including their requested state, in its receipt. Production capture defaults are unchanged.
 
-The kit verifies audio in both directions, publication/output gates and timing. Synthetic tones
-are not speech and can be removed by noise suppression; this kit does not grade NS fidelity.
-Noise-suppression quality remains part of device and speech QA. A failure with NS disabled still
-requires per-slot confidence, margins and chosen timing evidence; AEC and AGC stay enabled.
-The complete-marker threshold and timing limits below remain unchanged.
+The kit verifies audio flow each way, mute, hold and reconnect gates, and software timing.
+Synthetic capture has no acoustic path from speaker to microphone, so echo cancellation has
+no echo to cancel and can suppress near-end tones shared with the far-end render. Noise
+suppression can remove non-speech tones too. Noise suppression and echo cancellation fidelity
+remain device and speech QA. Every slot's confidence, margin and chosen timing is still
+required, with unchanged complete-marker thresholds, deadlines and gates.
 
 ## Marker profile
 

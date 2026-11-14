@@ -26,6 +26,17 @@
     private let probe: MediaAudioProbe
     private let frequencies: [Double]
 
+    /// Processing for synthetic capture, which has no acoustic echo or microphone noise.
+    ///
+    /// Pass these options only for this simulator source. Ordinary LiveKit capture defaults
+    /// remain unchanged. Automatic gain control still exercises software processing.
+    public static var syntheticCaptureOptions: AudioCaptureOptions {
+      AudioCaptureOptions(
+        echoCancellation: false, autoGainControl: true, noiseSuppression: false,
+        echoCancellationMode: .software, autoGainControlMode: .software,
+        noiseSuppressionMode: .software)
+    }
+
     public var generatedSamples: Int64 { clock.sampleIndex.withLock { $0 } }
 
     public var next: (any AudioEngineObserver)? {
