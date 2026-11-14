@@ -19,6 +19,7 @@
       switch event.kind {
       case .firstPacketReceived: name = "sdk.firstPacketReceived"
       case .firstPacketSent: name = "sdk.firstPacketSent"
+      default: return nil
       }
       callID = event.callID.rawValue
       callUUID = deviceUUID(for: event.callID)

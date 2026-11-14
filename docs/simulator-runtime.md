@@ -437,6 +437,9 @@ of the target simulator in an `inspector-journey` artifact, retained for seven d
 `CallMedia.transportEvents()` returns typed `MediaTransportEvent` observations, with a `CallID`,
 `firstPacketReceived` or `firstPacketSent`, and a `SuspendingClock.Instant`. Existing media
 implementations compile unchanged and return an empty stream. Missing directions mean unknown.
+`MediaTransportEvent.Kind` is an extensible, hashable value type. New kinds may be added;
+consumers compare the static members they understand and use a fallback for other values
+(including a `default` branch when switching). The packet journal ignores kinds it does not know.
 Media implementations return an independent stream per subscriber, and emit each direction at
 most once per preparation. Subscribe before preparing media to observe its earliest packets.
 The SDK subscribes before attaching the calling framework and push source.

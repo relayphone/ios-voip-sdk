@@ -65,6 +65,22 @@ extension EngineTests {
 
 @Suite(.timeLimit(.minutes(1))) @MainActor
 struct MediaPacketSamplerTests {
+  @Test func packetKindsSupportValueComparisonAndConsumerFallback() {
+    let received = MediaTransportEvent.Kind.firstPacketReceived
+    let sent = MediaTransportEvent.Kind.firstPacketSent
+    #expect(received != sent)
+    #expect(Set([received, received, sent]).count == 2)
+    // A consumer can understand one kind and leave every other kind to its fallback.
+    func handles(_ kind: MediaTransportEvent.Kind) -> Bool {
+      switch kind {
+      case .firstPacketReceived: return true
+      default: return false
+      }
+    }
+    #expect(handles(received))
+    #expect(!handles(sent))
+  }
+
   @Test(arguments: [(Duration.zero, Duration.seconds(1)), (.seconds(1), .zero)])
   func invalidBoundsNeverSample(bounds: (Duration, Duration)) async {
     var count = 0

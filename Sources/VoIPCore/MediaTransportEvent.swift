@@ -3,16 +3,23 @@
 /// The timestamp is when media observed evidence, not when the packet arrived. Missing events
 /// mean unknown. Emit each direction at most once per preparation.
 public struct MediaTransportEvent: Sendable, Equatable {
-  /// The first packet direction that the transport could observe.
-  public enum Kind: Sendable {
+  /// The kind of transport observation.
+  ///
+  /// New kinds may be added. Compare the members your app understands and handle other
+  /// values with a fallback, such as a `default` branch in a switch.
+  public struct Kind: Hashable, Sendable {
+    private let value: UInt8
+
+    private init(_ value: UInt8) { self.value = value }
+
     /// An inbound RTP packet counter became greater than zero.
-    case firstPacketReceived
+    public static let firstPacketReceived = Self(0)
     /// An outbound RTP packet counter became greater than zero.
-    case firstPacketSent
+    public static let firstPacketSent = Self(1)
   }
   /// The call whose transport carried the packet.
   public let callID: CallID
-  /// The observed direction.
+  /// The kind of transport observation.
   public let kind: Kind
   /// The suspending monotonic observation time in this process.
   public let observedAt: SuspendingClock.Instant
