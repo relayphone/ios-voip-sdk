@@ -27,10 +27,13 @@
     /// Delivers a VoIP push to the app's PushKit registry, or keeps it until the app registers.
     ///
     /// - Returns: The push's identifier in the runtime's journal.
-    func push(_ fields: [String: PushPayload.Value], mustReport: Bool = true) async throws -> UUID {
+    func push(
+      _ fields: [String: PushPayload.Value], mustReport: Bool = true,
+      delivery: PushDeliveryFaults = .none
+    ) async throws -> UUID {
       guard
         case .push(let id) = try await send(
-          .push(PushPayload(fields: fields), mustReport: mustReport))
+          .push(PushPayload(fields: fields), mustReport: mustReport, delivery: delivery))
       else { throw JourneyError("The runtime didn't schedule the push") }
       return id
     }
@@ -96,6 +99,7 @@
   struct JournalEntry: Decodable {
     let event: String
     let pushID: String?
+    let requestID: String?
     /// Why the runtime recorded a diagnostic.
     let reason: String?
     /// The kind of a system action, such as `start`.
@@ -106,13 +110,14 @@
     let fulfilled: Bool?
 
     private enum CodingKeys: String, CodingKey {
-      case event, pushID, reason, kind, callUUID, fulfilled
+      case event, pushID, requestID, reason, kind, callUUID, fulfilled
     }
 
     init(from decoder: any Decoder) throws {
       let values = try decoder.container(keyedBy: CodingKeys.self)
       event = try values.decode(String.self, forKey: .event)
       pushID = try? values.decodeIfPresent(String.self, forKey: .pushID)
+      requestID = try? values.decodeIfPresent(String.self, forKey: .requestID)
       // Other events use the field for numeric codes.
       reason = try? values.decodeIfPresent(String.self, forKey: .reason)
       kind = try? values.decodeIfPresent(String.self, forKey: .kind)

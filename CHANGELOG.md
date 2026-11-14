@@ -7,6 +7,11 @@ Public API changes include migration guidance.
 
 ### Added
 
+- `cksim push` can delay, drop and duplicate deliveries with independent journal
+  correlations and reporting deadlines. A background-launched app now samples its
+  UIKit state after launch, so later required pushes use the background joined-call
+  budget. Push reporting profile evidence uses `measured` and `unverified`.
+
 - The simulator runtime's `ios-27.0` profile enforces fresh-UUID reporting for required
   VoIP pushes, using the iPhone 13 / iOS 27.0 and 27.1 reporting budgets. Missing, late
   and duplicate reports terminate the simulator app with a correlated journal reason.

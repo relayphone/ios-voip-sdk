@@ -170,7 +170,7 @@
   "pushReporting": {
     "foregroundOrLaunch": {
       "seconds": 4.4,
-      "verification": "verified",
+      "verification": "measured",
       "evidence": [
         "iPhone 13 / iOS 27.0 and 27.1: foreground or newly launched app; about 4.4 s from delivery to termination; report entry at 3.15 s survived, a report due at 5 s did not.",
         "Tests/Fixtures/LiveCommunicationKit/push/README.md"
@@ -178,7 +178,7 @@
     },
     "backgroundJoinedCall": {
       "seconds": 30,
-      "verification": "verified",
+      "verification": "measured",
       "evidence": [
         "iPhone 13 / iOS 27.0 and 27.1: background app with a joined call; a callEnded push re-reported against the live UUID terminated the process about 30 s after delivery.",
         "https://github.com/relayphone/ios-voip-sdk/pull/247"

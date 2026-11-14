@@ -126,6 +126,9 @@ with the runtime. `status` returns full call UUIDs for subsequent commands.
 
 ```sh
 cksim --bundle com.example.app push --payload-file invitation.json --must-report true
+cksim --bundle com.example.app push --payload-file invitation.json --must-report true --delay-ms 5000
+cksim --bundle com.example.app push --payload-file invitation.json --must-report true --duplicate 2 --spacing-ms 700
+cksim --bundle com.example.app push --payload-file invitation.json --must-report true --drop
 cksim --bundle com.example.app answer CALL_UUID
 cksim --bundle com.example.app hold CALL_UUID --held true
 cksim --bundle com.example.app hold-and-accept WAITING_UUID --active-call ACTIVE_UUID
@@ -143,6 +146,22 @@ end reports use the call's stored binding. Reports without thread-local push con
 including LiveCommunicationKit reports on its own queue and late reports after callback
 return, satisfy the oldest outstanding obligation. This FIFO attribution is unverified
 simulator policy when several pushes overlap. One new UUID satisfies at most one push.
+
+`push` accepts delivery faults for a running app. `--delay-ms` delays the first
+attempt from command acceptance; `--duplicate N` adds N copies of the same payload,
+and `--spacing-ms` sets the interval between attempts. Zero spacing keeps their
+submission order. Timings must be nonnegative, at most 100 copies may be added,
+and the entire schedule must fit within 120,000 ms. Spacing requires duplicates.
+`--drop` combines with delay and duplication: each attempt is journaled as
+`push.dropped` and never reaches PushKit, so it has no reporting deadline.
+
+The command returns immediately with the original `pushID`. Every attempt has a
+distinct `pushID` in `push.scheduled`, correlated to that command by `requestID`;
+the original retains the request ID. Each actual `push.received` starts its own
+reporting budget, including for delayed and duplicate deliveries. A report for
+one copy cannot satisfy another. Pending schedules are cancelled when the runtime
+stops. These flags cannot combine with `--launch`, whose one-shot cold-launch
+envelope is unchanged; launch the app before applying delivery faults.
 
 ### Push reporting enforcement
 

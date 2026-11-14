@@ -434,13 +434,36 @@
       @OptionGroup var options: GlobalOptions
       @Option var payloadFile: String
       @Option var mustReport: Truth
+      @Option(help: "Delay the first delivery by 0–120000 milliseconds.") var delayMs = 0
+      @Flag(help: "Journal each attempted delivery as dropped; never invoke PushKit.") var drop =
+        false
+      @Option(help: "Deliver the same payload this many additional times (0–100).") var duplicate =
+        0
+      @Option(help: "Milliseconds between deliveries; requires --duplicate.") var spacingMs = 0
       @Flag(help: "Stage a push and launch a stopped SDK app (no DYLD injection).")
       var launch = false
       @Option var runID: String?
       @Option var launchReceipt: String?
 
+      var delivery: PushDeliveryFaults {
+        get throws {
+          do {
+            return try PushDeliveryFaults(
+              delayMS: delayMs, drop: drop, duplicate: duplicate, spacingMS: spacingMs)
+          } catch {
+            throw ValidationError(
+              "Push timing must be 0–120000 ms, duplicates 0–100, spacing requires duplicates, and the total schedule must fit 120000 ms."
+            )
+          }
+        }
+      }
+
       func validate() throws {
+        _ = try delivery
         if launch {
+          guard try delivery == .none else {
+            throw ValidationError("Push delivery faults require a running app; launch it first.")
+          }
           guard let runID, (1...64).contains(runID.utf8.count),
             runID.utf8.allSatisfy({ isRunIDByte($0) }), launchReceipt != nil
           else {
@@ -462,7 +485,8 @@
           }
           let payload = try JSONDecoder().decode(
             PushPayload.self, from: Data(contentsOf: URL(filePath: payloadFile)))
-          try await options.control(.push(payload, mustReport: mustReport.value), command: "push")
+          try await options.control(
+            .push(payload, mustReport: mustReport.value, delivery: delivery), command: "push")
         }
       }
     }

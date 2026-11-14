@@ -4,6 +4,13 @@ import Testing
 @testable import CKSimRuntime
 
 struct PushReportingTests {
+  @Test func legacyVerificationVocabularyIsRefusedByTheDecoder() throws {
+    let rule = #"{"seconds":4.4,"verification":"verified","evidence":["test"]}"#
+    #expect(throws: (any Error).self) {
+      try JSONDecoder().decode(PushReportingProfile.Rule.self, from: Data(rule.utf8))
+    }
+  }
+
   private func check(_ result: Bool, sourceLocation: SourceLocation = #_sourceLocation) {
     #expect(result, sourceLocation: sourceLocation)
   }
@@ -12,10 +19,10 @@ struct PushReportingTests {
     let profile = try behaviorProfile().pushReporting
     for application in [PushReportingProfile.ApplicationState.foreground, .launching] {
       let rule = profile.rule(application: application, joinedCall: false)
-      #expect(rule.seconds == 4.4 && rule.verification == .verified)
+      #expect(rule.seconds == 4.4 && rule.verification == .measured)
     }
     let background = profile.rule(application: .background, joinedCall: true)
-    #expect(background.seconds == 30 && background.verification == .verified)
+    #expect(background.seconds == 30 && background.verification == .measured)
     for (application, joined) in [
       (PushReportingProfile.ApplicationState.background, false), (.foreground, true),
       (.unknown, false),

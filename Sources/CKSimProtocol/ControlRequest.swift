@@ -22,7 +22,7 @@ public struct ControlRequest: Codable, Equatable, Sendable {
     /// Apply a nonempty partial fault update; omitted settings retain their values.
     case faults([FaultChange])
     /// Schedule a push with explicit reporting intent and application data.
-    case push(PushPayload, mustReport: Bool)
+    case push(PushPayload, mustReport: Bool, delivery: PushDeliveryFaults = .none)
     /// Reset the selected provider when no runtime actions are pending.
     case reset
     /// Deliver a call control after validating current provider state.
@@ -222,7 +222,7 @@ public struct ControlRequest: Codable, Equatable, Sendable {
   public init(id: UUID, target: RuntimeIdentity, operation: Operation) throws {
     var normalized = operation
     switch operation {
-    case .push(let payload, _):
+    case .push(let payload, _, _):
       guard try JSONEncoder().encode(payload).count <= 5120 else {
         throw ValidationError.payloadTooLarge
       }
@@ -263,7 +263,7 @@ public struct ControlRequest: Codable, Equatable, Sendable {
     case id, runID, pid, bundleID, operation, schemaVersion, controlTransport
     case callUUID, activeCallUUID, heldCallUUID, groupWithCallUUID, applicationRequest, held, muted,
       digits, reason
-    case faults, payload, mustReport
+    case faults, payload, mustReport, delayMS, drop, duplicate, spacingMS
   }
 
   private struct AnyKey: CodingKey {
@@ -313,10 +313,15 @@ public struct ControlRequest: Codable, Equatable, Sendable {
           }
         })
     case "push":
-      allowed.formUnion([.payload, .mustReport])
+      allowed.formUnion([.payload, .mustReport, .delayMS, .drop, .duplicate, .spacingMS])
       operation = try .push(
         values.decode(PushPayload.self, forKey: .payload),
-        mustReport: values.decode(Bool.self, forKey: .mustReport))
+        mustReport: values.decode(Bool.self, forKey: .mustReport),
+        delivery: PushDeliveryFaults(
+          delayMS: values.contains(.delayMS) ? values.decode(Int.self, forKey: .delayMS) : 0,
+          drop: values.contains(.drop) ? values.decode(Bool.self, forKey: .drop) : false,
+          duplicate: values.contains(.duplicate) ? values.decode(Int.self, forKey: .duplicate) : 0,
+          spacingMS: values.contains(.spacingMS) ? values.decode(Int.self, forKey: .spacingMS) : 0))
     case "answer", "decline", "end":
       allowed.insert(.callUUID)
       let id = try uuid()
@@ -370,9 +375,15 @@ public struct ControlRequest: Codable, Equatable, Sendable {
     try Header(id: id, target: target, operationName: operation.name).encode(to: encoder)
     var values = encoder.container(keyedBy: Key.self)
     switch operation {
-    case .push(let payload, let mustReport):
+    case .push(let payload, let mustReport, let delivery):
       try values.encode(payload, forKey: .payload)
       try values.encode(mustReport, forKey: .mustReport)
+      if delivery != .none {
+        try values.encode(delivery.delayMS, forKey: .delayMS)
+        try values.encode(delivery.drop, forKey: .drop)
+        try values.encode(delivery.duplicate, forKey: .duplicate)
+        try values.encode(delivery.spacingMS, forKey: .spacingMS)
+      }
     case .faults(let changes):
       var faults = values.nestedContainer(keyedBy: FaultKey.self, forKey: .faults)
       for change in changes {
@@ -453,7 +464,10 @@ public struct ControlRequest: Codable, Equatable, Sendable {
             throw ValidationError.duplicateField(key)
           }
           let integer =
-            objects.count == 1 && (key == "pid" || !headerOnly && key == "schemaVersion")
+            objects.count == 1
+            && (key == "pid"
+              || !headerOnly
+                && ["schemaVersion", "delayMS", "duplicate", "spacingMS"].contains(key))
             || !headerOnly && objects.count == 2 && objects[1].name == "faults"
               && ["reportCallbackDelayMS", "incomingErrorCode"].contains(key)
           if integer {

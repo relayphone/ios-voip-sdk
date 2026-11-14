@@ -4,7 +4,7 @@
 
   struct PushReportingProfile: Decodable, Sendable {
     enum ApplicationState: String, Sendable { case launching, foreground, background, unknown }
-    enum Verification: String, Decodable, Sendable { case verified, unverified }
+    enum Verification: String, Decodable, Sendable { case measured, unverified }
     struct Rule: Decodable, Sendable {
       let seconds: Double
       let verification: Verification
@@ -25,8 +25,8 @@
     var valid: Bool {
       [foregroundOrLaunch, backgroundJoinedCall, fallback].allSatisfy {
         $0.seconds.isFinite && $0.seconds > 0 && !$0.evidence.isEmpty
-      } && foregroundOrLaunch.verification == .verified
-        && backgroundJoinedCall.verification == .verified && fallback.verification == .unverified
+      } && foregroundOrLaunch.verification == .measured
+        && backgroundJoinedCall.verification == .measured && fallback.verification == .unverified
     }
   }
 

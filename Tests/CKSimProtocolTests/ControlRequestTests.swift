@@ -3,6 +3,34 @@ import Foundation
 import Testing
 
 struct ControlRequestTests {
+  @Test func pushDeliveryControlsRoundTripWithoutTouchingThePayload() throws {
+    let request = try ControlRequest.decode(
+      wire(
+        #""operation":"push","payload":{"delayMS":9},"mustReport":true,"delayMS":5000,"drop":true,"duplicate":2,"spacingMS":1000"#
+      ))
+    #expect(
+      request.operation
+        == .push(
+          PushPayload(fields: ["delayMS": .integer(9)]),
+          mustReport: true,
+          delivery: try PushDeliveryFaults(delayMS: 5000, drop: true, duplicate: 2, spacingMS: 1000)
+        ))
+    #expect(try ControlRequest.decode(JSONEncoder().encode(request)) == request)
+  }
+
+  @Test(arguments: [
+    #""delayMS":-1"#, #""delayMS":120001"#, #""delayMS":1.0"#, #""delayMS":1e2"#,
+    #""drop":null"#, #""drop":1"#, #""duplicate":101"#, #""duplicate":-1"#,
+    #""duplicate":2.0"#, #""spacingMS":1"#, #""spacingMS":-1"#,
+    #""duplicate":2,"spacingMS":60001"#, #""delayMS":120000,"duplicate":1,"spacingMS":1"#,
+  ])
+  func malformedPushDeliveryControlsAreRefused(fields: String) {
+    #expect(throws: (any Error).self) {
+      try ControlRequest.decode(
+        wire(#""operation":"push","payload":{},"mustReport":true,"# + fields))
+    }
+  }
+
   private let id = UUID(uuidString: "A0000000-0000-4000-8000-000000000001")!
   private let identity = #""runID":"run_123","pid":123,"bundleID":"dev.example.app""#
 
