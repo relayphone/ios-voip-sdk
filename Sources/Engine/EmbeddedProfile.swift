@@ -28,7 +28,7 @@
           "livecommunicationkit": "complete"
         },
         "fulfilledPostEndUnmuteEvidence": {
-          "callkit": "Measured fulfilled post-end unmute still times out in 5.0\u20135.9 s.",
+          "callkit": "Measured fulfilled post-end unmute still times out in 5.0–5.9 s.",
           "livecommunicationkit": "Measured no timeout through 5.542 s after fulfilled post-end unmute; terminal settlement follows public fulfill/complete semantics, not a measured infinite observation."
         },
         "lckActionDeadlineSeconds": 30,
@@ -67,9 +67,9 @@
           "verification": "measured",
           "reference": "#85; iPhone 13 / iOS 27.0 (24A5355q); October 24, 2026",
           "source": "Tests/Fixtures/LiveCommunicationKit/multicall/README.md",
-          "timingInterpretation": "Representative runtime samples and aggregate medians, not minimum delays or guaranteed bounds. Join median 115 ms (9\u2013239 ms); audio gap median 213 ms (151\u2013404 ms without delayed constituents). Pause 110 ms and deactivation 120 ms are representative delivery-relative samples; generated End 91 ms is relative to unpause delivery.",
+          "timingInterpretation": "Representative runtime samples and aggregate medians, not minimum delays or guaranteed bounds. Join median 115 ms (9–239 ms); audio gap median 213 ms (151–404 ms without delayed constituents). Pause 110 ms and deactivation 120 ms are representative delivery-relative samples; generated End 91 ms is relative to unpause delivery.",
           "evidence": {
-            "systemComposite": "Constituents of 28 system waiting-call composites arrived within 0\u20133 ms. Accepted Join followed every constituent terminal settlement; Tests/Fixtures/LiveCommunicationKit/multicall/README.md; Tests/Fixtures/LiveCommunicationKit/multicall/ha-delay-pause.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ha-reverse.jsonl.",
+            "systemComposite": "Constituents of 28 system waiting-call composites arrived within 0–3 ms. Accepted Join followed every constituent terminal settlement; Tests/Fixtures/LiveCommunicationKit/multicall/README.md; Tests/Fixtures/LiveCommunicationKit/multicall/ha-delay-pause.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ha-reverse.jsonl.",
             "pauseBeforeFulfillment": "Pause state appeared about 110 ms after delivery while Pause remained unfulfilled for 2 s; Tests/Fixtures/LiveCommunicationKit/multicall/ha-delay-pause.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ha-pending-pause.jsonl.",
             "effectiveExpiry": "timeoutDate advertised 30 s; Pause/End timedOut near 5.3 s, Join near 64 s; Tests/Fixtures/LiveCommunicationKit/multicall/ha-pending-pause.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ea-pending-end.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ha-pending-join.jsonl.",
             "failedPause": "Failed Pause ended A and delivered cleanup End A; B joined; Tests/Fixtures/LiveCommunicationKit/multicall/ha-fail-pause.jsonl.",
@@ -78,7 +78,7 @@
             "cleanupEnd": "Cleanup End arrived after the conversation had left. Immediate fulfillment still produced timedOut about 5.2 s later; Tests/Fixtures/LiveCommunicationKit/multicall/ha-fail-pause.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ha-pending-join.jsonl.",
             "noAutomaticResume": "Ending B left A paused until the application acted; Tests/Fixtures/LiveCommunicationKit/multicall/hold-accept.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/ha-fail-join.jsonl.",
             "choices": "Hold & Accept required maximumConversationGroups >= 2 and a free group. Full groups offered End & Accept, Decline and End Held & Accept; merging did not free a group. End Held & Accept delivered Pause B, End A and Join C; Tests/Fixtures/LiveCommunicationKit/multicall/cap-1x1.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/cap-1x2.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/cap-2x2.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/third-end-held-accept.jsonl.",
-            "outgoingCapacity": "Outgoing Start at capacity returned com.apple.CallKit.error.requesttransaction 7 after 11\u2013206 ms; Tests/Fixtures/LiveCommunicationKit/multicall/cap-1x1.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/cap-1x2.jsonl.",
+            "outgoingCapacity": "Outgoing Start at capacity returned com.apple.CallKit.error.requesttransaction 7 after 11–206 ms; Tests/Fixtures/LiveCommunicationKit/multicall/cap-1x1.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/cap-1x2.jsonl.",
             "capabilities": "No capabilities, or removing pausing mid-call, gated neither waiting choices nor app Pause; Tests/Fixtures/LiveCommunicationKit/multicall/caps-none.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/caps-toggle.jsonl.",
             "mergeAndUnmerge": "App Merge/Unmerge were accepted and delivered without conversation state changes, including singleton Unmerge and Merge into a ringing target. LCK exposes no group membership; Tests/Fixtures/LiveCommunicationKit/multicall/merge-b-into-a.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/merge-a-into-b.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/unmerge-singleton.jsonl; Tests/Fixtures/LiveCommunicationKit/multicall/cap-2x1.jsonl.",
             "appResume": "With 2x1, the app unpaused A into joined state, then a distinct generated End B arrived 91 ms after unpause delivery. Shared transaction composition was not observable; Tests/Fixtures/LiveCommunicationKit/multicall/swap-app.jsonl.",
@@ -115,7 +115,7 @@
         },
         "pushReportDeadlineSeconds": 4.4,
         "pushReportDeadlineEvidence": {
-          "measured": "Approximate 4.4 s termination and PKPushRegistry crash attribution from the device pass writeup; raw late-5s trace ends alive at4.200 s without a kill event.",
+          "measured": "iPhone 13 / iOS 27.0 and 27.1: foreground or newly launched app terminated about 4.4 s after delivery. A report started at 3.15 s survived; one due at 5 s was terminated. The raw late-5s capture ends at 4.200 s; timing and SIGABRT attribution come from the device crash observation.",
           "reference": "Tests/Fixtures/LiveCommunicationKit/push/README.md",
           "captures": {
             "Tests/Fixtures/LiveCommunicationKit/push/2026-10-23-iphone13-ios27-late-report-3s.jsonl": "1ed65280b43ebe27ab8b52535bb7b1df15b301e4eb9ab6d690cc9c8690ef36cf",
@@ -173,6 +173,42 @@
             "Tests/Fixtures/LiveCommunicationKit/multicall/filter-block-check.jsonl": "b41172c83eea3febb80c8d0f1172348fb4ad399aadda09a9342b2c4ed8c91828"
           },
           "scope": "The blocked number reported successfully and rang. Code 4 is not produced by iOS 27.0 for LCK in these measurements; runtime code 4 is an explicit injectable fault only."
+        },
+        "pushReporting": {
+          "foregroundOrLaunch": {
+            "seconds": 4.4,
+            "verification": "verified",
+            "evidence": [
+              "iPhone 13 / iOS 27.0 and 27.1: foreground or newly launched app; about 4.4 s from delivery to termination; report entry at 3.15 s survived, a report due at 5 s did not.",
+              "Tests/Fixtures/LiveCommunicationKit/push/README.md"
+            ]
+          },
+          "backgroundJoinedCall": {
+            "seconds": 30,
+            "verification": "verified",
+            "evidence": [
+              "iPhone 13 / iOS 27.0 and 27.1: background app with a joined call; a callEnded push re-reported against the live UUID terminated the process about 30 s after delivery.",
+              "https://github.com/relayphone/ios-voip-sdk/pull/247"
+            ],
+            "scope": "Measured for callEnded re-reported against the live call. Applying this budget to other required pushes in the same background/joined context is unverified simulator policy; payloads remain opaque."
+          },
+          "fallback": {
+            "seconds": 4.4,
+            "verification": "unverified",
+            "evidence": [
+              "Simulator policy: reuse the foreground/launch budget for background without a joined call, foreground with a call when reporting is explicitly required, and unknown activity. These required-push timings were not measured."
+            ]
+          },
+          "obligation": {
+            "legacy": "Always required.",
+            "metadata": "Required exactly when mustReport is true. iPhone 13 / iOS 27.0 and 27.1: foreground with a call, callEnded did not require a report and did not terminate.",
+            "qualification": "A report entered under a new incoming-call UUID satisfies one delivery, including a filtered report. Re-reporting an existing UUID does not satisfy it (#247).",
+            "unverified": [
+              "FIFO attribution of reports entered without thread-local push context when multiple obligations overlap.",
+              "Reusing an incoming UUID after that call has ended is rejected as a qualifying report for this process.",
+              "Metadata mustReport false is always honored; contradictory background/filter delivery observed on iOS 27.1 is outside this profile rule."
+            ]
+          }
         }
       }
       """#

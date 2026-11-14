@@ -3,7 +3,9 @@
 // `cksim`, as a developer without the SDK would.
 //
 // Usage: node tools/runtime-smoke.ts <runtime package> [--simulator <UUID>]
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -17,6 +19,89 @@ interface Call {
   connected: boolean;
   ringing: boolean;
   ended: boolean;
+}
+
+interface PushEvent {
+  event: string;
+  t_ms: number;
+  pushID?: string;
+  api?: string;
+  mustReport?: boolean;
+  reason?: string;
+  signal?: number;
+  seconds?: number;
+  qualifyingReport?: boolean;
+}
+
+/** Checks reporting enforcement in a disposable app process, never in the test runner. */
+async function reportingEnforcement(packagePath: string, simulator: string, work: string): Promise<void> {
+  const channel = join(run('xcrun', ['simctl', 'get_app_container', simulator, bundle, 'data']),
+    'Documents/.callkit-simulator');
+  const cksim = (...args: string[]) => run(join(packagePath, 'cksim'),
+    ['--simulator', simulator, '--bundle', bundle, ...args], { timeout: 120 });
+  const payload = join(work, 'reporting-push.json');
+  const cases = [
+    { name: 'missing legacy report', metadata: false, required: false, report: 'skip', dies: true },
+    { name: 'missing metadata report', metadata: true, required: true, report: 'skip', dies: true },
+    { name: 'report at 3.15 seconds', metadata: true, required: true, delayMS: 3150, dies: false },
+    { name: 'report due at 5 seconds', metadata: true, required: true, delayMS: 5000, dies: true },
+    { name: 'existing UUID report', metadata: true, required: true, duplicate: true, dies: true },
+    { name: 'optional push with a live call', metadata: true, required: false, report: 'skip', withCall: true, dies: false },
+  ];
+  for (const scenario of cases) {
+    launchToleratingASlowSimulator(() => run(join(packagePath, 'cksim'),
+      ['--simulator', simulator, '--bundle', bundle, 'launch'], {
+        timeout: 120, environment: {
+          ...process.env, SIMCTL_CHILD_CKSIM_SMOKE_METADATA: scenario.metadata ? '1' : '0',
+        },
+      }));
+    cksim('status');
+    const session = JSON.parse(readFileSync(join(channel, 'session.json'), 'utf8')) as { runID: string; pid: number };
+    const journal = join(channel, session.runID, 'events.jsonl');
+    const entries = (): PushEvent[] => readFileSync(journal, 'utf8').split('\n').slice(0, -1)
+      .map(line => JSON.parse(line) as PushEvent);
+    const running = () => {
+      try { process.kill(session.pid, 0); return true; } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+        throw error;
+      }
+    };
+    const callUUID = randomUUID();
+    if (scenario.duplicate || scenario.withCall) {
+      writeFileSync(payload, JSON.stringify({ callUUID }));
+      cksim('push', '--payload-file', payload, '--must-report', 'true');
+      await until('the first call', 10, () => {
+        const calls = JSON.parse(cksim('status')).result.calls as Call[];
+        return calls.some(call => call.uuid.toLowerCase() === callUUID) ? true : undefined;
+      });
+    }
+    writeFileSync(payload, JSON.stringify({ callUUID, report: scenario.report, delayMS: scenario.delayMS }));
+    const push = JSON.parse(cksim('push', '--payload-file', payload,
+      '--must-report', String(scenario.required))).result.pushID as string;
+    const received = await until('push delivery', 10, () =>
+      entries().find(row => row.event === 'push.received' && row.pushID === push));
+    assert.equal(received.api, scenario.metadata ? 'metadata' : 'legacy', scenario.name);
+    assert.equal(received.mustReport, scenario.metadata ? scenario.required : true, scenario.name);
+    if (scenario.dies) {
+      const termination = await until(`${scenario.name} to terminate the process`, 9, () => {
+        const row = entries().find(row => row.event === 'runtime.processTerminated' && row.pushID === push);
+        return row && !running() ? row : undefined;
+      });
+      assert.equal(termination.reason, 'required-new-call-report-missing');
+      assert.equal(termination.signal, 6); // SIGABRT, as in the iPhone 13 capture.
+      const elapsed = termination.t_ms - received.t_ms;
+      assert.ok(elapsed >= 4399 && elapsed <= 6400, `${scenario.name}: ${elapsed} ms`);
+      assert.ok(!entries().some(row => row.event === 'push.reportSatisfied' && row.pushID === push));
+    } else {
+      await sleep(4700);
+      assert.ok(running(), scenario.name);
+      cksim('status'); // The same process must still serve controls after the reporting deadline.
+      const rows = entries().filter(row => row.pushID === push);
+      assert.ok(!rows.some(row => row.event === 'runtime.processTerminated'), scenario.name);
+      assert.equal(rows.some(row => row.event === 'push.reportSatisfied'), scenario.required);
+      if (!scenario.required) assert.ok(!rows.some(row => row.event === 'push.reportDeadline'));
+    }
+  }
 }
 
 /** Waits until the check returns a value, retrying a failed check until the deadline. */
@@ -94,8 +179,12 @@ export async function smoke(packagePath: string, requestedSimulator?: string): P
     const expected = ['runtime.installed', 'push.received', 'report.incoming', 'action.settled', 'audio.activated'];
     const missing = expected.filter(name => !events.includes(name));
     if (missing.length > 0) throw new Error(`The journal is missing ${missing.join(', ')}`);
+    await reportingEnforcement(packagePath, simulator, work);
     return events;
   } finally {
+    if (requestedSimulator) {
+      try { run('xcrun', ['simctl', 'terminate', requestedSimulator, bundle], { timeout: 60 }); } catch { /* Already terminated. */ }
+    }
     if (created) {
       try { run('xcrun', ['simctl', 'shutdown', created], { timeout: 120 }); } catch { /* Already shut down. */ }
       run('xcrun', ['simctl', 'delete', created], { timeout: 120 });

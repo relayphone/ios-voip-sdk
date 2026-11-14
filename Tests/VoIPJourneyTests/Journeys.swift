@@ -87,7 +87,7 @@
       app.expectNoMoreEvents()
     }
 
-    @Test func endedPushForAConnectedCallIsReportedWithAThrowawayCall() async throws {
+    @Test func repeatedAndEndedPushesForAConnectedCallSurviveReportingEnforcement() async throws {
       let app = try await App()
       defer { app.stop() }
       let id = newCallID("connected")
@@ -98,13 +98,23 @@
       await app.client.receive(.connected, for: id, eventID: EventID(rawValue: "connected-\(id)"))
       try await app.until("the call to connect") { app.call(id)?.status == .connected }
 
+      let repeated = try await app.system.pushIncomingCall(id)
+      try await app.expectPushesFinished([invite, repeated])
+      try await app.expectReportedWithAThrowawayCall(repeated, notAs: id)
+      #expect(app.call(id)?.status == .connected)
+      #expect(await app.media.records.map(\.kind) == [.prepare, .activate])
+      app.expectNoMoreEvents()
+
       // The push must be reported, as in the background, although it brings no call to present.
       let ended = try await app.system.pushCallEnded(id, reason: "remoteEnded")
       try await app.expect([.ended(id, .endedRemotely), .audioDeactivated])
       try await app.until("the system to end the calls") { try await app.system.calls().isEmpty }
       #expect(await app.media.records.map(\.kind) == [.prepare, .activate, .deactivate])
-      try await app.expectPushesFinished([invite, ended])
+      try await app.expectPushesFinished([invite, repeated, ended])
       try await app.expectReportedWithAThrowawayCall(ended, notAs: id)
+      // Both measured budgets have passed; the same process still answers its mailbox.
+      try await Task.sleep(for: .seconds(31))
+      #expect(try await app.system.calls().isEmpty)
       app.expectNoMoreEvents()
     }
 
