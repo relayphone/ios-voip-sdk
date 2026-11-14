@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 /** SDK targets compiled by the package's optional CocoaPods subspecs. */
 export const sdkTargets = [
   'VoIPCore', 'VoIPAudio', 'VoIPLiveCommunicationKit', 'VoIPPushKit', 'VoIPPushDelivery',
-  'VoIPNotifications', 'VoIPLiveActivity', 'VoIPFocus', 'VoIPSimulator',
+  'VoIPNotifications', 'VoIPLiveActivity', 'VoIPFocus', 'VoIPSimulator', 'VoIPMediaTesting',
   'CKSimProtocol', 'Engine', 'Interposition',
 ] as const;
 

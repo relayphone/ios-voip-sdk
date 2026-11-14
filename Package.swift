@@ -28,10 +28,13 @@ let package = Package(
     .library(name: "VoIPNotifications", targets: ["VoIPNotifications"]),
     .library(name: "VoIPSimulator", targets: ["VoIPSimulator"]),
     .library(name: "VoIPTesting", targets: ["VoIPTesting"]),
+    .library(name: "VoIPMediaTesting", targets: ["VoIPMediaTesting"]),
   ],
   dependencies: [
     // For the `cksim` tool only.
-    .package(url: "https://github.com/apple/swift-argument-parser", from: "1.7.0")
+    .package(url: "https://github.com/apple/swift-argument-parser", from: "1.7.0"),
+    // Linked only by the optional media-testing product.
+    .package(url: "https://github.com/livekit/client-sdk-swift", exact: "2.19.0"),
   ],
   targets: [
     .target(name: "CKSimProtocol", swiftSettings: strictSwift),
@@ -74,6 +77,11 @@ let package = Package(
       swiftSettings: strictSwift
     ),
     .target(name: "VoIPCore", swiftSettings: strictSwift),
+    .target(
+      name: "VoIPMediaTesting",
+      dependencies: [
+        .product(name: "LiveKit", package: "client-sdk-swift", condition: .when(platforms: [.iOS]))
+      ], swiftSettings: strictSwift),
     .target(name: "VoIPAudio", dependencies: ["VoIPCore"], swiftSettings: strictSwift),
     .target(
       name: "VoIPConversationsMapping", dependencies: ["VoIPCore", "VoIPAudio"],
@@ -96,6 +104,9 @@ let package = Package(
       swiftSettings: strictSwift),
     .testTarget(
       name: "VoIPCoreTests", dependencies: ["VoIPCore", "VoIPTesting"], swiftSettings: strictSwift),
+    .testTarget(
+      name: "VoIPMediaTestingTests", dependencies: ["VoIPMediaTesting", "VoIPTesting"],
+      swiftSettings: strictSwift),
     .testTarget(
       name: "VoIPAudioTests", dependencies: ["VoIPAudio", "VoIPCore", "VoIPTesting"],
       swiftSettings: strictSwift),

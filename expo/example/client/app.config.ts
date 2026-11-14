@@ -12,6 +12,7 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: BUNDLE_ID,
+    infoPlist: { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } },
   },
   plugins: [
     [
@@ -25,12 +26,20 @@ const config: ExpoConfig = {
     [
       "expo-build-properties",
       {
-        ios: { deploymentTarget: "26.0", enableSceneSupport: true },
+        ios: {
+          deploymentTarget: "26.0", enableSceneSupport: true,
+          extraPods: [
+            { name: "LiveKitClient", git: "https://github.com/livekit/client-sdk-swift", tag: "2.19.0" },
+            { name: "LiveKitWebRTC", podspec: "https://raw.githubusercontent.com/livekit/webrtc-xcframework/150.7871.04/LiveKitWebRTC.podspec" },
+            { name: "LiveKitFFI", git: "https://github.com/livekit/livekit-ffi-xcframework", tag: "0.13.1" },
+          ],
+        },
       },
     ],
     [
       "@relayphone/ios-voip-sdk",
       {
+        mediaAdapter: "none",
         sounds: ["./assets/sounds/ringtone.wav"],
         defaultRingtoneIos: "ringtone.wav",
         iconTemplateIos: "./assets/call-icon.png",

@@ -145,3 +145,15 @@ export function detectMarker(pcm: Float32Array, sampleRate: number, marker: Medi
   }
   return null;
 }
+
+/** Internal diagnostic companion: score the selected elastic starts, or a labelled fixed-grid candidate. */
+export function markerSlotConfidences(pcm: Float32Array, sampleRate: number, marker: MediaMarker,
+  offset: number, slotStarts?: readonly number[]): readonly number[] {
+  validRate(sampleRate); validMarker(marker);
+  const count = sampleRate / 50;
+  const starts = slotStarts ?? marker.frequencies.map((_, slot) => offset + slot * count * 3);
+  if (!Number.isSafeInteger(offset) || offset < 0 || starts.length !== marker.frequencies.length ||
+      starts[0] !== offset || starts.some(start => !Number.isSafeInteger(start) || start < 0 || start + count * 3 > pcm.length))
+    throw new MediaTestError("invalid_arguments", "Full aligned slot windows are required");
+  return marker.frequencies.map((frequency, slot) => toneConfidence(pcm, starts[slot]! + count, count, frequency, sampleRate));
+}
