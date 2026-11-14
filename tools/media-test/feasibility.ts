@@ -12,7 +12,7 @@ import { createMarker, emissionSamples } from '../../expo/src/testing/marker.ts'
 import { markerReport, measureMarker, type PCMCapture } from './marker-evidence.ts';
 import { command, deadline, stopChild, unusedPort } from './fixture-runtime.ts';
 import { measureMarkerAsync } from './measure-marker.ts';
-import { monitorReceiver } from './peer-window.ts';
+import { monitorReceiver, ReceiverObservationError } from './peer-window.ts';
 
 const [simulator, app, binary, output] = process.argv.slice(2);
 const processing = "synthetic";
@@ -67,29 +67,43 @@ const source = new AudioSource(48_000, 1, 100);
 let received: number[] = [];
 let uplinkEvidence: ReturnType<typeof measureMarker> | null = null;
 let uplinkCapture: PCMCapture | null = null;
-const controls = { leakControlCaught: false, publicationSilent: false };
+type ControlStep = 'request' | 'drain' | 'window-1' | 'window-2' | 'window-3' | 'marker-analysis' | 'marker-gate' | 'silence-gate';
+const controls: { leakControlCaught: boolean; publicationSilent: boolean;
+  failure?: { phase: ControlStep; reason: ReceiverObservationError['reason'] | 'control-failed'; health?: ReceiverObservationError['health']; gapMs?: number } } =
+  { leakControlCaught: false, publicationSilent: false };
 const control = createServer(async (request, response) => {
+  let controlPhase: ControlStep = 'request';
+  const step = <T>(name: ControlStep, operation: () => Promise<T>) => {
+    controlPhase = name;
+    return phase(`control.${request.url === '/muted' ? 'muted' : 'leak-control'}.${name}`, operation);
+  };
   try {
     assert.ok(['/leak-control', '/muted'].includes(request.url ?? ''));
     // Exclude queued pre-mute frames, then retain an entire observation window.
-    await delay(500); receivedSamples = 0; energy = 0;
+    await step('drain', () => delay(500)); receivedSamples = 0; energy = 0;
     if (request.url === "/leak-control") received = [];
-    await monitorReceiver(() => ({ connected: peer.connectionState === ConnectionState.CONN_CONNECTED,
+    const observe = () => monitorReceiver(() => ({ connected: peer.connectionState === ConnectionState.CONN_CONNECTED,
       readerLive: readerLive && !readerFailed, trackAvailable }));
+    await step('window-1', observe);
     const rms = receivedSamples ? Math.sqrt(energy / receivedSamples) : 0;
     if (request.url === '/leak-control') {
       // Three seconds cover an arbitrary emission phase, allowed drift and the complete post-roll.
-      for (let window = 0; window < 2; window++) {
-        await monitorReceiver(() => ({ connected: peer.connectionState === ConnectionState.CONN_CONNECTED,
-          readerLive: readerLive && !readerFailed, trackAvailable }));
+      for (const window of ['window-2', 'window-3'] as const) {
+        await step(window, observe);
       }
       uplinkCapture = { sampleRate: 48_000, channels: [received.slice()], formatChanged: false };
-      uplinkEvidence = await measureMarkerAsync(uplinkCapture, uplink);
+      uplinkEvidence = await step('marker-analysis', () => measureMarkerAsync(uplinkCapture!, uplink));
+      controlPhase = 'marker-gate';
       assert.ok(uplinkEvidence.complete && uplinkEvidence.postRollObserved, 'Complete unmuted tones-v2 marker and post-roll were not received');
       controls.leakControlCaught = true;
-    } else { assert.ok(rms < 0.001, 'Muted publication leaked PCM'); controls.publicationSilent = true; }
+    } else { controlPhase = 'silence-gate'; assert.ok(rms < 0.001, 'Muted publication leaked PCM'); controls.publicationSilent = true; }
     response.end('ok');
-  } catch { response.statusCode = 500; response.end('failed'); }
+  } catch (error) {
+    controls.failure = { phase: controlPhase, reason: error instanceof ReceiverObservationError ? error.reason : 'control-failed',
+      ...(error instanceof ReceiverObservationError ? { health: error.health, gapMs: error.gapMs } : {}) };
+    console.log(JSON.stringify({ kind: 'control-failure', ...controls.failure }));
+    response.statusCode = 500; response.end('failed');
+  }
 });
 let publish: Promise<void> | undefined;
 try {

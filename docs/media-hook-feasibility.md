@@ -238,3 +238,83 @@ captures begin again at audio activation, excluding pre-activation decoder buffe
 cleanup, simulator and fixture operations have hard deadlines. The emission amendment adds the specified pre/post-roll to both sources. No marker waveform,
 processing flag, energy floor or confidence threshold is changed. The receipts additionally
 report generated capture samples and receiver sample/liveness counts for diagnosis.
+
+## Duplex measurements at 8a0ecbff
+
+[CI run](https://github.com/relayphone/ios-voip-sdk/actions/runs/43553954112) failed at publicationGate. All three PCM observations passed complete marker detection and post-roll coverage. AEC/AGC were requested and active, NS requested off and inactive, and both directions used Opus. The source generated 317952 samples. The final receiver was connected with a live reader, 494400 samples and RMS 0.170526.
+
+The positive control did not retain marker-analysis evidence: the stored marker evidence was computed afterward from retained PCM. Publication mute and teardown remain unqualified. Earlier control errors were discarded, so the exact observer failure is unknown. The helper now retains the failed control step, observer-health booleans and scheduling-gap duration. It logs each drain, observation window and marker-analysis phase. Gates and deadlines are unchanged.
+
+Startup phase measurements: terminate failed after 22.879 s; install 17.293 s; microphone permission 5.135 s; container lookup 0.996 s; server ready 1.338 s; peer connect 2.908 s; publish 0.021 s; launch 1.979 s; native result wait 10.374 s. Module startup completed at 04:05:04 UTC, and the native result was available about 64.218 s later.
+
+### Uplink / far end
+
+Complete marker: true.
+
+Channel 0; minimum confidence 0.8525597533954122; post-roll covered: true.
+
+
+Alignment: elastic; final drift 12 ms.
+
+| Slot | Hz | Start sample | Drift ms | Confidence | Margin above 0.8 |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 650 | 21552 | 0 | 0.950849 | 0.150849 |
+| 1 | 950 | 25152 | 15 | 0.918116 | 0.118116 |
+| 2 | 1350 | 28608 | 27 | 0.993980 | 0.193980 |
+| 3 | 1850 | 31728 | 32 | 0.968169 | 0.168169 |
+| 4 | 950 | 34848 | 37 | 0.935883 | 0.135883 |
+| 5 | 650 | 37728 | 37 | 0.852560 | 0.052560 |
+| 6 | 950 | 40608 | 37 | 0.902662 | 0.102662 |
+| 7 | 950 | 42768 | 22 | 0.991509 | 0.191509 |
+| 8 | 1850 | 46224 | 34 | 0.999257 | 0.199257 |
+| 9 | 1850 | 48960 | 31 | 0.999846 | 0.199846 |
+| 10 | 950 | 51648 | 27 | 0.991530 | 0.191530 |
+| 11 | 1350 | 53808 | 12 | 0.970536 | 0.170536 |
+
+### Downlink / decoded
+
+Complete marker: true.
+
+Channel 0; minimum confidence 0.9998103846102763; post-roll covered: true.
+
+
+Alignment: elastic; final drift -45 ms.
+
+| Slot | Hz | Start sample | Drift ms | Confidence | Margin above 0.8 |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 650 | 48480 | 0 | 0.999997 | 0.199997 |
+| 1 | 950 | 50736 | -13 | 0.999995 | 0.199995 |
+| 2 | 1350 | 53280 | -20 | 0.999959 | 0.199959 |
+| 3 | 1850 | 56400 | -15 | 0.999989 | 0.199989 |
+| 4 | 650 | 59856 | -3 | 0.999993 | 0.199993 |
+| 5 | 950 | 62544 | -7 | 0.999810 | 0.199810 |
+| 6 | 1850 | 64704 | -22 | 0.999986 | 0.199986 |
+| 7 | 650 | 67392 | -26 | 0.999996 | 0.199996 |
+| 8 | 650 | 69744 | -37 | 0.999993 | 0.199993 |
+| 9 | 650 | 72288 | -44 | 0.999991 | 0.199991 |
+| 10 | 1850 | 75264 | -42 | 0.999988 | 0.199988 |
+| 11 | 650 | 78000 | -45 | 0.999994 | 0.199994 |
+
+### Downlink / output
+
+Complete marker: true.
+
+Channel 0; minimum confidence 0.9998074187128735; post-roll covered: true.
+
+
+Alignment: elastic; final drift -45 ms.
+
+| Slot | Hz | Start sample | Drift ms | Confidence | Margin above 0.8 |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 650 | 48528 | 0 | 0.999997 | 0.199997 |
+| 1 | 950 | 50784 | -13 | 0.999995 | 0.199995 |
+| 2 | 1350 | 53328 | -20 | 0.999958 | 0.199958 |
+| 3 | 1850 | 56928 | -5 | 0.999989 | 0.199989 |
+| 4 | 650 | 59904 | -3 | 0.999993 | 0.199993 |
+| 5 | 950 | 62592 | -7 | 0.999807 | 0.199807 |
+| 6 | 1850 | 64752 | -22 | 0.999986 | 0.199986 |
+| 7 | 650 | 67488 | -25 | 0.999996 | 0.199996 |
+| 8 | 650 | 70416 | -24 | 0.999993 | 0.199993 |
+| 9 | 650 | 72768 | -35 | 0.999986 | 0.199986 |
+| 10 | 1850 | 75264 | -43 | 0.999988 | 0.199988 |
+| 11 | 650 | 78048 | -45 | 0.999994 | 0.199994 |
