@@ -1,0 +1,88 @@
+name: Media hook feasibility
+on:
+  pull_request:
+    paths: ['Sources/VoIPMediaTesting/**', 'Tests/VoIPMediaTestingTests/**', 'tools/media-test/**', 'expo/example/client/**', 'expo/ios/**', 'Package.*', '.github/workflows/media-feasibility.yml']
+permissions:
+  contents: read
+concurrency:
+  group: media-feasibility-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  duplex:
+    runs-on: xcode-27
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/setup
+      - name: Compile excluded configurations without LiveKit
+        run: |
+          xcrun --sdk iphoneos swiftc -DDEBUG -target arm64-apple-ios26.0 -parse-as-library \
+            -emit-module -module-name VoIPMediaTesting -emit-module-path "$RUNNER_TEMP/excluded-device.swiftmodule" Sources/VoIPMediaTesting/*.swift
+          xcrun --sdk iphonesimulator swiftc -target arm64-apple-ios26.0-simulator -parse-as-library \
+            -emit-module -module-name VoIPMediaTesting -emit-module-path "$RUNNER_TEMP/excluded-release.swiftmodule" Sources/VoIPMediaTesting/*.swift
+      - name: Build the bundled native-media example
+        run: |
+          npm ci --prefix expo --ignore-scripts --no-audit --no-fund
+          npm run build --prefix expo
+          npm run sync:sources --prefix expo
+          cd expo/example/client
+          npm install --no-audit --no-fund
+          npm run prebuild -- --no-install
+          cd ios
+          pod install
+          node "$GITHUB_WORKSPACE/tools/expo-journey-bundle.ts" "$PWD"
+          perl -e 'alarm 900; exec @ARGV' xcodebuild -workspace VoIPExample.xcworkspace -scheme VoIPExample -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/media-build" \
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build > "$RUNNER_TEMP/build.log" 2>&1
+      - name: Prepare the pinned peer and local server
+        run: |
+          npm ci --prefix tools/media-test --no-audit --no-fund
+          node --test tools/media-test/*.test.ts
+          node expo/node_modules/typescript/bin/tsc --noEmit --strict --target es2024 --module nodenext \
+            --moduleResolution nodenext --types node --typeRoots ./expo/node_modules/@types \
+            --skipLibCheck --allowImportingTsExtensions tools/media-test/*.ts
+          # Upstream publishes no macOS archive. Use the compatible, immutable Homebrew bottle.
+          # Formula: Homebrew/homebrew-core@4583624f89284747817e229845754c7aee8227db (arm64_sequoia).
+          test "$(uname -m)" = arm64
+          perl -e 'alarm 120; exec @ARGV' node --input-type=module <<'JS'
+          import { createHash } from 'node:crypto';
+          import { writeFileSync } from 'node:fs';
+          const digest = '1268330c7264fcc1626f673f5abb8cb1a1691344ac171f1941014c45fe4da214';
+          const auth = await fetch('https://ghcr.io/token?service=ghcr.io&scope=repository:homebrew/core/livekit:pull');
+          if (!auth.ok) throw new Error(`Registry authentication: ${auth.status}`);
+          const { token } = await auth.json();
+          const response = await fetch(`https://ghcr.io/v2/homebrew/core/livekit/blobs/sha256:${digest}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!response.ok) throw new Error(`Server download: ${response.status}`);
+          const archive = Buffer.from(await response.arrayBuffer());
+          if (createHash('sha256').update(archive).digest('hex') !== digest) throw new Error('Server checksum mismatch');
+          writeFileSync(`${process.env.RUNNER_TEMP}/server.tgz`, archive);
+          JS
+          tar -xzf "$RUNNER_TEMP/server.tgz" -C "$RUNNER_TEMP" --strip-components=3 livekit/1.13.11/bin/livekit-server
+          "$RUNNER_TEMP/livekit-server" --version
+      - name: Check hooks on one simulator
+        run: |
+          id=$(perl -e 'alarm 120; exec @ARGV' xcrun simctl create media-feasibility com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "$id" > "$RUNNER_TEMP/media-simulator"
+          perl -e 'alarm 120; exec @ARGV' xcrun simctl boot "$id"
+          perl -e 'alarm 300; exec @ARGV' xcrun simctl bootstatus "$id" -b
+          perl -e 'alarm 300; exec @ARGV' node tools/media-test/feasibility.ts "$id" \
+            "$RUNNER_TEMP/media-build/Build/Products/Debug-iphonesimulator/VoIPExample.app" \
+            "$RUNNER_TEMP/livekit-server" "$RUNNER_TEMP/media-result-synthetic.json"
+      - name: Clean up
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/media-simulator" ]; then
+            id=$(cat "$RUNNER_TEMP/media-simulator")
+            perl -e 'alarm 120; exec @ARGV' xcrun simctl shutdown "$id" || true
+            perl -e 'alarm 120; exec @ARGV' xcrun simctl delete "$id"
+          fi
+          rm -rf "$RUNNER_TEMP/media-build"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: media-feasibility
+          path: |
+            ${{ runner.temp }}/media-result-*.json
+            ${{ runner.temp }}/build.log

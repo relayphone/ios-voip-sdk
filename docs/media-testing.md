@@ -47,6 +47,21 @@ producer's `passed` flag. Assertions are serialized; `close` cancels reads and i
 Open/phase acknowledgements and cleanup have 3-second delivery bounds; read waits are bounded by
 the requested duration. These delivery bounds do not extend the receipt's phase deadline.
 
+## Synthetic capture configuration
+
+The media test kit keeps **AEC and AGC enabled and noise suppression disabled** for synthetic
+capture on both platforms: Debug iOS Simulator builds and Android `emulatorTest` builds only.
+The iOS fixture explicitly requests WebRTC software processing and verifies the requested and
+active AEC/AGC state, plus inactive NS, in its receipt. Production media configuration is unchanged.
+
+The kit verifies audio in both directions, publication/output gates and timing. Synthetic tones
+are not speech and can be removed by noise suppression; this kit does not grade NS fidelity.
+Noise-suppression quality remains part of device and speech QA. A failure with NS disabled still
+requires per-slot confidence, margins and chosen timing evidence; AEC and AGC stay enabled.
+The complete-marker threshold and timing limits below remain unchanged.
+
+## Marker profile
+
 `createMarker`, `markerSamples` and `detectMarker` implement **`tones-v2`**, replacing the
 unreleased `tones-v1`. Four sync slots (650/950/1350/1850 Hz) precede eight identity slots:
 the low 16 bits of FNV-1a 32 over the UTF-8 ID, read two bits at a time, low bits first, mapped

@@ -80,6 +80,12 @@ specification = Pod::Spec.new do |s|
     ss.source_files = "#{sdk}/VoIPCore/**/*.swift"
   end
 
+  s.subspec 'MediaTesting' do |ss|
+    ss.source_files = "#{sdk}/VoIPMediaTesting/**/*.swift"
+    ss.dependency 'LiveKitClient', '= 2.19.0'
+    ss.frameworks = 'AVFAudio'
+  end
+
   s.subspec 'Audio' do |ss|
     ss.dependency 'VoIPConversations/Core'
     ss.source_files = "#{sdk}/VoIPAudio/**/*.swift"
