@@ -1364,6 +1364,7 @@
           fields: ["requestID": command.id.uuidString, "incomingErrorCode": code])
         return .faults(incomingErrorCode: code)
       case .push(let applicationPayload, let mustReport, let faults):
+        let payload = try PreparedPushPayload(applicationPayload)
         let schedule = PushDeliverySchedule(id: command.id, faults: faults)
         let clock = ContinuousClock()
         let start = clock.now
@@ -1387,11 +1388,7 @@
                   event: "push.dropped",
                   fields: ["pushID": delivery.id.uuidString, "requestID": command.id.uuidString])
               } else {
-                // PushKit's Objective-C seam requires NSDictionary; bridge only application data.
-                guard let bytes = try? JSONEncoder().encode(applicationPayload),
-                  let payload = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any]
-                else { return }
-                CKSimInjectPush(payload, mustReport, delivery.id.uuidString)
+                CKSimInjectPush(payload.dictionary, mustReport, delivery.id.uuidString)
               }
             }
           }
