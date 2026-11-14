@@ -35,6 +35,10 @@ Public API changes include migration guidance.
   `answer --after-ms` schedules a ring-relative answer. Push payloads are validated
   once before scheduling and reused across deliveries, so bridging errors fail the command.
 
+- A reusable local media harness in `tools/media-test/`, with a verified pinned LiveKit server,
+  a controllable far-end peer, typed TypeScript API and JSON CLI. The example feasibility check
+  now uses it with the same audio and lifecycle gates. See `tools/media-test/README.md`.
+
 - `cksim push` can delay, drop and duplicate deliveries with independent journal
   correlations and reporting deadlines. A background-launched app now samples its
   UIKit state after launch, so later required pushes use the background joined-call

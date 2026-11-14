@@ -1,0 +1,140 @@
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { after, before, test } from 'node:test';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createServer } from 'node:http';
+import { setTimeout as delay } from 'node:timers/promises';
+import { dispose } from '@livekit/rtc-node';
+import { command, deadline } from './fixture-runtime.ts';
+import { serverBinary, startServer } from './server.ts';
+import { MediaPeer } from './peer.ts';
+import { parseAction, startHarness } from './harness.ts';
+import { createMarker } from '../../expo/src/testing/marker.ts';
+import { measureMarkerAsync } from './measure-marker.ts';
+import { monitorReceiver } from './peer-window.ts';
+
+const root = mkdtempSync(join(tmpdir(), 'media-harness-test-'));
+let binary: string;
+const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const until = (condition: () => boolean) => deadline(15_000, 'Test condition', async () => { while (!condition()) await delay(50); });
+before(async () => { binary = await serverBinary(root); });
+after(async () => { await dispose(); rmSync(root, { recursive: true, force: true }); });
+const directory = (name: string) => { const path = join(root, name); mkdirSync(path); cpSync(join(root, 'server.tgz'), join(path, 'server.tgz')); return path; };
+
+test('pinned archive corruption cannot launch an unverified binary', async () => {
+  const dir = directory('corrupt'); writeFileSync(join(dir, 'server.tgz'), 'corrupt');
+  await assert.rejects(serverBinary(dir), /checksum mismatch/);
+});
+test('server clean stop is awaited and repeatable', async () => {
+  const server = await startServer(binary, directory('server'));
+  try { assert.ok(server.alive()); assert.ok(alive(server.pid)); }
+  finally { await server.close(); await server.close(); }
+  assert.ok(!alive(server.pid));
+});
+test('an occupied health port cannot qualify an unrelated server', async () => {
+  const listener = createServer((_, res) => res.end('OK'));
+  await new Promise<void>(resolve => listener.listen(0, '127.0.0.1', resolve));
+  try {
+    const address = listener.address(); assert.ok(address && typeof address !== 'string');
+    await assert.rejects(startServer(binary, directory('occupied'), address.port));
+  } finally { await new Promise<void>(resolve => listener.close(() => resolve())); }
+});
+test('real peer publishes markers, captures app audio, holds silent and leaves', async () => {
+  const harness = await startHarness(directory('peer'), 'controls');
+  const app = new MediaPeer();
+  try {
+    await assert.rejects(startHarness(join(root, 'peer'), 'duplicate'), /EEXIST/);
+    await app.connect(harness.credentials('app'));
+    await until(() => app.status().readerLive && harness.status().readerLive);
+    await harness.act({ type: 'publish', markerId: 'controls:toDevice' });
+    app.publish('controls:fromDevice');
+    await delay(500); app.beginCapture(); await harness.act({ type: 'capture' });
+    await delay(3000);
+    for (const [capture, id] of [[app.capture(), 'controls:toDevice'], [harness.observation().capture, 'controls:fromDevice']] as const) {
+      const measured = await measureMarkerAsync(capture, createMarker(id));
+      assert.ok(measured.clean && measured.complete && measured.postRollObserved);
+    }
+    await harness.act({ type: 'hold' }); await delay(500); app.beginCapture();
+    await monitorReceiver(() => app.status());
+    assert.ok(app.status().receivedSamples > 0); assert.ok(app.status().rms! < 0.001);
+    await harness.act({ type: 'leave' }); assert.ok(!harness.status().connected);
+    await until(() => !app.status().trackAvailable);
+  } finally { await app.close(); await harness.stop(); }
+});
+test('JSON CLI supports clean stop and cleanup after a daemon crash', async () => {
+  const dir = directory('cli'), cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
+  const call = (...args: string[]) => command(process.execPath, [cli, ...args.slice(0, 1), dir, ...args.slice(1)], 180_000);
+  for (const crash of [false, true]) {
+    let daemon: number | undefined;
+    try {
+      const started = JSON.parse(await call('start'));
+      daemon = JSON.parse(readFileSync(join(dir, 'control.json'), 'utf8')).pid;
+      assert.ok(JSON.parse(await call('status')).connected);
+      assert.ok(JSON.parse(await call('credentials')).credentialsFile);
+      assert.ok(!started.status.token);
+      await call('act', JSON.stringify({ type: 'hold' }));
+      if (crash) {
+        process.kill(daemon!, 'SIGKILL');
+        await until(() => !alive(daemon!));
+      }
+      await call('stop');
+      assert.ok(!alive(started.status.serverPid)); assert.ok(!existsSync(join(dir, 'control.json')));
+    } finally { if (daemon && alive(daemon)) process.kill(daemon, 'SIGTERM'); }
+  }
+});
+test('untrusted JSON commands reject invalid publication controls', () => {
+  for (const input of [null, {}, { type: 'publish' }, { type: 'publish', markerId: '' }, { type: 'unknown' }]) assert.throws(() => parseAction(input));
+  assert.deepEqual(parseAction({ type: 'publish', markerId: 'test' }), { type: 'publish', markerId: 'test' });
+});
+
+test('a killed invoking runner cannot leave its daemon or server running', async () => {
+  const dir = directory('runner-crash'), cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
+  const runnerFile = join(dir, 'runner.ts');
+  writeFileSync(runnerFile, `import { execFileSync } from 'node:child_process';
+execFileSync(process.execPath, [process.argv[2], 'start', process.argv[3]], { stdio: 'ignore', timeout: 180000 });
+setInterval(() => {}, 1000);`);
+  const runner = spawn(process.execPath, [runnerFile, cli, dir], { stdio: 'ignore' });
+  try {
+    await until(() => existsSync(join(dir, 'control.json')));
+    const { pid } = JSON.parse(readFileSync(join(dir, 'control.json'), 'utf8'));
+    const status = JSON.parse(await command(process.execPath, [cli, 'status', dir]));
+    runner.kill('SIGKILL');
+    await until(() => !alive(pid) && !alive(status.serverPid));
+    await command(process.execPath, [cli, 'stop', dir]);
+  } finally { runner.kill('SIGKILL'); }
+});
+
+test('peer capture retires pending statistics, deduplicates counters and awaits polling on close', async () => {
+  const harness = await startHarness(directory('statistics'), 'statistics');
+  const first = Promise.withResolvers<void>(), last = Promise.withResolvers<void>();
+  let reads = 0, streamID = 'first', stall = false;
+  const app = new MediaPeer(async (_, sample) => {
+    reads++;
+    const count = reads;
+    if (count === 1) await first.promise;
+    if (stall) await last.promise;
+    return { sample: sample(), streamID, timestamp: count === 1 ? 10 : 20,
+      packetsLost: 0, concealedSamples: 0, insertedSamples: 0, removedSamples: 0 };
+  });
+  try {
+    await app.connect(harness.credentials('statistics-app'));
+    await until(() => reads === 1);
+    app.beginCapture(); first.resolve();
+    await until(() => reads >= 3);
+    assert.deepEqual(app.capture().transport?.map(row => row.timestamp), [20]);
+    const prior = app.capture();
+    streamID = 'second'; await until(() => app.capture().transport?.length === 2);
+    assert.equal(prior.transport?.length, 1, 'capture returns independent counter storage');
+    app.beginCapture(); assert.deepEqual(app.capture().transport, []);
+    await until(() => app.capture().transport?.length === 1);
+    assert.equal(app.capture().transport?.[0]?.streamID, 'second');
+    stall = true; const before = reads; await until(() => reads > before);
+    let closed = false; const closing = app.close().then(() => { closed = true; });
+    await delay(150); assert.equal(closed, false, 'close must await pending statistics');
+    last.resolve(); await closing;
+    const stoppedReads = reads; await delay(150); assert.equal(reads, stoppedReads);
+  } finally { first.resolve(); last.resolve(); await app.close(); await harness.stop(); }
+});
