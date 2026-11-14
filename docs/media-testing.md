@@ -72,7 +72,9 @@ Dynamic programming over (slot, cumulative drift) selects exactly, in order: lea
 movement `Σ|d_k − d_(k−1)|`, highest sum of slot confidences, then the lexicographically
 earliest start sequence. Keep one optimal prefix per state; future transitions depend only
 on that state. There are at most 12 × 121 × 31 transitions per anchor. Slot-zero confidence
-differences at most 1e-12 retain its earlier anchor; path confidence sums compare exactly.
+differences at most 1e-12 retain its earlier anchor. Path confidence sums within 1e-9 count
+as equal and fall through to the earliest-start sequence, avoiding cross-language sin/cos
+roundoff changing the selected path.
 No tolerance applies to the >=0.8 gate. Unstretched emissions keep twelve zero drifts.
 
 `MarkerDetection.slotStarts` contains all twelve absolute sample offsets within the captured
@@ -154,10 +156,10 @@ selection with drift changes only at transitions, are:
 
 | Rate | Edit | Selected drift list |
 | --- | --- | --- |
-| 8000 | +40 ms | `[0,7,13,14,14,14,20,23,31,31,31,33]` |
-| 8000 | −40 ms | `[0,0,0,-2,-2,-2,-3,-4,-4,-4,-7,-7]` |
-| 48000 | +40 ms | `[0,2,10,12,12,12,22,30,33,33,33,33]` |
-| 48000 | −40 ms | `[0,0,0,-1,-1,-1,-1,-6,-7,-7,-7,-7]` |
+| 8000 | +40 ms | `[0,0,0,10,10,10,20,20,30,30,30,33]` |
+| 8000 | −40 ms | `[0,0,0,-7,-7,-7,-7,-7,-7,-7,-7,-7]` |
+| 48000 | +40 ms | `[0,0,0,10,10,10,20,20,30,30,30,33]` |
+| 48000 | −40 ms | `[0,0,0,-7,-7,-7,-7,-7,-7,-7,-7,-7]` |
 
 The first slot offset remains 135 ms (1080/6480 samples). Both +80 ms inputs still reject;
 no path or chosen drift list is returned. Their earlier rejected diagnostic alignment

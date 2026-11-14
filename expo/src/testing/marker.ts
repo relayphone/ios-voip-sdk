@@ -1,4 +1,5 @@
 import { MediaTestError } from "./errors.ts";
+import { preferMarkerPath } from "./marker-path.ts";
 import type { MarkerDetection, MediaMarker } from "./types.ts";
 
 const tones = [650, 950, 1350, 1850] as const;
@@ -119,14 +120,6 @@ export function detectMarker(pcm: Float32Array, sampleRate: number, marker: Medi
     const anchor = Math.floor(anchorMs * sampleRate / 1000);
     // One optimal prefix per (slot, cumulative drift): future costs depend only on this state.
     interface Path { movement: number; sum: number; minimum: number; starts: readonly number[] }
-    const better = (left: Path, right: Path): boolean => {
-      if (left.movement !== right.movement) return left.movement < right.movement;
-      if (left.sum !== right.sum) return left.sum > right.sum;
-      for (let index = 0; index < left.starts.length; index++) {
-        if (left.starts[index] !== right.starts[index]) return left.starts[index]! < right.starts[index]!;
-      }
-      return false;
-    };
     let paths = new Map<number, Path>([[0, { movement: 0, sum: confidence, minimum: confidence, starts: [anchorMs] }]]);
     for (let slot = 1; slot < marker.frequencies.length && paths.size; slot++) {
       const next = new Map<number, Path>();
@@ -139,13 +132,13 @@ export function detectMarker(pcm: Float32Array, sampleRate: number, marker: Medi
           const path: Path = { movement: prefix.movement + Math.abs(drift - previousDrift),
             sum: prefix.sum + value, minimum: Math.min(prefix.minimum, value), starts: [...prefix.starts, start] };
           const incumbent = next.get(drift);
-          if (!incumbent || better(path, incumbent)) next.set(drift, path);
+          if (!incumbent || preferMarkerPath(path, incumbent)) next.set(drift, path);
         }
       }
       paths = next;
     }
     let chosen: Path | undefined;
-    for (const path of paths.values()) if (!chosen || better(path, chosen)) chosen = path;
+    for (const path of paths.values()) if (!chosen || preferMarkerPath(path, chosen)) chosen = path;
     if (chosen) return Object.freeze({ id: marker.id, offsetSamples: anchor, confidence: chosen.minimum,
       slotStarts: Object.freeze(chosen.starts.map(ms => Math.floor(ms * sampleRate / 1000))) });
     firstMs = searchEnd;

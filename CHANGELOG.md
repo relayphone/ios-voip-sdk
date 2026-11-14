@@ -13,7 +13,7 @@ Public API changes include migration guidance.
   Metadata `mustReport: false` creates no reporting deadline. Device builds are unaffected.
 
 - Media marker detection searches complete slot paths, choosing least total movement, then
-  highest confidence sum, then earliest starts. Drift remains within ±60 ms at every slot and
+  highest confidence sum (ties within 1e-9), then earliest starts. Drift remains within ±60 ms at every slot and
   changes only at tone transitions (at most ±15 ms); equal expected tones retain equal drift.
   Receipts enforce those limits. The signal and every-slot 0.8 gate are unchanged. Updated
   splice drift lists and repeated-tone/identity-control hashes are in `docs/media-testing.md`.
