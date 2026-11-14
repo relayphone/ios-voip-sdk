@@ -60,7 +60,7 @@ let package = Package(
     ),
     .target(
       name: "CKSimRuntime",
-      dependencies: ["CKSimRuntimeC", "CKSimProtocol"],
+      dependencies: ["CKSimRuntimeC", "CKSimProtocol", "VoIPCore"],
       path: "Sources/Engine",
       exclude: ["Resources"],
       swiftSettings: strictSwift

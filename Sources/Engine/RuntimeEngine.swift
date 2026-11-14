@@ -2,6 +2,9 @@
   public import Foundation
   import Darwin
   import Synchronization
+  #if DEBUG && canImport(VoIPCore) && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
+    @_spi(Simulator) import VoIPCore
+  #endif
   #if SWIFT_PACKAGE
     import CKSimRuntimeC
     import CKSimProtocol
@@ -146,6 +149,8 @@
     private var calls: [UUID: CallState] = [:]
     private let applicationActivity = RuntimeApplicationActivity()
     private var pushReportingObligations = PushReportingObligations()
+    private var callTimeline = RuntimeCallTimeline()
+    private var timedAnswers: [UUID: Task<Void, Never>] = [:]
     private var pushDeliveries: [UUID: Task<Void, Never>] = [:]
     private var pendingActions: [UUID: RuntimePendingAction] = [:]
     private let deadlines = NSMapTable<CXAction, NSDate>.weakToStrongObjects()
@@ -233,6 +238,9 @@
         throw error
       }
       state.async { self.processCommands() }
+      #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
+        SimulatorLifecycle.install { [weak self] in self?.recordSDK($0) }
+      #endif
     }
 
     private static func profileData(_ profileID: String) throws -> Data {
@@ -284,6 +292,11 @@
         guard !stopped else { return }
         stopped = true
         applicationActivity.stop()
+        #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
+          SimulatorLifecycle.install(nil)
+        #endif
+        for task in timedAnswers.values { task.cancel() }
+        timedAnswers.removeAll()
         for delivery in pushDeliveries.values { delivery.cancel() }
         pushDeliveries.removeAll()
         audioRevision += 1
@@ -341,10 +354,64 @@
     private var monotonicTime: Duration {
       .nanoseconds(DispatchTime.now().uptimeNanoseconds - epoch)
     }
+    private var elapsedMS: UInt64 { (DispatchTime.now().uptimeNanoseconds - epoch) / 1_000_000 }
+
+    #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
+      private func recordSDK(_ event: SimulatorLifecycle.Event) {
+        withState {
+          guard !stopped, event.uptimeNanoseconds >= epoch else { return }
+          let call = event.call
+          let uuid = deviceUUID(for: call.id)
+          let now = (event.uptimeNanoseconds - epoch) / 1_000_000
+          let phase: RetainedCall.Phase
+          var reason: String?
+          switch call.status {
+          case .ringing: phase = .ringing
+          case .dialing: phase = .dialing
+          case .previewing: phase = .previewing
+          case .connecting: phase = .connecting
+          case .connected: phase = .connected
+          case .reconnecting: phase = .reconnecting
+          case .ended(let end):
+            phase = .ended
+            switch end {
+            case .endedHere: reason = "endedHere"
+            case .endedRemotely: reason = "endedRemotely"
+            case .unanswered: reason = "unanswered"
+            case .answeredElsewhere: reason = "answeredElsewhere"
+            case .declinedElsewhere: reason = "declinedElsewhere"
+            case .filtered(let cause): reason = "filtered.\(cause)"
+            case .failed(let failure): reason = "failed.\(failure)"
+            }
+          }
+          callTimeline.update(uuid, now: now, reported: false) {
+            if $0.callID == nil { $0.connectedAtMS = nil }
+            $0.callID = call.id.rawValue
+            $0.state = phase
+            if event.kind == .accept { $0.answeredAtMS = $0.answeredAtMS ?? now }
+            if event.kind == .connected { $0.connectedAtMS = $0.connectedAtMS ?? now }
+            if phase == .ended {
+              $0.endedAtMS = $0.endedAtMS ?? now
+              $0.endReason = reason
+            }
+          }
+          var fields: [String: Any] = [
+            "callUUID": uuid.uuidString, "callID": call.id.rawValue, "state": phase.rawValue,
+          ]
+          if let reason { fields["reason"] = reason }
+          record(
+            event: "sdk.\(event.kind.rawValue)", fields: fields,
+            observed: DispatchTime(uptimeNanoseconds: event.uptimeNanoseconds))
+        }
+      }
+    #endif
+
     func record(event: String, fields: [String: Any]) {
+      record(event: event, fields: fields, observed: .now())
+    }
+    private func record(event: String, fields: [String: Any], observed: DispatchTime) {
       withState {
         guard !stopped else { return }
-        let observed = DispatchTime.now()
         var row = fields
         var pushViolation: String?
         var pushDeadline: (String, UUID, DispatchTime, PushReportingProfile.Rule)?
@@ -522,6 +589,19 @@
       }
     }
     private func changed(_ call: CallState, notifyObservers: Bool = true) {
+      let now = elapsedMS
+      callTimeline.update(call.id, now: now) {
+        $0.reportedAtMS = $0.reportedAtMS ?? now
+        if $0.callID == nil {
+          $0.state =
+            call.ended ? .ended : call.connected ? .connected : call.outgoing ? .dialing : .ringing
+          if call.connected && $0.connectedAtMS == nil { $0.connectedAtMS = now }
+        }
+        if call.ended && $0.callID == nil {
+          $0.endedAtMS = $0.endedAtMS ?? now
+          $0.endReason = $0.endReason ?? "systemEnded"
+        }
+      }
       let snapshot = call.snapshot()
       record(event: "call.changed", fields: callJSON(call))
       if call.reporter.apiKind == .livecommunicationkit {
@@ -797,6 +877,10 @@
           changed(call, notifyObservers: false)
         }
         pendingActions[action.uuid] = pending
+        if action is CXAnswerCallAction, let call = pending.call {
+          let now = elapsedMS
+          callTimeline.update(call.id, now: now) { $0.answeredAtMS = $0.answeredAtMS ?? now }
+        }
         if composite?.systemComposite == true, let hold = action as? CXSetHeldCallAction,
           hold.isOnHold, let call = pending.call
         {
@@ -1149,6 +1233,11 @@
     }
     func ended(provider: CXProvider, uuid: UUID, reason: Int) {
       withState {
+        if callTimeline.calls[uuid] != nil {
+          callTimeline.update(uuid, now: elapsedMS) {
+            if $0.callID == nil { $0.endReason = "systemReason(\(reason))" }
+          }
+        }
         record(
           event: "report.ended",
           fields: [
@@ -1335,7 +1424,45 @@
             incomingFilter: incomingFilterSnapshot(incomingFilter),
             providerConfigurations: providers.values.sorted {
               providerID($0.provider) < providerID($1.provider)
-            }.map(providerSnapshot)))
+            }.map(providerSnapshot),
+            retainedCalls: callTimeline.calls.values.sorted {
+              $0.uuid.uuidString < $1.uuid.uuidString
+            }))
+      case .answerAfter(let uuid, let offset):
+        guard let call = calls[uuid], call.ringing,
+          let report = callTimeline.calls[uuid]?.reportedAtMS
+        else {
+          throw ControlError.invalid("call is not ringing")
+        }
+        let delay = RuntimeCallTimeline.answerDelay(
+          rangAtMS: report, nowMS: elapsedMS, afterMS: offset)
+        record(
+          event: "answer.scheduled",
+          fields: [
+            "callUUID": uuid.uuidString, "requestID": command.id.uuidString, "afterMS": offset,
+          ])
+        timedAnswers[command.id] = Task { [weak self] in
+          defer { self?.withState { _ = self?.timedAnswers.removeValue(forKey: command.id) } }
+          do { try await Task.sleep(for: delay) } catch { return }
+          self?.withState {
+            guard let self, !self.stopped else { return }
+            let fields = ["callUUID": uuid.uuidString, "requestID": command.id.uuidString]
+            guard self.calls[uuid] === call, call.ringing else {
+              self.record(event: "answer.cancelled", fields: fields)
+              return
+            }
+            do {
+              _ = try self.execute(
+                ControlRequest(
+                  id: command.id, target: command.target, operation: .call(.answer(uuid))))
+            } catch {
+              self.record(
+                event: "answer.failed",
+                fields: fields.merging(["error": String(describing: error)]) { $1 })
+            }
+          }
+        }
+        return .scheduledAnswer(callUUID: uuid, afterMS: offset)
       case .events:
         return .events(
           (try? String(

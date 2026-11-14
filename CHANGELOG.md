@@ -30,6 +30,11 @@ Public API changes include migration guidance.
 
 ### Added
 
+- `cksim status --json` includes retained call lifecycle diagnostics, while SDK
+  accept, connected, ended and preparation-deadline events join the runtime journal.
+  `answer --after-ms` schedules a ring-relative answer. Push payloads are validated
+  once before scheduling and reused across deliveries, so bridging errors fail the command.
+
 - `cksim push` can delay, drop and duplicate deliveries with independent journal
   correlations and reporting deadlines. A background-launched app now samples its
   UIKit state after launch, so later required pushes use the background joined-call

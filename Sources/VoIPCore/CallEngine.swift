@@ -180,6 +180,11 @@ final class CallEngine {
       let key = TimerKey(id: id, deadline: deadline)
       guard self.timers[key]?.generation == generation else { return }
       self.timers[key] = nil
+      #if DEBUG && (os(macOS) || targetEnvironment(simulator))
+        if deadline == .mediaPreparation, let call = self.states[id]?.call, call.isIncoming {
+          SimulatorLifecycle.record(call, .joinDeadlineExpired)
+        }
+      #endif
       self.handle(id, .deadlineExpired(deadline, generation: generation))
     }
   }
@@ -282,6 +287,9 @@ final class CallEngine {
     outcomes[call.id] = .refused(.atCapacity)
     earlyEvents[call.id] = nil
     subscribers.yield(.ended(call))
+    #if DEBUG && (os(macOS) || targetEnvironment(simulator))
+      SimulatorLifecycle.record(call, .ended)
+    #endif
   }
 
   private func serverEvent(_ event: ServerEvent, for id: CallID, eventID: EventID) {
@@ -299,6 +307,13 @@ final class CallEngine {
   private func frameworkEvent(_ event: FrameworkEvent) {
     switch event {
     case .perform(let actionID, let action):
+      #if DEBUG && (os(macOS) || targetEnvironment(simulator))
+        switch action {
+        case .answer, .join:
+          if let call = states[action.callID]?.call { SimulatorLifecycle.record(call, .accept) }
+        default: break
+        }
+      #endif
       if states[action.callID] != nil {
         handle(action.callID, .performed(actionID, action))
       } else if case .start(let outgoing) = action {
@@ -391,6 +406,9 @@ final class CallEngine {
     let id = state.call.id
     states[id] = state
     order.append(id)
+    #if DEBUG && (os(macOS) || targetEnvironment(simulator))
+      SimulatorLifecycle.record(state.call)
+    #endif
     let reply = run(effects, for: id)
     settle(id)
     for early in earlyEvents.removeValue(forKey: id) ?? [] { handle(id, .server(early.event)) }
@@ -403,6 +421,13 @@ final class CallEngine {
     let (next, effects) = CallMachine.transition(
       state, event, configuration: configuration, now: clock.date())
     states[id] = next
+    #if DEBUG && (os(macOS) || targetEnvironment(simulator))
+      let kind: SimulatorLifecycle.Event.Kind =
+        next.phase.isEnded && !state.phase.isEnded
+        ? .ended
+        : next.call.connectedAt != nil && state.call.connectedAt == nil ? .connected : .state
+      SimulatorLifecycle.record(next.call, kind)
+    #endif
     if next.phase.isEnded || next.phase.isPreviewing,
       preparedCalls.remove(id) != nil
     {

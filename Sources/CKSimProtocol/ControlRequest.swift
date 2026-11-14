@@ -15,6 +15,8 @@ public struct ControlRequest: Codable, Equatable, Sendable {
     case status
     /// Read the retained event journal.
     case events
+    /// Schedule an answer relative to the incoming call's ring start (0–120000 ms).
+    case answerAfter(UUID, milliseconds: Int)
     /// Inspect the installed PushKit adapter.
     case inspectAdapter
     /// Configure the incoming-report filter.
@@ -33,6 +35,7 @@ public struct ControlRequest: Codable, Equatable, Sendable {
       switch self {
       case .status: "status"
       case .events: "events"
+      case .answerAfter: "answer"
       case .inspectAdapter: "inspect-adapter"
       case .incomingFilter: "incoming-filter"
       case .faults: "faults"
@@ -222,6 +225,8 @@ public struct ControlRequest: Codable, Equatable, Sendable {
   public init(id: UUID, target: RuntimeIdentity, operation: Operation) throws {
     var normalized = operation
     switch operation {
+    case .answerAfter(_, let offset):
+      guard (0...120_000).contains(offset) else { throw ValidationError.invalidInteger("afterMS") }
     case .push(let payload, _, _):
       guard try JSONEncoder().encode(payload).count <= 5120 else {
         throw ValidationError.payloadTooLarge
@@ -263,7 +268,7 @@ public struct ControlRequest: Codable, Equatable, Sendable {
     case id, runID, pid, bundleID, operation, schemaVersion, controlTransport
     case callUUID, activeCallUUID, heldCallUUID, groupWithCallUUID, applicationRequest, held, muted,
       digits, reason
-    case faults, payload, mustReport, delayMS, drop, duplicate, spacingMS
+    case faults, payload, mustReport, delayMS, drop, duplicate, spacingMS, afterMS
   }
 
   private struct AnyKey: CodingKey {
@@ -325,9 +330,14 @@ public struct ControlRequest: Codable, Equatable, Sendable {
     case "answer", "decline", "end":
       allowed.insert(.callUUID)
       let id = try uuid()
-      operation = .call(
-        header.operationName == "answer"
-          ? .answer(id) : header.operationName == "decline" ? .decline(id) : .end(id))
+      if header.operationName == "answer", values.contains(.afterMS) {
+        allowed.insert(.afterMS)
+        operation = .answerAfter(id, milliseconds: try values.decode(Int.self, forKey: .afterMS))
+      } else {
+        operation = .call(
+          header.operationName == "answer"
+            ? .answer(id) : header.operationName == "decline" ? .decline(id) : .end(id))
+      }
     case "hold":
       allowed.formUnion([.callUUID, .held, .applicationRequest])
       operation = .call(
@@ -375,6 +385,9 @@ public struct ControlRequest: Codable, Equatable, Sendable {
     try Header(id: id, target: target, operationName: operation.name).encode(to: encoder)
     var values = encoder.container(keyedBy: Key.self)
     switch operation {
+    case .answerAfter(let call, let offset):
+      try values.encode(call, forKey: .callUUID)
+      try values.encode(offset, forKey: .afterMS)
     case .push(let payload, let mustReport, let delivery):
       try values.encode(payload, forKey: .payload)
       try values.encode(mustReport, forKey: .mustReport)
@@ -467,7 +480,7 @@ public struct ControlRequest: Codable, Equatable, Sendable {
             objects.count == 1
             && (key == "pid"
               || !headerOnly
-                && ["schemaVersion", "delayMS", "duplicate", "spacingMS"].contains(key))
+                && ["schemaVersion", "delayMS", "duplicate", "spacingMS", "afterMS"].contains(key))
             || !headerOnly && objects.count == 2 && objects[1].name == "faults"
               && ["reportCallbackDelayMS", "incomingErrorCode"].contains(key)
           if integer {

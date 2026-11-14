@@ -162,6 +162,8 @@
               switch request.operation {
               case .call: .actions(actionIDs: [UUID()], transactionID: UUID())
               case .push: .push(pushID: request.id)
+              case .answerAfter(let call, let offset):
+                .scheduledAnswer(callUUID: call, afterMS: offset)
               case .faults(let changes):
                 .faults(
                   incomingErrorCode: changes.compactMap {

@@ -4,6 +4,31 @@ import Testing
 @testable import CKSimProtocol
 
 @Suite struct ControlResponseTests {
+  @Test func retainedHistoryAndScheduledAnswersRoundTrip() throws {
+    let answer = try JSONDecoder().decode(
+      ControlResponse.self,
+      from: envelope(
+        #""success":true,"result":{"answerScheduled":true,"callUUID":"\#(Self.id)","afterMS":21000}"#
+      ))
+    #expect(
+      try JSONDecoder().decode(ControlResponse.self, from: JSONEncoder().encode(answer)) == answer)
+    var object = try #require(
+      JSONSerialization.jsonObject(with: Data(Self.status.utf8)) as? [String: Any])
+    object["retainedCalls"] = [
+      [
+        "uuid": Self.id, "callID": "server-call", "state": "ended",
+        "endReason": "endedRemotely", "reportedAtMS": 1, "answeredAtMS": 2, "connectedAtMS": 3,
+        "endedAtMS": 4,
+      ]
+    ]
+    let snapshot = try JSONDecoder().decode(
+      RuntimeSnapshot.self, from: JSONSerialization.data(withJSONObject: object))
+    #expect(snapshot.retainedCalls.first?.callID == "server-call")
+    #expect(snapshot.retainedCalls.first?.endedAtMS == 4)
+    #expect(
+      try JSONDecoder().decode(RuntimeSnapshot.self, from: JSONEncoder().encode(snapshot))
+        == snapshot)
+  }
   private static let id = "11111111-1111-4111-8111-111111111111"
   private static let action = "22222222-2222-4222-8222-222222222222"
   private static let transaction = "33333333-3333-4333-8333-333333333333"

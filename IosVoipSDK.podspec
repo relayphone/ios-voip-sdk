@@ -35,6 +35,7 @@ Pod::Spec.new do |s|
 
   # The simulator runtime's sources, which Simulator presents. Depend on Simulator instead.
   s.subspec 'SimulatorRuntime' do |ss|
+    ss.dependency 'IosVoipSDK/Core'
     ss.source_files = ['Sources/CKSimProtocol/**/*.swift', 'Sources/Engine/**/*.swift', 'Sources/Interposition/**/*.{h,m}']
     # The external DYLD loader is not part of the embedded SDK.
     ss.exclude_files = 'Sources/Interposition/CKLoader.m'

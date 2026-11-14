@@ -3,6 +3,18 @@ import Foundation
 import Testing
 
 struct ControlRequestTests {
+  @Test func timedAnswerIsAnExplicitBoundedIntegerOffset() throws {
+    let request = try ControlRequest.decode(
+      wire(#""operation":"answer","callUUID":"\#(id)","afterMS":21000"#))
+    #expect(request.operation == .answerAfter(id, milliseconds: 21000))
+    #expect(try ControlRequest.decode(JSONEncoder().encode(request)) == request)
+    for offset in ["-1", "120001", "21.0", "2e3", "null", "true"] {
+      #expect(throws: (any Error).self) {
+        try ControlRequest.decode(
+          wire("\"operation\":\"answer\",\"callUUID\":\"\(id)\",\"afterMS\":\(offset)"))
+      }
+    }
+  }
   @Test func pushDeliveryControlsRoundTripWithoutTouchingThePayload() throws {
     let request = try ControlRequest.decode(
       wire(
