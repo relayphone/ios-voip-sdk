@@ -36,6 +36,8 @@ export interface MarkerDetection {
   /** Start of the complete marker relative to the first captured sample. */
   readonly offsetSamples: number;
   readonly confidence: number;
+  /** Twelve chosen slot starts, in samples relative to the captured PCM window. */
+  readonly slotStarts: readonly number[];
 }
 /** Measurements for one continuous, unmodified capture window; no inferred silence. */
 export type MediaReceipt = MediaTestOptions & MediaObservation & {

@@ -7,6 +7,10 @@ Public API changes include migration guidance.
 
 ### Added
 
+- Media marker detection aligns each subsequent slot within ±15 ms and caps final drift at
+  ±60 ms. Detections and receipts retain all twelve slot starts. Adapters must preserve these
+  starts in their receipts; the signal, parity, energy floor and every-slot 0.8 rule are unchanged.
+
 - The shared testing API exports `emissionSamples`, wrapping `tones-v2` in 150 ms 400 Hz
   pre-roll and post-roll with raised-cosine outer edges. Sources must use the full emission;
   capture windows must include post-roll. Marker detection, confidence and marker parity are
