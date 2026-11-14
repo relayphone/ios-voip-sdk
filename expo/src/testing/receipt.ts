@@ -70,11 +70,15 @@ export function validateMediaReceipt(value: unknown, request: MediaReadRequest):
         invalid("Slot alignment exceeds capture or disagrees with marker start");
       return start;
     });
-    for (let index = 1; index < slotStarts.length; index++)
+    for (let index = 1; index < slotStarts.length; index++) {
       if (Math.abs(slotStarts[index]! - slotStarts[index - 1]! - slotSamples) > Math.ceil(sampleRate * 0.015))
         invalid("Slot alignment exceeds local drift limit");
-    if (Math.abs(slotStarts.at(-1)! - offsetSamples - slotSamples * (slotStarts.length - 1)) > slotSamples)
-      invalid("Slot alignment exceeds cumulative drift limit");
+      if (Math.abs(slotStarts[index]! - offsetSamples - slotSamples * index) > slotSamples)
+        invalid("Slot alignment exceeds cumulative drift limit");
+      if (expected.frequencies[index] === expected.frequencies[index - 1] &&
+          slotStarts[index]! - slotStarts[index - 1]! !== slotSamples)
+        invalid("Slot alignment changes drift inside a repeated tone");
+    }
     marker = Object.freeze({ id: text(detection.id, "marker id", 4096), offsetSamples, confidence,
       slotStarts: Object.freeze(slotStarts) });
   }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createHash } from "node:crypto";
 import { detectionVector, pcm16LE, decodedPCM16, detectionVectors,
-  insertedDrifts, deletedDrifts, overCapDrifts } from "./detection-vectors.ts";
+  insertedDrifts, deletedDrifts, overCapDrifts, repeatedVector, repeatedVectors } from "./detection-vectors.ts";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
@@ -450,15 +450,47 @@ test("published pitch-preserving splice vectors match hashes and chosen slot dri
       assert.equal(found.offsetSamples, vector.rate * 0.135);
       assert.deepEqual(found.slotStarts.map((start, index) =>
         (start - found.offsetSamples - index * vector.rate * 0.06) / vector.rate * 1000),
-        vector.changeMs === 40 ? insertedDrifts : deletedDrifts);
+        vector.changeMs === 40 ? insertedDrifts[vector.rate] : deletedDrifts[vector.rate]);
     }
   }
 });
 
-test("a high-confidence over-cap vector alignment is rejected by receipts", () => {
-  const query = request(), receipt = evidence(query), offsetSamples = 6480;
+test("a high-confidence over-cap alignment is rejected by receipts", () => {
+  // No repeated tones: this control isolates the cumulative cap from transition validation.
+  const query = { ...request(), marker: createMarker("cap-v2-14") }, receipt = evidence(query), offsetSamples = 6480;
   const slotStarts = overCapDrifts.map((drift, index) => offsetSamples + index * 2880 + drift * 48);
   assert.throws(() => validateMediaReceipt({ ...receipt,
     marker: { id: query.marker.id, confidence: 1, offsetSamples, slotStarts } }, query),
     error => code("invalid_receipt")(error) && /cumulative/.test((error as Error).message));
+});
+
+test("receipts reject intermediate over-cap drift even when final drift returns inside", () => {
+  const query = { ...request(), marker: createMarker("cap-v2-14") }, receipt = evidence(query);
+  const drifts = [0, 15, 30, 45, 60, 75, 60, 45, 30, 15, 0, 0];
+  const slotStarts = drifts.map((drift, slot) => receipt.marker!.offsetSamples + slot * 2880 + drift * 48);
+  assert.throws(() => validateMediaReceipt({ ...receipt, marker: { ...receipt.marker!, slotStarts } }, query),
+    error => code("invalid_receipt")(error) && /cumulative/.test((error as Error).message));
+});
+
+test("published repeated-tone deletion and identity controls reproduce at both rates", () => {
+  for (const vector of repeatedVectors) {
+    const bytes = pcm16LE(repeatedVector(vector.rate, vector.variant));
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), vector.sha256);
+    const marker = createMarker(vector.variant === "alias" ? "wrong-each-slot" : "repeat-v2-8233");
+    const found = detectMarker(decodedPCM16(bytes), vector.rate, marker);
+    if (vector.variant !== "deleted") assert.equal(found, null, vector.variant);
+    else {
+      assert.ok(found && found.confidence >= 0.8);
+      assert.deepEqual(found.slotStarts.map((start, slot) => start - found.offsetSamples - slot * vector.rate * 0.06), Array(12).fill(0));
+      assert.ok(Object.isFrozen(found.slotStarts));
+    }
+  }
+});
+
+test("receipts reject drift changes inside a repeated tone", () => {
+  const query = { ...request(), marker: createMarker("wrong-each-slot") }, receipt = evidence(query);
+  const drifts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -12, -25];
+  const slotStarts = drifts.map((drift, slot) => receipt.marker!.offsetSamples + slot * 2880 + drift * 48);
+  assert.throws(() => validateMediaReceipt({ ...receipt, marker: { ...receipt.marker!, slotStarts } }, query),
+    error => code("invalid_receipt")(error) && /repeated tone/.test((error as Error).message));
 });

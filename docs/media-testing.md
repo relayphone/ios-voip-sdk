@@ -62,15 +62,23 @@ Goertzel confidence and the unchanged mean-square energy floor of 0.0001. **Ever
 score at least 0.8; the complete marker is required.** The search advances by approximately 1 ms. For slot zero, find the first passing sync window,
 then select its best score within one 60 ms neighbourhood **before** aligning later slots.
 Do not move this anchor after a failed drift cap; continue searching after that neighbourhood.
-This prevents an over-cap waveform from passing by moving slot zero later. Each later slot
-chooses the best central 20 ms score within ±15 ms of the previous chosen start plus 60 ms.
-The final chosen start may drift at most ±60 ms from slot zero plus 11×60 ms. Confidence
-differences at most 1e-12 count as numerical ties: prefer no local shift, then the smaller
-absolute shift, then the earlier start. The >=0.8 threshold never uses that tolerance.
+This prevents an over-cap waveform from passing by moving slot zero later. A complete path
+exists only when every subsequent slot scores at least 0.8 and its start is on the 1 ms grid,
+within ±15 ms of the previous chosen start plus 60 ms. At every slot, cumulative drift from
+slot zero plus `k*60` ms must remain within ±60 ms. **Drift may change only at a tone
+transition:** equal consecutive expected tones require equal drift.
+
+Dynamic programming over (slot, cumulative drift) selects exactly, in order: least total
+movement `Σ|d_k − d_(k−1)|`, highest sum of slot confidences, then the lexicographically
+earliest start sequence. Keep one optimal prefix per state; future transitions depend only
+on that state. There are at most 12 × 121 × 31 transitions per anchor. Slot-zero confidence
+differences at most 1e-12 retain its earlier anchor; path confidence sums compare exactly.
+No tolerance applies to the >=0.8 gate. Unstretched emissions keep twelve zero drifts.
 
 `MarkerDetection.slotStarts` contains all twelve absolute sample offsets within the captured
 PCM; its first value equals `offsetSamples`. Receipts preserve a frozen copy and reject missing
-starts, out-of-capture slots, local shifts beyond ±15 ms and final drift beyond ±60 ms. The
+starts, out-of-capture slots, local shifts beyond ±15 ms, any cumulative drift beyond ±60 ms,
+and drift changes between equal expected tones. The
 last aligned start plus 60 ms determines the received marker end, including deadline validation.
 Chosen scoring starts expose alignment changes; they are not physical tone-onset measurements. Guard time makes the marker-start estimate uncertain by up to 20 ms; it is not a
 physical onset measurement. Neither energy alone nor a partial identity establishes audio.
@@ -141,16 +149,55 @@ edited. The generator fixes all sample positions and arithmetic for other implem
 | 48000 | -40 ms | 47040 | `02030079b20fcd511fec09037b09d4852ff30fdcd9ca30f86f920d945e95a939` | Detect |
 | 48000 | +80 ms | 52800 | `62459596128b7f8e181c8ef1edd5a69039f37fdfa89a03e4f29e12d55aad7c14` | Reject cap |
 
-Chosen per-slot drifts in milliseconds relative to slot zero plus `k*60` are identical at both
-rates. The first slot offset is 135 ms (1080/6480 samples):
+Chosen per-slot drifts in milliseconds relative to slot zero plus `k*60`, under complete-path
+selection with drift changes only at transitions, are:
 
-- +40 ms: `[0,0,0,10,10,10,20,20,20,30,30,40]`.
-- -40 ms: `[0,0,0,0,0,0,0,0,0,0,-10,-10]`.
-- +80 ms rejected alignment: `[0,0,10,20,30,40,50,60,60,70,70,80]`; no detection is returned.
+| Rate | Edit | Selected drift list |
+| --- | --- | --- |
+| 8000 | +40 ms | `[0,7,13,14,14,14,20,23,31,31,31,33]` |
+| 8000 | −40 ms | `[0,0,0,-2,-2,-2,-3,-4,-4,-4,-7,-7]` |
+| 48000 | +40 ms | `[0,2,10,12,12,12,22,30,33,33,33,33]` |
+| 48000 | −40 ms | `[0,0,0,-1,-1,-1,-1,-6,-7,-7,-7,-7]` |
 
-These are chosen scoring starts, not the physical edit counts: guards can absorb some
-compression without moving the scoring window. The over-cap alignment has all twelve tones
-but exceeds the cap; receipts reject it too. Unstretched emissions retain twelve zero drifts.
+The first slot offset remains 135 ms (1080/6480 samples). Both +80 ms inputs still reject;
+no path or chosen drift list is returned. Their earlier rejected diagnostic alignment
+`[0,0,10,20,30,40,50,60,60,70,70,80]` remains an invalid receipt control.
+These are scoring starts, not physical edit counts: guards absorb some compression.
+
+### Repeated-tone regression vectors (3a and 3b)
+
+Canonical construction is `repeatedVector` in `expo/test/contracts/detection-vectors.ts`.
+Vectors 3a-1 through 3a-3 use `createMarker("repeat-v2-8233")`, whose identity ends in seven
+650 Hz slots and a 950 Hz slot. These model received PCM, rather than changing source emission:
+start with the unchanged 1020 ms emission, then represent the repeated run [390,810) ms as
+`0.2*sin(2π*650*(t−0.390))`, without intra-run amplitude notches. Delete [675,685) ms using
+the same in-place 2.5 ms crossfade specified above. This is a 10 ms deletion inside the run.
+
+After deletion, add a deterministic low-level 400 Hz render residual to sample `i`:
+`0.002*(1+i/N)*sin(2π*400*i/rate)`, where `N` is the resulting sample count. Each assignment
+rounds to Float32. Its increasing amplitude draws greedy confidence maxima backward through
+the continuous run; legacy best-local selection rejects at both rates. Complete-path selection
+detects with twelve zero drifts and minimum confidence above 0.99966. The 10 ms edit fits
+within the scoring guards; a larger observable shift can be taken at an exit transition.
+
+3a-2 replaces the later slot [800,860) ms with `0.2*sin(2π*1350*i/rate)` after adding the
+residual. 3a-3 instead sets the edited slot [630,680) ms to zero. Both reject.
+3a-4 is the final-slot alias counterexample: use the ordinary unedited emission for
+`createMarker("wrong-each-slot")` and replace [810,870) ms with
+`0.2*sin(2π*950*i/rate)`. It rejects: windows cannot slide within its final 650 Hz run.
+
+Hash PCM16 LE bytes after all edits with the conversion above, then detect on decoded PCM16:
+
+| Rate | Vector | Samples | Input PCM16 LE SHA-256 | Expected |
+| --- | --- | --- | --- | --- |
+| 8000 | 3a-1 (deleted) | 8080 | `dae143f33211f6fcf9617e2e4a99de5e00831e168adafa8a7b2d8fa041811a0b` | Detect, zero drift |
+| 8000 | 3a-2 (wrong) | 8080 | `236233ac4ebee517862f86fda82eb5e9fe38b2168a42fd90df090ce837c0199f` | Reject |
+| 8000 | 3a-3 (silent) | 8080 | `2ec6a4f8d98a1a85d5aa0bb29bd5f707c0dfd7102a78190761da7e8d19ba1531` | Reject |
+| 8000 | 3a-4 (alias) | 8160 | `35770229b8db7382e249035c555d399962bcedf12cdcbd86d10367a1953a4b5e` | Reject |
+| 48000 | 3a-1 (deleted) | 48480 | `67c9aaf0dc8265d63d8981ad26e800673597647ccd0bedbfe04596ee73cb9bb0` | Detect, zero drift |
+| 48000 | 3a-2 (wrong) | 48480 | `4afd4bfc1fe255d655c19391cc60f18e8ec95c91f04fef7a9bb059c28f9a34ea` | Reject |
+| 48000 | 3a-3 (silent) | 48480 | `2f7c12aecbb02fe41c280d382587dbd7f907cb433c08483b8bfef50fdd12673c` | Reject |
+| 48000 | 3a-4 (alias) | 48960 | `b94c47f58ff2975a232ef00c4f2b0b13f41b92aae53c077cfeb102d04737d612` | Reject |
 
 This is a content marker, not a cryptographic identity. PCM gaps do not establish RTP packet
 loss. RMS/peak silence limits remain 0.003/0.01. Transition-settling, missing-slot, wrong-tone,

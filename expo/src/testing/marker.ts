@@ -101,8 +101,7 @@ export function detectMarker(pcm: Float32Array, sampleRate: number, marker: Medi
     values.set(millisecond, result);
     return result;
   };
-  const shifts = [0, ...Array.from({ length: 15 }, (_, index) => [-index - 1, index + 1]).flat()];
-  // Pure tones can differ by floating-point roundoff. Ties favor the smallest local shift.
+  // Preserve the existing slot-zero anchor's numerical tie rule.
   const epsilon = 1e-12;
   for (let firstMs = 0; ; firstMs++) {
     const offset = Math.floor(firstMs * sampleRate / 1000);
@@ -118,26 +117,37 @@ export function detectMarker(pcm: Float32Array, sampleRate: number, marker: Medi
       if (candidateScore > confidence + epsilon) { anchorMs = candidate; confidence = candidateScore; }
     }
     const anchor = Math.floor(anchorMs * sampleRate / 1000);
-    const starts = [anchor];
-    let previousMs = anchorMs;
-    for (const frequency of marker.frequencies.slice(1)) {
-      const expectedMs = previousMs + marker.slotMs;
-      let chosenMs = expectedMs, chosenScore = -1;
-      for (const shift of shifts) {
-        const candidateMs = expectedMs + shift, candidateScore = score(candidateMs, frequency);
-        if (candidateScore > chosenScore + epsilon || chosenScore < 0.8 && candidateScore >= 0.8) {
-          chosenMs = candidateMs; chosenScore = candidateScore;
-        }
-        if (chosenScore >= 1 - epsilon) break;
+    // One optimal prefix per (slot, cumulative drift): future costs depend only on this state.
+    interface Path { movement: number; sum: number; minimum: number; starts: readonly number[] }
+    const better = (left: Path, right: Path): boolean => {
+      if (left.movement !== right.movement) return left.movement < right.movement;
+      if (left.sum !== right.sum) return left.sum > right.sum;
+      for (let index = 0; index < left.starts.length; index++) {
+        if (left.starts[index] !== right.starts[index]) return left.starts[index]! < right.starts[index]!;
       }
-      confidence = Math.min(confidence, chosenScore);
-      if (confidence < 0.8) break;
-      starts.push(Math.floor(chosenMs * sampleRate / 1000));
-      previousMs = chosenMs;
+      return false;
+    };
+    let paths = new Map<number, Path>([[0, { movement: 0, sum: confidence, minimum: confidence, starts: [anchorMs] }]]);
+    for (let slot = 1; slot < marker.frequencies.length && paths.size; slot++) {
+      const next = new Map<number, Path>();
+      const step = marker.frequencies[slot] === marker.frequencies[slot - 1] ? 0 : 15;
+      for (const [previousDrift, prefix] of paths) {
+        for (let drift = Math.max(-60, previousDrift - step); drift <= Math.min(60, previousDrift + step); drift++) {
+          const start = anchorMs + slot * marker.slotMs + drift;
+          const value = score(start, marker.frequencies[slot]!);
+          if (value < 0.8) continue;
+          const path: Path = { movement: prefix.movement + Math.abs(drift - previousDrift),
+            sum: prefix.sum + value, minimum: Math.min(prefix.minimum, value), starts: [...prefix.starts, start] };
+          const incumbent = next.get(drift);
+          if (!incumbent || better(path, incumbent)) next.set(drift, path);
+        }
+      }
+      paths = next;
     }
-    if (confidence >= 0.8 && starts.length === marker.frequencies.length &&
-        Math.abs(starts.at(-1)! - anchor - slotSamples * (starts.length - 1)) <= slotSamples)
-      return Object.freeze({ id: marker.id, offsetSamples: anchor, confidence, slotStarts: Object.freeze(starts) });
+    let chosen: Path | undefined;
+    for (const path of paths.values()) if (!chosen || better(path, chosen)) chosen = path;
+    if (chosen) return Object.freeze({ id: marker.id, offsetSamples: anchor, confidence: chosen.minimum,
+      slotStarts: Object.freeze(chosen.starts.map(ms => Math.floor(ms * sampleRate / 1000))) });
     firstMs = searchEnd;
   }
   return null;

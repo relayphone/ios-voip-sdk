@@ -52,6 +52,64 @@ export const detectionVectors = [
     sha256: "62459596128b7f8e181c8ef1edd5a69039f37fdfa89a03e4f29e12d55aad7c14" },
 ] as const;
 
-export const insertedDrifts = [0, 0, 0, 10, 10, 10, 20, 20, 20, 30, 30, 40] as const;
-export const deletedDrifts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -10, -10] as const;
+export const insertedDrifts = {
+  8000: [0, 7, 13, 14, 14, 14, 20, 23, 31, 31, 31, 33],
+  48000: [0, 2, 10, 12, 12, 12, 22, 30, 33, 33, 33, 33],
+} as const;
+export const deletedDrifts = {
+  8000: [0, 0, 0, -2, -2, -2, -3, -4, -4, -4, -7, -7],
+  48000: [0, 0, 0, -1, -1, -1, -1, -6, -7, -7, -7, -7],
+} as const;
 export const overCapDrifts = [0, 0, 10, 20, 30, 40, 50, 60, 60, 70, 70, 80] as const;
+
+export type RepeatedVariant = "deleted" | "wrong" | "silent" | "alias";
+/** Received continuous-tone run with a deterministic low-level render residual. */
+export function repeatedVector(rate: 8000 | 48000, variant: RepeatedVariant): Float32Array {
+  if (variant === "alias") {
+    const marker = createMarker("wrong-each-slot"), pcm = emissionSamples(marker, rate, rate / 50 * 51);
+    for (let index = rate * 81 / 100; index < rate * 87 / 100; index++)
+      pcm[index] = 0.2 * Math.sin(2 * Math.PI * 950 * index / rate);
+    return pcm;
+  }
+  const marker = createMarker("repeat-v2-8233"), pcm = emissionSamples(marker, rate, rate / 50 * 51);
+  // Model the received repeated 650 Hz run without intra-run amplitude notches.
+  // Source marker/emission generation and parity remain unchanged.
+  for (let index = rate * 39 / 100; index < rate * 81 / 100; index++)
+    pcm[index] = 0.2 * Math.sin(2 * Math.PI * 650 * (index - rate * 39 / 100) / rate);
+  const position = rate * 675 / 1000, count = rate / 100, fade = rate / 400;
+  const next = new Float32Array(pcm.length - count);
+  next.set(pcm.subarray(0, position));
+  next.set(pcm.subarray(position + count), position);
+  for (let index = 0; index < fade; index++) {
+    const weight = index / (fade - 1);
+    next[position + index] = (1 - weight) * pcm[position + index]! + weight * next[position + index]!;
+  }
+  // A 400 Hz residual with slowly increasing gain makes local confidence maxima
+  // move backwards through the run. A complete path retains its entry alignment.
+  for (let index = 0; index < next.length; index++)
+    next[index] = next[index]! + 0.002 * (1 + index / next.length) * Math.sin(2 * Math.PI * 400 * index / rate);
+  if (variant === "wrong") {
+    for (let index = rate * 80 / 100; index < rate * 86 / 100; index++)
+      next[index] = 0.2 * Math.sin(2 * Math.PI * 1350 * index / rate);
+  } else if (variant === "silent") next.fill(0, rate * 63 / 100, rate * 68 / 100);
+  return next;
+}
+
+export const repeatedVectors = [
+  { rate: 8000, variant: "deleted",
+    sha256: "dae143f33211f6fcf9617e2e4a99de5e00831e168adafa8a7b2d8fa041811a0b" },
+  { rate: 8000, variant: "wrong",
+    sha256: "236233ac4ebee517862f86fda82eb5e9fe38b2168a42fd90df090ce837c0199f" },
+  { rate: 8000, variant: "silent",
+    sha256: "2ec6a4f8d98a1a85d5aa0bb29bd5f707c0dfd7102a78190761da7e8d19ba1531" },
+  { rate: 8000, variant: "alias",
+    sha256: "35770229b8db7382e249035c555d399962bcedf12cdcbd86d10367a1953a4b5e" },
+  { rate: 48000, variant: "deleted",
+    sha256: "67c9aaf0dc8265d63d8981ad26e800673597647ccd0bedbfe04596ee73cb9bb0" },
+  { rate: 48000, variant: "wrong",
+    sha256: "4afd4bfc1fe255d655c19391cc60f18e8ec95c91f04fef7a9bb059c28f9a34ea" },
+  { rate: 48000, variant: "silent",
+    sha256: "2f7c12aecbb02fe41c280d382587dbd7f907cb433c08483b8bfef50fdd12673c" },
+  { rate: 48000, variant: "alias",
+    sha256: "b94c47f58ff2975a232ef00c4f2b0b13f41b92aae53c077cfeb102d04737d612" },
+] as const;
