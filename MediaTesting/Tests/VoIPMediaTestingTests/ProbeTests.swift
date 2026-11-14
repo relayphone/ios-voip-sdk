@@ -200,6 +200,19 @@
       }
     }
 
+    @Test(arguments: [3, 10])
+    func captureRemainsBoundedWhileObservationsContinue(seconds: Int) throws {
+      let probe = MediaAudioProbe(captureDuration: .seconds(seconds))
+      let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 8000, channels: 1))
+      let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 800))
+      buffer.frameLength = 800
+      let samples = try #require(buffer.floatChannelData?[0])
+      for index in 0..<800 { samples[index] = 0.125 }
+      for _ in 0..<120 { probe.receive(buffer, at: .decoded) }
+      #expect(probe.capture(.decoded).channels[0].count == seconds * 8000)
+      #expect(probe.observation(.decoded).samples == 96_000)
+    }
+
     @Test
     func silenceNeedsRealCallbacksAndNonzeroAudioFails() throws {
       let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))

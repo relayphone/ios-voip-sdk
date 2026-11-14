@@ -76,7 +76,7 @@ summary lists all channels and slots; `media-result-synthetic.json` preserves fu
 The run retains the complete-marker gate and all mute/activation checks. Each channel
 also reports captured tail duration and post-roll coverage. The fixture requires 150 ms of
 post-roll plus 20 ms for detector alignment uncertainty; that capture gate does not change marker
-detection. Three-second native captures and the three-second far-end positive window cover the tail
+detection. Native capture now retains cycles within the existing ten-second acquisition deadline; the three-second far-end positive window is unchanged. These windows cover the tail
 at any emission phase. A truncated emission may still detect its complete marker while failing
 this separate coverage gate.
 
@@ -102,6 +102,23 @@ energy floor and the 0.8 complete-marker rule remain fixed. A failed matrix rema
 
 Duplex qualification remains incomplete; generator-only controls do not establish codec or
 audio-processing survival.
+
+## First clean cycle
+
+The emitted signal repeats every 1020 ms. Native acquisition retains bounded PCM through its
+existing ten-second deadline instead of sealing only the first three seconds. The far-end
+publication control keeps its three one-second receiver windows. No timeout or confidence gate
+is increased. The shared detector's anchor, scoring, path selection and drift limits are unchanged.
+
+Each candidate records all twelve confidence values, selected starts when complete, post-roll,
+and receiver loss, concealment and stretch counter deltas. Any loss/concealment change in an
+overlapping statistics interval marks that candidate impaired. Counter coverage must bracket
+the candidate; missing, stale or reset statistics cannot establish a clean cycle. The first
+complete, clean candidate with post-roll wins independently for each observation. Rejected
+candidates remain diagnostics and cannot pass on energy or fixed-grid scores.
+
+The reference probe's retention bound is configurable from one to ten seconds, with the existing
+three-second default unchanged. This is a memory bound, not an extension of acquisition deadlines.
 
 ## Historical pipeline evidence
 

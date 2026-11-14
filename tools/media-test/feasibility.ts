@@ -12,6 +12,8 @@ import { createMarker, emissionSamples } from '../../expo/src/testing/marker.ts'
 import { markerReport, measureMarker, type PCMCapture } from './marker-evidence.ts';
 import { command, deadline, stopChild, unusedPort } from './fixture-runtime.ts';
 import { measureMarkerAsync } from './measure-marker.ts';
+import { receiverStatistics } from './receiver-statistics.ts';
+import type { TransportSnapshot } from './transport.ts';
 import { monitorReceiver, ReceiverObservationError } from './peer-window.ts';
 
 const [simulator, app, binary, output] = process.argv.slice(2);
@@ -65,6 +67,17 @@ let readerLive = false, trackAvailable = false, readerFailed = false;
 const cancelReaders: (() => Promise<void>)[] = [];
 const source = new AudioSource(48_000, 1, 100);
 let received: number[] = [];
+let transport: TransportSnapshot[] = [], captureGeneration = 0;
+const statistics = (async () => {
+  while (running) {
+    const generation = captureGeneration;
+    try {
+      const row = await receiverStatistics(peer, () => receivedSamples);
+      if (row && generation === captureGeneration && (row.streamID !== transport.at(-1)?.streamID || row.timestamp > transport.at(-1)!.timestamp)) transport.push(row);
+    } catch { /* Missing statistics remain unavailable and cannot qualify a clean cycle. */ }
+    await delay(100);
+  }
+})();
 let uplinkEvidence: ReturnType<typeof measureMarker> | null = null;
 let uplinkCapture: PCMCapture | null = null;
 type ControlStep = 'request' | 'drain' | 'window-1' | 'window-2' | 'window-3' | 'marker-analysis' | 'marker-gate' | 'silence-gate';
@@ -80,7 +93,7 @@ const control = createServer(async (request, response) => {
   try {
     assert.ok(['/leak-control', '/muted'].includes(request.url ?? ''));
     // Exclude queued pre-mute frames, then retain an entire observation window.
-    await step('drain', () => delay(500)); receivedSamples = 0; energy = 0;
+    await step('drain', () => delay(500)); receivedSamples = 0; energy = 0; transport = []; captureGeneration++;
     if (request.url === "/leak-control") received = [];
     const observe = () => monitorReceiver(() => ({ connected: peer.connectionState === ConnectionState.CONN_CONNECTED,
       readerLive: readerLive && !readerFailed, trackAvailable }));
@@ -91,10 +104,10 @@ const control = createServer(async (request, response) => {
       for (const window of ['window-2', 'window-3'] as const) {
         await step(window, observe);
       }
-      uplinkCapture = { sampleRate: 48_000, channels: [received.slice()], formatChanged: false };
+      uplinkCapture = { sampleRate: 48_000, channels: [received.slice()], formatChanged: false, transport: transport.slice() };
       uplinkEvidence = await step('marker-analysis', () => measureMarkerAsync(uplinkCapture!, uplink));
       controlPhase = 'marker-gate';
-      assert.ok(uplinkEvidence.complete && uplinkEvidence.postRollObserved, 'Complete unmuted tones-v2 marker and post-roll were not received');
+      assert.ok(uplinkEvidence.clean && uplinkEvidence.complete && uplinkEvidence.postRollObserved, 'Complete unmuted tones-v2 marker and post-roll were not received');
       controls.leakControlCaught = true;
     } else { controlPhase = 'silence-gate'; assert.ok(rms < 0.001, 'Muted publication leaked PCM'); controls.publicationSilent = true; }
     response.end('ok');
@@ -186,8 +199,8 @@ try {
         : `\n### ${processing}: toDevice / ${stage}\n\nMissing or invalid PCM observation.\n`;
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, report);
   }
-  assert.ok((uplinkEvidence as ReturnType<typeof measureMarker> | null)?.complete && (uplinkEvidence as ReturnType<typeof measureMarker> | null)?.postRollObserved &&
-    Object.values(downlinkEvidence).every(value => value?.complete && "postRollObserved" in value && value.postRollObserved),
+  assert.ok((uplinkEvidence as ReturnType<typeof measureMarker> | null)?.clean && (uplinkEvidence as ReturnType<typeof measureMarker> | null)?.complete && (uplinkEvidence as ReturnType<typeof measureMarker> | null)?.postRollObserved &&
+    Object.values(downlinkEvidence).every(value => value?.complete && 'clean' in value && value.clean && "postRollObserved" in value && value.postRollObserved),
     'A complete tones-v2 marker with every slot >= 0.8 and post-roll coverage is required in both directions');
   assert.ok(evidence && typeof evidence === 'object' && 'passed' in evidence && evidence.passed === true, 'Native media check failed');
   assert.ok(controls.leakControlCaught && controls.publicationSilent, 'Far-end controls did not complete');
@@ -199,7 +212,7 @@ try {
       await Promise.allSettled(cancelReaders.map(cancel => cancel()));
       await Promise.allSettled(readers);
       await peer.disconnect(); await source.close();
-      await publish;
+      await publish; await statistics;
       await dispose();
     });
   } finally {

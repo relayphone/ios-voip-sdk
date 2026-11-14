@@ -66,7 +66,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let codecs: [String: String]
     }
     nonisolated let commands: AsyncStream<AudioCommand>.Continuation
-    let probe = MediaAudioProbe()
+    let probe = MediaAudioProbe(captureDuration: .seconds(10))
     let fixture: Fixture
     let room = Room()
     let decoder: DecodedAudioProbe
@@ -80,6 +80,23 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     var released = false
     var phase = Phase.setup
     var failed = false
+    struct TransportSnapshot: Encodable {
+      let sample: Int
+      let packetsLost: Int64
+      let concealedSamples: UInt64
+      let insertedSamples: UInt64
+      let removedSamples: UInt64
+      let timestamp: Double
+      let streamID: String
+    }
+    struct CapturedPCM: Encodable {
+      let sampleRate: Double
+      let channels: [[Float]]
+      let formatChanged: Bool
+      let transport: [TransportSnapshot]
+    }
+    var transport: [MediaAudioProbe.Stage: [TransportSnapshot]] = [:]
+    var lastStatisticsTimestamp: Double?
     var savedDuplex = false
     var processing: [String: Bool] = [:]
     var codecs: [String: String] = [:]
@@ -162,10 +179,17 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
           _ = await client.report(incoming)
           try await client.request(.answer(incoming.id))
           phase = .duplex
-          try await until {
-            self.probe.observation(.output).frameSeconds >= 3
-              && self.probe.observation(.decoded).frameSeconds >= 3
+          // Keep the existing ten-second acquisition deadline; retain later repeated cycles.
+          let clock = ContinuousClock()
+          let acquisitionDeadline = clock.now + .seconds(10)
+          while clock.now < acquisitionDeadline {
+            recordTransport()
+            try await clock.sleep(until: min(acquisitionDeadline, clock.now + .milliseconds(100)))
           }
+          recordTransport()
+          guard probe.observation(.output).frameSeconds >= 3,
+            probe.observation(.decoded).frameSeconds >= 3
+          else { throw MediaAudioProbe.Failure.incompleteWindow(.decoded) }
           saveDuplex()
           phase = .codec
           codecs = [
@@ -280,10 +304,33 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       }
       return mime
     }
+    private func recordTransport() {
+      guard let stats = remoteTrack?.statistics?.inboundRtpStream.first,
+        stats.timestamp != lastStatisticsTimestamp,
+        let lost = stats.packetsLost, let concealed = stats.concealedSamples,
+        let inserted = stats.insertedSamplesForDeceleration,
+        let removed = stats.removedSamplesForAcceleration
+      else { return }
+      lastStatisticsTimestamp = stats.timestamp
+      for stage in [MediaAudioProbe.Stage.decoded, .output] {
+        let capture = probe.capture(stage)
+        let channels = max(1, capture.channels.count)
+        transport[stage, default: []].append(
+          TransportSnapshot(
+            sample: probe.observation(stage).samples / channels,
+            packetsLost: lost, concealedSamples: concealed,
+            insertedSamples: inserted, removedSamples: removed,
+            timestamp: stats.timestamp, streamID: stats.id))
+      }
+    }
     private func saveDuplex() {
       guard !savedDuplex else { return }
       for stage in [MediaAudioProbe.Stage.decoded, .output] {
-        try? JSONEncoder().encode(probe.capture(stage)).write(
+        let capture = probe.capture(stage)
+        let retained = CapturedPCM(
+          sampleRate: capture.sampleRate, channels: capture.channels,
+          formatChanged: capture.formatChanged, transport: transport[stage] ?? [])
+        try? JSONEncoder().encode(retained).write(
           to: URL.documentsDirectory.appending(path: "media-" + stage.rawValue + ".json"))
       }
       savedDuplex = true

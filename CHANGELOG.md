@@ -7,6 +7,12 @@ Public API changes include migration guidance.
 
 ### Fixed
 
+- Media feasibility retains repeated cycles within the existing native acquisition deadline,
+  instead of sealing only the first three seconds. It selects the first complete clean cycle
+  and reports per-candidate confidences with receiver loss, concealment and stretch counters.
+  Missing or stale counters cannot qualify clean coverage; thresholds and deadlines are unchanged.
+  The optional probe retains a three-second default, with a configurable bounded capture duration.
+
 - Production SwiftPM consumers no longer resolve LiveKit or its binary artifacts. The optional
   `VoIPMediaTesting` product now lives in the nested `MediaTesting/Package.swift`: add that
   directory from a local repository checkout and select `VoIPMediaTesting` for media tests.
