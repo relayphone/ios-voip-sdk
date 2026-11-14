@@ -1,0 +1,328 @@
+# Native media hook feasibility
+
+`VoIPMediaTesting` is optional: select the Swift package product or the CocoaPods `MediaTesting`
+subspec. The implementation exists only in Debug iOS Simulator builds. It is absent on devices,
+on macOS and in Release builds. LiveKit is not a dependency of the core SDK products.
+
+The selected provider is LiveKit Swift **2.19.0**, whose package and podspec pin LK-prefixed
+WebRTC **150.7871.04**. The Expo example uses native LiveKit through `NativeCallMedia`; it does
+not install the React Native WebRTC provider alongside it.
+
+`MarkerAudioEngine` installs after LiveKit's session/mixer observers before room creation.
+It replaces hardware capture with the shared 12-slot `tones-v2` source at `engineWillConnectInput`, without enabling
+the audio session. `DecodedAudioProbe.attach(to:)` observes the actual remote track.
+The output observer inserts a unity-gain meter **after** the ordinary engine's main mixer and
+before its output node. It does not use manual rendering or the decoder as output evidence.
+
+The example first uses `AudioManager.setEngineAvailability(.none)`, prepares the room, then
+enables its engine only through `CallMedia.activate()`. The check requires a stopped engine and
+no output samples before activation. It then requires both decoder and output PCM, verifies
+that LiveKit's mixer output-volume gate silences output while decoded audio continues, and
+requests mute through `VoIPClient`. Its native observer mutes the real microphone publication.
+A separate peer requires the complete current-fixture marker before mute and silence afterwards. The unchanged
+source is never artificially zeroed in response to mute.
+
+`MediaAudioProbe.expectSilence` checks every channel and requires an installed tap with live
+callback coverage throughout the requested interval. Missing callbacks cannot count as silence.
+Swift Testing covers missing taps, stopped callbacks, both stereo layouts, real silent frames
+and an intentional nonzero leak. The peer independently monitors its receiver during mute.
+
+`.github/workflows/media-feasibility.yml` runs the example on one simulator on the standard
+`xcode-27` GitHub-hosted image. The existing CI simulator suite also runs the Swift Testing controls.
+The feasibility job retains its result and build
+logs, then deletes its simulator and temporary builds. The server is pinned to LiveKit 1.13.11,
+using Homebrew's checksum-pinned ARM64 macOS bottle because upstream publishes no macOS archive;
+the throwaway peer's exact Node dependency is in `tools/media-test/package.json` and its lockfile.
+The example selects the official tagged CocoaPods sources explicitly because the Swift release
+is not indexed on CocoaPods trunk.
+
+This qualifies software capture, publication and post-mixer PCM. It does not establish physical
+microphone/speaker operation, Bluetooth routing or acoustic latency. The shared TypeScript
+contract and reusable host fixture are separate changes.
+
+## Marker qualification
+
+The shared profile is specified in merged [#294](https://github.com/relayphone/ios-voip-sdk/pull/294).
+This branch includes merged [#295](https://github.com/relayphone/ios-voip-sdk/pull/295), the shared
+emission generator opened before its fixture re-run. Both sources emit 150 ms of 400 Hz before
+and after the unchanged marker, with 5 ms raised-cosine fades only at the emission's outer edges.
+
+Both sources use the shared `createMarker` / `emissionSamples` profile: twelve 60 ms slots, amplitude 0.2, 5 ms raised-cosine fades,
+650/950/1350/1850 Hz, and distinct fixture-scoped direction identities. Swift receives the exact
+frequency sequence from the TypeScript fixture, restarts phase per slot, and matches both
+marker and emission PCM16 parity hashes in `docs/media-testing.md` (native parity checks use
+the actual capture sample functions).
+Only the central 20 ms of each slot is scored, with 20 ms guards on both sides. Unmodified, bounded PCM from the far end, iOS
+decoder and iOS post-output tap is checked with the shared `detectMarker`. Every slot must reach
+confidence **0.8**, and the whole marker must be present in every observed channel. Energy alone
+never establishes audio. The unreleased profile replaces tones-v1 as specified by the shared contract; the 0.8 threshold
+and complete-marker requirement are unchanged.
+
+The synthetic capture enters after Apple's hardware voice-processing node. For this Debug-only
+reference fixture, capture explicitly requests **WebRTC software** AGC with AEC and NS disabled.
+There is no acoustic path from the speaker to the synthetic microphone; echo suppression can
+mistake near-end tones shared with the render signal for echo. Noise suppression can remove
+the non-speech tones too. Echo cancellation and noise suppression fidelity remain device and
+speech QA. Runtime requested/active processing state and the actual RTP codec (Opus, including
+RED encapsulation) are required in the receipt. The Node peer publishes raw PCM without a
+capture APM: `fromDevice` covers iOS software AGC then Opus; `toDevice` covers peer Opus, iOS
+decoding and post-output. The kit verifies audio flow each way, mute, hold and reconnect gates,
+and software timing; this does not claim physical microphone or Node capture APM coverage.
+
+CI uses the fixed `synthetic` configuration (AGC on, AEC/NS off) on one simulator.
+Each result retains every slot's confidence and signed
+margin above 0.8, including the best rejected complete candidate when detection fails. The job
+summary lists all channels and slots; `media-result-synthetic.json` preserves full precision.
+The run retains the complete-marker gate and all mute/activation checks. Each channel
+also reports captured tail duration and post-roll coverage. The fixture requires 150 ms of
+post-roll plus 20 ms for detector alignment uncertainty; that capture gate does not change marker
+detection. Three-second native captures and the three-second far-end positive window cover the tail
+at any emission phase. A truncated emission may still detect its complete marker while failing
+this separate coverage gate.
+
+Elastic alignment is supplied by [#296](https://github.com/relayphone/ios-voip-sdk/pull/296)
+and complete-path selection by [#298](https://github.com/relayphone/ios-voip-sdk/pull/298).
+Measurements score each slot at the detector's chosen start and retain its sample offset,
+relative drift, confidence and margin. Tail coverage is measured after the last aligned slot,
+not after a fixed 720 ms grid. Rejected fixed-grid diagnostics are labelled and cannot count as
+accepted elastic evidence. All twelve slots still require confidence >=0.8; drift stays
+within ±60 ms at every slot and each transition step within ±15 ms. Equal expected tones
+retain equal drift. Selection prefers least total movement, then greatest confidence sum
+(ties within 1e-9), then earliest starts.
+
+Both sources precompute the byte-identical emission outside their capture/publish loops.
+Marker analysis runs in an owned Node worker with a 20-second deadline and bounded termination,
+so detection cannot interrupt the peer packet clock. Worker failure supplies no audio or silence
+receipt. Tests check published insert/delete drift lists, scoring at the actual chosen starts,
+and parent-clock progress while analysis runs. Real iOS margins and drifts with this detector
+are reported below for the first elastic CI measurement run.
+
+The detector update changes received-slot alignment only. Emitted PCM, the
+energy floor and the 0.8 complete-marker rule remain fixed. A failed matrix remains unqualified.
+
+Duplex qualification remains incomplete; generator-only controls do not establish codec or
+audio-processing survival.
+
+## Historical pipeline evidence
+
+The runs below used AEC/AGC on and NS off, before the complete-path detector and the
+current AGC-on, AEC/NS-off configuration. They do not qualify the current configuration. See
+[the shared test scope](media-testing.md#synthetic-capture-configuration).
+
+### Startup diagnostics at 04c2c7da
+
+The [next run](https://github.com/relayphone/ios-voip-sdk/actions/runs/43551344143)
+exited 124 during startup before producing native results or PCM. The peer connect callback
+arrived at 03:41:50 UTC and the outer 300-second fixture deadline fired at 03:41:57.
+The build passed; there are no per-slot measurements for this run.
+
+The fixture now records named simulator, server-ready, peer-connect/publish and result-wait
+phases with elapsed times. A separate progress artifact survives the outer deadline and cannot
+serve as a media receipt. Phase logs contain no command arguments, credentials or server
+configuration. A module-loaded timestamp also distinguishes module startup from later phases.
+All deadlines, media gates, AEC/AGC settings and the NS-off configuration remain unchanged.
+
+## NS-off measurements at 9f505db, attempt 2
+
+[CI run](https://github.com/relayphone/ios-voip-sdk/actions/runs/43544862403/attempts/2) failed at publicationGate. Software AEC/AGC were requested and active; NS was requested off and inactive. Both RTP directions used Opus. The source generated 411648 samples; the connected live receiver observed 184800 samples with RMS 0.113664. Uplink failed complete detection; decoded and output downlink passed with post-roll coverage. Mute validation did not complete.
+
+### Uplink / far end
+
+Alignment: fixed-grid diagnostic; minimum 0.000003; final drift 0 ms; post-roll coverage false.
+
+| Slot | Hz | Start samples | Drift ms | Confidence | Margin |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 650 | 42768 | 0 | 0.530827 | -0.269173 |
+| 1 | 950 | 45648 | 0 | 0.001804 | -0.798196 |
+| 2 | 1350 | 48528 | 0 | 0.921221 | 0.121221 |
+| 3 | 1850 | 51408 | 0 | 0.000049 | -0.799951 |
+| 4 | 1850 | 54288 | 0 | 0.001601 | -0.798399 |
+| 5 | 650 | 57168 | 0 | 0.000250 | -0.799750 |
+| 6 | 650 | 60048 | 0 | 0.004584 | -0.795416 |
+| 7 | 1350 | 62928 | 0 | 0.000005 | -0.799995 |
+| 8 | 1350 | 65808 | 0 | 0.000003 | -0.799997 |
+| 9 | 1350 | 68688 | 0 | 0.000004 | -0.799996 |
+| 10 | 1350 | 71568 | 0 | 0.000010 | -0.799990 |
+| 11 | 1350 | 74448 | 0 | 0.002608 | -0.797392 |
+
+### Downlink / decoded
+
+Alignment: elastic; minimum 0.998706; final drift -55 ms; post-roll coverage true.
+
+| Slot | Hz | Start samples | Drift ms | Confidence | Margin |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 650 | 73008 | 0 | 0.999986 | 0.199986 |
+| 1 | 950 | 75312 | -12 | 0.999928 | 0.199928 |
+| 2 | 1350 | 78336 | -9 | 0.999951 | 0.199951 |
+| 3 | 1850 | 81552 | -2 | 0.999886 | 0.199886 |
+| 4 | 1350 | 83712 | -17 | 0.998706 | 0.198706 |
+| 5 | 1850 | 86976 | -9 | 0.999934 | 0.199934 |
+| 6 | 650 | 89136 | -24 | 0.999981 | 0.199981 |
+| 7 | 1350 | 91392 | -37 | 0.999915 | 0.199915 |
+| 8 | 950 | 94992 | -22 | 0.999952 | 0.199952 |
+| 9 | 950 | 97728 | -25 | 0.999978 | 0.199978 |
+| 10 | 650 | 99888 | -40 | 0.999981 | 0.199981 |
+| 11 | 1850 | 102048 | -55 | 0.999921 | 0.199921 |
+
+### Downlink / output
+
+Alignment: elastic; minimum 0.998463; final drift -55 ms; post-roll coverage true.
+
+| Slot | Hz | Start samples | Drift ms | Confidence | Margin |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 650 | 73632 | 0 | 0.999986 | 0.199986 |
+| 1 | 950 | 75888 | -13 | 0.999933 | 0.199933 |
+| 2 | 1350 | 78912 | -10 | 0.999951 | 0.199951 |
+| 3 | 1850 | 82176 | -2 | 0.999886 | 0.199886 |
+| 4 | 1350 | 84336 | -17 | 0.998463 | 0.198463 |
+| 5 | 1850 | 87552 | -10 | 0.999934 | 0.199934 |
+| 6 | 650 | 89760 | -24 | 0.999982 | 0.199982 |
+| 7 | 1350 | 92064 | -36 | 0.999915 | 0.199915 |
+| 8 | 950 | 95664 | -21 | 0.999964 | 0.199964 |
+| 9 | 950 | 98352 | -25 | 0.999978 | 0.199978 |
+| 10 | 650 | 100512 | -40 | 0.999976 | 0.199976 |
+| 11 | 1850 | 102672 | -55 | 0.999909 | 0.199909 |
+
+The uplink starts and zero drifts are fixed-grid diagnostics, not accepted elastic timing. No processing effect is identified as the cause by these observations alone. AEC/AGC remain enabled. The next run retains the bounded PCM used for each measurement, so failed slots can be inspected without regenerating or modifying the signal.
+
+### Earlier processing matrix
+
+The following evidence predates the NS-off decision and does not qualify the fixed configuration.
+
+The [elastic run at 25915cd](https://github.com/relayphone/ios-voip-sdk/actions/runs/43530306294)
+failed all five modes. Every uplink slot scored zero (margin -0.8); all receivers stayed connected
+with live readers, but received only zero PCM. The source callback counter remained zero.
+
+| Processing | Generated samples | Receiver samples / RMS | Decoded min / final drift ms | Output min / final drift ms | Native failure phase |
+| --- | --- | --- | --- | --- | --- |
+| all | 0 | 218880 / 0 | 0.999719 / -22 | 0.999767 / -24 | publicationGate |
+| withoutNS | 0 | 196800 / 0 | 0.999560 / -54 | 0.999564 / -54 | publicationGate |
+| withoutAGC | 0 | 175200 / 0 | 0.999782 / -47 | 0.999779 / -47 | publicationGate |
+| withoutAEC | 0 | 174240 / 0 | 0.105167 / 0 | 0.095937 / 0 | publicationGate |
+| none | 0 | 182880 / 0 | 0.999530 / -53 | 0.999530 / -53 | captureProcessing |
+
+The decoded and output paths pass complete elastic detection and post-roll coverage in four
+modes. The without-AEC values are rejected fixed-grid diagnostics, so their zero drift is not
+an accepted alignment. The all-disabled mode stops at processing-state validation. Full slot
+starts, confidence, margins and drift lists are retained in the CI summary and artifacts.
+
+The capture hook disconnected the hardware-input path feeding LiveKit’s sink. Apple requires
+[AVAudioSinkNode to remain downstream of the input node](https://developer.apple.com/videos/play/wwdc2019/510/).
+The revised graph keeps an owned zero-gain hardware branch alongside the marker, preserving
+the input clock while excluding microphone PCM. Its graph regression checks the retained
+connection, zero gain, stopped state and cleanup; actual callback progress and duplex, mute
+and activation behavior still require the next native CI run.
+
+### Earlier fixed-grid observations
+
+The [tones-v2 run at 1a64a8d3](https://github.com/relayphone/ios-voip-sdk/actions/runs/43489084670)
+failed. Only the without-NS variant produced a receipt: software AEC/AGC were active, NS was
+inactive, and both RTP directions used Opus. Its best complete candidates were rejected:
+minimum confidence 0.727294 in decoded audio (margin -0.072706), 0.760370 after output
+(margin -0.039630), and 0 for each scored uplink slot. This is not duplex qualification or
+proof that an individual processing effect caused attenuation. The other variants failed
+connection startup or authentication, leaving the processing comparison incomplete.
+
+Rejected candidate measurements for the without-NS run; every channel shown was mono.
+
+| Slot | Downlink Hz | Decoded confidence (margin) | Output confidence (margin) | Uplink confidence (margin) |
+| --- | --- | --- | --- | --- |
+| 0 | 650 | 0.727294 (-0.072706) | 0.777461 (-0.022539) | 0.000000 (-0.800000) |
+| 1 | 950 | 0.999741 (+0.199741) | 0.999757 (+0.199757) | 0.000000 (-0.800000) |
+| 2 | 1350 | 0.999721 (+0.199721) | 0.999786 (+0.199786) | 0.000000 (-0.800000) |
+| 3 | 1850 | 0.998941 (+0.198941) | 0.998825 (+0.198825) | 0.000000 (-0.800000) |
+| 4 | 1350 | 0.999618 (+0.199618) | 0.999600 (+0.199600) | 0.000000 (-0.800000) |
+| 5 | 950 | 0.999912 (+0.199912) | 0.999931 (+0.199931) | 0.000000 (-0.800000) |
+| 6 | 1350 | 0.999820 (+0.199820) | 0.999805 (+0.199805) | 0.000000 (-0.800000) |
+| 7 | 650 | 0.999819 (+0.199819) | 0.999815 (+0.199815) | 0.000000 (-0.800000) |
+| 8 | 1350 | 0.998166 (+0.198166) | 0.997917 (+0.197917) | 0.000000 (-0.800000) |
+| 9 | 1850 | 0.999704 (+0.199704) | 0.999715 (+0.199715) | 0.000000 (-0.800000) |
+| 10 | 950 | 0.957710 (+0.157710) | 0.933724 (+0.133724) | 0.000000 (-0.800000) |
+| 11 | 1850 | 0.795710 (-0.004290) | 0.760370 (-0.039630) | 0.000000 (-0.800000) |
+
+The f4f68ff5 revision removes synchronous simulator commands from the peer's packet-clock event loop,
+uses fresh local ports, and awaits the owned server's actual exit before advancing. Native
+captures begin again at audio activation, excluding pre-activation decoder buffers. Connection,
+cleanup, simulator and fixture operations have hard deadlines. The emission amendment adds the specified pre/post-roll to both sources. No marker waveform,
+processing flag, energy floor or confidence threshold is changed. The receipts additionally
+report generated capture samples and receiver sample/liveness counts for diagnosis.
+
+## Duplex measurements at 8a0ecbff
+
+[CI run](https://github.com/relayphone/ios-voip-sdk/actions/runs/43553954112) failed at publicationGate. All three PCM observations passed complete marker detection and post-roll coverage. AEC/AGC were requested and active, NS requested off and inactive, and both directions used Opus. The source generated 317952 samples. The final receiver was connected with a live reader, 494400 samples and RMS 0.170526.
+
+The positive control did not retain marker-analysis evidence: the stored marker evidence was computed afterward from retained PCM. Publication mute and teardown remain unqualified. Earlier control errors were discarded, so the exact observer failure is unknown. The helper now retains the failed control step, observer-health booleans and scheduling-gap duration. It logs each drain, observation window and marker-analysis phase. Gates and deadlines are unchanged.
+
+Startup phase measurements: terminate failed after 22.879 s; install 17.293 s; microphone permission 5.135 s; container lookup 0.996 s; server ready 1.338 s; peer connect 2.908 s; publish 0.021 s; launch 1.979 s; native result wait 10.374 s. Module startup completed at 04:05:04 UTC, and the native result was available about 64.218 s later.
+
+### Uplink / far end
+
+Complete marker: true.
+
+Channel 0; minimum confidence 0.8525597533954122; post-roll covered: true.
+
+
+Alignment: elastic; final drift 12 ms.
+
+| Slot | Hz | Start sample | Drift ms | Confidence | Margin above 0.8 |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 650 | 21552 | 0 | 0.950849 | 0.150849 |
+| 1 | 950 | 25152 | 15 | 0.918116 | 0.118116 |
+| 2 | 1350 | 28608 | 27 | 0.993980 | 0.193980 |
+| 3 | 1850 | 31728 | 32 | 0.968169 | 0.168169 |
+| 4 | 950 | 34848 | 37 | 0.935883 | 0.135883 |
+| 5 | 650 | 37728 | 37 | 0.852560 | 0.052560 |
+| 6 | 950 | 40608 | 37 | 0.902662 | 0.102662 |
+| 7 | 950 | 42768 | 22 | 0.991509 | 0.191509 |
+| 8 | 1850 | 46224 | 34 | 0.999257 | 0.199257 |
+| 9 | 1850 | 48960 | 31 | 0.999846 | 0.199846 |
+| 10 | 950 | 51648 | 27 | 0.991530 | 0.191530 |
+| 11 | 1350 | 53808 | 12 | 0.970536 | 0.170536 |
+
+### Downlink / decoded
+
+Complete marker: true.
+
+Channel 0; minimum confidence 0.9998103846102763; post-roll covered: true.
+
+
+Alignment: elastic; final drift -45 ms.
+
+| Slot | Hz | Start sample | Drift ms | Confidence | Margin above 0.8 |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 650 | 48480 | 0 | 0.999997 | 0.199997 |
+| 1 | 950 | 50736 | -13 | 0.999995 | 0.199995 |
+| 2 | 1350 | 53280 | -20 | 0.999959 | 0.199959 |
+| 3 | 1850 | 56400 | -15 | 0.999989 | 0.199989 |
+| 4 | 650 | 59856 | -3 | 0.999993 | 0.199993 |
+| 5 | 950 | 62544 | -7 | 0.999810 | 0.199810 |
+| 6 | 1850 | 64704 | -22 | 0.999986 | 0.199986 |
+| 7 | 650 | 67392 | -26 | 0.999996 | 0.199996 |
+| 8 | 650 | 69744 | -37 | 0.999993 | 0.199993 |
+| 9 | 650 | 72288 | -44 | 0.999991 | 0.199991 |
+| 10 | 1850 | 75264 | -42 | 0.999988 | 0.199988 |
+| 11 | 650 | 78000 | -45 | 0.999994 | 0.199994 |
+
+### Downlink / output
+
+Complete marker: true.
+
+Channel 0; minimum confidence 0.9998074187128735; post-roll covered: true.
+
+
+Alignment: elastic; final drift -45 ms.
+
+| Slot | Hz | Start sample | Drift ms | Confidence | Margin above 0.8 |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 650 | 48528 | 0 | 0.999997 | 0.199997 |
+| 1 | 950 | 50784 | -13 | 0.999995 | 0.199995 |
+| 2 | 1350 | 53328 | -20 | 0.999958 | 0.199958 |
+| 3 | 1850 | 56928 | -5 | 0.999989 | 0.199989 |
+| 4 | 650 | 59904 | -3 | 0.999993 | 0.199993 |
+| 5 | 950 | 62592 | -7 | 0.999807 | 0.199807 |
+| 6 | 1850 | 64752 | -22 | 0.999986 | 0.199986 |
+| 7 | 650 | 67488 | -25 | 0.999996 | 0.199996 |
+| 8 | 650 | 70416 | -24 | 0.999993 | 0.199993 |
+| 9 | 650 | 72768 | -35 | 0.999986 | 0.199986 |
+| 10 | 1850 | 75264 | -43 | 0.999988 | 0.199988 |
+| 11 | 650 | 78048 | -45 | 0.999994 | 0.199994 |
