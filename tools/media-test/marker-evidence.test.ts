@@ -63,3 +63,43 @@ test('fixture scores and margins follow the published chosen starts in either dr
     assert.ok(result.channels[0]!.slots.every(slot => slot.confidence >= 0.8 && slot.margin >= 0));
   }
 });
+
+test('first clean cycle skips a complete cycle carrying receiver loss or concealment', () => {
+  for (const impairment of ['packetsLost', 'concealedSamples'] as const) {
+    const samples = emissionSamples(marker, rate, rate * 3);
+    const transport = Array.from({ length: 7 }, (_, i) => ({ sample: i * rate / 2, timestamp: i,
+      streamID: 'receiver', packetsLost: 0, concealedSamples: 0, insertedSamples: 0, removedSamples: 0,
+      [impairment]: i > 0 ? 1 : 0 }));
+    const result = measureMarker({ sampleRate: rate, channels: [Array.from(samples)], formatChanged: false, transport }, marker);
+    assert.ok(result.clean && result.complete && result.postRollObserved);
+    assert.equal(result.channels[0]!.cycles[0]!.transport.state, 'impaired');
+    assert.ok(!result.channels[0]!.cycles[0]!.accepted);
+    assert.ok(result.channels[0]!.offsetSamples >= rate * 1.02);
+  }
+});
+test('a rejected first cycle does not hide a later unchanged clean emission', () => {
+  const samples = emissionSamples(marker, rate, rate * 3);
+  samples.fill(0, rate * 0.75, rate * 0.81);
+  const transport = [0, 3].map(second => ({ sample: second * rate, timestamp: second, streamID: 'receiver',
+    packetsLost: 0, concealedSamples: 0, insertedSamples: 0, removedSamples: 0 }));
+  const result = measureMarker({ sampleRate: rate, channels: [Array.from(samples)], formatChanged: false, transport }, marker);
+  assert.ok(result.clean);
+  assert.ok(result.channels[0]!.cycles.some(cycle => !cycle.complete));
+  assert.ok(result.channels[0]!.offsetSamples >= rate * 1.02);
+});
+test('missing counter coverage and impairment in every cycle cannot qualify as clean', () => {
+  const samples = emissionSamples(marker, rate, rate * 3);
+  for (const transport of [[], [0, 3].map(second => ({ sample: second * rate, timestamp: second, streamID: 'receiver',
+    packetsLost: second, concealedSamples: second, insertedSamples: 0, removedSamples: 0 }))]) {
+    const result = measureMarker({ sampleRate: rate, channels: [Array.from(samples)], formatChanged: false, transport }, marker);
+    assert.equal(result.clean, false); assert.equal(result.complete, false);
+  }
+});
+
+test('stale receiver reports cannot certify a later cycle as clean', () => {
+  const samples = emissionSamples(marker, rate, rate * 3);
+  const transport = [0, 3].map(second => ({ sample: second * rate, timestamp: 1, streamID: 'receiver',
+    packetsLost: 0, concealedSamples: 0, insertedSamples: 0, removedSamples: 0 }));
+  const result = measureMarker({ sampleRate: rate, channels: [Array.from(samples)], formatChanged: false, transport }, marker);
+  assert.equal(result.clean, false);
+});

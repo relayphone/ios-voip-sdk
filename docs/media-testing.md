@@ -6,6 +6,11 @@ media; a second test room cannot stand in for it. Calling `createMediaTest` with
 rejects with `MediaTestError` code `unavailable`. Native media hooks and a far-end peer are
 separate integrations.
 
+The reference iOS adapter evaluates repeated emissions within its existing acquisition deadline.
+It retains per-candidate confidences and receiver statistics, skips spans with loss or concealment,
+and accepts the first complete clean cycle. Missing or stale receiver counters cannot prove clean
+coverage. The 0.8 rule, amplitudes, signal, drift limits and all deadlines remain unchanged.
+
 ## Installing the optional iOS hooks
 
 The root Swift package contains the production SDK and resolves no LiveKit dependency.

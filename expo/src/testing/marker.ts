@@ -85,6 +85,13 @@ function toneConfidence(pcm: Float32Array, start: number, count: number, frequen
 }
 /** Complete ordered marker with local slot alignment; signal and confidence threshold are unchanged. */
 export function detectMarker(pcm: Float32Array, sampleRate: number, marker: MediaMarker): MarkerDetection | null {
+  for (const candidate of markerCandidates(pcm, sampleRate, marker)) if (candidate.detection) return candidate.detection;
+  return null;
+}
+
+/** Internal cycle diagnostics. A sync-qualified rejected cycle never counts as a detection. */
+export function* markerCandidates(pcm: Float32Array, sampleRate: number, marker: MediaMarker):
+  Generator<{ anchor: number; syncQualified: boolean; detection: MarkerDetection | null }> {
   validRate(sampleRate); validMarker(marker);
   if (pcm.length > sampleRate * 60) throw new MediaTestError("invalid_arguments", "Capture exceeds 60 seconds");
   const slotSamples = sampleRate / 50 * 3;
@@ -121,6 +128,7 @@ export function detectMarker(pcm: Float32Array, sampleRate: number, marker: Medi
     // One optimal prefix per (slot, cumulative drift): future costs depend only on this state.
     interface Path { movement: number; sum: number; minimum: number; starts: readonly number[] }
     let paths = new Map<number, Path>([[0, { movement: 0, sum: confidence, minimum: confidence, starts: [anchorMs] }]]);
+    let syncQualified = false;
     for (let slot = 1; slot < marker.frequencies.length && paths.size; slot++) {
       const next = new Map<number, Path>();
       const step = marker.frequencies[slot] === marker.frequencies[slot - 1] ? 0 : 15;
@@ -136,14 +144,14 @@ export function detectMarker(pcm: Float32Array, sampleRate: number, marker: Medi
         }
       }
       paths = next;
+      if (slot === 3 && paths.size) syncQualified = true;
     }
     let chosen: Path | undefined;
     for (const path of paths.values()) if (!chosen || preferMarkerPath(path, chosen)) chosen = path;
-    if (chosen) return Object.freeze({ id: marker.id, offsetSamples: anchor, confidence: chosen.minimum,
-      slotStarts: Object.freeze(chosen.starts.map(ms => Math.floor(ms * sampleRate / 1000))) });
+    yield { anchor, syncQualified, detection: chosen ? Object.freeze({ id: marker.id, offsetSamples: anchor, confidence: chosen.minimum,
+      slotStarts: Object.freeze(chosen.starts.map(ms => Math.floor(ms * sampleRate / 1000))) }) : null };
     firstMs = searchEnd;
   }
-  return null;
 }
 
 /** Internal diagnostic companion: score the selected elastic starts, or a labelled fixed-grid candidate. */

@@ -34,7 +34,7 @@
       public var sampleRate = 0.0
       public var channels: [[Float]] = []
       public var formatChanged = false
-      fileprivate mutating func append(_ incoming: [[Float]], rate: Double) {
+      fileprivate mutating func append(_ incoming: [[Float]], rate: Double, seconds: Double) {
         if sampleRate == 0 {
           sampleRate = rate
           channels = Array(repeating: [], count: incoming.count)
@@ -43,7 +43,7 @@
           formatChanged = true
           return
         }
-        let remaining = max(0, Int(sampleRate * 3) - (channels.first?.count ?? 0))
+        let remaining = max(0, Int(sampleRate * seconds) - (channels.first?.count ?? 0))
         for channel in channels.indices {
           channels[channel].append(contentsOf: incoming[channel].prefix(remaining))
         }
@@ -56,15 +56,21 @@
     }
     private let state = Mutex(State())
     private let now: @Sendable () -> Double
+    private let captureSeconds: Double
     /// Uses a monotonic clock; tests can advance an injected clock without sleeping.
-    public init<C: Clock<Duration>>(clock: C) {
+    /// The retained diagnostic capture is bounded to one through ten seconds; default is three.
+    public init<C: Clock<Duration>>(clock: C, captureDuration: Duration = .seconds(3)) {
+      precondition(captureDuration >= .seconds(1) && captureDuration <= .seconds(10))
+      captureSeconds = Double(captureDuration / .seconds(1))
       let origin = clock.now
       now = {
         let elapsed = origin.duration(to: clock.now).components
         return Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
       }
     }
-    public convenience init() { self.init(clock: ContinuousClock()) }
+    public convenience init(captureDuration: Duration = .seconds(3)) {
+      self.init(clock: ContinuousClock(), captureDuration: captureDuration)
+    }
     /// Discards prior samples while preserving actual tap attachment.
     public func beginWindow() {
       let start = now()
@@ -135,7 +141,8 @@
       }
       state.withLock { state in
         guard entered >= state.start else { return }
-        state.captures[stage, default: Capture()].append(captured, rate: buffer.format.sampleRate)
+        state.captures[stage, default: Capture()].append(
+          captured, rate: buffer.format.sampleRate, seconds: captureSeconds)
         var value = state.values[stage] ?? Observation()
         if let last = value.lastCallback {
           value.maximumGap = max(value.maximumGap, entered - last)
