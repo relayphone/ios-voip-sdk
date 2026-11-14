@@ -146,6 +146,7 @@
     private var calls: [UUID: CallState] = [:]
     private let applicationActivity = RuntimeApplicationActivity()
     private var pushReportingObligations = PushReportingObligations()
+    private var pushDeliveries: [UUID: Task<Void, Never>] = [:]
     private var pendingActions: [UUID: RuntimePendingAction] = [:]
     private let deadlines = NSMapTable<CXAction, NSDate>.weakToStrongObjects()
     private var observers: [ObjectIdentifier: ObserverRegistration] = [:]
@@ -283,6 +284,8 @@
         guard !stopped else { return }
         stopped = true
         applicationActivity.stop()
+        for delivery in pushDeliveries.values { delivery.cancel() }
+        pushDeliveries.removeAll()
         audioRevision += 1
         for timer in timers.values {
           timer.setEventHandler(handler: nil)
@@ -1360,13 +1363,39 @@
           event: "faults.configured",
           fields: ["requestID": command.id.uuidString, "incomingErrorCode": code])
         return .faults(incomingErrorCode: code)
-      case .push(let applicationPayload, let mustReport):
-        // PushKit's Objective-C seam requires NSDictionary; only application data is bridged.
-        let bytes = try JSONEncoder().encode(applicationPayload)
-        guard let payload = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] else {
-          throw ControlError.invalid("payload object required")
+      case .push(let applicationPayload, let mustReport, let faults):
+        let schedule = PushDeliverySchedule(id: command.id, faults: faults)
+        let clock = ContinuousClock()
+        let start = clock.now
+        for delivery in schedule.deliveries {
+          record(
+            event: "push.scheduled",
+            fields: [
+              "requestID": command.id.uuidString, "pushID": delivery.id.uuidString,
+              "delayMS": delivery.offset.components.seconds * 1000
+                + delivery.offset.components.attoseconds / 1_000_000_000_000_000,
+              "drop": delivery.dropped, "mustReport": mustReport,
+            ])
         }
-        CKSimInjectPush(payload, mustReport, command.id.uuidString)
+        pushDeliveries[command.id] = Task { [weak self] in
+          defer { self?.withState { _ = self?.pushDeliveries.removeValue(forKey: command.id) } }
+          try? await schedule.run(clock: clock, startingAt: start) { [weak self] delivery in
+            self?.withState {
+              guard let self, !self.stopped else { return }
+              if delivery.dropped {
+                self.record(
+                  event: "push.dropped",
+                  fields: ["pushID": delivery.id.uuidString, "requestID": command.id.uuidString])
+              } else {
+                // PushKit's Objective-C seam requires NSDictionary; bridge only application data.
+                guard let bytes = try? JSONEncoder().encode(applicationPayload),
+                  let payload = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any]
+                else { return }
+                CKSimInjectPush(payload, mustReport, delivery.id.uuidString)
+              }
+            }
+          }
+        }
         return .push(pushID: command.id)
       case .reset:
         // Explicit selected-provider fault. This does not model invalidation of
