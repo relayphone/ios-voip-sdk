@@ -14,6 +14,30 @@ import { buildSimulatorApp } from './simulator-app.ts';
 
 const bundle = 'dev.callkitsim.smoke';
 
+/** Checks real runtime boundaries without treating hook installation as application readiness. */
+export function assertRuntimeBoundaries(journal: string, identity: { runID: string; pid: number }): void {
+  const rows = journal.trim().split('\n').map(line => JSON.parse(line) as {
+    event: string; runID: string; pid: number; sequence: number;
+    uptimeNanoseconds: number; t_ms: number; boundarySource?: string;
+  });
+  const entered = rows.filter(row => row.event === 'process.entered');
+  const ready = rows.filter(row => row.event === 'runtime.ready');
+  assert.equal(entered.length, 1, 'one instrumented entry per invocation');
+  assert.equal(ready.length, 1, 'one completed hook installation per invocation');
+  const entry = entered[0]!;
+  const hooks = ready[0]!;
+  for (const row of [entry, hooks]) {
+    assert.equal(row.runID, identity.runID);
+    assert.equal(row.pid, identity.pid);
+    assert.ok(row.uptimeNanoseconds > 0);
+  }
+  assert.equal(entry.boundarySource, 'runtime-preparation');
+  assert.equal(hooks.boundarySource, 'hooks-installed');
+  assert.equal(entry.t_ms, 0);
+  assert.ok(hooks.uptimeNanoseconds >= entry.uptimeNanoseconds);
+  assert.ok(hooks.sequence > entry.sequence);
+}
+
 interface Call {
   uuid: string;
   connected: boolean;
@@ -227,6 +251,7 @@ export async function smoke(packagePath: string, requestedSimulator?: string): P
       JSON.parse(readFileSync(join(channel, 'session.json'), 'utf8'));
     for (const cause of ['abrupt', 'user-requested']) {
       const before = session();
+      assertRuntimeBoundaries(readFileSync(join(channel, before.runID, 'events.jsonl'), 'utf8'), before);
       const requestID = JSON.parse(cksim('push', '--payload-file', payload, '--must-report', 'true',
         '--delay-ms', '120000', '--duplicate', '1')).result.pushID as string;
       const scheduled = cksim('events', '--run-id', before.runID).trim().split('\n')
@@ -248,7 +273,7 @@ export async function smoke(packagePath: string, requestedSimulator?: string): P
       const rows = cksim('events', '--run-id', before.runID).trim().split('\n')
         .map(line => JSON.parse(line) as { event: string; pid?: number; cause?: string;
           requestID?: string; pushID?: string });
-      assert.deepEqual(rows.filter(row => row.event.startsWith('process.')).map(row => row.event),
+      assert.deepEqual(rows.filter(row => ['process.killRequested', 'process.exited'].includes(row.event)).map(row => row.event),
         ['process.killRequested', 'process.exited']);
       const cancelled = rows.filter(row => row.event === 'push.cancelled');
       assert.deepEqual(cancelled.map(row => row.pushID), scheduled);
