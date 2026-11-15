@@ -1,5 +1,6 @@
 #if os(macOS)
   import Foundation
+  import CKSimProtocol
 
   /// `cksim push --launch`: stages one VoIP push for a stopped app that activates the runtime
   /// itself, then becomes the app's launcher. The runtime delivers the push after it installs its
@@ -49,20 +50,16 @@
       guard !exists(root.appending(path: "push-launch.consuming")) else {
         throw CKSimError("A push launch claim already exists; inspect before retrying.")
       }
-      guard
-        let payload = try JSONSerialization.jsonObject(with: Data(contentsOf: payloadFile))
-          as? [String: Any],
-        try JSONSerialization.data(withJSONObject: payload).count <= 5120
-      else { throw CKSimError("Push payload must be an object of at most 5120 bytes.") }
-      let id = UUID().uuidString
-      let created = Int(Date().timeIntervalSince1970 * 1000)
-      let envelope: [String: Any] = [
-        "schemaVersion": 1, "id": id, "runID": runID, "bundleID": target.bundle,
-        "createdAtMS": created, "expiresAtMS": created + 30_000, "mustReport": mustReport,
-        "payload": payload,
-      ]
-      var data = try JSONSerialization.data(
-        withJSONObject: envelope, options: [.sortedKeys, .withoutEscapingSlashes])
+      let payload = try JSONDecoder().decode(PushPayload.self, from: Data(contentsOf: payloadFile))
+      let id = UUID()
+      let created = Int64(Date().timeIntervalSince1970 * 1000)
+      let envelope = try PushLaunchEnvelope(
+        version: .singleDelivery, id: id, runID: runID, bundleID: target.bundle,
+        createdAtMS: created, expiresAtMS: created + 30_000, mustReport: mustReport,
+        payload: payload)
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+      var data = try encoder.encode(envelope)
       data.append(10)
       let file = root.appending(path: "push-launch.json")
       let temporary = root.appending(path: ".push-launch-\(UUID().uuidString)")
@@ -83,7 +80,8 @@
         receipt,
         json: [
           "schemaVersion": 1, "simulatorID": target.device, "bundleID": target.bundle,
-          "runID": runID, "pushID": id, "envelope": envelope, "envelopeSHA256": sha256(data),
+          "runID": runID, "pushID": id.uuidString,
+          "envelope": try JSONSerialization.jsonObject(with: data), "envelopeSHA256": sha256(data),
           "mode": Int(staged.st_mode & 0o7777), "appServiceAbsent": true,
           "serviceQuery": services, "serviceQuerySHA256": sha256(serviceTable),
           "runtimeInjectionRequested": false,
