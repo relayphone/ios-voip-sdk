@@ -147,3 +147,22 @@ describe("withVoIPConversationsIos call notifications", () => {
     assert.equal("com.apple.developer.usernotifications.communication" in (await evaluateMod({}, "entitlements")), false);
   });
 });
+
+
+describe("first-call media permission configuration", () => {
+  it("adds only microphone usage for audio-only apps", async () => {
+    const plist = await evaluateInfoPlist({});
+    assert.equal(plist.NSCameraUsageDescription, undefined);
+    assert.equal(typeof plist.NSMicrophoneUsageDescription, "string");
+    assert.equal((await evaluateInfoPlist({ supportsVideo: false, video: false })).NSCameraUsageDescription, undefined);
+    assert.equal((await evaluateInfoPlist({ cameraPermission: "Unused custom camera message" })).NSCameraUsageDescription, undefined);
+  });
+  it("adds camera usage when either video option is enabled and preserves custom messages", async () => {
+    for (const props of [{ supportsVideo: true }, { video: true }, { supportsVideo: false, video: true }]) {
+      assert.equal(typeof (await evaluateInfoPlist(props)).NSCameraUsageDescription, "string");
+    }
+    assert.equal((await evaluateInfoPlist({ supportsVideo: true, cameraPermission: "Video calls" })).NSCameraUsageDescription, "Video calls");
+    assert.equal((await evaluateInfoPlist({ video: true, cameraPermission: false })).NSCameraUsageDescription, undefined);
+    assert.equal((await evaluateMod({}, "infoPlist", { NSCameraUsageDescription: "Another app feature" })).NSCameraUsageDescription, "Another app feature");
+  });
+});

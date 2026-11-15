@@ -251,3 +251,19 @@ describe("a join that its handler doesn't place", () => {
     assert.partialDeepStrictEqual({ ...error }, { code: "handler_failed" });
   });
 });
+
+
+test("media permission helpers decode foreground and unknown-conversation failures", async () => {
+  const bridge = withCommandErrors({
+    async requestMediaPermissions(_kinds: readonly string[]) {
+      throw new Error('expo-conversation:{"code":"not_foreground","message":"Foreground UI required"}');
+    },
+    async conversationMediaReadiness(_id: string) {
+      throw new Error('expo-conversation:{"code":"unknown_conversation","message":"Unknown conversation"}');
+    },
+    async getMediaPermissions() { return { microphone: "unchanged", camera: "unchanged" }; },
+  });
+  await assert.rejects(bridge.requestMediaPermissions(["camera"]), { code: "not_foreground" });
+  await assert.rejects(bridge.conversationMediaReadiness("unknown"), { code: "unknown_conversation" });
+  assert.deepEqual(await bridge.getMediaPermissions(), { microphone: "unchanged", camera: "unchanged" });
+});

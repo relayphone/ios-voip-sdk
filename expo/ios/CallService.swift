@@ -556,6 +556,11 @@ final class CallService {
     return members
   }
 
+  func conversationMediaReadiness(_ id: String) throws(CommandError) -> JSONValue {
+    let call = try running().calls.first(where: { $0.id.rawValue == id })
+    return try MediaPermissionAccess.system.readiness(for: call)
+  }
+
   // MARK: Helpers
 
   private func running() throws(CommandError) -> VoIPClient {

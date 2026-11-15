@@ -51,6 +51,26 @@ public final class VoIPConversationsModule: Module, @unchecked Sendable {
       await CallService.shared.snapshotNow().foundationObject
     }
 
+    AsyncFunction("getMediaPermissions") { () async -> [String: Any] in
+      await MediaPermissionAccess.system.get().json.foundationObject
+    }
+
+    AsyncFunction("requestMediaPermissions") { (values: [String]) async throws -> [String: Any] in
+      let kinds = try values.map { value in
+        guard let kind = MediaKind(rawValue: value) else {
+          throw CommandError.invalidArguments.exception
+        }
+        return kind
+      }
+      return try await bridged { try await MediaPermissionAccess.system.request(kinds).json }
+        .foundationObject
+    }
+
+    AsyncFunction("conversationMediaReadiness") { (id: String) async throws -> [String: Any] in
+      try await bridged { try await CallService.shared.conversationMediaReadiness(id) }
+        .foundationObject
+    }
+
     AsyncFunction("getAudioRoutes") { () async -> [String: Any] in
       await CallService.shared.audioRoutes.foundationObject
     }

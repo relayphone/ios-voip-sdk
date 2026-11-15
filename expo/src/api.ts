@@ -202,3 +202,10 @@ export const reportConversation = bridge.reportConversation.bind(bridge);
 export const receiveCallEnded = bridge.receiveCallEnded.bind(bridge);
 /** Request an available native endpoint. @category Audio */
 export const selectAudioRoute = bridge.selectAudioRoute.bind(bridge);
+
+/** Read both media permissions without prompting, including in background paths. @category Permissions */
+export const getMediaPermissions = bridge.getMediaPermissions.bind(bridge);
+/** Explicit foreground-only prompts for permissions that can still be asked. @category Permissions */
+export const requestMediaPermissions = bridge.requestMediaPermissions.bind(bridge);
+/** Read the required and missing permissions for a conversation without prompting. @category Permissions */
+export const conversationMediaReadiness = bridge.conversationMediaReadiness.bind(bridge);

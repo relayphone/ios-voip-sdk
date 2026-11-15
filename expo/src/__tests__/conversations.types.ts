@@ -385,3 +385,20 @@ void joinFailure;
 
 // @ts-expect-error The SDK does not update a call’s video capability after creation.
 void api.reportConversation(id, { type: "updated", video: true });
+
+import { getMediaPermissions, requestMediaPermissions, conversationMediaReadiness } from "../index";
+import type { MediaKind, MediaPermissionResponse, MediaPermissions, ConversationMediaReadiness } from "../index";
+const mediaKinds: readonly MediaKind[] = ["microphone", "camera"];
+const allPermissions: Promise<MediaPermissions> = getMediaPermissions();
+const requestedPermissions: Promise<MediaPermissions> = requestMediaPermissions(mediaKinds);
+const mediaReadiness: Promise<ConversationMediaReadiness> = conversationMediaReadiness("call-id");
+const permissionResponse: MediaPermissionResponse = { status: "undetermined", granted: false, canAskAgain: true, expires: "never" };
+const foregroundError: ConversationErrorCode = "not_foreground";
+void [allPermissions, requestedPermissions, mediaReadiness, permissionResponse, foregroundError];
+// @ts-expect-error Only camera and microphone permissions are supported.
+void requestMediaPermissions(["screen"]);
+// @ts-expect-error Permission expiry is always never.
+const invalidPermissionExpiry: MediaPermissionResponse = { status: "denied", granted: false, canAskAgain: false, expires: 100 };
+void invalidPermissionExpiry;
+// @ts-expect-error Permission results are immutable.
+permissionResponse.status = "granted";

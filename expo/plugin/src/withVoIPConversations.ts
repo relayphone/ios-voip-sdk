@@ -62,6 +62,10 @@ export type VoIPConversationsPluginProps = {
    * @platform ios
    */
   cameraPermission?: string | false;
+  /** Adds the camera usage description for apps that offer video calls. Defaults to false. */
+  supportsVideo?: boolean;
+  /** Enables video permission configuration; equivalent to supportsVideo. */
+  video?: boolean;
   /**
    * Timeout in seconds for incoming calls before they are marked as unanswered. On iOS it also
    * bounds how long an outgoing call dials.
