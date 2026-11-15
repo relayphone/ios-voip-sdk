@@ -17,6 +17,8 @@
       var source: AVAudioSourceNode?
       var inputClock: AVAudioMixerNode?
       var output: AVAudioMixerNode?
+      var outputTapped = false
+      var outputRetired = false
     }
     /// Processing snapshots at options, engine and callback boundaries.
     public let processingTimeline = MediaProcessingTimeline()
@@ -40,6 +42,17 @@
     }
 
     public var generatedSamples: Int64 { clock.sampleIndex.withLock { $0 } }
+
+    /// Permanently removes this call's output observer, without starting audio.
+    /// A later graph callback cannot reinstall a tap after terminal release.
+    public func uninstallOutputTap() {
+      graph.withLock { state in
+        state.outputRetired = true
+        if state.outputTapped { state.output?.removeTap(onBus: 0) }
+        state.outputTapped = false
+        probe.removed(.output)
+      }
+    }
 
     public var next: (any AudioEngineObserver)? {
       get { graph.withLock { $0.next } }
@@ -119,26 +132,31 @@
     ) -> Int {
       processingTimeline.record(.engineWillConnectOutput, engineRunning: engine.isRunning)
       guard let dst else { return -1 }
-      graph.withLock { state in
+      let installed = graph.withLock { state in
+        guard !state.outputRetired else { return false }
         if let output = state.output, output.engine === engine {
-          output.removeTap(onBus: 0)
+          if state.outputTapped { output.removeTap(onBus: 0) }
           engine.detach(output)
         }
         state.output = nil
+        state.outputTapped = false
+        let meter = AVAudioMixerNode()
+        engine.attach(meter)
+        engine.disconnectNodeOutput(src)
+        engine.connect(src, to: meter, format: format)
+        engine.connect(meter, to: dst, format: format)
+        let probe = probe
+        let processingTimeline = processingTimeline
+        meter.installTap(onBus: 0, bufferSize: 480, format: format) { buffer, _ in
+          processingTimeline.recordCallback(.outputCallback)
+          probe.receive(buffer, at: .output)
+        }
+        state.output = meter
+        state.outputTapped = true
+        probe.installed(.output)
+        return true
       }
-      let meter = AVAudioMixerNode()
-      engine.attach(meter)
-      engine.disconnectNodeOutput(src)
-      engine.connect(src, to: meter, format: format)
-      engine.connect(meter, to: dst, format: format)
-      let probe = probe
-      let processingTimeline = processingTimeline
-      meter.installTap(onBus: 0, bufferSize: 480, format: format) { buffer, _ in
-        processingTimeline.recordCallback(.outputCallback)
-        probe.receive(buffer, at: .output)
-      }
-      graph.withLock { $0.output = meter }
-      probe.installed(.output)
+      guard installed else { return -1 }
       return next?.engineWillConnectOutput(
         engine, src: src, dst: dst, format: format, context: context) ?? 0
     }
@@ -184,16 +202,17 @@
       processingTimeline.record(.engineWillRelease, engineRunning: engine.isRunning)
       graph.withLock { state in
         if let output = state.output {
-          output.removeTap(onBus: 0)
+          if state.outputTapped { output.removeTap(onBus: 0) }
           engine.detach(output)
         }
         if let source = state.source { engine.detach(source) }
         if let inputClock = state.inputClock { engine.detach(inputClock) }
         state.inputClock = nil
         state.output = nil
+        state.outputTapped = false
         state.source = nil
+        probe.removed(.output)
       }
-      probe.removed(.output)
       return next?.engineWillRelease(engine) ?? 0
     }
   }

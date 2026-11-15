@@ -193,10 +193,23 @@
   /// A tap attached to the real room's remote track, before output mixing.
   public final class DecodedAudioProbe: AudioRenderer {
     private let probe: MediaAudioProbe
+    private let track = Mutex<RemoteAudioTrack?>(nil)
     public init(probe: MediaAudioProbe) { self.probe = probe }
     public func attach(to track: RemoteAudioTrack) {
-      track.add(audioRenderer: self)
-      probe.installed(.decoded)
+      self.track.withLock {
+        $0?.remove(audioRenderer: self)
+        $0 = track
+        track.add(audioRenderer: self)
+        probe.installed(.decoded)
+      }
+    }
+    /// Removes the renderer from the real remote track when call media is released.
+    public func detach() {
+      track.withLock {
+        $0?.remove(audioRenderer: self)
+        $0 = nil
+        probe.removed(.decoded)
+      }
     }
     public func render(pcmBuffer: AVAudioPCMBuffer) { probe.receive(pcmBuffer, at: .decoded) }
   }

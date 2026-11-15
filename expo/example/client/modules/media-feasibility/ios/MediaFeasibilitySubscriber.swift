@@ -87,9 +87,11 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let processingTimelineDropped: Int
       let codecs: [String: String]
       let silenceWindows: [PCMSilenceWindows.Window]
+      let teardown: MediaTeardownEvidence.Receipt
     }
     nonisolated let commands: AsyncStream<AudioCommand>.Continuation
     let probe = MediaAudioProbe(captureDuration: .seconds(10))
+    let teardown = MediaTeardownEvidence()
     let fixture: Fixture
     let room = Room()
     nonisolated let packetEvents = PacketEvents()
@@ -150,10 +152,17 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             case .deactivate:
               try AudioManager.shared.setEngineAvailability(.none)
               active = false
+              if !AudioManager.shared.isEngineRunning { teardown.record(.engineStopped) }
             case .release:
               packets?.cancel()
               packets = nil
               await room.disconnect()
+              if room.connectionState == .disconnected { teardown.record(.roomDisconnected) }
+              decoder.detach()
+              hooks.uninstallOutputTap()
+              if !probe.observation(.output).installed && !probe.observation(.decoded).installed {
+                teardown.record(.tapUninstalled)
+              }
               released = true
             }
             if released && !active { commands.finish() }
@@ -207,7 +216,9 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       didSubscribeTrack publication: RemoteTrackPublication
     ) {
       Task { @MainActor [weak self] in
-        guard let self, let track = publication.track as? RemoteAudioTrack else { return }
+        guard let self, !released, let track = publication.track as? RemoteAudioTrack else {
+          return
+        }
         decoder.attach(to: track)
         remoteTrack = track
         await track.set(reportStatistics: true)
@@ -218,6 +229,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       observer = Task { [weak self] in
         for await event in stream {
           guard let self else { return }
+          if case .audioDeactivated = event { teardown.record(.audioSessionReleased) }
           if case .performed(.mute(_, let muted), _) = event {
             do {
               try await room.localParticipant.setMicrophone(enabled: !muted)
@@ -330,9 +342,15 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             fail()
             return
           }
+          teardown.begin()
           try await client.request(.end(incoming.id))
           phase = .teardown
-          try await until { self.released && !self.active }
+          try await until {
+            self.released && !self.active && self.teardown.receipt()?.complete == true
+          }
+          guard let teardownReceipt = teardown.receipt(), teardownReceipt.complete else {
+            throw MediaAudioProbe.Failure.missingTap(.output)
+          }
           guard !failed else { return }
           let result = Result(
             generatedSamples: hooks.generatedSamples, passed: true, decoded: decoded,
@@ -341,7 +359,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             inactiveEngineStayedStopped: inactiveEngineStayedStopped, processing: processing,
             processingTimeline: hooks.processingTimeline.entries,
             processingTimelineDropped: hooks.processingTimeline.dropped,
-            codecs: codecs, silenceWindows: silenceWindows)
+            codecs: codecs, silenceWindows: silenceWindows, teardown: teardownReceipt)
           try JSONEncoder().encode(result).write(
             to: URL.documentsDirectory.appending(path: "media-result.json"))
 
@@ -445,13 +463,15 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         let decoded: MediaAudioProbe.Observation
         let output: MediaAudioProbe.Observation
         let silenceWindows: [PCMSilenceWindows.Window]
+        let teardown: MediaTeardownEvidence.Receipt?
       }
       let result = FailureResult(
         generatedSamples: hooks.generatedSamples, phase: phase, processing: processing,
         processingTimeline: hooks.processingTimeline.entries,
         processingTimelineDropped: hooks.processingTimeline.dropped,
         codecs: codecs, decoded: probe.observation(.decoded),
-        output: probe.observation(.output), silenceWindows: silenceWindows)
+        output: probe.observation(.output), silenceWindows: silenceWindows,
+        teardown: teardown.receipt())
       try? JSONEncoder().encode(result).write(
         to: URL.documentsDirectory.appending(path: "media-result.json"))
     }

@@ -10,6 +10,33 @@
 
   @Suite("Media observation evidence")
   struct ProbeTests {
+    @Test func uninstallingOutputTapRetainsOwnedMeterUntilGraphRelease() throws {
+      let engine = AVAudioEngine()
+      let source = AVAudioMixerNode()
+      let destination = AVAudioMixerNode()
+      engine.attach(source)
+      engine.attach(destination)
+      let probe = MediaAudioProbe()
+      let hooks = MarkerAudioEngine(probe: probe, frequencies: Array(repeating: 650, count: 12))
+      let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1))
+      #expect(
+        hooks.engineWillConnectOutput(
+          engine, src: source, dst: destination, format: format, context: [:]) == 0)
+      #expect(probe.observation(.output).installed)
+      hooks.uninstallOutputTap()
+      hooks.uninstallOutputTap()
+      #expect(
+        hooks.engineWillConnectOutput(
+          engine, src: source, dst: destination, format: format, context: [:]) == -1)
+      #expect(!probe.observation(.output).installed)
+      #expect(throws: MediaAudioProbe.Failure.missingTap(.output)) {
+        try probe.expectSilence(.output)
+      }
+      #expect(hooks.engineWillRelease(engine) == 0)
+      #expect(engine.attachedNodes.count == 2)
+      #expect(!engine.isRunning)
+    }
+
     @Test
     func processingTimelineKeepsUnknownStateAndBoundsCallbackSampling() throws {
       let timeline = MediaProcessingTimeline()

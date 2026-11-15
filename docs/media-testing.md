@@ -35,6 +35,10 @@ For a local end, the SDK's own published conversation state must reach `ended` w
 uninstalled, engine stopped, room disconnected and audio session released, on its acknowledged
 monotonic clock. Reuse cleanup evidence, adding a field only when an observation is missing.
 
+The native example retains `teardown.clockID`, `startedAtMs`, `observedAtMs` and an ordered
+`observations` array with each release event's `atMs`. All four events must be measured in the
+same attempt. Partial evidence is retained on failure; a producer's completion flag is insufficient.
+
 Independently, the harness peer must observe the app's audio publication removed and its
 participant disconnected within the deadline. After both events, retain the peer's receive
 capture and check that no marker from any emitted phase arrives. Preserve event identities, track SIDs,
