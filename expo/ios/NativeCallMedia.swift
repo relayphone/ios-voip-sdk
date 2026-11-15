@@ -119,6 +119,10 @@ final class RegisteredMedia: CallMedia {
     media.activate()
   }
 
+  func transportEvents() -> AsyncStream<MediaTransportEvent> {
+    media.transportEvents()
+  }
+
   func deactivate() {
     media.deactivate()
   }

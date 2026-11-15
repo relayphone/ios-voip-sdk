@@ -240,6 +240,19 @@
       state.async { self.processCommands() }
       #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
         SimulatorLifecycle.install { [weak self] in self?.recordSDK($0) }
+        SimulatorTransport.install { [weak self] event in
+          guard let self,
+            let observation = RuntimePacketObservation(
+              event, receivedAt: .now, elapsed: self.monotonicTime)
+          else { return }
+          self.record(
+            event: observation.name,
+            fields: [
+              "callID": observation.callID,
+              "callUUID": observation.callUUID.uuidString,
+              "observedAtMS": observation.observedAtMS,
+            ])
+        }
       #endif
     }
 
@@ -291,6 +304,9 @@
       withState {
         guard !stopped else { return }
         stopped = true
+        #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
+          SimulatorTransport.install(nil)
+        #endif
         applicationActivity.stop()
         #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
           SimulatorLifecycle.install(nil)

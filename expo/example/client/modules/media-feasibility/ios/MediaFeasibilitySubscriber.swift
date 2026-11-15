@@ -19,7 +19,26 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
 
 #if DEBUG && targetEnvironment(simulator)
   import LiveKitClient
-  import VoIPConversations
+  @_spi(MediaTransport) import VoIPConversations
+  import Synchronization
+
+  private final class PacketEvents: Sendable {
+    private let continuations = Mutex<[UUID: AsyncStream<MediaTransportEvent>.Continuation]>([:])
+    func stream() -> AsyncStream<MediaTransportEvent> {
+      let id = UUID()
+      let pair = AsyncStream<MediaTransportEvent>.makeStream()
+      continuations.withLock { $0[id] = pair.continuation }
+      pair.continuation.onTermination = { [weak self] _ in
+        self?.continuations.withLock { _ = $0.removeValue(forKey: id) }
+      }
+      return pair.stream
+    }
+    func emit(_ event: MediaTransportEvent) {
+      let sinks = continuations.withLock { Array($0.values) }
+      for sink in sinks { sink.yield(event) }
+    }
+    deinit { for sink in continuations.withLock({ Array($0.values) }) { sink.finish() } }
+  }
 
   private enum MarkerProfile: String, Decodable, Sendable { case tonesV2 = "tones-v2" }
   private struct Fixture: Decodable, Sendable {
@@ -41,7 +60,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       self.bridge = bridge
       commands = bridge.commands
     }
-    func prepare(_ call: Call) async throws { try await bridge.prepare() }
+    func transportEvents() -> AsyncStream<MediaTransportEvent> { bridge.packetEvents.stream() }
+    func prepare(_ call: Call) async throws { try await bridge.prepare(call.id) }
     func activate() { commands.yield(.activate) }
     func deactivate() { commands.yield(.deactivate) }
     func release(_ call: Call) { commands.yield(.release) }
@@ -72,6 +92,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     let probe = MediaAudioProbe(captureDuration: .seconds(10))
     let fixture: Fixture
     let room = Room()
+    nonisolated let packetEvents = PacketEvents()
+    var packets: Task<Void, Never>?
     let decoder: DecodedAudioProbe
     let hooks: MarkerAudioEngine
     var events: Task<Void, Never>?
@@ -129,6 +151,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
               try AudioManager.shared.setEngineAvailability(.none)
               active = false
             case .release:
+              packets?.cancel()
+              packets = nil
               await room.disconnect()
               released = true
             }
@@ -138,7 +162,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         await self?.room.disconnect()
       }
     }
-    func prepare() async throws {
+    func prepare(_ callID: CallID) async throws {
       let manager = AudioManager.shared
       manager.audioSession.isAutomaticConfigurationEnabled = false
       manager.set(engineObservers: [manager.audioSession, manager.mixer, hooks])
@@ -155,7 +179,29 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       inactiveEngineStayedStopped =
         !manager.isEngineRunning && probe.observation(.output).samples == 0
       guard inactiveEngineStayedStopped else { throw MediaAudioProbe.Failure.audioLeaked(.output) }
+      try Task.checkCancellation()
+      packets?.cancel()
+      packets = Task { [weak self] in
+        await MediaPacketSampler.observe(
+          callID: callID, clock: ContinuousClock(),
+          ready: { [weak self] in self?.active == true },
+          sample: { [weak self] received, sent in
+            guard let self else { return (false, false) }
+            return (
+              received
+                && (remoteTrack?.statistics?.inboundRtpStream.contains {
+                  ($0.packetsReceived ?? 0) > 0
+                } ?? false),
+              sent
+                && (localTrack?.statistics?.outboundRtpStream.contains {
+                  ($0.packetsSent ?? 0) > 0
+                } ?? false)
+            )
+          }, emit: { [weak self] in self?.packetEvents.emit($0) })
+      }
     }
+
+    deinit { packets?.cancel() }
     nonisolated func room(
       _ room: Room, participant: RemoteParticipant,
       didSubscribeTrack publication: RemoteTrackPublication
@@ -383,6 +429,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     }
     private func fail() {
       guard !failed else { return }
+      packets?.cancel()
+      packets = nil
       failed = true
       saveDuplex()
       struct FailureResult: Encodable {

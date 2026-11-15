@@ -37,6 +37,7 @@ final class CallEngine {
   private var earlyEvents: [CallID: [EarlyEvent]] = [:]
   private var timers: [TimerKey: Timer] = [:]
   private var preparations: [CallID: Task<Void, Never>] = [:]
+  private var transportTask: Task<Void, Never>?
   private var preparedCalls: Set<CallID> = []
   private var isAudioActive = false
   /// Whether the system interrupted active audio, and hasn't activated it again or ended the
@@ -68,6 +69,15 @@ final class CallEngine {
 
   /// Attaches the calling framework, the audio session and the push source.
   func attach() {
+    let transport = media.transportEvents()
+    transportTask = Task {
+      for await event in transport {
+        guard !Task.isCancelled else { return }
+        #if DEBUG && (os(macOS) || (os(iOS) && targetEnvironment(simulator)))
+          SimulatorTransport.record(event)
+        #endif
+      }
+    }
     framework.attach(configuration: configuration) { [weak self] event in
       guard let self else { return }
       serially { self.frameworkEvent(event) }
@@ -83,6 +93,8 @@ final class CallEngine {
   }
 
   // MARK: Requests from the app
+
+  deinit { transportTask?.cancel() }
 
   /// Reports an incoming call that the app learned about outside a VoIP push.
   func report(_ incoming: IncomingCall) async -> PresentationOutcome {
