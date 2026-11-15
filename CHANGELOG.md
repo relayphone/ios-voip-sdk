@@ -7,6 +7,8 @@ Public API changes include migration guidance.
 
 ### Fixed
 
+- Include timed processing-state and engine-transition diagnostics in native media feasibility receipts, and report the earliest native failure directly.
+
 - Reference media silence checks select the first full continuous window within the existing
   30-second result budget. Gapped attempts remain unobserved in receipts, with coverage,
   monotonic ticks and scheduler lag; observed leaks fail immediately. Native PCM coverage

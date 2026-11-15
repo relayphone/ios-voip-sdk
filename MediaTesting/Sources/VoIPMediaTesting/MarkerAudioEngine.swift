@@ -18,6 +18,8 @@
       var inputClock: AVAudioMixerNode?
       var output: AVAudioMixerNode?
     }
+    /// Processing snapshots at options, engine and callback boundaries.
+    public let processingTimeline = MediaProcessingTimeline()
     private let graph = Mutex(Graph())
     private final class MarkerClock: Sendable {
       let sampleIndex = Mutex<Int64>(0)
@@ -56,6 +58,7 @@
       _ engine: AVAudioEngine, src: AVAudioNode?, dst: AVAudioNode,
       format: AVAudioFormat, context: [AnyHashable: Any]
     ) -> Int {
+      processingTimeline.record(.engineWillConnectInput, engineRunning: engine.isRunning)
       let rate = format.sampleRate
       guard rate >= 8000, rate <= 96000, rate.truncatingRemainder(dividingBy: 50) == 0,
         format.commonFormat == .pcmFormatFloat32, let src
@@ -72,7 +75,9 @@
       let emission = (0..<Int(rate / 50 * 51)).map {
         MarkerSignal.emissionSample(Int64($0), rate: rate, frequencies: frequencies)
       }
+      let processingTimeline = processingTimeline
       let source = AVAudioSourceNode(format: format) { _, _, count, buffers in
+        processingTimeline.recordCallback(.sourceRender)
         clock.sampleIndex.withLock { sample in
           let output = UnsafeMutableAudioBufferListPointer(buffers)
           for frame in 0..<Int(count) {
@@ -112,6 +117,7 @@
       _ engine: AVAudioEngine, src: AVAudioNode, dst: AVAudioNode?,
       format: AVAudioFormat, context: [AnyHashable: Any]
     ) -> Int {
+      processingTimeline.record(.engineWillConnectOutput, engineRunning: engine.isRunning)
       guard let dst else { return -1 }
       graph.withLock { state in
         if let output = state.output, output.engine === engine {
@@ -126,7 +132,9 @@
       engine.connect(src, to: meter, format: format)
       engine.connect(meter, to: dst, format: format)
       let probe = probe
+      let processingTimeline = processingTimeline
       meter.installTap(onBus: 0, bufferSize: 480, format: format) { buffer, _ in
+        processingTimeline.recordCallback(.outputCallback)
         probe.receive(buffer, at: .output)
       }
       graph.withLock { $0.output = meter }
@@ -135,7 +143,45 @@
         engine, src: src, dst: dst, format: format, context: context) ?? 0
     }
 
+    public func engineDidCreate(_ engine: AVAudioEngine) -> Int {
+      processingTimeline.record(.engineDidCreate, engineRunning: engine.isRunning)
+      return next?.engineDidCreate(engine) ?? 0
+    }
+
+    public func engineWillEnable(
+      _ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool
+    ) -> Int {
+      processingTimeline.record(.engineWillEnable, engineRunning: engine.isRunning)
+      return next?.engineWillEnable(
+        engine, isPlayoutEnabled: isPlayoutEnabled, isRecordingEnabled: isRecordingEnabled) ?? 0
+    }
+
+    public func engineWillStart(
+      _ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool
+    ) -> Int {
+      processingTimeline.record(.engineWillStart, engineRunning: engine.isRunning)
+      return next?.engineWillStart(
+        engine, isPlayoutEnabled: isPlayoutEnabled, isRecordingEnabled: isRecordingEnabled) ?? 0
+    }
+
+    public func engineDidStop(
+      _ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool
+    ) -> Int {
+      processingTimeline.record(.engineDidStop, engineRunning: engine.isRunning)
+      return next?.engineDidStop(
+        engine, isPlayoutEnabled: isPlayoutEnabled, isRecordingEnabled: isRecordingEnabled) ?? 0
+    }
+
+    public func engineDidDisable(
+      _ engine: AVAudioEngine, isPlayoutEnabled: Bool, isRecordingEnabled: Bool
+    ) -> Int {
+      processingTimeline.record(.engineDidDisable, engineRunning: engine.isRunning)
+      return next?.engineDidDisable(
+        engine, isPlayoutEnabled: isPlayoutEnabled, isRecordingEnabled: isRecordingEnabled) ?? 0
+    }
+
     public func engineWillRelease(_ engine: AVAudioEngine) -> Int {
+      processingTimeline.record(.engineWillRelease, engineRunning: engine.isRunning)
       graph.withLock { state in
         if let output = state.output {
           output.removeTap(onBus: 0)

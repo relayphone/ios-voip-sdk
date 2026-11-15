@@ -16,7 +16,7 @@ import { receiverStatistics } from './receiver-statistics.ts';
 import type { TransportSnapshot } from './transport.ts';
 import { monitorReceiver, ReceiverObservationError } from './peer-window.ts';
 import { observeSilence, SilenceObservationError, type SilenceWindow } from './silence-window.ts';
-import { writeUnobservedResult } from './result-receipt.ts';
+import { assertNativePassed, writeUnobservedResult } from './result-receipt.ts';
 
 const [simulator, app, binary, output] = process.argv.slice(2);
 const processing = "synthetic";
@@ -204,8 +204,10 @@ try {
     }
   });
   const evidence: unknown = JSON.parse(readFileSync(result, 'utf8'));
+  let nativeFailure: unknown;
+  try { assertNativePassed(evidence); } catch (error) { nativeFailure = error; }
   uplinkCapture ??= { sampleRate: 48_000, channels: [received.slice()], formatChanged: false };
-  uplinkEvidence ??= await measureMarkerAsync(uplinkCapture, uplink);
+  if (!nativeFailure) uplinkEvidence ??= await measureMarkerAsync(uplinkCapture, uplink);
   const downlinkCaptures: Partial<Record<"decoded" | "output", PCMCapture>> = {};
   const downlinkEvidence = Object.fromEntries(await Promise.all((['decoded', 'output'] as const).map(async (stage): Promise<[string, ReturnType<typeof measureMarker> | { complete: false; error: string } | null]> => {
     const file = join(container, `Documents/media-${stage}.json`);
@@ -213,7 +215,7 @@ try {
       if (!existsSync(file)) return [stage, null];
       const capture = JSON.parse(readFileSync(file, 'utf8')) as PCMCapture;
       downlinkCaptures[stage] = capture;
-      return [stage, await measureMarkerAsync(capture, downlink)];
+      return [stage, nativeFailure ? null : await measureMarkerAsync(capture, downlink)];
     } catch (error) { return [stage, { complete: false, error: String(error) }]; }
   })));
   writeFileSync(output, JSON.stringify({ processing, native: evidence, farEnd: controls,
@@ -221,6 +223,7 @@ try {
     receiver: { connected: peer.connectionState === ConnectionState.CONN_CONNECTED, readerLive, trackAvailable,
       readerFailed, receivedSamples, rms: receivedSamples ? Math.sqrt(energy / receivedSamples) : null },
     markers: { fromDevice: uplinkEvidence, toDevice: downlinkEvidence } }, null, 2));
+  if (nativeFailure) throw nativeFailure;
   console.log(JSON.stringify({ processing, markers: { fromDevice: uplinkEvidence, toDevice: downlinkEvidence } }));
   if (process.env.GITHUB_STEP_SUMMARY) {
     let report = markerReport(`${processing}: fromDevice / farEnd`, uplinkEvidence);
@@ -232,7 +235,6 @@ try {
   assert.ok((uplinkEvidence as ReturnType<typeof measureMarker> | null)?.clean && (uplinkEvidence as ReturnType<typeof measureMarker> | null)?.complete && (uplinkEvidence as ReturnType<typeof measureMarker> | null)?.postRollObserved &&
     Object.values(downlinkEvidence).every(value => value?.complete && 'clean' in value && value.clean && "postRollObserved" in value && value.postRollObserved),
     'A complete tones-v2 marker with every slot >= 0.8 and post-roll coverage is required in both directions');
-  assert.ok(evidence && typeof evidence === 'object' && 'passed' in evidence && evidence.passed === true, 'Native media check failed');
   assert.ok(controls.leakControlCaught && controls.publicationSilent, 'Far-end controls did not complete');
 } finally {
   running = false;

@@ -63,6 +63,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let missingTapCaught: Bool
       let inactiveEngineStayedStopped: Bool
       let processing: [String: Bool]
+      let processingTimeline: [MediaProcessingTimeline.Entry]
+      let processingTimelineDropped: Int
       let codecs: [String: String]
       let silenceWindows: [PCMSilenceWindows.Window]
     }
@@ -118,7 +120,10 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             switch command {
             case .activate:
               probe.beginWindow()
+              hooks.processingTimeline.record(.engineAvailabilityApplying)
               try AudioManager.shared.setEngineAvailability(.default)
+              hooks.processingTimeline.record(
+                .engineAvailabilityApplied, engineRunning: AudioManager.shared.isEngineRunning)
               active = true
             case .deactivate:
               try AudioManager.shared.setEngineAvailability(.none)
@@ -140,9 +145,11 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       try manager.setEngineAvailability(.none)
       room.add(delegate: self)
       try await room.connect(url: fixture.url, token: fixture.token)
+      hooks.processingTimeline.record(.captureOptionsApplying)
       let publication = try await room.localParticipant.setMicrophone(
         enabled: true,
         captureOptions: MarkerAudioEngine.syntheticCaptureOptions)
+      hooks.processingTimeline.record(.captureOptionsApplied)
       localTrack = publication?.track as? LocalAudioTrack
       await localTrack?.set(reportStatistics: true)
       inactiveEngineStayedStopped =
@@ -186,6 +193,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
           // Keep the existing ten-second acquisition deadline; retain later repeated cycles.
           let acquisitionDeadline = clock.now + .seconds(10)
           while clock.now < acquisitionDeadline {
+            hooks.processingTimeline.record(
+              .acquisition, engineRunning: AudioManager.shared.isEngineRunning)
             recordTransport()
             try await clock.sleep(until: min(acquisitionDeadline, clock.now + .milliseconds(100)))
           }
@@ -203,19 +212,20 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             throw MediaAudioProbe.Failure.signalMissing(.decoded)
           }
           phase = .captureProcessing
-          let state = AudioManager.shared.audioProcessingState
-          guard state.echoCancellation.requested != nil, state.noiseSuppression.requested != nil,
-            state.autoGainControl.requested != nil
+          let state = hooks.processingTimeline.record(
+            .checkRead, engineRunning: AudioManager.shared.isEngineRunning)
+          guard state.aec.requested != .unavailable, state.ns.requested != .unavailable,
+            state.agc.requested != .unavailable
           else {
             throw MediaAudioProbe.Failure.signalMissing(.decoded)
           }
           processing = [
-            "aecRequested": state.echoCancellation.requested?.isEnabled == true,
-            "aecActive": state.echoCancellation.software.isActive,
-            "nsRequested": state.noiseSuppression.requested?.isEnabled == true,
-            "nsActive": state.noiseSuppression.software.isActive,
-            "agcRequested": state.autoGainControl.requested?.isEnabled == true,
-            "agcActive": state.autoGainControl.software.isActive,
+            "aecRequested": state.aec.requested == .enabled,
+            "aecActive": state.aec.active,
+            "nsRequested": state.ns.requested == .enabled,
+            "nsActive": state.ns.active,
+            "agcRequested": state.agc.requested == .enabled,
+            "agcActive": state.agc.active,
           ]
           let expected = [
             "aec": false,
@@ -283,6 +293,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             output: output,
             mutedOutput: mutedOutput, missingTapCaught: caught,
             inactiveEngineStayedStopped: inactiveEngineStayedStopped, processing: processing,
+            processingTimeline: hooks.processingTimeline.entries,
+            processingTimelineDropped: hooks.processingTimeline.dropped,
             codecs: codecs, silenceWindows: silenceWindows)
           try JSONEncoder().encode(result).write(
             to: URL.documentsDirectory.appending(path: "media-result.json"))
@@ -379,6 +391,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         let passed = false
         let phase: Phase
         let processing: [String: Bool]
+        let processingTimeline: [MediaProcessingTimeline.Entry]
+        let processingTimelineDropped: Int
         let codecs: [String: String]
         let decoded: MediaAudioProbe.Observation
         let output: MediaAudioProbe.Observation
@@ -386,6 +400,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       }
       let result = FailureResult(
         generatedSamples: hooks.generatedSamples, phase: phase, processing: processing,
+        processingTimeline: hooks.processingTimeline.entries,
+        processingTimelineDropped: hooks.processingTimeline.dropped,
         codecs: codecs, decoded: probe.observation(.decoded),
         output: probe.observation(.output), silenceWindows: silenceWindows)
       try? JSONEncoder().encode(result).write(

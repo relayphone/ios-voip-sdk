@@ -11,6 +11,32 @@
   @Suite("Media observation evidence")
   struct ProbeTests {
     @Test
+    func processingTimelineKeepsUnknownStateAndBoundsCallbackSampling() throws {
+      let timeline = MediaProcessingTimeline()
+      let options = timeline.record(.captureOptionsApplying)
+      #expect(options.seconds <= options.readCompletedSeconds)
+      for _ in 0..<10 { timeline.recordCallback(.sourceRender) }
+      #expect(timeline.entries.filter { $0.boundary == .sourceRender }.count == 3)
+      timeline.record(.engineWillConnectInput)
+      timeline.recordCallback(.sourceRender)
+      #expect(timeline.entries.filter { $0.boundary == .sourceRender }.count == 4)
+      let check = timeline.record(.checkRead, engineRunning: false)
+      let entries = timeline.entries
+      #expect(entries.last?.boundary == .checkRead)
+      #expect(entries.last?.seconds == check.seconds)
+      #expect(entries.allSatisfy { $0.seconds <= $0.readCompletedSeconds })
+      #expect(zip(entries, entries.dropFirst()).allSatisfy { $0.seconds <= $1.seconds })
+      #expect(MediaProcessingTimeline.Requested(nil) == .unavailable)
+      #expect(MediaProcessingTimeline.Requested(false) == .disabled)
+      #expect(MediaProcessingTimeline.Requested(true) == .enabled)
+      let encoded = try JSONEncoder().encode(entries)
+      #expect(!encoded.isEmpty)
+      for _ in 0..<520 { timeline.record(.acquisition) }
+      #expect(timeline.entries.count == 512)
+      #expect(timeline.dropped == entries.count + 520 - 512)
+    }
+
+    @Test
     func syntheticProcessingDoesNotChangeOrdinaryCaptureDefaults() {
       let before = AudioCaptureOptions()
       let synthetic = MarkerAudioEngine.syntheticCaptureOptions
