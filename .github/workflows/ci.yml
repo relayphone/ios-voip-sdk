@@ -62,6 +62,7 @@ jobs:
         with:
           xcode: "false"
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm ci --prefix media-test --no-audit --no-fund
       - run: npx tsc --project .
       - run: node --test
 
