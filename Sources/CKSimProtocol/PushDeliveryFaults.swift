@@ -36,3 +36,21 @@ public struct PushDeliveryFaults: Equatable, Sendable {
   /// A schedule outside the supported bounds.
   public enum ValidationError: Error, Sendable { case invalidSchedule }
 }
+
+extension PushDeliveryFaults: Codable {
+  private enum CodingKeys: String, CodingKey { case delayMS, drop, duplicate, spacingMS }
+
+  /// Decodes a complete delivery plan through the same bounds as command input.
+  public init(from decoder: any Decoder) throws {
+    let keys = try decoder.container(keyedBy: EnvelopeKey.self).allKeys.map(\.stringValue)
+    guard Set(keys) == Set(["delayMS", "drop", "duplicate", "spacingMS"]) else {
+      throw ValidationError.invalidSchedule
+    }
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      delayMS: values.decode(Int.self, forKey: .delayMS),
+      drop: values.decode(Bool.self, forKey: .drop),
+      duplicate: values.decode(Int.self, forKey: .duplicate),
+      spacingMS: values.decode(Int.self, forKey: .spacingMS))
+  }
+}
