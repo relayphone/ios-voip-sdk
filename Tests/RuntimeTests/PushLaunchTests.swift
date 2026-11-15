@@ -1,5 +1,6 @@
 #if os(iOS) && targetEnvironment(simulator)
   import CKSimRuntimeC
+  import CKSimProtocol
   import Darwin
   import Foundation
   import Testing
@@ -88,6 +89,63 @@
       try Data("existing claim".utf8).write(to: claim)
       #expect(!consume().delivered)
       #expect(try String(contentsOf: claim, encoding: .utf8) == "existing claim")
+    }
+  }
+
+  extension RuntimeSuites {
+    @Suite @MainActor struct LaunchDelivery {
+      @Test func plannedDuplicatesReachTheDelegateWithIndependentReports() async throws {
+        let runtime = try Runtime.shared()
+        try await withCallKitApp { _ in
+          let id = UUID()
+          let ids = [id, UUID(), UUID()]
+          let now = Int64(Date().timeIntervalSince1970 * 1000)
+          let envelope = try PushLaunchEnvelope(
+            id: id, runID: runtime.identity.runID, bundleID: runtime.identity.bundleID,
+            createdAtMS: now, expiresAtMS: now + 30_000, mustReport: true,
+            payload: PushPayload(fields: [:]),
+            delivery: PushDeliveryFaults(duplicate: 2, spacingMS: 150), deliveryIDs: ids)
+          let object = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(envelope))
+              as? [AnyHashable: Any])
+          #expect(CKSimScheduleLaunchPush(object) == nil)
+          try await runtime.until("three launch deliveries with new incoming reports") {
+            let entries = try runtime.entries()
+            return ids.allSatisfy { id in
+              entries.contains {
+                $0.event == "push.callbackReturned" && $0.pushID == id.uuidString
+                  && $0.reportEntered == true
+              }
+            } ? true : nil
+          }
+          let received = try runtime.entries().filter {
+            $0.event == "push.received" && ids.map(\.uuidString).contains($0.pushID ?? "")
+          }
+          #expect(received.map(\.pushID) == ids.map { Optional($0.uuidString) })
+          try #require(received.count == 3)
+          #expect(received[1].time >= received[0].time + 150)
+          #expect(received[2].time >= received[0].time + 300)
+          try await runtime.end(try await runtime.status().calls.map(\.state.uuid))
+        }
+      }
+
+      @Test func anInvalidPlanNeverSchedulesAPartialDelivery() async throws {
+        let runtime = try Runtime.shared()
+        try await withCallKitApp { _ in
+          let id = UUID().uuidString
+          let now = Int64(Date().timeIntervalSince1970 * 1000)
+          let object: [String: Any] = [
+            "schemaVersion": 2, "id": id, "runID": runtime.identity.runID,
+            "bundleID": runtime.identity.bundleID, "createdAtMS": now,
+            "expiresAtMS": now + 30_000, "mustReport": true, "payload": ["call": "one"],
+            "delivery": ["duplicate": 1, "spacingMS": 100, "delayMS": 0, "drop": false],
+            "deliveryIDs": [id, id],
+          ]
+          #expect(CKSimScheduleLaunchPush(object) != nil)
+          let entries = try runtime.entries()
+          #expect(!entries.contains { $0.pushID == id })
+        }
+      }
     }
   }
 #endif

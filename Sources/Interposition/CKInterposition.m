@@ -77,6 +77,10 @@ static void restoreHooks(void) {
 }
 #endif
 void CKSimEmit(NSString *event, NSDictionary *fields) { [Engine() recordEvent:event fields:fields]; }
+NSString *CKSimScheduleLaunchPush(NSDictionary *envelope) {
+  id<CKRuntimeEngineProtocol> engine=Engine();
+  return engine ? [engine scheduleLaunchPush:envelope] : @"launch schedule unavailable";
+}
 NSString *CKSimResourceDirectory(void) {
   Dl_info info;
   return dladdr((void *)&CKSimResourceDirectory, &info) ? [@(info.dli_fname) stringByDeletingLastPathComponent] : @"";

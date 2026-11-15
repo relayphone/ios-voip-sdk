@@ -26,6 +26,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSArray<CXCall *> *)liveCalls;
 - (void)setObserver:(CXCallObserver *)observer delegate:(nullable id<CXCallObserverDelegate>)delegate queue:(nullable dispatch_queue_t)queue NS_SWIFT_NAME(set(observer:delegate:queue:));
 - (void)recordEvent:(NSString *)event fields:(NSDictionary<NSString *, id> *)fields NS_SWIFT_NAME(record(event:fields:));
+- (nullable NSString *)scheduleLaunchPush:(NSDictionary *)envelope;
 @end
 
 bool CKSimPrepareEngine(void);
@@ -37,6 +38,7 @@ bool CKSimRuntimeIsActive(void);
 const char *CKSimRuntimeVersion(void);
 // Runtime mailbox and example controls exist only in simulator builds.
 void CKSimInjectPush(NSDictionary *payload, BOOL mustReport, NSString *identifier);
+NSString * _Nullable CKSimScheduleLaunchPush(NSDictionary *envelope);
 void CKSimEmit(NSString *event, NSDictionary *fields);
 
 // Capture before replacing any superclass implementation. SDK activation uses

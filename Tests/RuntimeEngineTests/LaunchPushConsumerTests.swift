@@ -52,16 +52,22 @@
           atPath: directory.appending(path: "push-launch.consuming").path))
     }
 
-    @Test(arguments: ["expired", "wrong-run", "future", "malformed", "plan"])
+    @Test func deliveryPlansRetainTheirStableIdentities() throws {
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let plan = try PushLaunchEnvelope(
+        id: envelope.id, runID: envelope.runID, bundleID: envelope.bundleID,
+        createdAtMS: envelope.createdAtMS, expiresAtMS: envelope.expiresAtMS,
+        mustReport: true, payload: envelope.payload,
+        delivery: PushDeliveryFaults(duplicate: 2, spacingMS: 500),
+        deliveryIDs: [envelope.id, UUID(), UUID()])
+      _ = try stage(plan)
+      #expect(try consume()?.envelope == plan)
+    }
+
+    @Test(arguments: ["expired", "wrong-run", "future", "malformed"])
     func invalidClaimIsRemovedWithoutDelivery(kind: String) throws {
       defer { try? FileManager.default.removeItem(at: directory) }
-      if kind == "plan" {
-        _ = try stage(
-          PushLaunchEnvelope(
-            id: envelope.id, runID: envelope.runID, bundleID: envelope.bundleID,
-            createdAtMS: envelope.createdAtMS, expiresAtMS: envelope.expiresAtMS,
-            mustReport: true, payload: envelope.payload))
-      } else if kind == "malformed" {
+      if kind == "malformed" {
         #expect(
           FileManager.default.createFile(
             atPath: file.path, contents: Data("not-json".utf8),

@@ -152,6 +152,7 @@
     private var callTimeline = RuntimeCallTimeline()
     private var timedAnswers: [UUID: Task<Void, Never>] = [:]
     private var pushDeliveries: [UUID: Task<Void, Never>] = [:]
+    private var launchEntries: [String: AsyncStream<ContinuousClock.Instant>.Continuation] = [:]
     private var pendingActions: [UUID: RuntimePendingAction] = [:]
     private let deadlines = NSMapTable<CXAction, NSDate>.weakToStrongObjects()
     private var observers: [ObjectIdentifier: ObserverRegistration] = [:]
@@ -315,6 +316,8 @@
         timedAnswers.removeAll()
         for delivery in pushDeliveries.values { delivery.cancel() }
         pushDeliveries.removeAll()
+        for entry in launchEntries.values { entry.finish() }
+        launchEntries.removeAll()
         audioRevision += 1
         for timer in timers.values {
           timer.setEventHandler(handler: nil)
@@ -423,6 +426,65 @@
       }
     #endif
 
+    func scheduleLaunchPush(_ object: [AnyHashable: Any]) -> String? {
+      do {
+        var wire = object
+        wire.removeValue(forKey: "envelopeSHA256")
+        let envelope = try JSONDecoder().decode(
+          PushLaunchEnvelope.self, from: JSONSerialization.data(withJSONObject: wire))
+        try envelope.validate(
+          runID: runID, bundleID: bundleID, nowMS: Int64(Date().timeIntervalSince1970 * 1000))
+        let payload = try PreparedPushPayload(envelope.payload)
+        let schedule = PushDeliverySchedule(launch: envelope)
+        return withState {
+          guard !stopped, pushDeliveries[envelope.id] == nil else {
+            return "launch schedule unavailable"
+          }
+          let (entries, continuation) = AsyncStream<ContinuousClock.Instant>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
+          launchEntries[envelope.id.uuidString] = continuation
+          for delivery in schedule.deliveries {
+            record(
+              event: "push.scheduled",
+              fields: [
+                "requestID": envelope.id.uuidString, "pushID": delivery.id.uuidString,
+                "drop": delivery.dropped, "mustReport": envelope.mustReport,
+                "spacingAnchor": "firstDelegateEntry",
+              ])
+          }
+          pushDeliveries[envelope.id] = Task { [weak self] in
+            defer {
+              self?.withState {
+                self?.launchEntries.removeValue(forKey: envelope.id.uuidString)?.finish()
+                self?.pushDeliveries.removeValue(forKey: envelope.id)
+              }
+            }
+            try? await schedule.runAfterFirstEntry(
+              clock: ContinuousClock(),
+              firstEntry: {
+                for await entry in entries { return entry }
+                throw CancellationError()
+              }
+            ) { [weak self] delivery in
+              self?.withState {
+                guard let self, !self.stopped else { return }
+                if delivery.dropped {
+                  self.record(
+                    event: "push.dropped",
+                    fields: [
+                      "requestID": envelope.id.uuidString, "pushID": delivery.id.uuidString,
+                    ])
+                } else {
+                  CKSimInjectPush(payload.dictionary, envelope.mustReport, delivery.id.uuidString)
+                }
+              }
+            }
+          }
+          return nil
+        }
+      } catch { return String(describing: error) }
+    }
+
     func record(event: String, fields: [String: Any]) {
       record(event: event, fields: fields, observed: .now())
     }
@@ -435,6 +497,10 @@
         if let pushID = fields["pushID"] as? String, !pushID.isEmpty {
           switch event {
           case "push.received":
+            if let entry = launchEntries.removeValue(forKey: pushID) {
+              entry.yield(ContinuousClock().now)
+              entry.finish()
+            }
             let required = fields["mustReport"] as? Bool ?? true
             let activity = applicationActivity.state
             let joined = calls.values.contains { $0.connected && !$0.ended }

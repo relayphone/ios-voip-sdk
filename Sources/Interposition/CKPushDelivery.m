@@ -152,7 +152,8 @@ NSString *CKSimInstallPushHooks(void) {
   if(launched) {
     CKSimEmit(@"push.launchConsumed",@{@"pushID":launched[@"id"],@"createdAtMS":launched[@"createdAtMS"],
       @"expiresAtMS":launched[@"expiresAtMS"],@"mustReport":launched[@"mustReport"],@"envelopeSHA256":launched[@"envelopeSHA256"]});
-    CKSimInjectPush(launched[@"payload"],[launched[@"mustReport"] boolValue],launched[@"id"]);
+    NSString *failure=CKSimScheduleLaunchPush(launched);
+    if(failure) CKSimEmit(@"push.launchRefused",@{@"reason":failure});
   } else if(reason) CKSimEmit(@"push.launchRefused",@{@"reason":reason});
   return nil;
 }
