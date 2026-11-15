@@ -346,6 +346,27 @@ within each session; consumers reject unsupported versions and identity/order
 mismatches and buffer incomplete trailing lines. New event names and fields are
 additive within version 1. Do not assume a fixed set of event names.
 
+For an offline snapshot, use `cksim --bundle com.example.app events --run-id <runID>`.
+This reads the selected app container without a runtime mailbox round trip or an installed
+runtime package, so host observations remain readable before app startup and after exit.
+It emits JSONL, while `events` without `--run-id` retains its mailbox response format.
+Cold push launches persist `process.launchRequested` before invoking the simulator launcher.
+They require a fresh run ID: an existing runtime or host run directory prevents staging, so
+an earlier invocation's boundaries cannot be attributed to a new process.
+Host producers each own an exclusive segment at
+`Documents/.callkit-simulator/process/<runID>/<producerID>.jsonl`; they never append to the
+runtime's file. A host row has a producer UUID and an optional app PID, absent before launch.
+
+Runtime rows additionally carry absolute `uptimeNanoseconds`. Snapshots merge this shared
+monotonic time across host and runtime segments, breaking ties by producer identity and then
+producer sequence. They preserve each producer's sequence instead of renumbering it globally.
+Wall-clock changes never reorder observations. A runtime journal without absolute uptime is
+refused with a rebuild diagnostic rather than guessed into the host timeline. Each snapshot
+validates invocation identity and contiguous producer sequences, omits incomplete trailing
+rows, and limits segments to 16 MiB and the merged rows to 64 MiB.
+The Inspector and `watch` continue to follow the runtime segment; combined streaming,
+readiness projections and host process controls follow separately.
+
 Reports use `report.*`; conversation snapshots use `call.changed` (including
 caller name, handle, ringing, connected, held, muted and ended). Actions use
 `action.deadline`, `action.settled`, `action.expired`, `action.timeout` and
