@@ -5,6 +5,8 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+## 0.6.0 (2026-11-16)
+
 ### Added
 
 - Explicit media permission helpers: `getMediaPermissions`, foreground-only
