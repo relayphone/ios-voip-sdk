@@ -44,11 +44,10 @@ final class InspectorJourney: XCTestCase {
     }
     XCTAssertTrue(filter.isHittable)
     clickWhenEnabled(filter)
-    XCTAssertEqual(
-      XCTWaiter.wait(
-        for: [XCTNSPredicateExpectation(predicate: filterConfirmation, object: filter)], timeout: 15
-      ),
-      .completed)
+    let confirmation = XCTWaiter.wait(
+      for: [XCTNSPredicateExpectation(predicate: filterConfirmation, object: filter)], timeout: 15)
+    if confirmation != .completed { attach(app, name: "Filter confirmation failed") }
+    XCTAssertEqual(confirmation, .completed)
     attach(app, name: "Filter confirmed")
   }
 

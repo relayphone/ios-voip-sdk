@@ -11,6 +11,7 @@ import { assertInspectorJournal } from './inspector-journal.ts';
 import { buildSimulatorApp } from './simulator-app.ts';
 import { runnerHungBeforeConnecting } from './simulator-test-result.ts';
 import { runReadyUITest } from './inspector-ui-run.ts';
+import { captureInspectorFailure } from './inspector-failure.ts';
 
 const bundle = 'dev.callkitsim.smoke';
 class InfrastructureFailure extends Error {
@@ -179,6 +180,7 @@ export async function journey(work: string): Promise<void> {
       summary(`product:ui passed; product:journal passed; infrastructure retries used: ${attempt}`);
       return;
     } catch (error) {
+      if (check !== 'setup' && devices[0]) captureInspectorFailure(devices[0], bundle, prefix);
       writeFileSync(`${prefix}-failure.log`, `${new Date().toISOString()}\n${String(error)}\n${error instanceof Error ? String(error.cause ?? '') : ''}`);
       console.error(`${new Date().toISOString()} ${String(error)}`);
       await simulatorDiagnostics(prefix);
