@@ -8,6 +8,96 @@ import VoIPTesting
 
 @Suite(.timeLimit(.minutes(1)))
 struct PushDeliveryScheduleTests {
+  private func coldPlan(drop: Bool = false) throws -> PushDeliverySchedule {
+    let id = UUID()
+    return PushDeliverySchedule(
+      launch: try PushLaunchEnvelope(
+        id: id, runID: "cold-test", bundleID: "dev.example", createdAtMS: 1000,
+        expiresAtMS: 31_000, mustReport: true, payload: PushPayload(fields: [:]),
+        delivery: PushDeliveryFaults(delayMS: 5000, drop: drop, duplicate: 2, spacingMS: 1000),
+        deliveryIDs: [id, UUID(), UUID()]))
+  }
+
+  @Test func coldDuplicatesWaitForEntryAndKeepSpacingAfterSlowStartup() async throws {
+    let clock = TestClock()
+    let plan = try coldPlan()
+    let entries = AsyncStream<TestClock.Instant>.makeStream()
+    let enqueued = AsyncStream<UUID>.makeStream()
+    let received = Mutex<[UUID]>([])
+    let task = Task {
+      try await plan.runAfterFirstEntry(
+        clock: clock,
+        firstEntry: {
+          for await entry in entries.stream { return entry }
+          throw CancellationError()
+        }
+      ) { delivery in
+        received.withLock { $0.append(delivery.id) }
+        enqueued.continuation.yield(delivery.id)
+      }
+    }
+    defer {
+      task.cancel()
+      entries.continuation.finish()
+    }
+    var iterator = enqueued.stream.makeAsyncIterator()
+    #expect(await iterator.next() == plan.deliveries[0].id)
+    clock.advance(by: .seconds(20))
+    #expect(received.withLock { $0.count == 1 })
+    entries.continuation.yield(clock.now)
+    try await clock.waitForSleepers()
+    clock.advance(by: .milliseconds(999))
+    #expect(received.withLock { $0.count == 1 })
+    clock.advance(by: .milliseconds(1))
+    #expect(await iterator.next() == plan.deliveries[1].id)
+    try await clock.waitForSleepers()
+    clock.advance(by: .seconds(1))
+    try await task.value
+    #expect(received.withLock { $0 == plan.deliveries.map(\.id) })
+  }
+
+  @Test func coldDropsNeverWaitForADelegateEntry() async throws {
+    let clock = TestClock()
+    let plan = try coldPlan(drop: true)
+    let dropped = Mutex<[UUID]>([])
+    try await plan.runAfterFirstEntry(
+      clock: clock,
+      firstEntry: {
+        Issue.record("A dropped push waited for registry readiness")
+        return clock.now
+      },
+      deliver: { delivery in
+        #expect(delivery.dropped)
+        dropped.withLock { $0.append(delivery.id) }
+      })
+    #expect(dropped.withLock { $0 == plan.deliveries.map(\.id) })
+  }
+
+  @Test func cancellingDuringRegistryStartupNeverEnqueuesDuplicates() async throws {
+    let clock = TestClock()
+    let plan = try coldPlan()
+    let entries = AsyncStream<TestClock.Instant>.makeStream()
+    let queued = AsyncStream<Void>.makeStream()
+    let received = Mutex<[UUID]>([])
+    let task = Task {
+      try await plan.runAfterFirstEntry(
+        clock: clock,
+        firstEntry: {
+          for await entry in entries.stream { return entry }
+          throw CancellationError()
+        }
+      ) { delivery in
+        received.withLock { $0.append(delivery.id) }
+        queued.continuation.yield(())
+      }
+    }
+    var iterator = queued.stream.makeAsyncIterator()
+    _ = await iterator.next()
+    task.cancel()
+    await #expect(throws: CancellationError.self) { try await task.value }
+    #expect(received.withLock { $0 == [plan.deliveries[0].id] })
+  }
+
   @Test func delayAndSpacingStartIndependentReportingWindowsAtDelivery() async throws {
     let clock = TestClock()
     let start = clock.now

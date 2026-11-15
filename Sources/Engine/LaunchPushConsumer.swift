@@ -59,9 +59,7 @@
       guard count == bytes.count else { throw Failure.unsafeEnvelope }
       do {
         let envelope = try JSONDecoder().decode(PushLaunchEnvelope.self, from: bytes)
-        // The delivery hook is still single-delivery. Reject plans until its scheduler is installed.
-        guard envelope.schemaVersion == .singleDelivery,
-          let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+        guard let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
           object["id"] as? String == envelope.id.uuidString
         else { throw Failure.invalidEnvelope }
         try envelope.validate(runID: runID, bundleID: bundleID, nowMS: nowMS)
