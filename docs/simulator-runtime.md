@@ -364,8 +364,20 @@ Wall-clock changes never reorder observations. A runtime journal without absolut
 refused with a rebuild diagnostic rather than guessed into the host timeline. Each snapshot
 validates invocation identity and contiguous producer sequences, omits incomplete trailing
 rows, and limits segments to 16 MiB and the merged rows to 64 MiB.
-The Inspector and `watch` continue to follow the runtime segment; combined streaming,
-readiness projections and host process controls follow separately.
+The Inspector and `watch` continue to follow the runtime segment; combined streaming and
+readiness projections follow separately.
+
+Stop a specific run before a cold-recovery test with
+`cksim --bundle com.example.app process kill --run-id <runID> --cause abrupt`.
+Use `--cause user-requested` for simulator termination instead of an abrupt kill.
+The host resolves the installed bundle, checks its published run and live service PID,
+persists `process.killRequested`, and repeats identity verification immediately before
+termination. It records `process.exited` and returns a JSON receipt only after both the
+service and old PID are absent. `--command-receipt <new-file>` persists that receipt.
+Identity changes, query failures, and an unconfirmed exit fail the command; inspect state
+before staging another push. These controls model test intent, not jetsam selection or
+SpringBoard's persistent force-quit eligibility. A later `push --launch` is an explicit
+launch override and requires a fresh run ID.
 
 Reports use `report.*`; conversation snapshots use `call.changed` (including
 caller name, handle, ringing, connected, held, muted and ended). Actions use

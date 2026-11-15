@@ -130,7 +130,7 @@
         Uninstall.self, Repair.self, Launch.self, Reset.self, Answer.self, Decline.self,
         End.self, Unmerge.self, Merge.self, Hold.self, Mute.self, Tones.self,
         HoldAndAccept.self, EndAndAccept.self, EndHeldAndAccept.self, Push.self, Faults.self,
-        IncomingFilter.self,
+        IncomingFilter.self, ProcessControl.self,
       ])
 
     /// Runs `cksim` with arguments in which the shared options may come before the command.
@@ -157,6 +157,9 @@
         }
       }
       guard let command = rest.first else { return leading }
+      if command == "process" {
+        return [command] + Self.arguments(leading + rest.dropFirst())
+      }
       return [command] + leading + rest.dropFirst()
     }
   }
