@@ -25,7 +25,36 @@ npx expo install expo-build-properties
 
 The release includes checksums and an attestation; see [release verification](runtime-releases.md#verifying-a-release).
 
-### Evaluate unreleased changes
+### First-call permissions
+
+Preflight media permissions during onboarding, from foreground UI:
+
+```ts
+import { getMediaPermissions, requestMediaPermissions, conversationMediaReadiness } from "@relayphone/ios-voip-sdk";
+
+const permissions = await getMediaPermissions(); // Safe in push and background paths; never prompts.
+await requestMediaPermissions(["microphone"]); // Explicit foreground UI only.
+// For video apps, configure the plugin with { supportsVideo: true } (or { video: true }).
+await requestMediaPermissions(["camera"]); // Only when offering video from foreground UI.
+const readiness = await conversationMediaReadiness(conversationId);
+```
+
+Both permission helpers return `microphone` and `camera` responses with Expo's
+`status`, `granted`, `canAskAgain` and `expires: "never"` fields. Requests skip kinds
+that cannot be asked again, and reject with `not_foreground` outside foreground UI.
+`conversationMediaReadiness` never prompts; it returns `required` and `missing`, requiring
+camera only when the conversation's `isVideo` is true. Unknown IDs reject with
+`unknown_conversation`.
+
+Before Answer with video, check readiness. If the camera is missing and foreground UI is
+available, request it and check again. Otherwise proceed audio-only in the app's media and
+offer video later; never prompt from push delivery or a locked-device Answer. The SDK does
+not request permissions automatically or change the conversation's video capability.
+Previously denied or restricted iOS access requires the user to change it in Settings.
+Audio-only apps need no camera usage description. Existing video apps should explicitly set
+`supportsVideo: true` or `video: true` in the plugin configuration.
+
+## Evaluate unreleased changes
 
 To evaluate changes on `main`, pack a full checkout:
 
@@ -87,8 +116,8 @@ export default config;
 ```
 
 The plugin configures iOS only. It adds VoIP and audio background modes, the APNs entitlement
-and `INStartCallIntent` for Siri, Contacts and Recents. It also configures microphone and camera
-permission messages. Provision the app for Push Notifications to receive real VoIP pushes.
+and `INStartCallIntent` for Siri, Contacts and Recents. It also configures the microphone permission message, and the camera message when
+`supportsVideo` or `video` is enabled. Provision the app for Push Notifications to receive real VoIP pushes.
 
 | Option | Default | Effect |
 | --- | --- | --- |
@@ -105,6 +134,7 @@ permission messages. Provision the app for Push Notifications to receive real Vo
 | `defaultRingtoneIos` | `"default"` | System ringtone, or a filename including its extension from `sounds`. |
 | `iconTemplateIos` | omitted | App-relative path to a square template PNG for the call UI, about 40 × 40 points with the glyph in its alpha channel. |
 | `microphonePermission` | `"Allow $(PRODUCT_NAME) to access your microphone"` | Permission message; `false` skips adding it. |
+| `supportsVideo` / `video` | `false` | Adds the camera usage description for video calls. |
 | `cameraPermission` | `"Allow $(PRODUCT_NAME) to access your camera"` | Permission message; `false` skips adding it. |
 
 CallKit is allowed only inside the simulator runtime in Debug iOS Simulator builds; the module

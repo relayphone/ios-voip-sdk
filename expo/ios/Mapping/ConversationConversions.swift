@@ -9,6 +9,7 @@ struct CommandError: Error {
   enum Code: String {
     case invalidArguments = "invalid_arguments"
     case unknownConversation = "unknown_conversation"
+    case notForeground = "not_foreground"
     case unsupported
     case conversation
     case duplicateSDKLinkage = "duplicate_sdk_linkage"
@@ -22,6 +23,9 @@ struct CommandError: Error {
   static let invalidArguments = CommandError(code: .invalidArguments, message: "Invalid arguments")
   static let unknownConversation = CommandError(
     code: .unknownConversation, message: "Unknown conversation")
+
+  static let notForeground = CommandError(
+    code: .notForeground, message: "Media permission requests require foreground UI")
 
   /// The SDK's refusal of an action.
   init(_ error: ActionError) {

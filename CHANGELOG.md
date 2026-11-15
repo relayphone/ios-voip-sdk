@@ -7,6 +7,12 @@ Public API changes include migration guidance.
 
 ### Added
 
+- Explicit media permission helpers: `getMediaPermissions`, foreground-only
+  `requestMediaPermissions`, and non-prompting `conversationMediaReadiness`, with shared Expo
+  response types and the `not_foreground` error code. iOS reads microphone and camera access
+  without prompting automatically. Video apps enable the plugin's `supportsVideo` or `video`
+  option to add a camera usage description; audio-only apps receive only the microphone entry.
+
 - `CallMedia.transportEvents()` optionally reports the first received and sent packet for a call,
   with a monotonic observation time. Existing media implementations remain silent by default.
   Observation kinds are extensible values; consumers must handle future kinds with a fallback.
