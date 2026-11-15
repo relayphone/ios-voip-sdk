@@ -10,7 +10,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { isMain, main, option, repository, run } from './command.ts';
 import { type BuildInfo, isVersion, manifest, sourceDigest } from './runtime-package.ts';
 
-const objectiveC = ['CKInterposition', 'CKPushDelivery', 'CKPushLaunch'];
+const objectiveC = ['CKInterposition', 'CKPushDelivery'];
 
 function swiftFiles(folder: string): string[] {
   return readdirSync(join(repository, folder))
