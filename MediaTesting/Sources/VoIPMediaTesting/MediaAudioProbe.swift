@@ -53,6 +53,7 @@
       var start = 0.0
       var values: [Stage: Observation] = [:]
       var captures: [Stage: Capture] = [:]
+      var silence: [Stage: PCMSilenceWindows] = [:]
     }
     private let state = Mutex(State())
     private let now: @Sendable () -> Double
@@ -87,6 +88,22 @@
     }
     public func capture(_ stage: Stage) -> Capture {
       state.withLock { $0.captures[stage] ?? Capture() }
+    }
+    /// Starts silence attempts within the remaining phase budget, on this probe's clock.
+    public func beginSilence(_ stage: Stage, for duration: Duration, remaining: Duration) {
+      let start = Duration.seconds(now())
+      state.withLock {
+        $0.silence[stage] = PCMSilenceWindows(
+          start: start, duration: duration, deadline: start + max(.zero, remaining))
+      }
+    }
+    /// Records scheduling diagnostics and returns every attempted PCM window.
+    public func silence(_ stage: Stage) -> PCMSilenceWindows? {
+      let time = Duration.seconds(now())
+      return state.withLock {
+        $0.silence[stage]?.tick(at: time)
+        return $0.silence[stage]
+      }
     }
     public func expectAudio(_ stage: Stage) throws(Failure) {
       let value = try liveObservation(stage, duration: .zero)
@@ -154,6 +171,21 @@
         value.energy += energy
         value.frameSeconds += Double(count) / buffer.format.sampleRate
         state.values[stage] = value
+        let attempts = state.silence[stage]?.windows.count
+        state.silence[stage]?.receive(
+          at: .seconds(entered), frames: count,
+          sampleRate: buffer.format.sampleRate, sampleCount: count * channels, energy: energy)
+        if let attempts, let silence = state.silence[stage], silence.verdict == nil,
+          silence.windows.count > attempts
+        {
+          // Retire tap history at the callback boundary, even when the observer task is stalled.
+          state.start = entered
+          state.captures = [:]
+          for observed in [Stage.decoded, .output] {
+            state.values[observed] = Observation(
+              installed: state.values[observed]?.installed ?? false)
+          }
+        }
       }
     }
   }

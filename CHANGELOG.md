@@ -7,6 +7,14 @@ Public API changes include migration guidance.
 
 ### Fixed
 
+- Include timed processing-state and engine-transition diagnostics in native media feasibility receipts, and report the earliest native failure directly.
+
+- Reference media silence checks select the first full continuous window within the existing
+  30-second result budget. Gapped attempts remain unobserved in receipts, with coverage,
+  monotonic ticks and scheduler lag; observed leaks fail immediately. Native PCM coverage
+  uses delivered frame duration with a 40 ms uncovered-time limit, alongside the unchanged
+  250 ms callback liveness limit.
+
 - Media feasibility retains repeated cycles within the existing native acquisition deadline,
   instead of sealing only the first three seconds. It selects the first complete clean cycle
   and reports per-candidate confidences with receiver loss, concealment and stretch counters.

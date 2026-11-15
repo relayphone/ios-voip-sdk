@@ -6,6 +6,19 @@ media; a second test room cannot stand in for it. Calling `createMediaTest` with
 rejects with `MediaTestError` code `unavailable`. Native media hooks and a far-end peer are
 separate integrations.
 
+Reference silence observations share the example's explicit 30-second result deadline.
+The host exposes its remaining budget to the native observer; request latency is subtracted
+before setting a native deadline. A scheduling gap retires an attempt as `unobserved` and
+starts another full-duration attempt within that same budget. Observed leakage fails immediately,
+including in an attempt containing a gap. No short suffix or expired attempt can pass.
+
+Host observer ticks retain the 250 ms continuity limit. Native PCM uses elapsed monotonic time
+minus accumulated delivered frame duration to measure uncovered time against 40 ms, while
+also retaining the separate 250 ms callback liveness check. Receipts include each attempted
+window's coverage, gaps and verdict, plus tick timestamps and scheduler lag. Deadline failures
+retain available native checkpoints, including unfinished attempts, and identify a missing
+final report explicitly.
+
 The reference iOS adapter evaluates repeated emissions within its existing acquisition deadline.
 It retains per-candidate confidences and receiver statistics, skips spans with loss or concealment,
 and accepts the first complete clean cycle. Missing or stale receiver counters cannot prove clean
@@ -261,3 +274,7 @@ full phase, expected marker, observation stage and duration, and returns seriali
 `validateMediaReceipt` rejects malformed, stale, mismatched or incomplete evidence. Credentials
 and raw PCM stay out of JavaScript receipts. Run `npm run typecheck --prefix expo` and
 `npm test --prefix expo` to exercise the contract and its failing controls.
+
+The native feasibility receipt includes a bounded processing timeline with requested and software-active AEC, NS and AGC values. Unknown requests stay explicit. Monotonic read-start and read-completion timestamps cover capture-options application, engine transitions, the first three source-render/output callbacks after each graph connection, acquisition samples and the exact `checkRead` snapshot used by the processing gate. A dropped-entry count reports diagnostic overflow. Initial callback snapshots synchronously query the shared WebRTC processing state; their measured read duration exposes the diagnostic cost. These observations do not acknowledge application or relax the processing gate.
+
+When the native check fails, the host saves its receipt and raw PCM and reports that native phase directly before evaluating subsequent marker gates.

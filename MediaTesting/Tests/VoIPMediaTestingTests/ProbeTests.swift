@@ -11,6 +11,32 @@
   @Suite("Media observation evidence")
   struct ProbeTests {
     @Test
+    func processingTimelineKeepsUnknownStateAndBoundsCallbackSampling() throws {
+      let timeline = MediaProcessingTimeline()
+      let options = timeline.record(.captureOptionsApplying)
+      #expect(options.seconds <= options.readCompletedSeconds)
+      for _ in 0..<10 { timeline.recordCallback(.sourceRender) }
+      #expect(timeline.entries.filter { $0.boundary == .sourceRender }.count == 3)
+      timeline.record(.engineWillConnectInput)
+      timeline.recordCallback(.sourceRender)
+      #expect(timeline.entries.filter { $0.boundary == .sourceRender }.count == 4)
+      let check = timeline.record(.checkRead, engineRunning: false)
+      let entries = timeline.entries
+      #expect(entries.last?.boundary == .checkRead)
+      #expect(entries.last?.seconds == check.seconds)
+      #expect(entries.allSatisfy { $0.seconds <= $0.readCompletedSeconds })
+      #expect(zip(entries, entries.dropFirst()).allSatisfy { $0.seconds <= $1.seconds })
+      #expect(MediaProcessingTimeline.Requested(nil) == .unavailable)
+      #expect(MediaProcessingTimeline.Requested(false) == .disabled)
+      #expect(MediaProcessingTimeline.Requested(true) == .enabled)
+      let encoded = try JSONEncoder().encode(entries)
+      #expect(!encoded.isEmpty)
+      for _ in 0..<520 { timeline.record(.acquisition) }
+      #expect(timeline.entries.count == 512)
+      #expect(timeline.dropped == entries.count + 520 - 512)
+    }
+
+    @Test
     func syntheticProcessingDoesNotChangeOrdinaryCaptureDefaults() {
       let before = AudioCaptureOptions()
       let synthetic = MarkerAudioEngine.syntheticCaptureOptions
@@ -237,6 +263,36 @@
       #expect(throws: MediaAudioProbe.Failure.audioLeaked(.output)) {
         try probe.expectSilence(.output)
       }
+    }
+  }
+#endif
+
+#if DEBUG && os(iOS) && targetEnvironment(simulator)
+  extension ProbeTests {
+    @Test func silenceRetryRetiresBothTapHistoriesWithoutPolling() throws {
+      let clock = TestClock()
+      let probe = MediaAudioProbe(clock: clock)
+      let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1))
+      let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4800))
+      buffer.frameLength = 4800
+      let samples = try #require(buffer.floatChannelData?[0])
+      probe.installed(.decoded)
+      probe.installed(.output)
+      probe.beginWindow()
+      probe.beginSilence(.output, for: .seconds(1), remaining: .seconds(3))
+      clock.advance(by: .milliseconds(400))
+      for index in 0..<4800 { samples[index] = 0 }
+      probe.receive(buffer, at: .output)
+      for _ in 0..<10 {
+        clock.advance(by: .milliseconds(100))
+        for index in 0..<4800 { samples[index] = 0.1 }
+        probe.receive(buffer, at: .decoded)
+        for index in 0..<4800 { samples[index] = 0 }
+        probe.receive(buffer, at: .output)
+      }
+      #expect(probe.silence(.output)?.verdict == .silent)
+      #expect(probe.silence(.output)?.windows.count == 2)
+      try probe.expectAudio(.decoded)
     }
   }
 #endif
