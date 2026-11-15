@@ -64,6 +64,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let inactiveEngineStayedStopped: Bool
       let processing: [String: Bool]
       let codecs: [String: String]
+      let silenceWindows: [PCMSilenceWindows.Window]
     }
     nonisolated let commands: AsyncStream<AudioCommand>.Continuation
     let probe = MediaAudioProbe(captureDuration: .seconds(10))
@@ -100,6 +101,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     var savedDuplex = false
     var processing: [String: Bool] = [:]
     var codecs: [String: String] = [:]
+    var silenceWindows: [PCMSilenceWindows.Window] = []
     var localTrack: LocalAudioTrack?
     var remoteTrack: RemoteAudioTrack?
     init(_ fixture: Fixture) {
@@ -174,13 +176,14 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       events = Task { [weak self, weak client] in
         guard let self, let client else { return }
         do {
+          let clock = ContinuousClock()
+          let resultDeadline = try await phaseDeadline(clock: clock)
           let party = Party(handle: try Handle(kind: .generic, value: "media-peer"))
           let incoming = IncomingCall(id: CallID(rawValue: "media-example"), parties: [party])
           _ = await client.report(incoming)
           try await client.request(.answer(incoming.id))
           phase = .duplex
           // Keep the existing ten-second acquisition deadline; retain later repeated cycles.
-          let clock = ContinuousClock()
           let acquisitionDeadline = clock.now + .seconds(10)
           while clock.now < acquisitionDeadline {
             recordTransport()
@@ -236,9 +239,25 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
           AudioManager.shared.mixer.outputVolume = 0
           try await Task.sleep(for: .milliseconds(300))
           probe.beginWindow()
-          try await Task.sleep(for: .seconds(1))
+          probe.beginSilence(
+            .output, for: .seconds(1), remaining: clock.now.duration(to: resultDeadline))
+          while let attempt = probe.silence(.output) {
+            let checkpoint = URL.documentsDirectory.appending(path: "media-silence-windows.json")
+            if attempt.windows.count != silenceWindows.count
+              || !FileManager.default.fileExists(atPath: checkpoint.path)
+            {
+              silenceWindows = attempt.windows
+              try JSONEncoder().encode(attempt.snapshot).write(to: checkpoint, options: .atomic)
+            }
+            if let verdict = attempt.verdict {
+              guard verdict == .silent else {
+                throw MediaAudioProbe.Failure.incompleteWindow(.output)
+              }
+              break
+            }
+            try await clock.sleep(until: min(resultDeadline, clock.now + .milliseconds(20)))
+          }
           try probe.expectAudio(.decoded)
-          try probe.expectSilence(.output, for: .seconds(1))
           let mutedOutput = probe.observation(.output)
           AudioManager.shared.mixer.outputVolume = 1
           phase = .publicationGate
@@ -264,7 +283,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             output: output,
             mutedOutput: mutedOutput, missingTapCaught: caught,
             inactiveEngineStayedStopped: inactiveEngineStayedStopped, processing: processing,
-            codecs: codecs)
+            codecs: codecs, silenceWindows: silenceWindows)
           try JSONEncoder().encode(result).write(
             to: URL.documentsDirectory.appending(path: "media-result.json"))
 
@@ -285,6 +304,21 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       guard (response as? HTTPURLResponse)?.statusCode == 200 else {
         throw MediaAudioProbe.Failure.audioLeaked(.output)
       }
+    }
+    private func phaseDeadline(clock: ContinuousClock) async throws -> ContinuousClock.Instant {
+      struct Budget: Decodable { let remainingMs: Double }
+      let started = clock.now
+      let (data, response) = try await URLSession.shared.data(
+        from: URL(string: fixture.control + "/deadline")!)
+      guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+        throw MediaAudioProbe.Failure.incompleteWindow(.output)
+      }
+      let budget = try JSONDecoder().decode(Budget.self, from: data)
+      guard budget.remainingMs.isFinite, budget.remainingMs >= 0 else {
+        throw MediaAudioProbe.Failure.incompleteWindow(.output)
+      }
+      // Subtract the entire round trip so the native deadline cannot extend the host budget.
+      return started + .milliseconds(budget.remainingMs)
     }
     private func codec(_ track: LiveKitClient.Track?, outbound: Bool) -> String {
       guard let statistics = track?.statistics,
@@ -348,11 +382,12 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         let codecs: [String: String]
         let decoded: MediaAudioProbe.Observation
         let output: MediaAudioProbe.Observation
+        let silenceWindows: [PCMSilenceWindows.Window]
       }
       let result = FailureResult(
         generatedSamples: hooks.generatedSamples, phase: phase, processing: processing,
         codecs: codecs, decoded: probe.observation(.decoded),
-        output: probe.observation(.output))
+        output: probe.observation(.output), silenceWindows: silenceWindows)
       try? JSONEncoder().encode(result).write(
         to: URL.documentsDirectory.appending(path: "media-result.json"))
     }

@@ -15,6 +15,8 @@ import { measureMarkerAsync } from './measure-marker.ts';
 import { receiverStatistics } from './receiver-statistics.ts';
 import type { TransportSnapshot } from './transport.ts';
 import { monitorReceiver, ReceiverObservationError } from './peer-window.ts';
+import { observeSilence, SilenceObservationError, type SilenceWindow } from './silence-window.ts';
+import { writeUnobservedResult } from './result-receipt.ts';
 
 const [simulator, app, binary, output] = process.argv.slice(2);
 const processing = "synthetic";
@@ -80,9 +82,13 @@ const statistics = (async () => {
 })();
 let uplinkEvidence: ReturnType<typeof measureMarker> | null = null;
 let uplinkCapture: PCMCapture | null = null;
+let resultDeadlineMs: number | undefined;
+const resultPhase = Promise.withResolvers<void>();
+let pendingSilence: Promise<SilenceWindow[]> | undefined;
 type ControlStep = 'request' | 'drain' | 'window-1' | 'window-2' | 'window-3' | 'marker-analysis' | 'marker-gate' | 'silence-gate';
 const controls: { leakControlCaught: boolean; publicationSilent: boolean;
-  failure?: { phase: ControlStep; reason: ReceiverObservationError['reason'] | 'control-failed'; health?: ReceiverObservationError['health']; gapMs?: number } } =
+  silenceWindows?: SilenceWindow[];
+  failure?: { phase: ControlStep; reason: ReceiverObservationError['reason'] | 'unobserved' | 'leak' | 'control-failed'; health?: ReceiverObservationError['health']; gapMs?: number } } =
   { leakControlCaught: false, publicationSilent: false };
 const control = createServer(async (request, response) => {
   let controlPhase: ControlStep = 'request';
@@ -91,15 +97,22 @@ const control = createServer(async (request, response) => {
     return phase(`control.${request.url === '/muted' ? 'muted' : 'leak-control'}.${name}`, operation);
   };
   try {
+    if (request.url === '/deadline') {
+      await resultPhase.promise;
+      assert.ok(resultDeadlineMs !== undefined, 'Result phase has not started');
+      response.setHeader('Content-Type', 'application/json');
+      response.end(JSON.stringify({ remainingMs: Math.max(0, resultDeadlineMs - performance.now()) }));
+      return;
+    }
+    assert.ok(resultDeadlineMs !== undefined, 'Result phase has not started');
     assert.ok(['/leak-control', '/muted'].includes(request.url ?? ''));
     // Exclude queued pre-mute frames, then retain an entire observation window.
     await step('drain', () => delay(500)); receivedSamples = 0; energy = 0; transport = []; captureGeneration++;
     if (request.url === "/leak-control") received = [];
     const observe = () => monitorReceiver(() => ({ connected: peer.connectionState === ConnectionState.CONN_CONNECTED,
       readerLive: readerLive && !readerFailed, trackAvailable }));
-    await step('window-1', observe);
-    const rms = receivedSamples ? Math.sqrt(energy / receivedSamples) : 0;
     if (request.url === '/leak-control') {
+      await step('window-1', observe);
       // Three seconds cover an arbitrary emission phase, allowed drift and the complete post-roll.
       for (const window of ['window-2', 'window-3'] as const) {
         await step(window, observe);
@@ -109,10 +122,19 @@ const control = createServer(async (request, response) => {
       controlPhase = 'marker-gate';
       assert.ok(uplinkEvidence.clean && uplinkEvidence.complete && uplinkEvidence.postRollObserved, 'Complete unmuted tones-v2 marker and post-roll were not received');
       controls.leakControlCaught = true;
-    } else { controlPhase = 'silence-gate'; assert.ok(rms < 0.001, 'Muted publication leaked PCM'); controls.publicationSilent = true; }
+    } else {
+      controlPhase = 'silence-gate';
+      pendingSilence = step('silence-gate', () => observeSilence(() => ({
+        connected: peer.connectionState === ConnectionState.CONN_CONNECTED,
+        readerLive: readerLive && !readerFailed, trackAvailable, samples: receivedSamples, energy,
+      }), { durationMs: 1000, deadlineMs: resultDeadlineMs!, gapLimitMs: 250 }));
+      controls.silenceWindows = await pendingSilence;
+      controls.publicationSilent = true;
+    }
     response.end('ok');
   } catch (error) {
-    controls.failure = { phase: controlPhase, reason: error instanceof ReceiverObservationError ? error.reason : 'control-failed',
+    if (error instanceof SilenceObservationError) controls.silenceWindows = error.windows;
+    controls.failure = { phase: controlPhase, reason: error instanceof SilenceObservationError ? error.reason : error instanceof ReceiverObservationError ? error.reason : 'control-failed',
       ...(error instanceof ReceiverObservationError ? { health: error.health, gapMs: error.gapMs } : {}) };
     console.log(JSON.stringify({ kind: 'control-failure', ...controls.failure }));
     response.statusCode = 500; response.end('failed');
@@ -163,15 +185,23 @@ try {
     }
   })();
   const result = join(container, 'Documents/media-result.json');
-  for (const name of ['result', 'decoded', 'output']) rmSync(join(container, `Documents/media-${name}.json`), { force: true });
+  for (const name of ['result', 'decoded', 'output', 'silence-windows']) rmSync(join(container, `Documents/media-${name}.json`), { force: true });
   writeFileSync(join(container, 'Documents/media-fixture.json'), JSON.stringify({
     url: roomURL, token: token('example'), control: `http://127.0.0.1:${controlAddress.port}`,
     profile: "tones-v2", uplinkFrequencies: uplink.frequencies,
   }), { mode: 0o600 });
   await simctl('launch', '--terminate-running-process', simulator, bundle);
+  resultDeadlineMs = performance.now() + 30_000;
+  resultPhase.resolve();
   await phase('example.result', async () => {
-    for (let attempt = 0; attempt < 300 && !existsSync(result); attempt++) await delay(100);
-    assert.ok(existsSync(result), 'Example produced no result');
+    while (!existsSync(result) && performance.now() < resultDeadlineMs!) await delay(Math.min(100, resultDeadlineMs! - performance.now()));
+    if (!existsSync(result)) {
+      // Finish serialization of an already-expired host observation; this grants no observation time.
+      await pendingSilence?.catch(() => {});
+      const nativeWindows = join(container, 'Documents/media-silence-windows.json');
+      writeUnobservedResult(output, resultDeadlineMs!, controls, nativeWindows);
+      throw new Error('Result budget ended: unobserved');
+    }
   });
   const evidence: unknown = JSON.parse(readFileSync(result, 'utf8'));
   uplinkCapture ??= { sampleRate: 48_000, channels: [received.slice()], formatChanged: false };
