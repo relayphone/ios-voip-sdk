@@ -93,6 +93,29 @@ struct MediaPacketSamplerTests {
     #expect(count == 0)
   }
 
+  @Test func waitsForEngineReadinessBeforeReadingStatistics() async throws {
+    let clock = TestClock()
+    var ready = false
+    var count = 0
+    let task = Task {
+      await MediaPacketSampler.observe(
+        callID: callID, clock: clock, ready: { ready },
+        sample: { _, _ in
+          count += 1
+          return (true, true)
+        }, emit: { _ in })
+    }
+    try await clock.waitForSleepers()
+    #expect(count == 0)
+    clock.advance(by: .milliseconds(250))
+    try await clock.waitForSleepers()
+    #expect(count == 0)
+    ready = true
+    clock.advance(by: .milliseconds(250))
+    await task.value
+    #expect(count == 1)
+  }
+
   @Test func wakingAfterDeadlineDoesNotSampleAgain() async throws {
     let clock = TestClock()
     var count = 0

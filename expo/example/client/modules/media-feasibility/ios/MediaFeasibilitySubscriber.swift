@@ -184,6 +184,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       packets = Task { [weak self] in
         await MediaPacketSampler.observe(
           callID: callID, clock: ContinuousClock(),
+          ready: { [weak self] in self?.active == true },
           sample: { [weak self] received, sent in
             guard let self else { return (false, false) }
             return (
