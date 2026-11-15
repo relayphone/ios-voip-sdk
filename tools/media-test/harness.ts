@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { MediaPeer } from './peer.ts';
 import { serverBinary, startServer } from './server.ts';
 
-export type HarnessAction = { type: 'publish'; markerId: string } | { type: 'hold' } | { type: 'capture' } | { type: 'leave' };
+export type HarnessAction = { type: 'publish'; markerId: string } | { type: 'hold' } | { type: 'capture' } | { type: 'leave' } | { type: 'reconnect' };
 export interface JoinCredentials { url: string; token: string }
 /** Owns one local server/room and one far-end participant. stop() is safe to repeat. */
 export async function startHarness(directory: string, fixtureId: string) {
@@ -30,7 +30,7 @@ export async function startHarness(directory: string, fixtureId: string) {
       writeFileSync(file, JSON.stringify(server.credentials(identity)), { mode: 0o600 }); return file;
     },
     status,
-    observation: () => ({ receiver: status(), capture: peer.capture(), lifecycle: peer.lifecycleObservation() }),
+    observation: () => ({ receiver: status(), capture: peer.capture(), lifecycle: peer.lifecycleObservation(), reconnect: peer.reconnectEvidence() }),
     async act(action: HarnessAction): Promise<void> {
       if (stopped) throw Error('Harness is stopped');
       switch (action.type) {
@@ -38,6 +38,7 @@ export async function startHarness(directory: string, fixtureId: string) {
         case 'hold': peer.hold(); break;
         case 'capture': peer.beginCapture(); break;
         case 'leave': await peer.close(); break;
+        case 'reconnect': await peer.reconnect(); break;
       }
     },
     abort: () => server.abort(), stop,
@@ -49,7 +50,7 @@ export type MediaHarness = Awaited<ReturnType<typeof startHarness>>;
 export function parseAction(value: unknown): HarnessAction {
   if (!value || typeof value !== 'object' || !('type' in value)) throw Error('Invalid action');
   switch (value.type) {
-    case 'hold': case 'capture': case 'leave': return { type: value.type };
+    case 'hold': case 'capture': case 'leave': case 'reconnect': return { type: value.type };
     case 'publish':
       if ('markerId' in value && typeof value.markerId === 'string' && value.markerId.length > 0 && value.markerId.length <= 256)
         return { type: 'publish', markerId: value.markerId };
