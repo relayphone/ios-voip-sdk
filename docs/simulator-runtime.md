@@ -121,6 +121,31 @@ app that already has the runtime loaded.
 
 ## Control calls
 
+`status --json` returns the versioned status envelope (JSON is also the default).
+`calls` remains the live system-call view. `retainedCalls` adds the SDK call ID when
+known, system UUID, lifecycle state, end reason and `reportedAtMS`, `answeredAtMS`,
+`connectedAtMS`, `endedAtMS`. Times are monotonic milliseconds from the same runtime
+epoch as journal `t_ms`; unavailable times are absent. SDK state distinguishes
+connecting from connected even when the system already shows a joined conversation.
+The runtime retains every live call and the most recent 256 ended calls until exit.
+
+`answer CALL_UUID --after-ms 21000` schedules an answer 21 seconds from the incoming
+report, rather than from the command. An elapsed offset answers immediately if the
+call still rings. Offsets must be integers from 0 to 120000. The command returns an
+`answerScheduled` acknowledgement; `answer.scheduled` and the eventual action rows
+share its `requestID`. If the call ends or stops ringing first, `answer.cancelled`
+records the skipped answer. A delivery failure produces `answer.failed`. Runtime
+shutdown cancels pending answers.
+
+With the SDK and runtime active in-process, `sdk.state`, `sdk.accept`,
+`sdk.connected`, `sdk.ended` (with reason) and `sdk.joinDeadlineExpired` use the
+existing journal and Inspector. The last event records expiry of the configured
+incoming-call media preparation deadline; it does not impose a new timer or assume
+that every app uses a 27-second deadline. System-only apps have no SDK call IDs or
+SDK events. First-packet received/sent telemetry is planned as a separate transport
+event-stream change; its absence means unknown, and connection or audio activation
+never synthesizes a packet event.
+
 Every command targets a bundle, process and run. The app must already be running
 with the runtime. `status` returns full call UUIDs for subsequent commands.
 

@@ -33,6 +33,8 @@ public enum ControlResult: Codable, Equatable, Sendable {
   case faults(incomingErrorCode: Int)
   /// A push accepted for scheduling, correlated by its request identity.
   case push(pushID: UUID)
+  /// A ring-relative answer accepted for scheduling; later journal rows show its outcome.
+  case scheduledAnswer(callUUID: UUID, afterMS: Int)
   /// A reset accepted for the selected provider's opaque identity.
   case reset(provider: String)
   /// Delivered actions whose later journal acknowledgements determine completion.
@@ -40,9 +42,10 @@ public enum ControlResult: Codable, Equatable, Sendable {
 
   private enum Key: String, CodingKey {
     case calls, pending, audioActive, sequence, incomingErrorCode, incomingFilter,
-      providerConfigurations
+      providerConfigurations, retainedCalls
     case events, metadataSelector, configured, scheduled, pushID, reset, provider, actionIDs,
       transactionID
+    case answerScheduled, callUUID, afterMS
   }
   /// Decodes by required result keys, rejecting ambiguous shapes without trial decoding.
   public init(from decoder: any Decoder) throws {
@@ -53,12 +56,13 @@ public enum ControlResult: Codable, Equatable, Sendable {
         .calls,
         [
           .calls, .pending, .audioActive, .sequence, .incomingErrorCode, .incomingFilter,
-          .providerConfigurations,
+          .providerConfigurations, .retainedCalls,
         ]
       ),
       (.events, [.events]), (.metadataSelector, [.metadataSelector]),
       (.incomingFilter, [.incomingFilter]), (.configured, [.configured, .incomingErrorCode]),
       (.scheduled, [.scheduled, .pushID]), (.reset, [.reset, .provider]),
+      (.answerScheduled, [.answerScheduled, .callUUID, .afterMS]),
       (.actionIDs, [.actionIDs, .transactionID]),
     ]
     let selected = shapes.filter {
@@ -85,6 +89,13 @@ public enum ControlResult: Codable, Equatable, Sendable {
         throw invalidControlValue(decoder.codingPath, "Push was not scheduled.")
       }
       self = .push(pushID: try values.decode(UUID.self, forKey: .pushID))
+    case .answerScheduled:
+      guard try values.decode(Bool.self, forKey: .answerScheduled) else {
+        throw invalidControlValue(decoder.codingPath, "Answer was not scheduled.")
+      }
+      self = .scheduledAnswer(
+        callUUID: try values.decode(UUID.self, forKey: .callUUID),
+        afterMS: try values.decode(Int.self, forKey: .afterMS))
     case .reset:
       guard try values.decode(Bool.self, forKey: .reset) else {
         throw invalidControlValue(decoder.codingPath, "Provider reset was not acknowledged.")
@@ -113,6 +124,10 @@ public enum ControlResult: Codable, Equatable, Sendable {
     case .push(let id):
       try values.encode(true, forKey: .scheduled)
       try values.encode(id, forKey: .pushID)
+    case .scheduledAnswer(let call, let offset):
+      try values.encode(true, forKey: .answerScheduled)
+      try values.encode(call, forKey: .callUUID)
+      try values.encode(offset, forKey: .afterMS)
     case .reset(let provider):
       try values.encode(true, forKey: .reset)
       try values.encode(provider, forKey: .provider)
@@ -123,6 +138,8 @@ public enum ControlResult: Codable, Equatable, Sendable {
   }
   private func validate(at path: [any CodingKey]) throws {
     switch self {
+    case .scheduledAnswer(_, let offset) where !(0...120_000).contains(offset):
+      throw invalidControlValue(path, "Invalid answer offset.")
     case .faults(let code) where ![0, 4].contains(code):
       throw invalidControlValue(path, "Unsupported incoming-report fault code.")
     case .actions(let ids, _) where ids.isEmpty || Set(ids).count != ids.count:

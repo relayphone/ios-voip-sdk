@@ -251,6 +251,7 @@
 
     struct Status: AsyncParsableCommand {
       @OptionGroup var options: GlobalOptions
+      @Flag(help: "Return the versioned JSON status (also the default format).") var json = false
       func run() async throws {
         try await reporting { try await options.control(.status, command: "status") }
       }
@@ -333,10 +334,24 @@
       }
     }
 
-    struct Answer: CallControlCommand {
+    struct Answer: AsyncParsableCommand {
       @OptionGroup var options: GlobalOptions
       @Argument var call: String
-      func control(_ call: UUID) -> ControlRequest.CallControl { .answer(call) }
+      @Option(help: "Answer at this offset from ring start, in milliseconds (0–120000).")
+      var afterMs: Int?
+      func validate() throws {
+        guard afterMs.map({ (0...120_000).contains($0) }) ?? true else {
+          throw ValidationError("Invalid --after-ms")
+        }
+      }
+      func run() async throws {
+        try await reporting {
+          let uuid = try callID(call)
+          try await options.control(
+            afterMs.map { .answerAfter(uuid, milliseconds: $0) } ?? .call(.answer(uuid)),
+            command: "answer")
+        }
+      }
     }
 
     struct Decline: CallControlCommand {

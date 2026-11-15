@@ -66,6 +66,58 @@
       app.expectNoMoreEvents()
     }
 
+    @Test func journalAndStatusShareTheSDKLifecycleWithARingRelativeAnswer() async throws {
+      let app = try await App()
+      defer { app.stop() }
+      let id = newCallID("timed-answer")
+      let uuid = deviceUUID(for: id)
+      let push = try await app.system.pushIncomingCall(id)
+      try await app.expect([.presented(id)])
+      try await Task.sleep(for: .milliseconds(150))
+      try await app.system.answer(uuid, afterMS: 400)
+      try await app.expect([.performed(.answer(id), .connecting), .audioActivated])
+      await app.client.receive(.connected, for: id, eventID: EventID(rawValue: "connected-\(id)"))
+      try await app.until("the SDK to connect") { app.call(id)?.status == .connected }
+      await app.client.receive(.endedRemotely, for: id, eventID: EventID(rawValue: "ended-\(id)"))
+      try await app.expect([.ended(id, .endedRemotely), .audioDeactivated])
+      let history = try await app.system.snapshot().retainedCalls
+      let call = try #require(history.first { $0.callID == id.rawValue })
+      #expect(call.uuid == uuid && call.state == .ended && call.endReason == "endedRemotely")
+      let answer = try #require(call.answeredAtMS)
+      let connected = try #require(call.connectedAtMS)
+      let ended = try #require(call.endedAtMS)
+      let reported = try #require(call.reportedAtMS)
+      #expect(answer >= reported + 399)
+      #expect(connected >= answer && ended >= connected)
+      let events = try await app.system.journal().filter { $0.callUUID == uuid.uuidString }
+      #expect(events.contains { $0.event == "sdk.accept" })
+      #expect(events.contains { $0.event == "sdk.connected" })
+      #expect(events.contains { $0.event == "sdk.ended" && $0.reason == "endedRemotely" })
+      #expect(try await app.system.calls().isEmpty)
+      try await app.expectPushesFinished([push])
+      app.expectNoMoreEvents()
+    }
+
+    @Test func endingBeforeTheScheduledAnswerCancelsIt() async throws {
+      let app = try await App()
+      defer { app.stop() }
+      let id = newCallID("cancel-timed-answer")
+      let uuid = deviceUUID(for: id)
+      let invite = try await app.system.pushIncomingCall(id)
+      try await app.expect([.presented(id)])
+      try await app.system.answer(uuid, afterMS: 1000)
+      let end = try await app.system.pushCallEnded(id, reason: "remoteEnded")
+      try await app.expect([.ended(id, .endedRemotely)])
+      try await app.until("the scheduled answer to be cancelled") {
+        try await app.system.journal().contains {
+          $0.event == "answer.cancelled" && $0.callUUID == uuid.uuidString
+        }
+      }
+      #expect(await app.media.records.isEmpty)
+      try await app.expectPushesFinished([invite, end])
+      app.expectNoMoreEvents()
+    }
+
     @Test func answeredElsewhereBecomesAPreview() async throws {
       let app = try await App()
       defer { app.stop() }

@@ -43,6 +43,19 @@
       _ = try await send(.call(control))
     }
 
+    func answer(_ call: UUID, afterMS: Int) async throws {
+      guard case .scheduledAnswer = try await send(.answerAfter(call, milliseconds: afterMS)) else {
+        throw JourneyError("The runtime didn't schedule an answer")
+      }
+    }
+
+    func snapshot() async throws -> RuntimeSnapshot {
+      guard case .status(let value) = try await send(.status) else {
+        throw JourneyError("The runtime didn't return its status")
+      }
+      return value
+    }
+
     /// Resets the calling framework, as when the system's call service restarts, which ends every
     /// call it presents.
     func resetCallingFramework() async throws {

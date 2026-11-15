@@ -194,6 +194,8 @@ public struct ProviderSnapshot: Codable, Equatable, Sendable {
 
 /// The complete status result from one runtime invocation.
 public struct RuntimeSnapshot: Codable, Equatable, Sendable {
+  /// Recent lifecycle records, including ended calls. The live system view remains in calls.
+  public var retainedCalls: [RetainedCall] = []
   /// Current calls, in the runtime's existing snapshot order.
   public let calls: [CallSnapshot]
   /// The number of unsettled runtime actions.
@@ -210,10 +212,40 @@ public struct RuntimeSnapshot: Codable, Equatable, Sendable {
   public let providerConfigurations: [ProviderSnapshot]
 
   /// Creates a status value without changing runtime state or journal sequence.
+  private enum CodingKeys: String, CodingKey {
+    case calls, pending, audioActive, sequence, incomingErrorCode, incomingFilter,
+      providerConfigurations, retainedCalls
+  }
+  /// Writes history additively, preserving older status shapes when history is empty.
+  public func encode(to encoder: any Encoder) throws {
+    var values = encoder.container(keyedBy: CodingKeys.self)
+    try values.encode(calls, forKey: .calls)
+    try values.encode(pending, forKey: .pending)
+    try values.encode(audioActive, forKey: .audioActive)
+    try values.encode(sequence, forKey: .sequence)
+    try values.encode(incomingErrorCode, forKey: .incomingErrorCode)
+    try values.encode(incomingFilter, forKey: .incomingFilter)
+    try values.encode(providerConfigurations, forKey: .providerConfigurations)
+    if !retainedCalls.isEmpty { try values.encode(retainedCalls, forKey: .retainedCalls) }
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    calls = try values.decode([CallSnapshot].self, forKey: .calls)
+    pending = try values.decode(UInt.self, forKey: .pending)
+    audioActive = try values.decode(Bool.self, forKey: .audioActive)
+    sequence = try values.decode(UInt64.self, forKey: .sequence)
+    incomingErrorCode = try values.decode(Int.self, forKey: .incomingErrorCode)
+    incomingFilter = try values.decode(IncomingFilterSnapshot.self, forKey: .incomingFilter)
+    providerConfigurations = try values.decode(
+      [ProviderSnapshot].self, forKey: .providerConfigurations)
+    retainedCalls = try values.decodeIfPresent([RetainedCall].self, forKey: .retainedCalls) ?? []
+  }
+
   public init(
     calls: [CallSnapshot], pending: UInt, audioActive: Bool, sequence: UInt64,
     incomingErrorCode: Int, incomingFilter: IncomingFilterSnapshot,
-    providerConfigurations: [ProviderSnapshot]
+    providerConfigurations: [ProviderSnapshot], retainedCalls: [RetainedCall] = []
   ) {
     self.calls = calls
     self.pending = pending
@@ -222,6 +254,7 @@ public struct RuntimeSnapshot: Codable, Equatable, Sendable {
     self.incomingErrorCode = incomingErrorCode
     self.incomingFilter = incomingFilter
     self.providerConfigurations = providerConfigurations
+    self.retainedCalls = retainedCalls
   }
 }
 

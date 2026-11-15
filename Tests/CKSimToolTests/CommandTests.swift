@@ -9,6 +9,16 @@
 
   /// `cksim`'s commands against a fake simulator and a fake runtime mailbox.
   struct CommandTests {
+    @Test func statusJSONAndRingRelativeAnswerAreExplicitCLIOptions() throws {
+      let status = try #require(CKSim.parseAsRoot(["status", "--json"]) as? CKSim.Status)
+      #expect(status.json)
+      let answer = try #require(
+        CKSim.parseAsRoot(["answer", call.uuidString, "--after-ms", "21000"]) as? CKSim.Answer)
+      #expect(answer.afterMs == 21000)
+      #expect(throws: (any Error).self) {
+        try CKSim.parseAsRoot(["answer", call.uuidString, "--after-ms", "-1"])
+      }
+    }
     @Test func pushDeliveryFlagsDescribeOneValidatedSchedule() throws {
       let command = try #require(
         CKSim.parseAsRoot([
