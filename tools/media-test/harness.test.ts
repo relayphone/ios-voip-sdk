@@ -101,7 +101,7 @@ test('a real app disconnect retains audio unpublication and independent terminal
     assert.ok(harness.status().connected, 'The independent observer must remain connected');
     for (const kind of ['trackUnpublished', 'participantDisconnected'] as const)
       assert.ok(before.events.some(row => row.identity === 'app' && row.kind === kind && row.atMs >= anchor));
-    await delay(1000);
+    await until(() => harness.observation().lifecycle.observedAtMs >= before.observedAtMs + 1000);
     const terminal = harness.observation().lifecycle;
     assert.equal(terminal.droppedEvents, 0);
     assert.equal(terminal.afterDisconnect!.overflowSamples, 0);
