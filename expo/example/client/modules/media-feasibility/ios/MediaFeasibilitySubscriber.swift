@@ -90,8 +90,9 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let teardown: MediaTeardownEvidence.Receipt
     }
     nonisolated let commands: AsyncStream<AudioCommand>.Continuation
-    let probe = MediaAudioProbe(captureDuration: .seconds(10))
-    let teardown = MediaTeardownEvidence()
+    let observationClock: MediaObservationClock
+    let probe: MediaAudioProbe
+    let teardown: MediaTeardownEvidence
     let fixture: Fixture
     let room = Room()
     nonisolated let packetEvents = PacketEvents()
@@ -132,6 +133,10 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     var remoteTrack: RemoteAudioTrack?
     init(_ fixture: Fixture) {
       self.fixture = fixture
+      let observationClock = MediaObservationClock()
+      self.observationClock = observationClock
+      probe = MediaAudioProbe(observationClock: observationClock, captureDuration: .seconds(10))
+      teardown = MediaTeardownEvidence(observationClock: observationClock)
       decoder = DecodedAudioProbe(probe: probe)
       hooks = MarkerAudioEngine(probe: probe, frequencies: fixture.uplinkFrequencies)
       let stream = AsyncStream<AudioCommand>.makeStream()

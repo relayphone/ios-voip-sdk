@@ -60,14 +60,15 @@
     private let captureSeconds: Double
     /// Uses a monotonic clock; tests can advance an injected clock without sleeping.
     /// The retained diagnostic capture is bounded to one through ten seconds; default is three.
-    public init<C: Clock<Duration>>(clock: C, captureDuration: Duration = .seconds(3)) {
+    public convenience init<C: Clock<Duration>>(clock: C, captureDuration: Duration = .seconds(3)) {
+      self.init(
+        observationClock: MediaObservationClock(clock: clock), captureDuration: captureDuration)
+    }
+    /// Uses the phase adapter's monotonic origin for callback and silence times.
+    public init(observationClock: MediaObservationClock, captureDuration: Duration = .seconds(3)) {
       precondition(captureDuration >= .seconds(1) && captureDuration <= .seconds(10))
       captureSeconds = Double(captureDuration / .seconds(1))
-      let origin = clock.now
-      now = {
-        let elapsed = origin.duration(to: clock.now).components
-        return Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
-      }
+      now = { observationClock.seconds }
     }
     public convenience init(captureDuration: Duration = .seconds(3)) {
       self.init(clock: ContinuousClock(), captureDuration: captureDuration)

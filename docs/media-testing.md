@@ -35,6 +35,12 @@ For a local end, the SDK's own published conversation state must reach `ended` w
 uninstalled, engine stopped, room disconnected and audio session released, on its acknowledged
 monotonic clock. Reuse cleanup evidence, adding a field only when an observation is missing.
 
+`MediaObservationClock` supplies one identity and origin to the native probe and teardown
+recorder. Construct it once per adapter and pass it through `observationClock:`; callback
+seconds and release milliseconds then refer to the same origin. A phase source can call
+`MarkerAudioEngine.replaceMarker(frequencies:)` to start a new tones-v2 cycle in the actual
+PCM source at a render boundary, while the cumulative generated sample count continues.
+
 The native example retains `teardown.clockID`, `startedAtMs`, `observedAtMs` and an ordered
 `observations` array with each release event's `atMs`. All four events must be measured in the
 same attempt. Partial evidence is retained on failure; a producer's completion flag is insufficient.

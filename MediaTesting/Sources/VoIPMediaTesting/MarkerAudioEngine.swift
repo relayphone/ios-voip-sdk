@@ -23,12 +23,8 @@
     /// Processing snapshots at options, engine and callback boundaries.
     public let processingTimeline = MediaProcessingTimeline()
     private let graph = Mutex(Graph())
-    private final class MarkerClock: Sendable {
-      let sampleIndex = Mutex<Int64>(0)
-    }
-    private let clock = MarkerClock()
+    private let emission: MarkerEmission
     private let probe: MediaAudioProbe
-    private let frequencies: [Double]
 
     /// Processing for synthetic capture, which has no acoustic echo or microphone noise.
     ///
@@ -41,7 +37,7 @@
         noiseSuppressionMode: .software)
     }
 
-    public var generatedSamples: Int64 { clock.sampleIndex.withLock { $0 } }
+    public var generatedSamples: Int64 { emission.generatedSamples }
 
     /// Permanently removes this call's output observer, without starting audio.
     /// A later graph callback cannot reinstall a tap after terminal release.
@@ -61,10 +57,14 @@
 
     /// Creates hooks without starting capture, output or the engine.
     public init(probe: MediaAudioProbe, frequencies: [Double]) {
-      precondition(
-        frequencies.count == 12 && frequencies.allSatisfy { [650, 950, 1350, 1850].contains($0) })
       self.probe = probe
-      self.frequencies = frequencies
+      emission = MarkerEmission(frequencies: frequencies)
+    }
+
+    /// Atomically starts a fresh tones-v2 cycle at the next source render boundary.
+    /// Already rendered PCM retains its previous marker; the graph stays connected.
+    public func replaceMarker(frequencies: [Double]) {
+      emission.replace(frequencies: frequencies)
     }
 
     public func engineWillConnectInput(
@@ -84,17 +84,15 @@
         state.source = nil
         state.inputClock = nil
       }
-      let clock = clock
-      let emission = (0..<Int(rate / 50 * 51)).map {
-        MarkerSignal.emissionSample(Int64($0), rate: rate, frequencies: frequencies)
-      }
+      let emission = emission
+      emission.configure(rate: rate)
       let processingTimeline = processingTimeline
       let source = AVAudioSourceNode(format: format) { _, _, count, buffers in
         processingTimeline.recordCallback(.sourceRender)
-        clock.sampleIndex.withLock { sample in
+        emission.render { samples, sample in
           let output = UnsafeMutableAudioBufferListPointer(buffers)
           for frame in 0..<Int(count) {
-            let value = emission[Int(sample % Int64(emission.count))]
+            let value = samples[Int(sample % Int64(samples.count))]
             for buffer in output {
               guard let data = buffer.mData else { continue }
               let samples = data.assumingMemoryBound(to: Float.self)
@@ -214,31 +212,6 @@
         probe.removed(.output)
       }
       return next?.engineWillRelease(engine) ?? 0
-    }
-  }
-  // Pure sample calculation shared by the capture callback and native parity checks.
-  enum MarkerSignal {
-    static func emissionSample(_ index: Int64, rate: Double, frequencies: [Double]) -> Float {
-      let pre = Int64((rate * 3 / 20).rounded(.toNearestOrAwayFromZero))
-      let post = pre + Int64(rate / 50 * 36)
-      let cycle = Int64(rate / 50 * 51)
-      let position = index % cycle
-      if position >= pre && position < post {
-        return sample(position - pre, rate: rate, frequencies: frequencies)
-      }
-      let local = Double(position < pre ? position : position - post)
-      let edge = position < pre ? local : Double(cycle - position)
-      let fade = min(1, edge / (rate / 200))
-      let envelope = 0.5 * (1 - cos(.pi * fade))
-      return Float(0.2 * envelope * sin(2 * .pi * 400 * local / rate))
-    }
-    static func sample(_ index: Int64, rate: Double, frequencies: [Double]) -> Float {
-      let slotSamples = Int64(rate / 50 * 3)
-      let slot = Int(index / slotSamples) % frequencies.count
-      let local = Double(index % slotSamples)
-      let fade = min(1, min(local, Double(slotSamples) - local) / (rate / 200))
-      let envelope = 0.5 * (1 - cos(.pi * fade))
-      return Float(0.2 * envelope * sin(2 * .pi * frequencies[slot] * local / rate))
     }
   }
 #endif

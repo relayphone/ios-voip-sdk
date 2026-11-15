@@ -5,6 +5,23 @@ import VoIPTesting
 
 @Suite("Measured media teardown")
 struct TeardownEvidenceTests {
+  @Test func delayedRecordersShareTheAcknowledgedOriginAndIdentity() throws {
+    let clock = TestClock()
+    let shared = MediaObservationClock(clock: clock)
+    clock.advance(by: .milliseconds(1250))
+    let first = MediaTeardownEvidence(observationClock: shared)
+    first.begin()
+    clock.advance(by: .milliseconds(250))
+    let second = MediaTeardownEvidence(observationClock: shared)
+    second.begin()
+    first.record(.engineStopped)
+    #expect(first.receipt()?.clockID == shared.id)
+    #expect(second.receipt()?.clockID == shared.id)
+    #expect(first.receipt()?.startedAtMs == 1250)
+    #expect(second.receipt()?.startedAtMs == 1500)
+    #expect(first.receipt()?.observations.first?.atMs == shared.seconds * 1000)
+  }
+
   @Test func missingEventsStayIncompleteAndDuplicatesRetainFirstObservation() throws {
     let clock = TestClock()
     let evidence = MediaTeardownEvidence(clock: clock)

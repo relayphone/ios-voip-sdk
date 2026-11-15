@@ -10,6 +10,26 @@
 
   @Suite("Media observation evidence")
   struct ProbeTests {
+    @Test func callbacksAndTeardownUseTheSameOriginAfterDelayedProbeCreation() throws {
+      let clock = TestClock()
+      let shared = MediaObservationClock(clock: clock)
+      clock.advance(by: .seconds(2))
+      let probe = MediaAudioProbe(observationClock: shared)
+      let teardown = MediaTeardownEvidence(observationClock: shared)
+      probe.beginWindow()
+      teardown.begin()
+      let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1))
+      let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 480))
+      buffer.frameLength = 480
+      for index in 0..<480 { buffer.floatChannelData?[0][index] = 0 }
+      probe.installed(.output)
+      probe.receive(buffer, at: .output)
+      teardown.record(.tapUninstalled)
+      #expect(probe.observation(.output).firstCallback == 2)
+      #expect(teardown.receipt()?.startedAtMs == 2000)
+      #expect(teardown.receipt()?.observations.first?.atMs == 2000)
+    }
+
     @Test func uninstallingOutputTapRetainsOwnedMeterUntilGraphRelease() throws {
       let engine = AVAudioEngine()
       let source = AVAudioMixerNode()

@@ -1,6 +1,27 @@
 public import Foundation
 import Synchronization
 
+/// A single monotonic origin shared by native phase, PCM and release observations.
+public final class MediaObservationClock: Sendable {
+  /// Identity acknowledged by the adapter for the lifetime of this clock.
+  public let id = UUID()
+  private let read: @Sendable () -> Double
+  /// Uses the injected clock without changing its units or origin between observers.
+  public init<C: Clock<Duration>>(clock: C) {
+    let origin = clock.now
+    read = {
+      let elapsed = origin.duration(to: clock.now).components
+      return Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
+    }
+  }
+  /// Creates a system monotonic clock with a fresh identity.
+  public convenience init() { self.init(clock: ContinuousClock()) }
+  /// Seconds since the shared origin.
+  public var seconds: Double { read() }
+  /// Milliseconds since the same origin.
+  public var milliseconds: Double { read() * 1000 }
+}
+
 /// Measured release observations for one actual call; missing observations never imply silence.
 public final class MediaTeardownEvidence: Sendable {
   /// Independent observations made by the actual room, graph and system audio callbacks.
@@ -16,7 +37,7 @@ public final class MediaTeardownEvidence: Sendable {
   }
   /// An incomplete or complete release attempt; consumers must bind it to their call and deadline.
   public struct Receipt: Codable, Sendable {
-    /// Identity of the observing clock, unique for this recorder's lifetime.
+    /// Identity of the observing clock, shared with the adapter's phase observers.
     public let clockID: UUID
     /// Time teardown was armed.
     public let startedAtMs: Double
@@ -32,12 +53,16 @@ public final class MediaTeardownEvidence: Sendable {
     var observations: [Observation] = []
   }
   private let state = Mutex(State())
-  private let clockID = UUID()
+  private let observationClock: MediaObservationClock
   private let now: @Sendable () -> Double
   /// All timestamps use this clock's origin and remain in milliseconds, including injected clocks.
-  public init<C: Clock<Duration>>(clock: C) {
-    let origin = clock.now
-    now = { Double(origin.duration(to: clock.now) / .milliseconds(1)) }
+  public convenience init<C: Clock<Duration>>(clock: C) {
+    self.init(observationClock: MediaObservationClock(clock: clock))
+  }
+  /// Shares the phase adapter's clock identity and origin.
+  public init(observationClock: MediaObservationClock) {
+    self.observationClock = observationClock
+    now = { observationClock.milliseconds }
   }
   /// Creates a recorder using the system monotonic clock.
   public convenience init() { self.init(clock: ContinuousClock()) }
@@ -60,7 +85,8 @@ public final class MediaTeardownEvidence: Sendable {
     state.withLock {
       guard let start = $0.startedAtMs else { return nil }
       return Receipt(
-        clockID: clockID, startedAtMs: start, observedAtMs: now(), observations: $0.observations)
+        clockID: observationClock.id, startedAtMs: start, observedAtMs: now(),
+        observations: $0.observations)
     }
   }
 }
