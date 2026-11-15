@@ -12,13 +12,16 @@ import { buildSimulatorApp } from './simulator-app.ts';
 import { runnerHungBeforeConnecting } from './simulator-test-result.ts';
 import { runReadyUITest } from './inspector-ui-run.ts';
 import { captureInspectorFailure } from './inspector-failure.ts';
+import { setupInspectorSimulator } from './inspector-setup.ts';
 
 const bundle = 'dev.callkitsim.smoke';
 class InfrastructureFailure extends Error {
   readonly step: string;
-  constructor(step: string, cause: unknown) {
+  readonly retryable: boolean;
+  constructor(step: string, cause: unknown, retryable = true) {
     super(`infra:${step}`, { cause });
     this.step = step;
+    this.retryable = retryable;
   }
 }
 function infrastructure<T>(step: string, body: () => T): T {
@@ -132,13 +135,10 @@ export async function journey(work: string): Promise<void> {
       const target = infrastructure('create', () => run('xcrun', ['simctl', 'create', targetName,
         type.identifier, 'com.apple.CoreSimulator.SimRuntime.iOS-27-0'], { timeout: 120 }));
       devices.push(target);
-      infrastructure('boot', () => {
-        run('xcrun', ['simctl', 'boot', target], { timeout: 120 });
-        run('xcrun', ['simctl', 'bootstatus', target, '-b'], { timeout: 300 });
-      });
+      try { await setupInspectorSimulator(target, app, { report: summary }); }
+      catch (error) { throw new InfrastructureFailure('setup', error, false); }
       const cksim = (...args: string[]) => run(join(runtime, 'cksim'),
         ['--simulator', target, '--bundle', bundle, ...args], { timeout: 180 });
-      infrastructure('install', () => run('xcrun', ['simctl', 'install', target, app], { timeout: 180 }));
       infrastructure('launch', () => launchToleratingASlowSimulator(() => cksim('launch')));
       infrastructure('bridge-connect', () => cksim('status'));
       const log = `${prefix}-bridge.log`;
@@ -150,6 +150,7 @@ export async function journey(work: string): Promise<void> {
         bridge.on('error', error => appendFileSync(log, String(error)));
       } finally { closeSync(fd); }
       await connected(bridge, log);
+      summary('infra:launch-and-bridge passed; journey:starting');
       check = 'ui';
       const result = `${prefix}.xcresult`;
       const uiLog = `${prefix}-ui.log`;
@@ -189,9 +190,11 @@ export async function journey(work: string): Promise<void> {
         catch { /* Preserve the original failure if a simulator cannot take a screenshot. */ }
       }
       if (error instanceof InfrastructureFailure) {
-        summary(`infra:${error.step} (${attempt === 0 ? 'retrying after CoreSimulator restart' : 'retry exhausted'})`);
+        const retry = attempt === 0 && error.retryable;
+        summary(`infra:${error.step} (${retry ? 'retrying after CoreSimulator restart' : 'failed; no further retry'})`);
+        if (check === 'setup') summary('journey:not-run (infrastructure setup failed)');
         console.error(error.cause);
-        if (attempt === 0) {
+        if (retry) {
           await stopBridge(bridge);
           bridge = undefined;
           try { await recover(names, markers); }
