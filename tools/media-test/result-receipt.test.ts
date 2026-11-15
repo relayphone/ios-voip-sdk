@@ -49,3 +49,23 @@ test('all four measured native release events must use one ordered clock interva
     { observations: receipt.observations.toReversed() }])
     assert.throws(() => assertNativeTeardown({ ...receipt, ...changed }));
 });
+
+test('terminal binding rejects foreign clocks, replayed attempts and late release events', () => {
+  const clockID = '7ff6b8a0-0d99-49d1-bb5e-450bf6173543';
+  const expected = { clockID, startedAtMs: 10, deadlineMs: 50 };
+  const receipt = { clockID, startedAtMs: 10, observedAtMs: 100,
+    observations: ['tapUninstalled', 'engineStopped', 'roomDisconnected', 'audioSessionReleased']
+      .map((event, index) => ({ event, atMs: 20 + index * 10 })) };
+  // A delayed snapshot still proves events observed by the deadline, including its boundary.
+  assert.doesNotThrow(() => assertNativeTeardown(receipt, expected));
+  assert.throws(() => assertNativeTeardown({ ...receipt,
+    clockID: 'a9aa1c90-cc38-4058-a8e7-d30f215763de' }, expected), /Foreign teardown clock/);
+  assert.throws(() => assertNativeTeardown({ ...receipt, startedAtMs: 9 }, expected), /Stale teardown attempt/);
+  assert.throws(() => assertNativeTeardown({ ...receipt,
+    observations: receipt.observations.map(row => ({ ...row, atMs: row.atMs + 1 })) }, expected),
+    /exceeded terminal deadline/);
+  for (const invalid of [{ startedAtMs: NaN }, { startedAtMs: -1 },
+    { deadlineMs: Infinity }, { deadlineMs: 9 }]) {
+    assert.throws(() => assertNativeTeardown(receipt, { ...expected, ...invalid }));
+  }
+});

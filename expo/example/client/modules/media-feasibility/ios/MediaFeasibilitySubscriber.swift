@@ -47,6 +47,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     let token: String
     let control: String
     let uplinkFrequencies: [Double]
+    let journey: MediaJourneyFixture?
     static var path: URL { URL.documentsDirectory.appending(path: "media-fixture.json") }
   }
 
@@ -102,6 +103,13 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     var events: Task<Void, Never>?
     var audio: Task<Void, Never>?
     var observer: Task<Void, Never>?
+    weak var client: VoIPClient?
+    var journeySession: MediaJourneySession?
+    var journeyPhaseAtMs: Double?
+    var journeyTicks: [Double] = []
+    var journeyTicksDropped = 0
+    var journeyEnded: JourneyEnd?
+    var publicationHeld = false
     var publicationMuted = false
     var inactiveEngineStayedStopped = false
     var active = false
@@ -229,15 +237,49 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         await track.set(reportStatistics: true)
       }
     }
+    nonisolated func room(_ room: Room, participantDidDisconnect participant: RemoteParticipant) {
+      Task { @MainActor [weak self] in
+        guard let self, fixture.journey != nil, participant.identity?.stringValue == "far-end",
+          let receipt = teardown.receipt(), !receipt.complete, journeyEnded == nil,
+          let client,
+          let call = client.calls.first(where: { $0.id.rawValue == fixture.journey?.conversationId }
+          )
+        else { return }
+        await client.receive(
+          .endedRemotely, for: call.id, eventID: EventID(rawValue: UUID().uuidString))
+      }
+    }
     func attach(to client: VoIPClient) {
+      self.client = client
       let stream = client.events()
       observer = Task { [weak self] in
         for await event in stream {
           guard let self else { return }
           if case .audioDeactivated = event { teardown.record(.audioSessionReleased) }
-          if case .performed(.mute(_, let muted), _) = event {
+          if case .ended(let call) = event, call.id.rawValue == fixture.journey?.conversationId {
+            let reason: JourneyEnd.Reason
+            switch call.status {
+            case .ended(.endedHere): reason = .local
+            case .ended(.endedRemotely): reason = .remoteEnded
+            default: reason = .unexpected
+            }
+            journeyEnded = JourneyEnd(reason: reason, atMs: observationClock.milliseconds)
+          }
+          if case .performed(.hold(_, let held), let call) = event,
+            call.id.rawValue == fixture.journey?.conversationId
+          {
             do {
-              try await room.localParticipant.setMicrophone(enabled: !muted)
+              AudioManager.shared.mixer.outputVolume = held ? 0 : 1
+              try await room.localParticipant.setMicrophone(enabled: !held && !call.isMuted)
+              publicationHeld = held
+            } catch { fail() }
+          }
+          if case .performed(.mute(_, let muted), let call) = event,
+            fixture.journey == nil || call.id.rawValue == fixture.journey?.conversationId
+          {
+            do {
+              try await room.localParticipant.setMicrophone(
+                enabled: !muted && !call.isOnHold)
               publicationMuted = muted
             } catch { fail() }
           }
@@ -246,6 +288,10 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       events = Task { [weak self, weak client] in
         guard let self, let client else { return }
         do {
+          if fixture.journey != nil {
+            try await runJourney(client)
+            return
+          }
           let clock = ContinuousClock()
           let resultDeadline = try await phaseDeadline(clock: clock)
           let party = Party(handle: try Handle(kind: .generic, value: "media-peer"))
@@ -371,6 +417,133 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         } catch { fail() }
       }
     }
+    struct JourneyEnd: Encodable {
+      enum Reason: String, Encodable { case local, remoteEnded, unexpected }
+      let reason: Reason
+      let atMs: Double
+    }
+    struct JourneySnapshot: Encodable {
+      struct Stage: Encodable {
+        let pcm: CapturedPCM
+        let observation: MediaAudioProbe.Observation
+      }
+      let commandId: UUID?
+      let sessionId: UUID
+      let fixtureId: String
+      let conversationId: String
+      let clockId: UUID
+      let phaseId: String?
+      let phaseAtMs: Double?
+      let observedAtMs: Double
+      let monitorTicksMs: [Double]
+      let droppedMonitorTicks: Int
+      let decoded: Stage
+      let output: Stage
+      let ended: JourneyEnd?
+      let teardown: MediaTeardownEvidence.Receipt?
+      let released: Bool
+      let audioActive: Bool
+      let publicationMuted: Bool
+      let onHold: Bool
+    }
+    private func journeySnapshot(command: UUID?) -> JourneySnapshot? {
+      guard let session = journeySession else { return nil }
+      func stage(_ stage: MediaAudioProbe.Stage) -> JourneySnapshot.Stage {
+        let pcm = probe.capture(stage)
+        return JourneySnapshot.Stage(
+          pcm: CapturedPCM(
+            sampleRate: pcm.sampleRate, channels: pcm.channels,
+            formatChanged: pcm.formatChanged, transport: transport[stage] ?? []),
+          observation: probe.observation(stage))
+      }
+      return JourneySnapshot(
+        commandId: command, sessionId: session.id, fixtureId: session.fixture.fixtureId,
+        conversationId: session.fixture.conversationId, clockId: observationClock.id,
+        phaseId: session.phaseId, phaseAtMs: journeyPhaseAtMs,
+        observedAtMs: observationClock.milliseconds, monitorTicksMs: journeyTicks,
+        droppedMonitorTicks: journeyTicksDropped, decoded: stage(.decoded), output: stage(.output),
+        ended: journeyEnded, teardown: teardown.receipt(), released: released,
+        audioActive: client?.isAudioActive ?? false, publicationMuted: publicationMuted,
+        onHold: client?.calls.first(where: { $0.id.rawValue == session.fixture.conversationId })?
+          .isOnHold ?? false)
+    }
+    private func runJourney(_ client: VoIPClient) async throws {
+      guard let fixture = fixture.journey else { return }
+      journeySession = try MediaJourneySession(fixture: fixture)
+      let callID = CallID(rawValue: fixture.conversationId)
+      let party = Party(handle: try Handle(kind: .generic, value: "media-peer"))
+      _ = await client.report(IncomingCall(id: callID, parties: [party]))
+      try await client.request(.answer(callID))
+      try await until { self.active }
+      let directory = URL.documentsDirectory
+      try JSONEncoder().encode(journeySnapshot(command: nil)).write(
+        to: directory.appending(path: "media-journey-ready.json"), options: .atomic)
+      let clock = ContinuousClock()
+      let deadline = clock.now + .seconds(180)
+      var lastCommand: UUID?
+      while clock.now < deadline {
+        try Task.checkCancellation()
+        if journeyPhaseAtMs != nil {
+          if journeyTicks.count < 3001 {
+            journeyTicks.append(observationClock.milliseconds)
+          } else {
+            journeyTicksDropped += 1
+          }
+          recordTransport()
+        }
+        let path = directory.appending(path: "media-journey-command.json")
+        if let data = try? Data(contentsOf: path),
+          let command = try? JSONDecoder().decode(MediaJourneyCommand.self, from: data),
+          command.id != lastCommand
+        {
+          lastCommand = command.id
+          do {
+            try journeySession?.accept(command)
+            switch command.operation {
+            case .beginPhase:
+              guard let frequencies = command.frequencies else {
+                throw MediaJourneySession.Failure.invalidPhase
+              }
+              hooks.replaceMarker(frequencies: frequencies)
+              journeyPhaseAtMs = observationClock.milliseconds
+              probe.beginWindow()
+              transport = [:]
+              lastStatisticsTimestamp = nil
+              journeyTicks = [journeyPhaseAtMs!]
+              journeyTicksDropped = 0
+            case .snapshot: break
+            case .mute:
+              try await client.request(.mute(callID, muted: command.enabled == true))
+              try await until { self.publicationMuted == (command.enabled == true) }
+            case .hold:
+              try await client.request(.hold(callID, onHold: command.enabled == true))
+              try await until { self.publicationHeld == (command.enabled == true) }
+            case .armTeardown: teardown.begin()
+            case .end:
+              guard teardown.receipt() != nil else {
+                throw MediaJourneySession.Failure.invalidPhase
+              }
+              try await client.request(.end(callID))
+            case .close: break
+            }
+            recordTransport()
+            try JSONEncoder().encode(journeySnapshot(command: command.id)).write(
+              to: directory.appending(path: "media-journey-response.json"), options: .atomic)
+            if command.operation == .close { return }
+          } catch {
+            struct Rejected: Encodable {
+              let commandId: UUID
+              let rejected = true
+            }
+            try JSONEncoder().encode(Rejected(commandId: command.id)).write(
+              to: directory.appending(path: "media-journey-response.json"), options: .atomic)
+          }
+        }
+        try await clock.sleep(for: .milliseconds(20))
+      }
+      throw MediaAudioProbe.Failure.incompleteWindow(.output)
+    }
+
     private func until(_ condition: () -> Bool) async throws {
       let clock = ContinuousClock()
       let deadline = ContinuousClock().now + .seconds(10)
@@ -452,6 +625,11 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     }
     private func fail() {
       guard !failed else { return }
+      if fixture.journey != nil {
+        try? JSONEncoder().encode(journeySnapshot(command: nil)).write(
+          to: URL.documentsDirectory.appending(path: "media-journey-failure.json"), options: .atomic
+        )
+      }
       packets?.cancel()
       packets = nil
       failed = true

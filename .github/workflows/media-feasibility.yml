@@ -25,6 +25,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: ./.github/actions/setup
+      - name: Test the example command protocol
+        run: |
+          perl -e 'alarm 120; exec @ARGV' swift test --package-path expo/example/client/modules/media-feasibility \
+            --scratch-path "$RUNNER_TEMP/media-journey-protocol" --jobs 2 > "$RUNNER_TEMP/media-journey-protocol.log" 2>&1
       - name: Resolve the optional media package
         run: node tools/check-package-isolation.ts media
       - name: Compile excluded configurations without LiveKit
@@ -131,12 +135,13 @@ jobs:
             perl -e 'alarm 120; exec @ARGV' xcrun simctl shutdown "$id" || true
             perl -e 'alarm 120; exec @ARGV' xcrun simctl delete "$id"
           fi
-          rm -rf "$RUNNER_TEMP/media-build" "$RUNNER_TEMP/media-package" "$RUNNER_TEMP/media-source-packages" "$RUNNER_TEMP/media-example-source-packages"
+          rm -rf "$RUNNER_TEMP/media-build" "$RUNNER_TEMP/media-package" "$RUNNER_TEMP/media-source-packages" "$RUNNER_TEMP/media-example-source-packages" "$RUNNER_TEMP/media-journey-protocol"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: media-feasibility
           path: |
+            ${{ runner.temp }}/media-journey-protocol.log
             ${{ runner.temp }}/media-result-*.json
             ${{ runner.temp }}/build.log
             ${{ runner.temp }}/media-package-*.log
