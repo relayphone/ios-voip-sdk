@@ -24,6 +24,33 @@ It retains per-candidate confidences and receiver statistics, skips spans with l
 and accepts the first complete clean cycle. Missing or stale receiver counters cannot prove clean
 coverage. The 0.8 rule, amplitudes, signal, drift limits and all deadlines remain unchanged.
 
+## Journey terminal phases
+
+The iOS and Android journeys use the same terminal oracle. Immediately before each end,
+begin a fresh shared-contract phase and require `expectAudio` in both directions. Retain
+those receipts alongside the terminal evidence; audio must have been demonstrably live.
+
+For a local end, the SDK's own published conversation state must reach `ended` with reason
+`local` within the existing deadline. The native adapter's teardown receipt must show the tap
+uninstalled, engine stopped, room disconnected and audio session released, on its acknowledged
+monotonic clock. Reuse cleanup evidence, adding a field only when an observation is missing.
+
+Independently, the harness peer must observe the app's audio publication removed and its
+participant disconnected within the deadline. After both events, retain the peer's receive
+capture and check that no marker from any emitted phase arrives. Preserve event identities, track SIDs,
+same-clock timestamps, observation endpoint and overflow counters; missing or truncated evidence
+cannot pass. This lifecycle evidence proves that the app stopped sending. It does not establish
+PCM silence when no track remains.
+
+For the far-end leave variant, the peer leaves and the SDK must publish `ended` with reason
+`remoteEnded`, followed by the same native release evidence within the existing deadlines.
+There must be no stray reconnect. The departed peer cannot observe the app's subsequent departure;
+retain the peer's leave evidence and the app's SDK state and teardown receipt for this variant.
+
+Once teardown removes the tap, device silence correctly returns `unobserved`. It is never an
+end-success oracle. Do not synthesize silent PCM or keep call audio active after deactivation.
+All preceding phases retain the unchanged first-clean-cycle, silence-window and deadline rules.
+
 ## Installing the optional iOS hooks
 
 The root Swift package contains the production SDK and resolves no LiveKit dependency.
