@@ -62,6 +62,128 @@
     }
   }
 
+  extension ProcessLifecycle {
+    struct KillReceipt: Encodable, Sendable {
+      let schemaVersion = 1
+      let identity: ProcessLifecycleIdentity
+      let pid: Int
+      let cause: ProcessExitCause
+      let exited: Bool
+    }
+
+    /// Stops only a live service matching the pinned runtime session. No runtime mailbox is needed.
+    static func kill(
+      target: Target, runID: String, cause: ProcessExitCause, timeout: Duration,
+      clock: some Clock<Duration> = ContinuousClock(),
+      signal: @Sendable (Int32) throws -> Void = { pid in
+        guard Darwin.kill(pid, SIGKILL) == 0 else {
+          throw CKSimError("Cannot kill verified process: \(String(cString: strerror(errno)))")
+        }
+      },
+      hasExited: @Sendable (Int32) throws -> Bool = { pid in
+        if Darwin.kill(pid, 0) == 0 { return false }
+        guard errno == ESRCH else { throw CKSimError("Cannot establish old process exit.") }
+        return true
+      }
+    ) async throws -> KillReceipt {
+      guard cause != .unknown, let simulator = UUID(uuidString: target.device) else {
+        throw CKSimError("Require a resolved simulator and an explicit kill cause.")
+      }
+      let identity = try ProcessLifecycleIdentity(
+        simulatorID: simulator, bundleID: target.bundle, runID: runID)
+      // Always resolve the installed bundle again; a cached container cannot authorize a signal.
+      let container = URL(
+        filePath: try target.simctl("get_app_container", target.device, target.bundle, "data"))
+      let channel = container.appending(path: "Documents/.callkit-simulator")
+      let session = try PublishedSession(channel: channel, bundle: target.bundle).session
+      guard session.runID == runID, Int32(exactly: session.pid) != nil else {
+        throw CKSimError("Requested run does not match a signalable runtime session.")
+      }
+      func verifySession() throws {
+        let current = URL(
+          filePath: try target.simctl("get_app_container", target.device, target.bundle, "data"))
+        guard current.standardizedFileURL == container.standardizedFileURL,
+          try PublishedSession(channel: channel, bundle: target.bundle).session == session
+        else { throw CKSimError("Process identity changed; refusing termination or exit claim.") }
+      }
+      func service() throws -> AppService? {
+        let output = try target.simctl.run(
+          ["spawn", target.device, "launchctl", "list"],
+          ProcessInfo.processInfo.environment.merging(["SIMCTL_CHILD_DYLD_INSERT_LIBRARIES": ""]) {
+            $1
+          }, Simctl.limit)
+        guard output.status == 0, output.standardError.isEmpty else {
+          throw CKSimError("Cannot verify app service: \(output.diagnostic)")
+        }
+        return try AppService.read(output.standardOutput, bundle: target.bundle)
+      }
+      guard let original = try service(), original.pid == session.pid else {
+        throw CKSimError("Live app service does not match the requested runtime process.")
+      }
+      let journal = try ProcessLifecycle(channel: channel, identity: identity)
+      try await journal.record(.killRequested, pid: session.pid, cause: cause)
+      try Task.checkCancellation()
+      try verifySession()
+      guard try service() == original else {
+        throw CKSimError("Live app service changed; refusing termination.")
+      }
+      try Task.checkCancellation()
+      switch cause {
+      case .abrupt: try signal(Int32(session.pid))
+      case .userRequested:
+        try target.simctl("terminate", target.device, target.bundle)
+      case .unknown: preconditionFailure("Validated above")
+      }
+      let deadline = clock.now.advanced(by: timeout)
+      repeat {
+        try Task.checkCancellation()
+        try verifySession()
+        let current = try service()
+        if current == nil, try hasExited(Int32(session.pid)) {
+          try await journal.record(.exited, pid: session.pid, cause: cause)
+          return KillReceipt(identity: identity, pid: session.pid, cause: cause, exited: true)
+        }
+        guard current == nil || current == original else {
+          throw CKSimError("App service was replaced; old process exit is unverified.")
+        }
+        guard clock.now < deadline else {
+          throw CKSimError("Process exit timed out; outcome is unknown. Inspect before launching.")
+        }
+        try await clock.sleep(for: .milliseconds(50))
+      } while true
+    }
+
+    /// Strict launchctl list parsing; ambiguous or malformed results cannot authorize a signal.
+    struct AppService: Equatable {
+      let pid: Int
+      let label: String
+
+      static func read(_ data: Data, bundle: String) throws -> Self? {
+        let rows = String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline).map {
+          $0.split(whereSeparator: \.isWhitespace).map(String.init)
+        }
+        guard rows.first == ["PID", "Status", "Label"], rows.count > 1 else {
+          throw CKSimError("Invalid launchctl service table.")
+        }
+        var app: Self?
+        for row in rows.dropFirst() {
+          guard row.count == 3,
+            row[0] == "-" || Int(row[0]).map({ $0 > 0 && String($0) == row[0] }) == true,
+            row[1] == "-" || Int(row[1]) != nil
+          else { throw CKSimError("Invalid launchctl service row.") }
+          guard row[2].hasPrefix("UIKitApplication:\(bundle)[") else { continue }
+          guard row[2].hasSuffix("]"), row[2].count > "UIKitApplication:\(bundle)[]".count else {
+            throw CKSimError("Invalid app service label.")
+          }
+          guard let pid = Int(row[0]) else { continue }
+          guard app == nil else { throw CKSimError("Multiple live app services; refusing kill.") }
+          app = Self(pid: pid, label: row[2])
+        }
+        return app
+      }
+    }
+  }
+
   /// A bounded offline snapshot: host segments are available even without a runtime session.
   struct ProcessJournal {
     struct Entry {

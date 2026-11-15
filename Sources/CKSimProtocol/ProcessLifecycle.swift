@@ -49,6 +49,8 @@ public struct ProcessLifecycleEvent: RawRepresentable, Codable, Equatable, Hasha
   }
   /// The host is about to request simulator launch.
   public static let launchRequested = Self(rawValue: "process.launchRequested")
+  /// The host durably recorded termination intent before verifying and stopping the process.
+  public static let killRequested = Self(rawValue: "process.killRequested")
   /// The application's earliest instrumented entry point executed.
   public static let entered = Self(rawValue: "process.entered")
   /// Runtime hooks and the mailbox are available.
