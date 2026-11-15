@@ -30,7 +30,7 @@ export async function startHarness(directory: string, fixtureId: string) {
       writeFileSync(file, JSON.stringify(server.credentials(identity)), { mode: 0o600 }); return file;
     },
     status,
-    observation: () => ({ receiver: status(), capture: peer.capture() }),
+    observation: () => ({ receiver: status(), capture: peer.capture(), lifecycle: peer.lifecycleObservation() }),
     async act(action: HarnessAction): Promise<void> {
       if (stopped) throw Error('Harness is stopped');
       switch (action.type) {

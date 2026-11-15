@@ -41,6 +41,14 @@ Use a fresh marker identity and phase observation for recovery assertions in the
 Do not call process-wide rtc-node `dispose()` until all harnesses and other rtc-node users in the
 process have stopped. The CLI owns its own process and performs this final disposal itself.
 
+`observation().lifecycle` also retains bounded, timestamped remote audio-publication and
+participant events on a process-unique `peerMonotonic` clock. Its `afterDisconnect` capture
+starts only after all observed audio publications and that participant have left. It retains
+late PCM, even after a reconnect, independently of ordinary phase capture resets. This is raw
+terminal evidence, not a passed flag: consumers check identities, deadline, continued peer
+connection, subsequent reconnect events, dropped-event/PCM overflow counters and absence of
+any emitted phase's marker over their observation interval. An empty capture does not assert silence.
+
 ## JSON CLI
 
 Run these commands from one long-lived journey runner or shell. `start` returns JSON status and

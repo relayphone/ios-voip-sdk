@@ -12,7 +12,7 @@ import { command, deadline } from './fixture-runtime.ts';
 import { serverBinary, startServer } from './server.ts';
 import { MediaPeer } from './peer.ts';
 import { parseAction, startHarness } from './harness.ts';
-import { createMarker } from '../../expo/src/testing/marker.ts';
+import { createMarker, detectMarker } from '../../expo/src/testing/marker.ts';
 import { measureMarkerAsync } from './measure-marker.ts';
 import { monitorReceiver } from './peer-window.ts';
 
@@ -84,6 +84,32 @@ test('JSON CLI supports clean stop and cleanup after a daemon crash', async () =
       assert.ok(!alive(started.status.serverPid)); assert.ok(!existsSync(join(dir, 'control.json')));
     } finally { if (daemon && alive(daemon)) process.kill(daemon, 'SIGTERM'); }
   }
+});
+test('a real app disconnect retains audio unpublication and independent terminal capture', async () => {
+  const harness = await startHarness(directory('terminal'), 'terminal');
+  const app = new MediaPeer();
+  try {
+    await app.connect(harness.credentials('app'));
+    await until(() => harness.status().readerLive);
+    app.publish('terminal:before-end');
+    await delay(3000);
+    assert.ok(detectMarker(Float32Array.from(harness.observation().capture.channels[0]!), 48_000, createMarker('terminal:before-end')));
+    const anchor = harness.observation().lifecycle.observedAtMs;
+    await app.close();
+    await until(() => harness.observation().lifecycle.afterDisconnect !== null);
+    const before = harness.observation().lifecycle;
+    assert.ok(harness.status().connected, 'The independent observer must remain connected');
+    for (const kind of ['trackUnpublished', 'participantDisconnected'] as const)
+      assert.ok(before.events.some(row => row.identity === 'app' && row.kind === kind && row.atMs >= anchor));
+    await until(() => harness.observation().lifecycle.observedAtMs >= before.observedAtMs + 1000);
+    const terminal = harness.observation().lifecycle;
+    assert.equal(terminal.droppedEvents, 0);
+    assert.equal(terminal.afterDisconnect!.overflowSamples, 0);
+    assert.equal(detectMarker(Float32Array.from(terminal.afterDisconnect!.channels[0]!), 48_000, createMarker('terminal:before-end')), null);
+    await harness.act({ type: 'capture' });
+    assert.deepEqual(harness.observation().lifecycle.afterDisconnect, terminal.afterDisconnect);
+    assert.ok(terminal.observedAtMs >= before.observedAtMs + 1000);
+  } finally { await app.close(); await harness.stop(); }
 });
 test('untrusted JSON commands reject invalid publication controls', () => {
   for (const input of [null, {}, { type: 'publish' }, { type: 'publish', markerId: '' }, { type: 'unknown' }]) assert.throws(() => parseAction(input));
