@@ -13,6 +13,15 @@ Public API changes include migration guidance.
   The LiveKit native example samples actual RTP packet counters for up to 30 seconds.
   Debug simulator runtimes journal these events without inferring them from connection state.
 
+### Changed
+
+- The shared media contract separates continuous silence duration from the phase observation
+  budget: `expectSilence({ direction, for, within? })` defaults `within` to 30000 ms.
+  Callers supplying only `for` now select the first complete silent window within 30 seconds;
+  pass `within: for` for the previous strict-from-anchor behavior. Adapters must supply every
+  attempted window in `silenceWindows`, including coverage, gaps and verdicts. Any observed
+  leak fails even if a later window is silent; no complete window fails as `unobserved`.
+
 ### Fixed
 
 - Include timed processing-state and engine-transition diagnostics in native media feasibility receipts, and report the earliest native failure directly.

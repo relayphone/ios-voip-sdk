@@ -1,4 +1,4 @@
-import { MediaTestError } from "./errors.ts";
+import { MediaTestError, type MediaTestErrorCode } from "./errors.ts";
 import { createMarker } from "./marker.ts";
 import { validateMediaReceipt } from "./receipt.ts";
 import type {
@@ -23,7 +23,8 @@ function observation(options: MediaExpectation): MediaObservation {
   if (options.direction === "fromDevice" && stage === "farEnd") return { direction: options.direction, stage };
   throw new MediaTestError("invalid_arguments", "Observation stage does not match direction");
 }
-function bounded<T>(milliseconds: number, signal: AbortSignal, body: (signal: AbortSignal) => Promise<T>): Promise<T> {
+function bounded<T>(milliseconds: number, signal: AbortSignal, body: (signal: AbortSignal) => Promise<T>,
+  timeoutCode: MediaTestErrorCode = "deadline_exceeded"): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const controller = new AbortController();
     let finished = false;
@@ -36,7 +37,7 @@ function bounded<T>(milliseconds: number, signal: AbortSignal, body: (signal: Ab
     };
     const timer = setTimeout(() => {
       controller.abort();
-      complete(() => reject(new MediaTestError("deadline_exceeded", "Media observation did not complete")));
+      complete(() => reject(new MediaTestError(timeoutCode, "Media observation did not complete")));
     }, milliseconds);
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) { abort(); return; }
@@ -69,6 +70,7 @@ export async function createMediaTest(options: MediaTestOptions, adapter?: Media
   }
   const instance = ++sessions;
   let phase: MediaPhase | undefined;
+  let phaseStartedAt = 0;
   let generation = 0;
   let queue = Promise.resolve();
   let closing: Promise<void> | undefined;
@@ -80,8 +82,11 @@ export async function createMediaTest(options: MediaTestOptions, adapter?: Media
     queue = result.then(() => {}, () => {});
     return result;
   }
-  async function expect(expectation: "audio" | "silence", options: MediaExpectation, milliseconds: number): Promise<MediaTestResult> {
+  async function expect(expectation: "audio" | "silence", options: MediaExpectation, milliseconds: number,
+    withinMs = milliseconds): Promise<MediaTestResult> {
     if (!phase) throw new MediaTestError("phase_required", "Begin an acknowledged phase before observing audio");
+    duration(milliseconds); duration(withinMs);
+    if (withinMs < milliseconds) throw new MediaTestError("invalid_arguments", "Observation budget must be at least the silent duration");
     const target = observation(options);
     const capability = connection.capabilities.find(value => value.direction === target.direction && value.stage === target.stage);
     if (!capability) throw new MediaTestError("capability_missing", `No ${target.direction} ${target.stage} observation`);
@@ -90,8 +95,12 @@ export async function createMediaTest(options: MediaTestOptions, adapter?: Media
       anchor.clock.domain === capability.domain && anchor.clock.id === capability.id))
       throw new MediaTestError("capability_missing", "No acknowledged observer clock");
     const request = Object.freeze({ ...scope, ...target, phase, clock: Object.freeze({ domain: capability.domain, id: capability.id }),
-      marker: createMarker(phase.id), expectation, durationMs: duration(milliseconds) });
-    const receipt = await bounded(milliseconds, lifetime.signal, signal => connection.read(request, signal));
+      marker: createMarker(phase.id), expectation, durationMs: milliseconds, withinMs });
+    // Account for the whole acknowledgement round trip conservatively; reads never renew a silence budget.
+    const remaining = expectation === "silence" ? withinMs - (performance.now() - phaseStartedAt) : milliseconds;
+    if (remaining <= 0) throw new MediaTestError("unobserved", "Silence phase budget ended");
+    const receipt = await bounded(remaining, lifetime.signal, signal => connection.read(request, signal),
+      expectation === "silence" ? "unobserved" : "deadline_exceeded");
     return validateMediaReceipt(receipt, request);
   }
   return Object.freeze({
@@ -101,6 +110,7 @@ export async function createMediaTest(options: MediaTestOptions, adapter?: Media
         const id = JSON.stringify([scope.fixtureId, scope.conversationId, connection.sessionId, instance, ++generation]);
         // Invalid acknowledgements retire the previous phase too.
         phase = undefined;
+        phaseStartedAt = performance.now();
         const ack = await bounded(3000, lifetime.signal, signal => connection.beginPhase(id, label, signal));
         if (!ack || ack.id !== id || ack.label !== label || !Array.isArray(ack.anchors) || !ack.anchors.length ||
             ack.anchors.some(anchor => !anchor || !anchor.clock || !Number.isFinite(anchor.atMs) || !identity(anchor.clock.id, 128) ||
@@ -114,7 +124,9 @@ export async function createMediaTest(options: MediaTestOptions, adapter?: Media
       });
     },
     expectAudio(options: ExpectAudioOptions) { return enqueue(() => expect("audio", options, options.within)); },
-    expectSilence(options: ExpectSilenceOptions) { return enqueue(() => expect("silence", options, options.for)); },
+    expectSilence(options: ExpectSilenceOptions) {
+      return enqueue(() => expect("silence", options, options.for, options.within === undefined ? 30000 : options.within));
+    },
     close() {
       if (!closing) {
         lifetime.abort();

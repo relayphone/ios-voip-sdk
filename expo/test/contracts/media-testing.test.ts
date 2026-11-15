@@ -31,12 +31,15 @@ function evidence(query: MediaReadRequest, silent = false): MediaReceipt {
   const start = query.phase.anchors.find(anchor => anchor.clock.id === query.clock.id)!.atMs;
   const target: MediaObservation = query.direction === "toDevice"
     ? { direction: query.direction, stage: query.stage } : { direction: query.direction, stage: query.stage };
-  return { ...target, schemaVersion: 1, profile: "tones-v2", conversationId: query.conversationId, fixtureId: query.fixtureId,
-    phaseId: query.phase.id, clock: query.clock,
-    tap: "active", startedAtMs: start, endedAtMs: start + 1000,
+  const capture = { startedAtMs: start, endedAtMs: start + 1000,
     sampleRate: rate, sampleCount: pcm.length, frameCount: 50, overflowFrames: 0,
     monitorTicks: 50, maxGapMs: 20, rms: Math.sqrt(energy / pcm.length), peak,
     marker: detectMarker(pcm, rate, query.marker) };
+  return { ...target, ...capture, schemaVersion: 1, profile: "tones-v2", conversationId: query.conversationId, fixtureId: query.fixtureId,
+    phaseId: query.phase.id, clock: query.clock,
+    tap: "active", ...(query.expectation === "silence" ? {
+      silenceWindows: [{ ...capture, coveredMs: 1000, gaps: [], verdict: "silent" as const }],
+    } : {}) };
 }
 function code(expected: string): (error: unknown) => boolean {
   return error => { assert.ok(error instanceof MediaTestError); assert.equal(error.code, expected); return true; };
@@ -208,12 +211,15 @@ test("stale, cross-call, wrong-stage, missing and incomplete evidence controls f
 test("silence needs live monitoring; zero received samples alone are not proof", () => {
   const query = request("silence"), silent = evidence(query, true);
   assert.equal(validateMediaReceipt(silent, query).expectation, "silence");
-  const noPackets = { ...silent, sampleCount: 0, frameCount: 0 };
+  const noPackets = { ...silent, sampleCount: 0, frameCount: 0,
+    silenceWindows: [{ ...silent.silenceWindows![0]!, sampleCount: 0, frameCount: 0 }] };
   assert.equal(validateMediaReceipt(noPackets, query).expectation, "silence");
-  assert.throws(() => validateMediaReceipt({ ...noPackets, monitorTicks: 0 }, query), code("invalid_receipt"));
+  assert.throws(() => validateMediaReceipt({ ...noPackets, monitorTicks: 0,
+    silenceWindows: [{ ...noPackets.silenceWindows[0]!, monitorTicks: 0 }] }, query), code("unobserved"));
   assert.throws(() => validateMediaReceipt({ ...noPackets, tap: "missing" }, query), code("capability_missing"));
   assert.throws(() => validateMediaReceipt({ ...silent, endedAtMs: 1500 }, query), code("invalid_receipt"));
-  assert.throws(() => validateMediaReceipt({ ...silent, startedAtMs: 1010, endedAtMs: 2010 }, query), code("invalid_receipt"));
+  assert.equal(validateMediaReceipt({ ...silent, startedAtMs: 1010, endedAtMs: 2010,
+    silenceWindows: [{ ...silent.silenceWindows![0]!, startedAtMs: 1010, endedAtMs: 2010 }] }, query).expectation, "silence");
   assert.throws(() => validateMediaReceipt(evidence(query), query), code("audio_leak"));
   assert.throws(() => validateMediaReceipt({ ...silent, peak: 0.02 }, query), code("audio_leak"));
 });

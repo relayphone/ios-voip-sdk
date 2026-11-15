@@ -11,6 +11,9 @@ void opened;
 void media.expectAudio({ direction: "toDevice", within: 3000 });
 void media.expectAudio({ direction: "toDevice", stage: "decoded", within: 3000 });
 void media.expectSilence({ direction: "fromDevice", for: 500 });
+void media.expectSilence({ direction: "fromDevice", for: 500, within: 30000 });
+// @ts-expect-error Observation budgets use integer milliseconds at runtime, never strings.
+void media.expectSilence({ direction: "fromDevice", for: 500, within: "30s" });
 // @ts-expect-error Durations use milliseconds, not strings.
 void media.expectAudio({ direction: "toDevice", within: "3s" });
 // @ts-expect-error Output is observed at the device, not at the far end.
@@ -29,3 +32,5 @@ void invalid;
 declare const error: MediaTestError;
 const errorCode: string = error.code;
 void errorCode;
+// @ts-expect-error Attempt history is immutable evidence.
+result.receipt.silenceWindows?.push({});
