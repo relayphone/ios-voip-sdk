@@ -85,6 +85,7 @@
           let entries = try runtime.entries()
           #expect(entries.map(\.sequence) == Array(1...entries.count), "Sequences are contiguous")
           for entry in entries {
+            #expect(entry.uptimeNanoseconds > 0)
             #expect(entry.schemaVersion == 1)
             #expect(
               entry.runID == runtime.session.runID && entry.pid == runtime.session.pid

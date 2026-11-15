@@ -57,6 +57,12 @@
         version: .singleDelivery, id: id, runID: runID, bundleID: target.bundle,
         createdAtMS: created, expiresAtMS: created + 30_000, mustReport: mustReport,
         payload: payload)
+      guard !exists(root.appending(path: runID)),
+        !exists(root.appending(path: "process/\(runID)"))
+      else {
+        throw CKSimError(
+          "Push launch requires a fresh run identifier; prior journal segments exist.")
+      }
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
       var data = try encoder.encode(envelope)
@@ -93,8 +99,8 @@
       )
     }
 
-    /// Stages the push, then replaces this process with the app's console launcher.
-    func run() throws -> Never {
+    /// Stages the push and durably records intent before returning the launch command.
+    func prepare() async throws -> (arguments: [String], environment: [String: String]) {
       guard !exists(receipt) else {
         throw CKSimError("Launch receipt already exists; inspect before staging.")
       }
@@ -116,6 +122,20 @@
       }
       let (arguments, environment) = try stage(
         container: container, serviceTable: query.standardOutput)
+      guard let simulatorID = UUID(uuidString: target.device) else {
+        throw CKSimError("Process journal requires a resolved simulator UUID.")
+      }
+      let journal = try ProcessLifecycle(
+        channel: container.appending(path: "Documents/.callkit-simulator"),
+        identity: ProcessLifecycleIdentity(
+          simulatorID: simulatorID, bundleID: target.bundle, runID: runID))
+      try await journal.record(.launchRequested)
+      return (arguments, environment)
+    }
+
+    /// Stages the push, then replaces this process with the app's console launcher.
+    func run() async throws -> Never {
+      let (arguments, environment) = try await prepare()
       execute(arguments, environment: environment)
     }
   }

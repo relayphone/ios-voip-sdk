@@ -1,6 +1,8 @@
 #if os(macOS)
   import Foundation
+  import CKSimProtocol
   import Testing
+  import Synchronization
 
   @testable import CKSimTool
 
@@ -25,6 +27,28 @@
 
     private static let stopped = Data(
       "PID\tStatus\tLabel\n-\t0\tUIKitApplication:\(bundle)[1a2b]\n".utf8)
+
+    @Test func hostIntentIsDurableBeforeTheLaunchCommandIsReturned() async throws {
+      let simulator = FakeSimulator()
+      simulator.state.withLock { $0.containers[bundle] = app.container }
+      let prepared = try await PushLaunch(
+        target: Target(simctl: simulator.simctl, device: device, bundle: bundle),
+        runID: launch.runID, mustReport: true, payloadFile: launch.payloadFile,
+        receipt: launch.receipt
+      ).prepare()
+      #expect(
+        prepared.arguments == ["/usr/bin/xcrun", "simctl", "launch", "--console", device, bundle])
+      let identity = try ProcessLifecycleIdentity(
+        simulatorID: UUID(uuidString: device)!, bundleID: bundle, runID: launch.runID)
+      let entries = try ProcessJournal(channel: app.channel, identity: identity).read()
+      let row = try JSONDecoder().decode(
+        ProcessLifecycleRecord.self, from: #require(entries.first).line)
+      #expect(row.event == .launchRequested && row.pid == nil)
+      #expect(!simulator.calls.contains { $0.first == "launch" })
+      #expect(throws: CKSimError.self) {
+        try launch.stage(container: app.container, serviceTable: Self.stopped)
+      }
+    }
 
     @Test func aStagedPushHasItsEnvelopeAndReceipt() throws {
       let before = Int(Date().timeIntervalSince1970 * 1000)
@@ -86,6 +110,19 @@
       #expect(throws: CKSimError("Unsafe push launch directory.")) {
         try launch.stage(container: app.container, serviceTable: Self.stopped)
       }
+    }
+
+    @Test(arguments: ["launch-run", "process/launch-run"])
+    func aPreviousInvocationCannotBeReused(path: String) throws {
+      try FileManager.default.createDirectory(
+        at: app.channel.appending(path: path), withIntermediateDirectories: true)
+      #expect(throws: CKSimError.self) {
+        try launch.stage(container: app.container, serviceTable: Self.stopped)
+      }
+      #expect(!FileManager.default.fileExists(atPath: launch.receipt.path))
+      #expect(
+        !FileManager.default.fileExists(
+          atPath: app.channel.appending(path: "push-launch.json").path))
     }
   }
 #endif
