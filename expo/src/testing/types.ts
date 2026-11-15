@@ -39,13 +39,8 @@ export interface MarkerDetection {
   /** Twelve chosen slot starts, in samples relative to the captured PCM window. */
   readonly slotStarts: readonly number[];
 }
-/** Measurements for one continuous, unmodified capture window; no inferred silence. */
-export type MediaReceipt = MediaTestOptions & MediaObservation & {
-  readonly schemaVersion: 1;
-  readonly profile: "tones-v2";
-  readonly phaseId: string;
-  readonly clock: MediaClock;
-  readonly tap: "active" | "missing";
+/** Original PCM levels and independent observer coverage on one clock. */
+export interface MediaCapture {
   readonly startedAtMs: number;
   readonly endedAtMs: number;
   readonly sampleRate: number;
@@ -60,6 +55,27 @@ export type MediaReceipt = MediaTestOptions & MediaObservation & {
   readonly peak: number;
   readonly marker: MarkerDetection | null;
 }
+/** An uncovered observer interval; timestamps use the receipt's clock. */
+export interface MediaSilenceGap {
+  readonly startedAtMs: number;
+  readonly endedAtMs: number;
+}
+/** Every attempted interval, including incomplete windows and observed leaks. */
+export interface MediaSilenceWindow extends MediaCapture {
+  readonly coveredMs: number;
+  readonly gaps: readonly MediaSilenceGap[];
+  readonly verdict: "silent" | "unobserved" | "leak";
+}
+/** The first accepted capture, or final attempt on failure; no inferred silence. */
+export type MediaReceipt = MediaTestOptions & MediaObservation & MediaCapture & {
+  readonly schemaVersion: 1;
+  readonly profile: "tones-v2";
+  readonly phaseId: string;
+  readonly clock: MediaClock;
+  readonly tap: "active" | "missing";
+  /** Required for silence; ordered history on the same observer clock. */
+  readonly silenceWindows?: readonly MediaSilenceWindow[];
+}
 /** Defaults to output for toDevice, farEnd for fromDevice. */
 export type MediaExpectation =
   | { readonly direction: "toDevice"; readonly stage?: "decoded" | "output" }
@@ -69,8 +85,10 @@ export type ExpectAudioOptions = MediaExpectation & {
   readonly within: number;
 }
 export type ExpectSilenceOptions = MediaExpectation & {
-  /** Continuous measured interval from the phase anchor, in milliseconds. */
+  /** Required continuous silent duration, in integer milliseconds (1–60000). */
   readonly for: number;
+  /** Observation budget from the phase anchor; defaults to 30000 and must be >= for. */
+  readonly within?: number;
 }
 export type MediaReadRequest = MediaTestOptions & MediaObservation & {
   readonly phase: MediaPhase;
@@ -78,6 +96,8 @@ export type MediaReadRequest = MediaTestOptions & MediaObservation & {
   readonly marker: MediaMarker;
   readonly expectation: "audio" | "silence";
   readonly durationMs: number;
+  /** Phase-anchored silence budget; audio uses durationMs as before. */
+  readonly withinMs?: number;
 }
 export interface MediaTestResult {
   readonly expectation: "audio" | "silence";

@@ -74,6 +74,33 @@ Directions are relative to the app. `toDevice` defaults to the post-output-gate 
 received decoded PCM and establishes no output or hold-silence claim. Missing output capability
 never falls back to a decoder tap. Durations are integer milliseconds, bounded to 60 seconds.
 
+`expectSilence({ direction, for, within? })` separates the required continuous silent duration
+(`for`) from the observation budget (`within`, default **30000 ms**). Both must be positive
+integer milliseconds, at most 60000, with `within >= for`. The budget starts at the acknowledged
+phase anchor, so another read in the same phase does not restart it. A duration above 30000 ms
+requires an explicit larger `within`.
+
+**Migration:** callers that supplied only `for` now get windowed retries within 30 seconds.
+Pass `within: for` for the previous strict-from-anchor behavior. Adapters receive `durationMs`
+for the required duration and `withinMs` for the phase budget; they must retain every attempt,
+including gapped, unfinished and leaking intervals, rather than returning only the final suffix.
+
+Silence receipts require an ordered, nonoverlapping `silenceWindows` array. Every window uses
+the receipt's observer clock and contains the `MediaCapture` fields (timestamps, original PCM
+counts/levels, overflow and independent monitoring evidence), plus `coveredMs`, a `gaps` array
+of `{ startedAtMs, endedAtMs }`, and a `silent`, `unobserved` or `leak` verdict. Coverage cannot
+exceed the interval minus its reported gaps. Every attempt must lie inside
+`[phase anchor, phase anchor + within]`. The receipt's top-level capture fields describe the
+first qualifying silent window, or the final attempt when none qualified.
+
+The validator checks all attempts for leakage before accepting the first continuous window
+covering at least `for`. RMS/peak limits remain **0.003/0.01**, and the observer gap limit remains
+**40 ms** with no overflow. Missing PCM alone proves nothing. A leak in any attempt fails with
+`audio_leak`, even when that attempt was gapped or a later window is clean. No qualifying window
+within the budget fails with `unobserved`. These errors retain the validated history in
+`MediaTestError.receipt`; a timed-out adapter may have no receipt, which is not silence evidence.
+The arrays, gaps and measurements returned by validation are immutable copies.
+
 Each open supplies a fresh native/host session UUID, including across JavaScript reloads. Phase
 marker identity includes fixture, conversation, that UUID and per-runtime/session generations.
 Each acknowledged phase also has observer-local monotonic clock anchors.
@@ -91,7 +118,8 @@ manufacture them from a stopped recording or fill missing PCM with zeroes. A mis
 `capability_missing`; leaks throw `audio_leak`. Evidence is validated independently of a
 producer's `passed` flag. Assertions are serialized; `close` cancels reads and is idempotent.
 Open/phase acknowledgements and cleanup have 3-second delivery bounds; read waits are bounded by
-the requested duration. These delivery bounds do not extend the receipt's phase deadline.
+the audio deadline or remaining silence budget. Silence read waits conservatively subtract the
+entire phase-acknowledgement round trip. These delivery bounds do not extend the receipt's phase deadline.
 
 ## Synthetic capture configuration
 

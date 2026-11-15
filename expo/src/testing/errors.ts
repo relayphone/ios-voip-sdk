@@ -1,10 +1,15 @@
+import type { MediaReceipt } from "./types.ts";
+
 export type MediaTestErrorCode =
   | "unavailable" | "capability_missing" | "invalid_arguments" | "invalid_receipt"
-  | "adapter_failed" | "phase_required" | "closed" | "deadline_exceeded" | "audio_missing" | "audio_leak";
+  | "adapter_failed" | "phase_required" | "closed" | "deadline_exceeded" | "audio_missing" | "audio_leak" | "unobserved";
 
 /** A missing tap is a capability error, never a successful silence assertion. */
 export class MediaTestError extends Error {
-  readonly name = "MediaTestError";
+  override readonly name = "MediaTestError";
   readonly code: MediaTestErrorCode;
-  constructor(code: MediaTestErrorCode, message: string) { super(message); this.code = code; }
+  readonly receipt: MediaReceipt | undefined;
+  constructor(code: MediaTestErrorCode, message: string, receipt?: MediaReceipt) {
+    super(message); this.code = code; this.receipt = receipt;
+  }
 }
