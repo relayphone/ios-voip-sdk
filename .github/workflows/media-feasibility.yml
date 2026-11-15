@@ -72,13 +72,6 @@ jobs:
             -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/media-build" \
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/media-example-source-packages" -disableAutomaticPackageResolution -skipPackageUpdates \
             CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build > "$RUNNER_TEMP/build.log" 2>&1
-      - name: Build the optional Swift package tests
-        run: |
-          cd MediaTesting
-          perl -e 'alarm 600; exec @ARGV' xcodebuild build-for-testing -scheme VoIPMediaTesting \
-            -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/media-package" \
-            -clonedSourcePackagesDirPath "$RUNNER_TEMP/media-source-packages" -disableAutomaticPackageResolution -skipPackageUpdates \
-            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO > "$RUNNER_TEMP/media-package-build.log" 2>&1
       - name: Prepare the pinned peer and local server
         run: |
           npm ci --prefix tools/media-test --no-audit --no-fund
@@ -112,15 +105,15 @@ jobs:
           echo "$id" > "$RUNNER_TEMP/media-simulator"
           perl -e 'alarm 120; exec @ARGV' xcrun simctl boot "$id"
           perl -e 'alarm 300; exec @ARGV' xcrun simctl bootstatus "$id" -b
-      - name: Run native package tests
+      - name: Build and run native package tests
         run: |
           id=$(cat "$RUNNER_TEMP/media-simulator")
-          (cd MediaTesting && perl -e 'alarm 300; exec @ARGV' xcodebuild test-without-building \
+          (cd MediaTesting && /usr/bin/time -p perl -e 'alarm 300; exec @ARGV' xcodebuild test \
             -scheme VoIPMediaTesting -destination "platform=iOS Simulator,id=$id" \
             -derivedDataPath "$RUNNER_TEMP/media-package" \
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/media-source-packages" -disableAutomaticPackageResolution -skipPackageUpdates \
             -only-testing:VoIPMediaTestingTests \
-            CODE_SIGNING_ALLOWED=NO > "$RUNNER_TEMP/media-package-tests.log" 2>&1)
+            CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO > "$RUNNER_TEMP/media-package-tests.log" 2>&1)
       - name: Check media hooks and continuous silence windows
         run: |
           id=$(cat "$RUNNER_TEMP/media-simulator")
