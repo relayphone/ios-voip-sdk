@@ -157,6 +157,13 @@ An ended failure with an `EndedFailureKind` may carry `platformCallRemaining: tr
 Android only: the system may still show this call; the app should ask the person to end it from
 the system UI. iOS never sets it. The flag is optional and does not appear on filtered failures.
 
+For `ended.failure.kind === "media"`, platforms may supply `stage` (`prepare`, `audioSession`
+or `activate`), `timedOut`, the expired `timeoutMs` when known, and `reason`
+(`publishPermissionNotGranted` or `prejoinCloseFailed`). Narrow on `kind` before reading these
+fields. Each diagnostic is optional: `{ kind: "media" }` remains valid, and an omitted
+`timedOut` means the platform did not report that detail. Current iOS behavior omits these
+fields. Applications using earlier SDK versions need no migration.
+
 A `reconnecting` conversation retains its original `connectedAt` and returns to `connected`
 with that same timestamp when transport recovers. Hold and end rules are unchanged. Exhaustive
 switches on `status` must handle `reconnecting`.
@@ -267,6 +274,13 @@ listener, dropping the oldest if full. The first listener receives them once in 
 `callNotificationRoute` and `callPreview`. State belongs in the snapshot; use events for facts
 such as a correlated server event or a notification response. Public event and payload types
 are in [`conversations/types.ts`](../expo/src/conversations/types.ts).
+
+The shared contract also describes `prewarmFailed`: its payload has `conversationId`, a
+`stage` of `connect`, `identity`, `subscribe` or `deadline`, and `errorType`, the platform error
+type name. It never contains the error message. Failure of optional prewarming can leave the
+call ringing; handle this diagnostic separately from an ended conversation. The event is
+available to platform implementations through the shared contract; current iOS behavior does
+not emit it.
 
 Commands reject with errors whose `code` and `message` describe the failure and whose optional
 `nativeDomain` and `nativeCode` preserve native details. Placement rejection uses

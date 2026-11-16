@@ -96,12 +96,28 @@ export type EndedFailureKind =
  */
 export type EndedFailure =
   | {
-      readonly kind: EndedFailureKind;
+      readonly kind: Exclude<EndedFailureKind, "media">;
       /**
        * Android only: the system may still show this call; the app should ask the person to end
        * it from the system UI. iOS never sets it.
        */
       readonly platformCallRemaining?: true;
+    }
+  | {
+      readonly kind: "media";
+      /**
+       * Android only: the system may still show this call; the app should ask the person to end
+       * it from the system UI. iOS never sets it.
+       */
+      readonly platformCallRemaining?: true;
+      /** Which part of media activation failed. Omitted when the platform doesn't report it. */
+      readonly stage?: "prepare" | "audioSession" | "activate";
+      /** True when the stage hit its deadline rather than failing outright. */
+      readonly timedOut?: boolean;
+      /** The deadline that expired, in milliseconds, when known. */
+      readonly timeoutMs?: number;
+      /** The reported native media cause, when known. */
+      readonly reason?: "publishPermissionNotGranted" | "prejoinCloseFailed";
     }
   | { readonly kind: "filtered"; readonly cause: IncomingFilterReason };
 
@@ -542,6 +558,13 @@ export interface PushToken {
 
 /** Lifecycle signals that cannot be derived from the snapshot. @category Events */
 export interface ConversationEventMap {
+  /** An optional media prewarm failed; this event does not end the conversation. */
+  readonly prewarmFailed: {
+    readonly conversationId: ConversationId;
+    readonly stage: "connect" | "identity" | "subscribe" | "deadline";
+    /** Platform error type name only (e.g. a Kotlin or Swift type). Never a message. */
+    readonly errorType: string;
+  };
   /** Why joining a call returned to its preview. */
   readonly joinFailed: { readonly conversationId: ConversationId; readonly reason: JoinFailure };
   /** An action the SDK already performed; no handler approval is requested. */
