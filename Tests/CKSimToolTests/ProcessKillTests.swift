@@ -22,6 +22,8 @@
       var ignoreKill = false
       var replaceSession = false
       var cancelAtQuery: Int?
+      var containerQueries = 0
+      var cancelAtContainer: Int?
     }
 
     init() throws {
@@ -37,6 +39,10 @@
           state.withLock { value in
             value.commands.append(arguments)
             if arguments.first == "get_app_container" {
+              value.containerQueries += 1
+              if value.cancelAtContainer == value.containerQueries {
+                withUnsafeCurrentTask { $0?.cancel() }
+              }
               return ProcessOutput(standardOutput: Data(app.container.path.utf8))
             }
             if arguments == ["terminate", device, bundle] {
@@ -116,6 +122,131 @@
           #expect(rows.map(\.event) == [.killRequested])
           state.withLock { $0.stopped = true }
         }, hasExited: { [self] _ in state.withLock { $0.stopped } })
+    }
+
+    private struct DeliveryRow: Encodable {
+      let schemaVersion = 1
+      let runID = FakeApp.runID
+      let bundleID = bundle
+      let pid: Int
+      let sequence: Int
+      let uptimeNanoseconds: UInt64
+      let wallTimeMS = 1000
+      let event: String
+      let pushID: UUID
+      let requestID: UUID?
+    }
+
+    private func deliveries(_ events: [(String, UUID, UUID?)], pid: Int = FakeApp.pid) throws {
+      var data = Data()
+      for (index, event) in events.enumerated() {
+        data.append(
+          try JSONEncoder().encode(
+            DeliveryRow(
+              pid: pid, sequence: index + 1, uptimeNanoseconds: UInt64(index + 1),
+              event: event.0, pushID: event.1, requestID: event.2)))
+        data.append(10)
+      }
+      try data.write(to: app.mailbox.appending(path: "events.jsonl"))
+    }
+
+    @Test(arguments: [ProcessExitCause.abrupt, .userRequested])
+    func exitCancelsOnlyCopiesWithoutDelegateEntry(cause: ProcessExitCause) async throws {
+      let request = UUID()
+      let received = UUID()
+      let pending = UUID()
+      let dropped = UUID()
+      try deliveries([
+        ("push.scheduled", received, request), ("push.scheduled", pending, request),
+        ("push.scheduled", dropped, request), ("push.received", received, nil),
+        ("push.dropped", dropped, request),
+      ])
+      let receipt = try await kill(cause)
+      #expect(receipt.cancelledDeliveries == [pending])
+      let rows = try observations()
+      #expect(rows.map(\.event) == [.killRequested, .exited, .cancelled])
+      let cancellation = try #require(rows.last)
+      #expect(cancellation.requestID == request && cancellation.pushID == pending)
+      #expect(cancellation.pid == FakeApp.pid && cancellation.cause == cause)
+      #expect(cancellation.sequence == 3)
+      let identity = try ProcessLifecycleIdentity(
+        simulatorID: UUID(uuidString: device)!, bundleID: bundle, runID: FakeApp.runID)
+      #expect(
+        try ProcessJournal(channel: app.channel, identity: identity).pendingDeliveries(
+          pid: FakeApp.pid
+        ).isEmpty)
+    }
+
+    @Test func failedExitCannotCancelPendingCopies() async throws {
+      let request = UUID()
+      let pending = UUID()
+      try deliveries([("push.scheduled", pending, request)])
+      state.withLock { $0.ignoreKill = true }
+      await #expect(throws: CKSimError.self) { try await kill() }
+      #expect(try observations().map(\.event) == [.killRequested])
+    }
+
+    @Test(arguments: [false, true])
+    func cancelledExitObservationNeverReturnsACancellationReceipt(inExitProbe: Bool) async throws {
+      try deliveries([("push.scheduled", UUID(), UUID())])
+      if !inExitProbe { state.withLock { $0.cancelAtContainer = 4 } }
+      let task = Task { [self] in
+        try await ProcessLifecycle.kill(
+          target: target, runID: FakeApp.runID, cause: .abrupt, timeout: .zero,
+          signal: { [self] _ in state.withLock { $0.stopped = true } },
+          hasExited: { _ in
+            if inExitProbe { withUnsafeCurrentTask { $0?.cancel() } }
+            return true
+          })
+      }
+      await #expect(throws: CancellationError.self) { try await task.value }
+      #expect(try observations().map(\.event) == [.killRequested, .exited])
+    }
+
+    @Test(arguments: [
+      "partial", "wrong-pid", "duplicate-id", "missing-request", "bad-sequence",
+      "wrong-drop-request", "missing-drop-request",
+    ])
+    func ambiguousEvidenceNeverInventsCancellation(kind: String) async throws {
+      let request = UUID()
+      let pending = UUID()
+      try deliveries(
+        [("push.scheduled", pending, kind == "missing-request" ? nil : request)],
+        pid: kind == "wrong-pid" ? FakeApp.pid + 1 : FakeApp.pid)
+      let file = app.mailbox.appending(path: "events.jsonl")
+      if kind == "partial" {
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(#"{"event":"push.received""#.utf8))
+        try handle.close()
+      } else if kind == "duplicate-id" {
+        try deliveries([("push.scheduled", pending, request), ("push.scheduled", pending, request)])
+      } else if kind == "bad-sequence" {
+        let row = try String(contentsOf: file, encoding: .utf8)
+        try Data(row.replacingOccurrences(of: #""sequence":1"#, with: #""sequence":2"#).utf8).write(
+          to: file)
+      } else if kind == "wrong-drop-request" || kind == "missing-drop-request" {
+        try deliveries([
+          ("push.scheduled", pending, request),
+          ("push.dropped", pending, kind == "wrong-drop-request" ? UUID() : nil),
+        ])
+      }
+      await #expect(throws: (any Error).self) { try await kill() }
+      #expect(try observations().map(\.event) == [.killRequested, .exited])
+    }
+
+    @Test func lastEntryBeforeExitPreventsCancellation() async throws {
+      let request = UUID()
+      let pending = UUID()
+      try deliveries([("push.scheduled", pending, request)])
+      let receipt = try await ProcessLifecycle.kill(
+        target: target, runID: FakeApp.runID, cause: .abrupt, timeout: .zero,
+        signal: { [self] _ in
+          try deliveries([("push.scheduled", pending, request), ("push.received", pending, nil)])
+          state.withLock { $0.stopped = true }
+        }, hasExited: { _ in true })
+      #expect(receipt.cancelledDeliveries.isEmpty)
+      #expect(try observations().map(\.event) == [.killRequested, .exited])
     }
 
     @Test func wrongRunNeverSignalsOrRecordsIntent() async throws {
