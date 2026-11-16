@@ -31,6 +31,9 @@ Public API changes include migration guidance.
   `false`. `ConversationEventMap` gains `videoChanged`, so code that switches exhaustively over
   conversation event types needs a case for it (or a default). The `updated` report accepts an
   optional `video`. Existing calls that never change video need no migration.
+- Swift: `CallEvent` gains `.videoChanged(Call, VideoChangeSource)`. Code that switches
+  exhaustively over `CallEvent` needs a case for it; add an explicit case rather than
+  `@unknown default` so future events still surface at compile time.
 
 ## 0.7.0 (2026-11-16)
 
