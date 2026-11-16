@@ -11,7 +11,7 @@ on:
       - "expo/**"
       - "tools/**"
       - ".github/workflows/runtime-release.yml"
-      - ".github/actions/setup/**"
+      - ".github/actions/setup*/**"
 permissions:
   contents: read
 concurrency:
@@ -56,7 +56,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/setup-simulator
       - name: Require an annotated version tag merged into main
         run: node tools/release.ts check "$RELEASE_TAG"
       - name: Build the runtime package for both simulator architectures
@@ -67,8 +67,14 @@ jobs:
         id: simulator
         run: >-
           echo "udid=$(xcrun simctl create "runtime-release-$GITHUB_RUN_ID"
-          com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-0)"
+          com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-2)"
           >> "$GITHUB_OUTPUT"
+      - name: Boot the test simulator before testing
+        env:
+          SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          perl -e 'alarm shift; exec @ARGV' 120 xcrun simctl boot "$SIMULATOR_ID"
+          perl -e 'alarm shift; exec @ARGV' 300 xcrun simctl bootstatus "$SIMULATOR_ID" -b
       - name: Run the runtime tests on the simulator
         env:
           SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}

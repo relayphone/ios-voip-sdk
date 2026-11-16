@@ -1,7 +1,7 @@
 name: Media hook feasibility
 on:
   pull_request:
-    paths: ['MediaTesting/**', 'tools/media-test/**', 'expo/example/client/**', 'expo/ios/**', 'Package.*', '.github/workflows/media-feasibility.yml']
+    paths: ['MediaTesting/**', 'tools/media-test/**', 'expo/example/client/**', 'expo/ios/**', 'Package.*', '.github/workflows/media-feasibility.yml', '.github/actions/setup*/**', 'tools/simulator-runtime.ts']
 permissions:
   contents: read
 concurrency:
@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/setup-simulator
       - name: Test the example command protocol
         run: |
           perl -e 'alarm 120; exec @ARGV' swift test --package-path expo/example/client/modules/media-feasibility \
@@ -96,7 +96,7 @@ jobs:
             --skipLibCheck --allowImportingTsExtensions tools/media-test/*.ts
       - name: Boot the media test simulator
         run: |
-          id=$(perl -e 'alarm 120; exec @ARGV' xcrun simctl create media-feasibility com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          id=$(perl -e 'alarm 120; exec @ARGV' xcrun simctl create media-feasibility com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-2)
           echo "$id" > "$RUNNER_TEMP/media-simulator"
           perl -e 'alarm 120; exec @ARGV' xcrun simctl boot "$id"
           perl -e 'alarm 300; exec @ARGV' xcrun simctl bootstatus "$id" -b

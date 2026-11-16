@@ -3,14 +3,22 @@ import XCTest
 @MainActor
 final class InspectorJourney: XCTestCase {
   private var filterConfirmation: NSPredicate {
-    NSPredicate(format: "value == 1 AND enabled == true")
+    NSPredicate(format: "(value == 1 OR value == '1') AND enabled == true")
   }
 
   func testFilterConfirmationRequiresCheckedAndEnabled() {
-    XCTAssertTrue(filterConfirmation.evaluate(with: CheckboxSnapshot(value: 1, enabled: true)))
-    XCTAssertFalse(filterConfirmation.evaluate(with: CheckboxSnapshot(value: 0, enabled: true)))
-    XCTAssertFalse(filterConfirmation.evaluate(with: CheckboxSnapshot(value: 2, enabled: true)))
-    XCTAssertFalse(filterConfirmation.evaluate(with: CheckboxSnapshot(value: 1, enabled: false)))
+    for value in [NSNumber(value: 1), true, "1"] as [Any] {
+      XCTAssertTrue(
+        filterConfirmation.evaluate(with: CheckboxSnapshot(value: value, enabled: true)))
+      XCTAssertFalse(
+        filterConfirmation.evaluate(with: CheckboxSnapshot(value: value, enabled: false)))
+    }
+    for value in [NSNumber(value: 0), false, "0", NSNumber(value: 2), "2"] as [Any] {
+      XCTAssertFalse(
+        filterConfirmation.evaluate(with: CheckboxSnapshot(value: value, enabled: true)))
+      XCTAssertFalse(
+        filterConfirmation.evaluate(with: CheckboxSnapshot(value: value, enabled: false)))
+    }
   }
 
   func testIncomingCallAndFilter() throws {
@@ -44,11 +52,30 @@ final class InspectorJourney: XCTestCase {
     }
     XCTAssertTrue(filter.isHittable)
     clickWhenEnabled(filter)
+    attachCheckbox(filter, name: "Filter after click")
     let confirmation = XCTWaiter.wait(
       for: [XCTNSPredicateExpectation(predicate: filterConfirmation, object: filter)], timeout: 15)
-    if confirmation != .completed { attach(app, name: "Filter confirmation failed") }
+    if confirmation != .completed {
+      attachCheckbox(filter, name: "Filter confirmation timeout")
+      attach(app, name: "Filter confirmation failed")
+    }
     XCTAssertEqual(confirmation, .completed)
     attach(app, name: "Filter confirmed")
+  }
+
+  private func attachCheckbox(_ filter: XCUIElement, name: String) {
+    let value = filter.value
+    let details = """
+      type(of: filter.value): \(String(describing: type(of: filter.value)))
+      unwrapped type: \(value.map { String(describing: type(of: $0)) } ?? "nil")
+      value: \(String(describing: value))
+      isEnabled: \(filter.isEnabled)
+      """
+    print("\(name):\n\(details)")
+    let observation = XCTAttachment(string: details)
+    observation.name = name
+    observation.lifetime = .keepAlways
+    add(observation)
   }
 
   private func wait(_ element: XCUIElement, value: String) -> Bool {
@@ -80,10 +107,10 @@ final class InspectorJourney: XCTestCase {
 }
 
 private final class CheckboxSnapshot: NSObject {
-  @objc let value: Int
+  @objc let value: Any
   @objc let enabled: Bool
 
-  init(value: Int, enabled: Bool) {
+  init(value: Any, enabled: Bool) {
     self.value = value
     self.enabled = enabled
   }

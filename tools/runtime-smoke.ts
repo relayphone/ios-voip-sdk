@@ -1,3 +1,4 @@
+import { simulatorRuntime } from './simulator-runtime.ts';
 // Checks a built runtime package end to end: it launches an app that doesn't link the runtime with
 // the package's runtime injected, then answers and ends a VoIP-pushed call with the package's
 // `cksim`, as a developer without the SDK would.
@@ -225,7 +226,7 @@ export async function smoke(packagePath: string, requestedSimulator?: string): P
     if (!simulator) {
       simulator = run('xcrun', [
         'simctl', 'create', `runtime-smoke-${process.pid}`,
-        'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro', 'com.apple.CoreSimulator.SimRuntime.iOS-27-0',
+        'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro', simulatorRuntime,
       ], { timeout: 120 });
       created = simulator;
     }

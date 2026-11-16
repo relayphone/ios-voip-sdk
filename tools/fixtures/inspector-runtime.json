@@ -1,7 +1,7 @@
 {
   "runtimes": [
     {
-      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-2",
       "isAvailable": true,
       "supportedDeviceTypes": [
         {

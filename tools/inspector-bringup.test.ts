@@ -23,7 +23,7 @@ test('falls back to the first supported iPhone when no preferred model exists', 
 test('rejects an unavailable runtime or a runtime with no supported iPhones', () => {
   assert.throws(() => selectIPhone('{"runtimes":[]}'), /unavailable/);
   assert.throws(() => selectIPhone(JSON.stringify({runtimes: [{
-    identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-0', isAvailable: true, supportedDeviceTypes: [],
+    identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-2', isAvailable: true, supportedDeviceTypes: [],
   }]})), /no supported iPhone/);
 });
 test('resource summary retains worst memory pressure and minimum free pages across samples', () => {
