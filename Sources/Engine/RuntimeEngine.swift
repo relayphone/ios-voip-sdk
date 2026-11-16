@@ -128,8 +128,9 @@
     private static let storage = Mutex<RuntimeEngine?>(nil)
 
     static func prepare() throws {
+      let enteredAt = DispatchTime.now().uptimeNanoseconds
       try storage.withLock { engine in
-        if engine == nil { engine = try RuntimeEngine(prepared: ()) }
+        if engine == nil { engine = try RuntimeEngine(prepared: enteredAt) }
       }
     }
 
@@ -167,13 +168,15 @@
     private let controlRoot: URL
     private var journal: FileHandle?
     private var journalWriter = RuntimeJournalWriter()
-    private let epoch = DispatchTime.now().uptimeNanoseconds
+    private var processLifecycle = RuntimeProcessLifecycle()
+    private let epoch: UInt64
     private var requestWatcher: (any DispatchSourceFileSystemObject)?
     private var stopped = false
     private var commandResults: [UUID: ControlResponse] = [:]
     private var timers: [UUID: any DispatchSourceTimer] = [:]
 
-    private init(prepared: Void) throws {
+    private init(prepared enteredAt: UInt64) throws {
+      epoch = enteredAt
       let env = ProcessInfo.processInfo.environment
       let profileID = env["CKSIM_PROFILE"].flatMap { $0.isEmpty ? nil : $0 } ?? "ios-27.0"
       guard profileID == "ios-27.0" else {
@@ -213,6 +216,7 @@
           throw BootstrapError.invalid("cannot create simulator event journal")
         }
         journal = try FileHandle(forWritingTo: path)
+        recordProcess(.entered, observed: DispatchTime(uptimeNanoseconds: enteredAt))
         // The host can publish requests even when CoreSimulator's spawn service
         // stalls. Observe the atomic rename instead of requiring a helper process
         // in the simulator to wake this queue for every command.
@@ -485,6 +489,18 @@
       } catch { return String(describing: error) }
     }
 
+    private func recordProcess(_ boundary: RuntimeProcessLifecycle.Boundary, observed: DispatchTime)
+    {
+      withState {
+        guard !stopped,
+          let observation = processLifecycle.observe(boundary, at: observed.uptimeNanoseconds)
+        else { return }
+        record(
+          event: observation.event.rawValue,
+          fields: ["boundarySource": observation.source.rawValue], observed: observed)
+      }
+    }
+
     func record(event: String, fields: [String: Any]) {
       record(event: event, fields: fields, observed: .now())
     }
@@ -538,6 +554,9 @@
             "t_ms": (observed.uptimeNanoseconds - epoch) / 1_000_000,
           ]) { _, new in new }
           return try row.mapValues(RuntimeJournalValue.init(legacyValue:))
+        }
+        if event == "runtime.installed" {
+          recordProcess(.runtimeReady, observed: observed)
         }
         if let (pushID, token, receivedAt, rule) = pushDeadline {
           record(

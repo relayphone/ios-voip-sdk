@@ -375,6 +375,13 @@ Wall-clock changes never reorder observations. A runtime journal without absolut
 refused with a rebuild diagnostic rather than guessed into the host timeline. Each snapshot
 validates invocation identity and contiguous producer sequences, omits incomplete trailing
 rows, and limits segments to 16 MiB and the merged rows to 64 MiB.
+Each runtime invocation emits `process.entered` with `boundarySource: runtime-preparation`
+at its first Swift preparation entry, followed by `runtime.ready` with
+`boundarySource: hooks-installed` when installation completes. Entry retains the captured
+monotonic time even though the journal opens later, and is the runtime's `t_ms: 0` anchor.
+For source activation this includes only execution from runtime preparation onward, not
+earlier app startup or pre-entry dyld work. Hook readiness establishes neither PushKit
+registry readiness nor application handler attachment; those require separate observations.
 The Inspector and `watch` continue to follow the runtime segment; combined streaming and
 readiness projections follow separately.
 

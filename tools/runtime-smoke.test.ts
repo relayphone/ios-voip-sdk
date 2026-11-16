@@ -1,6 +1,27 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { launchToleratingASlowSimulator } from './runtime-smoke.ts';
+import { assertRuntimeBoundaries, launchToleratingASlowSimulator } from './runtime-smoke.ts';
+
+const identity = { runID: 'runtime-run', pid: 123 };
+const entry = { ...identity, event: 'process.entered', sequence: 1,
+  uptimeNanoseconds: 100, t_ms: 0, boundarySource: 'runtime-preparation' };
+const ready = { ...identity, event: 'runtime.ready', sequence: 5,
+  uptimeNanoseconds: 200, t_ms: 1, boundarySource: 'hooks-installed' };
+const journal = (...rows: object[]) => rows.map(row => JSON.stringify(row)).join('\n') + '\n';
+
+test('runtime boundary evidence includes entry, hook completion and invocation identity', () => {
+  assertRuntimeBoundaries(journal(entry, ready), identity);
+});
+
+test('missing, repeated, stale or fabricated runtime boundaries cannot qualify', () => {
+  for (const rows of [
+    [entry], [ready], [entry, entry, ready], [entry, ready, ready],
+    [entry, { ...ready, pid: 456 }], [entry, { ...ready, runID: 'old-run' }],
+    [entry, { ...ready, uptimeNanoseconds: 99 }], [entry, { ...ready, sequence: 1 }],
+    [{ ...entry, t_ms: 1 }, ready], [{ ...entry, uptimeNanoseconds: 0 }, ready],
+    [entry, { ...ready, boundarySource: 'push-registry' }],
+  ]) assert.throws(() => assertRuntimeBoundaries(journal(...rows), identity));
+});
 
 const slowRead = new Error(
   'cksim --simulator X --bundle dev.callkitsim.smoke launch exited with 1\n' +
