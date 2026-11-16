@@ -5,6 +5,8 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+## 0.8.0 (2026-11-16)
+
 ### Added
 
 - Simulator call snapshots and retained histories expose confirmed video state. Video transitions appear in the runtime journal, cksim watch and Inspector; repeated reports preserve a single transition.
@@ -21,6 +23,14 @@ Public API changes include migration guidance.
   with explicit overflow and probe-window resets for subsequent host silence-window selection.
 - The native media example retains bounded first-occurrence startup receipts on its shared clock,
   including partial preparation and connection failures, engine availability, taps and callbacks.
+
+### Changed
+
+- `ConversationCapabilities.video` now means that mid-call video changes requested by the app or
+  server are supported for that conversation; conversations shown only as call previews report
+  `false`. `ConversationEventMap` gains `videoChanged`, so code that switches exhaustively over
+  conversation event types needs a case for it (or a default). The `updated` report accepts an
+  optional `video`. Existing calls that never change video need no migration.
 
 ## 0.7.0 (2026-11-16)
 
