@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { command, deadline, unusedPort } from './fixture-runtime.ts';
+import type { ServerEvent } from './server-protocol.ts';
 
 // Homebrew/core@4583624f89284747817e229845754c7aee8227db (arm64_sequoia).
 const macDigest = '1268330c7264fcc1626f673f5abb8cb1a1691344ac171f1941014c45fe4da214';
@@ -51,6 +52,18 @@ export async function startServer(binary: string, directory: string, port?: numb
   const owner = fork(fileURLToPath(new URL('./server-owner.ts', import.meta.url)), [], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
   const ownerFile = join(directory, 'server-owner.json');
   const exited = once(owner, 'exit');
+  let failure: Error | undefined;
+  owner.on('message', (event: ServerEvent) => {
+    if (event.type === 'failed') {
+      const diagnostic = event.diagnostic.replaceAll(key, '<REDACTED>').replaceAll(secret, '<REDACTED>');
+      failure = new Error(`Server failed: code=${event.code}, signal=${event.signal}\n${diagnostic}`);
+    }
+  });
+  const assertRunning = () => {
+    if (failure) throw failure;
+    assert.equal(owner.exitCode, null, 'Server owner exited before ready');
+    assert.equal(owner.signalCode, null, 'Server owner killed before ready');
+  };
   let pid: number | undefined;
   const close = async () => {
     if (owner.connected) owner.disconnect();
@@ -61,8 +74,10 @@ export async function startServer(binary: string, directory: string, port?: numb
     writeFileSync(ownerFile, JSON.stringify({ pid: owner.pid }), { mode: 0o600 });
     const message = once(owner, 'message');
     owner.send({ binary, config });
-    const result = await deadline(5000, 'Server spawn', () => Promise.race([message, exited.then(() => { throw Error('Server exited'); })]));
-    pid = (result[0] as { pid: number }).pid;
+    const result = await deadline(5000, 'Server spawn', () => Promise.race([message, exited.then(() => { throw failure ?? Error('Server owner exited'); })]));
+    const event = result[0] as ServerEvent;
+    if (event.type === 'failed') throw failure;
+    pid = event.pid;
     const url = `ws://127.0.0.1:${signalPort}`;
     const part = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
     const data = part({ alg: 'HS256', typ: 'JWT' }) + '.' + part({ iss: key, sub: 'readiness',
@@ -70,7 +85,7 @@ export async function startServer(binary: string, directory: string, port?: numb
     const readinessToken = data + '.' + createHmac('sha256', secret).update(data).digest('base64url');
     await deadline(12_000, 'Server health', async () => {
       while (true) {
-        assert.equal(owner.exitCode, null, 'Server exited before ready');
+        assertRunning();
         // Require the instance's fresh key; a health response can belong to another listener.
         const response = await fetch(`${url.replace('ws:', 'http:')}/twirp/livekit.RoomService/ListRooms`, {
           method: 'POST', headers: { Authorization: `Bearer ${readinessToken}`, 'Content-Type': 'application/json' },
@@ -86,7 +101,7 @@ export async function startServer(binary: string, directory: string, port?: numb
         await delay(100);
       }
       // Let a bind failure reach the supervisor; an unrelated HTTP listener cannot qualify it.
-      await delay(100); assert.equal(owner.exitCode, null, 'Server failed to bind');
+      await delay(100); assertRunning();
     });
     return { url, pid, room, close, abort: () => { if (owner.connected) owner.disconnect(); },
       alive: () => owner.exitCode === null && owner.signalCode === null,
