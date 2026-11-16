@@ -192,6 +192,19 @@
       complete(id, fulfilled: false)
     }
 
+    /// Mid-call video is available when the provider supports video.
+    public var supportsVideoChanges: Bool { configuration.supportsVideo }
+
+    /// Delivers the capability report on the manager's actor before committing SDK state.
+    public func setVideo(_ enabled: Bool, for call: Call) async throws(ActionError) -> Bool {
+      guard supportsVideoChanges else { throw .unsupported }
+      guard let bridge else { throw .refused(nil) }
+      let uuid = uuid(for: call.id)
+      let capabilities = Conversation.Capabilities(configuration.capabilities, hasVideo: enabled)
+      guard await bridge.reportVideo(capabilities, for: uuid) else { throw .unknownCall }
+      return enabled
+    }
+
     /// Updates the call's parties and capabilities in the system.
     public func update(_ call: Call) {
       report(

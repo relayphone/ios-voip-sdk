@@ -6,12 +6,18 @@
 @VoIPActor
 final class AudioSessionBridge: AudioSession {
   private let adapter: any AudioSession
+  private let configuresCalls: Bool
+  private let didUpdateVideo: @VoIPActor @Sendable (Call) -> Void
   private let willConfigure: @VoIPActor @Sendable () -> Void
 
   nonisolated init(
-    adapter: any AudioSession, willConfigure: @escaping @VoIPActor @Sendable () -> Void
+    adapter: any AudioSession, configuresCalls: Bool = true,
+    didUpdateVideo: @escaping @VoIPActor @Sendable (Call) -> Void = { _ in },
+    willConfigure: @escaping @VoIPActor @Sendable () -> Void
   ) {
     self.adapter = adapter
+    self.configuresCalls = configuresCalls
+    self.didUpdateVideo = didUpdateVideo
     self.willConfigure = willConfigure
   }
 
@@ -19,7 +25,13 @@ final class AudioSessionBridge: AudioSession {
     adapter.attach(onEvent: onEvent)
   }
 
+  func updateVideo(for call: Call) throws(AudioSessionError) {
+    try adapter.updateVideo(for: call)
+    didUpdateVideo(call)
+  }
+
   func configure(for call: Call) throws(AudioSessionError) {
+    guard configuresCalls else { return }
     willConfigure()
     try adapter.configure(for: call)
   }

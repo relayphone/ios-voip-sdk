@@ -185,6 +185,8 @@ enum Shape: Hashable, Sendable {
       case .joinRequested: self = .joinRequested
       case .joinFailed(_, let failure): self = .joinFailed(failure)
       case .performed(let action, _): self = .performed(action)
+      case .videoChanged:
+        preconditionFailure("Video changes are driven by the engine, not the reducer")
       case .audioActivated: self = .audioActivated
       case .audioDeactivated: self = .audioDeactivated
       case .audioInterrupted(let reason): self = .audioInterrupted(reason)
@@ -209,7 +211,7 @@ extension Effect {
       switch event {
       case .presented(let call), .previewStarted(let call), .startRequested(let call),
         .joinRequested(let call), .joinFailed(let call, _), .performed(_, let call),
-        .ended(let call):
+        .ended(let call), .videoChanged(let call, _):
         [call]
       case .audioActivated, .audioDeactivated, .audioInterrupted, .mediaServicesReset: []
       }

@@ -33,6 +33,10 @@ enum ConversationEncoding {
     fields["direction"] = .string(call.isIncoming ? "incoming" : "outgoing")
     fields["members"] = .array(members)
     fields["capabilities"] = capabilities
+    if case .previewing = call.status, case .object(var allowed) = capabilities {
+      allowed["video"] = .bool(false)
+      fields["capabilities"] = .object(allowed)
+    }
     fields["isMuted"] = .bool(call.isMuted)
     fields["isVideo"] = .bool(call.hasVideo)
     if let connectedAt = call.connectedAt { fields["connectedAt"] = .date(connectedAt) }

@@ -63,6 +63,7 @@ const commands: ReadonlySet<PropertyKey> = new Set<keyof NativeTransport>([
   "endConversation",
   "setHeld",
   "setMuted",
+  "setConversationVideo",
   "playTones",
   "mergeConversations",
   "reportConversation",

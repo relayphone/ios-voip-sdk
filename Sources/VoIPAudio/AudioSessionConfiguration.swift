@@ -4,7 +4,7 @@
 
 /// How the SDK configures the audio session for calls.
 ///
-/// The SDK always sets the play-and-record category in voice chat mode, which lets calls use
+/// The SDK always sets the play-and-record category in voice or video chat mode, which lets calls use
 /// Bluetooth hands-free (HFP) devices, such as AirPods and cars, for both the microphone and the
 /// speaker. These settings choose the other routes that calls can use.
 public struct AudioSessionConfiguration: Hashable, Sendable {
@@ -40,7 +40,7 @@ public struct AudioSessionConfiguration: Hashable, Sendable {
     self.videoCallsDefaultToSpeaker = videoCallsDefaultToSpeaker
   }
 
-  /// The category options for a call, set with the play-and-record category in voice chat mode.
+  /// The category options for a call, set with the play-and-record category in voice or video chat mode.
   func options(for call: Call) -> CategoryOptions {
     var options: CategoryOptions = [.allowBluetoothHFP]
     if allowsBluetoothA2DP { options.insert(.allowBluetoothA2DP) }

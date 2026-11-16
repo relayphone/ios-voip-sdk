@@ -205,6 +205,16 @@ public final class VoIPClient {
     try await engine.join(call)
   }
 
+  /// Changes video after reporting it to the system; never requests camera permission.
+  /// Same-value requests do nothing. Unknown, ended and unsupported calls throw their
+  /// corresponding `ActionError`. iOS accepts only app or server origins.
+  public func setVideo(
+    _ id: CallID, enabled: Bool, source: VideoChangeSource = .app
+  ) async throws(ActionError) {
+    try await engine.setVideo(id, enabled: enabled, source: source)
+    apply(await engine.videoSnapshot)
+  }
+
   /// Applies a fact about a call that the app learned from its servers other than through a VoIP
   /// push.
   ///

@@ -9,6 +9,7 @@ final class CallAudioConfiguration<Value: Sendable> {
   private var calls: [CallID: Value] = [:]
   private var order: [CallID] = []
   private var isActive = false
+  private var selectedCall: CallID?
   private let apply: @VoIPActor @Sendable (Value) -> Void
 
   init(apply: @escaping @VoIPActor @Sendable (Value) -> Void) { self.apply = apply }
@@ -21,10 +22,21 @@ final class CallAudioConfiguration<Value: Sendable> {
     calls[id] = configuration
     order.removeAll { $0 == id }
     order.append(id)
+    selectedCall = id
+  }
+
+  func updated(_ id: CallID, configuration: Value) {
+    guard calls[id] != nil else { return }
+    calls[id] = configuration
+  }
+
+  func select(_ id: CallID) {
+    guard calls[id] != nil else { return }
+    selectedCall = id
   }
 
   func activate() {
-    if let id = order.last, let configuration = calls[id] { apply(configuration) }
+    if let id = selectedCall ?? order.last, let configuration = calls[id] { apply(configuration) }
     isActive = true
   }
 
@@ -35,6 +47,7 @@ final class CallAudioConfiguration<Value: Sendable> {
 
   func release(_ id: CallID) {
     calls[id] = nil
+    if selectedCall == id { selectedCall = nil }
     order.removeAll { $0 == id }
     restoreIfIdle()
   }

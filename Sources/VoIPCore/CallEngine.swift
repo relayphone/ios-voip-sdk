@@ -37,9 +37,12 @@ final class CallEngine {
   private var earlyEvents: [CallID: [EarlyEvent]] = [:]
   private var timers: [TimerKey: Timer] = [:]
   private var preparations: [CallID: Task<Void, Never>] = [:]
+  private var videoTasks: [CallID: Task<Result<Void, ActionError>, Never>] = [:]
   private var transportTask: Task<Void, Never>?
   private var preparedCalls: Set<CallID> = []
   private var isAudioActive = false
+  private var audioVideoMode: Bool?
+  private var audioOwner: CallID?
   /// Whether the system interrupted active audio, and hasn't activated it again or ended the
   /// interruption.
   private var isAudioInterrupted = false
@@ -134,6 +137,56 @@ final class CallEngine {
       return try requested(reply, for: id)
     }
     try await send(action, for: call)
+  }
+
+  var videoSnapshot: Snapshot { published }
+
+  /// Serializes app/server mutations through the system report boundary, per call.
+  func setVideo(_ id: CallID, enabled: Bool, source: VideoChangeSource) async throws(ActionError) {
+    let previous = videoTasks[id]
+    let task = Task { () -> Result<Void, ActionError> in
+      _ = await previous?.value
+      do throws(ActionError) {
+        let call = try exclusively { () throws(ActionError) -> Call in
+          guard let state = states[id] else { throw .unknownCall }
+          guard !state.phase.isEnded else { throw .notAllowed(state.call.status) }
+          guard configuration.supportsVideo, framework.supportsVideoChanges,
+            !state.phase.isPreviewing
+          else { throw .unsupported }
+          return state.call
+        }
+        guard call.hasVideo != enabled else { return .success(()) }
+        let confirmed = try await framework.setVideo(enabled, for: call)
+        try exclusively { () throws(ActionError) in
+          guard let state = states[id] else { throw .unknownCall }
+          guard !state.phase.isEnded else { throw .notAllowed(state.call.status) }
+          guard state.call.hasVideo != confirmed else { return }
+          var updated = state.call
+          updated.hasVideo = confirmed
+          states[id]?.call = updated
+          var audioFailed = false
+          if audioCall?.id == id {
+            do {
+              try audio?.updateVideo(for: updated)
+              audioVideoMode = confirmed
+              audioOwner = id
+            } catch { audioFailed = true }
+          }
+          #if DEBUG && (os(macOS) || targetEnvironment(simulator))
+            SimulatorLifecycle.record(updated)
+          #endif
+          subscribers.yield(.videoChanged(updated, source))
+          if audioFailed {
+            handle(id, .audioConfigurationFailed)
+            throw .refused(nil)
+          }
+        }
+        guard confirmed == enabled else { throw .refused(nil) }
+        return .success(())
+      } catch { return .failure(error) }
+    }
+    videoTasks[id] = task
+    try await task.value.get()
   }
 
   /// Joins a call, first creating it as a call preview when this device doesn't know it.
@@ -393,6 +446,8 @@ final class CallEngine {
     if let audio, let call = configured.last(where: { !$0.isOnHold }) ?? configured.last {
       do throws(AudioSessionError) {
         try audio.configure(for: call)
+        audioVideoMode = call.hasVideo
+        audioOwner = call.id
       } catch {
         for call in configured { handle(call.id, .audioConfigurationFailed) }
         return
@@ -513,6 +568,8 @@ final class CallEngine {
     if let audio {
       do throws(AudioSessionError) {
         try audio.configure(for: call)
+        audioVideoMode = call.hasVideo
+        audioOwner = call.id
       } catch {
         // The transition that asked for the preparation finishes first.
         serially { self.handle(call.id, .audioConfigurationFailed) }
@@ -558,8 +615,22 @@ final class CallEngine {
     return try body()
   }
 
+  private var audioCall: Call? {
+    order.reversed().compactMap { id in
+      states[id].flatMap { $0.phase.hasAudioConfiguration && !$0.call.isOnHold ? $0.call : nil }
+    }.first
+  }
+
   private func finishWork() {
-    while !backlog.isEmpty { backlog.removeFirst()() }
+    while true {
+      while !backlog.isEmpty { backlog.removeFirst()() }
+      guard let audio, let call = audioCall,
+        audioOwner != call.id || audioVideoMode != call.hasVideo
+      else { break }
+      audioVideoMode = call.hasVideo
+      audioOwner = call.id
+      do { try audio.updateVideo(for: call) } catch { handle(call.id, .audioConfigurationFailed) }
+    }
     isBusy = false
     let calls = order.compactMap { states[$0] }.filter { !$0.phase.isEnded }.map(\.call)
     guard calls != published.calls || isAudioActive != published.isAudioActive else { return }
@@ -580,6 +651,7 @@ final class CallEngine {
     for (id, ended) in endedAt where now - ended >= retention {
       endedAt[id] = nil
       states[id] = nil
+      videoTasks[id] = nil
       outcomes[id] = nil
     }
     order.removeAll { states[$0] == nil }

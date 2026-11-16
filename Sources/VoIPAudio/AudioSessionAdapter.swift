@@ -18,7 +18,7 @@
 /// ```
 ///
 /// Before the SDK completes an answer, start or join, the adapter sets the play-and-record
-/// category in voice chat mode with the options that ``AudioSessionConfiguration`` chooses for the
+/// category in voice or video chat mode with the options that ``AudioSessionConfiguration`` chooses for the
 /// call. It never activates or deactivates the session: for calls only the system does, and the
 /// calling framework tells the SDK.
 ///
@@ -39,6 +39,9 @@ public final class AudioSessionAdapter: AudioSession {
   private var revision: UInt64 = 0
   /// Whether the last configuration plays through the speaker when nothing else is connected.
   private var defaultsToSpeaker = false
+  private var userSelectedRoute = false
+  private var videoMovedToSpeaker = false
+  private var expectedOverride: Bool?
 
   #if os(iOS)
     /// Creates the adapter for the app's audio session.
@@ -76,6 +79,11 @@ public final class AudioSessionAdapter: AudioSession {
   ///   ``AudioRouteError/refused`` when the audio session refuses the change.
   public func selectRoute(_ id: AudioRoute.ID) throws(AudioRouteError) {
     defer { refreshRoutes() }
+    guard list.selection(for: id) != nil else { throw .unavailable }
+    // An explicit selection owns the route even when it selects the current device.
+    userSelectedRoute = true
+    videoMovedToSpeaker = false
+    expectedOverride = nil
     switch list.selection(for: id) {
     case nil:
       throw .unavailable
@@ -101,16 +109,55 @@ public final class AudioSessionAdapter: AudioSession {
     refreshRoutes()
   }
 
-  /// Sets the play-and-record category in voice chat mode, with the options the configuration
+  /// Sets the play-and-record category in voice or video chat mode, with the options the configuration
   /// chooses for the call.
   public func configure(for call: Call) throws(AudioSessionError) {
-    let options = configuration.options(for: call)
+    let wasReceiver = session.ports().outputs.first?.type == .builtInReceiver
+    var options = configuration.options(for: call)
+    if userSelectedRoute && wasReceiver { options.remove(.defaultToSpeaker) }
     try session.setCategory(options: options)
+    try session.setVideoMode(call.hasVideo)
+    if wasReceiver && options.contains(.defaultToSpeaker) && !userSelectedRoute {
+      videoMovedToSpeaker = true
+    }
     // The system reports the route change that the new category causes. Only the receiver's place
     // in the list depends on the configuration.
     let speakerByDefault = options.contains(.defaultToSpeaker)
     guard speakerByDefault != defaultsToSpeaker else { return }
     defaultsToSpeaker = speakerByDefault
+    refreshRoutes()
+  }
+
+  /// Updates mode in place; only an owned automatic speaker selection is reversed.
+  public func updateVideo(for call: Call) throws(AudioSessionError) {
+    let before = session.ports()
+    let receiver = before.outputs.count == 1 && before.outputs.first?.type == .builtInReceiver
+    let speaker = before.outputs.count == 1 && before.outputs.first?.type == .builtInSpeaker
+    if defaultsToSpeaker && !call.hasVideo {
+      var voice = call
+      voice.hasVideo = false
+      try session.setCategory(options: configuration.options(for: voice))
+      defaultsToSpeaker = false
+    }
+    try session.setVideoMode(call.hasVideo)
+    do {
+      if call.hasVideo && receiver && !userSelectedRoute && configuration.videoCallsDefaultToSpeaker
+      {
+        expectedOverride = true
+        try session.overrideOutput(toSpeaker: true)
+        videoMovedToSpeaker = true
+      } else if !call.hasVideo {
+        if videoMovedToSpeaker && speaker && !userSelectedRoute {
+          expectedOverride = false
+          try session.overrideOutput(toSpeaker: false)
+        }
+        videoMovedToSpeaker = false
+      }
+    } catch {
+      expectedOverride = nil
+      videoMovedToSpeaker = false
+      throw .configurationFailed
+    }
     refreshRoutes()
   }
 
@@ -131,7 +178,22 @@ public final class AudioSessionAdapter: AudioSession {
     case .mediaServicesWereReset:
       onEvent?(.mediaServicesReset)
       refreshRoutes()
+    case .routeOverride:
+      let speaker = session.ports().outputs.first?.type == .builtInSpeaker
+      if let expectedOverride, speaker == expectedOverride {
+        self.expectedOverride = nil
+      } else {
+        userSelectedRoute = true
+        videoMovedToSpeaker = false
+      }
+      refreshRoutes()
     case .routesChanged:
+      if session.ports().outputs.first?.type != .builtInSpeaker {
+        videoMovedToSpeaker = false
+        if expectedOverride != false || session.ports().outputs.first?.type != .builtInReceiver {
+          expectedOverride = nil
+        }
+      }
       refreshRoutes()
     }
   }

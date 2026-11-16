@@ -216,9 +216,53 @@ cold launch: the SDK reports the call of the VoIP push that launched the app as 
 delivers it. Code that must see every event is a `CallObserver`, passed to `start` as
 `observers`, which subscribes in `attach(to:)` before the client attaches the push source.
 
+## Mid-call video
+
+Use `client.setVideo(callID, enabled: true)` in Swift or
+`setConversationVideo(conversationId, true)` in TypeScript; pass `false` to downgrade.
+A server report uses `reportConversation(id, { type: "updated", video: true })`, optionally
+with `members`. Calls carry video media in the app; the SDK handles system signalling and audio.
+These commands never request camera permission: check `conversationMediaReadiness` first.
+
+`capabilities.video` means app/server mid-call changes are supported for this conversation.
+Unknown IDs reject with `unknown_conversation`, ended calls with `invalid_arguments`, and
+unsupported changes with `unsupported`. iOS call previews have no system conversation to
+update, so their mid-call video capability is false. A same-value call resolves without reporting or emitting
+an event. A confirmed change updates `isVideo` and emits `videoChanged` with
+`{ conversationId, isVideo, source }`. Swift receives `CallEvent.videoChanged`.
+
+On iOS, LiveCommunicationKit receives a `.conversationUpdated` video capability report. The
+synchronous system-report delivery is the commit boundary; the public framework provides no
+separate video acknowledgement or getter. The SDK never publishes an optimistic request, and
+rejects reports for missing/ended system conversations. iOS has no mid-call video action from
+system UI and never emits source `system`. No simulator system-video injection is provided;
+exercise server changes through the app's report API. Simulator snapshots and retained history
+observe actual reports, with same-value changes deduplicated.
+
+| Platform / registration | App/server mid-call changes | `system` events |
+| --- | --- | --- |
+| iOS / LiveCommunicationKit | Supported when video is enabled for the provider | None |
+| Android / legacy path (API ≤33) | Supported | None |
+| Android / transactional API34 | Unsupported | No supported mid-call change |
+| Android / transactional API35–36 | Supported | Downgrades only; Core reverts system audio→video upgrades |
+| Android / transactional API37+ | Supported | Upgrades and downgrades |
+
+Android derives this from actual registration (`backwardsCompatSdkLevel` and device SDK).
+It forwards only changes its call-type flow delivers. A flow value matching a pending app/server
+request is attributed to that request; an unrelated system change to the same value cannot be
+distinguished. Initial and same-value emissions are ignored. On Android, an explicit earpiece
+choice made more than about three seconds before an upgrade can be overridden by Core's
+conditional speaker fallback. iOS preserves the full explicit-route rule.
+
+For the call owning iOS audio, video uses `videoChat`, voice uses `voiceChat`, without deactivating
+the session. Background/held-call changes do not reconfigure another call's audio. Upgrade selects
+the speaker only from the receiver when the user hasn't selected a route. Downgrade returns to
+the receiver only while the SDK still owns its automatic speaker move; a later explicit selection
+or external route cancels that ownership. Bluetooth and wired routes always take priority.
+
 ## Audio
 
-`AudioSessionAdapter` sets the audio session to the play-and-record category in voice chat mode
+`AudioSessionAdapter` sets the audio session to the play-and-record category in voice chat or video chat mode
 before the SDK completes an answer, start or join, with Bluetooth hands-free and A2DP devices,
 and the speaker by default for calls with video. Change these with `AudioSessionConfiguration`.
 Only the system activates the session for calls; the adapter never does.

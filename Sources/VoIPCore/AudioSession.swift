@@ -30,6 +30,14 @@ public protocol AudioSession: Sendable {
   /// - Throws: ``AudioSessionError/configurationFailed`` when the system refuses the
   ///   configuration.
   func configure(for call: Call) throws(AudioSessionError)
+
+  /// Changes mode and conditionally routes a confirmed video change without deactivating audio.
+  func updateVideo(for call: Call) throws(AudioSessionError)
+}
+
+extension AudioSession {
+  /// Custom audio owners configure the confirmed call without activating or deactivating it.
+  public func updateVideo(for call: Call) throws(AudioSessionError) { try configure(for: call) }
 }
 
 /// Something the audio session tells the SDK.

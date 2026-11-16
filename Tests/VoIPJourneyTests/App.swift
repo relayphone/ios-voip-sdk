@@ -180,6 +180,7 @@
     case joinRequested(CallID)
     case joinFailed(CallID, PreviewReason, JoinFailure)
     case performed(Action, CallStatus)
+    case videoChanged(CallID, Bool, VideoChangeSource)
     case audioActivated
     case audioDeactivated
     case audioInterrupted(AudioInterruptionReason)
@@ -202,6 +203,7 @@
         }
         self = .joinFailed(call.id, reason, failure)
       case .performed(let action, let call): self = .performed(action, call.status)
+      case .videoChanged(let call, let source): self = .videoChanged(call.id, call.hasVideo, source)
       case .audioActivated: self = .audioActivated
       case .audioDeactivated: self = .audioDeactivated
       case .audioInterrupted(let reason): self = .audioInterrupted(reason)

@@ -9,6 +9,11 @@ Public API changes include migration guidance.
 
 - Simulator call snapshots and retained histories expose confirmed video state. Video transitions appear in the runtime journal, cksim watch and Inspector; repeated reports preserve a single transition.
 
+- Mid-call video signalling through `setConversationVideo` and `updated.video` reports, with
+  confirmed `isVideo` snapshots and `videoChanged` events. On iOS, app/server changes report the
+  LiveCommunicationKit video capability and switch audio mode in place while preserving explicit,
+  Bluetooth and wired routes. The shared contract documents Android system-event limits per API.
+
 - Cold-launch push supervision retains cancelled duplicate outcomes after verified process exit. Cold launches now accept duplicate/spacing faults through the existing native scheduler. Status exposes invocation-local readiness timings from explicit registry and handler acknowledgements; CLI watch and Inspector combine host and runtime segments without sharing sequence counters.
 
 - Native media probe snapshots atomically expose original PCM, counters and bounded callback

@@ -108,11 +108,12 @@ final class CallService {
       #if VOIP_CONVERSATIONS_WEBRTC
         let rtc = RTCAudioSessionMedia()
         media = rtc
-        audio = AudioSessionBridge(adapter: self.audio) { rtc.rememberConfiguration() }
+        audio = AudioSessionBridge(
+          adapter: self.audio, didUpdateVideo: { rtc.videoUpdated($0) },
+          willConfigure: { rtc.rememberConfiguration() })
       #else
         media = AppManagedMedia()
-        audio = nil
-        Task { @VoIPActor [adapter = self.audio] in adapter.attach { _ in } }
+        audio = AudioSessionBridge(adapter: self.audio, configuresCalls: false, willConfigure: {})
       #endif
     }
     let intake = intake
@@ -259,6 +260,18 @@ final class CallService {
     try await request(.hold(callID, onHold: held))
   }
 
+  func setConversationVideo(
+    _ id: String, _ enabled: Bool, source: VideoChangeSource = .app
+  ) async throws(CommandError) {
+    guard !id.isEmpty else { throw .invalidArguments }
+    do {
+      try await running().setVideo(CallID(rawValue: id), enabled: enabled, source: source)
+    } catch let error as ActionError { throw CommandError(error) } catch let error as CommandError {
+      throw error
+    } catch { throw .invalidArguments }
+    publish()
+  }
+
   func setMuted(_ id: String, _ muted: Bool) async throws(CommandError) {
     let callID = CallID(rawValue: id)
     guard try call(callID).isMuted != muted else { return }
@@ -298,13 +311,12 @@ final class CallService {
     case "connected":
       await receive(.connected, for: callID)
     case "updated":
-      // The SDK keeps whether a call has video from its start; only members change.
-      guard let members = report["members"]?.array else { return }
-      guard !members.isEmpty else { throw .invalidArguments }
-      var parties: [Party] = []
-      for member in members { parties.append(try Party(participant: member)) }
-      participants[callID] = members
-      await receive(.partiesChanged(parties), for: callID)
+      let update = try ConversationVideoUpdate(report)
+      if let video = update.video { try await setConversationVideo(id, video, source: .server) }
+      if let members = update.members {
+        participants[callID] = members
+        await receive(.partiesChanged(update.parties), for: callID)
+      }
     case "ended":
       switch report["reason"]?.string {
       case "local": try await request(.end(callID))
@@ -445,6 +457,14 @@ final class CallService {
       publish()
       emitConversationEvent(
         "actionPerformed", ConversationEncoding.performed(action, call, origin: origin))
+    case .videoChanged(let call, let source):
+      publish()
+      emitConversationEvent(
+        "videoChanged",
+        .object([
+          "conversationId": .string(call.id.rawValue), "isVideo": .bool(call.hasVideo),
+          "source": .string(source.rawValue),
+        ]))
     case .audioActivated:
       publishRoutes()
       emit(

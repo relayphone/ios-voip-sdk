@@ -459,7 +459,16 @@ void missingPrewarmType;
 const unknownPrewarmStage: ConversationEventMap["prewarmFailed"] = { conversationId: id, stage: "activate", errorType: "Error" };
 void unknownPrewarmStage;
 
-// @ts-expect-error The SDK does not update a call’s video capability after creation.
+const videoResult: Promise<void> = api.setConversationVideo(id, true);
+void videoResult;
+const videoEvent: ConversationEventMap["videoChanged"] = { conversationId: id, isVideo: true, source: "server" };
+void videoEvent;
+// @ts-expect-error Video must be a boolean.
+void api.setConversationVideo(id, "true");
+// @ts-expect-error Unknown video sources are not accepted.
+const badVideoSource: ConversationEventMap["videoChanged"] = { conversationId: id, isVideo: false, source: "remote" };
+void badVideoSource;
+// A server update may carry video without members.
 void api.reportConversation(id, { type: "updated", video: true });
 
 import { getMediaPermissions, requestMediaPermissions, conversationMediaReadiness } from "../index";
@@ -478,3 +487,9 @@ const invalidPermissionExpiry: MediaPermissionResponse = { status: "denied", gra
 void invalidPermissionExpiry;
 // @ts-expect-error Permission results are immutable.
 permissionResponse.status = "granted";
+
+import { setConversationVideo } from "../index";
+const exportedVideoChange: Promise<void> = setConversationVideo(id, false);
+void exportedVideoChange;
+// @ts-expect-error Updated video must be a boolean.
+void api.reportConversation(id, { type: "updated", video: "yes" });

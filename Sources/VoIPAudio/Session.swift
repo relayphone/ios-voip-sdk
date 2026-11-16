@@ -10,6 +10,9 @@ protocol SessionControl: Sendable {
   /// the session.
   func setCategory(options: CategoryOptions) throws(AudioSessionError)
 
+  /// Changes voice/video mode in place, without deactivating audio.
+  func setVideoMode(_ enabled: Bool) throws(AudioSessionError)
+
   /// The session's available inputs and its current route's outputs.
   func ports() -> SessionPorts
 
@@ -47,6 +50,8 @@ enum SessionNotification: Hashable, Sendable {
   case mediaServicesWereReset
   /// `AVAudioSession.routeChangeNotification` or `availableInputsChangeNotification`.
   case routesChanged
+  /// A speaker override, including an explicit system route-picker selection.
+  case routeOverride
 }
 
 /// The audio session's ports that route projection reads.

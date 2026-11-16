@@ -57,6 +57,13 @@ public protocol CallingFramework: Sendable {
   /// - Parameter id: The action's identifier.
   func fail(_ id: ActionID)
 
+  /// Whether this adapter can report mid-call video changes.
+  var supportsVideoChanges: Bool { get }
+
+  /// Reports video to the system and returns the value actually reported after delivery.
+  /// Throws when unsupported, unknown, ended or refused; never completes optimistically.
+  func setVideo(_ enabled: Bool, for call: Call) async throws(ActionError) -> Bool
+
   /// Updates a call's details, such as its parties, in the system.
   ///
   /// - Parameter call: The call with its new details.
@@ -92,4 +99,13 @@ public enum FrameworkEvent: Hashable, Sendable {
   case audioDeactivated
   /// The calling framework reset, which ends every call it presents.
   case reset
+}
+
+extension CallingFramework {
+  /// Custom adapters opt into mid-call video explicitly.
+  public var supportsVideoChanges: Bool { false }
+  /// Custom adapters reject mid-call video until they implement its reporting boundary.
+  public func setVideo(_ enabled: Bool, for call: Call) async throws(ActionError) -> Bool {
+    throw .unsupported
+  }
 }
