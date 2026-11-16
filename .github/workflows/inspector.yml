@@ -17,6 +17,8 @@ on:
       - 'tools/fixtures/inspector-*.json'
       - 'tools/simulator-test-result*'
       - '.github/workflows/inspector.yml'
+      - '.github/actions/setup*/**'
+      - 'tools/simulator-runtime.ts'
   push:
     branches: [main]
     paths: *paths
@@ -37,7 +39,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/setup-simulator
       - name: Build the runtime and Inspector
         run: |
           trap 'if [[ $? != 0 ]]; then echo "product:build failed" >> "$GITHUB_STEP_SUMMARY"; fi' EXIT

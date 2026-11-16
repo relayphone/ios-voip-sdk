@@ -13,13 +13,14 @@ on:
       - 'tools/build-runtime.ts'
       - 'tools/runtime-package.ts'
       - 'tools/runtime-smoke.ts'
+      - 'tools/simulator-runtime.ts'
       - 'tools/command.ts'
       - 'tools/simulator-app.ts'
       - 'tools/inspector-devices.ts'
       - 'tools/inspector-resources.ts'
       - 'tools/inspector-processes.ts'
       - 'VERSION'
-      - '.github/actions/setup/**'
+      - '.github/actions/setup*/**'
       - '.github/workflows/expo-journeys.yml'
   push:
     branches: [main]
@@ -42,7 +43,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/setup-simulator
       - name: Build the control tool and pack the module
         run: |
           trap 'if [[ $? != 0 ]]; then echo "product:build failed" >> "$GITHUB_STEP_SUMMARY"; fi' EXIT

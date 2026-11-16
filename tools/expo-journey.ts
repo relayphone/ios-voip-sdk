@@ -1,3 +1,4 @@
+import { simulatorRuntime } from './simulator-runtime.ts';
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -124,7 +125,7 @@ export async function expoJourney(work: string, app: string): Promise<void> {
     writeFileSync(join(markers, name), '');
     try {
       target = infrastructure('create', () => run('xcrun', ['simctl', 'create', name,
-        deviceType.identifier, 'com.apple.CoreSimulator.SimRuntime.iOS-27-0'], { timeout: 120 }));
+        deviceType.identifier, simulatorRuntime], { timeout: 120 }));
       const simulator = target;
       infrastructure('boot', () => {
         run('xcrun', ['simctl', 'boot', simulator], { timeout: 120 });

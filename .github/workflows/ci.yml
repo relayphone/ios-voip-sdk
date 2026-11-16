@@ -129,7 +129,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/setup-simulator
       - name: Run the call journeys, the runtime tests and every other suite on the simulator
         id: simulator
         run: |
@@ -138,7 +138,7 @@ jobs:
             # Record the name before creation so cleanup can find it even if creation is interrupted.
             touch "$RUNNER_TEMP/ci-simulators/$name"
             SIMULATOR_ID=$(xcrun simctl create "$name" \
-              com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+              com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-2)
             echo "udid=$SIMULATOR_ID" >> "$GITHUB_OUTPUT"
             xcrun simctl boot "$SIMULATOR_ID"
             xcrun simctl bootstatus "$SIMULATOR_ID" -b

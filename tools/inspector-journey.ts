@@ -1,3 +1,4 @@
+import { simulatorRuntime } from './simulator-runtime.ts';
 // Runs the Mac Inspector GUI beside one injected target simulator.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -133,7 +134,7 @@ export async function journey(work: string): Promise<void> {
       names.push(targetName);
       writeFileSync(join(markers, targetName), '');
       const target = infrastructure('create', () => run('xcrun', ['simctl', 'create', targetName,
-        type.identifier, 'com.apple.CoreSimulator.SimRuntime.iOS-27-0'], { timeout: 120 }));
+        type.identifier, simulatorRuntime], { timeout: 120 }));
       devices.push(target);
       try { await setupInspectorSimulator(target, app, { report: summary }); }
       catch (error) { throw new InfrastructureFailure('setup', error, false); }

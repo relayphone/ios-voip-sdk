@@ -1,0 +1,26 @@
+name: Prepare the iOS simulator
+description: Select Xcode 27.2 and prepare the pinned iOS 27.2 runtime before boot.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: sudo xcode-select -s /Applications/Xcode_27.2.app
+    - uses: ./.github/actions/setup
+      with:
+        xcode: "false"
+    - name: Prepare simulator caches and verify the runtime
+      shell: bash
+      env:
+        DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+      run: |
+        echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+        prewarm_started=$SECONDS
+        record_prewarm_duration() { echo "prewarm totalSeconds=$((SECONDS - prewarm_started))"; }
+        trap record_prewarm_duration EXIT
+        echo "prewarm phase=first-launch started"
+        /usr/bin/time -p perl -e 'alarm shift; exec @ARGV' 600 sudo env DEVELOPER_DIR="$DEVELOPER_DIR" xcodebuild -runFirstLaunch
+        echo "prewarm phase=dyld-cache started"
+        /usr/bin/time -p perl -e 'alarm shift; exec @ARGV' 600 xcrun simctl runtime dyld_shared_cache update --all
+        echo "prewarm phase=runtime-check started"
+        /usr/bin/time -p perl -e 'alarm shift; exec @ARGV' 120 node tools/simulator-runtime.ts
+        xcodebuild -version
