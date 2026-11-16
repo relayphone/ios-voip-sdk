@@ -99,3 +99,23 @@ attempt's monotonic ticks, observed duration, gaps and scheduler lag in
 `farEnd.receiverWindows`, grouped by control step. Missing connection, reader or
 track fails immediately, including on the tick returning from a gap. Marker and
 transport-counter failures still fail their existing gates without retry.
+
+## Native journey control
+
+`prepareNativeJourney(documentsDirectory, options)` prepares the reference example's file
+mailbox before launch, removing prior journey control files. After launch, `connect(budget)`
+acknowledges the native session UUID and monotonic clock. `request(action, budget)` serializes
+typed phase, snapshot, mute, hold and terminal controls. Each budget carries an absolute host
+monotonic deadline and an abort signal; queueing and polling never extend it.
+
+The mailbox binds each reply to the command UUID, fixture, conversation, session, phase and
+native clock. A new phase sends the shared tones-v2 marker's frequencies. Other commands
+must preserve that phase's native anchor. A failure or cancellation after command publication
+retires the mailbox because native state may already have changed. The caller still owns app,
+peer and server cleanup. `close` acknowledges the native control loop's exit; it does not prove
+media teardown.
+
+Replies retain the original snapshot as untrusted `evidence`. This transport validates identity
+and timing envelopes only. It does not certify PCM coverage, processing, SDK end state or native
+release; those must pass the shared contract and terminal oracle separately. The existing
+feasibility runner is unchanged; the complete shared-contract journey remains to be connected.
