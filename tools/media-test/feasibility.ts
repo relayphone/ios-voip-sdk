@@ -14,7 +14,7 @@ import { command, deadline } from './fixture-runtime.ts';
 import { measureMarkerAsync } from './measure-marker.ts';
 import { monitorReceiver, ReceiverObservationError, type ReceiverWindow } from './peer-window.ts';
 import { observeSilence, SilenceObservationError, type SilenceWindow } from './silence-window.ts';
-import { assertNativePassed, writeUnobservedResult } from './result-receipt.ts';
+import { assertNativePassed, assertNativeTeardown, writeUnobservedResult } from './result-receipt.ts';
 
 const [simulator, app, output] = process.argv.slice(2);
 const processing = "synthetic";
@@ -146,7 +146,10 @@ try {
   });
   const evidence: unknown = JSON.parse(readFileSync(result, 'utf8'));
   let nativeFailure: unknown;
-  try { assertNativePassed(evidence); } catch (error) { nativeFailure = error; }
+  try {
+    assertNativePassed(evidence);
+    assertNativeTeardown((evidence as { teardown?: unknown }).teardown);
+  } catch (error) { nativeFailure = error; }
   uplinkCapture ??= harness.observation().capture;
   if (!nativeFailure) uplinkEvidence ??= await measureMarkerAsync(uplinkCapture, uplink);
   const downlinkCaptures: Partial<Record<"decoded" | "output", PCMCapture>> = {};

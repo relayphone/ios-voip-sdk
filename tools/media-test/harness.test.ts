@@ -64,6 +64,49 @@ test('real peer publishes markers, captures app audio, holds silent and leaves',
     await until(() => !app.status().trackAvailable);
   } finally { await app.close(); await harness.stop(); }
 });
+test('full peer transport reconnect republishes real audio and requires fresh clean markers', async () => {
+  const harness = await startHarness(directory('reconnect'), 'reconnect');
+  const app = new MediaPeer();
+  try {
+    await app.connect(harness.credentials('app'));
+    await until(() => app.status().readerLive && harness.status().readerLive);
+    await harness.act({ type: 'publish', markerId: 'reconnect:before:toDevice' });
+    app.publish('reconnect:before:fromDevice');
+    await delay(3000);
+    assert.ok(detectMarker(Float32Array.from(app.capture().channels[0]!), 48000, createMarker('reconnect:before:toDevice')));
+    assert.equal(harness.observation().reconnect, null);
+    const anchor = app.lifecycleObservation().observedAtMs;
+    await harness.act({ type: 'reconnect' });
+    const evidence = harness.observation().reconnect;
+    assert.ok(evidence && evidence.reconnectingAtMs !== undefined && evidence.reconnectedAtMs !== undefined);
+    assert.equal(evidence.clock.id, harness.observation().lifecycle.clock.id);
+    assert.ok(evidence.requestedAtMs <= evidence.reconnectingAtMs);
+    assert.ok(evidence.reconnectingAtMs <= evidence.reconnectedAtMs);
+    assert.ok(evidence.requestCompletedAtMs! >= evidence.requestedAtMs);
+    assert.equal(evidence.publicationSidsBefore.length, 1);
+    assert.equal(evidence.publicationSidsAfter?.length, 1);
+    await until(() => app.status().trackAvailable && harness.status().trackAvailable);
+    // Independent receiver events prove real publication teardown/recreation, not just status.
+    const events = app.lifecycleObservation().events.filter(row => row.identity === 'far-end' && row.atMs >= anchor);
+    assert.ok(events.some(row => row.kind === 'trackUnpublished'));
+    assert.ok(events.some(row => row.kind === 'trackPublished'));
+    await harness.act({ type: 'publish', markerId: 'reconnect:after:toDevice' });
+    app.publish('reconnect:after:fromDevice');
+    await delay(500); app.beginCapture(); await harness.act({ type: 'capture' });
+    await delay(3000);
+    for (const [capture, id] of [[app.capture(), 'reconnect:after:toDevice'],
+      [harness.observation().capture, 'reconnect:after:fromDevice']] as const) {
+      const measured = await measureMarkerAsync(capture, createMarker(id));
+      assert.ok(measured.clean && measured.complete && measured.postRollObserved);
+      assert.equal(detectMarker(Float32Array.from(capture.channels[0]!), 48000,
+        createMarker(id.replace(':after:', ':before:'))), null);
+    }
+    assert.ok(app.status().readerLive && harness.status().readerLive);
+    assert.deepEqual(harness.observation().reconnect, evidence, 'capture reset retains independent reconnect evidence');
+    await harness.act({ type: 'leave' });
+    await assert.rejects(harness.act({ type: 'reconnect' }), /cannot reconnect/);
+  } finally { await app.close(); await harness.stop(); }
+});
 test('JSON CLI supports clean stop and cleanup after a daemon crash', async () => {
   const dir = directory('cli'), cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
   const call = (...args: string[]) => command(process.execPath, [cli, ...args.slice(0, 1), dir, ...args.slice(1)], 180_000);
@@ -114,6 +157,7 @@ test('a real app disconnect retains audio unpublication and independent terminal
 test('untrusted JSON commands reject invalid publication controls', () => {
   for (const input of [null, {}, { type: 'publish' }, { type: 'publish', markerId: '' }, { type: 'unknown' }]) assert.throws(() => parseAction(input));
   assert.deepEqual(parseAction({ type: 'publish', markerId: 'test' }), { type: 'publish', markerId: 'test' });
+  assert.deepEqual(parseAction({ type: 'reconnect' }), { type: 'reconnect' });
 });
 
 test('a killed invoking runner cannot leave its daemon or server running', async () => {

@@ -5,6 +5,18 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+### Added
+
+- The optional media test kit exposes a shared observation clock and measured native teardown
+  receipts for tap removal, engine stop, room disconnection and audio session release. Host
+  validation can bind release evidence to a clock, arm acknowledgement and deadline.
+
+### Fixed
+
+- Pre-mute receiver/publication checks select the first complete observer window within the
+  existing result budget. Gapped attempts retain scheduler diagnostics as unobserved; health,
+  marker and transport failures remain terminal, with unchanged thresholds.
+
 ## 0.6.0 (2026-11-16)
 
 ### Added
@@ -31,10 +43,6 @@ Public API changes include migration guidance.
   leak fails even if a later window is silent; no complete window fails as `unobserved`.
 
 ### Fixed
-
-- Pre-mute receiver/publication checks select the first complete observer window within the
-  existing result budget. Gapped attempts retain scheduler diagnostics as unobserved; health,
-  marker and transport failures remain terminal, with unchanged thresholds.
 
 - Include timed processing-state and engine-transition diagnostics in native media feasibility receipts, and report the earliest native failure directly.
 

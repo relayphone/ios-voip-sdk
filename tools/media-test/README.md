@@ -24,6 +24,7 @@ try {
   // Connect the app using appConnection and await the shared contract's phase gates.
   const { receiver, capture } = host.observation();
   await host.act({ type: 'hold' });
+  await host.act({ type: 'reconnect' }); // Real server-driven peer media-session rebuild.
   await host.act({ type: 'leave' });
 } finally {
   await host.stop(); // Idempotent; awaits real process exit even after peer failure.
@@ -36,6 +37,16 @@ silence: retain the shared contract's coverage and liveness checks. `publish` re
 1020 ms tones-v2 emission to its beginning. `hold` replaces the far-end source with silent PCM;
 it does not alter the app's publication or bypass its mute/hold gates. `leave` disconnects the
 far-end participant. It does not claim to interrupt the app's server transport for reconnect tests.
+`reconnect` uses the pinned SDK's full-reconnect protocol request to the real server, which
+replaces the peer's media session and republishes its tracks. It is bounded to ten seconds;
+`observation().reconnect` retains the attempt UUID, shared peer clock, request/event times and
+publication SIDs, including partial evidence on failure. A failed or timed-out attempt retires
+reconnect control until the harness is stopped; late SDK callbacks cannot qualify a later attempt.
+These raw connection events are insufficient to pass recovery. Independently verify actual
+publication removal/recreation and require a fresh marker through the shared contract in both
+directions, including clean receiver counters and complete post-roll. Phase capture resets
+preserve reconnect evidence; PCM from retired readers is excluded from the current capture,
+while late PCM remains in the independent lifecycle observation.
 Use a fresh marker identity and phase observation for recovery assertions in the consuming journey.
 
 Do not call process-wide rtc-node `dispose()` until all harnesses and other rtc-node users in the
@@ -62,6 +73,7 @@ node tools/media-test/cli.ts act /tmp/my-media-run '{"type":"publish","markerId"
 node tools/media-test/cli.ts act /tmp/my-media-run '{"type":"capture"}'
 node tools/media-test/cli.ts observation /tmp/my-media-run
 node tools/media-test/cli.ts act /tmp/my-media-run '{"type":"hold"}'
+node tools/media-test/cli.ts act /tmp/my-media-run '{"type":"reconnect"}'
 node tools/media-test/cli.ts act /tmp/my-media-run '{"type":"leave"}'
 node tools/media-test/cli.ts stop /tmp/my-media-run
 ```

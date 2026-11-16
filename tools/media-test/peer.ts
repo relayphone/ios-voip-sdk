@@ -1,4 +1,4 @@
-import { AudioFrame, AudioSource, AudioStream, ConnectionState, LocalAudioTrack, Room, RoomEvent, TrackKind, TrackPublishOptions, TrackSource } from '@livekit/rtc-node';
+import { AudioFrame, AudioSource, AudioStream, ConnectionState, LocalAudioTrack, Room, RoomEvent, SimulateScenarioKind, TrackKind, TrackPublishOptions, TrackSource } from '@livekit/rtc-node';
 import { createMarker, emissionSamples } from '../../expo/src/testing/marker.ts';
 import type { PCMCapture } from './marker-evidence.ts';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -6,6 +6,7 @@ import { receiverStatistics } from './receiver-statistics.ts';
 import type { TransportSnapshot } from './transport.ts';
 import { deadline } from './fixture-runtime.ts';
 import { PeerLifecycle } from './peer-lifecycle.ts';
+import { PeerReconnect } from './peer-reconnect.ts';
 
 /** One real far-end participant; observations remain independent of publication control. */
 export class MediaPeer {
@@ -21,7 +22,10 @@ export class MediaPeer {
   private receivedSamples = 0;
   private energy = 0;
   private readerLive = false;
+  private readerGeneration = 0;
+  private readonly reconnectControl: PeerReconnect;
   private trackAvailable = false;
+  private activeTrackSid: string | undefined;
   private readerFailed = false;
   private publicationFailed = false;
   private stopping: Promise<void> | undefined;
@@ -33,6 +37,22 @@ export class MediaPeer {
 
   constructor(readStatistics: typeof receiverStatistics = receiverStatistics) {
     this.readStatistics = readStatistics;
+    this.reconnectControl = new PeerReconnect({
+      available: () => this.running && this.status().connected,
+      publications: () => [...this.room.localParticipant!.trackPublications.values()]
+        .flatMap(publication => publication.sid ? [publication.sid] : []),
+      // FULL_RECONNECT asks the real server for LeaveRequest{Reconnect}; the SDK replaces
+      // its RtcSession and republishes tracks. Signal-only resume cannot qualify this action.
+      request: () => this.room.simulateScenario(SimulateScenarioKind.SIMULATE_FULL_RECONNECT),
+      subscribe: (reconnecting, reconnected) => {
+        this.room.on(RoomEvent.Reconnecting, reconnecting);
+        this.room.on(RoomEvent.Reconnected, reconnected);
+        return () => {
+          this.room.off(RoomEvent.Reconnecting, reconnecting);
+          this.room.off(RoomEvent.Reconnected, reconnected);
+        };
+      },
+    }, this.lifecycle.snapshot().clock);
     this.room.on(RoomEvent.ParticipantConnected, participant => this.lifecycle.record('participantConnected', participant.identity));
     this.room.on(RoomEvent.ParticipantDisconnected, participant => this.lifecycle.record('participantDisconnected', participant.identity));
     this.room.on(RoomEvent.TrackPublished, (publication, participant) => {
@@ -41,17 +61,25 @@ export class MediaPeer {
     this.room.on(RoomEvent.TrackUnpublished, (publication, participant) => {
       if (publication.kind === TrackKind.KIND_AUDIO) this.lifecycle.record('trackUnpublished', participant.identity, publication.sid);
     });
-    this.room.on(RoomEvent.TrackUnsubscribed, () => { this.trackAvailable = false; });
+    this.room.on(RoomEvent.TrackUnsubscribed, track => {
+      if (track.sid !== this.activeTrackSid) return;
+      this.activeTrackSid = undefined;
+      this.trackAvailable = false; this.readerLive = false;
+      this.readerGeneration++;
+    });
     this.room.on(RoomEvent.TrackSubscribed, track => {
       if (this.trackAvailable) { this.readerFailed = true; return; }
+      this.activeTrackSid = track.sid;
       this.trackAvailable = true; this.readerLive = true;
+      const generation = ++this.readerGeneration;
       const reader = new AudioStream(track, 48_000, 1).getReader();
       this.cancelReaders.push(() => reader.cancel());
       this.readers.push((async () => {
         while (this.running) {
           const { done, value: frame } = await reader.read();
-          if (done) { this.readerLive = false; break; }
+          if (done) { if (generation === this.readerGeneration) this.readerLive = false; break; }
           this.lifecycle.receive(frame.data);
+          if (generation !== this.readerGeneration) continue;
           for (const sample of frame.data) {
             const value = sample / 32768;
             this.energy += value * value;
@@ -59,7 +87,9 @@ export class MediaPeer {
           }
           this.receivedSamples += frame.data.length;
         }
-      })().catch(() => { this.readerFailed = true; this.readerLive = false; }));
+      })().catch(() => {
+        if (generation === this.readerGeneration && this.running) { this.readerFailed = true; this.readerLive = false; }
+      }));
     });
   }
   async connect(credentials: { url: string; token: string }): Promise<void> {
@@ -86,6 +116,11 @@ export class MediaPeer {
       }
     })().catch(() => { this.publicationFailed = true; });
   }
+  /** Requests a real server-driven media-session rebuild, never an injected connection state. */
+  reconnect(): Promise<void> { return this.reconnectControl.run(); }
+  /** Incomplete attempts survive errors; recovery still requires a fresh marker gate. */
+  reconnectEvidence() { return this.reconnectControl.evidence(); }
+
   publish(markerId: string): void {
     if (!this.status().connected || this.publicationFailed) throw Error('Peer is unavailable');
     this.emission = Int16Array.from(emissionSamples(createMarker(markerId), 48_000, 48_000 / 50 * 51), value => Math.round(value * 32767));
