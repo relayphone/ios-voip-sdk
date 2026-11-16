@@ -9,6 +9,12 @@ Public API changes include migration guidance.
 
 - Verified simulator process termination records host cancellation rows and receipt IDs for
   scheduled pushes that never entered a delegate before the process exited.
+
+- The shared TypeScript contract describes optional media activation failure diagnostics
+  (`stage`, `timedOut`, `timeoutMs` and `reason`) and the `prewarmFailed` event. Stages and
+  reasons use descriptive literal unions; prewarm errors expose only the platform type name.
+  Existing media failures remain valid. iOS does not emit these optional diagnostics yet.
+
 - The optional media test kit exposes a shared observation clock and measured native teardown
   receipts for tap removal, engine stop, room disconnection and audio session release. Host
   validation can bind release evidence to a clock, arm acknowledgement and deadline.

@@ -119,6 +119,58 @@ const platformFailure: ConversationEnd = {
   failure: { kind: "refused", platformCallRemaining: true },
 };
 void platformFailure;
+const mediaFailure: ConversationEnd = {
+  at: "2026-11-16T00:00:00.000Z",
+  reason: "failed",
+  failure: {
+    kind: "media",
+    platformCallRemaining: true,
+    stage: "prepare",
+    timedOut: true,
+    timeoutMs: 5000,
+    reason: "prejoinCloseFailed",
+  },
+};
+void mediaFailure;
+const legacyMediaFailure: EndedFailure = { kind: "media" };
+void legacyMediaFailure;
+type MediaFailure = Extract<EndedFailure, { readonly kind: "media" }>;
+const activationStages: readonly NonNullable<MediaFailure["stage"]>[] = ["prepare", "audioSession", "activate"];
+const mediaReasons: readonly NonNullable<MediaFailure["reason"]>[] = ["publishPermissionNotGranted", "prejoinCloseFailed"];
+void activationStages;
+void mediaReasons;
+declare const diagnosedFailure: EndedFailure;
+if (diagnosedFailure.kind === "media") {
+  const stage: "prepare" | "audioSession" | "activate" | undefined = diagnosedFailure.stage;
+  const timedOut: boolean | undefined = diagnosedFailure.timedOut;
+  const timeoutMs: number | undefined = diagnosedFailure.timeoutMs;
+  void stage;
+  void timedOut;
+  void timeoutMs;
+  // @ts-expect-error Media diagnostics are immutable.
+  diagnosedFailure.stage = "activate";
+} else {
+  // @ts-expect-error Only media failures carry activation diagnostics.
+  void diagnosedFailure.stage;
+}
+// @ts-expect-error Numeric phases are not public activation stages.
+const numericMediaStage: EndedFailure = { kind: "media", stage: 1 };
+void numericMediaStage;
+// @ts-expect-error Media activation stages form a closed union.
+const unknownMediaStage: EndedFailure = { kind: "media", stage: "connect" };
+void unknownMediaStage;
+// @ts-expect-error Native numeric timeout flags must be mapped to booleans.
+const numericTimedOut: EndedFailure = { kind: "media", timedOut: 1 };
+void numericTimedOut;
+// @ts-expect-error Deadlines are numeric milliseconds.
+const stringTimeoutMs: EndedFailure = { kind: "media", timeoutMs: "5000" };
+void stringTimeoutMs;
+// @ts-expect-error Raw native reasons are not part of the public contract.
+const nativeMediaReason: EndedFailure = { kind: "media", reason: "PREJOIN_CLOSE_FAILED" };
+void nativeMediaReason;
+// @ts-expect-error Other failure kinds cannot carry media diagnostics.
+const serverMediaFailure: EndedFailure = { kind: "server", stage: "prepare" };
+void serverMediaFailure;
 // @ts-expect-error The remaining platform call flag is true or omitted, never false.
 const falseRemaining: EndedFailure = { kind: "refused", platformCallRemaining: false };
 void falseRemaining;
@@ -382,6 +434,30 @@ const obsoleteConfig: import("../index").ConversationConfiguration = { audioActi
 void obsoleteConfig;
 const joinFailure: ConversationEventMap["joinFailed"] = { conversationId: id, reason: { kind: "failed", failure: "notPlaced" } };
 void joinFailure;
+const prewarmFailure: ConversationEventMap["prewarmFailed"] = {
+  conversationId: id,
+  stage: "deadline",
+  errorType: "TimeoutCancellationException",
+};
+const prewarmStages: readonly ConversationEventMap["prewarmFailed"]["stage"][] = ["connect", "identity", "subscribe", "deadline"];
+void prewarmStages;
+native.addListener("conversationEvent", (event) => {
+  if (event.type === "prewarmFailed") {
+    const failure: ConversationEventMap["prewarmFailed"] = event.payload;
+    const errorType: string = failure.errorType;
+    void errorType;
+    // @ts-expect-error Error messages are not exposed by prewarm diagnostics.
+    void failure.message;
+  }
+});
+// @ts-expect-error Prewarm diagnostics are immutable.
+prewarmFailure.errorType = "Error";
+// @ts-expect-error The platform error type is required.
+const missingPrewarmType: ConversationEventMap["prewarmFailed"] = { conversationId: id, stage: "connect" };
+void missingPrewarmType;
+// @ts-expect-error Prewarm stages form a closed union.
+const unknownPrewarmStage: ConversationEventMap["prewarmFailed"] = { conversationId: id, stage: "activate", errorType: "Error" };
+void unknownPrewarmStage;
 
 // @ts-expect-error The SDK does not update a call’s video capability after creation.
 void api.reportConversation(id, { type: "updated", video: true });
