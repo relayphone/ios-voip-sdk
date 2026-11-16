@@ -87,6 +87,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let missingTapCaught: Bool
       let inactiveEngineStayedStopped: Bool
       let processing: [String: Bool]
+      let processingEvidence: MediaProcessingEvidence?
       let processingTimeline: [MediaProcessingTimeline.Entry]
       let processingTimelineDropped: Int
       let codecs: [String: String]
@@ -140,6 +141,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     var lastStatisticsTimestamp: Double?
     var savedDuplex = false
     var processing: [String: Bool] = [:]
+    var appliedProcessing: MediaProcessingEvidence.Configuration?
+    var processingEvidence: MediaProcessingEvidence?
     var codecs: [String: String] = [:]
     var silenceWindows: [PCMSilenceWindows.Window] = []
     var localTrack: LocalAudioTrack?
@@ -209,10 +212,14 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         probe.startup.record(.roomConnectFailed(errorType: String(reflecting: type(of: error))))
         throw error
       }
+      let captureOptions = MarkerAudioEngine.syntheticCaptureOptions
       hooks.processingTimeline.record(.captureOptionsApplying)
+      appliedProcessing = .init(
+        aec: captureOptions.echoCancellation, ns: captureOptions.noiseSuppression,
+        agc: captureOptions.autoGainControl)
       let publication = try await room.localParticipant.setMicrophone(
         enabled: true,
-        captureOptions: MarkerAudioEngine.syntheticCaptureOptions)
+        captureOptions: captureOptions)
       hooks.processingTimeline.record(.captureOptionsApplied)
       probe.startup.record(.captureOptionsApplied)
       localTrack = publication?.track as? LocalAudioTrack
@@ -342,31 +349,24 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
           phase = .captureProcessing
           let state = hooks.processingTimeline.record(
             .checkRead, engineRunning: AudioManager.shared.isEngineRunning)
-          guard state.aec.requested != .unavailable, state.ns.requested != .unavailable,
-            state.agc.requested != .unavailable
-          else {
-            throw MediaAudioProbe.Failure.signalMissing(.decoded)
+          var requested: [MediaProcessingEvidence.Effect: Bool] = [:]
+          for (effect, value) in [
+            (MediaProcessingEvidence.Effect.aec, state.aec.requested),
+            (.ns, state.ns.requested), (.agc, state.agc.requested),
+          ] where value != .unavailable {
+            requested[effect] = value == .enabled
           }
+          let evidence = MediaProcessingEvidence(
+            expected: .init(aec: false, ns: false, agc: true), applied: appliedProcessing,
+            active: .init(aec: state.aec.active, ns: state.ns.active, agc: state.agc.active),
+            engineRunning: state.engineRunning == true, requested: requested)
+          processingEvidence = evidence
           processing = [
-            "aecRequested": state.aec.requested == .enabled,
-            "aecActive": state.aec.active,
-            "nsRequested": state.ns.requested == .enabled,
-            "nsActive": state.ns.active,
-            "agcRequested": state.agc.requested == .enabled,
+            "aecActive": state.aec.active, "nsActive": state.ns.active,
             "agcActive": state.agc.active,
           ]
-          let expected = [
-            "aec": false,
-            "ns": false,
-            "agc": true,
-          ]
-          for (effect, enabled) in expected {
-            guard processing[effect + "Requested"] == enabled,
-              processing[effect + "Active"] == enabled
-            else {
-              throw MediaAudioProbe.Failure.signalMissing(.decoded)
-            }
-          }
+          for (effect, value) in requested { processing[effect.rawValue + "Requested"] = value }
+          guard evidence.passed else { throw MediaAudioProbe.Failure.signalMissing(.decoded) }
           phase = .duplex
           try probe.expectAudio(.decoded)
           try probe.expectAudio(.output)
@@ -427,6 +427,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             output: output,
             mutedOutput: mutedOutput, missingTapCaught: caught,
             inactiveEngineStayedStopped: inactiveEngineStayedStopped, processing: processing,
+            processingEvidence: processingEvidence,
             processingTimeline: hooks.processingTimeline.entries,
             processingTimelineDropped: hooks.processingTimeline.dropped,
             codecs: codecs, silenceWindows: silenceWindows, teardown: teardownReceipt,
@@ -664,6 +665,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         let passed = false
         let phase: Phase
         let processing: [String: Bool]
+        let processingEvidence: MediaProcessingEvidence?
         let processingTimeline: [MediaProcessingTimeline.Entry]
         let processingTimelineDropped: Int
         let codecs: [String: String]
@@ -675,6 +677,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       }
       let result = FailureResult(
         generatedSamples: hooks.generatedSamples, phase: phase, processing: processing,
+        processingEvidence: processingEvidence,
         processingTimeline: hooks.processingTimeline.entries,
         processingTimelineDropped: hooks.processingTimeline.dropped,
         codecs: codecs, decoded: probe.observation(.decoded),
