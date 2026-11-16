@@ -303,6 +303,12 @@
     var deadlineSeconds: Double?
     var issuedAtMS: Int?
     var advertisedDeadlineMS: Double?
+    var advertisedAtMS: Double?
+    /// The framework's advertised time remaining at the fixture's paired observation.
+    var advertisedIntervalMS: Double? {
+      guard let advertisedDeadlineMS, let advertisedAtMS else { return nil }
+      return advertisedDeadlineMS - advertisedAtMS
+    }
     var conversations: [Conversation]?
 
     private enum Key: String, CodingKey {
@@ -313,7 +319,7 @@
       case policy, label, name, reason, code, error, errorDomain, errorCode, incomingErrorCode
       case replyCount, connected, held, ended, muted, ringing, fulfilled, failed, main, success
       case reportEntered, latencyMS, deadlineMS, deadlineSeconds, issuedAtMS
-      case advertisedDeadlineMS, conversations
+      case advertisedDeadlineMS, advertisedAtMS, conversations
     }
 
     init(from decoder: any Decoder) throws {
@@ -372,6 +378,7 @@
       deadlineSeconds = optional(.deadlineSeconds)
       issuedAtMS = optional(.issuedAtMS)
       advertisedDeadlineMS = optional(.advertisedDeadlineMS)
+      advertisedAtMS = optional(.advertisedAtMS)
       conversations = optional(.conversations)
     }
   }
