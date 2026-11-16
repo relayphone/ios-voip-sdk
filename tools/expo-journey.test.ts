@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run } from './command.ts';
-import { deleteJourneySimulator, InfrastructureFailure, launchBundledExample, openJourneyLink, withInfrastructureRetry } from './expo-journey.ts';
+import { classifyJourneyFailure, HostUnresponsiveFailure, deleteJourneySimulator, InfrastructureFailure, launchBundledExample, openJourneyLink, withInfrastructureRetry } from './expo-journey.ts';
 
 test('the journey link is approved for the owned simulator before opening it without a UI prompt', t => {
   const root = mkdtempSync(join(tmpdir(), 'expo-journey-link-'));
@@ -140,4 +140,63 @@ test('a failed create with no device can still retry; failed deletion keeps its 
     }), /Delete failed/);
     assert.equal(existsSync(join(markers, 'owned')), true);
   } finally { rmSync(markers, { recursive: true, force: true }); }
+});
+
+
+test('an immediate simulator timeout classifies bootstrap failure without retrying it', async () => {
+  const original = new Error('Timed out waiting for JavaScript bootstrap');
+  let attempts = 0;
+  await assert.rejects(withInfrastructureRetry(async () => {
+    attempts++;
+    throw classifyJourneyFailure(original, 'javascript-start', 'owned', false, (command, args, options) => {
+      assert.equal(command, 'xcrun');
+      assert.deepEqual(args, ['simctl', 'list', 'devices', '--json']);
+      assert.equal(options?.timeout, 10);
+      throw new Error('spawnSync xcrun ETIMEDOUT');
+    });
+  }, () => {}), error => {
+    assert.ok(error instanceof HostUnresponsiveFailure);
+    assert.equal(error.message, 'infra:host-unresponsive');
+    assert.equal(error.cause, original);
+    assert.match(error.evidence, /ETIMEDOUT/);
+    return true;
+  });
+  assert.equal(attempts, 1);
+});
+
+test('responsive probes and non-timeout probe failures preserve product attribution', () => {
+  const original = new Error('Bootstrap failed');
+  for (const execute of [() => '{}', () => { throw new Error('simctl exited with 1'); }]) {
+    assert.equal(classifyJourneyFailure(original, 'javascript-start', 'owned', false, execute), original);
+  }
+});
+
+test('prior bootstatus failure classifies bootstrap failure and preserves its cause', () => {
+  const original = new Error('Bootstrap failed');
+  const classified = classifyJourneyFailure(original, 'javascript-start', 'owned', true,
+    () => { throw new Error('Unexpected probe'); });
+  assert.ok(classified instanceof HostUnresponsiveFailure);
+  assert.equal(classified.cause, original);
+  assert.match(classified.evidence, /bootstatus failed/);
+});
+
+test('later assertions, setup failures and missing simulator never trigger the startup probe', () => {
+  const setup = new InfrastructureFailure('boot', 'timeout');
+  const assertion = new assert.AssertionError({ message: 'Wrong call state' });
+  const probe = () => { assert.fail('Unexpected probe'); };
+  assert.equal(classifyJourneyFailure(setup, 'setup', 'owned', true, probe), setup);
+  assert.equal(classifyJourneyFailure(assertion, 'javascript', 'owned', true, probe), assertion);
+  assert.equal(classifyJourneyFailure(assertion, 'journal', 'owned', false, probe), assertion);
+  assert.equal(classifyJourneyFailure(assertion, 'javascript-start', undefined, true, probe), assertion);
+});
+
+test('boot retry followed by a host-attributed bootstrap failure exhausts the existing budget', async () => {
+  const attempts: number[] = [];
+  const original = new Error('Bootstrap deadline expired');
+  await assert.rejects(withInfrastructureRetry(async index => {
+    attempts.push(index);
+    if (index === 0) throw new InfrastructureFailure('boot', new Error('bootstatus ETIMEDOUT'));
+    throw classifyJourneyFailure(original, 'javascript-start', 'owned', true);
+  }, () => {}), error => error instanceof HostUnresponsiveFailure && error.cause === original);
+  assert.deepEqual(attempts, [0, 1]);
 });
