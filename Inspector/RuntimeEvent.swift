@@ -87,6 +87,7 @@ struct RuntimeEvent: Codable, Identifiable {
   var held: Bool?
   var ended: Bool?
   var muted: Bool?
+  var hasVideo: Bool?
   var callerName: String?
   var handle: String?
   var reportSucceeded: Bool {
@@ -120,6 +121,7 @@ struct RuntimeEvent: Codable, Identifiable {
     if event == "report.completed", let code, code != 0 {
       return "Incoming report rejected · code \(code)"
     }
+    if event == "call.videoChanged" { return hasVideo == true ? "Video enabled" : "Video disabled" }
     if event == "call.changed" { return "\(caller) · \(status)" }
     if event == "action.settled" {
       return "\(kind?.capitalized ?? "Action") \(fulfilled == true ? "fulfilled" : "failed")"
@@ -129,6 +131,7 @@ struct RuntimeEvent: Codable, Identifiable {
   }
   var detail: String {
     var parts = [origin, apiKind, boundarySource].compactMap { $0 }
+    if let hasVideo { parts.append(hasVideo ? "Video" : "Audio only") }
     if let generation { parts.append("Handler generation \(generation)") }
     if let latencyMS, event != "action.deadline" {
       parts.append(String(format: "%.1f ms", latencyMS))

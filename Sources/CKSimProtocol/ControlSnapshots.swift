@@ -38,6 +38,7 @@ public struct IncomingFilterSnapshot: Codable, Equatable, Sendable {
   }
   private enum CodingKeys: String, CodingKey { case reason, code, verification }
   /// Decodes a complete filter state, rejecting inconsistent policy metadata.
+  /// Decodes confirmed video state, defaulting older recordings to audio-only.
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     try self.init(
@@ -70,6 +71,8 @@ public struct CallSnapshot: Codable, Equatable, Sendable {
     public let muted: Bool
     /// Whether an incoming call is still ringing.
     public let ringing: Bool
+    /// Video state confirmed by a framework report.
+    public let hasVideo: Bool
     /// The caller's display name, empty when absent.
     public let callerName: String
     /// The remote handle, empty when absent.
@@ -89,7 +92,8 @@ public struct CallSnapshot: Codable, Equatable, Sendable {
     /// Creates the common state without imposing additional lifecycle transitions.
     public init(
       uuid: UUID, outgoing: Bool, connected: Bool, held: Bool, ended: Bool,
-      muted: Bool, ringing: Bool, callerName: String, handle: String, capabilities: [Capability]
+      muted: Bool, ringing: Bool, hasVideo: Bool = false, callerName: String, handle: String,
+      capabilities: [Capability]
     ) {
       self.uuid = uuid
       self.outgoing = outgoing
@@ -98,6 +102,7 @@ public struct CallSnapshot: Codable, Equatable, Sendable {
       self.ended = ended
       self.muted = muted
       self.ringing = ringing
+      self.hasVideo = hasVideo
       self.callerName = callerName
       self.handle = handle
       self.capabilities = capabilities
@@ -265,4 +270,27 @@ public struct RuntimeSnapshot: Codable, Equatable, Sendable {
 
 func invalidControlValue(_ path: [any CodingKey], _ message: String) -> DecodingError {
   .dataCorrupted(.init(codingPath: path, debugDescription: message))
+}
+
+// Decode recordings made before video observations were included.
+extension CallSnapshot.State {
+  private enum CodingKeys: String, CodingKey {
+    case uuid, outgoing, connected, held, ended, muted, ringing, hasVideo, callerName, handle,
+      capabilities
+  }
+  public init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      uuid: values.decode(UUID.self, forKey: .uuid),
+      outgoing: values.decode(Bool.self, forKey: .outgoing),
+      connected: values.decode(Bool.self, forKey: .connected),
+      held: values.decode(Bool.self, forKey: .held),
+      ended: values.decode(Bool.self, forKey: .ended),
+      muted: values.decode(Bool.self, forKey: .muted),
+      ringing: values.decode(Bool.self, forKey: .ringing),
+      hasVideo: values.decodeIfPresent(Bool.self, forKey: .hasVideo) ?? false,
+      callerName: values.decode(String.self, forKey: .callerName),
+      handle: values.decode(String.self, forKey: .handle),
+      capabilities: values.decode([Capability].self, forKey: .capabilities))
+  }
 }

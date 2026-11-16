@@ -14,13 +14,15 @@
     let cursor: Int
 
     init(
-      groups: Int = 2, perGroup: Int = 1,
+      groups: Int = 2, perGroup: Int = 1, supportsVideo: Bool = false,
       capabilities: Conversation.Capabilities = [.pausing, .merging, .unmerging]
     ) async throws {
       runtime = try Runtime.shared()
       try await runtime.clearSettings()
       cursor = try runtime.cursor()
-      app = LCKApp(groups: groups, perGroup: perGroup, capabilities: capabilities)
+      app = LCKApp(
+        groups: groups, perGroup: perGroup, supportsVideo: supportsVideo, capabilities: capabilities
+      )
       let created = try await runtime.entry("the conversation manager's provider", after: cursor) {
         $0.event == "provider.created"
       }
@@ -177,13 +179,14 @@
   /// afterwards even if the test fails, so that the next test starts without them.
   @MainActor
   func withLCKSession(
-    groups: Int = 2, perGroup: Int = 1,
+    groups: Int = 2, perGroup: Int = 1, supportsVideo: Bool = false,
     capabilities: Conversation.Capabilities = [.pausing, .merging, .unmerging],
     _ body: @MainActor (LCKSession) async throws -> Void
   ) async throws {
     try await exclusively {
       let session = try await LCKSession(
-        groups: groups, perGroup: perGroup, capabilities: capabilities)
+        groups: groups, perGroup: perGroup, supportsVideo: supportsVideo, capabilities: capabilities
+      )
       do {
         try await body(session)
       } catch {

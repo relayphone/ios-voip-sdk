@@ -8,6 +8,13 @@
 
   /// Reading a run's journal, `cksim watch`, and the Inspector's bridge.
   struct JournalTests {
+    @Test func videoValuesRemainVisibleInHumanReadableWatch() {
+      for hasVideo in [false, true] {
+        #expect(
+          timelineLine(["event": "call.videoChanged", "hasVideo": hasVideo]).contains(
+            "hasVideo=\(hasVideo)"))
+      }
+    }
     @Test func theJournalIsReadIncrementallyAndChecked() throws {
       let scratch = try Scratch()
       let app = try FakeApp(in: scratch.url)

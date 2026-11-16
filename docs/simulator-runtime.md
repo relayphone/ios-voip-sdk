@@ -537,3 +537,9 @@ epoch. `t_ms` remains the journal receipt time; `observedAtMS` preserves the ear
 The suspending monotonic clock matches the journal's uptime clock across host sleep. Observations
 before runtime startup or with future timestamps are discarded. Packet journal instrumentation is
 absent in device and Release builds. This stream does not change call state or action settlement.
+
+### Confirmed video observations
+
+`calls[].hasVideo` and `retainedCalls[].hasVideo` reflect successful framework reports (`CXCallUpdate.hasVideo`, including the LiveCommunicationKit adapter). Requests and SDK previews do not predict the value. Each confirmed change emits `call.videoChanged` with `callUUID`, `hasVideo` and runtime-relative `atMS`, and appends `{atMS, hasVideo}` to the retained call's `videoChanges`. Same-value reports add no video transition. Ended and unknown calls keep their history unchanged. cksim status, watch and Inspector expose these observations.
+
+iOS has no system-initiated mid-call video action; there is no simulator video injection command. App and server changes must travel through the app's framework-report path. Older recordings without video fields decode as audio-only with an empty video history.

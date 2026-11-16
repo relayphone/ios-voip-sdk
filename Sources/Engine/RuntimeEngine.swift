@@ -719,6 +719,16 @@
           $0.endReason = $0.endReason ?? "systemEnded"
         }
       }
+      if let update = call.update,
+        let video = callTimeline.confirmVideo(call.id, hasVideo: update.hasVideo, now: now)
+      {
+        record(
+          event: "call.videoChanged",
+          fields: [
+            "callUUID": call.id.uuidString,
+            "hasVideo": video.hasVideo, "atMS": video.atMS,
+          ])
+      }
       let snapshot = call.snapshot()
       record(event: "call.changed", fields: callJSON(call))
       if call.reporter.apiKind == .livecommunicationkit {
@@ -742,6 +752,7 @@
         "uuid": call.id.uuidString, "apiKind": call.reporter.apiKind.rawValue,
         "outgoing": call.outgoing, "connected": call.connected,
         "held": call.held, "ended": call.ended, "muted": call.muted,
+        "hasVideo": callTimeline.calls[call.id]?.hasVideo ?? false,
         "ringing": call.ringing, "callerName": call.update?.localizedCallerName ?? "",
         "handle": call.update?.remoteHandle?.value ?? "",
       ]
@@ -765,6 +776,7 @@
       let state = CallSnapshot.State(
         uuid: call.id, outgoing: call.outgoing, connected: call.connected,
         held: call.held, ended: call.ended, muted: call.muted, ringing: call.ringing,
+        hasVideo: callTimeline.calls[call.id]?.hasVideo ?? false,
         callerName: call.update?.localizedCallerName ?? "",
         handle: call.update?.remoteHandle?.value ?? "",
         capabilities: capabilities)
@@ -934,6 +946,7 @@
     }
     private func reserveStarts(_ actions: [CXAction], _ provider: ProviderRegistration) {
       for case let start as CXStartCallAction in actions {
+        callTimeline.beginIfEnded(start.callUUID)
         let call = CallState(start.callUUID, provider)
         call.outgoing = true
         call.ringing = false
@@ -1343,7 +1356,7 @@
     func updated(provider: CXProvider, uuid: UUID, update: CXCallUpdate) {
       withState {
         record(event: "report.updated", fields: ["callUUID": uuid.uuidString])
-        if let call = calls[uuid] {
+        if let call = calls[uuid], !call.ended, call.reporter.provider === provider {
           call.update = update.copy() as? CXCallUpdate
           changed(call, notifyObservers: false)
         }
