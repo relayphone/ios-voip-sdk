@@ -110,6 +110,18 @@
       manager.reportConversationEvent(event, for: conversation)
     }
 
+    /// A synchronous capability report is the system's video-update boundary, with no action
+    /// or acknowledgement API. A missing or ended conversation is never treated as a report.
+    func reportVideo(_ capabilities: Conversation.Capabilities, for id: UUID) -> Bool {
+      let manager = manager.onMain
+      guard let conversation = manager.conversations.first(where: { $0.uuid == id }),
+        conversation.state != .left
+      else { return false }
+      manager.reportConversationEvent(
+        .conversationUpdated(.init(capabilities: capabilities)), for: conversation)
+      return true
+    }
+
     /// Whether a mute changes nothing: the system repeats a mute shortly after the SDK fulfilled
     /// one, and unmutes a call after it ended.
     private func changesNothing(_ mute: MuteConversationAction) -> Bool {

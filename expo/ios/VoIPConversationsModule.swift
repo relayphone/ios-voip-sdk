@@ -104,6 +104,10 @@ public final class VoIPConversationsModule: Module, @unchecked Sendable {
       try await bridged { try await CallService.shared.setHeld(id, held) }
     }
 
+    AsyncFunction("setConversationVideo") { (id: String, enabled: Bool) async throws in
+      try await bridged { try await CallService.shared.setConversationVideo(id, enabled) }
+    }
+
     AsyncFunction("setMuted") { (id: String, muted: Bool) async throws in
       try await bridged { try await CallService.shared.setMuted(id, muted) }
     }

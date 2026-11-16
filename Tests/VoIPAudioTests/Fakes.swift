@@ -8,6 +8,7 @@ import VoIPCore
 final class FakeSession: SessionControl {
   enum Record: Hashable {
     case setCategory(CategoryOptions)
+    case videoMode(Bool)
     case overrideOutput(toSpeaker: Bool)
     case setPreferredInput(String)
   }
@@ -22,6 +23,11 @@ final class FakeSession: SessionControl {
 
   func setCategory(options: CategoryOptions) throws(AudioSessionError) {
     records.append(.setCategory(options))
+    if failsConfiguration { throw .configurationFailed }
+  }
+
+  func setVideoMode(_ enabled: Bool) throws(AudioSessionError) {
+    records.append(.videoMode(enabled))
     if failsConfiguration { throw .configurationFailed }
   }
 

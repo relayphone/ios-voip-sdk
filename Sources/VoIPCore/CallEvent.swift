@@ -25,6 +25,8 @@ public enum CallEvent: Hashable, Sendable {
   case joinFailed(Call, JoinFailure)
   /// The SDK performed an action on the call.
   case performed(Action, Call)
+  /// Video changed after the calling framework reported it to the system.
+  case videoChanged(Call, VideoChangeSource)
   /// The system activated the audio session. Microphone and speaker use for calls may start now.
   case audioActivated
   /// The system deactivated the audio session.
@@ -46,4 +48,12 @@ public enum CallEvent: Hashable, Sendable {
   case mediaServicesReset
   /// The call ended on this device. Its status holds the end reason.
   case ended(Call)
+}
+
+/// The origin of a confirmed iOS video change. iOS has no system video action.
+public enum VideoChangeSource: String, CaseIterable, Hashable, Sendable {
+  /// The app requested the change.
+  case app
+  /// The app reported a change learned from its server.
+  case server
 }

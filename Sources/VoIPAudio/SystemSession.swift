@@ -22,6 +22,20 @@
       }
     }
 
+    func setVideoMode(_ enabled: Bool) throws(AudioSessionError) {
+      let options = session.categoryOptions
+      let mode: AVAudioSession.Mode = enabled ? .videoChat : .voiceChat
+      do {
+        try session.setMode(mode)
+        // videoChat adds defaultToSpeaker implicitly. Restore the owner's exact options
+        // using the category-only setter, which leaves the mode in place.
+        try session.setCategory(session.category, options: options)
+        guard session.mode == mode, session.categoryOptions == options else {
+          throw AudioSessionError.configurationFailed
+        }
+      } catch { throw .configurationFailed }
+    }
+
     func ports() -> SessionPorts {
       SessionPorts(
         inputs: (session.availableInputs ?? []).map(Port.init),
@@ -91,7 +105,11 @@
         observe(AVAudioSession.interruptionNotification, Self.interruption)
       }
       observe(AVAudioSession.mediaServicesWereResetNotification) { _ in .mediaServicesWereReset }
-      observe(AVAudioSession.routeChangeNotification) { _ in .routesChanged }
+      observe(AVAudioSession.routeChangeNotification) { note in
+        let reason = (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt)
+          .flatMap(AVAudioSession.RouteChangeReason.init(rawValue:))
+        return reason == .override ? .routeOverride : .routesChanged
+      }
       observe(AVAudioSession.availableInputsChangeNotification) { _ in .routesChanged }
     }
 

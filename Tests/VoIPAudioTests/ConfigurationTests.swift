@@ -34,10 +34,10 @@ struct ConfigurationTests {
   ]
 
   @Test(arguments: cases)
-  func setsPlayAndRecordInVoiceChatModeWithTheCallsOptions(_ row: Case) throws {
+  func setsPlayAndRecordWithTheCallsModeAndOptions(_ row: Case) throws {
     let attached = Attached(configuration: row.configuration)
     try attached.adapter.configure(for: row.call)
-    #expect(attached.session.records == [.setCategory(row.options)])
+    #expect(attached.session.records == [.setCategory(row.options), .videoMode(row.call.hasVideo)])
   }
 
   @Test func aRefusedConfigurationThrows() {
@@ -48,14 +48,15 @@ struct ConfigurationTests {
     }
   }
 
-  @Test func configuringOnlySetsTheCategory() throws {
+  @Test func configuringSetsCategoryAndModeWithoutActivation() throws {
     let attached = Attached()
     try attached.adapter.configure(for: videoCall)
     try attached.adapter.configure(for: voiceCall)
     #expect(
       attached.session.records == [
         .setCategory([.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker]),
-        .setCategory([.allowBluetoothHFP, .allowBluetoothA2DP]),
+        .videoMode(true),
+        .setCategory([.allowBluetoothHFP, .allowBluetoothA2DP]), .videoMode(false),
       ])
     #expect(attached.events.isEmpty)
   }
@@ -79,11 +80,17 @@ struct ConfigurationTests {
     _ = await events.next()
     await framework.send(.audioDeactivated)
     _ = await events.next()
-    #expect(await session.records == [.setCategory([.allowBluetoothHFP, .allowBluetoothA2DP])])
+    #expect(
+      await session.records == [
+        .setCategory([.allowBluetoothHFP, .allowBluetoothA2DP]), .videoMode(false),
+      ])
     await framework.perform(.hold(id, onHold: false))
     _ = await events.next()
     await framework.send(.audioActivated)
     _ = await events.next()
-    #expect(await session.records == [.setCategory([.allowBluetoothHFP, .allowBluetoothA2DP])])
+    #expect(
+      await session.records == [
+        .setCategory([.allowBluetoothHFP, .allowBluetoothA2DP]), .videoMode(false),
+      ])
   }
 }

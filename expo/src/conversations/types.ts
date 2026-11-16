@@ -156,6 +156,7 @@ export interface ConversationCapabilities {
   readonly hold: boolean;
   readonly merge: boolean;
   readonly tones: boolean;
+  /** Mid-call video changes requested by the app or server are supported. */
   readonly video: boolean;
 }
 
@@ -280,6 +281,7 @@ export type ConversationReport =
   | {
       readonly type: "updated";
       readonly members?: readonly Participant[];
+      readonly video?: boolean;
     }
   | { readonly type: "ended"; readonly reason: EndedReason };
 
@@ -558,6 +560,12 @@ export interface PushToken {
 
 /** Lifecycle signals that cannot be derived from the snapshot. @category Events */
 export interface ConversationEventMap {
+  readonly videoChanged: {
+    readonly conversationId: ConversationId;
+    readonly isVideo: boolean;
+    /** iOS: app/server only. Android system delivery depends on OS API and registration. */
+    readonly source: "app" | "server" | "system";
+  };
   /** An optional media prewarm failed; this event does not end the conversation. */
   readonly prewarmFailed: {
     readonly conversationId: ConversationId;
@@ -669,6 +677,12 @@ export interface ConversationsApi {
    */
   joinConversation(id: ConversationId): Promise<void>;
   endConversation(id: ConversationId): Promise<void>;
+  /**
+   * Change video after the platform applies it; snapshots and videoChanged then reflect it.
+   * Rejects unsupported, unknown_conversation, or invalid_arguments for an ended call.
+   * Same-value calls do nothing. Never prompts; check conversationMediaReadiness first.
+   */
+  setConversationVideo(conversationId: string, enabled: boolean): Promise<void>;
   setMuted(id: ConversationId, muted: boolean): Promise<void>;
   setHeld(id: ConversationId, held: boolean): Promise<void>;
   playTones(id: ConversationId, digits: string): Promise<void>;

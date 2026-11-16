@@ -1,4 +1,5 @@
 import Foundation
+
 #if SWIFT_PACKAGE
   public import VoIPCore
 #endif
@@ -51,6 +52,24 @@ public final class FakeCallingFramework: CallingFramework {
   /// What the system does with each incoming call that the SDK reports, at once. When it is
   /// `nil`, reports wait for ``completeReports(of:with:)``. Defaults to `presented`.
   public var presentationOutcome: PresentationOutcome? = .presented
+
+  /// Whether video changes are supported.
+  public var supportsVideoChanges = true
+  /// Override the confirmed value, or use the requested value when nil.
+  public var confirmedVideo: Bool?
+  /// Optional suspended system report, for race and non-optimistic-state tests.
+  public var videoReport: (@VoIPActor @Sendable (Bool) async throws(ActionError) -> Bool)?
+
+  /// Records a confirmed system video report through the normal update record.
+  public func setVideo(_ enabled: Bool, for call: Call) async throws(ActionError) -> Bool {
+    guard supportsVideoChanges else { throw .unsupported }
+    let confirmed =
+      if let videoReport { try await videoReport(enabled) } else { confirmedVideo ?? enabled }
+    var updated = call
+    updated.hasVideo = confirmed
+    records.append(.update(updated))
+    return confirmed
+  }
 
   /// How the fake answers each request. Defaults to ``RequestResult/perform``.
   public var requestResult = RequestResult.perform

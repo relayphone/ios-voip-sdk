@@ -59,6 +59,13 @@
       }
     }
 
+    func videoUpdated(_ call: Call) {
+      let audio = AVAudioSession.sharedInstance()
+      configuration.updated(
+        call.id, configuration: (audio.category, audio.mode, audio.categoryOptions))
+      configuration.select(call.id)
+    }
+
     func activate() {
       guard let session = try? Self.session() else {
         Self.warnAboutMissingWebRTC()

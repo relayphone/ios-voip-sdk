@@ -66,7 +66,7 @@ final class ActionWaiter {
     case .ended(let call), .previewStarted(let call), .joinFailed(let call, _):
       call.id == action.callID
     case .presented, .startRequested, .joinRequested, .audioActivated, .audioDeactivated,
-      .audioInterrupted, .mediaServicesReset:
+      .audioInterrupted, .mediaServicesReset, .videoChanged:
       false
     }
   }

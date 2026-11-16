@@ -191,6 +191,14 @@ export const startConversation = bridge.startConversation.bind(bridge);
 export const joinConversation = bridge.joinConversation.bind(bridge);
 export const endConversation = bridge.endConversation.bind(bridge);
 export const setHeld = bridge.setHeld.bind(bridge);
+/**
+ * Ask the system to change whether a call carries video; never requests camera permission.
+ * Resolves after reporting to the platform, then snapshots show isVideo and videoChanged fires.
+ * Rejects unsupported, unknown_conversation, or invalid_arguments for an ended conversation.
+ * Same-value calls are no-ops; check conversationMediaReadiness before starting a camera track.
+ * @category Commands
+ */
+export const setConversationVideo = bridge.setConversationVideo.bind(bridge);
 export const setMuted = bridge.setMuted.bind(bridge);
 export const playTones = bridge.playTones.bind(bridge);
 export const mergeConversations = bridge.mergeConversations.bind(bridge);
