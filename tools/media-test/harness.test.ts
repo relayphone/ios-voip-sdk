@@ -23,6 +23,11 @@ const until = (condition: () => boolean) => deadline(15_000, 'Test condition', a
 before(async () => { binary = await serverBinary(root); });
 after(async () => { await dispose(); rmSync(root, { recursive: true, force: true }); });
 const directory = (name: string) => { const path = join(root, name); mkdirSync(path); cpSync(join(root, 'server.tgz'), join(path, 'server.tgz')); return path; };
+const rejectsServer = async (name: string, port: number) => {
+  let unexpected: Awaited<ReturnType<typeof startServer>> | undefined;
+  try { await assert.rejects(async () => { unexpected = await startServer(binary, directory(name), port); }); }
+  finally { await unexpected?.close(); }
+};
 
 test('pinned archive corruption cannot launch an unverified binary', async () => {
   const dir = directory('corrupt'); writeFileSync(join(dir, 'server.tgz'), 'corrupt');
@@ -39,8 +44,15 @@ test('an occupied health port cannot qualify an unrelated server', async () => {
   await new Promise<void>(resolve => listener.listen(0, '127.0.0.1', resolve));
   try {
     const address = listener.address(); assert.ok(address && typeof address !== 'string');
-    await assert.rejects(startServer(binary, directory('occupied'), address.port));
+    await rejectsServer('occupied', address.port);
   } finally { await new Promise<void>(resolve => listener.close(() => resolve())); }
+});
+test('another LiveKit instance cannot qualify with different credentials', async () => {
+  const existing = await startServer(binary, directory('existing'));
+  try {
+    await rejectsServer('different-key', Number(new URL(existing.url).port));
+    assert.ok(existing.alive(), 'The unrelated instance must remain running');
+  } finally { await existing.close(); }
 });
 test('real peer publishes markers, captures app audio, holds silent and leaves', async () => {
   const harness = await startHarness(directory('peer'), 'controls');
