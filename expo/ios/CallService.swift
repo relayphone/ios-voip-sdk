@@ -108,9 +108,9 @@ final class CallService {
       #if VOIP_CONVERSATIONS_WEBRTC
         let rtc = RTCAudioSessionMedia()
         media = rtc
-        audio = AudioSessionBridge(adapter: self.audio, didUpdateVideo: { rtc.videoUpdated($0) }) {
-          rtc.rememberConfiguration()
-        }
+        audio = AudioSessionBridge(
+          adapter: self.audio, didUpdateVideo: { rtc.videoUpdated($0) },
+          willConfigure: { rtc.rememberConfiguration() })
       #else
         media = AppManagedMedia()
         audio = AudioSessionBridge(adapter: self.audio, configuresCalls: false, willConfigure: {})
