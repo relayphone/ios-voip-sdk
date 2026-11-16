@@ -5,7 +5,20 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+## 0.7.0 (2026-11-16)
+
 ### Added
+
+- `cksim push --launch` accepts `--delay-ms`, which waits from command acceptance before staging
+  or launching, and `--drop`, which records a host `push.dropped` row and a dropped launch receipt
+  without staging, launching or creating a reporting obligation. The payload is validated and
+  frozen before any wait. Cold launches stage version-two envelopes with stable request and
+  delivery identities; version-one envelopes still decode. Cold-launch duplicates remain refused.
+
+- Each simulator runtime invocation journals `process.entered` at its first preparation entry,
+  which is also the runtime's `t_ms: 0` anchor, and `runtime.ready` when hook installation
+  completes, each with its `boundarySource`. Hook readiness does not imply PushKit registry or
+  application handler readiness.
 
 - Verified simulator process termination records host cancellation rows and receipt IDs for
   scheduled pushes that never entered a delegate before the process exited.
@@ -18,6 +31,11 @@ Public API changes include migration guidance.
 - The optional media test kit exposes a shared observation clock and measured native teardown
   receipts for tap removal, engine stop, room disconnection and audio session release. Host
   validation can bind release evidence to a clock, arm acknowledgement and deadline.
+
+### Changed
+
+- `ConversationEventMap` gains `prewarmFailed`. Code that switches exhaustively over
+  conversation event types needs a case for it (or a default); no other migration is needed.
 
 ### Fixed
 
