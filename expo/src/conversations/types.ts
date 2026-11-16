@@ -280,6 +280,7 @@ export type IncomingFilterReason = "doNotDisturb" | "blockList" | "other";
 export type ConversationErrorCode =
   | "invalid_arguments"
   | "unknown_conversation"
+  | "not_foreground"
   | "unsupported"
   | "conversation"
   | "duplicate_sdk_linkage"
@@ -592,12 +593,35 @@ export interface Subscription {
   remove(): void;
 }
 
+/** Media access whose dialogs the app may explicitly request. @category Permissions */
+export type MediaKind = "microphone" | "camera";
+/** Expo PermissionResponse shape; permission queries never prompt. @category Permissions */
+export interface MediaPermissionResponse {
+  readonly status: "granted" | "denied" | "undetermined";
+  readonly granted: boolean;
+  readonly canAskAgain: boolean;
+  readonly expires: "never";
+}
+/** Both media permissions, including kinds the caller did not request. @category Permissions */
+export type MediaPermissions = Readonly<Record<MediaKind, MediaPermissionResponse>>;
+/** Current requirements for one known conversation; camera is required only for video. @category Permissions */
+export interface ConversationMediaReadiness {
+  readonly required: readonly MediaKind[];
+  readonly missing: readonly MediaKind[];
+}
+
 /**
  * Platform implementation seam. Commands resolve on system acceptance; reports describe transport.
  * Incoming platform filtering/capacity/failure is returned as an outcome, not a fabricated id.
  * @category Core
  */
 export interface ConversationsApi {
+  /** Never prompts; safe from push and background paths. */
+  getMediaPermissions(): Promise<MediaPermissions>;
+  /** Foreground UI only; rejects with not_foreground otherwise. */
+  requestMediaPermissions(kinds: readonly MediaKind[]): Promise<MediaPermissions>;
+  /** Never prompts; rejects unknown_conversation for an unknown ID. */
+  conversationMediaReadiness(conversationId: string): Promise<ConversationMediaReadiness>;
   getConversations(): Promise<readonly Conversation[]>;
   setConversationHandler(handler: ConversationHandler | null): void;
   /**

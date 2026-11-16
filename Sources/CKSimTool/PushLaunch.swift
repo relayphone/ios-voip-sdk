@@ -2,7 +2,7 @@
   import Foundation
   import CKSimProtocol
 
-  /// `cksim push --launch`: stages one VoIP push for a stopped app that activates the runtime
+  /// `cksim push --launch`: stages a VoIP push for a stopped app that activates the runtime
   /// itself, then becomes the app's launcher. The runtime delivers the push after it installs its
   /// PushKit hooks; nothing is injected into the app.
   struct PushLaunch {
@@ -11,10 +11,22 @@
     let mustReport: Bool
     let payloadFile: URL
     let receipt: URL
+    var delivery: PushDeliveryFaults = .none
+    private let requestID = UUID()
+
+    private struct DroppedReceipt: Encodable {
+      let schemaVersion = 1
+      let simulatorID: String
+      let bundleID: String
+      let runID: String
+      let pushID: UUID
+      let dropped = true
+      let runtimeInjectionRequested = false
+    }
 
     /// Stages the push after checking, from the simulator's service table, that the app isn't
     /// running, and returns the launcher's arguments and environment.
-    func stage(container: URL, serviceTable: Data) throws -> (
+    func stage(container: URL, serviceTable: Data, payload: PushPayload? = nil) throws -> (
       arguments: [String], environment: [String: String]
     ) {
       guard !exists(receipt) else {
@@ -50,13 +62,19 @@
       guard !exists(root.appending(path: "push-launch.consuming")) else {
         throw CKSimError("A push launch claim already exists; inspect before retrying.")
       }
-      let payload = try JSONDecoder().decode(PushPayload.self, from: Data(contentsOf: payloadFile))
-      let id = UUID()
+      let payload = try payload ?? readPayload()
+      let id = requestID
       let created = Int64(Date().timeIntervalSince1970 * 1000)
       let envelope = try PushLaunchEnvelope(
-        version: .singleDelivery, id: id, runID: runID, bundleID: target.bundle,
+        id: id, runID: runID, bundleID: target.bundle,
         createdAtMS: created, expiresAtMS: created + 30_000, mustReport: mustReport,
-        payload: payload)
+        payload: payload, delivery: delivery)
+      guard !exists(root.appending(path: runID)),
+        !exists(root.appending(path: "process/\(runID)"))
+      else {
+        throw CKSimError(
+          "Push launch requires a fresh run identifier; prior journal segments exist.")
+      }
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
       var data = try encoder.encode(envelope)
@@ -93,13 +111,51 @@
       )
     }
 
-    /// Stages the push, then replaces this process with the app's console launcher.
-    func run() throws -> Never {
+    /// Stages the push and durably records intent before returning the launch command.
+    func prepare(clock: some Clock<Duration> = ContinuousClock()) async throws -> (
+      arguments: [String], environment: [String: String]
+    )? {
+      let accepted = clock.now
       guard !exists(receipt) else {
         throw CKSimError("Launch receipt already exists; inspect before staging.")
       }
+      // Freeze and validate the whole payload before waiting or writing any intent.
+      let payload = try readPayload()
+      let id = requestID
+      _ = try PushLaunchEnvelope(
+        id: id, runID: runID, bundleID: target.bundle, createdAtMS: 0,
+        expiresAtMS: 30_000, mustReport: mustReport, payload: payload, delivery: delivery)
+      guard delivery.duplicate == 0 else {
+        throw CKSimError("Cold-launch duplicates require host exit tracking.")
+      }
+      guard let simulatorID = UUID(uuidString: target.device) else {
+        throw CKSimError("Process journal requires a resolved simulator UUID.")
+      }
+      try Task.checkCancellation()
+      try await clock.sleep(
+        until: accepted.advanced(by: .milliseconds(delivery.delayMS)), tolerance: nil)
+      try Task.checkCancellation()
       let container = URL(
         filePath: try target.simctl("get_app_container", target.device, target.bundle, "data"))
+      try Task.checkCancellation()
+      if delivery.drop {
+        let channel = container.appending(path: "Documents/.callkit-simulator")
+        guard !exists(channel.appending(path: runID)),
+          !exists(channel.appending(path: "process/\(runID)"))
+        else { throw CKSimError("Push launch requires a fresh run identifier.") }
+        let journal = try ProcessLifecycle(
+          channel: channel,
+          identity: ProcessLifecycleIdentity(
+            simulatorID: simulatorID, bundleID: target.bundle, runID: runID))
+        try await journal.record(.dropped, requestID: id, pushID: id)
+        try writeNew(
+          receipt,
+          json: JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(
+              DroppedReceipt(
+                simulatorID: target.device, bundleID: target.bundle, runID: runID, pushID: id))))
+        return nil
+      }
       let query: ProcessOutput
       do {
         query = try target.simctl.run(
@@ -114,8 +170,25 @@
         throw CKSimError(
           "Stopped-app query failed or returned diagnostics: \(query.diagnostic)")
       }
+      try Task.checkCancellation()
       let (arguments, environment) = try stage(
-        container: container, serviceTable: query.standardOutput)
+        container: container, serviceTable: query.standardOutput, payload: payload)
+      let journal = try ProcessLifecycle(
+        channel: container.appending(path: "Documents/.callkit-simulator"),
+        identity: ProcessLifecycleIdentity(
+          simulatorID: simulatorID, bundleID: target.bundle, runID: runID))
+      try await journal.record(.launchRequested, requestID: requestID)
+      return (arguments, environment)
+    }
+
+    private func readPayload() throws -> PushPayload {
+      try JSONDecoder().decode(PushPayload.self, from: Data(contentsOf: payloadFile))
+    }
+
+    /// Stages the push, then replaces this process with the app's console launcher.
+    func run() async throws {
+      guard let (arguments, environment) = try await prepare() else { return }
+      try Task.checkCancellation()
       execute(arguments, environment: environment)
     }
   }

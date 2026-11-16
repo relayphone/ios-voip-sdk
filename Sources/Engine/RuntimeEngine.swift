@@ -534,6 +534,7 @@
             "pid": Int(getpid()),
             "bundleID": bundleID, "profile": profile.id,
             "wallTimeMS": Int64(Date().timeIntervalSince1970 * 1000),
+            "uptimeNanoseconds": observed.uptimeNanoseconds,
             "t_ms": (observed.uptimeNanoseconds - epoch) / 1_000_000,
           ]) { _, new in new }
           return try row.mapValues(RuntimeJournalValue.init(legacyValue:))

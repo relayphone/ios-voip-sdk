@@ -39,9 +39,11 @@ const SIRI_INTENTS = ["INStartCallIntent"];
 const withPermissions: ConfigPlugin<{
   cameraPermission?: string | false;
   microphonePermission?: string | false;
-}> = (config, { cameraPermission, microphonePermission }) => {
+  supportsVideo?: boolean;
+  video?: boolean;
+}> = (config, { cameraPermission, microphonePermission, supportsVideo, video }) => {
   return IOSConfig.Permissions.createPermissionsPlugin({
-    NSCameraUsageDescription: CAMERA_USAGE,
+    ...(supportsVideo || video ? { NSCameraUsageDescription: CAMERA_USAGE } : {}),
     NSMicrophoneUsageDescription: MICROPHONE_USAGE,
   })(config, {
     NSCameraUsageDescription: cameraPermission,
@@ -380,6 +382,8 @@ export const withVoIPConversationsIos: ConfigPlugin<VoIPConversationsPluginProps
   const {
     cameraPermission,
     microphonePermission,
+    supportsVideo,
+    video,
     incomingCallTimeout,
     fulfillAnswerCallTimeout,
     includesCallsInRecents,
@@ -404,7 +408,7 @@ export const withVoIPConversationsIos: ConfigPlugin<VoIPConversationsPluginProps
   config = withCallNotifications(config, { callNotifications });
   config = withCallPreviewActivities(config, { callPreviewActivities });
   config = withFocusFilter(config, { focusFilter });
-  config = withPermissions(config, { cameraPermission, microphonePermission });
+  config = withPermissions(config, { cameraPermission, microphonePermission, supportsVideo, video });
   config = withPushNotificationEntitlement(config);
   config = withBackgroundModes(config);
   config = withSiriIntents(config);

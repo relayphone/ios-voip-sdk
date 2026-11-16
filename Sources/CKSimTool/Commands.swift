@@ -130,7 +130,7 @@
         Uninstall.self, Repair.self, Launch.self, Reset.self, Answer.self, Decline.self,
         End.self, Unmerge.self, Merge.self, Hold.self, Mute.self, Tones.self,
         HoldAndAccept.self, EndAndAccept.self, EndHeldAndAccept.self, Push.self, Faults.self,
-        IncomingFilter.self,
+        IncomingFilter.self, ProcessControl.self,
       ])
 
     /// Runs `cksim` with arguments in which the shared options may come before the command.
@@ -157,6 +157,9 @@
         }
       }
       guard let command = rest.first else { return leading }
+      if command == "process" {
+        return [command] + Self.arguments(leading + rest.dropFirst())
+      }
       return [command] + leading + rest.dropFirst()
     }
   }
@@ -259,8 +262,36 @@
 
     struct Events: AsyncParsableCommand {
       @OptionGroup var options: GlobalOptions
+      @Option(
+        help:
+          "Read a merged journal snapshot for this run, including host events, without contacting the app."
+      )
+      var runID: String?
+      func validate() throws {
+        guard runID == nil || options.commandReceipt == nil else {
+          throw ValidationError(
+            "events --run-id has no mailbox request to capture with --command-receipt.")
+        }
+      }
       func run() async throws {
-        try await reporting { try await options.control(.events, command: "events") }
+        try await reporting {
+          guard let runID else {
+            try await options.control(.events, command: "events")
+            return
+          }
+          try options.validate(command: "events")
+          let device = try Tool.current.simctl.simulator(options.simulator)
+          guard let simulatorID = UUID(uuidString: device) else {
+            throw CKSimError("Process journal requires a resolved simulator UUID.")
+          }
+          let identity = try ProcessLifecycleIdentity(
+            simulatorID: simulatorID, bundleID: options.bundle ?? "", runID: runID)
+          let journal = ProcessJournal(
+            channel: try options.target(device).channel(), identity: identity)
+          for entry in try journal.read() {
+            Tool.current.write(String(decoding: entry.line, as: UTF8.self))
+          }
+        }
       }
     }
 
@@ -476,8 +507,8 @@
       func validate() throws {
         _ = try delivery
         if launch {
-          guard try delivery == .none else {
-            throw ValidationError("Push delivery faults require a running app; launch it first.")
+          guard duplicate == 0 else {
+            throw ValidationError("Cold-launch duplicates require host exit tracking.")
           }
           guard let runID, (1...64).contains(runID.utf8.count),
             runID.utf8.allSatisfy({ isRunIDByte($0) }), launchReceipt != nil
@@ -492,11 +523,12 @@
           try options.validate(command: "push", launching: launch)
           if launch {
             let device = try options.device(command: "push")
-            try PushLaunch(
+            try await PushLaunch(
               target: options.target(device), runID: runID ?? "", mustReport: mustReport.value,
               payloadFile: URL(filePath: payloadFile),
-              receipt: URL(filePath: launchReceipt ?? "")
+              receipt: URL(filePath: launchReceipt ?? ""), delivery: delivery
             ).run()
+            return
           }
           let payload = try JSONDecoder().decode(
             PushPayload.self, from: Data(contentsOf: URL(filePath: payloadFile)))

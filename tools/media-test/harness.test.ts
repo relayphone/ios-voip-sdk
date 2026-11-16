@@ -58,7 +58,7 @@ test('real peer publishes markers, captures app audio, holds silent and leaves',
       assert.ok(measured.clean && measured.complete && measured.postRollObserved);
     }
     await harness.act({ type: 'hold' }); await delay(500); app.beginCapture();
-    await monitorReceiver(() => app.status());
+    await monitorReceiver(() => app.status(), { deadlineMs: performance.now() + 30000 });
     assert.ok(app.status().receivedSamples > 0); assert.ok(app.status().rms! < 0.001);
     await harness.act({ type: 'leave' }); assert.ok(!harness.status().connected);
     await until(() => !app.status().trackAvailable);

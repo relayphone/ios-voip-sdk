@@ -5,7 +5,15 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+## 0.6.0 (2026-11-16)
+
 ### Added
+
+- Explicit media permission helpers: `getMediaPermissions`, foreground-only
+  `requestMediaPermissions`, and non-prompting `conversationMediaReadiness`, with shared Expo
+  response types and the `not_foreground` error code. iOS reads microphone and camera access
+  without prompting automatically. Video apps enable the plugin's `supportsVideo` or `video`
+  option to add a camera usage description; audio-only apps receive only the microphone entry.
 
 - `CallMedia.transportEvents()` optionally reports the first received and sent packet for a call,
   with a monotonic observation time. Existing media implementations remain silent by default.
@@ -23,6 +31,10 @@ Public API changes include migration guidance.
   leak fails even if a later window is silent; no complete window fails as `unobserved`.
 
 ### Fixed
+
+- Pre-mute receiver/publication checks select the first complete observer window within the
+  existing result budget. Gapped attempts retain scheduler diagnostics as unobserved; health,
+  marker and transport failures remain terminal, with unchanged thresholds.
 
 - Include timed processing-state and engine-transition diagnostics in native media feasibility receipts, and report the earliest native failure directly.
 

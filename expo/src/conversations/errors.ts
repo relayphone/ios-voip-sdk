@@ -4,6 +4,7 @@ import type { ConversationErrorCode, ConversationFailure } from "./types.ts";
 const codes = new Set<ConversationErrorCode>([
   "invalid_arguments",
   "unknown_conversation",
+  "not_foreground",
   "unsupported",
   "conversation",
   "duplicate_sdk_linkage",
@@ -52,6 +53,9 @@ export function commandError(value: unknown): unknown {
 /** Native functions whose rejections carry a `ConversationFailure`. */
 const commands: ReadonlySet<PropertyKey> = new Set<keyof NativeTransport>([
   "getConversations",
+  "getMediaPermissions",
+  "requestMediaPermissions",
+  "conversationMediaReadiness",
   "getAudioRoutes",
   "getPushToken",
   "startConversation",

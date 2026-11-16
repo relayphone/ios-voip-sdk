@@ -185,8 +185,19 @@ distinct `pushID` in `push.scheduled`, correlated to that command by `requestID`
 the original retains the request ID. Each actual `push.received` starts its own
 reporting budget, including for delayed and duplicate deliveries. A report for
 one copy cannot satisfy another. Pending schedules are cancelled when the runtime
-stops. These flags cannot combine with `--launch`, whose one-shot cold-launch
-envelope is unchanged; launch the app before applying delivery faults.
+stops.
+
+With `--launch`, `--delay-ms` waits from host command acceptance before staging or
+requesting launch; startup cannot wake the app early. The payload is validated
+and frozen before waiting, and stopped-app verification runs after the delay.
+The envelope's separate 30-second freshness window starts at staging. `--drop`
+records a host `push.dropped` row and a dropped launch receipt, without staging,
+launching, invoking PushKit or creating a reporting obligation. Drop may combine
+with delay. Use a fresh run ID and receipt path for each request. Cold launches
+now stage version-two envelopes with stable request/delivery identities;
+version-one decoding remains supported. Cold-launch duplicates are still refused
+until host exit tracking can retain cancelled delivery outcomes. Running-app
+duplication is unchanged.
 
 ### Push reporting enforcement
 
@@ -345,6 +356,39 @@ The CLI, CI and inspector consume the same append-only
 within each session; consumers reject unsupported versions and identity/order
 mismatches and buffer incomplete trailing lines. New event names and fields are
 additive within version 1. Do not assume a fixed set of event names.
+
+For an offline snapshot, use `cksim --bundle com.example.app events --run-id <runID>`.
+This reads the selected app container without a runtime mailbox round trip or an installed
+runtime package, so host observations remain readable before app startup and after exit.
+It emits JSONL, while `events` without `--run-id` retains its mailbox response format.
+Cold push launches persist `process.launchRequested` before invoking the simulator launcher.
+They require a fresh run ID: an existing runtime or host run directory prevents staging, so
+an earlier invocation's boundaries cannot be attributed to a new process.
+Host producers each own an exclusive segment at
+`Documents/.callkit-simulator/process/<runID>/<producerID>.jsonl`; they never append to the
+runtime's file. A host row has a producer UUID and an optional app PID, absent before launch.
+
+Runtime rows additionally carry absolute `uptimeNanoseconds`. Snapshots merge this shared
+monotonic time across host and runtime segments, breaking ties by producer identity and then
+producer sequence. They preserve each producer's sequence instead of renumbering it globally.
+Wall-clock changes never reorder observations. A runtime journal without absolute uptime is
+refused with a rebuild diagnostic rather than guessed into the host timeline. Each snapshot
+validates invocation identity and contiguous producer sequences, omits incomplete trailing
+rows, and limits segments to 16 MiB and the merged rows to 64 MiB.
+The Inspector and `watch` continue to follow the runtime segment; combined streaming and
+readiness projections follow separately.
+
+Stop a specific run before a cold-recovery test with
+`cksim --bundle com.example.app process kill --run-id <runID> --cause abrupt`.
+Use `--cause user-requested` for simulator termination instead of an abrupt kill.
+The host resolves the installed bundle, checks its published run and live service PID,
+persists `process.killRequested`, and repeats identity verification immediately before
+termination. It records `process.exited` and returns a JSON receipt only after both the
+service and old PID are absent. `--command-receipt <new-file>` persists that receipt.
+Identity changes, query failures, and an unconfirmed exit fail the command; inspect state
+before staging another push. These controls model test intent, not jetsam selection or
+SpringBoard's persistent force-quit eligibility. A later `push --launch` is an explicit
+launch override and requires a fresh run ID.
 
 Reports use `report.*`; conversation snapshots use `call.changed` (including
 caller name, handle, ringing, connected, held, muted and ended). Actions use

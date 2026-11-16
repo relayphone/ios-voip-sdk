@@ -259,6 +259,7 @@
     /// Milliseconds since the runtime started.
     let time: Int
     let wallTimeMS: Int
+    let uptimeNanoseconds: UInt64
 
     var uuid: String?
     var callUUID: String?
@@ -305,7 +306,7 @@
     var conversations: [Conversation]?
 
     private enum Key: String, CodingKey {
-      case schemaVersion, sequence, runID, pid, bundleID, event, wallTimeMS
+      case schemaVersion, sequence, runID, pid, bundleID, event, wallTimeMS, uptimeNanoseconds
       case time = "t_ms"
       case uuid, callUUID, actionID, actionIDs, transactionID, pushID, reportID, requestID
       case commandID, kind, origin, apiKind, state, domain, filterReason, verification, handle
@@ -325,6 +326,7 @@
       event = try values.decode(String.self, forKey: .event)
       time = try values.decode(Int.self, forKey: .time)
       wallTimeMS = try values.decode(Int.self, forKey: .wallTimeMS)
+      uptimeNanoseconds = try values.decode(UInt64.self, forKey: .uptimeNanoseconds)
       func optional<T: Decodable>(_ key: Key) -> T? {
         try? values.decodeIfPresent(T.self, forKey: key)
       }
