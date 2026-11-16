@@ -426,6 +426,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       struct Stage: Encodable {
         let pcm: CapturedPCM
         let observation: MediaAudioProbe.Observation
+        let callbacks: MediaPCMCallbackEvidence
       }
       let commandId: UUID?
       let sessionId: UUID
@@ -449,12 +450,13 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     private func journeySnapshot(command: UUID?) -> JourneySnapshot? {
       guard let session = journeySession else { return nil }
       func stage(_ stage: MediaAudioProbe.Stage) -> JourneySnapshot.Stage {
-        let pcm = probe.capture(stage)
+        let snapshot = probe.snapshot(stage)
+        let pcm = snapshot.capture
         return JourneySnapshot.Stage(
           pcm: CapturedPCM(
             sampleRate: pcm.sampleRate, channels: pcm.channels,
             formatChanged: pcm.formatChanged, transport: transport[stage] ?? []),
-          observation: probe.observation(stage))
+          observation: snapshot.observation, callbacks: snapshot.callbacks)
       }
       return JourneySnapshot(
         commandId: command, sessionId: session.id, fixtureId: session.fixture.fixtureId,
