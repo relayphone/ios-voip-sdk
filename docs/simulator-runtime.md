@@ -385,6 +385,17 @@ The host resolves the installed bundle, checks its published run and live servic
 persists `process.killRequested`, and repeats identity verification immediately before
 termination. It records `process.exited` and returns a JSON receipt only after both the
 service and old PID are absent. `--command-receipt <new-file>` persists that receipt.
+After confirmed exit, the host reads the pinned run's final delivery journal and
+records `push.cancelled` for scheduled copies that never entered a PushKit delegate
+and were not dropped or already cancelled. Each row retains its request ID, push ID,
+old PID and requested exit cause; the receipt's `cancelledDeliveries` lists those IDs.
+Delegate entry ends pending status even if its reporting obligation or completion is
+still outstanding. Cancellation never fulfills a reporting obligation.
+An incomplete or inconsistent journal leaves delivery outcomes unknown and fails the
+command after retaining the confirmed `process.exited` boundary; it cannot manufacture
+cancellation. This stricter final-snapshot rule does not change offline event snapshots,
+which still omit incomplete tails. Automatic launch supervision follows separately;
+cold-launch duplicate flags remain gated until that observer is available.
 Identity changes, query failures, and an unconfirmed exit fail the command; inspect state
 before staging another push. These controls model test intent, not jetsam selection or
 SpringBoard's persistent force-quit eligibility. A later `push --launch` is an explicit

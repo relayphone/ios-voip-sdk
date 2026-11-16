@@ -69,6 +69,7 @@
       let pid: Int
       let cause: ProcessExitCause
       let exited: Bool
+      let cancelledDeliveries: [UUID]
     }
 
     /// Stops only a live service matching the pinned runtime session. No runtime mailbox is needed.
@@ -141,7 +142,21 @@
         let current = try service()
         if current == nil, try hasExited(Int32(session.pid)) {
           try await journal.record(.exited, pid: session.pid, cause: cause)
-          return KillReceipt(identity: identity, pid: session.pid, cause: cause, exited: true)
+          try Task.checkCancellation()
+          let pending = try ProcessJournal(channel: channel, identity: identity)
+            .pendingDeliveries(pid: session.pid)
+          try verifySession()
+          try Task.checkCancellation()
+          for delivery in pending {
+            try Task.checkCancellation()
+            try await journal.record(
+              .cancelled, pid: session.pid, requestID: delivery.requestID,
+              pushID: delivery.pushID, cause: cause)
+          }
+          try Task.checkCancellation()
+          return KillReceipt(
+            identity: identity, pid: session.pid, cause: cause, exited: true,
+            cancelledDeliveries: pending.map(\.pushID))
         }
         guard current == nil || current == original else {
           throw CKSimError("App service was replaced; old process exit is unverified.")
@@ -186,6 +201,72 @@
 
   /// A bounded offline snapshot: host segments are available even without a runtime session.
   struct ProcessJournal {
+    struct PendingDelivery: Equatable {
+      let requestID: UUID
+      let pushID: UUID
+    }
+
+    private struct DeliveryObservation: Decodable {
+      let pushID: UUID
+      let requestID: UUID?
+    }
+
+    private enum DeliveryEvent: String {
+      case scheduled = "push.scheduled"
+      case received = "push.received"
+      case dropped = "push.dropped"
+    }
+
+    /// Reconstructs undelivered copies only from a validated snapshot of the pinned invocation.
+    /// A delegate entry ends pending status even when reporting or completion is still outstanding.
+    func pendingDeliveries(pid: Int) throws -> [PendingDelivery] {
+      var scheduled: [PendingDelivery] = []
+      var requests: [UUID: UUID] = [:]
+      var terminal = Set<UUID>()
+      var correlatedTerminals: [PendingDelivery] = []
+      for entry in try read(requireCompleteTail: true) {
+        if entry.producer.hasPrefix("runtime-") {
+          guard entry.producer == "runtime-\(pid)" else {
+            throw CKSimError("Delivery journal does not match the exited process.")
+          }
+          let header = try JSONDecoder().decode(RuntimeHeader.self, from: entry.line)
+          guard let event = DeliveryEvent(rawValue: header.event) else { continue }
+          let observation = try JSONDecoder().decode(DeliveryObservation.self, from: entry.line)
+          if event == .scheduled {
+            guard let requestID = observation.requestID,
+              requests[observation.pushID] == nil
+            else { throw CKSimError("Ambiguous push delivery schedule.") }
+            requests[observation.pushID] = requestID
+            scheduled.append(PendingDelivery(requestID: requestID, pushID: observation.pushID))
+          } else {
+            guard event != .dropped || observation.requestID != nil else {
+              throw CKSimError("Dropped delivery lacks request correlation.")
+            }
+            if let requestID = observation.requestID {
+              correlatedTerminals.append(
+                PendingDelivery(requestID: requestID, pushID: observation.pushID))
+            }
+            terminal.insert(observation.pushID)
+          }
+        } else {
+          let row = try JSONDecoder().decode(ProcessLifecycleRecord.self, from: entry.line)
+          if row.event == .cancelled {
+            guard row.pid == pid, let pushID = row.pushID, let requestID = row.requestID else {
+              throw CKSimError("Invalid prior delivery cancellation.")
+            }
+            correlatedTerminals.append(PendingDelivery(requestID: requestID, pushID: pushID))
+            terminal.insert(pushID)
+          }
+        }
+      }
+      for observation in correlatedTerminals {
+        guard requests[observation.pushID] == observation.requestID else {
+          throw CKSimError("Terminal observation does not match a scheduled delivery.")
+        }
+      }
+      return scheduled.filter { !terminal.contains($0.pushID) }
+    }
+
     struct Entry {
       let line: Data
       let uptimeNanoseconds: UInt64
@@ -195,7 +276,7 @@
     let channel: URL
     let identity: ProcessLifecycleIdentity
 
-    func read() throws -> [Entry] {
+    func read(requireCompleteTail: Bool = false) throws -> [Entry] {
       var entries: [Entry] = []
       var found = false
       var bytes = 0
@@ -221,7 +302,7 @@
           found = true
           var sequence: UInt64 = 0
           var uptime: UInt64 = 0
-          for line in try lines(file) {
+          for line in try lines(file, requireCompleteTail: requireCompleteTail) {
             try account(line)
             let row = try JSONDecoder().decode(ProcessLifecycleRecord.self, from: line)
             guard row.simulatorID == identity.simulatorID, row.bundleID == identity.bundleID,
@@ -243,7 +324,7 @@
         var sequence: UInt64 = 0
         var uptime: UInt64 = 0
         var pid: Int?
-        for line in try lines(runtime) {
+        for line in try lines(runtime, requireCompleteTail: requireCompleteTail) {
           try account(line)
           let row: RuntimeHeader
           do { row = try JSONDecoder().decode(RuntimeHeader.self, from: line) } catch {
@@ -286,7 +367,7 @@
       let wallTimeMS: Int64
     }
 
-    private func lines(_ file: URL) throws -> [Data] {
+    private func lines(_ file: URL, requireCompleteTail: Bool) throws -> [Data] {
       let descriptor = open(file.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
       guard descriptor >= 0 else { throw CKSimError("Cannot open journal segment safely.") }
       let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
@@ -299,6 +380,9 @@
       else { throw CKSimError("Unsafe or oversized journal segment.") }
       let data = try handle.read(upToCount: limit + 1) ?? Data()
       guard data.count <= limit else { throw CKSimError("Journal segment exceeds 16 MiB.") }
+      guard !requireCompleteTail || data.isEmpty || data.last == 10 else {
+        throw CKSimError("Incomplete journal tail; pending delivery outcome is unknown.")
+      }
       // A concurrently written or interrupted final row is not yet a complete observation.
       return data.split(separator: 10, omittingEmptySubsequences: false).dropLast().map(Data.init)
     }

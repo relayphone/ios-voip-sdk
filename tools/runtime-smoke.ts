@@ -227,6 +227,13 @@ export async function smoke(packagePath: string, requestedSimulator?: string): P
       JSON.parse(readFileSync(join(channel, 'session.json'), 'utf8'));
     for (const cause of ['abrupt', 'user-requested']) {
       const before = session();
+      const requestID = JSON.parse(cksim('push', '--payload-file', payload, '--must-report', 'true',
+        '--delay-ms', '120000', '--duplicate', '1')).result.pushID as string;
+      const scheduled = cksim('events', '--run-id', before.runID).trim().split('\n')
+        .map(line => JSON.parse(line) as PushEvent)
+        .filter(row => row.event === 'push.scheduled' && row.requestID === requestID)
+        .map(row => row.pushID);
+      assert.equal(scheduled.length, 2);
       const receiptPath = join(work, `kill-${cause}.json`);
       const receipt = JSON.parse(cksim('process', 'kill', '--run-id', before.runID,
         '--cause', cause, '--command-receipt', receiptPath));
@@ -234,13 +241,19 @@ export async function smoke(packagePath: string, requestedSimulator?: string): P
       assert.equal(receipt.pid, before.pid);
       assert.equal(receipt.identity.runID, before.runID);
       assert.equal(receipt.cause, cause);
+      assert.deepEqual(receipt.cancelledDeliveries, scheduled);
       assert.deepEqual(JSON.parse(readFileSync(receiptPath, 'utf8')), receipt);
       assert.throws(() => process.kill(before.pid, 0),
         (error: unknown) => (error as NodeJS.ErrnoException).code === 'ESRCH');
       const rows = cksim('events', '--run-id', before.runID).trim().split('\n')
-        .map(line => JSON.parse(line) as { event: string; pid?: number; cause?: string });
+        .map(line => JSON.parse(line) as { event: string; pid?: number; cause?: string;
+          requestID?: string; pushID?: string });
       assert.deepEqual(rows.filter(row => row.event.startsWith('process.')).map(row => row.event),
         ['process.killRequested', 'process.exited']);
+      const cancelled = rows.filter(row => row.event === 'push.cancelled');
+      assert.deepEqual(cancelled.map(row => row.pushID), scheduled);
+      assert.ok(cancelled.every(row => row.requestID === requestID && row.pid === before.pid && row.cause === cause));
+      assert.ok(!rows.some(row => row.event === 'push.received' && scheduled.includes(row.pushID)));
       launchToleratingASlowSimulator(() => cksim('launch'));
       await until('a new runtime process after verified kill', 120, () => {
         cksim('status');

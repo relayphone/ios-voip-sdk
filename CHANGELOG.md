@@ -7,6 +7,8 @@ Public API changes include migration guidance.
 
 ### Added
 
+- Verified simulator process termination records host cancellation rows and receipt IDs for
+  scheduled pushes that never entered a delegate before the process exited.
 - The optional media test kit exposes a shared observation clock and measured native teardown
   receipts for tap removal, engine stop, room disconnection and audio session release. Host
   validation can bind release evidence to a clock, arm acknowledgement and deadline.
