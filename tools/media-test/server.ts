@@ -64,10 +64,25 @@ export async function startServer(binary: string, directory: string, port?: numb
     const result = await deadline(5000, 'Server spawn', () => Promise.race([message, exited.then(() => { throw Error('Server exited'); })]));
     pid = (result[0] as { pid: number }).pid;
     const url = `ws://127.0.0.1:${signalPort}`;
+    const part = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
+    const data = part({ alg: 'HS256', typ: 'JWT' }) + '.' + part({ iss: key, sub: 'readiness',
+      exp: Math.floor(Date.now() / 1000) + 60, video: { roomList: true } });
+    const readinessToken = data + '.' + createHmac('sha256', secret).update(data).digest('base64url');
     await deadline(12_000, 'Server health', async () => {
       while (true) {
         assert.equal(owner.exitCode, null, 'Server exited before ready');
-        if (await fetch(url.replace('ws:', 'http:'), { signal: AbortSignal.timeout(1000) }).then(r => r.ok, () => false)) break;
+        // Require the instance's fresh key; a health response can belong to another listener.
+        const response = await fetch(`${url.replace('ws:', 'http:')}/twirp/livekit.RoomService/ListRooms`, {
+          method: 'POST', headers: { Authorization: `Bearer ${readinessToken}`, 'Content-Type': 'application/json' },
+          body: '{}', signal: AbortSignal.timeout(1000),
+        }).catch(() => undefined);
+        if (response) {
+          assert.ok(response.ok, 'Server readiness authentication failed');
+          const result: unknown = await response.json();
+          assert.ok(result && typeof result === 'object' && 'rooms' in result && Array.isArray(result.rooms),
+            'Invalid server readiness response');
+          break;
+        }
         await delay(100);
       }
       // Let a bind failure reach the supervisor; an unrelated HTTP listener cannot qualify it.
