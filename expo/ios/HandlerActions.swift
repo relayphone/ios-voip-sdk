@@ -1,5 +1,9 @@
 import Foundation
 
+#if DEBUG && targetEnvironment(simulator)
+  import Darwin
+#endif
+
 /// Delivers actions to the app's JavaScript `ConversationHandler`.
 ///
 /// The SDK performs answer, end, hold, mute and tones itself, then tells the app; it never waits
@@ -51,6 +55,7 @@ final class HandlerActions {
 
   private var gated: [Gated] = []
   private var generation = 0
+  private var readinessGeneration = 0
   private let send: @MainActor (String, JSONValue) -> Void
   private let conversation: @MainActor (CallID) -> JSONValue?
   private let complete: @MainActor (CallID, Kind, Outcome) -> Void
@@ -83,7 +88,15 @@ final class HandlerActions {
     withdrawDeliveries(reason: "handlerReplaced")
     generation = next
     isAttached = attached
-    if attached { gated.indices.forEach(deliver) }
+    if attached {
+      readinessGeneration += 1
+      #if DEBUG && targetEnvironment(simulator)
+        if let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CKSimHandlerAttached") {
+          unsafeBitCast(symbol, to: (@convention(c) (Int) -> Void).self)(readinessGeneration)
+        }
+      #endif
+      gated.indices.forEach(deliver)
+    }
   }
 
   /// The JavaScript runtime started again, so its handlers count generations from the start.

@@ -196,6 +196,8 @@ public struct ProviderSnapshot: Codable, Equatable, Sendable {
 public struct RuntimeSnapshot: Codable, Equatable, Sendable {
   /// Recent lifecycle records, including ended calls. The live system view remains in calls.
   public var retainedCalls: [RetainedCall] = []
+  /// Host/runtime process boundaries and optional readiness durations.
+  public var processLifecycle: ProcessReadinessSnapshot? = nil
   /// Current calls, in the runtime's existing snapshot order.
   public let calls: [CallSnapshot]
   /// The number of unsettled runtime actions.
@@ -214,11 +216,12 @@ public struct RuntimeSnapshot: Codable, Equatable, Sendable {
   /// Creates a status value without changing runtime state or journal sequence.
   private enum CodingKeys: String, CodingKey {
     case calls, pending, audioActive, sequence, incomingErrorCode, incomingFilter,
-      providerConfigurations, retainedCalls
+      providerConfigurations, retainedCalls, processLifecycle
   }
   /// Writes history additively, preserving older status shapes when history is empty.
   public func encode(to encoder: any Encoder) throws {
     var values = encoder.container(keyedBy: CodingKeys.self)
+    try values.encodeIfPresent(processLifecycle, forKey: .processLifecycle)
     try values.encode(calls, forKey: .calls)
     try values.encode(pending, forKey: .pending)
     try values.encode(audioActive, forKey: .audioActive)
@@ -239,6 +242,8 @@ public struct RuntimeSnapshot: Codable, Equatable, Sendable {
     incomingFilter = try values.decode(IncomingFilterSnapshot.self, forKey: .incomingFilter)
     providerConfigurations = try values.decode(
       [ProviderSnapshot].self, forKey: .providerConfigurations)
+    processLifecycle = try values.decodeIfPresent(
+      ProcessReadinessSnapshot.self, forKey: .processLifecycle)
     retainedCalls = try values.decodeIfPresent([RetainedCall].self, forKey: .retainedCalls) ?? []
   }
 

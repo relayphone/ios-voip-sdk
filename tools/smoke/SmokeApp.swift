@@ -4,6 +4,7 @@
   @preconcurrency import CallKit
   @preconcurrency import PushKit
   import SwiftUI
+  import Darwin
 
   @available(iOS 26.4, *)
   @MainActor
@@ -50,6 +51,10 @@
       }
       registry.desiredPushTypes = [.voIP]
       self.registry = registry
+      // The fixture's handler has been installed; acknowledge its first native generation.
+      if let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CKSimHandlerAttached") {
+        unsafeBitCast(symbol, to: (@convention(c) (Int) -> Void).self)(1)
+      }
       return true
     }
 

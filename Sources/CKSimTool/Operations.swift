@@ -6,7 +6,7 @@
   /// Follows a run's journal, printing new entries, until Ctrl-C or the duration ends. It waits
   /// for a stopped app to start again, and follows a new session from its first entry.
   func watch(
-    channel: URL, bundle: String, json: Bool, after: Int, duration: Duration?
+    channel: URL, bundle: String, simulatorID: UUID, json: Bool, after: Int, duration: Duration?
   ) async throws {
     let interrupted = Interrupt()
     let end = duration.map { ContinuousClock.now + $0 }
@@ -15,11 +15,19 @@
     }
     var journal = try Journal(channel: channel, bundle: bundle)
     var after = after
+    var seen: [String: UInt64] = [:]
     var disconnected = false
     while true {
-      let entries: [Journal.Entry]
+      let entries: [ProcessJournal.Entry]
       do {
-        entries = try journal.read()
+        try journal.checkSession()
+
+        entries = try ProcessJournal(
+          channel: channel,
+          identity: ProcessLifecycleIdentity(
+            simulatorID: simulatorID, bundleID: bundle, runID: journal.session.runID)
+        ).read()
+        try journal.checkSession()
         disconnected = false
       } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
         if !disconnected {
@@ -34,13 +42,24 @@
         guard let next = try? Journal(channel: channel, bundle: bundle) else { continue }
         journal = next
         after = 0
+        seen = [:]
         FileHandle.standardError.write(
           Data("Runtime session changed; following \(journal.session.runID)\n".utf8))
         continue
       }
-      for entry in entries where entry.sequence > after {
+      for entry in entries
+      where entry.sequence
+        > (seen[entry.producer] ?? (entry.producer.hasPrefix("runtime-") ? UInt64(after) : 0))
+      {
         Tool.current.write(
-          json ? String(decoding: entry.line, as: UTF8.self) : timelineLine(entry.json))
+          json
+            ? String(decoding: entry.line, as: UTF8.self)
+            : timelineLine(
+              try JSONSerialization.jsonObject(with: entry.line) as? [String: Any] ?? [:]))
+      }
+      for entry in entries {
+        let baseline = entry.producer.hasPrefix("runtime-") ? UInt64(after) : 0
+        seen[entry.producer] = max(seen[entry.producer] ?? baseline, entry.sequence)
       }
       if finished() { return }
       try await Task.sleep(for: .milliseconds(100))

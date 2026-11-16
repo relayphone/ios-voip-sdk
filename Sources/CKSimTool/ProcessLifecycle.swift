@@ -143,6 +143,8 @@
         if current == nil, try hasExited(Int32(session.pid)) {
           try await journal.record(.exited, pid: session.pid, cause: cause)
           try Task.checkCancellation()
+          let lease = try await journal.cancellationLease()
+          defer { try? lease.close() }
           let pending = try ProcessJournal(channel: channel, identity: identity)
             .pendingDeliveries(pid: session.pid)
           try verifySession()
@@ -222,6 +224,7 @@
     func pendingDeliveries(pid: Int) throws -> [PendingDelivery] {
       var scheduled: [PendingDelivery] = []
       var requests: [UUID: UUID] = [:]
+      var runtimeSchedules = Set<UUID>()
       var terminal = Set<UUID>()
       var correlatedTerminals: [PendingDelivery] = []
       for entry in try read(requireCompleteTail: true) {
@@ -234,10 +237,13 @@
           let observation = try JSONDecoder().decode(DeliveryObservation.self, from: entry.line)
           if event == .scheduled {
             guard let requestID = observation.requestID,
-              requests[observation.pushID] == nil
+              runtimeSchedules.insert(observation.pushID).inserted,
+              requests[observation.pushID] == nil || requests[observation.pushID] == requestID
             else { throw CKSimError("Ambiguous push delivery schedule.") }
+            if requests[observation.pushID] == nil {
+              scheduled.append(PendingDelivery(requestID: requestID, pushID: observation.pushID))
+            }
             requests[observation.pushID] = requestID
-            scheduled.append(PendingDelivery(requestID: requestID, pushID: observation.pushID))
           } else {
             guard event != .dropped || observation.requestID != nil else {
               throw CKSimError("Dropped delivery lacks request correlation.")
@@ -250,6 +256,13 @@
           }
         } else {
           let row = try JSONDecoder().decode(ProcessLifecycleRecord.self, from: entry.line)
+          if row.event == .launchScheduled {
+            guard row.pid == nil, let pushID = row.pushID, let requestID = row.requestID,
+              requests[pushID] == nil
+            else { throw CKSimError("Invalid retained launch schedule.") }
+            requests[pushID] = requestID
+            scheduled.append(PendingDelivery(requestID: requestID, pushID: pushID))
+          }
           if row.event == .cancelled {
             guard row.pid == pid, let pushID = row.pushID, let requestID = row.requestID else {
               throw CKSimError("Invalid prior delivery cancellation.")
@@ -385,6 +398,217 @@
       }
       // A concurrently written or interrupted final row is not yet a complete observation.
       return data.split(separator: 10, omittingEmptySubsequences: false).dropLast().map(Data.init)
+    }
+  }
+
+  extension ProcessLifecycle {
+    /// Serializes final snapshots and cancellation writes across independent host commands.
+    func cancellationLease() async throws -> FileHandle {
+      let path = file.deletingLastPathComponent().deletingLastPathComponent().appending(
+        path: ".\(identity.runID).cancellation-lock")
+      let descriptor = open(
+        path.path, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, 0o600)
+      guard descriptor >= 0 else { throw CKSimError("Cannot open cancellation lease.") }
+      let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+      var status = stat()
+      guard fstat(descriptor, &status) == 0, status.st_mode & S_IFMT == S_IFREG,
+        status.st_uid == getuid(), status.st_nlink == 1, status.st_mode & 0o7777 == 0o600
+      else {
+        try handle.close()
+        throw CKSimError("Unsafe cancellation lease.")
+      }
+      let deadline = ContinuousClock.now + .seconds(60)
+      do {
+        while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+          guard errno == EWOULDBLOCK, ContinuousClock.now < deadline else {
+            throw CKSimError("Cannot acquire cancellation lease.")
+          }
+          try await Task.sleep(for: .milliseconds(10))
+        }
+        try Task.checkCancellation()
+        return handle
+      } catch {
+        try? handle.close()
+        throw error
+      }
+    }
+
+    /// Retains the launch request until the verified process exits, including exits before hooks exist.
+    static func supervise(
+      target: Target, container: URL, envelope: PushLaunchEnvelope, environment: [String: String],
+      observationTimeout: Duration = .seconds(30),
+      clock: some Clock<Duration> = ContinuousClock(),
+      hasExited: (Int32) throws -> Bool = { pid in
+        if Darwin.kill(pid, 0) == 0 { return false }
+        guard errno == ESRCH else { throw CKSimError("Cannot establish launched process exit.") }
+        return true
+      }
+    ) async throws {
+      guard envelope.bundleID == target.bundle else {
+        throw CKSimError("Launch plan bundle mismatch.")
+      }
+      let channel = container.appending(path: "Documents/.callkit-simulator")
+      guard let simulator = UUID(uuidString: target.device) else {
+        throw CKSimError("Require a resolved simulator UUID.")
+      }
+      let identity = try ProcessLifecycleIdentity(
+        simulatorID: simulator, bundleID: target.bundle, runID: envelope.runID)
+      let journal = try ProcessLifecycle(channel: channel, identity: identity)
+      let snapshot = ProcessJournal(channel: channel, identity: identity)
+      for id in envelope.deliveryIDs {
+        try await journal.record(.launchScheduled, requestID: envelope.id, pushID: id)
+      }
+      try await journal.record(.launchRequested, requestID: envelope.id)
+      let output: ProcessOutput
+      do {
+        output = try target.simctl.run(
+          ["launch", target.device, target.bundle], environment, Simctl.limit)
+        guard output.status == 0 else {
+          throw CKSimError("Simulator launch failed: \(output.diagnostic)")
+        }
+      } catch {
+        try await journal.record(.launchFailed, requestID: envelope.id)
+        throw error
+      }
+      let prefix = "\(target.bundle): "
+      let response = output.output.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard response.hasPrefix(prefix), let pid = Int32(response.dropFirst(prefix.count)), pid > 0
+      else {
+        throw CKSimError("Simulator launch returned no verifiable process identity.")
+      }
+      let deadline = clock.now.advanced(by: observationTimeout)
+      var observedSession = false
+      var timedOut = false
+      while true {
+        try Task.checkCancellation()
+        guard
+          URL(
+            filePath: try target.simctl("get_app_container", target.device, target.bundle, "data")
+          ).standardizedFileURL.path == container.standardizedFileURL.path
+        else {
+          throw CKSimError("Launched application container changed.")
+        }
+        let query = try target.simctl.run(
+          ["spawn", target.device, "launchctl", "list"],
+          ProcessInfo.processInfo.environment.merging(["SIMCTL_CHILD_DYLD_INSERT_LIBRARIES": ""]) {
+            $1
+          }, Simctl.limit)
+        guard query.status == 0, query.standardError.isEmpty else {
+          throw CKSimError("Cannot observe launched app service.")
+        }
+        let service = try AppService.read(query.standardOutput, bundle: target.bundle)
+        guard service == nil || service?.pid == Int(pid) else {
+          throw CKSimError("Launched process was replaced; exit is unverified.")
+        }
+        let sessionFile = channel.appending(path: "session.json")
+        if exists(sessionFile) {
+          let session = try PublishedSession(channel: channel, bundle: target.bundle).session
+          if session.runID == envelope.runID {
+            guard session.pid == Int(pid) else {
+              throw CKSimError("Launched runtime PID mismatch.")
+            }
+            observedSession = true
+          } else if observedSession {
+            throw CKSimError("Launched runtime session was replaced.")
+          }
+        } else if observedSession {
+          throw CKSimError("Launched runtime session disappeared.")
+        }
+        if service == nil, try hasExited(pid) {
+          try await journal.record(.exited, pid: Int(pid), requestID: envelope.id, cause: .unknown)
+          let lease = try await journal.cancellationLease()
+          defer { try? lease.close() }
+          for id in try snapshot.pendingLaunchDeliveries(envelope, pid: Int(pid)) {
+            try await journal.record(
+              .cancelled, pid: Int(pid), requestID: envelope.id, pushID: id, cause: .unknown)
+          }
+          return
+        }
+        if !timedOut, clock.now >= deadline {
+          let readiness = try snapshot.readiness(pid: Int(pid))
+          if readiness.registry == nil {
+            try await journal.record(.registryMissing, pid: Int(pid), requestID: envelope.id)
+          }
+          if readiness.handler == nil {
+            try await journal.record(.handlerMissing, pid: Int(pid), requestID: envelope.id)
+          }
+          timedOut = true
+        }
+        try await clock.sleep(for: .milliseconds(100))
+      }
+    }
+  }
+
+  extension ProcessJournal {
+    /// Includes copies that never reached runtime scheduling, for example an exit during startup.
+    func pendingLaunchDeliveries(_ envelope: PushLaunchEnvelope, pid: Int) throws -> [UUID] {
+      let pending = try pendingDeliveries(pid: pid)
+      for delivery in pending where envelope.deliveryIDs.contains(delivery.pushID) {
+        guard delivery.requestID == envelope.id else {
+          throw CKSimError("Launch request correlation mismatch.")
+        }
+      }
+      let ids = Set(pending.map(\.pushID))
+      return envelope.deliveryIDs.filter { ids.contains($0) }
+    }
+
+    /// Projects validated, invocation-local observations; missing boundaries remain absent.
+    func readiness(pid: Int) throws -> ProcessReadinessSnapshot {
+      struct Boundary: Decodable {
+        let event: String
+        let boundarySource: String?
+        let generation: Int?
+      }
+      var result = ProcessReadinessSnapshot()
+      for entry in try read() {
+        let row = try JSONDecoder().decode(Boundary.self, from: entry.line)
+        if !entry.producer.hasPrefix("runtime-") {
+          if row.event == ProcessLifecycleEvent.launchRequested.rawValue {
+            result.launchRequested = entry.uptimeNanoseconds
+          }
+          if row.event == ProcessLifecycleEvent.registryMissing.rawValue {
+            result.registryTimedOut = true
+          }
+          if row.event == ProcessLifecycleEvent.handlerMissing.rawValue {
+            result.handlerTimedOut = true
+          }
+          continue
+        }
+        guard entry.producer == "runtime-\(pid)" else {
+          throw CKSimError("Readiness PID mismatch.")
+        }
+        switch row.event {
+        case "process.entered":
+          guard result.entered == nil, row.boundarySource == "runtime-preparation" else {
+            throw CKSimError("Invalid process entry boundary.")
+          }
+          result.entered = entry.uptimeNanoseconds
+        case "runtime.ready":
+          guard let entered = result.entered, result.runtimeReady == nil,
+            entry.uptimeNanoseconds >= entered, row.boundarySource == "hooks-installed"
+          else { throw CKSimError("Invalid runtime readiness boundary.") }
+          result.runtimeReady = entry.uptimeNanoseconds
+        case "push.registryReady":
+          guard let entered = result.entered, entry.uptimeNanoseconds >= entered,
+            result.registry == nil,
+            row.boundarySource == ProcessReadinessSnapshot.Source.registryQueue.rawValue
+          else {
+            throw CKSimError("Unverified registry readiness source.")
+          }
+          result.registry = .init(
+            uptimeNanoseconds: entry.uptimeNanoseconds, source: .registryQueue)
+        case "app.handlerReady":
+          guard let entered = result.entered, entry.uptimeNanoseconds >= entered,
+            row.boundarySource == ProcessReadinessSnapshot.Source.handlerAttachment.rawValue,
+            let generation = row.generation, generation > (result.handler?.generation ?? 0)
+          else { throw CKSimError("Handler readiness lacks generation identity.") }
+          result.handler = .init(
+            uptimeNanoseconds: entry.uptimeNanoseconds, source: .handlerAttachment,
+            generation: generation)
+        default: break
+        }
+      }
+      return result
     }
   }
 #endif

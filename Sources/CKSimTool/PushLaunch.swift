@@ -14,19 +14,31 @@
     var delivery: PushDeliveryFaults = .none
     private let requestID = UUID()
 
-    private struct DroppedReceipt: Encodable {
+    struct Prepared {
+      let arguments: [String]
+      let environment: [String: String]
+      let container: URL
+      let envelope: PushLaunchEnvelope
+    }
+    private struct DroppedReceipt:
+      Encodable
+    {
       let schemaVersion = 1
       let simulatorID: String
       let bundleID: String
       let runID: String
       let pushID: UUID
+      let deliveryIDs: [UUID]
       let dropped = true
       let runtimeInjectionRequested = false
     }
 
     /// Stages the push after checking, from the simulator's service table, that the app isn't
     /// running, and returns the launcher's arguments and environment.
-    func stage(container: URL, serviceTable: Data, payload: PushPayload? = nil) throws -> (
+    func stage(
+      container: URL, serviceTable: Data, payload: PushPayload? = nil,
+      preparedEnvelope: PushLaunchEnvelope? = nil
+    ) throws -> (
       arguments: [String], environment: [String: String]
     ) {
       guard !exists(receipt) else {
@@ -65,10 +77,13 @@
       let payload = try payload ?? readPayload()
       let id = requestID
       let created = Int64(Date().timeIntervalSince1970 * 1000)
-      let envelope = try PushLaunchEnvelope(
-        id: id, runID: runID, bundleID: target.bundle,
-        createdAtMS: created, expiresAtMS: created + 30_000, mustReport: mustReport,
-        payload: payload, delivery: delivery)
+      let envelope =
+        try preparedEnvelope
+        ?? PushLaunchEnvelope(
+          id: id, runID: runID, bundleID: target.bundle,
+          createdAtMS: created, expiresAtMS: created + 30_000, mustReport: mustReport,
+          payload: payload, delivery: delivery,
+          deliveryIDs: [id] + (0..<delivery.duplicate).map { _ in UUID() })
       guard !exists(root.appending(path: runID)),
         !exists(root.appending(path: "process/\(runID)"))
       else {
@@ -112,9 +127,7 @@
     }
 
     /// Stages the push and durably records intent before returning the launch command.
-    func prepare(clock: some Clock<Duration> = ContinuousClock()) async throws -> (
-      arguments: [String], environment: [String: String]
-    )? {
+    func prepare(clock: some Clock<Duration> = ContinuousClock()) async throws -> Prepared? {
       let accepted = clock.now
       guard !exists(receipt) else {
         throw CKSimError("Launch receipt already exists; inspect before staging.")
@@ -122,12 +135,11 @@
       // Freeze and validate the whole payload before waiting or writing any intent.
       let payload = try readPayload()
       let id = requestID
+      let ids = [id] + (0..<delivery.duplicate).map { _ in UUID() }
       _ = try PushLaunchEnvelope(
         id: id, runID: runID, bundleID: target.bundle, createdAtMS: 0,
-        expiresAtMS: 30_000, mustReport: mustReport, payload: payload, delivery: delivery)
-      guard delivery.duplicate == 0 else {
-        throw CKSimError("Cold-launch duplicates require host exit tracking.")
-      }
+        expiresAtMS: 30_000, mustReport: mustReport, payload: payload, delivery: delivery,
+        deliveryIDs: ids)
       guard let simulatorID = UUID(uuidString: target.device) else {
         throw CKSimError("Process journal requires a resolved simulator UUID.")
       }
@@ -147,13 +159,16 @@
           channel: channel,
           identity: ProcessLifecycleIdentity(
             simulatorID: simulatorID, bundleID: target.bundle, runID: runID))
-        try await journal.record(.dropped, requestID: id, pushID: id)
+        for deliveryID in ids {
+          try await journal.record(.dropped, requestID: id, pushID: deliveryID)
+        }
         try writeNew(
           receipt,
           json: JSONSerialization.jsonObject(
             with: JSONEncoder().encode(
               DroppedReceipt(
-                simulatorID: target.device, bundleID: target.bundle, runID: runID, pushID: id))))
+                simulatorID: target.device, bundleID: target.bundle, runID: runID, pushID: id,
+                deliveryIDs: ids))))
         return nil
       }
       let query: ProcessOutput
@@ -171,25 +186,29 @@
           "Stopped-app query failed or returned diagnostics: \(query.diagnostic)")
       }
       try Task.checkCancellation()
+      let created = Int64(Date().timeIntervalSince1970 * 1000)
+      let envelope = try PushLaunchEnvelope(
+        id: id, runID: runID, bundleID: target.bundle, createdAtMS: created,
+        expiresAtMS: created + 30_000, mustReport: mustReport, payload: payload, delivery: delivery,
+        deliveryIDs: ids)
       let (arguments, environment) = try stage(
-        container: container, serviceTable: query.standardOutput, payload: payload)
-      let journal = try ProcessLifecycle(
-        channel: container.appending(path: "Documents/.callkit-simulator"),
-        identity: ProcessLifecycleIdentity(
-          simulatorID: simulatorID, bundleID: target.bundle, runID: runID))
-      try await journal.record(.launchRequested, requestID: requestID)
-      return (arguments, environment)
+        container: container, serviceTable: query.standardOutput, payload: payload,
+        preparedEnvelope: envelope)
+      return Prepared(
+        arguments: arguments, environment: environment, container: container, envelope: envelope)
     }
 
     private func readPayload() throws -> PushPayload {
       try JSONDecoder().decode(PushPayload.self, from: Data(contentsOf: payloadFile))
     }
 
-    /// Stages the push, then replaces this process with the app's console launcher.
+    /// Stages one immutable plan, then retains host supervision until confirmed process exit.
     func run() async throws {
-      guard let (arguments, environment) = try await prepare() else { return }
+      guard let prepared = try await prepare() else { return }
       try Task.checkCancellation()
-      execute(arguments, environment: environment)
+      try await ProcessLifecycle.supervise(
+        target: target, container: prepared.container, envelope: prepared.envelope,
+        environment: prepared.environment)
     }
   }
 

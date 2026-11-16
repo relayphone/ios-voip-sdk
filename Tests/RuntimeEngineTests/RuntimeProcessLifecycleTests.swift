@@ -51,3 +51,25 @@ struct RuntimeProcessLifecycleTests {
     #expect(first.entered?.uptimeNanoseconds == 100)
   }
 }
+
+extension RuntimeProcessLifecycleTests {
+  @Test func registryAndHandlerAreIndependentAndGenerationAcknowledgementIsExplicit() throws {
+    var lifecycle = RuntimeProcessLifecycle()
+    let premature = lifecycle.observe(.handlerReady(1), at: 1)
+    #expect(premature == nil)
+    _ = lifecycle.observe(.entered, at: 100)
+    _ = lifecycle.observe(.runtimeReady, at: 200)
+    #expect(lifecycle.registryReady == nil && lifecycle.handlerReady == nil)
+    let invalid = lifecycle.observe(.handlerReady(0), at: 201)
+    #expect(invalid == nil)
+    let accepted = lifecycle.observe(.handlerReady(1), at: 202)
+    let handler = try #require(accepted)
+    #expect(handler.generation == 1 && lifecycle.registryReady == nil)
+    let repeated = lifecycle.observe(.handlerReady(1), at: 203)
+    let replacement = lifecycle.observe(.handlerReady(2), at: 204)
+    let registry = lifecycle.observe(.registryReady, at: 205)
+    let repeatedRegistry = lifecycle.observe(.registryReady, at: 206)
+    #expect(repeated == nil && replacement?.generation == 2)
+    #expect(registry?.source == .registryQueue && repeatedRegistry == nil)
+  }
+}

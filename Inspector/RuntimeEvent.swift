@@ -38,12 +38,17 @@ struct RuntimeEvent: Codable, Identifiable {
   let schemaVersion: Int
   let sequence: Int
   let runID: String
-  let pid: Int
+  let pid: Int?
   let bundleID: String
   let event: String
   // swift-format-ignore: AlwaysUseLowerCamelCase
   /// Milliseconds since the runtime started, under the journal's own field name.
-  let t_ms: Double
+  let t_ms: Double?
+  var producerID: UUID?
+  var uptimeNanoseconds: UInt64?
+  var boundarySource: String?
+  var generation: Int?
+  var runtimeTime: Double { t_ms ?? .nan }
   var uuid: String?
   var callUUID: String?
   var actionID: String?
@@ -88,7 +93,7 @@ struct RuntimeEvent: Codable, Identifiable {
     if case .code(0)? = error { return true }
     return false
   }
-  var id: Int { sequence }
+  var id: String { "\(producerID?.uuidString ?? "runtime-\(pid ?? 0)"):\(sequence)" }
   var caller: String {
     [callerName, handle].compactMap { $0 }.first { !$0.isEmpty } ?? "Unknown caller"
   }
@@ -123,7 +128,8 @@ struct RuntimeEvent: Codable, Identifiable {
     return event
   }
   var detail: String {
-    var parts = [origin, apiKind].compactMap { $0 }
+    var parts = [origin, apiKind, boundarySource].compactMap { $0 }
+    if let generation { parts.append("Handler generation \(generation)") }
     if let latencyMS, event != "action.deadline" {
       parts.append(String(format: "%.1f ms", latencyMS))
     }

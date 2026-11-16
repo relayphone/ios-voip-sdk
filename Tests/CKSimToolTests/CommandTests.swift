@@ -54,7 +54,6 @@
     @Test(arguments: [
       ["--delay-ms", "-1"], ["--delay-ms", "120001"], ["--duplicate", "101"],
       ["--spacing-ms", "1"], ["--duplicate", "2", "--spacing-ms", "70000"],
-      ["--launch", "--run-id", "test", "--launch-receipt", "r.json", "--duplicate", "1"],
     ])
     func invalidPushSchedulesNeverReachTheSimulator(flags: [String]) async throws {
       let simulator = FakeSimulator()

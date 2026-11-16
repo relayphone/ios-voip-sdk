@@ -218,7 +218,8 @@
           let device = try options.device(command: "watch")
           try await watch(
             channel: options.target(device).channel(), bundle: options.bundle ?? "",
-            json: json, after: after, duration: duration.map { .milliseconds(Int($0 * 1000)) })
+            simulatorID: UUID(uuidString: device)!, json: json, after: after,
+            duration: duration.map { .milliseconds(Int($0 * 1000)) })
         }
       }
     }
@@ -507,9 +508,6 @@
       func validate() throws {
         _ = try delivery
         if launch {
-          guard duplicate == 0 else {
-            throw ValidationError("Cold-launch duplicates require host exit tracking.")
-          }
           guard let runID, (1...64).contains(runID.utf8.count),
             runID.utf8.allSatisfy({ isRunIDByte($0) }), launchReceipt != nil
           else {

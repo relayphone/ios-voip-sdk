@@ -20,7 +20,7 @@ enum RuntimeTimingReferences {
   private struct Interval {
     let start: RuntimeEvent
     let end: RuntimeEvent
-    var milliseconds: Double { end.t_ms - start.t_ms }
+    var milliseconds: Double { end.runtimeTime - start.runtimeTime }
   }
 
   static func project(_ timeline: [RuntimeEvent]) -> [RuntimeTimingReadout] {
@@ -99,7 +99,7 @@ enum RuntimeTimingReferences {
   // Native action rows omit the value; the delivered transaction records it once.
   private static func muteValue(_ action: RuntimeEvent, in timeline: [RuntimeEvent]) -> Bool? {
     guard nonempty(action.actionID), nonempty(action.transactionID), nonempty(action.provider),
-      nonempty(action.callUUID), nonempty(action.origin), action.t_ms.isFinite
+      nonempty(action.callUUID), nonempty(action.origin), action.runtimeTime.isFinite
     else { return nil }
     let transactions = timeline.filter {
       $0.event == "transaction.delivered" && $0.transactionID == action.transactionID
@@ -109,8 +109,8 @@ enum RuntimeTimingReferences {
     guard !transactions.isEmpty else { return action.muted }
     guard transactions.count == 1, let transaction = transactions.first,
       transaction.provider == action.provider, transaction.origin == action.origin,
-      transaction.sequence < action.sequence, transaction.t_ms.isFinite,
-      transaction.t_ms <= action.t_ms,
+      transaction.sequence < action.sequence, transaction.runtimeTime.isFinite,
+      transaction.runtimeTime <= action.runtimeTime,
       let ids = transaction.actionIDs, !ids.isEmpty, ids.allSatisfy({ !$0.isEmpty }),
       Set(ids).count == ids.count,
       let calls = transaction.callUUIDs, calls.count == ids.count,
@@ -213,14 +213,14 @@ enum RuntimeTimingReferences {
     from start: RuntimeEvent?, in timeline: [RuntimeEvent],
     matching: (RuntimeEvent, RuntimeEvent) -> Bool
   ) -> Interval? {
-    guard let start, start.t_ms.isFinite else { return nil }
+    guard let start, start.runtimeTime.isFinite else { return nil }
     guard
       let end = timeline.first(where: {
         $0.sequence > start.sequence && $0.runID == start.runID && $0.pid == start.pid
           && $0.bundleID == start.bundleID && $0.schemaVersion == start.schemaVersion
           && matching(start, $0)
-      }), end.t_ms.isFinite, end.t_ms >= start.t_ms,
-      (end.t_ms - start.t_ms).isFinite
+      }), end.runtimeTime.isFinite, end.runtimeTime >= start.runtimeTime,
+      (end.runtimeTime - start.runtimeTime).isFinite
     else { return nil }
     return .init(start: start, end: end)
   }

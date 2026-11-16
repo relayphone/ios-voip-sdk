@@ -131,6 +131,7 @@
         var entry: [String: Any] = [
           "schemaVersion": 1, "runID": Self.runID, "pid": Self.pid, "bundleID": bundle,
           "sequence": sequence, "t_ms": sequence * 10, "wallTimeMS": 1_000 + sequence,
+          "uptimeNanoseconds": sequence * 10_000_000,
         ]
         entry.merge(fields) { $1 }
         var line = try JSONSerialization.data(withJSONObject: entry, options: .sortedKeys)
