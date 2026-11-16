@@ -79,3 +79,11 @@ hold, room leave, occupied ports, archive corruption and both runner/daemon cras
 
 The example feasibility adapter uses this API while retaining its marker, post-roll, processing,
 receiver-coverage, output/publication mute, missing-tap, activation and teardown gates.
+
+The pre-mute receiver/publication checks select the first full one-second observer
+window within the existing result deadline. A scheduling gap over 250 ms retires
+that attempt as `unobserved`; it does not renew the budget. Receipts retain every
+attempt's monotonic ticks, observed duration, gaps and scheduler lag in
+`farEnd.receiverWindows`, grouped by control step. Missing connection, reader or
+track fails immediately, including on the tick returning from a gap. Marker and
+transport-counter failures still fail their existing gates without retry.

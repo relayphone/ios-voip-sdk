@@ -32,6 +32,10 @@ Public API changes include migration guidance.
 
 ### Fixed
 
+- Pre-mute receiver/publication checks select the first complete observer window within the
+  existing result budget. Gapped attempts retain scheduler diagnostics as unobserved; health,
+  marker and transport failures remain terminal, with unchanged thresholds.
+
 - Include timed processing-state and engine-transition diagnostics in native media feasibility receipts, and report the earliest native failure directly.
 
 - Reference media silence checks select the first full continuous window within the existing

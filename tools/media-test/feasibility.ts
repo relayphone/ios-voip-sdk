@@ -12,7 +12,7 @@ import { createMarker } from '../../expo/src/testing/marker.ts';
 import { markerReport, measureMarker, type PCMCapture } from './marker-evidence.ts';
 import { command, deadline } from './fixture-runtime.ts';
 import { measureMarkerAsync } from './measure-marker.ts';
-import { monitorReceiver, ReceiverObservationError } from './peer-window.ts';
+import { monitorReceiver, ReceiverObservationError, type ReceiverWindow } from './peer-window.ts';
 import { observeSilence, SilenceObservationError, type SilenceWindow } from './silence-window.ts';
 import { assertNativePassed, writeUnobservedResult } from './result-receipt.ts';
 
@@ -53,11 +53,13 @@ let uplinkCapture: PCMCapture | null = null;
 let resultDeadlineMs: number | undefined;
 const resultPhase = Promise.withResolvers<void>();
 let pendingSilence: Promise<SilenceWindow[]> | undefined;
+let pendingReceiver: Promise<ReceiverWindow[]> | undefined;
 type ControlStep = 'request' | 'drain' | 'window-1' | 'window-2' | 'window-3' | 'marker-analysis' | 'marker-gate' | 'silence-gate';
 const controls: { leakControlCaught: boolean; publicationSilent: boolean;
   silenceWindows?: SilenceWindow[];
+  receiverWindows: { phase: ControlStep; window: ReceiverWindow }[];
   failure?: { phase: ControlStep; reason: ReceiverObservationError['reason'] | 'unobserved' | 'leak' | 'control-failed'; health?: ReceiverObservationError['health']; gapMs?: number } } =
-  { leakControlCaught: false, publicationSilent: false };
+  { leakControlCaught: false, publicationSilent: false, receiverWindows: [] };
 const control = createServer(async (request, response) => {
   let controlPhase: ControlStep = 'request';
   const step = <T>(name: ControlStep, operation: () => Promise<T>) => {
@@ -76,7 +78,19 @@ const control = createServer(async (request, response) => {
     assert.ok(['/leak-control', '/muted'].includes(request.url ?? ''));
     // Exclude queued pre-mute frames, then retain an entire observation window.
     await step('drain', () => delay(500)); await harness.act({ type: 'capture' });
-    const observe = () => monitorReceiver(() => harness.status());
+    const observe = async () => {
+      const retain = (windows: ReceiverWindow[]) => controls.receiverWindows.push(
+        ...windows.map(window => ({ phase: controlPhase, window })));
+      pendingReceiver = monitorReceiver(() => harness.status(), { deadlineMs: resultDeadlineMs! });
+      try { retain(await pendingReceiver); }
+      catch (error) {
+        if (error instanceof ReceiverObservationError) {
+          retain(error.windows);
+          controls.failure = { phase: controlPhase, reason: error.reason, health: error.health, gapMs: error.gapMs };
+        }
+        throw error;
+      }
+    };
     if (request.url === '/leak-control') {
       await step('window-1', observe);
       // Three seconds cover an arbitrary emission phase, allowed drift and the complete post-roll.
@@ -124,7 +138,7 @@ try {
     while (!existsSync(result) && performance.now() < resultDeadlineMs!) await delay(Math.min(100, resultDeadlineMs! - performance.now()));
     if (!existsSync(result)) {
       // Finish serialization of an already-expired host observation; this grants no observation time.
-      await pendingSilence?.catch(() => {});
+      await Promise.allSettled([pendingSilence, pendingReceiver]);
       const nativeWindows = join(container, 'Documents/media-silence-windows.json');
       writeUnobservedResult(output, resultDeadlineMs!, controls, nativeWindows);
       throw new Error('Result budget ended: unobserved');
