@@ -28,6 +28,57 @@
       #expect(probe.observation(.output).firstCallback == 2)
       #expect(teardown.receipt()?.startedAtMs == 2000)
       #expect(teardown.receipt()?.observations.first?.atMs == 2000)
+      let startup = probe.startup.receipt()
+      #expect(startup.clockID == shared.id)
+      #expect(
+        startup.observations.map(\.event) == [.tapInstalled(.output), .firstCallback(.output)])
+      #expect(startup.observations.map(\.atMs) == [2000, 2000])
+      clock.advance(by: .seconds(1))
+      probe.beginWindow()
+      probe.installed(.output)
+      probe.receive(buffer, at: .output)
+      #expect(probe.startup.receipt().observations.map(\.atMs) == [2000, 2000])
+    }
+
+    @Test func callbackSnapshotsUseActualStereoPCMAndResetWithTheWindow() throws {
+      let clock = TestClock()
+      let shared = MediaObservationClock(clock: clock)
+      let probe = MediaAudioProbe(observationClock: shared)
+      probe.installed(.output)
+      probe.beginWindow()
+      clock.advance(by: .seconds(2))
+      let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2))
+      let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 480))
+      buffer.frameLength = 480
+      let pcm = try #require(buffer.floatChannelData)
+      for index in 0..<480 {
+        pcm[0][index] = 0.125
+        pcm[1][index] = -0.25
+      }
+      probe.receive(buffer, at: .output)
+      let first = probe.snapshot(.output)
+      #expect(first.capture.channels.map(\.count) == [480, 480])
+      #expect(first.observation.samples == 960)
+      #expect(first.observation.energy == 37.5)
+      #expect(first.callbacks.frames.count == 1)
+      #expect(first.callbacks.frames[0].atSeconds == 2)
+      #expect(first.callbacks.frames[0].energy == 37.5)
+      #expect(first.callbacks.frames[0].peak == 0.25)
+      #expect(first.callbacks.frames[0].frameCount == 480)
+      #expect(first.callbacks.frames[0].sampleOffset == 0)
+      clock.advance(by: .milliseconds(10))
+      probe.receive(buffer, at: .output)
+      #expect(probe.snapshot(.output).callbacks.frames.map(\.sampleOffset) == [0, 480])
+      #expect(first.callbacks.frames.count == 1)
+      #expect(probe.snapshot(.decoded).callbacks.frames.isEmpty)
+      probe.beginWindow()
+      let reset = probe.snapshot(.output)
+      #expect(reset.observation.installed)
+      #expect(reset.observation.samples == 0)
+      #expect(reset.capture.channels.isEmpty)
+      #expect(reset.callbacks.frames.isEmpty)
+      probe.receive(buffer, at: .output)
+      #expect(probe.snapshot(.output).callbacks.frames[0].sampleOffset == 0)
     }
 
     @Test func uninstallingOutputTapRetainsOwnedMeterUntilGraphRelease() throws {
@@ -330,12 +381,20 @@
       clock.advance(by: .milliseconds(400))
       for index in 0..<4800 { samples[index] = 0 }
       probe.receive(buffer, at: .output)
+      for stage in [MediaAudioProbe.Stage.decoded, .output] {
+        #expect(probe.snapshot(stage).callbacks.frames.isEmpty)
+        #expect(probe.snapshot(stage).callbacks.droppedFrames == 0)
+      }
       for _ in 0..<10 {
         clock.advance(by: .milliseconds(100))
         for index in 0..<4800 { samples[index] = 0.1 }
         probe.receive(buffer, at: .decoded)
         for index in 0..<4800 { samples[index] = 0 }
         probe.receive(buffer, at: .output)
+      }
+      for stage in [MediaAudioProbe.Stage.decoded, .output] {
+        #expect(probe.snapshot(stage).callbacks.frames.first?.sampleOffset == 0)
+        #expect(probe.snapshot(stage).callbacks.frames.allSatisfy { $0.atSeconds > 0.4 })
       }
       #expect(probe.silence(.output)?.verdict == .silent)
       #expect(probe.silence(.output)?.windows.count == 2)

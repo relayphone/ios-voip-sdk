@@ -343,3 +343,23 @@ and raw PCM stay out of JavaScript receipts. Run `npm run typecheck --prefix exp
 The native feasibility receipt includes a bounded processing timeline with requested and software-active AEC, NS and AGC values. Unknown requests stay explicit. Monotonic read-start and read-completion timestamps cover capture-options application, engine transitions, the first three source-render/output callbacks after each graph connection, acquisition samples and the exact `checkRead` snapshot used by the processing gate. A dropped-entry count reports diagnostic overflow. Initial callback snapshots synchronously query the shared WebRTC processing state; their measured read duration exposes the diagnostic cost. These observations do not acknowledge application or relax the processing gate.
 
 When the native check fails, the host saves its receipt and raw PCM and reports that native phase directly before evaluating subsequent marker gates.
+
+Native `MediaAudioProbe.snapshot(_:)` reads bounded PCM, observation counters and
+`MediaPCMCallbackEvidence` together under one lock. Each callback row preserves its
+shared-clock entry time in seconds, per-channel sample offset and frame count, actual
+rate/channel count, original energy across all channels and maximum absolute sample.
+History is bounded to 8192 rows per stage and probe window; `droppedFrames` reports
+overflow, which consumers must reject. Beginning a window or retiring a gapped native
+silence attempt resets the callback history alongside PCM and counters. The example
+command mailbox includes these rows for host window selection; rows never fill missing
+intervals or change the shared-contract coverage, RMS or peak thresholds.
+
+The example's success, failure and journey receipts also include `startup`, a
+`MediaStartupEvidence.Receipt` with the same observation clock identity. It retains the
+first `prepareEntered`, `roomConnectRequested`, connection outcome, `captureOptionsApplied`
+and `engineAvailabilityObserved` events. Connection failure contains only the error type
+name; engine availability is read after the activation attempt as `running` or `unavailable`.
+`tapInstalled` and `firstCallback` are observed independently for decoded and output PCM.
+At most nine rows are retained across probe-window resets. Taking a failure snapshot never
+fills a missing stage or infers a callback. Startup diagnostics do not alter acquisition
+deadlines or media gates.

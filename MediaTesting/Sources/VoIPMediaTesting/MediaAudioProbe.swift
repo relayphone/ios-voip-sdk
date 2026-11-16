@@ -49,15 +49,27 @@
         }
       }
     }
+    /// An atomic view of PCM, callback counters and original callback timing.
+    public struct Snapshot: Codable, Sendable {
+      /// Original bounded PCM from this probe window.
+      public let capture: Capture
+      /// Counters and actual attachment state from the same lock acquisition.
+      public let observation: Observation
+      /// Original callback times, sample positions, energy and peak, including overflow.
+      public let callbacks: MediaPCMCallbackEvidence
+    }
     private struct State {
       var start = 0.0
       var values: [Stage: Observation] = [:]
       var captures: [Stage: Capture] = [:]
+      var callbacks: [Stage: MediaPCMCallbackEvidence] = [:]
       var silence: [Stage: PCMSilenceWindows] = [:]
     }
     private let state = Mutex(State())
     private let now: @Sendable () -> Double
     private let captureSeconds: Double
+    /// Startup observations survive PCM-window resets and are shared with the example adapter.
+    public let startup: MediaStartupEvidence
     /// Uses a monotonic clock; tests can advance an injected clock without sleeping.
     /// The retained diagnostic capture is bounded to one through ten seconds; default is three.
     public convenience init<C: Clock<Duration>>(clock: C, captureDuration: Duration = .seconds(3)) {
@@ -68,6 +80,7 @@
     public init(observationClock: MediaObservationClock, captureDuration: Duration = .seconds(3)) {
       precondition(captureDuration >= .seconds(1) && captureDuration <= .seconds(10))
       captureSeconds = Double(captureDuration / .seconds(1))
+      startup = MediaStartupEvidence(observationClock: observationClock)
       now = { observationClock.seconds }
     }
     public convenience init(captureDuration: Duration = .seconds(3)) {
@@ -79,6 +92,7 @@
       state.withLock { state in
         state.start = start
         state.captures = [:]
+        state.callbacks = [:]
         for stage in [Stage.decoded, .output] {
           state.values[stage] = Observation(installed: state.values[stage]?.installed ?? false)
         }
@@ -89,6 +103,15 @@
     }
     public func capture(_ stage: Stage) -> Capture {
       state.withLock { $0.captures[stage] ?? Capture() }
+    }
+    /// Reads all evidence together so a callback cannot split counters from its PCM.
+    public func snapshot(_ stage: Stage) -> Snapshot {
+      state.withLock {
+        Snapshot(
+          capture: $0.captures[stage] ?? Capture(),
+          observation: $0.values[stage] ?? Observation(),
+          callbacks: $0.callbacks[stage] ?? MediaPCMCallbackEvidence())
+      }
     }
     /// Starts silence attempts within the remaining phase budget, on this probe's clock.
     public func beginSilence(_ stage: Stage, for duration: Duration, remaining: Duration) {
@@ -132,14 +155,17 @@
     }
     func installed(_ stage: Stage) {
       state.withLock { $0.values[stage, default: Observation()].installed = true }
+      startup.record(.tapInstalled(stage == .decoded ? .decoded : .output))
     }
     func removed(_ stage: Stage) { state.withLock { $0.values[stage] = Observation() } }
     func receive(_ buffer: AVAudioPCMBuffer, at stage: Stage) {
       let entered = now()
+      startup.record(.firstCallback(stage == .decoded ? .decoded : .output))
       let count = Int(buffer.frameLength)
       let channels = Int(buffer.format.channelCount)
       guard count > 0, channels > 0, buffer.format.sampleRate > 0 else { return }
       var energy = 0.0
+      var peak = 0.0
       var captured = Array(repeating: [Float](), count: channels)
       for channel in 0..<channels {
         for frame in 0..<count {
@@ -154,6 +180,7 @@
             return
           }
           energy += value * value
+          peak = max(peak, abs(value))
           captured[channel].append(Float(value))
         }
       }
@@ -161,6 +188,9 @@
         guard entered >= state.start else { return }
         state.captures[stage, default: Capture()].append(
           captured, rate: buffer.format.sampleRate, seconds: captureSeconds)
+        state.callbacks[stage, default: MediaPCMCallbackEvidence()].record(
+          atSeconds: entered, frameCount: count, sampleRate: buffer.format.sampleRate,
+          channels: channels, energy: energy, peak: peak)
         var value = state.values[stage] ?? Observation()
         if let last = value.lastCallback {
           value.maximumGap = max(value.maximumGap, entered - last)
@@ -182,6 +212,7 @@
           // Retire tap history at the callback boundary, even when the observer task is stalled.
           state.start = entered
           state.captures = [:]
+          state.callbacks = [:]
           for observed in [Stage.decoded, .output] {
             state.values[observed] = Observation(
               installed: state.values[observed]?.installed ?? false)

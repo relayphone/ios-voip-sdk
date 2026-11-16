@@ -62,7 +62,10 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       commands = bridge.commands
     }
     func transportEvents() -> AsyncStream<MediaTransportEvent> { bridge.packetEvents.stream() }
-    func prepare(_ call: Call) async throws { try await bridge.prepare(call.id) }
+    func prepare(_ call: Call) async throws {
+      bridge.startup.record(.prepareEntered)
+      try await bridge.prepare(call.id)
+    }
     func activate() { commands.yield(.activate) }
     func deactivate() { commands.yield(.deactivate) }
     func release(_ call: Call) { commands.yield(.release) }
@@ -84,13 +87,16 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let missingTapCaught: Bool
       let inactiveEngineStayedStopped: Bool
       let processing: [String: Bool]
+      let processingEvidence: MediaProcessingEvidence?
       let processingTimeline: [MediaProcessingTimeline.Entry]
       let processingTimelineDropped: Int
       let codecs: [String: String]
       let silenceWindows: [PCMSilenceWindows.Window]
       let teardown: MediaTeardownEvidence.Receipt
+      let startup: MediaStartupEvidence.Receipt
     }
     nonisolated let commands: AsyncStream<AudioCommand>.Continuation
+    nonisolated let startup: MediaStartupEvidence
     let observationClock: MediaObservationClock
     let probe: MediaAudioProbe
     let teardown: MediaTeardownEvidence
@@ -135,6 +141,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     var lastStatisticsTimestamp: Double?
     var savedDuplex = false
     var processing: [String: Bool] = [:]
+    var appliedProcessing: MediaProcessingEvidence.Configuration?
+    var processingEvidence: MediaProcessingEvidence?
     var codecs: [String: String] = [:]
     var silenceWindows: [PCMSilenceWindows.Window] = []
     var localTrack: LocalAudioTrack?
@@ -144,6 +152,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let observationClock = MediaObservationClock()
       self.observationClock = observationClock
       probe = MediaAudioProbe(observationClock: observationClock, captureDuration: .seconds(10))
+      startup = probe.startup
       teardown = MediaTeardownEvidence(observationClock: observationClock)
       decoder = DecodedAudioProbe(probe: probe)
       hooks = MarkerAudioEngine(probe: probe, frequencies: fixture.uplinkFrequencies)
@@ -158,6 +167,11 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             case .activate:
               probe.beginWindow()
               hooks.processingTimeline.record(.engineAvailabilityApplying)
+              defer {
+                probe.startup.record(
+                  .engineAvailabilityObserved(
+                    AudioManager.shared.isEngineRunning ? .running : .unavailable))
+              }
               try AudioManager.shared.setEngineAvailability(.default)
               hooks.processingTimeline.record(
                 .engineAvailabilityApplied, engineRunning: AudioManager.shared.isEngineRunning)
@@ -190,12 +204,24 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       manager.set(engineObservers: [manager.audioSession, manager.mixer, hooks])
       try manager.setEngineAvailability(.none)
       room.add(delegate: self)
-      try await room.connect(url: fixture.url, token: fixture.token)
+      probe.startup.record(.roomConnectRequested)
+      do {
+        try await room.connect(url: fixture.url, token: fixture.token)
+        probe.startup.record(.roomConnectCompleted)
+      } catch {
+        probe.startup.record(.roomConnectFailed(errorType: String(reflecting: type(of: error))))
+        throw error
+      }
+      let captureOptions = MarkerAudioEngine.syntheticCaptureOptions
       hooks.processingTimeline.record(.captureOptionsApplying)
+      appliedProcessing = .init(
+        aec: captureOptions.echoCancellation, ns: captureOptions.noiseSuppression,
+        agc: captureOptions.autoGainControl)
       let publication = try await room.localParticipant.setMicrophone(
         enabled: true,
-        captureOptions: MarkerAudioEngine.syntheticCaptureOptions)
+        captureOptions: captureOptions)
       hooks.processingTimeline.record(.captureOptionsApplied)
+      probe.startup.record(.captureOptionsApplied)
       localTrack = publication?.track as? LocalAudioTrack
       await localTrack?.set(reportStatistics: true)
       inactiveEngineStayedStopped =
@@ -323,31 +349,24 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
           phase = .captureProcessing
           let state = hooks.processingTimeline.record(
             .checkRead, engineRunning: AudioManager.shared.isEngineRunning)
-          guard state.aec.requested != .unavailable, state.ns.requested != .unavailable,
-            state.agc.requested != .unavailable
-          else {
-            throw MediaAudioProbe.Failure.signalMissing(.decoded)
+          var requested: [MediaProcessingEvidence.Effect: Bool] = [:]
+          for (effect, value) in [
+            (MediaProcessingEvidence.Effect.aec, state.aec.requested),
+            (.ns, state.ns.requested), (.agc, state.agc.requested),
+          ] where value != .unavailable {
+            requested[effect] = value == .enabled
           }
+          let evidence = MediaProcessingEvidence(
+            expected: .init(aec: false, ns: false, agc: true), applied: appliedProcessing,
+            active: .init(aec: state.aec.active, ns: state.ns.active, agc: state.agc.active),
+            engineRunning: state.engineRunning == true, requested: requested)
+          processingEvidence = evidence
           processing = [
-            "aecRequested": state.aec.requested == .enabled,
-            "aecActive": state.aec.active,
-            "nsRequested": state.ns.requested == .enabled,
-            "nsActive": state.ns.active,
-            "agcRequested": state.agc.requested == .enabled,
+            "aecActive": state.aec.active, "nsActive": state.ns.active,
             "agcActive": state.agc.active,
           ]
-          let expected = [
-            "aec": false,
-            "ns": false,
-            "agc": true,
-          ]
-          for (effect, enabled) in expected {
-            guard processing[effect + "Requested"] == enabled,
-              processing[effect + "Active"] == enabled
-            else {
-              throw MediaAudioProbe.Failure.signalMissing(.decoded)
-            }
-          }
+          for (effect, value) in requested { processing[effect.rawValue + "Requested"] = value }
+          guard evidence.passed else { throw MediaAudioProbe.Failure.signalMissing(.decoded) }
           phase = .duplex
           try probe.expectAudio(.decoded)
           try probe.expectAudio(.output)
@@ -408,9 +427,11 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             output: output,
             mutedOutput: mutedOutput, missingTapCaught: caught,
             inactiveEngineStayedStopped: inactiveEngineStayedStopped, processing: processing,
+            processingEvidence: processingEvidence,
             processingTimeline: hooks.processingTimeline.entries,
             processingTimelineDropped: hooks.processingTimeline.dropped,
-            codecs: codecs, silenceWindows: silenceWindows, teardown: teardownReceipt)
+            codecs: codecs, silenceWindows: silenceWindows, teardown: teardownReceipt,
+            startup: probe.startup.receipt())
           try JSONEncoder().encode(result).write(
             to: URL.documentsDirectory.appending(path: "media-result.json"))
 
@@ -426,6 +447,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       struct Stage: Encodable {
         let pcm: CapturedPCM
         let observation: MediaAudioProbe.Observation
+        let callbacks: MediaPCMCallbackEvidence
       }
       let commandId: UUID?
       let sessionId: UUID
@@ -443,18 +465,20 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let teardown: MediaTeardownEvidence.Receipt?
       let released: Bool
       let audioActive: Bool
+      let startup: MediaStartupEvidence.Receipt
       let publicationMuted: Bool
       let onHold: Bool
     }
     private func journeySnapshot(command: UUID?) -> JourneySnapshot? {
       guard let session = journeySession else { return nil }
       func stage(_ stage: MediaAudioProbe.Stage) -> JourneySnapshot.Stage {
-        let pcm = probe.capture(stage)
+        let snapshot = probe.snapshot(stage)
+        let pcm = snapshot.capture
         return JourneySnapshot.Stage(
           pcm: CapturedPCM(
             sampleRate: pcm.sampleRate, channels: pcm.channels,
             formatChanged: pcm.formatChanged, transport: transport[stage] ?? []),
-          observation: probe.observation(stage))
+          observation: snapshot.observation, callbacks: snapshot.callbacks)
       }
       return JourneySnapshot(
         commandId: command, sessionId: session.id, fixtureId: session.fixture.fixtureId,
@@ -463,7 +487,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         observedAtMs: observationClock.milliseconds, monitorTicksMs: journeyTicks,
         droppedMonitorTicks: journeyTicksDropped, decoded: stage(.decoded), output: stage(.output),
         ended: journeyEnded, teardown: teardown.receipt(), released: released,
-        audioActive: client?.isAudioActive ?? false, publicationMuted: publicationMuted,
+        audioActive: client?.isAudioActive ?? false, startup: probe.startup.receipt(),
+        publicationMuted: publicationMuted,
         onHold: client?.calls.first(where: { $0.id.rawValue == session.fixture.conversationId })?
           .isOnHold ?? false)
     }
@@ -640,6 +665,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         let passed = false
         let phase: Phase
         let processing: [String: Bool]
+        let processingEvidence: MediaProcessingEvidence?
         let processingTimeline: [MediaProcessingTimeline.Entry]
         let processingTimelineDropped: Int
         let codecs: [String: String]
@@ -647,14 +673,16 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         let output: MediaAudioProbe.Observation
         let silenceWindows: [PCMSilenceWindows.Window]
         let teardown: MediaTeardownEvidence.Receipt?
+        let startup: MediaStartupEvidence.Receipt
       }
       let result = FailureResult(
         generatedSamples: hooks.generatedSamples, phase: phase, processing: processing,
+        processingEvidence: processingEvidence,
         processingTimeline: hooks.processingTimeline.entries,
         processingTimelineDropped: hooks.processingTimeline.dropped,
         codecs: codecs, decoded: probe.observation(.decoded),
         output: probe.observation(.output), silenceWindows: silenceWindows,
-        teardown: teardown.receipt())
+        teardown: teardown.receipt(), startup: probe.startup.receipt())
       try? JSONEncoder().encode(result).write(
         to: URL.documentsDirectory.appending(path: "media-result.json"))
     }
