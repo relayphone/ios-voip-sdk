@@ -4,6 +4,41 @@ import Testing
 @testable import MediaJourneyProtocol
 
 struct ProtocolTests {
+  @Test func endedCallFailureSurvivesRemovalFromTheLiveSDKSnapshot() {
+    var history = MediaSDKAudioState.CallHistory()
+    #expect(history.observation(snapshot: nil) == nil)
+    let live = MediaSDKAudioState.CallObservation(
+      status: .connecting, failure: nil, source: .snapshot, atMs: 50)
+    #expect(history.observation(snapshot: live)?.status == .connecting)
+    history.recordEnded(failure: .audioActivationTimedOut, atMs: 100)
+    let terminal = history.observation(snapshot: nil)
+    #expect(terminal?.status == .ended)
+    #expect(terminal?.failure == .audioActivationTimedOut)
+    #expect(terminal?.source == .endedEvent)
+    #expect(terminal?.atMs == 100)
+    #expect(history.observation(snapshot: live)?.source == .snapshot)
+    history.recordEnded(failure: .media, atMs: 200)
+    #expect(history.observation(snapshot: nil)?.failure == .media)
+    #expect(terminal?.failure == .audioActivationTimedOut)
+  }
+  @Test func failureAudioStatePreservesMissingClientAndTypedCallFailure() throws {
+    let clock = UUID()
+    for active: Bool? in [nil, false, true] {
+      let receipt = MediaSDKAudioState(
+        clockID: clock, observedAtMs: 120, isAudioActive: active,
+        callStatus: .ended, callFailure: .audioActivationTimedOut,
+        callSource: .endedEvent, callObservedAtMs: 100)
+      let decoded = try JSONDecoder().decode(
+        MediaSDKAudioState.self, from: JSONEncoder().encode(receipt))
+      #expect(decoded.clockID == clock)
+      #expect(decoded.observedAtMs == 120)
+      #expect(decoded.isAudioActive == active)
+      #expect(decoded.callStatus == .ended)
+      #expect(decoded.callFailure == .audioActivationTimedOut)
+      #expect(decoded.callSource == .endedEvent)
+      #expect(decoded.callObservedAtMs == 100)
+    }
+  }
   func command(
     _ session: MediaJourneySession, _ operation: MediaJourneyCommand.Operation,
     phase: String? = nil, frequencies: [Double]? = nil, enabled: Bool? = nil,

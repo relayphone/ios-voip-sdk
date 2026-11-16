@@ -65,8 +65,17 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     func prepare(_ call: Call) async throws {
       bridge.startup.record(.prepareEntered)
       try await bridge.prepare(call.id)
+      bridge.startup.record(.prepareCompleted)
     }
-    func activate() { commands.yield(.activate) }
+    func activate() {
+      bridge.startup.record(.activationEntered)
+      switch commands.yield(.activate) {
+      case .enqueued: bridge.startup.record(.activationEnqueued(.enqueued))
+      case .dropped: bridge.startup.record(.activationEnqueued(.dropped))
+      case .terminated: bridge.startup.record(.activationEnqueued(.terminated))
+      @unknown default: break
+      }
+    }
     func deactivate() { commands.yield(.deactivate) }
     func release(_ call: Call) { commands.yield(.release) }
   }
@@ -115,6 +124,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     var journeyTicks: [Double] = []
     var journeyTicksDropped = 0
     var journeyEnded: JourneyEnd?
+    var sdkCallHistory = MediaSDKAudioState.CallHistory()
     var publicationHeld = false
     var publicationMuted = false
     var inactiveEngineStayedStopped = false
@@ -165,6 +175,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
           do {
             switch command {
             case .activate:
+              probe.startup.record(.activationHandlerEntered)
               probe.beginWindow()
               hooks.processingTimeline.record(.engineAvailabilityApplying)
               defer {
@@ -281,7 +292,17 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       observer = Task { [weak self] in
         for await event in stream {
           guard let self else { return }
-          if case .audioDeactivated = event { teardown.record(.audioSessionReleased) }
+          if case .audioActivated = event { startup.recordAudioEvent(.activated) }
+          if case .audioDeactivated = event {
+            startup.recordAudioEvent(.deactivated)
+            teardown.record(.audioSessionReleased)
+          }
+          if case .ended(let call) = event,
+            call.id.rawValue == (fixture.journey?.conversationId ?? "media-example")
+          {
+            sdkCallHistory.recordEnded(
+              failure: sdkCallStatus(call).failure, atMs: observationClock.milliseconds)
+          }
           if case .ended(let call) = event, call.id.rawValue == fixture.journey?.conversationId {
             let reason: JourneyEnd.Reason
             switch call.status {
@@ -466,6 +487,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let released: Bool
       let audioActive: Bool
       let startup: MediaStartupEvidence.Receipt
+      let sdkAudioState: MediaSDKAudioState
       let publicationMuted: Bool
       let onHold: Bool
     }
@@ -488,6 +510,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         droppedMonitorTicks: journeyTicksDropped, decoded: stage(.decoded), output: stage(.output),
         ended: journeyEnded, teardown: teardown.receipt(), released: released,
         audioActive: client?.isAudioActive ?? false, startup: probe.startup.receipt(),
+        sdkAudioState: sdkAudioState(),
         publicationMuted: publicationMuted,
         onHold: client?.calls.first(where: { $0.id.rawValue == session.fixture.conversationId })?
           .isOnHold ?? false)
@@ -648,6 +671,54 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       }
       savedDuplex = true
     }
+    private func sdkCallStatus(_ call: Call) -> (
+      status: MediaSDKAudioState.Status, failure: MediaSDKAudioState.Failure?
+    ) {
+      let status: MediaSDKAudioState.Status
+      var failure: MediaSDKAudioState.Failure?
+      switch call.status {
+      case .ringing: status = .ringing
+      case .previewing: status = .previewing
+      case .dialing: status = .dialing
+      case .connecting: status = .connecting
+      case .connected: status = .connected
+      case .reconnecting: status = .reconnecting
+      case .ended(let reason):
+        status = .ended
+        if case .failed(let cause) = reason {
+          switch cause {
+          case .refused: failure = .refused
+          case .atCapacity: failure = .atCapacity
+          case .notPlaced: failure = .notPlaced
+          case .media: failure = .media
+          case .audioActivationTimedOut: failure = .audioActivationTimedOut
+          case .audioSession: failure = .audioSession
+          case .audioRecoveryTimedOut: failure = .audioRecoveryTimedOut
+          case .connectTimedOut: failure = .connectTimedOut
+          case .reconnectTimedOut: failure = .reconnectTimedOut
+          case .actionTimedOut: failure = .actionTimedOut
+          case .frameworkReset: failure = .frameworkReset
+          case .server: failure = .server
+          }
+        }
+      }
+      return (status, failure)
+    }
+    private func sdkAudioState() -> MediaSDKAudioState {
+      let id = fixture.journey?.conversationId ?? "media-example"
+      let snapshot = client?.calls.first(where: { $0.id.rawValue == id }).map { call in
+        let status = sdkCallStatus(call)
+        return MediaSDKAudioState.CallObservation(
+          status: status.status, failure: status.failure, source: .snapshot,
+          atMs: observationClock.milliseconds)
+      }
+      let call = sdkCallHistory.observation(snapshot: snapshot)
+      return MediaSDKAudioState(
+        clockID: observationClock.id, observedAtMs: observationClock.milliseconds,
+        isAudioActive: client?.isAudioActive, callStatus: call?.status ?? .unavailable,
+        callFailure: call?.failure, callSource: call?.source ?? .unavailable,
+        callObservedAtMs: call?.atMs)
+    }
     private func fail() {
       guard !failed else { return }
       if fixture.journey != nil {
@@ -674,6 +745,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         let silenceWindows: [PCMSilenceWindows.Window]
         let teardown: MediaTeardownEvidence.Receipt?
         let startup: MediaStartupEvidence.Receipt
+        let sdkAudioState: MediaSDKAudioState
       }
       let result = FailureResult(
         generatedSamples: hooks.generatedSamples, phase: phase, processing: processing,
@@ -682,7 +754,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         processingTimelineDropped: hooks.processingTimeline.dropped,
         codecs: codecs, decoded: probe.observation(.decoded),
         output: probe.observation(.output), silenceWindows: silenceWindows,
-        teardown: teardown.receipt(), startup: probe.startup.receipt())
+        teardown: teardown.receipt(), startup: probe.startup.receipt(),
+        sdkAudioState: sdkAudioState())
       try? JSONEncoder().encode(result).write(
         to: URL.documentsDirectory.appending(path: "media-result.json"))
     }

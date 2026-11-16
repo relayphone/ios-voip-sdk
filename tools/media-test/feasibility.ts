@@ -15,6 +15,7 @@ import { measureMarkerAsync } from './measure-marker.ts';
 import { monitorReceiver, ReceiverObservationError, type ReceiverWindow } from './peer-window.ts';
 import { observeSilence, SilenceObservationError, type SilenceWindow } from './silence-window.ts';
 import { assertNativePassed, assertNativeTeardown, writeUnobservedResult } from './result-receipt.ts';
+import { diagnoseNativeStartup } from './startup-diagnostics.ts';
 
 const [simulator, app, output] = process.argv.slice(2);
 const processing = "synthetic";
@@ -162,7 +163,7 @@ try {
       return [stage, nativeFailure ? null : await measureMarkerAsync(capture, downlink)];
     } catch (error) { return [stage, { complete: false, error: String(error) }]; }
   })));
-  writeFileSync(output, JSON.stringify({ processing, native: evidence, farEnd: controls,
+  writeFileSync(output, JSON.stringify({ processing, native: evidence, startupDiagnostics: diagnoseNativeStartup(evidence), farEnd: controls,
     pcm: { fromDevice: uplinkCapture, toDevice: downlinkCaptures },
     receiver: harness.status(),
     markers: { fromDevice: uplinkEvidence, toDevice: downlinkEvidence } }, null, 2));
