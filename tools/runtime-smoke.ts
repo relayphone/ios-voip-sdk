@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isMain, main, option, repository, run } from './command.ts';
+import { smokeCommand, SmokeCommandFailure } from './runtime-smoke-diagnostics.ts';
 import { buildSimulatorApp } from './simulator-app.ts';
 
 const bundle = 'dev.callkitsim.smoke';
@@ -62,9 +63,10 @@ interface PushEvent {
 
 /** Checks reporting enforcement in a disposable app process, never in the test runner. */
 async function reportingEnforcement(packagePath: string, simulator: string, work: string): Promise<void> {
-  const channel = join(run('xcrun', ['simctl', 'get_app_container', simulator, bundle, 'data']),
+  const channel = join(smokeCommand('reporting:container', 'xcrun', ['simctl', 'get_app_container', simulator, bundle, 'data']),
     'Documents/.callkit-simulator');
-  const cksim = (...args: string[]) => run(join(packagePath, 'cksim'),
+  let phase = 'reporting:setup';
+  const cksim = (...args: string[]) => smokeCommand(`${phase}:${args[0]}`, join(packagePath, 'cksim'),
     ['--simulator', simulator, '--bundle', bundle, ...args], { timeout: 120 });
   const payload = join(work, 'reporting-push.json');
   const cases: {
@@ -91,7 +93,8 @@ async function reportingEnforcement(packagePath: string, simulator: string, work
   ];
   for (const scenario of cases) {
     const priorRun = JSON.parse(readFileSync(join(channel, 'session.json'), 'utf8')).runID as string;
-    launchToleratingASlowSimulator(() => run(join(packagePath, 'cksim'),
+    phase = `reporting:${scenario.name}`;
+    launchToleratingASlowSimulator(() => smokeCommand(`${phase}:launch`, join(packagePath, 'cksim'),
       ['--simulator', simulator, '--bundle', bundle, 'launch'], {
         timeout: 120, environment: {
           ...process.env, SIMCTL_CHILD_CKSIM_SMOKE_METADATA: scenario.metadata ? '1' : '0',
@@ -224,41 +227,47 @@ export async function smoke(packagePath: string, requestedSimulator?: string): P
     });
     let simulator = requestedSimulator;
     if (!simulator) {
-      simulator = run('xcrun', [
+      simulator = smokeCommand('setup:create', 'xcrun', [
         'simctl', 'create', `runtime-smoke-${process.pid}`,
         'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro', simulatorRuntime,
       ], { timeout: 120 });
       created = simulator;
     }
     // Boots the simulator unless it's booted already, and waits until it has finished booting.
-    run('xcrun', ['simctl', 'bootstatus', simulator, '-b'], { timeout: 300 });
-    run('xcrun', ['simctl', 'install', simulator, app], { timeout: 300 });
+    smokeCommand('setup:boot', 'xcrun', ['simctl', 'bootstatus', simulator, '-b'], { timeout: 300 });
+    smokeCommand('setup:install', 'xcrun', ['simctl', 'install', simulator, app], { timeout: 300 });
 
+    let phase = 'call:launch';
     const cksim = (...args: string[]) =>
-      run(join(packagePath, 'cksim'), ['--simulator', simulator, '--bundle', bundle, ...args], { timeout: 120 });
+      smokeCommand(`${phase}:${args[0]}`, join(packagePath, 'cksim'), ['--simulator', simulator, '--bundle', bundle, ...args], { timeout: 120 });
     const calls = (): Call[] => JSON.parse(cksim('status')).result.calls as Call[];
     launchToleratingASlowSimulator(() => cksim('launch'));
     await until('the runtime to start in the app', 120, () => (calls() ? true : undefined));
     const payload = join(work, 'push.json');
     writeFileSync(payload, JSON.stringify({ operation: 'incoming' }));
+    phase = 'call:incoming';
     cksim('push', '--payload-file', payload, '--must-report', 'true');
     const ringing = await until('the pushed call to ring', 30, () => calls().find(call => call.ringing));
+    phase = 'call:answer';
     cksim('answer', ringing.uuid);
     await until('the call to connect', 30, () =>
       calls().find(call => call.uuid === ringing.uuid && call.connected));
+    phase = 'call:end';
     cksim('end', ringing.uuid);
     await until('the call to end', 30, () => (calls().length === 0 ? true : undefined));
 
+    phase = 'call:journal';
     const events = cksim('watch', '--json', '--duration', '1')
       .split('\n').filter(line => line.trim()).map(line => JSON.parse(line).event as string);
     const expected = ['runtime.installed', 'push.received', 'report.incoming', 'action.settled', 'audio.activated'];
     const missing = expected.filter(name => !events.includes(name));
     if (missing.length > 0) throw new Error(`The journal is missing ${missing.join(', ')}`);
-    const channel = join(run('xcrun', ['simctl', 'get_app_container', simulator, bundle, 'data']),
+    const channel = join(smokeCommand('process:container', 'xcrun', ['simctl', 'get_app_container', simulator, bundle, 'data']),
       'Documents/.callkit-simulator');
     const session = (): { runID: string; pid: number } =>
       JSON.parse(readFileSync(join(channel, 'session.json'), 'utf8'));
     for (const cause of ['abrupt', 'user-requested']) {
+      phase = `process:${cause}:kill`;
       const before = session();
       assertRuntimeBoundaries(readFileSync(join(channel, before.runID, 'events.jsonl'), 'utf8'), before);
       const requestID = JSON.parse(cksim('push', '--payload-file', payload, '--must-report', 'true',
@@ -288,6 +297,7 @@ export async function smoke(packagePath: string, requestedSimulator?: string): P
       assert.deepEqual(cancelled.map(row => row.pushID), scheduled);
       assert.ok(cancelled.every(row => row.requestID === requestID && row.pid === before.pid && row.cause === cause));
       assert.ok(!rows.some(row => row.event === 'push.received' && scheduled.includes(row.pushID)));
+      phase = `process:${cause}:relaunch`;
       launchToleratingASlowSimulator(() => cksim('launch'));
       await until('a new runtime process after verified kill', 120, () => {
         cksim('status');
@@ -363,11 +373,13 @@ const runID = `cold-${randomUUID()}`;
     return events;
   } finally {
     if (requestedSimulator) {
-      try { run('xcrun', ['simctl', 'terminate', requestedSimulator, bundle], { timeout: 60 }); } catch { /* Already terminated. */ }
+      try { smokeCommand('cleanup:terminate', 'xcrun', ['simctl', 'terminate', requestedSimulator, bundle], { timeout: 60 }); }
+      catch (error) { if (error instanceof SmokeCommandFailure) console.error(error.message); /* May already be terminated. */ }
     }
     if (created) {
-      try { run('xcrun', ['simctl', 'shutdown', created], { timeout: 120 }); } catch { /* Already shut down. */ }
-      run('xcrun', ['simctl', 'delete', created], { timeout: 120 });
+      try { smokeCommand('cleanup:shutdown', 'xcrun', ['simctl', 'shutdown', created], { timeout: 120 }); }
+      catch (error) { if (error instanceof SmokeCommandFailure) console.error(error.message); /* May already be shut down. */ }
+      smokeCommand('cleanup:delete', 'xcrun', ['simctl', 'delete', created], { timeout: 120 });
     }
     rmSync(work, { recursive: true, force: true });
   }

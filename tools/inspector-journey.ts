@@ -63,11 +63,19 @@ export function buildInspectorUITests(work: string, execute: typeof run = run): 
 }
 
 /** Runs the prebuilt Mac UI test once and pushes only after it activates the Inspector. */
-export function runInspectorUITest(work: string, result: string, push: () => void, execute: typeof runReadyUITest = runReadyUITest): Promise<string> {
-  return execute('xcodebuild', ['test-without-building', ...uiBuildArguments(work),
+export async function runInspectorUITest(work: string, result: string, push: () => void, execute: typeof runReadyUITest = runReadyUITest): Promise<string> {
+  const output = await execute('xcodebuild', ['test-without-building', ...uiBuildArguments(work),
     '-parallel-testing-enabled', 'NO', '-resultBundlePath', result], {
     timeout: 600, readyPath: `${result}.ready`, ready: push,
   });
+  const lines = output.split(/\r?\n/);
+  const index = lines.indexOf('Filter after click:');
+  const fields = ['type(of: filter.value): ', 'unwrapped type: ', 'value: ', 'isEnabled: '];
+  if (index >= 0 && fields.every((field, offset) => lines[index + offset + 1]?.startsWith(field))) {
+    const observation = lines.slice(index + 1, index + 1 + fields.length).join('; ');
+    summary(`Inspector checkbox after click:\n\n\`\`\`text\n${observation}\n\`\`\``);
+  }
+  return output;
 }
 
 /** Deletes owned devices and restarts the service before creating a fresh target. */
