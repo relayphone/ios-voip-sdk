@@ -247,6 +247,8 @@ final class CallEventHandler: CallObserver {
     case .presented(let call): history.add("Ringing: \(call.id.rawValue)")
     case .previewStarted(let call): history.add("Previewing: \(call.status)")
     case .joinFailed(let call, _): history.add("Join failed: \(call.id.rawValue)")
+    case .videoChanged(let call, let source):
+      history.add("Video \(call.hasVideo ? "on" : "off") (\(source.rawValue))")
     case .startRequested(let call), .joinRequested(let call):
       // The app places the call with its servers, then confirms it.
       await client?.confirmPlaced(call.id)
