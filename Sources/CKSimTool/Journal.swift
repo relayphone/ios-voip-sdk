@@ -84,6 +84,9 @@
       if text.isEmpty || (value as? NSNumber).map({ $0 == 0 }) == true { continue }
       detail.append(String(text.unicodeScalars.map { isPrintable($0) ? Character($0) : "?" }))
     }
+    if let hasVideo = row["hasVideo"] as? Bool {
+      detail.append("hasVideo=\(hasVideo)")
+    }
     if let deadline = row["deadlineSeconds"] as? Double {
       detail.append(
         "budget \(String(format: "%g", deadline))s (\(row["apiKind"] as? String ?? ""))")

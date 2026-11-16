@@ -35,7 +35,7 @@ import Testing
   private static let filter = #"{"reason":"none","code":0,"verification":"not-applicable"}"#
   private static let call = #"""
     "uuid":"11111111-1111-4111-8111-111111111111","outgoing":false,"connected":true,
-    "held":false,"ended":false,"muted":false,"ringing":false,"callerName":"Caller",
+    "held":false,"ended":false,"muted":false,"ringing":false,"hasVideo":false,"callerName":"Caller",
     "handle":"handle","capabilities":["pausing","merging","unmerging"]
     """#
   private static var status: String {

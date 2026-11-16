@@ -92,7 +92,9 @@
                     }
                   }
                   Spacer()
-                  Text(call.status).font(.subheadline).foregroundStyle(.secondary)
+                  Text("\(call.status) · \(call.hasVideo == true ? "Video" : "Audio only")").font(
+                    .subheadline
+                  ).foregroundStyle(.secondary)
                 }.frame(minHeight: 44).contentShape(Rectangle())
               }.buttonStyle(.plain)
             }

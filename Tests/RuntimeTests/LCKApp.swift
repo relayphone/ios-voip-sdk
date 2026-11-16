@@ -33,7 +33,7 @@
     private let capabilities: Conversation.Capabilities
 
     init(
-      groups: Int = 2, perGroup: Int = 1,
+      groups: Int = 2, perGroup: Int = 1, supportsVideo: Bool = false,
       capabilities: Conversation.Capabilities = [.pausing, .merging, .unmerging]
     ) {
       self.capabilities = capabilities
@@ -41,7 +41,7 @@
         configuration: .init(
           ringtoneName: nil, iconTemplateImageData: nil, maximumConversationGroups: groups,
           maximumConversationsPerConversationGroup: perGroup,
-          includesConversationInRecents: false, supportsVideo: false,
+          includesConversationInRecents: false, supportsVideo: supportsVideo,
           supportedHandleTypes: [.generic, .phoneNumber]))
       super.init()
       manager.delegate = self
