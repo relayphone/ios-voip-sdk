@@ -47,6 +47,8 @@ public struct ProcessLifecycleEvent: RawRepresentable, Codable, Equatable, Hasha
     var value = encoder.singleValueContainer()
     try value.encode(rawValue)
   }
+  /// The host durably retains an individual cold-launch delivery before starting the app.
+  public static let launchScheduled = Self(rawValue: "push.launchScheduled")
   /// The host is about to request simulator launch.
   public static let launchRequested = Self(rawValue: "process.launchRequested")
   /// The host durably recorded termination intent before verifying and stopping the process.
@@ -169,5 +171,85 @@ public struct ProcessLifecycleRecord: Codable, Equatable, Sendable {
       requestID: values.decodeIfPresent(UUID.self, forKey: .requestID),
       pushID: values.decodeIfPresent(UUID.self, forKey: .pushID),
       cause: values.decodeIfPresent(ProcessExitCause.self, forKey: .cause))
+  }
+}
+
+/// Invocation-local readiness evidence. Launch-relative durations include simulator service latency.
+public struct ProcessReadinessSnapshot: Codable, Equatable, Sendable {
+  /// Native sources accepted as readiness evidence.
+  public enum Source: String, Codable, Sendable {
+    /// Registry checked on the queue used for delegate delivery.
+    case registryQueue = "registry-delivery-queue"
+    /// Explicit native acknowledgement of an installed handler generation.
+    case handlerAttachment = "native-handler-acknowledgement"
+  }
+  /// A runtime boundary with explicit native provenance and optional handler generation.
+  public struct Observation: Codable, Equatable, Sendable {
+    /// Absolute monotonic observation time.
+    public let uptimeNanoseconds: UInt64
+    /// Native observation source, never inferred from another boundary.
+    public let source: Source
+    /// Acknowledged handler generation; absent for registry readiness.
+    public let generation: Int?
+    /// Creates a native observation.
+    public init(uptimeNanoseconds: UInt64, source: Source, generation: Int? = nil) {
+      self.uptimeNanoseconds = uptimeNanoseconds
+      self.source = source
+      self.generation = generation
+    }
+  }
+  /// Host launch intent time; absent for invocations launched by another driver.
+  public var launchRequested: UInt64?
+  /// First instrumented Swift preparation entry, excluding earlier startup/dyld work.
+  public var entered: UInt64?
+  /// Completed runtime hook installation.
+  public var runtimeReady: UInt64?
+  /// First registry ready on its delivery queue.
+  public var registry: Observation?
+  /// Latest explicitly acknowledged handler generation.
+  public var handler: Observation?
+  /// Host observation deadline passed without registry readiness.
+  public var registryTimedOut = false
+  /// Host observation deadline passed without handler readiness.
+  public var handlerTimedOut = false
+  /// Creates an empty projection; missing observations are never zero-filled.
+  public init() {}
+  private enum CodingKeys: String, CodingKey {
+    case launchRequested, entered, runtimeReady, registry, handler, registryTimedOut,
+      handlerTimedOut
+    case launchToRegistryMS, launchToHandlerMS, entryToRegistryMS, entryToHandlerMS
+    case runtimeToRegistryMS, runtimeToHandlerMS
+  }
+  /// Encodes optional measured durations without substituting a zero for absent evidence.
+  public func encode(to encoder: any Encoder) throws {
+    var values = encoder.container(keyedBy: CodingKeys.self)
+    try values.encodeIfPresent(launchRequested, forKey: .launchRequested)
+    try values.encodeIfPresent(entered, forKey: .entered)
+    try values.encodeIfPresent(runtimeReady, forKey: .runtimeReady)
+    try values.encodeIfPresent(registry, forKey: .registry)
+    try values.encodeIfPresent(handler, forKey: .handler)
+    try values.encode(registryTimedOut, forKey: .registryTimedOut)
+    try values.encode(handlerTimedOut, forKey: .handlerTimedOut)
+    for (anchor, observation, key) in [
+      (launchRequested, registry, CodingKeys.launchToRegistryMS),
+      (launchRequested, handler, .launchToHandlerMS),
+      (entered, registry, .entryToRegistryMS), (entered, handler, .entryToHandlerMS),
+      (runtimeReady, registry, .runtimeToRegistryMS), (runtimeReady, handler, .runtimeToHandlerMS),
+    ] {
+      if let anchor, let observation, observation.uptimeNanoseconds >= anchor {
+        try values.encode(Double(observation.uptimeNanoseconds - anchor) / 1_000_000, forKey: key)
+      }
+    }
+  }
+  /// Decodes observations from an additive status projection.
+  public init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    launchRequested = try values.decodeIfPresent(UInt64.self, forKey: .launchRequested)
+    entered = try values.decodeIfPresent(UInt64.self, forKey: .entered)
+    runtimeReady = try values.decodeIfPresent(UInt64.self, forKey: .runtimeReady)
+    registry = try values.decodeIfPresent(Observation.self, forKey: .registry)
+    handler = try values.decodeIfPresent(Observation.self, forKey: .handler)
+    registryTimedOut = try values.decode(Bool.self, forKey: .registryTimedOut)
+    handlerTimedOut = try values.decode(Bool.self, forKey: .handlerTimedOut)
   }
 }

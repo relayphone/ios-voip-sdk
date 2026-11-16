@@ -64,7 +64,22 @@
       #expect(try consume()?.envelope == plan)
     }
 
-    @Test(arguments: ["expired", "wrong-run", "future", "malformed"])
+    @Test func expiredEnvelopeHasADistinctTerminalReason() throws {
+      defer { try? FileManager.default.removeItem(at: directory) }
+      _ = try stage()
+      #expect(throws: LaunchPushConsumer.Failure.expiredEnvelope) { try consume(now: 120_000) }
+    }
+
+    @Test func futureEnvelopeIsInvalidRatherThanExpired() throws {
+      defer { try? FileManager.default.removeItem(at: directory) }
+      _ = try stage()
+      #expect(throws: LaunchPushConsumer.Failure.invalidEnvelope) { try consume(now: 98_999) }
+    }
+
+    @Test(arguments: [
+      "expired",
+      "wrong-run", "future", "malformed",
+    ])
     func invalidClaimIsRemovedWithoutDelivery(kind: String) throws {
       defer { try? FileManager.default.removeItem(at: directory) }
       if kind == "malformed" {

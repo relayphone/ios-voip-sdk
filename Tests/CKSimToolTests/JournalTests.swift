@@ -75,7 +75,8 @@
         tool.write = { line in printed.withLock { $0.append(line) } }
         try await Tool.$current.withValue(tool) {
           try await watch(
-            channel: app.channel, bundle: bundle, json: json, after: 1,
+            channel: app.channel, bundle: bundle, simulatorID: UUID(uuidString: device)!,
+            json: json, after: 1,
             duration: .milliseconds(150))
         }
         let lines = printed.withLock { $0 }

@@ -10,6 +10,8 @@
   actor InspectorBridge {
     private let mailbox: Mailbox
     private var journal: Journal
+    private var streamCursor = 0
+    private var seen: [String: UInt64] = [:]
     private var previous: (cursor: Int, batch: Data)?
 
     init(target: Target, timeout: Duration) throws {
@@ -38,13 +40,25 @@
         try journal.checkSession()
         return previous.batch
       }
-      guard cursor == journal.sequence else {
+      guard cursor == streamCursor else {
         throw CKSimError("Timeline cursor changed; relaunch cksim inspect to reconnect.")
       }
-      let entries = try journal.read()
-      let events = entries.map(\.json)
+      try journal.checkSession()
+      guard let simulator = UUID(uuidString: mailbox.target.device) else {
+        throw CKSimError("Require a simulator UUID.")
+      }
+      let snapshot = try ProcessJournal(
+        channel: journal.channel,
+        identity: ProcessLifecycleIdentity(
+          simulatorID: simulator, bundleID: journal.session.bundleID, runID: journal.session.runID)
+      ).read()
+      let entries = snapshot.filter { $0.sequence > (seen[$0.producer] ?? 0) }
+      let events = try entries.map { try JSONSerialization.jsonObject(with: $0.line) }
+      try journal.checkSession()
+      for entry in entries { seen[entry.producer] = entry.sequence }
+      streamCursor += entries.count
       let batch = try JSONSerialization.data(withJSONObject: [
-        "session": journal.published.json, "events": events, "cursor": journal.sequence,
+        "session": journal.published.json, "events": events, "cursor": streamCursor,
       ])
       if !entries.isEmpty { previous = (cursor, batch) }
       return batch

@@ -60,7 +60,7 @@ export function assertJavaScriptResults(value: unknown, runID: string): void {
 export function assertExpoJournal(journal: string, runID: string): void {
   const events = journal.split('\n').filter(line => line.trim()).map(line => object(JSON.parse(line)));
   let identity: string | undefined;
-  let sequence = 0;
+  const sequences: number[] = [];
   for (const row of events) {
     assert.equal(row.schemaVersion, 1);
     assert.equal(row.bundleID, 'com.example.voipconversations');
@@ -69,12 +69,17 @@ export function assertExpoJournal(journal: string, runID: string): void {
     assert.equal(row.profile, 'ios-27.0');
     const current = JSON.stringify([row.runID, row.pid, row.bundleID, row.profile]);
     assert.ok(identity === undefined || identity === current, 'Journal identity changed');
-    assert.ok(Number.isSafeInteger(row.sequence) && Number(row.sequence) > sequence, 'Invalid journal sequence');
-    identity = current; sequence = Number(row.sequence);
+    assert.ok(Number.isSafeInteger(row.sequence) && Number(row.sequence) > 0, 'Invalid journal sequence');
+    sequences.push(Number(row.sequence));
+    identity = current;
     assert.ok(!['action.expired', 'action.timeout', 'diagnostic.pushReportingViolation', 'diagnostic.pushReportExpired']
       .includes(String(row.event)), `Unexpected ${row.event}`);
     if (row.event === 'action.settled') assert.equal(row.fulfilled, true, 'An action failed');
   }
+  // The merged timeline orders source observations by uptime. An observation can reach
+  // the runtime writer after a later observation, so writer sequence need not be time order.
+  assert.deepEqual(sequences.toSorted((a, b) => a - b),
+    sequences.map((_, index) => index + 1), 'Missing or duplicate journal sequence');
   const reports = events.filter(row => row.event === 'report.incoming');
   assert.deepEqual(reports.map(row => row.code), [0, 3, 0, 3]);
   assert.deepEqual(reports.map(row => row.callUUID), ['incoming', 'preview', 'elsewhere', 'filtered']

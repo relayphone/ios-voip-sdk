@@ -5,6 +5,10 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+### Added
+
+- Cold-launch push supervision retains cancelled duplicate outcomes after verified process exit. Cold launches now accept duplicate/spacing faults through the existing native scheduler. Status exposes invocation-local readiness timings from explicit registry and handler acknowledgements; CLI watch and Inspector combine host and runtime segments without sharing sequence counters.
+
 ## 0.7.0 (2026-11-16)
 
 ### Added

@@ -195,9 +195,26 @@ records a host `push.dropped` row and a dropped launch receipt, without staging,
 launching, invoking PushKit or creating a reporting obligation. Drop may combine
 with delay. Use a fresh run ID and receipt path for each request. Cold launches
 now stage version-two envelopes with stable request/delivery identities;
-version-one decoding remains supported. Cold-launch duplicates are still refused
-until host exit tracking can retain cancelled delivery outcomes. Running-app
-duplication is unchanged.
+version-one decoding remains supported. Cold-launch `--duplicate` and `--spacing-ms`
+reuse the runtime scheduler, anchored to the first actual delegate entry. Keep the
+host command running until the process exits: it verifies the service/PID and
+records undelivered copies as `push.cancelled`, including exits before runtime
+scheduling. Copies with delegate entry or a prior terminal outcome are excluded.
+Concurrent explicit kills and the observer serialize cancellation writes. No copy
+is replayed into a later launch. A launch transport failure leaves execution
+unknown: inspect the retained envelope and events before retrying.
+
+`status --json` includes `result.processLifecycle`: optional `process.entered` and
+`runtime.ready` anchors, native registry/handler observations, and measured
+launch-, entry- and runtime-relative readiness durations. Launch-relative durations
+include simulator launch service latency; entry-relative values exclude earlier
+startup/dyld work. Registry readiness is checked on its delivery queue; handler
+readiness requires an explicit native acknowledgement of an installed generation.
+The Expo attachment bridge emits that acknowledgement in Debug simulator builds.
+Missing observations remain absent; the host records separate registry/handler
+observation timeout events after 30 seconds while continuing exit supervision.
+Envelope expiry is a distinct event with its own freshness bound. CLI watch and
+Inspector retain each host/runtime producer sequence in one combined event view.
 
 ### Push reporting enforcement
 

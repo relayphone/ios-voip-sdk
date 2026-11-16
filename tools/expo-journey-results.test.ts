@@ -109,3 +109,17 @@ test('rejects journal identity changes, invalid sequences and swapped call facts
   assert.throws(() => assertExpoJournal(journal(facts.map(row => ({ ...row, sequence: 1 }))), 'run'));
   assert.throws(() => assertExpoJournal(journal(facts.map(row => row.event === 'call.changed' ? { ...row, uuid: 'wrong' } : row)), 'run'));
 });
+
+test('accepts observation order when runtime writer sequences arrive out of order', () => {
+  const sequenced = facts.map((row, index) => ({ ...row, sequence: index + 1 }));
+  sequenced[3]!.sequence = 5;
+  sequenced[4]!.sequence = 4;
+  assertExpoJournal(journal(sequenced), 'run');
+});
+
+test('rejects missing, duplicate, fractional and nonpositive writer sequences', () => {
+  for (const sequence of [0, -1, 1.5, 2, facts.length + 1]) {
+    assert.throws(() => assertExpoJournal(journal(facts.map((row, index) =>
+      index === 0 ? { ...row, sequence } : row)), 'run'));
+  }
+});

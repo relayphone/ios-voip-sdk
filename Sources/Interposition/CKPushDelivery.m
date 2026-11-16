@@ -95,9 +95,17 @@ void CKSimInjectPush(NSDictionary *payload, BOOL mustReport, NSString *identifie
     [waiting addObject:@{@"payload":payload,@"mustReport":@(mustReport),@"id":identifier}]; attempt();
   });
 }
+static void observeReady(PKPushRegistry *registry) {
+  dispatch_queue_t queue=[registryQueues objectForKey:registry] ?: dispatch_get_main_queue();
+  dispatch_async(queue,^{
+    if (pushHooksActive && registry.delegate && [registry.desiredPushTypes containsObject:PKPushTypeVoIP])
+      CKSimEmit(@"push.registryObserved",@{});
+  });
+}
 static void ready(PKPushRegistry *registry) {
+
   __weak PKPushRegistry *weak=registry;
-  dispatch_async(dispatch_get_main_queue(),^{if (pushHooksActive && weak) [registries addObject:weak];attempt();});
+  dispatch_async(dispatch_get_main_queue(),^{if (pushHooksActive && weak) {[registries addObject:weak];observeReady(weak);}attempt();});
 }
 __attribute__((ns_returns_retained)) static id registryInit(PKPushRegistry * __attribute__((ns_consumed)) self,SEL selector,dispatch_queue_t queue) {
   id registry=((QueueInitializer)originalInit)(self,selector,queue);

@@ -3,6 +3,7 @@
 // `cksim`, as a developer without the SDK would.
 //
 // Usage: node tools/runtime-smoke.ts <runtime package> [--simulator <UUID>]
+import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -88,13 +89,20 @@ async function reportingEnforcement(packagePath: string, simulator: string, work
       copies: 3, faults: ['--duplicate', '2', '--spacing-ms', '700'] },
   ];
   for (const scenario of cases) {
+    const priorRun = JSON.parse(readFileSync(join(channel, 'session.json'), 'utf8')).runID as string;
     launchToleratingASlowSimulator(() => run(join(packagePath, 'cksim'),
       ['--simulator', simulator, '--bundle', bundle, 'launch'], {
         timeout: 120, environment: {
           ...process.env, SIMCTL_CHILD_CKSIM_SMOKE_METADATA: scenario.metadata ? '1' : '0',
         },
       }));
-    cksim('status');
+    await until(`the new runtime for ${scenario.name}`, 120, () => {
+      const published = JSON.parse(readFileSync(join(channel, 'session.json'), 'utf8'));
+      assert.notEqual(published.runID, priorRun);
+      cksim('status');
+      assert.equal(JSON.parse(readFileSync(join(channel, 'session.json'), 'utf8')).runID, published.runID);
+      return true;
+    });
     const session = JSON.parse(readFileSync(join(channel, 'session.json'), 'utf8')) as { runID: string; pid: number };
     const journal = join(channel, session.runID, 'events.jsonl');
     const entries = (): PushEvent[] => readFileSync(journal, 'utf8').split('\n').slice(0, -1)
@@ -287,6 +295,68 @@ export async function smoke(packagePath: string, requestedSimulator?: string): P
         assert.notEqual(after.runID, before.runID);
         return true;
       });
+    }
+    run('xcrun', ['simctl', 'terminate', simulator, bundle]);
+    for (const spacing of [100, 120000]) {
+      const before = session();
+const droppedRunID = `dropped-${randomUUID()}`;
+cksim('push', '--launch', '--run-id', droppedRunID, '--payload-file', payload, '--must-report', 'true',
+  '--launch-receipt', join(work, `${droppedRunID}.json`), '--drop', '--duplicate', '1');
+const dropped = cksim('events', '--run-id', droppedRunID).trim().split('\n').map(line => JSON.parse(line));
+assert.equal(dropped.length, 2);
+assert.ok(dropped.every(row => row.event === 'push.dropped' && row.pid === undefined));
+assert.equal(new Set(dropped.map(row => row.pushID)).size, 2);
+assert.equal(session().runID, before.runID);
+const runID = `cold-${randomUUID()}`;
+      const receiptPath = join(work, `${runID}.json`);
+      const observer = spawn(join(packagePath, 'cksim'), ['--simulator', simulator, '--bundle', bundle,
+        'push', '--launch', '--run-id', runID, '--payload-file', payload, '--must-report', 'true',
+        '--launch-receipt', receiptPath, '--duplicate', '1', '--spacing-ms', String(spacing)], {
+        env: { ...process.env, SIMCTL_CHILD_DYLD_INSERT_LIBRARIES: join(packagePath, 'CKSimRuntime.dylib'),
+          SIMCTL_CHILD_CKSIM_ENABLED: '1', SIMCTL_CHILD_CKSIM_PROFILE: 'ios-27.0' },
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      let diagnostic = '';
+      observer.stderr.on('data', chunk => { diagnostic += String(chunk); });
+      const exited = new Promise<number | null>((resolveExit, reject) => {
+        observer.once('error', reject); observer.once('exit', code => resolveExit(code));
+      });
+      try {
+        await until('the cold process and both readiness acknowledgements', 120, () => {
+          const status = JSON.parse(cksim('status')).result;
+          assert.equal(session().runID, runID);
+          assert.notEqual(session().pid, before.pid);
+          const timings = status.processLifecycle;
+          assert.ok(timings.registry && timings.handler?.generation === 1);
+          for (const key of ['launchToRegistryMS', 'entryToRegistryMS', 'launchToHandlerMS', 'entryToHandlerMS']) {
+            assert.ok(Number.isFinite(timings[key]) && timings[key] >= 0, key);
+          }
+          return true;
+        });
+        const plan = JSON.parse(readFileSync(receiptPath, 'utf8')).envelope;
+        const deliveredCount = spacing === 100 ? 2 : 1;
+        await until('independent duplicate delegate entries and reports', 30, () => {
+          const rows = cksim('events', '--run-id', runID).trim().split('\n').map(line => JSON.parse(line));
+          for (const id of plan.deliveryIDs.slice(0, deliveredCount)) {
+            assert.ok(rows.some(row => row.event === 'push.received' && row.pushID === id));
+            assert.ok(rows.some(row => row.event === 'report.incoming' && row.pushID === id));
+          }
+          return true;
+        });
+        // An external exit exercises automatic observation, independently of process kill.
+        run('xcrun', ['simctl', 'terminate', simulator, bundle]);
+        const timeout = new AbortController();
+        try {
+          assert.equal(await Promise.race([exited, sleep(30000, undefined, { signal: timeout.signal })
+            .then(() => { throw new Error('Cold observer exit timed out'); })]), 0, diagnostic);
+        } finally { timeout.abort(); }
+        const rows = cksim('events', '--run-id', runID).trim().split('\n').map(line => JSON.parse(line));
+        assert.deepEqual(rows.filter(row => row.event === 'push.cancelled').map(row => row.pushID),
+          plan.deliveryIDs.slice(deliveredCount));
+        assert.ok(rows.some(row => row.event === 'process.exited' && row.cause === 'unknown'));
+      } finally {
+        if (observer.exitCode === null) observer.kill('SIGTERM');
+      }
     }
     await reportingEnforcement(packagePath, simulator, work);
     return events;

@@ -497,11 +497,21 @@
         else { return }
         record(
           event: observation.event.rawValue,
-          fields: ["boundarySource": observation.source.rawValue], observed: observed)
+          fields: ["boundarySource": observation.source.rawValue].merging(
+            observation.generation.map { ["generation": $0] } ?? [:]
+          ) { _, new in new }, observed: observed)
       }
     }
 
     func record(event: String, fields: [String: Any]) {
+      if event == "push.registryObserved" {
+        recordProcess(.registryReady, observed: .now())
+        return
+      }
+      if event == "app.handlerObserved", let generation = fields["generation"] as? Int {
+        recordProcess(.handlerReady(generation), observed: .now())
+        return
+      }
       record(event: event, fields: fields, observed: .now())
     }
     private func record(event: String, fields: [String: Any], observed: DispatchTime) {
@@ -541,6 +551,10 @@
             pushViolation = observation.violation
           default: break
           }
+        }
+        if event == "push.launchRefused", fields["reason"] as? String == "expired launch envelope" {
+          record(
+            event: ProcessLifecycleEvent.envelopeExpired.rawValue, fields: [:], observed: observed)
         }
         // Recording failure must not interrupt call lifecycle work below or burn
         // a sequence number. Encode the complete record before touching the file.
@@ -1744,7 +1758,15 @@
   }
   private enum ControlError: Error { case invalid(String) }
 
+  /// Debug simulator acknowledgement after the application's handler is installed.
+  @_cdecl("CKSimHandlerAttached")
+  public func runtimeHandlerAttached(_ generation: Int) {
+    RuntimeEngine.existing()?.record(
+      event: "app.handlerObserved", fields: ["generation": generation])
+  }
+
   @_cdecl("CKSimGetEngine")
+
   func getRuntimeEngine() -> UnsafeMutableRawPointer? {
     RuntimeEngine.existing().map { Unmanaged.passRetained($0).toOpaque() }
   }

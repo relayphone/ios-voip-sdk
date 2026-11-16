@@ -105,8 +105,20 @@
         if let data = try? Data(contentsOf: responseFile) {
           guard let response = try? JSONDecoder().decode(ControlResponse.self, from: data),
             response.id == request.id, response.target == identity,
-            let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            var object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
           else { throw CKSimError("Runtime response identity mismatch.") }
+          if case .status = operation, var result = object["result"] as? [String: Any],
+            let simulator = UUID(uuidString: target.device)
+          {
+            let projection = try ProcessJournal(
+              channel: channel,
+              identity: ProcessLifecycleIdentity(
+                simulatorID: simulator, bundleID: target.bundle, runID: session.runID)
+            ).readiness(pid: session.pid)
+            result["processLifecycle"] = try JSONSerialization.jsonObject(
+              with: JSONEncoder().encode(projection))
+            object["result"] = result
+          }
           if let receipt {
             try writeNew(
               receipt,

@@ -37,6 +37,26 @@ struct InspectorModelTests {
     }
   }
 
+  @Test func combinedHostAndRuntimeRowsKeepIndependentSequencesAndIdentity() async throws {
+    let bridge = ScriptedBridge()
+    let producer = UUID().uuidString
+    bridge.append("process.entered", ["sequence": 1])
+    bridge.append(
+      "process.launchRequested",
+      [
+        "sequence": 1, "producerID": producer, "pid": NSNull(), "t_ms": NSNull(),
+        "uptimeNanoseconds": 1,
+      ])
+    bridge.append("runtime.ready", ["sequence": 2])
+    let (model, task) = following(bridge)
+    defer { task.cancel() }
+    try await wait("combined journal") { model.online && model.timeline.count == 3 }
+    #expect(Set(model.timeline.map(\.id)).count == 3)
+    #expect(model.timeline[1].pid == nil && model.timeline[1].t_ms == nil)
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(model.online && model.timeline.count == 3)
+  }
+
   @Test func liveCommunicationKitControlsWaitForTheirActions() async throws {
     let bridge = ScriptedBridge()
     var calls: [String: [String: Any]] = [:]

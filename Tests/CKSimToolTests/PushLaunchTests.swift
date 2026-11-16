@@ -29,7 +29,7 @@
     private static let stopped = Data(
       "PID\tStatus\tLabel\n-\t0\tUIKitApplication:\(bundle)[1a2b]\n".utf8)
 
-    @Test func hostIntentIsDurableBeforeTheLaunchCommandIsReturned() async throws {
+    @Test func preparationPinsThePlanWithoutClaimingLaunchWasRequested() async throws {
       let simulator = FakeSimulator()
       simulator.state.withLock { $0.containers[bundle] = app.container }
       let result = try await PushLaunch(
@@ -42,14 +42,54 @@
         prepared.arguments == ["/usr/bin/xcrun", "simctl", "launch", "--console", device, bundle])
       let identity = try ProcessLifecycleIdentity(
         simulatorID: UUID(uuidString: device)!, bundleID: bundle, runID: launch.runID)
-      let entries = try ProcessJournal(channel: app.channel, identity: identity).read()
-      let row = try JSONDecoder().decode(
-        ProcessLifecycleRecord.self, from: #require(entries.first).line)
-      #expect(row.event == .launchRequested && row.pid == nil)
+      #expect(prepared.envelope.runID == identity.runID)
+      #expect(!exists(app.channel.appending(path: "process/launch-run")))
       #expect(!simulator.calls.contains { $0.first == "launch" })
       #expect(throws: CKSimError.self) {
         try launch.stage(container: app.container, serviceTable: Self.stopped)
       }
+    }
+
+    @Test func droppedColdDuplicatesRetainEveryCopyWithoutLaunching() async throws {
+      let simulator = FakeSimulator()
+      simulator.state.withLock { $0.containers[bundle] = app.container }
+      let request = PushLaunch(
+        target: Target(simctl: simulator.simctl, device: device, bundle: bundle),
+        runID: launch.runID, mustReport: true, payloadFile: launch.payloadFile,
+        receipt: launch.receipt,
+        delivery: try PushDeliveryFaults(drop: true, duplicate: 2, spacingMS: 500))
+      let prepared = try await request.prepare()
+      #expect(prepared == nil)
+      let identity = try ProcessLifecycleIdentity(
+        simulatorID: UUID(uuidString: device)!, bundleID: bundle, runID: launch.runID)
+      let rows = try ProcessJournal(channel: app.channel, identity: identity).read().map {
+        try JSONDecoder().decode(ProcessLifecycleRecord.self, from: $0.line)
+      }
+      #expect(rows.count == 3 && rows.allSatisfy { $0.event == .dropped && $0.pid == nil })
+      #expect(
+        Set(rows.compactMap(\.pushID)).count == 3 && Set(rows.compactMap(\.requestID)).count == 1)
+      #expect(!exists(app.channel.appending(path: "push-launch.json")))
+      #expect(!simulator.calls.contains { $0.first == "launch" })
+    }
+
+    @Test func coldLaunchDuplicatesAreStagedAsOneStableNativePlan()
+      async throws
+    {
+      let simulator = FakeSimulator()
+      simulator.state.withLock { $0.containers[bundle] = app.container }
+      let request = PushLaunch(
+        target: Target(simctl: simulator.simctl, device: device, bundle: bundle),
+        runID: launch.runID, mustReport: true, payloadFile: launch.payloadFile,
+        receipt: launch.receipt, delivery: try PushDeliveryFaults(duplicate: 2, spacingMS: 500))
+      let result = try await request.prepare()
+      let prepared = try #require(result)
+      let staged = try JSONDecoder().decode(
+        PushLaunchEnvelope.self,
+        from: Data(contentsOf: app.channel.appending(path: "push-launch.json")))
+      #expect(staged == prepared.envelope)
+      #expect(staged.delivery.duplicate == 2 && staged.deliveryIDs.count == 3)
+      #expect(Set(staged.deliveryIDs).count == 3 && staged.deliveryIDs.first == staged.id)
+      #expect(!simulator.calls.contains { $0.first == "launch" })
     }
 
     @Test func aStagedPushHasItsEnvelopeAndReceipt() throws {

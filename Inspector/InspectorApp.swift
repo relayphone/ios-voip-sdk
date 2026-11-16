@@ -209,7 +209,8 @@
             ForEach(model.timeline.reversed()) { row in
               VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline) {
-                  Text(String(format: "+%.3f s", row.t_ms / 1000)).monospacedDigit()
+                  Text(row.t_ms.map { String(format: "+%.3f s", $0 / 1000) } ?? "host")
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
                   Text(row.title).foregroundStyle(row.fulfilled == false ? Color.red : .primary)
                 }.font(.subheadline)

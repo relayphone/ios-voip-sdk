@@ -143,6 +143,7 @@ final class InspectorModel: ObservableObject {
     else { throw URLError(.cannotParseResponse) }
     return response
   }
+  private var producerSequences: [String: Int] = [:]
   func follow() async {
     while !Task.isCancelled {
       do {
@@ -151,12 +152,18 @@ final class InspectorModel: ObservableObject {
         guard session == nil || session == batch.session,
           batch.cursor == cursor + batch.events.count
         else { throw URLError(.cannotParseResponse) }
-        for (offset, row) in batch.events.enumerated() {
-          guard row.schemaVersion == 1, row.sequence == cursor + offset + 1,
-            row.runID == batch.session.runID, row.pid == batch.session.pid,
-            row.bundleID == batch.session.bundleID
+        var sequences = producerSequences
+        for row in batch.events {
+          let producer = row.producerID?.uuidString ?? "runtime"
+          guard row.schemaVersion == 1, row.sequence == (sequences[producer] ?? 0) + 1,
+            row.runID == batch.session.runID,
+            row.pid == batch.session.pid || (row.producerID != nil && row.pid == nil),
+            row.bundleID == batch.session.bundleID,
+            row.producerID != nil || row.t_ms != nil
           else { throw URLError(.cannotParseResponse) }
+          sequences[producer] = row.sequence
         }
+        producerSequences = sequences
         session = batch.session
         for row in batch.events { consume(row) }
         cursor = batch.cursor

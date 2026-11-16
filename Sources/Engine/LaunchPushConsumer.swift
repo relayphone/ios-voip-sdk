@@ -14,11 +14,12 @@
     }
 
     enum Failure: Error, CustomStringConvertible {
-      case unsafeEnvelope, claimFailed, invalidEnvelope
+      case unsafeEnvelope, claimFailed, invalidEnvelope, expiredEnvelope
       var description: String {
         switch self {
         case .unsafeEnvelope: "unsafe launch envelope"
         case .claimFailed: "cannot claim launch envelope"
+        case .expiredEnvelope: "expired launch envelope"
         case .invalidEnvelope: "invalid or expired launch envelope"
         }
       }
@@ -62,11 +63,18 @@
         guard let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
           object["id"] as? String == envelope.id.uuidString
         else { throw Failure.invalidEnvelope }
-        try envelope.validate(runID: runID, bundleID: bundleID, nowMS: nowMS)
+        do {
+          try envelope.validate(runID: runID, bundleID: bundleID, nowMS: nowMS)
+        } catch PushLaunchEnvelope.ValidationError.expired {
+          guard nowMS >= envelope.expiresAtMS else { throw Failure.invalidEnvelope }
+          throw Failure.expiredEnvelope
+        }
         return Consumed(
           envelope: envelope,
           sha256: SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined())
-      } catch { throw Failure.invalidEnvelope }
+      } catch let failure as Failure { throw failure } catch {
+        throw Failure.invalidEnvelope
+      }
     }
   }
 #endif
