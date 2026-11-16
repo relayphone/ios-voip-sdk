@@ -62,7 +62,10 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       commands = bridge.commands
     }
     func transportEvents() -> AsyncStream<MediaTransportEvent> { bridge.packetEvents.stream() }
-    func prepare(_ call: Call) async throws { try await bridge.prepare(call.id) }
+    func prepare(_ call: Call) async throws {
+      bridge.startup.record(.prepareEntered)
+      try await bridge.prepare(call.id)
+    }
     func activate() { commands.yield(.activate) }
     func deactivate() { commands.yield(.deactivate) }
     func release(_ call: Call) { commands.yield(.release) }
@@ -89,8 +92,10 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let codecs: [String: String]
       let silenceWindows: [PCMSilenceWindows.Window]
       let teardown: MediaTeardownEvidence.Receipt
+      let startup: MediaStartupEvidence.Receipt
     }
     nonisolated let commands: AsyncStream<AudioCommand>.Continuation
+    nonisolated let startup: MediaStartupEvidence
     let observationClock: MediaObservationClock
     let probe: MediaAudioProbe
     let teardown: MediaTeardownEvidence
@@ -144,6 +149,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let observationClock = MediaObservationClock()
       self.observationClock = observationClock
       probe = MediaAudioProbe(observationClock: observationClock, captureDuration: .seconds(10))
+      startup = probe.startup
       teardown = MediaTeardownEvidence(observationClock: observationClock)
       decoder = DecodedAudioProbe(probe: probe)
       hooks = MarkerAudioEngine(probe: probe, frequencies: fixture.uplinkFrequencies)
@@ -158,6 +164,11 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             case .activate:
               probe.beginWindow()
               hooks.processingTimeline.record(.engineAvailabilityApplying)
+              defer {
+                probe.startup.record(
+                  .engineAvailabilityObserved(
+                    AudioManager.shared.isEngineRunning ? .running : .unavailable))
+              }
               try AudioManager.shared.setEngineAvailability(.default)
               hooks.processingTimeline.record(
                 .engineAvailabilityApplied, engineRunning: AudioManager.shared.isEngineRunning)
@@ -190,12 +201,20 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       manager.set(engineObservers: [manager.audioSession, manager.mixer, hooks])
       try manager.setEngineAvailability(.none)
       room.add(delegate: self)
-      try await room.connect(url: fixture.url, token: fixture.token)
+      probe.startup.record(.roomConnectRequested)
+      do {
+        try await room.connect(url: fixture.url, token: fixture.token)
+        probe.startup.record(.roomConnectCompleted)
+      } catch {
+        probe.startup.record(.roomConnectFailed(errorType: String(reflecting: type(of: error))))
+        throw error
+      }
       hooks.processingTimeline.record(.captureOptionsApplying)
       let publication = try await room.localParticipant.setMicrophone(
         enabled: true,
         captureOptions: MarkerAudioEngine.syntheticCaptureOptions)
       hooks.processingTimeline.record(.captureOptionsApplied)
+      probe.startup.record(.captureOptionsApplied)
       localTrack = publication?.track as? LocalAudioTrack
       await localTrack?.set(reportStatistics: true)
       inactiveEngineStayedStopped =
@@ -410,7 +429,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             inactiveEngineStayedStopped: inactiveEngineStayedStopped, processing: processing,
             processingTimeline: hooks.processingTimeline.entries,
             processingTimelineDropped: hooks.processingTimeline.dropped,
-            codecs: codecs, silenceWindows: silenceWindows, teardown: teardownReceipt)
+            codecs: codecs, silenceWindows: silenceWindows, teardown: teardownReceipt,
+            startup: probe.startup.receipt())
           try JSONEncoder().encode(result).write(
             to: URL.documentsDirectory.appending(path: "media-result.json"))
 
@@ -444,6 +464,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let teardown: MediaTeardownEvidence.Receipt?
       let released: Bool
       let audioActive: Bool
+      let startup: MediaStartupEvidence.Receipt
       let publicationMuted: Bool
       let onHold: Bool
     }
@@ -465,7 +486,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         observedAtMs: observationClock.milliseconds, monitorTicksMs: journeyTicks,
         droppedMonitorTicks: journeyTicksDropped, decoded: stage(.decoded), output: stage(.output),
         ended: journeyEnded, teardown: teardown.receipt(), released: released,
-        audioActive: client?.isAudioActive ?? false, publicationMuted: publicationMuted,
+        audioActive: client?.isAudioActive ?? false, startup: probe.startup.receipt(),
+        publicationMuted: publicationMuted,
         onHold: client?.calls.first(where: { $0.id.rawValue == session.fixture.conversationId })?
           .isOnHold ?? false)
     }
@@ -649,6 +671,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         let output: MediaAudioProbe.Observation
         let silenceWindows: [PCMSilenceWindows.Window]
         let teardown: MediaTeardownEvidence.Receipt?
+        let startup: MediaStartupEvidence.Receipt
       }
       let result = FailureResult(
         generatedSamples: hooks.generatedSamples, phase: phase, processing: processing,
@@ -656,7 +679,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         processingTimelineDropped: hooks.processingTimeline.dropped,
         codecs: codecs, decoded: probe.observation(.decoded),
         output: probe.observation(.output), silenceWindows: silenceWindows,
-        teardown: teardown.receipt())
+        teardown: teardown.receipt(), startup: probe.startup.receipt())
       try? JSONEncoder().encode(result).write(
         to: URL.documentsDirectory.appending(path: "media-result.json"))
     }

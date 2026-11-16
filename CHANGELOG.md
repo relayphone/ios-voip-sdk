@@ -14,6 +14,8 @@ Public API changes include migration guidance.
 - Native media probe snapshots atomically expose original PCM, counters and bounded callback
   timing/level evidence. Callback rows retain sample positions, frame counts, energy and peak,
   with explicit overflow and probe-window resets for subsequent host silence-window selection.
+- The native media example retains bounded first-occurrence startup receipts on its shared clock,
+  including partial preparation and connection failures, engine availability, taps and callbacks.
 
 ## 0.7.0 (2026-11-16)
 

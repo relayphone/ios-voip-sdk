@@ -28,6 +28,16 @@
       #expect(probe.observation(.output).firstCallback == 2)
       #expect(teardown.receipt()?.startedAtMs == 2000)
       #expect(teardown.receipt()?.observations.first?.atMs == 2000)
+      let startup = probe.startup.receipt()
+      #expect(startup.clockID == shared.id)
+      #expect(
+        startup.observations.map(\.event) == [.tapInstalled(.output), .firstCallback(.output)])
+      #expect(startup.observations.map(\.atMs) == [2000, 2000])
+      clock.advance(by: .seconds(1))
+      probe.beginWindow()
+      probe.installed(.output)
+      probe.receive(buffer, at: .output)
+      #expect(probe.startup.receipt().observations.map(\.atMs) == [2000, 2000])
     }
 
     @Test func callbackSnapshotsUseActualStereoPCMAndResetWithTheWindow() throws {

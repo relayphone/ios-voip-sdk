@@ -353,3 +353,13 @@ overflow, which consumers must reject. Beginning a window or retiring a gapped n
 silence attempt resets the callback history alongside PCM and counters. The example
 command mailbox includes these rows for host window selection; rows never fill missing
 intervals or change the shared-contract coverage, RMS or peak thresholds.
+
+The example's success, failure and journey receipts also include `startup`, a
+`MediaStartupEvidence.Receipt` with the same observation clock identity. It retains the
+first `prepareEntered`, `roomConnectRequested`, connection outcome, `captureOptionsApplied`
+and `engineAvailabilityObserved` events. Connection failure contains only the error type
+name; engine availability is read after the activation attempt as `running` or `unavailable`.
+`tapInstalled` and `firstCallback` are observed independently for decoded and output PCM.
+At most nine rows are retained across probe-window resets. Taking a failure snapshot never
+fills a missing stage or infers a callback. Startup diagnostics do not alter acquisition
+deadlines or media gates.

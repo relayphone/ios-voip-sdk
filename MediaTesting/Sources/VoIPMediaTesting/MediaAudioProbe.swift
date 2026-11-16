@@ -68,6 +68,8 @@
     private let state = Mutex(State())
     private let now: @Sendable () -> Double
     private let captureSeconds: Double
+    /// Startup observations survive PCM-window resets and are shared with the example adapter.
+    public let startup: MediaStartupEvidence
     /// Uses a monotonic clock; tests can advance an injected clock without sleeping.
     /// The retained diagnostic capture is bounded to one through ten seconds; default is three.
     public convenience init<C: Clock<Duration>>(clock: C, captureDuration: Duration = .seconds(3)) {
@@ -78,6 +80,7 @@
     public init(observationClock: MediaObservationClock, captureDuration: Duration = .seconds(3)) {
       precondition(captureDuration >= .seconds(1) && captureDuration <= .seconds(10))
       captureSeconds = Double(captureDuration / .seconds(1))
+      startup = MediaStartupEvidence(observationClock: observationClock)
       now = { observationClock.seconds }
     }
     public convenience init(captureDuration: Duration = .seconds(3)) {
@@ -152,10 +155,12 @@
     }
     func installed(_ stage: Stage) {
       state.withLock { $0.values[stage, default: Observation()].installed = true }
+      startup.record(.tapInstalled(stage == .decoded ? .decoded : .output))
     }
     func removed(_ stage: Stage) { state.withLock { $0.values[stage] = Observation() } }
     func receive(_ buffer: AVAudioPCMBuffer, at stage: Stage) {
       let entered = now()
+      startup.record(.firstCallback(stage == .decoded ? .decoded : .output))
       let count = Int(buffer.frameLength)
       let channels = Int(buffer.format.channelCount)
       guard count > 0, channels > 0, buffer.format.sampleRate > 0 else { return }
