@@ -99,7 +99,9 @@
             $0.event == "action.deadline" && $0.actionID == delivered.actionID
           }
           let issuedAt = Double(try #require(issued.issuedAtMS))
-          let advertised = try #require(delivered.advertisedDeadlineMS) - issuedAt
+          // LCK creates its advertised deadline on delivery, after the runtime's issue time.
+          // Keep that queue delay out of the advertised interval, but in effective expiry below.
+          let advertised = try #require(delivered.advertisedIntervalMS)
           #expect((29_000...31_000).contains(advertised), "LiveCommunicationKit advertises 30 s")
           #expect(Double(expired.wallTimeMS) - issuedAt >= (pending == "Join" ? 63_000 : 5_000))
           try await session.expect(["A": a, "B": b])

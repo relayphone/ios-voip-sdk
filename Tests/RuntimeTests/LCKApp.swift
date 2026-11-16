@@ -146,10 +146,12 @@
     }
 
     private func fields(_ action: ConversationAction) -> [String: Any] {
+      let advertisedAt = Date()
       var fields: [String: Any] = [
         "actionID": action.uuid.uuidString, "callUUID": action.conversationUUID.uuidString,
         "kind": kind(action),
         "advertisedDeadlineMS": action.timeoutDate.timeIntervalSince1970 * 1000,
+        "advertisedAtMS": advertisedAt.timeIntervalSince1970 * 1000,
       ]
       if let pause = action as? PauseConversationAction { fields["held"] = pause.isPaused }
       return fields
