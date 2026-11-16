@@ -356,10 +356,31 @@ intervals or change the shared-contract coverage, RMS or peak thresholds.
 
 The example's success, failure and journey receipts also include `startup`, a
 `MediaStartupEvidence.Receipt` with the same observation clock identity. It retains the
-first `prepareEntered`, `roomConnectRequested`, connection outcome, `captureOptionsApplied`
-and `engineAvailabilityObserved` events. Connection failure contains only the error type
+first `prepareEntered`, `roomConnectRequested`, connection outcome, `captureOptionsApplied`,
+`prepareCompleted`, `activationEntered`, `activationEnqueued`, `activationHandlerEntered`
+and `engineAvailabilityObserved` events. Preparation completion is recorded after the
+statistics await and successful return from preparation. Activation entry and the stream's
+actual enqueue result (`enqueued`, `dropped` or `terminated`) are separate from handler entry.
+The handler may run before the post-yield enqueue receipt is recorded; enqueue never implies
+consumption. Connection failure contains only the error type
 name; engine availability is read after the activation attempt as `running` or `unavailable`.
 `tapInstalled` and `firstCallback` are observed independently for decoded and output PCM.
-At most nine rows are retained across probe-window resets. Taking a failure snapshot never
+At most thirteen rows are retained across probe-window resets. Taking a failure snapshot never
 fills a missing stage or infers a callback. Startup diagnostics do not alter acquisition
 deadlines or media gates.
+
+The same startup receipt retains the latest observed SDK `audioActivated` and
+`audioDeactivated` timestamps, without growing the timeline or filling absent events. Failure
+and journey snapshots include `sdkAudioState`, with the shared clock identity, observation
+time, SDK `isAudioActive` value, call status and typed call failure when present. An unavailable
+client leaves the optional SDK flag absent and an unavailable call remains explicit; neither becomes inactive.
+These are SDK observations, not a second measurement of the platform audio session.
+Ended calls leave the SDK's live call list, so the example separately retains the matching
+SDK ended event. `callSource` and `callObservedAtMs` distinguish that earlier terminal
+observation from a current live-call snapshot; unrelated calls never supply the status.
+
+Host failure diagnostics distinguish unobserved prepare completion, activation never delivered,
+activation enqueue failure, an enqueued command not consumed, and an activation attempt with
+an unavailable engine. Missing engine outcome stays unobserved. Diagnostics neither qualify
+audio nor override a failed media result; older receipts without the new boundaries retain
+their uncertainty.

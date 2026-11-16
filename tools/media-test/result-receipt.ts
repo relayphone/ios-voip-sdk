@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { diagnoseNativeStartup } from './startup-diagnostics.ts';
 
 /** Persist failure evidence even when the native observer cannot finish its final report. */
 export function writeUnobservedResult<T>(output: string, deadlineMs: number, farEnd: T, checkpoint: string): void {
@@ -14,7 +15,8 @@ export function writeUnobservedResult<T>(output: string, deadlineMs: number, far
 export function assertNativePassed(evidence: unknown): void {
   const report = evidence && typeof evidence === 'object' ? evidence : undefined;
   const phase = report && 'phase' in report && typeof report.phase === 'string' ? report.phase : 'unavailable';
-  assert.ok(report && 'passed' in report && report.passed === true, `Native media check failed at ${phase}`);
+  assert.ok(report && 'passed' in report && report.passed === true,
+    `Native media check failed at ${phase}; startup=${diagnoseNativeStartup(evidence).boundary}`);
 }
 
 /** Expected native clock and arm acknowledgement for the current terminal phase. */

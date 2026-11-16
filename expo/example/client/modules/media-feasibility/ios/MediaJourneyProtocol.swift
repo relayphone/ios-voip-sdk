@@ -1,6 +1,41 @@
 #if DEBUG
   import Foundation
 
+  /// SDK state read at failure; absence of the client or call stays explicit.
+  struct MediaSDKAudioState: Codable {
+    enum CallSource: String, Codable { case snapshot, endedEvent, unavailable }
+    enum Status: String, Codable {
+      case unavailable, ringing, previewing, dialing, connecting, connected, reconnecting, ended
+    }
+    enum Failure: String, Codable {
+      case refused, atCapacity, notPlaced, media, audioActivationTimedOut, audioSession
+      case audioRecoveryTimedOut, connectTimedOut, reconnectTimedOut, actionTimedOut, frameworkReset
+      case server
+    }
+    struct CallObservation {
+      let status: Status
+      let failure: Failure?
+      let source: CallSource
+      let atMs: Double
+    }
+    /// Ended calls leave the live SDK snapshot; retain one actual terminal observation.
+    struct CallHistory {
+      private var lastEnded: CallObservation?
+      mutating func recordEnded(failure: Failure?, atMs: Double) {
+        lastEnded = CallObservation(
+          status: .ended, failure: failure, source: .endedEvent, atMs: atMs)
+      }
+      func observation(snapshot: CallObservation?) -> CallObservation? { snapshot ?? lastEnded }
+    }
+    let clockID: UUID
+    let observedAtMs: Double
+    let isAudioActive: Bool?
+    let callStatus: Status
+    let callFailure: Failure?
+    let callSource: CallSource
+    let callObservedAtMs: Double?
+  }
+
   struct MediaJourneyFixture: Decodable {
     let fixtureId: String
     let conversationId: String
