@@ -3,6 +3,7 @@
   import CKSimProtocol
   import Testing
   import Synchronization
+  import VoIPTesting
 
   @testable import CKSimTool
 
@@ -31,11 +32,12 @@
     @Test func hostIntentIsDurableBeforeTheLaunchCommandIsReturned() async throws {
       let simulator = FakeSimulator()
       simulator.state.withLock { $0.containers[bundle] = app.container }
-      let prepared = try await PushLaunch(
+      let result = try await PushLaunch(
         target: Target(simctl: simulator.simctl, device: device, bundle: bundle),
         runID: launch.runID, mustReport: true, payloadFile: launch.payloadFile,
         receipt: launch.receipt
       ).prepare()
+      let prepared = try #require(result)
       #expect(
         prepared.arguments == ["/usr/bin/xcrun", "simctl", "launch", "--console", device, bundle])
       let identity = try ProcessLifecycleIdentity(
@@ -63,12 +65,15 @@
       #expect(
         Set(envelope.keys) == [
           "schemaVersion", "id", "runID", "bundleID", "createdAtMS", "expiresAtMS", "mustReport",
-          "payload",
+          "payload", "delivery", "deliveryIDs",
         ])
       let created = try #require(envelope["createdAtMS"] as? Int)
       #expect(created >= before && envelope["expiresAtMS"] as? Int == created + 30_000)
       #expect(
         envelope["runID"] as? String == "launch-run" && envelope["mustReport"] as? Bool == true)
+      let typed = try JSONDecoder().decode(PushLaunchEnvelope.self, from: data)
+      #expect(typed.schemaVersion == .deliveryPlan && typed.delivery == .none)
+      #expect(typed.deliveryIDs == [typed.id])
       let mode = try FileManager.default.attributesOfItem(atPath: file.path())[.posixPermissions]
       #expect((mode as? NSNumber)?.intValue == 0o600)
       let receipt = try #require(
@@ -102,6 +107,130 @@
         #expect(error.description.contains(message))
       }
       #expect(!FileManager.default.fileExists(atPath: launch.receipt.path()))
+    }
+
+    @Test func delayDoesNotStageOrQueryBeforeItsAcceptedDeadline() async throws {
+      let clock = TestClock()
+      let simulator = FakeSimulator()
+      simulator.state.withLock { $0.containers[bundle] = app.container }
+      let delayed = PushLaunch(
+        target: Target(simctl: simulator.simctl, device: device, bundle: bundle),
+        runID: launch.runID, mustReport: true, payloadFile: launch.payloadFile,
+        receipt: launch.receipt, delivery: try PushDeliveryFaults(delayMS: 1000))
+      let request = delayed
+      let task = Task { try await request.prepare(clock: clock) }
+      try await clock.waitForSleepers()
+      #expect(simulator.calls.isEmpty)
+      #expect(!FileManager.default.fileExists(atPath: launch.receipt.path))
+      #expect(
+        !FileManager.default.fileExists(
+          atPath: app.channel.appending(path: "push-launch.json").path))
+      clock.advance(by: .milliseconds(999))
+      #expect(simulator.calls.isEmpty)
+      // Editing the source after acceptance must not change the scheduled payload.
+      try Data("[]".utf8).write(to: launch.payloadFile)
+      clock.advance(by: .milliseconds(1))
+      #expect(try await task.value != nil)
+      let envelope = try JSONDecoder().decode(
+        PushLaunchEnvelope.self,
+        from: Data(contentsOf: app.channel.appending(path: "push-launch.json")))
+      #expect(envelope.delivery.delayMS == 1000)
+      #expect(envelope.payload.fields["callId"] == .string("launch-1"))
+    }
+
+    @Test func appStartedDuringDelayCannotBeRelaunched() async throws {
+      let clock = TestClock()
+      let simulator = FakeSimulator()
+      simulator.state.withLock { $0.containers[bundle] = app.container }
+      let request = PushLaunch(
+        target: Target(simctl: simulator.simctl, device: device, bundle: bundle),
+        runID: launch.runID, mustReport: true, payloadFile: launch.payloadFile,
+        receipt: launch.receipt, delivery: try PushDeliveryFaults(delayMS: 1000))
+      let task = Task { try await request.prepare(clock: clock) }
+      try await clock.waitForSleepers()
+      simulator.state.withLock {
+        $0.serviceTable = "PID\tStatus\tLabel\n812\t0\tUIKitApplication:\(bundle)[1a2b]\n"
+      }
+      clock.advance(by: .seconds(1))
+      await #expect(throws: CKSimError.self) { try await task.value }
+      #expect(!FileManager.default.fileExists(atPath: launch.receipt.path))
+      #expect(
+        !FileManager.default.fileExists(
+          atPath: app.channel.appending(path: "push-launch.json").path))
+    }
+
+    @Test func droppedRequestHasOnlyAHostTerminalOutcome() async throws {
+      let simulator = FakeSimulator()
+      simulator.state.withLock { $0.containers[bundle] = app.container }
+      let dropped = PushLaunch(
+        target: Target(simctl: simulator.simctl, device: device, bundle: bundle),
+        runID: launch.runID, mustReport: true, payloadFile: launch.payloadFile,
+        receipt: launch.receipt, delivery: try PushDeliveryFaults(drop: true))
+      #expect(try await dropped.prepare() == nil)
+      #expect(simulator.calls.count == 1 && simulator.calls.first?.first == "get_app_container")
+      #expect(
+        !FileManager.default.fileExists(
+          atPath: app.channel.appending(path: "push-launch.json").path))
+      let identity = try ProcessLifecycleIdentity(
+        simulatorID: UUID(uuidString: device)!, bundleID: bundle, runID: launch.runID)
+      let rows = try ProcessJournal(channel: app.channel, identity: identity).read()
+      #expect(rows.count == 1)
+      let row = try JSONDecoder().decode(
+        ProcessLifecycleRecord.self, from: #require(rows.first).line)
+      #expect(
+        row.event == .dropped && row.pid == nil && row.requestID == row.pushID && row.pushID != nil)
+      #expect(throws: CKSimError.self) {
+        try launch.stage(container: app.container, serviceTable: Self.stopped)
+      }
+    }
+
+    @Test func cancelledDelayCannotLeaveAStagedEnvelope() async throws {
+      let clock = TestClock()
+      var delayed = launch
+      delayed.delivery = try PushDeliveryFaults(delayMS: 1000)
+      let request = delayed
+      let task = Task { try await request.prepare(clock: clock) }
+      try await clock.waitForSleepers()
+      task.cancel()
+      await #expect(throws: CancellationError.self) { try await task.value }
+      #expect(!FileManager.default.fileExists(atPath: launch.receipt.path))
+      #expect(
+        !FileManager.default.fileExists(
+          atPath: app.channel.appending(path: "push-launch.json").path))
+    }
+
+    @Test func invalidPayloadIsRejectedBeforeDelayOrDrop() async throws {
+      try Data("[]".utf8).write(to: launch.payloadFile)
+      var dropped = launch
+      dropped.delivery = try PushDeliveryFaults(delayMS: 120000, drop: true)
+      await #expect(throws: (any Error).self) { try await dropped.prepare(clock: TestClock()) }
+      #expect(!FileManager.default.fileExists(atPath: launch.receipt.path))
+    }
+
+    @Test(arguments: [false, true])
+    func cancellationInSimulatorQueryCannotStageOrDrop(drop: Bool) async throws {
+      let simulator = FakeSimulator()
+      simulator.state.withLock { $0.containers[bundle] = app.container }
+      let simctl = Simctl { arguments, environment, limit in
+        let output = try simulator.simctl.run(arguments, environment, limit)
+        if arguments.first == (drop ? "get_app_container" : "spawn") {
+          withUnsafeCurrentTask { $0?.cancel() }
+        }
+        return output
+      }
+      let request = PushLaunch(
+        target: Target(simctl: simctl, device: device, bundle: bundle),
+        runID: launch.runID, mustReport: true, payloadFile: launch.payloadFile,
+        receipt: launch.receipt, delivery: try PushDeliveryFaults(drop: drop))
+      let task = Task { try await request.prepare() }
+      await #expect(throws: CancellationError.self) { try await task.value }
+      #expect(!FileManager.default.fileExists(atPath: launch.receipt.path))
+      #expect(
+        !FileManager.default.fileExists(
+          atPath: app.channel.appending(path: "process/launch-run").path))
+      #expect(
+        !FileManager.default.fileExists(
+          atPath: app.channel.appending(path: "push-launch.json").path))
     }
 
     @Test func anUnsafeDirectoryIsRefused() throws {

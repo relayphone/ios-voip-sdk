@@ -507,8 +507,8 @@
       func validate() throws {
         _ = try delivery
         if launch {
-          guard try delivery == .none else {
-            throw ValidationError("Push delivery faults require a running app; launch it first.")
+          guard duplicate == 0 else {
+            throw ValidationError("Cold-launch duplicates require host exit tracking.")
           }
           guard let runID, (1...64).contains(runID.utf8.count),
             runID.utf8.allSatisfy({ isRunIDByte($0) }), launchReceipt != nil
@@ -526,8 +526,9 @@
             try await PushLaunch(
               target: options.target(device), runID: runID ?? "", mustReport: mustReport.value,
               payloadFile: URL(filePath: payloadFile),
-              receipt: URL(filePath: launchReceipt ?? "")
+              receipt: URL(filePath: launchReceipt ?? ""), delivery: delivery
             ).run()
+            return
           }
           let payload = try JSONDecoder().decode(
             PushPayload.self, from: Data(contentsOf: URL(filePath: payloadFile)))

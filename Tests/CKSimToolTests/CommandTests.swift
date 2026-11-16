@@ -31,10 +31,30 @@
             delayMS: 5000, drop: true, duplicate: 3, spacingMS: 700))
     }
 
+    @Test func droppedColdLaunchDoesNotFallThroughToMailboxDelivery() async throws {
+      let scratch = try Scratch()
+      let package = try makePackage(in: scratch.url)
+      let app = try FakeApp(in: scratch.url)
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o700], ofItemAtPath: app.channel.path)
+      let simulator = FakeSimulator()
+      simulator.state.withLock { $0.containers[bundle] = app.container }
+      let payload = scratch.url.appending(path: "push.json")
+      try Data(#"{"aps":{}}"#.utf8).write(to: payload)
+      let result = await run(
+        [
+          "--bundle", bundle, "--simulator", device, "push", "--payload-file", payload.path,
+          "--must-report", "true", "--launch", "--run-id", "drop-run",
+          "--launch-receipt", scratch.url.appending(path: "receipt.json").path, "--drop",
+        ], simulator: simulator, executableDirectory: package)
+      #expect(result.status == 0)
+      #expect(simulator.calls.count == 1 && simulator.calls.first?.first == "get_app_container")
+    }
+
     @Test(arguments: [
       ["--delay-ms", "-1"], ["--delay-ms", "120001"], ["--duplicate", "101"],
       ["--spacing-ms", "1"], ["--duplicate", "2", "--spacing-ms", "70000"],
-      ["--launch", "--run-id", "test", "--launch-receipt", "r.json", "--drop"],
+      ["--launch", "--run-id", "test", "--launch-receipt", "r.json", "--duplicate", "1"],
     ])
     func invalidPushSchedulesNeverReachTheSimulator(flags: [String]) async throws {
       let simulator = FakeSimulator()

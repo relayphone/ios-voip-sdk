@@ -185,8 +185,19 @@ distinct `pushID` in `push.scheduled`, correlated to that command by `requestID`
 the original retains the request ID. Each actual `push.received` starts its own
 reporting budget, including for delayed and duplicate deliveries. A report for
 one copy cannot satisfy another. Pending schedules are cancelled when the runtime
-stops. These flags cannot combine with `--launch`, whose one-shot cold-launch
-envelope is unchanged; launch the app before applying delivery faults.
+stops.
+
+With `--launch`, `--delay-ms` waits from host command acceptance before staging or
+requesting launch; startup cannot wake the app early. The payload is validated
+and frozen before waiting, and stopped-app verification runs after the delay.
+The envelope's separate 30-second freshness window starts at staging. `--drop`
+records a host `push.dropped` row and a dropped launch receipt, without staging,
+launching, invoking PushKit or creating a reporting obligation. Drop may combine
+with delay. Use a fresh run ID and receipt path for each request. Cold launches
+now stage version-two envelopes with stable request/delivery identities;
+version-one decoding remains supported. Cold-launch duplicates are still refused
+until host exit tracking can retain cancelled delivery outcomes. Running-app
+duplication is unchanged.
 
 ### Push reporting enforcement
 

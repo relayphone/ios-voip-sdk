@@ -140,7 +140,7 @@ let package = Package(
     .testTarget(
       name: "CKSimToolTests",
       dependencies: [
-        "CKSimTool", "CKSimProtocol",
+        "CKSimTool", "CKSimProtocol", "VoIPTesting",
         .product(
           name: "ArgumentParser", package: "swift-argument-parser",
           condition: .when(platforms: [.macOS])),
