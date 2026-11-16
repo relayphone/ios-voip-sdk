@@ -34,6 +34,29 @@ export class InfrastructureFailure extends Error {
   readonly step: string;
   constructor(step: string, cause: unknown) { super(`infra:${step}`, { cause }); this.step = step; }
 }
+
+/** Host evidence invalidates startup attribution without making a product check retryable. */
+export class HostUnresponsiveFailure extends Error {
+  readonly evidence: string;
+  constructor(cause: unknown, evidence: string) {
+    super('infra:host-unresponsive', { cause }); this.evidence = evidence;
+  }
+}
+
+/** Probe immediately after a bootstrap failure, before slower diagnostic collection. */
+export function classifyJourneyFailure(error: unknown, check: string, simulator: string | undefined,
+  bootstatusRetried: boolean, execute: typeof run = run): unknown {
+  if (check !== 'javascript-start' || !simulator || error instanceof InfrastructureFailure) return error;
+  if (bootstatusRetried) return new HostUnresponsiveFailure(error, 'bootstatus failed on the prior attempt');
+  try {
+    execute('xcrun', ['simctl', 'list', 'devices', '--json'], { timeout: 10 });
+  } catch (probe) {
+    if (probe instanceof Error && /\bETIMEDOUT\b|\btimed out\b/i.test(probe.message)) {
+      return new HostUnresponsiveFailure(error, `Immediate simulator probe: ${probe.message}`);
+    }
+  }
+  return error;
+}
 function infrastructure<T>(step: string, body: () => T): T {
   try { return body(); } catch (error) { throw new InfrastructureFailure(step, error); }
 }
@@ -88,6 +111,7 @@ export async function expoJourney(work: string, app: string): Promise<void> {
   mkdirSync(results, { recursive: true }); mkdirSync(markers, { recursive: true });
   const deviceType = infrastructure('device-selection', simulatorDevice);
   summary(`Target simulator: ${deviceType.name} (${deviceType.identifier}); one simulator per attempt`);
+  let bootstatusRetried = false;
   await withInfrastructureRetry(async attempt => {
     const name = `expo-journey-${process.env.GITHUB_RUN_ID ?? process.pid}-${process.env.GITHUB_RUN_ATTEMPT ?? 1}-${attempt}`;
     const prefix = join(results, `attempt-${attempt + 1}`);
@@ -104,7 +128,8 @@ export async function expoJourney(work: string, app: string): Promise<void> {
       const simulator = target;
       infrastructure('boot', () => {
         run('xcrun', ['simctl', 'boot', simulator], { timeout: 120 });
-        run('xcrun', ['simctl', 'bootstatus', simulator, '-b'], { timeout: 300 });
+        try { run('xcrun', ['simctl', 'bootstatus', simulator, '-b'], { timeout: 300 }); }
+        catch (error) { bootstatusRetried = true; throw error; }
       });
       infrastructure('install', () => run('xcrun', ['simctl', 'install', simulator, app], { timeout: 180 }));
       const container = infrastructure('container', () => run('xcrun', ['simctl', 'get_app_container', simulator, bundle, 'data'], { timeout: 120 }));
@@ -151,8 +176,9 @@ export async function expoJourney(work: string, app: string): Promise<void> {
       const journal = captureJournal(); writeFileSync(`${prefix}-events.jsonl`, journal);
       assertExpoJournal(journal, runID);
     } catch (error) {
-      summary(`${error instanceof InfrastructureFailure ? error.message : `product:${check} failed`}`);
-      writeFileSync(`${prefix}-failure.log`, `${String(error)}\n${error instanceof Error ? String(error.cause ?? '') : ''}`);
+      const failure = classifyJourneyFailure(error, check, target, bootstatusRetried);
+      summary(`${failure instanceof InfrastructureFailure || failure instanceof HostUnresponsiveFailure ? failure.message : `product:${check} failed`}`);
+      writeFileSync(`${prefix}-failure.log`, `${String(failure)}\n${failure instanceof Error ? String(failure.cause ?? '') : ''}\n${failure instanceof HostUnresponsiveFailure ? failure.evidence : ''}`);
       if (output && existsSync(output)) copyFileSync(output, `${prefix}-app.json`);
       try { if (captureJournal) writeFileSync(`${prefix}-events.jsonl`, captureJournal()); } catch { /* Retain the first failure. */ }
       if (target) {
@@ -163,7 +189,7 @@ export async function expoJourney(work: string, app: string): Promise<void> {
         catch { /* An unavailable screenshot cannot replace the journey failure. */ }
       }
       await simulatorDiagnostics(prefix);
-      throw error;
+      throw failure;
     } finally {
       try { deleteJourneySimulator(name, markers); }
       catch (error) { summary('infra:cleanup failed'); throw error; }
