@@ -572,3 +572,22 @@ never started application media in the late controls; missing runtime packet obs
 alone prove only missing telemetry. Real packet qualification uses the media test harness.
 Each scenario retains application results, the merged journal and launch diagnostics as CI
 artifacts. These checks model call state, not the lock-screen appearance or APNs eligibility.
+
+### Deterministic background execution policy
+
+The host-tested `RuntimeExecutionPolicy` accepts an explicit `LockedAnswerScenario` and
+clock instants. Lock, application activity and observed process execution are independent:
+locking does not suspend a process, and a decision that execution is supported does not
+resume one. Normal runtime startup does not create this scenario.
+
+Each push wake or adapter assertion has its own identifier, source and bounded lifetime.
+Scenario durations retain an `unverified` label; they are not iOS scheduling measurements.
+Denial provides no execution time. Release and expiration affect only their own identifier,
+including when SDK push and application assertions overlap. Audio supports the model only
+with observed activation, actual media activity and background-audio capability together.
+Unknown assertion coverage refuses an execution-conformance decision.
+
+This reducer supplies decisions for later adapter and host integration. It does not yet
+observe UIKit assertions or send process signals. It emits no SDK deadline callback while
+an application is stopped. Real suspension lag, protected-data availability and system
+execution allowances still require device qualification.
