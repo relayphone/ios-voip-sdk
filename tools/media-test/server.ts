@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { fork } from 'node:child_process';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { chmodSync, rmSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, rmSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -39,12 +39,49 @@ export async function serverBinary(directory: string): Promise<string> {
   await command('tar', ['-xzf', archive, '-C', directory, ...(mac ? ['--strip-components=3', 'livekit/1.13.11/bin/livekit-server'] : ['livekit-server'])]);
   return join(directory, 'livekit-server');
 }
-/** Local credentials never appear in process arguments or logs. The first join creates the room. */
+export interface ServerPorts { signal: number; tcp: number; udp: number }
+/** Bounded, redacted startup evidence; raw owner IPC never escapes through this error. */
+export class ServerStartError extends Error {
+  readonly code: number | null; readonly signal: NodeJS.Signals | null; readonly ports: ServerPorts;
+  readonly stdout: string; readonly stderr: string; readonly exitAfterMs: number; readonly closeAfterMs: number;
+  constructor(code: number | null, signal: NodeJS.Signals | null, ports: ServerPorts, stdout: string, stderr: string, exitAfterMs: number, closeAfterMs: number) {
+    super(`Server failed: code=${code}, signal=${signal}, ports=${ports.signal}/${ports.tcp}/${ports.udp}, elapsedMs=${Math.round(exitAfterMs)}, closedMs=${Math.round(closeAfterMs)}\nstdout:\n${stdout}\nstderr:\n${stderr}`);
+    this.code = code; this.signal = signal; this.ports = ports; this.stdout = stdout; this.stderr = stderr;
+    this.exitAfterMs = exitAfterMs; this.closeAfterMs = closeAfterMs;
+  }
+}
+async function allocatePorts(port?: number, previous?: ServerPorts): Promise<ServerPorts> {
+  const unavailable = new Set(previous ? Object.values(previous) : []);
+  const pick = async (protocol: 'tcp' | 'udp') => {
+    for (let probe = 0; probe < 8; probe++) {
+      const value = await unusedPort(protocol);
+      if (!unavailable.has(value)) {
+        if (previous) unavailable.add(value);
+        return value;
+      }
+    }
+    throw Error('Unable to allocate fresh server ports');
+  };
+  return { signal: port ?? await pick('tcp'), tcp: await pick('tcp'), udp: await pick('udp') };
+}
+/** Retry only an observed startup bind collision, after the failed owner has exited. */
 export async function startServer(binary: string, directory: string, port?: number) {
+  try { return await startServerAttempt(binary, directory, await allocatePorts(port)); }
+  catch (error) {
+    // Match the pinned server's actual CLI bind error, not a generic readiness failure.
+    const bind = /^listen (?:tcp|udp)[^\r\n]*: bind: address already in use\r?$/m;
+    if (port !== undefined || !(error instanceof ServerStartError) || error.code !== 1 || error.signal !== null ||
+        !(bind.test(error.stdout) || bind.test(error.stderr))) throw error;
+    console.warn(`Server startup bind collision; retrying once with fresh ports.\n${error.message}`);
+    return startServerAttempt(binary, directory, await allocatePorts(undefined, error.ports));
+  }
+}
+/** Local credentials never appear in process arguments or logs. The first join creates the room. */
+async function startServerAttempt(binary: string, directory: string, ports: ServerPorts) {
   mkdirSync(directory, { recursive: true, mode: 0o700 }); chmodSync(directory, 0o700);
   const key = randomBytes(16).toString('hex'), secret = randomBytes(32).toString('hex');
   const room = randomBytes(16).toString('hex');
-  const signalPort = port ?? await unusedPort(), tcpPort = await unusedPort(), udpPort = await unusedPort('udp');
+  const { signal: signalPort, tcp: tcpPort, udp: udpPort } = ports;
   const config = join(directory, 'server.json');
   writeFileSync(config, JSON.stringify({ port: signalPort,
     rtc: { tcp_port: tcpPort, udp_port: udpPort, use_external_ip: false, enable_loopback_candidate: true },
@@ -52,11 +89,27 @@ export async function startServer(binary: string, directory: string, port?: numb
   const owner = fork(fileURLToPath(new URL('./server-owner.ts', import.meta.url)), [], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
   const ownerFile = join(directory, 'server-owner.json');
   const exited = once(owner, 'exit');
-  let failure: Error | undefined;
+  const secrets = new Set([key, secret]);
+  const redact = (value: string) => {
+    for (const token of secrets) value = value.replaceAll(token, '<REDACTED>');
+    return value.replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '<REDACTED>');
+  };
+  const trace = (event: 'starting' | 'ready' | 'closed' | 'failed', extra: object = {}) => {
+    const path = process.env.MEDIA_SERVER_TRACE_DIRECTORY;
+    if (!path) return;
+    try {
+      mkdirSync(path, { recursive: true, mode: 0o700 });
+      appendFileSync(join(path, `server-${process.pid}.jsonl`), JSON.stringify({ event, at: new Date().toISOString(),
+        owner: owner.pid, ports: { signal: signalPort, tcp: tcpPort, udp: udpPort }, ...extra }) + '\n', { mode: 0o600 });
+    } catch { console.warn('Server trace unavailable'); }
+  };
+  trace('starting');
+  let failure: ServerStartError | undefined;
   owner.on('message', (event: ServerEvent) => {
     if (event.type === 'failed') {
-      const diagnostic = event.diagnostic.replaceAll(key, '<REDACTED>').replaceAll(secret, '<REDACTED>');
-      failure = new Error(`Server failed: code=${event.code}, signal=${event.signal}\n${diagnostic}`);
+      failure = new ServerStartError(event.code, event.signal, { signal: signalPort, tcp: tcpPort, udp: udpPort },
+        redact(event.stdout), redact(event.stderr), event.exitAfterMs, event.closeAfterMs);
+      trace('failed', { code: event.code, signal: event.signal, exitAfterMs: event.exitAfterMs });
     }
   });
   const assertRunning = () => {
@@ -68,6 +121,7 @@ export async function startServer(binary: string, directory: string, port?: numb
   const close = async () => {
     if (owner.connected) owner.disconnect();
     await deadline(12_000, 'Server owner shutdown', () => exited);
+    trace('closed');
     rmSync(ownerFile, { force: true }); rmSync(config, { force: true });
   };
   try {
@@ -83,6 +137,7 @@ export async function startServer(binary: string, directory: string, port?: numb
     const data = part({ alg: 'HS256', typ: 'JWT' }) + '.' + part({ iss: key, sub: 'readiness',
       exp: Math.floor(Date.now() / 1000) + 60, video: { roomList: true } });
     const readinessToken = data + '.' + createHmac('sha256', secret).update(data).digest('base64url');
+    secrets.add(readinessToken);
     await deadline(12_000, 'Server health', async () => {
       while (true) {
         assertRunning();
@@ -103,13 +158,15 @@ export async function startServer(binary: string, directory: string, port?: numb
       // Let a bind failure reach the supervisor; an unrelated HTTP listener cannot qualify it.
       await delay(100); assertRunning();
     });
+    trace('ready', { pid });
     return { url, pid, room, close, abort: () => { if (owner.connected) owner.disconnect(); },
       alive: () => owner.exitCode === null && owner.signalCode === null,
       credentials(identity: string) {
         const part = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
         const data = part({ alg: 'HS256', typ: 'JWT' }) + '.' + part({ iss: key, sub: identity,
           exp: Math.floor(Date.now() / 1000) + 3600, video: { roomJoin: true, room, canPublish: true, canSubscribe: true } });
-        return { url, token: data + '.' + createHmac('sha256', secret).update(data).digest('base64url') };
+        const token = data + '.' + createHmac('sha256', secret).update(data).digest('base64url');
+        secrets.add(token); return { url, token };
       } };
-  } catch (error) { await close(); throw error; }
+  } catch (error) { await close(); throw failure ?? error; }
 }
