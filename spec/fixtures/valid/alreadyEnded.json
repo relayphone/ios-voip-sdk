@@ -1,0 +1,10 @@
+{
+  "version": 0,
+  "kind": "endResult",
+  "value": {
+    "kind": "alreadyEnded",
+    "reason": {
+      "kind": "remoteEnded"
+    }
+  }
+}
