@@ -64,7 +64,10 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     func transportEvents() -> AsyncStream<MediaTransportEvent> { bridge.packetEvents.stream() }
     func prepare(_ call: Call) async throws {
       bridge.startup.record(.prepareEntered)
-      try await bridge.prepare(call.id)
+      do { try await bridge.prepare(call.id) } catch {
+        await bridge.recordJourneyFailure(error, operation: .prepare)
+        throw error
+      }
       bridge.startup.record(.prepareCompleted)
     }
     func activate() {
@@ -125,6 +128,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     var journeyTicksDropped = 0
     var journeyEnded: JourneyEnd?
     var sdkCallHistory = MediaSDKAudioState.CallHistory()
+    var videoHistory = MediaSDKVideoEvidence.History()
+    var journeyFailure: MediaJourneyFailure?
     var publicationHeld = false
     var publicationMuted = false
     var inactiveEngineStayedStopped = false
@@ -304,6 +309,9 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
               failure: sdkCallStatus(call).failure, atMs: observationClock.milliseconds)
           }
           if case .ended(let call) = event, call.id.rawValue == fixture.journey?.conversationId {
+            videoHistory.record(
+              .ended, hasVideo: call.hasVideo, connected: false, atMs: observationClock.milliseconds
+            )
             let reason: JourneyEnd.Reason
             switch call.status {
             case .ended(.endedHere): reason = .local
@@ -311,6 +319,13 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             default: reason = .unexpected
             }
             journeyEnded = JourneyEnd(reason: reason, atMs: observationClock.milliseconds)
+          }
+          if case .videoChanged(let call, let source) = event,
+            call.id.rawValue == fixture.journey?.conversationId
+          {
+            videoHistory.record(
+              .changed, hasVideo: call.hasVideo, connected: call.status == .connected,
+              source: source == .app ? .app : .server, atMs: observationClock.milliseconds)
           }
           if case .performed(.hold(_, let held), let call) = event,
             call.id.rawValue == fixture.journey?.conversationId
@@ -490,9 +505,12 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let sdkAudioState: MediaSDKAudioState
       let publicationMuted: Bool
       let onHold: Bool
+      let video: MediaSDKVideoEvidence
+      let failure: MediaJourneyFailure?
     }
     private func journeySnapshot(command: UUID?) -> JourneySnapshot? {
       guard let session = journeySession else { return nil }
+      let video = sdkVideoEvidence()
       func stage(_ stage: MediaAudioProbe.Stage) -> JourneySnapshot.Stage {
         let snapshot = probe.snapshot(stage)
         let pcm = snapshot.capture
@@ -513,16 +531,25 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         sdkAudioState: sdkAudioState(),
         publicationMuted: publicationMuted,
         onHold: client?.calls.first(where: { $0.id.rawValue == session.fixture.conversationId })?
-          .isOnHold ?? false)
+          .isOnHold ?? false, video: video, failure: journeyFailure)
     }
     private func runJourney(_ client: VoIPClient) async throws {
       guard let fixture = fixture.journey else { return }
       journeySession = try MediaJourneySession(fixture: fixture)
       let callID = CallID(rawValue: fixture.conversationId)
       let party = Party(handle: try Handle(kind: .generic, value: "media-peer"))
-      _ = await client.report(IncomingCall(id: callID, parties: [party]))
+      _ = await client.report(
+        IncomingCall(id: callID, parties: [party], hasVideo: fixture.initialVideo ?? false))
       try await client.request(.answer(callID))
-      try await until { self.active }
+      try await until {
+        self.active && client.isAudioActive && self.room.connectionState == .connected
+          && client.calls.first(where: { $0.id == callID })?.status == .connected
+      }
+      if let call = client.calls.first(where: { $0.id == callID }) {
+        videoHistory.record(
+          .readySnapshot, hasVideo: call.hasVideo, connected: call.status == .connected,
+          atMs: observationClock.milliseconds)
+      }
       let directory = URL.documentsDirectory
       try JSONEncoder().encode(journeySnapshot(command: nil)).write(
         to: directory.appending(path: "media-journey-ready.json"), options: .atomic)
@@ -566,6 +593,12 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             case .hold:
               try await client.request(.hold(callID, onHold: command.enabled == true))
               try await until { self.publicationHeld == (command.enabled == true) }
+            case .video:
+              guard let enabled = command.enabled, let source = command.videoSource else {
+                throw MediaJourneySession.Failure.invalidArguments
+              }
+              try await client.setVideo(
+                callID, enabled: enabled, source: source == .app ? .app : .server)
             case .armTeardown: teardown.begin()
             case .end:
               guard teardown.receipt() != nil else {
@@ -582,8 +615,12 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             struct Rejected: Encodable {
               let commandId: UUID
               let rejected = true
+              let failure: MediaJourneyFailure
             }
-            try JSONEncoder().encode(Rejected(commandId: command.id)).write(
+            let failure = MediaJourneyFailure(
+              error, operation: command.operation == .video ? .video : .command)
+            journeyFailure = journeyFailure ?? failure
+            try JSONEncoder().encode(Rejected(commandId: command.id, failure: failure)).write(
               to: directory.appending(path: "media-journey-response.json"), options: .atomic)
           }
         }
@@ -718,6 +755,16 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         isAudioActive: client?.isAudioActive, callStatus: call?.status ?? .unavailable,
         callFailure: call?.failure, callSource: call?.source ?? .unavailable,
         callObservedAtMs: call?.atMs)
+    }
+    private func sdkVideoEvidence() -> MediaSDKVideoEvidence {
+      let call = client?.calls.first(where: { $0.id.rawValue == fixture.journey?.conversationId })
+      return MediaSDKVideoEvidence(
+        clockID: observationClock.id, observedAtMs: observationClock.milliseconds,
+        hasVideo: call?.hasVideo, onHold: call?.isOnHold, connected: call?.status == .connected,
+        events: videoHistory.events, overflow: videoHistory.overflow)
+    }
+    func recordJourneyFailure(_ error: any Error, operation: MediaJourneyFailure.Operation) {
+      if journeyFailure == nil { journeyFailure = MediaJourneyFailure(error, operation: operation) }
     }
     private func fail() {
       guard !failed else { return }

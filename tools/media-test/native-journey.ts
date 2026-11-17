@@ -4,10 +4,12 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createMarker } from '../../expo/src/testing/marker.ts';
 import type { MediaTestOptions } from '../../expo/src/testing/types.ts';
+import { nativeJourneyFailure } from './native-video-evidence.ts';
 
 export type NativeJourneyAction =
   | { readonly operation: 'beginPhase'; readonly phaseId: string }
   | { readonly operation: 'mute' | 'hold'; readonly enabled: boolean }
+  | { readonly operation: 'video'; readonly enabled: boolean; readonly source: 'app' | 'server' }
   | { readonly operation: 'snapshot' | 'armTeardown' | 'end' | 'close' };
 export interface NativeJourneyBudget {
   /** Absolute host monotonic deadline supplied by the caller; polling never renews it. */
@@ -109,7 +111,8 @@ export function prepareNativeJourney(directory: string, options: MediaTestOption
     }
   }
   function assertNoFailure() {
-    if (read(paths.failure) !== undefined) throw Error('Native journey reported failure');
+    const failure = read(paths.failure);
+    if (failure !== undefined) throw nativeJourneyFailure(object(failure).failure, 'attempt');
   }
   return Object.freeze({
     connect(budget: NativeJourneyBudget): Promise<NativeJourneyReply> {
@@ -138,7 +141,8 @@ export function prepareNativeJourney(directory: string, options: MediaTestOption
         if (action.operation !== 'close' && !phaseId) throw Error('Native journey phase required');
         const frequencies = action.operation === 'beginPhase' ? createMarker(action.phaseId).frequencies : undefined;
         const command = { id, sessionId: previous.sessionId, ...scope, operation: action.operation, phaseId,
-          ...(frequencies ? { frequencies } : {}), ...('enabled' in action ? { enabled: action.enabled } : {}) };
+          ...(frequencies ? { frequencies } : {}), ...('enabled' in action ? { enabled: action.enabled } : {}),
+          ...(action.operation === 'video' ? { videoSource: action.source } : {}) };
         const temporary = join(directory, `media-journey-command-${id}.json`);
         try {
           writeFileSync(temporary, JSON.stringify(command), { mode: 0o600, flag: 'wx' });
@@ -149,7 +153,7 @@ export function prepareNativeJourney(directory: string, options: MediaTestOption
             if (value === undefined) return;
             const row = object(value);
             if (!uuid(row.commandId) || row.commandId.toLowerCase() !== id) return;
-            if (row.rejected === true) throw Error('Native journey command rejected');
+            if (row.rejected === true) throw nativeJourneyFailure(row.failure, 'command');
             const reply = envelope(value, scope);
             if (reply.sessionId !== previous.sessionId || reply.clockId !== previous.clockId || reply.phaseId !== phaseId ||
                 reply.observedAtMs < previous.observedAtMs) throw Error('Stale native journey response');

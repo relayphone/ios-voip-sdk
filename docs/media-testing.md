@@ -502,3 +502,24 @@ retain their participant/publication binding. Disposing or replacing an observer
 a negative interval; first validate fresh source content and a complete on-window before off.
 The original phase counter fence is mandatory: the dimension seed never supplies first-frame
 or complete-window rate evidence, even when its timestamp matches the enable event.
+
+The example's existing native journey mailbox accepts `video` with `enabled` and
+`source: 'app' | 'server'`. It uses the public SDK video API after session, call and current
+phase validation; the host serializes `source` as `videoSource` in the native command.
+Video commands are rejected after terminal arming. A command reply is
+an acknowledgement, not a confirmed event. Its video evidence separately retains actual
+SDK `videoChanged` callbacks, source and native observation time, plus the terminal event
+after the call leaves the SDK snapshot. An initial connected snapshot has its own
+`readySnapshot` kind and never invents a change event. The optional fixture `initialVideo`
+flag configures the incoming call's initial state; omitted input preserves audio-only setup.
+
+`readNativeVideoEvidence` reads that evidence from an already validated native mailbox
+reply, enforcing the original clock, timestamp ordering, event origin and 256-row bound.
+Overflow fails rather than evicting the initial anchor. An absent live call remains nil;
+the event history survives. These controls do not publish video or establish decoded-media
+success. Independent source/receiver receipts and all media gates are still required.
+
+Setup and rejected-command receipts retain only an allowlisted operation/category and a
+numeric error code. Raw error domains, descriptions, URLs and userInfo are excluded. The
+host preserves those sanitized fields when retiring a failed or uncertain mailbox, so a
+setup failure can identify itself without exposing fixture credentials.

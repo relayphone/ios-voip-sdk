@@ -72,9 +72,12 @@ test('serialized commands bind phase markers and every control to acknowledged n
     assert.deepEqual(f.received[0]!.frequencies, createMarker('phase-one').frequencies);
     assert.equal(f.received[1]!.phaseId, 'phase-one'); assert.equal(f.received[1]!.enabled, true);
     for (const action of [
+      { operation: 'video', enabled: true, source: 'app' }, { operation: 'video', enabled: false, source: 'server' },
       { operation: 'hold', enabled: true }, { operation: 'armTeardown' }, { operation: 'end' },
       { operation: 'snapshot' }, { operation: 'close' },
     ] as const) await f.mailbox.request(action, budget());
+    const video = f.received.filter(command => command.operation === 'video');
+    assert.deepEqual(video.map(command => [command.enabled, command.videoSource]), [[true, 'app'], [false, 'server']]);
     for (const command of f.received) {
       assert.equal(command.fixtureId, scope.fixtureId); assert.equal(command.conversationId, scope.conversationId);
       assert.equal(command.sessionId, f.state.sessionId.toLowerCase());
@@ -83,6 +86,25 @@ test('serialized commands bind phase markers and every control to acknowledged n
     assert.ok(!readdirSync(f.directory).some(name => /command-/.test(name)));
     await assert.rejects(f.mailbox.request({ operation: 'snapshot' }, budget()), /closed/);
   } finally { f.cleanup(); }
+});
+
+test('coded native setup and video rejection errors retire the uncertain mailbox without secrets', async () => {
+  for (const operation of ['prepare', 'video'] as const) {
+    const f = fixture();
+    try {
+      f.ready(); await f.mailbox.connect(budget());
+      f.serve(command => {
+        const failure = { operation, category: 'livekit', code: 101, message: 'fixture-token-secret' };
+        if (operation === 'prepare') f.write('failure', { ...f.state, failure });
+        else f.write('response', { commandId: command.id, rejected: true, failure });
+      });
+      await assert.rejects(f.mailbox.request({ operation: 'beginPhase', phaseId: 'video' }, budget()), (error: unknown) => {
+        assert.ok(error instanceof Error); assert.match(error.message, /livekit\/101/);
+        assert.ok(!error.message.includes('fixture-token-secret')); return true;
+      });
+      await assert.rejects(f.mailbox.request({ operation: 'snapshot' }, budget()), /closed/);
+    } finally { f.cleanup(); }
+  }
 });
 
 test('old command replies cannot acknowledge a new phase, even when all other identities match', async () => {
