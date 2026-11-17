@@ -51,3 +51,14 @@ test('confirmed terminal time cannot move to later source stop or a caller-suppl
   assert.throws(()=>assessVideo(f.observer.receipt(),{...f.source,publication:'other'},f.options));
   assert.throws(()=>assessVideo(f.observer.receipt(),f.source,{...f.options,nativeBoundaryMs:undefined}));
 });
+test('wrong epoch, low-rate windows and a long freeze cannot qualify', () => {
+  const foreign=setup(),marker={...foreign.source.generated[0]!,epoch:2};
+  const bytes=new Uint8Array(160*120*3/2).fill(128);bytes.set(videoLuma(marker));foreign.observer.receive(bytes,160,120,0n);
+  assert.equal(assessVideo(foreign.observer.receipt(),foreign.source,foreign.options).foreign,1);
+  const low=setup(),sparse=low.observer.receipt();sparse.arrivals=sparse.arrivals.filter((_,i)=>i%5===0);
+  assert.equal(assessVideo(sparse,low.source,low.options).onPassed,false);
+  const frozen=setup(),receipt=frozen.observer.receipt(),times=[0,100,200,1900,1950,1990];
+  receipt.arrivals=times.map((atMs,i)=>({...receipt.arrivals[i]!,atMs}));
+  const result=assessVideo(receipt,frozen.source,frozen.options);
+  assert.deepEqual(result.windows,[3,3]);assert.ok(result.gapMs>1600);assert.equal(result.onPassed,false);
+});
