@@ -1,3 +1,4 @@
+import { lateHandlerJourneys } from './expo-late-handler.ts';
 import { simulatorRuntime } from './simulator-runtime.ts';
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -176,6 +177,8 @@ export async function expoJourney(work: string, app: string): Promise<void> {
       check = 'journal';
       const journal = captureJournal(); writeFileSync(`${prefix}-events.jsonl`, journal);
       assertExpoJournal(journal, runID);
+      check = 'late-handler';
+      await lateHandlerJourneys(work, simulator, container, prefix, runID, evidence => launchBundledExample(simulator, evidence));
     } catch (error) {
       const failure = classifyJourneyFailure(error, check, target, bootstatusRetried);
       summary(`${failure instanceof InfrastructureFailure || failure instanceof HostUnresponsiveFailure ? failure.message : `product:${check} failed`}`);

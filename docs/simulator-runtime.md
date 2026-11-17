@@ -543,3 +543,26 @@ absent in device and Release builds. This stream does not change call state or a
 `calls[].hasVideo` and `retainedCalls[].hasVideo` reflect successful framework reports (`CXCallUpdate.hasVideo`, including the LiveCommunicationKit adapter). Requests and SDK previews do not predict the value. Each confirmed change emits `call.videoChanged` with `callUUID`, `hasVideo` and runtime-relative `atMS`, and appends `{atMS, hasVideo}` to the retained call's `videoChanges`. Same-value reports add no video transition. Ended and unknown calls keep their history unchanged. cksim status, watch and Inspector expose these observations.
 
 iOS has no system-initiated mid-call video action; there is no simulator video injection command. App and server changes must travel through the app's framework-report path. Older recordings without video fields decode as audio-only with an empty video history.
+
+### Delayed JavaScript attachment checks
+
+The bundled example integration build selects `journeys/entry.ts`, leaving the normal
+example entry and handler unchanged. The host writes a validated scenario configuration
+before launch (`handlerAttachDelayMS`, `connectDeadlineMS`, run identity). This build alone
+sets its connection deadline to 27 seconds. Incoming controls use `push --launch`, report
+natively before JavaScript attaches, and answer through `cksim answer`.
+
+The test coordinator observes connecting, then delays ordinary handler attachment by one
+second or 28 seconds. It reconciles current calls before starting its counting application
+transport and reporting connection. Native `app.handlerReady` acknowledgement is required;
+a JavaScript timestamp or PushKit registry registration cannot substitute for it. The late
+control must end with `failed.connectTimedOut` before attachment, with zero transport starts
+and no positive packet observations. A distinct preview-Join control delays attachment
+past placement expiry, requires `deadline_exceeded`, and remains a preview with a failed
+system action. It does not claim a connection timeout.
+
+The counting transport produces no network traffic. Its counters prove that the fixture
+never started application media in the late controls; missing runtime packet observations
+alone prove only missing telemetry. Real packet qualification uses the media test harness.
+Each scenario retains application results, the merged journal and launch diagnostics as CI
+artifacts. These checks model call state, not the lock-screen appearance or APNs eligibility.
