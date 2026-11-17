@@ -16,6 +16,9 @@ Public API changes include migration guidance.
 
 ### Added
 
+- `cksim process suspend` supervises a bounded SIGSTOP/SIGCONT interval from the host,
+  verifies process start time and kernel state, and retains correlated stop/resume observations.
+
 - Debug simulator fixtures can use `VoIPTesting.UIKitBackgroundExecution` to observe real UIKit
   background-task boundaries alongside the SDK push adapter in the embedded runtime journal.
 

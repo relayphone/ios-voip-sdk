@@ -425,6 +425,39 @@ before staging another push. These controls model test intent, not jetsam select
 SpringBoard's persistent force-quit eligibility. A later `push --launch` is an explicit
 launch override and requires a fresh run ID.
 
+For an explicit, bounded whole-process starvation interval, run:
+
+```sh
+cksim --bundle com.example.app process suspend --run-id <runID> --resume-after-ms 1000
+```
+
+The host resolves the installed app again and pins its published invocation, simulator
+service PID and kernel process start time. It records `process.suspendRequested` before
+SIGSTOP and `process.suspended` only after observing the kernel's stopped state. The host
+wakes the process with SIGCONT at the requested time and records `process.resumed` only
+after confirming a non-stopped kernel state. Normal sleeping is not suspension. These
+rows share a request ID; the JSON receipt identifies the invocation and final `outcome`.
+`--command-receipt <new-file>` retains it. `events --run-id` can read the host journal
+without asking the stopped application to acknowledge a mailbox command.
+
+The interval must be in 1...120000 ms; it is a fixture input, not an iOS execution allowance.
+`--timeout` bounds each kernel confirmation. A shared exclusive lease prevents other
+`process suspend` or `process kill` commands from racing the owner, even across run IDs.
+Cancellation, Ctrl-C, SIGTERM and errors after a stop attempt trigger cancellation-independent
+recovery before the command returns. Recovery checks the pinned kernel start time before
+SIGCONT, even if the runtime session changed. Simulator service/session checks run after
+recovery, so a slow simulator query cannot delay the host wake. A detected PID replacement
+receives no signal; confirmed
+exit is recorded instead. Failed or unconfirmed recovery fails the command, reports the
+pinned PID/start time and records `process.suspensionCleanupFailed` when the journal works.
+The command never terminates the application. Callers must await its recovery before
+cleanup/termination. Killing the host with SIGKILL cannot run recovery.
+
+This opt-in control does not infer lock state, assertion coverage or suspension eligibility.
+It does not wire the execution reducer to the assertion observations, prove iOS scheduling
+fidelity, or manufacture an in-process deadline callback while stopped. Signal confirmation
+and the fixture's heartbeat are separate from SDK deadline and media evidence.
+
 Reports use `report.*`; conversation snapshots use `call.changed` (including
 caller name, handle, ringing, connected, held, muted and ended). Actions use
 `action.deadline`, `action.settled`, `action.expired`, `action.timeout` and
@@ -615,7 +648,8 @@ The observation sink is absent from device and Release builds. It observes only 
 adapters in the embedded Debug runtime, not arbitrary third-party UIKit tasks or the standalone
 runtime package. It does not change the SDK's existing push assertion lifetime.
 
-The reducer and observations are not yet connected to execution decisions or process signals.
+The reducer and observations are not yet connected to automatic execution decisions or signals;
+the bounded host suspension control above is explicit fixture input.
 They emit no SDK deadline callback while
 an application is stopped. Real suspension lag, protected-data availability and system
 execution allowances still require device qualification.

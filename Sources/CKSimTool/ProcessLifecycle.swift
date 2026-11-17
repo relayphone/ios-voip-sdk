@@ -122,6 +122,8 @@
         throw CKSimError("Live app service does not match the requested runtime process.")
       }
       let journal = try ProcessLifecycle(channel: channel, identity: identity)
+      let signalLease = try journal.signalLease()
+      defer { try? signalLease.close() }
       try await journal.record(.killRequested, pid: session.pid, cause: cause)
       try Task.checkCancellation()
       try verifySession()
@@ -402,6 +404,24 @@
   }
 
   extension ProcessLifecycle {
+    /// Excludes overlapping stop/continue/termination owners for this application.
+    nonisolated func signalLease() throws -> FileHandle {
+      let path = file.deletingLastPathComponent().deletingLastPathComponent().appending(
+        path: ".signal-lock")
+      let descriptor = open(path.path, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
+      guard descriptor >= 0 else { throw CKSimError("Cannot open process signal lease.") }
+      let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+      var status = stat()
+      guard fstat(descriptor, &status) == 0, status.st_mode & S_IFMT == S_IFREG,
+        status.st_uid == getuid(), status.st_nlink == 1, status.st_mode & 0o7777 == 0o600,
+        flock(descriptor, LOCK_EX | LOCK_NB) == 0
+      else {
+        try handle.close()
+        throw CKSimError("Unsafe or busy process signal lease; inspect the current owner.")
+      }
+      return handle
+    }
+
     /// Serializes final snapshots and cancellation writes across independent host commands.
     func cancellationLease() async throws -> FileHandle {
       let path = file.deletingLastPathComponent().deletingLastPathComponent().appending(

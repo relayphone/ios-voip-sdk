@@ -266,6 +266,20 @@ export async function smoke(packagePath: string, requestedSimulator?: string): P
       'Documents/.callkit-simulator');
     const session = (): { runID: string; pid: number } =>
       JSON.parse(readFileSync(join(channel, 'session.json'), 'utf8'));
+    phase = 'process:suspend';
+    const beforeSuspension = session();
+    const resumed = JSON.parse(cksim('process', 'suspend', '--run-id', beforeSuspension.runID,
+      '--resume-after-ms', '250')) as { pid: number; identity: { runID: string }; outcome: 'resumed' | 'exited'; requestID: string };
+    assert.equal(resumed.outcome, 'resumed');
+    assert.equal(resumed.pid, beforeSuspension.pid);
+    assert.equal(resumed.identity.runID, beforeSuspension.runID);
+    const suspensionRows = cksim('events', '--run-id', beforeSuspension.runID).trim().split('\n')
+      .map(line => JSON.parse(line) as { event: string; requestID?: string; pid?: number })
+      .filter(row => row.requestID === resumed.requestID);
+    assert.deepEqual(suspensionRows.map(row => row.event),
+      ['process.suspendRequested', 'process.suspended', 'process.resumed']);
+    assert.ok(suspensionRows.every(row => row.pid === beforeSuspension.pid));
+    assert.equal(session().pid, beforeSuspension.pid);
     for (const cause of ['abrupt', 'user-requested']) {
       phase = `process:${cause}:kill`;
       const before = session();

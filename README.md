@@ -565,6 +565,8 @@ under `CallPreviewActivities`, and acts as the app's servers starting call previ
 
 ## Running the tests
 
+Host process-suspension tests also use Node.js 24 for a disposable heartbeat fixture.
+
 On macOS 26 or later with Xcode 27.1, run the host tests, then every suite on an iOS 27 simulator:
 
 ```sh
