@@ -1,0 +1,21 @@
+{
+  "version": 0,
+  "kind": "action",
+  "value": {
+    "kind": "start",
+    "callID": "short-code",
+    "line": {
+      "accountID": "account-a",
+      "id": "personal",
+      "label": "Personal"
+    },
+    "party": {
+      "id": "alice",
+      "handle": {
+        "kind": "opaque",
+        "value": "123"
+      },
+      "displayName": "Alice"
+    }
+  }
+}

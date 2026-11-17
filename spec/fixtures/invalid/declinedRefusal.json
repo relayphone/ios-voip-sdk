@@ -1,0 +1,13 @@
+{
+  "version": 0,
+  "kind": "endReason",
+  "value": {
+    "kind": "failed",
+    "error": {
+      "kind": "refused",
+      "reason": {
+        "kind": "declinedElsewhere"
+      }
+    }
+  }
+}

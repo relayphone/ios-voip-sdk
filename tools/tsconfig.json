@@ -17,5 +17,5 @@
       "@relayphone/ios-voip-sdk": ["../expo/src/conversations/types.ts"]
     }
   },
-  "include": ["*.ts"]
+  "include": ["*.ts", "conformance/*.ts"]
 }

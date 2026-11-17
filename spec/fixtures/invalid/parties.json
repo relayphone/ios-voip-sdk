@@ -1,0 +1,26 @@
+{
+  "version": 0,
+  "kind": "call",
+  "value": {
+    "id": "call-α",
+    "line": {
+      "accountID": "account-a",
+      "id": "personal",
+      "label": "Personal"
+    },
+    "direction": "incoming",
+    "parties": [],
+    "lifecycle": {
+      "kind": "ringing"
+    },
+    "held": false,
+    "muted": false,
+    "video": false,
+    "media": {
+      "owner": "native",
+      "preparation": "unprovided",
+      "audio": "inactive",
+      "transport": "disconnected"
+    }
+  }
+}

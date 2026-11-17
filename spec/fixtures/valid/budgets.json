@@ -1,0 +1,20 @@
+{
+  "version": 0,
+  "kind": "budgets",
+  "value": {
+    "answer": {
+      "total": 4500,
+      "claim": 2500,
+      "reconciliation": 500,
+      "settlementReserve": 500
+    },
+    "placement": 10000,
+    "incomingRing": 45000,
+    "outgoingNoAnswer": 45000,
+    "mediaPreparation": 5000,
+    "audioActivation": 10000,
+    "audioRecovery": 5000,
+    "connection": 30000,
+    "reconnection": 15000
+  }
+}
