@@ -14,7 +14,7 @@ export const validTypeFixtures = {
   failed: { version: 0, kind: 'endReason', value: { kind: 'failed', error: { kind: 'claimTimedOut', actionID: wireID('answer-a') } } },
   answer: { version: 0, kind: 'action', value: { kind: 'answer', callID: wireID('call-α') } },
   opaque: { version: 0, kind: 'action', value: { kind: 'start', callID: wireID('short-code'), line, party: { ...party, handle: { kind: 'opaque', value: '123' } } } },
-  budgets: { version: 0, kind: 'budgets', value: budgets },
+  budgets: { version: 0, kind: 'budgets', value: { ...budgets, retention: { lifetime: 7500, terminalRecords: 42 } } },
   refused: { version: 0, kind: 'error', value: { kind: 'refused', reason: { kind: 'answeredElsewhere' } } },
   elsewhere: { version: 0, kind: 'endReason', value: { kind: 'answeredElsewhere' } },
   notAllowed: { version: 0, kind: 'endReason', value: { kind: 'failed', error: { kind: 'refused', reason: { kind: 'notAllowed' } } } },

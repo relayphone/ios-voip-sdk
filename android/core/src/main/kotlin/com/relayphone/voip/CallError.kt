@@ -1,44 +1,80 @@
 package com.relayphone.voip
 
-/** Expected operation failure; callers inspect typed cases rather than native error messages. */
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+/** Expected operation failure with a typed cause and no native error text. */
+@Serializable
 public sealed interface CallError {
-    public data class UnknownCall(public val callID: CallID) : CallError
-    public data class InvalidTransition(public val state: LifecycleKind) : CallError
-    public data class Unsupported(public val feature: Feature) : CallError
-    public data class PermissionRequired(public val permission: MediaPermission) : CallError
-    public data class Refused(public val reason: RefusalReason) : CallError
-    public data class AuthorityUnavailable(public val cause: AuthorityFailure) : CallError
-    public data class ClaimTimedOut(public val actionID: ActionID) : CallError
-    public data class PlacementFailed(public val cause: PlacementFailure) : CallError
-    public data class DeadlineExceeded(public val stage: TimedStage) : CallError
-    public data class MediaFailed(public val stage: MediaStage, public val cause: MediaFailure) : CallError
-    public data class RemoteIdentityConflict(public val remoteID: RemoteCallID) : CallError
-    public data class InvalidConfiguration(public val field: ConfigurationField) : CallError
-    public data class SystemFailed(public val cause: SystemFailure) : CallError
-    public data object BridgeUnavailable : CallError
+    @Serializable @SerialName("unknownCall") public data class UnknownCall(public val callID: CallID) : CallError
+    @Serializable @SerialName("invalidTransition") public data class InvalidTransition(public val state: LifecycleKind) : CallError
+    @Serializable @SerialName("unsupported") public data class Unsupported(public val feature: Feature) : CallError
+    @Serializable @SerialName("permissionRequired") public data class PermissionRequired(public val permission: MediaPermission) : CallError
+    @Serializable @SerialName("refused") public data class Refused(public val reason: RefusalReason) : CallError
+    @Serializable @SerialName("authorityUnavailable") public data class AuthorityUnavailable(public val cause: AuthorityFailure) : CallError
+    @Serializable @SerialName("claimTimedOut") public data class ClaimTimedOut(public val actionID: ActionID) : CallError
+    @Serializable @SerialName("placementFailed") public data class PlacementFailed(public val cause: PlacementFailure) : CallError
+    @Serializable @SerialName("deadlineExceeded") public data class DeadlineExceeded(public val stage: TimedStage) : CallError
+    @Serializable @SerialName("mediaFailed") public data class MediaFailed(public val stage: MediaStage, public val cause: MediaFailure) : CallError
+    @Serializable @SerialName("remoteIdentityConflict") public data class RemoteIdentityConflict(public val remoteID: RemoteCallID) : CallError
+    @Serializable @SerialName("invalidConfiguration") public data class InvalidConfiguration(public val field: ConfigurationField) : CallError
+    @Serializable @SerialName("systemFailed") public data class SystemFailed(public val cause: SystemFailure) : CallError
+    @Serializable @SerialName("bridgeUnavailable") public data object BridgeUnavailable : CallError
 }
 
-/** Requested behavior that may be unsupported by an adapter. */
-public enum class Feature { HOLD, MUTE, TONES, VIDEO, PREVIEW_JOIN, MIXING }
-/** Permission required before a media capture operation. */
-public enum class MediaPermission { MICROPHONE, CAMERA }
-/** Native authorization failure without a service refusal. */
-public enum class AuthorityFailure { UNAVAILABLE, CREDENTIAL_UNAVAILABLE, INVALID_RESPONSE, NETWORK }
-/** Placement authority failure without an admitted remote call. */
-public enum class PlacementFailure { UNAVAILABLE, INVALID_RESPONSE, CANCELLED }
-/** Deadline category, independent of observation allowances. */
-public enum class TimedStage { CLAIM, RECONCILIATION, SETTLEMENT, PLACEMENT, MEDIA_PREPARATION, CONNECTION, RECONNECTION }
+/** Requested behavior that an adapter may not support. */
+@Serializable
+public enum class Feature {
+    @SerialName("hold") HOLD, @SerialName("video") VIDEO, @SerialName("tones") TONES,
+    @SerialName("preview") PREVIEW, @SerialName("merge") MERGE,
+}
+/** Permission required for capture. */
+@Serializable
+public enum class MediaPermission { @SerialName("microphone") MICROPHONE, @SerialName("camera") CAMERA }
+/** Native authority failure before a decision. */
+@Serializable
+public enum class AuthorityFailure {
+    @SerialName("credentialsUnavailable") CREDENTIALS_UNAVAILABLE,
+    @SerialName("network") NETWORK, @SerialName("invalidResponse") INVALID_RESPONSE,
+}
+/** Placement failure before native dialing. */
+@Serializable
+public enum class PlacementFailure { @SerialName("cancelled") CANCELLED, @SerialName("handlerFailed") HANDLER_FAILED }
+/** Deadline category independent of observer timing. */
+@Serializable
+public enum class TimedStage {
+    @SerialName("placement") PLACEMENT, @SerialName("claim") CLAIM, @SerialName("reconciliation") RECONCILIATION,
+    @SerialName("mediaPreparation") MEDIA_PREPARATION, @SerialName("audioActivation") AUDIO_ACTIVATION,
+    @SerialName("connection") CONNECTION, @SerialName("reconnection") RECONNECTION,
+    @SerialName("systemAction") SYSTEM_ACTION, @SerialName("noAnswer") NO_ANSWER,
+}
 /** Media operation that failed. */
-public enum class MediaStage { PREPARATION, ACTIVATION, TRANSPORT, RELEASE }
-/** Typed media failure without credential or provider-message payloads. */
-public enum class MediaFailure { UNAVAILABLE, INVALID_CREDENTIALS, TRANSPORT, CANCELLED }
+@Serializable
+public enum class MediaStage { @SerialName("prepare") PREPARE, @SerialName("activate") ACTIVATE, @SerialName("release") RELEASE }
+/** Machine-readable media failure. */
+@Serializable
+public enum class MediaFailure { @SerialName("transport") TRANSPORT, @SerialName("permission") PERMISSION, @SerialName("timeout") TIMEOUT }
 /** Configuration field whose policy cannot be applied. */
-public enum class ConfigurationField { ANSWER_BUDGET, INVITATION_BUDGET, MEDIA_BUDGET, CONNECTION_BUDGET, RETENTION_BUDGET }
-
-/** Platform-tagged diagnostics; codes are data and never select domain control flow. */
-public sealed interface SystemFailure {
-    public data class Android(public val operation: SystemOperation, public val nativeCode: Int? = null) : SystemFailure
-    public data class IOS(public val operation: SystemOperation, public val nativeCode: Int? = null) : SystemFailure
+@Serializable
+public enum class ConfigurationField {
+    @SerialName("answer") ANSWER_BUDGET, @SerialName("placement") PLACEMENT,
+    @SerialName("incomingRing") INCOMING_RING, @SerialName("outgoingNoAnswer") OUTGOING_NO_ANSWER,
+    @SerialName("mediaPreparation") MEDIA_PREPARATION, @SerialName("audioActivation") AUDIO_ACTIVATION,
+    @SerialName("audioRecovery") AUDIO_RECOVERY, @SerialName("connection") CONNECTION, @SerialName("reconnection") RECONNECTION,
+    @SerialName("retention") RETENTION,
 }
-/** Boundary at which a system adapter failed. */
-public enum class SystemOperation { ADMISSION, ANSWER, START, HOLD, MUTE, TONES, VIDEO, REMOVAL, RESET }
+
+/** Platform diagnostic with an optional original numeric code. */
+@Serializable
+public data class SystemFailure(
+    public val platform: Platform,
+    @SerialName("kind") public val operation: SystemOperation,
+    @SerialName("code") public val nativeCode: Int? = null,
+)
+@Serializable
+public enum class Platform { @SerialName("android") ANDROID, @SerialName("ios") IOS }
+@Serializable
+public enum class SystemOperation {
+    @SerialName("admission") ADMISSION, @SerialName("action") ACTION, @SerialName("removal") REMOVAL,
+    @SerialName("reset") RESET, @SerialName("audio") AUDIO,
+}

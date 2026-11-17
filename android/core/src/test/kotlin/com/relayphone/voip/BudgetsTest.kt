@@ -41,8 +41,9 @@ class BudgetsTest {
         assertThrows(IllegalArgumentException::class.java) { budget.copy(claim = 4.seconds) }
         assertThrows(IllegalArgumentException::class.java) { budget.copy(reconciliation = 2.seconds) }
         assertThrows(IllegalArgumentException::class.java) { budget.copy(settlementReserve = 5.seconds) }
-        assertEquals(3500.milliseconds, budget.copy(total = 3500.milliseconds).total)
-        val large = (Long.MAX_VALUE / 3).milliseconds
+        assertThrows(IllegalArgumentException::class.java) { budget.copy(total = 3500.milliseconds) }
+        assertEquals(3501.milliseconds, budget.copy(total = 3501.milliseconds).total)
+        val large = 9_007_199_254_740_991L.milliseconds
         assertTrue(large.isFinite())
         assertThrows(IllegalArgumentException::class.java) {
             AnswerBudget(total = large, claim = large, reconciliation = large, settlementReserve = large)

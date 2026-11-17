@@ -52,6 +52,22 @@ public value class AttemptID(public val value: String) {
 }
 
 private fun requireIdentity(value: String) {
-    require(value.isNotBlank()) { "Identity must not be blank" }
+    requireText(value)
+    require(!value.first().isWireSpace() && !value.last().isWireSpace()) { "Identity must not have edge whitespace" }
     require(value.none(Char::isISOControl)) { "Identity must not contain control characters" }
 }
+
+/** App identity of a party, independent of its handle. */
+@Serializable
+@JvmInline
+public value class PartyID(public val value: String) {
+    init { requireIdentity(value) }
+}
+
+internal fun requireText(value: String) {
+    require(value.codePointCount(0, value.length) in 1..256) { "Expected 1–256 code points" }
+}
+
+internal fun Char.isWireSpace(): Boolean =
+    this in '\u0009'..'\u000D' || this in '\u2000'..'\u200A' ||
+        this in " \u00A0\u1680\u2028\u2029\u202F\u205F\u3000\uFEFF"

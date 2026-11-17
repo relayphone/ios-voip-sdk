@@ -15,6 +15,10 @@
     "audioActivation": 10000,
     "audioRecovery": 5000,
     "connection": 30000,
-    "reconnection": 15000
+    "reconnection": 15000,
+    "retention": {
+      "lifetime": 7500,
+      "terminalRecords": 42
+    }
   }
 }

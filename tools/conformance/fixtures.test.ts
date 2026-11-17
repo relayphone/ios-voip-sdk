@@ -79,6 +79,17 @@ test('all budget values are validated and adapter deadlines remain separate from
   assert.throws(() => validateBudgets(larger, 5000));
 });
 
+test('retention is optional on the wire and validates both bounds when supplied', () => {
+  const { retention, ...budgets } = validTypeFixtures.budgets.value;
+  assert.deepEqual(decodeModel({ version: 0, kind: 'budgets', value: budgets }).value, budgets);
+  for (const policy of [
+    { ...retention, lifetime: 0 }, { ...retention, terminalRecords: 0 },
+    { ...retention, terminalRecords: 2_147_483_648 }, { lifetime: retention.lifetime },
+  ]) {
+    assert.throws(() => decodeModel({ version: 0, kind: 'budgets', value: { ...budgets, retention: policy } }));
+  }
+});
+
 test('schema support is fail-closed even in unmatched union branches', () => {
   // @ts-expect-error An unknown keyword intentionally tests validation of schema extensions.
   assert.throws(() => validate('yes', { oneOf: [{ const: 'yes' }, { mystery: true }] }), /Unsupported schema keyword/);

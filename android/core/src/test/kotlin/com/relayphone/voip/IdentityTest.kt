@@ -16,10 +16,10 @@ class IdentityTest {
             "line" to ::LineID, "event" to ::EventID, "action" to ::ActionID, "attempt" to ::AttemptID,
         ).map { (name, create) ->
             DynamicTest.dynamicTest(name) {
-                val raw = " tenant/呼び出し:AbC-001 "
+                val raw = "tenant/呼び出し:AbC 001"
                 assertEquals(create(raw), create(raw))
-                assertNotEquals(create(raw), create(raw.trim()))
-                listOf("", " ", "\t", "a\nb", "a\u0000b", "a\u007fb").forEach { invalid ->
+                assertNotEquals(create(raw), create(raw.lowercase()))
+                listOf("", " ", "\t", " padded", "padded\uFEFF", "🙂".repeat(257), "a\nb", "a\u0000b", "a\u007fb").forEach { invalid ->
                     assertThrows(IllegalArgumentException::class.java) { create(invalid) }
                 }
             }
