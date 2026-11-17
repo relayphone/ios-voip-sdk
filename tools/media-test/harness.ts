@@ -30,6 +30,10 @@ export async function startHarness(directory: string, fixtureId: string) {
       writeFileSync(file, JSON.stringify(server.credentials(identity)), { mode: 0o600 }); return file;
     },
     status,
+    async openVideo(clockID: string) {
+      if (stopped) throw Error('Harness is stopped');
+      return peer.openVideo(fixtureId, clockID);
+    },
     observation: () => ({ receiver: status(), capture: peer.capture(), lifecycle: peer.lifecycleObservation(), reconnect: peer.reconnectEvidence() }),
     async act(action: HarnessAction): Promise<void> {
       if (stopped) throw Error('Harness is stopped');
