@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { closeSync, copyFileSync, existsSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -9,16 +9,19 @@ import type { LateHandlerConfiguration, LateHandlerResults, LateHandlerScenario 
 
 /** Reuses the installed bundled app; each scenario starts with a fresh process and no handler. */
 export async function lateHandlerJourneys(work: string, simulator: string, container: string, prefix: string,
-  runID: string, launch: (evidence: string) => void): Promise<void> {
+  runID: string, launch: (evidence: string) => void,
+  spawnProcess: (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess = spawn,
+  execute: typeof run = run): Promise<void> {
   const bundle = 'com.example.voipconversations';
   const input = join(container, 'Documents/late-handler-config.json');
   const output = join(container, 'Documents/late-handler-results.json');
   assert.ok(!existsSync(join(container, 'Documents/media-fixture.json')), 'Native media fixture must be absent');
   const control = join(work, 'runtime/cksim');
-  const args = ['--simulator', simulator, '--bundle', bundle, '--app-container', container];
-  const cksim = (...command: string[]) => run(control, [...args, ...command], { timeout: 120 });
+  const args = ['--simulator', simulator, '--bundle', bundle];
+  const cksim = (...command: string[]) => execute(control,
+    [...args, '--app-container', container, ...command], { timeout: 120 });
   const cases: [LateHandlerScenario, number][] = [['before-deadline', 1000], ['after-deadline', 28000], ['preview-placement', 11000]];
-  run('xcrun', ['simctl', 'terminate', simulator, bundle], { timeout: 120 });
+  execute('xcrun', ['simctl', 'terminate', simulator, bundle], { timeout: 120 });
   for (const [scenario, delay] of cases) {
     const config: LateHandlerConfiguration = { schemaVersion: 1, scenario, runID: `${runID}-${scenario}`,
       handlerAttachDelayMS: delay, connectDeadlineMS: 27000 };
@@ -37,7 +40,7 @@ export async function lateHandlerJourneys(work: string, simulator: string, conta
       else {
         const log = openSync(`${evidence}-launcher.log`, 'w');
         try {
-          observer = spawn(control, [...args, 'push', '--launch', '--run-id', config.runID,
+          observer = spawnProcess(control, [...args, 'push', '--launch', '--run-id', config.runID,
             '--payload-file', payload, '--must-report', 'true', '--launch-receipt', `${evidence}-launch.json`],
           { stdio: ['ignore', log, log], timeout: 180000 });
         } finally { closeSync(log); }
@@ -95,7 +98,7 @@ export async function lateHandlerJourneys(work: string, simulator: string, conta
     } finally {
       if (existsSync(output)) copyFileSync(output, `${evidence}-app.json`);
       rmSync(input, { force: true });
-      try { run('xcrun', ['simctl', 'terminate', simulator, bundle], { timeout: 120 }); }
+      try { execute('xcrun', ['simctl', 'terminate', simulator, bundle], { timeout: 120 }); }
       catch (error) {
         writeFileSync(`${evidence}-cleanup.log`, String(error));
         if (!failed) throw error;
