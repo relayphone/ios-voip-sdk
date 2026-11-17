@@ -14,6 +14,7 @@ import { runnerHungBeforeConnecting } from './simulator-test-result.ts';
 import { runReadyUITest } from './inspector-ui-run.ts';
 import { captureInspectorFailure } from './inspector-failure.ts';
 import { setupInspectorSimulator } from './inspector-setup.ts';
+import { configureInspectorFixture, inspectorFixtureJournal, inspectorJourneyBudgetSeconds, inspectorUnansweredSeconds } from './inspector-fixture.ts';
 
 const bundle = 'dev.callkitsim.smoke';
 class InfrastructureFailure extends Error {
@@ -63,10 +64,11 @@ export function buildInspectorUITests(work: string, execute: typeof run = run): 
 }
 
 /** Runs the prebuilt Mac UI test once and pushes only after it activates the Inspector. */
-export async function runInspectorUITest(work: string, result: string, push: () => void, execute: typeof runReadyUITest = runReadyUITest): Promise<string> {
+export async function runInspectorUITest(work: string, result: string, push: () => void, execute: typeof runReadyUITest = runReadyUITest, journalPath?: string): Promise<string> {
   const output = await execute('xcodebuild', ['test-without-building', ...uiBuildArguments(work),
     '-parallel-testing-enabled', 'NO', '-resultBundlePath', result], {
-    timeout: 600, readyPath: `${result}.ready`, ready: push,
+    timeout: inspectorJourneyBudgetSeconds, readyPath: `${result}.ready`, ready: push,
+    environment: { ...process.env, TEST_RUNNER_CKSIM_INSPECTOR_JOURNAL_FILE: journalPath ?? '' },
   });
   const lines = output.split(/\r?\n/);
   const index = lines.indexOf('Filter after click:');
@@ -110,6 +112,8 @@ async function recover(names: readonly string[], markers: string): Promise<void>
 /** Runs at most two attempts; only infrastructure errors allow a fresh target simulator. */
 export async function journey(work: string): Promise<void> {
   const runtime = join(work, 'runtime');
+  configureInspectorFixture(runtime);
+  summary(`Inspector fixture-only unverified unanswered timeout: ${inspectorUnansweredSeconds}s; UI budget: ${inspectorJourneyBudgetSeconds}s`);
   const inspector = join(work, 'inspector/CKSimInspector.app');
   const app = join(work, 'Smoke.app');
   try { buildSimulatorApp({
@@ -148,8 +152,12 @@ export async function journey(work: string): Promise<void> {
       catch (error) { throw new InfrastructureFailure('setup', error, false); }
       const cksim = (...args: string[]) => run(join(runtime, 'cksim'),
         ['--simulator', target, '--bundle', bundle, ...args], { timeout: 180 });
+      summary(`Inspector target launch started ${new Date().toISOString()}`);
       infrastructure('launch', () => launchToleratingASlowSimulator(() => cksim('launch')));
+      summary(`Inspector target launch completed ${new Date().toISOString()}`);
       infrastructure('bridge-connect', () => cksim('status'));
+      const journalPath = inspectorFixtureJournal(run('xcrun',
+        ['simctl', 'get_app_container', target, bundle, 'data'], { timeout: 30 }));
       const log = `${prefix}-bridge.log`;
       const fd = openSync(log, 'w');
       try {
@@ -169,7 +177,7 @@ export async function journey(work: string): Promise<void> {
           check = 'push';
           cksim('push', '--payload-file', join(work, 'push.json'), '--must-report', 'true');
           check = 'ui';
-        });
+        }, runReadyUITest, journalPath);
         writeFileSync(uiLog, output);
       } catch (error) {
         const output = error instanceof Error ? error.message : String(error);
