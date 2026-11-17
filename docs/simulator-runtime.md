@@ -600,7 +600,22 @@ Each allowed assertion still needs an owner end after expiration; repeated end a
 visible for exactly-once cleanup checks. Typed observations are available as an async stream
 and retained history. This helper does not call UIKit or control an unknown system assertion.
 
-This reducer supplies decisions for later adapter and host integration. It does not yet
-observe UIKit assertions or send process signals. It emits no SDK deadline callback while
+In Debug simulator builds, `VoIPTesting.UIKitBackgroundExecution` is the fixture's real UIKit
+begin/end adapter. Its `begin(expiration:)` returns the owner's end operation; call it exactly
+once for each valid request, including after expiration. The SDK's existing push adapter uses
+the same `SimulatorBackgroundExecution` Debug SPI. The embedded runtime journals
+`backgroundAssertion.requested`, `.began`, `.denied`, `.expired` and `.ended`, with an independent
+`assertionID`, adapter `source` and monotonic timestamp. Requested and returned boundaries stay
+separate: an expiration callback can run before begin returns. End observations follow the
+actual end call and duplicate owner ends remain visible. No real assertion can be expired
+through a test command. A returned UIKit identifier is not proof of a grant; these observations
+have `verification: unverified` and carry no invented allowance or due time.
+
+The observation sink is absent from device and Release builds. It observes only these explicit
+adapters in the embedded Debug runtime, not arbitrary third-party UIKit tasks or the standalone
+runtime package. It does not change the SDK's existing push assertion lifetime.
+
+The reducer and observations are not yet connected to execution decisions or process signals.
+They emit no SDK deadline callback while
 an application is stopped. Real suspension lag, protected-data availability and system
 execution allowances still require device qualification.

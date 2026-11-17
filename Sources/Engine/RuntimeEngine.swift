@@ -245,6 +245,7 @@
       state.async { self.processCommands() }
       #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
         SimulatorLifecycle.install { [weak self] in self?.recordSDK($0) }
+        SimulatorBackgroundExecution.install { [weak self] in self?.recordBackgroundAssertion($0) }
         SimulatorTransport.install { [weak self] event in
           guard let self,
             let observation = RuntimePacketObservation(
@@ -315,6 +316,7 @@
         applicationActivity.stop()
         #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
           SimulatorLifecycle.install(nil)
+          SimulatorBackgroundExecution.install(nil)
         #endif
         for task in timedAnswers.values { task.cancel() }
         timedAnswers.removeAll()
@@ -380,6 +382,19 @@
     private var elapsedMS: UInt64 { (DispatchTime.now().uptimeNanoseconds - epoch) / 1_000_000 }
 
     #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
+      private func recordBackgroundAssertion(_ event: SimulatorBackgroundExecution.Event) {
+        guard
+          let row = RuntimeBackgroundObservation(
+            event, epoch: epoch, now: DispatchTime.now().uptimeNanoseconds)
+        else { return }
+        record(
+          event: row.name,
+          fields: [
+            "assertionID": row.id.uuidString, "source": row.source.rawValue,
+            "boundarySource": "explicit-uikit-adapter", "verification": "unverified",
+          ], observed: DispatchTime(uptimeNanoseconds: row.uptimeNanoseconds))
+      }
+
       private func recordSDK(_ event: SimulatorLifecycle.Event) {
         withState {
           guard !stopped, event.uptimeNanoseconds >= epoch else { return }
