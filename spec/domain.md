@@ -25,8 +25,9 @@ generated. Swift and Kotlin add these same fixtures as their implementations arr
 
 `CallID` is the canonical application ID for incoming and outgoing calls on every device.
 Wire IDs are exact strings, never platform UUIDs, hashes or normalized handles. They contain
-1–256 Unicode code points and at least one character outside the whitespace set in the schema.
-Whitespace around a valid ID is preserved. Native/JS APIs may wrap validated strings in ID types.
+1–256 Unicode code points, with no leading/trailing whitespace from the schema's explicit set
+and no control characters (U+0000–001F or U+007F–009F) anywhere. Reject invalid IDs; never trim them.
+Internal spaces and Unicode remain exact. The host uses validated `WireID` strings in typed records.
 A service assigning its own ID uses `bindRemote`; a call is never renamed. The alias is unique
 among live calls, repeated identical binding succeeds, and replacement/collision returns
 `remoteIdentityConflict`. Retain alias-addressed events until binding and deduplicate by `EventID`.
@@ -81,6 +82,10 @@ claim has not reconciled; `currentAttempt` rejects cancelled/older attempts;
 `supported` requires capability and completed native/media application;
 `firstTerminalIntent` owns the first accepted end; `previewPolicy` requires an `answeredElsewhere`
 reason and enabled preview policy on that same `remoteEnd` input; otherwise the terminal fallback wins.
+`elsewhereRefusal` requires a current pending Answer refused with `answeredElsewhere` or
+`declinedElsewhere`, with no prior terminal ownership; `elsewhereRefusalPreview` additionally
+requires `answeredElsewhere` and the same preview policy as server ends. `notAllowedRefusal`
+requires a current pending Answer refused with `notAllowed`, with no prior terminal ownership.
 `mediaReleased` means owned media cleanup is observed; `always` needs no additional guard.
 `outgoingDeferred`/`outgoingEager` select the preparation policy; `outgoingPrepared` and
 `preparedJoin` require current successful preparation for their placement origin. `noAnswerPending`
@@ -113,7 +118,11 @@ Native Answer authority has `allow`, typed `refuse`, timeout and one bounded rec
 A timeout emits `claimTimedOut`, then reconciles with the same action idempotency key. Allow may
 recover within the remaining budget; known refusal stays distinct; unknown fails `claimTimedOut`.
 Late permits are released. All paths settle exactly once without waiting for JavaScript.
-Refusal rejects system Answer; this version records a failed end with typed `refused` cause.
+Refusal rejects system Answer with `refused(reason)`. For `answeredElsewhere` or `declinedElsewhere`,
+the call's end reason is that same canonical ownership reason, never `failed(refused(reason))`.
+An `answeredElsewhere` refusal instead enters the same preview as a server `answeredElsewhere`
+when preview policy is enabled; `declinedElsewhere` remains terminal. Only `notAllowed` records
+`failed(refused(notAllowed))`. These paths release the Answer's slot and settle its receipt once.
 The optional HTTP authority and secure credential transport are implementation work, not test input.
 
 `whenProvided` starts native dialing after placement; later media credentials have no placement-to-
@@ -162,7 +171,8 @@ All durations are positive safe integer milliseconds, represented as native Dura
 | Connection / reconnection | 30000 / 15000 | Connection attempt / transport loss after connection |
 
 Startup validates each duration, `claim + reconciliation + reserve < total`, and total against
-that adapter's effective action deadline. Wire decoding validates allocation without assuming an
-Android deadline on iOS. Runtime action deadlines can only shorten these bounds. No retry resets
+that adapter's effective action deadline. The strict remainder is reserved for media preparation.
+Wire decoding validates allocation without assuming an Android deadline on iOS. Runtime action
+deadlines can only shorten these bounds. No retry resets
 an anchor. No-answer stops when Answer owns its action; deferred media does not arm preparation
 until provided. Host observation allowances never change these product budgets.

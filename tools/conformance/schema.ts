@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import type { Budgets, Journey, Model, Transitions } from './model.ts';
+import type { Budgets, Journey, Model, Transitions, WireID } from './model.ts';
 
 type Schema = Readonly<{ $schema?: string; $id?: string; $defs?: Readonly<Record<string, Schema>>;
   $ref?: string; type?: 'object' | 'array' | 'string' | 'integer' | 'boolean'; const?: unknown;
@@ -65,6 +65,11 @@ function visit(value: unknown, rule: Schema, path: string): void {
   }
 }
 
+/** Validates an exact wire identifier before it enters a typed record; never trims it. */
+export function wireID(value: string): WireID {
+  validate(value, { $ref: '#/$defs/id' });
+  return value as WireID;
+}
 /** Returns deterministic JSON without normalizing identifier strings or timestamps. */
 export function canonical(value: unknown): string {
   const serialize = (item: unknown): string => {

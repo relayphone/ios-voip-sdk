@@ -2,7 +2,7 @@
   "version": 0,
   "kind": "call",
   "value": {
-    "id": " call-α ",
+    "id": "call-α",
     "line": {
       "accountID": "account-a",
       "id": "personal",

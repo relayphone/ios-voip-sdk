@@ -3,16 +3,17 @@ import { test } from 'node:test';
 import type { Configuration, Input, Journey } from './model.ts';
 import type { JourneyDriver, Observation } from './runner.ts';
 import { check, runJourney } from './runner.ts';
+import { wireID } from './schema.ts';
 import { validTypeFixtures } from './fixtures.types.ts';
 
 const configuration = { budgets: validTypeFixtures.budgets.value, outgoingMedia: 'whenProvided', connectionAuthority: 'application', maximumParticipatingCalls: 1, previewAnsweredElsewhere: false } as const satisfies Configuration;
-const input = { kind: 'incoming', callID: ' call-α ', eventID: 'invite', line: validTypeFixtures.incoming.value.line, party: validTypeFixtures.incoming.value.parties[0] } as const satisfies Input;
-const journey: Journey = { version: 0, id: 'host-control', configuration, steps: [
+const input = { kind: 'incoming', callID: wireID('call-α'), eventID: wireID('invite'), line: validTypeFixtures.incoming.value.line, party: validTypeFixtures.incoming.value.parties[0] } as const satisfies Input;
+const journey: Journey = { version: 0, id: wireID('host-control'), configuration, steps: [
   { kind: 'input', input },
-  { kind: 'expect', expectation: { kind: 'call', callID: ' call-α ', lifecycle: { kind: 'ringing' }, lineID: 'personal' } },
-  { kind: 'expect', expectation: { kind: 'count', callID: ' call-α ', metric: 'claims', value: 0 } },
+  { kind: 'expect', expectation: { kind: 'call', callID: wireID('call-α'), lifecycle: { kind: 'ringing' }, lineID: wireID('personal') } },
+  { kind: 'expect', expectation: { kind: 'count', callID: wireID('call-α'), metric: 'claims', value: 0 } },
 ] };
-const complete: Observation = { calls: [validTypeFixtures.incoming.value], participating: [], counts: [{ callID: ' call-α ', metric: 'claims', value: 0 }], systemEnds: [], errors: [] };
+const complete: Observation = { calls: [validTypeFixtures.incoming.value], participating: [], counts: [{ callID: wireID('call-α'), metric: 'claims', value: 0 }], systemEnds: [], errors: [] };
 class ScriptedDriver implements JourneyDriver {
   readonly inputs: Input[] = [];
   resets = 0;
@@ -59,13 +60,24 @@ test('assertion and cleanup failures are both retained', async () => {
 });
 
 test('every expectation kind rejects incomplete or contradictory evidence', () => {
-  assert.throws(() => check({ kind: 'count', callID: ' call-α ', metric: 'claims', value: 0 }, { ...complete, counts: [...complete.counts, ...complete.counts] }));
-  assert.throws(() => check({ kind: 'participating', callIDs: ['a'] }, complete));
-  assert.throws(() => check({ kind: 'systemEnd', callID: 'a', cause: 'remote' }, complete));
-  assert.throws(() => check({ kind: 'error', callID: 'a', error: 'refused' }, complete));
+  assert.throws(() => check({ kind: 'count', callID: wireID('call-α'), metric: 'claims', value: 0 }, { ...complete, counts: [...complete.counts, ...complete.counts] }));
+  assert.throws(() => check({ kind: 'participating', callIDs: [wireID('a')] }, complete));
+  assert.throws(() => check({ kind: 'systemEnd', callID: wireID('a'), cause: 'remote' }, complete));
+  assert.throws(() => check({ kind: 'error', callID: wireID('a'), error: 'refused' }, complete));
   const observed = { ...complete, calls: [validTypeFixtures.failed.kind === 'endReason' ? { ...validTypeFixtures.incoming.value, lifecycle: { kind: 'ended', reason: validTypeFixtures.failed.value, endedAt: '2026-11-17T00:00:00.000Z' } as const } : validTypeFixtures.incoming.value] };
-  assert.doesNotThrow(() => check({ kind: 'call', callID: ' call-α ', lifecycle: { kind: 'ended', reason: { kind: 'failed', error: 'claimTimedOut' } } }, observed));
-  assert.throws(() => check({ kind: 'call', callID: ' call-α ', lifecycle: { kind: 'ended', reason: { kind: 'failed', error: 'refused' } } }, observed));
+  assert.doesNotThrow(() => check({ kind: 'call', callID: wireID('call-α'), lifecycle: { kind: 'ended', reason: { kind: 'failed', error: 'claimTimedOut' } } }, observed));
+  assert.throws(() => check({ kind: 'call', callID: wireID('call-α'), lifecycle: { kind: 'ended', reason: { kind: 'failed', error: 'refused' } } }, observed));
+});
+
+test('refusal results and canonical ownership are checked independently', () => {
+  const callID = wireID('call-α');
+  const observed = { ...complete, calls: [{ ...validTypeFixtures.incoming.value, lifecycle: { kind: 'ended', reason: { kind: 'answeredElsewhere' }, endedAt: '2026-11-17T00:00:00.000Z' } as const }],
+    errors: [{ callID, error: 'refused', reason: { kind: 'answeredElsewhere' } } as const] };
+  check({ kind: 'call', callID, lifecycle: { kind: 'ended', reason: { kind: 'answeredElsewhere' } } }, observed);
+  check({ kind: 'error', callID, error: 'refused', reason: { kind: 'answeredElsewhere' } }, observed);
+  assert.throws(() => check({ kind: 'error', callID, error: 'refused', reason: { kind: 'notAllowed' } }, observed));
+  assert.throws(() => check({ kind: 'error', callID, error: 'refused', reason: { kind: 'answeredElsewhere' } }, { ...observed, errors: [{ callID, error: 'refused' }] }));
+  assert.throws(() => check({ kind: 'call', callID, lifecycle: { kind: 'ended', reason: { kind: 'failed', error: 'refused' } } }, observed));
 });
 
 test('participation guards, preparation failure and elsewhere fallback select explicit rules', async () => {
@@ -83,6 +95,14 @@ test('participation guards, preparation failure and elsewhere fallback select ex
   assert.equal(selectTransition(table, 'placing', 'deadlineExpired', new Set()), undefined);
   assert.equal(selectTransition(table, 'ringing', 'remoteEnd', new Set(['previewPolicy', 'firstTerminalIntent']))?.to, 'previewing');
   assert.equal(selectTransition(table, 'ringing', 'remoteEnd', new Set(['firstTerminalIntent']))?.to, 'ending');
+  assert.equal(selectTransition(table, 'ringing', 'answerRefused', new Set(['currentAttempt']))?.to, undefined);
+  const previewRefusal = selectTransition(table, 'ringing', 'answerRefused', new Set(['elsewhereRefusalPreview', 'elsewhereRefusal']));
+  assert.equal(previewRefusal?.id, 'answer-refused-preview');
+  assert.equal(previewRefusal?.to, 'previewing');
+  assert.deepEqual(previewRefusal?.effects, ['rejectAction', 'closeMedia', 'requestRemoval', 'publish']);
+  assert.equal(selectTransition(table, 'ringing', 'answerRefused', new Set(['elsewhereRefusal']))?.id, 'answer-refused-elsewhere');
+  assert.equal(selectTransition(table, 'ringing', 'answerRefused', new Set(['notAllowedRefusal']))?.id, 'answer-refused-not-allowed');
+  assert.equal(selectTransition(table, 'ending', 'answerRefused', new Set(['elsewhereRefusal']))?.to, undefined);
   assert.deepEqual(selectTransition(table, 'placing', 'placed', new Set(['incomingJoin']))?.effects, ['prepareMedia']);
   assert.equal(selectTransition(table, 'ringing', 'noAnswerExpired', new Set(['live'])), undefined);
   assert.equal(selectTransition(table, 'ending', 'mediaReleased', new Set(['mediaReleased']))?.to, 'ended');

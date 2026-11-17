@@ -3,7 +3,7 @@
   "$id": "https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json",
   "oneOf": [{"$ref":"#/$defs/callModel"},{"$ref":"#/$defs/actionModel"},{"$ref":"#/$defs/endReasonModel"},{"$ref":"#/$defs/errorModel"},{"$ref":"#/$defs/budgetsModel"}],
   "$defs": {
-    "id": {"type":"string","minLength":1,"maxLength":256,"pattern":"[^\\u0009-\\u000D\\u0020\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]"},
+    "id": {"type":"string","minLength":1,"maxLength":256,"pattern":"^(?![\\s\\S]*[\\u0000-\\u001F\\u007F-\\u009F])[^\\u0009-\\u000D\\u0020\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF](?:[\\s\\S]*[^\\u0009-\\u000D\\u0020\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF])?(?![\\s\\S])"},
     "duration": {"type":"integer","minimum":1,"maximum":9007199254740991},
     "integer": {"type":"integer","minimum":0,"maximum":9007199254740991},
     "state": {"enum":["reporting","ringing","previewing","placing","dialing","connecting","connected","reconnecting","ending","ended"]},
@@ -36,11 +36,18 @@
       }
     },
     "error": {"oneOf": [
+      {"$ref":"#/$defs/nonRefusalError"},
+      {"type":"object","properties":{"kind":{"const":"refused"},"reason":{"$ref":"#/$defs/refusal"}},"required":["kind","reason"],"additionalProperties":false}
+    ]},
+    "endError": {"oneOf": [
+      {"$ref":"#/$defs/nonRefusalError"},
+      {"type":"object","properties":{"kind":{"const":"refused"},"reason":{"type":"object","properties":{"kind":{"const":"notAllowed"}},"required":["kind"],"additionalProperties":false}},"required":["kind","reason"],"additionalProperties":false}
+    ]},
+    "nonRefusalError": {"oneOf": [
       {"type":"object","properties":{"kind":{"const":"unknownCall"},"callID":{"$ref":"#/$defs/id"}},"required":["kind","callID"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"invalidTransition"},"state":{"$ref":"#/$defs/state"}},"required":["kind","state"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"unsupported"},"feature":{"enum":["hold","video","tones","preview","merge"]}},"required":["kind","feature"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"permissionRequired"},"permission":{"enum":["microphone","camera"]}},"required":["kind","permission"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"refused"},"reason":{"$ref":"#/$defs/refusal"}},"required":["kind","reason"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"authorityUnavailable"},"cause":{"enum":["credentialsUnavailable","network","invalidResponse"]}},"required":["kind","cause"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"claimTimedOut"},"actionID":{"$ref":"#/$defs/id"}},"required":["kind","actionID"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"placementFailed"},"cause":{"enum":["cancelled","handlerFailed"]}},"required":["kind","cause"],"additionalProperties":false},
@@ -53,7 +60,7 @@
     ]},
     "remoteEnd": {"oneOf": [
       {"type":"object","properties":{"kind":{"enum":["remoteEnded","unanswered","answeredElsewhere","declinedElsewhere"]}},"required":["kind"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"failed"},"error":{"$ref":"#/$defs/error"}},"required":["kind","error"],"additionalProperties":false}
+      {"type":"object","properties":{"kind":{"const":"failed"},"error":{"$ref":"#/$defs/endError"}},"required":["kind","error"],"additionalProperties":false}
     ]},
     "endReason": {"oneOf": [
       {"$ref":"#/$defs/remoteEnd"},
@@ -157,7 +164,8 @@
       {"type":"object","properties":{"kind":{"const":"count"},"callID":{"$ref":"#/$defs/id"},"metric":{"enum":["claims","reconciliations","settlements","publications","activations","reports","placements","performedEnds","releases"]},"value":{"type":"integer","minimum":0,"maximum":9007199254740991}},"required":["kind","callID","metric","value"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"participating"},"callIDs":{"type":"array","items":{"$ref":"#/$defs/id"},"minItems":0}},"required":["kind","callIDs"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"systemEnd"},"callID":{"$ref":"#/$defs/id"},"cause":{"enum":["local","remote","missed","rejected"]}},"required":["kind","callID","cause"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"error"},"callID":{"$ref":"#/$defs/id"},"error":{"enum":["unknownCall","invalidTransition","unsupported","permissionRequired","refused","authorityUnavailable","claimTimedOut","placementFailed","deadlineExceeded","mediaFailed","remoteIdentityConflict","invalidConfiguration","systemFailed","bridgeUnavailable"]}},"required":["kind","callID","error"],"additionalProperties":false}
+      {"type":"object","properties":{"kind":{"const":"error"},"callID":{"$ref":"#/$defs/id"},"error":{"enum":["unknownCall","invalidTransition","unsupported","permissionRequired","authorityUnavailable","claimTimedOut","placementFailed","deadlineExceeded","mediaFailed","remoteIdentityConflict","invalidConfiguration","systemFailed","bridgeUnavailable"]}},"required":["kind","callID","error"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"error"},"callID":{"$ref":"#/$defs/id"},"error":{"const":"refused"},"reason":{"$ref":"#/$defs/refusal"}},"required":["kind","callID","error"],"additionalProperties":false}
     ]},
     "journey": {"type": "object", "additionalProperties": false,
       "required": ["version","id","configuration","steps"],
@@ -174,7 +182,7 @@
         "id": {"$ref":"#/$defs/id"},
         "from": {"type":"array","items":{"enum":["absent","reporting","ringing","previewing","placing","dialing","connecting","connected","reconnecting","ending","ended"]},"minItems":1},
         "input": {"enum":["incoming","admitted","start","placed","answer","claimExpired","authorityAllowed","mediaPrepared","answerRefused","reconciliationUnknown","connected","provideMedia","bindRemote","noAnswerExpired","hold","mute","video","localEnd","remoteEnd","systemRemoved","lateCompletion","join","transportLost","transportRecovered","deadlineExpired","frameworkReset","joinFailed","mediaFailed","mediaReleased"]},
-        "guard": {"enum":["newCall","noRetainedEnd","outgoingDeferred","outgoingEager","outgoingPrepared","preparedJoin","noAnswerPending","incomingJoin","answerEligible","notReconciled","currentAttempt","authorizedAnswerPending","authoritativeAndPrepared","mediaNotReady","bufferedConnected","live","aliasAvailable","supported","firstTerminalIntent","previewPolicy","mediaReleased","always","newCallAndSlot","joinEligible"]},
+        "guard": {"enum":["newCall","noRetainedEnd","outgoingDeferred","outgoingEager","outgoingPrepared","preparedJoin","noAnswerPending","incomingJoin","answerEligible","notReconciled","currentAttempt","authorizedAnswerPending","authoritativeAndPrepared","mediaNotReady","bufferedConnected","live","aliasAvailable","supported","firstTerminalIntent","previewPolicy","mediaReleased","always","newCallAndSlot","joinEligible","elsewhereRefusalPreview","elsewhereRefusal","notAllowedRefusal"]},
         "to": {"enum":["same","absent","reporting","ringing","previewing","placing","dialing","connecting","connected","reconnecting","ending","ended"]},
         "effects": {"type":"array","items":{"enum":["reserveIdentity","reportIncoming","publish","requestPlacement","nativeStart","requestClaim","reconcile","prepareMedia","settleAction","rejectAction","closeMedia","requestRemoval","setActive","armConnection","bufferProgress","bindAlias","drainEvents","applyHold","applyMute","applyVideo","returnOriginalEnd","ignore","armReconnection","restorePreview"]},"minItems":0}
       }

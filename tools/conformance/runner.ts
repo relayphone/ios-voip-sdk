@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import type { Call, CallError, Configuration, Expectation, Guard, Input, Journey, Metric, State, Transitions, Trigger } from './model.ts';
+import type { Call, Configuration, ErrorExpectation, Expectation, Guard, Input, Journey, Metric, State, Transitions, Trigger, WireID } from './model.ts';
 import { decodeJourney, decodeModel, decodeTransitions } from './schema.ts';
 
-export type Observation = Readonly<{ calls: readonly Call[]; participating: readonly string[];
-  counts: readonly Readonly<{ callID: string; metric: Metric; value: number }>[];
-  systemEnds: readonly Readonly<{ callID: string; cause: 'local' | 'remote' | 'missed' | 'rejected' }>[];
-  errors: readonly Readonly<{ callID: string; error: CallError['kind'] }>[] }>;
+export type Observation = Readonly<{ calls: readonly Call[]; participating: readonly WireID[];
+  counts: readonly Readonly<{ callID: WireID; metric: Metric; value: number }>[];
+  systemEnds: readonly Readonly<{ callID: WireID; cause: 'local' | 'remote' | 'missed' | 'rejected' }>[];
+  errors: readonly (Readonly<{ callID: WireID }> & ErrorExpectation)[] }>;
 /** Drivers perform real controls and await native completion; they never receive expected results. */
 export interface JourneyDriver {
   reset(configuration: Configuration): Promise<void>;
@@ -47,7 +47,8 @@ export function check(expected: Expectation, observed: Observation): void {
     }
     case 'participating': assert.deepEqual([...observed.participating].sort(), [...expected.callIDs].sort()); break;
     case 'systemEnd': assert.ok(observed.systemEnds.some(row => row.callID === expected.callID && row.cause === expected.cause), 'Missing system end observation'); break;
-    case 'error': assert.ok(observed.errors.some(row => row.callID === expected.callID && row.error === expected.error), 'Missing typed error'); break;
+    case 'error': assert.ok(observed.errors.some(row => row.callID === expected.callID && row.error === expected.error
+      && (expected.error !== 'refused' || expected.reason === undefined || row.error === 'refused' && row.reason?.kind === expected.reason.kind)), 'Missing typed error'); break;
   }
 }
 /** Executes an already decoded journey. Assertions never mutate the driver or infer missing evidence. */

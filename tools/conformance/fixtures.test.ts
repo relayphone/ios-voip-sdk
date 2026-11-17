@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { invalidTypeFixtures, validTypeFixtures } from './fixtures.types.ts';
-import { canonical, decodeJourney, decodeModel, decodeTransitions, validate, validateBudgets } from './schema.ts';
+import { canonical, decodeJourney, decodeModel, decodeTransitions, validate, validateBudgets, wireID } from './schema.ts';
 import { loadCatalog } from './runner.ts';
 
 const root = new URL('../../spec/', import.meta.url);
@@ -25,7 +25,7 @@ for (const [kind, witnesses] of Object.entries({ valid: validTypeFixtures, inval
 }
 
 test('canonical serialization preserves IDs, Unicode and array order while sorting keys', () => {
-  assert.equal(canonical({ z: ['b', 'a'], a: ' call-α ' }), '{"a":" call-α ","z":["b","a"]}');
+  assert.equal(canonical({ z: ['b', 'a'], a: wireID('call-α') }), '{"a":"call-α","z":["b","a"]}');
   assert.equal(canonical({ z: 1, a: { b: true, a: null } }), canonical({ a: { a: null, b: true }, z: 1 }));
   assert.equal(canonical({ '2': false, '10': true }), '{"10":true,"2":false}');
   assert.throws(() => canonical(new Date()));
@@ -37,7 +37,7 @@ test('decoding copies caller data and preserves identity bytes', () => {
   const decoded = decodeModel(input);
   assert.equal(decoded.kind, 'call');
   assert.ok(decoded.kind === 'call');
-  assert.equal(decoded.value.id, ' call-α ');
+  assert.equal(decoded.value.id, 'call-α');
   assert.notEqual(decoded.value, input.value);
   assert.notEqual(decoded.value.parties, input.value.parties);
 });
@@ -50,10 +50,28 @@ test('value constraints reject blank IDs, impossible timestamps and lifecycle/di
   assert.throws(() => decodeModel({ ...validTypeFixtures.deferred, value: { ...validTypeFixtures.deferred.value, lifecycle: { kind: 'ringing' } } }));
 });
 
+test('every wire ID rejects boundary whitespace and controls without normalizing valid strings', () => {
+  const whitespace = [...'\u0009\u000A\u000B\u000C\u000D\u0020\u00A0\u1680\u2028\u2029\u202F\u205F\u3000\uFEFF', ...Array.from({ length: 11 }, (_, i) => String.fromCodePoint(0x2000 + i))];
+  const controls = Array.from({ length: 65 }, (_, i) => String.fromCodePoint(i < 32 ? i : i + 95));
+  for (const space of whitespace) for (const id of [`${space}call-a`, `call-a${space}`]) assert.throws(() => wireID(id));
+  for (const control of controls) for (const id of [`${control}call-a`, `call${control}a`, `call-a${control}`]) assert.throws(() => wireID(id));
+  for (const id of ['call-a', 'call a', 'call-α', 'é', 'e\u0301', '😀'.repeat(256)]) assert.equal(wireID(id), id);
+  for (const field of ['id', 'remoteID'] as const) assert.throws(() => decodeModel({ ...validTypeFixtures.incoming, value: { ...validTypeFixtures.incoming.value, [field]: 'call-a ' } }));
+  for (const field of ['accountID', 'id'] as const) assert.throws(() => decodeModel({ ...validTypeFixtures.incoming, value: { ...validTypeFixtures.incoming.value, line: { ...validTypeFixtures.incoming.value.line, [field]: ' personal' } } }));
+  assert.throws(() => decodeModel({ ...validTypeFixtures.incoming, value: { ...validTypeFixtures.incoming.value, parties: [{ ...validTypeFixtures.incoming.value.parties[0], id: 'alice\u0000' }] } }));
+  assert.throws(() => decodeModel({ ...validTypeFixtures.failed, value: { kind: 'failed', error: { kind: 'claimTimedOut', actionID: 'answer\u007F' } } }));
+  const journey = loadCatalog(root)[0]!;
+  assert.throws(() => decodeJourney({ ...journey, id: ' journey' }));
+  assert.throws(() => decodeJourney({ ...journey, steps: [{ kind: 'input', input: { kind: 'connected', callID: 'call-a', eventID: 'event-a\n' } }, ...journey.steps] }));
+  const table = decodeTransitions(JSON.parse(readFileSync(new URL('transitions.json', root), 'utf8')));
+  assert.throws(() => decodeTransitions({ ...table, rules: [{ ...table.rules[0], id: 'rule\u0085' }] }));
+});
+
 test('all budget values are validated and adapter deadlines remain separate from decoding', () => {
   const budgets = validTypeFixtures.budgets.value;
   for (const value of [0, -1, 1.5, Infinity, NaN]) assert.throws(() => validateBudgets({ ...budgets, placement: value }));
   assert.throws(() => validateBudgets({ ...budgets, answer: { ...budgets.answer, total: 3500 } }));
+  assert.doesNotThrow(() => validateBudgets({ ...budgets, answer: { ...budgets.answer, total: 3501 } }));
   assert.throws(() => validateBudgets(budgets, 4000));
   assert.doesNotThrow(() => validateBudgets(budgets, 4500));
   const larger = { ...budgets, answer: { ...budgets.answer, total: 6000 } };
@@ -71,10 +89,10 @@ test('schema support is fail-closed even in unmatched union branches', () => {
   assert.throws(() => decodeModel(JSON.parse('{"version":0,"kind":"action","value":{"kind":"answer","callID":"a","__proto__":{}}}')));
 });
 
-test('all eight reference journeys and the transition table decode without claiming execution', () => {
+test('all reference journeys and the transition table decode without claiming execution', () => {
   const journeys = loadCatalog(root);
-  assert.equal(journeys.length, 8);
-  assert.deepEqual(journeys.map(j => j.id).sort(), ['incoming-killed-answer', 'claim-timeout-reconcile', 'answer-refusal', 'outgoing-deferred-binding', 'no-answer-direction', 'local-server-end-race', 'answered-elsewhere', 'cross-line-waiting'].sort());
+  assert.equal(journeys.length, 10);
+  assert.deepEqual(journeys.map(j => j.id).sort(), ['incoming-killed-answer', 'claim-timeout-reconcile', 'answer-refusal', 'answer-not-allowed', 'answer-refusal-preview', 'outgoing-deferred-binding', 'no-answer-direction', 'local-server-end-race', 'answered-elsewhere', 'cross-line-waiting'].sort());
   const table: unknown = JSON.parse(readFileSync(new URL('transitions.json', root), 'utf8'));
   assert.ok(decodeTransitions(table).rules.length >= 26);
   assert.throws(() => decodeTransitions({ version: 0, rules: [{ id: 'bad', from: ['held'], input: 'answer', guard: 'always', to: 'connected', effects: [] }] }));
