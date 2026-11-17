@@ -22,12 +22,22 @@ native work without waiting for a virtual deadline that a later `advance` suppli
 returns fresh, complete evidence; each implementation bounds its own native I/O/waits. Advance
 uses virtual time on hosts and bounded native deadline observation in integration drivers.
 
+An incoming control with `deferAdmission: true` waits for `admitted`. A Hold with
+`deferConfirmation: true` waits for `holdApplied`, which completes the recorded request.
+`latePermit` completes the original timed-out claim with an allow. The fake authority's `unknown`
+reconciliation completes at its deadline so the pending interval can be observed.
+Process and authority controls configure the ports, and `advance` drives timer inputs. The
+transition table names the resulting reducer inputs, such as `claimExpired` and `authorityAllowed`.
+
 Expectations are explicit projections: lifecycle kind/reason, line/alias/gates, per-call counters,
 participating IDs, typed errors and normalized system end class. Unknown timestamps/action IDs
 are not guessed; native receipts retain them. Refusal expectations can require the typed reason
 independently of the call's canonical end/preview reason. A missing zero counter fails instead of inventing
 zero. Counts need complete observation coverage, and drivers must reject overflow/gaps. `missed`
 and `remote` describe semantic system end classes, retaining actual platform codes separately.
+`endResult` checks the latest completed End result for the call. `ringingPublications` counts
+native ringing snapshots even without JavaScript. `claimTimeouts`, `permitReleases` and
+`holdRequests` count timeout observations, permit releases and issued Hold requests respectively.
 
 The runner sends no expected results to drivers. It observes only at `expect` steps, closes on
 reset/input/assertion failure, and preserves cleanup errors alongside the original failure.

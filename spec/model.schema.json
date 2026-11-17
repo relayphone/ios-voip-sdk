@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json",
-  "oneOf": [{"$ref":"#/$defs/callModel"},{"$ref":"#/$defs/actionModel"},{"$ref":"#/$defs/endReasonModel"},{"$ref":"#/$defs/errorModel"},{"$ref":"#/$defs/budgetsModel"}],
+  "oneOf": [{"$ref":"#/$defs/callModel"},{"$ref":"#/$defs/actionModel"},{"$ref":"#/$defs/endReasonModel"},{"$ref":"#/$defs/errorModel"},{"$ref":"#/$defs/budgetsModel"},{"$ref":"#/$defs/endResultModel"}],
   "$defs": {
     "id": {"type":"string","minLength":1,"maxLength":256,"pattern":"^(?![\\s\\S]*[\\u0000-\\u001F\\u007F-\\u009F])[^\\u0009-\\u000D\\u0020\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF](?:[\\s\\S]*[^\\u0009-\\u000D\\u0020\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF])?(?![\\s\\S])"},
     "duration": {"type":"integer","minimum":1,"maximum":9007199254740991},
@@ -140,10 +140,11 @@
     ]},
     "input": {"oneOf": [
       {"type":"object","properties":{"kind":{"const":"process"},"running":{"type":"boolean"},"javascriptAttached":{"type":"boolean"}},"required":["kind","running","javascriptAttached"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"incoming"},"callID":{"$ref":"#/$defs/id"},"eventID":{"$ref":"#/$defs/id"},"line":{"$ref":"#/$defs/line"},"party":{"$ref":"#/$defs/party"}},"required":["kind","callID","eventID","line","party"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"incoming"},"callID":{"$ref":"#/$defs/id"},"eventID":{"$ref":"#/$defs/id"},"line":{"$ref":"#/$defs/line"},"party":{"$ref":"#/$defs/party"},"deferAdmission":{"const":true}},"required":["kind","callID","eventID","line","party"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"authority"},"callID":{"$ref":"#/$defs/id"},"claim":{"oneOf":[{"$ref":"#/$defs/decision"},{"type":"object","properties":{"kind":{"const":"timeout"}},"required":["kind"],"additionalProperties":false}]},"reconciliation":{"oneOf":[{"$ref":"#/$defs/decision"},{"type":"object","properties":{"kind":{"const":"unknown"}},"required":["kind"],"additionalProperties":false}]}},"required":["kind","callID","claim","reconciliation"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"action"},"origin":{"enum":["app","system"]},"action":{"$ref":"#/$defs/action"}},"required":["kind","origin","action"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"enum":["placed","provideMedia"]},"callID":{"$ref":"#/$defs/id"}},"required":["kind","callID"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"action"},"origin":{"enum":["app","system"]},"action":{"type":"object","properties":{"kind":{"const":"hold"},"callID":{"$ref":"#/$defs/id"},"held":{"type":"boolean"}},"required":["kind","callID","held"],"additionalProperties":false},"deferConfirmation":{"const":true}},"required":["kind","origin","action","deferConfirmation"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"enum":["placed","provideMedia","admitted","latePermit","holdApplied"]},"callID":{"$ref":"#/$defs/id"}},"required":["kind","callID"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"bindRemote"},"callID":{"$ref":"#/$defs/id"},"remoteID":{"$ref":"#/$defs/id"}},"required":["kind","callID","remoteID"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"connected"},"callID":{"$ref":"#/$defs/id"},"eventID":{"$ref":"#/$defs/id"}},"required":["kind","callID","eventID"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"remoteEnd"},"target":{"type":"object","properties":{"kind":{"enum":["call","remote"]},"id":{"$ref":"#/$defs/id"}},"required":["kind","id"],"additionalProperties":false},"eventID":{"$ref":"#/$defs/id"},"reason":{"$ref":"#/$defs/remoteEnd"}},"required":["kind","target","eventID","reason"],"additionalProperties":false},
@@ -161,11 +162,12 @@
     ]},
     "expectation": {"oneOf": [
       {"type":"object","properties":{"kind":{"const":"call"},"callID":{"$ref":"#/$defs/id"},"lifecycle":{"$ref":"#/$defs/lifecycleExpectation"},"lineID":{"$ref":"#/$defs/id"},"remoteID":{"$ref":"#/$defs/id"},"held":{"type":"boolean"},"muted":{"type":"boolean"}},"required":["kind","callID","lifecycle"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"count"},"callID":{"$ref":"#/$defs/id"},"metric":{"enum":["claims","reconciliations","settlements","publications","activations","reports","placements","performedEnds","releases"]},"value":{"type":"integer","minimum":0,"maximum":9007199254740991}},"required":["kind","callID","metric","value"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"count"},"callID":{"$ref":"#/$defs/id"},"metric":{"enum":["claims","reconciliations","settlements","publications","activations","reports","placements","performedEnds","releases","claimTimeouts","permitReleases","ringingPublications","holdRequests"]},"value":{"type":"integer","minimum":0,"maximum":9007199254740991}},"required":["kind","callID","metric","value"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"participating"},"callIDs":{"type":"array","items":{"$ref":"#/$defs/id"},"minItems":0}},"required":["kind","callIDs"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"systemEnd"},"callID":{"$ref":"#/$defs/id"},"cause":{"enum":["local","remote","missed","rejected"]}},"required":["kind","callID","cause"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"error"},"callID":{"$ref":"#/$defs/id"},"error":{"enum":["unknownCall","invalidTransition","unsupported","permissionRequired","authorityUnavailable","claimTimedOut","placementFailed","deadlineExceeded","mediaFailed","remoteIdentityConflict","invalidConfiguration","systemFailed","bridgeUnavailable"]}},"required":["kind","callID","error"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"error"},"callID":{"$ref":"#/$defs/id"},"error":{"const":"refused"},"reason":{"$ref":"#/$defs/refusal"}},"required":["kind","callID","error"],"additionalProperties":false}
+      {"type":"object","properties":{"kind":{"const":"error"},"callID":{"$ref":"#/$defs/id"},"error":{"const":"refused"},"reason":{"$ref":"#/$defs/refusal"}},"required":["kind","callID","error"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"endResult"},"callID":{"$ref":"#/$defs/id"},"result":{"$ref":"#/$defs/endResult"}},"required":["kind","callID","result"],"additionalProperties":false}
     ]},
     "journey": {"type": "object", "additionalProperties": false,
       "required": ["version","id","configuration","steps"],
@@ -181,10 +183,10 @@
       "properties": {
         "id": {"$ref":"#/$defs/id"},
         "from": {"type":"array","items":{"enum":["absent","reporting","ringing","previewing","placing","dialing","connecting","connected","reconnecting","ending","ended"]},"minItems":1},
-        "input": {"enum":["incoming","admitted","start","placed","answer","claimExpired","authorityAllowed","mediaPrepared","answerRefused","reconciliationUnknown","connected","provideMedia","bindRemote","noAnswerExpired","hold","mute","video","localEnd","remoteEnd","systemRemoved","lateCompletion","join","transportLost","transportRecovered","deadlineExpired","frameworkReset","joinFailed","mediaFailed","mediaReleased"]},
-        "guard": {"enum":["newCall","noRetainedEnd","outgoingDeferred","outgoingEager","outgoingPrepared","preparedJoin","noAnswerPending","incomingJoin","answerEligible","notReconciled","currentAttempt","authorizedAnswerPending","authoritativeAndPrepared","mediaNotReady","bufferedConnected","live","aliasAvailable","supported","firstTerminalIntent","previewPolicy","mediaReleased","always","newCallAndSlot","joinEligible","elsewhereRefusalPreview","elsewhereRefusal","notAllowedRefusal"]},
+        "input": {"enum":["incoming","admitted","start","placed","answer","claimExpired","authorityAllowed","mediaPrepared","answerRefused","reconciliationUnknown","connected","provideMedia","bindRemote","noAnswerExpired","hold","holdApplied","holdFailed","mute","muteApplied","muteFailed","video","videoApplied","videoFailed","tones","tonesApplied","tonesFailed","localEnd","remoteEnd","systemRemoved","lateCompletion","join","transportLost","transportRecovered","joinFailed","mediaFailed","deadlineExpired","frameworkReset","mediaReleased"]},
+        "guard": {"enum":["newCall","retainedEndPreview","retainedEnd","always","newCallAndSlot","outgoingDeferred","incomingJoin","answerEligible","notReconciled","currentAttempt","staleAttempt","authorizedAnswerPending","elsewhereRefusalPreview","elsewhereRefusal","notAllowedRefusal","authoritativeAndPrepared","mediaNotReady","live","bufferedConnected","aliasAvailable","noAnswerPending","supported","noToneTransport","firstTerminalIntent","previewPolicy","hasLocalEndReceipt","joinEligible","outgoingEager","outgoingPrepared","preparedJoin","mediaReleased","noRetainedEnd"]},
         "to": {"enum":["same","absent","reporting","ringing","previewing","placing","dialing","connecting","connected","reconnecting","ending","ended"]},
-        "effects": {"type":"array","items":{"enum":["reserveIdentity","reportIncoming","publish","requestPlacement","nativeStart","requestClaim","reconcile","prepareMedia","settleAction","rejectAction","closeMedia","requestRemoval","setActive","armConnection","bufferProgress","bindAlias","drainEvents","applyHold","applyMute","applyVideo","returnOriginalEnd","ignore","armReconnection","restorePreview"]},"minItems":0}
+        "effects": {"type":"array","items":{"enum":["reserveIdentity","retainBufferedEnd","reportIncoming","closeMedia","requestRemoval","publish","requestPlacement","nativeStart","prepareMedia","requestClaim","emitObservation","reconcile","releasePermit","settleAction","armConnection","rejectAction","setActive","bufferProgress","bindAlias","drainEvents","trackAction","applyHold","applyMute","applyVideo","sendTones","returnAlreadyEnded","bufferEnd","retainEnd","returnOriginalEnd","ignore","armReconnection","restorePreview"]},"minItems":0}
       }
     },
     "transitions": {"type": "object", "additionalProperties": false,
@@ -194,6 +196,12 @@
         "rules": {"type":"array","items":{"$ref":"#/$defs/transition"},"minItems":1}
       }
     },
+    "endReceipt": {"type":"object","properties":{"callID":{"$ref":"#/$defs/id"},"actionID":{"$ref":"#/$defs/id"},"reason":{"type":"object","properties":{"kind":{"enum":["localDeclined","localEnded"]}},"required":["kind"],"additionalProperties":false}},"required":["callID","actionID","reason"],"additionalProperties":false},
+    "endResult": {"oneOf": [
+      {"type":"object","properties":{"kind":{"const":"ended"},"receipt":{"$ref":"#/$defs/endReceipt"}},"required":["kind","receipt"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"alreadyEnded"},"reason":{"$ref":"#/$defs/endReason"}},"required":["kind","reason"],"additionalProperties":false}
+    ]},
+    "endResultModel": {"type":"object","properties":{"version":{"const":0},"kind":{"const":"endResult"},"value":{"$ref":"#/$defs/endResult"}},"required":["version","kind","value"],"additionalProperties":false},
     "callModel": {"type": "object", "additionalProperties": false,
       "required": ["version","kind","value"],
       "properties": {

@@ -91,8 +91,13 @@ test('schema support is fail-closed even in unmatched union branches', () => {
 
 test('all reference journeys and the transition table decode without claiming execution', () => {
   const journeys = loadCatalog(root);
-  assert.equal(journeys.length, 10);
-  assert.deepEqual(journeys.map(j => j.id).sort(), ['incoming-killed-answer', 'claim-timeout-reconcile', 'answer-refusal', 'answer-not-allowed', 'answer-refusal-preview', 'outgoing-deferred-binding', 'no-answer-direction', 'local-server-end-race', 'answered-elsewhere', 'cross-line-waiting'].sort());
+  assert.equal(journeys.length, 14);
+  assert.deepEqual(journeys.map(j => j.id).sort(), [
+    'incoming-killed-answer', 'claim-timeout-reconcile', 'answer-refusal', 'answer-not-allowed',
+    'answer-refusal-preview', 'outgoing-deferred-binding', 'no-answer-direction', 'local-server-end-race',
+    'answered-elsewhere', 'cross-line-waiting', 'end-before-admission', 'late-answer-permit',
+    'end-after-server-end', 'hold-request-confirm',
+  ].sort());
   const table: unknown = JSON.parse(readFileSync(new URL('transitions.json', root), 'utf8'));
   assert.ok(decodeTransitions(table).rules.length >= 26);
   assert.throws(() => decodeTransitions({ version: 0, rules: [{ id: 'bad', from: ['held'], input: 'answer', guard: 'always', to: 'connected', effects: [] }] }));
@@ -100,4 +105,10 @@ test('all reference journeys and the transition table decode without claiming ex
   assert.throws(() => decodeJourney({ ...first, version: 1 }));
   assert.throws(() => decodeJourney({ ...first, steps: [{ kind: 'input', input: { kind: 'advance', milliseconds: 1 } }] }));
   assert.throws(() => decodeJourney({ ...first, steps: [{ kind: 'expect', expectation: { kind: 'count', callID: 'a', metric: 'claims', value: -1 } }] }));
+});
+
+test('every declared reducer input has a transition rule', () => {
+  const schema = JSON.parse(readFileSync(new URL('model.schema.json', root), 'utf8'));
+  const rules = decodeTransitions(JSON.parse(readFileSync(new URL('transitions.json', root), 'utf8'))).rules;
+  assert.deepEqual(new Set(rules.map(rule => rule.input)), new Set(schema.$defs.transition.properties.input.enum));
 });

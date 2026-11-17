@@ -1,0 +1,25 @@
+{
+  "version": 0,
+  "id": "hold-request-confirm",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":true,"javascriptAttached":true}},
+    {"kind":"input","input":{"kind":"incoming","callID":"hold-a","eventID":"invite-hold-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}},
+    {"kind":"input","input":{"kind":"authority","callID":"hold-a","claim":{"kind":"allow"},"reconciliation":{"kind":"unknown"}}},
+    {"kind":"input","input":{"kind":"provideMedia","callID":"hold-a"}},
+    {"kind":"input","input":{"kind":"action","origin":"system","action":{"kind":"answer","callID":"hold-a"}}},
+    {"kind":"input","input":{"kind":"connected","callID":"hold-a","eventID":"connected-hold-a"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"hold-a","lifecycle":{"kind":"connected"},"held":false}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"hold-a","metric":"settlements","value":1}},
+    {"kind":"input","input":{"kind":"action","origin":"app","action":{"kind":"hold","callID":"hold-a","held":true},"deferConfirmation":true}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"hold-a","metric":"holdRequests","value":1}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"hold-a","metric":"settlements","value":1}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"hold-a","lifecycle":{"kind":"connected"},"held":false}},
+    {"kind":"expect","expectation":{"kind":"participating","callIDs":["hold-a"]}},
+    {"kind":"input","input":{"kind":"holdApplied","callID":"hold-a"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"hold-a","lifecycle":{"kind":"connected"},"held":true}},
+    {"kind":"expect","expectation":{"kind":"participating","callIDs":[]}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"hold-a","metric":"holdRequests","value":1}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"hold-a","metric":"settlements","value":2}}
+  ]
+}

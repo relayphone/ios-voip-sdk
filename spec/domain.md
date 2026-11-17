@@ -8,7 +8,7 @@ claim a platform implementation. JSON Schema uses draft 2020-12, with document `
 ## Wire format and evolution
 
 `model.schema.json` validates envelopes `{ version, kind, value }` for `call`, `action`,
-`endReason`, `error` and `budgets`. Its `journey` and `transitions` definitions validate the
+`endReason`, `endResult`, `error` and `budgets`. Its `journey` and `transitions` definitions validate the
 other two document formats. Unknown fields, discriminants and versions fail. Breaking shape or
 meaning changes require a new version and explicit reader support; do not silently reinterpret v0.
 The host decoder supports the schema's declared subset only and rejects unknown schema keywords.
@@ -69,17 +69,25 @@ ownership cannot resurrect the call. Action/attempt generations protect asynchro
 
 Guards have these meanings: `newCall` means no live identity collision; `newCallAndSlot` additionally
 requires a free participation slot for Start; `joinEligible` requires preview Join and that slot.
-`noRetainedEnd` means no
-accepted end raced admission; `incomingJoin` requires the current attempt's pending preview
+`retainedEnd` means a remote end already owns the reporting call. `retainedEndPreview` also
+requires `answeredElsewhere` and enabled preview policy. `noRetainedEnd` is the explicit ringing
+case in the ordered admission rules. `incomingJoin` requires the current attempt's pending preview
 placement before participation, rejecting older generations on every asynchronous input;
 `answerEligible`
-means ringing, no pending Answer and a free participating slot; `notReconciled` means this timed-out
-claim has not reconciled; `currentAttempt` rejects cancelled/older attempts;
+means ringing, no pending Answer and a free participating slot. `notReconciled` requires the
+current pending claim's timer and that reconciliation has not started. `currentAttempt` requires
+the matching pending operation and generation without cancellation or terminal ownership.
+`staleAttempt` on an allow means that operation no longer
+accepts the permit, including after unresolved reconciliation, terminal ownership, or supersession.
+Duplicate deliveries of a permit already accepted or released produce no further effects.
 `authorizedAnswerPending` additionally requires a permit and prepared media;
 `authoritativeAndPrepared` requires the configured connection report and preparation;
 `mediaNotReady` retains that report; `bufferedConnected` applies it after preparation;
 `live` excludes terminal ownership; `aliasAvailable` enforces binding uniqueness;
-`supported` requires capability and completed native/media application;
+`supported` requires the action capability in its declared source state with no terminal ownership.
+`noToneTransport`
+matches connected Tones requests without a registered media or signaling transport.
+`hasLocalEndReceipt` means a previous local End owns the recorded result.
 `firstTerminalIntent` owns the first accepted end; `previewPolicy` requires an `answeredElsewhere`
 reason and enabled preview policy on that same `remoteEnd` input; otherwise the terminal fallback wins.
 `elsewhereRefusal` requires a current pending Answer refused with `answeredElsewhere` or
@@ -95,9 +103,14 @@ Effects are ordered requests or observations, not optimistic state. Eager placem
 preparation; deferred placement may start without it. `prepareMedia` completion returns
 as a new input before any dependent settlement. `settleAction`/`rejectAction` act only on a still
 pending receipt, exactly once. `closeMedia` immediately closes gates and cancels preparation;
-`requestRemoval` owns independent system cleanup. `publish` exposes confirmed state. Alias drain
-preserves receive order. An admission raced by an end must apply that end before any ringing
-publication; preview-join failure restores its previous preview and releases only that attempt.
+`requestRemoval` owns independent system cleanup. `publish` exposes confirmed state. `retainEnd`
+records the first accepted reason while the call stays in `reporting`. An unresolved canonical ID
+or alias uses `bufferEnd` within the bounded event window. `retainBufferedEnd` transfers a matching
+canonical end before `reportIncoming` runs. Binding drains matching alias events through the same
+rules in receive order. Deduplicate on receipt and drain each buffered event once. Admission
+with a retained result goes directly to `ending`, or to
+`previewing` under the elsewhere policy, without publishing `ringing`. Preview-join failure
+restores its previous preview and releases only that attempt.
 Successful owned media release permits logical `ended` even if platform removal is still pending;
 later system removal updates independent cleanup evidence without rewriting terminal state.
 Effect names include engine-owned timer work before calling external ports: admission/native
@@ -110,14 +123,24 @@ or extend product deadlines, and a cancelled generation cannot affect a later at
 
 Start reserves the canonical ID and asks placement; Join applies only to a preview and also asks
 placement. Answer applies only to ringing and never asks a JS placement handler. End declines a
-ringing call or hangs up a participating call. Hold/mute/video/tones are native-performed actions;
-the app is informed after application. Unsupported actions fail explicitly. Pre-connect outgoing
-hold cannot imply remote answer. Video changes never implicitly authorize camera capture.
+ringing call or hangs up a participating call. Hold, Mute, Video and Tones requests keep confirmed
+state unchanged. `trackAction` stores the pending action and generation before issuing the native
+or media request. On the matching `*Applied`, publish the confirmed value or performed Tones
+event, then settle the action. On `*Failed`, reject with the typed error and retain the previous
+state. Terminal ownership rejects a pending control once with `invalidTransition` for the current
+lifecycle and prevents late confirmation from publishing.
+Tones are allowed only in `connected` and `sendTones` uses a registered media or signaling
+transport. With no transport, reject the request as `unsupported(tones)`. A pending send can
+confirm or fail during reconnection. Confirmation observes the local send. Pre-connect outgoing hold
+cannot imply remote answer. Video changes never implicitly authorize camera capture.
 
 Native Answer authority has `allow`, typed `refuse`, timeout and one bounded reconciliation.
-A timeout emits `claimTimedOut`, then reconciles with the same action idempotency key. Allow may
-recover within the remaining budget; known refusal stays distinct; unknown fails `claimTimedOut`.
-Late permits are released. All paths settle exactly once without waiting for JavaScript.
+The engine's claim timer inputs `claimExpired`. `emitObservation` records `claimTimedOut` for
+that action before `reconcile` starts with the same idempotency key. The timeout observation
+leaves the call ringing and the action pending. Allow may recover within the remaining budget.
+Known refusal stays distinct. Unknown reconciliation fails the pending Answer as `claimTimedOut`.
+An allow for a stale attempt runs `releasePermit` in any state without advancing the call or
+settling it again. All paths settle exactly once without waiting for JavaScript.
 Refusal rejects system Answer with `refused(reason)`. For `answeredElsewhere` or `declinedElsewhere`,
 the call's end reason is that same canonical ownership reason, never `failed(refused(reason))`.
 An `answeredElsewhere` refusal instead enters the same preview as a server `answeredElsewhere`
@@ -138,11 +161,13 @@ failed placement/authorization, independently of eventual system removal.
 
 ## Termination and errors
 
-The first accepted terminal intent wins, local or remote. Duplicate End returns the original
-receipt; later remote ends may finish cleanup but cannot replace the reason. Server-only ends
-never fabricate a performed local End. `answeredElsewhere` is the single ownership fact, either
-terminal or a preview under policy. A valid end received before admission/binding is retained
-within the bounded event window and applied first. Matching duplicate event IDs have no new effects.
+The first accepted terminal intent wins, local or remote. The first local End atomically records a
+receipt with `callID`, `actionID` and the local reason before teardown. It returns `ended(receipt)`, and repeated local Ends
+return the identical receipt. A local End after a server-only end succeeds with
+`alreadyEnded(originalReason)` and creates no performed End receipt. Later remote ends may
+finish cleanup while the original reason remains fixed. `answeredElsewhere` is the single
+ownership fact, either terminal or a preview under policy. Matching duplicate event IDs have no
+new effects.
 
 Reasons are `localDeclined`, `localEnded`, `remoteEnded`, `unanswered`, `answeredElsewhere`,
 `declinedElsewhere`, `filtered(cause)` and `failed(error)`. Failure always includes a typed error.

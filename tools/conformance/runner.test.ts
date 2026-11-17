@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import type { Configuration, Input, Journey } from './model.ts';
+import type { Configuration, Input, Journey, State } from './model.ts';
 import type { JourneyDriver, Observation } from './runner.ts';
-import { check, runJourney } from './runner.ts';
-import { wireID } from './schema.ts';
+import { check, runJourney, selectTransition } from './runner.ts';
+import { decodeTransitions, wireID } from './schema.ts';
 import { validTypeFixtures } from './fixtures.types.ts';
 
 const configuration = { budgets: validTypeFixtures.budgets.value, outgoingMedia: 'whenProvided', connectionAuthority: 'application', maximumParticipatingCalls: 1, previewAnsweredElsewhere: false } as const satisfies Configuration;
@@ -80,11 +81,8 @@ test('refusal results and canonical ownership are checked independently', () => 
   assert.throws(() => check({ kind: 'call', callID, lifecycle: { kind: 'ended', reason: { kind: 'failed', error: 'refused' } } }, observed));
 });
 
-test('participation guards, preparation failure and elsewhere fallback select explicit rules', async () => {
-  const { readFileSync } = await import('node:fs');
-  const { decodeTransitions } = await import('./schema.ts');
-  const { selectTransition } = await import('./runner.ts');
-  const table = decodeTransitions(JSON.parse(readFileSync(new URL('../../spec/transitions.json', import.meta.url), 'utf8')));
+const table = decodeTransitions(JSON.parse(readFileSync(new URL('../../spec/transitions.json', import.meta.url), 'utf8')));
+test('participation guards, preparation failure and elsewhere fallback select explicit rules', () => {
   assert.equal(selectTransition(table, 'absent', 'start', new Set(['newCall'])), undefined);
   assert.equal(selectTransition(table, 'absent', 'start', new Set(['newCallAndSlot']))?.to, 'placing');
   assert.equal(selectTransition(table, 'previewing', 'join', new Set(['live'])), undefined);
@@ -107,4 +105,51 @@ test('participation guards, preparation failure and elsewhere fallback select ex
   assert.equal(selectTransition(table, 'ringing', 'noAnswerExpired', new Set(['live'])), undefined);
   assert.equal(selectTransition(table, 'ending', 'mediaReleased', new Set(['mediaReleased']))?.to, 'ended');
   assert.equal(selectTransition(table, 'ended', 'systemRemoved', new Set(['always']))?.to, 'same');
+});
+
+test('control requests, confirmations and failures have separate effects', () => {
+  for (const [request, applied, failed, effect] of [
+    ['hold', 'holdApplied', 'holdFailed', 'applyHold'],
+    ['mute', 'muteApplied', 'muteFailed', 'applyMute'],
+    ['video', 'videoApplied', 'videoFailed', 'applyVideo'],
+    ['tones', 'tonesApplied', 'tonesFailed', 'sendTones'],
+  ] as const) {
+    const requested = selectTransition(table, 'connected', request, new Set(['supported']));
+    assert.equal(requested?.to, 'same');
+    assert.deepEqual(requested?.effects, ['trackAction', effect]);
+    assert.equal(selectTransition(table, 'connected', applied, new Set()), undefined);
+    assert.deepEqual(selectTransition(table, 'connected', applied, new Set(['currentAttempt']))?.effects, ['publish', 'settleAction']);
+    assert.deepEqual(selectTransition(table, 'connected', failed, new Set(['currentAttempt']))?.effects, ['rejectAction']);
+  }
+  assert.equal(selectTransition(table, 'reconnecting', 'tones', new Set(['supported'])), undefined);
+  assert.deepEqual(selectTransition(table, 'reconnecting', 'tonesFailed', new Set(['currentAttempt']))?.effects, ['rejectAction']);
+  assert.deepEqual(selectTransition(table, 'connected', 'tones', new Set(['noToneTransport']))?.effects, ['rejectAction']);
+});
+
+test('retention precedes admission and stale permits can only be released', () => {
+  assert.deepEqual(selectTransition(table, 'absent', 'remoteEnd', new Set(['always']))?.effects, ['bufferEnd']);
+  assert.deepEqual(selectTransition(table, 'reporting', 'remoteEnd', new Set(['firstTerminalIntent', 'previewPolicy']))?.effects, ['retainEnd']);
+  assert.equal(selectTransition(table, 'reporting', 'admitted', new Set(['always', 'retainedEnd', 'retainedEndPreview']))?.to, 'previewing');
+  assert.equal(selectTransition(table, 'reporting', 'admitted', new Set(['always', 'retainedEnd']))?.to, 'ending');
+  assert.equal(selectTransition(table, 'reporting', 'admitted', new Set(['noRetainedEnd']))?.to, 'ringing');
+  assert.deepEqual(selectTransition(table, 'ringing', 'claimExpired', new Set(['notReconciled']))?.effects, ['emitObservation', 'reconcile']);
+  const states: readonly (State | 'absent')[] = ['absent', 'reporting', 'ringing', 'previewing', 'placing',
+    'dialing', 'connecting', 'connected', 'reconnecting', 'ending', 'ended'];
+  for (const state of states) {
+    const stale = selectTransition(table, state, 'authorityAllowed', new Set(['staleAttempt']));
+    assert.equal(stale?.to, 'same');
+    assert.deepEqual(stale?.effects, ['releasePermit']);
+  }
+});
+
+test('server-only End reports the original reason without borrowing a performed receipt', () => {
+  const callID = validTypeFixtures.endedReceipt.value.receipt.callID;
+  const expected = { kind: 'endResult', callID, result: validTypeFixtures.alreadyEnded.value } as const;
+  const before = { callID, result: validTypeFixtures.endedReceipt.value };
+  const after = { callID, result: validTypeFixtures.alreadyEnded.value };
+  check(expected, { ...complete, endResults: [before, after] });
+  assert.throws(() => check(expected, { ...complete, endResults: [after, before] }));
+  assert.throws(() => check(expected, complete), /Missing End result/);
+  assert.deepEqual(selectTransition(table, 'ended', 'localEnd', new Set(['always']))?.effects, ['returnAlreadyEnded']);
+  assert.deepEqual(selectTransition(table, 'ended', 'localEnd', new Set(['always', 'hasLocalEndReceipt']))?.effects, ['returnOriginalEnd']);
 });

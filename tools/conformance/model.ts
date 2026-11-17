@@ -30,6 +30,9 @@ export type RemoteEnd = { readonly kind: 'remoteEnded' | 'unanswered' | 'answere
   | { readonly kind: 'failed'; readonly error: EndError };
 export type EndReason = RemoteEnd | { readonly kind: 'localDeclined' | 'localEnded' }
   | { readonly kind: 'filtered'; readonly cause: 'doNotDisturb' | 'blockList' | 'unknown' };
+export type EndReceipt = Readonly<{ callID: WireID; actionID: WireID; reason: { readonly kind: 'localDeclined' | 'localEnded' } }>;
+export type EndResult = { readonly kind: 'ended'; readonly receipt: EndReceipt }
+  | { readonly kind: 'alreadyEnded'; readonly reason: EndReason };
 export type PreviewReason = { readonly kind: 'filtered'; readonly cause: 'doNotDisturb' | 'blockList' | 'unknown' }
   | { readonly kind: 'answeredElsewhere' | 'policy' };
 export type Lifecycle = { readonly kind: 'reporting' | 'ringing' | 'placing' | 'dialing' | 'connecting' }
@@ -55,21 +58,25 @@ export type Budgets = Readonly<{ answer: Readonly<{ total: number; claim: number
 export type Model = { readonly version: 0 } & (
   | { readonly kind: 'call'; readonly value: Call } | { readonly kind: 'action'; readonly value: Action }
   | { readonly kind: 'endReason'; readonly value: EndReason } | { readonly kind: 'error'; readonly value: CallError }
+  | { readonly kind: 'endResult'; readonly value: EndResult }
   | { readonly kind: 'budgets'; readonly value: Budgets });
 export type Configuration = Readonly<{ budgets: Budgets; outgoingMedia: 'whenProvided' | 'duringPlacement';
   connectionAuthority: 'application' | 'nativeMedia'; maximumParticipatingCalls: 1; previewAnsweredElsewhere: boolean }>;
 export type AuthorityDecision = { readonly kind: 'allow' } | { readonly kind: 'refuse'; readonly reason: Refusal };
 export type Input = { readonly kind: 'process'; readonly running: boolean; readonly javascriptAttached: boolean }
-  | ({ readonly kind: 'incoming' } & Invitation)
+  | ({ readonly kind: 'incoming'; readonly deferAdmission?: true } & Invitation)
   | { readonly kind: 'authority'; readonly callID: WireID; readonly claim: AuthorityDecision | { readonly kind: 'timeout' };
       readonly reconciliation: AuthorityDecision | { readonly kind: 'unknown' } }
-  | { readonly kind: 'action'; readonly origin: 'app' | 'system'; readonly action: Action }
-  | { readonly kind: 'placed' | 'provideMedia'; readonly callID: WireID }
+  | ({ readonly kind: 'action'; readonly origin: 'app' | 'system' } & (
+      | { readonly action: Action; readonly deferConfirmation?: never }
+      | { readonly action: Extract<Action, { readonly kind: 'hold' }>; readonly deferConfirmation: true }))
+  | { readonly kind: 'placed' | 'provideMedia' | 'admitted' | 'latePermit' | 'holdApplied'; readonly callID: WireID }
   | { readonly kind: 'bindRemote'; readonly callID: WireID; readonly remoteID: WireID }
   | { readonly kind: 'connected'; readonly callID: WireID; readonly eventID: WireID }
   | { readonly kind: 'remoteEnd'; readonly target: { readonly kind: 'call' | 'remote'; readonly id: WireID }; readonly eventID: WireID; readonly reason: RemoteEnd }
   | { readonly kind: 'advance'; readonly milliseconds: number };
-export type Metric = 'claims' | 'reconciliations' | 'settlements' | 'publications' | 'activations' | 'reports' | 'placements' | 'performedEnds' | 'releases';
+export type Metric = 'claims' | 'reconciliations' | 'settlements' | 'publications' | 'activations' | 'reports' | 'placements'
+  | 'performedEnds' | 'releases' | 'claimTimeouts' | 'permitReleases' | 'ringingPublications' | 'holdRequests';
 export type EndExpectation = Exclude<EndReason, { readonly kind: 'failed' }>
   | { readonly kind: 'failed'; readonly error: CallError['kind'] };
 export type LifecycleExpectation = { readonly kind: Exclude<State, 'previewing' | 'ending' | 'ended'> }
@@ -81,21 +88,25 @@ export type Expectation = { readonly kind: 'call'; readonly callID: WireID; read
   | { readonly kind: 'count'; readonly callID: WireID; readonly metric: Metric; readonly value: number }
   | { readonly kind: 'participating'; readonly callIDs: readonly WireID[] }
   | { readonly kind: 'systemEnd'; readonly callID: WireID; readonly cause: 'local' | 'remote' | 'missed' | 'rejected' }
+  | { readonly kind: 'endResult'; readonly callID: WireID; readonly result: EndResult }
   | ({ readonly kind: 'error'; readonly callID: WireID } & ErrorExpectation);
 export type Journey = Readonly<{ version: 0; id: WireID; configuration: Configuration;
   steps: readonly ({ readonly kind: 'input'; readonly input: Input } | { readonly kind: 'expect'; readonly expectation: Expectation })[] }>;
 export type Trigger = 'incoming' | 'admitted' | 'start' | 'placed' | 'answer' | 'claimExpired' | 'authorityAllowed'
   | 'mediaPrepared' | 'answerRefused' | 'reconciliationUnknown' | 'connected' | 'provideMedia' | 'bindRemote'
   | 'mediaReleased' | 'join' | 'transportLost' | 'transportRecovered' | 'deadlineExpired' | 'frameworkReset' | 'joinFailed' | 'mediaFailed'
-  | 'noAnswerExpired' | 'hold' | 'mute' | 'video' | 'localEnd' | 'remoteEnd' | 'systemRemoved' | 'lateCompletion';
-export type Guard = 'newCall' | 'newCallAndSlot' | 'joinEligible' | 'noRetainedEnd' | 'outgoingDeferred' | 'outgoingEager' | 'outgoingPrepared' | 'preparedJoin' | 'noAnswerPending' | 'incomingJoin' | 'answerEligible' | 'notReconciled'
+  | 'noAnswerExpired' | 'hold' | 'mute' | 'video' | 'tones' | 'localEnd' | 'remoteEnd' | 'systemRemoved' | 'lateCompletion'
+  | 'holdApplied' | 'muteApplied' | 'videoApplied' | 'tonesApplied' | 'holdFailed' | 'muteFailed' | 'videoFailed' | 'tonesFailed';
+export type Guard = 'newCall' | 'newCallAndSlot' | 'joinEligible' | 'outgoingDeferred' | 'outgoingEager' | 'outgoingPrepared' | 'preparedJoin' | 'noAnswerPending' | 'incomingJoin' | 'answerEligible' | 'notReconciled'
   | 'currentAttempt' | 'authorizedAnswerPending' | 'authoritativeAndPrepared' | 'mediaNotReady' | 'bufferedConnected'
   | 'live' | 'aliasAvailable' | 'supported' | 'firstTerminalIntent' | 'previewPolicy' | 'mediaReleased' | 'always'
-  | 'elsewhereRefusalPreview' | 'elsewhereRefusal' | 'notAllowedRefusal';
+  | 'elsewhereRefusalPreview' | 'elsewhereRefusal' | 'notAllowedRefusal' | 'retainedEnd' | 'retainedEndPreview'
+  | 'hasLocalEndReceipt' | 'staleAttempt' | 'noToneTransport' | 'noRetainedEnd';
 export type Effect = 'reserveIdentity' | 'reportIncoming' | 'publish' | 'requestPlacement' | 'nativeStart' | 'requestClaim'
   | 'reconcile' | 'prepareMedia' | 'settleAction' | 'rejectAction' | 'closeMedia' | 'requestRemoval' | 'setActive'
   | 'armConnection' | 'bufferProgress' | 'bindAlias' | 'drainEvents' | 'applyHold' | 'applyMute' | 'applyVideo'
-  | 'returnOriginalEnd' | 'armReconnection' | 'restorePreview' | 'ignore';
+  | 'returnOriginalEnd' | 'returnAlreadyEnded' | 'armReconnection' | 'restorePreview' | 'ignore'
+  | 'trackAction' | 'sendTones' | 'retainEnd' | 'bufferEnd' | 'retainBufferedEnd' | 'emitObservation' | 'releasePermit';
 export type Transition = Readonly<{ id: WireID; from: readonly (State | 'absent')[]; input: Trigger;
   guard: Guard; to: State | 'same' | 'absent'; effects: readonly Effect[] }>;
 export type Transitions = Readonly<{ version: 0; rules: readonly Transition[] }>;

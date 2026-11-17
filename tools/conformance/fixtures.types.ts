@@ -18,6 +18,8 @@ export const validTypeFixtures = {
   refused: { version: 0, kind: 'error', value: { kind: 'refused', reason: { kind: 'answeredElsewhere' } } },
   elsewhere: { version: 0, kind: 'endReason', value: { kind: 'answeredElsewhere' } },
   notAllowed: { version: 0, kind: 'endReason', value: { kind: 'failed', error: { kind: 'refused', reason: { kind: 'notAllowed' } } } },
+  endedReceipt: { version: 0, kind: 'endResult', value: { kind: 'ended', receipt: { callID: wireID('call-a'), actionID: wireID('end-a'), reason: { kind: 'localEnded' } } } },
+  alreadyEnded: { version: 0, kind: 'endResult', value: { kind: 'alreadyEnded', reason: { kind: 'remoteEnded' } } },
 } as const satisfies Readonly<Record<string, Model>>;
 // @ts-expect-error Only version 0 is accepted.
 const version: Model = { version: 1, kind: 'action', value: { kind: 'answer', callID: wireID('call-α') } };
@@ -47,4 +49,9 @@ const controlID: Model = { version: 0, kind: 'action', value: { kind: 'answer', 
 const answeredRefusal: Model = { version: 0, kind: 'endReason', value: { kind: 'failed', error: { kind: 'refused', reason: { kind: 'answeredElsewhere' } } } };
 // @ts-expect-error Declined-elsewhere ownership also has one canonical end reason.
 const declinedRefusal: Model = { version: 0, kind: 'endReason', value: { kind: 'failed', error: { kind: 'refused', reason: { kind: 'declinedElsewhere' } } } };
-export const invalidTypeFixtures = { version, state, parties, action, failed, budget, reason, refused, tones, paddedID, leadingID, controlID, answeredRefusal, declinedRefusal };
+// @ts-expect-error A performed End requires the original receipt.
+const missingEndReceipt: Model = { version: 0, kind: 'endResult', value: { kind: 'ended' } };
+// @ts-expect-error An already ended call cannot fabricate a local receipt.
+const spuriousEndReceipt: Model = { version: 0, kind: 'endResult', value: { kind: 'alreadyEnded', reason: { kind: 'remoteEnded' }, receipt: validTypeFixtures.endedReceipt.value.receipt } };
+export const invalidTypeFixtures = { version, state, parties, action, failed, budget, reason, refused, tones, paddedID,
+  leadingID, controlID, answeredRefusal, declinedRefusal, missingEndReceipt, spuriousEndReceipt };
