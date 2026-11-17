@@ -527,6 +527,21 @@ not infer source identity, synchronization or gate verdicts. Host source binding
 clock brackets, permission controls and complete SDK-driven journey assertions are still
 required before these receipts establish decoded-media success.
 
+`readNativeSyntheticVideo` validates the native synthetic receipts from a validated mailbox
+reply: clock/fixture identity, bounded source epochs and receiver rows, original seed fences,
+producer boundaries, full-plane provenance and lifecycle ordering. Source failures preserve
+only sanitized codes. `bindNativeVideoSource` requires the independently subscribed native
+participant and publication SID; an unpublished held-source epoch cannot supply that binding.
+`bindNativeVideoReceiver` selects the actual reverse publication and checks decoded markers
+against the far-end source ledger. Duplicate, content-free and ambiguous callbacks remain
+present. Binding does not establish frame-rate, privacy, observation-health or journey passes.
+
+`sampleNativeVideoClock` requests a fresh snapshot through the existing mailbox with the
+caller's absolute deadline and cancellation signal. It retains host send/receive times around
+the original native clock sample. `hostVideoBoundary` preserves the resulting uncertainty;
+remote source timestamps remain on their own clock. Diagnostics retain native media/RTP
+timestamps without using them as event or latency anchors. Unsafe numeric evidence fails.
+
 The host `VideoPeer` uses the existing fixture Room and independent decoded `VideoStream`.
 Its metadata retention is bounded at 4096 rows per series, with overflow invalidating the
 observation. It retains no continuous video. The native stream/encoder's internal queues are
