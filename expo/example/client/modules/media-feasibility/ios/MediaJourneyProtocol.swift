@@ -67,6 +67,17 @@
     let videoSource: MediaSDKVideoEvidence.Source?
   }
 
+  struct MediaJourneyServerVideoUpdate: Decodable {
+    enum Kind: String, Decodable { case video }
+    let type: Kind
+    let id: UUID
+    let sessionId: UUID
+    let fixtureId: String
+    let conversationId: String
+    let phaseId: String
+    let enabled: Bool
+  }
+
   /// Validates the serialized example control boundary before it touches real call media.
   struct MediaJourneySession {
     enum Failure: Error { case invalidIdentity, staleCommand, invalidPhase, invalidArguments }
@@ -107,13 +118,27 @@
         guard command.enabled != nil else { throw .invalidArguments }
       case .video:
         guard !terminalArmed, let phaseId, command.phaseId == phaseId else { throw .invalidPhase }
-        guard command.enabled != nil, command.videoSource != nil else { throw .invalidArguments }
+        guard command.enabled != nil, command.videoSource == .app else { throw .invalidArguments }
       case .end:
         guard terminalArmed, let phaseId, command.phaseId == phaseId else { throw .invalidPhase }
       case .close:
         guard command.phaseId == phaseId else { throw .invalidPhase }
       }
       commands.insert(command.id)
+    }
+
+    /// Applies only current, unseen updates from the fixture room's server-owned metadata.
+    mutating func acceptServerVideo(_ metadata: String) -> MediaJourneyServerVideoUpdate? {
+      guard !terminalArmed, metadata.utf8.count <= 32_768,
+        let update = try? JSONDecoder().decode(
+          MediaJourneyServerVideoUpdate.self, from: Data(metadata.utf8)),
+        update.sessionId == id, update.fixtureId == fixture.fixtureId,
+        update.conversationId == fixture.conversationId,
+        commands.count < 16_384, commands.insert(update.id).inserted
+      else { return nil }
+      // A replay must stay rejected even if a formerly out-of-phase ID now matches.
+      guard update.phaseId == phaseId else { return nil }
+      return update
     }
   }
 #endif

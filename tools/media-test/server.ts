@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { fork } from 'node:child_process';
-import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { appendFileSync, chmodSync, rmSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,6 +8,17 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { command, deadline, unusedPort } from './fixture-runtime.ts';
 import type { ServerEvent } from './server-protocol.ts';
+import type { NativeJourneyBudget } from './native-journey.ts';
+
+export interface ServerVideoUpdate {
+  readonly fixtureId: string;
+  readonly conversationId: string;
+  readonly sessionId: string;
+  readonly phaseId: string;
+  readonly enabled: boolean;
+}
+type RoomGrant = { roomList: true } | { roomAdmin: true; room: string } |
+  { roomJoin: true; room: string; canPublish: true; canSubscribe: true };
 
 // Homebrew/core@4583624f89284747817e229845754c7aee8227db (arm64_sequoia).
 const macDigest = '1268330c7264fcc1626f673f5abb8cb1a1691344ac171f1941014c45fe4da214';
@@ -94,6 +105,14 @@ async function startServerAttempt(binary: string, directory: string, ports: Serv
     for (const token of secrets) value = value.replaceAll(token, '<REDACTED>');
     return value.replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '<REDACTED>');
   };
+  const part = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const sign = (identity: string, expiresInSeconds: number, grants: RoomGrant) => {
+    const data = part({ alg: 'HS256', typ: 'JWT' }) + '.' + part({ iss: key, sub: identity,
+      exp: Math.floor(Date.now() / 1000) + expiresInSeconds, video: grants });
+    const token = data + '.' + createHmac('sha256', secret).update(data).digest('base64url');
+    secrets.add(token);
+    return token;
+  };
   const trace = (event: 'starting' | 'ready' | 'closed' | 'failed', extra: object = {}) => {
     const path = process.env.MEDIA_SERVER_TRACE_DIRECTORY;
     if (!path) return;
@@ -133,16 +152,13 @@ async function startServerAttempt(binary: string, directory: string, ports: Serv
     if (event.type === 'failed') throw failure;
     pid = event.pid;
     const url = `ws://127.0.0.1:${signalPort}`;
-    const part = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
-    const data = part({ alg: 'HS256', typ: 'JWT' }) + '.' + part({ iss: key, sub: 'readiness',
-      exp: Math.floor(Date.now() / 1000) + 60, video: { roomList: true } });
-    const readinessToken = data + '.' + createHmac('sha256', secret).update(data).digest('base64url');
-    secrets.add(readinessToken);
+    const roomService = `http://127.0.0.1:${signalPort}/twirp/livekit.RoomService`;
+    const readinessToken = sign('readiness', 60, { roomList: true });
     await deadline(12_000, 'Server health', async () => {
       while (true) {
         assertRunning();
         // Require the instance's fresh key; a health response can belong to another listener.
-        const response = await fetch(`${url.replace('ws:', 'http:')}/twirp/livekit.RoomService/ListRooms`, {
+        const response = await fetch(`${roomService}/ListRooms`, {
           method: 'POST', headers: { Authorization: `Bearer ${readinessToken}`, 'Content-Type': 'application/json' },
           body: '{}', signal: AbortSignal.timeout(1000),
         }).catch(() => undefined);
@@ -159,14 +175,44 @@ async function startServerAttempt(binary: string, directory: string, ports: Serv
       await delay(100); assertRunning();
     });
     trace('ready', { pid });
+    let videoUpdateState: 'idle' | 'pending' | 'uncertain' = 'idle';
     return { url, pid, room, close, abort: () => { if (owner.connected) owner.disconnect(); },
       alive: () => owner.exitCode === null && owner.signalCode === null,
       credentials(identity: string) {
-        const part = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
-        const data = part({ alg: 'HS256', typ: 'JWT' }) + '.' + part({ iss: key, sub: identity,
-          exp: Math.floor(Date.now() / 1000) + 3600, video: { roomJoin: true, room, canPublish: true, canSubscribe: true } });
-        const token = data + '.' + createHmac('sha256', secret).update(data).digest('base64url');
-        secrets.add(token); return { url, token };
+        return { url, token: sign(identity, 3600, { roomJoin: true, room, canPublish: true, canSubscribe: true }) };
+      },
+      /** Writes server-owned state for one transition. The caller must await its SDK event. */
+      async updateVideo(update: ServerVideoUpdate, budget: NativeJourneyBudget) {
+        budget.signal.throwIfAborted();
+        assert.equal(videoUpdateState, 'idle', 'Server video update already pending or uncertain');
+        const { fixtureId, conversationId, sessionId, phaseId, enabled } = update;
+        assert.ok(fixtureId && fixtureId.length <= 128 && conversationId && conversationId.length <= 256 &&
+          /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(sessionId) &&
+          phaseId && phaseId.length <= 4096 && typeof enabled === 'boolean', 'Invalid server video update');
+        const metadata = JSON.stringify({ type: 'video', id: randomUUID(), fixtureId, conversationId, sessionId, phaseId, enabled });
+        assert.ok(Buffer.byteLength(metadata) <= 32_768, 'Server video update is too large');
+        const body = JSON.stringify({ room, metadata });
+        const token = sign('video-control', 60, { roomAdmin: true, room });
+        const remaining = Math.ceil(budget.deadlineMs - performance.now());
+        assert.ok(Number.isSafeInteger(remaining) && remaining > 0 && remaining <= 0x7fff_ffff,
+          'Server video update deadline exceeded');
+        videoUpdateState = 'pending';
+        try {
+          const response = await fetch(`${roomService}/UpdateRoomMetadata`, {
+            method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body,
+            signal: AbortSignal.any([budget.signal, AbortSignal.timeout(remaining)]),
+          });
+          await response.body?.cancel();
+          budget.signal.throwIfAborted();
+          assert.ok(performance.now() < budget.deadlineMs, 'Server video update deadline exceeded');
+          assert.ok(response.ok, `Server video update rejected (HTTP ${response.status})`);
+          videoUpdateState = 'idle';
+        } catch (error) {
+          // The room may retain the update even when the client loses the reply.
+          videoUpdateState = 'uncertain';
+          throw error;
+        }
       } };
   } catch (error) { await close(); throw failure ?? error; }
 }

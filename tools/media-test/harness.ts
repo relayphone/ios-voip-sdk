@@ -1,7 +1,8 @@
 import { mkdirSync, chmodSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MediaPeer } from './peer.ts';
-import { serverBinary, startServer } from './server.ts';
+import { serverBinary, startServer, type ServerVideoUpdate } from './server.ts';
+import type { NativeJourneyBudget } from './native-journey.ts';
 
 export type HarnessAction = { type: 'publish'; markerId: string } | { type: 'hold' } | { type: 'capture' } | { type: 'leave' } | { type: 'reconnect' };
 export interface JoinCredentials { url: string; token: string }
@@ -33,6 +34,10 @@ export async function startHarness(directory: string, fixtureId: string) {
     async openVideo(clockID: string) {
       if (stopped) throw Error('Harness is stopped');
       return peer.openVideo(fixtureId, clockID);
+    },
+    async updateVideo(update: Omit<ServerVideoUpdate, 'fixtureId'>, budget: NativeJourneyBudget) {
+      if (stopped) throw Error('Harness is stopped');
+      await server.updateVideo({ ...update, fixtureId }, budget);
     },
     observation: () => ({ receiver: status(), capture: peer.capture(), lifecycle: peer.lifecycleObservation(), reconnect: peer.reconnectEvidence() }),
     async act(action: HarnessAction): Promise<void> {

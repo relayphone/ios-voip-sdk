@@ -72,12 +72,12 @@ test('serialized commands bind phase markers and every control to acknowledged n
     assert.deepEqual(f.received[0]!.frequencies, createMarker('phase-one').frequencies);
     assert.equal(f.received[1]!.phaseId, 'phase-one'); assert.equal(f.received[1]!.enabled, true);
     for (const action of [
-      { operation: 'video', enabled: true, source: 'app' }, { operation: 'video', enabled: false, source: 'server' },
+      { operation: 'video', enabled: true, source: 'app' }, { operation: 'video', enabled: false, source: 'app' },
       { operation: 'hold', enabled: true }, { operation: 'armTeardown' }, { operation: 'end' },
       { operation: 'snapshot' }, { operation: 'close' },
     ] as const) await f.mailbox.request(action, budget());
     const video = f.received.filter(command => command.operation === 'video');
-    assert.deepEqual(video.map(command => [command.enabled, command.videoSource]), [[true, 'app'], [false, 'server']]);
+    assert.deepEqual(video.map(command => [command.enabled, command.videoSource]), [[true, 'app'], [false, 'app']]);
     for (const command of f.received) {
       assert.equal(command.fixtureId, scope.fixtureId); assert.equal(command.conversationId, scope.conversationId);
       assert.equal(command.sessionId, f.state.sessionId.toLowerCase());

@@ -9,7 +9,7 @@ import { nativeJourneyFailure } from './native-video-evidence.ts';
 export type NativeJourneyAction =
   | { readonly operation: 'beginPhase'; readonly phaseId: string }
   | { readonly operation: 'mute' | 'hold'; readonly enabled: boolean }
-  | { readonly operation: 'video'; readonly enabled: boolean; readonly source: 'app' | 'server' }
+  | { readonly operation: 'video'; readonly enabled: boolean; readonly source: 'app' }
   | { readonly operation: 'snapshot' | 'armTeardown' | 'end' | 'close' };
 export interface NativeJourneyBudget {
   /** Absolute host monotonic deadline supplied by the caller; polling never renews it. */

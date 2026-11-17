@@ -632,6 +632,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let clock = ContinuousClock()
       let deadline = clock.now + .seconds(180)
       var lastCommand: UUID?
+      var lastServerMetadata: String?
       while clock.now < deadline {
         try Task.checkCancellation()
         if journeyPhaseAtMs != nil {
@@ -644,6 +645,18 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         }
         syntheticVideo?.heartbeat()
         syntheticVideoEvidence = await syntheticVideo?.snapshot()
+        // The fixture room carries server updates independently of the local command mailbox.
+        if let metadata = room.metadata, metadata != lastServerMetadata {
+          lastServerMetadata = metadata
+          if !videoTerminating, let update = journeySession?.acceptServerVideo(metadata) {
+            do {
+              try await client.setVideo(callID, enabled: update.enabled, source: .server)
+            } catch {
+              recordJourneyFailure(error, operation: .video)
+              throw error
+            }
+          }
+        }
         let path = directory.appending(path: "media-journey-command.json")
         if let data = try? Data(contentsOf: path),
           let command = try? JSONDecoder().decode(MediaJourneyCommand.self, from: data),
@@ -672,11 +685,10 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
               try await client.request(.hold(callID, onHold: command.enabled == true))
               try await until { self.publicationHeld == (command.enabled == true) }
             case .video:
-              guard let enabled = command.enabled, let source = command.videoSource else {
+              guard let enabled = command.enabled else {
                 throw MediaJourneySession.Failure.invalidArguments
               }
-              try await client.setVideo(
-                callID, enabled: enabled, source: source == .app ? .app : .server)
+              try await client.setVideo(callID, enabled: enabled)
             case .armTeardown: teardown.begin()
             case .end:
               guard teardown.receipt() != nil else {

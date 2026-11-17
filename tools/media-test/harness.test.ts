@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { after, before, test } from 'node:test';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -7,7 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
-import { dispose } from '@livekit/rtc-node';
+import { dispose, Room, RoomEvent } from '@livekit/rtc-node';
 import { command, deadline } from './fixture-runtime.ts';
 import { serverBinary, startServer } from './server.ts';
 import { MediaPeer } from './peer.ts';
@@ -53,6 +54,55 @@ test('another LiveKit instance cannot qualify with different credentials', async
     await rejectsServer('different-key', Number(new URL(existing.url).port));
     assert.ok(existing.alive(), 'The unrelated instance must remain running');
   } finally { await existing.close(); }
+});
+test('video updates arrive from the fixture server under a room-admin grant', async (t) => {
+  const harness = await startHarness(directory('server-video'), 'fixture-video');
+  const app = new Room();
+  const signals: string[] = [];
+  app.on(RoomEvent.RoomMetadataChanged, (metadata: string) => signals.push(metadata));
+  const update = { conversationId: 'call', sessionId: randomUUID(), phaseId: 'live', enabled: true };
+  const budget = () => ({ signal: new AbortController().signal, deadlineMs: performance.now() + 5000 });
+  try {
+    const { url, token } = harness.credentials('example');
+    await app.connect(url, token);
+    const participantAttempt = await fetch(
+      `${url.replace('ws:', 'http:')}/twirp/livekit.RoomService/UpdateRoomMetadata`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ room: app.name, metadata: 'participant update' }), signal: AbortSignal.timeout(5000),
+      });
+    await participantAttempt.body?.cancel();
+    assert.equal(participantAttempt.status, 401);
+    await assert.rejects(harness.updateVideo(update, { ...budget(), deadlineMs: performance.now() - 1 }), /deadline/);
+    await assert.rejects(harness.updateVideo(update, { ...budget(), signal: AbortSignal.abort(Error('cancelled')) }), /cancelled/);
+    await assert.rejects(harness.updateVideo({ ...update, phaseId: '' }, budget()), /Invalid server video update/);
+    for (const enabled of [true, false]) {
+      const previous = signals.length;
+      const pending = harness.updateVideo({ ...update, enabled }, budget());
+      await assert.rejects(harness.updateVideo(update, budget()), /already pending/);
+      await pending;
+      await until(() => signals.length > previous);
+      const value: Record<string, unknown> = JSON.parse(signals.at(-1)!);
+      const { id, ...message } = value;
+      assert.match(String(id), /^[0-9a-f-]{36}$/);
+      assert.deepEqual(message, { type: 'video', fixtureId: 'fixture-video', ...update, enabled });
+    }
+    assert.equal(signals.length, 2);
+    assert.notEqual(JSON.parse(signals[0]!).id, JSON.parse(signals[1]!).id);
+
+    const cancelled = new AbortController();
+    const send = globalThis.fetch;
+    t.mock.method(globalThis, 'fetch', async (...args: Parameters<typeof fetch>) => {
+      const response = await send(...args);
+      // Lose the host acknowledgement after the real server commits the update.
+      cancelled.abort(Error('Lost update acknowledgement'));
+      return response;
+    });
+    await assert.rejects(harness.updateVideo(update, { ...budget(), signal: cancelled.signal }));
+    await until(() => signals.length === 3);
+    await assert.rejects(harness.updateVideo(update, budget()), /uncertain/);
+  } finally {
+    try { await app.disconnect(); } finally { await harness.stop(); }
+  }
 });
 test('real peer publishes markers, captures app audio, holds silent and leaves', async () => {
   const harness = await startHarness(directory('peer'), 'controls');
