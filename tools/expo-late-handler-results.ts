@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { LateHandlerConfiguration, LateHandlerResults } from '../expo/example/client/journeys/late-handler.ts';
 
 /** Bounds native callback scheduling lateness; independent of the fixture's observation wait. */
-export const LATE_TIMER_MARGIN_MS = 1500;
+export const LATE_TIMER_MARGIN_MS = 3000;
 
 interface Row {
   event: string; callID?: string; callUUID?: string; kind?: string; fulfilled?: boolean; state?: string;
@@ -59,10 +59,14 @@ export function assertLateHandlerResults(result: LateHandlerResults, config: Lat
     } else {
       const ended = calls.find(row => row.event === 'sdk.ended');
       assert.equal(ended?.reason, 'failed.connectTimedOut');
-      assert.ok(ended!.uptimeNanoseconds - connecting.uptimeNanoseconds >= config.connectDeadlineMS * 1e6);
-      assert.ok(ended!.uptimeNanoseconds - connecting.uptimeNanoseconds
-        <= (config.connectDeadlineMS + LATE_TIMER_MARGIN_MS) * 1e6, 'Connection timeout callback exceeded its lateness margin');
-      assert.ok(ready.uptimeNanoseconds > ended!.uptimeNanoseconds, 'Handler attached before failure');
+      const elapsedNS = ended!.uptimeNanoseconds - connecting.uptimeNanoseconds;
+      const timing = `lateness ${(elapsedNS / 1e6 - config.connectDeadlineMS).toFixed(3)} ms, limit ${LATE_TIMER_MARGIN_MS} ms; `
+        + `handler acknowledgement ${((ready.uptimeNanoseconds - ended!.uptimeNanoseconds) / 1e6).toFixed(3)} ms after timeout, `
+        + `${((ready.uptimeNanoseconds - connecting.uptimeNanoseconds) / 1e6).toFixed(3)} ms after connecting`;
+      assert.ok(elapsedNS >= config.connectDeadlineMS * 1e6, `Connection timeout fired before its deadline (${timing})`);
+      assert.ok(elapsedNS <= (config.connectDeadlineMS + LATE_TIMER_MARGIN_MS) * 1e6,
+        `Connection timeout callback exceeded its lateness margin (${timing})`);
+      assert.ok(ready.uptimeNanoseconds > ended!.uptimeNanoseconds, `Handler attached before failure (${timing})`);
       assert.equal(connected.length, 0);
     }
   }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { LateHandlerConfiguration, LateHandlerResults, LateHandlerScenario } from '../expo/example/client/journeys/late-handler.ts';
-import { assertLateHandlerResults, LATE_TIMER_MARGIN_MS } from './expo-late-handler-results.ts';
+import { assertLateHandlerResults } from './expo-late-handler-results.ts';
 
 function fixture(scenario: LateHandlerScenario = 'after-deadline') {
   const config: LateHandlerConfiguration = { schemaVersion: 1, runID: 'fixture', scenario,
@@ -39,19 +39,24 @@ for (const scenario of ['before-deadline', 'after-deadline', 'preview-placement'
     const f = fixture(scenario); assertLateHandlerResults(f.result, f.config, f.journal());
   });
 }
-for (const latenessMS of [LATE_TIMER_MARGIN_MS, LATE_TIMER_MARGIN_MS + 1, 33000]) {
-  test(`native failure lateness ${latenessMS}ms ${latenessMS <= LATE_TIMER_MARGIN_MS ? 'passes' : 'fails'} the upper bound`, () => {
+for (const [latenessMS, passes] of [[3000, true], [3001, false], [33000, false]] as const) {
+  test(`native failure lateness ${latenessMS}ms ${passes ? 'passes' : 'fails'} the upper bound`, () => {
     const f = fixture();
     const connecting = f.rows.find(row => row.event === 'sdk.state' && row.state === 'connecting')!;
     const ended = f.rows.find(row => row.event === 'sdk.ended')!;
     ended.uptimeNanoseconds = connecting.uptimeNanoseconds + (f.config.connectDeadlineMS + latenessMS) * 1e6;
     // Keep attachment after the failure, so rejection must come from the timer upper bound.
-    f.rows.find(row => row.event === 'app.handlerReady')!.uptimeNanoseconds = ended.uptimeNanoseconds + 1;
-    f.result.attachedAtMS = f.config.connectDeadlineMS + latenessMS + 1;
-    if (latenessMS <= LATE_TIMER_MARGIN_MS) {
+    f.rows.find(row => row.event === 'app.handlerReady')!.uptimeNanoseconds = ended.uptimeNanoseconds + 125e6;
+    f.result.attachedAtMS = f.config.connectDeadlineMS + latenessMS + 125;
+    if (passes) {
       assertLateHandlerResults(f.result, f.config, f.journal());
     } else {
-      assert.throws(() => assertLateHandlerResults(f.result, f.config, f.journal()), /lateness margin/);
+      assert.throws(() => assertLateHandlerResults(f.result, f.config, f.journal()), (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.ok(error.message.includes(`lateness margin (lateness ${latenessMS.toFixed(3)} ms, limit 3000 ms; `
+          + `handler acknowledgement 125.000 ms after timeout, ${(27125 + latenessMS).toFixed(3)} ms after connecting)`));
+        return true;
+      });
     }
   });
 }
