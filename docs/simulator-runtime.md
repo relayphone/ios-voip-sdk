@@ -591,6 +591,15 @@ including when SDK push and application assertions overlap. Audio supports the m
 with observed activation, actual media activity and background-audio capability together.
 Unknown assertion coverage refuses an execution-conformance decision.
 
+`VoIPTesting.BackgroundExecutionScenario` provides the explicit fake adapter for host tests.
+Its begin operation records an independent identifier, adapter source and unverified allowance.
+Tests can queue denial or expiration before begin returns, expire only identifiers owned by
+that fake, or advance a supplied clock and call `expireDueAssertions()`. Advancing time alone
+does not invoke callbacks. Due callbacks run in deadline order, with begin order breaking ties.
+Each allowed assertion still needs an owner end after expiration; repeated end attempts remain
+visible for exactly-once cleanup checks. Typed observations are available as an async stream
+and retained history. This helper does not call UIKit or control an unknown system assertion.
+
 This reducer supplies decisions for later adapter and host integration. It does not yet
 observe UIKit assertions or send process signals. It emits no SDK deadline callback while
 an application is stopped. Real suspension lag, protected-data availability and system

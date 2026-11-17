@@ -7,6 +7,9 @@ Public API changes include migration guidance.
 
 ### Added
 
+- `VoIPTesting.BackgroundExecutionScenario` provides typed fake assertion observations,
+  injected-clock expiration, denial and expiration-before-return controls for background tests.
+
 - The optional media test kit provides simulator-only buffer video capture, deterministic pixel
   markers, bounded source/decoder ledgers and calibration measurements for video timing and drain.
 
