@@ -53,6 +53,14 @@ public struct ProcessLifecycleEvent: RawRepresentable, Codable, Equatable, Hasha
   public static let launchRequested = Self(rawValue: "process.launchRequested")
   /// The host durably recorded termination intent before verifying and stopping the process.
   public static let killRequested = Self(rawValue: "process.killRequested")
+  /// The host retained a bounded suspension intent before SIGSTOP.
+  public static let suspendRequested = Self(rawValue: "process.suspendRequested")
+  /// The host observed the pinned process in the kernel's stopped state.
+  public static let suspended = Self(rawValue: "process.suspended")
+  /// The host observed the pinned process running again after SIGCONT.
+  public static let resumed = Self(rawValue: "process.resumed")
+  /// Recovery failed; no successful resume may be inferred.
+  public static let suspensionCleanupFailed = Self(rawValue: "process.suspensionCleanupFailed")
   /// The application's earliest instrumented entry point executed.
   public static let entered = Self(rawValue: "process.entered")
   /// Runtime hooks and the mailbox are available.
@@ -111,7 +119,7 @@ public struct ProcessLifecycleRecord: Codable, Equatable, Sendable {
   public let uptimeNanoseconds: UInt64
   /// Wall-clock time for display only; never used to order events.
   public let wallTimeMS: Int64
-  /// Correlated push request, when present.
+  /// Correlated host control or push request, when present.
   public let requestID: UUID?
   /// Correlated individual delivery, when present.
   public let pushID: UUID?
