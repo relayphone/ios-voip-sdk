@@ -12,7 +12,7 @@ let package = Package(
     .target(
       name: "MediaJourneyProtocol", path: "ios",
       exclude: ["MediaFeasibilitySubscriber.swift", "MediaFeasibility.podspec"],
-      sources: ["MediaJourneyProtocol.swift"], swiftSettings: strict),
+      sources: ["MediaJourneyProtocol.swift", "MediaVideoEvidence.swift"], swiftSettings: strict),
     .testTarget(
       name: "ProtocolTests", dependencies: ["MediaJourneyProtocol"], path: "tests/ProtocolTests",
       swiftSettings: strict),

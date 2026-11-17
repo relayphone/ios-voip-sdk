@@ -42,12 +42,13 @@ struct ProtocolTests {
   func command(
     _ session: MediaJourneySession, _ operation: MediaJourneyCommand.Operation,
     phase: String? = nil, frequencies: [Double]? = nil, enabled: Bool? = nil,
-    sessionID: UUID? = nil
+    sessionID: UUID? = nil, videoSource: MediaSDKVideoEvidence.Source? = nil
   ) -> MediaJourneyCommand {
     MediaJourneyCommand(
       id: UUID(), sessionId: sessionID ?? session.id,
       fixtureId: session.fixture.fixtureId, conversationId: session.fixture.conversationId,
-      operation: operation, phaseId: phase, frequencies: frequencies, enabled: enabled)
+      operation: operation, phaseId: phase, frequencies: frequencies, enabled: enabled,
+      videoSource: videoSource)
   }
   @Test func rejectsForeignSessionReplayAndStalePhasesBeforeMediaControl() throws {
     var session = try MediaJourneySession(

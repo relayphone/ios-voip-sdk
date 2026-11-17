@@ -39,11 +39,17 @@
   struct MediaJourneyFixture: Decodable {
     let fixtureId: String
     let conversationId: String
+    let initialVideo: Bool?
+    init(fixtureId: String, conversationId: String, initialVideo: Bool? = nil) {
+      self.fixtureId = fixtureId
+      self.conversationId = conversationId
+      self.initialVideo = initialVideo
+    }
   }
 
   struct MediaJourneyCommand: Decodable {
     enum Operation: String, Decodable {
-      case beginPhase, snapshot, mute, hold, armTeardown, end, close
+      case beginPhase, snapshot, mute, hold, video, armTeardown, end, close
     }
     let id: UUID
     let sessionId: UUID
@@ -53,6 +59,7 @@
     let phaseId: String?
     let frequencies: [Double]?
     let enabled: Bool?
+    let videoSource: MediaSDKVideoEvidence.Source?
   }
 
   /// Validates the serialized example control boundary before it touches real call media.
@@ -93,6 +100,9 @@
       case .mute, .hold:
         guard let phaseId, command.phaseId == phaseId else { throw .invalidPhase }
         guard command.enabled != nil else { throw .invalidArguments }
+      case .video:
+        guard !terminalArmed, let phaseId, command.phaseId == phaseId else { throw .invalidPhase }
+        guard command.enabled != nil, command.videoSource != nil else { throw .invalidArguments }
       case .end:
         guard terminalArmed, let phaseId, command.phaseId == phaseId else { throw .invalidPhase }
       case .close:
