@@ -94,6 +94,8 @@ jobs:
           node expo/node_modules/typescript/bin/tsc --noEmit --strict --target es2024 --module nodenext \
             --moduleResolution nodenext --types node --typeRoots ./expo/node_modules/@types \
             --skipLibCheck --allowImportingTsExtensions tools/media-test/*.ts
+      - name: Check the independent video peer
+        run: VIDEO_PEER_INTEGRATION=1 node --test tools/media-test/video-peer.integration.test.ts
       - name: Boot the media test simulator
         run: |
           id=$(perl -e 'alarm 120; exec @ARGV' xcrun simctl create media-feasibility com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-2)

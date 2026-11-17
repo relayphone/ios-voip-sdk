@@ -140,3 +140,20 @@ The existing native execution deadline remains unchanged. Each invocation retain
 bounded stdout/stderr logs and a small launcher receipt, without command arguments or environment
 values. Stdout stays separate so decoder diagnostics cannot split structured native receipts. A timed-out observation remains failed. A caller must not reuse a simulator
 when cleanup is unconfirmed; recover that owned simulator before starting another test.
+
+The optional video peer uses the same authenticated Room and cleanup owner as the audio peer.
+Use a UUID fixture ID, then `await harness.openVideo(hostClockID)` for one publication epoch.
+Arm `observe(participant, epoch)` before the app publishes; its decoded observation binds the
+actual participant and publication SID. `publish(epoch)` supplies reverse-direction camera
+frames at the frozen 160×120/10 fps profile; `hold()` unpublishes while counters keep advancing.
+`stop()` freezes the source ledger before awaiting pacing and publication work. A later epoch
+uses a new phase instance after retaining the prior drain evidence. Failed or closed instances
+cannot qualify a window. The caller retains original source ledgers and confirmed SDK anchors;
+`assessVideo` checks participant/SID and both clock IDs, using full host/native bracket uncertainty.
+The terminal event time is explicit and independent of the producer stop timestamp.
+
+`VIDEO_PEER_INTEGRATION=1 node --test tools/media-test/video-peer.integration.test.ts` runs
+real VP8 encode/decode in both directions through the fixture server with the audio peer active,
+then verifies held source progress and joined stop. The native-media workflow runs this check
+before booting its simulator. Swift and TS marker tests share a byte-identical pixel vector;
+these contract tests precede the SDK-driven app journey adapter.

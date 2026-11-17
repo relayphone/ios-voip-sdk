@@ -1,3 +1,4 @@
+import { VideoPeer } from './video-peer.ts';
 import { AudioFrame, AudioSource, AudioStream, ConnectionState, LocalAudioTrack, Room, RoomEvent, SimulateScenarioKind, TrackKind, TrackPublishOptions, TrackSource } from '@livekit/rtc-node';
 import { createMarker, emissionSamples } from '../../expo/src/testing/marker.ts';
 import type { PCMCapture } from './marker-evidence.ts';
@@ -11,6 +12,8 @@ import { PeerReconnect } from './peer-reconnect.ts';
 /** One real far-end participant; observations remain independent of publication control. */
 export class MediaPeer {
   private room = new Room();
+  private videoPeer?: VideoPeer;
+  private videoOpening = false;
   private source = new AudioSource(48_000, 1, 100);
   private running = true;
   private emission: Int16Array | undefined;
@@ -68,6 +71,7 @@ export class MediaPeer {
       this.readerGeneration++;
     });
     this.room.on(RoomEvent.TrackSubscribed, track => {
+      if (track.kind !== TrackKind.KIND_AUDIO) return;
       if (this.trackAvailable) { this.readerFailed = true; return; }
       this.activeTrackSid = track.sid;
       this.trackAvailable = true; this.readerLive = true;
@@ -137,12 +141,25 @@ export class MediaPeer {
       readerFailed: this.readerFailed, publicationFailed: this.publicationFailed,
       receivedSamples: this.receivedSamples, energy: this.energy, rms: this.receivedSamples ? Math.sqrt(this.energy / this.receivedSamples) : null };
   }
+  /** One video phase shares this audio peer's authenticated Room and lifetime. */
+  async openVideo(fixture: string, clockID: string): Promise<VideoPeer> {
+    if (!this.running || !this.status().connected || this.videoOpening) throw Error('Video peer unavailable');
+    this.videoOpening = true;
+    try {
+      await this.videoPeer?.close();
+      if (!this.running || !this.status().connected) throw Error('Video peer retired');
+      return this.videoPeer = new VideoPeer(this.room, fixture, clockID);
+    } finally { this.videoOpening = false; }
+  }
   close(): Promise<void> {
     return this.stopping ??= deadline(10_000, 'Peer cleanup', async () => {
       this.running = false;
+      let videoFailed = false;
+      try { await this.videoPeer?.close(); } catch { videoFailed = true; }
       await Promise.allSettled(this.cancelReaders.map(cancel => cancel()));
       await Promise.allSettled(this.readers);
       await this.room.disconnect(); await this.source.close(); await this.publishing; await this.statistics;
+      if (videoFailed) throw Error('Video cleanup unconfirmed');
     });
   }
 }

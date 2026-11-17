@@ -450,3 +450,55 @@ Both are experiment settings, not throughput claims. The bounded smoke supplies 
 plumbing, not a substitute for repeated calibration across runner allocations and an
 independent holdout. Retain timeout/invalid trials as such; never widen the existing audio,
 result-acquisition or workflow deadlines to make a video measurement complete.
+
+
+### Qualified iOS synthetic video profile
+
+Use 160×120 at 10 fps, one VP8 layer. The portable marker layout and decode tolerance are
+shared by Swift and the host peer. The iOS gates are frozen from the original training
+observations and five complete holdout trials, including the two separately allocated
+completion trials. 320×240 remains diagnostic; Android requires separate qualification.
+
+| Gate | Frozen value |
+| --- | --- |
+| First independently decoded frame, conservative bound | 3000 ms |
+| Maximum unique-frame inter-arrival/final on-phase gap | 1600 ms |
+| Minimum unique fps in every complete one-second window | 3 |
+| Identified pre-boundary source drain after off/end | 800 ms |
+
+| Complete 160×120 trial | First-frame ms | Maximum gap ms | Minimum fps | Identified source drain ms |
+| --- | --- | --- | --- | --- |
+| first/off, allocation 30 | 340.437 | 165.242 | 8 | No source arrival after stop |
+| re-enable/end, allocation 31 | 246.938 | 157.624 | 8 | No source arrival after stop |
+| first/end, allocation 31 | 313.026 | 158.305 | 8 | 17.561 |
+| re-enable/off, allocation 32 | 811.968 | 129.373 | 8 | No source arrival after stop |
+| first/end, allocation 33 | 829.351 | 138.624 | 9 | 11.115 |
+
+The candidate snapshot SHA-256 is
+`e2f0fe87c7d3da92d09b4774fdea5128fda207a63a85fe35b083e10776ad8eaf`.
+The rule was rounded-up 100 ms headroom covering the larger of twice nearest-rank P95 and
+1.25 times the training maximum; the fps floor is the training minimum. Candidates were
+unchanged throughout [the initial holdout](https://github.com/relayphone/ios-voip-sdk/actions/runs/44058115723)
+and [the completion trials](https://github.com/relayphone/ios-voip-sdk/actions/runs/44066404246).
+The initial run's setup failure and four not-run cases are retained outside completion quota.
+
+These measurements qualify the standalone simulator source/codec profile with audio active.
+They do not establish a combined journey's total duration, a physical camera, Android,
+external-route audibility, or energy consumption. The existing acquisition/process deadlines
+remain unchanged; separate bounded invocations must reuse the build when needed.
+
+The host `VideoPeer` uses the existing fixture Room and independent decoded `VideoStream`.
+Its metadata retention is bounded at 4096 rows per series, with overflow invalidating the
+observation. It retains no continuous video. The native stream/encoder's internal queues are
+not directly measured. Read continuously; stalled observation coverage, stream failure,
+wrong participant/publication/epoch and missing lifecycle evidence cannot qualify silence.
+`assessVideo` consumes original source ledgers and confirmed-event anchors from its caller;
+source or publication acknowledgements alone are never decoded-frame evidence. Native clock
+samples must retain host send/receive brackets, refreshed at transitions; the full uncertainty
+contributes to conservative first-frame/drain bounds. Media/RTP timestamps are diagnostic only.
+The terminal evaluator receives the original confirmed event time separately from producer stop;
+it reports their lag and rejects source content generated after that event. Source ledgers also
+retain their participant/publication binding. Disposing or replacing an observer cannot qualify
+a negative interval; first validate fresh source content and a complete on-window before off.
+The original phase counter fence is mandatory: the dimension seed never supplies first-frame
+or complete-window rate evidence, even when its timestamp matches the enable event.
