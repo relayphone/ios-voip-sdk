@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { LateHandlerConfiguration, LateHandlerResults, LateHandlerScenario } from '../expo/example/client/journeys/late-handler.ts';
-import { assertLateHandlerResults } from './expo-late-handler-results.ts';
+import { assertLateHandlerResults, LATE_TIMER_MARGIN_MS } from './expo-late-handler-results.ts';
 
 function fixture(scenario: LateHandlerScenario = 'after-deadline') {
   const config: LateHandlerConfiguration = { schemaVersion: 1, runID: 'fixture', scenario,
@@ -39,8 +39,25 @@ for (const scenario of ['before-deadline', 'after-deadline', 'preview-placement'
     const f = fixture(scenario); assertLateHandlerResults(f.result, f.config, f.journal());
   });
 }
+for (const latenessMS of [LATE_TIMER_MARGIN_MS, LATE_TIMER_MARGIN_MS + 1, 33000]) {
+  test(`native failure lateness ${latenessMS}ms ${latenessMS <= LATE_TIMER_MARGIN_MS ? 'passes' : 'fails'} the upper bound`, () => {
+    const f = fixture();
+    const connecting = f.rows.find(row => row.event === 'sdk.state' && row.state === 'connecting')!;
+    const ended = f.rows.find(row => row.event === 'sdk.ended')!;
+    ended.uptimeNanoseconds = connecting.uptimeNanoseconds + (f.config.connectDeadlineMS + latenessMS) * 1e6;
+    // Keep attachment after the failure, so rejection must come from the timer upper bound.
+    f.rows.find(row => row.event === 'app.handlerReady')!.uptimeNanoseconds = ended.uptimeNanoseconds + 1;
+    f.result.attachedAtMS = f.config.connectDeadlineMS + latenessMS + 1;
+    if (latenessMS <= LATE_TIMER_MARGIN_MS) {
+      assertLateHandlerResults(f.result, f.config, f.journal());
+    } else {
+      assert.throws(() => assertLateHandlerResults(f.result, f.config, f.journal()), /lateness margin/);
+    }
+  });
+}
 for (const mutation of ['missing acknowledgement', 'wrong generation', 'wrong runtime', 'wrong failure',
-  'early failure', 'connected', 'positive packet', 'transport start', 'stale config', 'failed stage', 'early attachment']) {
+  'early failure', 'connected', 'positive packet', 'transport start', 'stale config', 'failed stage', 'early attachment',
+  'native attachment before failure']) {
   test(`rejects misleading completion: ${mutation}`, () => {
     const f = fixture();
     switch (mutation) {
@@ -55,6 +72,9 @@ for (const mutation of ['missing acknowledgement', 'wrong generation', 'wrong ru
       case 'stale config': f.result.configuration = { ...f.config, runID: 'stale' }; break;
       case 'failed stage': f.result.stage = 'failed'; break;
       case 'early attachment': f.result.attachedAtMS = 1000; break;
+      case 'native attachment before failure':
+        f.rows.find(row => row.event === 'app.handlerReady')!.uptimeNanoseconds = 27000000002;
+        break;
     }
     assert.throws(() => assertLateHandlerResults(f.result, f.config, f.rows.map(row => JSON.stringify(row)).join('\n')));
   });
