@@ -508,6 +508,25 @@ numeric error code. Raw error domains, descriptions, URLs and userInfo are exclu
 host preserves those sanitized fields when retiring a failed or uncertain mailbox, so a
 setup failure can identify itself without exposing fixture credentials.
 
+For DEBUG simulator builds, the journey fixture can additionally supply a `syntheticVideo`
+UUID. This opts into an app-owned 160×120/10 fps buffer source on the existing audio Room.
+Confirmed SDK video state selects ordinary publication; audio-only setup stays off. Initial
+video waits for the existing connected call, audio activation and Room readiness. Same-value
+updates preserve the source. Hold mutes the publication while generation keeps ticking;
+resume joins the held source and starts a new epoch/publication. Upgrading while already
+held starts only the upstream source. Off/end freezes the source ledger and joins pacing
+before unpublish or disconnect. Setup and publication errors retain sanitized video codes.
+
+The additive `syntheticVideo` reply retains each epoch's seed fence, original source ledger,
+publication SID and actual publication actions, plus independently decoded remote callback
+observations from the expected `far-end` participant. Remote renderers remain attached
+through unpublish/EOS and Room teardown until explicit mailbox close. Bounded heartbeats,
+Room publication changes and replacement/late-subscription invalidation remain visible.
+`VideoCalibration.observation()` exports receiver-only evidence on its own clock; it does
+not infer source identity, synchronization or gate verdicts. Host source binding, transition
+clock brackets, permission controls and complete SDK-driven journey assertions are still
+required before these receipts establish decoded-media success.
+
 The host `VideoPeer` uses the existing fixture Room and independent decoded `VideoStream`.
 Its metadata retention is bounded at 4096 rows per series, with overflow invalidating the
 observation. It retains no continuous video. The native stream/encoder's internal queues are

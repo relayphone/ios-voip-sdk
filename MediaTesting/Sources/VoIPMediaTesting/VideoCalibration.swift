@@ -45,6 +45,32 @@ public final class VideoCalibration: Sendable {
     /// Actual callback entry on the named observation clock.
     public let atUs: UInt64
   }
+  /// Original receiver-only evidence for a remote source on another clock.
+  /// Identity and cross-clock timing must be validated against the far-end ledger by the host.
+  public struct Observation: Encodable, Sendable {
+    /// Named native monotonic clock; remote source timestamps are never subtracted here.
+    public let clockID: UUID
+    /// Original decoded callback rows, including content-free and ambiguous images.
+    public let arrivals: [Arrival]
+    /// Actual attached/heartbeat/detached observations.
+    public let lifecycle: [Event]
+    /// Snapshot time on this receiver's clock.
+    public let observedAtUs: UInt64
+    /// Overflow or in-flight decoding makes the observation incomplete.
+    public let overflow: Bool
+    /// Maximum simultaneous decoder callbacks.
+    public let queueHighWaterMark: Int
+  }
+  /// Snapshots without requiring a local source or inventing remote clock synchronization.
+  public func observation() -> Observation {
+    let snapshot = state.withLock {
+      ($0.arrivals, $0.events, $0.overflow || $0.pending != 0, $0.highWater)
+    }
+    return Observation(
+      clockID: clock.id, arrivals: snapshot.0.sorted { $0.atUs < $1.atUs },
+      lifecycle: snapshot.1, observedAtUs: nowUs, overflow: snapshot.2,
+      queueHighWaterMark: snapshot.3)
+  }
   /// A complete fixed window's unique, ledger-matched decoded frame rate.
   public struct Window: Codable, Sendable {
     /// Start relative to the phase clock origin.
