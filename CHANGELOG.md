@@ -16,6 +16,9 @@ Public API changes include migration guidance.
 
 ### Added
 
+- `cksim execution-scenario` explicitly configures embedded Debug assertion allowances and
+  publishes typed execution assessments in status and the existing journal.
+
 - Embedded Debug simulator status retains typed UIKit assertion attempts, callback/return times,
   expiration-before-return history and duplicate end counts without inferring execution grants.
 

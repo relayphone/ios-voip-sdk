@@ -205,6 +205,8 @@ public struct RuntimeSnapshot: Codable, Equatable, Sendable {
   public var processLifecycle: ProcessReadinessSnapshot? = nil
   /// Explicit UIKit adapter observations; absent when instrumentation is unavailable.
   public var backgroundAssertions: BackgroundAssertionsSnapshot? = nil
+  /// Latest opt-in policy assessment; absent until explicitly configured.
+  public var executionDecision: ExecutionDecisionSnapshot? = nil
   /// Current calls, in the runtime's existing snapshot order.
   public let calls: [CallSnapshot]
   /// The number of unsettled runtime actions.
@@ -223,13 +225,15 @@ public struct RuntimeSnapshot: Codable, Equatable, Sendable {
   /// Creates a status value without changing runtime state or journal sequence.
   private enum CodingKeys: String, CodingKey {
     case calls, pending, audioActive, sequence, incomingErrorCode, incomingFilter,
-      providerConfigurations, retainedCalls, processLifecycle, backgroundAssertions
+      providerConfigurations, retainedCalls, processLifecycle, backgroundAssertions,
+      executionDecision
   }
   /// Writes history additively, preserving older status shapes when history is empty.
   public func encode(to encoder: any Encoder) throws {
     var values = encoder.container(keyedBy: CodingKeys.self)
     try values.encodeIfPresent(processLifecycle, forKey: .processLifecycle)
     try values.encodeIfPresent(backgroundAssertions, forKey: .backgroundAssertions)
+    try values.encodeIfPresent(executionDecision, forKey: .executionDecision)
     try values.encode(calls, forKey: .calls)
     try values.encode(pending, forKey: .pending)
     try values.encode(audioActive, forKey: .audioActive)
@@ -254,6 +258,8 @@ public struct RuntimeSnapshot: Codable, Equatable, Sendable {
       ProcessReadinessSnapshot.self, forKey: .processLifecycle)
     backgroundAssertions = try values.decodeIfPresent(
       BackgroundAssertionsSnapshot.self, forKey: .backgroundAssertions)
+    executionDecision = try values.decodeIfPresent(
+      ExecutionDecisionSnapshot.self, forKey: .executionDecision)
     retainedCalls = try values.decodeIfPresent([RetainedCall].self, forKey: .retainedCalls) ?? []
   }
 
@@ -261,7 +267,8 @@ public struct RuntimeSnapshot: Codable, Equatable, Sendable {
     calls: [CallSnapshot], pending: UInt, audioActive: Bool, sequence: UInt64,
     incomingErrorCode: Int, incomingFilter: IncomingFilterSnapshot,
     providerConfigurations: [ProviderSnapshot], retainedCalls: [RetainedCall] = [],
-    backgroundAssertions: BackgroundAssertionsSnapshot? = nil
+    backgroundAssertions: BackgroundAssertionsSnapshot? = nil,
+    executionDecision: ExecutionDecisionSnapshot? = nil
   ) {
     self.calls = calls
     self.pending = pending
@@ -272,6 +279,7 @@ public struct RuntimeSnapshot: Codable, Equatable, Sendable {
     self.providerConfigurations = providerConfigurations
     self.retainedCalls = retainedCalls
     self.backgroundAssertions = backgroundAssertions
+    self.executionDecision = executionDecision
   }
 }
 

@@ -171,6 +171,8 @@
     private var processLifecycle = RuntimeProcessLifecycle()
     #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
       private var backgroundAssertions = RuntimeBackgroundAssertions()
+      private var executionSession: RuntimeExecutionSession<ContinuousClock.Instant>?
+      private var lastExecutionDecision: ExecutionDecisionSnapshot?
     #endif
     private let epoch: UInt64
     private var requestWatcher: (any DispatchSourceFileSystemObject)?
@@ -400,6 +402,9 @@
               "assertionID": row.id.uuidString, "source": row.source.rawValue,
               "boundarySource": "explicit-uikit-adapter", "verification": "unverified",
             ], observed: DispatchTime(uptimeNanoseconds: row.uptimeNanoseconds))
+          do { _ = try assessExecution() } catch {
+            record(event: "execution.assessmentFailed", fields: ["verification": "unknown"])
+          }
         }
       }
 
@@ -1566,9 +1571,58 @@
         }
       }
     }
+    private func configureExecution(_ configuration: ExecutionScenarioConfiguration) throws {
+      #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
+        guard executionSession == nil,
+          let simulator = ProcessInfo.processInfo.environment["SIMULATOR_UDID"].flatMap(
+            UUID.init(uuidString:))
+        else {
+          throw ControlError.invalid(
+            "Execution scenario already configured or simulator identity unavailable")
+        }
+        executionSession = try RuntimeExecutionSession(
+          configuration: configuration,
+          invocation: ProcessLifecycleIdentity(
+            simulatorID: simulator, bundleID: bundleID, runID: runID),
+          pid: Int(getpid()), epoch: epoch, at: ContinuousClock.now)
+      #else
+        throw ControlError.invalid(
+          "Execution scenarios require embedded Debug adapter instrumentation")
+      #endif
+    }
+
+    private func assessExecution() throws -> ExecutionDecisionSnapshot? {
+      #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
+        guard var session = executionSession else { return nil }
+        defer { executionSession = session }
+        let decision = try session.read(
+          backgroundAssertions.snapshot, uptime: DispatchTime.now().uptimeNanoseconds)
+        if lastExecutionDecision?.configuration != decision.configuration
+          || lastExecutionDecision?.eligibility != decision.eligibility
+          || lastExecutionDecision?.reasons != decision.reasons
+        {
+          let data = try JSONEncoder().encode(decision)
+          guard var fields = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw ControlError.invalid("Execution decision cannot be journaled")
+          }
+          fields["boundarySource"] = "explicit-fixture-policy"
+          fields["verification"] = "unverified"
+          record(event: "execution.assessed", fields: fields)
+        }
+        lastExecutionDecision = decision
+        return decision
+      #else
+        return nil
+      #endif
+    }
+
     private func execute(_ command: ControlRequest) throws -> ControlResult {
       switch command.operation {
+      case .executionScenario(let configuration):
+        try configureExecution(configuration)
+        fallthrough
       case .status:
+        let decision = try assessExecution()
         let assertions: BackgroundAssertionsSnapshot?
         #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
           assertions = backgroundAssertions.snapshot
@@ -1587,7 +1641,7 @@
             }.map(providerSnapshot),
             retainedCalls: callTimeline.calls.values.sorted {
               $0.uuid.uuidString < $1.uuid.uuidString
-            }, backgroundAssertions: assertions))
+            }, backgroundAssertions: assertions, executionDecision: decision))
       case .answerAfter(let uuid, let offset):
         guard let call = calls[uuid], call.ringing, callTimeline.isAwaitingAnswer(uuid),
           let report = callTimeline.calls[uuid]?.reportedAtMS

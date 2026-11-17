@@ -672,8 +672,43 @@ boundaries, and regressed wake history fail without committing partial state. Te
 cannot be undone. Expiration before a valid begin return immediately retires that attempt in
 the replay, while the retained snapshot preserves the actual callback and return times.
 
-Assessment remains an internal, host-tested adapter; runtime startup does not enable it.
-It is not yet connected to host supervision or journaled execution decisions;
+Configure an embedded Debug runtime explicitly with:
+
+```sh
+cksim --simulator <udid> --bundle <bundle-id> execution-scenario --configuration-file scenario.json
+```
+
+The file supplies every input; durations are unverified fixture bounds in 1...120000 ms:
+
+```json
+{
+  "id": "11111111-1111-4111-8111-111111111111",
+  "lock": "locked",
+  "activity": "background",
+  "coverage": "explicitAdapters",
+  "applicationAllowanceMS": 15000,
+  "sdkPushAllowanceMS": 10000
+}
+```
+
+Only one immutable configuration is accepted per invocation; restart the app for another
+scenario. Lock and activity are explicit model inputs, independent of UIKit's actual state.
+Use `unknownAssertions` coverage when the fixture cannot account for every assertion it uses.
+The control requires embedded Debug adapter instrumentation and a simulator identity; the
+standalone runtime rejects it. Normal startup remains unconfigured.
+
+The control acknowledges with status. Subsequent `status --json` reads include
+`executionDecision`, with the full configuration, assessment uptime, active reason IDs/sources,
+unverified allowances, absolute due times and next deadline. A status acknowledgement records
+running execution independently of suspension eligibility. Status reads and real adapter
+boundaries reassess the history. Changed decisions enter the existing journal as
+`execution.assessed`, with `boundarySource: explicit-fixture-policy` and `verification: unverified`.
+Unchanged reads refresh the assessment time without adding duplicate decision rows.
+An invalid history read poisons the session: later reads fail, and adapter-triggered failures
+record `execution.assessmentFailed`, preventing a clean read from concealing a gap.
+
+This stage models explicit adapter assertions. Push-wake/audio observations and host
+supervision follow separately;
 the bounded host suspension control above is explicit fixture input.
 They emit no SDK deadline callback while
 an application is stopped. Real suspension lag, protected-data availability and system
