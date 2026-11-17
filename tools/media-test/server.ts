@@ -50,12 +50,38 @@ export class ServerStartError extends Error {
     this.exitAfterMs = exitAfterMs; this.closeAfterMs = closeAfterMs;
   }
 }
-/** Local credentials never appear in process arguments or logs. The first join creates the room. */
+async function allocatePorts(port?: number, previous?: ServerPorts): Promise<ServerPorts> {
+  const unavailable = new Set(previous ? Object.values(previous) : []);
+  const pick = async (protocol: 'tcp' | 'udp') => {
+    for (let probe = 0; probe < 8; probe++) {
+      const value = await unusedPort(protocol);
+      if (!unavailable.has(value)) {
+        if (previous) unavailable.add(value);
+        return value;
+      }
+    }
+    throw Error('Unable to allocate fresh server ports');
+  };
+  return { signal: port ?? await pick('tcp'), tcp: await pick('tcp'), udp: await pick('udp') };
+}
+/** Retry only an observed startup bind collision, after the failed owner has exited. */
 export async function startServer(binary: string, directory: string, port?: number) {
+  try { return await startServerAttempt(binary, directory, await allocatePorts(port)); }
+  catch (error) {
+    // Match the pinned server's actual CLI bind error, not a generic readiness failure.
+    const bind = /^listen (?:tcp|udp)[^\r\n]*: bind: address already in use\r?$/m;
+    if (port !== undefined || !(error instanceof ServerStartError) || error.code !== 1 || error.signal !== null ||
+        !(bind.test(error.stdout) || bind.test(error.stderr))) throw error;
+    console.warn(`Server startup bind collision; retrying once with fresh ports.\n${error.message}`);
+    return startServerAttempt(binary, directory, await allocatePorts(undefined, error.ports));
+  }
+}
+/** Local credentials never appear in process arguments or logs. The first join creates the room. */
+async function startServerAttempt(binary: string, directory: string, ports: ServerPorts) {
   mkdirSync(directory, { recursive: true, mode: 0o700 }); chmodSync(directory, 0o700);
   const key = randomBytes(16).toString('hex'), secret = randomBytes(32).toString('hex');
   const room = randomBytes(16).toString('hex');
-  const signalPort = port ?? await unusedPort(), tcpPort = await unusedPort(), udpPort = await unusedPort('udp');
+  const { signal: signalPort, tcp: tcpPort, udp: udpPort } = ports;
   const config = join(directory, 'server.json');
   writeFileSync(config, JSON.stringify({ port: signalPort,
     rtc: { tcp_port: tcpPort, udp_port: udpPort, use_external_ip: false, enable_loopback_candidate: true },
