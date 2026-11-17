@@ -487,22 +487,6 @@ They do not establish a combined journey's total duration, a physical camera, An
 external-route audibility, or energy consumption. The existing acquisition/process deadlines
 remain unchanged; separate bounded invocations must reuse the build when needed.
 
-The host `VideoPeer` uses the existing fixture Room and independent decoded `VideoStream`.
-Its metadata retention is bounded at 4096 rows per series, with overflow invalidating the
-observation. It retains no continuous video. The native stream/encoder's internal queues are
-not directly measured. Read continuously; stalled observation coverage, stream failure,
-wrong participant/publication/epoch and missing lifecycle evidence cannot qualify silence.
-`assessVideo` consumes original source ledgers and confirmed-event anchors from its caller;
-source or publication acknowledgements alone are never decoded-frame evidence. Native clock
-samples must retain host send/receive brackets, refreshed at transitions; the full uncertainty
-contributes to conservative first-frame/drain bounds. Media/RTP timestamps are diagnostic only.
-The terminal evaluator receives the original confirmed event time separately from producer stop;
-it reports their lag and rejects source content generated after that event. Source ledgers also
-retain their participant/publication binding. Disposing or replacing an observer cannot qualify
-a negative interval; first validate fresh source content and a complete on-window before off.
-The original phase counter fence is mandatory: the dimension seed never supplies first-frame
-or complete-window rate evidence, even when its timestamp matches the enable event.
-
 The example's existing native journey mailbox accepts `video` with `enabled` and
 `source: 'app' | 'server'`. It uses the public SDK video API after session, call and current
 phase validation; the host serializes `source` as `videoSource` in the native command.
@@ -523,3 +507,19 @@ Setup and rejected-command receipts retain only an allowlisted operation/categor
 numeric error code. Raw error domains, descriptions, URLs and userInfo are excluded. The
 host preserves those sanitized fields when retiring a failed or uncertain mailbox, so a
 setup failure can identify itself without exposing fixture credentials.
+
+The host `VideoPeer` uses the existing fixture Room and independent decoded `VideoStream`.
+Its metadata retention is bounded at 4096 rows per series, with overflow invalidating the
+observation. It retains no continuous video. The native stream/encoder's internal queues are
+not directly measured. Read continuously; stalled observation coverage, stream failure,
+wrong participant/publication/epoch and missing lifecycle evidence cannot qualify silence.
+`assessVideo` consumes original source ledgers and confirmed-event anchors from its caller;
+source or publication acknowledgements alone are never decoded-frame evidence. Native clock
+samples must retain host send/receive brackets, refreshed at transitions; the full uncertainty
+contributes to conservative first-frame/drain bounds. Media/RTP timestamps are diagnostic only.
+The terminal evaluator receives the original confirmed event time separately from producer stop;
+it reports their lag and rejects source content generated after that event. Source ledgers also
+retain their participant/publication binding. Disposing or replacing an observer cannot qualify
+a negative interval; first validate fresh source content and a complete on-window before off.
+The original phase counter fence is mandatory: the dimension seed never supplies first-frame
+or complete-window rate evidence, even when its timestamp matches the enable event.
