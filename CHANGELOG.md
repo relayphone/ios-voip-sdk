@@ -7,6 +7,9 @@ Public API changes include migration guidance.
 
 ### Added
 
+- Debug simulator fixtures can use `VoIPTesting.UIKitBackgroundExecution` to observe real UIKit
+  background-task boundaries alongside the SDK push adapter in the embedded runtime journal.
+
 - `VoIPTesting.BackgroundExecutionScenario` provides typed fake assertion observations,
   injected-clock expiration, denial and expiration-before-return controls for background tests.
 
