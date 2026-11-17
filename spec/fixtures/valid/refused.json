@@ -1,0 +1,10 @@
+{
+  "version": 0,
+  "kind": "error",
+  "value": {
+    "kind": "refused",
+    "reason": {
+      "kind": "answeredElsewhere"
+    }
+  }
+}

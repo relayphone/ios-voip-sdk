@@ -1,0 +1,17 @@
+{
+  "version": 0,
+  "id": "no-answer-direction",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":true,"javascriptAttached":true}},
+    {"kind":"input","input":{"kind":"incoming","callID":"missed-a","eventID":"invite-missed-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}},
+    {"kind":"input","input":{"kind":"advance","milliseconds":45000}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"missed-a","lifecycle":{"kind":"ended","reason":{"kind":"unanswered"}}}},
+    {"kind":"expect","expectation":{"kind":"systemEnd","callID":"missed-a","cause":"missed"}},
+    {"kind":"input","input":{"kind":"action","origin":"app","action":{"kind":"start","callID":"unanswered-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}}},
+    {"kind":"input","input":{"kind":"placed","callID":"unanswered-a"}},
+    {"kind":"input","input":{"kind":"advance","milliseconds":45000}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"unanswered-a","lifecycle":{"kind":"ended","reason":{"kind":"unanswered"}}}},
+    {"kind":"expect","expectation":{"kind":"systemEnd","callID":"unanswered-a","cause":"remote"}}
+  ]
+}

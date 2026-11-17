@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json",
+  "oneOf": [{"$ref":"#/$defs/callModel"},{"$ref":"#/$defs/actionModel"},{"$ref":"#/$defs/endReasonModel"},{"$ref":"#/$defs/errorModel"},{"$ref":"#/$defs/budgetsModel"}],
+  "$defs": {
+    "id": {"type":"string","minLength":1,"maxLength":256,"pattern":"[^\\u0009-\\u000D\\u0020\\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF]"},
+    "duration": {"type":"integer","minimum":1,"maximum":9007199254740991},
+    "integer": {"type":"integer","minimum":0,"maximum":9007199254740991},
+    "state": {"enum":["reporting","ringing","previewing","placing","dialing","connecting","connected","reconnecting","ending","ended"]},
+    "timestamp": {"type":"string","minLength":1,"maxLength":256,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"},
+    "handle": {"oneOf": [
+      {"type":"object","properties":{"kind":{"const":"phone"},"e164":{"type":"string","minLength":1,"maxLength":256,"pattern":"^\\+[1-9][0-9]{1,14}$"}},"required":["kind","e164"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"email"},"address":{"type":"string","minLength":1,"maxLength":256,"pattern":"^[^\\s@]+@[^\\s@]+$"}},"required":["kind","address"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"opaque"},"value":{"type":"string","minLength":1,"maxLength":256,"pattern":"\\S"}},"required":["kind","value"],"additionalProperties":false}
+    ]},
+    "line": {"type": "object", "additionalProperties": false,
+      "required": ["accountID","id","label"],
+      "properties": {
+        "accountID": {"$ref":"#/$defs/id"},
+        "id": {"$ref":"#/$defs/id"},
+        "label": {"type":"string","minLength":1,"maxLength":256}
+      }
+    },
+    "party": {"type": "object", "additionalProperties": false,
+      "required": ["id","handle","displayName"],
+      "properties": {
+        "id": {"$ref":"#/$defs/id"},
+        "handle": {"$ref":"#/$defs/handle"},
+        "displayName": {"type":"string","minLength":1,"maxLength":256}
+      }
+    },
+    "refusal": {"type": "object", "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {"enum":["answeredElsewhere","declinedElsewhere","notAllowed"]}
+      }
+    },
+    "error": {"oneOf": [
+      {"type":"object","properties":{"kind":{"const":"unknownCall"},"callID":{"$ref":"#/$defs/id"}},"required":["kind","callID"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"invalidTransition"},"state":{"$ref":"#/$defs/state"}},"required":["kind","state"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"unsupported"},"feature":{"enum":["hold","video","tones","preview","merge"]}},"required":["kind","feature"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"permissionRequired"},"permission":{"enum":["microphone","camera"]}},"required":["kind","permission"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"refused"},"reason":{"$ref":"#/$defs/refusal"}},"required":["kind","reason"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"authorityUnavailable"},"cause":{"enum":["credentialsUnavailable","network","invalidResponse"]}},"required":["kind","cause"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"claimTimedOut"},"actionID":{"$ref":"#/$defs/id"}},"required":["kind","actionID"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"placementFailed"},"cause":{"enum":["cancelled","handlerFailed"]}},"required":["kind","cause"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"deadlineExceeded"},"stage":{"enum":["placement","claim","reconciliation","mediaPreparation","audioActivation","connection","reconnection","systemAction","noAnswer"]}},"required":["kind","stage"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"mediaFailed"},"stage":{"enum":["prepare","activate","release"]},"cause":{"enum":["transport","permission","timeout"]}},"required":["kind","stage","cause"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"remoteIdentityConflict"},"remoteID":{"$ref":"#/$defs/id"}},"required":["kind","remoteID"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"invalidConfiguration"},"field":{"enum":["answer","placement","incomingRing","outgoingNoAnswer","mediaPreparation","audioActivation","audioRecovery","connection","reconnection"]}},"required":["kind","field"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"systemFailed"},"cause":{"type":"object","properties":{"platform":{"enum":["ios","android"]},"kind":{"enum":["admission","action","removal","reset","audio"]},"code":{"type":"integer","minimum":-2147483648,"maximum":2147483647}},"required":["platform","kind"],"additionalProperties":false}},"required":["kind","cause"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"bridgeUnavailable"}},"required":["kind"],"additionalProperties":false}
+    ]},
+    "remoteEnd": {"oneOf": [
+      {"type":"object","properties":{"kind":{"enum":["remoteEnded","unanswered","answeredElsewhere","declinedElsewhere"]}},"required":["kind"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"failed"},"error":{"$ref":"#/$defs/error"}},"required":["kind","error"],"additionalProperties":false}
+    ]},
+    "endReason": {"oneOf": [
+      {"$ref":"#/$defs/remoteEnd"},
+      {"type":"object","properties":{"kind":{"enum":["localDeclined","localEnded"]}},"required":["kind"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"filtered"},"cause":{"enum":["doNotDisturb","blockList","unknown"]}},"required":["kind","cause"],"additionalProperties":false}
+    ]},
+    "previewReason": {"oneOf": [
+      {"type":"object","properties":{"kind":{"const":"filtered"},"cause":{"enum":["doNotDisturb","blockList","unknown"]}},"required":["kind","cause"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"enum":["answeredElsewhere","policy"]}},"required":["kind"],"additionalProperties":false}
+    ]},
+    "lifecycle": {"oneOf": [
+      {"type":"object","properties":{"kind":{"enum":["reporting","ringing","placing","dialing","connecting"]}},"required":["kind"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"previewing"},"reason":{"$ref":"#/$defs/previewReason"}},"required":["kind","reason"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"enum":["connected","reconnecting"]},"connectedAt":{"$ref":"#/$defs/timestamp"}},"required":["kind","connectedAt"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"ending"},"reason":{"$ref":"#/$defs/endReason"}},"required":["kind","reason"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"ended"},"reason":{"$ref":"#/$defs/endReason"},"endedAt":{"$ref":"#/$defs/timestamp"}},"required":["kind","reason","endedAt"],"additionalProperties":false}
+    ]},
+    "media": {"type": "object", "additionalProperties": false,
+      "required": ["owner","preparation","audio","transport"],
+      "properties": {
+        "owner": {"enum":["native","application"]},
+        "preparation": {"enum":["unprovided","preparing","prepared","released"]},
+        "audio": {"enum":["inactive","active"]},
+        "transport": {"enum":["disconnected","connecting","connected","reconnecting"]}
+      }
+    },
+    "call": {"type": "object", "additionalProperties": false,
+      "required": ["id","line","direction","parties","lifecycle","held","muted","video","media"],
+      "properties": {
+        "id": {"$ref":"#/$defs/id"},
+        "remoteID": {"$ref":"#/$defs/id"},
+        "line": {"$ref":"#/$defs/line"},
+        "direction": {"enum":["incoming","outgoing"]},
+        "parties": {"type":"array","items":{"$ref":"#/$defs/party"},"minItems":1},
+        "lifecycle": {"$ref":"#/$defs/lifecycle"},
+        "held": {"type":"boolean"},
+        "muted": {"type":"boolean"},
+        "video": {"type":"boolean"},
+        "media": {"$ref":"#/$defs/media"}
+      }
+    },
+    "action": {"oneOf": [
+      {"type":"object","properties":{"kind":{"const":"start"},"callID":{"$ref":"#/$defs/id"},"line":{"$ref":"#/$defs/line"},"party":{"$ref":"#/$defs/party"}},"required":["kind","callID","line","party"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"enum":["answer","join","end"]},"callID":{"$ref":"#/$defs/id"}},"required":["kind","callID"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"hold"},"callID":{"$ref":"#/$defs/id"},"held":{"type":"boolean"}},"required":["kind","callID","held"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"mute"},"callID":{"$ref":"#/$defs/id"},"muted":{"type":"boolean"}},"required":["kind","callID","muted"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"video"},"callID":{"$ref":"#/$defs/id"},"enabled":{"type":"boolean"}},"required":["kind","callID","enabled"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"tones"},"callID":{"$ref":"#/$defs/id"},"digits":{"type":"array","items":{"enum":["0","1","2","3","4","5","6","7","8","9","*","#"]},"minItems":1}},"required":["kind","callID","digits"],"additionalProperties":false}
+    ]},
+    "budgets": {"type": "object", "additionalProperties": false,
+      "required": ["answer","placement","incomingRing","outgoingNoAnswer","mediaPreparation","audioActivation","audioRecovery","connection","reconnection"],
+      "properties": {
+        "answer": {"type":"object","properties":{"total":{"type":"integer","minimum":1,"maximum":9007199254740991},"claim":{"type":"integer","minimum":1,"maximum":9007199254740991},"reconciliation":{"type":"integer","minimum":1,"maximum":9007199254740991},"settlementReserve":{"type":"integer","minimum":1,"maximum":9007199254740991}},"required":["total","claim","reconciliation","settlementReserve"],"additionalProperties":false},
+        "placement": {"type":"integer","minimum":1,"maximum":9007199254740991},
+        "incomingRing": {"type":"integer","minimum":1,"maximum":9007199254740991},
+        "outgoingNoAnswer": {"type":"integer","minimum":1,"maximum":9007199254740991},
+        "mediaPreparation": {"type":"integer","minimum":1,"maximum":9007199254740991},
+        "audioActivation": {"type":"integer","minimum":1,"maximum":9007199254740991},
+        "audioRecovery": {"type":"integer","minimum":1,"maximum":9007199254740991},
+        "connection": {"type":"integer","minimum":1,"maximum":9007199254740991},
+        "reconnection": {"type":"integer","minimum":1,"maximum":9007199254740991}
+      }
+    },
+    "configuration": {"type": "object", "additionalProperties": false,
+      "required": ["budgets","outgoingMedia","connectionAuthority","maximumParticipatingCalls","previewAnsweredElsewhere"],
+      "properties": {
+        "budgets": {"$ref":"#/$defs/budgets"},
+        "outgoingMedia": {"enum":["whenProvided","duringPlacement"]},
+        "connectionAuthority": {"enum":["application","nativeMedia"]},
+        "maximumParticipatingCalls": {"const":1},
+        "previewAnsweredElsewhere": {"type":"boolean"}
+      }
+    },
+    "decision": {"oneOf": [
+      {"type":"object","properties":{"kind":{"const":"allow"}},"required":["kind"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"refuse"},"reason":{"$ref":"#/$defs/refusal"}},"required":["kind","reason"],"additionalProperties":false}
+    ]},
+    "input": {"oneOf": [
+      {"type":"object","properties":{"kind":{"const":"process"},"running":{"type":"boolean"},"javascriptAttached":{"type":"boolean"}},"required":["kind","running","javascriptAttached"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"incoming"},"callID":{"$ref":"#/$defs/id"},"eventID":{"$ref":"#/$defs/id"},"line":{"$ref":"#/$defs/line"},"party":{"$ref":"#/$defs/party"}},"required":["kind","callID","eventID","line","party"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"authority"},"callID":{"$ref":"#/$defs/id"},"claim":{"oneOf":[{"$ref":"#/$defs/decision"},{"type":"object","properties":{"kind":{"const":"timeout"}},"required":["kind"],"additionalProperties":false}]},"reconciliation":{"oneOf":[{"$ref":"#/$defs/decision"},{"type":"object","properties":{"kind":{"const":"unknown"}},"required":["kind"],"additionalProperties":false}]}},"required":["kind","callID","claim","reconciliation"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"action"},"origin":{"enum":["app","system"]},"action":{"$ref":"#/$defs/action"}},"required":["kind","origin","action"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"enum":["placed","provideMedia"]},"callID":{"$ref":"#/$defs/id"}},"required":["kind","callID"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"bindRemote"},"callID":{"$ref":"#/$defs/id"},"remoteID":{"$ref":"#/$defs/id"}},"required":["kind","callID","remoteID"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"connected"},"callID":{"$ref":"#/$defs/id"},"eventID":{"$ref":"#/$defs/id"}},"required":["kind","callID","eventID"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"remoteEnd"},"target":{"type":"object","properties":{"kind":{"enum":["call","remote"]},"id":{"$ref":"#/$defs/id"}},"required":["kind","id"],"additionalProperties":false},"eventID":{"$ref":"#/$defs/id"},"reason":{"$ref":"#/$defs/remoteEnd"}},"required":["kind","target","eventID","reason"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"advance"},"milliseconds":{"type":"integer","minimum":1,"maximum":9007199254740991}},"required":["kind","milliseconds"],"additionalProperties":false}
+    ]},
+    "endExpectation": {"oneOf": [
+      {"type":"object","properties":{"kind":{"enum":["localDeclined","localEnded","remoteEnded","unanswered","answeredElsewhere","declinedElsewhere"]}},"required":["kind"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"filtered"},"cause":{"enum":["doNotDisturb","blockList","unknown"]}},"required":["kind","cause"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"failed"},"error":{"enum":["unknownCall","invalidTransition","unsupported","permissionRequired","refused","authorityUnavailable","claimTimedOut","placementFailed","deadlineExceeded","mediaFailed","remoteIdentityConflict","invalidConfiguration","systemFailed","bridgeUnavailable"]}},"required":["kind","error"],"additionalProperties":false}
+    ]},
+    "lifecycleExpectation": {"oneOf": [
+      {"type":"object","properties":{"kind":{"enum":["reporting","ringing","placing","dialing","connecting","connected","reconnecting"]}},"required":["kind"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"previewing"},"reason":{"$ref":"#/$defs/previewReason"}},"required":["kind","reason"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"enum":["ending","ended"]},"reason":{"$ref":"#/$defs/endExpectation"}},"required":["kind","reason"],"additionalProperties":false}
+    ]},
+    "expectation": {"oneOf": [
+      {"type":"object","properties":{"kind":{"const":"call"},"callID":{"$ref":"#/$defs/id"},"lifecycle":{"$ref":"#/$defs/lifecycleExpectation"},"lineID":{"$ref":"#/$defs/id"},"remoteID":{"$ref":"#/$defs/id"},"held":{"type":"boolean"},"muted":{"type":"boolean"}},"required":["kind","callID","lifecycle"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"count"},"callID":{"$ref":"#/$defs/id"},"metric":{"enum":["claims","reconciliations","settlements","publications","activations","reports","placements","performedEnds","releases"]},"value":{"type":"integer","minimum":0,"maximum":9007199254740991}},"required":["kind","callID","metric","value"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"participating"},"callIDs":{"type":"array","items":{"$ref":"#/$defs/id"},"minItems":0}},"required":["kind","callIDs"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"systemEnd"},"callID":{"$ref":"#/$defs/id"},"cause":{"enum":["local","remote","missed","rejected"]}},"required":["kind","callID","cause"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"error"},"callID":{"$ref":"#/$defs/id"},"error":{"enum":["unknownCall","invalidTransition","unsupported","permissionRequired","refused","authorityUnavailable","claimTimedOut","placementFailed","deadlineExceeded","mediaFailed","remoteIdentityConflict","invalidConfiguration","systemFailed","bridgeUnavailable"]}},"required":["kind","callID","error"],"additionalProperties":false}
+    ]},
+    "journey": {"type": "object", "additionalProperties": false,
+      "required": ["version","id","configuration","steps"],
+      "properties": {
+        "version": {"const":0},
+        "id": {"$ref":"#/$defs/id"},
+        "configuration": {"$ref":"#/$defs/configuration"},
+        "steps": {"type":"array","items":{"oneOf":[{"type":"object","properties":{"kind":{"const":"input"},"input":{"$ref":"#/$defs/input"}},"required":["kind","input"],"additionalProperties":false},{"type":"object","properties":{"kind":{"const":"expect"},"expectation":{"$ref":"#/$defs/expectation"}},"required":["kind","expectation"],"additionalProperties":false}]},"minItems":2}
+      }
+    },
+    "transition": {"type": "object", "additionalProperties": false,
+      "required": ["id","from","input","guard","to","effects"],
+      "properties": {
+        "id": {"$ref":"#/$defs/id"},
+        "from": {"type":"array","items":{"enum":["absent","reporting","ringing","previewing","placing","dialing","connecting","connected","reconnecting","ending","ended"]},"minItems":1},
+        "input": {"enum":["incoming","admitted","start","placed","answer","claimExpired","authorityAllowed","mediaPrepared","answerRefused","reconciliationUnknown","connected","provideMedia","bindRemote","noAnswerExpired","hold","mute","video","localEnd","remoteEnd","systemRemoved","lateCompletion","join","transportLost","transportRecovered","deadlineExpired","frameworkReset","joinFailed","mediaFailed","mediaReleased"]},
+        "guard": {"enum":["newCall","noRetainedEnd","outgoingDeferred","outgoingEager","outgoingPrepared","preparedJoin","noAnswerPending","incomingJoin","answerEligible","notReconciled","currentAttempt","authorizedAnswerPending","authoritativeAndPrepared","mediaNotReady","bufferedConnected","live","aliasAvailable","supported","firstTerminalIntent","previewPolicy","mediaReleased","always","newCallAndSlot","joinEligible"]},
+        "to": {"enum":["same","absent","reporting","ringing","previewing","placing","dialing","connecting","connected","reconnecting","ending","ended"]},
+        "effects": {"type":"array","items":{"enum":["reserveIdentity","reportIncoming","publish","requestPlacement","nativeStart","requestClaim","reconcile","prepareMedia","settleAction","rejectAction","closeMedia","requestRemoval","setActive","armConnection","bufferProgress","bindAlias","drainEvents","applyHold","applyMute","applyVideo","returnOriginalEnd","ignore","armReconnection","restorePreview"]},"minItems":0}
+      }
+    },
+    "transitions": {"type": "object", "additionalProperties": false,
+      "required": ["version","rules"],
+      "properties": {
+        "version": {"const":0},
+        "rules": {"type":"array","items":{"$ref":"#/$defs/transition"},"minItems":1}
+      }
+    },
+    "callModel": {"type": "object", "additionalProperties": false,
+      "required": ["version","kind","value"],
+      "properties": {
+        "version": {"const":0},
+        "kind": {"const":"call"},
+        "value": {"$ref":"#/$defs/call"}
+      }
+    },
+    "actionModel": {"type": "object", "additionalProperties": false,
+      "required": ["version","kind","value"],
+      "properties": {
+        "version": {"const":0},
+        "kind": {"const":"action"},
+        "value": {"$ref":"#/$defs/action"}
+      }
+    },
+    "endReasonModel": {"type": "object", "additionalProperties": false,
+      "required": ["version","kind","value"],
+      "properties": {
+        "version": {"const":0},
+        "kind": {"const":"endReason"},
+        "value": {"$ref":"#/$defs/endReason"}
+      }
+    },
+    "errorModel": {"type": "object", "additionalProperties": false,
+      "required": ["version","kind","value"],
+      "properties": {
+        "version": {"const":0},
+        "kind": {"const":"error"},
+        "value": {"$ref":"#/$defs/error"}
+      }
+    },
+    "budgetsModel": {"type": "object", "additionalProperties": false,
+      "required": ["version","kind","value"],
+      "properties": {
+        "version": {"const":0},
+        "kind": {"const":"budgets"},
+        "value": {"$ref":"#/$defs/budgets"}
+      }
+    }
+  }
+}

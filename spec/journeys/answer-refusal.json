@@ -1,0 +1,17 @@
+{
+  "version": 0,
+  "id": "answer-refusal",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":true,"javascriptAttached":true}},
+    {"kind":"input","input":{"kind":"incoming","callID":"refused-a","eventID":"invite-refused-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}},
+    {"kind":"input","input":{"kind":"authority","callID":"refused-a","claim":{"kind":"refuse","reason":{"kind":"notAllowed"}},"reconciliation":{"kind":"unknown"}}},
+    {"kind":"input","input":{"kind":"action","origin":"system","action":{"kind":"answer","callID":"refused-a"}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"refused-a","lifecycle":{"kind":"ended","reason":{"kind":"failed","error":"refused"}}}},
+    {"kind":"expect","expectation":{"kind":"error","callID":"refused-a","error":"refused"}},
+    {"kind":"expect","expectation":{"kind":"systemEnd","callID":"refused-a","cause":"rejected"}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"refused-a","metric":"reconciliations","value":0}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"refused-a","metric":"settlements","value":1}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"refused-a","metric":"publications","value":0}}
+  ]
+}

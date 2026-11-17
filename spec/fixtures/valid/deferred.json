@@ -1,0 +1,36 @@
+{
+  "version": 0,
+  "kind": "call",
+  "value": {
+    "id": "outgoing-a",
+    "line": {
+      "accountID": "account-a",
+      "id": "personal",
+      "label": "Personal"
+    },
+    "direction": "outgoing",
+    "parties": [
+      {
+        "id": "alice",
+        "handle": {
+          "kind": "opaque",
+          "value": "sip:alice@example.test"
+        },
+        "displayName": "Alice"
+      }
+    ],
+    "lifecycle": {
+      "kind": "dialing"
+    },
+    "held": false,
+    "muted": false,
+    "video": false,
+    "media": {
+      "owner": "native",
+      "preparation": "unprovided",
+      "audio": "inactive",
+      "transport": "disconnected"
+    },
+    "remoteID": "remote-a"
+  }
+}

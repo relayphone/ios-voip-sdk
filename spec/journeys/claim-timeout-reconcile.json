@@ -1,0 +1,20 @@
+{
+  "version": 0,
+  "id": "claim-timeout-reconcile",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":true,"javascriptAttached":true}},
+    {"kind":"input","input":{"kind":"incoming","callID":"timeout-a","eventID":"invite-timeout-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}},
+    {"kind":"input","input":{"kind":"authority","callID":"timeout-a","claim":{"kind":"timeout"},"reconciliation":{"kind":"unknown"}}},
+    {"kind":"input","input":{"kind":"action","origin":"system","action":{"kind":"answer","callID":"timeout-a"}}},
+    {"kind":"input","input":{"kind":"advance","milliseconds":3000}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"timeout-a","lifecycle":{"kind":"ended","reason":{"kind":"failed","error":"claimTimedOut"}}}},
+    {"kind":"expect","expectation":{"kind":"error","callID":"timeout-a","error":"claimTimedOut"}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"timeout-a","metric":"reconciliations","value":1}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"timeout-a","metric":"settlements","value":1}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"timeout-a","metric":"publications","value":0}},
+    {"kind":"input","input":{"kind":"advance","milliseconds":4500}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"timeout-a","metric":"reconciliations","value":1}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"timeout-a","metric":"settlements","value":1}}
+  ]
+}
