@@ -251,6 +251,11 @@ public enum StartupError: Error, Hashable, Sendable {
 final class Subscribers: Sendable {
   private let continuations = Mutex<[Int: AsyncStream<CallEvent>.Continuation]>([:])
   private let nextKey = Atomic(0)
+  private let observe: (@VoIPActor @Sendable (CallEvent) -> Void)?
+
+  init(observe: (@VoIPActor @Sendable (CallEvent) -> Void)? = nil) {
+    self.observe = observe
+  }
 
   func stream() -> AsyncStream<CallEvent> {
     let (stream, continuation) = AsyncStream.makeStream(of: CallEvent.self)
@@ -262,7 +267,8 @@ final class Subscribers: Sendable {
     return stream
   }
 
-  func yield(_ event: CallEvent) {
+  @VoIPActor func yield(_ event: CallEvent) {
+    observe?(event)
     for continuation in continuations.withLock({ Array($0.values) }) {
       continuation.yield(event)
     }

@@ -16,6 +16,9 @@ Public API changes include migration guidance.
 
 ### Added
 
+- Swift host tests round-trip the shared v0 model fixtures and run the shared journeys against
+  the native call engine. The suite tracks behavioral gaps as known issues.
+
 - `cksim execution-scenario` explicitly configures embedded Debug assertion allowances and
   publishes typed execution assessments in status and the existing journal.
 

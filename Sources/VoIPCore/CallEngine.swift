@@ -559,7 +559,7 @@ final class CallEngine {
       do { try await clock.sleep(due) } catch { return }
       self?.timerFired(key.deadline, for: key.id, generation: generation)
     }
-    timers[key] = Timer(generation: generation, task: task)
+    timers[key] = Timer(generation: generation, due: due, task: task)
   }
 
   /// Configures the audio session for the call, then prepares its media.
@@ -656,7 +656,95 @@ final class CallEngine {
     }
     order.removeAll { states[$0] == nil }
   }
+
+  #if SWIFT_PACKAGE
+    fileprivate var timeUntilNextDeadline: Duration? {
+      timers.values.map(\.due).min().map { max(.zero, $0 - clock.now()) }
+    }
+
+    /// Joins due timers and preparation tasks when the test media port completes immediately.
+    fileprivate func synchronize() async {
+      while true {
+        let now = clock.now()
+        // A due timer can cancel media preparation.
+        let tasks = timers.values.filter { $0.due <= now }.map(\.task) + preparations.values
+        guard !tasks.isEmpty else { return }
+        for task in tasks { await task.value }
+      }
+    }
+
+    fileprivate func cancelWork() {
+      for timer in timers.values { timer.task.cancel() }
+      for preparation in preparations.values { preparation.cancel() }
+    }
+  #endif
 }
+
+#if SWIFT_PACKAGE
+  /// Package access to the same engine and event stream used by VoIPClient, with retained calls
+  /// and a synchronization point for deterministic port tests.
+  @VoIPActor
+  package final class SpecEngine {
+    package enum Phase: Sendable {
+      case reporting, placing, visible
+    }
+
+    private let engine: CallEngine
+
+    package init(
+      framework: any CallingFramework, media: any CallMedia, push: any PushSource,
+      configuration: VoIPConfiguration, clock: any Clock<Duration>,
+      observe: @escaping @VoIPActor @Sendable (CallEvent) -> Void
+    ) {
+      engine = CallEngine(
+        framework: framework, media: media, audio: nil, pushSource: push,
+        configuration: configuration, clock: clock, subscribers: Subscribers(observe: observe),
+        publish: { _ in })
+      engine.attach()
+    }
+
+    package var calls: [Call] { engine.states.values.map(\.call) }
+
+    package var participating: Set<CallID> {
+      Set(
+        engine.states.values.lazy.filter { state in
+          guard !state.call.isOnHold else { return false }
+          switch state.phase {
+          case .requesting, .placing, .preparing, .dialing, .connecting, .connected, .reconnecting:
+            return true
+          case .reporting, .ringing, .previewing, .ended:
+            return false
+          }
+        }.map { $0.call.id })
+    }
+
+    package func phase(for id: CallID) -> Phase {
+      switch engine.states[id]?.phase {
+      case .reporting: .reporting
+      case .requesting, .placing: .placing
+      default: .visible
+      }
+    }
+
+    package func request(_ action: Action) async throws(ActionError) {
+      try await engine.request(action)
+    }
+
+    package func setVideo(_ id: CallID, enabled: Bool) async throws(ActionError) {
+      try await engine.setVideo(id, enabled: enabled, source: .app)
+    }
+
+    package func confirmPlaced(_ id: CallID) { engine.confirmPlaced(id) }
+
+    package func receive(_ event: ServerEvent, for id: CallID, eventID: EventID) {
+      engine.receive(event, for: id, eventID: eventID)
+    }
+
+    package var timeUntilNextDeadline: Duration? { engine.timeUntilNextDeadline }
+    package func synchronize() async { await engine.synchronize() }
+    package func close() { engine.cancelWork() }
+  }
+#endif
 
 /// The client's view of the engine: its calls that haven't ended, and whether audio is active.
 struct Snapshot: Sendable {
@@ -673,6 +761,7 @@ private struct TimerKey: Hashable {
 
 private struct Timer {
   let generation: UInt64
+  let due: Duration
   let task: Task<Void, Never>
 }
 
