@@ -1,0 +1,36 @@
+name: Android JVM
+
+on:
+  pull_request:
+    paths: &paths
+      - 'android/**'
+      - 'spec/**'
+      - '.github/workflows/android.yml'
+      - 'VERSION'
+  push:
+    branches: [main]
+    paths: *paths
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-jvm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  jvm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: ./gradlew check --no-daemon --console=plain
