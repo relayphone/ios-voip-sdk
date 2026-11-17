@@ -500,3 +500,5 @@ The terminal evaluator receives the original confirmed event time separately fro
 it reports their lag and rejects source content generated after that event. Source ledgers also
 retain their participant/publication binding. Disposing or replacing an observer cannot qualify
 a negative interval; first validate fresh source content and a complete on-window before off.
+The original phase counter fence is mandatory: the dimension seed never supplies first-frame
+or complete-window rate evidence, even when its timestamp matches the enable event.

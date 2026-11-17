@@ -10,7 +10,7 @@ function setup() {
   for(let i=0;i<25;i++){now=i*100;observer.tick();frame(i);}
   now=2500;observer.tick();source.stoppedAtUs=2500000;source.finalCounter=24;source.finalEpoch=1;observer.record('unpublished');
   for(let i=26;i<=34;i++){now=i*100;observer.tick();}
-  const options={participant:'app',publication:'video',nativeAnchorMs:0,nativeBoundaryMs:2500,bracket:{clockID:'native',hostClockID:observer.clockID,nativeMs:0,sentMs:0,receivedMs:0},terminal:{clockID:'native',hostClockID:observer.clockID,nativeMs:2500,sentMs:2500,receivedMs:2500}};
+  const options={participant:'app',publication:'video',nativeAnchorMs:0,afterCounter:0,nativeBoundaryMs:2500,bracket:{clockID:'native',hostClockID:observer.clockID,nativeMs:0,sentMs:0,receivedMs:0},terminal:{clockID:'native',hostClockID:observer.clockID,nativeMs:2500,sentMs:2500,receivedMs:2500}};
   return {observer,source,options,frame,setTime:(t:number)=>{now=t;}};
 }
 test('real pixel observations require advancing identities, whole windows, clock brackets and lifecycle', () => {
@@ -57,8 +57,16 @@ test('wrong epoch, low-rate windows and a long freeze cannot qualify', () => {
   assert.equal(assessVideo(foreign.observer.receipt(),foreign.source,foreign.options).foreign,1);
   const low=setup(),sparse=low.observer.receipt();sparse.arrivals=sparse.arrivals.filter((_,i)=>i%5===0);
   assert.equal(assessVideo(sparse,low.source,low.options).onPassed,false);
-  const frozen=setup(),receipt=frozen.observer.receipt(),times=[0,100,200,1900,1950,1990];
-  receipt.arrivals=times.map((atMs,i)=>({...receipt.arrivals[i]!,atMs}));
+  const frozen=setup(),receipt=frozen.observer.receipt(),times=[100,200,300,2000,2050,2090];
+  receipt.arrivals=times.map((atMs,i)=>({...receipt.arrivals[i+1]!,atMs}));
   const result=assessVideo(receipt,frozen.source,frozen.options);
   assert.deepEqual(result.windows,[3,3]);assert.ok(result.gapMs>1600);assert.equal(result.onPassed,false);
+});
+
+test('the dimension seed cannot satisfy first-frame or increase a complete window rate', () => {
+  const f=setup(),receipt=f.observer.receipt();
+  receipt.arrivals=receipt.arrivals.slice(0,3);
+  const result=assessVideo(receipt,f.source,f.options);
+  assert.equal(result.firstMs,100.001);assert.equal(result.onPassed,false);
+  assert.throws(()=>assessVideo(f.observer.receipt(),f.source,{...f.options,afterCounter:-1}));
 });

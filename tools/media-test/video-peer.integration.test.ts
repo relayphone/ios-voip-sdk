@@ -37,7 +37,7 @@ test('real VP8 uplink decode, reverse source, held production and joined stop', 
     assert.throws(capture);await app.localParticipant!.unpublishTrack(publication.sid!,false);await delay(1000);
     const receipt=peer.observation();assert.ok(receipt);
     const bracket={hostClockID:receipt.clockID,clockID:'native-test',nativeMs:anchor,sentMs:anchor,receivedMs:anchor};
-    const result=assessVideo(receipt,ledger,{participant:'app',publication:publication.sid!,nativeAnchorMs:anchor,nativeBoundaryMs:stop,bracket,terminal:{...bracket,nativeMs:stop,sentMs:stop,receivedMs:stop}});
+    const result=assessVideo(receipt,ledger,{participant:'app',publication:publication.sid!,nativeAnchorMs:anchor,afterCounter:0,nativeBoundaryMs:stop,bracket,terminal:{...bracket,nativeMs:stop,sentMs:stop,receivedMs:stop}});
     assert.equal(result.onPassed,true,JSON.stringify(result));assert.equal(result.offPassed,true,JSON.stringify(result));
     await peer.publish(2);assert.equal((await deadline(5000,'Reverse decoded frame',()=>reverse.promise)).direction,1);
     await peer.hold();const generated=peer.sourceReceipt().generated.length;await delay(250);assert.ok(peer.sourceReceipt().generated.length>generated);

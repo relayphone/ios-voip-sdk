@@ -41,8 +41,9 @@ export function hostVideoBoundary(nativeMs: number, bracket: VideoClockBracket) 
 }
 /** Independently validates decoded identities; stats/publish acknowledgements cannot satisfy any gate. */
 export function assessVideo(receipt: VideoReceipt, source: VideoSourceReceipt, options: {
-  participant: string; publication: string; nativeAnchorMs: number; bracket: VideoClockBracket; afterCounter?: number; terminal?: VideoClockBracket; nativeBoundaryMs?: number;
+  participant: string; publication: string; nativeAnchorMs: number; bracket: VideoClockBracket; afterCounter: number; terminal?: VideoClockBracket; nativeBoundaryMs?: number;
 }) {
+  if (!Number.isSafeInteger(options.afterCounter) || options.afterCounter < 0 || options.afterCounter > 0xffffffff) throw Error('Invalid video counter fence');
   if (options.participant !== receipt.scope.participant || options.publication !== receipt.scope.publication || source.participant !== options.participant || source.publication !== options.publication) throw Error('Video subscription mismatch');
   if (options.bracket.hostClockID !== receipt.clockID || (options.terminal && options.terminal.hostClockID !== receipt.clockID)) throw Error('Host video clock mismatch');
   if (source.clockID !== options.bracket.clockID || (options.terminal && source.clockID !== options.terminal.clockID)) throw Error('Video clock mismatch');
@@ -63,7 +64,7 @@ export function assessVideo(receipt: VideoReceipt, source: VideoSourceReceipt, o
     if (arrival.image.y.width !== videoGates.width || arrival.image.y.height !== videoGates.height || m.fixture.toLowerCase() !== scope.fixture.toLowerCase() || m.direction !== scope.direction || m.epoch !== scope.epoch || !originals.has(videoIdentity(m))) { foreign++; continue; }
     matched.push(arrival);
     if (seen.has(videoIdentity(m))) { duplicate++; continue; } seen.add(videoIdentity(m));
-    if (m.sourceTimeUs >= options.nativeAnchorMs * 1000 && m.counter > (options.afterCounter ?? -1) && arrival.atMs >= anchor.earliest) fresh.push(arrival);
+    if (m.sourceTimeUs >= options.nativeAnchorMs * 1000 && m.counter > options.afterCounter && arrival.atMs >= anchor.earliest) fresh.push(arrival);
   }
   const end = options.terminal && options.nativeBoundaryMs !== undefined ? hostVideoBoundary(options.nativeBoundaryMs, options.terminal) : undefined;
   const on = fresh.filter(a => !end || a.atMs < end.earliest), windows: number[] = [];
