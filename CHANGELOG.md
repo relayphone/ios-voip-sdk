@@ -5,6 +5,11 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+### Added
+
+- The optional media test kit provides simulator-only buffer video capture, deterministic pixel
+  markers, bounded source/decoder ledgers and calibration measurements for video timing and drain.
+
 ## 0.8.0 (2026-11-16)
 
 ### Added
