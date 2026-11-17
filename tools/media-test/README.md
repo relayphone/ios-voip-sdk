@@ -119,3 +119,24 @@ Replies retain the original snapshot as untrusted `evidence`. This transport val
 and timing envelopes only. It does not certify PCM coverage, processing, SDK end state or native
 release; those must pass the shared contract and terminal oracle separately. The existing
 feasibility runner is unchanged; the complete shared-contract journey remains to be connected.
+
+### Prebuilt native tests
+
+`run-native-tests.ts` runs the standalone `.xctest` bundle described by a single-target
+`.xctestrun` specification through the selected simulator's `xctest` host. Build the
+small `SimulatorTestHost.swift` executable with the simulator SDK first. The wrapper
+owns a simulator process group and reports its PID before replacing itself with xctest;
+the TypeScript supervisor owns the host command group. Both are stopped on timeout,
+interruption or output overflow. Confirmed cleanup means no live group members;
+non-running zombies can await their system reaper.
+
+A passed-test log line never replaces a successful native process exit. The launcher
+also requires a nonempty Swift Testing result and confirmed cleanup. App-hosted/UI
+targets and embedded test selections are rejected. The optional final CLI argument
+selects a suite as `Module.Suite`. Fixture environment and built-product search paths
+are taken from the specification, including when Products were relocated.
+
+The existing native execution deadline remains unchanged. Each invocation retains a
+bounded stdout/stderr logs and a small launcher receipt, without command arguments or environment
+values. Stdout stays separate so decoder diagnostics cannot split structured native receipts. A timed-out observation remains failed. A caller must not reuse a simulator
+when cleanup is unconfirmed; recover that owned simulator before starting another test.

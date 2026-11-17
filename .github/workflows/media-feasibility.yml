@@ -120,9 +120,15 @@ jobs:
             echo "Expected one native test run specification, found ${#test_runs[@]}" >&2
             exit 1
           fi
-          /usr/bin/time -p perl -e 'alarm 300; exec @ARGV' xcodebuild test-without-building \
-            -xctestrun "${test_runs[0]}" -destination "platform=iOS Simulator,id=$id" \
-            -only-testing:VoIPMediaTestingTests > "$RUNNER_TEMP/media-package-tests.log" 2>&1
+          xcrun --sdk iphonesimulator swiftc -swift-version 6 -target arm64-apple-ios26.0-simulator \
+            "$GITHUB_WORKSPACE/tools/media-test/SimulatorTestHost.swift" -o "$RUNNER_TEMP/native-test-host"
+          /usr/bin/time -p node "$GITHUB_WORKSPACE/tools/media-test/run-native-tests.ts" 300 \
+            "$RUNNER_TEMP/media-build-diagnostics/native-tests-run" "$id" "${test_runs[0]}" \
+            "$RUNNER_TEMP/native-test-host" > "$RUNNER_TEMP/media-package-tests.log" 2>&1
+          NATIVE_LAUNCHER_SPEC="${test_runs[0]}" NATIVE_LAUNCHER_SIMULATOR="$id" \
+            NATIVE_LAUNCHER_HOST="$RUNNER_TEMP/native-test-host" \
+            NATIVE_LAUNCHER_DIRECTORY="$RUNNER_TEMP/media-build-diagnostics/launcher-controls" \
+            node --test "$GITHUB_WORKSPACE/tools/media-test/native-test-launcher.integration.test.ts"
       - name: Check media hooks and continuous silence windows
         run: |
           id=$(cat "$RUNNER_TEMP/media-simulator")
