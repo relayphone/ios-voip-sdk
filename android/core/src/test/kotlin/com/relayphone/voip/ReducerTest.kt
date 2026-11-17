@@ -428,7 +428,7 @@ class ReducerTest {
         val call: Call get() = state.calls.getValue(id)
 
         fun send(input: Input): List<Effect> {
-            val transition = reduce(state, input, instant, trace)
+            val transition = reduce(state, input, Now(monotonic = instant, utc = instant), trace)
             state = transition.state
             transition.effects.filterIsInstance<Effect.ArmTimer>().forEach { timers[it.kind] = it }
             return transition.effects

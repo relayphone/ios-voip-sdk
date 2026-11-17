@@ -11,7 +11,7 @@ import org.junit.jupiter.api.TestFactory
 
 class JourneysTest {
     @TestFactory
-    fun `shared journeys execute with virtual time`(): List<DynamicTest> {
+    fun `shared journeys execute through the runtime with virtual time`(): List<DynamicTest> {
         val files = Path.of(System.getProperty("spec.journeys")).listDirectoryEntries("*.json").sorted()
         val ids = files.map { it.nameWithoutExtension }.toSet()
         check(ids.containsAll(requiredJourneys)) { "Missing v0 journeys: ${requiredJourneys - ids}" }

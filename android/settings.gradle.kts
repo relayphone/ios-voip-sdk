@@ -8,4 +8,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "voip-android"
-include(":core", ":testing")
+include(":core", ":runtime", ":testing")
