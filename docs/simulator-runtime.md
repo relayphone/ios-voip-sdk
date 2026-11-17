@@ -557,9 +557,13 @@ second or 28 seconds. It reconciles current calls before starting its counting a
 transport and reporting connection. In the late control, 28 seconds is a minimum delay:
 attachment also waits for the failed call to leave the native snapshot, within the existing
 120-second observation bound. A due native timer still needs executor time to run.
-The host separately requires connection failure by 28.5 seconds from connecting
-(the 27-second deadline plus the named 1500 ms timer margin); a longer observation wait
+The host separately requires connection failure by 30 seconds from connecting
+(the 27-second deadline plus the named 3000 ms timer margin); a longer observation wait
 cannot qualify a late timeout callback.
+CI simulator timeout lateness measured 360 ms, 1122 ms and 1619.376 ms; the 3000 ms cap
+bounds executor scheduling lateness, not the product deadline on a device. Misses require
+scheduling investigation. Timing failures print measured lateness and native
+handler-acknowledgement timing.
 Native `app.handlerReady` acknowledgement is required;
 a JavaScript timestamp or PushKit registry registration cannot substitute for it. The late
 control must end with `failed.connectTimedOut` before attachment, with zero transport starts
