@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import type { LateHandlerConfiguration, LateHandlerResults } from '../expo/example/client/journeys/late-handler.ts';
 
+/** Bounds native callback scheduling lateness; independent of the fixture's observation wait. */
+export const LATE_TIMER_MARGIN_MS = 1500;
+
 interface Row {
   event: string; callID?: string; callUUID?: string; kind?: string; fulfilled?: boolean; state?: string;
   reason?: string; boundarySource?: string; generation?: number; uptimeNanoseconds: number;
@@ -57,6 +60,8 @@ export function assertLateHandlerResults(result: LateHandlerResults, config: Lat
       const ended = calls.find(row => row.event === 'sdk.ended');
       assert.equal(ended?.reason, 'failed.connectTimedOut');
       assert.ok(ended!.uptimeNanoseconds - connecting.uptimeNanoseconds >= config.connectDeadlineMS * 1e6);
+      assert.ok(ended!.uptimeNanoseconds - connecting.uptimeNanoseconds
+        <= (config.connectDeadlineMS + LATE_TIMER_MARGIN_MS) * 1e6, 'Connection timeout callback exceeded its lateness margin');
       assert.ok(ready.uptimeNanoseconds > ended!.uptimeNanoseconds, 'Handler attached before failure');
       assert.equal(connected.length, 0);
     }
