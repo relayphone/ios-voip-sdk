@@ -4,6 +4,25 @@ import Testing
 @testable import CKSimProtocol
 
 @Suite struct ControlResponseTests {
+  @Test func explicitAssertionHistoryIsAdditiveAndRoundTrips() throws {
+    var status = try JSONDecoder().decode(RuntimeSnapshot.self, from: Data(Self.status.utf8))
+    #expect(status.backgroundAssertions == nil)
+    var assertion = BackgroundAssertionSnapshot(
+      id: UUID(), source: .applicationAssertion, requestedAt: 100)
+    assertion.expiredAt = 110
+    assertion.beganAt = 120
+    assertion.endedAt = 130
+    assertion.endCount = 1
+    status.backgroundAssertions = BackgroundAssertionsSnapshot(
+      hasUnresolvedObservations: true, assertions: [assertion])
+    let decoded = try JSONDecoder().decode(
+      RuntimeSnapshot.self, from: JSONEncoder().encode(status))
+    #expect(decoded == status)
+    #expect(decoded.backgroundAssertions?.assertions.first?.lifetime == .ended)
+    #expect(decoded.backgroundAssertions?.assertions.first?.expiredAt == 110)
+    #expect(decoded.backgroundAssertions?.hasUnresolvedObservations == true)
+  }
+
   @Test func retainedHistoryAndScheduledAnswersRoundTrip() throws {
     let answer = try JSONDecoder().decode(
       ControlResponse.self,
