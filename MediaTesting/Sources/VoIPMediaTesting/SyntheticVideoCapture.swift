@@ -29,6 +29,8 @@ public enum MediaVideoSupport {
     private let width: Int, height: Int
     private var pool: CVPixelBufferPool?
     private var running = false
+    private var pacingSleep: Task<Void, any Error>?
+    private var stopWaiters: [CheckedContinuation<Void, Never>] = []
     /// Allocation or unsupported-capturer failure, with no fallback to a physical camera.
     public enum Failure: Error { case capturer, pixelBuffer, duration, alreadyRunning }
     private init(
@@ -111,11 +113,20 @@ public enum MediaVideoSupport {
     public func run<C: Clock<Duration>>(clock pacingClock: C, duration: Duration) async throws {
       guard duration > .zero, duration <= .seconds(180) else { throw Failure.duration }
       guard !running else { throw Failure.alreadyRunning }
+      guard ledger.stoppedAtUs == nil else { throw VideoMarker.Failure.stopped }
       running = true
-      defer { running = false }
+      ledger.pacingTaskJoined = false
+      defer {
+        running = false
+        ledger.pacingTaskJoined = true
+        let waiters = stopWaiters
+        stopWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+      }
       let end = pacingClock.now.advanced(by: duration)
       var schedule = VideoFrameSchedule(next: pacingClock.now)
       while pacingClock.now < end {
+        if ledger.stoppedAtUs != nil { return }
         try Task.checkCancellation()
         while schedule.next.advanced(by: .milliseconds(100)) <= pacingClock.now {
           try ledger.skipTick()
@@ -123,14 +134,31 @@ public enum MediaVideoSupport {
         }
         try captureFrame()
         for _ in 0..<schedule.completed(at: pacingClock.now) { try ledger.skipTick() }
-        try await pacingClock.sleep(
-          until: min(end, schedule.wake(after: pacingClock.now)), tolerance: .zero)
+        let wake = min(end, schedule.wake(after: pacingClock.now))
+        let sleep = Task { try await pacingClock.sleep(until: wake, tolerance: .zero) }
+        pacingSleep = sleep
+        do {
+          try await withTaskCancellationHandler {
+            try await sleep.value
+          } onCancel: {
+            sleep.cancel()
+          }
+          pacingSleep = nil
+        } catch {
+          pacingSleep = nil
+          if ledger.stoppedAtUs != nil { return }
+          throw error
+        }
       }
     }
-    /// Atomically freezes generation before any asynchronous media teardown.
+    /// Atomically freezes generation, then joins pacing before returning the final receipt.
     /// The app separately records the actual unpublish/mute and keeps the receiver healthy.
-    public func stop() throws(VideoMarker.Failure) -> VideoSourceLedger {
+    public func stop() async throws(VideoMarker.Failure) -> VideoSourceLedger {
       try ledger.stop(atUs: UInt64(max(0, clock.milliseconds * 1000)))
+      pacingSleep?.cancel()
+      if running {
+        await withCheckedContinuation { stopWaiters.append($0) }
+      }
       return ledger
     }
     /// Original bounded ledger, including the seed and any capture attempts that failed after generation.
@@ -153,20 +181,42 @@ public enum MediaVideoSupport {
     /// Observes actual decoded luma; unsupported conversion is recorded as a corrupt arrival.
     public func render(frame: VideoFrame) {
       calibration.receiveDecoded {
+        let type: VideoImageProvenance.BufferType =
+          frame.buffer is I420VideoBuffer
+          ? .i420
+          : frame.buffer is CVPixelVideoBuffer ? .pixelBuffer : .unsupported
         guard let buffer = frame.toI420() else {
-          return .decode(luma: [], width: 0, height: 0, stride: 0)
+          return .decode(
+            luma: [], width: Int(frame.dimensions.width), height: Int(frame.dimensions.height),
+            stride: 0, bufferType: type, mediaTimestampNs: frame.timeStampNs,
+            rtpTimestamp: frame.rtpTimestamp)
         }
         return buffer.withUnsafePlanes { planes in
-          let stride = Int(planes.strideY)
+          let width = Int(planes.width)
           let height = Int(planes.height)
-          guard planes.width > 0, planes.width <= 1920, height > 0, height <= 1080,
-            stride >= Int(planes.width), stride <= 16384
+          let stride = Int(planes.strideY)
+          let cw = Int(planes.chromaWidth)
+          let ch = Int(planes.chromaHeight)
+          let su = Int(planes.strideU)
+          let sv = Int(planes.strideV)
+          guard width > 0, width <= 1920, height > 0, height <= 1080,
+            stride >= width, stride <= 16384, cw == (width + 1) / 2,
+            ch == (height + 1) / 2, su >= cw, su <= 16384, sv >= cw, sv <= 16384
           else {
-            return .decode(luma: [], width: Int(planes.width), height: height, stride: stride)
+            return .decode(
+              luma: [], width: width, height: height, stride: stride, bufferType: type,
+              mediaTimestampNs: frame.timeStampNs, rtpTimestamp: frame.rtpTimestamp)
           }
           return .decode(
             luma: Array(UnsafeBufferPointer(start: planes.dataY, count: stride * height)),
-            width: Int(planes.width), height: height, stride: stride)
+            width: width, height: height, stride: stride,
+            u: .init(
+              bytes: Array(UnsafeBufferPointer(start: planes.dataU, count: su * ch)),
+              width: cw, height: ch, stride: su),
+            v: .init(
+              bytes: Array(UnsafeBufferPointer(start: planes.dataV, count: sv * ch)),
+              width: cw, height: ch, stride: sv),
+            bufferType: type, mediaTimestampNs: frame.timeStampNs, rtpTimestamp: frame.rtpTimestamp)
         }
       }
     }

@@ -401,8 +401,11 @@ track with camera semantics, seeds its dimensions before publication, and uses a
 allocation ceiling. It opens no camera and has no camera fallback. The application owns
 publication, hold/mute, unpublish and shutdown. Keep generating during hold and suppress the
 ordinary publication gate; call `stop()` at the actual applied off/end boundary. Stop is
-serialized with generation before any asynchronous media teardown. Cancel/join the pacing
-task and separately stop/unpublish the track. Ordinary builds expose only
+serialized with generation before any asynchronous media teardown. Use `try await stop()`;
+it freezes the final counter/epoch, cancels any pending pacing sleep and joins pacing before
+returning the ledger. Separately stop/unpublish the track. The ledger explicitly encodes the
+final counter (null if none), final epoch, pacing completion and rejected post-stop captures.
+Before stop, use `generated.last?.counter` for the latest generated counter. Ordinary builds expose only
 `MediaVideoSupport.canCapture == false`, without the capture implementation or LiveKit import.
 
 Retain `SyntheticVideoReceiver` while collecting decoded pixels, including the drain interval.
@@ -414,8 +417,16 @@ generation-to-arrival residence, post-stop pre-boundary drain, every post-bounda
 process CPU/peak RSS samples and the decoder callback high-water mark. Internal encoder queues
 are not directly observed. All resource fields are process-wide; sampling failure is nil.
 Evidence overflow or an in-progress callback makes a report incomplete, never successful.
-The recorder keeps at most 96 KiB of one failing luma plane for diagnosis. Unidentified
-post-stop callbacks increment `ambiguousBoundaryFrames` and leave `preBoundaryDrainUs` nil;
+Each of at most 4096 callback rows retains geometry, original buffer type, media/RTP timestamps,
+full-plane extrema/completeness and at most sixteen sample bytes per Y/U/V plane. Callback entry
+uses the observation clock; media timestamps are reported without cross-clock subtraction.
+An undecodable image is content-free only when all active Y samples are within ±2 of a common
+value, retained U/V planes satisfy the same test, and geometry differs from both source profiles
+(160×120 and 320×240). Padding is excluded. Content-free callbacks remain counted and reported,
+but never contribute to first-frame, fps, continuity, residence or source drain. Their transport
+origin is not inferred. Partial planes, source-sized uniform images and nonuniform undecodable
+images remain ambiguous. The recorder keeps at most 96 KiB of one failing luma plane for diagnosis.
+Ambiguous post-stop callbacks increment `ambiguousBoundaryFrames` and leave `preBoundaryDrainUs` nil;
 zero recognized post-boundary counters cannot turn that ambiguity into a privacy pass.
 
 Off/end requires zero post-boundary generated identities reaching the receiver, bounded

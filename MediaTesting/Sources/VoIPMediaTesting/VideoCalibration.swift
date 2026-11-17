@@ -14,13 +14,23 @@ public final class VideoCalibration: Sendable {
   /// Result of pixel decoding with an optional bounded failure sample.
   public struct Image: Sendable {
     fileprivate let marker: VideoMarker?
+    let provenance: VideoImageProvenance
     fileprivate let corruptFrame: CorruptFrame?
     /// Decodes actual pixels, retaining a bounded sample only on failure.
-    public static func decode(luma: [UInt8], width: Int, height: Int, stride: Int) -> Self {
+    public static func decode(
+      luma: [UInt8], width: Int, height: Int, stride: Int,
+      u: VideoImageProvenance.Plane? = nil, v: VideoImageProvenance.Plane? = nil,
+      bufferType: VideoImageProvenance.BufferType = .luma, mediaTimestampNs: Int64? = nil,
+      rtpTimestamp: UInt32? = nil
+    ) -> Self {
       let marker = try? VideoMarker.decode(luma: luma, width: width, height: height, stride: stride)
+      let provenance = VideoImageProvenance(
+        y: .init(bytes: luma, width: width, height: height, stride: stride), u: u, v: v,
+        bufferType: bufferType, mediaTimestampNs: mediaTimestampNs, rtpTimestamp: rtpTimestamp,
+        decoded: marker != nil)
       return Self(
-        marker: marker,
-        corruptFrame: marker == nil
+        marker: provenance.classification == .source ? marker : nil, provenance: provenance,
+        corruptFrame: provenance.classification == .ambiguous
           ? CorruptFrame(
             width: width, height: height,
             stride: stride, luma: Data(luma.prefix(96 * 1024))) : nil)
@@ -30,6 +40,8 @@ public final class VideoCalibration: Sendable {
   public struct Arrival: Codable, Sendable {
     /// Pixel identity, absent when decoding failed.
     public let marker: VideoMarker?
+    /// Actual per-callback geometry, plane completeness, bounded samples and classification.
+    public let provenance: VideoImageProvenance
     /// Actual callback entry on the named observation clock.
     public let atUs: UInt64
   }
@@ -99,6 +111,8 @@ public final class VideoCalibration: Sendable {
     public let postBoundaryFrames: Int
     /// Corrupt pixels cannot establish which side of the privacy boundary they belong to.
     public let corruptFrames: Int
+    /// Positively uniform non-source images; counted but excluded from all source metrics.
+    public let contentFreeFrames: Int
     /// Post-stop callbacks whose source order is unknown; these cannot qualify drain.
     public let ambiguousBoundaryFrames: Int
     /// First failing pixel plane, bounded separately from arrival metadata.
@@ -160,7 +174,7 @@ public final class VideoCalibration: Sendable {
     state.withLock {
       $0.pending -= 1
       if $0.arrivals.count < 4096 {
-        $0.arrivals.append(Arrival(marker: image.marker, atUs: at))
+        $0.arrivals.append(Arrival(marker: image.marker, provenance: image.provenance, atUs: at))
         if $0.firstCorruptFrame == nil { $0.firstCorruptFrame = image.corruptFrame }
       } else {
         $0.overflow = true
@@ -195,6 +209,7 @@ public final class VideoCalibration: Sendable {
     var seen: Set<VideoMarker> = []
     var fresh: [Arrival] = []
     var corrupt = 0
+    var contentFree = 0
     var unmatched = 0
     var duplicates = 0
     var postBoundary = 0
@@ -202,6 +217,10 @@ public final class VideoCalibration: Sendable {
     var residence: UInt64?
     var drain = source.stoppedAtUs.map { _ in UInt64(0) }
     for arrival in arrivals {
+      if arrival.provenance.classification == .contentFree {
+        contentFree += 1
+        continue
+      }
       guard let marker = arrival.marker else {
         corrupt += 1
         if let stop = source.stoppedAtUs, arrival.atUs >= stop { ambiguous += 1 }
@@ -256,7 +275,7 @@ public final class VideoCalibration: Sendable {
       firstFrameLatencyUs: fresh.first.map { $0.atUs - anchorAtUs },
       windows: windows, maximumGapUs: gap, maximumPipelineResidenceUs: residence,
       preBoundaryDrainUs: ambiguous == 0 ? drain : nil, postBoundaryFrames: postBoundary,
-      corruptFrames: corrupt,
+      corruptFrames: corrupt, contentFreeFrames: contentFree,
       ambiguousBoundaryFrames: ambiguous, firstCorruptFrame: snapshot.5,
       unmatchedFrames: unmatched, duplicateFrames: duplicates,
       overflow: snapshot.2 || snapshot.4 != 0,

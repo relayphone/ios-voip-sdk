@@ -5,6 +5,15 @@ Public API changes include migration guidance.
 
 ## Unreleased
 
+### Breaking
+
+- In the optional `MediaTesting` package, call `try await SyntheticVideoCapture.stop()` to
+  freeze generation and join pacing before reading the final producer receipt. `finalCounter`
+  is now frozen at stop and explicitly encoded alongside `finalEpoch`; use
+  `generated.last?.counter` for the latest counter before stop. Receiver receipts now report
+  bounded per-callback Y/U/V provenance and count positively uniform, non-source-sized images
+  as content-free, excluding them from source timing and frame-rate measurements.
+
 ### Added
 
 - `VoIPTesting.BackgroundExecutionScenario` provides typed fake assertion observations,

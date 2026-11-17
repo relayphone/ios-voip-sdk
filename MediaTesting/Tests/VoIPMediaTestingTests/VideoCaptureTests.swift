@@ -1,12 +1,57 @@
 #if DEBUG && os(iOS) && targetEnvironment(simulator)
+  import CoreVideo
   import Foundation
   import LiveKit
   import Testing
+  import VoIPTesting
 
   @testable import VoIPMediaTesting
 
   @Suite("Simulator buffer camera", .serialized)
   struct VideoCaptureTests {
+    @Test func nativeReceiverRetainsChromaAndRejectsNonuniformPixels() throws {
+      let clock = MediaObservationClock()
+      let calibration = VideoCalibration(observationClock: clock)
+      let receiver = SyntheticVideoReceiver(calibration: calibration)
+      var ledger = VideoSourceLedger(
+        clockID: clock.id, fixture: UUID(), direction: .uplink, epoch: 1)
+      let anchor = try ledger.anchor(atUs: calibration.nowUs)
+      try ledger.stop(atUs: calibration.nowUs)
+      var pixelBuffer: CVPixelBuffer?
+      #expect(
+        CVPixelBufferCreate(
+          nil, 8, 8, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, nil, &pixelBuffer)
+          == kCVReturnSuccess)
+      let pixels = try #require(pixelBuffer)
+      CVPixelBufferLockBaseAddress(pixels, [])
+      let y = try #require(CVPixelBufferGetBaseAddressOfPlane(pixels, 0))
+      let uv = try #require(CVPixelBufferGetBaseAddressOfPlane(pixels, 1))
+      y.initializeMemory(
+        as: UInt8.self, repeating: 16,
+        count: CVPixelBufferGetBytesPerRowOfPlane(pixels, 0) * 8)
+      uv.initializeMemory(
+        as: UInt8.self, repeating: 128,
+        count: CVPixelBufferGetBytesPerRowOfPlane(pixels, 1) * 4)
+      CVPixelBufferUnlockBaseAddress(pixels, [])
+      let frame = VideoFrame(
+        dimensions: Dimensions(width: 8, height: 8), rotation: ._0,
+        timeStampNs: 42, rtpTimestamp: 43,
+        buffer: CVPixelVideoBuffer(pixelBuffer: pixels))
+      receiver.render(frame: frame)
+      CVPixelBufferLockBaseAddress(pixels, [])
+      uv.assumingMemoryBound(to: UInt8.self)[0] = 200
+      CVPixelBufferUnlockBaseAddress(pixels, [])
+      receiver.render(frame: frame)
+      let report = try calibration.receipt(source: ledger, anchor: anchor)
+      #expect(report.contentFreeFrames == 1)
+      #expect(report.ambiguousBoundaryFrames == 1)
+      #expect(report.preBoundaryDrainUs == nil)
+      #expect(report.arrivals.first?.provenance.bufferType == .pixelBuffer)
+      #expect(report.arrivals.first?.provenance.mediaTimestampNs == 42)
+      #expect(report.arrivals.first?.provenance.rtpTimestamp == 43)
+      #expect(report.arrivals.first?.provenance.u?.minimum == 128)
+      #expect(report.arrivals.last?.provenance.u?.maximum == 200)
+    }
     @Test func seedsWithoutCameraAndStopsAtTheFinalProducerCounter() async throws {
       let source = try await SyntheticVideoCapture.make(
         fixture: UUID(), direction: .uplink,
@@ -17,9 +62,38 @@
       try await source.captureFrame()
       let stopped = try await source.stop()
       #expect(stopped.finalCounter == 1)
+      #expect(stopped.finalEpoch == 1)
+      #expect(stopped.pacingTaskJoined)
       #expect(stopped.stoppedAtUs != nil)
       await #expect(throws: VideoMarker.Failure.stopped) { try await source.captureFrame() }
+      #expect(await source.snapshot().postStopCaptureRejects == 1)
       #expect(await source.snapshot().generated == stopped.generated)
+      _ = try await source.track.stop()
+    }
+
+    @Test func stopJoinsActivePacingBeforeReturningTheFinalReceipt() async throws {
+      let source = try await SyntheticVideoCapture.make(
+        fixture: UUID(), direction: .uplink, epoch: 3, observationClock: MediaObservationClock())
+      let pacingClock = TestClock()
+      try await withThrowingTaskGroup(of: Void.self) { group in
+        group.addTask { try await source.run(clock: pacingClock, duration: .seconds(5)) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while pacingClock.pendingSleepCount == 0, ContinuousClock.now < deadline {
+          await Task.yield()
+        }
+        #expect(await source.snapshot().pacingTaskJoined == false)
+        #expect(pacingClock.pendingSleepCount == 1)
+        let stopped = try await source.stop()
+        #expect(stopped.pacingTaskJoined)
+        #expect(pacingClock.pendingSleepCount == 0)
+        #expect(stopped.finalEpoch == 3)
+        await #expect(throws: VideoMarker.Failure.stopped) { try await source.captureFrame() }
+        let after = await source.snapshot()
+        #expect(after.generated == stopped.generated)
+        #expect(after.finalCounter == stopped.finalCounter)
+        #expect(after.postStopCaptureRejects == 1)
+        try await group.waitForAll()
+      }
       _ = try await source.track.stop()
     }
 
