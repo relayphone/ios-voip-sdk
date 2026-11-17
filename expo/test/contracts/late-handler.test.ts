@@ -65,15 +65,32 @@ for (const scenario of ['before-deadline', 'after-deadline', 'preview-placement'
     assert.equal(result.joinError, scenario === 'preview-placement' ? 'deadline_exceeded' : undefined);
   });
 }
-test('a still-live call after the deadline is a failure, not a passing absence of packet telemetry', async () => {
+test('a call that never expires fails within the observation bound without attaching', async () => {
   const f = fixture('after-deadline');
   const sleep = f.clock.sleepMS;
   f.clock.sleepMS = async delay => { await sleep(delay); f.setStatus('connecting'); };
-  await assert.rejects(driveLateHandler(f.config, f.api, f.save, f.clock, f.media), /retained call/);
+  await assert.rejects(driveLateHandler(f.config, f.api, f.save, f.clock, f.media), /observation timed out/);
   assert.equal(f.results.at(-1)!.stage, 'failed');
   assert.equal(f.media.starts, 0);
   assert.equal(f.attachments.at(-1)![0], false);
+  assert.equal(f.attachments.filter(([attached]) => attached).length, 0);
+  assert.equal(f.clock.nowMS(), 120000);
 });
+for (const callbackAtMS of [28000, 28125, 29500]) {
+  test(`late attachment waits for the actual native failure callback at ${callbackAtMS}ms`, async () => {
+    const f = fixture('after-deadline');
+    const sleep = f.clock.sleepMS;
+    f.clock.sleepMS = async delay => {
+      await sleep(delay);
+      f.setStatus(f.clock.nowMS() >= callbackAtMS ? undefined : 'connecting');
+    };
+    await driveLateHandler(f.config, f.api, f.save, f.clock, f.media);
+    assert.equal(f.results.at(-1)!.stage, 'complete');
+    assert.ok(f.attachments[0]![2] >= callbackAtMS);
+    assert.equal(f.media.starts, 0);
+    assert.equal(f.results.at(-1)!.handlerInvocations, 0);
+  });
+}
 test('failed fake transport connection is terminal and detaches the handler', async () => {
   const f = fixture('before-deadline');
   f.media.start = async () => { throw new Error('Fixture transport failed'); };

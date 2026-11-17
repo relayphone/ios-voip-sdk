@@ -66,8 +66,7 @@ export async function driveLateHandler(configuration: LateHandlerConfiguration, 
     save(result);
   };
   const current = async () => (await api.getConversations()).find(call => call.id === id);
-  async function until(read: () => Promise<boolean>): Promise<void> {
-    const deadline = clock.nowMS() + 120000;
+  async function until(read: () => Promise<boolean>, deadline = clock.nowMS() + 120000): Promise<void> {
     while (!await read()) {
       if (clock.nowMS() >= deadline) throw new Error('Late-handler observation timed out');
       await clock.sleepMS(100);
@@ -85,6 +84,11 @@ export async function driveLateHandler(configuration: LateHandlerConfiguration, 
     publish('observed');
     const attachDue = result.observedAtMS + config.handlerAttachDelayMS;
     while (clock.nowMS() < attachDue) await clock.sleepMS(attachDue - clock.nowMS());
+    if (config.scenario === 'after-deadline') {
+      // A due timer still needs native executor time. Observe failure before late attachment;
+      // the host independently requires its actual reason and journal ordering.
+      await until(async () => !await current(), result.observedAtMS + 120000);
+    }
     api.setConversationHandler({
       start() { throw new Error('Unexpected start handler'); },
       join() { result.handlerInvocations++; },

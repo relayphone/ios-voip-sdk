@@ -40,7 +40,8 @@ for (const scenario of ['before-deadline', 'after-deadline', 'preview-placement'
   });
 }
 for (const mutation of ['missing acknowledgement', 'wrong generation', 'wrong runtime', 'wrong failure',
-  'early failure', 'connected', 'positive packet', 'transport start', 'stale config', 'failed stage', 'early attachment']) {
+  'early failure', 'connected', 'positive packet', 'transport start', 'stale config', 'failed stage', 'early attachment',
+  'native attachment before failure']) {
   test(`rejects misleading completion: ${mutation}`, () => {
     const f = fixture();
     switch (mutation) {
@@ -55,6 +56,9 @@ for (const mutation of ['missing acknowledgement', 'wrong generation', 'wrong ru
       case 'stale config': f.result.configuration = { ...f.config, runID: 'stale' }; break;
       case 'failed stage': f.result.stage = 'failed'; break;
       case 'early attachment': f.result.attachedAtMS = 1000; break;
+      case 'native attachment before failure':
+        f.rows.find(row => row.event === 'app.handlerReady')!.uptimeNanoseconds = 27000000002;
+        break;
     }
     assert.throws(() => assertLateHandlerResults(f.result, f.config, f.rows.map(row => JSON.stringify(row)).join('\n')));
   });
