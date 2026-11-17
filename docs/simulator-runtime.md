@@ -659,7 +659,21 @@ The observation sink is absent from device and Release builds. It observes only 
 adapters in the embedded Debug runtime, not arbitrary third-party UIKit tasks or the standalone
 runtime package. It does not change the SDK's existing push assertion lifetime.
 
-The reducer and observations are not yet connected to automatic execution decisions or signals;
+`RuntimeExecutionAssessment` connects typed assertion history to the existing reducer in an
+explicit scenario. It replays actual boundary timestamps against an injected clock origin and
+explicit, unverified allowances for the application and SDK push adapters. Reading a snapshot
+late never extends its modeled due time. A bounded PushKit wake is a separate fixture input;
+current lock, activity, execution and audio evidence remain independent inputs. Decisions retain
+all active IDs, sources, unverified allowances and deadlines through the existing reducer.
+
+Pending begin returns refuse coverage until resolved. Missing or malformed histories remain
+unknown for the assessment's lifetime. Changed invocation/PID, backwards time, erased or changed
+boundaries, and regressed wake history fail without committing partial state. Terminal exit
+cannot be undone. Expiration before a valid begin return immediately retires that attempt in
+the replay, while the retained snapshot preserves the actual callback and return times.
+
+Assessment remains an internal, host-tested adapter; runtime startup does not enable it.
+It is not yet connected to host supervision or journaled execution decisions;
 the bounded host suspension control above is explicit fixture input.
 They emit no SDK deadline callback while
 an application is stopped. Real suspension lag, protected-data availability and system
