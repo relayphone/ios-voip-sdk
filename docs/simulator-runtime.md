@@ -644,6 +644,17 @@ actual end call and duplicate owner ends remain visible. No real assertion can b
 through a test command. A returned UIKit identifier is not proof of a grant; these observations
 have `verification: unverified` and carry no invented allowance or due time.
 
+`cksim status --json` also retains `backgroundAssertions` in the embedded Debug runtime.
+Each attempt has an independent ID, adapter source and absolute monotonic `requestedAt`,
+optional `beganAt`, `deniedAt`, `expiredAt` and `endedAt` boundaries, plus `endCount`.
+Expiration before begin returns stays expired even when a valid identifier returns later;
+end-after-expiration preserves both times, and repeated owner ends increment the count.
+`hasUnresolvedObservations` stays true after a missing request, source mismatch, contradictory
+return, or invalid/out-of-order timestamp. Such history cannot establish modeled assertion
+coverage. Even a complete observation history covers only the explicit adapters and does not
+establish a system grant, exhaustive OS coverage, or a suspension decision. Older producers and
+builds without this instrumentation omit the field; absence is unknown, not an empty history.
+
 The observation sink is absent from device and Release builds. It observes only these explicit
 adapters in the embedded Debug runtime, not arbitrary third-party UIKit tasks or the standalone
 runtime package. It does not change the SDK's existing push assertion lifetime.

@@ -169,6 +169,9 @@
     private var journal: FileHandle?
     private var journalWriter = RuntimeJournalWriter()
     private var processLifecycle = RuntimeProcessLifecycle()
+    #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
+      private var backgroundAssertions = RuntimeBackgroundAssertions()
+    #endif
     private let epoch: UInt64
     private var requestWatcher: (any DispatchSourceFileSystemObject)?
     private var stopped = false
@@ -383,16 +386,21 @@
 
     #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
       private func recordBackgroundAssertion(_ event: SimulatorBackgroundExecution.Event) {
-        guard
-          let row = RuntimeBackgroundObservation(
+        withState {
+          guard !stopped else { return }
+          backgroundAssertions.observe(
             event, epoch: epoch, now: DispatchTime.now().uptimeNanoseconds)
-        else { return }
-        record(
-          event: row.name,
-          fields: [
-            "assertionID": row.id.uuidString, "source": row.source.rawValue,
-            "boundarySource": "explicit-uikit-adapter", "verification": "unverified",
-          ], observed: DispatchTime(uptimeNanoseconds: row.uptimeNanoseconds))
+          guard
+            let row = RuntimeBackgroundObservation(
+              event, epoch: epoch, now: DispatchTime.now().uptimeNanoseconds)
+          else { return }
+          record(
+            event: row.name,
+            fields: [
+              "assertionID": row.id.uuidString, "source": row.source.rawValue,
+              "boundarySource": "explicit-uikit-adapter", "verification": "unverified",
+            ], observed: DispatchTime(uptimeNanoseconds: row.uptimeNanoseconds))
+        }
       }
 
       private func recordSDK(_ event: SimulatorLifecycle.Event) {
@@ -1561,6 +1569,12 @@
     private func execute(_ command: ControlRequest) throws -> ControlResult {
       switch command.operation {
       case .status:
+        let assertions: BackgroundAssertionsSnapshot?
+        #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
+          assertions = backgroundAssertions.snapshot
+        #else
+          assertions = nil
+        #endif
         return .status(
           try RuntimeSnapshot(
             calls: calls.values.map(callSnapshot),
@@ -1573,7 +1587,7 @@
             }.map(providerSnapshot),
             retainedCalls: callTimeline.calls.values.sorted {
               $0.uuid.uuidString < $1.uuid.uuidString
-            }))
+            }, backgroundAssertions: assertions))
       case .answerAfter(let uuid, let offset):
         guard let call = calls[uuid], call.ringing, callTimeline.isAwaitingAnswer(uuid),
           let report = callTimeline.calls[uuid]?.reportedAtMS
