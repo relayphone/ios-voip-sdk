@@ -502,3 +502,23 @@ retain their participant/publication binding. Disposing or replacing an observer
 a negative interval; first validate fresh source content and a complete on-window before off.
 The original phase counter fence is mandatory: the dimension seed never supplies first-frame
 or complete-window rate evidence, even when its timestamp matches the enable event.
+
+For Android evaluation, pass `platform: 'android'` and an explicit `gates` object to
+`assessVideo`. `VideoGateLimits` requires `firstMs`, `gapMs`, `minimumFPS`, `drainMs` and
+`terminalCoverageMs`. All limits must be finite and positive; the fps floor is a whole
+number at most 10, and terminal coverage must cover the drain budget. Missing Android
+limits fail rather than borrowing iOS values. Omitted platform input (or explicit `ios`)
+keeps the frozen iOS defaults above, including 800 ms terminal coverage. Explicit limits
+apply only to that invocation. Android values require their own measurement and review;
+the controls' synthetic values are not qualified candidates.
+
+`measureVideo(receipt, source, options)` exports the same raw, conservative first-frame,
+maximum-gap, fixed one-second unique-frame windows and terminal measurements without gate
+verdicts. It retains integrity, producer/lifecycle and clock checks. Use
+`identifiedPostBoundaryArrivals` and nullable `identifiedDrainMs` for calibration: no
+identified arrival is distinct from a measured zero drain. `terminalObservedMs` is the
+coverage after the latest possible confirmed boundary, so clock uncertainty is preserved.
+The legacy `drainMs` field remains zero when a terminal receipt has no identified arrivals.
+Neither API changes the 160×120/10 fps source profile, marker/classifier, original counter
+fence, privacy checks or observer heartbeat limit. Increasing a platform drain/coverage
+budget cannot make an unhealthy observer qualify.
