@@ -4,7 +4,7 @@ import { createMarker, emissionSamples } from '../../expo/src/testing/marker.ts'
 import type { PCMCapture } from './marker-evidence.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { receiverStatistics } from './receiver-statistics.ts';
-import type { TransportSnapshot } from './transport.ts';
+import { HOST_RECEIVER_STATS_POLL_MS, type TransportSnapshot } from './transport.ts';
 import { deadline } from './fixture-runtime.ts';
 import { PeerLifecycle } from './peer-lifecycle.ts';
 import { PeerReconnect } from './peer-reconnect.ts';
@@ -107,7 +107,7 @@ export class MediaPeer {
           if (this.running && generation === this.captureGeneration && row &&
               (!previous || row.streamID !== previous.streamID || row.timestamp > previous.timestamp)) this.transport.push(row);
         } catch { /* Missing statistics cannot qualify a clean cycle. */ }
-        if (this.running) await delay(100);
+        if (this.running) await delay(HOST_RECEIVER_STATS_POLL_MS);
       }
     })();
     const options = new TrackPublishOptions(); options.source = TrackSource.SOURCE_MICROPHONE;

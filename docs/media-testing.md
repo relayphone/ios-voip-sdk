@@ -24,6 +24,13 @@ It retains per-candidate confidences and receiver statistics, skips spans with l
 and accepts the first complete clean cycle. Missing or stale receiver counters cannot prove clean
 coverage. The 0.8 rule, amplitudes, signal, drift limits and all deadlines remain unchanged.
 
+For the far-end uplink, a missing outer counter bracket can use the nearest retained report
+inside the cycle within one host polling interval (100 ms) of that edge. Both edges require
+real reports at distinct sample positions, and every observed overlapping interval still
+rejects packet loss or concealment. Native downlink measurements require exact bracketing.
+The summary shows marker bounds, required counter bounds and the first and last retained
+counter positions.
+
 ## Journey terminal phases
 
 The iOS and Android journeys use the same terminal oracle. Immediately before each end,
