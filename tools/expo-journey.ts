@@ -3,7 +3,7 @@ import { simulatorRuntime } from './simulator-runtime.ts';
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { isMain, main, run } from './command.ts';
+import { CommandFailure, isMain, main, run } from './command.ts';
 import { simulatorDevice } from './inspector-devices.ts';
 import { captureTail, simulatorDiagnostics } from './inspector-resources.ts';
 import { launchToleratingASlowSimulator } from './runtime-smoke.ts';
@@ -35,6 +35,30 @@ export function openJourneyLink(simulator: string, runID: string, execute: typeo
 export class InfrastructureFailure extends Error {
   readonly step: string;
   constructor(step: string, cause: unknown) { super(`infra:${step}`, { cause }); this.step = step; }
+}
+
+/** Installation diagnostics survive both the immediate classification and retry summary. */
+export class InstallFailure extends InfrastructureFailure {
+  readonly elapsedMS: number;
+  readonly stderrTail: string | undefined;
+  constructor(cause: unknown, elapsedMS: number, stderrTail: string | undefined) {
+    super('install', cause);
+    this.elapsedMS = elapsedMS;
+    this.stderrTail = stderrTail;
+    this.message += `; elapsed_ms=${elapsedMS}; stderr_tail=${JSON.stringify(stderrTail ?? '(unavailable)')}`;
+  }
+}
+
+/** Keeps the existing install deadline while retaining the failed command's evidence. */
+export function installBundledExample(simulator: string, app: string, execute: typeof run = run,
+  now: () => number = () => performance.now()): void {
+  const started = now();
+  try {
+    execute('xcrun', ['simctl', 'install', simulator, app], { timeout: 180 });
+  } catch (cause) {
+    throw new InstallFailure(cause, cause instanceof CommandFailure ? cause.elapsedMS : Math.round(now() - started),
+      cause instanceof CommandFailure ? cause.stderrTail : undefined);
+  }
 }
 
 /** Host evidence invalidates startup attribution without making a product check retryable. */
@@ -88,7 +112,7 @@ export async function withInfrastructureRetry(attempt: (index: number) => Promis
       return;
     } catch (error) {
       if (error instanceof InfrastructureFailure) {
-        report(`infra:${error.step} (${index === 0 ? 'retrying on a fresh simulator' : 'retry exhausted'}); infrastructure retries used: ${index}`);
+        report(`${error.message} (${index === 0 ? 'retrying on a fresh simulator' : 'retry exhausted'}); infrastructure retries used: ${index}`);
         if (index === 0) continue;
       }
       throw error;
@@ -133,7 +157,7 @@ export async function expoJourney(work: string, app: string): Promise<void> {
         try { run('xcrun', ['simctl', 'bootstatus', simulator, '-b'], { timeout: 300 }); }
         catch (error) { bootstatusRetried = true; throw error; }
       });
-      infrastructure('install', () => run('xcrun', ['simctl', 'install', simulator, app], { timeout: 180 }));
+      installBundledExample(simulator, app);
       const container = infrastructure('container', () => run('xcrun', ['simctl', 'get_app_container', simulator, bundle, 'data'], { timeout: 120 }));
       const cksim = (...args: string[]) => run(join(work, 'runtime/cksim'),
         ['--simulator', simulator, '--bundle', bundle, '--app-container', container, ...args], { timeout: 180 });

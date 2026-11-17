@@ -3,8 +3,52 @@ import { test } from 'node:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { run } from './command.ts';
-import { classifyJourneyFailure, HostUnresponsiveFailure, deleteJourneySimulator, InfrastructureFailure, launchBundledExample, openJourneyLink, withInfrastructureRetry } from './expo-journey.ts';
+import { CommandFailure, run } from './command.ts';
+import { classifyJourneyFailure, HostUnresponsiveFailure, deleteJourneySimulator, InfrastructureFailure, InstallFailure, installBundledExample, launchBundledExample, openJourneyLink, withInfrastructureRetry } from './expo-journey.ts';
+
+test('install classification and exhausted retry summary retain command elapsed time and stderr', async () => {
+  const cause = new CommandFailure('spawnSync xcrun ETIMEDOUT', 180012, 'waiting for installd\nlast line');
+  const reports: string[] = [];
+  let attempts = 0;
+  await assert.rejects(withInfrastructureRetry(async () => {
+    attempts++;
+    installBundledExample('owned', '/fixture/App.app', (command, args, options) => {
+      assert.equal(command, 'xcrun');
+      assert.deepEqual(args, ['simctl', 'install', 'owned', '/fixture/App.app']);
+      assert.equal(options?.timeout, 180);
+      throw cause;
+    });
+  }, message => reports.push(message)), error => {
+    assert.ok(error instanceof InstallFailure);
+    assert.equal(error.cause, cause);
+    assert.equal(error.elapsedMS, 180012);
+    assert.equal(error.stderrTail, 'waiting for installd\nlast line');
+    return true;
+  });
+  assert.equal(attempts, 2);
+  assert.equal(reports.length, 2);
+  for (const report of reports) {
+    assert.match(report, /infra:install; elapsed_ms=180012; stderr_tail="waiting for installd\\nlast line"/);
+    assert.equal(report.split('\n').length, 1);
+  }
+  assert.match(reports[1]!, /retry exhausted/);
+});
+
+test('empty stderr and unavailable stderr are distinguished without changing install success', () => {
+  for (const [cause, expected] of [[new CommandFailure('timeout', 100, ''), '""'],
+    [new Error('unavailable'), '"(unavailable)"']] as const) {
+    let time = 0;
+    assert.throws(() => installBundledExample('owned', 'App.app', () => { throw cause; }, () => time += 50), error => {
+      assert.ok(error instanceof InstallFailure);
+      assert.ok(error.message.endsWith(`stderr_tail=${expected}`));
+      assert.equal(error.elapsedMS, cause instanceof CommandFailure ? 100 : 50);
+      return true;
+    });
+  }
+  let calls = 0;
+  installBundledExample('owned', 'App.app', () => { calls++; return ''; });
+  assert.equal(calls, 1);
+});
 
 test('the journey link is approved for the owned simulator before opening it without a UI prompt', t => {
   const root = mkdtempSync(join(tmpdir(), 'expo-journey-link-'));
