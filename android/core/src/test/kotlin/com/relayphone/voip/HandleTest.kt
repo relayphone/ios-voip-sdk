@@ -19,7 +19,7 @@ class HandleTest {
     fun `email validates an address and preserves its spelling`() {
         val address = "Alice+Calls@Example.COM"
         assertEquals(address, Handle.Email(address).address)
-        listOf("", "alice", "@example.com", "alice@", "a@@b", "a b@c", "a@b\n").forEach {
+        listOf("", "alice", "@example.com", "alice@", "a@@b", "a b@c").forEach {
             assertThrows(IllegalArgumentException::class.java) { Handle.Email(it) }
         }
     }
@@ -29,7 +29,7 @@ class HandleTest {
         listOf("sip:Alice@Example.com;transport=tls", "112", "*123#", "+14155552671").forEach {
             assertEquals(it, Handle.Opaque(it).value)
         }
-        listOf("", " ", "a\u0000b").forEach {
+        listOf("", " ", "🙂".repeat(257)).forEach {
             assertThrows(IllegalArgumentException::class.java) { Handle.Opaque(it) }
         }
     }

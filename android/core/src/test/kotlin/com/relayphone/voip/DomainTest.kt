@@ -31,30 +31,30 @@ class DomainTest {
         val reasons = listOf(
             EndReason.LocalDeclined, EndReason.LocalEnded, EndReason.RemoteEnded, EndReason.Unanswered,
             EndReason.AnsweredElsewhere, EndReason.DeclinedElsewhere,
-            EndReason.Filtered(FilterCause.POLICY), EndReason.Failed(error),
+            EndReason.Filtered(FilterCause.DO_NOT_DISTURB), EndReason.Failed(error),
         )
         assertEquals(8, reasons.toSet().size)
         assertEquals(error, EndReason.Failed(error).error)
-        assertEquals(FilterCause.POLICY, EndReason.Filtered(FilterCause.POLICY).cause)
+        assertEquals(FilterCause.DO_NOT_DISTURB, EndReason.Filtered(FilterCause.DO_NOT_DISTURB).cause)
         val ended = Lifecycle.Ended(EndReason.Failed(error), Instant.parse("2026-11-17T12:00:10Z"))
         assertEquals(EndReason.Failed(error), ended.reason)
     }
 
     @Test
     fun `actions carry requested values while Answer and Join stay separate`() {
-        assertNotEquals(Action.Answer as Action, Action.Join as Action)
-        assertEquals(true, Action.Hold(true).held)
-        assertEquals(false, Action.Mute(false).muted)
-        assertEquals(true, Action.Video(true).enabled)
-        assertNotEquals(Action.Hold(true), Action.Hold(false))
-        assertNotEquals(Action.Mute(true), Action.Mute(false))
-        assertNotEquals(Action.Video(true), Action.Video(false))
-        val tones = Action.Tones(DTMFSequence("0123456789*#ABCD"))
-        assertEquals("0123456789*#ABCD", tones.digits.value)
+        assertNotEquals(Action.Answer(CallID("a")), Action.Join(CallID("a")))
+        assertEquals(true, Action.Hold(CallID("a"), true).held)
+        assertEquals(false, Action.Mute(CallID("a"), false).muted)
+        assertEquals(true, Action.Video(CallID("a"), true).enabled)
+        assertNotEquals(Action.Hold(CallID("a"), true), Action.Hold(CallID("a"), false))
+        assertNotEquals(Action.Mute(CallID("a"), true), Action.Mute(CallID("a"), false))
+        assertNotEquals(Action.Video(CallID("a"), true), Action.Video(CallID("a"), false))
+        val tones = Action.Tones(CallID("a"), DTMFSequence("0123456789*#"))
+        assertEquals("0123456789*#", tones.digits.value)
         listOf("", "1,2", "a", "1 2", "１２").forEach {
             assertThrows(IllegalArgumentException::class.java) { DTMFSequence(it) }
         }
-        assertEquals(Action.End, Action.End)
+        assertEquals(CallID("a"), Action.End(CallID("a")).callID)
     }
 
     @Test
@@ -66,14 +66,14 @@ class DomainTest {
             CallError.Unsupported(Feature.TONES),
             CallError.PermissionRequired(MediaPermission.MICROPHONE),
             CallError.Refused(RefusalReason.NotAllowed),
-            CallError.AuthorityUnavailable(AuthorityFailure.CREDENTIAL_UNAVAILABLE),
+            CallError.AuthorityUnavailable(AuthorityFailure.CREDENTIALS_UNAVAILABLE),
             CallError.ClaimTimedOut(actionID),
-            CallError.PlacementFailed(PlacementFailure.UNAVAILABLE),
+            CallError.PlacementFailed(PlacementFailure.HANDLER_FAILED),
             CallError.DeadlineExceeded(TimedStage.RECONCILIATION),
-            CallError.MediaFailed(MediaStage.PREPARATION, MediaFailure.INVALID_CREDENTIALS),
+            CallError.MediaFailed(MediaStage.PREPARE, MediaFailure.PERMISSION),
             CallError.RemoteIdentityConflict(RemoteCallID("alias")),
             CallError.InvalidConfiguration(ConfigurationField.ANSWER_BUDGET),
-            CallError.SystemFailed(SystemFailure.Android(SystemOperation.REMOVAL, 7)),
+            CallError.SystemFailed(SystemFailure(Platform.ANDROID, SystemOperation.REMOVAL, 7)),
             CallError.BridgeUnavailable,
         )
         assertEquals(14, errors.toSet().size)
@@ -82,12 +82,12 @@ class DomainTest {
         assertEquals(LifecycleKind.ENDED, CallError.InvalidTransition(LifecycleKind.ENDED).state)
         assertEquals(Feature.TONES, CallError.Unsupported(Feature.TONES).feature)
         assertEquals(MediaPermission.CAMERA, CallError.PermissionRequired(MediaPermission.CAMERA).permission)
-        val media = CallError.MediaFailed(MediaStage.PREPARATION, MediaFailure.TRANSPORT)
-        assertEquals(MediaStage.PREPARATION, media.stage)
+        val media = CallError.MediaFailed(MediaStage.PREPARE, MediaFailure.TRANSPORT)
+        assertEquals(MediaStage.PREPARE, media.stage)
         assertEquals(MediaFailure.TRANSPORT, media.cause)
-        val android = SystemFailure.Android(SystemOperation.REMOVAL, 7)
+        val android = SystemFailure(Platform.ANDROID, SystemOperation.REMOVAL, 7)
         assertEquals(7, android.nativeCode)
-        assertNotEquals(android as SystemFailure, SystemFailure.IOS(SystemOperation.REMOVAL, 7))
+        assertNotEquals(android, SystemFailure(Platform.IOS, SystemOperation.REMOVAL, 7))
     }
 
     @Test

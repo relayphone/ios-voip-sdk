@@ -1,20 +1,16 @@
-# Android JVM foundation
+# Android JVM core
 
-Requires JDK 17. From this directory, run `./gradlew check` (Windows: `gradlew.bat check`).
-The checked-in Gradle wrapper verifies its pinned distribution checksum. Kotlin, coroutines,
-serialization and JUnit versions are pinned in `gradle/libs.versions.toml`.
+Requires JDK 17. Run `./gradlew check` from this directory (`gradlew.bat check` on Windows).
+The wrapper verifies its Gradle distribution checksum. CI also validates the wrapper JAR.
 
-- `:core` contains validated identities, handles, calling lines, lifecycle/action/error types,
-  typed outcomes and duration policies. It has no Android framework or Android Gradle plugin dependency.
-- `:testing` exposes the core and `kotlinx-coroutines-test` dependency for future deterministic fakes.
-  Its tests exercise the core from a separate module under virtual time.
+- `:core` provides the v0 wire types and pure reducer. `reduce(state, input, instant)`
+  returns updated state and ordered effects. An engine supplies the instant, executes effects,
+  and feeds back confirmations and timer expirations with their original generations.
+  Validate configured Answer budgets against the adapter's effective deadline before use.
+- `:testing` runs the shared journeys against that reducer. Fake system, authority and media
+  ports execute effects under coroutine virtual time. Each discovered journey runs as a test.
+  The core suite separately round-trips every valid model fixture and rejects every invalid one.
 
-Constructors reject invalid values with `IllegalArgumentException`; expected operation failures
-are represented by `Outcome`. Answer budgets must pass `validateFor` with the adapter's effective
-deadline before use. Invitation and preparation policies cap remaining work by enclosing expiry.
-
-The build configures Maven publications `com.relayphone:voip-core` and `com.relayphone:voip-testing`,
-with the root `VERSION` and source JARs. Release archives and repository delivery are not implemented.
-There is no reducer, call runtime, fake port implementation, shared-spec conformance driver,
-Android system/push/media adapter, Expo/Exact binding or calling capability in these modules yet.
-The JVM checks cover constructor validation, typed payloads, deadline boundaries and dependency use.
+The Maven publications `com.relayphone:voip-core` and `com.relayphone:voip-testing` use
+the root `VERSION`. The checks qualify the JVM model and behavior with fakes. Android
+system, push and media adapters, device behavior and release archive delivery remain separate.
