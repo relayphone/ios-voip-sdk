@@ -15,6 +15,19 @@ import org.junit.jupiter.api.TestFactory
 
 class WireFixturesTest {
     @Test
+    fun `retention may be omitted or explicitly encode the default`() {
+        val default = RetentionBudget()
+        val implicit = Wire.encode(Model.BudgetValue(0, Budgets()))
+        val explicit = Wire.encode(Model.BudgetValue(0, Budgets().withRetention(default)))
+        assertEquals(default, (Wire.decode(implicit) as Model.BudgetValue).value.retention)
+        assertEquals(default, (Wire.decode(explicit) as Model.BudgetValue).value.retention)
+        assertEquals(implicit, Wire.encode(Wire.decode(implicit)))
+        assertEquals(explicit, Wire.encode(Wire.decode(explicit)))
+        val invalid = explicit.replace("\"terminalRecords\":256", "\"terminalRecords\":0")
+        assertThrows(IllegalArgumentException::class.java) { Wire.decode(invalid) }
+    }
+
+    @Test
     fun `canonical encoding preserves isolated code units and normalizes integer formats`() {
         val source = """{"version":0e0,"kind":"action","value":{"kind":"answer","callID":"a\ud800b🏷"}}"""
         val canonical = """{"kind":"action","value":{"callID":"a\ud800b🏷","kind":"answer"},"version":0}"""

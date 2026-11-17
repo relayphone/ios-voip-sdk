@@ -1,7 +1,6 @@
 package com.relayphone.voip
 
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 
 /** Applies one input at a supplied instant. The caller executes effects in their returned order. */
@@ -11,10 +10,11 @@ public fun reduce(state: State, input: Input, instant: Instant): Transition =
 private class Reduction(state: State, private val now: Instant) {
     private val policy = state.configuration
     private val budgets = policy.budgets
+    private val retention = budgets.retention
     private var records = state.records
-    private var events = state.events.filterValues { now - it.at < 120.seconds }
-    private var releasedPermits = state.releasedPermits.filterValues { now - it < 120.seconds }
-    private var actionIDs = state.actionIDs.filterValues { now - it < 120.seconds }
+    private var events = state.events.filterValues { withinRetention(it.at) }
+    private var releasedPermits = state.releasedPermits.filterValues(::withinRetention)
+    private var actionIDs = state.actionIDs.filterValues(::withinRetention)
     private var generation = state.generation
     private val effects = mutableListOf<Effect>()
 
@@ -85,15 +85,16 @@ private class Reduction(state: State, private val now: Instant) {
                     put(record.copy(systemRemoved = true), publish = !record.live)
                 }
             }
-            Input.FrameworkReset -> records.values.filter { it.live && it.call.lifecycle !is Lifecycle.Previewing }.forEach {
-                val error = CallError.SystemFailed(SystemFailure(Platform.ANDROID, SystemOperation.RESET))
-                val retained = it.retainedEnd?.takeIf { event -> now - event.at < 120.seconds }?.end
+            is Input.FrameworkReset -> records.values.filter { it.live && it.call.lifecycle !is Lifecycle.Previewing }.forEach {
+                val error = CallError.SystemFailed(input.failure)
+                val retained = it.retainedEnd?.takeIf { event -> withinRetention(event.at) }?.end
                 if (retained != null) remoteFinish(it, retained.reason)
                 else finish(it, EndReason.Failed(error), error)
             }
         }
         prune()
-        return Transition(State(policy, records, events, releasedPermits, actionIDs, generation), effects.toList())
+        // Admit a buffered end before the invitation consumes a slot in the event history.
+        return Transition(State(policy, records, events.tail(), releasedPermits, actionIDs, generation), effects.toList())
     }
 
     private fun incoming(input: Input.Incoming) {
@@ -116,7 +117,7 @@ private class Reduction(state: State, private val now: Instant) {
         }
         if (record.call.lifecycle != Lifecycle.Reporting) return@on
         val admitted = record.copy(admission = null)
-        val end = admitted.retainedEnd?.takeIf { now - it.at < 120.seconds }?.end?.reason
+        val end = admitted.retainedEnd?.takeIf { withinRetention(it.at) }?.end?.reason
         if (end != null) {
             remoteFinish(admitted, end)
         } else {
@@ -362,7 +363,7 @@ private class Reduction(state: State, private val now: Instant) {
             effects += Effect.CompleteEnd(record.call.id, id, result)
             return
         }
-        val retained = record.retainedEnd?.takeIf { now - it.at < 120.seconds }?.end
+        val retained = record.retainedEnd?.takeIf { withinRetention(it.at) }?.end
         if (retained != null) {
             effects += Effect.CompleteEnd(record.call.id, id, EndResult.AlreadyEnded(retained.reason))
             return
@@ -522,26 +523,29 @@ private class Reduction(state: State, private val now: Instant) {
 
     private fun retain(record: Record, event: SeenEvent): Record {
         val retained = record.retainedEnd
-        return if (retained == null || now - retained.at >= 120.seconds || event.order < retained.order) {
+        return if (retained == null || !withinRetention(retained.at) || event.order < retained.order) {
             record.copy(retainedEnd = event)
         } else record
     }
 
     private fun remember(id: EventID, end: Input.RemoteEnd? = null): Boolean {
         if (id in events) return false
-        events = (events + (id to SeenEvent(now, ++generation, end))).tail()
+        events = events + (id to SeenEvent(now, ++generation, end))
         return true
     }
 
     private fun prune() {
         val retained = records.values.filter { it.terminalAt != null }
-            .filter { now - requireNotNull(it.terminalAt) < 120.seconds }
+            .filter { withinRetention(requireNotNull(it.terminalAt)) }
             .sortedWith(compareBy({ it.terminalAt }, { it.cleanup?.generation }))
-            .takeLast(256).map { it.call.id }.toSet()
+            .takeLast(retention.terminalRecords).map { it.call.id }.toSet()
         records = records.filterValues { it.live || it.call.id in retained }
     }
 
     private fun attempt(id: CallID): Attempt = Attempt(id, ++generation)
+    private fun withinRetention(at: Instant): Boolean = now - at < retention.lifetime
+    private fun <K, V> Map<K, V>.tail(): Map<K, V> =
+        entries.toList().takeLast(retention.terminalRecords).associate { it.key to it.value }
     private fun slotAvailable(): Boolean = records.values.count { record ->
         record.participating || record.controls.any { (it.action as? Action.Hold)?.held == false }
     } < policy.maximumParticipatingCalls
@@ -554,8 +558,6 @@ private class Reduction(state: State, private val now: Instant) {
         Call(id, line, direction, listOf(party), lifecycle, held = false, muted = false, video = false,
             Media(Owner.NATIVE, Preparation.UNPROVIDED, Audio.INACTIVE, Transport.DISCONNECTED))
 }
-
-private fun <K, V> Map<K, V>.tail(): Map<K, V> = entries.toList().takeLast(256).associate { it.key to it.value }
 
 private val Record.live: Boolean get() = terminalAt == null
 private fun Record.pending(id: ActionID): Boolean =

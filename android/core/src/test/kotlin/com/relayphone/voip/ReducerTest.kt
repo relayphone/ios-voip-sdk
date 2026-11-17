@@ -166,8 +166,49 @@ class ReducerTest {
         assertTrue(scenario.state.calls.isEmpty())
     }
 
-    private class Scenario(previews: Boolean = false, outgoing: OutgoingMedia = OutgoingMedia.WHEN_PROVIDED) {
-        var state = State(Configuration(Budgets(), outgoing, ConnectionAuthority.APPLICATION, 1, previews))
+    @Test
+    fun `configured retention bounds terminal outcomes and buffered ends`() {
+        val retention = RetentionBudget(lifetime = 2.seconds, terminalRecords = 1)
+        val scenario = Scenario(budgets = Budgets().withRetention(retention))
+        val earlier = CallID("earlier")
+        val later = CallID("later")
+        listOf(earlier, later).forEach { callID ->
+            scenario.send(Input.Incoming(callID, EventID("invite-${callID.value}"), line, party))
+            val close = scenario.send(Input.Request(Action.End(callID), ActionID("end-${callID.value}"))).only<Effect.CloseMedia>()
+            scenario.send(Input.MediaReleased(close.attempt))
+        }
+        assertEquals(setOf(later), scenario.state.calls.keys)
+
+        val unknown = CallID("unknown")
+        scenario.send(Input.RemoteEnd(EndTarget.Canonical(unknown), EventID("before-admission"), EndReason.RemoteEnded))
+        val fresh = scenario.send(Input.Incoming(unknown, EventID("fresh-invite"), line, party)).only<Effect.ReportIncoming>()
+        scenario.send(Input.Admitted(fresh.attempt))
+        assertEquals(Lifecycle.Ending(EndReason.RemoteEnded), scenario.state.calls.getValue(unknown).lifecycle)
+        assertEquals(setOf(unknown), scenario.state.calls.keys)
+
+        scenario.send(Input.RemoteEnd(EndTarget.Canonical(id), EventID("expired-end"), EndReason.RemoteEnded))
+        scenario.instant += retention.lifetime
+        scenario.ring()
+        assertEquals(mapOf(id to Lifecycle.Ringing), scenario.state.calls.mapValues { it.value.lifecycle })
+    }
+
+    @Test
+    fun `framework reset retains the adapter supplied platform failure`() {
+        Platform.entries.forEach { platform ->
+            val scenario = Scenario()
+            scenario.ring()
+            val failure = SystemFailure(platform, SystemOperation.RESET, nativeCode = 42)
+            val effects = scenario.send(Input.FrameworkReset(failure))
+            val reason = EndReason.Failed(CallError.SystemFailed(failure))
+            assertEquals(Lifecycle.Ending(reason), scenario.call.lifecycle)
+            assertEquals(reason, effects.only<Effect.RequestRemoval>().reason)
+        }
+    }
+
+    private class Scenario(
+        previews: Boolean = false, outgoing: OutgoingMedia = OutgoingMedia.WHEN_PROVIDED, budgets: Budgets = Budgets(),
+    ) {
+        var state = State(Configuration(budgets, outgoing, ConnectionAuthority.APPLICATION, 1, previews))
         var instant = Instant.fromEpochSeconds(0)
         private val timers = mutableMapOf<TimerKind, Effect.ArmTimer>()
         val call: Call get() = state.calls.getValue(id)

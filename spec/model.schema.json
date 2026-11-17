@@ -54,7 +54,7 @@
       {"type":"object","properties":{"kind":{"const":"deadlineExceeded"},"stage":{"enum":["placement","claim","reconciliation","mediaPreparation","audioActivation","connection","reconnection","systemAction","noAnswer"]}},"required":["kind","stage"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"mediaFailed"},"stage":{"enum":["prepare","activate","release"]},"cause":{"enum":["transport","permission","timeout"]}},"required":["kind","stage","cause"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"remoteIdentityConflict"},"remoteID":{"$ref":"#/$defs/id"}},"required":["kind","remoteID"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"invalidConfiguration"},"field":{"enum":["answer","placement","incomingRing","outgoingNoAnswer","mediaPreparation","audioActivation","audioRecovery","connection","reconnection"]}},"required":["kind","field"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"invalidConfiguration"},"field":{"enum":["answer","placement","incomingRing","outgoingNoAnswer","mediaPreparation","audioActivation","audioRecovery","connection","reconnection","retention"]}},"required":["kind","field"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"systemFailed"},"cause":{"type":"object","properties":{"platform":{"enum":["ios","android"]},"kind":{"enum":["admission","action","removal","reset","audio"]},"code":{"type":"integer","minimum":-2147483648,"maximum":2147483647}},"required":["platform","kind"],"additionalProperties":false}},"required":["kind","cause"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"bridgeUnavailable"}},"required":["kind"],"additionalProperties":false}
     ]},
@@ -121,7 +121,10 @@
         "audioActivation": {"type":"integer","minimum":1,"maximum":9007199254740991},
         "audioRecovery": {"type":"integer","minimum":1,"maximum":9007199254740991},
         "connection": {"type":"integer","minimum":1,"maximum":9007199254740991},
-        "reconnection": {"type":"integer","minimum":1,"maximum":9007199254740991}
+        "reconnection": {"type":"integer","minimum":1,"maximum":9007199254740991},
+        "retention": {"type":"object","additionalProperties":false,"required":["lifetime","terminalRecords"],
+          "properties":{"lifetime":{"$ref":"#/$defs/duration"},
+            "terminalRecords":{"type":"integer","minimum":1,"maximum":2147483647}}}
       }
     },
     "configuration": {"type": "object", "additionalProperties": false,

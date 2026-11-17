@@ -61,6 +61,7 @@ public enum class ConfigurationField {
     @SerialName("incomingRing") INCOMING_RING, @SerialName("outgoingNoAnswer") OUTGOING_NO_ANSWER,
     @SerialName("mediaPreparation") MEDIA_PREPARATION, @SerialName("audioActivation") AUDIO_ACTIVATION,
     @SerialName("audioRecovery") AUDIO_RECOVERY, @SerialName("connection") CONNECTION, @SerialName("reconnection") RECONNECTION,
+    @SerialName("retention") RETENTION,
 }
 
 /** Platform diagnostic with an optional original numeric code. */

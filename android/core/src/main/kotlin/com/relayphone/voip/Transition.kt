@@ -76,7 +76,7 @@ public sealed interface Input {
     public data class TransportRecovered(public val attempt: Attempt) : Input
     public data class MediaReleased(public val attempt: Attempt) : Input
     public data class SystemRemoved(public val attempt: Attempt) : Input
-    public data object FrameworkReset : Input
+    public data class FrameworkReset(public val failure: SystemFailure) : Input
 }
 
 /** Ordered work for the engine. Timer effects schedule inputs and never suspend the reducer. */

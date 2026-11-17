@@ -36,7 +36,7 @@ A line contains `accountID`, `id` and display `label`; the line is immutable aft
 A party has an app ID, display name and a `phone`, `email` or `opaque` handle. Phone is E.164;
 opaque explicitly includes SIP URIs and short codes. Handles never replace call identity.
 Event, action and attempt IDs occupy separate namespaces. Retain terminal/deduplication metadata
-for up to 120 seconds and 256 terminal records, limited by both, without credentials. Runtime
+within the configured lifetime and record limit, without credentials. Runtime
 state is authoritative; persisted connected records require reconciliation after process death.
 
 ## Lifecycle and invariants
@@ -169,6 +169,7 @@ All durations are positive safe integer milliseconds, represented as native Dura
 | Media preparation | 5000 | Preparation starts, also capped by any enclosing action |
 | Audio activation / recovery | 10000 / 5000 | Taking part / end of interruption or reset |
 | Connection / reconnection | 30000 / 15000 | Connection attempt / transport loss after connection |
+| Retention lifetime / record limit | 120000 ms / 256 records | Recording terminal ownership or deduplication metadata |
 
 Startup validates each duration, `claim + reconciliation + reserve < total`, and total against
 that adapter's effective action deadline. The strict remainder is reserved for media preparation.
@@ -176,3 +177,6 @@ Wire decoding validates allocation without assuming an Android deadline on iOS. 
 deadlines can only shorten these bounds. No retry resets
 an anchor. No-answer stops when Answer owns its action; deferred media does not arm preparation
 until provided. Host observation allowances never change these product budgets.
+Omitting `budgets.retention` uses the defaults. A supplied policy sets both `lifetime` in
+milliseconds and a positive `terminalRecords` count. The same time and count limits bound
+terminal records and the deduplication history for events, actions and released permits.

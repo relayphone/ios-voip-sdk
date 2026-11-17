@@ -51,7 +51,8 @@ export type Action = { readonly kind: 'start'; readonly callID: WireID; readonly
   | { readonly kind: 'tones'; readonly callID: WireID; readonly digits: readonly [DTMFDigit, ...DTMFDigit[]] };
 export type Budgets = Readonly<{ answer: Readonly<{ total: number; claim: number; reconciliation: number; settlementReserve: number }>;
   placement: number; incomingRing: number; outgoingNoAnswer: number; mediaPreparation: number;
-  audioActivation: number; audioRecovery: number; connection: number; reconnection: number }>;
+  audioActivation: number; audioRecovery: number; connection: number; reconnection: number;
+  retention?: Readonly<{ lifetime: number; terminalRecords: number }> }>;
 export type Model = { readonly version: 0 } & (
   | { readonly kind: 'call'; readonly value: Call } | { readonly kind: 'action'; readonly value: Action }
   | { readonly kind: 'endReason'; readonly value: EndReason } | { readonly kind: 'error'; readonly value: CallError }
