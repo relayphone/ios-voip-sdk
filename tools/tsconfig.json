@@ -12,7 +12,10 @@
     "verbatimModuleSyntax": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": {
+      "@relayphone/ios-voip-sdk": ["../expo/src/conversations/types.ts"]
+    }
   },
   "include": ["*.ts"]
 }
