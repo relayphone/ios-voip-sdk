@@ -52,8 +52,11 @@ final class ScriptedBridge: InspectorBridge {
 
 /// Follows the bridge with a new model until the test ends.
 @MainActor
-func following(_ bridge: ScriptedBridge) -> (model: InspectorModel, task: Task<Void, Never>) {
-  let model = InspectorModel(bridge: bridge, pollInterval: .milliseconds(10))
+func following(
+  _ bridge: ScriptedBridge, configurationClock: any Clock<Duration> = ContinuousClock()
+) -> (model: InspectorModel, task: Task<Void, Never>) {
+  let model = InspectorModel(
+    bridge: bridge, pollInterval: .milliseconds(10), configurationClock: configurationClock)
   return (model, Task { await model.follow() })
 }
 

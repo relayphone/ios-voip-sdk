@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import VoIPTesting
 
 @testable import CKSimInspector
 
@@ -237,6 +238,7 @@ struct InspectorModelTests {
   func aSettingChangesOnlyWhenTheJournalConfirmsIt(setting: Setting, script: Script) async throws {
     let faults = setting == .faults
     let bridge = ScriptedBridge()
+    let clock = TestClock()
     bridge.respond = { command, _ in
       var result: [String: Any] =
         faults
@@ -255,8 +257,11 @@ struct InspectorModelTests {
       }
       return ["result": result]
     }
-    let (model, task) = following(bridge)
-    defer { task.cancel() }
+    let (model, task) = following(bridge, configurationClock: clock)
+    defer {
+      task.cancel()
+      clock.advance(by: .seconds(3))
+    }
     try await wait("the model to connect") { model.online }
     let values = script == .confirmed ? [true, false] : [true]
     var priorFilter = InspectorIncomingFilter.none
@@ -265,7 +270,6 @@ struct InspectorModelTests {
       let reason: InspectorIncomingFilter = on ? .doNotDisturb : .none
       let code = on ? 4 : 0
       let requestID = ScriptedBridge.responseID(offset + 1)
-      let started = ContinuousClock.now
       if faults {
         model.configureIncomingError(code)
       } else {
@@ -282,9 +286,14 @@ struct InspectorModelTests {
         if script == .rejection { #expect(model.commandError == "runtime rejection message") }
         continue
       }
-      #expect(model.busy && model.commandError == nil)
+      // Keep virtual time still while the model consumes the scripted journal entry.
+      try await wait("the command to start waiting for its journal") {
+        clock.pendingSleepCount == 1 || !model.busy
+      }
+      try #require(model.busy && model.commandError == nil)
       #expect(model.incomingFilter == priorFilter && model.incomingErrorCode == priorCode)
 
+      let journalCount = model.timeline.count
       let confirmation: [String: Any] =
         script == .otherRequest
         ? ["requestID": "FFFFFFFF-FFFF-4FFF-8FFF-FFFFFFFFFFFF"] : ["requestID": requestID]
@@ -310,23 +319,28 @@ struct InspectorModelTests {
             confirmation.merging(Self.filterState(other ? "none" : reason.rawValue)) { $1 })
         }
       }
+      if script != .unconfirmed {
+        try await wait("the scripted journal entry") { model.timeline.count > journalCount }
+      }
       if script == .otherRequest {
-        try await wait("the other request's confirmation") {
-          model.timeline.contains {
-            $0.event == (faults ? "faults.configured" : "incomingFilter.configured")
-          }
-        }
         #expect(model.busy, "Another request's confirmation doesn't confirm this one")
         #expect(model.incomingFilter == (faults ? priorFilter : reason))
         #expect(model.incomingErrorCode == (faults ? code : priorCode))
       }
-      try await wait("the setting to finish") { !model.busy }
       if script == .confirmed {
+        clock.advance(by: .milliseconds(25))
+        try await wait("the confirmed setting to finish") { !model.busy }
         #expect(model.commandError == nil)
         #expect(model.incomingFilter == (faults ? priorFilter : reason))
         #expect(model.incomingErrorCode == (faults ? code : priorCode))
       } else {
-        #expect(started.duration(to: .now) >= .milliseconds(2900), "It waits for the confirmation")
+        clock.advance(by: .milliseconds(2975))
+        try await wait("the command to check the journal before its deadline") {
+          clock.pendingSleepCount == 1 || !model.busy
+        }
+        try #require(model.busy && model.commandError == nil)
+        clock.advance(by: .milliseconds(25))
+        try await wait("the unconfirmed setting to expire") { !model.busy }
         #expect(model.commandError?.contains("journal confirmation has not arrived") == true)
         #expect(model.incomingFilter == (!faults && script == .otherRequest ? reason : priorFilter))
         #expect(model.incomingErrorCode == (faults && script == .otherRequest ? code : priorCode))

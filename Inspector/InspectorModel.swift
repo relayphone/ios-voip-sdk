@@ -96,15 +96,20 @@ final class InspectorModel: ObservableObject {
   private var configurationOrder: [ConfigurationAcknowledgement] = []
   private let bridge: any InspectorBridge
   private let pollInterval: Duration
+  private let configurationClock: any Clock<Duration>
 
   /// Connects to the bridge named in the app's launch environment.
   convenience init(environment: [String: String] = ProcessInfo.processInfo.environment) {
     self.init(bridge: HTTPInspectorBridge(environment: environment))
   }
 
-  init(bridge: any InspectorBridge, pollInterval: Duration = .milliseconds(250)) {
+  init(
+    bridge: any InspectorBridge, pollInterval: Duration = .milliseconds(250),
+    configurationClock: any Clock<Duration> = ContinuousClock()
+  ) {
     self.bridge = bridge
     self.pollInterval = pollInterval
+    self.configurationClock = configurationClock
   }
   var incoming: RuntimeEvent? {
     conversations.values.filter { $0.ringing == true && $0.ended != true }.sorted {
@@ -282,19 +287,24 @@ final class InspectorModel: ObservableObject {
       do {
         let response = try await controlResponse(body)
         guard accepting(try response.get()) else { throw URLError(.cannotParseResponse) }
-        let deadline = Date().addingTimeInterval(3)
-        while !configurationAcknowledgements.contains(acknowledgement(response.id)) {
-          guard Date() < deadline else {
-            throw NSError(
-              domain: "Inspector", code: 6,
-              userInfo: [
-                NSLocalizedDescriptionKey:
-                  "Configuration accepted, but its journal confirmation has not arrived. Check the timeline before retrying."
-              ])
-          }
-          try await Task.sleep(for: .milliseconds(25))
-        }
+        try await waitForConfiguration(acknowledgement(response.id), on: configurationClock)
       } catch { commandError = error.localizedDescription }
+    }
+  }
+  private func waitForConfiguration(
+    _ acknowledgement: ConfigurationAcknowledgement, on clock: some Clock<Duration>
+  ) async throws {
+    let deadline = clock.now.advanced(by: .seconds(3))
+    while !configurationAcknowledgements.contains(acknowledgement) {
+      guard clock.now < deadline else {
+        throw NSError(
+          domain: "Inspector", code: 6,
+          userInfo: [
+            NSLocalizedDescriptionKey:
+              "Configuration accepted, but its journal confirmation has not arrived. Check the timeline before retrying."
+          ])
+      }
+      try await clock.sleep(for: .milliseconds(25))
     }
   }
   func send(
