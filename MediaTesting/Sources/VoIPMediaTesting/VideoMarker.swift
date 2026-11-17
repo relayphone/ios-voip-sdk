@@ -145,7 +145,13 @@ public struct VideoSourceLedger: Encodable, Sendable {
   public private(set) var rejectedSubmissions: UInt32 = 0
   private var nextCounter: UInt32 = 0
   /// Last generated counter at the atomic boundary; nil means none were generated.
-  public var finalCounter: UInt32? { generated.last?.counter }
+  public private(set) var finalCounter: UInt32?
+  /// Epoch frozen with the stop boundary, explicitly encoded even with no generated frame.
+  public private(set) var finalEpoch: UInt32?
+  /// True only after the capture owner has joined its pacing invocation.
+  public internal(set) var pacingTaskJoined = true
+  /// Capture attempts rejected at the stopped generation boundary.
+  public private(set) var postStopCaptureRejects: UInt64 = 0
   private let fixture: UUID
   private let direction: VideoMarker.Direction
   private let epoch: UInt32
@@ -156,9 +162,33 @@ public struct VideoSourceLedger: Encodable, Sendable {
     self.direction = direction
     self.epoch = epoch
   }
+  private enum CodingKeys: String, CodingKey {
+    case clockID, generated, stoppedAtUs, skippedTicks, rejectedSubmissions, nextCounter,
+      finalCounter, finalEpoch, pacingTaskJoined, postStopCaptureRejects, fixture, direction, epoch
+  }
+  /// Encodes an explicit null final counter when stopping before the first generation.
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(clockID, forKey: .clockID)
+    try container.encode(generated, forKey: .generated)
+    try container.encodeIfPresent(stoppedAtUs, forKey: .stoppedAtUs)
+    try container.encode(skippedTicks, forKey: .skippedTicks)
+    try container.encode(rejectedSubmissions, forKey: .rejectedSubmissions)
+    try container.encode(nextCounter, forKey: .nextCounter)
+    try container.encode(finalCounter, forKey: .finalCounter)
+    try container.encode(finalEpoch, forKey: .finalEpoch)
+    try container.encode(pacingTaskJoined, forKey: .pacingTaskJoined)
+    try container.encode(postStopCaptureRejects, forKey: .postStopCaptureRejects)
+    try container.encode(fixture, forKey: .fixture)
+    try container.encode(direction, forKey: .direction)
+    try container.encode(epoch, forKey: .epoch)
+  }
   /// Records source creation before submission. At most 4096 original frames are retained.
   public mutating func generate(atUs: UInt64) throws(VideoMarker.Failure) -> VideoMarker {
-    guard stoppedAtUs == nil else { throw .stopped }
+    guard stoppedAtUs == nil else {
+      postStopCaptureRejects += 1
+      throw .stopped
+    }
     guard nextCounter < 4096 else { throw .exhausted }
     guard atUs >= (generated.last?.sourceTimeUs ?? 0) else { throw .time }
     let marker = try VideoMarker(
@@ -173,7 +203,7 @@ public struct VideoSourceLedger: Encodable, Sendable {
     guard atUs >= (generated.last?.sourceTimeUs ?? 0), atUs <= 9_007_199_254_740_991 else {
       throw .time
     }
-    return Anchor(clockID: clockID, atUs: atUs, afterCounter: finalCounter)
+    return Anchor(clockID: clockID, atUs: atUs, afterCounter: generated.last?.counter)
   }
   /// Advances source order without rendering or bursting to make up missed deadlines.
   public mutating func skipTick() throws(VideoMarker.Failure) {
@@ -190,6 +220,8 @@ public struct VideoSourceLedger: Encodable, Sendable {
     guard atUs >= (generated.last?.sourceTimeUs ?? 0), atUs <= 9_007_199_254_740_991 else {
       throw .time
     }
+    finalCounter = generated.last?.counter
+    finalEpoch = epoch
     stoppedAtUs = atUs
   }
 }
