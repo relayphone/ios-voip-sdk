@@ -157,7 +157,7 @@ jobs:
           }
           mkdir -p "$RUNNER_TEMP/results" "$RUNNER_TEMP/ci-simulators"
           create_simulator first
-          label='product:tests (unknown failed)'
+          label='infra:result-unavailable'
           trap 'echo "$label" >> "$GITHUB_STEP_SUMMARY"' EXIT
           if suites tests; then
             label=ok
@@ -165,16 +165,26 @@ jobs:
           fi
           summary=$(xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/results/tests.xcresult" --compact)
           echo "$summary" > "$RUNNER_TEMP/results/summary.json"
-          label='product:tests'
-          node tools/simulator-test-result.ts "$RUNNER_TEMP/results/summary.json" "$RUNNER_TEMP/results/tests.log" || exit 1
-          label='infra:runner-hang (retried, failed)'
-          echo "::warning::The simulator's test runner hung before it connected. Running the suites again."
+          classification=$(node tools/simulator-test-result.ts "$RUNNER_TEMP/results/summary.json" "$RUNNER_TEMP/results/tests.log" "$RUNNER_TEMP/results/tests.xcresult")
+          label="$classification"
+          case "$label" in
+            infra:runner-hang|infra:test-host-restart) ;;
+            *) exit 1 ;;
+          esac
+          label="$classification (retried, failed)"
+          echo "::warning::$classification. Running the suites once on a fresh simulator."
           xcrun simctl shutdown "$SIMULATOR_ID" || true
           xcrun simctl delete "$SIMULATOR_ID"
           rm "$RUNNER_TEMP/ci-simulators/$name"
           create_simulator retry
-          suites tests-again
-          label='infra:runner-hang (retried, passed)'
+          if suites tests-again; then
+            label="$classification (retried, passed)"
+          else
+            xcrun xcresulttool get test-results summary --path "$RUNNER_TEMP/results/tests-again.xcresult" --compact > "$RUNNER_TEMP/results/summary-again.json"
+            retry_classification=$(node tools/simulator-test-result.ts "$RUNNER_TEMP/results/summary-again.json" "$RUNNER_TEMP/results/tests-again.log" "$RUNNER_TEMP/results/tests-again.xcresult")
+            label="$retry_classification (retried, failed; no further retry)"
+            exit 1
+          fi
       - name: Answer and end a call with the standalone runtime and cksim
         env:
           SIMULATOR_ID: ${{ steps.simulator.outputs.udid }}
