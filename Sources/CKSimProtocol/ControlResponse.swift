@@ -42,7 +42,8 @@ public enum ControlResult: Codable, Equatable, Sendable {
 
   private enum Key: String, CodingKey {
     case calls, pending, audioActive, sequence, incomingErrorCode, incomingFilter,
-      providerConfigurations, retainedCalls, processLifecycle
+      providerConfigurations, retainedCalls, processLifecycle, backgroundAssertions,
+      executionDecision
     case events, metadataSelector, configured, scheduled, pushID, reset, provider, actionIDs,
       transactionID
     case answerScheduled, callUUID, afterMS
@@ -56,7 +57,8 @@ public enum ControlResult: Codable, Equatable, Sendable {
         .calls,
         [
           .calls, .pending, .audioActive, .sequence, .incomingErrorCode, .incomingFilter,
-          .providerConfigurations, .retainedCalls, .processLifecycle,
+          .providerConfigurations, .retainedCalls, .processLifecycle, .backgroundAssertions,
+          .executionDecision,
         ]
       ),
       (.events, [.events]), (.metadataSelector, [.metadataSelector]),

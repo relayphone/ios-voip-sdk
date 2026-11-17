@@ -9,6 +9,59 @@
 
   /// `cksim`'s commands against a fake simulator and a fake runtime mailbox.
   struct CommandTests {
+    @Test func executionScenarioFileReachesTheVerifiedMailbox() async throws {
+      let scratch = try Scratch()
+      let package = try makePackage(in: scratch.url)
+      let app = try FakeApp(in: scratch.url)
+      let simulator = FakeSimulator()
+      simulator.state.withLock { $0.containers[bundle] = app.container }
+      let config = try ExecutionScenarioConfiguration(
+        id: UUID(), lock: .locked, activity: .background,
+        coverage: .explicitAdapters, applicationAllowanceMS: 5000, sdkPushAllowanceMS: 2000)
+      let file = scratch.url.appending(path: "scenario.json")
+      try JSONEncoder().encode(config).write(to: file)
+      let seen = Mutex(false)
+      let responder = app.respond { request, response in
+        #expect(request.operation == .executionScenario(config))
+        seen.withLock { $0 = true }
+        let json =
+          #"{"calls":[],"pending":0,"audioActive":false,"sequence":1,"incomingErrorCode":0,"incomingFilter":{"reason":"none","code":0,"verification":"not-applicable"},"providerConfigurations":[]}"#
+        guard var status = try? JSONDecoder().decode(RuntimeSnapshot.self, from: Data(json.utf8))
+        else {
+          Issue.record("Invalid fake status")
+          return
+        }
+        status.executionDecision = .init(
+          configuration: config, assessedAt: 100,
+          eligibility: .suspendEligible, reasons: [])
+        if let data = try? JSONEncoder().encode(status) {
+          response["result"] = try? JSONSerialization.jsonObject(with: data)
+        }
+      }
+      defer { responder.cancel() }
+      let result = await run(
+        [
+          "--bundle", bundle, "--simulator", device, "--runtime-dir", package.path,
+          "execution-scenario", "--configuration-file", file.path,
+        ], simulator: simulator)
+      #expect(result.status == 0 && seen.withLock { $0 })
+      let response = try JSONDecoder().decode(
+        ControlResponse.self,
+        from: Data(try #require(result.output.first).utf8))
+      guard case .success(.status(let status)) = response.outcome else {
+        Issue.record("Expected a status acknowledgement")
+        return
+      }
+      #expect(status.executionDecision?.configuration == config)
+    }
+    @Test func executionScenarioRequiresAnExplicitConfigurationFile() throws {
+      let command = try #require(
+        CKSim.parseAsRoot([
+          "execution-scenario", "--configuration-file", "/tmp/scenario.json",
+        ]) as? CKSim.ExecutionScenario)
+      #expect(command.configurationFile == "/tmp/scenario.json")
+      #expect(throws: (any Error).self) { try CKSim.parseAsRoot(["execution-scenario"]) }
+    }
     @Test func statusJSONAndRingRelativeAnswerAreExplicitCLIOptions() throws {
       let status = try #require(CKSim.parseAsRoot(["status", "--json"]) as? CKSim.Status)
       #expect(status.json)

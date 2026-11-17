@@ -130,7 +130,7 @@
         Uninstall.self, Repair.self, Launch.self, Reset.self, Answer.self, Decline.self,
         End.self, Unmerge.self, Merge.self, Hold.self, Mute.self, Tones.self,
         HoldAndAccept.self, EndAndAccept.self, EndHeldAndAccept.self, Push.self, Faults.self,
-        IncomingFilter.self, ProcessControl.self,
+        IncomingFilter.self, ProcessControl.self, ExecutionScenario.self,
       ])
 
     /// Runs `cksim` with arguments in which the shared options may come before the command.

@@ -13,6 +13,8 @@ public struct ControlRequest: Codable, Equatable, Sendable {
   public enum Operation: Equatable, Sendable {
     /// Read the current runtime snapshot.
     case status
+    /// Configure one explicit execution fixture in this invocation.
+    case executionScenario(ExecutionScenarioConfiguration)
     /// Read the retained event journal.
     case events
     /// Schedule an answer relative to the incoming call's ring start (0–120000 ms).
@@ -34,6 +36,7 @@ public struct ControlRequest: Codable, Equatable, Sendable {
     public var name: String {
       switch self {
       case .status: "status"
+      case .executionScenario: "execution-scenario"
       case .events: "events"
       case .answerAfter: "answer"
       case .inspectAdapter: "inspect-adapter"
@@ -268,7 +271,7 @@ public struct ControlRequest: Codable, Equatable, Sendable {
     case id, runID, pid, bundleID, operation, schemaVersion, controlTransport
     case callUUID, activeCallUUID, heldCallUUID, groupWithCallUUID, applicationRequest, held, muted,
       digits, reason
-    case faults, payload, mustReport, delayMS, drop, duplicate, spacingMS, afterMS
+    case faults, payload, mustReport, delayMS, drop, duplicate, spacingMS, afterMS, scenario
   }
 
   private struct AnyKey: CodingKey {
@@ -293,6 +296,10 @@ public struct ControlRequest: Codable, Equatable, Sendable {
     let operation: Operation
     switch header.operationName {
     case "status": operation = .status
+    case "execution-scenario":
+      allowed.insert(.scenario)
+      operation = .executionScenario(
+        try values.decode(ExecutionScenarioConfiguration.self, forKey: .scenario))
     case "events": operation = .events
     case "inspect-adapter": operation = .inspectAdapter
     case "reset": operation = .reset
@@ -385,6 +392,7 @@ public struct ControlRequest: Codable, Equatable, Sendable {
     try Header(id: id, target: target, operationName: operation.name).encode(to: encoder)
     var values = encoder.container(keyedBy: Key.self)
     switch operation {
+    case .executionScenario(let config): try values.encode(config, forKey: .scenario)
     case .answerAfter(let call, let offset):
       try values.encode(call, forKey: .callUUID)
       try values.encode(offset, forKey: .afterMS)
@@ -483,7 +491,10 @@ public struct ControlRequest: Codable, Equatable, Sendable {
                 && ["schemaVersion", "delayMS", "duplicate", "spacingMS", "afterMS"].contains(key))
             || !headerOnly && objects.count == 2 && objects[1].name == "faults"
               && ["reportCallbackDelayMS", "incomingErrorCode"].contains(key)
-          if integer {
+          let scenarioInteger =
+            !headerOnly && objects.count == 2 && objects[1].name == "scenario"
+            && ["applicationAllowanceMS", "sdkPushAllowanceMS"].contains(key)
+          if integer || scenarioInteger {
             var end = valueStart
             if end < bytes.count && bytes[end] == 45 { end += 1 }
             while end < bytes.count && (48...57).contains(bytes[end]) { end += 1 }
