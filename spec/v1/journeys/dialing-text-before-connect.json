@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "id": "dialing-text-before-connect",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":true,"javascriptAttached":false}},
+    {"kind":"input","input":{"kind":"presentation","callID":"outgoing-a","descriptor":{"state":"dialing","title":"Calling…","body":"Alice","lineLabel":"Personal","bodyTap":{"kind":"openCall"},"extraActions":[]}}},
+    {"kind":"input","input":{"kind":"presentation","callID":"outgoing-a","descriptor":{"state":"connected","title":"On call","body":"Alice","lineLabel":"Personal","bodyTap":{"kind":"openCall"},"extraActions":[]}}},
+    {"kind":"input","input":{"kind":"action","origin":"app","action":{"kind":"start","callID":"outgoing-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}}},
+    {"kind":"input","input":{"kind":"placed","callID":"outgoing-a"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"outgoing-a","lifecycle":{"kind":"dialing"}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"notificationObservation","value":{"kind":"posted","callID":"outgoing-a","surface":"ongoingCallStyle","generation":1,"descriptor":{"state":"dialing","title":"Calling…","body":"Alice","lineLabel":"Personal","bodyTap":{"kind":"openCall"},"extraActions":[]},"systemButtons":["hangUp"]}}}},
+    {"kind":"input","input":{"kind":"provideMedia","callID":"outgoing-a"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"outgoing-a","lifecycle":{"kind":"dialing"}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"notificationObservation","value":{"kind":"posted","callID":"outgoing-a","surface":"ongoingCallStyle","generation":1,"descriptor":{"state":"dialing","title":"Calling…","body":"Alice","lineLabel":"Personal","bodyTap":{"kind":"openCall"},"extraActions":[]},"systemButtons":["hangUp"]}}}},
+    {"kind":"input","input":{"kind":"connected","callID":"outgoing-a","eventID":"connect-outgoing-a"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"outgoing-a","lifecycle":{"kind":"connected"}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"notificationObservation","value":{"kind":"posted","callID":"outgoing-a","surface":"ongoingCallStyle","generation":1,"descriptor":{"state":"connected","title":"On call","body":"Alice","lineLabel":"Personal","bodyTap":{"kind":"openCall"},"extraActions":[]},"systemButtons":["hangUp"]}}}}
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "kind": "presentationDescriptor",
+  "value": {"state":"dialing","title":"Calling…","body":"Alice","lineLabel":"Personal","bodyTap":{"kind":"registered","targetID":"details"},"extraActions":[{"id":"openInbox","title":"Inbox"}]}
+}

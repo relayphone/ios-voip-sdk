@@ -10,10 +10,10 @@ export type Observation = Readonly<{ calls: readonly Call[]; participating: read
   endResults?: readonly Readonly<{ callID: WireID; result: EndResult }>[];
   errors: readonly (Readonly<{ callID: WireID }> & ErrorExpectation)[] }>;
 /** Drivers perform real controls and await native completion; they never receive expected results. */
-export interface JourneyDriver {
+export interface JourneyDriver<Control = Input, Snapshot = Observation> {
   reset(configuration: Configuration): Promise<void>;
-  apply(input: Input): Promise<void>;
-  observe(): Promise<Observation>;
+  apply(input: Control): Promise<void>;
+  observe(): Promise<Snapshot>;
   close(): Promise<void>;
 }
 /** Selects a declared rule; computing guards and executing effects remain native engine work. */
@@ -60,13 +60,19 @@ export function check(expected: Expectation, observed: Observation): void {
   }
 }
 /** Executes an already decoded journey. Assertions never mutate the driver or infer missing evidence. */
-export async function runJourney(journey: Journey, driver: JourneyDriver): Promise<void> {
+export function runJourney(journey: Journey, driver: JourneyDriver): Promise<void> {
+  return runSteps(journey, driver, check);
+}
+export async function runSteps<Control, Assertion, Snapshot>(journey: Readonly<{
+  configuration: Configuration;
+  steps: readonly ({ kind: 'input'; input: Control } | { kind: 'expect'; expectation: Assertion })[];
+}>, driver: JourneyDriver<Control, Snapshot>, assertObservation: (expected: Assertion, observed: Snapshot) => void): Promise<void> {
   let failure: { error: unknown } | undefined;
   try {
     await driver.reset(journey.configuration);
     for (const step of journey.steps) {
       if (step.kind === 'input') await driver.apply(step.input);
-      else check(step.expectation, await driver.observe());
+      else assertObservation(step.expectation, await driver.observe());
     }
   } catch (error) { failure = { error }; }
   try { await driver.close(); }

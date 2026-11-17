@@ -7,34 +7,52 @@ type Schema = Readonly<{ $schema?: string; $id?: string; $defs?: Readonly<Record
   required?: readonly string[]; additionalProperties?: false; items?: Schema; minItems?: number;
   minLength?: number; maxLength?: number; pattern?: string; minimum?: number; maximum?: number }>;
 const schema = JSON.parse(readFileSync(new URL('../../spec/model.schema.json', import.meta.url), 'utf8')) as Schema;
+let schemaV1: Schema | undefined;
 const keywords = new Set(['$schema', '$id', '$defs', '$ref', 'type', 'const', 'enum', 'oneOf', 'properties',
   'required', 'additionalProperties', 'items', 'minItems', 'minLength', 'maxLength', 'pattern', 'minimum', 'maximum']);
 
-function audit(rule: Schema): void {
+function audit(rule: Schema, root: Schema, seen = new Set<Schema>()): void {
+  if (seen.has(rule)) return;
+  seen.add(rule);
   for (const key of Object.keys(rule)) if (!keywords.has(key)) throw new Error(`Unsupported schema keyword: ${key}`);
   if (rule.type && !['object', 'array', 'string', 'integer', 'boolean'].includes(rule.type)) throw new Error('Unsupported schema type');
   if ('additionalProperties' in rule && rule.additionalProperties !== false) throw new Error('Unsupported additionalProperties policy');
-  if (rule.$ref) referenced(rule.$ref);
-  for (const child of [...Object.values(rule.$defs ?? {}), ...Object.values(rule.properties ?? {}), ...(rule.oneOf ?? []), ...(rule.items ? [rule.items] : [])]) audit(child);
+  if (rule.$ref) {
+    const [target, targetRoot] = referenced(rule.$ref, root);
+    audit(target, targetRoot, seen);
+  }
+  for (const child of [...Object.values(rule.$defs ?? {}), ...Object.values(rule.properties ?? {}), ...(rule.oneOf ?? []), ...(rule.items ? [rule.items] : [])]) audit(child, root, seen);
 }
-function referenced(reference: string): Schema {
-  const name = reference.replace(/^#\/\$defs\//, '');
-  if (reference !== `#/$defs/${name}` || !schema.$defs || !Object.hasOwn(schema.$defs, name)) throw new Error(`Unknown schema reference: ${reference}`);
-  return schema.$defs[name]!;
+function referenced(reference: string, root: Schema): readonly [Schema, Schema] {
+  const [document, name, extra] = reference.split('#/$defs/');
+  const target = document === '' ? root : document === schema.$id ? schema : undefined;
+  if (!name || extra !== undefined || !target?.$defs || !Object.hasOwn(target.$defs, name)) {
+    throw new Error(`Unknown schema reference: ${reference}`);
+  }
+  return [target.$defs[name]!, target];
 }
 /** Checks the declared JSON Schema subset without accepting unknown keywords in unused branches. */
 export function validate(value: unknown, rule: Schema = schema, path = '$'): void {
-  audit(rule);
-  visit(value, rule, path);
+  audit(rule, schema);
+  visit(value, rule, path, schema);
+}
+export function validateV1(value: unknown, definition?: string): void {
+  const root = schemaV1 ??= JSON.parse(readFileSync(new URL('../../spec/v1/model.schema.json', import.meta.url), 'utf8')) as Schema;
+  const rule = definition === undefined ? root : { $ref: `#/$defs/${definition}` };
+  audit(rule, root);
+  visit(value, rule, '$', root);
 }
 /** The schema intentionally uses this small, fail-closed JSON Schema subset; no external validator. */
-function visit(value: unknown, rule: Schema, path: string): void {
+function visit(value: unknown, rule: Schema, path: string, root: Schema): void {
   const fail = (): never => { throw new Error(`Invalid conformance value at ${path}`); };
-  if (rule.$ref) visit(value, referenced(rule.$ref), path);
+  if (rule.$ref) {
+    const [target, targetRoot] = referenced(rule.$ref, root);
+    visit(value, target, path, targetRoot);
+  }
   if ('const' in rule && value !== rule.const) fail();
   if (rule.enum && !rule.enum.includes(value)) fail();
   if (rule.oneOf) {
-    const matches = rule.oneOf.filter(option => { try { visit(value, option, path); return true; } catch { return false; } });
+    const matches = rule.oneOf.filter(option => { try { visit(value, option, path, root); return true; } catch { return false; } });
     if (matches.length !== 1) fail();
   }
   switch (rule.type) {
@@ -44,14 +62,14 @@ function visit(value: unknown, rule: Schema, path: string): void {
       for (const key of rule.required ?? []) if (!Object.hasOwn(record, key)) fail();
       for (const [key, entry] of Object.entries(record)) {
         const child = rule.properties && Object.hasOwn(rule.properties, key) ? rule.properties[key] : undefined;
-        if (child) visit(entry, child, `${path}.${key}`);
+        if (child) visit(entry, child, `${path}.${key}`, root);
         else if (rule.additionalProperties === false) fail();
       }
       break;
     }
     case 'array':
       if (!Array.isArray(value) || value.length < (rule.minItems ?? 0)) fail();
-      if (rule.items) (value as unknown[]).forEach((item, i) => visit(item, rule.items!, `${path}[${i}]`));
+      if (rule.items) (value as unknown[]).forEach((item, i) => visit(item, rule.items!, `${path}[${i}]`, root));
       break;
     case 'string':
       if (typeof value !== 'string') fail();

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "id": "unsupported-tones",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":true,"javascriptAttached":false}},
+    {"kind":"input","input":{"kind":"toneTransport","available":false}},
+    {"kind":"input","input":{"kind":"action","origin":"app","action":{"kind":"start","callID":"tones-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}}},
+    {"kind":"input","input":{"kind":"placed","callID":"tones-a"}},
+    {"kind":"input","input":{"kind":"provideMedia","callID":"tones-a"}},
+    {"kind":"input","input":{"kind":"connected","callID":"tones-a","eventID":"connect-tones-a"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"tones-a","lifecycle":{"kind":"connected"}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"capability","value":{"feature":"tones","callID":"tones-a","availability":{"kind":"unavailable","reason":"requiresMediaProvider"}}}}},
+    {"kind":"input","input":{"kind":"action","origin":"app","action":{"kind":"tones","callID":"tones-a","digits":["1","#"]}}},
+    {"kind":"expect","expectation":{"kind":"actionError","callID":"tones-a","error":{"kind":"unsupported","feature":"tones"}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"tones-a","lifecycle":{"kind":"connected"}}}
+  ]
+}

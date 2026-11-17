@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "kind": "audioRoute",
+  "value": {"callID":"call-a","intent":{"kind":"endpoint","endpointID":"receiver"},"observed":{"kind":"active","endpoint":{"id":"speaker","kind":"speaker"}}}
+}
