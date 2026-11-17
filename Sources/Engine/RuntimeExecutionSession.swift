@@ -37,8 +37,23 @@
         at: origin)
     }
 
-    /// A failed read poisons the session so a later clean read cannot conceal a history gap.
-    mutating func read(_ assertions: BackgroundAssertionsSnapshot?, uptime: UInt64) throws(Failure)
+    /// Keeps diagnostics readable while permanently refusing eligibility after a failed read.
+    mutating func read(_ assertions: BackgroundAssertionsSnapshot?, uptime: UInt64)
+      -> ExecutionDecisionSnapshot
+    {
+      do {
+        return try assess(assertions, uptime: uptime)
+      } catch {
+        failed = true
+        return .init(
+          configuration: configuration, assessedAt: uptime, eligibility: .unknownCoverage,
+          reasons: [], failure: .assessmentFailed)
+      }
+    }
+
+    /// A failed assessment poisons the session so later clean history cannot conceal a gap.
+    private mutating func assess(_ assertions: BackgroundAssertionsSnapshot?, uptime: UInt64)
+      throws(Failure)
       -> ExecutionDecisionSnapshot
     {
       guard !failed else { throw Failure.assessmentFailed }

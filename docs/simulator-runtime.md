@@ -704,8 +704,10 @@ running execution independently of suspension eligibility. Status reads and real
 boundaries reassess the history. Changed decisions enter the existing journal as
 `execution.assessed`, with `boundarySource: explicit-fixture-policy` and `verification: unverified`.
 Unchanged reads refresh the assessment time without adding duplicate decision rows.
-An invalid history read poisons the session: later reads fail, and adapter-triggered failures
-record `execution.assessmentFailed`, preventing a clean read from concealing a gap.
+An invalid assessment poisons the session: status remains readable with
+`eligibility: unknownCoverage`, `failure: assessmentFailed`, and no active reasons or deadline.
+The changed decision records `execution.assessmentFailed` with its configuration and provenance.
+Later clean history retains that failure marker, preventing a clean read from concealing a gap.
 
 This stage models explicit adapter assertions. Push-wake/audio observations and host
 supervision follow separately;

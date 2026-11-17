@@ -101,6 +101,9 @@ Public API changes include migration guidance.
 
 ### Fixed
 
+- Simulator status remains readable after an execution assessment fails, exposing unknown
+  coverage and a persistent failure marker while journaling the failed assessment.
+
 - Pre-mute receiver/publication checks select the first complete observer window within the
   existing result budget. Gapped attempts retain scheduler diagnostics as unobserved; health,
   marker and transport failures remain terminal, with unchanged thresholds.

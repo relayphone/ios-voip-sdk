@@ -1595,11 +1595,12 @@
       #if DEBUG && (SWIFT_PACKAGE || CKSIM_SDK_SOURCE)
         guard var session = executionSession else { return nil }
         defer { executionSession = session }
-        let decision = try session.read(
+        let decision = session.read(
           backgroundAssertions.snapshot, uptime: DispatchTime.now().uptimeNanoseconds)
         if lastExecutionDecision?.configuration != decision.configuration
           || lastExecutionDecision?.eligibility != decision.eligibility
           || lastExecutionDecision?.reasons != decision.reasons
+          || lastExecutionDecision?.failure != decision.failure
         {
           let data = try JSONEncoder().encode(decision)
           guard var fields = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -1607,7 +1608,9 @@
           }
           fields["boundarySource"] = "explicit-fixture-policy"
           fields["verification"] = "unverified"
-          record(event: "execution.assessed", fields: fields)
+          record(
+            event: decision.failure == nil ? "execution.assessed" : "execution.assessmentFailed",
+            fields: fields)
         }
         lastExecutionDecision = decision
         return decision
