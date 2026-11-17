@@ -384,3 +384,58 @@ activation enqueue failure, an enqueued command not consumed, and an activation 
 an unavailable engine. Missing engine outcome stays unobserved. Diagnostics neither qualify
 audio nor override a failed media result; older receipts without the new boundaries retain
 their uncertainty.
+
+## Synthetic video source and calibration receipts
+
+The optional `MediaTesting` package supplies a coarse luma marker with fixture, direction,
+epoch, source counter, source-clock timestamp and an integrity digest. `VideoMarker` generates
+and decodes actual pixel planes, including padded row strides. `VideoSourceLedger` preserves
+up to 4096 original identities and freezes its final counter atomically at off/end. It rejects
+further generation and never evicts old privacy evidence. New phases use new epochs.
+Capture a typed source `anchor()` before a new measurement phase; its counter fence excludes
+the dimension seed even if both share a rounded timestamp. Skipped ticks and rejected buffer
+submissions remain explicit. Fixed-grid counters advance under load without catch-up bursts.
+
+`SyntheticVideoCapture` exists only in DEBUG iOS simulator builds. It creates a LiveKit buffer
+track with camera semantics, seeds its dimensions before publication, and uses a four-buffer
+allocation ceiling. It opens no camera and has no camera fallback. The application owns
+publication, hold/mute, unpublish and shutdown. Keep generating during hold and suppress the
+ordinary publication gate; call `stop()` at the actual applied off/end boundary. Stop is
+serialized with generation before any asynchronous media teardown. Cancel/join the pacing
+task and separately stop/unpublish the track. Ordinary builds expose only
+`MediaVideoSupport.canCapture == false`, without the capture implementation or LiveKit import.
+
+Retain `SyntheticVideoReceiver` while collecting decoded pixels, including the drain interval.
+Its `VideoCalibration` recorder preserves corrupt, foreign and repeated arrivals. Only unique
+ledger-matched frames count toward complete-window fps. First observed fresh-frame latency is
+a same-clock upper bound on first delivery (attachment can miss an earlier frame); no
+cross-process clock subtraction is allowed. Reports include the maximum on-phase gap,
+generation-to-arrival residence, post-stop pre-boundary drain, every post-boundary counter,
+process CPU/peak RSS samples and the decoder callback high-water mark. Internal encoder queues
+are not directly observed. All resource fields are process-wide; sampling failure is nil.
+Evidence overflow or an in-progress callback makes a report incomplete, never successful.
+The recorder keeps at most 96 KiB of one failing luma plane for diagnosis. Unidentified
+post-stop callbacks increment `ambiguousBoundaryFrames` and leave `preBoundaryDrainUs` nil;
+zero recognized post-boundary counters cannot turn that ambiguity into a privacy pass.
+
+Off/end requires zero post-boundary generated identities reaching the receiver, bounded
+arrival of pre-boundary frames within a separately calibrated drain budget, and lifecycle
+receipts for source stop, publication mute/unpublish, no republish and continued receiver
+health. Corrupt or unmatched pixels cannot establish boundary order. An observer heartbeat
+is a recorder scheduling observation, not proof by itself that a remote decoder stayed
+attached. Keep actual track/room lifecycle evidence alongside it. Do not equate observer
+removal with silence or discard pre-boundary arrivals after off. No numeric budget is frozen
+by these types.
+
+`VideoCaptureTests.roomCodecCalibration` is an opt-in same-process, two-room VP8 calibration
+smoke. Supply a private JSON file in the simulator with `url`, `publisherToken`,
+`subscriberToken`, `width` and `height`; set the test-process environment variable
+`VIDEO_CALIBRATION_FIXTURE` to that file's path. Obtain the tokens from the existing fixture
+server's `credentials` function for two identities in one room. Never print or retain the
+credentials in test artifacts. The test emits one bounded `VIDEO_CALIBRATION` JSON line,
+keeps the receiver attached during the two-second observation after unpublish, and closes
+both rooms. The default profile is 320×240 at 10 fps, one VP8 layer; 160×120 is the fallback.
+Both are experiment settings, not throughput claims. The bounded smoke supplies measurement
+plumbing, not a substitute for repeated calibration across runner allocations and an
+independent holdout. Retain timeout/invalid trials as such; never widen the existing audio,
+result-acquisition or workflow deadlines to make a video measurement complete.
