@@ -12,6 +12,9 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     val fixtures = rootDir.resolve("../spec/fixtures")
+    val transitions = rootDir.resolve("../spec/transitions.json")
     inputs.dir(fixtures)
+    inputs.file(transitions)
     systemProperty("spec.fixtures", fixtures)
+    systemProperty("spec.transitions", transitions)
 }
