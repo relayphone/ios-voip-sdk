@@ -132,3 +132,36 @@ struct VideoProvenanceTests {
     #expect(report.preBoundaryDrainUs == nil)
   }
 }
+
+extension VideoProvenanceTests {
+  @Test func remoteObservationPreservesPixelsWithoutALocalSourceClock() throws {
+    let clock = MediaObservationClock()
+    let recorder = VideoCalibration(observationClock: clock)
+    let marker = try VideoMarker(
+      fixture: UUID(), direction: .downlink, epoch: 4, counter: 9, sourceTimeUs: 7)
+    recorder.record(.receiverAttached)
+    recorder.receive(
+      luma: try marker.luma(width: 160, height: 120), width: 160, height: 120, stride: 160)
+    recorder.receive(luma: [], width: 160, height: 120, stride: 0)
+    recorder.record(.receiverHeartbeat)
+    let observed = recorder.observation()
+    #expect(observed.clockID == clock.id)
+    #expect(observed.arrivals.first?.marker == marker)
+    #expect(observed.arrivals.last?.provenance.classification == .ambiguous)
+    #expect(observed.arrivals.count == 2)
+    #expect(observed.arrivals.allSatisfy { $0.atUs <= observed.observedAtUs })
+    #expect(observed.lifecycle.map(\.kind) == [.receiverAttached, .receiverHeartbeat])
+    #expect(!observed.overflow)
+    #expect(observed.queueHighWaterMark == 1)
+  }
+  @Test func remoteObservationRejectsCallbackOverflowAndInFlightDecoding() {
+    let recorder = VideoCalibration(observationClock: MediaObservationClock())
+    recorder.receiveDecoded {
+      #expect(recorder.observation().overflow)
+      return .decode(luma: [], width: 1, height: 1, stride: 0)
+    }
+    for _ in 0..<4096 { recorder.receive(luma: [], width: 1, height: 1, stride: 0) }
+    #expect(recorder.observation().arrivals.count == 4096)
+    #expect(recorder.observation().overflow)
+  }
+}

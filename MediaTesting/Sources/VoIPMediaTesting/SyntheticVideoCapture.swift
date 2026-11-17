@@ -113,7 +113,9 @@ public enum MediaVideoSupport {
     public func run<C: Clock<Duration>>(clock pacingClock: C, duration: Duration) async throws {
       guard duration > .zero, duration <= .seconds(180) else { throw Failure.duration }
       guard !running else { throw Failure.alreadyRunning }
-      guard ledger.stoppedAtUs == nil else { throw VideoMarker.Failure.stopped }
+      // A terminal transition can freeze the source before its scheduled pacing task enters.
+      // Joining that task is successful cleanup, not a failed attempt to restart capture.
+      if ledger.stoppedAtUs != nil { return }
       running = true
       ledger.pacingTaskJoined = false
       defer {

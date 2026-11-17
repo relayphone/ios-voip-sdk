@@ -40,10 +40,15 @@
     let fixtureId: String
     let conversationId: String
     let initialVideo: Bool?
-    init(fixtureId: String, conversationId: String, initialVideo: Bool? = nil) {
+    let syntheticVideo: UUID?
+    init(
+      fixtureId: String, conversationId: String, initialVideo: Bool? = nil,
+      syntheticVideo: UUID? = nil
+    ) {
       self.fixtureId = fixtureId
       self.conversationId = conversationId
       self.initialVideo = initialVideo
+      self.syntheticVideo = syntheticVideo
     }
   }
 
