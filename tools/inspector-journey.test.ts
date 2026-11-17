@@ -50,6 +50,13 @@ test('the Mac UI invocation propagates a failed test without another execution',
   assert.equal(invocations, 1);
 });
 
+test('the UI runner receives the actual invocation journal for report timestamps', async () => {
+  await runInspectorUITest('/fixture/work', '/fixture/result.xcresult', () => {}, async (_command, _args, options) => {
+    assert.equal(options.environment?.TEST_RUNNER_CKSIM_INSPECTOR_JOURNAL_FILE, '/fixture/events.jsonl');
+    return '';
+  }, '/fixture/events.jsonl');
+});
+
 test('successful checkbox observations reach the step summary without unrelated UI output', async context => {
   const folder = mkdtempSync(join(tmpdir(), 'inspector-summary-'));
   const previous = process.env.GITHUB_STEP_SUMMARY;
