@@ -15,6 +15,17 @@ export interface RunOptions {
   inherit?: boolean;
 }
 
+/** Retains bounded stderr even when spawnSync reports a timeout before an exit status. */
+export class CommandFailure extends Error {
+  readonly elapsedMS: number;
+  readonly stderrTail: string;
+  constructor(message: string, elapsedMS: number, stderr: string, cause?: Error) {
+    super(message, { cause });
+    this.elapsedMS = elapsedMS;
+    this.stderrTail = stderr.slice(-4096);
+  }
+}
+
 /** Runs a command and returns its trimmed output, failing if it doesn't succeed. */
 export function run(command: string, args: readonly string[], options: RunOptions = {}): string {
   const spawnOptions: SpawnSyncOptions = {
@@ -26,11 +37,16 @@ export function run(command: string, args: readonly string[], options: RunOption
     timeout: (options.timeout ?? 600) * 1000,
     killSignal: 'SIGKILL',
   };
+  const started = performance.now();
   const result = spawnSync(command, args, spawnOptions);
-  if (result.error) throw new Error(`${command} ${args.join(' ')}: ${result.error.message}`);
+  const elapsedMS = Math.round(performance.now() - started);
+  const stderr = result.stderr == null ? '' : String(result.stderr);
+  if (result.error) throw new CommandFailure(`${command} ${args.join(' ')}: ${result.error.message}`,
+    elapsedMS, stderr, result.error);
   if (result.status !== 0) {
     const detail = options.inherit ? '' : `\n${String(result.stdout)}${String(result.stderr)}`;
-    throw new Error(`${command} ${args.join(' ')} exited with ${result.status ?? result.signal}${detail}`);
+    throw new CommandFailure(`${command} ${args.join(' ')} exited with ${result.status ?? result.signal}${detail}`,
+      elapsedMS, stderr);
   }
   return options.inherit ? '' : String(result.stdout).trim();
 }
