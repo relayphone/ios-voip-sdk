@@ -34,6 +34,13 @@ export class JourneySetupTrace {
     catch (error) { console.warn(`warning: could not save simulator setup trace: ${String(error)}`); }
   }
 
+  installWindow(): { startMS: number; endMS: number } | undefined {
+    const install = this.observations.find(row => row.phase === 'install');
+    if (!install) return undefined;
+    const startMS = Date.parse(install.startedAt);
+    return { startMS, endMS: startMS + install.elapsedMS };
+  }
+
   /** Read-only probes run only after install or lookup fails and cannot affect the verdict. */
   captureInstallFailure(simulator: string, execute: typeof run = run): void {
     const collect = (phase: Phase, command: string, args: readonly string[], timeout: number,
