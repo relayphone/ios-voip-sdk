@@ -74,8 +74,28 @@ private struct InvariantChecker {
     #expect(endedEvents <= 1, "ended emitted twice", sourceLocation: sourceLocation)
     switch (before.phase, after.phase) {
     case (.ended, _):
-      #expect(after == before, "an ended call never changes", sourceLocation: sourceLocation)
-      #expect(effects.allSatisfy { $0.isRefusal }, "\(effects)", sourceLocation: sourceLocation)
+      var expected = before
+      var permittedEffects: [Effect] = []
+      switch event {
+      case .reportCompleted(let outcome) where before.admissionAttempt != nil:
+        if before.removeAfterAdmission, outcome == .presented,
+          case .ended(let reason) = before.phase
+        {
+          permittedEffects = [.reportEnded(before.call.id, reason)]
+        }
+        expected.admissionAttempt = nil
+        expected.removeAfterAdmission = false
+      case .admissionFailed(let attempt, _) where before.admissionAttempt == attempt:
+        fallthrough
+      case .frameworkReset:
+        expected.admissionAttempt = nil
+        expected.removeAfterAdmission = false
+      default: break
+      }
+      #expect(
+        after == expected, "an ended call only retires pending work", sourceLocation: sourceLocation
+      )
+      #expect(effects.filter { !$0.isRefusal } == permittedEffects, sourceLocation: sourceLocation)
     case (_, .ended):
       #expect(endedCount == 1, sourceLocation: sourceLocation)
       #expect(effects.last?.isEnded == true, sourceLocation: sourceLocation)

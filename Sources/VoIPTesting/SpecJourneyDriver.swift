@@ -7,6 +7,7 @@
   package final class SpecJourneyDriver {
     private let clock = TestClock()
     private let framework = FakeCallingFramework()
+    private var admittedReports: [CallID: @VoIPActor (PresentationOutcome) -> Void] = [:]
     private let media = FakeMedia()
     private let authority = ScriptedAuthority()
     private let events = EventLog()
@@ -86,6 +87,7 @@
           mediaProvided.removeAll()
           pendingHolds.removeAll()
           endResults.removeAll()
+          admittedReports.removeAll()
         }
       case .incoming(let id, let eventID, _, let party, let deferAdmission):
         let incoming = IncomingCall(id: id.callID, parties: [try party.sdkParty()])
@@ -98,12 +100,20 @@
         }
         framework.presentationOutcome = .presented
       case .admitted(let id):
-        guard framework.waitingCalls.contains(where: { $0.id == id.callID }) else {
+        guard let complete = framework.takeReportCompletion(of: id.callID) else {
           return "\(id.rawValue) has no pending system admission."
         }
-        framework.completeReports(of: id.callID, with: .presented)
-      case .admissionFailed(let id, _):
-        return "The engine has no per-attempt system failure input for \(id.rawValue)."
+        admittedReports[id.callID] = complete
+        complete(.presented)
+      case .admissionFailed(let id, let cause):
+        guard
+          let complete = framework.takeReportCompletion(of: id.callID)
+            ?? admittedReports.removeValue(forKey: id.callID)
+        else { return "\(id.rawValue) has no system admission to refuse." }
+        let failure = SystemFailure(
+          platform: cause.platform == .ios ? .ios : .android, operation: .admission,
+          diagnostic: cause.code.map(SystemFailure.Diagnostic.code))
+        complete(.refused(.systemFailed(failure)))
       case .authority(let id, let claim, let reconciliation):
         authority.script(id.callID, claim: claim, reconciliation: reconciliation)
       case .latePermit(let id):
@@ -511,7 +521,8 @@
       case .audioActivationTimedOut, .audioRecoveryTimedOut, .connectTimedOut,
         .reconnectTimedOut, .actionTimedOut:
         .deadlineExceeded
-      case .refused, .atCapacity, .audioSession, .frameworkReset, .server: .systemFailed
+      case .refused, .systemFailed, .atCapacity, .audioSession, .frameworkReset, .server:
+        .systemFailed
       }
     }
   }

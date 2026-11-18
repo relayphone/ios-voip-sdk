@@ -154,7 +154,7 @@ extension CallFailure {
   /// The TypeScript API's `EndedFailureKind`, which names the SDK's case.
   var kind: String {
     switch self {
-    case .refused: "refused"
+    case .refused, .systemFailed: "refused"
     case .atCapacity: "atCapacity"
     case .notPlaced: "notPlaced"
     case .media: "media"

@@ -7,7 +7,7 @@ extension CallMachine {
   ///   presentation policy is ``PresentationPolicy/Presentation/none``, which doesn't exist on
   ///   this device.
   static func begin(
-    _ origin: Origin, configuration: VoIPConfiguration, now: Date
+    _ origin: Origin, attempt: AttemptID, configuration: VoIPConfiguration, now: Date
   ) -> (State, [Effect])? {
     switch origin {
     case .incoming(let incoming):
@@ -20,6 +20,7 @@ extension CallMachine {
         var step = Step(
           call: call, phase: .reporting(endOnPresent: nil), policy: policy,
           configuration: configuration, now: now)
+        step.state.admissionAttempt = attempt
         step.output(.reportIncoming(step.state.call))
         return step.result
       case .preview:
@@ -37,6 +38,7 @@ extension CallMachine {
         call: Call(outgoing), phase: .requesting(action),
         policy: configuration.presentationPolicy, configuration: configuration,
         now: now)
+      step.state.startAttempt = attempt
       step.arm(.placement)
       step.output(.request(action))
       return step.result
@@ -115,6 +117,8 @@ private struct Step {
   mutating func apply(_ event: CallMachine.Event) {
     switch event {
     case .reportCompleted(let outcome): reportCompleted(outcome)
+    case .admissionFailed(let attempt, let failure): admissionFailed(attempt, failure)
+    case .startFailed(let attempt, let failure): startFailed(attempt, failure)
     case .performed(let id, let action): perform(id, action)
     case .actionTimedOut(let id):
       if state.phase.held?.id == id { abandon(.actionTimedOut) }
@@ -143,6 +147,11 @@ private struct Step {
   }
 
   private mutating func reportCompleted(_ outcome: PresentationOutcome) {
+    state.admissionAttempt = nil
+    if case .ended(let reason) = state.phase, state.removeAfterAdmission, outcome == .presented {
+      output(.reportEnded(state.call.id, reason))
+    }
+    state.removeAfterAdmission = false
     guard case .reporting(let remembered) = state.phase else { return }
     let presented = outcome == .presented
     switch (outcome, remembered) {
@@ -165,6 +174,24 @@ private struct Step {
     case (.previewed, nil), (.notShown, nil):
       // A calling framework never completes a report this way, and didn't present the call.
       end(.failed(.refused), reportingEnd: false)
+    }
+  }
+
+  private mutating func admissionFailed(_ attempt: CallMachine.AttemptID, _ failure: SystemFailure)
+  {
+    guard state.admissionAttempt == attempt else { return }
+    state.admissionAttempt = nil
+    state.removeAfterAdmission = false
+    guard case .reporting(let retainedEnd) = state.phase else { return }
+    end(retainedEnd ?? .failed(.systemFailed(failure)), reportingEnd: false)
+  }
+
+  private mutating func startFailed(_ attempt: CallMachine.AttemptID, _ failure: SystemFailure) {
+    guard state.startAttempt == attempt else { return }
+    switch state.phase {
+    case .requesting(.start), .placing, .preparing, .dialing:
+      end(.failed(.systemFailed(failure)), reportingEnd: false)
+    default: break
     }
   }
 
@@ -237,12 +264,9 @@ private struct Step {
   }
 
   private mutating func requestFailed(_ action: Action) {
-    guard case .requesting(let requested) = state.phase, requested == action else { return }
-    if action.isJoin {
-      returnToPreview(.refused)
-    } else {
-      end(.failed(.refused), reportingEnd: false)
-    }
+    guard action.isJoin, case .requesting(let requested) = state.phase, requested == action
+    else { return }
+    returnToPreview(.refused)
   }
 
   private mutating func placed() {
@@ -431,6 +455,8 @@ private struct Step {
   }
 
   private mutating func frameworkReset() {
+    state.admissionAttempt = nil
+    state.removeAfterAdmission = false
     switch state.phase {
     case .previewing, .ended:
       break
@@ -494,8 +520,11 @@ private struct Step {
   private mutating func endLocally(_ receipt: EndReceipt, fulfilling systemAction: ActionID? = nil)
   {
     state.localEndReceipt = receipt
+    state.removeAfterAdmission = systemAction == nil && state.admissionAttempt != nil
     end(
-      receipt.reason.endReason, reportingEnd: systemAction == nil && !state.phase.isPreviewing,
+      receipt.reason.endReason,
+      reportingEnd: systemAction == nil && !state.phase.isPreviewing
+        && state.admissionAttempt == nil,
       fulfilling: systemAction, performed: .end(receipt.callID))
   }
 
@@ -524,6 +553,10 @@ private struct Step {
   // MARK: Effects
 
   private mutating func enter(_ phase: Phase) {
+    switch phase {
+    case .requesting, .placing, .preparing, .dialing: break
+    default: state.startAttempt = nil
+    }
     state.phase = phase
     state.call.status = phase.status
     if case .previewing(let reason) = phase { state.previewReason = reason }

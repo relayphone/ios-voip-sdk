@@ -56,9 +56,9 @@
     /// The conversation UUIDs of calls started from a system surface, which the system chose.
     private var systemUUIDs: [CallID: UUID] = [:]
     /// The starts and joins the app requested, until the system asks the SDK to perform them.
-    private var requested: [UUID: Action] = [:]
+    private var requested: [UUID: (id: UUID, action: Action)] = [:]
     /// The incoming reports the system hasn't answered.
-    private var reporting: Set<UUID> = []
+    private var reporting: [UUID: UUID] = [:]
     /// Ends to report once the system has answered the call's report.
     private var endsAfterReport: [UUID: EndReason] = [:]
     /// Platform actions that remove calls the SDK already ended, keyed by action ID.
@@ -107,11 +107,12 @@
     ) {
       guard let manager else { return completion(.refused(.refused)) }
       let uuid = uuid(for: call.id)
+      let reportID = UUID()
       let update = Conversation.Update(
         members: Set(call.parties.systemHandles),
         capabilities: Conversation.Capabilities(configuration.capabilities, hasVideo: call.hasVideo)
       )
-      reporting.insert(uuid)
+      reporting[uuid] = reportID
       let answered = DispatchSemaphore(value: 0)
       Task.detached(priority: .userInitiated) { [weak self] in
         let start = ContinuousClock.now
@@ -129,7 +130,7 @@
         }
         answered.signal()
         if let self {
-          await self.reportCompleted(uuid, outcome, then: completion)
+          await self.reportCompleted(uuid, reportID: reportID, outcome, then: completion)
         } else {
           await completion(outcome)
         }
@@ -149,12 +150,10 @@
       let systemAction: ConversationAction
       switch action {
       case .start(let outgoing):
-        requested[uuid] = action
         systemAction = StartConversationAction(
           conversationUUID: uuid, handles: outgoing.parties.systemHandles,
           isVideo: outgoing.hasVideo)
       case .join:
-        requested[uuid] = action
         systemAction = StartConversationAction(
           conversationUUID: uuid, handles: call.parties.systemHandles, isVideo: call.hasVideo)
       case .answer:
@@ -173,13 +172,18 @@
       case .unmerge:
         systemAction = UnmergeConversationAction(conversationUUID: uuid)
       }
+      let actionID = systemAction.uuid
+      if systemAction is StartConversationAction {
+        requested[uuid] = (actionID, action)
+      }
       do {
         try await manager.perform(systemAction)
       } catch {
-        if requested[uuid] == action { requested[uuid] = nil }
+        if requested[uuid]?.id == actionID { requested[uuid] = nil }
         let detail = FrameworkError(error)
         Self.log.error(
           "The system refused \(action.name, privacy: .public): \(detail, privacy: .public)")
+        if case .start = action { throw .refused(detail) }
         throw SystemError.actionError(for: error)
       }
     }
@@ -229,7 +233,7 @@
     public func reportEnded(_ id: CallID, reason: EndReason) {
       let uuid = uuid(for: id)
       requested[uuid] = nil
-      guard !reporting.contains(uuid) else {
+      guard reporting[uuid] == nil else {
         endsAfterReport[uuid] = reason
         return
       }
@@ -271,7 +275,9 @@
         if case .end = systemAction, localRemovals.removeValue(forKey: id) != nil {
           return complete(id, fulfilled: true)
         }
-        guard let action = action(for: systemAction) else { return complete(id, fulfilled: false) }
+        guard let action = action(for: systemAction, id: id) else {
+          return complete(id, fulfilled: false)
+        }
         onEvent(.perform(id, action))
       case .actionTimedOut(let id):
         if localRemovals[id] != nil { finishLocalRemoval(id) } else { onEvent(.actionTimedOut(id)) }
@@ -286,10 +292,14 @@
 
     /// The SDK's action for an action the system asks it to perform, or `nil` when it names a
     /// call this device doesn't know.
-    private func action(for systemAction: SystemAction) -> Action? {
+    private func action(for systemAction: SystemAction, id actionID: ActionID) -> Action? {
       switch systemAction {
       case .start(let uuid, let handles, let isVideo):
-        if let action = requested.removeValue(forKey: uuid) { return action }
+        if let request = requested[uuid] {
+          guard request.id == actionID.rawValue else { return nil }
+          requested[uuid] = nil
+          return request.action
+        }
         // A start from a system surface, such as Recents.
         let parties = handles.compactMap(Party.init)
         guard !parties.isEmpty else { return nil }
@@ -311,12 +321,14 @@
     }
 
     private func reportCompleted(
-      _ uuid: UUID, _ outcome: PresentationOutcome,
+      _ uuid: UUID, reportID: UUID, _ outcome: PresentationOutcome,
       then completion: @VoIPActor (PresentationOutcome) -> Void
     ) {
-      reporting.remove(uuid)
-      if let reason = endsAfterReport.removeValue(forKey: uuid), outcome == .presented {
-        removeConversation(uuid, reason: reason)
+      if reporting[uuid] == reportID {
+        reporting[uuid] = nil
+        if let reason = endsAfterReport.removeValue(forKey: uuid), outcome == .presented {
+          removeConversation(uuid, reason: reason)
+        }
       }
       completion(outcome)
     }

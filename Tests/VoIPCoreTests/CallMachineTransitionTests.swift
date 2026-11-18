@@ -69,7 +69,7 @@ let transitionRows: [TransitionRow] = [
     [.reject(answer, .notAllowed(.ringing))]),
   .init(
     .reporting, .event(.localEnd(localEndReceipt)), .ended(.localEnded),
-    [.reportEnded(.localEnded), .performed(end), .ended(.localEnded)]),
+    [.performed(end), .ended(.localEnded)]),
   .init(
     .reporting, .event(.frameworkReset), .ended(.failed(.frameworkReset)),
     [.ended(.failed(.frameworkReset))]),
@@ -182,8 +182,13 @@ let transitionRows: [TransitionRow] = [
     [.startRequested]),
   .init(.requestingStart, .event(.performed(a2, join)), .requesting(startAction), [.fail(a2)]),
   .init(
-    .requestingStart, .event(.requestFailed(startAction)), .ended(.failed(.refused)),
-    [.disarm(.placement), .ended(.failed(.refused))]),
+    .requestingStart,
+    .event(.startFailed(attempt, SystemFailure(platform: .ios, operation: .start))),
+    .ended(.failed(.systemFailed(SystemFailure(platform: .ios, operation: .start)))),
+    [
+      .disarm(.placement),
+      .ended(.failed(.systemFailed(SystemFailure(platform: .ios, operation: .start)))),
+    ]),
   .init(.requestingStart, .event(.requestFailed(end)), .requesting(startAction), []),
   .init(
     .requestingStart, .expiry(.placement), .ended(.failed(.notPlaced)),
@@ -602,7 +607,8 @@ let beginRows: [BeginRow] = [
 @Suite struct CallMachineTransitionTests {
   @Test(arguments: beginRows)
   func begin(_ row: BeginRow) {
-    let result = CallMachine.begin(row.origin, configuration: row.configuration, now: epoch)
+    let result = CallMachine.begin(
+      row.origin, attempt: attempt, configuration: row.configuration, now: epoch)
     #expect(result?.0.phase == row.phase)
     #expect(result?.0.call.status == row.phase?.status)
     #expect((result?.1 ?? []).map(Shape.init) == row.effects)

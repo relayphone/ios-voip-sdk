@@ -7,6 +7,14 @@ Public API changes include migration guidance.
 
 ### Breaking
 
+- Swift reports native admission and Start refusals as `CallFailure.systemFailed(SystemFailure)`.
+  Handle the new case when switching on `CallFailure`, and use its operation, platform, and
+  diagnostic to distinguish these refusals. Custom `CallingFramework` adapters can return
+  `.refused(.systemFailed(failure))` from an incoming report to retain the native error. Legacy
+  `.refused(.refused)` reports produce an admission failure without a diagnostic. A refused
+  LiveCommunicationKit Start returns `ActionError.refused` with the native error, including
+  when the native error is an unknown conversation.
+
 - Swift `EndReason.endedHere` is now `localDeclined` for a ringing incoming call and
   `localEnded` for other local ends. Update switches to handle both. `request(.end(id))`
   now ends the call before system removal and returns successfully for retained ended calls.

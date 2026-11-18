@@ -49,6 +49,9 @@ public final class FakeCallingFramework: CallingFramework {
   /// The configuration the SDK attached with, or `nil` before it attached.
   public private(set) var configuration: VoIPConfiguration?
 
+  /// The platform to identify in system failures.
+  public var platform: SystemFailure.Platform = .ios
+
   /// What the system does with each incoming call that the SDK reports, at once. When it is
   /// `nil`, reports wait for ``completeReports(of:with:)``. Defaults to `presented`.
   public var presentationOutcome: PresentationOutcome? = .presented
@@ -74,6 +77,9 @@ public final class FakeCallingFramework: CallingFramework {
   /// How the fake answers each request. Defaults to ``RequestResult/perform``.
   public var requestResult = RequestResult.perform
 
+  /// Optionally handles a request after it is recorded, including suspending its completion.
+  public var requestHandler: (@VoIPActor @Sendable (Action) async throws(ActionError) -> Void)?
+
   private var onEvent: (@VoIPActor (FrameworkEvent) -> Void)?
   private var waitingReports: [(call: Call, completion: @VoIPActor (PresentationOutcome) -> Void)] =
     []
@@ -94,6 +100,12 @@ public final class FakeCallingFramework: CallingFramework {
     let completing = waitingReports.filter { $0.call.id == id }
     waitingReports.removeAll { $0.call.id == id }
     for report in completing { report.completion(outcome) }
+  }
+
+  /// Takes the oldest waiting report for a call so a test can control its callback directly.
+  public func takeReportCompletion(of id: CallID) -> (@VoIPActor (PresentationOutcome) -> Void)? {
+    guard let index = waitingReports.firstIndex(where: { $0.call.id == id }) else { return nil }
+    return waitingReports.remove(at: index).completion
   }
 
   /// Asks the SDK to perform an action, as the system does when the user acts on its calling
@@ -143,6 +155,7 @@ public final class FakeCallingFramework: CallingFramework {
   /// Records the request and answers it as ``requestResult`` says.
   public func request(_ action: Action, for call: Call) async throws(ActionError) {
     records.append(.request(action, call))
+    if let requestHandler { return try await requestHandler(action) }
     switch requestResult {
     case .perform: perform(action)
     case .accept: break

@@ -172,7 +172,7 @@ internal class JourneyDriver(private val scope: TestScope, private val configura
         }
 
         fun rejectSetup(id: CallID, failure: SystemFailure) {
-            check(admissions.remove(id) != null)
+            check(admissions.remove(id) != null || failure.operation == SystemOperation.ADMISSION)
             check(sessions.getValue(id).complete(Outcome.Failure(failure)))
         }
 

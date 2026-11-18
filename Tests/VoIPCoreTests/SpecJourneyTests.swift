@@ -8,7 +8,6 @@ private let catalog = URL(filePath: #filePath)
   .appending(path: "spec/journeys", directoryHint: .isDirectory)
 
 private let pending: [String: String] = [
-  "admission-rejected-isolated": "per-attempt system failure input not yet in the Swift engine",
   "answer-not-allowed": "No native claim port or typed notAllowed refusal.",
   "answer-refusal": "No native claim port to end the call with the refusal's ownership reason.",
   "answer-refusal-preview": "No native claim port to apply preview policy to an ownership refusal.",

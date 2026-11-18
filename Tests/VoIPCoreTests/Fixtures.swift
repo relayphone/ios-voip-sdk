@@ -12,6 +12,7 @@ typealias State = CallMachine.State
 let callID = CallID(rawValue: "call-1")
 let otherCallID = CallID(rawValue: "call-2")
 let epoch = Date(timeIntervalSince1970: 1_800_000_000)
+let attempt = CallMachine.AttemptID(generation: 1)
 let later = epoch.addingTimeInterval(5)
 
 let alice: Party = {
@@ -131,7 +132,7 @@ enum Start: String, CaseIterable, Sendable, CustomTestStringConvertible {
   ) throws -> State {
     let (origin, events) = path(policy: policy)
     var (state, _) = try #require(
-      CallMachine.begin(origin, configuration: configuration, now: epoch))
+      CallMachine.begin(origin, attempt: attempt, configuration: configuration, now: epoch))
     for event in events {
       (state, _) = CallMachine.transition(state, event, configuration: configuration, now: epoch)
     }

@@ -22,7 +22,6 @@ import VoIPCore
 
   @Test(arguments: [
     (2, PresentationOutcome.presented), (3, .filtered(.doNotDisturb)), (4, .filtered(.blockList)),
-    (0, .refused(.refused)), (1, .refused(.refused)),
   ])
   func mapsIncomingReportErrors(_ code: Int, _ outcome: PresentationOutcome) {
     #expect(
@@ -33,13 +32,15 @@ import VoIPCore
   }
 
   @Test func refusesReportErrorsFromOtherDomainsOrTooDeep() {
-    #expect(SystemError.presentationOutcome(for: CancellationError()) == .refused(.refused))
-    #expect(
-      SystemError.presentationOutcome(for: wrapped(Self.requestTransaction, 3))
-        == .refused(.refused))
-    #expect(
-      SystemError.presentationOutcome(for: wrapped(Self.incomingCall, 3, depth: 4))
-        == .refused(.refused))
+    let errors: [any Error] = [
+      CancellationError(), wrapped(Self.incomingCall, 0), wrapped(Self.incomingCall, 1),
+      wrapped(Self.requestTransaction, 3), wrapped(Self.incomingCall, 3, depth: 4),
+    ]
+    for error in errors {
+      let failure = SystemFailure(
+        platform: .ios, operation: .admission, diagnostic: .framework(FrameworkError(error)))
+      #expect(SystemError.presentationOutcome(for: error) == .refused(.systemFailed(failure)))
+    }
   }
 
   /// The error that ``wrapped(_:_:depth:)`` makes, as the SDK keeps it.
