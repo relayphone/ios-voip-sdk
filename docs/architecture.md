@@ -402,6 +402,7 @@ by ordered revisions/events with action/attempt correlation. Payloads include `a
 cursors return `resyncRequired` with state; bounded terminal replay requires idempotent handling.
 `subscribe(listener)` shares `observe()`'s store, hydration and ordering, with an idempotent
 unsubscribe for that listener. `/react` hooks project the same store without another native client.
+The [native and JavaScript bridge contract](../spec/bridge.md) defines the transport beneath this API.
 
 `audio` separates requested from observed endpoints; `permissions` separates safe reads from
 foreground prompts. `push` distinguishes APNs VoIP/FCM registration and delivery evidence.
