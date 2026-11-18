@@ -133,7 +133,10 @@ export async function runTestProcess(options: {
     const terminate = (why: TestProcessResult['reason']) => {
       if (reason === 'exit') reason = why;
       stop();
-      fallback ??= setTimeout(abandonPipes, 1000);
+      // A failed signal may leave the pipes open indefinitely. Once the native
+      // group is known, give buffered output a short grace before settling.
+      const pipeGraceMS = cleanupErrors.size > 0 && nativePID !== undefined ? 250 : 1000;
+      fallback ??= setTimeout(abandonPipes, pipeGraceMS);
     };
     let timer = readiness
       ? setTimeout(() => terminate('startupTimeout'), readiness.timeoutMS)
