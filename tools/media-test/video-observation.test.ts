@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assessVideo, VideoObservation, hostVideoBoundary, type VideoSourceReceipt } from './video-observation.ts';
+import { assessBoundVideo, assessVideo, VideoObservation, hostVideoBoundary, type VideoSourceReceipt } from './video-observation.ts';
 import { videoLuma, type VideoMarker } from './video-marker.ts';
 const fixture='01234567-89ab-cdef-0123-456789abcdef';
 function setup() {
@@ -69,4 +69,26 @@ test('the dimension seed cannot satisfy first-frame or increase a complete windo
   const result=assessVideo(receipt,f.source,f.options);
   assert.equal(result.firstMs,100.001);assert.equal(result.onPassed,false);
   assert.throws(()=>assessVideo(f.observer.receipt(),f.source,{...f.options,afterCounter:-1}));
+});
+
+test('out-of-order unique decoded markers cannot claim forward progress', () => {
+  const f = setup(), receipt = f.observer.receipt();
+  const reversed = [...receipt.arrivals].reverse();
+  receipt.arrivals = receipt.arrivals.map((arrival, i) => ({ ...reversed[i]!, atMs: arrival.atMs }));
+  assert.equal(assessVideo(receipt, f.source, f.options).onPassed, false);
+});
+
+test('hold requires a running source that advances through the suppression window', () => {
+  const f = setup(), receipt = f.observer.receipt();
+  const source = { ...f.source, stoppedAtUs: undefined, finalCounter: undefined, pacingTaskJoined: false };
+  receipt.events = receipt.events.map(row => row.kind === 'unpublished' ? { ...row, kind: 'muted' } : row);
+  const timing = { participant: 'app', publication: 'video', sourceAnchorMs: 0, afterCounter: 0,
+    anchor: { earliest: 0, latest: 0 },
+    terminal: { operation: 'hold' as const, earliest: 2500, latest: 2500, sourceBoundaryMs: 2500 } };
+  for (let i = 25; i <= 32; i++) source.generated.push({
+    ...source.generated[0]!, counter: i, sourceTimeUs: i * 100_000,
+  });
+  assert.equal(assessBoundVideo(receipt, source, timing).offPassed, true);
+  source.generated.length = 26;
+  assert.equal(assessBoundVideo(receipt, source, timing).offPassed, false);
 });

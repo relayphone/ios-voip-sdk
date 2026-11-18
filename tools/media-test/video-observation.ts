@@ -22,18 +22,19 @@ function gateLimits(input: VideoGateInput): VideoGateLimits {
   return { ...gates };
 }
 export interface VideoScope { fixture: string; direction: 0 | 1; epoch: number; participant: string; publication: string }
-export interface VideoArrival { atMs: number; mediaTimestampUs: string; image: VideoImage }
+export interface VideoArrival { atMs: number; mediaTimestampUs: string; image: Omit<VideoImage, 'u' | 'v'> & { u: VideoImage['u'] | null; v: VideoImage['v'] | null } }
 export interface VideoReceipt { clockID: string; scope: VideoScope; startedAtMs: number; observedAtMs: number;
-  arrivals: VideoArrival[]; ticks: number[]; events: {kind: 'attached' | 'unpublished' | 'eos' | 'failed'; atMs: number}[]; overflow: boolean }
+  arrivals: VideoArrival[]; ticks: number[]; events: {kind: 'attached' | 'muted' | 'unpublished' | 'eos' | 'failed'; atMs: number}[]; overflow: boolean }
 /** Bounded synchronous metadata capture. No video buffers survive receive(). */
 export class VideoObservation {
-  readonly clockID = randomUUID();
+  readonly clockID: string;
   private readonly startedAtMs: number;
   private arrivals: VideoArrival[] = []; private ticks: number[] = [];
   private events: VideoReceipt['events'] = []; private overflow = false;
   readonly scope: VideoScope;
   private readonly now: () => number;
-  constructor(scope: VideoScope, now = () => performance.now()) {
+  constructor(scope: VideoScope, now = () => performance.now(), clockID = randomUUID().toString()) {
+    this.clockID = clockID;
     this.now = now;
     videoIdentity({ ...scope, counter: 0, sourceTimeUs: 0 });
     if (!scope.participant || !scope.publication) throw Error('Missing video subscription identity');
@@ -64,30 +65,51 @@ export interface VideoMeasurementOptions {
 }
 /** Raw calibration measurements and integrity evidence, without platform gate verdicts. */
 export function measureVideo(receipt: VideoReceipt, source: VideoSourceReceipt, options: VideoMeasurementOptions) {
-  if (!Number.isSafeInteger(options.afterCounter) || options.afterCounter < 0 || options.afterCounter > 0xffffffff) throw Error('Invalid video counter fence');
-  if (options.participant !== receipt.scope.participant || options.publication !== receipt.scope.publication || source.participant !== options.participant || source.publication !== options.publication) throw Error('Video subscription mismatch');
   if (options.bracket.hostClockID !== receipt.clockID || (options.terminal && options.terminal.hostClockID !== receipt.clockID)) throw Error('Host video clock mismatch');
   if (source.clockID !== options.bracket.clockID || (options.terminal && source.clockID !== options.terminal.clockID)) throw Error('Video clock mismatch');
   if (!!options.terminal !== (options.nativeBoundaryMs !== undefined)) throw Error('Missing confirmed terminal anchor');
+  const nativeBoundaryMs = options.nativeBoundaryMs;
+  return measureBoundVideo(receipt, source, {
+    participant: options.participant, publication: options.publication, afterCounter: options.afterCounter,
+    sourceAnchorMs: options.nativeAnchorMs, anchor: hostVideoBoundary(options.nativeAnchorMs, options.bracket),
+    terminal: options.terminal && nativeBoundaryMs !== undefined ? {
+      ...hostVideoBoundary(nativeBoundaryMs, options.terminal), sourceBoundaryMs: nativeBoundaryMs, operation: 'stop',
+      stopAtOrAfterMs: nativeBoundaryMs,
+    } : undefined,
+  });
+}
+export interface BoundVideoTiming {
+  participant: string; publication: string; afterCounter: number; sourceAnchorMs: number;
+  anchor: { earliest: number; latest: number };
+  terminal?: { earliest: number; latest: number; sourceBoundaryMs: number;
+    stopAtOrAfterMs?: number; publicationAtOrAfterMs?: number; operation: 'stop' | 'hold' };
+}
+
+function measureBoundVideo(receipt: VideoReceipt, source: VideoSourceReceipt, options: BoundVideoTiming) {
+  if (!Number.isSafeInteger(options.afterCounter) || options.afterCounter < 0 || options.afterCounter > 0xffffffff) throw Error('Invalid video counter fence');
+  if (options.participant !== receipt.scope.participant || options.publication !== receipt.scope.publication || source.participant !== options.participant || source.publication !== options.publication) throw Error('Video subscription mismatch');
   if (source.stoppedAtUs !== undefined && (!Number.isSafeInteger(source.stoppedAtUs) || source.stoppedAtUs < 0)) throw Error('Invalid source boundary');
-  const anchor = hostVideoBoundary(options.nativeAnchorMs, options.bracket);
+  const { anchor, terminal: end } = options;
+  const sourceBoundaryMs = end?.sourceBoundaryMs;
   const scope = receipt.scope, originals = new Set(source.generated.map(videoIdentity)), seen = new Set<string>();
   let corrupt = 0, foreign = 0, duplicate = 0, contentFree = 0, postBoundary = 0;
   const fresh: VideoArrival[] = [], matched: VideoArrival[] = [];
-  let previousArrival = receipt.startedAtMs;
+  let previousArrival = receipt.startedAtMs, latestFreshCounter = options.afterCounter;
   for (const arrival of receipt.arrivals) {
     if (!Number.isFinite(arrival.atMs) || arrival.atMs < previousArrival || arrival.atMs > receipt.observedAtMs) throw Error('Invalid video arrival time');
     previousArrival = arrival.atMs;
     if (arrival.image.kind === 'contentFree') { contentFree++; continue; }
     const m = arrival.image.marker;
     if (arrival.image.kind !== 'source' || !m) { corrupt++; continue; }
-    if (options.nativeBoundaryMs !== undefined && m.fixture.toLowerCase() === scope.fixture.toLowerCase() && m.direction === scope.direction && m.epoch === scope.epoch && (m.sourceTimeUs > options.nativeBoundaryMs * 1000 || m.counter > (source.finalCounter ?? -1))) postBoundary++;
+    if (sourceBoundaryMs !== undefined && m.fixture.toLowerCase() === scope.fixture.toLowerCase() && m.direction === scope.direction && m.epoch === scope.epoch && (m.sourceTimeUs > sourceBoundaryMs * 1000 || (end?.operation === 'stop' && m.counter > (source.finalCounter ?? -1)))) postBoundary++;
     if (arrival.image.y.width !== videoGates.width || arrival.image.y.height !== videoGates.height || m.fixture.toLowerCase() !== scope.fixture.toLowerCase() || m.direction !== scope.direction || m.epoch !== scope.epoch || !originals.has(videoIdentity(m))) { foreign++; continue; }
     matched.push(arrival);
     if (seen.has(videoIdentity(m))) { duplicate++; continue; } seen.add(videoIdentity(m));
-    if (m.sourceTimeUs >= options.nativeAnchorMs * 1000 && m.counter > options.afterCounter && arrival.atMs >= anchor.earliest) fresh.push(arrival);
+    if (m.sourceTimeUs >= options.sourceAnchorMs * 1000 && m.counter > latestFreshCounter && arrival.atMs >= anchor.earliest) {
+      latestFreshCounter = m.counter;
+      fresh.push(arrival);
+    }
   }
-  const end = options.terminal && options.nativeBoundaryMs !== undefined ? hostVideoBoundary(options.nativeBoundaryMs, options.terminal) : undefined;
   const on = fresh.filter(a => !end || a.atMs < end.earliest), windows: number[] = [];
   const onEnd = end?.earliest ?? receipt.observedAtMs;
   if (on.length) for (let t = on[0]!.atMs; t + videoGates.windowMs <= onEnd; t += videoGates.windowMs)
@@ -100,23 +122,37 @@ export function measureVideo(receipt: VideoReceipt, source: VideoSourceReceipt, 
     coverage.every((t, i) => Number.isFinite(t) && (!i || t >= coverage[i - 1]! && t - coverage[i - 1]! <= videoGates.drainMs));
   const identifiedPostBoundary = end ? matched.filter(a => a.atMs >= end.earliest) : [];
   const drainMs = end ? Math.max(0, ...identifiedPostBoundary.map(a => a.atMs - end.earliest + .001)) : null;
-  const producer = source.stoppedAtUs !== undefined && source.finalCounter === source.generated.at(-1)?.counter && source.finalEpoch === scope.epoch &&
-    source.pacingTaskJoined === true && Number.isSafeInteger(source.postStopCaptureRejects) && source.postStopCaptureRejects > 0 &&
-    options.nativeBoundaryMs !== undefined && source.stoppedAtUs >= options.nativeBoundaryMs * 1000 && source.generated.every(m => m.sourceTimeUs <= options.nativeBoundaryMs! * 1000);
+  const producer = end?.operation === 'hold'
+    ? source.stoppedAtUs === undefined && (source.generated.at(-1)?.sourceTimeUs ?? 0) >
+      (end.sourceBoundaryMs + videoGates.drainMs - 2 * 1000 / videoGates.fps) * 1000
+    : sourceBoundaryMs !== undefined && source.stoppedAtUs !== undefined &&
+      source.finalCounter === source.generated.at(-1)?.counter && source.finalEpoch === scope.epoch &&
+      source.pacingTaskJoined && Number.isSafeInteger(source.postStopCaptureRejects) && source.postStopCaptureRejects > 0 &&
+      (end?.stopAtOrAfterMs === undefined || source.stoppedAtUs >= end.stopAtOrAfterMs * 1000) &&
+      source.generated.every(m => m.sourceTimeUs <= sourceBoundaryMs * 1000);
   const terminalObservedMs = end ? receipt.observedAtMs - end.latest : null;
-  const terminalUnpublished = !!end && receipt.events.some(e => e.kind === 'unpublished' && e.atMs >= end.earliest);
+  const terminalUnpublished = !!end && receipt.events.some(e =>
+    (e.kind === 'unpublished' || (end.operation === 'hold' && e.kind === 'muted')) && e.atMs >= (end.publicationAtOrAfterMs ?? end.earliest));
   const validSource = source.generated.length > 0 && source.generated.length <= 4096 && source.generated.every((m, i) =>
     m.fixture.toLowerCase() === scope.fixture.toLowerCase() && m.direction === scope.direction && m.epoch === scope.epoch &&
     (!i || m.counter > source.generated[i - 1]!.counter && m.sourceTimeUs >= source.generated[i - 1]!.sourceTimeUs));
   const eosObserved = !receipt.events.some(e => e.kind === 'eos' && (!end || e.atMs < end.earliest || !receipt.events.some(row => row.kind === 'unpublished')));
   const integrity = validSource && eosObserved && !receipt.overflow && !corrupt && !foreign && !postBoundary && healthy;
-  return { sourceStopLagMs: options.nativeBoundaryMs !== undefined && source.stoppedAtUs !== undefined ? source.stoppedAtUs / 1000 - options.nativeBoundaryMs : null, firstMs, gapMs, windows, drainMs, corrupt, foreign, duplicate, contentFree, postBoundary, healthy,
+  return { sourceStopLagMs: sourceBoundaryMs !== undefined && source.stoppedAtUs !== undefined ? source.stoppedAtUs / 1000 - sourceBoundaryMs : null, firstMs, gapMs, lastFreshAtMs: on.at(-1)?.atMs ?? null, windows, drainMs, corrupt, foreign, duplicate, contentFree, postBoundary, healthy,
     integrity, producer, terminalObservedMs, terminalUnpublished, identifiedPostBoundaryArrivals: identifiedPostBoundary.length,
     identifiedDrainMs: identifiedPostBoundary.length ? drainMs : null };
 }
 /** Independently validates decoded identities; stats/publish acknowledgements cannot satisfy any gate. */
 export function assessVideo(receipt: VideoReceipt, source: VideoSourceReceipt, options: VideoMeasurementOptions & VideoGateInput) {
-  const gates = gateLimits(options), measured = measureVideo(receipt, source, options);
+  return qualifyVideo(measureVideo(receipt, source, options), gateLimits(options));
+}
+
+/** Shared gates for receivers whose clocks and conservative source bounds were bound by the driver. */
+export function assessBoundVideo(receipt: VideoReceipt, source: VideoSourceReceipt, timing: BoundVideoTiming) {
+  return qualifyVideo(measureBoundVideo(receipt, source, timing), iosLimits);
+}
+
+function qualifyVideo(measured: ReturnType<typeof measureBoundVideo>, gates: VideoGateLimits) {
   const onPassed = measured.integrity && measured.firstMs !== null && measured.firstMs <= gates.firstMs &&
     measured.gapMs <= gates.gapMs && measured.windows.length > 0 && measured.windows.every(fps => fps >= gates.minimumFPS);
   const terminal = measured.producer && measured.terminalObservedMs !== null && measured.terminalObservedMs >= gates.terminalCoverageMs &&

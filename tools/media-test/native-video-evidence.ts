@@ -1,7 +1,7 @@
 import type { NativeJourneyReply } from './native-journey.ts';
 
 export interface NativeVideoEvent {
-  readonly sequence: number; readonly kind: 'readySnapshot' | 'changed' | 'ended';
+  readonly sequence: number; readonly kind: 'readySnapshot' | 'changed' | 'held' | 'resumed' | 'ended';
   readonly hasVideo: boolean; readonly connected: boolean; readonly source: 'app' | 'server' | null; readonly atMs: number;
 }
 export interface NativeVideoEvidence {
@@ -29,7 +29,7 @@ export function readNativeVideoEvidence(reply: NativeJourneyReply): NativeVideoE
   let previous = 0;
   const events: NativeVideoEvent[] = video.events.map((value: unknown, index: number) => {
     const row = object(value), atMs = time(row.atMs), source = row.source ?? null;
-    if (row.sequence !== index + 1 || typeof row.kind !== 'string' || !['readySnapshot', 'changed', 'ended'].includes(row.kind) ||
+    if (row.sequence !== index + 1 || typeof row.kind !== 'string' || !['readySnapshot', 'changed', 'held', 'resumed', 'ended'].includes(row.kind) ||
         typeof row.hasVideo !== 'boolean' || typeof row.connected !== 'boolean' || atMs < previous || atMs > observedAtMs ||
         (row.kind === 'changed' ? source !== 'app' && source !== 'server' : source !== null)) throw Error('Invalid native video event');
     previous = atMs;

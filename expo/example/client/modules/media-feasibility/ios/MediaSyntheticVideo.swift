@@ -14,7 +14,7 @@
     struct Action: Encodable {
       enum Kind: String, Encodable {
         case published, heldSourceStarted, muted, stopped, receiverAttached, receiverDetached,
-          roomDisconnected,
+          roomDisconnected, roomReconnecting, farEndDisconnected,
           remotePublished, remoteUnpublished, remoteUnsubscribed, receiverReplaced, lateSubscription
       }
       let kind: Kind
@@ -37,6 +37,7 @@
       let receivers: [Remote]
       let publicationSID: String?
       let publicationMuted: Bool?
+      let publicationStopping: Bool
       let roomConnected: Bool
       let remotePublications: [String]
       let epochs: [Epoch]
@@ -178,6 +179,7 @@
         clockID: clock.id, observedAtMs: clock.milliseconds,
         receivers: decoded,
         publicationSID: publication?.sid.stringValue, publicationMuted: publication?.isMuted,
+        publicationStopping: publication != nil && epochs.last?.source.stoppedAtUs != nil,
         roomConnected: room.connectionState == .connected,
         remotePublications: room.remoteParticipants.values.filter {
           $0.identity?.stringValue == "far-end"

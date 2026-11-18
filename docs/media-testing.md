@@ -504,7 +504,7 @@ server write has an uncertain outcome. Wait for each transition's confirmed SDK 
 writing the next update. Video evidence retains actual SDK `videoChanged` callbacks,
 source and native observation time, plus the terminal event
 after the call leaves the SDK snapshot. An initial connected snapshot has its own
-`readySnapshot` kind and never invents a change event. The optional fixture `initialVideo`
+`readySnapshot` kind. The performed hold and resume callbacks supply their original native times. The optional fixture `initialVideo`
 flag configures the incoming call's initial state; omitted input preserves audio-only setup.
 
 `readNativeVideoEvidence` reads that evidence from an already validated native mailbox
@@ -533,9 +533,9 @@ observations from the expected `far-end` participant. Remote renderers remain at
 through unpublish/EOS and Room teardown until explicit mailbox close. Bounded heartbeats,
 Room publication changes and replacement/late-subscription invalidation remain visible.
 `VideoCalibration.observation()` exports receiver-only evidence on its own clock; it does
-not infer source identity, synchronization or gate verdicts. Host source binding, transition
-clock brackets, permission controls and complete SDK-driven journey assertions are still
-required before these receipts establish decoded-media success.
+not infer source identity, synchronization or gate verdicts. The driver validates these
+receipts against independent host bindings and original SDK transition times. Camera-permission
+controls are tracked separately.
 
 `readNativeSyntheticVideo` validates the native synthetic receipts from a validated mailbox
 reply: clock/fixture identity, bounded source epochs and receiver rows, original seed fences,
@@ -551,6 +551,23 @@ caller's absolute deadline and cancellation signal. It retains host send/receive
 the original native clock sample. `hostVideoBoundary` preserves the resulting uncertainty;
 remote source timestamps remain on their own clock. Diagnostics retain native media/RTP
 timestamps without using them as event or latency anchors. Unsafe numeric evidence fails.
+
+The simulator driver runs initial video and local end, app upgrade and downgrade with a
+duplicate request, server upgrade and remote end, and hold and resume. Each invocation
+uses the same build and has its own 30-second acquisition and 180-second process budgets.
+Each reuses the audio Room and requires clean fresh duplex audio. Hold requires both
+video gates to suppress output while both sources advance, as well as the native output
+and far-end audio gates. Resume requires a new publication and fresh decoded video in
+both directions. Upgrade and downgrade assert the actual AVAudioSession mode and available
+simulator output. The automatic receiver branch is exercised when the simulator reports a
+receiver. The existing route-policy tests cover explicit selections and external endpoints.
+
+Local end keeps both decoded observers through the 800 ms terminal window. Remote end
+requires fresh independently decoded audio and video in both directions before the
+actual far-end leave. The native receiver remains attached and the driver checks the SDK
+`remoteEnded` event, the final joined app producer ledger, the native teardown and absence
+of reconnect. The receipt records post-leave independent uplink coverage as
+`unexercised` with reason `single far-end peer`.
 
 The host `VideoPeer` uses the existing fixture Room and independent decoded `VideoStream`.
 Its metadata retention is bounded at 4096 rows per series, with overflow invalidating the

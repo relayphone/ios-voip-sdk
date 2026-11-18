@@ -18,6 +18,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
 }
 
 #if DEBUG && targetEnvironment(simulator)
+  import AVFAudio
   import LiveKitClient
   @_spi(MediaTransport) import VoIPConversations
   import Synchronization
@@ -206,6 +207,10 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
               active = false
               if !AudioManager.shared.isEngineRunning { teardown.record(.engineStopped) }
             case .release:
+              // The SDK queues release before delivering its ended event to the app.
+              if syntheticVideo != nil, teardown.receipt() != nil {
+                try await until { self.journeyEnded != nil }
+              }
               videoTerminating = true
               do { try await applyVideo(hasVideo: false, held: false, ended: true) } catch {
                 recordJourneyFailure(error, operation: .video)
@@ -286,14 +291,18 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       didSubscribeTrack publication: RemoteTrackPublication
     ) {
       Task { @MainActor [weak self] in
-        guard let self, !released else { return }
+        guard let self else { return }
         if let track = publication.track as? RemoteVideoTrack,
           participant.identity?.stringValue == "far-end"
         {
-          syntheticVideo?.attach(track, sid: publication.sid.stringValue)
+          if released {
+            syntheticVideo?.record(.lateSubscription, sid: publication.sid.stringValue)
+          } else {
+            syntheticVideo?.attach(track, sid: publication.sid.stringValue)
+          }
           return
         }
-        guard let track = publication.track as? RemoteAudioTrack else { return }
+        guard !released, let track = publication.track as? RemoteAudioTrack else { return }
         decoder.attach(to: track)
         remoteTrack = track
         await track.set(reportStatistics: true)
@@ -328,10 +337,15 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         self?.syntheticVideo?.record(kind, sid: publication.sid.stringValue)
       }
     }
+    nonisolated func room(_ room: Room, didStartReconnectWithMode _: ReconnectMode) {
+      Task { @MainActor [weak self] in self?.syntheticVideo?.record(.roomReconnecting) }
+    }
     nonisolated func room(_ room: Room, participantDidDisconnect participant: RemoteParticipant) {
       Task { @MainActor [weak self] in
-        guard let self, fixture.journey != nil, participant.identity?.stringValue == "far-end",
-          let receipt = teardown.receipt(), !receipt.complete, journeyEnded == nil,
+        guard let self, fixture.journey != nil, participant.identity?.stringValue == "far-end"
+        else { return }
+        syntheticVideo?.record(.farEndDisconnected)
+        guard let receipt = teardown.receipt(), !receipt.complete, journeyEnded == nil,
           let client,
           let call = client.calls.first(where: { $0.id.rawValue == fixture.journey?.conversationId }
           )
@@ -397,12 +411,15 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
           if case .performed(.hold(_, let held), let call) = event,
             call.id.rawValue == fixture.journey?.conversationId
           {
+            videoHistory.record(
+              held ? .held : .resumed, hasVideo: call.hasVideo,
+              connected: call.status == .connected, atMs: observationClock.milliseconds)
             do {
               AudioManager.shared.mixer.outputVolume = held ? 0 : 1
-              try await room.localParticipant.setMicrophone(enabled: !held && !call.isMuted)
               if !videoTerminating {
                 try await applyVideo(hasVideo: call.hasVideo, held: held)
               }
+              try await room.localParticipant.setMicrophone(enabled: !held && !call.isMuted)
               publicationHeld = held
             } catch { fail() }
           }
@@ -550,6 +567,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let atMs: Double
     }
     struct JourneySnapshot: Encodable {
+      enum AudioMode: String, Encodable { case voice, video, other }
       struct Stage: Encodable {
         let pcm: CapturedPCM
         let observation: MediaAudioProbe.Observation
@@ -575,6 +593,9 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let sdkAudioState: MediaSDKAudioState
       let publicationMuted: Bool
       let onHold: Bool
+      let audioMode: AudioMode
+      let heldOutput: PCMSilenceWindows.Snapshot?
+      let outputPorts: [String]
       let video: MediaSDKVideoEvidence
       let syntheticVideo: MediaSyntheticVideo.Snapshot?
       let failure: MediaJourneyFailure?
@@ -582,6 +603,13 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     private func journeySnapshot(command: UUID?) -> JourneySnapshot? {
       guard let session = journeySession else { return nil }
       let video = sdkVideoEvidence()
+      let audioSession = AVAudioSession.sharedInstance()
+      let mode: JourneySnapshot.AudioMode =
+        switch audioSession.mode {
+        case .voiceChat: .voice
+        case .videoChat: .video
+        default: .other
+        }
       func stage(_ stage: MediaAudioProbe.Stage) -> JourneySnapshot.Stage {
         let snapshot = probe.snapshot(stage)
         let pcm = snapshot.capture
@@ -602,7 +630,16 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         sdkAudioState: sdkAudioState(),
         publicationMuted: publicationMuted,
         onHold: client?.calls.first(where: { $0.id.rawValue == session.fixture.conversationId })?
-          .isOnHold ?? false, video: video, syntheticVideo: syntheticVideoEvidence,
+          .isOnHold ?? false, audioMode: mode,
+        heldOutput: publicationHeld ? probe.silence(.output)?.snapshot : nil,
+        outputPorts: audioSession.currentRoute.outputs.map {
+          switch $0.portType {
+          case .builtInReceiver: "receiver"
+          case .builtInSpeaker: "speaker"
+          default: $0.portType.rawValue
+          }
+        }.sorted(),
+        video: video, syntheticVideo: syntheticVideoEvidence,
         failure: journeyFailure)
     }
     private func runJourney(_ client: VoIPClient) async throws {
@@ -643,8 +680,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
           }
           recordTransport()
         }
+        if publicationHeld { _ = probe.silence(.output) }
         syntheticVideo?.heartbeat()
-        syntheticVideoEvidence = await syntheticVideo?.snapshot()
         // The fixture room carries server updates independently of the local command mailbox.
         if let metadata = room.metadata, metadata != lastServerMetadata {
           lastServerMetadata = metadata
@@ -682,8 +719,14 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
               try await client.request(.mute(callID, muted: command.enabled == true))
               try await until { self.publicationMuted == (command.enabled == true) }
             case .hold:
-              try await client.request(.hold(callID, onHold: command.enabled == true))
-              try await until { self.publicationHeld == (command.enabled == true) }
+              let held = command.enabled == true
+              try await client.request(.hold(callID, onHold: held))
+              try await until { self.publicationHeld == held }
+              if held {
+                try await clock.sleep(for: .milliseconds(300))
+                probe.beginSilence(
+                  .output, for: .seconds(1), remaining: clock.now.duration(to: deadline))
+              }
             case .video:
               guard let enabled = command.enabled else {
                 throw MediaJourneySession.Failure.invalidArguments

@@ -80,6 +80,17 @@ test('unpublished held-source epochs preserve absence and cannot bind to a claim
   assert.throws(() => bindNativeVideoSource(native, 1, f.uplink, 'native-app'));
 });
 
+test('a frozen ledger can still own its publication while real unpublish is pending', () => {
+  const f = fixture();
+  f.syntheticVideo.publicationSID = 'native-video';
+  f.syntheticVideo.publicationMuted = false;
+  assert.throws(() => readNativeSyntheticVideo(f.reply, f.fixtureID));
+  Object.assign(f.syntheticVideo, { publicationStopping: true });
+  const state = readNativeSyntheticVideo(f.reply, f.fixtureID);
+  assert.equal(state.publication, 'native-video');
+  assert.equal(state.epochs[0]!.source.stoppedAtUs, 310_000);
+});
+
 test('invalid native identity, source order, final boundaries, overflow and lifecycle controls fail closed', () => {
   const controls: ((f: ReturnType<typeof fixture>) => void)[] = [
     f => { f.syntheticVideo.clockID = randomUUID(); }, f => { f.syntheticVideo.observedAtMs = 400; },

@@ -64,6 +64,12 @@ export class MediaPeer {
     this.room.on(RoomEvent.TrackUnpublished, (publication, participant) => {
       if (publication.kind === TrackKind.KIND_AUDIO) this.lifecycle.record('trackUnpublished', participant.identity, publication.sid);
     });
+    this.room.on(RoomEvent.TrackMuted, (publication, participant) => {
+      if (publication.kind === TrackKind.KIND_AUDIO) this.lifecycle.record('trackMuted', participant.identity, publication.sid);
+    });
+    this.room.on(RoomEvent.TrackUnmuted, (publication, participant) => {
+      if (publication.kind === TrackKind.KIND_AUDIO) this.lifecycle.record('trackUnmuted', participant.identity, publication.sid);
+    });
     this.room.on(RoomEvent.TrackUnsubscribed, track => {
       if (track.sid !== this.activeTrackSid) return;
       this.activeTrackSid = undefined;
@@ -139,7 +145,7 @@ export class MediaPeer {
     return { connected: this.room.connectionState === ConnectionState.CONN_CONNECTED,
       readerLive: this.readerLive && !this.readerFailed, trackAvailable: this.trackAvailable,
       readerFailed: this.readerFailed, publicationFailed: this.publicationFailed,
-      receivedSamples: this.receivedSamples, energy: this.energy, rms: this.receivedSamples ? Math.sqrt(this.energy / this.receivedSamples) : null };
+      activeTrackSid: this.activeTrackSid, receivedSamples: this.receivedSamples, energy: this.energy, rms: this.receivedSamples ? Math.sqrt(this.energy / this.receivedSamples) : null };
   }
   /** One video phase shares this audio peer's authenticated Room and lifetime. */
   async openVideo(fixture: string, clockID: string): Promise<VideoPeer> {

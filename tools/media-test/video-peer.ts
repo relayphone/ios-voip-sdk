@@ -1,4 +1,4 @@
-import { LocalVideoTrack, Room, RoomEvent, TrackKind, TrackPublishOptions, TrackSource, VideoBufferType, VideoCodec, VideoFrame, VideoSource, VideoStream, type RemoteTrackPublication, type RemoteTrack, type RemoteParticipant } from '@livekit/rtc-node';
+import { LocalVideoTrack, Room, RoomEvent, TrackKind, TrackPublishOptions, TrackSource, VideoBufferType, VideoCodec, VideoFrame, VideoSource, VideoStream, type TrackPublication, type Participant, type RemoteTrackPublication, type RemoteTrack, type RemoteParticipant } from '@livekit/rtc-node';
 import { setTimeout as delay } from 'node:timers/promises';
 import { videoIdentity, videoLuma, type VideoMarker } from './video-marker.ts';
 import { VideoObservation, type VideoReceipt, type VideoSourceReceipt } from './video-observation.ts';
@@ -25,6 +25,9 @@ export class VideoPeer {
     this.sourceClockID = clockID;
     this.room.on(RoomEvent.TrackSubscribed, this.subscribed);
     this.room.on(RoomEvent.TrackUnpublished, this.unpublished);
+    this.room.on(RoomEvent.TrackMuted, this.muted);
+    this.room.on(RoomEvent.TrackPublished, this.published);
+    this.room.on(RoomEvent.Reconnecting, this.reconnecting);
     this.monitor = setInterval(() => {
       this.observer?.tick();
       if (this.closed || !this.room.isConnected) this.observer?.record('failed');
@@ -40,7 +43,7 @@ export class VideoPeer {
     if (track.kind !== TrackKind.KIND_VIDEO || !this.arm || participant.identity !== this.arm.participant || this.failed) return;
     if (!publication.sid || this.observer || publication.source !== TrackSource.SOURCE_CAMERA) { this.failed = true; this.observer?.record('failed'); return; }
     this.observer = new VideoObservation({ fixture: this.fixture, direction: 0, epoch: this.arm!.epoch,
-      participant: participant.identity, publication: publication.sid });
+      participant: participant.identity, publication: publication.sid }, () => performance.now(), this.sourceClockID);
     const reader = new VideoStream(track).getReader(); this.reader = reader;
     this.reading = (async () => {
       try {
@@ -53,6 +56,16 @@ export class VideoPeer {
         }
       } catch { this.failed = true; this.observer?.record('failed'); }
     })();
+  };
+  private reconnecting = () => { this.failed = true; this.observer?.record('failed'); };
+  private published = (publication: RemoteTrackPublication, participant: RemoteParticipant) => {
+    const scope = this.observer?.scope;
+    if (scope && participant.identity === scope.participant && publication.kind === TrackKind.KIND_VIDEO &&
+        publication.sid !== scope.publication) this.observer!.record('failed');
+  };
+  private muted = (publication: TrackPublication, participant: Participant) => {
+    const scope = this.observer?.scope;
+    if (scope && participant.identity === scope.participant && publication.sid === scope.publication) this.observer!.record('muted');
   };
   private unpublished = (publication: RemoteTrackPublication, participant: RemoteParticipant) => {
     const scope = this.observer?.scope;
@@ -109,7 +122,8 @@ export class VideoPeer {
     if (!this.sid || this.held || this.stoppedAtUs !== undefined) throw Error('Video publication unavailable');
     await this.unpublish(); this.held = true;
   }
-  private freeze() { this.stoppedAtUs ??= Math.floor(performance.now() * 1000); this.abort?.abort(); }
+  /** Retire generation synchronously before dispatching a terminal SDK action. */
+  freeze() { this.stoppedAtUs ??= Math.floor(performance.now() * 1000); this.abort?.abort(); }
   private async retire() {
     this.freeze(); await this.pumping;
     if (this.publishing) await deadline(3000, 'Pending video publication', () => this.publishing!);
@@ -131,7 +145,11 @@ export class VideoPeer {
   close(): Promise<void> {
     return this.closing ??= (async () => {
       this.closed = true; this.observer?.record('failed');
-      this.room.off(RoomEvent.TrackSubscribed, this.subscribed); this.room.off(RoomEvent.TrackUnpublished, this.unpublished);
+      this.room.off(RoomEvent.TrackSubscribed, this.subscribed);
+      this.room.off(RoomEvent.TrackUnpublished, this.unpublished);
+      this.room.off(RoomEvent.TrackMuted, this.muted);
+      this.room.off(RoomEvent.TrackPublished, this.published);
+      this.room.off(RoomEvent.Reconnecting, this.reconnecting);
       clearInterval(this.monitor);
       let incomplete = false;
       try { await this.retire(); } catch { incomplete = true; }

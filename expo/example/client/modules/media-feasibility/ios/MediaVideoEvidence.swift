@@ -4,7 +4,7 @@
   /// SDK observations on the existing native clock, independent of command completion.
   struct MediaSDKVideoEvidence: Codable {
     enum Source: String, Codable { case app, server }
-    enum Kind: String, Codable { case readySnapshot, changed, ended }
+    enum Kind: String, Codable { case readySnapshot, changed, held, resumed, ended }
     struct Event: Codable {
       let sequence: Int
       let kind: Kind
