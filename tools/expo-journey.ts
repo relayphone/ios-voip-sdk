@@ -9,7 +9,7 @@ import { captureTail, simulatorDiagnostics } from './inspector-resources.ts';
 import { launchToleratingASlowSimulator } from './runtime-smoke.ts';
 import { assertExpoJournal, assertJavaScriptResults } from './expo-journey-results.ts';
 import { buildBundledExample } from './expo-journey-build.ts';
-import { buildInstallProbe, JourneySetupTrace, warmSimulatorInstaller } from './expo-journey-setup.ts';
+import { buildInstallProbe, JourneySetupTrace, waitForJourneyBoot, warmSimulatorInstaller } from './expo-journey-setup.ts';
 import { journeyIDs, type JourneyStage } from '../expo/example/client/journeys/results.ts';
 
 const bundle = 'com.example.voipconversations';
@@ -143,7 +143,7 @@ export async function expoJourney(work: string, app: string, example?: string): 
   try { probe = buildInstallProbe(work); }
   catch (error) { summary('product:build failed'); throw error; }
   let bootstatusRetried = false;
-  const build = example ? buildBundledExample(work, example, app) : undefined;
+  let build: Promise<void> | undefined;
   await withInfrastructureRetry(async attempt => {
     const name = `expo-journey-${process.env.GITHUB_RUN_ID ?? process.pid}-${process.env.GITHUB_RUN_ATTEMPT ?? 1}-${attempt}`;
     const prefix = join(results, `attempt-${attempt + 1}`);
@@ -155,25 +155,21 @@ export async function expoJourney(work: string, app: string, example?: string): 
     let captureJournal: (() => string) | undefined;
     let output: string | undefined;
     try {
-      try {
-        writeFileSync(join(markers, name), '');
-        target = infrastructure('create', () => setup.observe('create', () => run('xcrun',
-          ['simctl', 'create', name, deviceType.identifier, simulatorRuntime], { timeout: 120 })));
-        const simulator = target;
-        infrastructure('boot', () => {
-          setup.observe('boot', () => run('xcrun', ['simctl', 'boot', simulator], { timeout: 120 }));
-          try {
-            setup.observe('bootstatus', () => run('xcrun', ['simctl', 'bootstatus', simulator, '-b'],
-              { timeout: 300 }), output => output);
-          } catch (error) { bootstatusRetried = true; throw error; }
-        });
-        infrastructure('installer-warmup', () => warmSimulatorInstaller(simulator, probe, setup));
-      } finally {
-        // Join the build even after a simulator failure. A failed build is never retried on a new device.
-        try { await build; }
-        catch (error) { check = 'build'; setup.save(prefix); throw error; }
-      }
+      writeFileSync(join(markers, name), '');
+      target = infrastructure('create', () => setup.observe('create', () => run('xcrun',
+        ['simctl', 'create', name, deviceType.identifier, simulatorRuntime], { timeout: 120 })));
       const simulator = target;
+      infrastructure('boot', () => {
+        try { waitForJourneyBoot(simulator, setup); }
+        catch (error) { bootstatusRetried = true; throw error; }
+      });
+      infrastructure('installer-warmup', () => warmSimulatorInstaller(simulator, probe, setup));
+      // Complete the initial boot and probe before Xcode starts competing for CPU.
+      if (example) {
+        check = 'build';
+        await (build ??= buildBundledExample(work, example, app));
+        check = 'setup';
+      }
       setup.observe('install', () => installBundledExample(simulator, app));
       const container = infrastructure('container', () => setup.observe('container', () => run('xcrun',
         ['simctl', 'get_app_container', simulator, bundle, 'data'], { timeout: 120 })));
@@ -227,7 +223,7 @@ export async function expoJourney(work: string, app: string, example?: string): 
           (error.step === 'installer-warmup' || error.step === 'install' || error.step === 'container')) {
         setup.captureInstallFailure(target);
       }
-      if (check === 'setup') setup.save(prefix);
+      if (check === 'setup' || check === 'build') setup.save(prefix);
       const failure = classifyJourneyFailure(error, check, target, bootstatusRetried);
       summary(`${failure instanceof InfrastructureFailure || failure instanceof HostUnresponsiveFailure ? failure.message : `product:${check} failed`}`);
       writeFileSync(`${prefix}-failure.log`, `${String(failure)}\n${failure instanceof Error ? String(failure.cause ?? '') : ''}\n${failure instanceof HostUnresponsiveFailure ? failure.evidence : ''}`);

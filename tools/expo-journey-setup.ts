@@ -3,15 +3,28 @@ import { join } from 'node:path';
 import { CommandFailure, repository, run } from './command.ts';
 import { buildSimulatorApp } from './simulator-app.ts';
 
-type Phase = 'create' | 'boot' | 'bootstatus' | 'probe-install' | 'probe-uninstall' | 'install' | 'container'
+type Phase = 'create' | 'bootstatus' | 'probe-install' | 'probe-uninstall' | 'install' | 'container'
   | 'host-processes' | 'simulator-services' | 'host-install-log';
 
 type Observation = { phase: Phase; startedAt: string; elapsedMS: number } & (
-  { outcome: 'succeeded'; stdout?: string } |
+  { outcome: 'succeeded'; stdout?: string; lastMigrationElapsedMS?: number } |
   { outcome: 'failed'; error: string; stderrTail?: string }
 );
 
 const probeIdentifier = 'com.example.voip.install-probe';
+
+/** Returns the last migration elapsed time reported by simctl, if a sample was observed. */
+function lastReportedMigrationElapsed(output: string): number | undefined {
+  const elapsed = Array.from(output.matchAll(/Migration Elapsed:\s*(\d+(?::\d{2}){1,2})\b/g)).at(-1)?.[1];
+  if (elapsed === undefined) return undefined;
+  return elapsed.split(':').reduce((total, unit) => total * 60 + Number(unit), 0) * 1000;
+}
+
+/** Monitors before starting the device so the initial migration can be observed. */
+export function waitForJourneyBoot(simulator: string, setup: JourneySetupTrace, execute: typeof run = run): void {
+  setup.observe('bootstatus', () => execute('xcrun', ['simctl', 'bootstatus', simulator, '-b', '-d'],
+    { timeout: 300 }), output => output);
+}
 
 /** Builds a tiny signed simulator app separate from the example's build products. */
 export function buildInstallProbe(work: string, execute: typeof run = run): string {
@@ -41,7 +54,9 @@ export class JourneySetupTrace {
     const timing = () => ({ phase, startedAt, elapsedMS: Math.round(performance.now() - start) });
     try {
       const result = operation();
-      this.observations.push({ ...timing(), outcome: 'succeeded', stdout: stdout?.(result).slice(-8192) });
+      const output = stdout?.(result);
+      const lastMigrationElapsedMS = phase === 'bootstatus' && output ? lastReportedMigrationElapsed(output) : undefined;
+      this.observations.push({ ...timing(), outcome: 'succeeded', stdout: output?.slice(-8192), lastMigrationElapsedMS });
       return result;
     } catch (error) {
       const cause = error instanceof Error && error.cause instanceof CommandFailure ? error.cause : error;

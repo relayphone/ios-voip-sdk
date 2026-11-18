@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { CommandFailure } from './command.ts';
-import { JourneySetupTrace, warmSimulatorInstaller } from './expo-journey-setup.ts';
+import { JourneySetupTrace, waitForJourneyBoot, warmSimulatorInstaller } from './expo-journey-setup.ts';
 
 function savedTrace(t: TestContext, trace: JourneySetupTrace) {
   const directory = mkdtempSync(join(tmpdir(), 'expo-journey-setup-'));
@@ -27,6 +27,7 @@ test('keeps bootstatus output and command failure evidence without recording a c
   assert.equal(boot.outcome, 'succeeded');
   assert.equal(boot.stdout.length, 8192);
   assert.ok(boot.stdout.endsWith('Device already booted'));
+  assert.equal(boot.lastMigrationElapsedMS, undefined);
   assert.equal(container.phase, 'container');
   assert.equal(container.stdout, undefined);
   assert.equal(install.phase, 'install');
@@ -36,6 +37,20 @@ test('keeps bootstatus output and command failure evidence without recording a c
     assert.ok(Number.isFinite(Date.parse(row.startedAt)));
     assert.ok(Number.isInteger(row.elapsedMS) && row.elapsedMS >= 0);
   }
+});
+
+test('boot starts under the readiness monitor and retains the last reported migration time', t => {
+  const trace = new JourneySetupTrace();
+  waitForJourneyBoot('owned', trace, (command, args, options) => {
+    assert.equal(command, 'xcrun');
+    assert.deepEqual(args, ['simctl', 'bootstatus', 'owned', '-b', '-d']);
+    assert.equal(options?.timeout, 300);
+    return '\tMigration Elapsed:00:02 seconds\n\tMigration Elapsed:01:46 seconds\n' + 'x'.repeat(8192);
+  });
+  const [boot] = savedTrace(t, trace);
+  assert.equal(boot.phase, 'bootstatus');
+  assert.equal(boot.lastMigrationElapsedMS, 106_000);
+  assert.equal(boot.stdout.length, 8_192);
 });
 
 test('a timed-out simulator service probe still retains independent host diagnostics', t => {

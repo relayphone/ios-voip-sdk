@@ -3,7 +3,7 @@ import { closeSync, openSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { run } from './command.ts';
 
-/** Starts the bundled build while the journey readies its first simulator. */
+/** Builds the bundled Debug example and retains Xcode's diagnostics. */
 export async function buildBundledExample(work: string, example: string, app: string): Promise<void> {
   const log = join(work, 'build.log');
   const output = openSync(log, 'w');
