@@ -108,7 +108,7 @@ test('all reference journeys and the transition table decode without claiming ex
     'answered-elsewhere', 'cross-line-waiting', 'end-before-admission', 'late-answer-permit',
     'end-after-server-end', 'hold-request-confirm', 'admission-rejected-isolated',
     'early-connected-start-rejected', 'end-before-start-admission',
-    'late-start-admission-after-end', 'stale-start-admission',
+    'late-start-admission-after-end', 'stale-start-admission', 'stale-admission-failure',
   ].sort());
   const table: unknown = JSON.parse(readFileSync(new URL('transitions.json', root), 'utf8'));
   assert.ok(decodeTransitions(table).rules.length >= 26);
