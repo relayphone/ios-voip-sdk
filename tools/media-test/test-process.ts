@@ -2,6 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { promisify } from 'node:util';
 import { StringDecoder } from 'node:string_decoder';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const execute = promisify(execFile);
 
@@ -27,9 +28,18 @@ export interface TestProcessReadiness {
   timeoutMS: number;
 }
 
+type ProcessGroupInspection = {
+  existingGroups: number[];
+  timeoutMS: number;
+  states?: string[][];
+  error?: string;
+  remainingGroups?: number[];
+};
+
 async function readProcessGroupStates(timeout: number): Promise<string> {
+  // An execFile timeout can discard unread stdout even when ps exits successfully.
   const { stdout } = await execute('/bin/ps', ['-axo', 'pgid=,stat='], {
-    timeout, killSignal: 'SIGKILL', maxBuffer: 256 * 1024,
+    signal: AbortSignal.timeout(timeout), killSignal: 'SIGKILL', maxBuffer: 256 * 1024,
   });
   return stdout;
 }
@@ -45,28 +55,37 @@ function groupMayExist(group: number): boolean {
 
 export async function confirmGroupsStopped(
   groups: number[], cleanupErrors: Set<string>, inspect = readProcessGroupStates,
+  onGroupInspection?: (inspection: ProcessGroupInspection) => void,
 ): Promise<boolean> {
-  const settleDeadline = performance.now() + 500;
-  let inspectionTimeout = 1000;
+  let inspectionTimeout = 500;
+  const settleDeadline = performance.now() + inspectionTimeout;
   let observedLiveGroup = false;
   // A live process can still be handling SIGKILL when the launcher closes its pipes.
   do {
-    if (!groups.some(groupMayExist)) return true;
+    const existingGroups = groups.filter(groupMayExist);
+    if (!existingGroups.length) {
+      onGroupInspection?.({ existingGroups, timeoutMS: inspectionTimeout });
+      return true;
+    }
+    let stdout: string;
     try {
-      const stdout = await inspect(inspectionTimeout);
-      const live = stdout.split('\n').some(line => {
-        const [group, state] = line.trim().split(/\s+/);
-        return groups.includes(Number(group)) && !state?.startsWith('Z');
-      });
-      if (!live) return true;
-      observedLiveGroup = true;
+      stdout = await inspect(inspectionTimeout);
     } catch (error) {
       // A group can disappear while the process table scan is in flight.
-      if (!groups.some(groupMayExist)) return true;
+      const remainingGroups = groups.filter(groupMayExist);
       const failure = error as NodeJS.ErrnoException & { signal?: NodeJS.Signals };
-      cleanupErrors.add(`processInspection:${failure.code ?? failure.signal ?? 'unknown'}`);
+      const inspectionError = `processInspection:${failure.code ?? failure.signal ?? 'unknown'}`;
+      onGroupInspection?.({ existingGroups, timeoutMS: inspectionTimeout, error: inspectionError, remainingGroups });
+      if (!remainingGroups.length) return true;
+      cleanupErrors.add(inspectionError);
       break;
     }
+    const states = stdout.split('\n').map(line => line.trim().split(/\s+/, 2))
+      .filter(([group]) => groups.includes(Number(group)));
+    onGroupInspection?.({ existingGroups, timeoutMS: inspectionTimeout, states });
+    if (!states.some(([, state]) => !state?.startsWith('Z'))) return true;
+    observedLiveGroup = true;
+    if (settleDeadline - performance.now() > 25) await delay(25);
     inspectionTimeout = Math.ceil(settleDeadline - performance.now());
   } while (inspectionTimeout > 0);
   if (observedLiveGroup) cleanupErrors.add('liveProcessGroup');
@@ -81,6 +100,7 @@ const kill = (pid: number) => {
 export async function runTestProcess(options: {
   command: string; args: string[]; timeoutMS: number; env?: NodeJS.ProcessEnv;
   secrets?: string[]; outputLimit?: number; readiness?: TestProcessReadiness;
+  onGroupInspection?: (inspection: ProcessGroupInspection) => void;
 }): Promise<TestProcessResult> {
   if (!Number.isSafeInteger(options.timeoutMS) || options.timeoutMS <= 0) throw new Error('Invalid test timeout');
   const limit = options.outputLimit ?? 16 * 1024 * 1024;
@@ -174,7 +194,8 @@ export async function runTestProcess(options: {
     log = log.replaceAll(secret, '<REDACTED>'); stderr = stderr.replaceAll(secret, '<REDACTED>');
   }
   const clean = nativePID !== undefined &&
-    await confirmGroupsStopped([nativePID, ...(child.pid ? [child.pid] : [])], cleanupErrors);
+    await confirmGroupsStopped([...new Set([nativePID, ...(child.pid ? [child.pid] : [])])], cleanupErrors,
+      readProcessGroupStates, options.onGroupInspection);
   return { code, signal, reason, log, stderr, elapsedMS: performance.now() - started, processElapsedMS, readyElapsedMS,
     nativePID, clean, cleanupErrors: [...cleanupErrors] };
 }
