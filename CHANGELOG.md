@@ -7,6 +7,14 @@ Public API changes include migration guidance.
 
 ### Breaking
 
+- Swift `EndReason.endedHere` is now `localDeclined` for a ringing incoming call and
+  `localEnded` for other local ends. Update switches to handle both. `request(.end(id))`
+  now ends the call before system removal and returns successfully for retained ended calls.
+  Ending during a pending join ends the call. Custom `CallingFramework` adapters should
+  handle local reasons in `reportEnded(_:reason:)` by removing the system call. No-answer
+  still ends the domain call with `unanswered`. Adapters receive `unanswered` for incoming
+  calls and `endedRemotely` for outgoing calls.
+
 - In the optional `MediaTesting` package, call `try await SyntheticVideoCapture.stop()` to
   freeze generation and join pacing before reading the final producer receipt. `finalCounter`
   is now frozen at stop and explicitly encoded alongside `finalEpoch`; use
@@ -15,6 +23,10 @@ Public API changes include migration guidance.
   as content-free, excluding them from source timing and frame-rate measurements.
 
 ### Added
+
+- Call `try await client.end(id)` to read a typed End result. A local End returns its original
+  receipt throughout the retention window. A call already ended by the server returns
+  `alreadyEnded(originalReason)`.
 
 - Swift supports `VoIPConfiguration(outgoingMedia: .whenProvided)`. To adopt it, keep calling
   `confirmPlaced(_:)` after local placement, then supply credentials to your native media

@@ -76,11 +76,13 @@ public protocol CallingFramework: Sendable {
   ///   - connected: Whether the call connected, rather than began connecting.
   func reportOutgoing(_ id: CallID, connected: Bool)
 
-  /// Tells the system that a call ended without the user ending it on this device.
+  /// Removes a call whose end the SDK has already recorded.
   ///
   /// - Parameters:
   ///   - id: The call.
-  ///   - reason: Why the call ended.
+  ///   - reason: The reason to present to the system. Outgoing no-answer uses
+  ///     ``EndReason/endedRemotely`` and incoming no-answer uses ``EndReason/unanswered``.
+  ///     For local ends, perform system removal without asking the SDK to end the call again.
   func reportEnded(_ id: CallID, reason: EndReason)
 }
 

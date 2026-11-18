@@ -26,6 +26,11 @@ on:
     branches: [main]
     paths: *paths
   workflow_dispatch:
+    inputs:
+      serial_samples:
+        description: Run five sequential simulator journeys
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -36,13 +41,22 @@ concurrency:
 
 jobs:
   journeys:
-    name: JavaScript journeys on one simulator
+    name: JavaScript journeys on one simulator${{ inputs.serial_samples && format(' ({0})', matrix.sample) || '' }}
     runs-on: xcode-27
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        sample: ${{ fromJSON(inputs.serial_samples && '[1,2,3,4,5]' || '[1]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Record runner image
+        run: |
+          mkdir -p "$RUNNER_TEMP/expo-journey/results"
+          printf 'ImageOS=%s\nImageVersion=%s\n' "$ImageOS" "$ImageVersion" > "$RUNNER_TEMP/expo-journey/results/runner-image.txt"
       - uses: ./.github/actions/setup-simulator
       - name: Build the control tool and pack the module
         run: |
@@ -50,7 +64,7 @@ jobs:
           node tools/build-runtime.ts "$RUNNER_TEMP/expo-journey/runtime" --archs "$(uname -m)"
           npm ci --prefix expo --ignore-scripts --no-audit --no-fund
           npm pack ./expo --pack-destination "$RUNNER_TEMP"
-      - name: Install the packed module and build a bundled Debug example
+      - name: Install the packed module and bundle the example's JavaScript
         run: |
           trap 'if [[ $? != 0 ]]; then echo "product:build failed" >> "$GITHUB_STEP_SUMMARY"; fi' EXIT
           cp -R expo/example/client "$RUNNER_TEMP/expo-journey/example"
@@ -61,18 +75,11 @@ jobs:
           cd ios
           pod install --repo-update
           node "$GITHUB_WORKSPACE/tools/expo-journey-bundle.ts" "$PWD"
-          cd ..
-          xcodebuild -workspace ios/VoIPExample.xcworkspace -scheme VoIPExample \
-            -configuration Debug -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "$RUNNER_TEMP/expo-journey/build" CODE_SIGNING_ALLOWED=NO \
-            COMPILER_INDEX_STORE_ENABLE=NO build > "$RUNNER_TEMP/expo-journey/build.log" 2>&1 || {
-              tail -100 "$RUNNER_TEMP/expo-journey/build.log"; exit 1;
-            }
-          test -s "$RUNNER_TEMP/expo-journey/build/Build/Products/Debug-iphonesimulator/VoIPExample.app/main.jsbundle"
-      - name: Drive JavaScript and verify app results and the runtime journal
+      - name: Boot the simulator, build the app and verify the journeys
         run: |
           node tools/expo-journey.ts "$RUNNER_TEMP/expo-journey" \
-            "$RUNNER_TEMP/expo-journey/build/Build/Products/Debug-iphonesimulator/VoIPExample.app"
+            "$RUNNER_TEMP/expo-journey/build/Build/Products/Debug-iphonesimulator/VoIPExample.app" \
+            "$RUNNER_TEMP/expo-journey/example"
       - name: Delete every created simulator and temporary build
         if: always()
         run: |
@@ -90,7 +97,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: expo-journeys-${{ github.run_id }}-${{ github.run_attempt }}
+          name: expo-journeys-${{ github.run_id }}-${{ github.run_attempt }}${{ inputs.serial_samples && format('-{0}', matrix.sample) || '' }}
           path: |
             ${{ runner.temp }}/expo-journey/results
             ${{ runner.temp }}/expo-journey/build.log

@@ -226,7 +226,7 @@ import VoIPTesting
   @Test func ignoresCallsWithoutAPreview() async throws {
     let h = Harness()
     var ended = filtered
-    ended.status = .ended(.endedHere)
+    ended.status = .ended(.localEnded)
     h.send(.performed(.join(callID), filtered))
     h.send(.ended(ended))
     try await h.expectNoEvents()
@@ -336,7 +336,7 @@ import VoIPTesting
   @Test(arguments: [
     (CallStatus.previewing(.filtered(.doNotDisturb)), CallPreviewStatus.filtered),
     (.previewing(.answeredElsewhere), .answeredElsewhere), (.previewing(.policy), .policy),
-    (.ringing, .policy), (.ended(.endedHere), .ended),
+    (.ringing, .policy), (.ended(.localEnded), .ended),
   ])
   func defaultContentFollowsTheCall(_ status: CallStatus, _ expected: CallPreviewStatus) {
     var call = filtered

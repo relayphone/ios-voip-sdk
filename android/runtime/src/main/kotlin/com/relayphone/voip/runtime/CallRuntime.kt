@@ -12,22 +12,31 @@ import com.relayphone.voip.Now
 import com.relayphone.voip.Outcome
 import com.relayphone.voip.State
 import com.relayphone.voip.SystemFailure
+import com.relayphone.voip.SystemFailureDetail
+import com.relayphone.voip.SystemOperation
 import com.relayphone.voip.reduce
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Clock
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Runs the pure call reducer in one coroutine. Each call owns its session, operations and timers. */
 public class CallRuntime private constructor(
@@ -44,8 +53,10 @@ public class CallRuntime private constructor(
     private val lifetime = Job(parent.coroutineContext[Job])
     private val scope = CoroutineScope(parent.coroutineContext + lifetime)
     private val inbox = Channel<Message>(Channel.UNLIMITED)
+    private val accepting = AtomicBoolean(true)
     private val calls = mutableMapOf<CallID, CallWork>()
     private val timerJobs = mutableMapOf<Attempt, Job>()
+    private val startSetups = mutableMapOf<Attempt, StartSetup>()
     private val current = MutableStateFlow(State(configuration))
     private var eventSequence = 0L
     private val observations = MutableSharedFlow<RuntimeEvent>(
@@ -63,11 +74,12 @@ public class CallRuntime private constructor(
     public val events: SharedFlow<RuntimeEvent> = observations.asSharedFlow()
 
     init {
-        scope.launch {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 for (message in inbox) {
                     when (message) {
                         is Message.Deliver -> deliver(message.input)
+                        is Message.StartSetupResolved -> deliver(requireNotNull(startSetups.remove(message.attempt)?.result()))
                         is Message.Finished -> finish(message)
                         is Message.RemovalFailed -> {
                             deliver(Input.SystemRemovalFailed(message.attempt))
@@ -76,27 +88,51 @@ public class CallRuntime private constructor(
                     }
                 }
             } finally {
-                calls.clear()
-                timerJobs.clear()
+                shutdown()
             }
-        }.invokeOnCompletion { inbox.cancel() }
+        }
     }
 
     /** Queues input from any port or caller. Returns false after shutdown. */
-    public fun submit(input: Input): Boolean = inbox.trySend(Message.Deliver(input)).isSuccess
+    public fun submit(input: Input): Boolean = accepting.get() && inbox.trySend(Message.Deliver(input)).isSuccess
 
-    /** Cancels the runtime and joins all port work and call scopes. */
+    /** Cancels and joins all port work, settles pending native setup results and clears [state]. */
     public suspend fun close() {
-        inbox.cancel()
+        accepting.set(false)
         lifetime.cancelAndJoin()
     }
 
-    private fun deliver(input: Input) {
+    private suspend fun shutdown() {
+        accepting.set(false)
+        withContext(NonCancellable) {
+            val jobs = calls.values.map { it.job }
+            jobs.forEach { it.cancel() }
+            jobs.joinAll()
+        }
+        inbox.cancel()
+        try {
+            // Cancellation can interrupt delivery after the receiver has dequeued a notification.
+            for (setup in startSetups.values) {
+                deliver(requireNotNull(setup.result()), receiptsOnly = true)
+            }
+        } finally {
+            calls.clear()
+            timerJobs.clear()
+            startSetups.clear()
+            current.value = State(current.value.configuration)
+        }
+    }
+
+    private fun deliver(input: Input, receiptsOnly: Boolean = false) {
         val previous = current.value
         val now = Now(monotonic = monotonicClock.now(), utc = utcClock.now())
         val transition = reduce(previous, input, now)
         current.value = transition.state
-        transition.effects.forEach { effect -> execute(effect, previous) }
+        transition.effects.forEach { effect ->
+            if (!receiptsOnly || effect is Effect.SettleAction || effect is Effect.RejectAction) {
+                execute(effect, previous)
+            }
+        }
     }
 
     private fun execute(effect: Effect, previous: State) {
@@ -104,12 +140,17 @@ public class CallRuntime private constructor(
             is Effect.ReportIncoming -> {
                 val call = projection(effect.attempt, previous)
                 launch(effect.attempt, WorkKind.SESSION) {
-                    system.reportIncoming(call, effect) { submit(Input.Admitted(effect.attempt)) }
+                    val result = system.reportIncoming(call, effect) { submit(Input.Admitted(effect.attempt)) }
+                    if (result is Outcome.Failure) submit(Input.AdmissionFailed(effect.attempt, result.error))
                 }
             }
             is Effect.NativeStart -> {
                 val call = projection(effect.attempt, previous)
-                launch(effect.attempt, WorkKind.SESSION) { system.startOutgoing(call, effect) }
+                val setup = StartSetup()
+                check(startSetups.put(effect.attempt, setup) == null)
+                launch(effect.attempt, WorkKind.SESSION) {
+                    runOutgoingSession(call, effect, setup)
+                }
             }
             is Effect.RequestPlacement -> {
                 val call = projection(effect.attempt, previous)
@@ -177,6 +218,28 @@ public class CallRuntime private constructor(
         }
     }
 
+    private suspend fun runOutgoingSession(call: Call, request: Effect.NativeStart, setup: StartSetup) {
+        val job = requireNotNull(currentCoroutineContext()[Job])
+        var failure = SystemFailure(
+            system.platform, SystemOperation.START, detail = SystemFailureDetail.SESSION_ENDED_BEFORE_ADMISSION,
+        )
+        try {
+            job.ensureActive()
+            val result = system.startOutgoing(call, request) {
+                if (setup.complete(Input.StartAdmitted(request.attempt), job)) {
+                    inbox.trySend(Message.StartSetupResolved(request.attempt))
+                }
+            }
+            if (result is Outcome.Failure) failure = result.error
+        } catch (error: Exception) {
+            if (error is CancellationException || setup.result() != null) throw error
+        } finally {
+            if (setup.complete(Input.StartFailed(request.attempt, failure))) {
+                inbox.trySend(Message.StartSetupResolved(request.attempt))
+            }
+        }
+    }
+
     private fun projection(attempt: Attempt, previous: State): Call =
         current.value.calls[attempt.callID] ?: previous.calls.getValue(attempt.callID)
 
@@ -229,10 +292,23 @@ public class CallRuntime private constructor(
         val jobs = mutableMapOf<Job, WorkKind>()
     }
 
+    private class StartSetup {
+        private var result: Input? = null
+
+        fun complete(input: Input, session: Job? = null): Boolean = synchronized(this) {
+            if (result != null || session?.isActive == false) return@synchronized false
+            result = input
+            true
+        }
+
+        fun result(): Input? = synchronized(this) { result }
+    }
+
     private enum class WorkKind { OPERATION, SESSION, CLEANUP, TIMER }
 
     private sealed interface Message {
         data class Deliver(val input: Input) : Message
+        data class StartSetupResolved(val attempt: Attempt) : Message
         data class Finished(val attempt: Attempt, val job: Job) : Message
         data class RemovalFailed(val attempt: Attempt, val failure: SystemFailure) : Message
     }

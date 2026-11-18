@@ -5,6 +5,12 @@
     {"id":"admitted-retained-preview","from":["reporting"],"input":"admitted","guard":"retainedEndPreview","to":"previewing","effects":["closeMedia","requestRemoval","publish"]},
     {"id":"admitted-retained-end","from":["reporting"],"input":"admitted","guard":"retainedEnd","to":"ending","effects":["closeMedia","requestRemoval","publish"]},
     {"id":"admitted","from":["reporting"],"input":"admitted","guard":"noRetainedEnd","to":"ringing","effects":["publish"]},
+    {"id":"admission-failed","from":["reporting"],"input":"admissionFailed","guard":"currentAttempt","to":"ending","effects":["closeMedia","publish"]},
+    {"id":"apply-start-progress","from":["dialing"],"input":"startAdmitted","guard":"bufferedStartProgress","to":"same","effects":["settleAction","applyBufferedProgress"]},
+    {"id":"start-admitted","from":["dialing"],"input":"startAdmitted","guard":"currentAttempt","to":"same","effects":["settleAction"]},
+    {"id":"start-failed","from":["placing","dialing"],"input":"startFailed","guard":"currentAttempt","to":"ending","effects":["rejectAction","closeMedia","publish"]},
+    {"id":"retire-failed-start","from":["ending","ended"],"input":"startFailed","guard":"retiringStart","to":"same","effects":[]},
+    {"id":"stale-system-failure","from":["absent","reporting","ringing","previewing","placing","dialing","connecting","connected","reconnecting","ending","ended"],"input":"systemSetupResult","guard":"staleAttempt","to":"same","effects":["ignore"]},
     {"id":"start","from":["absent"],"input":"start","guard":"newCallAndSlot","to":"placing","effects":["reserveIdentity","requestPlacement"]},
     {"id":"placed-outgoing","from":["placing"],"input":"placed","guard":"outgoingDeferred","to":"dialing","effects":["nativeStart","publish"]},
     {"id":"placed-join","from":["placing"],"input":"placed","guard":"incomingJoin","to":"same","effects":["prepareMedia"]},
@@ -17,11 +23,13 @@
     {"id":"answer-refused-elsewhere","from":["ringing"],"input":"answerRefused","guard":"elsewhereRefusal","to":"ending","effects":["rejectAction","closeMedia","requestRemoval","publish"]},
     {"id":"answer-refused-not-allowed","from":["ringing"],"input":"answerRefused","guard":"notAllowedRefusal","to":"ending","effects":["rejectAction","closeMedia","requestRemoval","publish"]},
     {"id":"claim-unresolved","from":["ringing"],"input":"reconciliationUnknown","guard":"currentAttempt","to":"ending","effects":["rejectAction","closeMedia","requestRemoval","publish"]},
+    {"id":"buffer-start-progress","from":["dialing"],"input":"outgoingProgress","guard":"startAdmissionPending","to":"same","effects":["bufferProgress"]},
     {"id":"connected","from":["dialing","connecting"],"input":"connected","guard":"authoritativeAndPrepared","to":"connected","effects":["setActive","publish"]},
     {"id":"early-connected","from":["dialing","connecting"],"input":"connected","guard":"mediaNotReady","to":"connecting","effects":["bufferProgress","armConnection","publish"]},
     {"id":"deferred-media","from":["dialing","connecting"],"input":"provideMedia","guard":"live","to":"same","effects":["prepareMedia"]},
     {"id":"prepared-after-report","from":["connecting"],"input":"mediaPrepared","guard":"bufferedConnected","to":"connected","effects":["setActive","publish"]},
     {"id":"bind","from":["reporting","ringing","previewing","placing","dialing","connecting","connected","reconnecting"],"input":"bindRemote","guard":"aliasAvailable","to":"same","effects":["bindAlias","drainEvents","publish"]},
+    {"id":"start-admission-expired","from":["dialing"],"input":"noAnswerExpired","guard":"startAdmissionPending","to":"ending","effects":["rejectAction","closeMedia","publish"]},
     {"id":"no-answer","from":["ringing","dialing"],"input":"noAnswerExpired","guard":"noAnswerPending","to":"ending","effects":["closeMedia","requestRemoval","publish"]},
     {"id":"hold","from":["connected","reconnecting"],"input":"hold","guard":"supported","to":"same","effects":["trackAction","applyHold"]},
     {"id":"hold-applied","from":["connected","reconnecting"],"input":"holdApplied","guard":"currentAttempt","to":"same","effects":["publish","settleAction"]},
@@ -37,6 +45,7 @@
     {"id":"tones-applied","from":["connected","reconnecting"],"input":"tonesApplied","guard":"currentAttempt","to":"same","effects":["publish","settleAction"]},
     {"id":"tones-failed","from":["connected","reconnecting"],"input":"tonesFailed","guard":"currentAttempt","to":"same","effects":["rejectAction"]},
     {"id":"retained-end-local-end","from":["reporting"],"input":"localEnd","guard":"retainedEnd","to":"same","effects":["returnAlreadyEnded"]},
+    {"id":"end-before-start-admission","from":["dialing"],"input":"terminalIntent","guard":"startAdmissionPending","to":"ending","effects":["rejectAction","closeMedia","publish"]},
     {"id":"local-end","from":["reporting","ringing","previewing","placing","dialing","connecting","connected","reconnecting"],"input":"localEnd","guard":"firstTerminalIntent","to":"ending","effects":["closeMedia","requestRemoval","publish"]},
     {"id":"buffer-unknown-end","from":["absent"],"input":"remoteEnd","guard":"always","to":"same","effects":["bufferEnd"]},
     {"id":"retain-reporting-end","from":["reporting"],"input":"remoteEnd","guard":"firstTerminalIntent","to":"same","effects":["retainEnd"]},
@@ -59,6 +68,7 @@
     {"id":"eager-prepared","from":["placing"],"input":"mediaPrepared","guard":"outgoingPrepared","to":"dialing","effects":["nativeStart","publish"]},
     {"id":"join-prepared","from":["placing"],"input":"mediaPrepared","guard":"preparedJoin","to":"connecting","effects":["settleAction","armConnection","publish"]},
     {"id":"media-released","from":["ending"],"input":"mediaReleased","guard":"mediaReleased","to":"ended","effects":["publish"]},
-    {"id":"late-admission","from":["ending","ended"],"input":"admitted","guard":"always","to":"same","effects":["requestRemoval"]}
+    {"id":"late-admission","from":["ending","ended"],"input":"admitted","guard":"always","to":"same","effects":["requestRemoval"]},
+    {"id":"late-start-admission","from":["ending","ended"],"input":"startAdmitted","guard":"retiringStart","to":"same","effects":["requestRemoval"]}
   ]
 }

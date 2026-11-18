@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { Call, CallError, EndExpectation, EndReason, Lifecycle, Model, WireID } from "../../../tools/conformance/model.ts";
+import type { Call, CallError, EndExpectation, EndReason, Lifecycle, Model, SystemFailure, WireID } from "../../../tools/conformance/model.ts";
 import type { ExpectationV1, InputV1, ModelV1 } from "../../../tools/conformance/model-v1.ts";
 import { loadCatalog } from "../../../tools/conformance/runner.ts";
 import { wireID } from "../../../tools/conformance/schema.ts";
@@ -35,19 +35,22 @@ function claimTimedOut(callID: WireID): Extract<CallError, { kind: "claimTimedOu
   return { kind: "claimTimedOut", actionID: wireID(`answer-${callID}`) };
 }
 
-function completeEndReason(reason: EndExpectation, callID: WireID): EndReason {
+function completeEndReason(reason: EndExpectation, callID: WireID, systemFailure?: SystemFailure): EndReason {
   if (reason.kind !== "failed") return reason;
   switch (reason.error) {
     case "refused": return { kind: "failed", error: { kind: "refused", reason: { kind: "notAllowed" } } };
     case "claimTimedOut": return { kind: "failed", error: claimTimedOut(callID) };
+    case "systemFailed":
+      assert.ok(systemFailure, `Missing system failure input for ${callID}`);
+      return { kind: "failed", error: { kind: "systemFailed", cause: systemFailure } };
     default: assert.fail(`Missing bridge fixture details for ${reason.error}`);
   }
 }
 
-function completeLifecycle({ lifecycle, callID }: ExpectedCall): Lifecycle {
+function completeLifecycle({ lifecycle, callID }: ExpectedCall, systemFailure?: SystemFailure): Lifecycle {
   switch (lifecycle.kind) {
-    case "ending": return { kind: "ending", reason: completeEndReason(lifecycle.reason, callID) };
-    case "ended": return { kind: "ended", reason: completeEndReason(lifecycle.reason, callID), endedAt: timestamp };
+    case "ending": return { kind: "ending", reason: completeEndReason(lifecycle.reason, callID, systemFailure) };
+    case "ended": return { kind: "ended", reason: completeEndReason(lifecycle.reason, callID, systemFailure), endedAt: timestamp };
     case "connected":
     case "reconnecting": return { kind: lifecycle.kind, connectedAt: timestamp };
     case "previewing": return lifecycle;
@@ -147,6 +150,7 @@ for (const journey of [...loadCatalog(), ...loadCatalogV1()]) {
     const native = fakeNativeTransport(journey.id);
     const store = createCallsStore(native);
     const identities = new Map<WireID, CallIdentity>();
+    const systemFailures = new Map<WireID, SystemFailure>();
     const wireCalls = new Map<WireID, Call>();
     const received: unknown[] = [];
     const unsubscribe = store.subscribe((observation) => received.push(observation));
@@ -170,6 +174,9 @@ for (const journey of [...loadCatalog(), ...loadCatalogV1()]) {
         if (step.kind === "input") {
           const identity = callIdentity(step.input);
           if (identity) identities.set(identity.id, identity);
+          if (step.input.kind === "admissionFailed") {
+            systemFailures.set(step.input.callID, step.input.failure);
+          }
           continue;
         }
         const expected = step.expectation;
@@ -179,7 +186,7 @@ for (const journey of [...loadCatalog(), ...loadCatalogV1()]) {
             assert.ok(identity, `Missing incoming or start input for ${expected.callID}`);
             const previous = wireCalls.get(expected.callID);
             const remoteID = expected.remoteID ?? previous?.remoteID;
-            const lifecycle = completeLifecycle(expected);
+            const lifecycle = completeLifecycle(expected, systemFailures.get(expected.callID));
             const value: Call = {
               ...identity,
               ...(remoteID && { remoteID }),

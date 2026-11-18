@@ -27,13 +27,12 @@ public struct EventID: RawRepresentable, Hashable, Sendable {
   }
 }
 
-/// Identifies one action that the calling framework asked the SDK to perform, so that the SDK can
-/// fulfil or fail it.
+/// Identifies a local action, including an action the calling framework asked the SDK to perform.
 public struct ActionID: RawRepresentable, Hashable, Sendable {
-  /// The identifier of the system's action, such as a LiveCommunicationKit action's UUID.
+  /// The UUID assigned by the SDK or the calling framework.
   public let rawValue: UUID
 
-  /// Creates an action ID from the system action's identifier.
+  /// Creates an action ID from its UUID.
   public init(rawValue: UUID) {
     self.rawValue = rawValue
   }

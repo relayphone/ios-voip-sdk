@@ -114,8 +114,7 @@ public final class VoIPClient {
   ///
   /// Starting a call creates it; it then waits for the app to place it, which the app confirms
   /// with ``confirmPlaced(_:)``, or with ``confirmNotPlaced(_:)`` when it can't. Joining a call
-  /// from its preview waits in the same way. Ending a call preview ends it without the calling
-  /// framework.
+  /// from its preview waits in the same way. An End uses ``end(_:)`` and discards the result.
   ///
   /// - Parameter action: The action to request.
   /// - Throws: ``ActionError/unknownCall`` when this device doesn't know the call,
@@ -126,6 +125,18 @@ public final class VoIPClient {
   ///   preview.
   public func request(_ action: Action) async throws(ActionError) {
     try await engine.request(action)
+  }
+
+  /// Ends this device's participation in a call and returns its retained result.
+  ///
+  /// A local End records its receipt before releasing media and requesting system removal.
+  /// Later End requests return the same receipt during ``VoIPConfiguration/retention``.
+  /// If another terminal event owned the end first, the result carries its original reason.
+  ///
+  /// - Parameter id: The call to end or decline.
+  /// - Throws: ``ActionError/unknownCall`` if the call is unknown or its retention has passed.
+  public func end(_ id: CallID) async throws(ActionError) -> EndResult {
+    try await engine.end(id)
   }
 
   /// Confirms that the app placed a call it was asked to start or join, after

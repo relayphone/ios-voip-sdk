@@ -57,6 +57,16 @@ public sealed interface Input {
         public val party: Party, public val expiresAt: Instant? = null,
     ) : Input
     public data class Admitted(public val attempt: Attempt) : Input
+    /** The incoming platform setup resolved without opening a session. */
+    public data class AdmissionFailed(public val attempt: Attempt, public val failure: SystemFailure) : Input {
+        init { require(failure.operation == SystemOperation.ADMISSION) }
+    }
+    /** The platform opened the outgoing session for this attempt. */
+    public data class StartAdmitted(public val attempt: Attempt) : Input
+    /** The outgoing platform setup resolved without opening a session. */
+    public data class StartFailed(public val attempt: Attempt, public val failure: SystemFailure) : Input {
+        init { require(failure.operation == SystemOperation.START) }
+    }
     public data class Request(
         public val action: Action, public val id: ActionID, public val supported: Boolean = false,
         public val effectiveDeadline: Duration? = null,
@@ -123,7 +133,10 @@ public class State internal constructor(
     public constructor(configuration: Configuration) : this(configuration, emptyMap(), emptyMap(), emptyMap(), emptyMap(), 0)
     public val calls: Map<CallID, Call> get() = records.mapValues { it.value.call }
     public val participating: Set<CallID> get() = records.filterValues(Record::participating).keys
-    public val systemRemoved: Set<CallID> get() = records.filterValues(Record::systemRemoved).keys
+    public val systemRemoved: Set<CallID> get() = records.filterValues { it.removalEvidence == RemovalEvidence.REMOVED }.keys
+    /** Calls whose platform setup failed before there was a session to remove. */
+    public val systemRemovalNotApplicable: Set<CallID>
+        get() = records.filterValues { it.removalEvidence == RemovalEvidence.NOT_APPLICABLE }.keys
 }
 
 public data class Transition(public val state: State, public val effects: List<Effect>)
@@ -134,12 +147,16 @@ internal data class SeenEvent(val at: Instant, val order: Long, val end: Input.R
 internal data class PermitKey(val callID: CallID, val id: AttemptID)
 internal data class PermitRelease(val attempt: Attempt, val permit: AttemptID)
 internal data class Armed(val attempt: Attempt, val deadline: Instant)
+internal enum class RemovalEvidence { UNCONFIRMED, REMOVED, NOT_APPLICABLE }
+internal enum class OutgoingProgress { CONNECTED, PROVIDE_MEDIA }
 internal data class Record(
     val call: Call,
     val admission: Attempt? = null,
     val invitationDeadline: Instant? = null,
     val retainedEnd: SeenEvent? = null,
     val placement: Pending? = null,
+    val nativeStart: Effect.NativeStart? = null,
+    val outgoingProgress: List<OutgoingProgress> = emptyList(),
     val joinAttempt: Attempt? = null,
     val previousPreview: PreviewReason? = null,
     val answer: Pending? = null,
@@ -157,7 +174,7 @@ internal data class Record(
     val releasingPermit: PermitRelease? = null,
     val terminalAt: Instant? = null,
     val localEnd: ActionID? = null,
-    val systemRemoved: Boolean = false,
+    val removalEvidence: RemovalEvidence = RemovalEvidence.UNCONFIRMED,
     val timers: Map<TimerKind, Armed> = emptyMap(),
 ) {
     val participating: Boolean get() =

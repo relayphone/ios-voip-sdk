@@ -16,9 +16,16 @@ export interface JourneyDriver<Control = Input, Snapshot = Observation> {
   observe(): Promise<Snapshot>;
   close(): Promise<void>;
 }
+const triggerGroups: Partial<Record<Trigger, readonly Trigger[]>> = {
+  systemSetupResult: ['admissionFailed', 'startAdmitted', 'startFailed'],
+  outgoingProgress: ['connected', 'provideMedia'],
+  terminalIntent: ['localEnd', 'remoteEnd'],
+};
+
 /** Selects a declared rule; computing guards and executing effects remain native engine work. */
 export function selectTransition(table: Transitions, state: State | 'absent', input: Trigger, satisfied: ReadonlySet<Guard>) {
-  return table.rules.find(rule => rule.from.includes(state) && rule.input === input && satisfied.has(rule.guard));
+  return table.rules.find(rule => rule.from.includes(state) && satisfied.has(rule.guard)
+    && (rule.input === input || triggerGroups[rule.input]?.includes(input)));
 }
 export function check(expected: Expectation, observed: Observation): void {
   switch (expected.kind) {

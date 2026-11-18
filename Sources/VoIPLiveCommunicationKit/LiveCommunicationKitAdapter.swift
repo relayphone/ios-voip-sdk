@@ -61,6 +61,8 @@
     private var reporting: Set<UUID> = []
     /// Ends to report once the system has answered the call's report.
     private var endsAfterReport: [UUID: EndReason] = [:]
+    /// Platform actions that remove calls the SDK already ended, keyed by action ID.
+    private var localRemovals: [ActionID: UUID] = [:]
 
     /// Creates the LiveCommunicationKit adapter.
     public nonisolated init() {}
@@ -223,7 +225,7 @@
         for: uuid(for: id))
     }
 
-    /// Tells the system that a call ended without the user ending it on this device.
+    /// Removes a call whose end the SDK has already recorded.
     public func reportEnded(_ id: CallID, reason: EndReason) {
       let uuid = uuid(for: id)
       requested[uuid] = nil
@@ -231,7 +233,33 @@
         endsAfterReport[uuid] = reason
         return
       }
-      report(.conversationEnded(.now, Conversation.EndedReason(reason)), for: uuid)
+      removeConversation(uuid, reason: reason)
+    }
+
+    private func removeConversation(_ uuid: UUID, reason: EndReason) {
+      guard let manager, reason == .localDeclined || reason == .localEnded else {
+        report(.conversationEnded(.now, Conversation.EndedReason(reason)), for: uuid)
+        return
+      }
+      // An End action preserves local handling in the system's call history.
+      Task { [weak self] in
+        guard self != nil else { return }
+        let action = EndConversationAction(conversationUUID: uuid)
+        let id = ActionID(rawValue: action.uuid)
+        self?.localRemovals[id] = uuid
+        do {
+          try await manager.perform(action)
+        } catch {
+          Self.log.error(
+            "The system refused local call removal: \(FrameworkError(error), privacy: .public)")
+          self?.finishLocalRemoval(id)
+        }
+      }
+    }
+
+    private func finishLocalRemoval(_ id: ActionID) {
+      guard let uuid = localRemovals.removeValue(forKey: id) else { return }
+      report(.conversationEnded(.now, .remoteEnded), for: uuid)
     }
 
     // MARK: The system
@@ -240,13 +268,18 @@
       guard let onEvent else { return }
       switch event {
       case .perform(let id, let systemAction):
+        if case .end = systemAction, localRemovals.removeValue(forKey: id) != nil {
+          return complete(id, fulfilled: true)
+        }
         guard let action = action(for: systemAction) else { return complete(id, fulfilled: false) }
         onEvent(.perform(id, action))
-      case .actionTimedOut(let id): onEvent(.actionTimedOut(id))
+      case .actionTimedOut(let id):
+        if localRemovals[id] != nil { finishLocalRemoval(id) } else { onEvent(.actionTimedOut(id)) }
       case .audioActivated: onEvent(.audioActivated)
       case .audioDeactivated: onEvent(.audioDeactivated)
       case .reset:
         requested.removeAll()
+        localRemovals.removeAll()
         onEvent(.reset)
       }
     }
@@ -283,7 +316,7 @@
     ) {
       reporting.remove(uuid)
       if let reason = endsAfterReport.removeValue(forKey: uuid), outcome == .presented {
-        report(.conversationEnded(.now, Conversation.EndedReason(reason)), for: uuid)
+        removeConversation(uuid, reason: reason)
       }
       completion(outcome)
     }

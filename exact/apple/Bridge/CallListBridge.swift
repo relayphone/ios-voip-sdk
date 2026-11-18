@@ -279,7 +279,7 @@ public final class CallListBridge: CallObserver {
 
   private func endedBySDK(_ call: Call) {
     guard let entry = last[call.id], entry.state != .ended else { return }
-    if case .ended(.endedHere) = call.status { return }
+    if call.status == .ended(.localDeclined) || call.status == .ended(.localEnded) { return }
     person[call.id, default: []].insert(.end)
     continuation.yield(.choice(call.id, .failed))
   }

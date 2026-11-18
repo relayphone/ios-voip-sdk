@@ -13,6 +13,9 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
@@ -52,6 +55,185 @@ class RuntimeTest {
             runCurrent()
             assertTrue(closing.isCompleted)
             assertEquals(setOf(id, other), ports.retired)
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
+    fun `a report rejection ends only its call and leaves no platform removal work`() = runTest {
+        val ports = Ports()
+        val runtime = start(ports)
+        try {
+            runtime.invite(id)
+            runtime.invite(other)
+            runCurrent()
+            ports.admissions.getValue(other).invoke()
+            runCurrent()
+            val failure = SystemFailure(Platform.ANDROID, SystemOperation.ADMISSION, nativeCode = 37)
+            ports.sessions.getValue(id).complete(Outcome.Failure(failure))
+            advanceTimeBy(1)
+            runCurrent()
+
+            val reason = EndReason.Failed(CallError.SystemFailed(failure))
+            assertEquals(mapOf(id to Lifecycle.Ending(reason), other to Lifecycle.Ringing), runtime.lifecycles())
+            assertEquals(listOf("media"), ports.cleanup)
+            assertEquals(setOf(id), runtime.state.value.systemRemovalNotApplicable)
+            assertTrue(runtime.state.value.systemRemoved.isEmpty())
+            assertFalse(ports.sessions.getValue(other).isCompleted)
+
+            ports.mediaRelease.complete(Unit)
+            runCurrent()
+            assertEquals(reason, (runtime.lifecycles().getValue(id) as Lifecycle.Ended).reason)
+            assertEquals(Lifecycle.Ringing, runtime.lifecycles().getValue(other))
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
+    fun `native start rejection reaches the matching Start receipt`() = runTest {
+        val failure = SystemFailure(Platform.ANDROID, SystemOperation.START, nativeCode = 38)
+        val ports = Ports(outgoing = { Outcome.Failure(failure) })
+        val runtime = start(ports)
+        try {
+            val action = ActionID("start")
+            check(runtime.submit(Input.Request(Action.Start(id, line, party), action)))
+            runCurrent()
+
+            val error = CallError.SystemFailed(failure)
+            assertEquals(listOf(Effect.RejectAction(id, action, error)), ports.rejections)
+            assertEquals(Lifecycle.Ending(EndReason.Failed(error)), runtime.lifecycles().getValue(id))
+            assertEquals(setOf(id), runtime.state.value.systemRemovalNotApplicable)
+            assertEquals(listOf("media"), ports.cleanup)
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
+    fun `native Start success without admission rejects and prunes its record`() = runTest {
+        verifyUnadmittedStart { Outcome.Success(Unit) }
+    }
+
+    @Test
+    fun `native Start exception before admission rejects and prunes its record`() = runTest {
+        verifyUnadmittedStart { throw IllegalStateException("session aborted") }
+    }
+
+    @Test
+    fun `native Start cancellation before admission rejects and prunes its record`() = runTest {
+        verifyUnadmittedStart { admitted ->
+            currentCoroutineContext().cancel()
+            try {
+                awaitCancellation()
+            } finally {
+                admitted()
+            }
+        }
+    }
+
+    @Test
+    fun `runtime shutdown rejects a suspended Start once and discards its record`() = runTest {
+        val ports = Ports(outgoing = { admitted ->
+            try {
+                awaitCancellation()
+            } finally {
+                admitted()
+            }
+        })
+        val runtime = start(ports)
+        val action = ActionID("start")
+        try {
+            check(runtime.submit(Input.Request(Action.Start(id, line, party), action)))
+            runCurrent()
+            assertEquals(Lifecycle.Dialing, runtime.lifecycles().getValue(id))
+            assertTrue(ports.rejections.isEmpty())
+
+            runtime.close()
+            assertEquals(listOf(Effect.RejectAction(id, action, unadmittedError)), ports.rejections)
+            assertTrue(ports.settlements.isEmpty())
+            assertTrue(runtime.state.value.calls.isEmpty())
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
+    fun `runtime shutdown preserves admission already reported by the session`() = runTest {
+        val admission = CompletableDeferred<() -> Unit>()
+        val ports = Ports(outgoing = { admitted ->
+            admission.complete(admitted)
+            awaitCancellation()
+        })
+        val runtime = start(ports)
+        val action = ActionID("start")
+        try {
+            check(runtime.submit(Input.Request(Action.Start(id, line, party), action)))
+            runCurrent()
+            val admitted = admission.await()
+            admitted()
+            admitted()
+            // Shut down before the runtime consumes the admission notification.
+            runtime.close()
+            assertEquals(listOf(action), ports.settlements)
+            assertTrue(ports.rejections.isEmpty())
+            assertTrue(runtime.state.value.calls.isEmpty())
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
+    fun `a cancelled Start releases an ended record retained beyond its expiry`() = runTest {
+        val session = CompletableDeferred<Unit>()
+        val ports = Ports(outgoing = {
+            session.await()
+            Outcome.Success(Unit)
+        })
+        val runtime = start(ports, policy = shortRetention)
+        val action = ActionID("start")
+        try {
+            ports.mediaRelease.complete(Unit)
+            check(runtime.submit(Input.Request(Action.Start(id, line, party), action)))
+            runCurrent()
+            runtime.endFromServer(id)
+            advanceTimeBy(1_000)
+            runtime.endFromServer(other)
+            runCurrent()
+            assertEquals(EndReason.RemoteEnded, (runtime.lifecycles().getValue(id) as Lifecycle.Ended).reason)
+
+            session.cancel()
+            runCurrent()
+            assertFalse(id in runtime.state.value.calls)
+            val rejection = Effect.RejectAction(id, action, CallError.InvalidTransition(LifecycleKind.ENDING))
+            assertEquals(listOf(rejection), ports.rejections)
+            assertEquals(listOf("media"), ports.cleanup)
+        } finally {
+            runtime.close()
+        }
+    }
+
+    private suspend fun TestScope.verifyUnadmittedStart(
+        outgoing: suspend (() -> Unit) -> Outcome<Unit, SystemFailure>,
+    ) {
+        val ports = Ports(outgoing = outgoing)
+        val runtime = start(ports, policy = shortRetention)
+        val action = ActionID("start")
+        try {
+            ports.mediaRelease.complete(Unit)
+            check(runtime.submit(Input.Request(Action.Start(id, line, party), action)))
+            runCurrent()
+            assertEquals(listOf(Effect.RejectAction(id, action, unadmittedError)), ports.rejections)
+            assertTrue(ports.settlements.isEmpty())
+            assertEquals(EndReason.Failed(unadmittedError), (runtime.lifecycles().getValue(id) as Lifecycle.Ended).reason)
+            assertEquals(setOf(id), runtime.state.value.systemRemovalNotApplicable)
+            assertEquals(listOf("media"), ports.cleanup)
+
+            advanceTimeBy(1_000)
+            runtime.endFromServer(other)
+            runCurrent()
+            assertFalse(id in runtime.state.value.calls)
         } finally {
             runtime.close()
         }
@@ -261,23 +443,28 @@ class RuntimeTest {
     private class Ports(
         override val answerDeadline: Duration = 5.seconds,
         private val answerPermit: AttemptID? = null,
+        private val outgoing: (suspend (() -> Unit) -> Outcome<Unit, SystemFailure>)? = null,
     ) : SystemPort, AuthorityPort, MediaPort, PresentationPort {
+        override val platform = Platform.ANDROID
         val admissions = mutableMapOf<CallID, () -> Unit>()
-        val sessions = mutableMapOf<CallID, CompletableDeferred<Unit>>()
+        val sessions = mutableMapOf<CallID, CompletableDeferred<Outcome<Unit, SystemFailure>>>()
         val retired = mutableSetOf<CallID>()
         val cleanup = mutableListOf<String>()
         val mediaRelease = CompletableDeferred<Unit>()
         val systemRemoval = CompletableDeferred<Outcome<Unit, SystemFailure>>()
         val settlements = mutableListOf<ActionID>()
+        val rejections = mutableListOf<Effect.RejectAction>()
         val releaseRequest = CompletableDeferred<Effect.ReleasePermit>()
         val permitReleased = CompletableDeferred<Unit>()
 
-        override suspend fun reportIncoming(call: Call, request: Effect.ReportIncoming, admitted: () -> Unit) {
-            val done = CompletableDeferred<Unit>()
+        override suspend fun reportIncoming(
+            call: Call, request: Effect.ReportIncoming, admitted: () -> Unit,
+        ): Outcome<Unit, SystemFailure> {
+            val done = CompletableDeferred<Outcome<Unit, SystemFailure>>()
             sessions[call.id] = done
             admissions[call.id] = admitted
             try {
-                done.await()
+                return done.await()
             } finally {
                 withContext(NonCancellable) { delay(1) }
                 retired += call.id
@@ -286,7 +473,7 @@ class RuntimeTest {
 
         override suspend fun remove(call: Call, request: Effect.RequestRemoval): Outcome<Unit, SystemFailure> {
             cleanup += "system"
-            return systemRemoval.await().also { sessions.getValue(call.id).complete(Unit) }
+            return systemRemoval.await().also { sessions.getValue(call.id).complete(Outcome.Success(Unit)) }
         }
 
         override suspend fun close(request: Effect.CloseMedia) {
@@ -294,16 +481,23 @@ class RuntimeTest {
             mediaRelease.await()
         }
 
-        override suspend fun startOutgoing(call: Call, request: Effect.NativeStart): Unit = error("Unexpected Start")
+        override suspend fun startOutgoing(
+            call: Call, request: Effect.NativeStart, admitted: () -> Unit,
+        ): Outcome<Unit, SystemFailure> = checkNotNull(outgoing) { "Unexpected Start" }(admitted)
         override suspend fun apply(request: Effect.Apply): Outcome<Unit, CallError> = error("Unexpected control")
         override suspend fun setActive(request: Effect.SetActive): Unit = error("Unexpected activation")
         override fun settle(result: Effect.SettleAction) {
             settlements += result.actionID
         }
-        override fun reject(result: Effect.RejectAction): Unit = error("Unexpected rejection")
+        override fun reject(result: Effect.RejectAction) {
+            check(outgoing != null) { "Unexpected rejection" }
+            rejections += result
+        }
         override fun completeEnd(result: Effect.CompleteEnd): Unit = error("Unexpected local End")
-        override suspend fun place(call: Call, request: Effect.RequestPlacement): Outcome<Unit, CallError.PlacementFailed> =
-            error("Unexpected placement")
+        override suspend fun place(call: Call, request: Effect.RequestPlacement): Outcome<Unit, CallError.PlacementFailed> {
+            check(outgoing != null) { "Unexpected placement" }
+            return Outcome.Success(Unit)
+        }
         override suspend fun claim(request: Effect.RequestClaim): AnswerDecision =
             AnswerDecision.Allow(checkNotNull(answerPermit))
         override suspend fun reconcile(request: Effect.Reconcile): Reconciliation = error("Unexpected reconciliation")
@@ -323,6 +517,9 @@ class RuntimeTest {
         val party = Party(PartyID("alice"), Handle.Opaque("sip:alice@example.test"), "Alice")
         val configuration = Configuration(Budgets(), OutgoingMedia.WHEN_PROVIDED, ConnectionAuthority.APPLICATION, 1, true)
         val shortRetention = configuration.copy(budgets = Budgets().withRetention(RetentionBudget(lifetime = 1.seconds)))
+        val unadmittedError = CallError.SystemFailed(SystemFailure(
+            Platform.ANDROID, SystemOperation.START, detail = SystemFailureDetail.SESSION_ENDED_BEFORE_ADMISSION,
+        ))
 
         fun CallRuntime.lifecycles(): Map<CallID, Lifecycle> = state.value.calls.mapValues { it.value.lifecycle }
         fun CallRuntime.invite(id: CallID, expiresAt: Instant? = null) {

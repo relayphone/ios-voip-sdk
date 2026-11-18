@@ -5,6 +5,7 @@ import com.relayphone.voip.Call
 import com.relayphone.voip.CallError
 import com.relayphone.voip.Effect
 import com.relayphone.voip.Outcome
+import com.relayphone.voip.Platform
 import com.relayphone.voip.RefusalReason
 import com.relayphone.voip.SystemFailure
 import kotlin.time.Duration
@@ -18,14 +19,24 @@ import kotlinx.coroutines.delay
  * Switch to a separate dispatcher before any blocking work, Binder calls or I/O.
  */
 public interface SystemPort {
+    /** Platform used to classify failures synthesized by the runtime. */
+    public val platform: Platform
+
     /** Effective allowance for a system Answer callback, including any adapter reserve. */
     public val answerDeadline: Duration
 
-    /** Runs the incoming session. Invoke [admitted] on entry to the platform control block. */
-    public suspend fun reportIncoming(call: Call, request: Effect.ReportIncoming, admitted: () -> Unit)
+    /** Runs the incoming session. Invoke [admitted] on entry. Return an admission failure if setup was rejected before entry. */
+    public suspend fun reportIncoming(
+        call: Call, request: Effect.ReportIncoming, admitted: () -> Unit,
+    ): Outcome<Unit, SystemFailure>
 
-    /** Runs the outgoing session and settles its Start receipt when the platform resolves it. */
-    public suspend fun startOutgoing(call: Call, request: Effect.NativeStart)
+    /**
+     * Runs the outgoing session. Invoke [admitted] on entry while the session is active.
+     * Return a failure with the Start operation when setup is rejected before entry.
+     */
+    public suspend fun startOutgoing(
+        call: Call, request: Effect.NativeStart, admitted: () -> Unit,
+    ): Outcome<Unit, SystemFailure>
 
     /** Reports observed platform removal or a typed failure. */
     public suspend fun remove(call: Call, request: Effect.RequestRemoval): Outcome<Unit, SystemFailure>

@@ -16,6 +16,7 @@ export const validTypeFixtures = {
   opaque: { version: 0, kind: 'action', value: { kind: 'start', callID: wireID('short-code'), line, party: { ...party, handle: { kind: 'opaque', value: '123' } } } },
   budgets: { version: 0, kind: 'budgets', value: { ...budgets, retention: { lifetime: 7500, terminalRecords: 42 } } },
   refused: { version: 0, kind: 'error', value: { kind: 'refused', reason: { kind: 'answeredElsewhere' } } },
+  systemStartFailed: { version: 0, kind: 'error', value: { kind: 'systemFailed', cause: { platform: 'android', kind: 'start', code: 7 } } },
   elsewhere: { version: 0, kind: 'endReason', value: { kind: 'answeredElsewhere' } },
   notAllowed: { version: 0, kind: 'endReason', value: { kind: 'failed', error: { kind: 'refused', reason: { kind: 'notAllowed' } } } },
   endedReceipt: { version: 0, kind: 'endResult', value: { kind: 'ended', receipt: { callID: wireID('call-a'), actionID: wireID('end-a'), reason: { kind: 'localEnded' } } } },

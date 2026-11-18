@@ -126,6 +126,10 @@ final class CallEngine {
   /// Requests an action, returning once the calling framework accepted it or the SDK performed it.
   func request(_ action: Action) async throws(ActionError) {
     let id = action.callID
+    if case .end = action {
+      _ = try end(id)
+      return
+    }
     let call = try exclusively { () throws(ActionError) -> Call? in
       let reply: Reply
       if states[id] != nil {
@@ -138,6 +142,16 @@ final class CallEngine {
       return try requested(reply, for: id)
     }
     try await send(action, for: call)
+  }
+
+  func end(_ id: CallID) throws(ActionError) -> EndResult {
+    try exclusively { () throws(ActionError) in
+      guard let state = states[id] else { throw .unknownCall }
+      if let result = state.endResult { return result }
+      let receipt = state.endReceipt(for: ActionID(rawValue: UUID()))
+      handle(id, .localEnd(receipt))
+      return .ended(receipt)
+    }
   }
 
   var videoSnapshot: Snapshot { published }
@@ -523,9 +537,8 @@ final class CallEngine {
     {
       media.release(next.call)
     }
-    let reply = run(effects, for: id)
     settle(id)
-    return reply
+    return run(effects, for: id)
   }
 
   private func reportCompleted(_ id: CallID, _ outcome: PresentationOutcome) {
@@ -555,7 +568,11 @@ final class CallEngine {
       case .update(let call): framework.update(call)
       case .reportOutgoing(let call, let connected):
         framework.reportOutgoing(call, connected: connected)
-      case .reportEnded(let call, let reason): framework.reportEnded(call, reason: reason)
+      case .reportEnded(let call, let reason):
+        let systemReason =
+          reason == .unanswered && states[call]?.call.isIncoming == false
+          ? EndReason.endedRemotely : reason
+        framework.reportEnded(call, reason: systemReason)
       case .prepareMedia(let call): prepare(call)
       case .arm(let deadline, let duration, let generation):
         arm(TimerKey(id: id, deadline: deadline), after: duration, generation: generation)
@@ -679,7 +696,7 @@ final class CallEngine {
       let kept = events.filter { now - $0.receivedAt < retention }
       return kept.isEmpty ? nil : kept
     }
-    for (id, ended) in endedAt where now - ended >= retention {
+    for (id, ended) in endedAt where now - ended >= retention && reportWaiters[id] == nil {
       endedAt[id] = nil
       states[id] = nil
       videoTasks[id] = nil
@@ -760,6 +777,8 @@ final class CallEngine {
     package func request(_ action: Action) async throws(ActionError) {
       try await engine.request(action)
     }
+
+    package func end(_ id: CallID) throws(ActionError) -> EndResult { try engine.end(id) }
 
     package func setVideo(_ id: CallID, enabled: Bool) async throws(ActionError) {
       try await engine.setVideo(id, enabled: enabled, source: .app)

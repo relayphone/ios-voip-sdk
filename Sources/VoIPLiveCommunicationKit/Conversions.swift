@@ -47,18 +47,15 @@
   }
 
   extension Conversation.EndedReason {
-    /// The reason LiveCommunicationKit shows, such as in Recents, for a call that ended without
-    /// the user ending it on this device.
+    /// The reason LiveCommunicationKit shows for a conversation-ended report.
     init(_ reason: EndReason) {
       self =
         switch reason {
-        case .endedRemotely: .remoteEnded
+        case .endedRemotely, .localDeclined, .localEnded: .remoteEnded
         case .unanswered: .unanswered
         case .answeredElsewhere: .joinedElsewhere
         case .declinedElsewhere: .declinedElsewhere
         case .failed, .filtered: .failed
-        // The SDK ends a call on this device with an end action, not a report.
-        case .endedHere: .remoteEnded
         }
     }
   }
