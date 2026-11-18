@@ -28,6 +28,55 @@ test('a passed line followed by a hang remains a failed timeout', async () => {
   assert.ok(result.elapsedMS < 1500);
 });
 
+test('native control startup does not spend the execution budget', async (context) => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const marker = 'NATIVE_LAUNCHER_CONTROL success';
+  const pending = run(`console.log('${marker}');${passed}`, 20, {
+    readiness: { line: marker, timeoutMS: 1000 },
+  });
+  context.mock.timers.tick(20);
+  const result = await pending;
+  assert.ok(result.log.includes(marker), 'Control must actually reach native execution');
+  assert.ok(result.readyElapsedMS !== undefined);
+  assert.equal(result.code, 0);
+});
+
+test('a launcher that never reaches its native control has a distinct bounded startup failure', async (context) => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const pending = run('setInterval(() => {}, 1000)', 20, {
+    readiness: { line: 'NATIVE_LAUNCHER_CONTROL hang', timeoutMS: 100 },
+  });
+  context.mock.timers.tick(100);
+  const result = await pending;
+  assert.equal(result.reason, 'startupTimeout');
+  assert.equal(result.readyElapsedMS, undefined);
+  assert.equal(nativeTestSucceeded(result), false);
+});
+
+test('the exact stdout marker starts the stalled control execution timer', async () => {
+  const marker = 'NATIVE_LAUNCHER_CONTROL hang';
+  const result = await run(`
+    console.error('${marker}');
+    console.log('${marker} unexpected');
+    process.stdout.write('NATIVE_LAUNCHER_');
+    setImmediate(() => console.log('CONTROL hang'));
+    setInterval(() => {}, 1000);
+  `, 100, { readiness: { line: marker, timeoutMS: 2000 } });
+  assert.equal(result.reason, 'timeout');
+  assert.equal(result.signal, 'SIGKILL');
+  assert.equal(result.clean, true);
+  assert.ok(result.readyElapsedMS !== undefined);
+});
+
+test('near matches and stderr do not satisfy native control readiness', async () => {
+  const marker = 'NATIVE_LAUNCHER_CONTROL success';
+  const result = await run(`console.log('${marker} unexpected');console.error('${marker}');`, 100, {
+    readiness: { line: marker, timeoutMS: 2000 },
+  });
+  assert.equal(result.code, 0);
+  assert.equal(result.readyElapsedMS, undefined);
+});
+
 test('exited parents cannot leave inherited output and workers alive', async () => {
   const started = performance.now();
   const result = await run(`const {spawn}=require('node:child_process');
@@ -107,6 +156,7 @@ test('a live unkillable group is unclean and cannot keep the supervisor waiting'
     const result = await run('setInterval(()=>{},1000)', 150);
     pid = result.nativePID;
     assert.equal(result.reason, 'timeout'); assert.equal(result.clean, false);
+    assert.ok(result.cleanupErrors.includes('liveProcessGroup'));
     assert.equal(nativeTestSucceeded(result), false); assert.ok(result.elapsedMS < 2000);
   } finally {
     process.kill = original;

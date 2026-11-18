@@ -8,22 +8,49 @@ const execute = promisify(execFile);
 export interface TestProcessResult {
   code: number | null;
   signal: NodeJS.Signals | null;
-  reason: 'exit' | 'timeout' | 'outputLimit' | 'interrupted' | 'launchError' | 'outputHeldOpen';
+  reason: 'exit' | 'startupTimeout' | 'timeout' | 'outputLimit' | 'interrupted' | 'launchError' | 'outputHeldOpen';
   /** Original stdout, kept separate so diagnostics cannot split a structured receipt. */
   log: string;
   stderr: string;
   elapsedMS: number;
+  /** Time from host start to the native readiness marker, when requested and observed. */
+  readyElapsedMS?: number;
   nativePID?: number;
   clean: boolean;
   cleanupErrors: string[];
 }
-const stopped = async (groups: number[]) => {
-  const {stdout} = await execute('/bin/ps', ['-axo', 'pgid=,stat='], {timeout: 1000, maxBuffer: 256 * 1024});
-  return !stdout.split('\n').some(line => {
-    const [group, state] = line.trim().split(/\s+/);
-    return groups.includes(Number(group)) && !state?.startsWith('Z');
-  });
-};
+export interface TestProcessReadiness {
+  /** Exact LF-terminated stdout line after the native process ownership receipt. */
+  line: string;
+  timeoutMS: number;
+}
+
+async function confirmGroupsStopped(groups: number[], cleanupErrors: Set<string>): Promise<boolean> {
+  const settleDeadline = performance.now() + 500;
+  let inspectionTimeout = 1000;
+  let observedLiveGroup = false;
+  // A live process can still be handling SIGKILL when the launcher closes its pipes.
+  do {
+    try {
+      const { stdout } = await execute('/bin/ps', ['-axo', 'pgid=,stat='], {
+        timeout: inspectionTimeout, killSignal: 'SIGKILL', maxBuffer: 256 * 1024,
+      });
+      const live = stdout.split('\n').some(line => {
+        const [group, state] = line.trim().split(/\s+/);
+        return groups.includes(Number(group)) && !state?.startsWith('Z');
+      });
+      if (!live) return true;
+      observedLiveGroup = true;
+    } catch (error) {
+      const failure = error as NodeJS.ErrnoException & { signal?: NodeJS.Signals };
+      cleanupErrors.add(`processInspection:${failure.code ?? failure.signal ?? 'unknown'}`);
+      break;
+    }
+    inspectionTimeout = Math.ceil(settleDeadline - performance.now());
+  } while (inspectionTimeout > 0);
+  if (observedLiveGroup) cleanupErrors.add('liveProcessGroup');
+  return false;
+}
 const kill = (pid: number) => {
   try { process.kill(-pid, 'SIGKILL'); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return (error as NodeJS.ErrnoException).code ?? 'unknown'; }
@@ -32,16 +59,21 @@ const kill = (pid: number) => {
 /** Owns both host and simulator groups; output or a passed-test line never substitutes for exit. */
 export async function runTestProcess(options: {
   command: string; args: string[]; timeoutMS: number; env?: NodeJS.ProcessEnv;
-  secrets?: string[]; outputLimit?: number;
+  secrets?: string[]; outputLimit?: number; readiness?: TestProcessReadiness;
 }): Promise<TestProcessResult> {
   if (!Number.isSafeInteger(options.timeoutMS) || options.timeoutMS <= 0) throw new Error('Invalid test timeout');
   const limit = options.outputLimit ?? 16 * 1024 * 1024;
   if (!Number.isSafeInteger(limit) || limit <= 0) throw new Error('Invalid output limit');
+  const { readiness } = options;
+  if (readiness && (!readiness.line || /[\r\n]/.test(readiness.line) ||
+    !Number.isSafeInteger(readiness.timeoutMS) || readiness.timeoutMS <= 0)) throw new Error('Invalid test readiness');
+  const marker = readiness && `\n${readiness.line}\n`;
   const started = performance.now();
   const child = spawn(options.command, options.args, { detached: true, env: options.env, stdio: ['ignore', 'pipe', 'pipe'] });
   let reason: TestProcessResult['reason'] = 'exit', log = '', stderr = '', bytes = 0, prefix = '';
   const stdoutDecoder = new StringDecoder('utf8'), stderrDecoder = new StringDecoder('utf8');
   let nativePID: number | undefined, parsed = false, closed = false;
+  let readyElapsedMS: number | undefined;
   let code: number | null = null, signal: NodeJS.Signals | null = null;
   const cleanupErrors = new Set<string>();
   let fallback: ReturnType<typeof setTimeout> | undefined;
@@ -62,6 +94,9 @@ export async function runTestProcess(options: {
       stop();
       fallback ??= setTimeout(abandonPipes, 1000);
     };
+    let timer = readiness
+      ? setTimeout(() => terminate('startupTimeout'), readiness.timeoutMS)
+      : setTimeout(() => terminate('timeout'), options.timeoutMS);
     const receive = (chunk: Buffer, stdout: boolean) => {
       if (closed) return;
       if (stdout && !parsed) {
@@ -77,8 +112,18 @@ export async function runTestProcess(options: {
       }
       bytes += chunk.length;
       if (bytes > limit) { terminate('outputLimit'); return; }
-      if (stdout) log += stdoutDecoder.write(chunk);
-      else stderr += stderrDecoder.write(chunk);
+      if (!stdout) {
+        stderr += stderrDecoder.write(chunk);
+        return;
+      }
+      const previousLength = log.length;
+      log += stdoutDecoder.write(chunk);
+      if (marker && nativePID !== undefined && readyElapsedMS === undefined && reason === 'exit' &&
+        log.includes(marker, Math.max(0, previousLength - marker.length + 1))) {
+        readyElapsedMS = performance.now() - started;
+        clearTimeout(timer);
+        timer = setTimeout(() => terminate('timeout'), options.timeoutMS);
+      }
     };
     child.stdout.on('data', chunk => receive(chunk, true));
     child.stderr.on('data', chunk => receive(chunk, false));
@@ -92,7 +137,6 @@ export async function runTestProcess(options: {
     child.once('close', finish);
     const interrupt = () => terminate('interrupted');
     process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt);
-    const timer = setTimeout(() => terminate('timeout'), options.timeoutMS);
     cleanup = () => {
       clearTimeout(timer); clearTimeout(fallback);
       process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt);
@@ -104,8 +148,8 @@ export async function runTestProcess(options: {
   for (const secret of options.secrets ?? []) if (secret) {
     log = log.replaceAll(secret, '<REDACTED>'); stderr = stderr.replaceAll(secret, '<REDACTED>');
   }
-  let clean = false;
-  try { clean = nativePID !== undefined && await stopped([nativePID, ...(child.pid ? [child.pid] : [])]); } catch { /* Unknown cleanup is not success. */ }
-  return { code, signal, reason, log, stderr, elapsedMS: performance.now() - started, nativePID,
-    clean, cleanupErrors: [...cleanupErrors] };
+  const clean = nativePID !== undefined &&
+    await confirmGroupsStopped([nativePID, ...(child.pid ? [child.pid] : [])], cleanupErrors);
+  return { code, signal, reason, log, stderr, elapsedMS: performance.now() - started, readyElapsedMS,
+    nativePID, clean, cleanupErrors: [...cleanupErrors] };
 }

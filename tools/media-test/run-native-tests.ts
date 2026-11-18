@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { runTestProcess, type TestProcessResult } from './test-process.ts';
+import { runTestProcess, type TestProcessReadiness, type TestProcessResult } from './test-process.ts';
 
 const execute = promisify(execFile);
 interface TestTarget {
@@ -51,7 +51,7 @@ export function nativeTestSucceeded(result: TestProcessResult): boolean {
 /** Runs prebuilt tests directly, avoiding xcodebuild's separate result-collection teardown. */
 export async function runNativeTests(options: {
   specification: string; simulator: string; host: string; directory: string;
-  timeoutMS: number; only?: string; secrets?: string[];
+  timeoutMS: number; only?: string; secrets?: string[]; readiness?: TestProcessReadiness;
 }) {
   const specification = resolve(options.specification), directory = resolve(options.directory);
   const [{ stdout: data }, { stdout: developer }] = await Promise.all([
@@ -62,9 +62,10 @@ export async function runNativeTests(options: {
   if (!existsSync(options.host)) throw Error('Missing simulator test host');
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const result = await runTestProcess({ command: '/usr/bin/xcrun', args: plan.args,
-    env: { ...process.env, ...plan.env }, timeoutMS: options.timeoutMS, secrets: options.secrets });
+    env: { ...process.env, ...plan.env }, timeoutMS: options.timeoutMS, secrets: options.secrets,
+    readiness: options.readiness });
   const { log, stderr, ...receipt } = result;
-  const success = nativeTestSucceeded(result);
+  const success = (!options.readiness || result.readyElapsedMS !== undefined) && nativeTestSucceeded(result);
   writeFileSync(join(directory, 'tests.log'), log);
   writeFileSync(join(directory, 'stderr.log'), stderr);
   writeFileSync(join(directory, 'launcher.json'), JSON.stringify({ ...receipt, success }, null, 2) + '\n');
