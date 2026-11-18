@@ -61,10 +61,9 @@ class TelecomJourneysTest {
             report(runtime)
             awaitTelecom("RINGING")
             awaitNotification(present = true)
-            shell("cmd media_session dispatch headsethook")
+            assertEquals(Outcome.Success(Unit), system.answer(id))
             runtime.awaitLifecycle { it == Lifecycle.Connecting }
             awaitTelecom("ACTIVE")
-            assertEquals(Outcome.Success(Unit), system.answer(id))
             assertEquals(1, authority.claims.get())
             end(runtime)
             awaitEnd(runtime)
