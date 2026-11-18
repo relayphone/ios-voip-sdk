@@ -1,0 +1,60 @@
+[
+  {
+    "kind": "response",
+    "operation": "claim",
+    "status": 200,
+    "idempotencyKey": "v1.YW5zd2VyLc6x",
+    "body": {
+      "version":1,"callID":"call-a","actionID":"answer-α","kind":"allow",
+      "permit":{"id":"permit-a","expiresAt":"2026-11-18T12:00:30.000Z"}
+    }
+  },
+  {
+    "kind": "response",
+    "operation": "reconcile",
+    "status": 200,
+    "idempotencyKey": "v1.YW5zd2VyLc6x",
+    "body": {
+      "version":1,"callID":"call-a","actionID":"answer-α","kind":"allow",
+      "permit":{"id":"permit-a","expiresAt":"2026-11-18T12:00:30.000Z"}
+    }
+  },
+  {
+    "kind": "response",
+    "operation": "claim",
+    "status": 200,
+    "idempotencyKey": "v1.YW5zd2VyLWI",
+    "body": {
+      "version":1,"callID":"call-b","actionID":"answer-b","kind":"allow",
+      "permit":{"id":"permit-b","expiresAt":"2026-11-18T12:00:30.000Z"},
+      "media":{"provider":"livekit","url":"wss://media.example.test","room":"room-b","identity":"participant-b","token":"synthetic-media-token","expiresAt":1795003230}
+    }
+  },
+  {
+    "kind": "response",
+    "operation": "claim",
+    "status": 200,
+    "idempotencyKey": "v1.YW5zd2VyLWM",
+    "body": {"version":1,"callID":"call-c","actionID":"answer-c","kind":"refuse","reason":{"kind":"answeredElsewhere"}}
+  },
+  {
+    "kind": "response",
+    "operation": "reconcile",
+    "status": 200,
+    "idempotencyKey": "v1.YW5zd2VyLc6x",
+    "body": {"version":1,"callID":"call-a","actionID":"answer-α","kind":"unknown"}
+  },
+  {
+    "kind": "response",
+    "operation": "release",
+    "status": 200,
+    "idempotencyKey": "v1.YW5zd2VyLc6x",
+    "body": {"version":1,"callID":"call-a","actionID":"answer-α","kind":"released"}
+  },
+  {"kind":"response","operation":"claim","status":307},
+  {"kind":"response","operation":"claim","status":401},
+  {"kind":"response","operation":"claim","status":403},
+  {"kind":"response","operation":"claim","status":409},
+  {"kind":"response","operation":"reconcile","status":503},
+  {"kind":"response","operation":"release","status":504}
+]

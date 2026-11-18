@@ -190,7 +190,8 @@ the call's end reason is that same canonical ownership reason, never `failed(ref
 An `answeredElsewhere` refusal instead enters the same preview as a server `answeredElsewhere`
 when preview policy is enabled; `declinedElsewhere` remains terminal. Only `notAllowed` records
 `failed(refused(notAllowed))`. These paths release the Answer's slot and settle its receipt once.
-The optional HTTP authority and secure credential transport are implementation work, not test input.
+The [built-in HTTP authority contract](v1/http-authority.md) specifies transport and secure
+credentials. The reducer observes only the typed authority results.
 
 `whenProvided` starts native dialing after placement; later media credentials have no placement-to-
 media deadline. Only an explicit application connected report commits outgoing connection. An early

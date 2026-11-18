@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://relayphone.github.io/voip-sdk/spec/v1/http-authority.schema.json",
+  "oneOf": [
+    {"$ref":"#/$defs/request"},
+    {"$ref":"#/$defs/response"}
+  ],
+  "$defs": {
+    "id": {"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/id"},
+    "idempotencyKey": {
+      "type":"string","pattern":"^v1\\.[A-Za-z0-9_-]{2,1366}(?![\\s\\S])"
+    },
+    "actionRequestBody": {
+      "type":"object",
+      "properties":{"version":{"const":1},"callID":{"$ref":"#/$defs/id"},"accountID":{"$ref":"#/$defs/id"},"lineID":{"$ref":"#/$defs/id"},"actionID":{"$ref":"#/$defs/id"}},
+      "required":["version","callID","accountID","lineID","actionID"],"additionalProperties":false
+    },
+    "releaseRequestBody": {
+      "type":"object",
+      "properties":{"version":{"const":1},"callID":{"$ref":"#/$defs/id"},"accountID":{"$ref":"#/$defs/id"},"lineID":{"$ref":"#/$defs/id"},"actionID":{"$ref":"#/$defs/id"},"permitID":{"$ref":"#/$defs/id"}},
+      "required":["version","callID","accountID","lineID","actionID","permitID"],"additionalProperties":false
+    },
+    "request": {"oneOf":[
+      {
+        "type":"object",
+        "properties":{
+          "kind":{"const":"request"},"operation":{"const":"claim"},"method":{"const":"POST"},
+          "path":{"type":"string","pattern":"^(?:/[A-Za-z0-9._~-]+)*/v1/answer/claim(?![\\s\\S])"},
+          "idempotencyKey":{"$ref":"#/$defs/idempotencyKey"},"body":{"$ref":"#/$defs/actionRequestBody"}
+        },
+        "required":["kind","operation","method","path","idempotencyKey","body"],"additionalProperties":false
+      },
+      {
+        "type":"object",
+        "properties":{
+          "kind":{"const":"request"},"operation":{"const":"reconcile"},"method":{"const":"POST"},
+          "path":{"type":"string","pattern":"^(?:/[A-Za-z0-9._~-]+)*/v1/answer/reconcile(?![\\s\\S])"},
+          "idempotencyKey":{"$ref":"#/$defs/idempotencyKey"},"body":{"$ref":"#/$defs/actionRequestBody"}
+        },
+        "required":["kind","operation","method","path","idempotencyKey","body"],"additionalProperties":false
+      },
+      {
+        "type":"object",
+        "properties":{
+          "kind":{"const":"request"},"operation":{"const":"release"},"method":{"const":"POST"},
+          "path":{"type":"string","pattern":"^(?:/[A-Za-z0-9._~-]+)*/v1/answer/release(?![\\s\\S])"},
+          "idempotencyKey":{"$ref":"#/$defs/idempotencyKey"},"body":{"$ref":"#/$defs/releaseRequestBody"}
+        },
+        "required":["kind","operation","method","path","idempotencyKey","body"],"additionalProperties":false
+      }
+    ]},
+    "permit": {
+      "type":"object",
+      "properties":{"id":{"$ref":"#/$defs/id"},"expiresAt":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/timestamp"}},
+      "required":["id","expiresAt"],"additionalProperties":false
+    },
+    "liveKitMedia": {
+      "type":"object",
+      "properties":{
+        "provider":{"const":"livekit"},
+        "url":{"type":"string","pattern":"^wss://[^\\s/?#@\\\\]+(?:[/?][^\\s#\\\\]*)?(?![\\s\\S])"},
+        "room":{"type":"string","minLength":1},"identity":{"type":"string","minLength":1},"token":{"type":"string","minLength":1},
+        "expiresAt":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/duration"}
+      },
+      "required":["provider","url","room","identity","token","expiresAt"],"additionalProperties":false
+    },
+    "allowBody": {
+      "type":"object",
+      "properties":{
+        "version":{"const":1},"callID":{"$ref":"#/$defs/id"},"actionID":{"$ref":"#/$defs/id"},
+        "kind":{"const":"allow"},"permit":{"$ref":"#/$defs/permit"},"media":{"$ref":"#/$defs/liveKitMedia"}
+      },
+      "required":["version","callID","actionID","kind","permit"],"additionalProperties":false
+    },
+    "refuseBody": {
+      "type":"object",
+      "properties":{
+        "version":{"const":1},"callID":{"$ref":"#/$defs/id"},"actionID":{"$ref":"#/$defs/id"},
+        "kind":{"const":"refuse"},"reason":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/refusal"}
+      },
+      "required":["version","callID","actionID","kind","reason"],"additionalProperties":false
+    },
+    "unknownBody": {
+      "type":"object",
+      "properties":{"version":{"const":1},"callID":{"$ref":"#/$defs/id"},"actionID":{"$ref":"#/$defs/id"},"kind":{"const":"unknown"}},
+      "required":["version","callID","actionID","kind"],"additionalProperties":false
+    },
+    "releasedBody": {
+      "type":"object",
+      "properties":{"version":{"const":1},"callID":{"$ref":"#/$defs/id"},"actionID":{"$ref":"#/$defs/id"},"kind":{"const":"released"}},
+      "required":["version","callID","actionID","kind"],"additionalProperties":false
+    },
+    "response": {"oneOf":[
+      {
+        "type":"object",
+        "properties":{
+          "kind":{"const":"response"},"operation":{"const":"claim"},"status":{"const":200},
+          "idempotencyKey":{"$ref":"#/$defs/idempotencyKey"},
+          "body":{"oneOf":[{"$ref":"#/$defs/allowBody"},{"$ref":"#/$defs/refuseBody"}]}
+        },
+        "required":["kind","operation","status","idempotencyKey","body"],"additionalProperties":false
+      },
+      {
+        "type":"object",
+        "properties":{
+          "kind":{"const":"response"},"operation":{"const":"reconcile"},"status":{"const":200},
+          "idempotencyKey":{"$ref":"#/$defs/idempotencyKey"},
+          "body":{"oneOf":[{"$ref":"#/$defs/allowBody"},{"$ref":"#/$defs/refuseBody"},{"$ref":"#/$defs/unknownBody"}]}
+        },
+        "required":["kind","operation","status","idempotencyKey","body"],"additionalProperties":false
+      },
+      {
+        "type":"object",
+        "properties":{
+          "kind":{"const":"response"},"operation":{"const":"release"},"status":{"const":200},
+          "idempotencyKey":{"$ref":"#/$defs/idempotencyKey"},"body":{"$ref":"#/$defs/releasedBody"}
+        },
+        "required":["kind","operation","status","idempotencyKey","body"],"additionalProperties":false
+      },
+      {
+        "type":"object",
+        "properties":{
+          "kind":{"const":"response"},"operation":{"enum":["claim","reconcile","release"]},
+          "status":{"oneOf":[{"type":"integer","minimum":100,"maximum":199},{"type":"integer","minimum":201,"maximum":599}]}
+        },
+        "required":["kind","operation","status"],"additionalProperties":false
+      }
+    ]}
+  }
+}

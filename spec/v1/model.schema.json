@@ -47,6 +47,8 @@
     "input": {"oneOf": [
       {"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/input"},
       {"$ref":"#/$defs/pushInput"},
+      {"type":"object","properties":{"kind":{"const":"useHTTPAuthority"},"callID":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/id"},"actionID":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/id"},"credentialRef":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/id"}},"required":["kind","callID","actionID","credentialRef"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"httpReply"},"response":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v1/http-authority.schema.json#/$defs/response"}},"required":["kind","response"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"presentation"},"callID":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/id"},"descriptor":{"$ref":"#/$defs/presentationDescriptor"}},"required":["kind","callID","descriptor"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"refuseNotificationPost"},"callID":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/id"},"surface":{"$ref":"#/$defs/notificationSurface"},"reason":{"$ref":"#/$defs/postRefusal"}},"required":["kind","callID","surface","reason"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"enablePrejoin"},"callID":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/id"},"attemptID":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/id"}},"required":["kind","callID","attemptID"],"additionalProperties":false},
@@ -56,6 +58,7 @@
     ]},
     "expectation": {"oneOf": [
       {"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/expectation"},
+      {"type":"object","properties":{"kind":{"const":"httpRequests"},"callID":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/id"},"requests":{"type":"array","items":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v1/http-authority.schema.json#/$defs/request"}}},"required":["kind","callID","requests"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"record"},"record":{"$ref":"#/$defs/model"}},"required":["kind","record"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"actionError"},"callID":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/id"},"error":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/error"}},"required":["kind","callID","error"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"cleanup"},"callID":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/id"},"outcome":{"enum":["removed","failed"]}},"required":["kind","callID","outcome"],"additionalProperties":false},

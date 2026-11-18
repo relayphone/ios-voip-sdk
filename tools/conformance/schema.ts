@@ -9,8 +9,12 @@ type Schema = Readonly<{ $schema?: string; $id?: string; $defs?: Readonly<Record
 const schema = JSON.parse(readFileSync(new URL('../../spec/model.schema.json', import.meta.url), 'utf8')) as Schema;
 let schemaV1: Schema | undefined;
 let bridgeSchema: Schema | undefined;
+let httpAuthoritySchema: Schema | undefined;
 const versionOne = () => schemaV1 ??= JSON.parse(
   readFileSync(new URL('../../spec/v1/model.schema.json', import.meta.url), 'utf8'),
+) as Schema;
+const httpAuthority = () => httpAuthoritySchema ??= JSON.parse(
+  readFileSync(new URL('../../spec/v1/http-authority.schema.json', import.meta.url), 'utf8'),
 ) as Schema;
 const keywords = new Set(['$schema', '$id', '$defs', '$ref', 'type', 'const', 'enum', 'oneOf', 'properties',
   'required', 'additionalProperties', 'items', 'minItems', 'minLength', 'maxLength', 'pattern', 'minimum', 'maximum']);
@@ -30,7 +34,8 @@ function audit(rule: Schema, root: Schema, seen = new Set<Schema>()): void {
 function referenced(reference: string, root: Schema): readonly [Schema, Schema] {
   const [document, name, extra] = reference.split('#/$defs/');
   const target = document === '' ? root : document === schema.$id ? schema
-    : document === versionOne().$id ? versionOne() : undefined;
+    : document === versionOne().$id ? versionOne()
+    : document === httpAuthority().$id ? httpAuthority() : undefined;
   if (!name || extra !== undefined || !target?.$defs || !Object.hasOwn(target.$defs, name)) {
     throw new Error(`Unknown schema reference: ${reference}`);
   }
@@ -47,6 +52,9 @@ export function validateV1(value: unknown, definition?: string): void {
 export function validateBridge(value: unknown, definition?: 'snapshot' | 'frame' | 'command' | 'reply'): void {
   bridgeSchema ??= JSON.parse(readFileSync(new URL('../../spec/bridge.schema.json', import.meta.url), 'utf8')) as Schema;
   validateDocument(value, bridgeSchema, definition);
+}
+export function validateHTTPAuthority(value: unknown): void {
+  validateDocument(value, httpAuthority());
 }
 function validateDocument(value: unknown, root: Schema, definition?: string): void {
   const rule = definition === undefined ? root : { $ref: `#/$defs/${definition}` };
