@@ -8,7 +8,7 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "paths": { "@relayphone/ios-voip-sdk": ["./src/conversations/types.ts"] },
-    "rootDir": "."
+    "rootDir": ".."
   },
   "include": [
     "test/**/*.ts",
