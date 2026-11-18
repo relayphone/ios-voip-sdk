@@ -16,6 +16,13 @@ Public API changes include migration guidance.
 
 ### Added
 
+- Swift supports `VoIPConfiguration(outgoingMedia: .whenProvided)`. To adopt it, keep calling
+  `confirmPlaced(_:)` after local placement, then supply credentials to your native media
+  adapter and call `try await client.provideMedia(callID)`. The call dials while waiting for
+  media, and the preparation deadline starts when media is supplied. Continue to send
+  `receive(.connected, for:eventID:)` when the remote party answers. An early report waits for
+  media under the connection deadline. The default policy remains `.duringPlacement`.
+
 - Swift host tests round-trip the shared v0 model fixtures and run the shared journeys against
   the native call engine. The suite tracks behavioral gaps as known issues.
 

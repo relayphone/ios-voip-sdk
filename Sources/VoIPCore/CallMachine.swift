@@ -79,6 +79,10 @@ enum CallMachine {
     case connected
   }
 
+  enum DeferredMedia: Hashable, Sendable {
+    case unprovided, preparing, prepared
+  }
+
   /// One call's state.
   struct State: Hashable, Sendable {
     /// The call as the app sees it. Its status always matches ``phase``.
@@ -93,6 +97,10 @@ enum CallMachine {
     /// or a call joined from its preview, once it takes part.
     var startedHere = false
     var earlyProgress: EarlyProgress?
+    var deferredMedia: DeferredMedia?
+    var hasAudioConfiguration: Bool {
+      deferredMedia != .unprovided && phase.hasAudioConfiguration
+    }
     /// The generation of every armed deadline.
     var armed: [Deadline: UInt64] = [:]
     var lastGeneration: UInt64 = 0
@@ -122,6 +130,8 @@ enum CallMachine {
     case requestFailed(Action)
     /// The app placed the call it was asked to start or join.
     case placed
+    /// The app supplied media for a placed outgoing call.
+    case provideMedia
     /// The app couldn't place the call it was asked to start or join.
     case notPlaced
     /// The call's media is prepared.

@@ -127,10 +127,11 @@ private struct Step {
     case .requested(let action): request(action)
     case .requestFailed(let action): requestFailed(action)
     case .placed: placed()
+    case .provideMedia: provideMedia()
     case .notPlaced: notPlaced()
     case .mediaPrepared: mediaPrepared()
     case .mediaPreparationFailed:
-      if case .preparing = state.phase { abandon(.media) }
+      if state.armed[.mediaPreparation] != nil { abandon(.media) }
     case .server(let event): server(event)
     case .deadlineExpired(let deadline, let generation):
       guard state.armed[deadline] == generation else { return }
@@ -255,7 +256,28 @@ private struct Step {
   private mutating func placed() {
     guard case .placing(let held) = state.phase else { return }
     disarm(.placement)
+    if held.action.isStart && configuration.outgoingMedia == .whenProvided {
+      fulfill(held.id)
+      state.startedHere = true
+      state.deferredMedia = .unprovided
+      enter(.dialing)
+      arm(.ring)
+      output(.reportOutgoing(state.call.id, connected: false))
+      if state.earlyProgress == .connected { connectDeferredOutgoing() }
+      state.earlyProgress = nil
+      emit(.performed(held.action, state.call))
+      return
+    }
     enter(.preparing(held))
+    arm(.mediaPreparation)
+    output(.prepareMedia(state.call))
+  }
+
+  private mutating func provideMedia() {
+    guard state.deferredMedia == .unprovided,
+      state.phase == .dialing || state.phase == .connecting
+    else { return }
+    state.deferredMedia = .preparing
     arm(.mediaPreparation)
     output(.prepareMedia(state.call))
   }
@@ -269,6 +291,13 @@ private struct Step {
   }
 
   private mutating func mediaPrepared() {
+    if state.deferredMedia == .preparing {
+      state.deferredMedia = .prepared
+      disarm(.mediaPreparation)
+      arm(.audioActivation)
+      if state.phase == .connecting { connectDeferredOutgoing() }
+      return
+    }
     guard case .preparing(let held) = state.phase else { return }
     fulfill(held.id)
     disarm(.mediaPreparation)
@@ -299,6 +328,8 @@ private struct Step {
       state.call.parties = parties
       if !phase.isPreviewing { output(.update(state.call)) }
     case .connecting:
+      // Deferred outgoing calls keep their no-answer timer until an explicit connected report.
+      if !state.call.isIncoming && configuration.outgoingMedia == .whenProvided { return }
       switch phase {
       case .dialing:
         disarm(.ring)
@@ -310,6 +341,10 @@ private struct Step {
         break
       }
     case .connected:
+      if state.deferredMedia != nil && (phase == .dialing || phase == .connecting) {
+        connectDeferredOutgoing()
+        return
+      }
       switch phase {
       case .dialing:
         disarm(.ring)
@@ -346,6 +381,17 @@ private struct Step {
     case .declinedElsewhere: serverEnded(.declinedElsewhere)
     case .unanswered: serverEnded(.unanswered)
     case .failed: serverEnded(.failed(.server))
+    }
+  }
+
+  private mutating func connectDeferredOutgoing() {
+    disarm(.ring)
+    if state.deferredMedia == .prepared {
+      disarm(.connect)
+      becomeConnected()
+    } else if state.phase == .dialing {
+      enter(.connecting)
+      arm(.connect)
     }
   }
 
@@ -386,7 +432,8 @@ private struct Step {
   /// reset. A call that takes part and isn't on hold waits for it until the recovery deadline,
   /// unless it still waits for its first activation.
   private mutating func awaitAudioRecovery() {
-    guard state.phase.isTakingPart, !state.call.isOnHold, state.armed[.audioActivation] == nil
+    guard state.phase.isTakingPart, !state.call.isOnHold, state.armed[.audioActivation] == nil,
+      state.deferredMedia == nil || state.deferredMedia == .prepared
     else { return }
     arm(.audioRecovery)
   }
@@ -463,6 +510,7 @@ private struct Step {
     disarmAll()
     if reportingEnd { output(.reportEnded(state.call.id, reason)) }
     state.earlyProgress = nil
+    state.deferredMedia = nil
     enter(.ended(reason))
     if let action { emit(.performed(action, state.call)) }
     emit(.ended(state.call))
@@ -486,8 +534,15 @@ private struct Step {
     disarm(deadline)
     state.lastGeneration += 1
     state.armed[deadline] = state.lastGeneration
-    timers.append(
-      .arm(deadline, after: configuration.deadlines[deadline], generation: state.lastGeneration))
+    let duration =
+      if deadline == .ring, !state.call.isIncoming,
+        let noAnswer = configuration.deadlines.outgoingNoAnswer
+      {
+        noAnswer
+      } else {
+        configuration.deadlines[deadline]
+      }
+    timers.append(.arm(deadline, after: duration, generation: state.lastGeneration))
   }
 
   private mutating func disarm(_ deadline: Deadline) {

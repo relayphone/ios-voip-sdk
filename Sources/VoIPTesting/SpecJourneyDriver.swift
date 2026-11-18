@@ -32,8 +32,10 @@
           mediaPreparation: budgets.mediaPreparation.duration,
           audioActivation: budgets.audioActivation.duration,
           audioRecovery: budgets.audioRecovery.duration,
-          connect: budgets.connection.duration, reconnect: budgets.reconnection.duration),
-        retention: .seconds(120))
+          connect: budgets.connection.duration, reconnect: budgets.reconnection.duration,
+          outgoingNoAnswer: budgets.outgoingNoAnswer.duration),
+        retention: .seconds(120),
+        outgoingMedia: settings.outgoingMedia == .whenProvided ? .whenProvided : .duringPlacement)
     }
 
     /// Returns every failed expectation, labeled by its step. Decoding and driver errors throw.
@@ -116,6 +118,14 @@
         start().confirmPlaced(id.callID)
       case .provideMedia(let id):
         mediaProvided.insert(id.callID)
+        let engine = start()
+        // Incoming credentials are consumed by Answer. The current native Answer does not
+        // yet have a credential input.
+        if outgoingMedia == .whenProvided,
+          !engine.calls.contains(where: { $0.id == id.callID && $0.isIncoming })
+        {
+          try engine.provideMedia(id.callID)
+        }
       case .bindRemote(let id, _):
         return "The engine has no remote alias binding for \(id.rawValue)."
       case .connected(let id, let eventID):

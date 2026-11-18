@@ -131,13 +131,27 @@ public final class VoIPClient {
   /// Confirms that the app placed a call it was asked to start or join, after
   /// ``CallEvent/startRequested(_:)`` or ``CallEvent/joinRequested(_:)``.
   ///
-  /// The SDK then prepares the call's media and completes the start or join. A call that isn't
-  /// placed before ``Deadlines/placement`` ends with ``CallFailure/notPlaced``, or returns to its
-  /// call preview.
+  /// A deferred outgoing call starts dialing immediately. Other calls prepare media before
+  /// completing Start or Join. A call that isn't placed before ``Deadlines/placement`` ends with
+  /// ``CallFailure/notPlaced``, or returns to its call preview.
   ///
   /// - Parameter id: The call the app placed.
   public func confirmPlaced(_ id: CallID) async {
     await engine.confirmPlaced(id)
+  }
+
+  /// Begins media preparation for a placed outgoing call using the `.whenProvided` policy.
+  ///
+  /// Supply any credentials to your native ``CallMedia`` adapter before calling this method.
+  /// The preparation deadline starts here. Repeating the call once preparation has started
+  /// has no effect. Connection still requires an explicit ``ServerEvent/connected`` report.
+  ///
+  /// - Parameter id: The placed outgoing call.
+  /// - Throws: ``ActionError/unknownCall`` for an unknown ID, ``ActionError/unsupported``
+  ///   for another media policy or an incoming call, or ``ActionError/notAllowed(_:)`` if
+  ///   the outgoing call hasn't been placed or has ended.
+  public func provideMedia(_ id: CallID) async throws(ActionError) {
+    try await engine.provideMedia(id)
   }
 
   /// Confirms that the app couldn't place a call it was asked to start or join, after

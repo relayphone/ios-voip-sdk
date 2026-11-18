@@ -2,6 +2,14 @@ public import Foundation
 
 /// How the SDK presents and controls calls in this app.
 public struct VoIPConfiguration: Hashable, Sendable {
+  /// When an outgoing call prepares its media.
+  public enum OutgoingMedia: Hashable, Sendable {
+    /// Prepares media before completing the system Start action.
+    case duringPlacement
+    /// Completes Start after placement and waits for ``VoIPClient/provideMedia(_:)``.
+    case whenProvided
+  }
+
   /// The optional actions that calls in this app support.
   public struct Capabilities: OptionSet, Hashable, Sendable {
     /// Calls can be put on hold. LiveCommunicationKit calls this pausing.
@@ -61,6 +69,9 @@ public struct VoIPConfiguration: Hashable, Sendable {
   /// How long the SDK waits at each step of a call before ending it.
   public var deadlines: Deadlines
 
+  /// When outgoing media is prepared. Defaults to ``OutgoingMedia/duringPlacement``.
+  public var outgoingMedia: OutgoingMedia
+
   /// How long the SDK remembers ended calls, event IDs, and server events for calls it doesn't
   /// know yet. Defaults to 5 minutes.
   ///
@@ -81,6 +92,7 @@ public struct VoIPConfiguration: Hashable, Sendable {
   ///   - iconTemplateImageData: PNG data for the app's icon on the system's call screen.
   ///   - deadlines: How long the SDK waits at each step of a call.
   ///   - retention: How long the SDK remembers ended calls and early server events.
+  ///   - outgoingMedia: When outgoing media is prepared.
   public init(
     capabilities: Capabilities = [.holding, .playingTones],
     presentationPolicy: PresentationPolicy = PresentationPolicy(),
@@ -91,7 +103,8 @@ public struct VoIPConfiguration: Hashable, Sendable {
     ringtoneSound: String? = nil,
     iconTemplateImageData: Data? = nil,
     deadlines: Deadlines = Deadlines(),
-    retention: Duration = .seconds(300)
+    retention: Duration = .seconds(300),
+    outgoingMedia: OutgoingMedia = .duringPlacement
   ) {
     self.capabilities = capabilities
     self.presentationPolicy = presentationPolicy
@@ -103,6 +116,7 @@ public struct VoIPConfiguration: Hashable, Sendable {
     self.iconTemplateImageData = iconTemplateImageData
     self.deadlines = deadlines
     self.retention = retention
+    self.outgoingMedia = outgoingMedia
   }
 }
 
@@ -111,19 +125,21 @@ public struct VoIPConfiguration: Hashable, Sendable {
 /// When a deadline passes, the call ends: as ``EndReason/unanswered`` for the ring deadline, and
 /// as ``EndReason/failed(_:)`` for the others.
 public struct Deadlines: Hashable, Sendable {
-  /// How long an incoming call rings, or an outgoing call dials, before it ends unanswered.
-  /// Defaults to 60 seconds.
+  /// How long an incoming call rings before it ends unanswered. Also used for outgoing calls
+  /// unless ``outgoingNoAnswer`` is set. Defaults to 60 seconds.
   public var ring: Duration
+
+  /// How long an outgoing call dials before it ends unanswered. Uses ``ring`` when omitted.
+  public var outgoingNoAnswer: Duration?
 
   /// How long the app has to place an outgoing call, or join a call, after it is requested.
   /// Defaults to 10 seconds.
   public var placement: Duration
 
-  /// How long the SDK waits for the call's media to be prepared before it completes an answer,
-  /// start or join. Defaults to 2 seconds.
+  /// How long the SDK waits once it starts preparing the call's media. Defaults to 2 seconds.
   ///
-  /// The SDK holds the system's answer, start or join action while ``CallMedia/prepare(_:)``
-  /// runs. Meanwhile the system shows the call as connecting, and the SDK's call is
+  /// Except for deferred outgoing media, the SDK holds the system's answer, start or join
+  /// action while ``CallMedia/prepare(_:)`` runs. Meanwhile the SDK's call is
   /// ``CallStatus/connecting``, or ``CallStatus/dialing`` for a start. There's no audio yet: the
   /// system activates the audio session only once the SDK completes the action.
   ///
@@ -154,7 +170,8 @@ public struct Deadlines: Hashable, Sendable {
   /// 5 seconds.
   public var audioRecovery: Duration
 
-  /// How long an answered or joined call may take to connect. Defaults to 30 seconds.
+  /// How long a call may wait to connect. For deferred outgoing calls this starts at the first
+  /// explicit connected report if media is still pending. Defaults to 30 seconds.
   public var connect: Duration
 
   /// How long a call may take to reconnect. Defaults to 65 seconds.
@@ -171,6 +188,7 @@ public struct Deadlines: Hashable, Sendable {
   ///     interruption or a media services reset.
   ///   - connect: How long a call may take to connect.
   ///   - reconnect: How long a call may take to reconnect.
+  ///   - outgoingNoAnswer: Overrides the ring deadline for an outgoing call.
   public init(
     ring: Duration = .seconds(60),
     placement: Duration = .seconds(10),
@@ -178,7 +196,8 @@ public struct Deadlines: Hashable, Sendable {
     audioActivation: Duration = .seconds(10),
     audioRecovery: Duration = .seconds(5),
     connect: Duration = .seconds(30),
-    reconnect: Duration = .seconds(65)
+    reconnect: Duration = .seconds(65),
+    outgoingNoAnswer: Duration? = nil
   ) {
     self.ring = ring
     self.placement = placement
@@ -187,5 +206,6 @@ public struct Deadlines: Hashable, Sendable {
     self.audioRecovery = audioRecovery
     self.connect = connect
     self.reconnect = reconnect
+    self.outgoingNoAnswer = outgoingNoAnswer
   }
 }
