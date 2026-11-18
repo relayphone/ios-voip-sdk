@@ -15,7 +15,6 @@ class JourneysTest {
         val files = Path.of(System.getProperty("spec.journeys")).listDirectoryEntries("*.json").sorted()
         val ids = files.map { it.nameWithoutExtension }.toSet()
         check(ids.containsAll(requiredJourneys)) { "Missing v0 journeys: ${requiredJourneys - ids}" }
-        pendingJourneys.filterKeys { it !in ids }.forEach { (id, reason) -> println("Pending ${id}: ${reason}") }
         return files.map { file ->
             DynamicTest.dynamicTest(file.nameWithoutExtension) {
                 val journey = Wire.json.decodeFromString<Journey>(file.readText())
@@ -46,14 +45,10 @@ class JourneysTest {
     private companion object {
         val requiredJourneys = setOf(
             "answer-not-allowed", "answer-refusal-preview", "answer-refusal", "answered-elsewhere",
-            "claim-timeout-reconcile", "cross-line-waiting", "incoming-killed-answer",
-            "local-server-end-race", "no-answer-direction", "outgoing-deferred-binding",
-        )
-        val pendingJourneys = mapOf(
-            "end-after-server-end" to "Requires the shared EndResult journey",
-            "end-before-admission" to "Requires the shared deferred-admission journey",
-            "hold-request-confirm" to "Requires the shared two-phase Hold journey",
-            "late-answer-permit" to "Requires the shared late-permit journey",
+            "claim-timeout-reconcile", "cross-line-waiting", "end-after-server-end",
+            "end-before-admission", "hold-request-confirm", "incoming-killed-answer",
+            "late-answer-permit", "local-server-end-race", "no-answer-direction",
+            "outgoing-deferred-binding",
         )
     }
 }

@@ -1,15 +1,144 @@
 package com.relayphone.voip
 
+import java.nio.file.Path
+import kotlin.io.path.readText
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class ReducerTest {
+    @Test
+    fun `every shared rule is exercised by the reducer`() {
+        val observed = mutableSetOf<String>()
+        fun scenario(previews: Boolean = false, outgoing: OutgoingMedia = OutgoingMedia.WHEN_PROVIDED) =
+            Scenario(previews, outgoing, trace = { observed += it.id })
+        fun remote(event: String, reason: EndReason = EndReason.RemoteEnded) =
+            Input.RemoteEnd(EndTarget.Canonical(id), EventID(event), reason)
+        fun Scenario.request(action: Action, name: String) = send(Input.Request(action, ActionID(name), supported = true))
+        fun Scenario.report() = send(Input.Incoming(id, EventID("invite"), line, party)).only<Effect.ReportIncoming>().attempt
+        fun Scenario.answer() = request(Action.Answer(id), "answer").only<Effect.RequestClaim>().attempt
+        fun Scenario.start() = request(Action.Start(id, line, party), "start").only<Effect.RequestPlacement>().attempt
+        fun Scenario.beginJoin(): Attempt {
+            ring()
+            send(remote("elsewhere", EndReason.AnsweredElsewhere))
+            return request(Action.Join(id), "join").only<Effect.RequestPlacement>().attempt
+        }
+        val reset = Input.FrameworkReset(SystemFailure(Platform.ANDROID, SystemOperation.RESET))
+        val actionError = CallError.SystemFailed(SystemFailure(Platform.ANDROID, SystemOperation.ACTION))
+        val placementError = CallError.PlacementFailed(PlacementFailure.HANDLER_FAILED)
+        val mediaError = CallError.MediaFailed(MediaStage.PREPARE, MediaFailure.TRANSPORT)
+        val connected = Input.Connected(id, EventID("connected"), ConnectionAuthority.APPLICATION)
+        scenario().apply {
+            send(remote("before-invite"))
+            val admission = report()
+            request(Action.End(id), "before-admission")
+            val end = send(Input.Admitted(admission)).only<Effect.CloseMedia>().attempt
+            request(Action.End(id), "after-server-end")
+            send(Input.SystemRemoved(end))
+            send(Input.MediaReleased(end))
+            assertTrue(send(Input.MediaPrepared(end)).isEmpty())
+        }
+        scenario(previews = true).apply {
+            val admission = report()
+            send(remote("before-admission", EndReason.AnsweredElsewhere))
+            send(Input.Admitted(admission))
+        }
+        scenario().apply {
+            val admission = report()
+            val cleanup = request(Action.End(id), "end").only<Effect.CloseMedia>().attempt
+            request(Action.End(id), "repeat-end")
+            send(Input.MediaReleased(cleanup))
+            send(Input.Admitted(admission))
+        }
+        scenario().apply {
+            ring()
+            send(Input.BindRemote(id, RemoteCallID("alias")))
+            at(state.configuration.budgets.incomingRing, TimerKind.NO_ANSWER)
+        }
+        scenario().apply {
+            ring()
+            send(remote("server-end"))
+        }
+        scenario().apply {
+            ring()
+            val authority = answer()
+            val reconcile = at(state.configuration.budgets.answer.claim, TimerKind.CLAIM).only<Effect.Reconcile>().attempt
+            send(Input.ReconciliationUnknown(reconcile))
+            send(Input.AuthorityAllowed(authority, AttemptID("late")))
+        }
+        listOf(
+            true to RefusalReason.AnsweredElsewhere,
+            false to RefusalReason.DeclinedElsewhere,
+            false to RefusalReason.NotAllowed,
+        ).forEach { (previews, refusal) ->
+            scenario(previews).apply {
+                ring()
+                send(Input.AnswerRefused(answer(), refusal))
+            }
+        }
+        scenario().apply {
+            val attempt = start()
+            send(Input.Placed(attempt))
+            send(connected)
+            val media = send(Input.ProvideMedia(id)).only<Effect.PrepareMedia>().attempt
+            send(Input.MediaPrepared(media))
+        }
+        scenario(outgoing = OutgoingMedia.DURING_PLACEMENT).apply {
+            val media = send(Input.Placed(start())).only<Effect.PrepareMedia>().attempt
+            send(Input.MediaPrepared(media))
+        }
+        scenario(previews = true).apply {
+            val join = beginJoin()
+            val media = send(Input.Placed(join)).only<Effect.PrepareMedia>().attempt
+            send(Input.MediaPrepared(media))
+            send(Input.Placed(join, placementError))
+        }
+        scenario(previews = true).apply {
+            val media = send(Input.Placed(beginJoin())).only<Effect.PrepareMedia>().attempt
+            send(Input.MediaFailed(media, mediaError))
+        }
+        scenario(previews = true).apply {
+            beginJoin()
+            at(state.configuration.budgets.placement, TimerKind.PLACEMENT)
+        }
+        scenario().apply {
+            start()
+            at(state.configuration.budgets.placement, TimerKind.PLACEMENT)
+        }
+        scenario().apply {
+            send(Input.MediaFailed(connect(), mediaError))
+        }
+        scenario().apply {
+            val media = connect()
+            val recovery = send(Input.TransportLost(media)).only<Effect.ArmTimer>().attempt
+            send(Input.TransportRecovered(recovery))
+            val tones = Action.Tones(id, DTMFSequence("5"))
+            send(Input.Request(tones, ActionID("unsupported")))
+            listOf(Action.Hold(id, true), Action.Mute(id, true), Action.Video(id, true), tones)
+                .forEachIndexed { index, action ->
+                    val attempt = request(action, "fail-$index").controlAttempt()
+                    send(Input.ApplyFailed(attempt, actionError))
+                    val retry = request(action, "apply-$index").controlAttempt()
+                    send(Input.Applied(retry))
+                }
+            send(reset)
+        }
+
+        val catalog = Wire.json.parseToJsonElement(Path.of(System.getProperty("spec.transitions")).readText())
+            .jsonObject.getValue("rules").jsonArray.map { it.jsonObject.getValue("id").jsonPrimitive.content }
+        val declared = Rule.entries.map { it.id }
+        assertEquals(catalog.sorted(), declared.sorted(), "Reducer tags must match the shared catalog")
+        assertEquals(catalog.toSet(), observed, "Every catalog rule must run in the reducer")
+    }
+
     @Test
     fun `claim timeout reconciles once and stale permits release once in either lifecycle`() {
         val scenario = Scenario()
@@ -151,9 +280,7 @@ class ReducerTest {
         val scenario = Scenario()
         repeat(257) { index ->
             val callID = CallID("call-$index")
-            scenario.send(Input.Incoming(callID, EventID("invite-$index"), line, party))
-            val close = scenario.send(Input.Request(Action.End(callID), ActionID("end-$index"))).only<Effect.CloseMedia>()
-            scenario.send(Input.MediaReleased(close.attempt))
+            scenario.endAdmitted(callID).let(scenario::completeCleanup)
         }
         assertEquals(256, scenario.state.calls.size)
         assertFalse(CallID("call-0") in scenario.state.calls)
@@ -173,23 +300,109 @@ class ReducerTest {
         val earlier = CallID("earlier")
         val later = CallID("later")
         listOf(earlier, later).forEach { callID ->
-            scenario.send(Input.Incoming(callID, EventID("invite-${callID.value}"), line, party))
-            val close = scenario.send(Input.Request(Action.End(callID), ActionID("end-${callID.value}"))).only<Effect.CloseMedia>()
-            scenario.send(Input.MediaReleased(close.attempt))
+            scenario.endAdmitted(callID).let(scenario::completeCleanup)
         }
         assertEquals(setOf(later), scenario.state.calls.keys)
 
         val unknown = CallID("unknown")
         scenario.send(Input.RemoteEnd(EndTarget.Canonical(unknown), EventID("before-admission"), EndReason.RemoteEnded))
         val fresh = scenario.send(Input.Incoming(unknown, EventID("fresh-invite"), line, party)).only<Effect.ReportIncoming>()
-        scenario.send(Input.Admitted(fresh.attempt))
+        val cleanup = scenario.send(Input.Admitted(fresh.attempt)).only<Effect.CloseMedia>().attempt
         assertEquals(Lifecycle.Ending(EndReason.RemoteEnded), scenario.state.calls.getValue(unknown).lifecycle)
+        assertEquals(setOf(later, unknown), scenario.state.calls.keys)
+        scenario.completeCleanup(cleanup)
         assertEquals(setOf(unknown), scenario.state.calls.keys)
 
         scenario.send(Input.RemoteEnd(EndTarget.Canonical(id), EventID("expired-end"), EndReason.RemoteEnded))
         scenario.instant += retention.lifetime
         scenario.ring()
         assertEquals(mapOf(id to Lifecycle.Ringing), scenario.state.calls.mapValues { it.value.lifecycle })
+    }
+
+    @Test
+    fun `count and age bounds preserve late media and system cleanup`() {
+        listOf(true, false).forEach { mediaIsLate ->
+            val retention = RetentionBudget(lifetime = 1.seconds, terminalRecords = 1)
+            val scenario = Scenario(budgets = Budgets().withRetention(retention))
+            val late = scenario.endAdmitted(id)
+            val media = Input.MediaReleased(late)
+            val system = Input.SystemRemoved(late)
+            val completion = if (mediaIsLate) media else system
+            scenario.send(if (mediaIsLate) system else media)
+            val completed = CallID("completed")
+            scenario.completeCleanup(scenario.endAdmitted(completed))
+            assertEquals(setOf(id, completed), scenario.state.calls.keys)
+            scenario.instant += retention.lifetime
+            scenario.send(Input.Request(Action.End(id), ActionID("repeat"))).only<Effect.CompleteEnd>()
+            assertEquals(setOf(id), scenario.state.calls.keys)
+            assertTrue(scenario.send(completion).only<Effect.Publish>().call.lifecycle is Lifecycle.Ended)
+            assertTrue(scenario.state.calls.isEmpty())
+        }
+    }
+
+    @Test
+    fun `late admission reopens removal and a failed removal completes its generation`() {
+        val retention = RetentionBudget(lifetime = 1.seconds, terminalRecords = 1)
+        val scenario = Scenario(budgets = Budgets().withRetention(retention))
+        val admission = scenario.send(Input.Incoming(id, EventID("invite"), line, party)).only<Effect.ReportIncoming>()
+        val close = scenario.send(Input.Request(Action.End(id), ActionID("end"))).only<Effect.CloseMedia>()
+        scenario.completeCleanup(close.attempt)
+        scenario.instant += retention.lifetime
+        val lateRemoval = scenario.send(Input.Admitted(admission.attempt)).only<Effect.RequestRemoval>()
+        assertFalse(lateRemoval.attempt == close.attempt)
+        assertFalse(id in scenario.state.systemRemoved)
+        assertTrue(scenario.send(Input.SystemRemoved(close.attempt)).isEmpty())
+        assertTrue(id in scenario.state.calls)
+        assertTrue(scenario.send(Input.SystemRemovalFailed(lateRemoval.attempt)).isEmpty())
+        assertTrue(scenario.state.calls.isEmpty())
+    }
+
+    @Test
+    fun `an owned permit pins its terminated call until release is confirmed`() {
+        val retention = RetentionBudget(lifetime = 1.seconds, terminalRecords = 1)
+        val scenario = Scenario(budgets = Budgets().withRetention(retention))
+        val media = scenario.connect()
+        val end = scenario.send(Input.Request(Action.End(id), ActionID("end")))
+        val release = end.only<Effect.ReleasePermit>()
+        scenario.completeCleanup(end.only<Effect.CloseMedia>().attempt)
+        scenario.instant += retention.lifetime
+        assertTrue(scenario.send(Input.AuthorityAllowed(release.attempt, release.permit)).isEmpty())
+        assertTrue(scenario.call.lifecycle is Lifecycle.Ended)
+        scenario.send(Input.PermitReleased(media, release.permit))
+        assertTrue(id in scenario.state.calls)
+        scenario.send(Input.PermitReleased(release.attempt, release.permit))
+        assertFalse(id in scenario.state.calls)
+    }
+
+    @Test
+    fun `terminal cleanup waits for earlier preview cleanup under a tiny bound`() {
+        val retention = RetentionBudget(lifetime = 1.seconds, terminalRecords = 1)
+        val scenario = Scenario(previews = true, budgets = Budgets().withRetention(retention))
+        scenario.ring()
+        val first = scenario.send(Input.RemoteEnd(EndTarget.Canonical(id), EventID("elsewhere"), EndReason.AnsweredElsewhere))
+            .only<Effect.CloseMedia>().attempt
+        val second = scenario.send(Input.Request(Action.End(id), ActionID("end"))).only<Effect.CloseMedia>().attempt
+        scenario.completeCleanup(second)
+        scenario.instant += retention.lifetime
+        assertTrue(scenario.send(Input.MediaReleased(first)).only<Effect.Publish>().call.lifecycle is Lifecycle.Ended)
+        assertTrue(id in scenario.state.calls)
+        scenario.send(Input.SystemRemoved(first))
+        assertFalse(id in scenario.state.calls)
+    }
+
+    @Test
+    fun `late preview admission can be removed while a join owns the current call`() {
+        val scenario = Scenario(previews = true)
+        val admission = scenario.send(Input.Incoming(id, EventID("invite"), line, party)).only<Effect.ReportIncoming>()
+        scenario.send(Input.RemoteEnd(EndTarget.Canonical(id), EventID("elsewhere"), EndReason.AnsweredElsewhere))
+        val reset = Input.FrameworkReset(SystemFailure(Platform.ANDROID, SystemOperation.RESET))
+        scenario.completeCleanup(scenario.send(reset).only<Effect.CloseMedia>().attempt)
+        scenario.send(Input.Request(Action.Join(id), ActionID("join"))).only<Effect.RequestPlacement>()
+        val removal = scenario.send(Input.Admitted(admission.attempt)).only<Effect.RequestRemoval>()
+        assertEquals(EndReason.AnsweredElsewhere, removal.reason)
+        scenario.send(Input.SystemRemoved(removal.attempt))
+        assertEquals(Lifecycle.Placing, scenario.call.lifecycle)
+        assertFalse(id in scenario.state.systemRemoved)
     }
 
     @Test
@@ -207,6 +420,7 @@ class ReducerTest {
 
     private class Scenario(
         previews: Boolean = false, outgoing: OutgoingMedia = OutgoingMedia.WHEN_PROVIDED, budgets: Budgets = Budgets(),
+        private val trace: (Rule) -> Unit = {},
     ) {
         var state = State(Configuration(budgets, outgoing, ConnectionAuthority.APPLICATION, 1, previews))
         var instant = Instant.fromEpochSeconds(0)
@@ -214,7 +428,7 @@ class ReducerTest {
         val call: Call get() = state.calls.getValue(id)
 
         fun send(input: Input): List<Effect> {
-            val transition = reduce(state, input, instant)
+            val transition = reduce(state, input, instant, trace)
             state = transition.state
             transition.effects.filterIsInstance<Effect.ArmTimer>().forEach { timers[it.kind] = it }
             return transition.effects
@@ -228,7 +442,21 @@ class ReducerTest {
         }
 
         fun ring() {
-            val report = send(Input.Incoming(id, EventID("invite"), line, party)).only<Effect.ReportIncoming>()
+            admit(id, EventID("invite"))
+        }
+
+        fun endAdmitted(callID: CallID): Attempt {
+            admit(callID, EventID("invite-${callID.value}"))
+            return send(Input.Request(Action.End(callID), ActionID("end-${callID.value}"))).only<Effect.CloseMedia>().attempt
+        }
+
+        fun completeCleanup(attempt: Attempt) {
+            send(Input.MediaReleased(attempt))
+            send(Input.SystemRemoved(attempt))
+        }
+
+        private fun admit(callID: CallID, event: EventID) {
+            val report = send(Input.Incoming(callID, event, line, party)).only<Effect.ReportIncoming>()
             send(Input.Admitted(report.attempt))
         }
 
@@ -247,5 +475,7 @@ class ReducerTest {
         val line = CallingLine(AccountID("account"), LineID("line"), "Line")
         val party = Party(PartyID("party"), Handle.Opaque("sip:caller@example.test"), "Caller")
         inline fun <reified T : Effect> List<Effect>.only(): T = filterIsInstance<T>().single()
+        fun List<Effect>.controlAttempt(): Attempt =
+            filterIsInstance<Effect.Apply>().singleOrNull()?.attempt ?: only<Effect.SendTones>().attempt
     }
 }

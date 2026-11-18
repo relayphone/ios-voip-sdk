@@ -76,6 +76,10 @@ public sealed interface Input {
     public data class TransportRecovered(public val attempt: Attempt) : Input
     public data class MediaReleased(public val attempt: Attempt) : Input
     public data class SystemRemoved(public val attempt: Attempt) : Input
+    /** The adapter finished its removal attempt without confirming removal. */
+    public data class SystemRemovalFailed(public val attempt: Attempt) : Input
+    /** The authority finished releasing a permit previously owned by the call. */
+    public data class PermitReleased(public val attempt: Attempt, public val permit: AttemptID) : Input
     public data class FrameworkReset(public val failure: SystemFailure) : Input
 }
 
@@ -124,6 +128,7 @@ internal data class Pending(val attempt: Attempt, val id: ActionID, val deadline
 internal data class Control(val action: Action, val attempt: Attempt, val id: ActionID)
 internal data class SeenEvent(val at: Instant, val order: Long, val end: Input.RemoteEnd? = null)
 internal data class PermitKey(val callID: CallID, val id: AttemptID)
+internal data class PermitRelease(val attempt: Attempt, val permit: AttemptID)
 internal data class Armed(val attempt: Attempt, val deadline: Instant)
 internal data class Record(
     val call: Call,
@@ -142,6 +147,10 @@ internal data class Record(
     val connectedAt: Instant? = null,
     val controls: List<Control> = emptyList(),
     val cleanup: Attempt? = null,
+    val mediaReleases: Set<Attempt> = emptySet(),
+    val removal: Attempt? = null,
+    val removals: Set<Attempt> = emptySet(),
+    val releasingPermit: PermitRelease? = null,
     val terminalAt: Instant? = null,
     val localEnd: ActionID? = null,
     val systemRemoved: Boolean = false,

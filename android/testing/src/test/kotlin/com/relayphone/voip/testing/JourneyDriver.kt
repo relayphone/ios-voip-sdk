@@ -130,7 +130,10 @@ internal class JourneyDriver(private val scope: TestScope, private val configura
             is Effect.RequestClaim -> authority.claim(effect)
             is Effect.Reconcile -> authority.reconcile(effect)
             is Effect.ClaimTimedOut -> increment(effect.attempt.callID, Metric.CLAIM_TIMEOUTS)
-            is Effect.ReleasePermit -> increment(effect.attempt.callID, Metric.PERMIT_RELEASES)
+            is Effect.ReleasePermit -> {
+                increment(effect.attempt.callID, Metric.PERMIT_RELEASES)
+                inbox += Input.PermitReleased(effect.attempt, effect.permit)
+            }
             is Effect.PrepareMedia -> media.prepare(effect.attempt)
             is Effect.CloseMedia -> media.close(effect.attempt, effect.mediaAttempt)
             is Effect.RequestRemoval -> system.remove(effect)
