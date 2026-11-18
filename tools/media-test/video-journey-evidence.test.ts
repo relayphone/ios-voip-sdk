@@ -5,10 +5,25 @@ import { VideoObservation, type VideoSourceReceipt } from './video-observation.t
 import type { NativeVideoEvent } from './native-video-evidence.ts';
 import type { NativeVideoPlane } from './native-synthetic-video.ts';
 import { videoLuma, type VideoMarker } from './video-marker.ts';
-import { heldOutputReceipt, type JourneyAudio } from './video-journey-audio.ts';
+import { hasDuplexSamples, heldOutputReceipt, type JourneyAudio } from './video-journey-audio.ts';
+
+test('fresh duplex capture waits for actual transport coverage at both native taps', () => {
+  const stage = { sampleRate: 48_000, retainedSamples: 192_000, transportCount: 5, lastTransportSample: 192_480,
+    observation: { installed: true, frameSeconds: 4 }, droppedCallbacks: 0 };
+  const audio: JourneyAudio = { audioActive: true, audioEngineRunning: true, audioOutputAvailable: true,
+    decoded: stage, output: stage, startup: {}, onHold: false, audioMode: 'video', outputPorts: ['speaker'],
+    monitorTicksMs: [], droppedMonitorTicks: 0 };
+  const host = { fixtureId: 'call', serverAlive: true, serverPid: 1, connected: true, readerLive: true,
+    trackAvailable: true, readerFailed: false, publicationFailed: false, activeTrackSid: 'up',
+    receivedSamples: 144_000, energy: 100, rms: 0.1 };
+  assert.equal(hasDuplexSamples(audio, host), true);
+  assert.equal(hasDuplexSamples({ ...audio, output: { ...stage, lastTransportSample: 191_999 } }, host), false);
+  assert.equal(hasDuplexSamples({ ...audio, decoded: { ...stage, transportCount: 1 } }, host), false);
+  assert.equal(hasDuplexSamples(audio, { ...host, readerLive: false }), false);
+});
 
 test('a held call without an output tap requires observed SDK deactivation, engine stop and no output callbacks', () => {
-  const stage = { sampleRate: 48_000, retainedSamples: 0, transportCount: 0, transportStable: false,
+  const stage = { sampleRate: 48_000, retainedSamples: 0, transportCount: 0, lastTransportSample: 0,
     observation: { installed: true, frameSeconds: 0 }, droppedCallbacks: 0, lastCallbackAtMs: 1050 };
   const audio: JourneyAudio = {
     decoded: stage, output: { ...stage, observation: { installed: false, frameSeconds: 0 } },

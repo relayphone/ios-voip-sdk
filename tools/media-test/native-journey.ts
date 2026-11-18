@@ -10,7 +10,7 @@ export type NativeJourneyAction =
   | { readonly operation: 'beginPhase'; readonly phaseId: string }
   | { readonly operation: 'mute' | 'hold'; readonly enabled: boolean }
   | { readonly operation: 'video'; readonly enabled: boolean; readonly source: 'app' }
-  | { readonly operation: 'snapshot' | 'audioSnapshot' | 'captureAudio' | 'armTeardown' | 'end' | 'close' };
+  | { readonly operation: 'snapshot' | 'audioSnapshot' | 'armTeardown' | 'end' | 'close' };
 export interface NativeJourneyBudget {
   /** Absolute host monotonic deadline supplied by the caller; polling never renews it. */
   readonly deadlineMs: number;
@@ -146,6 +146,8 @@ export function prepareNativeJourney(directory: string, options: MediaTestOption
         const temporary = join(directory, `media-journey-command-${id}.json`);
         try {
           writeFileSync(temporary, JSON.stringify(command), { mode: 0o600, flag: 'wx' });
+          // The previous request already consumed its response. A large PCM snapshot should be read only once.
+          rmSync(paths.response, { force: true });
           renameSync(temporary, paths.command);
           const reply = await poll(budget, () => {
             assertNoFailure();

@@ -173,7 +173,9 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       self.fixture = fixture
       let observationClock = MediaObservationClock()
       self.observationClock = observationClock
-      probe = MediaAudioProbe(observationClock: observationClock, captureDuration: .seconds(10))
+      probe = MediaAudioProbe(
+        observationClock: observationClock,
+        captureDuration: fixture.journey?.syntheticVideo == nil ? .seconds(10) : .seconds(4))
       startup = probe.startup
       teardown = MediaTeardownEvidence(observationClock: observationClock)
       decoder = DecodedAudioProbe(probe: probe)
@@ -584,7 +586,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         let sampleRate: Double
         let retainedSamples: Int
         let transportCount: Int
-        let transportStable: Bool
+        let lastTransportSample: Int
         let observation: MediaAudioProbe.Observation
         let droppedCallbacks: Int
         let lastCallbackAtMs: Double?
@@ -634,25 +636,13 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         let snapshot = probe.snapshot(stage)
         let pcm = snapshot.capture
         let counters = transport[stage] ?? []
-        let stable: Bool
-        if counters.count >= 2, let last = counters.last {
-          let previous = counters[counters.count - 2]
-          stable =
-            previous.streamID == last.streamID && previous.timestamp < last.timestamp
-            && previous.sample < last.sample && previous.packetsLost == last.packetsLost
-            && previous.concealedSamples == last.concealedSamples
-            && previous.insertedSamples == last.insertedSamples
-            && previous.removedSamples == last.removedSamples
-        } else {
-          stable = false
-        }
         return JourneySnapshot.Stage(
           pcm: includePCM
             ? CapturedPCM(
               sampleRate: pcm.sampleRate, channels: pcm.channels,
               formatChanged: pcm.formatChanged, transport: counters) : nil,
           sampleRate: pcm.sampleRate, retainedSamples: pcm.channels.first?.count ?? 0,
-          transportCount: counters.count, transportStable: stable,
+          transportCount: counters.count, lastTransportSample: counters.last?.sample ?? 0,
           observation: snapshot.observation, droppedCallbacks: snapshot.callbacks.droppedFrames,
           lastCallbackAtMs: snapshot.callbacks.frames.lazy.map { $0.atSeconds * 1000 }.max())
       }
@@ -768,7 +758,6 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
               resetJourneyCapture()
               journeyTicks = []
               journeyTicksDropped = 0
-            case .captureAudio: resetJourneyCapture()
             case .snapshot, .audioSnapshot: break
             case .mute:
               try await client.request(.mute(callID, muted: command.enabled == true))

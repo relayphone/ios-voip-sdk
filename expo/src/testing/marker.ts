@@ -89,6 +89,25 @@ export function detectMarker(pcm: Float32Array, sampleRate: number, marker: Medi
   return null;
 }
 
+function slotScorer(pcm: Float32Array, sampleRate: number) {
+  const count = sampleRate / 50;
+  const cache = new Map<number, Float64Array>();
+  return (millisecond: number, frequency: number): number => {
+    const start = Math.floor(millisecond * sampleRate / 1000);
+    if (start < 0 || start + count * 3 > pcm.length) return -1;
+    let values = cache.get(frequency);
+    if (!values) {
+      values = new Float64Array(Math.ceil(pcm.length * 1000 / sampleRate) + 1).fill(-1);
+      cache.set(frequency, values);
+    }
+    const cached = values[millisecond]!;
+    if (cached >= 0) return cached;
+    const result = toneConfidence(pcm, start + count, count, frequency, sampleRate);
+    values[millisecond] = result;
+    return result;
+  };
+}
+
 /** Internal cycle diagnostics. A sync-qualified rejected cycle never counts as a detection. */
 export function* markerCandidates(pcm: Float32Array, sampleRate: number, marker: MediaMarker):
   Generator<{ anchor: number; syncQualified: boolean; detection: MarkerDetection | null }> {
@@ -97,18 +116,7 @@ export function* markerCandidates(pcm: Float32Array, sampleRate: number, marker:
   const slotSamples = sampleRate / 50 * 3;
   const length = slotSamples * marker.frequencies.length;
   // Cache actual 20 ms scores. Neighboring candidate paths reuse the same windows.
-  const cache = new Map<number, Map<number, number>>();
-  const score = (millisecond: number, frequency: number): number => {
-    const start = Math.floor(millisecond * sampleRate / 1000);
-    if (start < 0 || start + slotSamples > pcm.length) return -1;
-    let values = cache.get(frequency);
-    if (!values) { values = new Map(); cache.set(frequency, values); }
-    const cached = values.get(millisecond);
-    if (cached !== undefined) return cached;
-    const result = toneConfidence(pcm, start + sampleRate / 50, sampleRate / 50, frequency, sampleRate);
-    values.set(millisecond, result);
-    return result;
-  };
+  const score = slotScorer(pcm, sampleRate);
   // Preserve the existing slot-zero anchor's numerical tie rule.
   const epsilon = 1e-12;
   for (let firstMs = 0; ; firstMs++) {
@@ -137,10 +145,13 @@ export function* markerCandidates(pcm: Float32Array, sampleRate: number, marker:
           const start = anchorMs + slot * marker.slotMs + drift;
           const value = score(start, marker.frequencies[slot]!);
           if (value < 0.8) continue;
-          const path: Path = { movement: prefix.movement + Math.abs(drift - previousDrift),
-            sum: prefix.sum + value, minimum: Math.min(prefix.minimum, value), starts: [...prefix.starts, start] };
           const incumbent = next.get(drift);
-          if (!incumbent || preferMarkerPath(path, incumbent)) next.set(drift, path);
+          const movement = prefix.movement + Math.abs(drift - previousDrift);
+          const sum = prefix.sum + value;
+          // Every prefix competing for this drift has the same final start.
+          if (!incumbent || preferMarkerPath({ movement, sum, starts: prefix.starts }, incumbent)) {
+            next.set(drift, { movement, sum, minimum: Math.min(prefix.minimum, value), starts: [...prefix.starts, start] });
+          }
         }
       }
       paths = next;
@@ -152,6 +163,23 @@ export function* markerCandidates(pcm: Float32Array, sampleRate: number, marker:
       slotStarts: Object.freeze(chosen.starts.map(ms => Math.floor(ms * sampleRate / 1000))) }) : null };
     firstMs = searchEnd;
   }
+}
+
+/** Internal diagnostic for rejected captures. The fixed grid never qualifies a marker. */
+export function bestFixedGridMarkerDiagnostic(pcm: Float32Array, sampleRate: number, marker: MediaMarker) {
+  validRate(sampleRate); validMarker(marker);
+  const length = sampleRate / 50 * 3 * marker.frequencies.length;
+  const score = slotScorer(pcm, sampleRate);
+  let best = -1, offset = 0;
+  let scores: readonly number[] = [];
+  for (let ms = 0; ; ms++) {
+    const candidate = Math.floor(ms * sampleRate / 1000);
+    if (candidate + length > pcm.length) break;
+    const row = marker.frequencies.map((frequency, slot) => score(ms + slot * marker.slotMs, frequency));
+    const confidence = Math.min(...row);
+    if (confidence > best) { best = confidence; offset = candidate; scores = row; }
+  }
+  return { offset, scores };
 }
 
 /** Internal diagnostic companion: score the selected elastic starts, or a labelled fixed-grid candidate. */

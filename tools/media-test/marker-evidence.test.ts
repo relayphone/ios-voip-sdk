@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createMarker, markerSamples, emissionSamples } from '../../expo/src/testing/marker.ts';
+import { bestFixedGridMarkerDiagnostic, createMarker, markerSamples, emissionSamples, markerSlotConfidences } from '../../expo/src/testing/marker.ts';
 import { measureMarker } from './marker-evidence.ts';
 import { detectionVector, pcm16LE, decodedPCM16, insertedDrifts, deletedDrifts } from '../../expo/test/contracts/detection-vectors.ts';
 
@@ -24,6 +24,17 @@ test('one corrupted slot fails even when the other eleven and total energy are s
   assert.equal(evidence.complete, false);
   assert.equal(evidence.channels[0]!.slots.length, 12);
   assert.ok(evidence.channels[0]!.slots[10]!.margin < 0);
+});
+
+test('cached fixed-grid diagnostics match the full score at fractional millisecond sample offsets', () => {
+  const sampleRate = 44_100;
+  const samples = new Float32Array(sampleRate * 0.76);
+  samples.set(markerSamples(marker, sampleRate, sampleRate * 0.72), 308);
+  samples.fill(0, sampleRate * 0.66);
+  const offsets = Array.from({ length: 41 }, (_, ms) => Math.floor(ms * sampleRate / 1000));
+  const rows = offsets.map(offset => ({ offset, scores: markerSlotConfidences(samples, sampleRate, marker, offset) }));
+  const best = rows.reduce((left, right) => Math.min(...right.scores) > Math.min(...left.scores) ? right : left);
+  assert.deepEqual(bestFixedGridMarkerDiagnostic(samples, sampleRate, marker), best);
 });
 
 test('a sub-threshold slot, attenuation below the energy floor and truncation cannot pass', () => {

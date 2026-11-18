@@ -6,7 +6,7 @@ import type { PCMCapture } from './marker-evidence.ts';
 import { measureMarkerAsync } from './measure-marker.ts';
 import type { NativeJourneyReply } from './native-journey.ts';
 
-type AudioStage = { pcm?: PCMCapture; sampleRate: number; retainedSamples: number; transportCount: number; transportStable: boolean;
+type AudioStage = { pcm?: PCMCapture; sampleRate: number; retainedSamples: number; transportCount: number; lastTransportSample: number;
   observation: { installed: boolean; frameSeconds: number };
   droppedCallbacks: number; lastCallbackAtMs?: number };
 export type JourneyAudio = {
@@ -31,12 +31,15 @@ export function readJourneyAudio(reply: NativeJourneyReply): JourneyAudio {
   return audio;
 }
 
-export function hasDuplexSamples(audio: JourneyAudio, harness: MediaHarness) {
-  const host = harness.status();
-  return audio.audioActive && host.connected && host.readerLive && host.trackAvailable &&
-    host.receivedSamples >= 48_000 * 3 && [audio.decoded, audio.output].every(s =>
-      s.observation.installed && s.observation.frameSeconds >= 3 &&
-      s.retainedSamples >= s.sampleRate * 3 && s.transportCount >= 2);
+export function hasUplinkSamples(host: ReturnType<MediaHarness['status']>) {
+  return host.connected && host.readerLive && host.trackAvailable && !host.publicationFailed &&
+    host.receivedSamples >= 48_000 * 3;
+}
+
+export function hasDuplexSamples(audio: JourneyAudio, host: ReturnType<MediaHarness['status']>) {
+  return audio.audioActive && hasUplinkSamples(host) && [audio.decoded, audio.output].every(s =>
+      s.observation.installed && s.sampleRate > 0 && s.retainedSamples >= s.sampleRate * 4 &&
+      s.transportCount >= 2 && s.lastTransportSample >= s.sampleRate * 4);
 }
 
 export async function assertDuplexAudio(audio: JourneyAudio, harness: MediaHarness, markers: { up: MediaMarker; down: MediaMarker }) {

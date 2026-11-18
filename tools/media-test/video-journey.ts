@@ -14,7 +14,7 @@ import { NativeJourneyFailure, type NativeVideoEvent } from './native-video-evid
 import { assertNativeTeardown } from './result-receipt.ts';
 import { observeSilence } from './silence-window.ts';
 import { diagnoseNativeStartup } from './startup-diagnostics.ts';
-import { assertDuplexAudio, assertLocalAudioDeparture, hasDuplexSamples, heldOutputReceipt, readAudioRoute, readJourneyAudio, type JourneyAudio } from './video-journey-audio.ts';
+import { assertDuplexAudio, assertLocalAudioDeparture, hasDuplexSamples, hasUplinkSamples, heldOutputReceipt, readAudioRoute, readJourneyAudio } from './video-journey-audio.ts';
 import { appParticipant, assertRemoteProducer, assessJourneyVideo, readVideoSnapshot, remoteUplinkCoverage, type VideoSnapshot } from './video-journey-evidence.ts';
 import { hostVideoBoundary, videoGates, type VideoSourceReceipt } from './video-observation.ts';
 import type { VideoPeer } from './video-peer.ts';
@@ -65,35 +65,29 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
   async function freshAudio(label: string) {
     const phaseId = randomUUID(), downId = `${phaseId}:downlink`;
     phaseIds.push(phaseId, downId);
+    const startedAtMs = performance.now();
     await harness.act({ type: 'capture' });
     await harness.act({ type: 'publish', markerId: downId });
-    await request({ operation: 'beginPhase', phaseId });
-    const warmup: { host?: ReturnType<MediaHarness['status']>; native?: JourneyAudio } = {};
+    const phase = await request({ operation: 'beginPhase', phaseId });
+    const capture = { host: harness.status(), native: readJourneyAudio(phase) };
     try {
-      await until(`${label} decoded warmup`, async () => {
-        warmup.host = harness.status();
-        if (!warmup.host.readerLive || !warmup.host.trackAvailable || warmup.host.receivedSamples < 24_000) return;
-        warmup.native = readJourneyAudio(await request({ operation: 'snapshot' }));
-        const { audioActive, decoded, output } = warmup.native;
-        return audioActive && decoded.transportStable && [decoded, output].every(stage =>
-          stage.observation.installed && stage.observation.frameSeconds >= 0.5) ? true : undefined;
+      await until(`${label} duplex samples with RTP coverage`, async () => {
+        capture.host = harness.status();
+        if (!hasUplinkSamples(capture.host)) return;
+        capture.native = readJourneyAudio(await request({ operation: 'snapshot' }));
+        return hasDuplexSamples(capture.native, capture.host) ? true : undefined;
       });
+      const pcm = readJourneyAudio(await request({ operation: 'audioSnapshot' }));
+      assert.ok(hasDuplexSamples(pcm, harness.status()), 'Duplex capture lost coverage between snapshots');
+      const capturedAtMs = performance.now();
+      const markers = await assertDuplexAudio(pcm, harness, { up: createMarker(phaseId), down: createMarker(downId) });
+      keep(label, { phaseId, startedAtMs, capturedAtMs, analyzedAtMs: performance.now(), markers });
+      for (const marker of Object.values(markers)) {
+        assert.ok(marker.clean && marker.complete && marker.postRollObserved, `${label}: missing clean fresh audio`);
+      }
     } catch (error) {
-      keep(`${label}-warmup`, { phaseId, ...warmup });
+      keep(`${label}-capture`, { phaseId, startedAtMs, observedAtMs: performance.now(), ...capture });
       throw error;
-    }
-    await harness.act({ type: 'capture' });
-    await request({ operation: 'captureAudio' });
-    await until(`${label} duplex samples`, async () => {
-      if (harness.status().receivedSamples < 48_000 * 3) return;
-      const audio = readJourneyAudio(await request({ operation: 'snapshot' }));
-      return hasDuplexSamples(audio, harness) ? true : undefined;
-    });
-    const markers = await assertDuplexAudio(readJourneyAudio(await request({ operation: 'audioSnapshot' })), harness,
-      { up: createMarker(phaseId), down: createMarker(downId) });
-    keep(label, { phaseId, markers });
-    for (const marker of Object.values(markers)) {
-      assert.ok(marker.clean && marker.complete && marker.postRollObserved, `${label}: missing clean fresh audio`);
     }
     deadlineCheck();
     return sample();
