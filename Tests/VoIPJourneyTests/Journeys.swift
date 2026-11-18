@@ -1,7 +1,9 @@
 #if os(iOS) && targetEnvironment(simulator)
   import AVFAudio
   import CKSimProtocol
+  import Dispatch
   import Foundation
+  import Synchronization
   import Testing
   import VoIPAudio
   import VoIPCore
@@ -602,6 +604,35 @@
           .activate, .deactivate, .activate, .deactivate,
         ])
       try await app.expectPushesFinished(pushIDs)
+      app.expectNoMoreEvents()
+    }
+
+    @Test func aWaitingCallIsPresentedWhileItsReportLogIsBlocked() async throws {
+      let (active, waiting) = (newCallID("logging-active"), newCallID("logging-waiting"))
+      let entered = Mutex(false)
+      let release = DispatchSemaphore(value: 0)
+      defer { release.signal() }
+
+      // Keep the synchronous log sink blocked until the report has reached the SDK and PushKit.
+      let reports = IncomingReportLog { id in
+        guard id == waiting else { return }
+        entered.withLock { $0 = true }
+        release.wait()
+      }
+      let app = try await App(reports: reports)
+      defer { app.stop() }
+      let pushes = try await answerAndConnect(active, thenRing: waiting, in: app)
+      try await app.until("the waiting call's adapter log to begin") { entered.withLock { $0 } }
+      #expect(reports.waitTimedOut(for: waiting) == false)
+      try await app.expectPushesFinished(pushes)
+
+      await app.client.receive(
+        .endedRemotely, for: waiting, eventID: EventID(rawValue: "end-\(waiting)"))
+      try await app.expect([.ended(waiting, .endedRemotely)])
+      await app.client.receive(
+        .endedRemotely, for: active, eventID: EventID(rawValue: "end-\(active)"))
+      try await app.expect([.ended(active, .endedRemotely), .audioDeactivated])
+      try await app.until("both system calls to end") { try await app.system.calls().isEmpty }
       app.expectNoMoreEvents()
     }
 

@@ -65,7 +65,29 @@
     private var localRemovals: [ActionID: UUID] = [:]
 
     /// Creates the LiveCommunicationKit adapter.
-    public nonisolated init() {}
+    public nonisolated init() {
+      #if SWIFT_PACKAGE && targetEnvironment(simulator)
+        observeReport = nil
+      #endif
+    }
+
+    #if SWIFT_PACKAGE && targetEnvironment(simulator)
+      /// The boundaries around a simulator report, including the synchronous logging call.
+      package enum ReportProgress: Sendable {
+        case started(ContinuousClock.Instant)
+        case answered(ContinuousClock.Instant, PresentationOutcome)
+        case waitFinished(timedOut: Bool)
+        case forwarded(ContinuousClock.Instant)
+        case willLog
+      }
+
+      private nonisolated let observeReport: (@Sendable (CallID, ReportProgress) -> Void)?
+
+      package nonisolated init(observeReport: @escaping @Sendable (CallID, ReportProgress) -> Void)
+      {
+        self.observeReport = observeReport
+      }
+    #endif
 
     isolated deinit {
       // A process has one calling framework provider, which a later client's adapter takes over.
@@ -112,29 +134,58 @@
         capabilities: Conversation.Capabilities(configuration.capabilities, hasVideo: call.hasVideo)
       )
       reporting.insert(uuid)
+      #if SWIFT_PACKAGE && targetEnvironment(simulator)
+        let callID = call.id
+        let observeReport = observeReport
+        observeReport?(callID, .started(.now))
+      #endif
       let answered = DispatchSemaphore(value: 0)
       Task.detached(priority: .userInitiated) { [weak self] in
         let start = ContinuousClock.now
         let outcome: PresentationOutcome
+        let detail: FrameworkError?
         do {
           try await manager.reportNewIncomingConversation(uuid: uuid, update: update)
           outcome = .presented
-          Self.log.info("The system presented an incoming report after \(start.milliseconds) ms")
+          detail = nil
         } catch {
           outcome = SystemError.presentationOutcome(for: error)
-          let detail = FrameworkError(error)
-          Self.log.notice(
-            "The system answered an incoming report after \(start.milliseconds) ms with \(detail, privacy: .public)"
-          )
+          detail = FrameworkError(error)
         }
+        let milliseconds = start.milliseconds
+        #if SWIFT_PACKAGE && targetEnvironment(simulator)
+          observeReport?(callID, .answered(.now, outcome))
+        #endif
+        let logReport = {
+          #if SWIFT_PACKAGE && targetEnvironment(simulator)
+            observeReport?(callID, .willLog)
+          #endif
+          if let detail {
+            Self.log.notice(
+              "The system answered an incoming report after \(milliseconds) ms with \(detail, privacy: .public)"
+            )
+          } else {
+            Self.log.info("The system presented an incoming report after \(milliseconds) ms")
+          }
+        }
+        // A synchronous log sink can stall. Release the push callback and forward the result
+        // before writing the log so presentation and push completion can proceed independently.
         answered.signal()
         if let self {
           await self.reportCompleted(uuid, outcome, then: completion)
         } else {
           await completion(outcome)
         }
+        #if SWIFT_PACKAGE && targetEnvironment(simulator)
+          observeReport?(callID, .forwarded(.now))
+        #endif
+        logReport()
       }
-      if answered.wait(timeout: .now() + Self.reportWaitLimit) == .timedOut {
+      let timedOut = answered.wait(timeout: .now() + Self.reportWaitLimit) == .timedOut
+      #if SWIFT_PACKAGE && targetEnvironment(simulator)
+        observeReport?(callID, .waitFinished(timedOut: timedOut))
+      #endif
+      if timedOut {
         Self.log.notice("The system hadn't answered an incoming report after 3 seconds")
       }
     }
