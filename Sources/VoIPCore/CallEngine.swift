@@ -41,6 +41,7 @@ final class CallEngine {
   private var transportTask: Task<Void, Never>?
   private var preparedCalls: Set<CallID> = []
   private var isAudioActive = false
+  private var isMediaAudioActive = false
   private var audioVideoMode: Bool?
   private var audioOwner: CallID?
   /// Whether the system interrupted active audio, and hasn't activated it again or ended the
@@ -228,6 +229,17 @@ final class CallEngine {
     exclusively { handle(id, .placed) }
   }
 
+  func provideMedia(_ id: CallID) throws(ActionError) {
+    try exclusively { () throws(ActionError) in
+      guard let state = states[id] else { throw .unknownCall }
+      guard configuration.outgoingMedia == .whenProvided, !state.call.isIncoming else {
+        throw .unsupported
+      }
+      guard let deferredMedia = state.deferredMedia else { throw .notAllowed(state.call.status) }
+      if deferredMedia == .unprovided { handle(id, .provideMedia) }
+    }
+  }
+
   /// Records that the app couldn't place a call that it was asked to start or join.
   func confirmNotPlaced(_ id: CallID) {
     exclusively { handle(id, .notPlaced) }
@@ -391,7 +403,7 @@ final class CallEngine {
     case .audioActivated:
       isAudioActive = true
       isAudioInterrupted = false
-      media.activate()
+      activateMediaAudio()
       for id in liveCalls { handle(id, .audioActivated) }
       subscribers.yield(.audioActivated)
     case .audioDeactivated:
@@ -407,11 +419,22 @@ final class CallEngine {
     order.filter { states[$0]?.phase.isEnded == false }
   }
 
+  private func activateMediaAudio() {
+    guard isAudioActive, !isMediaAudioActive,
+      configuration.outgoingMedia == .duringPlacement || !preparedCalls.isEmpty
+    else { return }
+    isMediaAudioActive = true
+    media.activate()
+  }
+
   /// Marks audio inactive, and stops the media when it was using audio.
   private func stopAudio() {
     guard isAudioActive else { return }
     isAudioActive = false
-    media.deactivate()
+    if isMediaAudioActive {
+      isMediaAudioActive = false
+      media.deactivate()
+    }
   }
 
   // MARK: The audio session
@@ -441,7 +464,7 @@ final class CallEngine {
   /// session refuses, every call it was configured for ends.
   private func configureAfterReset() {
     let configured = liveCalls.compactMap { id in
-      states[id].flatMap { $0.phase.hasAudioConfiguration ? $0.call : nil }
+      states[id].flatMap { $0.hasAudioConfiguration ? $0.call : nil }
     }
     if let audio, let call = configured.last(where: { !$0.isOnHold }) ?? configured.last {
       do throws(AudioSessionError) {
@@ -547,9 +570,11 @@ final class CallEngine {
 
   /// Keeps the engine's records in step with a call's new phase.
   private func settle(_ id: CallID) {
-    guard let phase = states[id]?.phase else { return }
-    if !phase.isPreparing { preparations.removeValue(forKey: id)?.cancel() }
-    if phase.isEnded, endedAt[id] == nil { endedAt[id] = clock.now() }
+    guard let state = states[id] else { return }
+    if !state.phase.isPreparing, state.deferredMedia != .preparing {
+      preparations.removeValue(forKey: id)?.cancel()
+    }
+    if state.phase.isEnded, endedAt[id] == nil { endedAt[id] = clock.now() }
   }
 
   private func arm(_ key: TimerKey, after duration: Duration, generation: UInt64) {
@@ -588,6 +613,12 @@ final class CallEngine {
       serially {
         if case .mediaPrepared = event { self.preparedCalls.insert(call.id) }
         self.handle(call.id, event)
+        if case .mediaPrepared = event, self.isAudioActive {
+          if self.states[call.id]?.deferredMedia == .prepared {
+            self.handle(call.id, .audioActivated)
+          }
+          self.activateMediaAudio()
+        }
       }
     }
   }
@@ -617,7 +648,7 @@ final class CallEngine {
 
   private var audioCall: Call? {
     order.reversed().compactMap { id in
-      states[id].flatMap { $0.phase.hasAudioConfiguration && !$0.call.isOnHold ? $0.call : nil }
+      states[id].flatMap { $0.hasAudioConfiguration && !$0.call.isOnHold ? $0.call : nil }
     }.first
   }
 
@@ -735,6 +766,8 @@ final class CallEngine {
     }
 
     package func confirmPlaced(_ id: CallID) { engine.confirmPlaced(id) }
+
+    package func provideMedia(_ id: CallID) throws(ActionError) { try engine.provideMedia(id) }
 
     package func receive(_ event: ServerEvent, for id: CallID, eventID: EventID) {
       engine.receive(event, for: id, eventID: eventID)

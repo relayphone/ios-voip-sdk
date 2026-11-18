@@ -21,7 +21,7 @@ private let pending: [String: String] = [
   "local-server-end-race":
     "Repeated local End rejects an already ended call instead of returning its receipt.",
   "no-answer-direction": "The system end port reports one unanswered cause for both directions.",
-  "outgoing-deferred-binding": "Outgoing preparation is eager and remote alias binding is missing.",
+  "outgoing-deferred-binding": "Remote alias binding and alias-addressed events are missing.",
 ]
 
 @Suite(.timeLimit(.minutes(1)))
