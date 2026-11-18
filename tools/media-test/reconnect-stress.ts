@@ -17,7 +17,7 @@ export async function reconnectStress(directory: string, iterations = 30): Promi
       mkdirSync(evidence, { recursive: true }); process.env.MEDIA_SERVER_TRACE_DIRECTORY = evidence;
       const startedAt = new Date().toISOString(), start = performance.now();
       console.log(JSON.stringify({ kind: 'reconnect-stress', iteration, iterations, state: 'started' }));
-      const code = await runBuild({ command: process.execPath, args: ['--test'], timeoutMS: 180_000,
+      const code = await runBuild({ command: 'npm', args: ['test'], timeoutMS: 180_000,
         directory: evidence, capture: async () => {} });
       results.push({ iteration, code, startedAt, elapsedMs: performance.now() - start });
       writeFileSync(join(directory, 'summary.json'), JSON.stringify({ iterations, results }, null, 2) + '\n');
