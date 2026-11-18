@@ -151,15 +151,25 @@ test('a live unkillable group is unclean and cannot keep the supervisor waiting'
   const original = process.kill;
   let pid: number | undefined;
   process.kill = ((group, signal) => {
-    if (group < 0 && signal === 'SIGKILL') throw Object.assign(new Error('Unkillable group'), {code:'EPERM'});
+    if (group < 0 && signal === 'SIGKILL') {
+      pid = -group;
+      throw Object.assign(new Error('Unkillable group'), {code:'EPERM'});
+    }
     return original(group, signal);
   }) as typeof process.kill;
   try {
-    const result = await run('setInterval(()=>{},1000)', 150);
-    pid = result.nativePID;
-    assert.equal(result.reason, 'timeout'); assert.equal(result.clean, false);
-    assert.ok(result.cleanupErrors.includes('liveProcessGroup'));
-    assert.equal(nativeTestSucceeded(result), false); assert.ok(result.elapsedMS < 2000);
+    const inspections: unknown[] = [];
+    const result = await runTestProcess({
+      command: '/bin/sh', args: ['-c', 'printf "SIMULATOR_TEST_PROCESS %s\\n" "$$"; exec /bin/sleep 60'], timeoutMS: 150,
+      onGroupInspection: inspection => inspections.push(inspection),
+    });
+    const diagnostic = JSON.stringify({ pid, processElapsedMS: result.processElapsedMS, elapsedMS: result.elapsedMS,
+      cleanupErrors: result.cleanupErrors, inspections });
+    assert.equal(result.reason, 'timeout', diagnostic);
+    assert.equal(result.clean, false, diagnostic);
+    assert.ok(result.cleanupErrors.includes('liveProcessGroup'), diagnostic);
+    assert.equal(nativeTestSucceeded(result), false);
+    assert.ok(result.elapsedMS < 2000, diagnostic);
   } finally {
     process.kill = original;
     if (pid) { try { original(-pid, 'SIGKILL'); } catch { /* Already reaped. */ } }
