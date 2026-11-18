@@ -6,6 +6,8 @@
     "exactOptionalPropertyTypes": true
   },
   "include": [
+    "src/calls/**/*.ts",
+    "src/__tests__/calls.types.ts",
     "src/conversations/**/*.ts",
     "src/__tests__/conversations.types.ts",
     "src/testing/**/*.ts",
