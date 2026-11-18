@@ -20,7 +20,8 @@ The wrapper verifies its Gradle distribution checksum. CI also validates the wra
   and route its inputs to `CallRuntime.submit`. Use `AndroidTelecomSystem.answer`
   for app Answer requests so they share a receipt with the system callback. Submit
   Start and End through the runtime. Core-Telecom admission, logical End and observed
-  system removal have separate results.
+  system removal have separate results. The adapter allows 4.7 seconds for callbacks,
+  leaving 300 milliseconds for Core-Telecom to report completion within its five-second limit.
 - `:testing` runs the shared journeys through the runtime under coroutine virtual time. Fake
   ports provide confirmations with the original attempt generations.
   The core suite separately round-trips every valid model fixture and rejects every invalid one.

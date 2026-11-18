@@ -2,8 +2,9 @@ package com.relayphone.voip.system
 
 import com.relayphone.voip.AccountID
 import com.relayphone.voip.Action
-import com.relayphone.voip.Attempt
 import com.relayphone.voip.ActionID
+import com.relayphone.voip.AnswerBudget
+import com.relayphone.voip.Attempt
 import com.relayphone.voip.Audio
 import com.relayphone.voip.Call
 import com.relayphone.voip.CallError
@@ -28,6 +29,7 @@ import com.relayphone.voip.SystemFailure
 import com.relayphone.voip.SystemOperation
 import com.relayphone.voip.TimedStage
 import com.relayphone.voip.Transport
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -39,6 +41,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -90,8 +93,8 @@ class TelecomPortTest {
         val second = async { port.answer(incoming.id) }
         val answer = requests.receive() as Input.Request
         assertEquals(Action.Answer(incoming.id), answer.action)
-        assertEquals(5.seconds, answer.effectiveDeadline)
-        assertEquals(5.seconds, port.answerDeadline)
+        assertEquals(4_700.milliseconds, answer.effectiveDeadline)
+        assertEquals(port.answerDeadline, answer.effectiveDeadline)
         port.settle(Effect.SettleAction(incoming.id, answer.id))
 
         assertEquals(Outcome.Success(Unit), first.await())
@@ -132,7 +135,7 @@ class TelecomPortTest {
     }
 
     @Test
-    fun `system callback and the shared app receipt expire at five seconds`() = runTest {
+    fun `a system callback with no decision fails before the Telecom limit`() = runTest {
         val backend = FakeBackend()
         val requests = Channel<Input>(Channel.UNLIMITED)
         val port = TelecomPort(backend, { requests.trySend(it).isSuccess }, StandardTestDispatcher(testScheduler))
@@ -142,16 +145,29 @@ class TelecomPortTest {
         assertEquals(Action.Answer(incoming.id), (requests.receive() as Input.Request).action)
         val app = async { port.answer(incoming.id) }
         runCurrent()
-        advanceTimeBy(4_999)
+        advanceTimeBy(4_699)
+        runCurrent()
         assertFalse(callback.isCompleted)
+        assertFalse(app.isCompleted)
         advanceTimeBy(1)
         runCurrent()
+        assertTrue(callback.isCompleted)
+        assertTrue(app.isCompleted)
+        assertTrue(testScheduler.currentTime.milliseconds < 5.seconds)
         val error = CallError.DeadlineExceeded(TimedStage.SYSTEM_ACTION)
         assertEquals(Outcome.Failure(error), app.await())
         assertEquals(true, callback.await().isFailure)
         assertEquals(EndReason.Failed(error), (requests.receive() as Input.RemoteEnd).reason)
         backend.close.complete(Unit)
         report.await()
+    }
+
+    @Test
+    fun `default Answer budget fits inside the effective callback deadline`() = runTest {
+        val port = TelecomPort(FakeBackend(), { true }, StandardTestDispatcher(testScheduler))
+        val budget = AnswerBudget()
+        assertEquals(Outcome.Success(Unit), budget.validateFor(port.answerDeadline))
+        assertEquals(200.milliseconds, port.answerDeadline - budget.total)
     }
 
     @Test

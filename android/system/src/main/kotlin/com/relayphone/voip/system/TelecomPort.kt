@@ -21,6 +21,7 @@ import com.relayphone.voip.TimedStage
 import com.relayphone.voip.runtime.SystemPort
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -35,13 +36,18 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
+private val TELECOM_CALLBACK_LIMIT = 5.seconds
+// Allow the callback to unwind and Core-Telecom to deliver its result before the platform timeout.
+private val CALLBACK_RESERVE = 300.milliseconds
+private val SESSION_CLEANUP_LIMIT = 5.seconds
+
 internal class TelecomPort<NativeID : Any>(
     private val backend: TelecomBackend<NativeID>,
     private val submit: (Input) -> Boolean,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : SystemPort {
     override val platform = Platform.ANDROID
-    override val answerDeadline = 5.seconds
+    override val answerDeadline = TELECOM_CALLBACK_LIMIT - CALLBACK_RESERVE
 
     private val sessions = Sessions<NativeID>()
     private val receipts = ConcurrentHashMap<ReceiptKey, Receipt>()
@@ -81,7 +87,7 @@ internal class TelecomPort<NativeID : Any>(
             val control = session.control
             if (control != null && session.beginDisconnect(Origin.APP)) {
                 withContext(NonCancellable + dispatcher) {
-                    val cleanup = withTimeoutOrNull(answerDeadline) {
+                    val cleanup = withTimeoutOrNull(SESSION_CLEANUP_LIMIT) {
                         session.controlLock.withLock {
                             nativeResult(SystemOperation.REMOVAL) { control.disconnect(TelecomEnd.LOCAL) }
                         }
