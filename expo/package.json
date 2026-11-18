@@ -62,7 +62,7 @@
       "url": "https://github.com/mfairley"
     }
   ],
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
   "homepage": "https://github.com/relayphone/ios-voip-sdk",
   "dependencies": {},

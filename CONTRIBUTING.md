@@ -49,4 +49,4 @@ not retried. A successful infrastructure retry leaves the job green while preser
 
 Keep changes focused, describe the behavior and include the checks you ran. Add or update tests and documentation where appropriate. For public API changes, add migration notes to [CHANGELOG.md](CHANGELOG.md). Do not commit generated native projects, credentials or private device traces.
 
-See the [code of conduct](CODE_OF_CONDUCT.md) and [security policy](SECURITY.md). This repository does not yet have a license; see the [README](README.md#license).
+See the [code of conduct](CODE_OF_CONDUCT.md) and [security policy](SECURITY.md). Contributions are licensed under the repository's [MIT license](LICENSE).

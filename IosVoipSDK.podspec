@@ -24,7 +24,7 @@ Pod::Spec.new do |s|
   s.summary = 'Calls for iOS apps through LiveCommunicationKit, with PushKit and the iOS Simulator.'
   s.homepage = 'https://github.com/relayphone/ios-voip-sdk'
   s.author = { 'Hamza Zia' => 'https://github.com/ziahamza' }
-  s.license = { :type => 'UNLICENSED' }
+  s.license = { :type => 'MIT', :file => 'LICENSE' }
   s.source = { :git => 'https://github.com/relayphone/ios-voip-sdk.git', :tag => "v#{s.version}" }
   s.platform = :ios, '26.0'
   s.swift_version = '6.0'
