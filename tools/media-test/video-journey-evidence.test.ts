@@ -5,6 +5,26 @@ import { VideoObservation, type VideoSourceReceipt } from './video-observation.t
 import type { NativeVideoEvent } from './native-video-evidence.ts';
 import type { NativeVideoPlane } from './native-synthetic-video.ts';
 import { videoLuma, type VideoMarker } from './video-marker.ts';
+import { heldOutputReceipt, type JourneyAudio } from './video-journey-audio.ts';
+
+test('a held call without an output tap requires observed SDK deactivation, engine stop and no output callbacks', () => {
+  const stage = { sampleRate: 48_000, retainedSamples: 0, transportCount: 0, transportStable: false,
+    observation: { installed: true, frameSeconds: 0 }, droppedCallbacks: 0, lastCallbackAtMs: 1050 };
+  const audio: JourneyAudio = {
+    decoded: stage, output: { ...stage, observation: { installed: false, frameSeconds: 0 } },
+    audioActive: false, audioEngineRunning: false, audioOutputAvailable: false, audioEngineStoppedAtMs: 1100,
+    startup: { lastAudioDeactivatedAtMs: 1120 }, heldOutputStartAtMs: 1300, onHold: true, audioMode: 'video', outputPorts: [],
+    droppedMonitorTicks: 0, monitorTicksMs: [1400, 1600, 1800, 2000, 2200],
+  };
+  assert.equal(heldOutputReceipt(audio, 950, 1000, 2299), undefined);
+  assert.deepEqual(heldOutputReceipt(audio, 950, 1000, 2300),
+    { kind: 'engineStopped', stoppedAtMs: 1100, deactivatedAtMs: 1120 });
+  assert.throws(() => heldOutputReceipt({ ...audio, audioEngineRunning: true }, 950, 1000, 2300), /verified engine stop/);
+  assert.throws(() => heldOutputReceipt({ ...audio, startup: {} }, 950, 1000, 2300), /verified engine stop/);
+  assert.throws(() => heldOutputReceipt({ ...audio, monitorTicksMs: [] }, 950, 1000, 2300), /Unobserved/);
+  assert.throws(() => heldOutputReceipt({ ...audio,
+    output: { ...audio.output, lastCallbackAtMs: 1200 } }, 950, 1000, 2300), /verified engine stop/);
+});
 
 const fixture = '01234567-89ab-cdef-0123-456789abcdef';
 const nativeClock = '01234567-89ab-cdef-0123-456789abcdaa';

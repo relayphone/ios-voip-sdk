@@ -137,6 +137,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     var journeyFailure: MediaJourneyFailure?
     var publicationHeld = false
     var publicationMuted = false
+    var audioEngineStoppedAtMs: Double?
+    var heldOutputStartAtMs: Double?
     var inactiveEngineStayedStopped = false
     var active = false
     var released = false
@@ -190,6 +192,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
           do {
             switch command {
             case .activate:
+              audioEngineStoppedAtMs = nil
               probe.startup.record(.activationHandlerEntered)
               probe.beginWindow()
               hooks.processingTimeline.record(.engineAvailabilityApplying)
@@ -205,7 +208,10 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             case .deactivate:
               try AudioManager.shared.setEngineAvailability(.none)
               active = false
-              if !AudioManager.shared.isEngineRunning { teardown.record(.engineStopped) }
+              if !AudioManager.shared.isEngineRunning {
+                audioEngineStoppedAtMs = observationClock.milliseconds
+                teardown.record(.engineStopped)
+              }
             case .release:
               // The SDK queues release before delivering its ended event to the app.
               if syntheticVideo != nil, teardown.receipt() != nil {
@@ -343,9 +349,12 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       Task { @MainActor [weak self] in self?.syntheticVideo?.record(.roomReconnecting) }
     }
     nonisolated func room(_ room: Room, participantDidDisconnect participant: RemoteParticipant) {
+      // LiveKit resets the participant state after its delegate returns.
+      guard let identity = participant.identity, identity.stringValue == "far-end",
+        room.connectionState == .connected, room.remoteParticipants[identity] == nil
+      else { return }
       Task { @MainActor [weak self] in
-        guard let self, fixture.journey != nil, participant.identity?.stringValue == "far-end"
-        else { return }
+        guard let self, fixture.journey != nil else { return }
         syntheticVideo?.record(.farEndDisconnected)
         guard let receipt = teardown.receipt(), !receipt.complete, journeyEnded == nil,
           let client,
@@ -571,9 +580,14 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     struct JourneySnapshot: Encodable {
       enum AudioMode: String, Encodable { case voice, video, other }
       struct Stage: Encodable {
-        let pcm: CapturedPCM
+        let pcm: CapturedPCM?
+        let sampleRate: Double
+        let retainedSamples: Int
+        let transportCount: Int
+        let transportStable: Bool
         let observation: MediaAudioProbe.Observation
-        let callbacks: MediaPCMCallbackEvidence
+        let droppedCallbacks: Int
+        let lastCallbackAtMs: Double?
       }
       let commandId: UUID?
       let sessionId: UUID
@@ -591,6 +605,10 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let teardown: MediaTeardownEvidence.Receipt?
       let released: Bool
       let audioActive: Bool
+      let audioEngineRunning: Bool
+      let audioOutputAvailable: Bool
+      let audioEngineStoppedAtMs: Double?
+      let heldOutputStartAtMs: Double?
       let startup: MediaStartupEvidence.Receipt
       let sdkAudioState: MediaSDKAudioState
       let publicationMuted: Bool
@@ -602,7 +620,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let syntheticVideo: MediaSyntheticVideo.Snapshot?
       let failure: MediaJourneyFailure?
     }
-    private func journeySnapshot(command: UUID?) -> JourneySnapshot? {
+    private func journeySnapshot(command: UUID?, includePCM: Bool = false) -> JourneySnapshot? {
       guard let session = journeySession else { return nil }
       let video = sdkVideoEvidence()
       let audioSession = AVAudioSession.sharedInstance()
@@ -615,11 +633,28 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       func stage(_ stage: MediaAudioProbe.Stage) -> JourneySnapshot.Stage {
         let snapshot = probe.snapshot(stage)
         let pcm = snapshot.capture
+        let counters = transport[stage] ?? []
+        let stable: Bool
+        if counters.count >= 2, let last = counters.last {
+          let previous = counters[counters.count - 2]
+          stable =
+            previous.streamID == last.streamID && previous.timestamp < last.timestamp
+            && previous.sample < last.sample && previous.packetsLost == last.packetsLost
+            && previous.concealedSamples == last.concealedSamples
+            && previous.insertedSamples == last.insertedSamples
+            && previous.removedSamples == last.removedSamples
+        } else {
+          stable = false
+        }
         return JourneySnapshot.Stage(
-          pcm: CapturedPCM(
-            sampleRate: pcm.sampleRate, channels: pcm.channels,
-            formatChanged: pcm.formatChanged, transport: transport[stage] ?? []),
-          observation: snapshot.observation, callbacks: snapshot.callbacks)
+          pcm: includePCM
+            ? CapturedPCM(
+              sampleRate: pcm.sampleRate, channels: pcm.channels,
+              formatChanged: pcm.formatChanged, transport: counters) : nil,
+          sampleRate: pcm.sampleRate, retainedSamples: pcm.channels.first?.count ?? 0,
+          transportCount: counters.count, transportStable: stable,
+          observation: snapshot.observation, droppedCallbacks: snapshot.callbacks.droppedFrames,
+          lastCallbackAtMs: snapshot.callbacks.frames.lazy.map { $0.atSeconds * 1000 }.max())
       }
       return JourneySnapshot(
         commandId: command, sessionId: session.id, fixtureId: session.fixture.fixtureId,
@@ -628,7 +663,11 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         observedAtMs: observationClock.milliseconds, monitorTicksMs: journeyTicks,
         droppedMonitorTicks: journeyTicksDropped, decoded: stage(.decoded), output: stage(.output),
         ended: journeyEnded, teardown: teardown.receipt(), released: released,
-        audioActive: client?.isAudioActive ?? false, startup: probe.startup.receipt(),
+        audioActive: client?.isAudioActive ?? false,
+        audioEngineRunning: AudioManager.shared.isEngineRunning,
+        audioOutputAvailable: AudioManager.shared.engineAvailability.isOutputAvailable,
+        audioEngineStoppedAtMs: audioEngineStoppedAtMs, heldOutputStartAtMs: heldOutputStartAtMs,
+        startup: probe.startup.receipt(),
         sdkAudioState: sdkAudioState(),
         publicationMuted: publicationMuted,
         onHold: client?.calls.first(where: { $0.id.rawValue == session.fixture.conversationId })?
@@ -686,14 +725,17 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       var lastServerMetadata: String?
       while clock.now < deadline {
         try Task.checkCancellation()
-        if journeyPhaseAtMs != nil {
-          if journeyTicks.count < 3001 {
+        if publicationHeld, audioEngineStoppedAtMs != nil {
+          let manager = AudioManager.shared
+          if manager.isEngineRunning || manager.engineAvailability.isOutputAvailable {
+            audioEngineStoppedAtMs = nil
+          } else if journeyTicks.count < 3001 {
             journeyTicks.append(observationClock.milliseconds)
           } else {
             journeyTicksDropped += 1
           }
-          recordTransport()
         }
+        if journeyPhaseAtMs != nil { recordTransport() }
         if publicationHeld { _ = probe.silence(.output) }
         syntheticVideo?.heartbeat()
         // The fixture room carries server updates independently of the local command mailbox.
@@ -723,12 +765,11 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
               }
               hooks.replaceMarker(frequencies: frequencies)
               journeyPhaseAtMs = observationClock.milliseconds
-              probe.beginWindow()
-              transport = [:]
-              lastStatisticsTimestamp = nil
-              journeyTicks = [journeyPhaseAtMs!]
+              resetJourneyCapture()
+              journeyTicks = []
               journeyTicksDropped = 0
-            case .snapshot: break
+            case .captureAudio: resetJourneyCapture()
+            case .snapshot, .audioSnapshot: break
             case .mute:
               try await client.request(.mute(callID, muted: command.enabled == true))
               try await until { self.publicationMuted == (command.enabled == true) }
@@ -738,8 +779,12 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
               try await until { self.publicationHeld == held }
               if held {
                 try await clock.sleep(for: .milliseconds(300))
+                journeyTicks = []
+                heldOutputStartAtMs = observationClock.milliseconds
                 probe.beginSilence(
                   .output, for: .seconds(1), remaining: clock.now.duration(to: deadline))
+              } else {
+                heldOutputStartAtMs = nil
               }
             case .video:
               guard let enabled = command.enabled else {
@@ -758,8 +803,12 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
               syntheticVideo?.closeReceivers()
             }
             recordTransport()
-            syntheticVideoEvidence = await syntheticVideo?.snapshot()
-            try JSONEncoder().encode(journeySnapshot(command: command.id)).write(
+            if command.operation != .audioSnapshot {
+              syntheticVideoEvidence = await syntheticVideo?.snapshot()
+            }
+            try JSONEncoder().encode(
+              journeySnapshot(command: command.id, includePCM: command.operation == .audioSnapshot)
+            ).write(
               to: directory.appending(path: "media-journey-response.json"), options: .atomic)
             if command.operation == .close { return }
           } catch {
@@ -830,6 +879,11 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         }
       }
       return mime
+    }
+    private func resetJourneyCapture() {
+      probe.beginWindow()
+      transport = [:]
+      lastStatisticsTimestamp = nil
     }
     private func recordTransport() {
       guard let stats = remoteTrack?.statistics?.inboundRtpStream.first,

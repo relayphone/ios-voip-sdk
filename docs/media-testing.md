@@ -358,8 +358,9 @@ rate/channel count, original energy across all channels and maximum absolute sam
 History is bounded to 8192 rows per stage and probe window; `droppedFrames` reports
 overflow, which consumers must reject. Beginning a window or retiring a gapped native
 silence attempt resets the callback history alongside PCM and counters. The example
-command mailbox includes these rows for host window selection; rows never fill missing
-intervals or change the shared-contract coverage, RMS or peak thresholds.
+command mailbox reports the dropped callback count and last callback time, and sends
+PCM on request. Callback evidence never fills missing intervals or changes coverage,
+RMS or peak thresholds.
 
 The example's success, failure and journey receipts also include `startup`, a
 `MediaStartupEvidence.Receipt` with the same observation clock identity. It retains the
@@ -556,8 +557,11 @@ The simulator driver runs initial video and local end, app upgrade and downgrade
 duplicate request, server upgrade and remote end, and hold and resume. Each invocation
 uses the same build and has its own 30-second acquisition and 180-second process budgets.
 Each reuses the audio Room and requires clean fresh duplex audio. Hold requires both
-video gates to suppress output while both sources advance, as well as the native output
-and far-end audio gates. Resume requires a new publication and fresh decoded video in
+video gates to suppress output while both sources advance, as well as native output
+and far-end audio evidence. When the system deactivates the last held call's audio, the
+native receipt records the SDK deactivation and a continuously observed stopped engine
+with no output callbacks. With an active engine, it requires the full output PCM silence
+window. Resume requires a new publication and fresh decoded video in
 both directions. Upgrade and downgrade assert the actual AVAudioSession mode and available
 simulator output. The automatic receiver branch is exercised when the simulator reports a
 receiver. The existing route-policy tests cover explicit selections and external endpoints.
