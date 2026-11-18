@@ -11,16 +11,14 @@ struct VideoEvidenceTests {
     try session.accept(
       helper.command(
         session, .beginPhase, phase: "live", frequencies: Array(repeating: 650, count: 12)))
-    for source in [MediaSDKVideoEvidence.Source.app, .server] {
-      for enabled in [true, true, false] {
-        try session.accept(
-          helper.command(session, .video, phase: "live", enabled: enabled, videoSource: source))
-      }
+    for enabled in [true, true, false] {
+      try session.accept(
+        helper.command(session, .video, phase: "live", enabled: enabled, videoSource: .app))
     }
     for value in [
       helper.command(session, .video, phase: "old", enabled: true, videoSource: .app),
       helper.command(session, .video, phase: "live", enabled: true),
-      helper.command(session, .video, phase: "live", videoSource: .server),
+      helper.command(session, .video, phase: "live", enabled: true, videoSource: .server),
     ] {
       #expect(throws: MediaJourneySession.Failure.self) { try session.accept(value) }
     }
@@ -29,6 +27,41 @@ struct VideoEvidenceTests {
       try session.accept(
         helper.command(session, .video, phase: "live", enabled: true, videoSource: .app))
     }
+  }
+
+  @Test func serverRoomUpdateRequiresLiveScopeAndRejectsReplays() throws {
+    let helper = ProtocolTests()
+    var session = try MediaJourneySession(
+      fixture: .init(fixtureId: "fixture", conversationId: "call"))
+    let sessionId = session.id
+    let id = UUID()
+    func metadata(
+      eventID: UUID = id, type: String = "video", session: UUID = sessionId,
+      fixture: String = "fixture", conversation: String = "call", phase: String = "live",
+      enabled: Bool = true
+    ) -> String {
+      """
+      {"type":"\(type)","id":"\(eventID)","sessionId":"\(session)","fixtureId":"\(fixture)",
+        "conversationId":"\(conversation)","phaseId":"\(phase)","enabled":\(enabled)}
+      """
+    }
+    let early = metadata(eventID: UUID())
+    #expect(session.acceptServerVideo(early) == nil)
+    try session.accept(
+      helper.command(
+        session, .beginPhase, phase: "live", frequencies: Array(repeating: 650, count: 12)))
+    for invalid in [
+      "{}", metadata(type: "audio"), metadata(session: UUID()), metadata(fixture: "foreign"),
+      metadata(conversation: "other"), metadata(eventID: UUID(), phase: "old"), early,
+      metadata() + String(repeating: " ", count: 32_768),
+    ] {
+      #expect(session.acceptServerVideo(invalid) == nil)
+    }
+    #expect(session.acceptServerVideo(metadata())?.enabled == true)
+    #expect(session.acceptServerVideo(metadata(enabled: false)) == nil)
+    #expect(session.acceptServerVideo(metadata(eventID: UUID(), enabled: false))?.enabled == false)
+    try session.accept(helper.command(session, .armTeardown, phase: "live"))
+    #expect(session.acceptServerVideo(metadata(eventID: UUID())) == nil)
   }
 
   @Test func initialSnapshotIsSeparateFromConfirmedChangesAndSurvivesTerminalRemoval() throws {

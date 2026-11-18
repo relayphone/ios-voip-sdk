@@ -494,12 +494,15 @@ They do not establish a combined journey's total duration, a physical camera, An
 external-route audibility, or energy consumption. The existing acquisition/process deadlines
 remain unchanged; separate bounded invocations must reuse the build when needed.
 
-The example's existing native journey mailbox accepts `video` with `enabled` and
-`source: 'app' | 'server'`. It uses the public SDK video API after session, call and current
-phase validation; the host serializes `source` as `videoSource` in the native command.
-Video commands are rejected after terminal arming. A command reply is
-an acknowledgement, not a confirmed event. Its video evidence separately retains actual
-SDK `videoChanged` callbacks, source and native observation time, plus the terminal event
+The example's native journey mailbox accepts `video` with `enabled` and `source: 'app'`.
+Server-source updates use `harness.updateVideo(update, budget)` with the native session ID,
+conversation ID and active phase ID. The harness writes to the fixture room's server-owned
+metadata using a room-scoped admin grant and the caller's absolute deadline and abort signal.
+The native example validates the scope and update ID before applying the public SDK video API.
+The native example rejects updates after terminal arming. The driver must retire the fixture if a
+server write has an uncertain outcome. Wait for each transition's confirmed SDK event before
+writing the next update. Video evidence retains actual SDK `videoChanged` callbacks,
+source and native observation time, plus the terminal event
 after the call leaves the SDK snapshot. An initial connected snapshot has its own
 `readySnapshot` kind and never invents a change event. The optional fixture `initialVideo`
 flag configures the incoming call's initial state; omitted input preserves audio-only setup.
