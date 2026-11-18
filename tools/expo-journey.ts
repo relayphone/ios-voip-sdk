@@ -8,7 +8,8 @@ import { simulatorDevice } from './inspector-devices.ts';
 import { captureTail, simulatorDiagnostics } from './inspector-resources.ts';
 import { launchToleratingASlowSimulator } from './runtime-smoke.ts';
 import { assertExpoJournal, assertJavaScriptResults } from './expo-journey-results.ts';
-import { JourneySetupTrace } from './expo-journey-setup.ts';
+import { buildBundledExample } from './expo-journey-build.ts';
+import { buildInstallProbe, JourneySetupTrace, warmSimulatorInstaller } from './expo-journey-setup.ts';
 import { journeyIDs, type JourneyStage } from '../expo/example/client/journeys/results.ts';
 
 const bundle = 'com.example.voipconversations';
@@ -132,13 +133,17 @@ async function until<T>(label: string, seconds: number, read: () => T | undefine
 }
 
 /** Drives a bundled Debug example without a development server, taps or runtime injection. */
-export async function expoJourney(work: string, app: string): Promise<void> {
+export async function expoJourney(work: string, app: string, example?: string): Promise<void> {
   const results = join(work, 'results');
   const markers = join(work, 'simulators');
   mkdirSync(results, { recursive: true }); mkdirSync(markers, { recursive: true });
   const deviceType = infrastructure('device-selection', simulatorDevice);
   summary(`Target simulator: ${deviceType.name} (${deviceType.identifier}); one simulator per attempt`);
+  let probe: string;
+  try { probe = buildInstallProbe(work); }
+  catch (error) { summary('product:build failed'); throw error; }
   let bootstatusRetried = false;
+  const build = example ? buildBundledExample(work, example, app) : undefined;
   await withInfrastructureRetry(async attempt => {
     const name = `expo-journey-${process.env.GITHUB_RUN_ID ?? process.pid}-${process.env.GITHUB_RUN_ATTEMPT ?? 1}-${attempt}`;
     const prefix = join(results, `attempt-${attempt + 1}`);
@@ -149,18 +154,26 @@ export async function expoJourney(work: string, app: string): Promise<void> {
     let check = 'setup';
     let captureJournal: (() => string) | undefined;
     let output: string | undefined;
-    writeFileSync(join(markers, name), '');
     try {
-      target = infrastructure('create', () => setup.observe('create', () => run('xcrun',
-        ['simctl', 'create', name, deviceType.identifier, simulatorRuntime], { timeout: 120 })));
+      try {
+        writeFileSync(join(markers, name), '');
+        target = infrastructure('create', () => setup.observe('create', () => run('xcrun',
+          ['simctl', 'create', name, deviceType.identifier, simulatorRuntime], { timeout: 120 })));
+        const simulator = target;
+        infrastructure('boot', () => {
+          setup.observe('boot', () => run('xcrun', ['simctl', 'boot', simulator], { timeout: 120 }));
+          try {
+            setup.observe('bootstatus', () => run('xcrun', ['simctl', 'bootstatus', simulator, '-b'],
+              { timeout: 300 }), output => output);
+          } catch (error) { bootstatusRetried = true; throw error; }
+        });
+        infrastructure('installer-warmup', () => warmSimulatorInstaller(simulator, probe, setup));
+      } finally {
+        // Join the build even after a simulator failure. A failed build is never retried on a new device.
+        try { await build; }
+        catch (error) { check = 'build'; setup.save(prefix); throw error; }
+      }
       const simulator = target;
-      infrastructure('boot', () => {
-        setup.observe('boot', () => run('xcrun', ['simctl', 'boot', simulator], { timeout: 120 }));
-        try {
-          setup.observe('bootstatus', () => run('xcrun', ['simctl', 'bootstatus', simulator, '-b'],
-            { timeout: 300 }), output => output);
-        } catch (error) { bootstatusRetried = true; throw error; }
-      });
       setup.observe('install', () => installBundledExample(simulator, app));
       const container = infrastructure('container', () => setup.observe('container', () => run('xcrun',
         ['simctl', 'get_app_container', simulator, bundle, 'data'], { timeout: 120 })));
@@ -210,7 +223,8 @@ export async function expoJourney(work: string, app: string): Promise<void> {
       check = 'late-handler';
       await lateHandlerJourneys(work, simulator, container, prefix, runID, evidence => launchBundledExample(simulator, evidence));
     } catch (error) {
-      if (error instanceof InfrastructureFailure && target && (error.step === 'install' || error.step === 'container')) {
+      if (error instanceof InfrastructureFailure && target &&
+          (error.step === 'installer-warmup' || error.step === 'install' || error.step === 'container')) {
         setup.captureInstallFailure(target);
       }
       if (check === 'setup') setup.save(prefix);
@@ -236,7 +250,7 @@ export async function expoJourney(work: string, app: string): Promise<void> {
 }
 
 if (isMain(import.meta.url)) await main(async () => {
-  const [work, app] = process.argv.slice(2);
-  if (!work || !app) throw new Error('Usage: expo-journey.ts <work directory> <Debug simulator app>');
-  await expoJourney(resolve(work), resolve(app));
+  const [work, app, example] = process.argv.slice(2);
+  if (!work || !app) throw new Error('Usage: expo-journey.ts <work directory> <Debug simulator app> [example project]');
+  await expoJourney(resolve(work), resolve(app), example ? resolve(example) : undefined);
 });

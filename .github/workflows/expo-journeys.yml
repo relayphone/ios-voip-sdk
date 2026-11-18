@@ -10,6 +10,7 @@ on:
       - 'Sources/Engine/**'
       - 'Sources/Interposition/**'
       - 'tools/expo-*'
+      - 'tools/SimulatorInstallProbe.swift'
       - 'tools/build-runtime.ts'
       - 'tools/runtime-package.ts'
       - 'tools/runtime-smoke.ts'
@@ -31,7 +32,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: expo-journeys-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  group: expo-journeys-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -50,7 +51,7 @@ jobs:
           node tools/build-runtime.ts "$RUNNER_TEMP/expo-journey/runtime" --archs "$(uname -m)"
           npm ci --prefix expo --ignore-scripts --no-audit --no-fund
           npm pack ./expo --pack-destination "$RUNNER_TEMP"
-      - name: Install the packed module and build a bundled Debug example
+      - name: Install the packed module and bundle the example's JavaScript
         run: |
           trap 'if [[ $? != 0 ]]; then echo "product:build failed" >> "$GITHUB_STEP_SUMMARY"; fi' EXIT
           cp -R expo/example/client "$RUNNER_TEMP/expo-journey/example"
@@ -61,18 +62,11 @@ jobs:
           cd ios
           pod install --repo-update
           node "$GITHUB_WORKSPACE/tools/expo-journey-bundle.ts" "$PWD"
-          cd ..
-          xcodebuild -workspace ios/VoIPExample.xcworkspace -scheme VoIPExample \
-            -configuration Debug -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "$RUNNER_TEMP/expo-journey/build" CODE_SIGNING_ALLOWED=NO \
-            COMPILER_INDEX_STORE_ENABLE=NO build > "$RUNNER_TEMP/expo-journey/build.log" 2>&1 || {
-              tail -100 "$RUNNER_TEMP/expo-journey/build.log"; exit 1;
-            }
-          test -s "$RUNNER_TEMP/expo-journey/build/Build/Products/Debug-iphonesimulator/VoIPExample.app/main.jsbundle"
-      - name: Drive JavaScript and verify app results and the runtime journal
+      - name: Build the app, warm the simulator and verify the journeys
         run: |
           node tools/expo-journey.ts "$RUNNER_TEMP/expo-journey" \
-            "$RUNNER_TEMP/expo-journey/build/Build/Products/Debug-iphonesimulator/VoIPExample.app"
+            "$RUNNER_TEMP/expo-journey/build/Build/Products/Debug-iphonesimulator/VoIPExample.app" \
+            "$RUNNER_TEMP/expo-journey/example"
       - name: Delete every created simulator and temporary build
         if: always()
         run: |
@@ -83,7 +77,7 @@ jobs:
             xcrun simctl shutdown "$name" || true
             if xcrun simctl delete "$name"; then rm "$marker"; else status=1; fi
           done
-          rm -rf "$RUNNER_TEMP/expo-journey/build" "$RUNNER_TEMP/expo-journey/example" "$RUNNER_TEMP/expo-journey/runtime"
+          rm -rf "$RUNNER_TEMP/expo-journey/build" "$RUNNER_TEMP/expo-journey/example" "$RUNNER_TEMP/expo-journey/runtime" "$RUNNER_TEMP/expo-journey/install-probe"
           if [[ "$status" != 0 ]]; then echo "infra:cleanup failed" >> "$GITHUB_STEP_SUMMARY"; fi
           exit "$status"
       - name: Keep app results, journals and diagnostics
