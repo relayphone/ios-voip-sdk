@@ -7,20 +7,53 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
-import { setTimeout as delay } from 'node:timers/promises';
+import { setImmediate as nextTurn, setTimeout as delay } from 'node:timers/promises';
 import { dispose, Room, RoomEvent } from '@livekit/rtc-node';
 import { command, deadline } from './fixture-runtime.ts';
 import { serverBinary, startServer } from './server.ts';
 import { MediaPeer } from './peer.ts';
 import { parseAction, startHarness } from './harness.ts';
-import { createMarker, detectMarker } from '../../expo/src/testing/marker.ts';
+import { createMarker, detectMarker, emissionSamples } from '../../expo/src/testing/marker.ts';
+import { measureMarker, markerReport, type PCMCapture } from './marker-evidence.ts';
 import { measureMarkerAsync } from './measure-marker.ts';
 import { monitorReceiver } from './peer-window.ts';
 
 const root = mkdtempSync(join(tmpdir(), 'media-harness-test-'));
 let binary: string;
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
-const until = (condition: () => boolean) => deadline(15_000, 'Test condition', async () => { while (!condition()) await delay(50); });
+const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+async function waitFor<T>(label: string, observe: () => T | undefined): Promise<T> {
+  let observing = true;
+  try {
+    return await deadline(15_000, label, async () => {
+      while (observing) {
+        const value = observe();
+        if (value !== undefined) return value;
+        await pause(50);
+      }
+      throw Error(`${label} observation ended`);
+    });
+  } finally { observing = false; }
+}
+const until = (condition: () => boolean) => waitFor('Test condition', () => condition() || undefined);
+const reconnectSampleRate = 48_000;
+const reconnectWindowSamples = 3 * reconnectSampleRate;
+type DuplexCapture = readonly [PCMCapture, PCMCapture];
+
+async function captureReconnectWindow(read: () => DuplexCapture, received: () => readonly [number, number]) {
+  try {
+    return await waitFor('Reconnect PCM and receiver counters', () => {
+      if (received().some(samples => samples < reconnectWindowSamples)) return;
+      const window = read();
+      if (window.every(capture => capture.channels[0]!.length >= reconnectWindowSamples &&
+        (capture.transport?.at(-1)?.sample ?? 0) >= reconnectWindowSamples)) return window;
+    });
+  } catch (cause) {
+    const progress = read().map((capture, index) =>
+      `${index === 0 ? 'downlink' : 'uplink'} PCM=${capture.channels[0]!.length}, counters through=${capture.transport?.at(-1)?.sample ?? 'missing'}`);
+    throw new Error(`Incomplete reconnect capture for ${reconnectWindowSamples} samples (${progress.join(' | ')})`, { cause });
+  }
+}
 before(async () => { binary = await serverBinary(root); });
 after(async () => { await dispose(); rmSync(root, { recursive: true, force: true }); });
 const directory = (name: string) => { const path = join(root, name); mkdirSync(path); cpSync(join(root, 'server.tgz'), join(path, 'server.tgz')); return path; };
@@ -147,19 +180,26 @@ test('full peer transport reconnect republishes real audio and requires fresh cl
     assert.ok(evidence.requestCompletedAtMs! >= evidence.requestedAtMs);
     assert.equal(evidence.publicationSidsBefore.length, 1);
     assert.equal(evidence.publicationSidsAfter?.length, 1);
-    await until(() => app.status().trackAvailable && harness.status().trackAvailable);
+    await until(() => [app.status(), harness.status()].every(status => status.trackAvailable && status.readerLive));
     // Independent receiver events prove real publication teardown/recreation, not just status.
     const events = app.lifecycleObservation().events.filter(row => row.identity === 'far-end' && row.atMs >= anchor);
     assert.ok(events.some(row => row.kind === 'trackUnpublished'));
     assert.ok(events.some(row => row.kind === 'trackPublished'));
+    const appBeforePublication = app.status().receivedSamples;
+    const peerBeforePublication = harness.status().receivedSamples;
     await harness.act({ type: 'publish', markerId: 'reconnect:after:toDevice' });
     app.publish('reconnect:after:fromDevice');
-    await delay(500); app.beginCapture(); await harness.act({ type: 'capture' });
-    await delay(3000);
-    for (const [capture, id] of [[app.capture(), 'reconnect:after:toDevice'],
-      [harness.observation().capture, 'reconnect:after:fromDevice']] as const) {
+    const warmupSamples = reconnectSampleRate / 2;
+    await until(() => app.status().receivedSamples - appBeforePublication >= warmupSamples &&
+      harness.status().receivedSamples - peerBeforePublication >= warmupSamples);
+    app.beginCapture(); await harness.act({ type: 'capture' });
+    const [downlink, uplink] = await captureReconnectWindow(
+      () => [app.capture(), harness.observation().capture],
+      () => [app.status().receivedSamples, harness.status().receivedSamples],
+    );
+    for (const [capture, id] of [[downlink, 'reconnect:after:toDevice'], [uplink, 'reconnect:after:fromDevice']] as const) {
       const measured = await measureMarkerAsync(capture, createMarker(id));
-      assert.ok(measured.clean && measured.complete && measured.postRollObserved);
+      assert.ok(measured.clean && measured.complete && measured.postRollObserved, markerReport(id, measured));
       assert.equal(detectMarker(Float32Array.from(capture.channels[0]!), 48000,
         createMarker(id.replace(':after:', ':before:'))), null);
     }
@@ -168,6 +208,31 @@ test('full peer transport reconnect republishes real audio and requires fresh cl
     await harness.act({ type: 'leave' });
     await assert.rejects(harness.act({ type: 'reconnect' }), /cannot reconnect/);
   } finally { await app.close(); await harness.stop(); }
+});
+
+test('reconnect capture waits for decoded samples and counters beyond the nominal wall window', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const marker = createMarker('reconnect:after:toDevice');
+  const samples = Array.from(emissionSamples(marker, reconnectSampleRate, reconnectWindowSamples, reconnectSampleRate / 2));
+  const transport = Array.from({ length: 31 }, (_, timestamp) => ({
+    sample: timestamp * 4800, timestamp, streamID: 'replacement-track',
+    packetsLost: 0, concealedSamples: 0, insertedSamples: 0, removedSamples: 0,
+  }));
+  const full = { sampleRate: reconnectSampleRate, channels: [samples], formatChanged: false, transport };
+  let downlink: PCMCapture = { ...full, channels: [samples.slice(0, 60_000)], transport: transport.slice(0, 13) };
+  const pending = captureReconnectWindow(() => [downlink, full], () => [downlink.channels[0]!.length, reconnectWindowSamples]);
+  t.mock.timers.tick(3000);
+  await nextTurn();
+
+  downlink = { ...full, transport: transport.slice(0, 13) };
+  t.mock.timers.tick(50);
+  await nextTurn();
+
+  downlink = full;
+  t.mock.timers.tick(50);
+  const [capture] = await pending;
+  const measured = measureMarker(capture, marker);
+  assert.ok(measured.clean && measured.complete && measured.postRollObserved, markerReport(marker.id, measured));
 });
 test('JSON CLI supports clean stop and cleanup after a daemon crash', async () => {
   const dir = directory('cli'), cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
