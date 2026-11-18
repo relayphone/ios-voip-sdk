@@ -11,49 +11,58 @@ export const sdkTargets = [
 ] as const;
 
 /** Source directory for a vendored target, including the optional nested package. */
-export function sdkSourceDirectory(repository: string, target: string): string {
+export function sdkSourceDirectory(repository: string, target: string) {
   return target === 'MediaTesting' ? join(repository, 'MediaTesting/Sources/VoIPMediaTesting')
     : join(repository, 'Sources', target);
 }
 
-function sourceFile(repository: string, path: string): string {
+function sourceFile(repository: string, path: string) {
   const [target, ...parts] = path.split('/');
-  return join(sdkSourceDirectory(repository, target!), ...parts);
+  if (target === undefined) throw new Error('Missing SDK target in source path');
+  return join(sdkSourceDirectory(repository, target), ...parts);
 }
 
 const manifestName = 'sources.json';
+
 interface SourceManifest {
   version: string;
   files: Record<string, string>;
 }
 
-function packageVersion(directory: string): string {
+function isRecord(value: unknown): value is object {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+function packageVersion(directory: string) {
   const value: unknown = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'));
-  if (!value || typeof value !== 'object' || !('version' in value) || typeof value.version !== 'string') {
+  if (!isRecord(value) || !('version' in value) || !isString(value.version)) {
     throw new Error('The Expo package has no version');
   }
   return value.version;
 }
 
-function filesIn(directory: string): string[] {
-  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
-    const path = join(directory, entry.name);
-    return entry.isDirectory() ? filesIn(path) : [path];
-  });
+function filesIn(directory: string) {
+  return readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter(entry => !entry.isDirectory())
+    .map(entry => join(entry.parentPath, entry.name));
 }
 
-function ships(path: string): boolean {
+function ships(path: string) {
   const parts = path.split('/');
   return path !== 'Interposition/CKLoader.m' &&
     parts.slice(0, -1).every(part => extname(part) === '') &&
     ['.swift', '.m', '.h'].includes(extname(path));
 }
 
-function digest(path: string): string {
+function digest(path: string) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
-function sourceManifest(repository: string): SourceManifest {
+function sourceManifest(repository: string) {
   const files: Record<string, string> = {};
   for (const target of sdkTargets) {
     const directory = sdkSourceDirectory(repository, target);
@@ -62,21 +71,21 @@ function sourceManifest(repository: string): SourceManifest {
     if (paths.length === 0) throw new Error(`Empty SDK target: ${target}`);
     for (const path of paths) files[path] = digest(sourceFile(repository, path));
   }
-  return { version: packageVersion(join(repository, 'expo')), files };
+  return { version: packageVersion(join(repository, 'expo')), files } satisfies SourceManifest;
 }
 
-function readManifest(vendor: string): SourceManifest {
+function readManifest(vendor: string) {
   const value: unknown = JSON.parse(readFileSync(join(vendor, manifestName), 'utf8'));
-  if (!value || typeof value !== 'object' || !('version' in value) ||
-      typeof value.version !== 'string' || !('files' in value) ||
-      !value.files || typeof value.files !== 'object' || Array.isArray(value.files)) {
+  if (!isRecord(value) || !('version' in value) || !isString(value.version) ||
+      !('files' in value) || !isRecord(value.files)) {
     throw new Error('Invalid SDK source manifest');
   }
   const files: Record<string, string> = {};
-  for (const [path, hash] of Object.entries(value.files)) {
+  const entries: [string, unknown][] = Object.entries(value.files);
+  for (const [path, hash] of entries) {
     if (!ships(path) || path.split('/').some(part => !part || part === '.' || part === '..') ||
         !sdkTargets.some(target => path.startsWith(`${target}/`)) ||
-        typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) {
+        !isString(hash) || !/^[a-f0-9]{64}$/.test(hash)) {
       throw new Error(`Invalid SDK source manifest entry: ${path}`);
     }
     files[path] = hash;
@@ -86,10 +95,10 @@ function readManifest(vendor: string): SourceManifest {
       throw new Error(`Missing SDK target in manifest: ${target}`);
     }
   }
-  return { version: value.version, files };
+  return { version: value.version, files } satisfies SourceManifest;
 }
 
-function verifyFiles(vendor: string, expected: SourceManifest): void {
+function verifyFiles(vendor: string, expected: SourceManifest) {
   const actual = filesIn(vendor).map(path => relative(vendor, path)).filter(path => path !== manifestName).sort();
   const paths = Object.keys(expected.files).sort();
   if (JSON.stringify(actual) !== JSON.stringify(paths)) {
@@ -103,7 +112,7 @@ function verifyFiles(vendor: string, expected: SourceManifest): void {
 }
 
 /** Reject a package version that differs from the tag's SDK version. */
-export function checkVersion(repository: string): void {
+export function checkVersion(repository: string) {
   const version = readFileSync(join(repository, 'VERSION'), 'utf8').trim();
   if (packageVersion(join(repository, 'expo')) !== version) {
     throw new Error(`The Expo package version must equal VERSION (${version})`);
@@ -111,7 +120,7 @@ export function checkVersion(repository: string): void {
 }
 
 /** Fail on stale, missing or extra files in an existing checkout copy, without changing it. */
-export function checkVendor(repository: string): void {
+export function checkVendor(repository: string) {
   const vendor = join(repository, 'expo/ios/Vendor');
   if (!existsSync(vendor)) return;
   const expected = sourceManifest(repository);
@@ -125,7 +134,7 @@ export function checkVendor(repository: string): void {
 }
 
 /** Check an installed distribution too, where the source checkout is unavailable. */
-export function checkDistribution(directory: string): void {
+export function checkDistribution(directory: string) {
   const vendor = join(directory, 'ios/Vendor');
   const manifest = readManifest(vendor);
   if (manifest.version !== packageVersion(directory)) throw new Error('Vendor version differs from the package');
@@ -133,7 +142,7 @@ export function checkDistribution(directory: string): void {
 }
 
 /** Copy source files, without build outputs or the standalone simulator loader. */
-export function preparePackage(repository: string): void {
+export function preparePackage(repository: string) {
   checkVersion(repository);
   const manifest = sourceManifest(repository);
   const vendor = join(repository, 'expo/ios/Vendor');
@@ -148,7 +157,7 @@ export function preparePackage(repository: string): void {
   checkVendor(repository);
 }
 
-function packageDirectory(): string {
+function packageDirectory() {
   let directory = dirname(fileURLToPath(import.meta.url));
   while (directory !== dirname(directory)) {
     if (existsSync(join(directory, 'ios/VoIPConversations.podspec'))) return directory;
