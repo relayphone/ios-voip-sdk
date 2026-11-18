@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { runTestProcess, type TestProcessReadiness, type TestProcessResult } from './test-process.ts';
+import { SimulatorMediaRefusal, withSimulatorMediaAudio } from './simulator-media.ts';
 
 const execute = promisify(execFile);
 interface TestTarget {
@@ -48,11 +49,17 @@ export function nativeTestSucceeded(result: TestProcessResult): boolean {
     (summary.test(result.log) || summary.test(result.stderr));
 }
 
-/** Runs prebuilt tests directly, avoiding xcodebuild's separate result-collection teardown. */
-export async function runNativeTests(options: {
+interface NativeTestOptions {
   specification: string; simulator: string; host: string; directory: string;
   timeoutMS: number; only?: string; secrets?: string[]; readiness?: TestProcessReadiness;
-}) {
+}
+
+/** Runs prebuilt tests directly, avoiding xcodebuild's separate result-collection teardown. */
+export async function runNativeTests(options: NativeTestOptions) {
+  return withSimulatorMediaAudio(signal => runGuardedNativeTests(options, signal));
+}
+
+async function runGuardedNativeTests(options: NativeTestOptions, signal: AbortSignal) {
   const specification = resolve(options.specification), directory = resolve(options.directory);
   const [{ stdout: data }, { stdout: developer }] = await Promise.all([
     execute('/usr/bin/plutil', ['-convert', 'json', '-o', '-', specification], { timeout: 5000 }),
@@ -63,7 +70,7 @@ export async function runNativeTests(options: {
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const result = await runTestProcess({ command: '/usr/bin/xcrun', args: plan.args,
     env: { ...process.env, ...plan.env }, timeoutMS: options.timeoutMS, secrets: options.secrets,
-    readiness: options.readiness });
+    readiness: options.readiness, abortSignal: signal });
   const { log, stderr, ...receipt } = result;
   const success = (!options.readiness || result.readyElapsedMS !== undefined) && nativeTestSucceeded(result);
   writeFileSync(join(directory, 'tests.log'), log);
@@ -79,5 +86,8 @@ if (import.meta.main) {
     const result = await runNativeTests({ timeoutMS: Number(seconds) * 1000, directory, simulator, specification, host, only });
     process.stdout.write(result.log); process.stderr.write(result.stderr);
     process.exitCode = result.success ? 0 : result.reason === 'timeout' ? 142 : 1;
-  } catch { console.error('Native test launch failed'); process.exitCode = 1; }
+  } catch (error) {
+    console.error(error instanceof SimulatorMediaRefusal ? error.message : 'Native test launch failed');
+    process.exitCode = 1;
+  }
 }

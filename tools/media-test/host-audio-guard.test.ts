@@ -12,7 +12,7 @@ const binary = process.env.HOST_AUDIO_GUARD_CONTROL;
 test('the guard detects silent playback on the real output device', {
   skip: !binary || process.platform !== 'darwin',
   timeout: 15_000,
-}, async ({ signal }) => {
+}, async ({ signal, skip }) => {
   const scratch = await mkdtemp(join(tmpdir(), 'host-audio-control-'));
   const silence = join(scratch, 'silence.wav');
   // One second of mono PCM16 zeros. afplay uses nonzero player volume.
@@ -41,6 +41,12 @@ test('the guard detects silent playback on the real output device', {
         once(stdout, 'line').then(([line]) => line),
         guardClosed.then(() => { throw new Error(report.trim() || 'Guard exited before readiness'); }),
       ]);
+      if (ready === 'ready: no host devices') {
+        guard.stdin.end();
+        assert.deepEqual(await guardClosed, [0, null]);
+        skip('no host devices');
+        return;
+      }
       assert.equal(ready, 'ready: monitoring default host devices');
       const player = spawn('/usr/bin/afplay', ['-v', '1', silence], { signal, stdio: 'ignore' });
       const [verdict, [exit]] = await Promise.all([guardClosed, once(player, 'close')]);

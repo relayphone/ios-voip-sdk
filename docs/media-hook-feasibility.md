@@ -67,8 +67,19 @@ They supply neither a replacement for that capture delivery path nor a manual pl
 destination on the real output mixer.
 [Apple AVAudioEngine manual rendering](https://developer.apple.com/documentation/avfaudio/avaudioenginemanualrenderingmode) · [Apple AVAudioSinkNode](https://developer.apple.com/documentation/avfaudio/avaudiosinknode)
 
-Run simulator media and video journeys on hosted CI. Local runs require an isolated simulator
-lease with virtual input and output devices.
+### Running media journeys
+
+Run simulator media and video journeys on hosted GitHub Actions. The fixture uses the simulator's
+audio devices, which can activate the speakers and microphone on a local Mac. The runners
+refuse local starts before setup. On hosted macOS, the Core Audio guard checks the default input
+and output before boot, fails the run on device activity or a default-route change, and records a
+verdict in the job summary. A runner with no default devices reports `no host devices`.
+
+The future simulator lease adapter must verify `audio.isolated` and prove that the simulator uses
+its own virtual input and output devices. The local `SimulatorLeaseAudio` type names these
+checks `isolated`, `virtualInputVerified`, and `virtualOutputVerified`. The adapter will map
+them once the lease format is available. The current preflight refuses all local lease runs
+until that adapter ships. Approved lease runs will use the same Core Audio guard.
 
 ## Marker qualification
 
