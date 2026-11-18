@@ -57,8 +57,8 @@ export async function confirmGroupsStopped(
   groups: number[], cleanupErrors: Set<string>, inspect = readProcessGroupStates,
   onGroupInspection?: (inspection: ProcessGroupInspection) => void,
 ): Promise<boolean> {
-  let inspectionTimeout = 500;
-  const settleDeadline = performance.now() + inspectionTimeout;
+  const settleDeadline = performance.now() + 500;
+  let inspectionTimeout = 1000;
   let observedLiveGroup = false;
   // A live process can still be handling SIGKILL when the launcher closes its pipes.
   do {
