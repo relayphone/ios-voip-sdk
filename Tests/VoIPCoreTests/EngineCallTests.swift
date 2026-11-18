@@ -56,17 +56,25 @@ extension EngineTests {
       let h = try Harness()
       try await h.ring()
       if fromApp {
-        try await h.client.request(.end(callID))
+        let result = try await h.client.end(callID)
+        guard case .ended(let receipt) = result else {
+          Issue.record("Expected a local decline receipt")
+          return
+        }
+        #expect(receipt.callID == callID)
+        #expect(receipt.reason == .localDeclined)
+        #expect(await h.records.last == .reportEnded(callID, .localDeclined))
       } else {
-        await h.framework.perform(.end(callID))
+        let actionID = await h.framework.perform(.end(callID))
+        #expect(await h.records.last == .fulfill(actionID))
+        #expect(
+          try await h.client.end(callID)
+            == .ended(EndReceipt(callID: callID, actionID: actionID, reason: .localDeclined)))
       }
       #expect(
         try await h.next(2) == [
-          .performed(.end(callID), .ended(.endedHere)), .ended(callID, .endedHere),
+          .performed(.end(callID), .ended(.localDeclined)), .ended(callID, .localDeclined),
         ])
-      let decline = try await h.lastActionID()
-      #expect(await h.records.last == .fulfill(decline))
-      #expect(await h.reported().contains { if case .ended = $0 { true } else { false } } == false)
     }
 
     @Test(arguments: [true, false])
@@ -286,14 +294,25 @@ extension EngineTests {
     @Test func appEndsConnectedCall() async throws {
       let h = try Harness()
       try await h.connect()
-      try await h.client.request(.end(callID))
+      let original = try await h.client.end(callID)
+      guard case .ended(let receipt) = original else {
+        Issue.record("Expected a local End receipt")
+        return
+      }
+      #expect(receipt.callID == callID)
+      #expect(receipt.reason == .localEnded)
       #expect(
         try await h.next(2) == [
-          .performed(.end(callID), .ended(.endedHere)), .ended(callID, .endedHere),
+          .performed(.end(callID), .ended(.localEnded)), .ended(callID, .localEnded),
         ])
-      let end = try await h.lastActionID()
-      #expect(await h.records.last == .fulfill(end))
+      #expect(await h.records.last == .reportEnded(callID, .localEnded))
+      let records = await h.records
+      await h.client.receive(.endedRemotely, for: callID, eventID: e3)
+      try await h.client.request(.end(callID))
+      #expect(try await h.client.end(callID) == original)
+      #expect(await h.records == records)
       await h.until { $0.calls.isEmpty }
+      try await h.expectNoEvents()
     }
 
     @Test func performsActionsWithoutSubscriber() async throws {

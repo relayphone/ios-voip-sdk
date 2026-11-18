@@ -192,6 +192,25 @@ extension EngineTests {
       #expect(try await h.next() == .previewStarted(callID, .answeredElsewhere))
     }
 
+    @Test func firstServerEndOwnsCallWhileAdmissionIsPending() async throws {
+      let h = try Harness()
+      let framework = h.framework
+      await onVoIPActor { framework.presentationOutcome = nil }
+      let invite = VoIPPush.incoming(ringingCall, eventID: e1)
+      await h.deliver(invite)
+      await h.client.receive(.endedRemotely, for: callID, eventID: e2)
+      await h.client.receive(.answeredElsewhere, for: callID, eventID: e3)
+      #expect(try await h.client.end(callID) == .alreadyEnded(.endedRemotely))
+      #expect(await h.reported() == [.report(callID)])
+
+      await onVoIPActor { framework.completeReports(of: callID, with: .presented) }
+      #expect(try await h.next() == .ended(callID, .endedRemotely))
+      #expect(await h.push.finished == [invite])
+      #expect(await h.reported() == [.report(callID), .ended(callID, .endedRemotely)])
+      #expect(try await h.client.end(callID) == .alreadyEnded(.endedRemotely))
+      try await h.expectNoEvents()
+    }
+
     @Test func serverEventBeforeItsCallIsForgottenAfterRetention() async throws {
       let h = try Harness()
       await h.client.receive(.endedRemotely, for: callID, eventID: e2)

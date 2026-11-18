@@ -98,6 +98,21 @@ enum CallMachine {
     var startedHere = false
     var earlyProgress: EarlyProgress?
     var deferredMedia: DeferredMedia?
+    var localEndReceipt: EndReceipt?
+
+    var endResult: EndResult? {
+      if let localEndReceipt { return .ended(localEndReceipt) }
+      switch phase {
+      case .ended(let reason), .reporting(let reason?): return .alreadyEnded(reason)
+      default: return nil
+      }
+    }
+
+    func endReceipt(for actionID: ActionID) -> EndReceipt {
+      EndReceipt(
+        callID: call.id, actionID: actionID,
+        reason: phase == .ringing ? .localDeclined : .localEnded)
+    }
     var hasAudioConfiguration: Bool {
       deferredMedia != .unprovided && phase.hasAudioConfiguration
     }
@@ -126,6 +141,8 @@ enum CallMachine {
     case frameworkReset
     /// The app requested an action.
     case requested(Action)
+    /// The app ended a live call.
+    case localEnd(EndReceipt)
     /// The calling framework refused a request.
     case requestFailed(Action)
     /// The app placed the call it was asked to start or join.

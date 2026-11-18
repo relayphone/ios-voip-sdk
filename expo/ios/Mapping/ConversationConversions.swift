@@ -124,7 +124,7 @@ extension EndReason {
   /// which this module never configures, so the TypeScript API has no reason for it.
   var json: JSONValue {
     switch self {
-    case .endedHere: .string("local")
+    case .localDeclined, .localEnded: .string("local")
     case .endedRemotely: .string("remoteEnded")
     case .unanswered: .string("unanswered")
     case .answeredElsewhere: .string("answeredElsewhere")
@@ -142,7 +142,8 @@ extension EndReason {
       fields["failure"] = .object(["kind": .string(failure.kind)])
     case .filtered(let cause):
       fields["failure"] = .object(["kind": .string("filtered"), "cause": cause.json])
-    case .endedHere, .endedRemotely, .unanswered, .answeredElsewhere, .declinedElsewhere:
+    case .localDeclined, .localEnded, .endedRemotely, .unanswered, .answeredElsewhere,
+      .declinedElsewhere:
       break
     }
     return .object(fields)

@@ -86,7 +86,7 @@ struct CallNotifierTests {
     #expect(h.center.delivered == [notification(.missed)])
   }
 
-  @Test(arguments: [EndReason.endedHere, .answeredElsewhere, .declinedElsewhere])
+  @Test(arguments: [EndReason.localDeclined, .localEnded, .answeredElsewhere, .declinedElsewhere])
   func handledCallRemovesItsNotification(_ reason: EndReason) async throws {
     let h = Harness()
     h.send(.previewStarted(call(.previewing(dnd))))
@@ -124,7 +124,7 @@ struct CallNotifierTests {
   }
 
   @Test(arguments: [
-    EndReason.endedHere, .answeredElsewhere, .declinedElsewhere, .failed(.server),
+    EndReason.localEnded, .answeredElsewhere, .declinedElsewhere, .failed(.server),
     .filtered(.doNotDisturb),
   ])
   func appsCanKeepThePreviousMissedCallBehavior(_ reason: EndReason) async throws {
@@ -190,7 +190,7 @@ struct CallNotifierTests {
     h.send(.joinRequested(call(.previewing(dnd))))
     h.send(.performed(.join(callID), call(.connecting)))
     #expect(try await h.next() == .withdrawn(callID))
-    h.send(.ended(call(.ended(.endedHere))))
+    h.send(.ended(call(.ended(.localEnded))))
     try await h.expectNothingElse()
     #expect(h.center.records.prefix(2) == [.post(notification(.incoming)), .withdraw(callID)])
   }

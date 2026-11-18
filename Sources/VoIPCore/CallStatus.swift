@@ -33,8 +33,10 @@ public enum PreviewReason: Hashable, Sendable {
 
 /// Why a call ended on this device.
 public enum EndReason: Hashable, Sendable {
-  /// The user or the app ended the call on this device, including declining it while it rang.
-  case endedHere
+  /// The user or the app declined the incoming call while it rang on this device.
+  case localDeclined
+  /// The user or the app ended the call on this device.
+  case localEnded
   /// The other side, or the app's servers, ended the call.
   case endedRemotely
   /// Nobody answered the call while it rang.
@@ -49,6 +51,39 @@ public enum EndReason: Hashable, Sendable {
   case filtered(FilterCause)
   /// The call failed.
   case failed(CallFailure)
+}
+
+/// The first local action that ended a call.
+public struct EndReceipt: Hashable, Sendable {
+  /// Why a local action ended the call.
+  public enum LocalReason: Hashable, Sendable {
+    /// The incoming call was declined while it rang.
+    case localDeclined
+    /// The call ended on this device.
+    case localEnded
+
+    var endReason: EndReason {
+      switch self {
+      case .localDeclined: .localDeclined
+      case .localEnded: .localEnded
+      }
+    }
+  }
+
+  /// The call that ended.
+  public let callID: CallID
+  /// The identifier of the original local action.
+  public let actionID: ActionID
+  /// The local decline or end reason recorded before teardown.
+  public let reason: LocalReason
+}
+
+/// The result of a local End request.
+public enum EndResult: Hashable, Sendable {
+  /// A local action owns the end. Repeated requests return the original receipt.
+  case ended(EndReceipt)
+  /// Another terminal event already owns the end.
+  case alreadyEnded(EndReason)
 }
 
 /// Why the system filtered an incoming call.

@@ -1,6 +1,6 @@
 /// Why joining a call stopped before it took part on this device and returned to its preview.
 public enum JoinFailure: Sendable, Hashable {
-  /// The user or the app ended the join through an end action performed by the calling framework.
+  /// The join was ended. The SDK now reports a local End through ``CallEvent/ended(_:)``.
   case ended
   /// The calling framework refused the request to join the call.
   case refused

@@ -364,7 +364,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             )
             let reason: JourneyEnd.Reason
             switch call.status {
-            case .ended(.endedHere): reason = .local
+            case .ended(.localDeclined), .ended(.localEnded): reason = .local
             case .ended(.endedRemotely): reason = .remoteEnded
             default: reason = .unexpected
             }

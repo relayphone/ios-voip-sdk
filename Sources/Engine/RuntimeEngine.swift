@@ -426,7 +426,7 @@
           case .ended(let end):
             phase = .ended
             switch end {
-            case .endedHere: reason = "endedHere"
+            case .localDeclined, .localEnded: reason = "endedHere"
             case .endedRemotely: reason = "endedRemotely"
             case .unanswered: reason = "unanswered"
             case .answeredElsewhere: reason = "answeredElsewhere"
