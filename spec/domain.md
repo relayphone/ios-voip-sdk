@@ -141,9 +141,12 @@ and deferred media provision under the existing outgoing no-answer deadline. Kee
 of each, and buffer media provision only while there is no preparation attempt. After admission,
 a replayed Connected report uses the existing connection budget if it still needs media.
 At the no-answer deadline, expiry takes precedence over a still-pending setup result.
+Expiry ends the call as `unanswered` and rejects the pending Start with `invalidTransition(ending)`.
 `startFailed(attempt, failure)` ends the matching placing or pending native Start with
 `failed(systemFailed(start))`, discards buffered progress and rejects Start with the original
 platform diagnostic. Platform removal is not applicable.
+If the session ends before admission without a platform diagnostic, the runtime supplies a
+Start failure for that attempt.
 
 A local or remote End before admission wins immediately and rejects the pending Start with
 `invalidTransition(ending)`. A local End returns its normal receipt. Retain the retiring attempt

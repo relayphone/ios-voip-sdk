@@ -154,6 +154,7 @@ internal class JourneyDriver(private val scope: TestScope, private val configura
     }
 
     private inner class FakeSystem : SystemPort {
+        override val platform = Platform.ANDROID
         override val answerDeadline = 5.seconds
         private val admissions = mutableMapOf<CallID, () -> Unit>()
         private val deferredStarts = mutableMapOf<CallID, Attempt>()

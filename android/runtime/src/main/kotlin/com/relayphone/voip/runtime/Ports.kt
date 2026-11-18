@@ -5,6 +5,7 @@ import com.relayphone.voip.Call
 import com.relayphone.voip.CallError
 import com.relayphone.voip.Effect
 import com.relayphone.voip.Outcome
+import com.relayphone.voip.Platform
 import com.relayphone.voip.RefusalReason
 import com.relayphone.voip.SystemFailure
 import kotlin.time.Duration
@@ -18,6 +19,9 @@ import kotlinx.coroutines.delay
  * Switch to a separate dispatcher before any blocking work, Binder calls or I/O.
  */
 public interface SystemPort {
+    /** Platform used to classify failures synthesized by the runtime. */
+    public val platform: Platform
+
     /** Effective allowance for a system Answer callback, including any adapter reserve. */
     public val answerDeadline: Duration
 
@@ -26,7 +30,10 @@ public interface SystemPort {
         call: Call, request: Effect.ReportIncoming, admitted: () -> Unit,
     ): Outcome<Unit, SystemFailure>
 
-    /** Runs the outgoing session. Invoke [admitted] on entry. Return a start failure if setup was rejected before entry. */
+    /**
+     * Runs the outgoing session. Invoke [admitted] on entry while the session is active.
+     * Return a failure with the Start operation when setup is rejected before entry.
+     */
     public suspend fun startOutgoing(
         call: Call, request: Effect.NativeStart, admitted: () -> Unit,
     ): Outcome<Unit, SystemFailure>

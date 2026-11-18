@@ -2,6 +2,7 @@ package com.relayphone.voip
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /** Expected operation failure with a typed cause and no native error text. */
 @Serializable
@@ -64,13 +65,20 @@ public enum class ConfigurationField {
     @SerialName("retention") RETENTION,
 }
 
-/** Platform diagnostic with an optional original numeric code. */
+/** Platform diagnostic with an optional original numeric code and an in-process detail. */
 @Serializable
 public data class SystemFailure(
     public val platform: Platform,
     @SerialName("kind") public val operation: SystemOperation,
     @SerialName("code") public val nativeCode: Int? = null,
+    @Transient public val detail: SystemFailureDetail? = null,
 )
+
+/** Runtime diagnostic supplement to the portable platform and operation. */
+public enum class SystemFailureDetail {
+    /** An outgoing session finished before its admission callback. */
+    SESSION_ENDED_BEFORE_ADMISSION,
+}
 @Serializable
 public enum class Platform { @SerialName("android") ANDROID, @SerialName("ios") IOS }
 @Serializable
