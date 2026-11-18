@@ -4,6 +4,7 @@ This is the initial executable contract for the [accepted architecture](../docs/
 It covers identity, lifecycle, actions, termination, errors and budgets. Platform presentation,
 media provider protocols and broader capability policy follow separately; this version does not
 claim a platform implementation. JSON Schema uses draft 2020-12, with document `version: 0`.
+The [version 1 extensions](v1/domain.md) add presentation, media, push, capabilities and timing.
 
 ## Wire format and evolution
 
@@ -35,9 +36,18 @@ among live calls, repeated identical binding succeeds, and replacement/collision
 A line contains `accountID`, `id` and display `label`; the line is immutable after admission.
 A party has an app ID, display name and a `phone`, `email` or `opaque` handle. Phone is E.164;
 opaque explicitly includes SIP URIs and short codes. Handles never replace call identity.
-Event, action and attempt IDs occupy separate namespaces. Retain terminal/deduplication metadata
-within the configured lifetime and record limit, without credentials. Runtime
-state is authoritative; persisted connected records require reconciliation after process death.
+Event, action and attempt IDs occupy separate namespaces. Retain terminal metadata without
+credentials. The configured age and count limits (default 120 seconds and 256 records) apply only
+to terminal records whose adapter work is complete. Media must be released, system removal observed or failed,
+and no adapter operation outstanding. A resource or removal that was never requested needs
+no completion. Outstanding work keeps its owner and identity reachable regardless of pressure.
+A removal failure completes the attempt without asserting successful removal.
+
+Measure age from recording terminal ownership with the monotonic clock. Prune expired eligible
+records and then the oldest eligible records above the count limit. Re-evaluate on completion of
+the last operation. Keep pending events, duplicate IDs and released-permit markers in separate
+bounded history as described in [Budgets](#budgets).
+Runtime state is authoritative. Persisted connected records require reconciliation after process death.
 
 ## Lifecycle and invariants
 
@@ -203,5 +213,6 @@ deadlines can only shorten these bounds. No retry resets
 an anchor. No-answer stops when Answer owns its action; deferred media does not arm preparation
 until provided. Host observation allowances never change these product budgets.
 Omitting `budgets.retention` uses the defaults. A supplied policy sets both `lifetime` in
-milliseconds and a positive `terminalRecords` count. The same time and count limits bound
-terminal records and the deduplication history for events, actions and released permits.
+milliseconds and a positive `terminalRecords` count. Use the same limits for separate bounded
+histories of buffered events, deduplication and released permits. Pruning those histories
+keeps the ownership and correlation data needed for outstanding adapter work.

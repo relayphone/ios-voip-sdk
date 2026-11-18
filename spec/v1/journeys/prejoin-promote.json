@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "id": "prejoin-promote",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":true,"javascriptAttached":false}},
+    {"kind":"input","input":{"kind":"enablePrejoin","callID":"prejoin-a","attemptID":"media-a"}},
+    {"kind":"input","input":{"kind":"incoming","callID":"prejoin-a","eventID":"invite-prejoin-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}},
+    {"kind":"input","input":{"kind":"mediaFeedback","callID":"prejoin-a","attemptID":"media-a","signal":"prejoined"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"prejoin-a","lifecycle":{"kind":"ringing"}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"mediaState","value":{"callID":"prejoin-a","owner":"native","stage":"prejoined","attemptID":"media-a","transport":"connected","activation":"inactive","capture":"closed","output":"closed","firstPackets":{"sent":"unknown","received":"unknown"}}}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"prejoin-a","metric":"publications","value":0}},
+    {"kind":"input","input":{"kind":"authority","callID":"prejoin-a","claim":{"kind":"allow"},"reconciliation":{"kind":"unknown"}}},
+    {"kind":"input","input":{"kind":"action","origin":"system","action":{"kind":"answer","callID":"prejoin-a"}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"mediaState","value":{"callID":"prejoin-a","owner":"native","stage":"promoting","attemptID":"media-a","transport":"connected","activation":"inactive","capture":"closed","output":"closed","firstPackets":{"sent":"unknown","received":"unknown"}}}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"prejoin-a","metric":"settlements","value":0}},
+    {"kind":"input","input":{"kind":"mediaFeedback","callID":"prejoin-a","attemptID":"media-a","signal":"promoted"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"prejoin-a","lifecycle":{"kind":"connecting"}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"mediaState","value":{"callID":"prejoin-a","owner":"native","stage":"prepared","attemptID":"media-a","transport":"connected","activation":"inactive","capture":"closed","output":"closed","firstPackets":{"sent":"unknown","received":"unknown"}}}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"prejoin-a","metric":"settlements","value":1}},
+    {"kind":"input","input":{"kind":"mediaFeedback","callID":"prejoin-a","attemptID":"media-a","signal":"activated"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"prejoin-a","lifecycle":{"kind":"connecting"}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"mediaState","value":{"callID":"prejoin-a","owner":"native","stage":"prepared","attemptID":"media-a","transport":"connected","activation":"active","capture":"open","output":"open","firstPackets":{"sent":"unknown","received":"unknown"}}}}},
+    {"kind":"input","input":{"kind":"connected","callID":"prejoin-a","eventID":"connect-prejoin-a"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"prejoin-a","lifecycle":{"kind":"connected"}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"mediaState","value":{"callID":"prejoin-a","owner":"native","stage":"prepared","attemptID":"media-a","transport":"connected","activation":"active","capture":"open","output":"open","firstPackets":{"sent":"unknown","received":"unknown"}}}}},
+    {"kind":"input","input":{"kind":"mediaFeedback","callID":"prejoin-a","attemptID":"media-a","signal":"firstReceivedPacket"}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"mediaState","value":{"callID":"prejoin-a","owner":"native","stage":"prepared","attemptID":"media-a","transport":"connected","activation":"active","capture":"open","output":"open","firstPackets":{"sent":"unknown","received":"observed"}}}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"prejoin-a","metric":"publications","value":1}}
+  ]
+}

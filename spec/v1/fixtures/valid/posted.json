@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "kind": "notificationObservation",
+  "value": {"callID":"call-a","surface":"ongoingCallStyle","generation":1,"kind":"posted","descriptor":{"state":"dialing","title":"Calling…","body":"Alice","lineLabel":"Personal","bodyTap":{"kind":"registered","targetID":"details"},"extraActions":[{"id":"openInbox","title":"Inbox"}]},"systemButtons":["hangUp"]}
+}

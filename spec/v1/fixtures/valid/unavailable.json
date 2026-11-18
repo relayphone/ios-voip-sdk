@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "kind": "capability",
+  "value": {"callID":"call-a","feature":"tones","availability":{"kind":"unavailable","reason":"requiresMediaProvider"}}
+}

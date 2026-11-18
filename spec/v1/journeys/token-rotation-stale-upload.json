@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "id": "token-rotation-stale-upload",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":true,"javascriptAttached":false}},
+    {"kind":"input","input":{"kind":"pushTokenChanged","installationID":"installation-a","channel":"fcm","tokenID":"token-a"}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"pushRegistration","value":{"kind":"registered","installationID":"installation-a","channel":"fcm","generation":1,"tokenID":"token-a","upload":{"kind":"pending"}}}}},
+    {"kind":"input","input":{"kind":"pushTokenChanged","installationID":"installation-a","channel":"fcm","tokenID":"token-b"}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"pushRegistration","value":{"kind":"registered","installationID":"installation-a","channel":"fcm","generation":2,"tokenID":"token-b","upload":{"kind":"pending"}}}}},
+    {"kind":"input","input":{"kind":"pushUploadCompleted","installationID":"installation-a","channel":"fcm","generation":1,"tokenID":"token-a","result":{"kind":"acknowledged"}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"pushRegistration","value":{"kind":"registered","installationID":"installation-a","channel":"fcm","generation":2,"tokenID":"token-b","upload":{"kind":"pending"}}}}},
+    {"kind":"input","input":{"kind":"pushUploadCompleted","installationID":"installation-a","channel":"fcm","generation":2,"tokenID":"token-b","result":{"kind":"acknowledged"}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"pushRegistration","value":{"kind":"registered","installationID":"installation-a","channel":"fcm","generation":2,"tokenID":"token-b","upload":{"kind":"acknowledged"}}}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"pushHealth","value":{"registration":{"kind":"registered","installationID":"installation-a","channel":"fcm","generation":2,"tokenID":"token-b","upload":{"kind":"acknowledged"}},"readiness":{"kind":"unknown"},"connectivity":{"kind":"unknown"},"delivery":{"kind":"unknown","reason":"noEvidence"}}}}},
+    {"kind":"input","input":{"kind":"pushUploadCompleted","installationID":"installation-a","channel":"fcm","generation":1,"tokenID":"token-a","result":{"kind":"acknowledged"}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"pushRegistration","value":{"kind":"registered","installationID":"installation-a","channel":"fcm","generation":2,"tokenID":"token-b","upload":{"kind":"acknowledged"}}}}}
+  ]
+}

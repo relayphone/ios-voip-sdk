@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "id": "retention-pressure-late-removal",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000,"retention":{"lifetime":1000,"terminalRecords":1}},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":true,"javascriptAttached":false}},
+    {"kind":"input","input":{"kind":"deferSystemRemoval","callID":"pending-a"}},
+    {"kind":"input","input":{"kind":"incoming","callID":"pending-a","eventID":"invite-pending-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}},
+    {"kind":"input","input":{"kind":"remoteEnd","target":{"kind":"call","id":"pending-a"},"eventID":"end-pending-a","reason":{"kind":"remoteEnded"}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"pending-a","lifecycle":{"kind":"ended","reason":{"kind":"remoteEnded"}}}},
+    {"kind":"input","input":{"kind":"incoming","callID":"finished-b","eventID":"invite-finished-b","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}},
+    {"kind":"input","input":{"kind":"remoteEnd","target":{"kind":"call","id":"finished-b"},"eventID":"end-finished-b","reason":{"kind":"remoteEnded"}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"finished-b","lifecycle":{"kind":"ended","reason":{"kind":"remoteEnded"}}}},
+    {"kind":"input","input":{"kind":"advance","milliseconds":1}},
+    {"kind":"input","input":{"kind":"incoming","callID":"finished-c","eventID":"invite-finished-c","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}},
+    {"kind":"input","input":{"kind":"remoteEnd","target":{"kind":"call","id":"finished-c"},"eventID":"end-finished-c","reason":{"kind":"remoteEnded"}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"finished-c","lifecycle":{"kind":"ended","reason":{"kind":"remoteEnded"}}}},
+    {"kind":"expect","expectation":{"kind":"callAbsent","callID":"finished-b"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"pending-a","lifecycle":{"kind":"ended","reason":{"kind":"remoteEnded"}}}},
+    {"kind":"input","input":{"kind":"advance","milliseconds":1000}},
+    {"kind":"expect","expectation":{"kind":"callAbsent","callID":"finished-c"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"pending-a","lifecycle":{"kind":"ended","reason":{"kind":"remoteEnded"}}}},
+    {"kind":"input","input":{"kind":"systemRemoved","callID":"pending-a"}},
+    {"kind":"expect","expectation":{"kind":"cleanup","callID":"pending-a","outcome":"removed"}},
+    {"kind":"expect","expectation":{"kind":"callAbsent","callID":"pending-a"}}
+  ]
+}

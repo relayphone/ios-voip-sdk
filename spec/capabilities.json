@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "features": [
+    {"feature":"hold","ios":[{"requires":"System and media hold are supported for the participating call."}],"android":[{"requires":"Telecom and media hold are supported for the participating call without implying remote answer."}]},
+    {"feature":"video","ios":[{"requires":"An app or service request can negotiate and confirm video with the registered media provider. Capture also needs permission."}],"android":[
+      {"backend":"legacy","requires":"An app or service request can negotiate and confirm video with the registered media provider. Capture also needs permission."},
+      {"backend":"transactional","minApi":34,"maxApi":34,"unavailable":"requiresSystemVersion"},
+      {"backend":"transactional","minApi":35,"requires":"The profile qualifies app or service video changes through media negotiation, permissions and observed system type."}
+    ]},
+    {"feature":"tones","ios":[{"requires":"A registered media or signaling provider can send tones for the call."}],"android":[{"requires":"A registered media or signaling provider can send tones for the call. Telecom supplies call control."}]},
+    {"feature":"preview","ios":[{"requires":"Native preview presentation and policy permit following the call without ringing or audio."}],"android":[{"unavailable":"notImplemented"}]},
+    {"feature":"merge","ios":[{"unavailable":"notImplemented"}],"android":[{"unavailable":"notImplemented"}]},
+    {"feature":"prejoin","ios":[{"requires":"Policy permits native prejoin and a registered provider can prepare while keeping capture and output closed."}],"android":[{"requires":"Policy permits native prejoin and a registered provider can prepare while keeping capture and output closed."}]},
+    {"feature":"nativeAnswerAuthority","ios":[{"requires":"A bounded native authority is installed before incoming intake, with validated budget and any required credentials."}],"android":[{"requires":"A bounded native authority is installed before incoming intake, with validated budget and any required credentials."}]},
+    {"feature":"audioRoutes","ios":[{"requires":"The system audio adapter can observe routes and apply route intent within the active session."}],"android":[{"requires":"The Telecom adapter observes endpoints and supports changes for the current call. Endpoint absence or unreadiness can limit an individual route."}]},
+    {"feature":"push","ios":[{"requires":"The native PushKit adapter and VoIP registration are configured for the app."}],"android":[{"requires":"The native FCM intake and registration adapter are configured, including forwarding when using an existing service."}]},
+    {"feature":"customPresentation","ios":[{"requires":"Native descriptors are installed for SDK-owned notifications or previews."}],"android":[{"requires":"Native descriptors are installed for SDK-owned call notifications and respect system action requirements."}]},
+    {"feature":"fullScreenIncoming","ios":[{"unavailable":"unsupportedPlatform"}],"android":[{"requires":"The Android full-screen notification intent is configured and currently allowed for the app and call."}]},
+    {"feature":"systemVideoUpgrade","ios":[{"unavailable":"unsupportedPlatform"}],"android":[
+      {"backend":"legacy","unavailable":"requiresTransactional"},
+      {"backend":"transactional","minApi":34,"maxApi":36,"unavailable":"requiresSystemVersion"},
+      {"backend":"transactional","minApi":37,"requires":"The profile qualifies system-initiated video upgrades, including observed system type and confirmed media application."}
+    ]},
+    {"feature":"systemVideoDowngrade","ios":[{"unavailable":"unsupportedPlatform"}],"android":[
+      {"backend":"legacy","unavailable":"requiresTransactional"},
+      {"backend":"transactional","minApi":34,"maxApi":34,"unavailable":"requiresSystemVersion"},
+      {"backend":"transactional","minApi":35,"requires":"The profile qualifies system-initiated video downgrades, including observed system type and confirmed media application."}
+    ]},
+    {"feature":"focusFiltering","ios":[{"requires":"The system supplies Focus filtering evidence for the call."}],"android":[{"unavailable":"unsupportedPlatform"}]},
+    {"feature":"liveActivities","ios":[{"requires":"ActivityKit preview support is available and enabled on the device."}],"android":[{"unavailable":"unsupportedPlatform"}]},
+    {"feature":"systemDialIntent","ios":[{"requires":"The app has opted into a supported system dial path and can assign a canonical call ID."}],"android":[{"unavailable":"unsupportedPlatform"}]}
+  ]
+}
