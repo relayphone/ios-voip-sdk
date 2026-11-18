@@ -53,5 +53,21 @@
     "landmines-structure/package-exports": "error",
     "landmines-structure/test-file-names": "warn",
     "landmines-types/no-explicit-return-types": "warn"
-  }
+  },
+  "overrides": [
+    {
+      "files": ["tools/package-exact.ts", "tools/package-exact.test.ts"],
+      "rules": {
+        "anti-slop/no-shape-in-symbol-names": "error",
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    },
+    {
+      "files": ["tools/package-exact.test.ts"],
+      "rules": {
+        // The manifest test validates JSON fields at runtime.
+        "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }]
+      }
+    }
+  ]
 }
