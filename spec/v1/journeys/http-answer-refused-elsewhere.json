@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "id": "http-answer-refused-elsewhere",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":false,"javascriptAttached":false}},
+    {"kind":"input","input":{"kind":"useHTTPAuthority","callID":"http-refused","actionID":"answer-refused","credentialRef":"authority-key"}},
+    {"kind":"input","input":{"kind":"incoming","callID":"http-refused","eventID":"invite-refused","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}},
+    {"kind":"input","input":{"kind":"provideMedia","callID":"http-refused"}},
+    {"kind":"expect","expectation":{"kind":"httpRequests","callID":"http-refused","requests":[]}},
+    {"kind":"input","input":{"kind":"action","origin":"system","action":{"kind":"answer","callID":"http-refused"}}},
+    {"kind":"input","input":{"kind":"httpReply","response":{"kind":"response","operation":"claim","status":200,"idempotencyKey":"v1.YW5zd2VyLXJlZnVzZWQ","body":{"version":1,"callID":"http-refused","actionID":"answer-refused","kind":"refuse","reason":{"kind":"answeredElsewhere"}}}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"http-refused","lifecycle":{"kind":"ended","reason":{"kind":"answeredElsewhere"}}}},
+    {"kind":"expect","expectation":{"kind":"error","callID":"http-refused","error":"refused","reason":{"kind":"answeredElsewhere"}}},
+    {"kind":"expect","expectation":{"kind":"systemEnd","callID":"http-refused","cause":"remote"}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"http-refused","metric":"settlements","value":1}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"http-refused","metric":"publications","value":0}},
+    {"kind":"expect","expectation":{"kind":"participating","callIDs":[]}},
+    {"kind":"expect","expectation":{"kind":"httpRequests","callID":"http-refused","requests":[
+      {"kind":"request","operation":"claim","method":"POST","path":"/v1/answer/claim","idempotencyKey":"v1.YW5zd2VyLXJlZnVzZWQ","body":{"version":1,"callID":"http-refused","accountID":"account-a","lineID":"personal","actionID":"answer-refused"}}
+    ]}}
+  ]
+}

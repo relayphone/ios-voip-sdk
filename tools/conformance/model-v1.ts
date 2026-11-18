@@ -1,4 +1,5 @@
 import type { CallError, Configuration, Expectation, Input, State, WireID } from './model.ts';
+import type { HTTPAuthorityRequest, HTTPAuthorityResponse } from './http-authority.ts';
 import type { PushEnvelope, PushHealth, PushInput, PushRegistration } from './push-v1.ts';
 
 export type PresentationState = State | 'authorizing' | 'held' | 'missed';
@@ -73,6 +74,8 @@ export type ModelV1 = RecordEnvelope<'presentationDescriptor', PresentationDescr
   | RecordEnvelope<'pushEnvelope', PushEnvelope> | RecordEnvelope<'pushRegistration', PushRegistration>
   | RecordEnvelope<'pushHealth', PushHealth> | RecordEnvelope<'capability', Capability> | RecordEnvelope<'timing', TimingEvent>;
 export type InputV1 = Input | PushInput
+  | { readonly kind: 'useHTTPAuthority'; readonly callID: WireID; readonly actionID: WireID; readonly credentialRef: WireID }
+  | { readonly kind: 'httpReply'; readonly response: HTTPAuthorityResponse }
   | { readonly kind: 'presentation'; readonly callID: WireID; readonly descriptor: PresentationDescriptor }
   | { readonly kind: 'refuseNotificationPost'; readonly callID: WireID; readonly surface: NotificationSurface; readonly reason: PostRefusal }
   | { readonly kind: 'enablePrejoin'; readonly callID: WireID; readonly attemptID: WireID }
@@ -81,6 +84,7 @@ export type InputV1 = Input | PushInput
   | { readonly kind: 'toneTransport'; readonly available: boolean }
   | { readonly kind: 'deferSystemRemoval' | 'systemRemoved'; readonly callID: WireID };
 export type ExpectationV1 = Expectation
+  | { readonly kind: 'httpRequests'; readonly callID: WireID; readonly requests: readonly HTTPAuthorityRequest[] }
   | { readonly kind: 'record'; readonly record: ModelV1 }
   | { readonly kind: 'actionError'; readonly callID: WireID; readonly error: CallError }
   | { readonly kind: 'cleanup'; readonly callID: WireID; readonly outcome: 'removed' | 'failed' }

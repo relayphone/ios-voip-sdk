@@ -121,12 +121,12 @@ prompting. Match accessibility to locked-device support; qualify pre-first-unloc
 [Keychain](https://developer.apple.com/documentation/security/keychain-services), [Keystore](https://developer.android.com/privacy-and-security/keystore),
 [Android storage availability](https://developer.android.com/privacy-and-security/direct-boot).
 
-HTTP claim/reconcile/release operations share a per-action idempotency key through echoes and
-reconciliation. Validate permit/refusal/unknown responses; HTTP success alone cannot prove ownership.
+The [HTTP Answer contract](../spec/v1/http-authority.md) defines claim, reconciliation and
+release with a single per-action idempotency key and correlated decisions.
 An allow response may supply scoped media credentials directly to the selected native `CallMedia`,
 without crossing JS, so the built-in media path needs no custom native credential-fetch code.
-All network work spends the same absolute budget, without unbounded retries. Custom native
-authorities remain the general mechanism. M3 ships and tests both integrations.
+Network work on the Answer decision spends the same absolute budget. Bounded Release cleanup
+never extends system settlement. M3 ships the built-in and custom native authorities.
 
 | Budget | Default | Meaning |
 | --- | --- | --- |

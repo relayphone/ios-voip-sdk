@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import type { CallError, Model, WireID } from './model.ts';
+import { decodeHTTPAuthority, type HTTPAuthorityRequest } from './http-authority.ts';
 import { features } from './model-v1.ts';
 import type { CapabilityCatalog, ExpectationV1, InputV1, JourneyV1, ModelV1, NotificationSurface, PresentationDescriptor, SystemButton } from './model-v1.ts';
 import { validatePushEnvelope, validatePushHealth } from './push-v1.ts';
@@ -104,7 +105,15 @@ export function decodeJourneyV1(value: unknown): JourneyV1 {
   if (!journey.steps.some(step => step.kind === 'expect')) throw new Error('Journey has no assertions');
   for (const step of journey.steps) {
     if (step.kind === 'input' && step.input.kind === 'presentation') checkDescriptor(step.input.descriptor);
+    if (step.kind === 'input' && step.input.kind === 'httpReply') decodeHTTPAuthority(step.input.response);
     if (step.kind === 'expect' && step.expectation.kind === 'record') decodeModelV1(step.expectation.record);
+    if (step.kind === 'expect' && step.expectation.kind === 'httpRequests') {
+      const { callID, requests } = step.expectation;
+      for (const request of requests) {
+        decodeHTTPAuthority(request);
+        if (request.body.callID !== callID) throw new Error('HTTP request must match the expected call');
+      }
+    }
   }
   return journey;
 }
@@ -113,6 +122,7 @@ type ObservationV1 = Observation & Readonly<{
   records: readonly ModelV1[];
   actionErrors: readonly Readonly<{ callID: WireID; error: CallError }>[];
   cleanup: readonly Readonly<{ callID: WireID; outcome: 'removed' | 'failed' }>[];
+  httpRequests?: readonly HTTPAuthorityRequest[];
 }>;
 export type JourneyDriverV1 = JourneyDriver<InputV1, ObservationV1>;
 
@@ -134,6 +144,16 @@ function recordKey(record: ModelV1): readonly (string | number)[] {
 
 export function checkV1(expected: ExpectationV1, observed: ObservationV1): void {
   switch (expected.kind) {
+    case 'httpRequests': {
+      assert.ok(observed.httpRequests, 'Missing HTTP Answer request evidence');
+      const requests = observed.httpRequests.map(request => {
+        const message = decodeHTTPAuthority(request);
+        assert.ok(message.kind === 'request', 'Expected an HTTP request');
+        return message;
+      }).filter(request => request.body.callID === expected.callID);
+      assert.deepEqual(requests, expected.requests);
+      break;
+    }
     case 'record': {
       const key = JSON.stringify(recordKey(expected.record));
       const matches = observed.records.filter(record => JSON.stringify(recordKey(record)) === key);

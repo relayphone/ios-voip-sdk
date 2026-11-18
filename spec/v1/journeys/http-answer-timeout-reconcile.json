@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "id": "http-answer-timeout-reconcile",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":false,"javascriptAttached":false}},
+    {"kind":"input","input":{"kind":"useHTTPAuthority","callID":"http-reconcile","actionID":"answer-reconcile","credentialRef":"authority-key"}},
+    {"kind":"input","input":{"kind":"incoming","callID":"http-reconcile","eventID":"invite-reconcile","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}},
+    {"kind":"input","input":{"kind":"provideMedia","callID":"http-reconcile"}},
+    {"kind":"expect","expectation":{"kind":"httpRequests","callID":"http-reconcile","requests":[]}},
+    {"kind":"input","input":{"kind":"action","origin":"system","action":{"kind":"answer","callID":"http-reconcile"}}},
+    {"kind":"input","input":{"kind":"advance","milliseconds":2499}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"http-reconcile","metric":"claimTimeouts","value":0}},
+    {"kind":"expect","expectation":{"kind":"httpRequests","callID":"http-reconcile","requests":[
+      {"kind":"request","operation":"claim","method":"POST","path":"/v1/answer/claim","idempotencyKey":"v1.YW5zd2VyLXJlY29uY2lsZQ","body":{"version":1,"callID":"http-reconcile","accountID":"account-a","lineID":"personal","actionID":"answer-reconcile"}}
+    ]}},
+    {"kind":"input","input":{"kind":"advance","milliseconds":1}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"http-reconcile","lifecycle":{"kind":"ringing"}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"http-reconcile","metric":"claimTimeouts","value":1}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"http-reconcile","metric":"settlements","value":0}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"http-reconcile","metric":"publications","value":0}},
+    {"kind":"expect","expectation":{"kind":"httpRequests","callID":"http-reconcile","requests":[
+      {"kind":"request","operation":"claim","method":"POST","path":"/v1/answer/claim","idempotencyKey":"v1.YW5zd2VyLXJlY29uY2lsZQ","body":{"version":1,"callID":"http-reconcile","accountID":"account-a","lineID":"personal","actionID":"answer-reconcile"}},
+      {"kind":"request","operation":"reconcile","method":"POST","path":"/v1/answer/reconcile","idempotencyKey":"v1.YW5zd2VyLXJlY29uY2lsZQ","body":{"version":1,"callID":"http-reconcile","accountID":"account-a","lineID":"personal","actionID":"answer-reconcile"}}
+    ]}},
+    {"kind":"input","input":{"kind":"advance","milliseconds":100}},
+    {"kind":"input","input":{"kind":"httpReply","response":{"kind":"response","operation":"reconcile","status":200,"idempotencyKey":"v1.YW5zd2VyLXJlY29uY2lsZQ","body":{"version":1,"callID":"http-reconcile","actionID":"answer-reconcile","kind":"allow","permit":{"id":"permit-reconcile","expiresAt":"2026-11-18T00:00:30.000Z"}}}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"http-reconcile","lifecycle":{"kind":"connecting"}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"http-reconcile","metric":"settlements","value":1}},
+    {"kind":"input","input":{"kind":"advance","milliseconds":1901}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"http-reconcile","metric":"settlements","value":1}},
+    {"kind":"expect","expectation":{"kind":"httpRequests","callID":"http-reconcile","requests":[
+      {"kind":"request","operation":"claim","method":"POST","path":"/v1/answer/claim","idempotencyKey":"v1.YW5zd2VyLXJlY29uY2lsZQ","body":{"version":1,"callID":"http-reconcile","accountID":"account-a","lineID":"personal","actionID":"answer-reconcile"}},
+      {"kind":"request","operation":"reconcile","method":"POST","path":"/v1/answer/reconcile","idempotencyKey":"v1.YW5zd2VyLXJlY29uY2lsZQ","body":{"version":1,"callID":"http-reconcile","accountID":"account-a","lineID":"personal","actionID":"answer-reconcile"}}
+    ]}}
+  ]
+}

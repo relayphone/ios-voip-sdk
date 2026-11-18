@@ -1,0 +1,34 @@
+[
+  {
+    "kind": "request",
+    "operation": "claim",
+    "method": "POST",
+    "path": "/v1/answer/claim",
+    "idempotencyKey": "v1.YW5zd2VyLc6x",
+    "body": {"version":1,"callID":"call-a","accountID":"account-a","lineID":"personal","actionID":"answer-α"}
+  },
+  {
+    "kind": "request",
+    "operation": "reconcile",
+    "method": "POST",
+    "path": "/v1/answer/reconcile",
+    "idempotencyKey": "v1.YW5zd2VyLc6x",
+    "body": {"version":1,"callID":"call-a","accountID":"account-a","lineID":"personal","actionID":"answer-α"}
+  },
+  {
+    "kind": "request",
+    "operation": "release",
+    "method": "POST",
+    "path": "/v1/answer/release",
+    "idempotencyKey": "v1.YW5zd2VyLc6x",
+    "body": {"version":1,"callID":"call-a","accountID":"account-a","lineID":"personal","actionID":"answer-α","permitID":"permit-a"}
+  },
+  {
+    "kind": "request",
+    "operation": "claim",
+    "method": "POST",
+    "path": "/deployment/v1/answer/claim",
+    "idempotencyKey": "v1.YW5zd2VyLWI",
+    "body": {"version":1,"callID":"call-b","accountID":"account-a","lineID":"personal","actionID":"answer-b"}
+  }
+]
