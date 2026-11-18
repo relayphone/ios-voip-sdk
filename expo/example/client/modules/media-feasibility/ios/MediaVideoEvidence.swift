@@ -40,7 +40,7 @@
 
   /// No descriptions, raw domains, URLs or userInfo cross the fixture boundary.
   struct MediaJourneyFailure: Codable {
-    enum Operation: String, Codable { case prepare, video, command }
+    enum Operation: String, Codable { case prepare, connect, video, command }
     enum Category: String, Codable { case livekit, url, osStatus, posix, cocoa, other }
     let operation: Operation
     let category: Category

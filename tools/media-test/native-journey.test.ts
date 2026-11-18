@@ -88,6 +88,16 @@ test('serialized commands bind phase markers and every control to acknowledged n
   } finally { f.cleanup(); }
 });
 
+test('a native connection failure takes precedence over readiness', async () => {
+  const f = fixture();
+  try {
+    f.ready();
+    f.write('failure', { ...f.state, failure: { operation: 'connect', category: 'other', code: 1 } });
+    await assert.rejects(f.mailbox.connect(budget()), /reported failure: connect\/other\/1/);
+    await assert.rejects(f.mailbox.connect(budget()), /mailbox closed/);
+  } finally { f.cleanup(); }
+});
+
 test('coded native setup and video rejection errors retire the uncertain mailbox without secrets', async () => {
   for (const operation of ['prepare', 'video'] as const) {
     const f = fixture();

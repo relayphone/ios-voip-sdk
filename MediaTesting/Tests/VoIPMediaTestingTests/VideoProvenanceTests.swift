@@ -157,11 +157,19 @@ extension VideoProvenanceTests {
   @Test func remoteObservationRejectsCallbackOverflowAndInFlightDecoding() {
     let recorder = VideoCalibration(observationClock: MediaObservationClock())
     recorder.receiveDecoded {
-      #expect(recorder.observation().overflow)
+      let inFlight = recorder.observation()
+      #expect(inFlight.overflow)
+      #expect(inFlight.pendingDecodes == 1)
       return .decode(luma: [], width: 1, height: 1, stride: 0)
     }
+    let complete = recorder.observation()
+    #expect(complete.arrivals.count == 1)
+    #expect(!complete.overflow)
+    #expect(complete.pendingDecodes == 0)
     for _ in 0..<4096 { recorder.receive(luma: [], width: 1, height: 1, stride: 0) }
-    #expect(recorder.observation().arrivals.count == 4096)
-    #expect(recorder.observation().overflow)
+    let overflow = recorder.observation()
+    #expect(overflow.arrivals.count == 4096)
+    #expect(overflow.overflow)
+    #expect(overflow.pendingDecodes == 0)
   }
 }

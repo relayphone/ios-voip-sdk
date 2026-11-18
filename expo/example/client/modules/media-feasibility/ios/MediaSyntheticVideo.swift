@@ -161,6 +161,21 @@
       }
     }
     func snapshot() async -> Snapshot {
+      let clock = ContinuousClock()
+      let deadline = clock.now + .milliseconds(100)
+      while true {
+        let snapshot = await snapshotOnce()
+        if clock.now >= deadline
+          || !snapshot.receivers.contains(where: { $0.observation.pendingDecodes > 0 })
+        {
+          return snapshot
+        }
+        do {
+          try await clock.sleep(until: min(deadline, clock.now + .milliseconds(2)))
+        } catch { return snapshot }
+      }
+    }
+    private func snapshotOnce() async -> Snapshot {
       var epochs = completed
       if let source, let anchor {
         let ledger = await source.snapshot()

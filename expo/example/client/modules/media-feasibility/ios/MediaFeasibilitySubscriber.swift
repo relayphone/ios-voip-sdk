@@ -649,10 +649,22 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let party = Party(handle: try Handle(kind: .generic, value: "media-peer"))
       _ = await client.report(
         IncomingCall(id: callID, parties: [party], hasVideo: fixture.initialVideo ?? false))
-      try await client.request(.answer(callID))
-      try await until {
-        self.active && client.isAudioActive && self.room.connectionState == .connected
-          && client.calls.first(where: { $0.id == callID })?.status == .connected
+      do {
+        try await client.request(.answer(callID))
+        let deadline = ContinuousClock.now + .seconds(10)
+        try await until(deadline: deadline) {
+          self.active && client.isAudioActive && self.room.connectionState == .connected
+            && client.calls.first(where: { $0.id == callID })?.status == .connecting
+        }
+        // The fixture supplies the server connection event once the actual Room is ready.
+        await client.receive(.connected, for: callID, eventID: EventID(rawValue: UUID().uuidString))
+        try await until(deadline: deadline) {
+          self.active && client.isAudioActive && self.room.connectionState == .connected
+            && client.calls.first(where: { $0.id == callID })?.status == .connected
+        }
+      } catch {
+        recordJourneyFailure(error, operation: .connect)
+        throw error
       }
       if let call = client.calls.first(where: { $0.id == callID }) {
         videoHistory.record(
@@ -766,13 +778,16 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       throw MediaAudioProbe.Failure.incompleteWindow(.output)
     }
 
-    private func until(_ condition: () -> Bool) async throws {
+    private func until(
+      deadline: ContinuousClock.Instant = ContinuousClock.now + .seconds(10),
+      _ condition: () -> Bool
+    ) async throws {
       let clock = ContinuousClock()
-      let deadline = ContinuousClock().now + .seconds(10)
-      while !condition() {
-        if clock.now >= deadline { throw MediaAudioProbe.Failure.noFrames(.output) }
-        try await clock.sleep(for: .milliseconds(20))
+      while clock.now < deadline {
+        if condition() { return }
+        try await clock.sleep(until: min(deadline, clock.now + .milliseconds(20)))
       }
+      throw MediaAudioProbe.Failure.noFrames(.output)
     }
     private func control(_ phase: String) async throws {
       let url = URL(string: fixture.control + "/" + phase)!

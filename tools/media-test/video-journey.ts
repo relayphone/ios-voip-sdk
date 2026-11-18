@@ -10,7 +10,7 @@ import { command, deadline } from './fixture-runtime.ts';
 import { startHarness, type MediaHarness } from './harness.ts';
 import { prepareNativeJourney, type NativeJourneyBudget } from './native-journey.ts';
 import { sampleNativeVideoClock } from './native-synthetic-video.ts';
-import type { NativeVideoEvent } from './native-video-evidence.ts';
+import { NativeJourneyFailure, type NativeVideoEvent } from './native-video-evidence.ts';
 import { assertNativeTeardown } from './result-receipt.ts';
 import { observeSilence } from './silence-window.ts';
 import { diagnoseNativeStartup } from './startup-diagnostics.ts';
@@ -326,7 +326,10 @@ try {
   if (fixtureFile) {
     try {
       const checkpoint: unknown = JSON.parse(readFileSync(join(dirname(fixtureFile), 'media-journey-failure.json'), 'utf8'));
-      report.checkpoints.push({ phase: 'native-failure', evidence: diagnoseNativeStartup(checkpoint) });
+      const code = error instanceof NativeJourneyFailure
+        ? { operation: error.operation, category: error.category, code: error.code }
+        : undefined;
+      report.checkpoints.push({ phase: 'native-failure', evidence: { ...diagnoseNativeStartup(checkpoint), failure: code } });
     } catch { /* A failure before the app launches has no native checkpoint. */ }
   }
 } finally {

@@ -39,7 +39,7 @@ export function readNativeVideoEvidence(reply: NativeJourneyReply): NativeVideoE
   return Object.freeze({ clockId: reply.clockId, observedAtMs, hasVideo, onHold, connected: video.connected, events: Object.freeze(events) });
 }
 
-type Operation = 'prepare' | 'video' | 'command';
+type Operation = 'prepare' | 'connect' | 'video' | 'command';
 type Category = 'livekit' | 'url' | 'osStatus' | 'posix' | 'cocoa' | 'other';
 export class NativeJourneyFailure extends Error {
   readonly operation: Operation; readonly category: Category; readonly code: number;
@@ -52,7 +52,7 @@ export class NativeJourneyFailure extends Error {
 export function nativeJourneyFailure(value: unknown, context: 'command' | 'attempt'): Error {
   if (value === undefined) return Error(`Native journey ${context === 'command' ? 'command rejected' : 'reported failure'}`);
   const row = object(value);
-  if (typeof row.operation !== 'string' || !['prepare', 'video', 'command'].includes(row.operation) ||
+  if (typeof row.operation !== 'string' || !['prepare', 'connect', 'video', 'command'].includes(row.operation) ||
       typeof row.category !== 'string' || !['livekit', 'url', 'osStatus', 'posix', 'cocoa', 'other'].includes(row.category) ||
       typeof row.code !== 'number' || !Number.isSafeInteger(row.code)) throw Error('Invalid native failure code');
   return new NativeJourneyFailure(row.operation as Operation, row.category as Category, row.code, context);
