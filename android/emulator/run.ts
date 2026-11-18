@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { closeSync, existsSync, openSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, openSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -39,6 +39,7 @@ const adb = (args: string[], timeout = 5_000) => execFileSync(
 ).trim();
 
 function startEmulator(output: string, attempt: number): Emulator {
+  const started = performance.now();
   const log = openSync(join(output, `emulator-${attempt}.log`), 'w');
   const child = spawn(join(process.env.ANDROID_HOME!, 'emulator', 'emulator'), [
     '-avd', 'telecom', '-port', '5554', '-no-window', '-no-snapshot', '-no-audio', '-no-boot-anim',
@@ -54,30 +55,46 @@ function startEmulator(output: string, attempt: number): Emulator {
     resolve();
   }));
 
+  async function waitForBoot(): Promise<void> {
+    const deadline = performance.now() + 180_000;
+    while (performance.now() < deadline) {
+      if (launchError) throw launchError;
+      if (exited) throw new Error(`Emulator exited with ${child.exitCode ?? child.signalCode}`);
+      try {
+        if (adb(['shell', 'getprop', 'sys.boot_completed']) === '1') return;
+      } catch {
+        // ADB can be offline while Android starts.
+      }
+      await delay(2_000);
+    }
+    throw new Error('Android did not finish booting within 180 seconds');
+  }
+
   return {
     async warm() {
-      const deadline = performance.now() + 180_000;
-      let booted = false;
-      while (performance.now() < deadline) {
-        if (launchError) throw launchError;
-        if (exited) throw new Error(`Emulator exited with ${child.exitCode ?? child.signalCode}`);
-        try {
-          booted = adb(['shell', 'getprop', 'sys.boot_completed']) === '1';
-        } catch {
-          // ADB can be offline while Android starts.
+      let bootedAt: number | undefined;
+      let ready = false;
+      try {
+        await waitForBoot();
+        bootedAt = performance.now();
+        adb(['shell', 'input', 'keyevent', 'KEYCODE_WAKEUP']);
+        adb(['shell', 'wm', 'dismiss-keyguard']);
+        const home = adb(['shell', 'am', 'start', '-W', '-a', 'android.intent.action.MAIN',
+          '-c', 'android.intent.category.HOME'], 20_000);
+        if (!/^Status: ok$/m.test(home)) throw new Error(`Launcher did not start: ${home}`);
+        if (adb(['shell', 'service', 'check', 'telecom']) !== 'Service telecom: found') {
+          throw new Error('Telecom service is unavailable');
         }
-        if (booted) break;
-        await delay(2_000);
-      }
-      if (!booted) throw new Error('Android did not finish booting within 180 seconds');
-
-      adb(['shell', 'input', 'keyevent', 'KEYCODE_WAKEUP']);
-      adb(['shell', 'wm', 'dismiss-keyguard']);
-      const home = adb(['shell', 'am', 'start', '-W', '-a', 'android.intent.action.MAIN',
-        '-c', 'android.intent.category.HOME'], 20_000);
-      if (!/^Status: ok$/m.test(home)) throw new Error(`Launcher did not start: ${home}`);
-      if (adb(['shell', 'service', 'check', 'telecom']) !== 'Service telecom: found') {
-        throw new Error('Telecom service is unavailable');
+        ready = true;
+      } finally {
+        const summary = process.env.GITHUB_STEP_SUMMARY;
+        if (summary) {
+          const finishedAt = performance.now();
+          const seconds = (milliseconds: number) => `${(milliseconds / 1_000).toFixed(1)} s`;
+          const boot = `${seconds((bootedAt ?? finishedAt) - started)} (${bootedAt === undefined ? 'failed' : 'passed'})`;
+          const telecom = bootedAt === undefined ? 'Skipped' : `${seconds(finishedAt - bootedAt)} (${ready ? 'passed' : 'failed'})`;
+          appendFileSync(summary, `\n### Emulator attempt ${attempt}\n\n| Phase | Duration and result |\n| --- | --- |\n| Android boot | ${boot} |\n| Telecom readiness | ${telecom} |\n`);
+        }
       }
     },
     async stop() {
