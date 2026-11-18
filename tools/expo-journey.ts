@@ -9,7 +9,7 @@ import { captureTail, simulatorDiagnostics } from './inspector-resources.ts';
 import { launchToleratingASlowSimulator } from './runtime-smoke.ts';
 import { assertExpoJournal, assertJavaScriptResults } from './expo-journey-results.ts';
 import { JourneySetupTrace } from './expo-journey-setup.ts';
-import { collectInstallLog, compareMinimalInstall, saveInstallBundleInventory } from './expo-install-profile.ts';
+import { collectInstallLog, compareMinimalInstall, prepareMinimalInstall, saveInstallBundleInventory } from './expo-install-profile.ts';
 import { journeyIDs, type JourneyStage } from '../expo/example/client/journeys/results.ts';
 
 const bundle = 'com.example.voipconversations';
@@ -141,6 +141,7 @@ export async function expoJourney(work: string, app: string): Promise<void> {
   summary(`Target simulator: ${deviceType.name} (${deviceType.identifier}); one simulator per attempt`);
   let bootstatusRetried = false;
   const compareInstalls = process.env.EXPO_INSTALL_COMPARISON === 'true';
+  const minimalApp = compareInstalls ? prepareMinimalInstall(work) : undefined;
   await withInfrastructureRetry(async attempt => {
     const name = `expo-journey-${process.env.GITHUB_RUN_ID ?? process.pid}-${process.env.GITHUB_RUN_ATTEMPT ?? 1}-${attempt}`;
     const prefix = join(results, `attempt-${attempt + 1}`);
@@ -211,7 +212,7 @@ export async function expoJourney(work: string, app: string): Promise<void> {
       assertExpoJournal(journal, runID);
       check = 'late-handler';
       await lateHandlerJourneys(work, simulator, container, prefix, runID, evidence => launchBundledExample(simulator, evidence));
-      if (compareInstalls) compareMinimalInstall(work, app, simulator, prefix);
+      if (minimalApp) compareMinimalInstall(minimalApp, app, simulator, prefix);
     } catch (error) {
       if (error instanceof InfrastructureFailure && target && (error.step === 'install' || error.step === 'container')) {
         setup.captureInstallFailure(target);

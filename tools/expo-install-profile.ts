@@ -43,17 +43,21 @@ export function saveInstallBundleInventory(app: string, work: string): void {
   }
 }
 
-function observeCommand(command: string, args: string[], seconds: number, execute: typeof run) {
+function observeOperation(operation: () => string) {
   const startedAt = new Date().toISOString();
   const start = performance.now();
   try {
-    const output = execute(command, args, { timeout: seconds });
+    const output = operation();
     return { startedAt, elapsedMS: Math.round(performance.now() - start), outcome: 'succeeded' as const, output };
   } catch (error) {
     const diagnostic = error instanceof CommandFailure && error.stderrTail ? error.stderrTail : String(error);
     return { startedAt, elapsedMS: Math.round(performance.now() - start), outcome: 'failed' as const,
       output: diagnostic.slice(-4096) };
   }
+}
+
+function observeCommand(command: string, args: string[], seconds: number, execute: typeof run) {
+  return observeOperation(() => execute(command, args, { timeout: seconds }));
 }
 
 /** Collects installer evidence after the measured commands and before simulator cleanup. */
@@ -71,19 +75,34 @@ export function collectInstallLog(setup: JourneySetupTrace, prefix: string, exec
   }
 }
 
+const probeIdentifier = 'com.example.voip.install-probe';
+
+/** Builds the diagnostic app before simulator boot so compilation cannot compete with the device. */
+export function prepareMinimalInstall(work: string, execute: typeof run = run): string | undefined {
+  const minimalApp = join(work, 'build', 'InstallProbe.app');
+  const build = observeOperation(() => {
+    buildSimulatorApp({
+      bundle: minimalApp, executable: 'InstallProbe', identifier: probeIdentifier, displayName: 'Install Probe', minimumOS: '26.0',
+      sources: [join(repository, 'tools', 'SimulatorInstallProbe.swift')],
+    }, (command, args, options) => execute(command, args, { ...options, timeout: 120 }));
+    return '';
+  });
+  try {
+    writeFileSync(join(work, 'results', 'install-probe-build.json'), JSON.stringify(build, null, 2) + '\n');
+  } catch (error) {
+    console.warn(`warning: could not save minimal simulator app build: ${String(error)}`);
+  }
+  if (build.outcome === 'succeeded') return minimalApp;
+  console.warn(`warning: could not prepare minimal simulator app: ${build.output}`);
+}
+
 /** Runs a serial warm-simulator control after the full app's journey has completed. */
-export function compareMinimalInstall(work: string, fullApp: string, simulator: string, prefix: string,
+export function compareMinimalInstall(minimalApp: string, fullApp: string, simulator: string, prefix: string,
   execute: typeof run = run): void {
   try {
-    const identifier = 'com.example.voip.install-probe';
-    const minimalApp = join(work, 'InstallProbe.app');
-    buildSimulatorApp({
-      bundle: minimalApp, executable: 'InstallProbe', identifier, displayName: 'Install Probe', minimumOS: '26.0',
-      sources: [join(repository, 'tools', 'SimulatorInstallProbe.swift')],
-    }, (command, args, options) => execute(command, args, { timeout: 60, ...options }));
     const install = observeCommand('xcrun', ['simctl', 'install', simulator, minimalApp], 180, execute);
     const container = install.outcome === 'succeeded'
-      ? observeCommand('xcrun', ['simctl', 'get_app_container', simulator, identifier, 'data'], 120, execute) : undefined;
+      ? observeCommand('xcrun', ['simctl', 'get_app_container', simulator, probeIdentifier, 'data'], 120, execute) : undefined;
     // Host verification can identify signed payload and work to read it. Installer logs are separate evidence.
     const verify = (app: string) =>
       observeCommand('/usr/bin/codesign', ['--verify', '--deep', '--strict', '--verbose=2', app], 60, execute);

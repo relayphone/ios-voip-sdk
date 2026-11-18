@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { CommandFailure } from './command.ts';
-import { collectInstallLog, compareMinimalInstall, installBundleInventory } from './expo-install-profile.ts';
+import { collectInstallLog, compareMinimalInstall, installBundleInventory, prepareMinimalInstall } from './expo-install-profile.ts';
 import { JourneySetupTrace } from './expo-journey-setup.ts';
 
 function fixture(t: TestContext): string {
@@ -28,14 +28,24 @@ test('counts installed files and bytes without traversing links', t => {
 
 test('the control installs and locates its container before checking signatures', t => {
   const work = fixture(t);
+  mkdirSync(join(work, 'build'));
+  mkdirSync(join(work, 'results'));
   const comparison = join(work, 'attempt-1');
   const calls: { phase: string; timeout?: number }[] = [];
-  compareMinimalInstall(work, join(work, 'Example.app'), 'owned', comparison, (_command, args, options) => {
+  const minimalApp = prepareMinimalInstall(work, (_command, args, options) => {
+    assert.equal(options?.timeout, 120);
+    assert.notEqual(args[0], 'simctl');
     if (args.includes('--show-sdk-path')) return '/sdk';
     if (args.includes('swiftc')) {
       writeFileSync(args.at(-1)!, 'binary');
       return '';
     }
+    return '';
+  });
+  assert.ok(minimalApp);
+  const preparation = JSON.parse(readFileSync(join(work, 'results', 'install-probe-build.json'), 'utf8'));
+  assert.equal(preparation.outcome, 'succeeded');
+  compareMinimalInstall(minimalApp, join(work, 'Example.app'), 'owned', comparison, (_command, args, options) => {
     if (args.includes('--verify')) calls.push({ phase: 'verify', timeout: options?.timeout });
     if (args[0] === 'simctl') {
       assert.equal(args[2], 'owned');
@@ -49,6 +59,21 @@ test('the control installs and locates its container before checking signatures'
   assert.equal(receipt.minimal.install.outcome, 'succeeded');
   assert.equal(receipt.minimal.container.outcome, 'succeeded');
   assert.equal(receipt.minimal.bundle.files, 2);
+});
+
+test('a timed-out compile leaves a preparation diagnostic and no app to install', t => {
+  const work = fixture(t);
+  mkdirSync(join(work, 'build'));
+  mkdirSync(join(work, 'results'));
+  t.mock.method(console, 'warn', () => {});
+  const minimalApp = prepareMinimalInstall(work, (_command, args) => {
+    if (args.includes('--show-sdk-path')) return '/sdk';
+    throw new CommandFailure('swiftc ETIMEDOUT', 120_000, '');
+  });
+  assert.equal(minimalApp, undefined);
+  const receipt = JSON.parse(readFileSync(join(work, 'results', 'install-probe-build.json'), 'utf8'));
+  assert.equal(receipt.outcome, 'failed');
+  assert.match(receipt.output, /swiftc ETIMEDOUT/);
 });
 
 test('installer logs are queried only for a recorded install window', t => {
