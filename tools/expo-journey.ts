@@ -9,7 +9,7 @@ import { captureTail, simulatorDiagnostics } from './inspector-resources.ts';
 import { launchToleratingASlowSimulator } from './runtime-smoke.ts';
 import { assertExpoJournal, assertJavaScriptResults } from './expo-journey-results.ts';
 import { buildBundledExample } from './expo-journey-build.ts';
-import { buildInstallProbe, JourneySetupTrace, waitForJourneyBoot, warmSimulatorInstaller } from './expo-journey-setup.ts';
+import { JourneySetupTrace, waitForJourneyBoot } from './expo-journey-setup.ts';
 import { journeyIDs, type JourneyStage } from '../expo/example/client/journeys/results.ts';
 
 const bundle = 'com.example.voipconversations';
@@ -139,9 +139,6 @@ export async function expoJourney(work: string, app: string, example?: string): 
   mkdirSync(results, { recursive: true }); mkdirSync(markers, { recursive: true });
   const deviceType = infrastructure('device-selection', simulatorDevice);
   summary(`Target simulator: ${deviceType.name} (${deviceType.identifier}); one simulator per attempt`);
-  let probe: string;
-  try { probe = buildInstallProbe(work); }
-  catch (error) { summary('product:build failed'); throw error; }
   let bootstatusRetried = false;
   let build: Promise<void> | undefined;
   await withInfrastructureRetry(async attempt => {
@@ -163,8 +160,7 @@ export async function expoJourney(work: string, app: string, example?: string): 
         try { waitForJourneyBoot(simulator, setup); }
         catch (error) { bootstatusRetried = true; throw error; }
       });
-      infrastructure('installer-warmup', () => warmSimulatorInstaller(simulator, probe, setup));
-      // Complete the initial boot and probe before Xcode starts competing for CPU.
+      // Leave the booted simulator idle while Xcode builds the example.
       if (example) {
         check = 'build';
         await (build ??= buildBundledExample(work, example, app));
@@ -219,8 +215,7 @@ export async function expoJourney(work: string, app: string, example?: string): 
       check = 'late-handler';
       await lateHandlerJourneys(work, simulator, container, prefix, runID, evidence => launchBundledExample(simulator, evidence));
     } catch (error) {
-      if (error instanceof InfrastructureFailure && target &&
-          (error.step === 'installer-warmup' || error.step === 'install' || error.step === 'container')) {
+      if (error instanceof InfrastructureFailure && target && (error.step === 'install' || error.step === 'container')) {
         setup.captureInstallFailure(target);
       }
       if (check === 'setup' || check === 'build') setup.save(prefix);

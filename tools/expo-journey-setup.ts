@@ -1,17 +1,13 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { CommandFailure, repository, run } from './command.ts';
-import { buildSimulatorApp } from './simulator-app.ts';
+import { writeFileSync } from 'node:fs';
+import { CommandFailure, run } from './command.ts';
 
-type Phase = 'create' | 'bootstatus' | 'probe-install' | 'probe-uninstall' | 'install' | 'container'
+type Phase = 'create' | 'bootstatus' | 'install' | 'container'
   | 'host-processes' | 'simulator-services' | 'host-install-log';
 
 type Observation = { phase: Phase; startedAt: string; elapsedMS: number } & (
   { outcome: 'succeeded'; stdout?: string; lastMigrationElapsedMS?: number } |
   { outcome: 'failed'; error: string; stderrTail?: string }
 );
-
-const probeIdentifier = 'com.example.voip.install-probe';
 
 /** Returns the last migration elapsed time reported by simctl, if a sample was observed. */
 function lastReportedMigrationElapsed(output: string): number | undefined {
@@ -26,25 +22,7 @@ export function waitForJourneyBoot(simulator: string, setup: JourneySetupTrace, 
     { timeout: 300 }), output => output);
 }
 
-/** Builds a tiny signed simulator app separate from the example's build products. */
-export function buildInstallProbe(work: string, execute: typeof run = run): string {
-  const parent = join(work, 'install-probe');
-  mkdirSync(parent, { recursive: true });
-  const bundle = join(mkdtempSync(join(parent, 'build-')), 'SimulatorInstallProbe.app');
-  buildSimulatorApp({ bundle, executable: 'SimulatorInstallProbe', identifier: probeIdentifier,
-    displayName: 'Simulator Install Probe', minimumOS: '26.0', sources: [join(repository, 'tools/SimulatorInstallProbe.swift')],
-  }, (command, args, options) => execute(command, args, { ...options, timeout: 120 }));
-  return bundle;
-}
-
-/** Finishes the throwaway install before measuring the example's install. */
-export function warmSimulatorInstaller(simulator: string, probe: string, setup: JourneySetupTrace,
-  execute: typeof run = run): void {
-  setup.observe('probe-install', () => execute('xcrun', ['simctl', 'install', simulator, probe], { timeout: 180 }));
-  setup.observe('probe-uninstall', () => execute('xcrun', ['simctl', 'uninstall', simulator, probeIdentifier], { timeout: 120 }));
-}
-
-/** Records bounded setup commands, including the warm-up and the example install. */
+/** Records bounded simulator setup commands. */
 export class JourneySetupTrace {
   private readonly observations: Observation[] = [];
 
