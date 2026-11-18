@@ -566,7 +566,11 @@ and far-end audio evidence. When the system deactivates the last held call's aud
 native receipt records the SDK deactivation and a continuously observed stopped engine
 with no output callbacks. With an active engine, it requires the full output PCM silence
 window. Resume requires a new publication and fresh decoded video in
-both directions. Upgrade and downgrade assert the actual AVAudioSession mode and available
+both directions. When hold stopped the native audio engine, the fixture replaces the far-end
+audio publication after confirmed resume. It observes the old subscription retire before
+publishing its replacement and binds fresh audio to that replacement in the same Room.
+This clears queued playout before collecting the fresh audio marker.
+Upgrade and downgrade assert the actual AVAudioSession mode and available
 simulator output. The automatic receiver branch is exercised when the simulator reports a
 receiver. The existing route-policy tests cover explicit selections and external endpoints.
 

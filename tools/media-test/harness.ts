@@ -35,6 +35,10 @@ export async function startHarness(directory: string, fixtureId: string) {
       if (stopped) throw Error('Harness is stopped');
       return peer.openVideo(fixtureId, clockID);
     },
+    async renewAudioPublication(observeRetired: (retired: string) => Promise<void>) {
+      if (stopped) throw Error('Harness is stopped');
+      return peer.renewAudioPublication(observeRetired);
+    },
     async updateVideo(update: Omit<ServerVideoUpdate, 'fixtureId'>, budget: NativeJourneyBudget) {
       if (stopped) throw Error('Harness is stopped');
       await server.updateVideo({ ...update, fixtureId }, budget);

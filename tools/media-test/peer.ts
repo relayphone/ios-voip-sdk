@@ -116,8 +116,7 @@ export class MediaPeer {
         if (this.running) await delay(HOST_RECEIVER_STATS_POLL_MS);
       }
     })();
-    const options = new TrackPublishOptions(); options.source = TrackSource.SOURCE_MICROPHONE;
-    await deadline(15_000, 'Peer publish', () => this.room.localParticipant!.publishTrack(LocalAudioTrack.createAudioTrack('marker', this.source), options));
+    await deadline(15_000, 'Peer publish', () => this.publishAudio());
     this.publishing = (async () => {
       while (this.running) {
         const pcm = this.emission?.slice(this.cursor, this.cursor + 480) ?? new Int16Array(480);
@@ -130,6 +129,36 @@ export class MediaPeer {
   reconnect(): Promise<void> { return this.reconnectControl.run(); }
   /** Incomplete attempts survive errors; recovery still requires a fresh marker gate. */
   reconnectEvidence() { return this.reconnectControl.evidence(); }
+
+  private async publishAudio() {
+    const participant = this.room.localParticipant;
+    if (!participant) throw Error('Peer is unavailable');
+    const track = LocalAudioTrack.createAudioTrack('marker', this.source);
+    try {
+      const publication = await participant.publishTrack(track,
+        new TrackPublishOptions({ source: TrackSource.SOURCE_MICROPHONE }));
+      if (!publication.sid) throw Error('Missing peer audio publication identity');
+      return publication.sid;
+    } catch (error) { await track.close(false); throw error; }
+  }
+
+  /** Start a new receiver stream in the same Room while keeping the paced audio source. */
+  async renewAudioPublication(observeRetired: (retired: string) => Promise<void>) {
+    const participant = this.room.localParticipant;
+    const audio = [...(participant?.trackPublications.values() ?? [])]
+      .filter(publication => publication.track instanceof LocalAudioTrack);
+    const [previous] = audio;
+    if (!this.running || !participant || audio.length !== 1 || !previous?.sid ||
+      !(previous.track instanceof LocalAudioTrack)) throw Error('Peer audio publication is unavailable');
+    const { sid: retired, track } = previous;
+    await participant.unpublishTrack(retired, false);
+    await track.close(false);
+    await observeRetired(retired);
+    if (!this.running) throw Error('Peer is closed');
+    const publication = await this.publishAudio();
+    if (publication === retired) throw Error('Peer reused the retired audio publication');
+    return { retired, publication };
+  }
 
   publish(markerId: string): void {
     if (!this.status().connected || this.publicationFailed) throw Error('Peer is unavailable');

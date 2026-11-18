@@ -11,6 +11,7 @@ type AudioStage = { pcm?: PCMCapture; sampleRate: number; retainedSamples: numbe
   droppedCallbacks: number; lastCallbackAtMs?: number };
 export type JourneyAudio = {
   decoded: AudioStage; output: AudioStage; audioActive: boolean; audioEngineRunning: boolean;
+  remoteAudioPublication?: string;
   audioOutputAvailable: boolean;
   audioEngineStoppedAtMs?: number;
   heldOutputStartAtMs?: number;

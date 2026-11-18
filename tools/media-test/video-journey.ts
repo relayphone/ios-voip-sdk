@@ -62,7 +62,7 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
       event.source === source && event.atMs >= prior.sdk.observedAtMs, 'Unexpected confirmed SDK video event');
     return { event, sample: state };
   });
-  async function freshAudio(label: string) {
+  async function freshAudio(label: string, expectedDownlink?: string) {
     const phaseId = randomUUID(), downId = `${phaseId}:downlink`;
     phaseIds.push(phaseId, downId);
     const startedAtMs = performance.now();
@@ -71,6 +71,9 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     const phase = await request({ operation: 'beginPhase', phaseId });
     const capture = { host: harness.status(), native: readJourneyAudio(phase) };
     try {
+      if (expectedDownlink) {
+        assert.equal(capture.native.remoteAudioPublication, expectedDownlink, 'Resumed capture began on a different downlink');
+      }
       await until(`${label} duplex samples with RTP coverage`, async () => {
         capture.host = harness.status();
         if (!hasUplinkSamples(capture.host)) return;
@@ -79,9 +82,13 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
       });
       const pcm = readJourneyAudio(await request({ operation: 'audioSnapshot' }));
       assert.ok(hasDuplexSamples(pcm, harness.status()), 'Duplex capture lost coverage between snapshots');
+      if (expectedDownlink) {
+        assert.equal(pcm.remoteAudioPublication, expectedDownlink, 'Resumed PCM came from a different downlink');
+      }
       const capturedAtMs = performance.now();
       const markers = await assertDuplexAudio(pcm, harness, { up: createMarker(phaseId), down: createMarker(downId) });
-      keep(label, { phaseId, startedAtMs, capturedAtMs, analyzedAtMs: performance.now(), markers });
+      keep(label, { phaseId, remoteAudioPublication: pcm.remoteAudioPublication,
+        startedAtMs, capturedAtMs, analyzedAtMs: performance.now(), markers });
       for (const marker of Object.values(markers)) {
         assert.ok(marker.clean && marker.complete && marker.postRollObserved, `${label}: missing clean fresh audio`);
       }
@@ -191,6 +198,7 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
   let epoch = await startVideo(enabled, initialPeer, 1);
   let live = await freshVideo('first-video', epoch);
   let downgradedBoundary: Parameters<typeof assessJourneyVideo>[5];
+  let resumedAudioPublication: string | undefined;
   if (scenario === 'app-downgrade') {
     await request({ operation: 'video', enabled: true, source: 'app' });
     // At least one complete fixed rate window now falls entirely after the duplicate request.
@@ -254,10 +262,33 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     assert.equal(resume.sample.sdk.onHold, false);
     epoch = await startVideo(resume, next, 2);
     live = await freshVideo('resumed-video', epoch);
+    if (output.kind === 'engineStopped') {
+      // The stopped engine could not pull playout. Use a fresh receiver stream
+      // so NetEQ does not accelerate queued audio through the resume marker.
+      deadlineCheck();
+      const publication = await deadline(budget.deadlineMs - performance.now(), 'Renew resumed audio publication',
+        () => harness.renewAudioPublication(async retired => {
+          assert.equal(retired, finalAudio.remoteAudioPublication, 'Held downlink audio publication changed');
+          await until('retired downlink audio subscription', async () => {
+            const reply = await request({ operation: 'snapshot' });
+            if (readJourneyAudio(reply).remoteAudioPublication !== undefined) return;
+            keep('retired-audio-subscription', { retired, observedAtMs: reply.observedAtMs });
+            return true;
+          });
+        }));
+      await until('resumed downlink audio subscription', async () => {
+        const reply = await request({ operation: 'snapshot' });
+        const audio = readJourneyAudio(reply);
+        if (audio.remoteAudioPublication !== publication.publication || !audio.decoded.observation.installed) return;
+        keep('resumed-audio-subscription', { ...publication, observedAtMs: reply.observedAtMs });
+        return true;
+      });
+      resumedAudioPublication = publication.publication;
+    }
   }
 
   const videoAtEnd = scenario !== 'app-downgrade', remote = scenario === 'server-remote';
-  await freshAudio('before-end');
+  await freshAudio('before-end', resumedAudioPublication);
   const armed = await request({ operation: 'armTeardown' });
   if (videoAtEnd) live = await freshVideo('before-end-video', epoch);
   else live = await sample();

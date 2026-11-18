@@ -607,6 +607,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let teardown: MediaTeardownEvidence.Receipt?
       let released: Bool
       let audioActive: Bool
+      let remoteAudioPublication: String?
       let audioEngineRunning: Bool
       let audioOutputAvailable: Bool
       let audioEngineStoppedAtMs: Double?
@@ -626,6 +627,10 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       guard let session = journeySession else { return nil }
       let video = sdkVideoEvidence()
       let audioSession = AVAudioSession.sharedInstance()
+      let farEnd = room.remoteParticipants[Participant.Identity(from: "far-end")]
+      let remoteAudioPublication: String? = remoteTrack?.sid.flatMap { sid in
+        farEnd?.trackPublications[sid]?.isSubscribed == true ? sid.stringValue : nil
+      }
       let mode: JourneySnapshot.AudioMode =
         switch audioSession.mode {
         case .voiceChat: .voice
@@ -654,6 +659,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         droppedMonitorTicks: journeyTicksDropped, decoded: stage(.decoded), output: stage(.output),
         ended: journeyEnded, teardown: teardown.receipt(), released: released,
         audioActive: client?.isAudioActive ?? false,
+        remoteAudioPublication: remoteAudioPublication,
         audioEngineRunning: AudioManager.shared.isEngineRunning,
         audioOutputAvailable: AudioManager.shared.engineAvailability.isOutputAvailable,
         audioEngineStoppedAtMs: audioEngineStoppedAtMs, heldOutputStartAtMs: heldOutputStartAtMs,
