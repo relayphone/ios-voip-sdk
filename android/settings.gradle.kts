@@ -1,11 +1,11 @@
 pluginManagement {
-    repositories { gradlePluginPortal(); mavenCentral() }
+    repositories { google(); gradlePluginPortal(); mavenCentral() }
 }
 
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories { mavenCentral() }
+    repositories { google(); mavenCentral() }
 }
 
 rootProject.name = "voip-android"
-include(":core", ":runtime", ":testing")
+include(":core", ":runtime", ":system", ":testing")
