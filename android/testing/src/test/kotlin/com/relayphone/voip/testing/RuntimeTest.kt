@@ -349,8 +349,9 @@ class RuntimeTest {
             mediaRelease.await()
         }
 
-        override suspend fun startOutgoing(call: Call, request: Effect.NativeStart): Outcome<Unit, SystemFailure> =
-            Outcome.Failure(checkNotNull(startFailure) { "Unexpected Start" })
+        override suspend fun startOutgoing(
+            call: Call, request: Effect.NativeStart, admitted: () -> Unit,
+        ): Outcome<Unit, SystemFailure> = Outcome.Failure(checkNotNull(startFailure) { "Unexpected Start" })
         override suspend fun apply(request: Effect.Apply): Outcome<Unit, CallError> = error("Unexpected control")
         override suspend fun setActive(request: Effect.SetActive): Unit = error("Unexpected activation")
         override fun settle(result: Effect.SettleAction) {

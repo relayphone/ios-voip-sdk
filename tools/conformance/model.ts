@@ -73,7 +73,10 @@ export type Input = { readonly kind: 'process'; readonly running: boolean; reado
   | ({ readonly kind: 'action'; readonly origin: 'app' | 'system' } & (
       | { readonly action: Action; readonly deferConfirmation?: never }
       | { readonly action: Extract<Action, { readonly kind: 'hold' }>; readonly deferConfirmation: true }))
-  | { readonly kind: 'placed' | 'provideMedia' | 'admitted' | 'latePermit' | 'holdApplied'; readonly callID: WireID }
+  | { readonly kind: 'provideMedia' | 'admitted' | 'latePermit' | 'holdApplied'; readonly callID: WireID }
+  | { readonly kind: 'placed'; readonly callID: WireID; readonly deferStartAdmission?: true }
+  | { readonly kind: 'startAdmitted'; readonly callID: WireID; readonly stale?: true }
+  | { readonly kind: 'startFailed'; readonly callID: WireID; readonly failure: SystemFailure<'start'> }
   | { readonly kind: 'admissionFailed'; readonly callID: WireID; readonly failure: SystemFailure<'admission'> }
   | { readonly kind: 'bindRemote'; readonly callID: WireID; readonly remoteID: WireID }
   | { readonly kind: 'connected'; readonly callID: WireID; readonly eventID: WireID }
@@ -97,7 +100,7 @@ export type Expectation = { readonly kind: 'call'; readonly callID: WireID; read
 export type Journey = Readonly<{ version: 0; id: WireID; configuration: Configuration;
   steps: readonly ({ readonly kind: 'input'; readonly input: Input } | { readonly kind: 'expect'; readonly expectation: Expectation })[] }>;
 export type Trigger = 'incoming' | 'admitted' | 'start' | 'placed' | 'answer' | 'claimExpired' | 'authorityAllowed'
-  | 'admissionFailed' | 'startFailed' | 'systemFailure'
+  | 'admissionFailed' | 'startAdmitted' | 'startFailed' | 'systemSetupResult' | 'outgoingProgress' | 'terminalIntent'
   | 'mediaPrepared' | 'answerRefused' | 'reconciliationUnknown' | 'connected' | 'provideMedia' | 'bindRemote'
   | 'mediaReleased' | 'join' | 'transportLost' | 'transportRecovered' | 'deadlineExpired' | 'frameworkReset' | 'joinFailed' | 'mediaFailed'
   | 'noAnswerExpired' | 'hold' | 'mute' | 'video' | 'tones' | 'localEnd' | 'remoteEnd' | 'systemRemoved' | 'lateCompletion'
@@ -106,10 +109,11 @@ export type Guard = 'newCall' | 'newCallAndSlot' | 'joinEligible' | 'outgoingDef
   | 'currentAttempt' | 'authorizedAnswerPending' | 'authoritativeAndPrepared' | 'mediaNotReady' | 'bufferedConnected'
   | 'live' | 'aliasAvailable' | 'supported' | 'firstTerminalIntent' | 'previewPolicy' | 'mediaReleased' | 'always'
   | 'elsewhereRefusalPreview' | 'elsewhereRefusal' | 'notAllowedRefusal' | 'retainedEnd' | 'retainedEndPreview'
-  | 'hasLocalEndReceipt' | 'staleAttempt' | 'noToneTransport' | 'noRetainedEnd';
+  | 'hasLocalEndReceipt' | 'staleAttempt' | 'noToneTransport' | 'noRetainedEnd'
+  | 'startAdmissionPending' | 'bufferedStartProgress' | 'retiringStart';
 export type Effect = 'reserveIdentity' | 'reportIncoming' | 'publish' | 'requestPlacement' | 'nativeStart' | 'requestClaim'
   | 'reconcile' | 'prepareMedia' | 'settleAction' | 'rejectAction' | 'closeMedia' | 'requestRemoval' | 'setActive'
-  | 'armConnection' | 'bufferProgress' | 'bindAlias' | 'drainEvents' | 'applyHold' | 'applyMute' | 'applyVideo'
+  | 'armConnection' | 'bufferProgress' | 'applyBufferedProgress' | 'bindAlias' | 'drainEvents' | 'applyHold' | 'applyMute' | 'applyVideo'
   | 'returnOriginalEnd' | 'returnAlreadyEnded' | 'armReconnection' | 'restorePreview' | 'ignore'
   | 'trackAction' | 'sendTones' | 'retainEnd' | 'bufferEnd' | 'retainBufferedEnd' | 'emitObservation' | 'releasePermit';
 export type Transition = Readonly<{ id: WireID; from: readonly (State | 'absent')[]; input: Trigger;

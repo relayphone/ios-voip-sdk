@@ -26,8 +26,10 @@ public interface SystemPort {
         call: Call, request: Effect.ReportIncoming, admitted: () -> Unit,
     ): Outcome<Unit, SystemFailure>
 
-    /** Runs the outgoing session and settles Start on admission. Return a start failure if setup was rejected before admission. */
-    public suspend fun startOutgoing(call: Call, request: Effect.NativeStart): Outcome<Unit, SystemFailure>
+    /** Runs the outgoing session. Invoke [admitted] on entry. Return a start failure if setup was rejected before entry. */
+    public suspend fun startOutgoing(
+        call: Call, request: Effect.NativeStart, admitted: () -> Unit,
+    ): Outcome<Unit, SystemFailure>
 
     /** Reports observed platform removal or a typed failure. */
     public suspend fun remove(call: Call, request: Effect.RequestRemoval): Outcome<Unit, SystemFailure>

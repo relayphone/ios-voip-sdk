@@ -62,6 +62,15 @@ class ReducerTest {
             send(Input.Placed(placement))
             send(Input.StartFailed(placement, SystemFailure(Platform.ANDROID, SystemOperation.START)))
         }
+        for (admitted in listOf(true, false)) {
+            scenario().apply {
+                val placement = start()
+                send(Input.Placed(placement))
+                request(Action.End(id), "end-before-start")
+                if (admitted) send(Input.StartAdmitted(placement))
+                else send(Input.StartFailed(placement, SystemFailure(Platform.ANDROID, SystemOperation.START)))
+            }
+        }
         scenario().apply {
             val admission = report()
             val cleanup = request(Action.End(id), "end").only<Effect.CloseMedia>().attempt
@@ -99,8 +108,17 @@ class ReducerTest {
             val attempt = start()
             send(Input.Placed(attempt))
             send(connected)
+            send(Input.StartAdmitted(attempt))
             val media = send(Input.ProvideMedia(id)).only<Effect.PrepareMedia>().attempt
             send(Input.MediaPrepared(media))
+        }
+        for (admitted in listOf(true, false)) {
+            scenario().apply {
+                val attempt = start()
+                send(Input.Placed(attempt))
+                if (admitted) send(Input.StartAdmitted(attempt))
+                else at(state.configuration.budgets.outgoingNoAnswer, TimerKind.NO_ANSWER)
+            }
         }
         scenario(outgoing = OutgoingMedia.DURING_PLACEMENT).apply {
             val media = send(Input.Placed(start())).only<Effect.PrepareMedia>().attempt
@@ -265,9 +283,14 @@ class ReducerTest {
         assertEquals(Lifecycle.Dialing, scenario.call.lifecycle)
         scenario.send(Input.Connected(id, EventID("wrong-source"), ConnectionAuthority.NATIVE_MEDIA))
         assertEquals(Lifecycle.Dialing, scenario.call.lifecycle)
-        val active = scenario.send(Input.Connected(id, EventID("connected"), ConnectionAuthority.APPLICATION)).only<Effect.SetActive>()
+        assertTrue(scenario.send(Input.Connected(id, EventID("connected"), ConnectionAuthority.APPLICATION)).isEmpty())
+        assertEquals(Lifecycle.Dialing, scenario.call.lifecycle)
+        val admitted = scenario.send(Input.StartAdmitted(start.attempt))
+        assertEquals(Effect.SettleAction(id, startID), admitted.first())
+        val active = admitted.only<Effect.SetActive>()
         assertEquals(media.attempt, active.attempt)
         assertTrue(scenario.call.lifecycle is Lifecycle.Connected)
+        assertTrue(scenario.send(Input.StartAdmitted(start.attempt)).isEmpty())
     }
 
     @Test
@@ -486,6 +509,104 @@ class ReducerTest {
         }
     }
 
+    @Test
+    fun `buffered connection cannot advance the call before a Start rejection`() {
+        val scenario = Scenario()
+        val start = scenario.pendingStart()
+        assertTrue(scenario.send(Input.Connected(id, EventID("early"), ConnectionAuthority.APPLICATION)).isEmpty())
+        assertTrue(scenario.send(Input.ProvideMedia(id)).isEmpty())
+        assertEquals(Lifecycle.Dialing, scenario.call.lifecycle)
+        val failure = SystemFailure(Platform.ANDROID, SystemOperation.START, 42)
+        val error = CallError.SystemFailed(failure)
+        val effects = scenario.send(Input.StartFailed(start.attempt, failure))
+        assertEquals(Effect.RejectAction(id, start.actionID, error), effects.only<Effect.RejectAction>())
+        assertFalse(effects.any { it is Effect.SetActive || it is Effect.PrepareMedia || it is Effect.RequestRemoval })
+        assertEquals(Lifecycle.Ending(EndReason.Failed(error)), scenario.call.lifecycle)
+        assertEquals(setOf(id), scenario.state.systemRemovalNotApplicable)
+        assertTrue(scenario.send(Input.StartAdmitted(start.attempt)).isEmpty())
+    }
+
+    @Test
+    fun `End before Start admission settles both receipts and waits for the platform result`() {
+        for (local in listOf(true, false)) {
+            val scenario = Scenario()
+            val start = scenario.pendingStart()
+            val end = ActionID("end")
+            val reason = if (local) EndReason.LocalEnded else EndReason.RemoteEnded
+            val effects = scenario.send(if (local) Input.Request(Action.End(id), end)
+                else Input.RemoteEnd(EndTarget.Canonical(id), EventID("end"), reason))
+            assertEquals(
+                Effect.RejectAction(id, start.actionID, CallError.InvalidTransition(LifecycleKind.ENDING)),
+                effects.only<Effect.RejectAction>(),
+            )
+            val receipt = if (local) EndResult.Ended(EndReceipt(id, end, reason)) else EndResult.AlreadyEnded(reason)
+            assertEquals(receipt, scenario.send(Input.Request(Action.End(id), end)).only<Effect.CompleteEnd>().result)
+            assertFalse(effects.any { it is Effect.RequestRemoval })
+            scenario.send(Input.MediaReleased(effects.only<Effect.CloseMedia>().attempt))
+            assertEquals(reason, (scenario.call.lifecycle as Lifecycle.Ended).reason)
+            if (local) {
+                val failure = SystemFailure(Platform.ANDROID, SystemOperation.START)
+                assertTrue(scenario.send(Input.StartFailed(start.attempt, failure)).isEmpty())
+                assertEquals(setOf(id), scenario.state.systemRemovalNotApplicable)
+            } else {
+                val removal = scenario.send(Input.StartAdmitted(start.attempt)).single() as Effect.RequestRemoval
+                assertEquals(reason, removal.reason)
+                scenario.send(Input.SystemRemoved(removal.attempt))
+                assertEquals(setOf(id), scenario.state.systemRemoved)
+            }
+            assertEquals(reason, (scenario.call.lifecycle as Lifecycle.Ended).reason)
+        }
+    }
+
+    @Test
+    fun `buffered media and connection replay in receive order only for the admitted attempt`() {
+        for (mediaFirst in listOf(true, false)) {
+            val scenario = Scenario()
+            val start = scenario.pendingStart()
+            val progress = listOf(Input.ProvideMedia(id), Input.Connected(id, EventID("early"), ConnectionAuthority.APPLICATION))
+            (if (mediaFirst) progress else progress.reversed()).forEach {
+                assertTrue(scenario.send(it).isEmpty())
+            }
+            assertTrue(scenario.send(Input.StartAdmitted(start.attempt.copy(generation = 0))).isEmpty())
+            assertEquals(Lifecycle.Dialing, scenario.call.lifecycle)
+            val effects = scenario.send(Input.StartAdmitted(start.attempt))
+            val prepare = effects.only<Effect.PrepareMedia>()
+            val publish = effects.only<Effect.Publish>()
+            assertEquals(Effect.SettleAction(id, start.actionID), effects.first())
+            assertEquals(mediaFirst, effects.indexOf(prepare) < effects.indexOf(publish))
+            assertEquals(Lifecycle.Connecting, scenario.call.lifecycle)
+            scenario.send(Input.MediaPrepared(prepare.attempt)).only<Effect.SetActive>()
+            assertTrue(scenario.call.lifecycle is Lifecycle.Connected)
+        }
+    }
+
+    @Test
+    fun `unadmitted Start keeps the existing no-answer deadline after buffering progress`() {
+        val scenario = Scenario()
+        val start = scenario.pendingStart()
+        scenario.send(Input.Connected(id, EventID("early"), ConnectionAuthority.APPLICATION))
+        val effects = scenario.at(scenario.state.configuration.budgets.outgoingNoAnswer, TimerKind.NO_ANSWER)
+        assertEquals(start.actionID, effects.only<Effect.RejectAction>().actionID)
+        assertEquals(Lifecycle.Ending(EndReason.Unanswered), scenario.call.lifecycle)
+        assertEquals(EndReason.Unanswered, scenario.send(Input.StartAdmitted(start.attempt)).only<Effect.RequestRemoval>().reason)
+    }
+
+    @Test
+    fun `a setup result at the no-answer deadline cannot overtake expiration`() {
+        for (admitted in listOf(true, false)) {
+            val scenario = Scenario()
+            val start = scenario.pendingStart()
+            scenario.instant += scenario.state.configuration.budgets.outgoingNoAnswer
+            val effects = scenario.send(if (admitted) Input.StartAdmitted(start.attempt)
+                else Input.StartFailed(start.attempt, SystemFailure(Platform.ANDROID, SystemOperation.START)))
+            assertEquals(Lifecycle.Ending(EndReason.Unanswered), scenario.call.lifecycle)
+            assertEquals(Effect.RejectAction(id, start.actionID, CallError.InvalidTransition(LifecycleKind.ENDING)),
+                effects.only<Effect.RejectAction>())
+            assertEquals(admitted, effects.any { it is Effect.RequestRemoval })
+            assertEquals(!admitted, id in scenario.state.systemRemovalNotApplicable)
+        }
+    }
+
     private class Scenario(
         previews: Boolean = false, outgoing: OutgoingMedia = OutgoingMedia.WHEN_PROVIDED, budgets: Budgets = Budgets(),
         private val trace: (Rule) -> Unit = {},
@@ -494,6 +615,11 @@ class ReducerTest {
         var instant = Instant.fromEpochSeconds(0)
         private val timers = mutableMapOf<TimerKind, Effect.ArmTimer>()
         val call: Call get() = state.calls.getValue(id)
+
+        fun pendingStart(): Effect.NativeStart {
+            val placement = send(Input.Request(Action.Start(id, line, party), ActionID("start"))).only<Effect.RequestPlacement>()
+            return send(Input.Placed(placement.attempt)).only<Effect.NativeStart>()
+        }
 
         fun send(input: Input): List<Effect> {
             val transition = reduce(state, input, Now(monotonic = instant, utc = instant), trace)
