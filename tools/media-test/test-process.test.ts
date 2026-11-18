@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { test } from 'node:test';
 import { performance } from 'node:perf_hooks';
-import { runTestProcess } from './test-process.ts';
+import { confirmGroupsStopped, runTestProcess } from './test-process.ts';
 import { nativeTestPlan, nativeTestSucceeded } from './run-native-tests.ts';
 
 const banner = `console.log('SIMULATOR_TEST_PROCESS '+process.pid);`;
@@ -161,6 +163,54 @@ test('a live unkillable group is unclean and cannot keep the supervisor waiting'
   } finally {
     process.kill = original;
     if (pid) { try { original(-pid, 'SIGKILL'); } catch { /* Already reaped. */ } }
+  }
+});
+
+test('reaped process groups do not depend on a fresh process table scan', async () => {
+  const child = spawn(process.execPath, ['-e', ''], { detached: true, stdio: 'ignore' });
+  const [code] = await once(child, 'close');
+  assert.equal(code, 0);
+  assert.ok(child.pid);
+  const errors = new Set<string>();
+  const inspect = async () => { throw Object.assign(new Error('Inspection timed out'), { signal: 'SIGKILL' }); };
+  assert.equal(await confirmGroupsStopped([child.pid], errors, inspect), true);
+  assert.deepEqual([...errors], []);
+});
+
+test('an inspection failure still rejects an extant group', async () => {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
+  const closed = once(child, 'close');
+  await once(child, 'spawn');
+  assert.ok(child.pid);
+  const errors = new Set<string>();
+  const inspect = async () => { throw Object.assign(new Error('Inspection timed out'), { signal: 'SIGKILL' }); };
+  try {
+    assert.equal(await confirmGroupsStopped([child.pid], errors, inspect), false);
+    assert.deepEqual([...errors], ['processInspection:SIGKILL']);
+  } finally {
+    process.kill(-child.pid, 'SIGKILL');
+    await closed;
+  }
+});
+
+test('an inspection failure can be resolved by observing the group disappear', async () => {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
+  const closed = once(child, 'close');
+  await once(child, 'spawn');
+  const pid = child.pid;
+  assert.ok(pid);
+  const errors = new Set<string>();
+  const inspect = async () => {
+    process.kill(-pid, 'SIGKILL');
+    await closed;
+    throw Object.assign(new Error('Inspection timed out'), { signal: 'SIGKILL' });
+  };
+  try {
+    assert.equal(await confirmGroupsStopped([pid], errors, inspect), true);
+    assert.deepEqual([...errors], []);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) process.kill(-pid, 'SIGKILL');
+    await closed;
   }
 });
 

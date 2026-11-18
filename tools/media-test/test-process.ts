@@ -13,6 +13,8 @@ export interface TestProcessResult {
   log: string;
   stderr: string;
   elapsedMS: number;
+  /** Time through launcher exit and pipe handling, before final group cleanup. */
+  processElapsedMS: number;
   /** Time from host start to the native readiness marker, when requested and observed. */
   readyElapsedMS?: number;
   nativePID?: number;
@@ -25,16 +27,33 @@ export interface TestProcessReadiness {
   timeoutMS: number;
 }
 
-async function confirmGroupsStopped(groups: number[], cleanupErrors: Set<string>): Promise<boolean> {
+async function readProcessGroupStates(timeout: number): Promise<string> {
+  const { stdout } = await execute('/bin/ps', ['-axo', 'pgid=,stat='], {
+    timeout, killSignal: 'SIGKILL', maxBuffer: 256 * 1024,
+  });
+  return stdout;
+}
+
+function groupMayExist(group: number): boolean {
+  try {
+    process.kill(-group, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
+
+export async function confirmGroupsStopped(
+  groups: number[], cleanupErrors: Set<string>, inspect = readProcessGroupStates,
+): Promise<boolean> {
   const settleDeadline = performance.now() + 500;
   let inspectionTimeout = 1000;
   let observedLiveGroup = false;
   // A live process can still be handling SIGKILL when the launcher closes its pipes.
   do {
+    if (!groups.some(groupMayExist)) return true;
     try {
-      const { stdout } = await execute('/bin/ps', ['-axo', 'pgid=,stat='], {
-        timeout: inspectionTimeout, killSignal: 'SIGKILL', maxBuffer: 256 * 1024,
-      });
+      const stdout = await inspect(inspectionTimeout);
       const live = stdout.split('\n').some(line => {
         const [group, state] = line.trim().split(/\s+/);
         return groups.includes(Number(group)) && !state?.startsWith('Z');
@@ -42,6 +61,8 @@ async function confirmGroupsStopped(groups: number[], cleanupErrors: Set<string>
       if (!live) return true;
       observedLiveGroup = true;
     } catch (error) {
+      // A group can disappear while the process table scan is in flight.
+      if (!groups.some(groupMayExist)) return true;
       const failure = error as NodeJS.ErrnoException & { signal?: NodeJS.Signals };
       cleanupErrors.add(`processInspection:${failure.code ?? failure.signal ?? 'unknown'}`);
       break;
@@ -142,7 +163,11 @@ export async function runTestProcess(options: {
       process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt);
     };
   });
-  try { await completed; }
+  let processElapsedMS: number;
+  try {
+    await completed;
+    processElapsedMS = performance.now() - started;
+  }
   finally { cleanup(); stop(); }
   log += stdoutDecoder.end(); stderr += stderrDecoder.end();
   for (const secret of options.secrets ?? []) if (secret) {
@@ -150,6 +175,6 @@ export async function runTestProcess(options: {
   }
   const clean = nativePID !== undefined &&
     await confirmGroupsStopped([nativePID, ...(child.pid ? [child.pid] : [])], cleanupErrors);
-  return { code, signal, reason, log, stderr, elapsedMS: performance.now() - started, readyElapsedMS,
+  return { code, signal, reason, log, stderr, elapsedMS: performance.now() - started, processElapsedMS, readyElapsedMS,
     nativePID, clean, cleanupErrors: [...cleanupErrors] };
 }

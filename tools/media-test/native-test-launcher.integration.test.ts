@@ -19,7 +19,9 @@ test('native failure, a stalled test and the following test preserve process iso
         readiness: { line: marker, timeoutMS: 35_000 },
         only: 'VoIPMediaTestingTests.NativeLauncherControls' });
       const diagnostic = `mode=${mode}, reason=${result.reason}, nativePID=${result.nativePID === undefined ? 'absent' : 'present'}, ` +
-        `code=${result.code}, signal=${result.signal}, clean=${result.clean}, cleanupErrors=${result.cleanupErrors.join(',') || 'none'}`;
+        `code=${result.code}, signal=${result.signal}, clean=${result.clean}, cleanupErrors=${result.cleanupErrors.join(',') || 'none'}, ` +
+        `readyMS=${result.readyElapsedMS?.toFixed(0) ?? 'absent'}, processMS=${result.processElapsedMS.toFixed(0)}, ` +
+        `totalMS=${result.elapsedMS.toFixed(0)}`;
       assert.ok(result.readyElapsedMS !== undefined, `Control must actually reach native execution (${diagnostic})`);
       assert.equal(result.clean, true, diagnostic);
       assert.equal(result.success, mode === 'success', diagnostic);
