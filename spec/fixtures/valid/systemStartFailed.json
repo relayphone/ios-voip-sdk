@@ -1,0 +1,12 @@
+{
+  "version": 0,
+  "kind": "error",
+  "value": {
+    "kind": "systemFailed",
+    "cause": {
+      "platform": "android",
+      "kind": "start",
+      "code": 7
+    }
+  }
+}

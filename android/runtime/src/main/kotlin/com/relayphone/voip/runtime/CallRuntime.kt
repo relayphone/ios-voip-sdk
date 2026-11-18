@@ -104,12 +104,16 @@ public class CallRuntime private constructor(
             is Effect.ReportIncoming -> {
                 val call = projection(effect.attempt, previous)
                 launch(effect.attempt, WorkKind.SESSION) {
-                    system.reportIncoming(call, effect) { submit(Input.Admitted(effect.attempt)) }
+                    val result = system.reportIncoming(call, effect) { submit(Input.Admitted(effect.attempt)) }
+                    if (result is Outcome.Failure) submit(Input.AdmissionFailed(effect.attempt, result.error))
                 }
             }
             is Effect.NativeStart -> {
                 val call = projection(effect.attempt, previous)
-                launch(effect.attempt, WorkKind.SESSION) { system.startOutgoing(call, effect) }
+                launch(effect.attempt, WorkKind.SESSION) {
+                    val result = system.startOutgoing(call, effect)
+                    if (result is Outcome.Failure) submit(Input.StartFailed(effect.attempt, result.error))
+                }
             }
             is Effect.RequestPlacement -> {
                 val call = projection(effect.attempt, previous)

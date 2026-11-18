@@ -123,6 +123,17 @@ with a retained result goes directly to `ending`, or to
 restores its previous preview and releases only that attempt.
 Successful owned media release permits logical `ended` even if platform removal is still pending;
 later system removal updates independent cleanup evidence without rewriting terminal state.
+
+`admissionFailed(attempt, failure)` ends the matching reporting call with `failed(systemFailed(admission))`.
+If an end is still retained for that call, its reason wins. Close media and publish ending. System
+removal is not applicable because the platform never admitted the call. If the matching admission
+fails after a local End, retire the pending admission and preserve the original terminal reason.
+`startFailed(attempt, failure)` ends the matching placing or dialing call with
+`failed(systemFailed(start))`. Reject its pending Start action, if any, then close media and publish.
+Native Start rejection also leaves no platform session to remove. Both inputs retain the adapter's
+platform and typed diagnostic. The `stale-system-failure` rule groups both inputs under
+`systemFailure` when the attempt no longer owns the call. Only `frameworkReset` applies across calls.
+
 Effect names include engine-owned timer work before calling external ports: admission/native
 start arm no-answer, placement requests arm placement, and claim requests cancel no-answer and
 arm the shared Answer deadline. Preparation arms its bounded attempt; connection/reconnection

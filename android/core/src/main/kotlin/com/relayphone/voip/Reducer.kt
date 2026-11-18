@@ -27,6 +27,8 @@ private class Reduction(state: State, private val clocks: Now, private val trace
         when (input) {
             is Input.Incoming -> incoming(input)
             is Input.Admitted -> admitted(input)
+            is Input.AdmissionFailed -> admissionFailed(input)
+            is Input.StartFailed -> startFailed(input)
             is Input.Request -> request(input)
             is Input.Placed -> placed(input)
             is Input.AuthorityAllowed -> allowed(input)
@@ -143,6 +145,39 @@ private class Reduction(state: State, private val clocks: Now, private val trace
         }
     }
 
+    private fun admissionFailed(input: Input.AdmissionFailed) {
+        val record = records[input.attempt.callID]
+        if (record == null || record.admission != input.attempt) {
+            trace(Rule.STALE_SYSTEM_FAILURE)
+            return
+        }
+        val retired = record.copy(admission = null)
+        if (record.call.lifecycle != Lifecycle.Reporting) {
+            put(if (record.live) retired else retired.copy(removal = null, removalEvidence = RemovalEvidence.NOT_APPLICABLE))
+            return
+        }
+        trace(Rule.ADMISSION_FAILED)
+        val retained = record.retainedEnd?.takeIf { withinRetention(it.at) }?.end
+        val reason = retained?.reason ?: EndReason.Failed(CallError.SystemFailed(input.failure))
+        finish(retired.copy(removalEvidence = RemovalEvidence.NOT_APPLICABLE), reason, removeFromSystem = false)
+    }
+
+    private fun startFailed(input: Input.StartFailed) {
+        val record = records[input.attempt.callID]
+        val placing = record?.call?.lifecycle == Lifecycle.Placing && record.call.direction == Direction.OUTGOING &&
+            record.placement?.attempt == input.attempt
+        val dialing = record?.call?.lifecycle == Lifecycle.Dialing && record.nativeStart?.attempt == input.attempt
+        if (record == null || (!placing && !dialing)) {
+            trace(Rule.STALE_SYSTEM_FAILURE)
+            return
+        }
+        trace(Rule.START_FAILED)
+        val error = CallError.SystemFailed(input.failure)
+        record.nativeStart?.let { reject(record.call.id, it.actionID, error) }
+        finish(record.copy(removalEvidence = RemovalEvidence.NOT_APPLICABLE), EndReason.Failed(error), error,
+            removeFromSystem = false)
+    }
+
     private fun request(input: Input.Request) {
         val action = input.action
         val record = records[action.callID]
@@ -162,7 +197,7 @@ private class Reduction(state: State, private val clocks: Now, private val trace
                 val preview = record.call.lifecycle as? Lifecycle.Previewing
                     ?: return reject(input, CallError.InvalidTransition(record.call.lifecycle.kind))
                 if (!slotAvailable()) return reject(input, CallError.Refused(RefusalReason.NotAllowed))
-                placement(record.copy(previousPreview = preview.reason, removal = null, systemRemoved = false), input)
+                placement(record.copy(previousPreview = preview.reason, removal = null, removalEvidence = RemovalEvidence.UNCONFIRMED), input)
             }
             is Action.Answer -> answer(record, input)
             is Action.End -> end(record, input.id)
@@ -213,11 +248,12 @@ private class Reduction(state: State, private val clocks: Now, private val trace
 
     private fun nativeStart(record: Record) {
         val pending = requireNotNull(record.placement)
+        val nativeStart = Effect.NativeStart(pending.attempt, pending.id)
         val dialing = cancel(record, TimerKind.PLACEMENT).copy(
-            call = record.call.copy(lifecycle = Lifecycle.Dialing), placement = null,
+            call = record.call.copy(lifecycle = Lifecycle.Dialing), placement = null, nativeStart = nativeStart,
         )
         put(arm(dialing, TimerKind.NO_ANSWER, now + budgets.outgoingNoAnswer))
-        effects += Effect.NativeStart(pending.attempt, pending.id)
+        effects += nativeStart
         effects += Effect.Publish(dialing.call)
     }
 
@@ -564,7 +600,13 @@ private class Reduction(state: State, private val clocks: Now, private val trace
     private fun failAttempt(record: Record, error: CallError) =
         finish(record, EndReason.Failed(error), error, record.previousPreview)
 
-    private fun finish(record: Record, reason: EndReason, error: CallError? = null, preview: PreviewReason? = null) {
+    private fun finish(
+        record: Record,
+        reason: EndReason,
+        error: CallError? = null,
+        preview: PreviewReason? = null,
+        removeFromSystem: Boolean = true,
+    ) {
         val attempt = attempt(record.call.id)
         val rejection = error ?: CallError.InvalidTransition(LifecycleKind.ENDING)
         listOfNotNull(record.answer?.id, record.placement?.id).forEach {
@@ -578,14 +620,15 @@ private class Reduction(state: State, private val clocks: Now, private val trace
             releasePermit(permit, owner)
             PermitRelease(owner, permit)
         } ?: record.releasingPermit
-        val removing = requestRemoval(cancelled, attempt, reason)
+        val removing = if (removeFromSystem) requestRemoval(cancelled, attempt, reason) else cancelled
         val next = preview?.let { Lifecycle.Previewing(it) } ?: Lifecycle.Ending(reason)
         put(removing.copy(
             call = record.call.copy(lifecycle = next, media = record.call.media.copy(
                 audio = Audio.INACTIVE, transport = Transport.DISCONNECTED,
                 preparation = if (preview != null) Preparation.RELEASED else record.call.media.preparation,
             )),
-            answer = null, placement = null, permit = null, permitAttempt = null, mediaAttempt = null, controls = emptyList(),
+            answer = null, placement = null, nativeStart = null, permit = null,
+            permitAttempt = null, mediaAttempt = null, controls = emptyList(),
             cleanup = attempt, mediaReleases = record.mediaReleases + attempt, releasingPermit = releasing,
             retainedEnd = null, reconciliation = null, bufferedConnection = false,
             previousPreview = null, joinAttempt = null, terminalAt = if (preview == null) now else null,
@@ -595,7 +638,7 @@ private class Reduction(state: State, private val clocks: Now, private val trace
     private fun requestRemoval(record: Record, attempt: Attempt, reason: EndReason, current: Boolean = true): Record {
         effects += Effect.RequestRemoval(attempt, reason)
         val pending = record.copy(removals = record.removals + attempt)
-        return if (current) pending.copy(removal = attempt, systemRemoved = false) else pending
+        return if (current) pending.copy(removal = attempt, removalEvidence = RemovalEvidence.UNCONFIRMED) else pending
     }
 
     private fun removalCompleted(attempt: Attempt, removed: Boolean) = on(attempt) { record ->
@@ -607,7 +650,8 @@ private class Reduction(state: State, private val clocks: Now, private val trace
         }
         val publish = removed && !record.live
         if (publish) trace(Rule.REMOVED)
-        put(updated.copy(removal = null, systemRemoved = removed), publish = publish)
+        val evidence = if (removed) RemovalEvidence.REMOVED else RemovalEvidence.UNCONFIRMED
+        put(updated.copy(removal = null, removalEvidence = evidence), publish = publish)
     }
 
     private fun mediaReleased(attempt: Attempt) = on(attempt) { record ->

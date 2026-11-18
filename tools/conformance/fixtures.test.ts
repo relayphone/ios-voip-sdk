@@ -102,12 +102,12 @@ test('schema support is fail-closed even in unmatched union branches', () => {
 
 test('all reference journeys and the transition table decode without claiming execution', () => {
   const journeys = loadCatalog(root);
-  assert.equal(journeys.length, 14);
+  assert.equal(journeys.length, 15);
   assert.deepEqual(journeys.map(j => j.id).sort(), [
     'incoming-killed-answer', 'claim-timeout-reconcile', 'answer-refusal', 'answer-not-allowed',
     'answer-refusal-preview', 'outgoing-deferred-binding', 'no-answer-direction', 'local-server-end-race',
     'answered-elsewhere', 'cross-line-waiting', 'end-before-admission', 'late-answer-permit',
-    'end-after-server-end', 'hold-request-confirm',
+    'end-after-server-end', 'hold-request-confirm', 'admission-rejected-isolated',
   ].sort());
   const table: unknown = JSON.parse(readFileSync(new URL('transitions.json', root), 'utf8'));
   assert.ok(decodeTransitions(table).rules.length >= 26);
@@ -122,4 +122,12 @@ test('every declared reducer input has a transition rule', () => {
   const schema = JSON.parse(readFileSync(new URL('model.schema.json', root), 'utf8'));
   const rules = decodeTransitions(JSON.parse(readFileSync(new URL('transitions.json', root), 'utf8'))).rules;
   assert.deepEqual(new Set(rules.map(rule => rule.input)), new Set(schema.$defs.transition.properties.input.enum));
+});
+
+test('a journey admission failure requires an admission diagnostic', () => {
+  const journey = loadCatalog(root).find(journey => journey.id === 'admission-rejected-isolated')!;
+  const steps = journey.steps.map(step => step.kind === 'input' && step.input.kind === 'admissionFailed'
+    ? { ...step, input: { ...step.input, failure: { ...step.input.failure, kind: 'start' } } }
+    : step);
+  assert.throws(() => decodeJourney({ ...journey, steps }));
 });

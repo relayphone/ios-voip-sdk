@@ -9,6 +9,8 @@ export type State = 'reporting' | 'ringing' | 'previewing' | 'placing' | 'dialin
 export type Refusal = { readonly kind: 'answeredElsewhere' | 'declinedElsewhere' | 'notAllowed' };
 export type Stage = 'placement' | 'claim' | 'reconciliation' | 'mediaPreparation' | 'audioActivation'
   | 'connection' | 'reconnection' | 'systemAction' | 'noAnswer';
+export type SystemFailure<Kind = 'admission' | 'start' | 'action' | 'removal' | 'reset' | 'audio'> =
+  Readonly<{ platform: 'ios' | 'android'; kind: Kind; code?: number }>;
 export type CallError =
   | { readonly kind: 'unknownCall'; readonly callID: WireID }
   | { readonly kind: 'invalidTransition'; readonly state: State }
@@ -22,7 +24,7 @@ export type CallError =
   | { readonly kind: 'mediaFailed'; readonly stage: 'prepare' | 'activate' | 'release'; readonly cause: 'transport' | 'permission' | 'timeout' }
   | { readonly kind: 'remoteIdentityConflict'; readonly remoteID: WireID }
   | { readonly kind: 'invalidConfiguration'; readonly field: keyof Budgets }
-  | { readonly kind: 'systemFailed'; readonly cause: Readonly<{ platform: 'ios' | 'android'; kind: 'admission' | 'action' | 'removal' | 'reset' | 'audio'; code?: number }> }
+  | { readonly kind: 'systemFailed'; readonly cause: SystemFailure }
   | { readonly kind: 'bridgeUnavailable' };
 export type EndError = Exclude<CallError, { readonly kind: 'refused' }>
   | { readonly kind: 'refused'; readonly reason: { readonly kind: 'notAllowed' } };
@@ -72,6 +74,7 @@ export type Input = { readonly kind: 'process'; readonly running: boolean; reado
       | { readonly action: Action; readonly deferConfirmation?: never }
       | { readonly action: Extract<Action, { readonly kind: 'hold' }>; readonly deferConfirmation: true }))
   | { readonly kind: 'placed' | 'provideMedia' | 'admitted' | 'latePermit' | 'holdApplied'; readonly callID: WireID }
+  | { readonly kind: 'admissionFailed'; readonly callID: WireID; readonly failure: SystemFailure<'admission'> }
   | { readonly kind: 'bindRemote'; readonly callID: WireID; readonly remoteID: WireID }
   | { readonly kind: 'connected'; readonly callID: WireID; readonly eventID: WireID }
   | { readonly kind: 'remoteEnd'; readonly target: { readonly kind: 'call' | 'remote'; readonly id: WireID }; readonly eventID: WireID; readonly reason: RemoteEnd }
@@ -94,6 +97,7 @@ export type Expectation = { readonly kind: 'call'; readonly callID: WireID; read
 export type Journey = Readonly<{ version: 0; id: WireID; configuration: Configuration;
   steps: readonly ({ readonly kind: 'input'; readonly input: Input } | { readonly kind: 'expect'; readonly expectation: Expectation })[] }>;
 export type Trigger = 'incoming' | 'admitted' | 'start' | 'placed' | 'answer' | 'claimExpired' | 'authorityAllowed'
+  | 'admissionFailed' | 'startFailed' | 'systemFailure'
   | 'mediaPrepared' | 'answerRefused' | 'reconciliationUnknown' | 'connected' | 'provideMedia' | 'bindRemote'
   | 'mediaReleased' | 'join' | 'transportLost' | 'transportRecovered' | 'deadlineExpired' | 'frameworkReset' | 'joinFailed' | 'mediaFailed'
   | 'noAnswerExpired' | 'hold' | 'mute' | 'video' | 'tones' | 'localEnd' | 'remoteEnd' | 'systemRemoved' | 'lateCompletion'

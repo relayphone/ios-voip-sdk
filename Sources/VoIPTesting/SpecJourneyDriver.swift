@@ -99,6 +99,8 @@
           return "\(id.rawValue) has no pending system admission."
         }
         framework.completeReports(of: id.callID, with: .presented)
+      case .admissionFailed(let id, _):
+        return "The engine has no per-attempt system failure input for \(id.rawValue)."
       case .authority(let id, let claim, let reconciliation):
         authority.script(id.callID, claim: claim, reconciliation: reconciliation)
       case .latePermit(let id):

@@ -53,6 +53,17 @@ class ReducerTest {
         }
         scenario().apply {
             val admission = report()
+            val failure = SystemFailure(Platform.ANDROID, SystemOperation.ADMISSION)
+            assertTrue(send(Input.AdmissionFailed(admission.copy(generation = admission.generation + 1), failure)).isEmpty())
+            send(Input.AdmissionFailed(admission, failure))
+        }
+        scenario().apply {
+            val placement = start()
+            send(Input.Placed(placement))
+            send(Input.StartFailed(placement, SystemFailure(Platform.ANDROID, SystemOperation.START)))
+        }
+        scenario().apply {
+            val admission = report()
             val cleanup = request(Action.End(id), "end").only<Effect.CloseMedia>().attempt
             request(Action.End(id), "repeat-end")
             send(Input.MediaReleased(cleanup))
@@ -415,6 +426,63 @@ class ReducerTest {
             val reason = EndReason.Failed(CallError.SystemFailed(failure))
             assertEquals(Lifecycle.Ending(reason), scenario.call.lifecycle)
             assertEquals(reason, effects.only<Effect.RequestRemoval>().reason)
+        }
+    }
+
+    @Test
+    fun `admission rejection preserves the retained reason without removal or preview`() {
+        val scenario = Scenario(previews = true)
+        val report = scenario.send(Input.Incoming(id, EventID("invite"), line, party)).only<Effect.ReportIncoming>()
+        val reason = EndReason.AnsweredElsewhere
+        scenario.send(Input.RemoteEnd(EndTarget.Canonical(id), EventID("elsewhere"), reason))
+        val rejected = Input.AdmissionFailed(report.attempt, SystemFailure(Platform.ANDROID, SystemOperation.ADMISSION))
+        val effects = scenario.send(rejected)
+        assertEquals(listOf(Effect.CloseMedia::class, Effect.Publish::class), effects.map { it::class })
+        assertEquals(Lifecycle.Ending(reason), scenario.call.lifecycle)
+        assertEquals(setOf(id), scenario.state.systemRemovalNotApplicable)
+        assertTrue(scenario.send(rejected).isEmpty())
+        assertTrue(scenario.send(Input.Admitted(report.attempt)).isEmpty())
+    }
+
+    @Test
+    fun `rejection after local End releases the pending admission without changing the reason`() {
+        val retention = RetentionBudget(lifetime = 1.seconds, terminalRecords = 1)
+        val scenario = Scenario(budgets = Budgets().withRetention(retention))
+        val report = scenario.send(Input.Incoming(id, EventID("invite"), line, party)).only<Effect.ReportIncoming>()
+        val close = scenario.send(Input.Request(Action.End(id), ActionID("end"))).only<Effect.CloseMedia>()
+        scenario.send(Input.MediaReleased(close.attempt))
+        val ended = scenario.call.lifecycle
+        val rejection = Input.AdmissionFailed(report.attempt, SystemFailure(Platform.ANDROID, SystemOperation.ADMISSION))
+        assertTrue(scenario.send(rejection).isEmpty())
+        assertEquals(EndReason.LocalEnded, (ended as Lifecycle.Ended).reason)
+        assertEquals(ended, scenario.call.lifecycle)
+        assertEquals(setOf(id), scenario.state.systemRemovalNotApplicable)
+        assertTrue(scenario.send(Input.SystemRemoved(close.attempt)).isEmpty())
+        assertTrue(scenario.state.systemRemoved.isEmpty())
+        assertEquals(setOf(id), scenario.state.systemRemovalNotApplicable)
+        scenario.instant += retention.lifetime
+        scenario.send(rejection)
+        assertTrue(scenario.state.calls.isEmpty())
+    }
+
+    @Test
+    fun `start rejection rejects the matching action once while placing or dialing`() {
+        for (placed in listOf(false, true)) {
+            val scenario = Scenario()
+            val action = ActionID("start")
+            val attempt = scenario.send(Input.Request(Action.Start(id, line, party), action))
+                .only<Effect.RequestPlacement>().attempt
+            if (placed) scenario.send(Input.Placed(attempt))
+            val failure = SystemFailure(Platform.ANDROID, SystemOperation.START, nativeCode = 42)
+            val error = CallError.SystemFailed(failure)
+            assertTrue(scenario.send(Input.StartFailed(attempt.copy(generation = attempt.generation + 1), failure)).isEmpty())
+            val rejected = Input.StartFailed(attempt, failure)
+            val effects = scenario.send(rejected).filterNot { it is Effect.CancelTimer }
+            assertEquals(listOf(Effect.RejectAction::class, Effect.CloseMedia::class, Effect.Publish::class), effects.map { it::class })
+            assertEquals(Effect.RejectAction(id, action, error), effects.only<Effect.RejectAction>())
+            assertEquals(Lifecycle.Ending(EndReason.Failed(error)), scenario.call.lifecycle)
+            assertEquals(setOf(id), scenario.state.systemRemovalNotApplicable)
+            assertTrue(scenario.send(rejected).isEmpty())
         }
     }
 
