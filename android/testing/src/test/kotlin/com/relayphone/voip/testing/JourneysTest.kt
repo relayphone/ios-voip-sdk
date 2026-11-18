@@ -44,6 +44,7 @@ class JourneysTest {
 
     private companion object {
         val requiredJourneys = setOf(
+            "admission-rejected-isolated",
             "answer-not-allowed", "answer-refusal-preview", "answer-refusal", "answered-elsewhere",
             "claim-timeout-reconcile", "cross-line-waiting", "end-after-server-end",
             "end-before-admission", "hold-request-confirm", "incoming-killed-answer",

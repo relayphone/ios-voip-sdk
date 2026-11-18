@@ -58,6 +58,57 @@ class RuntimeTest {
     }
 
     @Test
+    fun `a report rejection ends only its call and leaves no platform removal work`() = runTest {
+        val ports = Ports()
+        val runtime = start(ports)
+        try {
+            runtime.invite(id)
+            runtime.invite(other)
+            runCurrent()
+            ports.admissions.getValue(other).invoke()
+            runCurrent()
+            val failure = SystemFailure(Platform.ANDROID, SystemOperation.ADMISSION, nativeCode = 37)
+            ports.sessions.getValue(id).complete(Outcome.Failure(failure))
+            advanceTimeBy(1)
+            runCurrent()
+
+            val reason = EndReason.Failed(CallError.SystemFailed(failure))
+            assertEquals(mapOf(id to Lifecycle.Ending(reason), other to Lifecycle.Ringing), runtime.lifecycles())
+            assertEquals(listOf("media"), ports.cleanup)
+            assertEquals(setOf(id), runtime.state.value.systemRemovalNotApplicable)
+            assertTrue(runtime.state.value.systemRemoved.isEmpty())
+            assertFalse(ports.sessions.getValue(other).isCompleted)
+
+            ports.mediaRelease.complete(Unit)
+            runCurrent()
+            assertEquals(reason, (runtime.lifecycles().getValue(id) as Lifecycle.Ended).reason)
+            assertEquals(Lifecycle.Ringing, runtime.lifecycles().getValue(other))
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
+    fun `native start rejection reaches the matching Start receipt`() = runTest {
+        val failure = SystemFailure(Platform.ANDROID, SystemOperation.START, nativeCode = 38)
+        val ports = Ports(startFailure = failure)
+        val runtime = start(ports)
+        try {
+            val action = ActionID("start")
+            check(runtime.submit(Input.Request(Action.Start(id, line, party), action)))
+            runCurrent()
+
+            val error = CallError.SystemFailed(failure)
+            assertEquals(listOf(Effect.RejectAction(id, action, error)), ports.rejections)
+            assertEquals(Lifecycle.Ending(EndReason.Failed(error)), runtime.lifecycles().getValue(id))
+            assertEquals(setOf(id), runtime.state.value.systemRemovalNotApplicable)
+            assertEquals(listOf("media"), ports.cleanup)
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
     fun `virtual timer starts ordered teardown and removal and release complete independently`() = runTest {
         listOf(true, false).forEach { mediaFirst ->
             val ports = Ports()
@@ -261,23 +312,27 @@ class RuntimeTest {
     private class Ports(
         override val answerDeadline: Duration = 5.seconds,
         private val answerPermit: AttemptID? = null,
+        private val startFailure: SystemFailure? = null,
     ) : SystemPort, AuthorityPort, MediaPort, PresentationPort {
         val admissions = mutableMapOf<CallID, () -> Unit>()
-        val sessions = mutableMapOf<CallID, CompletableDeferred<Unit>>()
+        val sessions = mutableMapOf<CallID, CompletableDeferred<Outcome<Unit, SystemFailure>>>()
         val retired = mutableSetOf<CallID>()
         val cleanup = mutableListOf<String>()
         val mediaRelease = CompletableDeferred<Unit>()
         val systemRemoval = CompletableDeferred<Outcome<Unit, SystemFailure>>()
         val settlements = mutableListOf<ActionID>()
+        val rejections = mutableListOf<Effect.RejectAction>()
         val releaseRequest = CompletableDeferred<Effect.ReleasePermit>()
         val permitReleased = CompletableDeferred<Unit>()
 
-        override suspend fun reportIncoming(call: Call, request: Effect.ReportIncoming, admitted: () -> Unit) {
-            val done = CompletableDeferred<Unit>()
+        override suspend fun reportIncoming(
+            call: Call, request: Effect.ReportIncoming, admitted: () -> Unit,
+        ): Outcome<Unit, SystemFailure> {
+            val done = CompletableDeferred<Outcome<Unit, SystemFailure>>()
             sessions[call.id] = done
             admissions[call.id] = admitted
             try {
-                done.await()
+                return done.await()
             } finally {
                 withContext(NonCancellable) { delay(1) }
                 retired += call.id
@@ -286,7 +341,7 @@ class RuntimeTest {
 
         override suspend fun remove(call: Call, request: Effect.RequestRemoval): Outcome<Unit, SystemFailure> {
             cleanup += "system"
-            return systemRemoval.await().also { sessions.getValue(call.id).complete(Unit) }
+            return systemRemoval.await().also { sessions.getValue(call.id).complete(Outcome.Success(Unit)) }
         }
 
         override suspend fun close(request: Effect.CloseMedia) {
@@ -294,16 +349,22 @@ class RuntimeTest {
             mediaRelease.await()
         }
 
-        override suspend fun startOutgoing(call: Call, request: Effect.NativeStart): Unit = error("Unexpected Start")
+        override suspend fun startOutgoing(call: Call, request: Effect.NativeStart): Outcome<Unit, SystemFailure> =
+            Outcome.Failure(checkNotNull(startFailure) { "Unexpected Start" })
         override suspend fun apply(request: Effect.Apply): Outcome<Unit, CallError> = error("Unexpected control")
         override suspend fun setActive(request: Effect.SetActive): Unit = error("Unexpected activation")
         override fun settle(result: Effect.SettleAction) {
             settlements += result.actionID
         }
-        override fun reject(result: Effect.RejectAction): Unit = error("Unexpected rejection")
+        override fun reject(result: Effect.RejectAction) {
+            check(startFailure != null) { "Unexpected rejection" }
+            rejections += result
+        }
         override fun completeEnd(result: Effect.CompleteEnd): Unit = error("Unexpected local End")
-        override suspend fun place(call: Call, request: Effect.RequestPlacement): Outcome<Unit, CallError.PlacementFailed> =
-            error("Unexpected placement")
+        override suspend fun place(call: Call, request: Effect.RequestPlacement): Outcome<Unit, CallError.PlacementFailed> {
+            check(startFailure != null) { "Unexpected placement" }
+            return Outcome.Success(Unit)
+        }
         override suspend fun claim(request: Effect.RequestClaim): AnswerDecision =
             AnswerDecision.Allow(checkNotNull(answerPermit))
         override suspend fun reconcile(request: Effect.Reconcile): Reconciliation = error("Unexpected reconciliation")

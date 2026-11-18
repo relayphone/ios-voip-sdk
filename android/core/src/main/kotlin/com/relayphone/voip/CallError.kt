@@ -75,6 +75,6 @@ public data class SystemFailure(
 public enum class Platform { @SerialName("android") ANDROID, @SerialName("ios") IOS }
 @Serializable
 public enum class SystemOperation {
-    @SerialName("admission") ADMISSION, @SerialName("action") ACTION, @SerialName("removal") REMOVAL,
+    @SerialName("admission") ADMISSION, @SerialName("start") START, @SerialName("action") ACTION, @SerialName("removal") REMOVAL,
     @SerialName("reset") RESET, @SerialName("audio") AUDIO,
 }

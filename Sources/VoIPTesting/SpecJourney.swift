@@ -131,7 +131,7 @@
     package enum Input: Decodable, Sendable {
       private enum Kind: String, Decodable {
         case process, incoming, authority, action, placed, provideMedia, bindRemote, connected
-        case remoteEnd, advance, admitted, latePermit, holdApplied
+        case remoteEnd, advance, admitted, admissionFailed, latePermit, holdApplied
       }
 
       case process(running: Bool, javascriptAttached: Bool)
@@ -142,6 +142,7 @@
       case placed(callID: ID)
       case provideMedia(callID: ID)
       case admitted(callID: ID)
+      case admissionFailed(callID: ID, failure: SpecV0.Failure.SystemCause)
       case latePermit(callID: ID)
       case holdApplied(callID: ID)
       case bindRemote(callID: ID, remoteID: ID)
@@ -189,6 +190,13 @@
         case .admitted:
           try object.requireOnly(.kind, .callID)
           self = .admitted(callID: try object.decode(.callID))
+        case .admissionFailed:
+          try object.requireOnly(.kind, .callID, .failure)
+          let failure: SpecV0.Failure.SystemCause = try object.decode(.failure)
+          guard failure.kind == .admission else {
+            throw object.invalid("Expected an admission failure")
+          }
+          self = .admissionFailed(callID: try object.decode(.callID), failure: failure)
         case .latePermit:
           try object.requireOnly(.kind, .callID)
           self = .latePermit(callID: try object.decode(.callID))
@@ -366,6 +374,7 @@
   extension SpecV0.Key {
     fileprivate static let deferAdmission: Self = "deferAdmission"
     fileprivate static let deferConfirmation: Self = "deferConfirmation"
+    fileprivate static let failure: Self = "failure"
     fileprivate static let result: Self = "result"
   }
 

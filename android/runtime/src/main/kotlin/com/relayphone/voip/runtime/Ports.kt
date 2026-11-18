@@ -21,11 +21,13 @@ public interface SystemPort {
     /** Effective allowance for a system Answer callback, including any adapter reserve. */
     public val answerDeadline: Duration
 
-    /** Runs the incoming session. Invoke [admitted] on entry to the platform control block. */
-    public suspend fun reportIncoming(call: Call, request: Effect.ReportIncoming, admitted: () -> Unit)
+    /** Runs the incoming session. Invoke [admitted] on entry. Return an admission failure if setup was rejected before entry. */
+    public suspend fun reportIncoming(
+        call: Call, request: Effect.ReportIncoming, admitted: () -> Unit,
+    ): Outcome<Unit, SystemFailure>
 
-    /** Runs the outgoing session and settles its Start receipt when the platform resolves it. */
-    public suspend fun startOutgoing(call: Call, request: Effect.NativeStart)
+    /** Runs the outgoing session and settles Start on admission. Return a start failure if setup was rejected before admission. */
+    public suspend fun startOutgoing(call: Call, request: Effect.NativeStart): Outcome<Unit, SystemFailure>
 
     /** Reports observed platform removal or a typed failure. */
     public suspend fun remove(call: Call, request: Effect.RequestRemoval): Outcome<Unit, SystemFailure>

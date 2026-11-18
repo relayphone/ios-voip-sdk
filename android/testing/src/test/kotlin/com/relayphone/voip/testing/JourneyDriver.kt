@@ -81,6 +81,7 @@ internal class JourneyDriver(private val scope: TestScope, private val configura
                 send(Input.Request(control.action, id, supported = true))
             }
             is Control.Admitted -> system.admit(control.callID)
+            is Control.AdmissionFailed -> system.rejectAdmission(control.callID, control.failure)
             is Control.HoldApplied -> system.confirmHold(control.callID)
             is Control.Placed -> authority.confirmPlacement(control.callID)
             is Control.LatePermit -> authority.deliverLatePermit(control.callID)
@@ -151,35 +152,41 @@ internal class JourneyDriver(private val scope: TestScope, private val configura
         override val answerDeadline = 5.seconds
         private val admissions = mutableMapOf<CallID, () -> Unit>()
         private val controls = mutableMapOf<CallID, CompletableDeferred<Unit>>()
-        private val sessions = mutableMapOf<CallID, CompletableDeferred<Unit>>()
+        private val sessions = mutableMapOf<CallID, CompletableDeferred<Outcome<Unit, SystemFailure>>>()
         val deferAdmission = mutableSetOf<CallID>()
         val deferControl = mutableSetOf<ActionID>()
         val endCauses = mutableMapOf<CallID, SystemEndCause>()
 
         fun admit(id: CallID) = (admissions.remove(id) ?: error("Missing admission"))()
 
+        fun rejectAdmission(id: CallID, failure: SystemFailure) {
+            check(admissions.remove(id) != null)
+            check(sessions.getValue(id).complete(Outcome.Failure(failure)))
+        }
+
         fun confirmHold(id: CallID) {
             check(controls.getValue(id).complete(Unit))
         }
 
-        override suspend fun reportIncoming(call: Call, request: Effect.ReportIncoming, admitted: () -> Unit) {
+        override suspend fun reportIncoming(
+            call: Call, request: Effect.ReportIncoming, admitted: () -> Unit,
+        ): Outcome<Unit, SystemFailure> {
             val id = call.id
             increment(id, Metric.REPORTS)
-            session(id) {
+            return session(id) {
                 if (deferAdmission.remove(id)) admissions[id] = admitted else admitted()
             }
         }
 
-        override suspend fun startOutgoing(call: Call, request: Effect.NativeStart) {
+        override suspend fun startOutgoing(call: Call, request: Effect.NativeStart): Outcome<Unit, SystemFailure> =
             session(call.id) { settle(call.id, request.actionID) }
-        }
 
-        private suspend fun session(id: CallID, opened: () -> Unit) {
-            val closing = CompletableDeferred<Unit>()
+        private suspend fun session(id: CallID, opened: () -> Unit): Outcome<Unit, SystemFailure> {
+            val closing = CompletableDeferred<Outcome<Unit, SystemFailure>>()
             check(sessions.put(id, closing) == null)
             try {
                 opened()
-                closing.await()
+                return closing.await()
             } finally {
                 sessions.remove(id, closing)
                 admissions.remove(id)
@@ -211,7 +218,7 @@ internal class JourneyDriver(private val scope: TestScope, private val configura
                 is EndReason.Failed -> if (reason.error is CallError.Refused) SystemEndCause.REJECTED else SystemEndCause.REMOTE
                 else -> SystemEndCause.REMOTE
             }
-            session.complete(Unit)
+            session.complete(Outcome.Success(Unit))
             return Outcome.Success(Unit)
         }
 

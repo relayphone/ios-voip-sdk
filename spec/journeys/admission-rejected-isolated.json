@@ -1,0 +1,15 @@
+{
+  "version": 0,
+  "id": "admission-rejected-isolated",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":true},
+  "steps": [
+    {"kind":"input","input":{"kind":"incoming","callID":"live-a","eventID":"invite-live-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"live-a","lifecycle":{"kind":"ringing"}}},
+    {"kind":"input","input":{"kind":"incoming","callID":"refused-b","eventID":"invite-refused-b","line":{"accountID":"account-a","id":"work","label":"Work"},"party":{"id":"bob","handle":{"kind":"opaque","value":"sip:bob@example.test"},"displayName":"Bob"},"deferAdmission":true}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"refused-b","lifecycle":{"kind":"reporting"}}},
+    {"kind":"input","input":{"kind":"admissionFailed","callID":"refused-b","failure":{"platform":"android","kind":"admission"}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"refused-b","lifecycle":{"kind":"ended","reason":{"kind":"failed","error":"systemFailed"}}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"refused-b","metric":"ringingPublications","value":0}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"live-a","lifecycle":{"kind":"ringing"}}}
+  ]
+}

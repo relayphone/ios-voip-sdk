@@ -38,6 +38,9 @@ internal sealed interface Control {
     }
     @Serializable @SerialName("placed") data class Placed(val callID: CallID) : Control
     @Serializable @SerialName("admitted") data class Admitted(val callID: CallID) : Control
+    @Serializable @SerialName("admissionFailed") data class AdmissionFailed(val callID: CallID, val failure: SystemFailure) : Control {
+        init { require(failure.operation == SystemOperation.ADMISSION) }
+    }
     @Serializable @SerialName("latePermit") data class LatePermit(val callID: CallID) : Control
     @Serializable @SerialName("holdApplied") data class HoldApplied(val callID: CallID) : Control
     @Serializable @SerialName("provideMedia") data class ProvideMedia(val callID: CallID) : Control

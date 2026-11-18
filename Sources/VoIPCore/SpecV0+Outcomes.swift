@@ -95,7 +95,7 @@
       package struct SystemCause: Codable, Sendable {
         package enum Platform: String, Codable, Sendable { case ios, android }
         package enum Kind: String, Codable, Sendable {
-          case admission, action, removal, reset, audio
+          case admission, start, action, removal, reset, audio
         }
 
         package let platform: Platform
