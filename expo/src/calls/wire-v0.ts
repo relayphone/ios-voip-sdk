@@ -23,7 +23,7 @@ export const lifecycleKind = literal('reporting', 'ringing', 'placing', 'dialing
 const refusalReason = object({ kind: literal('answeredElsewhere', 'declinedElsewhere', 'notAllowed') });
 const timedStage = literal('placement', 'claim', 'reconciliation', 'mediaPreparation', 'audioActivation',
   'connection', 'reconnection', 'systemAction', 'noAnswer');
-const systemFailure = { kind: literal('admission', 'action', 'removal', 'reset', 'audio'),
+const systemFailure = { kind: literal('admission', 'start', 'action', 'removal', 'reset', 'audio'),
   code: optional(integer(-2147483648, 2147483647)) };
 const budgetFields = {
   placement: milliseconds, incomingRing: milliseconds, outgoingNoAnswer: milliseconds,
