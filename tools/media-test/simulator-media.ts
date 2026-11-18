@@ -103,6 +103,7 @@ async function startAudioGuard(): Promise<AudioGuard> {
   }
 }
 
+/** Checks admission and holds the host audio guard from before setup through cleanup. */
 export async function withSimulatorMediaAudio<T>(
   run: (signal: AbortSignal) => Promise<T>,
   { authorization = { environment: process.env }, start = startAudioGuard }:

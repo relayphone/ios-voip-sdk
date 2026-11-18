@@ -75,6 +75,19 @@ refuse local starts before setup. On hosted macOS, the Core Audio guard checks t
 and output before boot, fails the run on device activity or a default-route change, and records a
 verdict in the job summary. A runner with no default devices reports `no host devices`.
 
+Wrap each simulator journey in one call to `withSimulatorMediaAudio` from
+`tools/media-test/simulator-media.ts`.
+
+```ts
+import { withSimulatorMediaAudio } from './simulator-media.ts';
+
+await withSimulatorMediaAudio(signal => runJourney(signal));
+```
+
+Start simulator setup inside the callback, pass its abort signal to commands and waits, and
+finish simulator cleanup before the callback returns. The wrapper checks admission before
+invoking the callback and keeps the guard active until cleanup finishes.
+
 The future simulator lease adapter must verify `audio.isolated` and prove that the simulator uses
 its own virtual input and output devices. The local `SimulatorLeaseAudio` type names these
 checks `isolated`, `virtualInputVerified`, and `virtualOutputVerified`. The adapter will map
