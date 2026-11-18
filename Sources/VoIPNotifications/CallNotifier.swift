@@ -134,7 +134,7 @@ public final class CallNotifier: CallObserver {
     /// this device. It receives the ended call, whose status holds the end reason.
     ///
     /// The default posts a missed-call notification for `EndReason.endedRemotely` and
-    /// `EndReason.unanswered`, removes the notification for `EndReason.endedHere`,
+    /// `EndReason.unanswered`, removes the notification for a local decline or end,
     /// `EndReason.answeredElsewhere` and `EndReason.declinedElsewhere`, and keeps it for a failure
     /// or any other reason. To keep the behavior before 0.2.1, pass `{ _ in .missedCall }`.
     public var endedWithoutJoining: @MainActor (Call) -> EndedCallNotification
@@ -170,7 +170,9 @@ public final class CallNotifier: CallObserver {
       endedWithoutJoining: @escaping @MainActor (Call) -> EndedCallNotification = { call in
         switch call.status {
         case .ended(.endedRemotely), .ended(.unanswered): .missedCall
-        case .ended(.endedHere), .ended(.answeredElsewhere), .ended(.declinedElsewhere): .remove
+        case .ended(.localDeclined), .ended(.localEnded), .ended(.answeredElsewhere),
+          .ended(.declinedElsewhere):
+          .remove
         default: .keep
         }
       },

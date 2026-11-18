@@ -59,7 +59,9 @@
       try await app.expect([.presented(id)])
 
       try await app.system.perform(.decline(deviceUUID(for: id)))
-      try await app.expect([.performed(.end(id), .ended(.endedHere)), .ended(id, .endedHere)])
+      try await app.expect([
+        .performed(.end(id), .ended(.localDeclined)), .ended(id, .localDeclined),
+      ])
       try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
       #expect(await app.media.records.isEmpty)
       try await app.expectPushesFinished([pushID])
@@ -190,7 +192,9 @@
       #expect(app.call(id)?.status == .ringing)
       #expect(await app.media.records.isEmpty)
       try await app.system.perform(.decline(deviceUUID(for: id)))
-      try await app.expect([.performed(.end(id), .ended(.endedHere)), .ended(id, .endedHere)])
+      try await app.expect([
+        .performed(.end(id), .ended(.localDeclined)), .ended(id, .localDeclined),
+      ])
       try await app.until("the call to leave the call screen") {
         try await app.system.calls().isEmpty
       }
@@ -306,7 +310,7 @@
     @Test(arguments: [
       JoinFailure.ended, .refused, .frameworkReset, .failed(.media),
     ])
-    func failedJoinReturnsToPreviewWithItsCause(_ failure: JoinFailure) async throws {
+    func failedOrEndedJoinSettlesWithItsCause(_ failure: JoinFailure) async throws {
       let resetFramework = FakeCallingFramework()
       let app: App
       if failure == .frameworkReset {
@@ -342,7 +346,21 @@
         try await app.expect([.joinRequested(id)])
         switch failure {
         case .ended:
-          try await app.client.request(.end(id))
+          let result = try await app.client.end(id)
+          guard case .ended(let receipt) = result else {
+            Issue.record("Expected a local End receipt")
+            return
+          }
+          #expect(receipt.reason == .localEnded)
+          try await app.expect([
+            .performed(.end(id), .ended(.localEnded)), .ended(id, .localEnded),
+          ])
+          try await app.until("the system to remove the ended join") {
+            guard app.call(id) == nil else { return false }
+            return try await app.system.calls().isEmpty
+          }
+          app.expectNoMoreEvents()
+          return
         case .frameworkReset:
           await resetFramework.send(.reset)
         case .failed:
@@ -394,7 +412,7 @@
 
       try await app.client.request(.end(id))
       try await app.expect([
-        .performed(.end(id), .ended(.endedHere)), .ended(id, .endedHere), .audioDeactivated,
+        .performed(.end(id), .ended(.localEnded)), .ended(id, .localEnded), .audioDeactivated,
       ])
       try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
       app.expectNoMoreEvents()
@@ -421,9 +439,14 @@
 
       try await app.client.request(.end(id))
       try await app.expect([
-        .performed(.end(id), .ended(.endedHere)), .ended(id, .endedHere), .audioDeactivated,
+        .performed(.end(id), .ended(.localEnded)), .ended(id, .localEnded), .audioDeactivated,
       ])
       try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
+      let uuid = deviceUUID(for: id).uuidString
+      let settledEnds = try await app.system.journal().filter {
+        $0.event == "action.settled" && $0.kind == "end" && $0.callUUID == uuid
+      }
+      #expect(settledEnds.map(\.fulfilled) == [true])
       app.expectNoMoreEvents()
     }
 
@@ -491,7 +514,7 @@
 
       try await app.system.perform(.end(uuid))
       try await app.expect([
-        .performed(.end(id), .ended(.endedHere)), .ended(id, .endedHere), .audioDeactivated,
+        .performed(.end(id), .ended(.localEnded)), .ended(id, .localEnded), .audioDeactivated,
       ])
       try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
       app.expectNoMoreEvents()
@@ -527,7 +550,7 @@
       // Ending the answered call leaves the held one on hold until the user takes it off hold.
       try await app.system.perform(.end(deviceUUID(for: waiting)))
       try await app.expect([
-        .performed(.end(waiting), .ended(.endedHere)), .ended(waiting, .endedHere),
+        .performed(.end(waiting), .ended(.localEnded)), .ended(waiting, .localEnded),
         .audioDeactivated,
       ])
       try await app.until("the answered call to end") { app.call(waiting) == nil }
@@ -558,7 +581,7 @@
         .endAndAccept(deviceUUID(for: waiting), active: deviceUUID(for: active)))
       try await app.expect(
         interleaving: [
-          .performed(.end(active), .ended(.endedHere)), .ended(active, .endedHere),
+          .performed(.end(active), .ended(.localEnded)), .ended(active, .localEnded),
           .performed(.answer(waiting), .connecting),
         ], [.audioDeactivated, .audioActivated])
       await app.client.receive(
@@ -602,7 +625,9 @@
       pushIDs.append(try await app.system.pushIncomingCall(next))
       try await app.expect([.presented(next)])
       try await app.system.perform(.decline(deviceUUID(for: next)))
-      try await app.expect([.performed(.end(next), .ended(.endedHere)), .ended(next, .endedHere)])
+      try await app.expect([
+        .performed(.end(next), .ended(.localDeclined)), .ended(next, .localDeclined),
+      ])
       try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
       try await app.expectPushesFinished(pushIDs)
       app.expectNoMoreEvents()

@@ -15,13 +15,9 @@ private let pending: [String: String] = [
   "claim-timeout-reconcile": "No native claim budget or reconciliation port.",
   "cross-line-waiting":
     "No line identity or shared participation slot to refuse a second Answer or Start.",
-  "end-after-server-end": "End rejects a server-ended call instead of returning alreadyEnded.",
   "end-before-admission": "Alias-addressed ends cannot reach a call during pending admission.",
   "incoming-killed-answer": "Native Answer prepares media without a service claim.",
   "late-answer-permit": "No native claim deadline, reconciliation, or stale permit release.",
-  "local-server-end-race":
-    "Repeated local End rejects an already ended call instead of returning its receipt.",
-  "no-answer-direction": "The system end port reports one unanswered cause for both directions.",
   "outgoing-deferred-binding": "Remote alias binding and alias-addressed events are missing.",
 ]
 

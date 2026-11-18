@@ -16,9 +16,9 @@ public enum CallEvent: Hashable, Sendable {
   case joinRequested(Call)
   /// Joining the call ended before the call took part on this device, and the call returned to
   /// its preview, which ``previewStarted(_:)`` follows. The calling framework refused or dropped
-  /// the join, the app didn't place it, its media or audio failed, or the user ended it on the
-  /// system's call screen. The failure explains why joining stopped; the call's status holds
-  /// the preview's reason.
+  /// the join, the app didn't place it, or its media or audio failed. The failure explains why
+  /// joining stopped, and the call's status holds the preview's reason. A local End during a
+  /// join produces ``ended(_:)``.
   ///
   /// The user asked to join the call, from any surface, so a ``CallObserver`` such as the call
   /// notifier can tell this preview from one that the user hasn't seen.

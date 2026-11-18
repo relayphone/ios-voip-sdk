@@ -68,8 +68,8 @@ let transitionRows: [TransitionRow] = [
     .reporting, .event(.requested(answer)), .reporting(endOnPresent: nil),
     [.reject(answer, .notAllowed(.ringing))]),
   .init(
-    .reporting, .event(.requested(end)), .reporting(endOnPresent: nil),
-    [.reject(end, .notAllowed(.ringing))]),
+    .reporting, .event(.localEnd(localEndReceipt)), .ended(.localEnded),
+    [.reportEnded(.localEnded), .performed(end), .ended(.localEnded)]),
   .init(
     .reporting, .event(.frameworkReset), .ended(.failed(.frameworkReset)),
     [.ended(.failed(.frameworkReset))]),
@@ -91,7 +91,7 @@ let transitionRows: [TransitionRow] = [
     .ended(.answeredElsewhere), [.ended(.answeredElsewhere)], policy: noPreviews),
   .init(
     .reportingAnsweredElsewhere, .event(.server(.endedRemotely)),
-    .reporting(endOnPresent: .endedRemotely), []),
+    .reporting(endOnPresent: .answeredElsewhere), []),
   .init(
     .reportingEndedRemotely, .event(.reportCompleted(.presented)), .ended(.endedRemotely),
     [.reportEnded(.endedRemotely), .ended(.endedRemotely)]),
@@ -104,12 +104,14 @@ let transitionRows: [TransitionRow] = [
     .ringing, .event(.performed(a2, answer)), .preparing(held(a2, answer)),
     [.disarm(.ring), .arm(.mediaPreparation), .prepareMedia]),
   .init(
-    .ringing, .event(.performed(a2, end)), .ended(.endedHere),
-    [.fulfill(a2), .disarm(.ring), .performed(end), .ended(.endedHere)]),
+    .ringing, .event(.performed(a2, end)), .ended(.localDeclined),
+    [.fulfill(a2), .disarm(.ring), .performed(end), .ended(.localDeclined)]),
   .init(.ringing, .event(.performed(a2, muteOn)), .ringing, [.fail(a2)]),
   .init(.ringing, .event(.performed(a2, join)), .ringing, [.fail(a2)]),
   .init(.ringing, .event(.requested(answer)), .ringing, [.request(answer)]),
-  .init(.ringing, .event(.requested(end)), .ringing, [.request(end)]),
+  .init(
+    .ringing, .event(.localEnd(localDeclineReceipt)), .ended(.localDeclined),
+    [.disarm(.ring), .reportEnded(.localDeclined), .performed(end), .ended(.localDeclined)]),
   .init(.ringing, .event(.requested(join)), .ringing, [.reject(join, .notAllowed(.ringing))]),
   .init(.ringing, .event(.requested(muteOn)), .ringing, [.reject(muteOn, .notAllowed(.ringing))]),
   .init(
@@ -150,8 +152,8 @@ let transitionRows: [TransitionRow] = [
     .previewing, .event(.requested(join)), .requesting(join),
     [.arm(.placement), .request(join)]),
   .init(
-    .previewing, .event(.requested(end)), .ended(.endedHere),
-    [.performed(end), .ended(.endedHere)]),
+    .previewing, .event(.localEnd(localEndReceipt)), .ended(.localEnded),
+    [.performed(end), .ended(.localEnded)]),
   .init(
     .previewing, .event(.requested(answer)), .previewing(.policy),
     [.reject(answer, .notAllowed(.previewing(.policy)))]),
@@ -186,11 +188,15 @@ let transitionRows: [TransitionRow] = [
   .init(
     .requestingStart, .expiry(.placement), .ended(.failed(.notPlaced)),
     [.reportEnded(.failed(.notPlaced)), .ended(.failed(.notPlaced))]),
-  .init(.requestingStart, .event(.requested(end)), .requesting(startAction), [.request(end)]),
+  .init(
+    .requestingStart, .event(.localEnd(localEndReceipt)), .ended(.localEnded),
+    [.disarm(.placement), .reportEnded(.localEnded), .performed(end), .ended(.localEnded)]),
   .init(
     .requestingStart, .event(.requested(muteOn)), .requesting(startAction),
     [.reject(muteOn, .notAllowed(.dialing))]),
-  .init(.requestingStart, .event(.performed(a2, end)), .requesting(startAction), [.fail(a2)]),
+  .init(
+    .requestingStart, .event(.performed(a2, end)), .ended(.localEnded),
+    [.fulfill(a2), .disarm(.placement), .performed(end), .ended(.localEnded)]),
   .init(
     .requestingStart, .event(.server(.endedRemotely)), .ended(.endedRemotely),
     [.disarm(.placement), .reportEnded(.endedRemotely), .ended(.endedRemotely)]),
@@ -239,8 +245,8 @@ let transitionRows: [TransitionRow] = [
       .ended(.failed(.notPlaced)),
     ]),
   .init(
-    .placingStart, .event(.performed(a2, end)), .ended(.endedHere),
-    [.fail(a1), .fulfill(a2), .disarm(.placement), .performed(end), .ended(.endedHere)]),
+    .placingStart, .event(.performed(a2, end)), .ended(.localEnded),
+    [.fail(a1), .fulfill(a2), .disarm(.placement), .performed(end), .ended(.localEnded)]),
   .init(
     .placingStart, .event(.actionTimedOut(a1)), .ended(.failed(.actionTimedOut)),
     [
@@ -258,7 +264,12 @@ let transitionRows: [TransitionRow] = [
     .placingStart, .event(.performed(a2, holdOn)), .placing(held(a1, startAction)), [.fail(a2)],
     configuration: withoutCapabilities),
   .init(.placingStart, .event(.server(.connected)), .placing(held(a1, startAction)), []),
-  .init(.placingStart, .event(.requested(end)), .placing(held(a1, startAction)), [.request(end)]),
+  .init(
+    .placingStart, .event(.localEnd(localEndReceipt)), .ended(.localEnded),
+    [
+      .fail(a1), .disarm(.placement), .reportEnded(.localEnded), .performed(end),
+      .ended(.localEnded),
+    ]),
   .init(.placingStart, .event(.mediaPrepared), .placing(held(a1, startAction)), []),
 
   // MARK: Placing a joined call
@@ -279,8 +290,8 @@ let transitionRows: [TransitionRow] = [
       .previewStarted,
     ]),
   .init(
-    .placingJoin, .event(.performed(a2, end)), .previewing(.policy),
-    [.fail(a1), .fulfill(a2), .disarm(.placement), .joinFailed(.ended), .previewStarted]),
+    .placingJoin, .event(.performed(a2, end)), .ended(.localEnded),
+    [.fail(a1), .fulfill(a2), .disarm(.placement), .performed(end), .ended(.localEnded)]),
   .init(
     .placingJoin, .event(.frameworkReset), .previewing(.policy),
     [.fail(a1), .disarm(.placement), .joinFailed(.frameworkReset), .previewStarted]),
@@ -315,8 +326,8 @@ let transitionRows: [TransitionRow] = [
     .preparingAnswer, .event(.server(.answeredElsewhere)), .previewing(.answeredElsewhere),
     [.fail(a1), .disarm(.mediaPreparation), .reportEnded(.answeredElsewhere), .previewStarted]),
   .init(
-    .preparingAnswer, .event(.performed(a2, end)), .ended(.endedHere),
-    [.fail(a1), .fulfill(a2), .disarm(.mediaPreparation), .performed(end), .ended(.endedHere)]),
+    .preparingAnswer, .event(.performed(a2, end)), .ended(.localEnded),
+    [.fail(a1), .fulfill(a2), .disarm(.mediaPreparation), .performed(end), .ended(.localEnded)]),
   .init(
     .preparingAnswer, .event(.performed(a2, answer)), .preparing(held(a1, answer)), [.fail(a2)]),
   .init(
@@ -392,10 +403,10 @@ let transitionRows: [TransitionRow] = [
   .init(.dialing, .event(.server(.answeredElsewhere)), .dialing, []),
   .init(.dialing, .event(.notPlaced), .dialing, []),
   .init(
-    .dialing, .event(.performed(a2, end)), .ended(.endedHere),
+    .dialing, .event(.performed(a2, end)), .ended(.localEnded),
     [
       .fulfill(a2), .disarm(.ring), .disarm(.audioActivation), .performed(end),
-      .ended(.endedHere),
+      .ended(.localEnded),
     ]),
 
   // MARK: Connecting
@@ -428,10 +439,10 @@ let transitionRows: [TransitionRow] = [
     [.disarm(.connect), .reportOutgoing(connected: true)]),
   .init(.connectingJoin, .event(.server(.answeredElsewhere)), .connecting, []),
   .init(
-    .connectingJoin, .event(.performed(a2, end)), .ended(.endedHere),
+    .connectingJoin, .event(.performed(a2, end)), .ended(.localEnded),
     [
       .fulfill(a2), .disarm(.audioActivation), .disarm(.connect), .performed(end),
-      .ended(.endedHere),
+      .ended(.localEnded),
     ]),
 
   // MARK: Connected
@@ -467,8 +478,8 @@ let transitionRows: [TransitionRow] = [
   .init(
     .connected, .event(.requested(join)), .connected, [.reject(join, .notAllowed(.connected))]),
   .init(
-    .connected, .event(.performed(a2, end)), .ended(.endedHere),
-    [.fulfill(a2), .performed(end), .ended(.endedHere)]),
+    .connected, .event(.performed(a2, end)), .ended(.localEnded),
+    [.fulfill(a2), .performed(end), .ended(.localEnded)]),
   .init(
     .connected, .event(.server(.endedRemotely)), .ended(.endedRemotely),
     [.reportEnded(.endedRemotely), .ended(.endedRemotely)]),
@@ -531,14 +542,15 @@ let transitionRows: [TransitionRow] = [
 
   // MARK: Ended
   .init(.ended, .event(.performed(a2, end)), .ended(.endedRemotely), [.fail(a2)]),
-  .init(
-    .ended, .event(.requested(end)), .ended(.endedRemotely),
-    [.reject(end, .notAllowed(.ended(.endedRemotely)))]),
+  .init(.ended, .event(.localEnd(localEndReceipt)), .ended(.endedRemotely), []),
   .init(.ended, .event(.server(.connected)), .ended(.endedRemotely), []),
   .init(.ended, .event(.frameworkReset), .ended(.endedRemotely), []),
   .init(.ended, .event(.reportCompleted(.presented)), .ended(.endedRemotely), []),
   .init(.ended, .event(.server(.partiesChanged([alice]))), .ended(.endedRemotely), []),
 ]
+
+private let localEndReceipt = EndReceipt(callID: callID, actionID: a2, reason: .localEnded)
+private let localDeclineReceipt = EndReceipt(callID: callID, actionID: a2, reason: .localDeclined)
 
 struct BeginRow: Sendable, CustomTestStringConvertible {
   let name: String

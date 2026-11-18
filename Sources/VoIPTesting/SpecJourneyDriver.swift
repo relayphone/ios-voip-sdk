@@ -1,4 +1,5 @@
 #if SWIFT_PACKAGE
+  import Foundation
   package import VoIPCore
 
   /// Runs version 0 inputs through the native engine and compares its state and port observations.
@@ -17,6 +18,7 @@
     private var observedMediaRecords = 0
     private var mediaProvided: Set<CallID> = []
     private var pendingHolds: [Action] = []
+    private var endResults: [CallID: EndResult] = [:]
     private var audioActive = false
     private var errors: [(id: CallID, kind: SpecV0.ErrorKind, observed: Bool)] = []
 
@@ -83,6 +85,7 @@
           audioActive = false
           mediaProvided.removeAll()
           pendingHolds.removeAll()
+          endResults.removeAll()
         }
       case .incoming(let id, let eventID, _, let party, let deferAdmission):
         let incoming = IncomingCall(id: id.callID, parties: [try party.sdkParty()])
@@ -216,6 +219,11 @@
         if deferConfirmation { framework.requestResult = .accept }
         defer { framework.requestResult = .perform }
         do {
+          if case .end = request {
+            endResults[id] = nil
+            endResults[id] = try engine.end(id)
+            return
+          }
           try await engine.request(request)
           if deferConfirmation,
             framework.records.dropFirst(recordStart).contains(where: {
@@ -262,7 +270,8 @@
         return systemEnds(for: id.callID).contains(cause)
           ? nil : "\(id.rawValue) has no system End with cause \(cause)."
       case .endResult(let id, let result):
-        return "\(id.rawValue) has no typed End result matching \(result)."
+        return endResults[id.callID]?.matches(result) == true
+          ? nil : "\(id.rawValue) has no typed End result matching \(result)."
       case .error(let id, let kind, let reason):
         // Legacy errors carry no spec refusal reason.
         guard reason == nil,
@@ -373,9 +382,7 @@
         guard case .reportEnded(id, let reason) = $0 else { return nil }
         switch reason {
         case .endedRemotely, .answeredElsewhere, .declinedElsewhere: return .remote
-        case .unanswered:
-          // The current port reports the same unanswered cause for both directions.
-          return engine?.calls.first(where: { $0.id == id })?.isIncoming == true ? .missed : nil
+        case .unanswered: return .missed
         default: return nil
         }
       }
@@ -452,14 +459,46 @@
       case .connecting: .connecting
       case .connected: .connected
       case .reconnecting: .reconnecting
-      case .ended(.endedHere):
-        .ended(isIncoming && answeredAt == nil ? .localDeclined : .localEnded)
-      case .ended(.endedRemotely): .ended(.remoteEnded)
-      case .ended(.unanswered): .ended(.unanswered)
-      case .ended(.answeredElsewhere): .ended(.answeredElsewhere)
-      case .ended(.declinedElsewhere): .ended(.declinedElsewhere)
-      case .ended(.filtered(let cause)): .ended(.filtered(cause.specCause))
-      case .ended(.failed(let failure)): .ended(.failed(failure.specKind))
+      case .ended(let reason): .ended(reason.specExpectation)
+      }
+    }
+  }
+
+  extension EndReason {
+    fileprivate var specExpectation: SpecJourney.EndExpectation {
+      switch self {
+      case .localDeclined: .localDeclined
+      case .localEnded: .localEnded
+      case .endedRemotely: .remoteEnded
+      case .unanswered: .unanswered
+      case .answeredElsewhere: .answeredElsewhere
+      case .declinedElsewhere: .declinedElsewhere
+      case .filtered(let cause): .filtered(cause.specCause)
+      case .failed(let failure): .failed(failure.specKind)
+      }
+    }
+  }
+
+  extension EndResult {
+    fileprivate func matches(_ expected: SpecV0.EndResult) -> Bool {
+      switch (self, expected) {
+      case (.ended(let actual), .ended(let expected)):
+        actual.callID.rawValue.utf8.elementsEqual(expected.callID.rawValue.utf8)
+          && actual.actionID.rawValue.uuidString.utf8.elementsEqual(expected.actionID.rawValue.utf8)
+          && (expected.reason == .localDeclined
+            ? actual.reason == .localDeclined
+            : actual.reason == .localEnded)
+      case (.alreadyEnded(let actual), .alreadyEnded(let expected)):
+        switch (actual.specExpectation, expected) {
+        case (.localDeclined, .localDeclined), (.localEnded, .localEnded),
+          (.remoteEnded, .remoteEnded), (.unanswered, .unanswered),
+          (.answeredElsewhere, .answeredElsewhere), (.declinedElsewhere, .declinedElsewhere):
+          true
+        case (.filtered(let actual), .filtered(let expected)): actual == expected
+        case (.failed(let actual), .failed(let expected)): actual == expected.kind
+        default: false
+        }
+      default: false
       }
     }
   }
