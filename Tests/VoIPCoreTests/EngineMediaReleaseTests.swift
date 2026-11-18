@@ -1,3 +1,4 @@
+import Synchronization
 import Testing
 import VoIPTesting
 
@@ -6,6 +7,54 @@ import VoIPTesting
 extension EngineTests {
   @Suite("Media release") @MainActor
   struct MediaReleaseTests {
+    @Test func systemEndReleasesMediaBeforeFulfillingTheAction() async throws {
+      let h = try Harness()
+      try await h.connect()
+      await h.until { $0.calls.first?.status == .connected }
+      let media = h.media
+      let framework = h.framework
+      let endID = await onVoIPActor {
+        framework.onActionSettlement = { record in
+          guard case .fulfill = record else { return }
+          #expect(
+            media.lifecycleRecords.compactMap(\.releasedCall).map(\.status) == [.ended(.localEnded)]
+          )
+        }
+        return framework.perform(.end(callID))
+      }
+
+      #expect(await h.records.last == .fulfill(endID))
+      #expect(
+        try await h.next(2) == [
+          .performed(.end(callID), .ended(.localEnded)), .ended(callID, .localEnded),
+        ])
+    }
+
+    @Test func failedHeldAnswerCancelsMediaPreparationBeforeFailingTheAction() async throws {
+      let h = try Harness()
+      let media = h.media
+      let framework = h.framework
+      let cancelled = Mutex<CallID?>(nil)
+      await onVoIPActor {
+        media.preparation = .wait
+        media.onPreparationCancelled = { id in cancelled.withLock { $0 = id } }
+      }
+      try await h.ring()
+      let answerID = await framework.perform(.answer(callID))
+      await waitForPreparation(media)
+      await onVoIPActor {
+        framework.onActionSettlement = { record in
+          guard record == .fail(answerID) else { return }
+          #expect(cancelled.withLock { $0 } == callID)
+          #expect(media.lifecycleRecords.compactMap(\.releasedCall).isEmpty)
+        }
+        framework.send(.actionTimedOut(answerID))
+      }
+
+      #expect(await h.records.contains(.fail(answerID)))
+      #expect(try await h.next() == .ended(callID, .failed(.actionTimedOut)))
+    }
+
     @Test(arguments: [true, false])
     func releaseAndDeactivationFollowTheirInputOrder(endsFirst: Bool) async throws {
       let h = try Harness()

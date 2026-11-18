@@ -80,6 +80,9 @@ public final class FakeCallingFramework: CallingFramework {
   /// Optionally handles a request after it is recorded, including suspending its completion.
   public var requestHandler: (@VoIPActor @Sendable (Action) async throws(ActionError) -> Void)?
 
+  /// Observes each fulfillment or failure immediately after it is recorded.
+  public var onActionSettlement: (@VoIPActor (Record) -> Void)?
+
   private var onEvent: (@VoIPActor (FrameworkEvent) -> Void)?
   private var waitingReports: [(call: Call, completion: @VoIPActor (PresentationOutcome) -> Void)] =
     []
@@ -165,12 +168,16 @@ public final class FakeCallingFramework: CallingFramework {
 
   /// Records that the SDK completed an action.
   public func fulfill(_ id: ActionID) {
-    records.append(.fulfill(id))
+    let record = Record.fulfill(id)
+    records.append(record)
+    onActionSettlement?(record)
   }
 
   /// Records that the SDK completed an action as failed.
   public func fail(_ id: ActionID) {
-    records.append(.fail(id))
+    let record = Record.fail(id)
+    records.append(record)
+    onActionSettlement?(record)
   }
 
   /// Records a call's new details.

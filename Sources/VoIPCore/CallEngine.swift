@@ -232,6 +232,7 @@ final class CallEngine {
   private func send(_ action: Action, for call: Call?) async throws(ActionError) {
     guard let call else { return }
     let startAttempt = action.isStart ? states[call.id]?.startAttempt : nil
+    precondition(!action.isStart || startAttempt != nil, "A native Start requires an attempt")
     do throws(ActionError) {
       try await framework.request(action, for: call)
     } catch {
@@ -585,13 +586,6 @@ final class CallEngine {
 
   /// Carries out a transition's effects in order.
   private func run(_ effects: [CallMachine.Effect], for id: CallID) -> Reply {
-    for effect in effects {
-      switch effect {
-      case .fulfill(let action): framework.fulfill(action)
-      case .fail(let action): framework.fail(action)
-      default: break
-      }
-    }
     settle(id)
 
     var reply = Reply()
@@ -605,7 +599,8 @@ final class CallEngine {
         }
       case .request(let action): reply.request = action
       case .reject(_, let error): reply.rejection = error
-      case .fulfill, .fail: break
+      case .fulfill(let action): framework.fulfill(action)
+      case .fail(let action): framework.fail(action)
       case .update(let call): framework.update(call)
       case .reportOutgoing(let call, let connected):
         framework.reportOutgoing(call, connected: connected)
