@@ -61,6 +61,8 @@ public sealed interface Input {
     public data class AdmissionFailed(public val attempt: Attempt, public val failure: SystemFailure) : Input {
         init { require(failure.operation == SystemOperation.ADMISSION) }
     }
+    /** The platform opened the outgoing session for this attempt. */
+    public data class StartAdmitted(public val attempt: Attempt) : Input
     /** The outgoing platform setup resolved without opening a session. */
     public data class StartFailed(public val attempt: Attempt, public val failure: SystemFailure) : Input {
         init { require(failure.operation == SystemOperation.START) }
@@ -146,6 +148,7 @@ internal data class PermitKey(val callID: CallID, val id: AttemptID)
 internal data class PermitRelease(val attempt: Attempt, val permit: AttemptID)
 internal data class Armed(val attempt: Attempt, val deadline: Instant)
 internal enum class RemovalEvidence { UNCONFIRMED, REMOVED, NOT_APPLICABLE }
+internal enum class OutgoingProgress { CONNECTED, PROVIDE_MEDIA }
 internal data class Record(
     val call: Call,
     val admission: Attempt? = null,
@@ -153,6 +156,7 @@ internal data class Record(
     val retainedEnd: SeenEvent? = null,
     val placement: Pending? = null,
     val nativeStart: Effect.NativeStart? = null,
+    val outgoingProgress: List<OutgoingProgress> = emptyList(),
     val joinAttempt: Attempt? = null,
     val previousPreview: PreviewReason? = null,
     val answer: Pending? = null,

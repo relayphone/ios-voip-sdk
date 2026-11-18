@@ -36,10 +36,16 @@ internal sealed interface Control {
     ) : Control {
         init { require(!deferConfirmation || action is Action.Hold) }
     }
-    @Serializable @SerialName("placed") data class Placed(val callID: CallID) : Control
+    @Serializable @SerialName("placed") data class Placed(
+        val callID: CallID, val deferStartAdmission: Boolean = false,
+    ) : Control
     @Serializable @SerialName("admitted") data class Admitted(val callID: CallID) : Control
     @Serializable @SerialName("admissionFailed") data class AdmissionFailed(val callID: CallID, val failure: SystemFailure) : Control {
         init { require(failure.operation == SystemOperation.ADMISSION) }
+    }
+    @Serializable @SerialName("startAdmitted") data class StartAdmitted(val callID: CallID, val stale: Boolean = false) : Control
+    @Serializable @SerialName("startFailed") data class StartFailed(val callID: CallID, val failure: SystemFailure) : Control {
+        init { require(failure.operation == SystemOperation.START) }
     }
     @Serializable @SerialName("latePermit") data class LatePermit(val callID: CallID) : Control
     @Serializable @SerialName("holdApplied") data class HoldApplied(val callID: CallID) : Control

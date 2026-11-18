@@ -102,8 +102,8 @@ test('capability conditions cover every feature once without overlapping Android
   ] }), /Overlapping Android conditions/);
 });
 
-test('the catalog keeps the 15 v0 journeys alongside the six v1 journeys', () => {
-  assert.equal(loadCatalog(root).length, 15);
+test('the catalog keeps the v0 journeys alongside the six v1 journeys', () => {
+  assert.equal(loadCatalog(root).length, 19);
   const journeys = loadCatalogV1(root);
   assert.deepEqual(journeys.map(journey => journey.id), [
     'dialing-text-before-connect', 'prejoin-promote', 'refused-post-fallback', 'retention-pressure-late-removal',

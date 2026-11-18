@@ -87,6 +87,9 @@ placement before participation, rejecting older generations on every asynchronou
 means ringing, no pending Answer and a free participating slot. `notReconciled` requires the
 current pending claim's timer and that reconciliation has not started. `currentAttempt` requires
 the matching pending operation and generation without cancellation or terminal ownership.
+`startAdmissionPending` requires a live, unadmitted native Start. `bufferedStartProgress`
+additionally requires a matching admission result and buffered progress. `retiringStart` requires
+a matching setup result for an unadmitted Start after terminal ownership.
 `staleAttempt` on an allow means that operation no longer
 accepts the permit, including after unresolved reconciliation, terminal ownership, or supersession.
 Duplicate deliveries of a permit already accepted or released produce no further effects.
@@ -128,11 +131,31 @@ later system removal updates independent cleanup evidence without rewriting term
 If an end is still retained for that call, its reason wins. Close media and publish ending. System
 removal is not applicable because the platform never admitted the call. If the matching admission
 fails after a local End, retire the pending admission and preserve the original terminal reason.
-`startFailed(attempt, failure)` ends the matching placing or dialing call with
-`failed(systemFailed(start))`. Reject its pending Start action, if any, then close media and publish.
-Native Start rejection also leaves no platform session to remove. Both inputs retain the adapter's
-platform and typed diagnostic. The `stale-system-failure` rule groups both inputs under
-`systemFailure` when the attempt no longer owns the call. Only `frameworkReset` applies across calls.
+`startAdmitted(attempt)` confirms that the platform opened the outgoing session. On iOS this
+is when the system performs `StartConversationAction`. On Android with Core-Telecom it is
+entry into the `addCall` control block. This input is the only success for the pending native
+Start receipt. Settle it once, then apply buffered progress in receive order.
+
+While waiting for native admission, keep the call in `dialing` and buffer authoritative Connected
+and deferred media provision under the existing outgoing no-answer deadline. Keep only the first
+of each, and buffer media provision only while there is no preparation attempt. After admission,
+a replayed Connected report uses the existing connection budget if it still needs media.
+At the no-answer deadline, expiry takes precedence over a still-pending setup result.
+Expiry ends the call as `unanswered` and rejects the pending Start with `invalidTransition(ending)`.
+`startFailed(attempt, failure)` ends the matching placing or pending native Start with
+`failed(systemFailed(start))`, discards buffered progress and rejects Start with the original
+platform diagnostic. Platform removal is not applicable.
+If the session ends before admission without a platform diagnostic, the runtime supplies a
+Start failure for that attempt.
+
+A local or remote End before admission wins immediately and rejects the pending Start with
+`invalidTransition(ending)`. A local End returns its normal receipt. Retain the retiring attempt
+until its system result arrives. A late `startAdmitted` requests removal without changing the
+terminal reason. A late `startFailed` retires the attempt and records removal as not applicable.
+The `stale-system-failure` rule groups `admissionFailed`, `startAdmitted` and `startFailed` under
+`systemSetupResult`. The table groups `connected` and `provideMedia` under `outgoingProgress`,
+and `localEnd` and `remoteEnd` under `terminalIntent` for the pending Start cases. Only
+`frameworkReset` applies across calls.
 
 Effect names include engine-owned timer work before calling external ports: admission/native
 start arm no-answer, placement requests arm placement, and claim requests cancel no-answer and

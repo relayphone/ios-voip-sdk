@@ -47,9 +47,10 @@ class JourneysTest {
             "admission-rejected-isolated",
             "answer-not-allowed", "answer-refusal-preview", "answer-refusal", "answered-elsewhere",
             "claim-timeout-reconcile", "cross-line-waiting", "end-after-server-end",
-            "end-before-admission", "hold-request-confirm", "incoming-killed-answer",
+            "early-connected-start-rejected", "end-before-admission", "end-before-start-admission",
+            "hold-request-confirm", "incoming-killed-answer", "late-start-admission-after-end",
             "late-answer-permit", "local-server-end-race", "no-answer-direction",
-            "outgoing-deferred-binding",
+            "outgoing-deferred-binding", "stale-start-admission",
         )
     }
 }

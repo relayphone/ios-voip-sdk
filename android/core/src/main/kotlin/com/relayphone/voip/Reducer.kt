@@ -28,6 +28,7 @@ private class Reduction(state: State, private val clocks: Now, private val trace
             is Input.Incoming -> incoming(input)
             is Input.Admitted -> admitted(input)
             is Input.AdmissionFailed -> admissionFailed(input)
+            is Input.StartAdmitted -> startAdmitted(input)
             is Input.StartFailed -> startFailed(input)
             is Input.Request -> request(input)
             is Input.Placed -> placed(input)
@@ -41,14 +42,7 @@ private class Reduction(state: State, private val clocks: Now, private val trace
                     finish(record, EndReason.Failed(error), error)
                 }
             }
-            is Input.ProvideMedia -> records[input.id]?.let { record ->
-                if (record.call.lifecycle.kind in setOf(LifecycleKind.DIALING, LifecycleKind.CONNECTING) &&
-                    record.mediaAttempt == null && !expireDue(record, TimerKind.CONNECTION, TimerKind.NO_ANSWER)
-                ) {
-                    trace(Rule.DEFERRED_MEDIA)
-                    prepare(record, record.placement?.deadline)
-                }
-            }
+            is Input.ProvideMedia -> records[input.id]?.let(::provideMedia)
             is Input.MediaPrepared -> prepared(input)
             is Input.MediaFailed -> on(input.attempt) { record ->
                 if (record.live && record.mediaAttempt == input.attempt) {
@@ -162,20 +156,54 @@ private class Reduction(state: State, private val clocks: Now, private val trace
         finish(retired.copy(removalEvidence = RemovalEvidence.NOT_APPLICABLE), reason, removeFromSystem = false)
     }
 
+    private fun startAdmitted(input: Input.StartAdmitted) {
+        val record = records[input.attempt.callID]
+        val start = record?.nativeStart
+        if (record == null || start?.attempt != input.attempt) {
+            trace(Rule.STALE_SYSTEM_FAILURE)
+            return
+        }
+        // An admission at the deadline still needs disconnecting if the call has expired.
+        expireDue(record, TimerKind.NO_ANSWER)
+        val current = records.getValue(record.call.id)
+        val admitted = current.copy(nativeStart = null, outgoingProgress = emptyList())
+        if (!current.live) {
+            trace(Rule.LATE_START_ADMISSION)
+            put(requestRemoval(admitted, attempt(record.call.id), current.reason))
+            return
+        }
+        trace(if (current.outgoingProgress.isEmpty()) Rule.START_ADMITTED else Rule.APPLY_START_PROGRESS)
+        put(admitted)
+        effects += Effect.SettleAction(record.call.id, start.actionID)
+        current.outgoingProgress.forEach { progress ->
+            val updated = records.getValue(record.call.id)
+            when (progress) {
+                OutgoingProgress.CONNECTED -> connect(updated)
+                OutgoingProgress.PROVIDE_MEDIA -> provideMedia(updated)
+            }
+        }
+    }
+
     private fun startFailed(input: Input.StartFailed) {
         val record = records[input.attempt.callID]
         val placing = record?.call?.lifecycle == Lifecycle.Placing && record.call.direction == Direction.OUTGOING &&
             record.placement?.attempt == input.attempt
-        val dialing = record?.call?.lifecycle == Lifecycle.Dialing && record.nativeStart?.attempt == input.attempt
-        if (record == null || (!placing && !dialing)) {
+        if (record == null || (!placing && record.nativeStart?.attempt != input.attempt)) {
             trace(Rule.STALE_SYSTEM_FAILURE)
+            return
+        }
+        if (!placing) expireDue(record, TimerKind.NO_ANSWER)
+        val current = records.getValue(record.call.id)
+        val retired = current.copy(nativeStart = null, removalEvidence = RemovalEvidence.NOT_APPLICABLE)
+        if (!current.live) {
+            trace(Rule.RETIRE_FAILED_START)
+            put(retired)
             return
         }
         trace(Rule.START_FAILED)
         val error = CallError.SystemFailed(input.failure)
-        record.nativeStart?.let { reject(record.call.id, it.actionID, error) }
-        finish(record.copy(removalEvidence = RemovalEvidence.NOT_APPLICABLE), EndReason.Failed(error), error,
-            removeFromSystem = false)
+        current.nativeStart?.let { reject(current.call.id, it.actionID, error) }
+        finish(retired, EndReason.Failed(error), error, removeFromSystem = false)
     }
 
     private fun request(input: Input.Request) {
@@ -368,9 +396,16 @@ private class Reduction(state: State, private val clocks: Now, private val trace
 
     private fun connected(input: Input.Connected) {
         if (!remember(input.eventID) || input.source != policy.connectionAuthority) return
-        val record = records[input.callID] ?: return
+        records[input.callID]?.let(::connect)
+    }
+
+    private fun connect(record: Record) {
         if (record.call.lifecycle.kind !in setOf(LifecycleKind.DIALING, LifecycleKind.CONNECTING)) return
         if (expireDue(record, TimerKind.NO_ANSWER, TimerKind.CONNECTION)) return
+        if (record.nativeStart != null) {
+            bufferOutgoingProgress(record, OutgoingProgress.CONNECTED)
+            return
+        }
         if (record.call.media.preparation == Preparation.PREPARED) {
             trace(Rule.CONNECTED)
             commitConnected(record)
@@ -383,6 +418,24 @@ private class Reduction(state: State, private val clocks: Now, private val trace
                 else arm(connecting, TimerKind.CONNECTION, now + budgets.connection)
             put(timed, publish = true)
         }
+    }
+
+    private fun provideMedia(record: Record) {
+        if (record.call.lifecycle.kind !in setOf(LifecycleKind.DIALING, LifecycleKind.CONNECTING) ||
+            record.mediaAttempt != null || expireDue(record, TimerKind.CONNECTION, TimerKind.NO_ANSWER)
+        ) return
+        if (record.nativeStart != null) {
+            bufferOutgoingProgress(record, OutgoingProgress.PROVIDE_MEDIA)
+        } else {
+            trace(Rule.DEFERRED_MEDIA)
+            prepare(record, record.placement?.deadline)
+        }
+    }
+
+    private fun bufferOutgoingProgress(record: Record, progress: OutgoingProgress) {
+        if (progress in record.outgoingProgress) return
+        trace(Rule.BUFFER_START_PROGRESS)
+        put(record.copy(outgoingProgress = record.outgoingProgress + progress))
     }
 
     private fun commitConnected(record: Record) {
@@ -440,7 +493,11 @@ private class Reduction(state: State, private val clocks: Now, private val trace
             put(retained)
         } else {
             val reason = requireNotNull(event.end).reason
-            trace(if (record.call.lifecycle == Lifecycle.Ringing && preview(reason)) Rule.ELSEWHERE_PREVIEW else Rule.REMOTE_END)
+            trace(when {
+                record.nativeStart != null -> Rule.END_BEFORE_START_ADMISSION
+                record.call.lifecycle == Lifecycle.Ringing && preview(reason) -> Rule.ELSEWHERE_PREVIEW
+                else -> Rule.REMOTE_END
+            })
             remoteFinish(record, reason)
         }
     }
@@ -467,7 +524,7 @@ private class Reduction(state: State, private val clocks: Now, private val trace
             effects += Effect.CompleteEnd(record.call.id, id, EndResult.AlreadyEnded(retained.reason))
             return
         }
-        trace(Rule.LOCAL_END)
+        trace(if (record.nativeStart != null) Rule.END_BEFORE_START_ADMISSION else Rule.LOCAL_END)
         val reason = if (record.call.lifecycle == Lifecycle.Ringing) EndReason.LocalDeclined else EndReason.LocalEnded
         finish(record.copy(localEnd = id), reason)
         effects += Effect.CompleteEnd(record.call.id, id, EndResult.Ended(EndReceipt(record.call.id, id, reason)))
@@ -559,7 +616,7 @@ private class Reduction(state: State, private val clocks: Now, private val trace
             TimerKind.NO_ANSWER -> if (record.answer == null && !record.bufferedConnection &&
                 record.call.lifecycle.kind in setOf(LifecycleKind.RINGING, LifecycleKind.DIALING)
             ) {
-                trace(Rule.NO_ANSWER)
+                trace(if (record.nativeStart == null) Rule.NO_ANSWER else Rule.START_ADMISSION_EXPIRED)
                 finish(fired, EndReason.Unanswered)
             }
             TimerKind.CLAIM -> {
@@ -609,7 +666,7 @@ private class Reduction(state: State, private val clocks: Now, private val trace
     ) {
         val attempt = attempt(record.call.id)
         val rejection = error ?: CallError.InvalidTransition(LifecycleKind.ENDING)
-        listOfNotNull(record.answer?.id, record.placement?.id).forEach {
+        listOfNotNull(record.answer?.id, record.placement?.id, record.nativeStart?.actionID).forEach {
             reject(record.call.id, it, rejection)
         }
         record.controls.forEach { reject(record.call.id, it.id, CallError.InvalidTransition(record.call.lifecycle.kind)) }
@@ -620,14 +677,16 @@ private class Reduction(state: State, private val clocks: Now, private val trace
             releasePermit(permit, owner)
             PermitRelease(owner, permit)
         } ?: record.releasingPermit
-        val removing = if (removeFromSystem) requestRemoval(cancelled, attempt, reason) else cancelled
+        val removing = if (removeFromSystem && record.nativeStart == null) {
+            requestRemoval(cancelled, attempt, reason)
+        } else cancelled
         val next = preview?.let { Lifecycle.Previewing(it) } ?: Lifecycle.Ending(reason)
         put(removing.copy(
             call = record.call.copy(lifecycle = next, media = record.call.media.copy(
                 audio = Audio.INACTIVE, transport = Transport.DISCONNECTED,
                 preparation = if (preview != null) Preparation.RELEASED else record.call.media.preparation,
             )),
-            answer = null, placement = null, nativeStart = null, permit = null,
+            answer = null, placement = null, outgoingProgress = emptyList(), permit = null,
             permitAttempt = null, mediaAttempt = null, controls = emptyList(),
             cleanup = attempt, mediaReleases = record.mediaReleases + attempt, releasingPermit = releasing,
             retainedEnd = null, reconciliation = null, bufferedConnection = false,
@@ -753,10 +812,10 @@ private val Record.live: Boolean get() = terminalAt == null
 private val Record.canPrune: Boolean get() =
     call.lifecycle is Lifecycle.Ended && call.media.preparation == Preparation.RELEASED &&
         mediaReleases.isEmpty() && removals.isEmpty() && releasingPermit == null &&
-        admission == null && placement == null && joinAttempt == null && answer == null &&
+        admission == null && placement == null && nativeStart == null && joinAttempt == null && answer == null &&
         reconciliation == null && permit == null && mediaAttempt == null && controls.isEmpty() && timers.isEmpty()
 private fun Record.pending(id: ActionID): Boolean =
-    answer?.id == id || placement?.id == id || controls.any { it.id == id }
+    answer?.id == id || placement?.id == id || (live && nativeStart?.actionID == id) || controls.any { it.id == id }
 private val Record.reason: EndReason get() = when (val lifecycle = call.lifecycle) {
     is Lifecycle.Ending -> lifecycle.reason
     is Lifecycle.Ended -> lifecycle.reason

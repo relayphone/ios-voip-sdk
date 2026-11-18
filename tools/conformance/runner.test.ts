@@ -153,3 +153,26 @@ test('server-only End reports the original reason without borrowing a performed 
   assert.deepEqual(selectTransition(table, 'ended', 'localEnd', new Set(['always']))?.effects, ['returnAlreadyEnded']);
   assert.deepEqual(selectTransition(table, 'ended', 'localEnd', new Set(['always', 'hasLocalEndReceipt']))?.effects, ['returnOriginalEnd']);
 });
+
+test('outgoing admission selects buffered replay, retiring cleanup, and stale results in order', () => {
+  assert.deepEqual(selectTransition(table, 'dialing', 'startAdmitted', new Set(['currentAttempt']))?.effects,
+    ['settleAction']);
+  assert.deepEqual(
+    selectTransition(table, 'dialing', 'startAdmitted', new Set(['currentAttempt', 'bufferedStartProgress']))?.effects,
+    ['settleAction', 'applyBufferedProgress'],
+  );
+  for (const input of ['connected', 'provideMedia'] as const) {
+    assert.equal(selectTransition(table, 'dialing', input,
+      new Set(['startAdmissionPending', 'authoritativeAndPrepared', 'live']))?.id, 'buffer-start-progress');
+  }
+  for (const input of ['localEnd', 'remoteEnd'] as const) {
+    assert.equal(selectTransition(table, 'dialing', input,
+      new Set(['startAdmissionPending', 'firstTerminalIntent']))?.id, 'end-before-start-admission');
+  }
+  assert.equal(selectTransition(table, 'dialing', 'noAnswerExpired',
+    new Set(['startAdmissionPending', 'noAnswerPending']))?.id, 'start-admission-expired');
+  assert.deepEqual(selectTransition(table, 'ended', 'startAdmitted', new Set(['retiringStart']))?.effects,
+    ['requestRemoval']);
+  assert.equal(selectTransition(table, 'ended', 'startFailed', new Set(['retiringStart']))?.id, 'retire-failed-start');
+  assert.equal(selectTransition(table, 'dialing', 'startAdmitted', new Set(['staleAttempt']))?.id, 'stale-system-failure');
+});
