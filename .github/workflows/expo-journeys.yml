@@ -29,10 +29,10 @@ on:
   workflow_dispatch:
     inputs:
       install_comparison:
-        description: "Compare the full and minimal app installs"
+        description: "Compare full and minimal installs, or measure consecutive warm installs"
         type: choice
         default: "off"
-        options: ["off", "one", "ten"]
+        options: ["off", "one", "ten", "warm"]
 
 permissions:
   contents: read
@@ -83,6 +83,7 @@ jobs:
       - name: Drive JavaScript and verify app results and the runtime journal
         env:
           EXPO_INSTALL_COMPARISON: ${{ inputs.install_comparison == 'one' || inputs.install_comparison == 'ten' }}
+          EXPO_WARM_INSTALL_COMPARISON: ${{ inputs.install_comparison == 'warm' }}
         run: |
           node tools/expo-journey.ts "$RUNNER_TEMP/expo-journey" \
             "$RUNNER_TEMP/expo-journey/build/Build/Products/Debug-iphonesimulator/VoIPExample.app"

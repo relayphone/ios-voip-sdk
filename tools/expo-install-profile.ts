@@ -1,4 +1,4 @@
-import { lstatSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, globSync, lstatSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CommandFailure, repository, run } from './command.ts';
 import { buildSimulatorApp } from './simulator-app.ts';
@@ -60,6 +60,95 @@ function observeCommand(command: string, args: string[], seconds: number, execut
   return observeOperation(() => execute(command, args, { timeout: seconds }));
 }
 
+function verifyInstallBundle(app: string, execute: typeof run) {
+  return observeCommand('/usr/bin/codesign', ['--verify', '--deep', '--strict', '--verbose=2', app], 60, execute);
+}
+
+function allocatedContents(app: string, execute: typeof run) {
+  const paths = readdirSync(app).filter(name => name !== 'Frameworks');
+  const frameworks = join(app, 'Frameworks');
+  if (existsSync(frameworks)) paths.push(...readdirSync(frameworks).map(name => join('Frameworks', name)));
+  if (!paths.length) return [];
+  const output = execute('/usr/bin/du', ['-sk', ...paths.map(path => `./${path}`)], { directory: app, timeout: 30 });
+  return output.split('\n').map(line => {
+    const tab = line.indexOf('\t');
+    const kibibytes = Number(line.slice(0, tab));
+    if (tab < 1 || !Number.isSafeInteger(kibibytes)) throw new Error(`Unexpected du output: ${line}`);
+    return { path: line.slice(tab + 1).replace(/^\.\//, ''), kibibytes };
+  }).sort((a, b) => b.kibibytes - a.kibibytes);
+}
+
+/** Measures the original build after its journey and installs a smaller copy when debug stripping saves bytes. */
+export function compareWarmInstalls(app: string, simulator: string, bundle: string, work: string, prefix: string,
+  execute: typeof run = run): void {
+  const receipt = `${prefix}-warm-installs.json`;
+  const uninstall = () => observeCommand('xcrun', ['simctl', 'uninstall', simulator, bundle], 120, execute);
+  const install = (path: string) => observeCommand('xcrun', ['simctl', 'install', simulator, path], 180, execute);
+  const diskUsage = (path: string) => observeCommand('/usr/bin/du', ['-sh', path], 30, execute);
+  try {
+    const inventory = installBundleInventory(app);
+    const allocated = diskUsage(app);
+    const contents = allocatedContents(app, execute);
+    const hostVerification = verifyInstallBundle(app, execute);
+    const removal = uninstall();
+    const first = removal.outcome === 'succeeded' ? install(app) : undefined;
+    const repeat = first?.outcome === 'succeeded' ? install(app) : undefined;
+    const original = { ...inventory, allocated, largest: contents.slice(0, 10), hostVerification, removal, first, repeat };
+    const save = (stripped?: object) => writeFileSync(receipt, JSON.stringify({ original, stripped }, null, 2) + '\n');
+    save();
+    if (repeat?.outcome !== 'succeeded') return;
+
+    const framework = contents.find(item => item.path.startsWith('Frameworks/') && item.path.endsWith('.framework'));
+    const dSYMs = globSync('**/*.dSYM', { cwd: app });
+    if (inventory.frameworkBytes + inventory.dSYMBytes <= inventory.bytes / 2 || (!framework && !dSYMs.length)) {
+      save({ outcome: 'skipped', reason: 'Frameworks and debug symbol bundles do not dominate the app size' });
+      return;
+    }
+
+    const copy = join(work, 'build', 'StrippedExample.app');
+    const candidate = { framework: framework?.path, dSYMs };
+    const preparation = observeOperation(() => {
+      execute('/usr/bin/ditto', [app, copy], { timeout: 120 });
+      let signing = '';
+      if (framework) {
+        const directory = join(copy, framework.path);
+        const executable = execute('/usr/bin/plutil', ['-extract', 'CFBundleExecutable', 'raw', '-o', '-',
+          join(directory, 'Info.plist')], { timeout: 15 });
+        const originalSignature = verifyInstallBundle(join(app, framework.path), execute);
+        execute('xcrun', ['strip', '-S', join(directory, executable)], { timeout: 60 });
+        if (originalSignature.outcome === 'succeeded' && verifyInstallBundle(directory, execute).outcome !== 'succeeded') {
+          execute('/usr/bin/codesign', ['--force', '--sign', '-', '--preserve-metadata=identifier,entitlements,flags,runtime',
+            directory], { timeout: 60 });
+          execute('/usr/bin/codesign', ['--verify', '--strict', directory], { timeout: 60 });
+          signing = 'Re-signed the stripped framework ad hoc';
+        }
+      }
+      for (const path of dSYMs) rmSync(join(copy, path), { recursive: true, force: true });
+      return signing;
+    });
+    if (preparation.outcome !== 'succeeded') {
+      save({ candidate, preparation });
+      return;
+    }
+    const smaller = installBundleInventory(copy);
+    const measured = { ...smaller, candidate, preparation, allocated: diskUsage(copy),
+      hostVerification: verifyInstallBundle(copy, execute) };
+    if (smaller.bytes >= inventory.bytes) {
+      save({ ...measured, outcome: 'skipped', reason: 'Debug stripping did not reduce bundle bytes' });
+      return;
+    }
+    if (hostVerification.outcome === 'succeeded' && measured.hostVerification.outcome !== 'succeeded') {
+      save({ ...measured, outcome: 'skipped', reason: 'The stripped copy failed signature verification' });
+      return;
+    }
+    const strippedRemoval = uninstall();
+    const strippedInstall = strippedRemoval.outcome === 'succeeded' ? install(copy) : undefined;
+    save({ ...measured, removal: strippedRemoval, first: strippedInstall });
+  } catch (error) {
+    console.warn(`warning: could not complete warm simulator install comparison: ${String(error)}`);
+  }
+}
+
 /** Collects installer evidence after the measured commands and before simulator cleanup. */
 export function collectInstallLog(setup: JourneySetupTrace, prefix: string, execute: typeof run = run): void {
   const window = setup.installWindow();
@@ -104,11 +193,9 @@ export function compareMinimalInstall(minimalApp: string, fullApp: string, simul
     const container = install.outcome === 'succeeded'
       ? observeCommand('xcrun', ['simctl', 'get_app_container', simulator, probeIdentifier, 'data'], 120, execute) : undefined;
     // Host verification can identify signed payload and work to read it. Installer logs are separate evidence.
-    const verify = (app: string) =>
-      observeCommand('/usr/bin/codesign', ['--verify', '--deep', '--strict', '--verbose=2', app], 60, execute);
     const receipt = { order: 'full-then-minimal', device: 'same-warm-simulator',
-      minimal: { bundle: installBundleInventory(minimalApp), install, container, hostVerification: verify(minimalApp) },
-      full: { hostVerification: verify(fullApp) } };
+      minimal: { bundle: installBundleInventory(minimalApp), install, container, hostVerification: verifyInstallBundle(minimalApp, execute) },
+      full: { hostVerification: verifyInstallBundle(fullApp, execute) } };
     writeFileSync(`${prefix}-install-comparison.json`, JSON.stringify(receipt, null, 2) + '\n');
   } catch (error) {
     console.warn(`warning: could not compare minimal simulator install: ${String(error)}`);

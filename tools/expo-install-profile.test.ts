@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { CommandFailure } from './command.ts';
-import { collectInstallLog, compareMinimalInstall, installBundleInventory, prepareMinimalInstall } from './expo-install-profile.ts';
+import { CommandFailure, run } from './command.ts';
+import { collectInstallLog, compareMinimalInstall, compareWarmInstalls, installBundleInventory,
+  prepareMinimalInstall } from './expo-install-profile.ts';
 import { JourneySetupTrace } from './expo-journey-setup.ts';
 
 function fixture(t: TestContext): string {
@@ -94,4 +95,72 @@ test('installer logs are queried only for a recorded install window', t => {
   });
   const receipt = JSON.parse(readFileSync(`${prefix}-install-log.json`, 'utf8'));
   assert.equal(receipt.output, 'installer event');
+});
+
+test('warm installs use the same path twice, then compare a fresh install of a smaller copy', t => {
+  const work = fixture(t);
+  const app = join(work, 'Example.app');
+  const framework = 'Frameworks/Large Framework.framework';
+  const executable = 'Large Framework';
+  mkdirSync(join(app, framework), { recursive: true });
+  writeFileSync(join(app, framework, executable), Buffer.alloc(65_536, 1));
+  writeFileSync(join(app, 'main.jsbundle'), 'app');
+  mkdirSync(join(work, 'build'));
+  const copy = join(work, 'build', 'StrippedExample.app');
+  const prefix = join(work, 'attempt-1');
+  const operations: string[][] = [];
+  compareWarmInstalls(app, 'owned', 'example', work, prefix, (command, args, options) => {
+    operations.push([command, ...args]);
+    if (command === '/usr/bin/du') return run(command, args, options);
+    if (command === '/usr/bin/ditto') { cpSync(app, copy, { recursive: true }); return ''; }
+    if (command === '/usr/bin/plutil') return executable;
+    if (command === '/usr/bin/codesign') throw new CommandFailure('Unsigned', 1, 'code object is not signed at all');
+    if (args[0] === 'strip') {
+      assert.deepEqual(args, ['strip', '-S', join(copy, framework, executable)]);
+      writeFileSync(args[2]!, 'stripped');
+    }
+    if (args[1] === 'install') assert.equal(options?.timeout, 180);
+    return '';
+  });
+  const first = operations.findIndex(args => args[2] === 'install');
+  assert.deepEqual(operations.slice(first - 1, first + 2), [
+    ['xcrun', 'simctl', 'uninstall', 'owned', 'example'],
+    ['xcrun', 'simctl', 'install', 'owned', app],
+    ['xcrun', 'simctl', 'install', 'owned', app],
+  ]);
+  assert.deepEqual(operations.slice(-2), [
+    ['xcrun', 'simctl', 'uninstall', 'owned', 'example'],
+    ['xcrun', 'simctl', 'install', 'owned', copy],
+  ]);
+  const receipt = JSON.parse(readFileSync(`${prefix}-warm-installs.json`, 'utf8'));
+  assert.equal(receipt.original.largest[0].path, framework);
+  assert.equal(receipt.original.files, 2);
+  assert.equal(receipt.original.allocated.outcome, 'succeeded');
+  assert.equal(receipt.original.hostVerification.outcome, 'failed');
+  assert.equal(receipt.original.repeat.outcome, 'succeeded');
+  assert.equal(receipt.stripped.first.outcome, 'succeeded');
+  assert.equal(receipt.stripped.bytes, 11);
+  assert.equal(readFileSync(join(app, framework, executable)).length, 65_536);
+});
+
+test('a failed warm first install leaves a measurement and consumes no diagnostic retry', t => {
+  const work = fixture(t);
+  const app = join(work, 'Example.app');
+  mkdirSync(app);
+  writeFileSync(join(app, 'main.jsbundle'), 'app');
+  const prefix = join(work, 'attempt-1');
+  const installs: string[] = [];
+  compareWarmInstalls(app, 'owned', 'example', work, prefix, (command, args, options) => {
+    if (command === '/usr/bin/du') return run(command, args, options);
+    if (args[1] === 'install') {
+      installs.push(args[3]!);
+      throw new CommandFailure('install ETIMEDOUT', 180_002, '');
+    }
+    return '';
+  });
+  assert.deepEqual(installs, [app]);
+  const receipt = JSON.parse(readFileSync(`${prefix}-warm-installs.json`, 'utf8'));
+  assert.match(receipt.original.first.output, /ETIMEDOUT/);
+  assert.equal(receipt.original.repeat, undefined);
+  assert.equal(receipt.stripped, undefined);
 });
