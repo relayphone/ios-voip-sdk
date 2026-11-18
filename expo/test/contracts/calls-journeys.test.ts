@@ -174,7 +174,7 @@ for (const journey of [...loadCatalog(), ...loadCatalogV1()]) {
         if (step.kind === "input") {
           const identity = callIdentity(step.input);
           if (identity) identities.set(identity.id, identity);
-          if (step.input.kind === "admissionFailed") {
+          if (step.input.kind === "admissionFailed" || step.input.kind === "startFailed") {
             systemFailures.set(step.input.callID, step.input.failure);
           }
           continue;
