@@ -28,6 +28,9 @@ public data class Configuration(
 public data class Attempt(public val callID: CallID, public val generation: Long)
 public enum class TimerKind { PLACEMENT, NO_ANSWER, CLAIM, RECONCILIATION, ANSWER, PREPARATION, CONNECTION, RECONNECTION }
 
+/** Clock samples for one input. Only UTC is suitable for published timestamps. */
+public data class Now(public val monotonic: Instant, public val utc: Instant)
+
 /** End receipts are produced once and reused for duplicate End requests. */
 @Serializable
 public sealed interface EndResult {
@@ -48,6 +51,7 @@ public sealed interface EndTarget {
 
 /** Inputs carry port confirmations and explicit authority. A request alone changes no control state. */
 public sealed interface Input {
+    /** A new invitation with an optional UTC expiry supplied by the service. */
     public data class Incoming(
         public val callID: CallID, public val eventID: EventID, public val line: CallingLine,
         public val party: Party, public val expiresAt: Instant? = null,
@@ -83,7 +87,7 @@ public sealed interface Input {
     public data class FrameworkReset(public val failure: SystemFailure) : Input
 }
 
-/** Ordered work for the engine. Timer effects schedule inputs and never suspend the reducer. */
+/** Ordered work for the engine. Effect deadlines use the reducer's monotonic time domain. */
 public sealed interface Effect {
     public data class ReportIncoming(public val attempt: Attempt) : Effect
     public data class RequestPlacement(public val attempt: Attempt, public val actionID: ActionID) : Effect
@@ -133,7 +137,7 @@ internal data class Armed(val attempt: Attempt, val deadline: Instant)
 internal data class Record(
     val call: Call,
     val admission: Attempt? = null,
-    val invitationExpiry: Instant? = null,
+    val invitationDeadline: Instant? = null,
     val retainedEnd: SeenEvent? = null,
     val placement: Pending? = null,
     val joinAttempt: Attempt? = null,

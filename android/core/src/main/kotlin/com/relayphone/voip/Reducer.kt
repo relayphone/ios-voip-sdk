@@ -3,14 +3,15 @@ package com.relayphone.voip
 import kotlin.time.Duration
 import kotlin.time.Instant
 
-/** Applies one input at a supplied instant. The caller executes effects in their returned order. */
-public fun reduce(state: State, input: Input, instant: Instant): Transition =
-    reduce(state, input, instant) {}
+/** Applies one input with separate elapsed time and UTC samples. Effects retain their order. */
+public fun reduce(state: State, input: Input, now: Now): Transition =
+    reduce(state, input, now) {}
 
-internal fun reduce(state: State, input: Input, instant: Instant, trace: (Rule) -> Unit): Transition =
-    Reduction(state, instant, trace).run(input)
+internal fun reduce(state: State, input: Input, now: Now, trace: (Rule) -> Unit): Transition =
+    Reduction(state, now, trace).run(input)
 
-private class Reduction(state: State, private val now: Instant, private val trace: (Rule) -> Unit) {
+private class Reduction(state: State, private val clocks: Now, private val trace: (Rule) -> Unit) {
+    private val now = clocks.monotonic
     private val policy = state.configuration
     private val budgets = policy.budgets
     private val retention = budgets.retention
@@ -107,12 +108,14 @@ private class Reduction(state: State, private val now: Instant, private val trac
     }
 
     private fun incoming(input: Input.Incoming) {
-        if (!remember(input.eventID) || input.callID in records || input.expiresAt?.let { it <= now } == true) return
+        if (!remember(input.eventID) || input.callID in records) return
+        val remaining = input.expiresAt?.minus(clocks.utc)
+        if (remaining != null && remaining <= Duration.ZERO) return
         trace(Rule.INCOMING)
         val attempt = attempt(input.callID)
         val record = Record(
             createCall(input.callID, input.line, input.party, Direction.INCOMING, Lifecycle.Reporting),
-            admission = attempt, invitationExpiry = input.expiresAt,
+            admission = attempt, invitationDeadline = remaining?.let { now + it },
         )
         put(buffered(EndTarget.Canonical(input.callID)).fold(record, ::retain))
         effects += Effect.ReportIncoming(attempt)
@@ -134,7 +137,7 @@ private class Reduction(state: State, private val now: Instant, private val trac
             remoteFinish(admitted, end)
         } else {
             trace(Rule.ADMITTED)
-            val deadline = minOf(now + budgets.incomingRing, admitted.invitationExpiry ?: Instant.DISTANT_FUTURE)
+            val deadline = minOf(now + budgets.incomingRing, admitted.invitationDeadline ?: Instant.DISTANT_FUTURE)
             val ringing = admitted.copy(call = admitted.call.copy(lifecycle = Lifecycle.Ringing))
             put(arm(ringing.copy(retainedEnd = null), TimerKind.NO_ANSWER, deadline), publish = true)
         }
@@ -347,7 +350,7 @@ private class Reduction(state: State, private val now: Instant, private val trac
     }
 
     private fun commitConnected(record: Record) {
-        val at = record.connectedAt ?: now
+        val at = record.connectedAt ?: clocks.utc
         val connected = cancel(cancel(record, TimerKind.NO_ANSWER), TimerKind.CONNECTION).copy(
             call = record.call.copy(
                 lifecycle = Lifecycle.Connected(at), media = record.call.media.copy(transport = Transport.CONNECTED),
@@ -617,7 +620,7 @@ private class Reduction(state: State, private val now: Instant, private val trac
         }
         trace(Rule.MEDIA_RELEASED)
         put(updated.copy(call = record.call.copy(
-            lifecycle = Lifecycle.Ended(ending.reason, now),
+            lifecycle = Lifecycle.Ended(ending.reason, clocks.utc),
             media = record.call.media.copy(preparation = Preparation.RELEASED),
         )), publish = true)
     }

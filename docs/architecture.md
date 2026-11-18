@@ -15,7 +15,7 @@ do not own calls. One native runtime per app process serves every binding.
 
 | Layer | iOS | Android | Responsibility |
 | --- | --- | --- | --- |
-| Domain and execution | `VoIPCore`, pure reducer and isolated engine | `:core`, pure JVM reducer and coroutine runtime | Identity, state, policies, commands, events, deadlines and effects; no UI, Expo or React Native |
+| Domain and execution | `VoIPCore`, pure reducer and isolated engine | `:core` pure JVM reducer, `:runtime` coroutine engine | Identity, state, policies, commands, events, deadlines and effects; no UI, Expo or React Native |
 | System calls | `VoIPLiveCommunicationKit` | `:system`, Core-Telecom adapter | Admission, system actions, settlement and confirmed system state |
 | Push | `VoIPPushKit` | `:push-fcm` | Native launch intake, decoding, deduplication, reporting obligations, registration and health observations |
 | Answer authority | `AnswerAuthority`, optional `VoIPHTTPAuthority` | `AnswerAuthority`, optional `:authority-http` | Bounded native ownership claim, reconciliation and release |
@@ -517,8 +517,8 @@ instrumentation uses its JUnit runner. Use `Mutex` for small shared state, DocC/
 APIs and behavior tests throughout. Untyped framework payloads are decoded at the boundary.
 
 Publish `com.relayphone:voip-sdk` as a small Android facade AAR with transitive dependencies on
-`voip-core` (JAR), `voip-system` and optional push/media artifacts. Testing/runtime artifacts
-are separate and never production dependencies. All artifacts and bindings use the repository's
+`voip-core` (JAR), `voip-runtime`, `voip-system` and optional push/media artifacts. Keep testing and
+emulator runtime artifacts in test dependencies. All artifacts and bindings use the repository's
 version and tag. Use Gradle's [`maven-publish`](https://docs.gradle.org/current/userguide/publishing_maven.html)
 to produce POMs, Gradle metadata, sources and documentation alongside binaries.
 

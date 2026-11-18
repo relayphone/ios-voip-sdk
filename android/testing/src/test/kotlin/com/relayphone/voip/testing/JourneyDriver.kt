@@ -1,11 +1,23 @@
 package com.relayphone.voip.testing
 
 import com.relayphone.voip.*
-import kotlin.time.Duration
+import com.relayphone.voip.runtime.AnswerDecision
+import com.relayphone.voip.runtime.AuthorityPort
+import com.relayphone.voip.runtime.CallRuntime
+import com.relayphone.voip.runtime.MediaPort
+import com.relayphone.voip.runtime.MonotonicClock
+import com.relayphone.voip.runtime.PresentationPort
+import com.relayphone.voip.runtime.Reconciliation
+import com.relayphone.voip.runtime.RuntimeEvent
+import com.relayphone.voip.runtime.SystemPort
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -14,12 +26,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 
-/** Drives the real reducer. Ports see effects and controls only, never expectations. */
+/** Drives the runtime with fake ports under virtual time. Fakes never read expectations. */
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class JourneyDriver(private val scope: TestScope, private val configuration: Configuration) {
-    private var state = State(configuration)
-    private val timerJobs = mutableMapOf<Attempt, Job>()
-    private val inbox = ArrayDeque<Input>()
     private val counters = mutableMapOf<CallID, MutableMap<Metric, Int>>()
     private val errors = mutableMapOf<CallID, CallError>()
     private val ends = mutableMapOf<CallID, EndResult>()
@@ -31,7 +40,25 @@ internal class JourneyDriver(private val scope: TestScope, private val configura
     private var sequence = 0
     private var running = false
     private var javascript = false
-    private val now: Instant get() = Instant.fromEpochMilliseconds(scope.testScheduler.currentTime)
+    private val runtime = when (val started = CallRuntime.start(
+        configuration, scope.backgroundScope, system, authority, media,
+        PresentationPort { call ->
+            if (call.lifecycle == Lifecycle.Ringing) increment(call.id, Metric.RINGING_PUBLICATIONS)
+        },
+        monotonicClock = MonotonicClock { Instant.fromEpochMilliseconds(scope.testScheduler.currentTime) },
+        utcClock = object : Clock {
+            override fun now(): Instant = Instant.fromEpochMilliseconds(scope.testScheduler.currentTime)
+        },
+    )) {
+        is Outcome.Success -> started.value
+        is Outcome.Failure -> error("Invalid runtime configuration: ${started.error}")
+    }
+    private val state: State get() = runtime.state.value
+    private val observationJob = scope.backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
+        runtime.events.collect { event ->
+            if (event is RuntimeEvent.ClaimTimedOut) increment(event.effect.attempt.callID, Metric.CLAIM_TIMEOUTS)
+        }
+    }
 
     fun apply(control: Control) {
         when (control) {
@@ -53,13 +80,10 @@ internal class JourneyDriver(private val scope: TestScope, private val configura
                 if (control.deferConfirmation) system.deferControl += id
                 send(Input.Request(control.action, id, supported = true))
             }
-            is Control.Admitted -> send(Input.Admitted(system.admissions.remove(control.callID) ?: error("Missing admission")))
-            is Control.HoldApplied -> send(Input.Applied(system.controls.remove(control.callID) ?: error("Missing hold request")))
-            is Control.Placed -> send(Input.Placed(system.placements.remove(control.callID) ?: error("Missing placement")))
-            is Control.LatePermit -> {
-                val attempt = authority.claims.getValue(control.callID)
-                send(Input.AuthorityAllowed(attempt, AttemptID("late-${attempt.generation}")))
-            }
+            is Control.Admitted -> system.admit(control.callID)
+            is Control.HoldApplied -> system.confirmHold(control.callID)
+            is Control.Placed -> authority.confirmPlacement(control.callID)
+            is Control.LatePermit -> authority.deliverLatePermit(control.callID)
             is Control.ProvideMedia -> {
                 media.available += control.callID
                 send(Input.ProvideMedia(control.callID))
@@ -94,71 +118,13 @@ internal class JourneyDriver(private val scope: TestScope, private val configura
         }
     }
 
-    fun close() {
-        timerJobs.values.forEach(Job::cancel)
-        timerJobs.clear()
+    suspend fun close() {
+        runtime.close()
+        observationJob.cancelAndJoin()
     }
 
     private fun send(input: Input) {
-        inbox.addLast(input)
-        while (inbox.isNotEmpty()) {
-            val transition = reduce(state, inbox.removeFirst(), now)
-            state = transition.state
-            transition.effects.forEach(::perform)
-        }
-    }
-
-    private fun perform(effect: Effect) {
-        when (effect) {
-            is Effect.ArmTimer -> {
-                timerJobs[effect.attempt] = scope.backgroundScope.launch {
-                    delay((effect.deadline - now).coerceAtLeast(Duration.ZERO))
-                    timerJobs.remove(effect.attempt)
-                    send(Input.TimerExpired(effect.attempt, effect.kind))
-                }
-            }
-            is Effect.CancelTimer -> timerJobs.remove(effect.attempt)?.cancel()
-            is Effect.ReportIncoming -> system.report(effect.attempt)
-            is Effect.RequestPlacement -> {
-                increment(effect.attempt.callID, Metric.PLACEMENTS)
-                system.placements[effect.attempt.callID] = effect.attempt
-            }
-            is Effect.NativeStart -> {
-                system.nativeCalls += effect.attempt.callID
-                settle(effect.attempt.callID, effect.actionID)
-            }
-            is Effect.RequestClaim -> authority.claim(effect)
-            is Effect.Reconcile -> authority.reconcile(effect)
-            is Effect.ClaimTimedOut -> increment(effect.attempt.callID, Metric.CLAIM_TIMEOUTS)
-            is Effect.ReleasePermit -> {
-                increment(effect.attempt.callID, Metric.PERMIT_RELEASES)
-                inbox += Input.PermitReleased(effect.attempt, effect.permit)
-            }
-            is Effect.PrepareMedia -> media.prepare(effect.attempt)
-            is Effect.CloseMedia -> media.close(effect.attempt, effect.mediaAttempt)
-            is Effect.RequestRemoval -> system.remove(effect)
-            is Effect.SetActive -> {
-                check(effect.attempt.callID in system.nativeCalls)
-                increment(effect.attempt.callID, Metric.ACTIVATIONS)
-                media.activate(effect.attempt)
-            }
-            is Effect.Apply -> system.apply(effect)
-            is Effect.SendTones -> media.sendTones(effect.attempt)
-            is Effect.TonesPerformed -> Unit
-            is Effect.Publish -> if (effect.call.lifecycle == Lifecycle.Ringing) increment(effect.call.id, Metric.RINGING_PUBLICATIONS)
-            is Effect.SettleAction -> settle(effect.callID, effect.actionID)
-            is Effect.RejectAction -> {
-                errors[effect.callID] = effect.error
-                effect.actionID?.let { settle(effect.callID, it) }
-            }
-            is Effect.CompleteEnd -> {
-                val result = effect.result
-                ends[effect.callID] = result
-                if (result is EndResult.Ended && endReceipts.add(result.receipt)) {
-                    increment(effect.callID, Metric.PERFORMED_ENDS)
-                }
-            }
-        }
+        check(runtime.submit(input)) { "Runtime is closed" }
     }
 
     private fun project(lifecycle: Lifecycle): JsonObject {
@@ -181,98 +147,175 @@ internal class JourneyDriver(private val scope: TestScope, private val configura
         increment(id, Metric.SETTLEMENTS)
     }
 
-    private inner class FakeSystem {
-        val admissions = mutableMapOf<CallID, Attempt>()
-        val placements = mutableMapOf<CallID, Attempt>()
-        val controls = mutableMapOf<CallID, Attempt>()
+    private inner class FakeSystem : SystemPort {
+        override val answerDeadline = 5.seconds
+        private val admissions = mutableMapOf<CallID, () -> Unit>()
+        private val controls = mutableMapOf<CallID, CompletableDeferred<Unit>>()
+        private val sessions = mutableMapOf<CallID, CompletableDeferred<Unit>>()
         val deferAdmission = mutableSetOf<CallID>()
         val deferControl = mutableSetOf<ActionID>()
-        val nativeCalls = mutableSetOf<CallID>()
         val endCauses = mutableMapOf<CallID, SystemEndCause>()
 
-        fun report(attempt: Attempt) {
-            val id = attempt.callID
+        fun admit(id: CallID) = (admissions.remove(id) ?: error("Missing admission"))()
+
+        fun confirmHold(id: CallID) {
+            check(controls.getValue(id).complete(Unit))
+        }
+
+        override suspend fun reportIncoming(call: Call, request: Effect.ReportIncoming, admitted: () -> Unit) {
+            val id = call.id
             increment(id, Metric.REPORTS)
-            nativeCalls += id
-            if (deferAdmission.remove(id)) admissions[id] = attempt
-            else inbox += Input.Admitted(attempt)
+            session(id) {
+                if (deferAdmission.remove(id)) admissions[id] = admitted else admitted()
+            }
         }
 
-        fun apply(effect: Effect.Apply) {
-            if (effect.action is Action.Hold) increment(effect.attempt.callID, Metric.HOLD_REQUESTS)
-            if (deferControl.remove(effect.actionID)) {
-                controls[effect.attempt.callID] = effect.attempt
-            } else inbox += Input.Applied(effect.attempt)
+        override suspend fun startOutgoing(call: Call, request: Effect.NativeStart) {
+            session(call.id) { settle(call.id, request.actionID) }
         }
 
-        fun remove(effect: Effect.RequestRemoval) {
-            val id = effect.attempt.callID
-            val call = state.calls.getValue(id)
-            if (nativeCalls.remove(id)) endCauses[id] = when (effect.reason) {
+        private suspend fun session(id: CallID, opened: () -> Unit) {
+            val closing = CompletableDeferred<Unit>()
+            check(sessions.put(id, closing) == null)
+            try {
+                opened()
+                closing.await()
+            } finally {
+                sessions.remove(id, closing)
+                admissions.remove(id)
+            }
+        }
+
+        override suspend fun apply(request: Effect.Apply): Outcome<Unit, CallError> {
+            val id = request.attempt.callID
+            if (request.action is Action.Hold) increment(id, Metric.HOLD_REQUESTS)
+            if (deferControl.remove(request.actionID)) {
+                val confirmation = CompletableDeferred<Unit>()
+                check(controls.put(id, confirmation) == null)
+                try {
+                    confirmation.await()
+                } finally {
+                    controls.remove(id, confirmation)
+                }
+            }
+            return Outcome.Success(Unit)
+        }
+
+        override suspend fun remove(call: Call, request: Effect.RequestRemoval): Outcome<Unit, SystemFailure> {
+            val id = call.id
+            val session = sessions.remove(id) ?: return Outcome.Success(Unit)
+            endCauses[id] = when (val reason = request.reason) {
                 EndReason.LocalDeclined -> SystemEndCause.REJECTED
                 EndReason.LocalEnded -> SystemEndCause.LOCAL
                 EndReason.Unanswered -> if (call.direction == Direction.INCOMING) SystemEndCause.MISSED else SystemEndCause.REMOTE
-                is EndReason.Failed -> if ((effect.reason as EndReason.Failed).error is CallError.Refused) SystemEndCause.REJECTED else SystemEndCause.REMOTE
+                is EndReason.Failed -> if (reason.error is CallError.Refused) SystemEndCause.REJECTED else SystemEndCause.REMOTE
                 else -> SystemEndCause.REMOTE
             }
-            inbox += Input.SystemRemoved(effect.attempt)
-        }
-    }
-
-    private inner class FakeAuthority {
-        val plans = mutableMapOf<CallID, Control.Authority>()
-        val claims = mutableMapOf<CallID, Attempt>()
-        private val actions = mutableMapOf<CallID, ActionID>()
-
-        fun claim(effect: Effect.RequestClaim) {
-            val id = effect.attempt.callID
-            increment(id, Metric.CLAIMS)
-            claims[id] = effect.attempt
-            actions[id] = effect.actionID
-            respond(effect.attempt, plans.getValue(id).claim)
+            session.complete(Unit)
+            return Outcome.Success(Unit)
         }
 
-        fun reconcile(effect: Effect.Reconcile) {
-            val id = effect.attempt.callID
-            check(actions.getValue(id) == effect.actionID)
-            increment(id, Metric.RECONCILIATIONS)
-            respond(effect.attempt, plans.getValue(id).reconciliation)
+        override suspend fun setActive(request: Effect.SetActive) {
+            check(request.attempt.callID in sessions)
+            increment(request.attempt.callID, Metric.ACTIVATIONS)
+            media.observeActive(request.attempt)
         }
 
-        private fun respond(attempt: Attempt, decision: Decision) {
-            when (decision) {
-                Decision.Allow -> inbox += Input.AuthorityAllowed(attempt, AttemptID("permit-${attempt.generation}"))
-                is Decision.Refuse -> inbox += Input.AnswerRefused(attempt, decision.reason)
-                Decision.Timeout, Decision.Unknown -> Unit // The corresponding engine deadline supplies the result.
+        override fun settle(result: Effect.SettleAction) = settle(result.callID, result.actionID)
+
+        override fun reject(result: Effect.RejectAction) {
+            errors[result.callID] = result.error
+            result.actionID?.let { settle(result.callID, it) }
+        }
+
+        override fun completeEnd(result: Effect.CompleteEnd) {
+            val end = result.result
+            ends[result.callID] = end
+            if (end is EndResult.Ended && endReceipts.add(end.receipt)) {
+                increment(result.callID, Metric.PERFORMED_ENDS)
             }
         }
     }
 
-    private inner class FakeMedia {
+    private inner class FakeAuthority : AuthorityPort {
+        val plans = mutableMapOf<CallID, Control.Authority>()
+        private val placements = mutableMapOf<CallID, CompletableDeferred<Unit>>()
+        private val claims = mutableMapOf<CallID, Attempt>()
+        private val actions = mutableMapOf<CallID, ActionID>()
+
+        fun confirmPlacement(id: CallID) {
+            check(placements.getValue(id).complete(Unit))
+        }
+
+        fun deliverLatePermit(id: CallID) {
+            val attempt = claims.getValue(id)
+            send(Input.AuthorityAllowed(attempt, AttemptID("late-${attempt.generation}")))
+        }
+
+        override suspend fun place(call: Call, request: Effect.RequestPlacement): Outcome<Unit, CallError.PlacementFailed> {
+            increment(call.id, Metric.PLACEMENTS)
+            val placement = CompletableDeferred<Unit>()
+            check(placements.put(call.id, placement) == null)
+            try {
+                placement.await()
+                return Outcome.Success(Unit)
+            } finally {
+                placements.remove(call.id, placement)
+            }
+        }
+
+        override suspend fun claim(request: Effect.RequestClaim): AnswerDecision {
+            val id = request.attempt.callID
+            increment(id, Metric.CLAIMS)
+            claims[id] = request.attempt
+            actions[id] = request.actionID
+            return respond(request.attempt, plans.getValue(id).claim)
+        }
+
+        override suspend fun reconcile(request: Effect.Reconcile): Reconciliation {
+            val id = request.attempt.callID
+            check(actions.getValue(id) == request.actionID)
+            increment(id, Metric.RECONCILIATIONS)
+            return respond(request.attempt, plans.getValue(id).reconciliation)
+        }
+
+        override suspend fun release(request: Effect.ReleasePermit) {
+            increment(request.attempt.callID, Metric.PERMIT_RELEASES)
+        }
+
+        private suspend fun respond(attempt: Attempt, decision: Decision): AnswerDecision = when (decision) {
+            Decision.Allow -> AnswerDecision.Allow(AttemptID("permit-${attempt.generation}"))
+            is Decision.Refuse -> AnswerDecision.Refuse(decision.reason)
+            Decision.Timeout, Decision.Unknown -> awaitCancellation()
+        }
+    }
+
+    private inner class FakeMedia : MediaPort {
         val available = mutableSetOf<CallID>()
         private val prepared = mutableMapOf<CallID, Attempt>()
 
-        fun prepare(attempt: Attempt) {
+        override suspend fun prepare(request: Effect.PrepareMedia): Outcome<Unit, CallError.MediaFailed> {
+            val attempt = request.attempt
             check(attempt.callID in available) { "Media preparation started before media was supplied" }
             check(prepared.put(attempt.callID, attempt) == null)
-            inbox += Input.MediaPrepared(attempt)
+            return Outcome.Success(Unit)
         }
 
-        fun activate(attempt: Attempt) {
+        fun observeActive(attempt: Attempt) {
             check(prepared[attempt.callID] == attempt)
             increment(attempt.callID, Metric.PUBLICATIONS)
         }
 
-        fun sendTones(attempt: Attempt) {
-            check(attempt.callID in prepared)
-            inbox += Input.Applied(attempt)
+        override suspend fun sendTones(request: Effect.SendTones): Outcome<Unit, CallError> {
+            check(request.attempt.callID in prepared)
+            return Outcome.Success(Unit)
         }
 
-        fun close(attempt: Attempt, mediaAttempt: Attempt?) {
-            if (mediaAttempt != null && prepared.remove(attempt.callID, mediaAttempt)) {
-                increment(attempt.callID, Metric.RELEASES)
+        override suspend fun close(request: Effect.CloseMedia) {
+            val id = request.attempt.callID
+            if (request.mediaAttempt != null && prepared.remove(id, request.mediaAttempt)) {
+                increment(id, Metric.RELEASES)
             }
-            inbox += Input.MediaReleased(attempt)
         }
     }
 }

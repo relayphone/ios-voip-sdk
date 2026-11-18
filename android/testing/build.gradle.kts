@@ -1,7 +1,7 @@
 plugins { alias(libs.plugins.kotlin.serialization) }
 
 dependencies {
-    api(project(":core"))
+    api(project(":runtime"))
     api(libs.coroutines.test)
     testImplementation(libs.serialization.json)
     testImplementation(platform(libs.junit.bom))

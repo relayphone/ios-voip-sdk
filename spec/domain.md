@@ -195,6 +195,7 @@ local actions/presentation. Schema-shaped diagnostics never include credentials 
 ## Budgets
 
 All durations are positive safe integer milliseconds, represented as native Duration values.
+Deadlines, timers and retention use monotonic time. Published timestamps use UTC.
 
 | Budget | Default | Anchor |
 | --- | ---: | --- |
