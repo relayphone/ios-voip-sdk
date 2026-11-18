@@ -9,7 +9,7 @@
   "scripts": {
     "test": "node --test \"*.test.ts\" \"conformance/*.test.ts\" \"media-test/*.test.ts\"",
     "typecheck": "tsc --project .",
-    "lint": "cd .. && oxlint --config tools/.oxlintrc.json tools expo exact"
+    "lint": "cd .. && oxlint tools expo exact"
   },
   "devDependencies": {
     "@interfere/landmines": "0.1.0",

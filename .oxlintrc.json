@@ -1,9 +1,9 @@
 {
   "extends": [
-    "./node_modules/@interfere/landmines/configs/recommended.json"
+    "./tools/node_modules/@interfere/landmines/configs/recommended.json"
   ],
   "jsPlugins": [
-    "./oxlint/anti-slop/index.ts"
+    "./tools/oxlint/anti-slop/index.ts"
   ],
   "ignorePatterns": [
     "tools/oxlint/anti-slop/**",
