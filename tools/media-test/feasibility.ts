@@ -99,7 +99,7 @@ const control = createServer(async (request, response) => {
         await step(window, observe);
       }
       uplinkCapture = harness.observation().capture;
-      uplinkEvidence = await step('marker-analysis', () => measureMarkerAsync(uplinkCapture!, uplink));
+      uplinkEvidence = await step('marker-analysis', () => measureMarkerAsync(uplinkCapture!, uplink, 'host-poll'));
       controlPhase = 'marker-gate';
       assert.ok(uplinkEvidence.clean && uplinkEvidence.complete && uplinkEvidence.postRollObserved, 'Complete unmuted tones-v2 marker and post-roll were not received');
       controls.leakControlCaught = true;
@@ -152,7 +152,7 @@ try {
     assertNativeTeardown((evidence as { teardown?: unknown }).teardown);
   } catch (error) { nativeFailure = error; }
   uplinkCapture ??= harness.observation().capture;
-  if (!nativeFailure) uplinkEvidence ??= await measureMarkerAsync(uplinkCapture, uplink);
+  if (!nativeFailure) uplinkEvidence ??= await measureMarkerAsync(uplinkCapture, uplink, 'host-poll');
   const downlinkCaptures: Partial<Record<"decoded" | "output", PCMCapture>> = {};
   const downlinkEvidence = Object.fromEntries(await Promise.all((['decoded', 'output'] as const).map(async (stage): Promise<[string, ReturnType<typeof measureMarker> | { complete: false; error: string } | null]> => {
     const file = join(container, `Documents/media-${stage}.json`);
@@ -167,7 +167,6 @@ try {
     pcm: { fromDevice: uplinkCapture, toDevice: downlinkCaptures },
     receiver: harness.status(),
     markers: { fromDevice: uplinkEvidence, toDevice: downlinkEvidence } }, null, 2));
-  if (nativeFailure) throw nativeFailure;
   console.log(JSON.stringify({ processing, markers: { fromDevice: uplinkEvidence, toDevice: downlinkEvidence } }));
   if (process.env.GITHUB_STEP_SUMMARY) {
     let report = markerReport(`${processing}: fromDevice / farEnd`, uplinkEvidence);
@@ -176,6 +175,7 @@ try {
         : `\n### ${processing}: toDevice / ${stage}\n\nMissing or invalid PCM observation.\n`;
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, report);
   }
+  if (nativeFailure) throw nativeFailure;
   assert.ok((uplinkEvidence as ReturnType<typeof measureMarker> | null)?.clean && (uplinkEvidence as ReturnType<typeof measureMarker> | null)?.complete && (uplinkEvidence as ReturnType<typeof measureMarker> | null)?.postRollObserved &&
     Object.values(downlinkEvidence).every(value => value?.complete && 'clean' in value && value.clean && "postRollObserved" in value && value.postRollObserved),
     'A complete tones-v2 marker with every slot >= 0.8 and post-roll coverage is required in both directions');

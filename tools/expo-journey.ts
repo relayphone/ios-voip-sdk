@@ -8,6 +8,7 @@ import { simulatorDevice } from './inspector-devices.ts';
 import { captureTail, simulatorDiagnostics } from './inspector-resources.ts';
 import { launchToleratingASlowSimulator } from './runtime-smoke.ts';
 import { assertExpoJournal, assertJavaScriptResults } from './expo-journey-results.ts';
+import { JourneySetupTrace } from './expo-journey-setup.ts';
 import { journeyIDs, type JourneyStage } from '../expo/example/client/journeys/results.ts';
 
 const bundle = 'com.example.voipconversations';
@@ -141,6 +142,7 @@ export async function expoJourney(work: string, app: string): Promise<void> {
   await withInfrastructureRetry(async attempt => {
     const name = `expo-journey-${process.env.GITHUB_RUN_ID ?? process.pid}-${process.env.GITHUB_RUN_ATTEMPT ?? 1}-${attempt}`;
     const prefix = join(results, `attempt-${attempt + 1}`);
+    const setup = new JourneySetupTrace();
     const runID = `js-${process.env.GITHUB_RUN_ID ?? process.pid}-${process.env.GITHUB_RUN_ATTEMPT ?? 1}-${attempt}`;
     const ids = journeyIDs(runID);
     let target: string | undefined;
@@ -149,16 +151,20 @@ export async function expoJourney(work: string, app: string): Promise<void> {
     let output: string | undefined;
     writeFileSync(join(markers, name), '');
     try {
-      target = infrastructure('create', () => run('xcrun', ['simctl', 'create', name,
-        deviceType.identifier, simulatorRuntime], { timeout: 120 }));
+      target = infrastructure('create', () => setup.observe('create', () => run('xcrun',
+        ['simctl', 'create', name, deviceType.identifier, simulatorRuntime], { timeout: 120 })));
       const simulator = target;
       infrastructure('boot', () => {
-        run('xcrun', ['simctl', 'boot', simulator], { timeout: 120 });
-        try { run('xcrun', ['simctl', 'bootstatus', simulator, '-b'], { timeout: 300 }); }
-        catch (error) { bootstatusRetried = true; throw error; }
+        setup.observe('boot', () => run('xcrun', ['simctl', 'boot', simulator], { timeout: 120 }));
+        try {
+          setup.observe('bootstatus', () => run('xcrun', ['simctl', 'bootstatus', simulator, '-b'],
+            { timeout: 300 }), output => output);
+        } catch (error) { bootstatusRetried = true; throw error; }
       });
-      installBundledExample(simulator, app);
-      const container = infrastructure('container', () => run('xcrun', ['simctl', 'get_app_container', simulator, bundle, 'data'], { timeout: 120 }));
+      setup.observe('install', () => installBundledExample(simulator, app));
+      const container = infrastructure('container', () => setup.observe('container', () => run('xcrun',
+        ['simctl', 'get_app_container', simulator, bundle, 'data'], { timeout: 120 })));
+      setup.save(prefix);
       const cksim = (...args: string[]) => run(join(work, 'runtime/cksim'),
         ['--simulator', simulator, '--bundle', bundle, '--app-container', container, ...args], { timeout: 180 });
       captureJournal = () => cksim('watch', '--json', '--duration', '1');
@@ -204,6 +210,10 @@ export async function expoJourney(work: string, app: string): Promise<void> {
       check = 'late-handler';
       await lateHandlerJourneys(work, simulator, container, prefix, runID, evidence => launchBundledExample(simulator, evidence));
     } catch (error) {
+      if (error instanceof InfrastructureFailure && target && (error.step === 'install' || error.step === 'container')) {
+        setup.captureInstallFailure(target);
+      }
+      if (check === 'setup') setup.save(prefix);
       const failure = classifyJourneyFailure(error, check, target, bootstatusRetried);
       summary(`${failure instanceof InfrastructureFailure || failure instanceof HostUnresponsiveFailure ? failure.message : `product:${check} failed`}`);
       writeFileSync(`${prefix}-failure.log`, `${String(failure)}\n${failure instanceof Error ? String(failure.cause ?? '') : ''}\n${failure instanceof HostUnresponsiveFailure ? failure.evidence : ''}`);

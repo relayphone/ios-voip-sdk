@@ -1,0 +1,9 @@
+{
+  "version": 0,
+  "kind": "action",
+  "value": {
+    "kind": "tones",
+    "callID": "call-a",
+    "digits": []
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "version": 0,
+  "kind": "endResult",
+  "value": {
+    "kind": "ended",
+    "receipt": {
+      "callID": "call-a",
+      "actionID": "end-a",
+      "reason": {
+        "kind": "localEnded"
+      }
+    }
+  }
+}

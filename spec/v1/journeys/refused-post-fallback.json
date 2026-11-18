@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "id": "refused-post-fallback",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":true,"javascriptAttached":false}},
+    {"kind":"input","input":{"kind":"presentation","callID":"fallback-a","descriptor":{"state":"dialing","title":"Calling…","body":"Alice","lineLabel":"Personal","bodyTap":{"kind":"openCall"},"extraActions":[]}}},
+    {"kind":"input","input":{"kind":"refuseNotificationPost","callID":"fallback-a","surface":"ongoingCallStyle","reason":"systemRefused"}},
+    {"kind":"input","input":{"kind":"action","origin":"app","action":{"kind":"start","callID":"fallback-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}}},
+    {"kind":"input","input":{"kind":"placed","callID":"fallback-a"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"fallback-a","lifecycle":{"kind":"dialing"}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"notificationObservation","value":{"kind":"refused","callID":"fallback-a","surface":"ongoingCallStyle","generation":1,"reason":"systemRefused"}}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"notificationObservation","value":{"kind":"posted","callID":"fallback-a","surface":"serviceFallback","generation":1,"descriptor":{"state":"dialing","title":"Calling…","body":"Alice","lineLabel":"Personal","bodyTap":{"kind":"openCall"},"extraActions":[]},"systemButtons":["hangUp"]}}}},
+    {"kind":"input","input":{"kind":"action","origin":"app","action":{"kind":"end","callID":"fallback-a"}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"fallback-a","lifecycle":{"kind":"ended","reason":{"kind":"localEnded"}}}},
+    {"kind":"expect","expectation":{"kind":"record","record":{"version":1,"kind":"notificationObservation","value":{"kind":"removed","callID":"fallback-a","surface":"serviceFallback","generation":1}}}}
+  ]
+}

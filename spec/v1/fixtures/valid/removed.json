@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "kind": "notificationObservation",
+  "value": {"callID":"call-a","surface":"ongoingCallStyle","generation":1,"kind":"removed"}
+}

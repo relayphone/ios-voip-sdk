@@ -1,0 +1,17 @@
+{
+  "version": 0,
+  "kind": "endResult",
+  "value": {
+    "kind": "alreadyEnded",
+    "reason": {
+      "kind": "remoteEnded"
+    },
+    "receipt": {
+      "callID": "call-a",
+      "actionID": "end-a",
+      "reason": {
+        "kind": "localEnded"
+      }
+    }
+  }
+}

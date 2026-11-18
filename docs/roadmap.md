@@ -3,6 +3,8 @@
 The current release is listed in [`VERSION`](../VERSION) and the [changelog](../CHANGELOG.md).
 Until 1.0, a minor release may change the public API, and the changelog says how to migrate.
 
+The accepted [iOS and Android architecture](architecture.md) defines the next implementation milestones and supersedes the separate Android composition plan below.
+
 ## Toward 1.0
 
 The work below is in priority order.

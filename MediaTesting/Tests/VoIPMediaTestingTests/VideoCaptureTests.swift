@@ -71,6 +71,19 @@
       _ = try await source.track.stop()
     }
 
+    @Test func stopBeforePacingStartsNeverResumesGeneration() async throws {
+      let source = try await SyntheticVideoCapture.make(
+        fixture: UUID(), direction: .uplink, epoch: 5, observationClock: MediaObservationClock())
+      let final = try await source.stop()
+      try await source.run(clock: ContinuousClock(), duration: .seconds(1))
+      let after = await source.snapshot()
+      #expect(after.generated == final.generated)
+      #expect(after.finalCounter == final.finalCounter)
+      #expect(after.pacingTaskJoined)
+      #expect(after.postStopCaptureRejects == 0)
+      _ = try await source.track.stop()
+    }
+
     @Test func stopJoinsActivePacingBeforeReturningTheFinalReceipt() async throws {
       let source = try await SyntheticVideoCapture.make(
         fixture: UUID(), direction: .uplink, epoch: 3, observationClock: MediaObservationClock())

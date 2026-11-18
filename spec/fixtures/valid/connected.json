@@ -1,0 +1,36 @@
+{
+  "version": 0,
+  "kind": "call",
+  "value": {
+    "id": "call-α",
+    "line": {
+      "accountID": "account-a",
+      "id": "personal",
+      "label": "Personal"
+    },
+    "direction": "incoming",
+    "parties": [
+      {
+        "id": "alice",
+        "handle": {
+          "kind": "opaque",
+          "value": "sip:alice@example.test"
+        },
+        "displayName": "Alice"
+      }
+    ],
+    "lifecycle": {
+      "kind": "connected",
+      "connectedAt": "2026-11-17T00:00:00.000Z"
+    },
+    "held": false,
+    "muted": false,
+    "video": false,
+    "media": {
+      "owner": "native",
+      "preparation": "prepared",
+      "audio": "active",
+      "transport": "connected"
+    }
+  }
+}

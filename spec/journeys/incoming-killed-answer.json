@@ -1,0 +1,23 @@
+{
+  "version": 0,
+  "id": "incoming-killed-answer",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":false,"javascriptAttached":false}},
+    {"kind":"input","input":{"kind":"incoming","callID":"incoming-a","eventID":"invite-incoming-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}},
+    {"kind":"input","input":{"kind":"authority","callID":"incoming-a","claim":{"kind":"allow"},"reconciliation":{"kind":"unknown"}}},
+    {"kind":"input","input":{"kind":"provideMedia","callID":"incoming-a"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"incoming-a","lifecycle":{"kind":"ringing"}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"incoming-a","metric":"reports","value":1}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"incoming-a","metric":"publications","value":0}},
+    {"kind":"input","input":{"kind":"action","origin":"system","action":{"kind":"answer","callID":"incoming-a"}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"incoming-a","lifecycle":{"kind":"connecting"}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"incoming-a","metric":"claims","value":1}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"incoming-a","metric":"settlements","value":1}},
+    {"kind":"input","input":{"kind":"connected","callID":"incoming-a","eventID":"connected-incoming-a"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"incoming-a","lifecycle":{"kind":"connected"}}},
+    {"kind":"input","input":{"kind":"action","origin":"system","action":{"kind":"end","callID":"incoming-a"}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"incoming-a","lifecycle":{"kind":"ended","reason":{"kind":"localEnded"}}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"incoming-a","metric":"releases","value":1}}
+  ]
+}

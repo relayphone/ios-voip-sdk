@@ -128,6 +128,10 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
     var journeyTicksDropped = 0
     var journeyEnded: JourneyEnd?
     var sdkCallHistory = MediaSDKAudioState.CallHistory()
+    var syntheticVideo: MediaSyntheticVideo?
+    var videoPolicy: MediaVideoPolicy?
+    var syntheticVideoEvidence: MediaSyntheticVideo.Snapshot?
+    var videoTerminating = false
     var videoHistory = MediaSDKVideoEvidence.History()
     var journeyFailure: MediaJourneyFailure?
     var publicationHeld = false
@@ -174,6 +178,11 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let stream = AsyncStream<AudioCommand>.makeStream()
       commands = stream.continuation
       super.init()
+      if let token = fixture.journey?.syntheticVideo {
+        let video = MediaSyntheticVideo(room: room, clock: observationClock, fixture: token)
+        syntheticVideo = video
+        videoPolicy = MediaVideoPolicy(transport: video)
+      }
       audio = Task { [weak self] in
         for await command in stream.stream {
           guard let self else { return }
@@ -197,9 +206,15 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
               active = false
               if !AudioManager.shared.isEngineRunning { teardown.record(.engineStopped) }
             case .release:
+              videoTerminating = true
+              do { try await applyVideo(hasVideo: false, held: false, ended: true) } catch {
+                recordJourneyFailure(error, operation: .video)
+                fail()
+              }
               packets?.cancel()
               packets = nil
               await room.disconnect()
+              syntheticVideo?.record(.roomDisconnected)
               if room.connectionState == .disconnected { teardown.record(.roomDisconnected) }
               decoder.detach()
               hooks.uninstallOutputTap()
@@ -271,12 +286,46 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       didSubscribeTrack publication: RemoteTrackPublication
     ) {
       Task { @MainActor [weak self] in
-        guard let self, !released, let track = publication.track as? RemoteAudioTrack else {
+        guard let self, !released else { return }
+        if let track = publication.track as? RemoteVideoTrack,
+          participant.identity?.stringValue == "far-end"
+        {
+          syntheticVideo?.attach(track, sid: publication.sid.stringValue)
           return
         }
+        guard let track = publication.track as? RemoteAudioTrack else { return }
         decoder.attach(to: track)
         remoteTrack = track
         await track.set(reportStatistics: true)
+      }
+    }
+    nonisolated func room(
+      _ room: Room, participant: RemoteParticipant,
+      didPublishTrack publication: RemoteTrackPublication
+    ) {
+      recordRemoteVideo(participant, publication, .remotePublished)
+    }
+    nonisolated func room(
+      _ room: Room, participant: RemoteParticipant,
+      didUnpublishTrack publication: RemoteTrackPublication
+    ) {
+      recordRemoteVideo(participant, publication, .remoteUnpublished)
+    }
+    nonisolated func room(
+      _ room: Room, participant: RemoteParticipant,
+      didUnsubscribeTrack publication: RemoteTrackPublication
+    ) {
+      recordRemoteVideo(participant, publication, .remoteUnsubscribed)
+    }
+    private nonisolated func recordRemoteVideo(
+      _ participant: RemoteParticipant, _ publication: RemoteTrackPublication,
+      _ kind: MediaSyntheticVideo.Action.Kind
+    ) {
+      guard participant.identity?.stringValue == "far-end", publication.kind == .video else {
+        return
+      }
+      Task { @MainActor [weak self] in
+        self?.syntheticVideo?.record(kind, sid: publication.sid.stringValue)
       }
     }
     nonisolated func room(_ room: Room, participantDidDisconnect participant: RemoteParticipant) {
@@ -309,8 +358,9 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
               failure: sdkCallStatus(call).failure, atMs: observationClock.milliseconds)
           }
           if case .ended(let call) = event, call.id.rawValue == fixture.journey?.conversationId {
+            let endedAtMs = observationClock.milliseconds
             videoHistory.record(
-              .ended, hasVideo: call.hasVideo, connected: false, atMs: observationClock.milliseconds
+              .ended, hasVideo: call.hasVideo, connected: false, atMs: endedAtMs
             )
             let reason: JourneyEnd.Reason
             switch call.status {
@@ -318,7 +368,12 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             case .ended(.endedRemotely): reason = .remoteEnded
             default: reason = .unexpected
             }
-            journeyEnded = JourneyEnd(reason: reason, atMs: observationClock.milliseconds)
+            journeyEnded = JourneyEnd(reason: reason, atMs: endedAtMs)
+            videoTerminating = true
+            do { try await applyVideo(hasVideo: false, held: false, ended: true) } catch {
+              recordJourneyFailure(error, operation: .video)
+              fail()
+            }
           }
           if case .videoChanged(let call, let source) = event,
             call.id.rawValue == fixture.journey?.conversationId
@@ -326,6 +381,18 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             videoHistory.record(
               .changed, hasVideo: call.hasVideo, connected: call.status == .connected,
               source: source == .app ? .app : .server, atMs: observationClock.milliseconds)
+            if !videoTerminating,
+              !call.hasVideo
+                || (call.status == .connected && active && client.isAudioActive
+                  && room.connectionState == .connected)
+            {
+              do {
+                try await applyVideo(hasVideo: call.hasVideo, held: call.isOnHold)
+              } catch {
+                recordJourneyFailure(error, operation: .video)
+                fail()
+              }
+            }
           }
           if case .performed(.hold(_, let held), let call) = event,
             call.id.rawValue == fixture.journey?.conversationId
@@ -333,6 +400,9 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
             do {
               AudioManager.shared.mixer.outputVolume = held ? 0 : 1
               try await room.localParticipant.setMicrophone(enabled: !held && !call.isMuted)
+              if !videoTerminating {
+                try await applyVideo(hasVideo: call.hasVideo, held: held)
+              }
               publicationHeld = held
             } catch { fail() }
           }
@@ -506,6 +576,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let publicationMuted: Bool
       let onHold: Bool
       let video: MediaSDKVideoEvidence
+      let syntheticVideo: MediaSyntheticVideo.Snapshot?
       let failure: MediaJourneyFailure?
     }
     private func journeySnapshot(command: UUID?) -> JourneySnapshot? {
@@ -531,7 +602,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         sdkAudioState: sdkAudioState(),
         publicationMuted: publicationMuted,
         onHold: client?.calls.first(where: { $0.id.rawValue == session.fixture.conversationId })?
-          .isOnHold ?? false, video: video, failure: journeyFailure)
+          .isOnHold ?? false, video: video, syntheticVideo: syntheticVideoEvidence,
+        failure: journeyFailure)
     }
     private func runJourney(_ client: VoIPClient) async throws {
       guard let fixture = fixture.journey else { return }
@@ -550,6 +622,10 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
           .readySnapshot, hasVideo: call.hasVideo, connected: call.status == .connected,
           atMs: observationClock.milliseconds)
       }
+      if let call = client.calls.first(where: { $0.id == callID }), !videoTerminating {
+        try await applyVideo(hasVideo: call.hasVideo, held: call.isOnHold)
+      }
+      syntheticVideoEvidence = await syntheticVideo?.snapshot()
       let directory = URL.documentsDirectory
       try JSONEncoder().encode(journeySnapshot(command: nil)).write(
         to: directory.appending(path: "media-journey-ready.json"), options: .atomic)
@@ -566,6 +642,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
           }
           recordTransport()
         }
+        syntheticVideo?.heartbeat()
+        syntheticVideoEvidence = await syntheticVideo?.snapshot()
         let path = directory.appending(path: "media-journey-command.json")
         if let data = try? Data(contentsOf: path),
           let command = try? JSONDecoder().decode(MediaJourneyCommand.self, from: data),
@@ -605,9 +683,13 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
                 throw MediaJourneySession.Failure.invalidPhase
               }
               try await client.request(.end(callID))
-            case .close: break
+            case .close:
+              videoTerminating = true
+              try await applyVideo(hasVideo: false, held: false, ended: true)
+              syntheticVideo?.closeReceivers()
             }
             recordTransport()
+            syntheticVideoEvidence = await syntheticVideo?.snapshot()
             try JSONEncoder().encode(journeySnapshot(command: command.id)).write(
               to: directory.appending(path: "media-journey-response.json"), options: .atomic)
             if command.operation == .close { return }
@@ -763,12 +845,29 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         hasVideo: call?.hasVideo, onHold: call?.isOnHold, connected: call?.status == .connected,
         events: videoHistory.events, overflow: videoHistory.overflow)
     }
+    private func applyVideo(hasVideo: Bool, held: Bool, ended: Bool = false) async throws {
+      do { try await videoPolicy?.apply(hasVideo: hasVideo, held: held, ended: ended) } catch {
+        recordJourneyFailure(error, operation: .video)
+        throw error
+      }
+    }
     func recordJourneyFailure(_ error: any Error, operation: MediaJourneyFailure.Operation) {
       if journeyFailure == nil { journeyFailure = MediaJourneyFailure(error, operation: operation) }
     }
     private func fail() {
       guard !failed else { return }
-      if fixture.journey != nil {
+      if syntheticVideo != nil {
+        videoTerminating = true
+        Task { [self] in
+          do { try await applyVideo(hasVideo: false, held: false, ended: true) } catch {
+            recordJourneyFailure(error, operation: .video)
+          }
+          syntheticVideoEvidence = await syntheticVideo?.snapshot()
+          try? JSONEncoder().encode(journeySnapshot(command: nil)).write(
+            to: URL.documentsDirectory.appending(path: "media-journey-failure.json"),
+            options: .atomic)
+        }
+      } else if fixture.journey != nil {
         try? JSONEncoder().encode(journeySnapshot(command: nil)).write(
           to: URL.documentsDirectory.appending(path: "media-journey-failure.json"), options: .atomic
         )

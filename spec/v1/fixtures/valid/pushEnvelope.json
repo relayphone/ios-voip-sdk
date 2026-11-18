@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "kind": "pushEnvelope",
+  "value": {"invitation":{"callID":"call-α","eventID":"invite-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}},"issuedAt":"2026-11-18T00:00:00.000Z","expiresAt":"2026-11-18T00:00:45.000Z","credentialRef":"credential-reference-a"}
+}

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "kind": "action",
+  "value": {
+    "kind": "answer",
+    "callID": "call-α"
+  }
+}

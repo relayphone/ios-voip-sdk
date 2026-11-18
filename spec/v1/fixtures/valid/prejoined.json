@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "kind": "mediaState",
+  "value": {"callID":"call-a","owner":"native","attemptID":"media-a","stage":"prejoined","transport":"connected","activation":"inactive","capture":"closed","output":"closed","firstPackets":{"sent":"unknown","received":"unknown"}}
+}

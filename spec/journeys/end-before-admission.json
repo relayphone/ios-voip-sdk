@@ -1,0 +1,29 @@
+{
+  "version": 0,
+  "id": "end-before-admission",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":true},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":true,"javascriptAttached":true}},
+    {"kind":"input","input":{"kind":"incoming","callID":"reporting-a","eventID":"invite-reporting-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"},"deferAdmission":true}},
+    {"kind":"input","input":{"kind":"remoteEnd","target":{"kind":"call","id":"reporting-a"},"eventID":"end-reporting-a","reason":{"kind":"remoteEnded"}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"reporting-a","lifecycle":{"kind":"reporting"}}},
+    {"kind":"input","input":{"kind":"admitted","callID":"reporting-a"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"reporting-a","lifecycle":{"kind":"ended","reason":{"kind":"remoteEnded"}}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"reporting-a","metric":"ringingPublications","value":0}},
+    {"kind":"expect","expectation":{"kind":"systemEnd","callID":"reporting-a","cause":"remote"}},
+    {"kind":"input","input":{"kind":"remoteEnd","target":{"kind":"call","id":"buffered-a"},"eventID":"end-buffered-a","reason":{"kind":"remoteEnded"}}},
+    {"kind":"input","input":{"kind":"incoming","callID":"buffered-a","eventID":"invite-buffered-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"},"deferAdmission":true}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"buffered-a","lifecycle":{"kind":"reporting"}}},
+    {"kind":"input","input":{"kind":"admitted","callID":"buffered-a"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"buffered-a","lifecycle":{"kind":"ended","reason":{"kind":"remoteEnded"}}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"buffered-a","metric":"ringingPublications","value":0}},
+    {"kind":"input","input":{"kind":"remoteEnd","target":{"kind":"remote","id":"remote-preview-a"},"eventID":"end-preview-a","reason":{"kind":"answeredElsewhere"}}},
+    {"kind":"input","input":{"kind":"incoming","callID":"preview-a","eventID":"invite-preview-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"},"deferAdmission":true}},
+    {"kind":"input","input":{"kind":"bindRemote","callID":"preview-a","remoteID":"remote-preview-a"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"preview-a","remoteID":"remote-preview-a","lifecycle":{"kind":"reporting"}}},
+    {"kind":"input","input":{"kind":"admitted","callID":"preview-a"}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"preview-a","remoteID":"remote-preview-a","lifecycle":{"kind":"previewing","reason":{"kind":"answeredElsewhere"}}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"preview-a","metric":"ringingPublications","value":0}},
+    {"kind":"expect","expectation":{"kind":"systemEnd","callID":"preview-a","cause":"remote"}}
+  ]
+}

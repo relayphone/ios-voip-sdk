@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "kind": "timing",
+  "value": {"stage":"promotion","clockID":"clock-a","elapsedMicros":250000,"sequence":8,"correlation":{"callID":"call-a","actionID":"answer-a","attemptID":"media-a"},"boundary":"started","outcome":"succeeded"}
+}

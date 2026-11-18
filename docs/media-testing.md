@@ -24,6 +24,13 @@ It retains per-candidate confidences and receiver statistics, skips spans with l
 and accepts the first complete clean cycle. Missing or stale receiver counters cannot prove clean
 coverage. The 0.8 rule, amplitudes, signal, drift limits and all deadlines remain unchanged.
 
+For the far-end uplink, a missing outer counter bracket can use the nearest retained report
+inside the cycle within one host polling interval (100 ms) of that edge. Both edges require
+real reports at distinct sample positions, and every observed overlapping interval still
+rejects packet loss or concealment. Native downlink measurements require exact bracketing.
+The summary shows marker bounds, required counter bounds and the first and last retained
+counter positions.
+
 ## Journey terminal phases
 
 The iOS and Android journeys use the same terminal oracle. Immediately before each end,
@@ -507,6 +514,40 @@ Setup and rejected-command receipts retain only an allowlisted operation/categor
 numeric error code. Raw error domains, descriptions, URLs and userInfo are excluded. The
 host preserves those sanitized fields when retiring a failed or uncertain mailbox, so a
 setup failure can identify itself without exposing fixture credentials.
+
+For DEBUG simulator builds, the journey fixture can additionally supply a `syntheticVideo`
+UUID. This opts into an app-owned 160×120/10 fps buffer source on the existing audio Room.
+Confirmed SDK video state selects ordinary publication; audio-only setup stays off. Initial
+video waits for the existing connected call, audio activation and Room readiness. Same-value
+updates preserve the source. Hold mutes the publication while generation keeps ticking;
+resume joins the held source and starts a new epoch/publication. Upgrading while already
+held starts only the upstream source. Off/end freezes the source ledger and joins pacing
+before unpublish or disconnect. Setup and publication errors retain sanitized video codes.
+
+The additive `syntheticVideo` reply retains each epoch's seed fence, original source ledger,
+publication SID and actual publication actions, plus independently decoded remote callback
+observations from the expected `far-end` participant. Remote renderers remain attached
+through unpublish/EOS and Room teardown until explicit mailbox close. Bounded heartbeats,
+Room publication changes and replacement/late-subscription invalidation remain visible.
+`VideoCalibration.observation()` exports receiver-only evidence on its own clock; it does
+not infer source identity, synchronization or gate verdicts. Host source binding, transition
+clock brackets, permission controls and complete SDK-driven journey assertions are still
+required before these receipts establish decoded-media success.
+
+`readNativeSyntheticVideo` validates the native synthetic receipts from a validated mailbox
+reply: clock/fixture identity, bounded source epochs and receiver rows, original seed fences,
+producer boundaries, full-plane provenance and lifecycle ordering. Source failures preserve
+only sanitized codes. `bindNativeVideoSource` requires the independently subscribed native
+participant and publication SID; an unpublished held-source epoch cannot supply that binding.
+`bindNativeVideoReceiver` selects the actual reverse publication and checks decoded markers
+against the far-end source ledger. Duplicate, content-free and ambiguous callbacks remain
+present. Binding does not establish frame-rate, privacy, observation-health or journey passes.
+
+`sampleNativeVideoClock` requests a fresh snapshot through the existing mailbox with the
+caller's absolute deadline and cancellation signal. It retains host send/receive times around
+the original native clock sample. `hostVideoBoundary` preserves the resulting uncertainty;
+remote source timestamps remain on their own clock. Diagnostics retain native media/RTP
+timestamps without using them as event or latency anchors. Unsafe numeric evidence fails.
 
 The host `VideoPeer` uses the existing fixture Room and independent decoded `VideoStream`.
 Its metadata retention is bounded at 4096 rows per series, with overflow invalidating the

@@ -65,6 +65,8 @@ public struct ExecutionScenarioConfiguration: Codable, Equatable, Sendable {
 
 /// One explicit policy assessment, not an observed OS scheduling decision.
 public struct ExecutionDecisionSnapshot: Codable, Equatable, Sendable {
+  /// Assessment failure retained for diagnostics; no eligibility claim survives it.
+  public enum Failure: String, Codable, Sendable { case assessmentFailed }
   /// Verification available for fixture policy allowances.
   public enum Verification: String, Codable, Sendable { case unverified }
   /// Actual execution is independent of policy eligibility.
@@ -100,6 +102,8 @@ public struct ExecutionDecisionSnapshot: Codable, Equatable, Sendable {
   public let assessedAt: UInt64
   /// Independent axes and assertion evidence determine this result.
   public let eligibility: Eligibility
+  /// Absent on a successful assessment, including a valid unknown-coverage result.
+  public let failure: Failure?
   /// An in-process acknowledgement observes running execution; it never confirms host suspension.
   public let execution: Execution
   /// These allowances are fixture inputs, not measured iOS durations.
@@ -111,11 +115,12 @@ public struct ExecutionDecisionSnapshot: Codable, Equatable, Sendable {
   /// Constructs an assessment for status and the existing runtime journal.
   public init(
     configuration: ExecutionScenarioConfiguration, assessedAt: UInt64,
-    eligibility: Eligibility, reasons: [Reason]
+    eligibility: Eligibility, reasons: [Reason], failure: Failure? = nil
   ) {
     self.configuration = configuration
     self.assessedAt = assessedAt
     self.eligibility = eligibility
+    self.failure = failure
     self.execution = .running
     self.verification = .unverified
     self.reasons = reasons

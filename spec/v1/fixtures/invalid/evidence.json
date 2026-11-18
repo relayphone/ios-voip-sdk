@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "kind": "pushHealth",
+  "value": {"registration":{"kind":"registered","installationID":"installation-a","channel":"fcm","generation":2,"tokenID":"token-b","upload":{"kind":"acknowledged"}},"readiness":{"kind":"ready"},"connectivity":{"kind":"online"},"delivery":{"kind":"observed"}}
+}
