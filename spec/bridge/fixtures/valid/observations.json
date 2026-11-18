@@ -1,0 +1,32 @@
+[
+  {
+    "cursor":{"epoch":"observations-a","sequence":1},
+    "calls":[
+      {
+        "id":"oldest","direction":"incoming","line":{"accountID":"account-a","id":"personal","label":"Personal"},
+        "parties":[{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}],
+        "lifecycle":{"kind":"ended","reason":{"kind":"remoteEnded"},"endedAt":"2026-11-18T00:00:00.000Z"},
+        "held":false,"muted":false,"video":false,
+        "media":{"owner":"native","preparation":"released","audio":"inactive","transport":"disconnected"}
+      },
+      {
+        "id":"younger","direction":"incoming","line":{"accountID":"account-a","id":"personal","label":"Personal"},
+        "parties":[{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}],
+        "lifecycle":{"kind":"ended","reason":{"kind":"remoteEnded"},"endedAt":"2026-11-18T00:00:01.000Z"},
+        "held":false,"muted":false,"video":false,
+        "media":{"owner":"native","preparation":"released","audio":"inactive","transport":"disconnected"}
+      }
+    ],
+    "completed":["younger"],
+    "records":[{"version":1,"kind":"capability","value":{"feature":"hold","availability":{"kind":"available"}}}]
+  },
+  {
+    "cursor":{"epoch":"observations-a","sequence":1},
+    "kind":"record",
+    "record":{"version":1,"kind":"capability","value":{"feature":"hold","availability":{"kind":"available"}}}
+  },
+  {"cursor":{"epoch":"observations-a","sequence":2},"kind":"cleanup","callID":"oldest","outcome":"removed"},
+  {"cursor":{"epoch":"observations-a","sequence":3},"kind":"terminalCompleted","callID":"oldest"},
+  {"cursor":{"epoch":"observations-a","sequence":4},"kind":"callRemoved","callID":"oldest"},
+  {"cursor":{"epoch":"observations-a","sequence":5},"kind":"callRemoved","callID":"younger"}
+]

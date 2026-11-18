@@ -1,0 +1,29 @@
+[
+  {"cursor":{"epoch":"epoch-a","sequence":-1},"calls":[]},
+  {"cursor":{"epoch":" epoch-a","sequence":9007199254740992},"calls":[]},
+  {"kind":"callRemoved","callID":"call-a","cursor":{"epoch":"epoch-a","sequence":0.5}},
+  {"kind":"cleanup","callID":"call-a","outcome":"pending","cursor":{"epoch":"epoch-a","sequence":2}},
+  {"kind":"disconnect","callID":"call-a","cursor":{"epoch":"epoch-a","sequence":2}},
+  {"kind":"terminalCompleted","callID":"call-a","cursor":{"epoch":"epoch-a","sequence":2},"mediaPending":true},
+  {"kind":"record","cursor":{"epoch":"epoch-a","sequence":2},"record":{"version":0,"kind":"endReason","value":{"kind":"failed"}}},
+  {"kind":"record","cursor":{"epoch":"epoch-a","sequence":2},"record":{"version":1,"kind":"capability","value":{"feature":"hold","availability":{"kind":"unavailable"}}}},
+  {"kind":"record","cursor":{"epoch":"epoch-a","sequence":2},"record":{"version":2,"kind":"endReason","value":{"kind":"localEnded"}}},
+  {"kind":"negotiate","versions":[]},
+  {"kind":"negotiated","result":{"ok":true,"value":{"version":2}}},
+  {"kind":"command","operation":"deleteCall","input":{"id":"call-a"}},
+  {"kind":"command","operation":"perform","input":{"id":"call-a","action":{"kind":"tones","digits":["A"]}}},
+  {"kind":"command","operation":"receive","input":{"kind":"ended","eventID":"event-a","target":{"kind":"call","id":"call-a"},"reason":{"kind":"localEnded"}}},
+  {"kind":"reply","operation":"bindRemote","result":{"ok":true,"value":{"kind":"applied"}}},
+  {"kind":"reply","operation":"perform","result":{"ok":false,"error":{"kind":"unknownCall","callID":"call-a","message":"No such call"}}},
+  {"kind":"reply","operation":"start","result":{"ok":false,"error":{"kind":"claimTimedOut"}}},
+  {"kind":"reply","operation":"push.registration","result":{"ok":true,"value":{
+    "kind":"registered","installationID":"installation-a","channel":"fcm","generation":1,
+    "tokenID":"token-a","upload":{"kind":"pending"},"token":"raw-token-example"
+  }}},
+  {"kind":"command","operation":"push.health","input":{"credential":"raw-credential-example"}},
+  {"kind":"placementRequested","generation":1,"actionID":"place-a","remainingMs":500,
+    "request":{"kind":"start","origin":"app","callID":"call-a",
+      "line":{"accountID":"account-a","id":"personal","label":"Personal"},
+      "parties":[{"id":"alice","handle":{"kind":"phone","e164":"+12025550100"},"displayName":"Alice"}]}},
+  {"kind":"command","operation":"placement.settle","input":{"generation":0,"actionID":"place-a","result":{"ok":true,"value":{"kind":"placed"}}}}
+]
