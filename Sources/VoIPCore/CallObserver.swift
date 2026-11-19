@@ -2,7 +2,7 @@
 /// shows each call preview as a Live Activity.
 ///
 /// Pass observers to
-/// ``VoIPClient/start(framework:media:push:audio:observers:configuration:clock:)``, which
+/// ``VoIPClient/start(framework:media:push:audio:observers:configuration:clock:answerAuthority:)``, which
 /// attaches each one, in order, before it attaches the calling framework, the audio session and
 /// the push source. So a stream from ``VoIPClient/events()`` that an observer creates in
 /// ``attach(to:)`` receives every event, including those of the VoIP push that cold-launched the

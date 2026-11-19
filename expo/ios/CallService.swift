@@ -477,6 +477,8 @@ final class CallService {
       emit(
         "conversationEvent",
         .object(["type": .string("audioDeactivated"), "payload": .object([:])]))
+    case .answerClaimTimedOut, .answerFailed:
+      break
     case .ended(let call):
       ended(call)
     }

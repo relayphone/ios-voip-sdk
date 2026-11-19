@@ -100,6 +100,8 @@ public enum FilterCause: Hashable, Sendable {
 public enum CallFailure: Hashable, Sendable {
   /// The calling framework refused to report or start the call.
   case refused
+  /// Native Answer ended with a typed authorization failure.
+  case answerAuthorization(AnswerFailure)
   /// The platform refused this call's incoming admission or outgoing Start.
   case systemFailed(SystemFailure)
   /// This device already had as many calls as the app allows.

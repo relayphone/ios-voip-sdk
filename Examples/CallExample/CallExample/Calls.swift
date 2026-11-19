@@ -247,6 +247,10 @@ final class CallEventHandler: CallObserver {
     case .presented(let call): history.add("Ringing: \(call.id.rawValue)")
     case .previewStarted(let call): history.add("Previewing: \(call.status)")
     case .joinFailed(let call, _): history.add("Join failed: \(call.id.rawValue)")
+    case .answerClaimTimedOut(let call, _):
+      history.add("Checking Answer with the server: \(call.id.rawValue)")
+    case .answerFailed(let call, _, let failure):
+      history.add("Answer failed: \(call.id.rawValue) (\(failure))")
     case .videoChanged(let call, let source):
       history.add("Video \(call.hasVideo ? "on" : "off") (\(source.rawValue))")
     case .startRequested(let call), .joinRequested(let call):

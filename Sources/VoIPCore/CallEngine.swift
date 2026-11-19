@@ -18,6 +18,9 @@ final class CallEngine {
   private let pushSource: (any PushSource)?
   private let configuration: VoIPConfiguration
   private let clock: EngineClock
+  private let authority: (any AnswerAuthority)?
+  private var answers: [CallID: AnswerExchange] = [:]
+  private var answerReceipts: [ActionID: Duration] = [:]
   private let subscribers: Subscribers
   private let publish: @Sendable (Snapshot) -> Void
 
@@ -63,6 +66,7 @@ final class CallEngine {
     configuration: VoIPConfiguration,
     clock: any Clock<Duration>,
     subscribers: Subscribers,
+    authority: (any AnswerAuthority)? = nil,
     publish: @escaping @Sendable (Snapshot) -> Void
   ) {
     self.framework = framework
@@ -72,6 +76,7 @@ final class CallEngine {
     self.configuration = configuration
     self.clock = EngineClock(clock)
     self.subscribers = subscribers
+    self.authority = authority
     self.publish = publish
   }
 
@@ -88,7 +93,8 @@ final class CallEngine {
     }
     framework.attach(configuration: configuration) { [weak self] event in
       guard let self else { return }
-      serially { self.frameworkEvent(event) }
+      let deliveredAt = clock.now()
+      serially { self.frameworkEvent(event, deliveredAt: deliveredAt) }
     }
     audio?.attach { [weak self] event in
       guard let self else { return }
@@ -102,7 +108,10 @@ final class CallEngine {
 
   // MARK: Requests from the app
 
-  deinit { transportTask?.cancel() }
+  isolated deinit {
+    transportTask?.cancel()
+    for answer in answers.values { answer.close() }
+  }
 
   /// Reports an incoming call that the app learned about outside a VoIP push.
   func report(_ incoming: IncomingCall) async -> PresentationOutcome {
@@ -142,7 +151,10 @@ final class CallEngine {
       return
     }
     let call = try exclusively { () throws(ActionError) -> Call? in
-      guard states[id] != nil else { throw .unknownCall }
+      guard let state = states[id] else { throw .unknownCall }
+      if needsParticipationSlot(action, state: state), !participationSlotAvailable {
+        throw .noParticipationSlot
+      }
       return try requested(handle(id, .requested(action)), for: id)
     }
     try await send(action, for: call)
@@ -155,6 +167,7 @@ final class CallEngine {
       if let state = states[outgoing.id] {
         return completion(.failure(.notAllowed(state.call.status)))
       }
+      guard participationSlotAvailable else { return completion(.failure(.noParticipationSlot)) }
       begin(.outgoing(outgoing), startCompletion: completion)
     }
   }
@@ -229,6 +242,9 @@ final class CallEngine {
     let id = incoming.id
     let action = Action.join(id)
     let call = try exclusively { () throws(ActionError) -> Call? in
+      if needsParticipationSlot(action, state: states[id]), !participationSlotAvailable {
+        throw .noParticipationSlot
+      }
       if states[id] == nil { begin(.joining(incoming)) }
       guard states[id] != nil else { throw .unknownCall }
       return try requested(handle(id, .requested(action)), for: id)
@@ -415,23 +431,14 @@ final class CallEngine {
 
   // MARK: The calling framework
 
-  private func frameworkEvent(_ event: FrameworkEvent) {
+  private func frameworkEvent(_ event: FrameworkEvent, deliveredAt: Duration) {
     switch event {
     case .perform(let actionID, let action):
-      #if DEBUG && (os(macOS) || targetEnvironment(simulator))
-        switch action {
-        case .answer, .join:
-          if let call = states[action.callID]?.call { SimulatorLifecycle.record(call, .accept) }
-        default: break
-        }
-      #endif
-      if states[action.callID] != nil {
-        handle(action.callID, .performed(actionID, action))
-      } else if case .start(let outgoing) = action {
-        begin(.systemStart(actionID, outgoing))
-      } else {
-        framework.fail(actionID)
-      }
+      perform(actionID, action)
+    case .performAnswer(let actionID, let id, let remaining, let elapsed):
+      perform(
+        actionID, .answer(id), received: deliveredAt - elapsed,
+        nativeDeadline: deliveredAt + remaining)
     case .actionTimedOut(let actionID):
       for id in liveCalls { handle(id, .actionTimedOut(actionID)) }
     case .audioActivated:
@@ -455,13 +462,85 @@ final class CallEngine {
     }
   }
 
+  private var participationSlotAvailable: Bool {
+    authority == nil
+      || states.values.lazy.filter(\.reservesParticipation).count
+        < configuration.maximumParticipatingCalls
+  }
+
+  private func needsParticipationSlot(_ action: Action, state: CallMachine.State?) -> Bool {
+    switch action {
+    case .answer: state?.phase == .ringing && state?.answer == nil
+    case .start: state == nil
+    case .join: state == nil || state?.phase.isPreviewing == true
+    case .hold(_, onHold: false):
+      state?.phase.isTakingPart == true && state?.call.isOnHold == true
+        && configuration.capabilities.contains(.holding)
+    default: false
+    }
+  }
+
+  private func perform(
+    _ actionID: ActionID, _ action: Action, received: Duration? = nil,
+    nativeDeadline: Duration? = nil
+  ) {
+    #if DEBUG && (os(macOS) || targetEnvironment(simulator))
+      switch action {
+      case .answer, .join:
+        if let call = states[action.callID]?.call { SimulatorLifecycle.record(call, .accept) }
+      default: break
+      }
+    #endif
+    let id = action.callID
+    let state = states[id]
+    if authority != nil, action.isAnswer {
+      guard answers[id]?.attempt.action != actionID, answerReceipts[actionID] == nil else { return }
+      answerReceipts[actionID] = clock.now()
+      if answerReceipts.count > 256, let oldest = answerReceipts.min(by: { $0.value < $1.value }) {
+        answerReceipts[oldest.key] = nil
+      }
+    }
+    if needsParticipationSlot(action, state: state), !participationSlotAvailable {
+      framework.fail(actionID)
+      if action.isAnswer, let state {
+        subscribers.yield(.answerFailed(state.call, actionID, .refused(.notAllowed)))
+      }
+      return
+    }
+    guard state != nil else {
+      if case .start(let outgoing) = action {
+        begin(.systemStart(actionID, outgoing))
+      } else {
+        framework.fail(actionID)
+      }
+      return
+    }
+    guard authority != nil, action.isAnswer else {
+      handle(id, .performed(actionID, action))
+      return
+    }
+    if expireIfDue(.ring, for: id) { return framework.fail(actionID) }
+    let anchor = received ?? clock.now()
+    let total = min(
+      configuration.answerBudget.total,
+      nativeDeadline.map { $0 - anchor } ?? configuration.answerBudget.total)
+    attemptGeneration += 1
+    handle(
+      id,
+      .answerRequested(
+        .init(
+          generation: .init(generation: attemptGeneration), action: actionID,
+          received: anchor, total: total)))
+  }
+
   private var liveCalls: [CallID] {
     order.filter { states[$0]?.phase.isEnded == false }
   }
 
   private func activateMediaAudio() {
     guard isAudioActive, !isMediaAudioActive,
-      configuration.outgoingMedia == .duringPlacement || !preparedCalls.isEmpty
+      !preparedCalls.isEmpty
+        || (authority == nil && configuration.outgoingMedia == .duringPlacement)
     else { return }
     isMediaAudioActive = true
     media.activate()
@@ -554,7 +633,7 @@ final class CallEngine {
   private func handle(_ id: CallID, _ event: CallMachine.Event) -> Reply {
     guard let state = states[id] else { return Reply() }
     let (next, effects) = CallMachine.transition(
-      state, event, configuration: configuration, now: clock.date())
+      state, event, configuration: configuration, now: clock.date(), elapsed: clock.now())
     states[id] = next
     #if DEBUG && (os(macOS) || targetEnvironment(simulator))
       let kind: SimulatorLifecycle.Event.Kind =
@@ -665,6 +744,10 @@ final class CallEngine {
           ? EndReason.endedRemotely : reason
         framework.reportEnded(call, reason: systemReason)
       case .prepareMedia(let call): prepare(call)
+      case .requestAnswer(let attempt, let stage, let deadline):
+        requestAnswer(id, attempt: attempt, stage: stage, deadline: deadline)
+      case .armAt(let deadline, let due, let generation):
+        arm(TimerKey(id: id, deadline: deadline), due: due, generation: generation)
       case .arm(let deadline, let duration, let generation):
         arm(TimerKey(id: id, deadline: deadline), after: duration, generation: generation)
       case .disarm(let deadline, let generation):
@@ -684,15 +767,21 @@ final class CallEngine {
     {
       media.release(state.call)
     }
-    if !state.phase.isPreparing, state.deferredMedia != .preparing {
+    if state.phase.isEnded || state.phase.isPreviewing {
+      answers.removeValue(forKey: id)?.close()
+    }
+    if !state.phase.isPreparing, state.deferredMedia != .preparing, state.answer?.permit == nil {
       preparations.removeValue(forKey: id)?.cancel()
     }
     if state.phase.isEnded, endedAt[id] == nil { endedAt[id] = clock.now() }
   }
 
   private func arm(_ key: TimerKey, after duration: Duration, generation: UInt64) {
+    arm(key, due: clock.now() + duration, generation: generation)
+  }
+
+  private func arm(_ key: TimerKey, due: Duration, generation: UInt64) {
     timers[key]?.task.cancel()
-    let due = clock.now() + duration
     let task = Task { [weak self, clock] in
       do { try await clock.sleep(due) } catch { return }
       self?.timerFired(key.deadline, for: key.id, generation: generation)
@@ -725,9 +814,9 @@ final class CallEngine {
       guard let self, !Task.isCancelled else { return }
       serially {
         if case .mediaPrepared = event { self.preparedCalls.insert(call.id) }
-        if case .preparingStart = self.states[call.id]?.phase,
-          self.expireIfDue(.mediaPreparation, for: call.id)
-        {
+        let state = self.states[call.id]
+        let isBounded = state?.answer?.permit != nil || state?.phase.isPreparingStart == true
+        if isBounded, self.expireIfDue(.mediaPreparation, for: call.id) {
           return
         }
         self.handle(call.id, event)
@@ -739,6 +828,68 @@ final class CallEngine {
         }
       }
     }
+  }
+
+  private func requestAnswer(
+    _ id: CallID, attempt: CallMachine.AnswerAttempt, stage: CallMachine.Deadline,
+    deadline: Duration
+  ) {
+    guard let authority, let call = states[id]?.call else { return }
+    let exchange =
+      answers[id]
+      ?? AnswerExchange(attempt: attempt, call: call, authority: authority, now: clock.now)
+    answers[id] = exchange
+    let request = exchange.request(deadline: deadline)
+    guard request.remaining > .zero else { return }
+    exchange.tasks[stage] = Task { [weak self] in
+      defer { exchange.tasks[stage] = nil }
+      guard !Task.isCancelled, request.remaining > .zero else { return }
+      let result =
+        if stage == .claim { await authority.claim(request) } else {
+          await authority.reconcile(request)
+        }
+      exchange.tasks[stage] = nil
+      let cleanup: Task<Void, Never>?
+      if let self {
+        cleanup = exclusively { answerCompleted(exchange, stage: stage, result: result) }
+      } else if case .allow(let permit) = result {
+        cleanup = exchange.release(permit)
+      } else {
+        cleanup = nil
+      }
+      await cleanup?.value
+    }
+  }
+
+  private func answerCompleted(
+    _ exchange: AnswerExchange, stage: CallMachine.Deadline, result: AnswerDecision?
+  ) -> Task<Void, Never>? {
+    let id = exchange.call.id
+    if answers[id] === exchange {
+      expireIfDue(.claim, for: id)
+      expireIfDue(.reconciliation, for: id)
+    }
+    let isCurrent = answers[id] === exchange
+    if isCurrent, states[id]?.armed[stage] != nil {
+      if case .allow(let permit) = result, let expiry = permit.expiresAt, expiry <= clock.date() {
+        let cleanup = exchange.release(permit)
+        handle(
+          id,
+          .answerResolved(exchange.attempt.generation, stage: stage, .unavailable(.invalidResponse))
+        )
+        return cleanup
+      }
+      if case .allow(let permit) = result { exchange.adopt(permit) }
+      handle(id, .answerResolved(exchange.attempt.generation, stage: stage, result))
+    } else if case .allow(let permit) = result {
+      if isCurrent, states[id]?.armed[.reconciliation] != nil {
+        // The two replies can identify the same grant. Let reconciliation decide which to keep.
+        exchange.lateClaimPermit = permit
+      } else {
+        return exchange.releaseUnlessAdopted(permit)
+      }
+    }
+    return nil
   }
 
   // MARK: Running work
@@ -792,6 +943,7 @@ final class CallEngine {
   private func prune() {
     let now = clock.now()
     let retention = configuration.retention
+    answerReceipts = answerReceipts.filter { now - $0.value < retention }
     seenEvents = seenEvents.filter { now - $0.value < retention }
     earlyEvents = earlyEvents.compactMapValues { events in
       let kept = events.filter { now - $0.receivedAt < retention }
@@ -823,9 +975,15 @@ final class CallEngine {
       }
     }
 
+    fileprivate func answerTask(for id: CallID, stage: CallMachine.Deadline) -> Task<Void, Never>? {
+      answers[id]?.tasks[stage]
+    }
+
     fileprivate func cancelWork() {
       for timer in timers.values { timer.task.cancel() }
       for preparation in preparations.values { preparation.cancel() }
+      for answer in answers.values { answer.close() }
+      answers.removeAll()
     }
   #endif
 }
@@ -844,29 +1002,20 @@ final class CallEngine {
     package init(
       framework: any CallingFramework, media: any CallMedia, push: any PushSource,
       configuration: VoIPConfiguration, clock: any Clock<Duration>,
+      authority: (any AnswerAuthority)? = nil,
       observe: @escaping @VoIPActor @Sendable (CallEvent) -> Void
     ) {
       engine = CallEngine(
         framework: framework, media: media, audio: nil, pushSource: push,
         configuration: configuration, clock: clock, subscribers: Subscribers(observe: observe),
-        publish: { _ in })
+        authority: authority, publish: { _ in })
       engine.attach()
     }
 
     package var calls: [Call] { engine.states.values.map(\.call) }
 
     package var participating: Set<CallID> {
-      Set(
-        engine.states.values.lazy.filter { state in
-          guard !state.call.isOnHold else { return false }
-          switch state.phase {
-          case .requesting, .placing, .preparing, .placingStart, .preparingStart, .dialing,
-            .connecting, .connected, .reconnecting:
-            return true
-          case .reporting, .ringing, .previewing, .ended:
-            return false
-          }
-        }.map { $0.call.id })
+      Set(engine.states.values.lazy.filter(\.reservesParticipation).map { $0.call.id })
     }
 
     package func phase(for id: CallID) -> Phase {
@@ -913,6 +1062,9 @@ final class CallEngine {
 
     package var timeUntilNextDeadline: Duration? { engine.timeUntilNextDeadline }
     package func synchronize() async { await engine.synchronize() }
+    package func answerTask(_ id: CallID, reconciling: Bool = false) -> Task<Void, Never>? {
+      engine.answerTask(for: id, stage: reconciling ? .reconciliation : .claim)
+    }
     package func close() { engine.cancelWork() }
   }
 #endif
@@ -963,7 +1115,67 @@ private struct EngineClock: Sendable {
   }
 }
 
+/// Owns the original receipt and compensates late results even after the call is pruned.
+@VoIPActor
+private final class AnswerExchange {
+  let attempt: CallMachine.AnswerAttempt
+  let call: Call
+  let authority: any AnswerAuthority
+  let now: @Sendable () -> Duration
+  var tasks: [CallMachine.Deadline: Task<Void, Never>] = [:]
+  var lateClaimPermit: AnswerPermit?
+  private var adopted: AnswerPermit?
+  private var releases: Set<Data> = []
+
+  init(
+    attempt: CallMachine.AnswerAttempt, call: Call, authority: any AnswerAuthority,
+    now: @escaping @Sendable () -> Duration
+  ) {
+    self.attempt = attempt
+    self.call = call
+    self.authority = authority
+    self.now = now
+  }
+
+  func request(deadline: Duration) -> AnswerRequest {
+    AnswerRequest(call: call, actionID: attempt.action, deadline: deadline, now: now)
+  }
+
+  func adopt(_ permit: AnswerPermit) {
+    adopted = permit
+    if let lateClaimPermit { releaseUnlessAdopted(lateClaimPermit) }
+    lateClaimPermit = nil
+  }
+
+  func close() {
+    for task in tasks.values { task.cancel() }
+    tasks.removeAll()
+    if let adopted { release(adopted) }
+    if let lateClaimPermit { release(lateClaimPermit) }
+    adopted = nil
+    lateClaimPermit = nil
+  }
+
+  @discardableResult
+  func releaseUnlessAdopted(_ permit: AnswerPermit) -> Task<Void, Never>? {
+    adopted?.id.utf8.elementsEqual(permit.id.utf8) == true ? nil : release(permit)
+  }
+
+  @discardableResult
+  func release(_ permit: AnswerPermit) -> Task<Void, Never>? {
+    guard releases.insert(Data(permit.id.utf8)).inserted else { return nil }
+    let now = now()
+    let answerDeadline = attempt.received + attempt.total
+    let cleanup = now + .seconds(1)
+    let request = request(deadline: now < answerDeadline ? min(cleanup, answerDeadline) : cleanup)
+    return Task { [authority] in await authority.release(permit, for: request) }
+  }
+}
+
 extension CallMachine.Phase {
+  fileprivate var isPreparingStart: Bool {
+    if case .preparingStart = self { true } else { false }
+  }
   var isEnded: Bool {
     if case .ended = self { true } else { false }
   }

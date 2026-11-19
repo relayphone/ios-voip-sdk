@@ -38,7 +38,7 @@
 
   /// Something the system told the adapter, in values that can leave the main actor.
   enum SystemEvent: Sendable {
-    case perform(ActionID, SystemAction)
+    case perform(ActionID, SystemAction, received: ContinuousClock.Instant, allowance: Duration)
     case actionTimedOut(ActionID)
     case startEnded(ActionID)
     case audioActivated
@@ -197,7 +197,9 @@
       if action is StartConversationAction {
         startConversations[id] = manager.conversations.first { $0.uuid == action.conversationUUID }
       }
-      send(.perform(id, value))
+      send(
+        .perform(
+          id, value, received: .now, allowance: .seconds(action.timeoutDate.timeIntervalSinceNow)))
     }
 
     func conversationManager(

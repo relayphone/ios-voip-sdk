@@ -9,6 +9,9 @@ public protocol CallingFramework: Sendable {
   /// The platform this adapter represents when reporting system failures.
   var platform: SystemFailure.Platform { get }
 
+  /// The effective platform Answer allowance used to validate client configuration.
+  nonisolated var effectiveAnswerDeadline: Duration { get }
+
   /// Starts the calling framework with the app's configuration.
   ///
   /// The SDK calls this once, before any other method. The adapter calls `onEvent` for everything
@@ -114,6 +117,9 @@ public enum FrameworkEvent: Hashable, Sendable {
   /// The SDK fulfils or fails it with ``CallingFramework/fulfill(_:)`` or
   /// ``CallingFramework/fail(_:)``.
   case perform(ActionID, Action)
+  /// The system asks the SDK to answer with this much time left on the native action.
+  /// Supply time elapsed since native receipt if delivery crosses an asynchronous boundary.
+  case performAnswer(ActionID, CallID, remaining: Duration, elapsed: Duration = .zero)
   /// The system stopped waiting for an action to complete.
   case actionTimedOut(ActionID)
   /// The system activated the audio session for calls.
@@ -125,6 +131,9 @@ public enum FrameworkEvent: Hashable, Sendable {
 }
 
 extension CallingFramework {
+  /// The default Answer allowance advertised by LiveCommunicationKit.
+  public nonisolated var effectiveAnswerDeadline: Duration { .seconds(30) }
+
   /// Swift calling frameworks represent iOS by default.
   public var platform: SystemFailure.Platform { .ios }
 

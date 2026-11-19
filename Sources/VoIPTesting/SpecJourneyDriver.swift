@@ -9,7 +9,7 @@
     private let framework = FakeCallingFramework()
     private var admittedReports: [CallID: @VoIPActor (PresentationOutcome) -> Void] = [:]
     private let media = FakeMedia()
-    private let authority = ScriptedAuthority()
+    private let authority: ScriptedAuthority
     private let events = EventLog()
     private let configuration: VoIPConfiguration
     private let outgoingMedia: SpecJourney.Configuration.OutgoingMedia
@@ -24,9 +24,19 @@
     private var endActionIDs: [ActionID: String] = [:]
     private var startSettlements: [CallID: Int] = [:]
     private var audioActive = false
-    private var errors: [(id: CallID, kind: SpecV0.ErrorKind, observed: Bool)] = []
+    private var errors: [ObservedError] = []
+    private var claimTasks: [CallID: Task<Void, Never>] = [:]
+
+    private struct ObservedError {
+      let id: CallID
+      let kind: SpecV0.ErrorKind
+      var reason: SpecV0.Refusal?
+      var observed = false
+      var isNativeObservation = false
+    }
 
     private init(_ settings: SpecJourney.Configuration) {
+      authority = ScriptedAuthority(clock: clock)
       let budgets = settings.budgets
       outgoingMedia = settings.outgoingMedia
       configuration = VoIPConfiguration(
@@ -41,13 +51,21 @@
           connect: budgets.connection.duration, reconnect: budgets.reconnection.duration,
           outgoingNoAnswer: budgets.outgoingNoAnswer.duration),
         retention: .seconds(120),
-        outgoingMedia: settings.outgoingMedia == .whenProvided ? .whenProvided : .duringPlacement)
+        outgoingMedia: settings.outgoingMedia == .whenProvided ? .whenProvided : .duringPlacement,
+        answerBudget: AnswerBudget(
+          total: budgets.answer.total.duration, claim: budgets.answer.claim.duration,
+          reconciliation: budgets.answer.reconciliation.duration,
+          settlementReserve: budgets.answer.settlementReserve.duration),
+        maximumParticipatingCalls: settings.maximumParticipatingCalls)
     }
 
     /// Returns every failed expectation, labeled by its step. Decoding and driver errors throw.
     package static func run(_ journey: SpecJourney) async throws -> [String] {
       let driver = SpecJourneyDriver(journey.configuration)
-      defer { driver.engine?.close() }
+      defer {
+        driver.engine?.close()
+        driver.authority.finishClaims()
+      }
       var mismatches: [String] = []
       if journey.configuration.connectionAuthority == .nativeMedia {
         mismatches.append("The engine has no native-media connection authority.")
@@ -61,7 +79,7 @@
           }
         if let mismatch { mismatches.append("Step \(index + 1): \(mismatch)") }
       }
-      mismatches += driver.errors.filter { !$0.observed }.map {
+      mismatches += driver.errors.filter { !$0.observed && !$0.isNativeObservation }.map {
         "\($0.id.rawValue) returned unexpected action error \($0.kind)."
       }
       return mismatches
@@ -72,7 +90,7 @@
       push = FakePushSource(pending: pending)
       let engine = SpecEngine(
         framework: framework, media: media, push: push, configuration: configuration,
-        clock: clock, observe: { [events] in events.values.append($0) })
+        clock: clock, authority: authority, observe: { [events] in events.values.append($0) })
       self.engine = engine
       return engine
     }
@@ -89,6 +107,8 @@
           audioActive = false
           mediaProvided.removeAll()
           pendingHolds.removeAll()
+          authority.finishClaims()
+          claimTasks.removeAll()
           endResults.removeAll()
           admittedReports.removeAll()
         }
@@ -120,7 +140,10 @@
       case .authority(let id, let claim, let reconciliation):
         authority.script(id.callID, claim: claim, reconciliation: reconciliation)
       case .latePermit(let id):
-        return "\(id.rawValue) has no native authority port to deliver a late permit."
+        guard authority.deliverLatePermit(id.callID) else {
+          return "\(id.rawValue) has no outstanding claim."
+        }
+        await claimTasks.removeValue(forKey: id.callID)?.value
       case .action(.system, .video, _):
         return "The system port has no Video action."
       case .action(.system, .hold, true):
@@ -165,8 +188,7 @@
       case .provideMedia(let id):
         mediaProvided.insert(id.callID)
         let engine = start()
-        // Incoming credentials are consumed by Answer. The current native Answer does not
-        // yet have a credential input.
+        // Incoming credentials are held by the media port for authorized Answer.
         if outgoingMedia == .whenProvided,
           !engine.calls.contains(where: { $0.id == id.callID && $0.isIncoming })
         {
@@ -212,7 +234,35 @@
     private func synchronize() async {
       guard let engine else { return }
       await engine.synchronize()
-      let opened = events.values.dropFirst(observedEvents).contains {
+      let newEvents = Array(events.values.dropFirst(observedEvents))
+      observedEvents += newEvents.count
+      for event in newEvents {
+        switch event {
+        case .answerClaimTimedOut(let call, _):
+          if let task = engine.answerTask(call.id, reconciling: true) {
+            await authority.waitForReconciliation(call.id)
+            if authority.reconcilesImmediately(call.id) { await task.value }
+          }
+        case .answerFailed(let call, _, let failure):
+          switch failure {
+          case .refused(let reason):
+            errors.append(
+              .init(
+                id: call.id, kind: .refused, reason: SpecV0.Refusal(reason),
+                isNativeObservation: true))
+          case .claimTimedOut:
+            errors.append(.init(id: call.id, kind: .claimTimedOut, isNativeObservation: true))
+          case .unavailable:
+            errors.append(
+              .init(id: call.id, kind: .authorityUnavailable, isNativeObservation: true))
+          case .invalidBudget:
+            errors.append(
+              .init(id: call.id, kind: .invalidConfiguration, isNativeObservation: true))
+          }
+        default: break
+        }
+      }
+      let opened = newEvents.contains {
         switch $0 {
         case .performed(.start, _), .performed(.join, _), .performed(.answer, _): true
         default: false
@@ -227,7 +277,7 @@
         audioActive = true
         framework.send(.audioActivated)
       }
-      observedEvents = events.values.count
+      if observedEvents < events.values.count { await synchronize() }
     }
 
     private func perform(
@@ -250,16 +300,26 @@
         do {
           try await engine.setVideo(id, enabled: enabled)
         } catch {
-          errors.append((id, error.specKind, false))
+          errors.append(.init(id: id, kind: error.specKind, reason: error.specRefusal))
         }
         return
       }
       if origin == .system {
         framework.perform(request)
+        if case .answer = request, let task = engine.answerTask(id) {
+          if authority.claimsImmediately(id) {
+            await task.value
+          } else {
+            claimTasks[id] = task
+            await authority.waitForClaim(id)
+          }
+        }
       } else if case .start(let outgoing) = request {
         engine.start(outgoing) { [weak self] result in
           self?.startSettlements[id, default: 0] += 1
-          if case .failure(let error) = result { self?.errors.append((id, error.specKind, false)) }
+          if case .failure(let error) = result {
+            self?.errors.append(.init(id: id, kind: error.specKind, reason: error.specRefusal))
+          }
         }
       } else {
         let recordStart = framework.records.count
@@ -282,7 +342,7 @@
             pendingHolds.append(request)
           }
         } catch {
-          errors.append((id, error.specKind, false))
+          errors.append(.init(id: id, kind: error.specKind, reason: error.specRefusal))
         }
       }
     }
@@ -322,10 +382,8 @@
         return endResults[id.callID]?.matches(result, actionIDs: endActionIDs) == true
           ? nil : "\(id.rawValue) has no typed End result matching \(result)."
       case .error(let id, let kind, let reason):
-        // Legacy errors carry no spec refusal reason.
-        guard reason == nil,
-          let index = errors.lastIndex(where: { $0.id == id.callID && !$0.observed }),
-          errors[index].kind == kind
+        guard let index = errors.lastIndex(where: { $0.id == id.callID && !$0.observed }),
+          errors[index].kind == kind, reason == nil || errors[index].reason == reason
         else { return "\(id.rawValue) has no matching \(kind) error." }
         errors[index].observed = true
         return nil
@@ -366,9 +424,11 @@
       switch metric {
       case .claims: return authority.claims.count { $0 == id }
       case .reconciliations: return authority.reconciliations.count { $0 == id }
-      case .claimTimeouts, .permitReleases:
-        // The authority port has no engine connection yet.
-        return 0
+      case .claimTimeouts:
+        return events.values.count {
+          if case .answerClaimTimedOut(let call, _) = $0 { call.id == id } else { false }
+        }
+      case .permitReleases: return authority.releases.count { $0 == id }
       case .ringingPublications:
         return events.values.count {
           if case .presented(let call) = $0 { call.id == id } else { false }
@@ -434,6 +494,7 @@
         switch reason {
         case .endedRemotely, .answeredElsewhere, .declinedElsewhere: return .remote
         case .unanswered: return .missed
+        case .failed(.answerAuthorization(.refused(.notAllowed))): return .rejected
         default: return nil
         }
       }
@@ -446,12 +507,18 @@
       var values: [CallEvent] = []
     }
 
-    /// The scriptable authority port. The current engine has no hook to call it.
     @VoIPActor
-    private final class ScriptedAuthority {
+    private final class ScriptedAuthority: AnswerAuthority {
+      private let clock: TestClock
       private var decisions: [CallID: (SpecJourney.Claim, SpecJourney.Reconciliation)] = [:]
+      private var pendingClaims: [CallID: CheckedContinuation<AnswerDecision, Never>] = [:]
+      private var claimWaiters: [CallID: CheckedContinuation<Void, Never>] = [:]
+      private var reconciliationWaiters: [CallID: CheckedContinuation<Void, Never>] = [:]
       private(set) var claims: [CallID] = []
       private(set) var reconciliations: [CallID] = []
+      private(set) var releases: [CallID] = []
+
+      init(clock: TestClock) { self.clock = clock }
 
       func script(
         _ id: CallID, claim: SpecJourney.Claim, reconciliation: SpecJourney.Reconciliation
@@ -459,14 +526,90 @@
         decisions[id] = (claim, reconciliation)
       }
 
-      func claim(_ id: CallID) -> SpecJourney.Claim? {
-        claims.append(id)
-        return decisions[id]?.0
+      func claimsImmediately(_ id: CallID) -> Bool {
+        if case .timeout = decisions[id]?.0 { false } else { true }
       }
 
-      func reconcile(_ id: CallID) -> SpecJourney.Reconciliation? {
+      func reconcilesImmediately(_ id: CallID) -> Bool {
+        switch decisions[id]?.1 {
+        case .allow, .refuse: true
+        default: false
+        }
+      }
+
+      func claim(_ request: AnswerRequest) async -> AnswerDecision {
+        let id = request.call.id
+        claims.append(id)
+        switch decisions[id]?.0 {
+        case .refuse(let reason): return .refuse(reason.native)
+        case .allow, nil: return .allow(permit(id))
+        case .timeout:
+          return await withCheckedContinuation { continuation in
+            pendingClaims[id] = continuation
+            claimWaiters.removeValue(forKey: id)?.resume()
+          }
+        }
+      }
+
+      func reconcile(_ request: AnswerRequest) async -> AnswerDecision? {
+        let id = request.call.id
         reconciliations.append(id)
-        return decisions[id]?.1
+        reconciliationWaiters.removeValue(forKey: id)?.resume()
+        switch decisions[id]?.1 {
+        case .allow: return .allow(permit(id))
+        case .refuse(let reason): return .refuse(reason.native)
+        case .unknown, nil:
+          try? await clock.sleep(for: request.remaining)
+          return nil
+        }
+      }
+
+      func release(_ permit: AnswerPermit, for request: AnswerRequest) async {
+        let id = request.call.id
+        releases.append(id)
+      }
+
+      func waitForClaim(_ id: CallID) async {
+        if !claims.contains(id) { await withCheckedContinuation { claimWaiters[id] = $0 } }
+      }
+
+      func waitForReconciliation(_ id: CallID) async {
+        if !reconciliations.contains(id) {
+          await withCheckedContinuation { reconciliationWaiters[id] = $0 }
+        }
+      }
+
+      func deliverLatePermit(_ id: CallID) -> Bool {
+        guard let completion = pendingClaims.removeValue(forKey: id) else { return false }
+        completion.resume(returning: .allow(permit(id)))
+        return true
+      }
+
+      func finishClaims() {
+        for completion in pendingClaims.values {
+          completion.resume(returning: .unavailable(.network))
+        }
+        pendingClaims.removeAll()
+      }
+
+      private func permit(_ id: CallID) -> AnswerPermit { AnswerPermit(id: id.rawValue) }
+    }
+  }
+
+  extension SpecV0.Refusal {
+    fileprivate init(_ reason: AnswerRefusal) {
+      switch reason {
+      case .answeredElsewhere: self = .answeredElsewhere
+      case .declinedElsewhere: self = .declinedElsewhere
+      case .notAllowed: self = .notAllowed
+      }
+    }
+
+    fileprivate var native: AnswerRefusal {
+      switch self {
+      case .answeredElsewhere: .answeredElsewhere
+      case .declinedElsewhere: .declinedElsewhere
+      case .notAllowed: .notAllowed
       }
     }
   }
@@ -489,12 +632,17 @@
   }
 
   extension ActionError {
+    fileprivate var specRefusal: SpecV0.Refusal? {
+      if case .noParticipationSlot = self { .notAllowed } else { nil }
+    }
+
     fileprivate var specKind: SpecV0.ErrorKind {
       switch self {
       case .unknownCall: .unknownCall
       case .unsupported: .unsupported
       case .notAllowed: .invalidTransition
       case .refused: .systemFailed
+      case .noParticipationSlot: .refused
       }
     }
   }
@@ -558,6 +706,10 @@
     fileprivate var specKind: SpecV0.ErrorKind {
       switch self {
       case .notPlaced: .placementFailed
+      case .answerAuthorization(.refused): .refused
+      case .answerAuthorization(.claimTimedOut): .claimTimedOut
+      case .answerAuthorization(.unavailable): .authorityUnavailable
+      case .answerAuthorization(.invalidBudget): .invalidConfiguration
       case .media: .mediaFailed
       case .audioActivationTimedOut, .audioRecoveryTimedOut, .connectTimedOut,
         .reconnectTimedOut, .actionTimedOut:

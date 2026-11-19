@@ -69,6 +69,12 @@ public struct VoIPConfiguration: Hashable, Sendable {
   /// How long the SDK waits at each step of a call before ending it.
   public var deadlines: Deadlines
 
+  /// Bounds the native Answer claim, reconciliation and settlement.
+  public var answerBudget: AnswerBudget
+
+  /// The participation limit when a native Answer authority is installed. Defaults to one.
+  public var maximumParticipatingCalls: Int
+
   /// When outgoing media is prepared. Defaults to ``OutgoingMedia/duringPlacement``.
   public var outgoingMedia: OutgoingMedia
 
@@ -93,6 +99,8 @@ public struct VoIPConfiguration: Hashable, Sendable {
   ///   - deadlines: How long the SDK waits at each step of a call.
   ///   - retention: How long the SDK remembers ended calls and early server events.
   ///   - outgoingMedia: When outgoing media is prepared.
+  ///   - answerBudget: Times available to native Answer.
+  ///   - maximumParticipatingCalls: The participation limit with a native Answer authority.
   public init(
     capabilities: Capabilities = [.holding, .playingTones],
     presentationPolicy: PresentationPolicy = PresentationPolicy(),
@@ -104,7 +112,9 @@ public struct VoIPConfiguration: Hashable, Sendable {
     iconTemplateImageData: Data? = nil,
     deadlines: Deadlines = Deadlines(),
     retention: Duration = .seconds(300),
-    outgoingMedia: OutgoingMedia = .duringPlacement
+    outgoingMedia: OutgoingMedia = .duringPlacement,
+    answerBudget: AnswerBudget = .standard,
+    maximumParticipatingCalls: Int = 1
   ) {
     self.capabilities = capabilities
     self.presentationPolicy = presentationPolicy
@@ -117,6 +127,8 @@ public struct VoIPConfiguration: Hashable, Sendable {
     self.deadlines = deadlines
     self.retention = retention
     self.outgoingMedia = outgoingMedia
+    self.answerBudget = answerBudget
+    self.maximumParticipatingCalls = maximumParticipatingCalls
   }
 }
 

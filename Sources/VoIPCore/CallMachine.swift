@@ -75,6 +75,8 @@ enum CallMachine {
   /// A timer the machine arms while it waits for something to happen.
   enum Deadline: Hashable, Sendable, CaseIterable {
     case ring
+    case claim
+    case reconciliation
     case placement
     case mediaPreparation
     case audioActivation
@@ -97,6 +99,18 @@ enum CallMachine {
     case connected, provideMedia
   }
 
+  struct AnswerAttempt: Hashable, Sendable {
+    let generation: AttemptID
+    let action: ActionID
+    let received: Duration
+    let total: Duration
+  }
+
+  struct PendingAnswer: Hashable, Sendable {
+    let attempt: AnswerAttempt
+    var permit: AnswerPermit?
+  }
+
   /// One call's state.
   struct State: Hashable, Sendable {
     /// The call as the app sees it. Its status always matches ``phase``.
@@ -116,7 +130,19 @@ enum CallMachine {
     var admissionAttempt: AttemptID?
     var removeAfterAdmission = false
     var startAttempt: AttemptID?
+    var answer: PendingAnswer?
     var startProgress: [StartProgress] = []
+
+    var reservesParticipation: Bool {
+      guard !call.isOnHold else { return false }
+      switch phase {
+      case .ringing: return answer != nil
+      case .requesting, .placing, .preparing, .placingStart, .preparingStart, .dialing,
+        .connecting, .connected, .reconnecting:
+        return true
+      case .reporting, .previewing, .ended: return false
+      }
+    }
 
     var awaitsNativeStart: Bool { phase == .dialing && startAttempt != nil }
 
@@ -134,7 +160,7 @@ enum CallMachine {
         reason: phase == .ringing ? .localDeclined : .localEnded)
     }
     var hasAudioConfiguration: Bool {
-      deferredMedia != .unprovided && phase.hasAudioConfiguration
+      answer?.permit != nil || (deferredMedia != .unprovided && phase.hasAudioConfiguration)
     }
     /// The generation of every armed deadline.
     var armed: [Deadline: UInt64] = [:]
@@ -153,6 +179,8 @@ enum CallMachine {
     case startFailed(AttemptID, SystemFailure)
     /// The calling framework asks the SDK to perform an action.
     case performed(ActionID, Action)
+    case answerRequested(AnswerAttempt)
+    case answerResolved(AttemptID, stage: Deadline, AnswerDecision?)
     /// The calling framework stopped waiting for an action.
     case actionTimedOut(ActionID)
     /// The system activated the audio session.
@@ -213,8 +241,10 @@ enum CallMachine {
     case reportEnded(CallID, EndReason)
     /// Prepare the call's media.
     case prepareMedia(Call)
+    case requestAnswer(AnswerAttempt, stage: Deadline, due: Duration)
     /// Start a deadline's timer.
     case arm(Deadline, after: Duration, generation: UInt64)
+    case armAt(Deadline, due: Duration, generation: UInt64)
     /// Cancel a deadline's timer.
     case disarm(Deadline, generation: UInt64)
     /// Tell the app.
@@ -305,6 +335,7 @@ extension Deadlines {
   subscript(deadline: CallMachine.Deadline) -> Duration {
     switch deadline {
     case .ring: ring
+    case .claim, .reconciliation: preconditionFailure("Answer timers use absolute deadlines")
     case .placement: placement
     case .mediaPreparation: mediaPreparation
     case .audioActivation: audioActivation

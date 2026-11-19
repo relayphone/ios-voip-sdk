@@ -11,7 +11,7 @@ import Synchronization
 ///
 /// Code that must see every event from the moment the client starts, including those of the VoIP
 /// push that cold-launched the app, is a ``CallObserver`` passed to
-/// ``start(framework:media:push:audio:observers:configuration:clock:)``.
+/// ``start(framework:media:push:audio:observers:configuration:clock:answerAuthority:)``.
 @MainActor
 @Observable
 public final class VoIPClient {
@@ -64,8 +64,10 @@ public final class VoIPClient {
   ///     and the push source, and keeps them for its life.
   ///   - configuration: How the SDK presents and controls calls.
   ///   - clock: The clock that times deadlines and retention. Tests pass a `TestClock`.
+  ///   - answerAuthority: The optional native service that authorizes Answer before preparation.
   /// - Returns: The running client.
-  /// - Throws: ``StartupError/alreadyStarted`` when another client is running.
+  /// - Throws: ``StartupError/alreadyStarted`` when another client is running, or
+  ///   ``StartupError/invalidAnswerBudget`` if the authority's budget cannot fit the framework.
   public static func start(
     framework: any CallingFramework,
     media: any CallMedia,
@@ -73,8 +75,14 @@ public final class VoIPClient {
     audio: (any AudioSession)? = nil,
     observers: [any CallObserver] = [],
     configuration: VoIPConfiguration = VoIPConfiguration(),
-    clock: any Clock<Duration> = ContinuousClock()
+    clock: any Clock<Duration> = ContinuousClock(),
+    answerAuthority: (any AnswerAuthority)? = nil
   ) throws(StartupError) -> VoIPClient {
+    if answerAuthority != nil,
+      !configuration.answerBudget.isValid(effectiveDeadline: framework.effectiveAnswerDeadline)
+    {
+      throw .invalidAnswerBudget
+    }
     let claimed = isRunning.withLock { isRunning in
       defer { isRunning = true }
       return !isRunning
@@ -85,6 +93,7 @@ public final class VoIPClient {
     let engine = CallEngine(
       framework: framework, media: media, audio: audio, pushSource: push,
       configuration: configuration, clock: clock, subscribers: subscribers,
+      authority: answerAuthority,
       publish: { continuation.yield($0) })
     let client = VoIPClient(
       engine: engine, subscribers: subscribers, observers: observers, snapshots: snapshots)
@@ -101,7 +110,7 @@ public final class VoIPClient {
   /// subscribes are not kept; the SDK performs actions without waiting for the app, and
   /// ``calls`` holds the current state.
   ///
-  /// A stream created after ``start(framework:media:push:audio:observers:configuration:clock:)``
+  /// A stream created after ``start(framework:media:push:audio:observers:configuration:clock:answerAuthority:)``
   /// returns can miss the first events of a cold launch, because the SDK may report the call of
   /// the VoIP push that launched the app before the app subscribes. To receive every event from
   /// the start, create the stream in the ``CallObserver/attach(to:)`` of an observer passed to
@@ -274,6 +283,8 @@ public final class VoIPClient {
 public enum StartupError: Error, Hashable, Sendable {
   /// Another client is running in this process, which has one calling framework provider.
   case alreadyStarted
+  /// The configured native Answer durations exceed the bounds or leave no preparation time.
+  case invalidAnswerBudget
 }
 
 /// The streams of everyone who subscribed to call events.

@@ -10,7 +10,7 @@
   /// A push source that receives the app's VoIP pushes from PushKit.
   ///
   /// Create it on the main actor when the app launches and pass it to
-  /// `VoIPClient.start(framework:media:push:audio:observers:configuration:clock:)`, which attaches
+  /// `VoIPClient.start(framework:media:push:audio:observers:configuration:clock:answerAuthority:)`, which attaches
   /// it before any push can arrive. PushKit delivers pushes on `VoIPActor`, so the SDK reports a
   /// push's call before the push callback returns, as Apple requires.
   ///

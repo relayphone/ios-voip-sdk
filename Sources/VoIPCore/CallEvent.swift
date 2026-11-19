@@ -23,6 +23,10 @@ public enum CallEvent: Hashable, Sendable {
   /// The user asked to join the call, from any surface, so a ``CallObserver`` such as the call
   /// notifier can tell this preview from one that the user hasn't seen.
   case joinFailed(Call, JoinFailure)
+  /// The claim expired. The same Answer remains pending while the SDK reconciles it.
+  case answerClaimTimedOut(Call, ActionID)
+  /// The native Answer was rejected during authorization.
+  case answerFailed(Call, ActionID, AnswerFailure)
   /// The SDK performed an action on the call.
   case performed(Action, Call)
   /// Video changed after the calling framework reported it to the system.
