@@ -147,7 +147,7 @@ function sameCapture(a: MediaCapture, b: MediaCapture) {
 }
 
 /** Validate serialized evidence independently of any producer's passed flag. */
-export function validateMediaReceipt(value: unknown, request: MediaReadRequest) {
+export function validateMediaReceipt(value: unknown, request: MediaReadRequest): MediaTestResult {
   const expected = createMarker(request.marker.id);
   if (request.marker.profile !== expected.profile || request.marker.slotMs !== expected.slotMs ||
       request.marker.frequencies.length !== expected.frequencies.length ||
@@ -195,7 +195,7 @@ export function validateMediaReceipt(value: unknown, request: MediaReadRequest) 
     if (!selected) throw new MediaTestError("unobserved", "No complete continuous silent window within the phase budget", receipt);
     if (!sameCapture(capture, selected)) invalid("Receipt must describe the first complete silent window");
   }
-  return Object.freeze({ expectation: request.expectation, receipt, firstAudioAfterPhaseMs }) satisfies MediaTestResult;
+  return Object.freeze({ expectation: request.expectation, receipt, firstAudioAfterPhaseMs });
 }
 function rmsLeak(capture: MediaCapture) {
   return capture.rms > 0.003 || capture.peak > 0.01 || capture.marker !== null;
