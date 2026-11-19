@@ -7,7 +7,7 @@ export const performed = object({ kind: literal('performed'), cursor, receipt: a
 export const ended = object({ kind: literal('end'), cursor, outcome: endResult });
 export type Performed = Decoded<typeof performed>;
 
-const bridgeError = union(error, object({ kind: literal('unsupported'), feature }));
+export const bridgeError = union(error, object({ kind: literal('unsupported'), feature }));
 const incomingDecision = union(
   object({ kind: literal('admitted', 'hidden', 'capacity'), callID }),
   object({ kind: literal('previewed'), callID, reason: previewReason }),

@@ -1,17 +1,33 @@
+import { literal, object, union, type Decoder } from "../calls/decode.ts";
 import { createCallsStore, type CallsSnapshot } from "../calls/store.ts";
-import type { Call, CallError, EndReason } from "../calls/model.ts";
-import { ended, incomingOutcome, performed } from "../calls/receipts.ts";
+import { callID, type Call, type CallError, type CallingLine, type EndReason } from "../calls/model.ts";
+import { bridgeError, ended, incomingOutcome, performed } from "../calls/receipts.ts";
+import { line as callingLine } from "../calls/wire-v0.ts";
 import type { NativeEvents, NativeTransport } from "./transport.ts";
 import type {
   Conversation, ConversationEnd, ConversationErrorCode, ConversationId, IncomingCallPayload, IncomingConversationOutcome,
-  MediaKind, Participant, Subscription,
+  EndedReason, JSONValue, MediaKind, Participant, Subscription,
 } from "./types.ts";
 
 type Handle = Call["parties"][number]["handle"];
-type ErrorResult = { readonly ok: false; readonly error: CallError };
-type Reply<Value> = { readonly ok: true; readonly value: Value } | ErrorResult;
-type Permission = "granted" | "denied" | "restricted" | "notDetermined";
-type DefaultLine = Pick<Call["line"], "id" | "label" | "accountID">;
+type EventValue = NativeEvents[keyof NativeEvents];
+type RemoteEventInput =
+  | { kind: "ended"; reason: ReturnType<typeof remoteReason> }
+  | { kind: "partiesChanged"; parties: readonly ReturnType<typeof party>[] };
+type CommandInput =
+  | { id: ConversationId; action: { kind: "answer" | "end" } }
+  | { kind: MediaKind }
+  | (RemoteEventInput & { target: { kind: "call"; id: string }; eventID: string })
+  | { callID: string; eventID: string; line: CallingLine; party: ReturnType<typeof callerParty> };
+
+const negotiated = object({
+  kind: literal("negotiated"),
+  result: object({ ok: literal(true), value: object({ version: literal(1) }) }),
+});
+const permissionStatus = object({ kind: literal("granted", "denied", "restricted", "notDetermined") });
+const received = object({ kind: literal("applied", "buffered", "duplicate") });
+const unknownRegistration = object({ kind: literal("unknown") });
+const refused = object({ ok: literal(false), error: bridgeError });
 
 export interface AndroidBridge {
   negotiate(offer: string): string;
@@ -23,18 +39,21 @@ export interface AndroidBridge {
   addListener(name: "bridgeFrame", receive: (event: { json: string }) => void): Subscription;
 }
 
-export function bindAndroid(native: AndroidBridge): NativeTransport {
-  const negotiation = JSON.parse(native.negotiate(JSON.stringify({ kind: "negotiate", versions: [1] })));
-  if (negotiation?.kind !== "negotiated" || negotiation.result?.ok !== true ||
-      negotiation.result.value?.version !== 1) throw failure("conversation", "The calling bridge is unavailable");
-  const line: DefaultLine | null = JSON.parse(native.line());
+export function bindAndroid(native: AndroidBridge) {
+  try {
+    negotiated(JSON.parse(native.negotiate(JSON.stringify({ kind: "negotiate", versions: [1] }))));
+  } catch {
+    throw failure("conversation", "The calling bridge is unavailable");
+  }
+  const lineValue: JSONValue = JSON.parse(native.line());
+  const line = lineValue === null ? null : callingLine(lineValue);
   function configuredLine() {
     if (!line) throw failure("invalid_arguments", "Configure an Android calling line");
     return line;
   }
-  const listeners = new Set<(name: keyof NativeEvents, value: unknown) => void>();
+  const listeners = new Map<keyof NativeEvents, Set<(value: EventValue) => void>>();
   const emit = <Name extends keyof NativeEvents>(name: Name, value: NativeEvents[Name]) => {
-    for (const deliver of listeners) deliver(name, value);
+    listeners.get(name)?.forEach(deliver => deliver(value));
   };
   const store = createCallsStore({
     attach(receive) {
@@ -56,14 +75,14 @@ export function bindAndroid(native: AndroidBridge): NativeTransport {
     snapshot: () => JSON.parse(native.snapshot()),
   });
 
-  async function command<Value>(operation: string, input?: unknown): Promise<Value> {
-    const reply: { kind: string; operation: string; result: Reply<Value> } = JSON.parse(
-      await native.command(JSON.stringify({ kind: "command", operation, input })),
-    );
-    if (reply.kind !== "reply" || reply.operation !== operation)
-      throw failure("conversation", "Invalid calling bridge reply");
+  async function command<Value>(operation: string, decode: Decoder<Value>, input?: CommandInput) {
+    const reply = object({
+      kind: literal("reply"),
+      operation: literal(operation),
+      result: union(object({ ok: literal(true), value: raw => ({ decoded: decode(raw) }) }), refused),
+    })(JSON.parse(await native.command(JSON.stringify({ kind: "command", operation, input }))));
     if (!reply.result.ok) throw commandError(reply.result.error);
-    return reply.result.value;
+    return reply.result.value.decoded;
   }
 
   let revision = 0;
@@ -81,44 +100,48 @@ export function bindAndroid(native: AndroidBridge): NativeTransport {
       if (action.kind === "answer" || action.kind === "end" || action.kind === "hold") {
         const { callID, ...performed } = action;
         emit("conversationEvent", { type: "actionPerformed", payload: {
-          conversationId: callID as string as ConversationId, origin, action: performed,
+          conversationId: conversationID(callID), origin, action: performed,
         } });
       }
     }
   });
   async function perform(id: ConversationId, kind: "answer" | "end") {
-    const value: unknown = await command("perform", { id, action: { kind } });
-    if (kind === "end") ended(value);
-    else {
-      const { action } = performed(value).receipt;
-      if (action.kind !== "answer" || (action.callID as string) !== id)
-        throw failure("conversation", "Invalid Answer receipt");
+    const request = { id, action: { kind } };
+    if (kind === "end") {
+      await command("perform", ended, request);
+      return;
     }
+    const { action } = (await command("perform", performed, request)).receipt;
+    if (action.kind !== "answer" || action.callID !== callID(id))
+      throw failure("conversation", "Invalid Answer receipt");
   }
-  const unsupported = (feature: string): never => { throw failure("unsupported", `${feature} is unavailable on Android`); };
+  const unsupported = (feature: string) => { throw failure("unsupported", `${feature} is unavailable on Android`); };
   async function permission(kind: MediaKind, request: boolean) {
-    const status = (await command<{ kind: Permission }>(`permissions.${request ? "request" : "read"}`, { kind })).kind;
+    const status = (await command(`permissions.${request ? "request" : "read"}`, permissionStatus, { kind })).kind;
     return {
       status: status === "notDetermined" ? "undetermined" : status === "restricted" ? "denied" : status,
       granted: status === "granted", canAskAgain: status !== "restricted", expires: "never",
     } as const;
   }
   const permissions = async () => ({ microphone: await permission("microphone", false), camera: await permission("camera", false) });
-  const receive = (id: string, event: object, eventID = newID()) =>
-    command<{ kind: string }>("receive", { target: { kind: "call", id }, eventID, ...event });
-  return {
+  const receive = (id: string, event: RemoteEventInput, eventID = newID()) =>
+    command("receive", received, { target: { kind: "call", id }, eventID, ...event });
+  const transport: NativeTransport = {
     get snapshot() { return current; },
     mediaAdapter: "none",
     addListener(name, listener) {
-      const deliver = (event: keyof NativeEvents, value: unknown) => {
-        if (event === name) listener(value as NativeEvents[typeof name]);
+      const subscribers = listeners.get(name) ?? new Set();
+      listeners.set(name, subscribers);
+      const subscription = (event: EventValue) => {
+        // SAFETY: emit only routes the typed value for this event name to these subscribers.
+        listener(event as NativeEvents[typeof name]);
       };
-      listeners.add(deliver);
-      return { remove: () => { listeners.delete(deliver); } };
+      subscribers.add(subscription);
+      return { remove: () => { subscribers.delete(subscription); } };
     },
     getConversations: async () => current,
     getAudioRoutes: async () => ({ revision: 0, routes: [], current: null }),
-    getPushToken: async () => { await command("push.registration"); return { revision: 0, token: null }; },
+    getPushToken: async () => { await command("push.registration", unknownRegistration); return { revision: 0, token: null }; },
     setHandlerAttached(attached) { if (attached) unsupported("Call placement"); },
     settleAction() { unsupported("Call placement"); },
     startConversation: async () => unsupported("Outgoing calls"),
@@ -133,11 +156,11 @@ export function bindAndroid(native: AndroidBridge): NativeTransport {
     async reportIncomingConversation(payload) {
       if (payload.hasVideo) return unsupported("Video");
       if (payload.media) return unsupported("Native media pre-warm");
-      const outcome = incomingOutcome(await command("reportIncoming", {
+      const outcome = await command("reportIncoming", incomingOutcome, {
         callID: payload.serverCallId, eventID: payload.eventId, line: configuredLine(), party: callerParty(payload.caller),
-      }));
+      });
       const decision = outcome.kind === "duplicate" ? outcome.original : outcome;
-      const id = decision.callID as string as ConversationId;
+      const id = conversationID(decision.callID);
       let projected: IncomingConversationOutcome;
       switch (decision.kind) {
         case "admitted": projected = { status: "reported", id }; break;
@@ -176,7 +199,7 @@ export function bindAndroid(native: AndroidBridge): NativeTransport {
       const result = await receive(payload.serverCallId, { kind: "ended", reason: remoteReason(payload.reason) }, payload.eventId);
       if (result.kind === "applied" && payload.reason === "answeredElsewhere") {
         emit("conversationEvent", { type: "answeredElsewhere", payload: {
-          conversationId: payload.serverCallId as ConversationId, serverCallId: payload.serverCallId, eventId: payload.eventId,
+          conversationId: conversationID(payload.serverCallId), serverCallId: payload.serverCallId, eventId: payload.eventId,
         } });
       }
       return result.kind === "applied";
@@ -191,12 +214,20 @@ export function bindAndroid(native: AndroidBridge): NativeTransport {
       return { required: ["microphone"], missing: (await permission("microphone", false)).granted ? [] : ["microphone"] };
     },
   };
+  return transport;
 }
 
-function failure(code: ConversationErrorCode, message: string) {
-  return Object.assign(new Error(message), { code });
+function conversationID(value: string) {
+  // SAFETY: Both public ID types carry the same canonical call identifier after validation.
+  return callID(value) as ReturnType<typeof callID> & ConversationId;
 }
-function commandError(error: CallError): Error & { code: ConversationErrorCode; nativeCode?: number } {
+
+function failure(code: ConversationErrorCode, message: string, nativeCode?: number) {
+  const error: Error & { code: ConversationErrorCode; nativeCode?: number } = Object.assign(new Error(message), { code });
+  if (nativeCode !== undefined) error.nativeCode = nativeCode;
+  return error;
+}
+function commandError(error: CallError) {
   switch (error.kind) {
     case "unknownCall": return failure("unknown_conversation", "Unknown conversation");
     case "unsupported": return failure("unsupported", `${error.feature} is unavailable on Android`);
@@ -204,8 +235,7 @@ function commandError(error: CallError): Error & { code: ConversationErrorCode; 
     case "deadlineExceeded": return failure("deadline_exceeded", "The call action expired");
     case "placementFailed": return failure("handler_failed", "Conversation handler failed");
     case "refused": return failure("refused", "The call action was refused");
-    case "systemFailed": return Object.assign(failure("conversation", "Android Telecom could not complete the call action"),
-      { ...(error.cause.code !== undefined && { nativeCode: error.cause.code }) });
+    case "systemFailed": return failure("conversation", "Android Telecom could not complete the call action", error.cause.code);
     default: return failure("conversation", "The call action failed");
   }
 }
@@ -222,26 +252,27 @@ function callerParty(caller: IncomingCallPayload["caller"]) {
     caller.handleType === "phone" ? { kind: "phone", e164: value }
       : caller.handleType === "email" ? { kind: "email", address: caller.value } : { kind: "opaque", value: caller.value } };
 }
-function participant(handle: Handle): Partial<Participant> {
-  return handle.kind === "phone" ? { phoneNumber: handle.e164 } : handle.kind === "email" ? { email: handle.address } : {};
+function participant(handle: Handle) {
+  const member: Partial<Participant> = handle.kind === "phone" ? { phoneNumber: handle.e164 }
+    : handle.kind === "email" ? { email: handle.address } : {};
+  return member;
 }
-function remoteReason(kind: string) {
+function remoteReason(kind: Exclude<EndedReason, "local">) {
   return kind === "failed" ? { kind, error: { kind: "serverFailed" } } : { kind };
 }
-function end(at: string, reason: EndReason): ConversationEnd {
+function end(at: string, reason: EndReason) {
   switch (reason.kind) {
-    case "localDeclined": case "localEnded": return { at, reason: "local" };
+    case "localDeclined": case "localEnded": return { at, reason: "local" } satisfies ConversationEnd;
     case "filtered": return { at, reason: "failed", failure: { kind: "filtered",
-      cause: reason.cause === "unknown" ? "other" : reason.cause } };
-    case "failed": return { at, reason: "failed", ...(reason.error.kind === "serverFailed" && { failure: { kind: "server" } }) };
-    default: return { at, reason: reason.kind };
+      cause: reason.cause === "unknown" ? "other" : reason.cause } } satisfies ConversationEnd;
+    case "failed": return { at, reason: "failed", ...(reason.error.kind === "serverFailed" && { failure: { kind: "server" } }) } satisfies ConversationEnd;
+    default: return { at, reason: reason.kind } satisfies ConversationEnd;
   }
 }
 function snapshot(state: CallsSnapshot, revision: number) {
-  const conversations = state.calls.map((call): Conversation => {
+  const conversations = state.calls.map<Conversation>(call => {
     const base = {
-      // The call ID decoder validated this opaque identifier for both public views.
-      id: call.id as string as ConversationId,
+      id: conversationID(call.id),
       members: call.parties.map(({ id, handle, displayName }) => ({ ...participant(handle), id, displayName })),
       capabilities: { hold: false, merge: false, tones: false, video: false },
       isVideo: call.video.confirmed === "video", isMuted: call.muted, direction: call.direction,

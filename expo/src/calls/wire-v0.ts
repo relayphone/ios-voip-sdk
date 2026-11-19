@@ -14,7 +14,7 @@ const handle = union(
   object({ kind: literal('email'), address: text(1, 256, /^[^\s@]+@[^\s@]+$/u) }),
   object({ kind: literal('opaque'), value: text(1, 256, /\S/u) }),
 );
-const line = object({ accountID: id<'account'>(), id: lineID, label: text() });
+export const line = object({ accountID: id<'account'>(), id: lineID, label: text() });
 const party = object({ id: id<'party'>(), handle, displayName: text() });
 export const invitation = object({ callID, eventID, line, party });
 
