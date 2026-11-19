@@ -12,7 +12,7 @@ import { type BuildInfo, isVersion, manifest, sourceDigest } from './runtime-pac
 
 const objectiveC = ['CKInterposition', 'CKPushDelivery'];
 
-function swiftFiles(folder: string): string[] {
+function swiftFiles(folder: string) {
   return readdirSync(join(repository, folder))
     .filter(name => name.endsWith('.swift'))
     .sort()
@@ -20,7 +20,7 @@ function swiftFiles(folder: string): string[] {
 }
 
 /** Builds the package in a new directory and returns its manifest. */
-export function buildRuntime(output: string, architectures: readonly string[]): BuildInfo {
+export function buildRuntime(output: string, architectures: readonly string[]) {
   if (existsSync(output)) throw new Error(`Output already exists: ${output}`);
   if (architectures.length === 0 || architectures.some(name => !['arm64', 'x86_64'].includes(name))) {
     throw new Error('Architectures must be arm64, x86_64 or both.');
