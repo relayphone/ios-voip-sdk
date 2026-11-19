@@ -33,6 +33,7 @@ private class Reduction(
     private var receipt: CommandReceipt? = null
     private var admission: AdmissionCompletion? = null
     private var removal: RemovalCompletion? = null
+    private var actionPerformed: ActionReceipt? = null
     private val effects = mutableListOf<Effect>()
 
     fun run(input: Input): Transition {
@@ -56,6 +57,7 @@ private class Reduction(
             }
             is Input.AuthorityAllowed -> allowed(input)
             is Input.AnswerRefused -> answerRefused(input)
+            is Input.AnswerConfirmed -> receipt = CommandReceipt.Answered(answerConfirmed(input))
             is Input.ReconciliationUnknown -> on(input.attempt) { record ->
                 val answer = record.answer ?: return@on
                 if (record.reconciliation == input.attempt && record.permit == null) {
@@ -130,7 +132,7 @@ private class Reduction(
         // Admit a buffered end before the invitation consumes a slot in the event history.
         return Transition(
             State(policy, records, events.tail(), releasedPermits, actionIDs, generation, completed),
-            effects.toList(), receipt, terminalCompletions.toList(), admission, removal,
+            effects.toList(), receipt, terminalCompletions.toList(), admission, removal, actionPerformed,
         )
     }
 
@@ -140,7 +142,7 @@ private class Reduction(
         seen?.incoming?.let { return resolved(IncomingResult.Duplicate(it)) }
         val original = records.values.firstOrNull { it.invitationEvent == input.eventID }
         original?.admission?.let { return CommandReceipt.Incoming.Pending(it, duplicate = true) }
-        if (!remember(input.eventID)) return resolved(IncomingResult.Refused(IncomingRefusal.EventAlreadyUsed))
+        if (!remember(input.eventID)) return resolved(IncomingResult.Refused(input.callID, IncomingRefusal.EventAlreadyUsed))
 
         val existing = records[input.callID]
         val remaining = input.expiresAt?.minus(clocks.utc)
@@ -150,7 +152,7 @@ private class Reduction(
             else -> null
         }
         if (refusal != null) {
-            val decision = IncomingResult.Refused(refusal)
+            val decision = IncomingResult.Refused(input.callID, refusal)
             rememberAdmission(input.eventID, decision)
             return resolved(decision)
         }
@@ -188,7 +190,7 @@ private class Reduction(
                 is Lifecycle.Ending -> IncomingRefusal.Ended(lifecycle.reason)
                 else -> IncomingRefusal.CallAlreadyExists(lifecycle.kind)
             }
-            val admitted = resolveAdmission(record, IncomingResult.Refused(refusal))
+            val admitted = resolveAdmission(record, IncomingResult.Refused(record.call.id, refusal))
             if (!record.live) trace(Rule.LATE_ADMISSION)
             val reason = if (record.live) EndReason.AnsweredElsewhere else record.reason
             val current = !record.live || record.call.lifecycle is Lifecycle.Previewing
@@ -200,16 +202,16 @@ private class Reduction(
             val previews = preview(end)
             val refusal = if (previews) IncomingRefusal.Previewed(PreviewReason.AnsweredElsewhere)
                 else IncomingRefusal.Ended(end)
-            val admitted = resolveAdmission(record, IncomingResult.Refused(refusal))
+            val admitted = resolveAdmission(record, IncomingResult.Refused(record.call.id, refusal))
             trace(if (previews) Rule.ADMITTED_RETAINED_PREVIEW else Rule.ADMITTED_RETAINED_END)
             remoteFinish(admitted, end)
         } else if (record.invitationDeadline?.let { now >= it } == true) {
             trace(Rule.NO_ANSWER)
-            val expired = resolveAdmission(record, IncomingResult.Refused(IncomingRefusal.Expired))
+            val expired = resolveAdmission(record, IncomingResult.Refused(record.call.id, IncomingRefusal.Expired))
             finish(expired, EndReason.Unanswered)
         } else {
             trace(Rule.ADMITTED)
-            val admitted = resolveAdmission(record, IncomingResult.Admitted)
+            val admitted = resolveAdmission(record, IncomingResult.Admitted(record.call.id))
             val deadline = minOf(now + budgets.incomingRing, admitted.invitationDeadline ?: Instant.DISTANT_FUTURE)
             val ringing = admitted.copy(call = admitted.call.copy(lifecycle = Lifecycle.Ringing))
             put(arm(ringing.copy(retainedEnd = null), TimerKind.NO_ANSWER, deadline), publish = true)
@@ -222,7 +224,7 @@ private class Reduction(
             trace(Rule.STALE_SYSTEM_FAILURE)
             return
         }
-        val retired = resolveAdmission(record, IncomingResult.Refused(IncomingRefusal.SystemFailed(input.failure)))
+        val retired = resolveAdmission(record, IncomingResult.Refused(record.call.id, IncomingRefusal.SystemFailed(input.failure)))
         if (record.call.lifecycle != Lifecycle.Reporting) {
             put(if (record.live) retired else retired.copy(removal = null, removalEvidence = RemovalEvidence.NOT_APPLICABLE))
             return
@@ -243,7 +245,7 @@ private class Reduction(
         // An admission at the deadline still needs disconnecting if the call has expired.
         expireDue(record, TimerKind.NO_ANSWER)
         val current = records.getValue(record.call.id)
-        val admitted = current.copy(nativeStart = null, outgoingProgress = emptyList())
+        val admitted = current.copy(nativeStart = null, startingAction = null, outgoingProgress = emptyList())
         if (!current.live) {
             trace(Rule.LATE_START_ADMISSION)
             put(requestRemoval(admitted, attempt(record.call.id), current.reason))
@@ -251,6 +253,7 @@ private class Reduction(
         }
         trace(if (current.outgoingProgress.isEmpty()) Rule.START_ADMITTED else Rule.APPLY_START_PROGRESS)
         put(admitted)
+        actionPerformed = requireNotNull(current.startingAction)
         effects += Effect.SettleAction(record.call.id, start.actionID)
         current.outgoingProgress.forEach { progress ->
             val updated = records.getValue(record.call.id)
@@ -271,7 +274,7 @@ private class Reduction(
         }
         if (!placing) expireDue(record, TimerKind.NO_ANSWER)
         val current = records.getValue(record.call.id)
-        val retired = current.copy(nativeStart = null, removalEvidence = RemovalEvidence.NOT_APPLICABLE)
+        val retired = current.copy(nativeStart = null, startingAction = null, removalEvidence = RemovalEvidence.NOT_APPLICABLE)
         if (!current.live) {
             trace(Rule.RETIRE_FAILED_START)
             put(retired)
@@ -286,7 +289,7 @@ private class Reduction(
     private fun request(input: Input.Request) {
         val action = input.action
         if (action is Action.Start) {
-            start(Input.Start(action.callID, action.line, listOf(action.party), false, input.id, input.effectiveDeadline))
+            start(Input.Start(action.callID, action.line, listOf(action.party), false, input.id, input.effectiveDeadline, input.origin))
             return
         }
         val record = records[action.callID]
@@ -300,11 +303,11 @@ private class Reduction(
                 if (!slotAvailable()) return reject(input, CallError.Refused(RefusalReason.NotAllowed))
                 placement(
                     record.copy(previousPreview = preview.reason, removal = null, removalEvidence = RemovalEvidence.UNCONFIRMED),
-                    input.id, input.effectiveDeadline, Rule.JOIN,
+                    ActionReceipt(input.id, action, input.origin), input.effectiveDeadline, Rule.JOIN,
                 )
             }
             is Action.Answer -> answer(record, input)
-            is Action.End -> end(record, input.id)
+            is Action.End -> end(record, ActionReceipt(input.id, action, input.origin))
             else -> control(record, input)
         }
     }
@@ -317,17 +320,19 @@ private class Reduction(
         }
         if (!slotAvailable()) return reject(input.callID, input.id, CallError.Refused(RefusalReason.NotAllowed))
         val call = createCall(input.callID, input.line, input.parties, Direction.OUTGOING, Lifecycle.Placing, input.video)
-        placement(Record(call), input.id, input.effectiveDeadline, Rule.START)
+        val action = Action.Start(input.callID, input.line, input.parties.first())
+        placement(Record(call), ActionReceipt(input.id, action, input.origin), input.effectiveDeadline, Rule.START)
     }
 
-    private fun placement(record: Record, id: ActionID, effectiveDeadline: Duration?, rule: Rule) {
+    private fun placement(record: Record, action: ActionReceipt, effectiveDeadline: Duration?, rule: Rule) {
+        val id = action.actionID
         val attempt = attempt(record.call.id)
         val allowance = minOf(budgets.placement, effectiveDeadline ?: budgets.placement)
         if (allowance <= Duration.ZERO) return reject(record.call.id, id, CallError.DeadlineExceeded(TimedStage.PLACEMENT))
         trace(rule)
         val deadline = now + allowance
         val placing = record.copy(
-            call = record.call.copy(lifecycle = Lifecycle.Placing), placement = Pending(attempt, id, deadline),
+            call = record.call.copy(lifecycle = Lifecycle.Placing), placement = Pending(attempt, action, deadline),
         )
         put(arm(placing, TimerKind.PLACEMENT, deadline))
         if (rule == Rule.START) drain(record.call.id, EndTarget.Canonical(record.call.id))
@@ -380,6 +385,7 @@ private class Reduction(
         val nativeStart = Effect.NativeStart(pending.attempt, pending.id)
         val dialing = cancel(record, TimerKind.PLACEMENT).copy(
             call = record.call.copy(lifecycle = Lifecycle.Dialing), placement = null, nativeStart = nativeStart,
+            startingAction = pending.receipt,
         )
         put(arm(dialing, TimerKind.NO_ANSWER, now + budgets.outgoingNoAnswer))
         effects += nativeStart
@@ -398,7 +404,7 @@ private class Reduction(
         }
         trace(Rule.ANSWER)
         val attempt = attempt(record.call.id)
-        val pending = Pending(attempt, input.id, now + total)
+        val pending = Pending(attempt, ActionReceipt(input.id, input.action, input.origin), now + total)
         val answering = cancel(record, TimerKind.NO_ANSWER).copy(answer = pending)
         val bounded = arm(answering, TimerKind.ANSWER, pending.deadline)
         put(arm(bounded, TimerKind.CLAIM, now + budget.claim))
@@ -491,9 +497,29 @@ private class Reduction(
 
     private fun connecting(record: Record, pending: Pending) {
         effects += Effect.SettleAction(record.call.id, pending.id, pending.deadline)
-        val ready = record.copy(call = record.call.copy(lifecycle = Lifecycle.Connecting))
+        val isAnswer = pending.receipt.action is Action.Answer
+        if (!isAnswer) actionPerformed = pending.receipt
+        val ready = record.copy(
+            call = record.call.copy(lifecycle = Lifecycle.Connecting),
+            confirmingAnswer = pending.takeIf { isAnswer },
+        )
         if (ready.bufferedConnection) commitConnected(ready)
         else put(arm(ready, TimerKind.CONNECTION, now + budgets.connection), publish = true)
+    }
+
+    private fun answerConfirmed(input: Input.AnswerConfirmed): Outcome<Unit, CallError> {
+        val record = records[input.callID] ?: return Outcome.Failure(CallError.UnknownCall(input.callID))
+        val answer = record.confirmingAnswer?.takeIf { it.id == input.actionID }
+            ?: return Outcome.Failure(CallError.InvalidTransition(record.call.lifecycle.kind))
+        val settled = record.copy(confirmingAnswer = null)
+        if (now >= answer.deadline) {
+            val error = CallError.DeadlineExceeded(TimedStage.SYSTEM_ACTION)
+            deadline(settled, error)
+            return Outcome.Failure(error)
+        }
+        put(settled)
+        actionPerformed = answer.receipt
+        return Outcome.Success(Unit)
     }
 
     private fun connected(input: Input.Connected) {
@@ -646,7 +672,8 @@ private class Reduction(
         finish(record, reason, preview = preview)
     }
 
-    private fun end(record: Record, id: ActionID) {
+    private fun end(record: Record, action: ActionReceipt) {
+        val id = action.actionID
         val receipt = record.localEnd
         if (!record.live) {
             trace(if (receipt != null) Rule.REPEAT_LOCAL_END else Rule.ALREADY_ENDED)
@@ -664,6 +691,7 @@ private class Reduction(
         trace(if (record.nativeStart != null) Rule.END_BEFORE_START_ADMISSION else Rule.LOCAL_END)
         val reason = if (record.call.lifecycle == Lifecycle.Ringing) EndReason.LocalDeclined else EndReason.LocalEnded
         finish(record.copy(localEnd = id), reason)
+        actionPerformed = action
         effects += Effect.CompleteEnd(record.call.id, id, EndResult.Ended(EndReceipt(record.call.id, id, reason)))
     }
 
@@ -699,7 +727,7 @@ private class Reduction(
             else -> error("Expected a control action")
         })
         val attempt = attempt(record.call.id)
-        put(record.copy(controls = record.controls + Control(action, attempt, input.id)))
+        put(record.copy(controls = record.controls + Control(ActionReceipt(input.id, action, input.origin), attempt)))
         effects += if (action is Action.Tones) Effect.SendTones(attempt, action)
             else Effect.Apply(attempt, input.id, action)
     }
@@ -743,6 +771,7 @@ private class Reduction(
         put(updated.copy(call = confirmed), publish = tones == null)
         if (tones != null) effects += Effect.TonesPerformed(call.id, pending.id, tones.digits)
         effects += Effect.SettleAction(call.id, pending.id)
+        actionPerformed = pending.receipt
     }
 
     private fun expired(input: Input.TimerExpired) = on(input.attempt) { record ->
@@ -826,7 +855,7 @@ private class Reduction(
                 audio = Audio.INACTIVE, transport = Transport.DISCONNECTED,
                 preparation = if (preview != null) Preparation.RELEASED else record.call.media.preparation,
             )),
-            answer = null, placement = null, outgoingProgress = emptyList(), permit = null,
+            answer = null, confirmingAnswer = null, placement = null, outgoingProgress = emptyList(), permit = null,
             permitAttempt = null, mediaAttempt = null, controls = emptyList(),
             cleanup = attempt, mediaReleases = record.mediaReleases + attempt, releasingPermit = releasing,
             retainedEnd = null, reconciliation = null, bufferedConnection = false,
@@ -966,7 +995,8 @@ private val Record.canPrune: Boolean get() =
         admission == null && placement == null && nativeStart == null && joinAttempt == null && answer == null &&
         reconciliation == null && permit == null && mediaAttempt == null && controls.isEmpty() && timers.isEmpty()
 private fun Record.pending(id: ActionID): Boolean =
-    answer?.id == id || placement?.id == id || (live && nativeStart?.actionID == id) || controls.any { it.id == id }
+    answer?.id == id || confirmingAnswer?.id == id || placement?.id == id ||
+        (live && nativeStart?.actionID == id) || controls.any { it.id == id }
 private val Record.reason: EndReason get() = when (val lifecycle = call.lifecycle) {
     is Lifecycle.Ending -> lifecycle.reason
     is Lifecycle.Ended -> lifecycle.reason

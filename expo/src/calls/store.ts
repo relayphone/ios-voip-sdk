@@ -1,10 +1,10 @@
-import { array, id, integer, literal, object, optional, union, type Decoded } from './decode.ts';
+import { array, integer, literal, object, optional, union, type Decoded } from './decode.ts';
 import { actionID, attemptID, callID, decodeWireRecord, eventID, projectCall,
   type Call, type CallID, type Feature, type PushHealth, type WireRecord } from './model.ts';
-import { wireCall } from './wire-v0.ts';
+import { actionReceipt, wireCall } from './wire-v0.ts';
 import { pushHealth, type Capability } from './wire-v1.ts';
+import { cursor } from './receipts.ts';
 
-const cursor = object({ epoch: id<'epoch'>(), sequence: integer() });
 export type Cursor = Decoded<typeof cursor>;
 const nativeSnapshot = object({
   cursor, calls: array(wireCall), completed: optional(array(callID)),
@@ -14,6 +14,7 @@ const correlation = object({ callID: optional(callID), actionID: optional(action
   eventID: optional(eventID), attemptID: optional(attemptID) });
 const frame = union(
   object({ cursor, kind: literal('record'), record: decodeWireRecord, correlation: optional(correlation) }),
+  object({ cursor, kind: literal('actionPerformed'), receipt: actionReceipt }),
   object({ cursor, kind: literal('callRemoved'), callID }),
   object({ cursor, kind: literal('cleanup'), callID, outcome: literal('removed', 'failed') }),
   object({ cursor, kind: literal('terminalCompleted'), callID }),

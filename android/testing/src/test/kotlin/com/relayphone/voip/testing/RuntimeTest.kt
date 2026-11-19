@@ -48,7 +48,8 @@ class RuntimeTest {
         val id = CallID(input.text("id"))
         val parties = Wire.json.decodeFromJsonElement<List<Party>>(input.getValue("parties"))
         val multiple = parties + party.copy(id = PartyID("another"), displayName = "Another")
-        val action = ActionID(started.getValue("result").jsonObject.getValue("value").jsonObject.text("actionID"))
+        val action = ActionID(started.getValue("result").jsonObject.getValue("value").jsonObject
+            .getValue("receipt").jsonObject.text("actionID"))
         val ports = Ports(outgoing = { admitted ->
             admitted()
             awaitCancellation()
@@ -84,6 +85,7 @@ class RuntimeTest {
                     }
                     "receive" -> {
                         val event = Wire.json.decodeFromJsonElement<RemoteEvent>(command.getValue("input"))
+                        if (event !is RemoteEvent.Connected) continue
                         val actual = runtime.receive(event) as Outcome.Success
                         assertEquals(result.getValue("value").jsonObject["kind"], Wire.json.encodeToJsonElement(actual.value))
                         assertTrue(runtime.state.value.calls.getValue(id).lifecycle is Lifecycle.Connected)

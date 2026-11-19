@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { callID, type Action, type CallError, type Result } from '../../expo/src/calls/model.ts';
 import { createCallsStore, type CallsTransport, type Observation } from '../../expo/src/calls/store.ts';
+import { incomingOutcome, performed } from '../../expo/src/calls/receipts.ts';
 import { canonical, validateBridge } from './schema.ts';
 import { decodeModelV1 } from './v1.ts';
 
@@ -150,17 +151,18 @@ test('negotiation chooses a common version without depending on offer order', ()
 });
 
 type CallCommand =
-  | { operation: 'start'; input: { id: string } }
+  | { operation: 'start'; input: { id: string; parties: readonly unknown[] } }
   | { operation: 'perform'; input: { id: string; action: Action } }
   | { operation: 'bindRemote'; input: { id: string; remoteID: string } }
-  | { operation: 'receive'; input: { eventID: string; target: { kind: 'call' | 'remote'; id: string } } }
-  | { operation: 'reportIncoming'; input: { callID: string } }
+  | { operation: 'receive'; input: { kind: string; eventID: string; target: { kind: 'call' | 'remote'; id: string }; reason?: unknown } }
+  | { operation: 'reportIncoming'; input: { callID: string; eventID: string } }
   | { operation: 'permissions.read' | 'permissions.request'; input: { kind: 'microphone' | 'camera' } }
   | { operation: 'push.registration' | 'push.health' };
 
 function fakeCommandTransport() {
   const calls = new Map<string, { alias?: string; ended?: unknown }>();
   const events = new Set<string>();
+  const invitations = new Map<string, { kind: 'admitted'; callID: string }>();
   let sequence = 0;
   let negotiated = false;
   const advance = () => ({ epoch: 'commands-a', sequence: ++sequence });
@@ -175,7 +177,12 @@ function fakeCommandTransport() {
     switch (command.operation) {
       case 'start':
         calls.set(command.input.id, {});
-        return success({ kind: 'performed', actionID: 'start-a', cursor: advance() });
+        return success({ kind: 'performed', cursor: advance(), receipt: {
+          actionID: 'start-a', origin: 'app', action: {
+            kind: 'start', callID: command.input.id, line: { id: 'personal', accountID: 'account-a', label: 'Personal' },
+            party: command.input.parties[0],
+          },
+        } });
       case 'bindRemote': {
         const call = calls.get(command.input.id);
         if (!call) return unknown(command.input.id);
@@ -187,10 +194,15 @@ function fakeCommandTransport() {
         const { eventID, target } = command.input;
         if (events.has(eventID)) return success({ kind: 'duplicate' });
         events.add(eventID);
-        const known = target.kind === 'call'
-          ? calls.has(target.id) : [...calls.values()].some(call => call.alias === target.id);
-        if (known) advance();
-        return success({ kind: known ? 'applied' : 'buffered' });
+        const call = target.kind === 'call'
+          ? calls.get(target.id) : [...calls.values()].find(call => call.alias === target.id);
+        if (call) {
+          const cursor = advance();
+          if (command.input.kind === 'ended') call.ended ??= {
+            kind: 'end', cursor, outcome: { kind: 'alreadyEnded', reason: command.input.reason },
+          };
+        }
+        return success({ kind: call ? 'applied' : 'buffered' });
       }
       case 'perform': {
         const { id, action } = command.input;
@@ -204,10 +216,16 @@ function fakeCommandTransport() {
         };
         return success(call.ended);
       }
-      case 'reportIncoming':
-        calls.set(command.input.callID, {});
+      case 'reportIncoming': {
+        const { callID, eventID } = command.input;
+        const original = invitations.get(eventID);
+        if (original) return success({ kind: 'duplicate', original });
+        const decision = { kind: 'admitted', callID } as const;
+        invitations.set(eventID, decision);
+        calls.set(callID, {});
         advance();
-        return success({ kind: 'admitted' });
+        return success(decision);
+      }
       case 'permissions.read':
       case 'permissions.request':
         return success({ kind: command.input.kind === 'microphone' ? 'granted' : 'denied' });
@@ -238,6 +256,38 @@ test('commands and typed replies conform after negotiation', () => {
     const reply = native.command(transcript[index]);
     validateBridge(reply, 'reply');
     assert.deepEqual(reply, transcript[index + 1]);
+    if (reply.result.ok && reply.operation === 'start') assert.deepEqual(performed(reply.result.value), reply.result.value);
+    if (reply.result.ok && reply.operation === 'reportIncoming') {
+      assert.deepEqual(incomingOutcome(reply.result.value), reply.result.value);
+    }
+  }
+  const absent = { kind: 'command', operation: 'perform', input: { id: 'different-call', action: { kind: 'end' } } };
+  assert.deepEqual(native.command(absent).result, failure({ kind: 'unknownCall', callID: callID('different-call') }));
+});
+
+test('the store delivers and replays the original performed receipts in sequence', async () => {
+  const native = fakeObservationTransport({ cursor: { epoch: 'actions-a', sequence: 0 }, calls: [] });
+  const store = createCallsStore(native);
+  const at = store.snapshot().cursor;
+  const actionFrames = messages('actions.json');
+  const received: Observation[] = [];
+  store.subscribe(frame => received.push(frame));
+  for (const frame of actionFrames) {
+    native.send(frame);
+    native.send(frame);
+  }
+  assert.equal(received[0]?.kind, 'snapshot');
+  assert.deepEqual(received.slice(1), actionFrames);
+  const reader = store.observe({ after: at })[Symbol.asyncIterator]();
+  for (const frame of actionFrames) assert.deepEqual((await reader.next()).value, frame);
+  store.close();
+});
+
+test('the incoming decoder preserves terminal and refusal decisions through duplicates', () => {
+  for (const reply of messages('admissions.json')) {
+    validateBridge(reply, 'reply');
+    const { result } = reply as { result: { value: unknown } };
+    assert.deepEqual(incomingOutcome(result.value), result.value);
   }
 });
 

@@ -3,6 +3,7 @@ package com.relayphone.voip.system
 import android.content.Context
 import android.os.ParcelUuid
 import androidx.core.telecom.CallsManager
+import com.relayphone.voip.ActionReceipt
 import com.relayphone.voip.CallError
 import com.relayphone.voip.CallID
 import com.relayphone.voip.Input
@@ -17,6 +18,9 @@ public class AndroidTelecomSystem private constructor(
 ) : SystemPort by port {
     /** Answers a ringing call, sharing the receipt with any Telecom Answer callback. */
     public suspend fun answer(callID: CallID): Outcome<Unit, CallError> = port.answer(callID)
+
+    /** Answers using the same action receipt as a concurrent Telecom Answer callback. */
+    public suspend fun answerWithReceipt(callID: CallID): Outcome<ActionReceipt, CallError> = port.answerWithReceipt(callID)
 
     public companion object {
         /**

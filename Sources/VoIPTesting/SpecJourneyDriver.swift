@@ -191,7 +191,8 @@
         case .unanswered: event = .unanswered
         case .answeredElsewhere: event = .answeredElsewhere
         case .declinedElsewhere: event = .declinedElsewhere
-        case .failed: return "The engine cannot receive a typed server failure."
+        case .failed(.serverFailed): event = .failed
+        case .failed: return "The engine cannot receive this failure from the server."
         case .localDeclined, .localEnded, .filtered: throw DriverError.invalidRemoteEnd
         }
         switch target {
@@ -483,7 +484,8 @@
       framework.records.compactMap {
         guard case .reportEnded(id, let reason) = $0 else { return nil }
         switch reason {
-        case .endedRemotely, .answeredElsewhere, .declinedElsewhere: return .remote
+        case .endedRemotely, .answeredElsewhere, .declinedElsewhere, .failed(.server):
+          return .remote
         case .unanswered: return .missed
         case .failed(.answerAuthorization(.refused(.notAllowed))): return .rejected
         default: return nil
@@ -739,7 +741,8 @@
       case .audioActivationTimedOut, .audioRecoveryTimedOut, .connectTimedOut,
         .reconnectTimedOut, .actionTimedOut:
         .deadlineExceeded
-      case .refused, .systemFailed, .atCapacity, .audioSession, .frameworkReset, .server:
+      case .server: .serverFailed
+      case .refused, .systemFailed, .atCapacity, .audioSession, .frameworkReset:
         .systemFailed
       }
     }

@@ -20,6 +20,7 @@ public sealed interface CallError {
     @Serializable @SerialName("remoteIdentityConflict") public data class RemoteIdentityConflict(public val remoteID: RemoteCallID) : CallError
     @Serializable @SerialName("invalidConfiguration") public data class InvalidConfiguration(public val field: ConfigurationField) : CallError
     @Serializable @SerialName("systemFailed") public data class SystemFailed(public val cause: SystemFailure) : CallError
+    @Serializable @SerialName("serverFailed") public data object ServerFailed : CallError
     @Serializable @SerialName("bridgeUnavailable") public data object BridgeUnavailable : CallError
 }
 

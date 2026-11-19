@@ -1,0 +1,16 @@
+{
+  "version": 0,
+  "id": "end-after-server-failure",
+  "configuration": {"budgets":{"answer":{"total":4500,"claim":2500,"reconciliation":500,"settlementReserve":500},"placement":10000,"incomingRing":45000,"outgoingNoAnswer":45000,"mediaPreparation":5000,"audioActivation":10000,"audioRecovery":5000,"connection":30000,"reconnection":15000},"outgoingMedia":"whenProvided","connectionAuthority":"application","maximumParticipatingCalls":1,"previewAnsweredElsewhere":false},
+  "steps": [
+    {"kind":"input","input":{"kind":"process","running":true,"javascriptAttached":true}},
+    {"kind":"input","input":{"kind":"incoming","callID":"server-end-a","eventID":"invite-server-end-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},"party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}}},
+    {"kind":"input","input":{"kind":"remoteEnd","target":{"kind":"call","id":"server-end-a"},"eventID":"end-server-end-a","reason":{"kind":"failed","error":{"kind":"serverFailed"}}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"server-end-a","lifecycle":{"kind":"ended","reason":{"kind":"failed","error":"serverFailed"}}}},
+    {"kind":"expect","expectation":{"kind":"systemEnd","callID":"server-end-a","cause":"remote"}},
+    {"kind":"input","input":{"kind":"action","origin":"app","action":{"kind":"end","callID":"server-end-a"}}},
+    {"kind":"expect","expectation":{"kind":"endResult","callID":"server-end-a","result":{"kind":"alreadyEnded","reason":{"kind":"failed","error":{"kind":"serverFailed"}}}}},
+    {"kind":"expect","expectation":{"kind":"call","callID":"server-end-a","lifecycle":{"kind":"ended","reason":{"kind":"failed","error":"serverFailed"}}}},
+    {"kind":"expect","expectation":{"kind":"count","callID":"server-end-a","metric":"performedEnds","value":0}}
+  ]
+}

@@ -56,6 +56,7 @@
       {"type":"object","properties":{"kind":{"const":"remoteIdentityConflict"},"remoteID":{"$ref":"#/$defs/id"}},"required":["kind","remoteID"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"invalidConfiguration"},"field":{"enum":["answer","placement","incomingRing","outgoingNoAnswer","mediaPreparation","audioActivation","audioRecovery","connection","reconnection","retention"]}},"required":["kind","field"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"systemFailed"},"cause":{"$ref":"#/$defs/systemFailure"}},"required":["kind","cause"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"serverFailed"}},"required":["kind"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"bridgeUnavailable"}},"required":["kind"],"additionalProperties":false}
     ]},
     "remoteEnd": {"oneOf": [
@@ -161,7 +162,7 @@
     "endExpectation": {"oneOf": [
       {"type":"object","properties":{"kind":{"enum":["localDeclined","localEnded","remoteEnded","unanswered","answeredElsewhere","declinedElsewhere"]}},"required":["kind"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"filtered"},"cause":{"enum":["doNotDisturb","blockList","unknown"]}},"required":["kind","cause"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"failed"},"error":{"enum":["unknownCall","invalidTransition","unsupported","permissionRequired","refused","authorityUnavailable","claimTimedOut","placementFailed","deadlineExceeded","mediaFailed","remoteIdentityConflict","invalidConfiguration","systemFailed","bridgeUnavailable"]}},"required":["kind","error"],"additionalProperties":false}
+      {"type":"object","properties":{"kind":{"const":"failed"},"error":{"enum":["unknownCall","invalidTransition","unsupported","permissionRequired","refused","authorityUnavailable","claimTimedOut","placementFailed","deadlineExceeded","mediaFailed","remoteIdentityConflict","invalidConfiguration","systemFailed","serverFailed","bridgeUnavailable"]}},"required":["kind","error"],"additionalProperties":false}
     ]},
     "lifecycleExpectation": {"oneOf": [
       {"type":"object","properties":{"kind":{"enum":["reporting","ringing","placing","dialing","connecting","connected","reconnecting"]}},"required":["kind"],"additionalProperties":false},
@@ -173,7 +174,7 @@
       {"type":"object","properties":{"kind":{"const":"count"},"callID":{"$ref":"#/$defs/id"},"metric":{"enum":["claims","reconciliations","settlements","publications","activations","reports","placements","performedEnds","releases","claimTimeouts","permitReleases","ringingPublications","holdRequests"]},"value":{"type":"integer","minimum":0,"maximum":9007199254740991}},"required":["kind","callID","metric","value"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"participating"},"callIDs":{"type":"array","items":{"$ref":"#/$defs/id"},"minItems":0}},"required":["kind","callIDs"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"systemEnd"},"callID":{"$ref":"#/$defs/id"},"cause":{"enum":["local","remote","missed","rejected"]}},"required":["kind","callID","cause"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"error"},"callID":{"$ref":"#/$defs/id"},"error":{"enum":["unknownCall","invalidTransition","unsupported","permissionRequired","authorityUnavailable","claimTimedOut","placementFailed","deadlineExceeded","mediaFailed","remoteIdentityConflict","invalidConfiguration","systemFailed","bridgeUnavailable"]}},"required":["kind","callID","error"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"error"},"callID":{"$ref":"#/$defs/id"},"error":{"enum":["unknownCall","invalidTransition","unsupported","permissionRequired","authorityUnavailable","claimTimedOut","placementFailed","deadlineExceeded","mediaFailed","remoteIdentityConflict","invalidConfiguration","systemFailed","serverFailed","bridgeUnavailable"]}},"required":["kind","callID","error"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"error"},"callID":{"$ref":"#/$defs/id"},"error":{"const":"refused"},"reason":{"$ref":"#/$defs/refusal"}},"required":["kind","callID","error"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"endResult"},"callID":{"$ref":"#/$defs/id"},"result":{"$ref":"#/$defs/endResult"}},"required":["kind","callID","result"],"additionalProperties":false}
     ]},

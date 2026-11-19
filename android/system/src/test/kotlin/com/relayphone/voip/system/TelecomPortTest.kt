@@ -3,6 +3,8 @@ package com.relayphone.voip.system
 import com.relayphone.voip.AccountID
 import com.relayphone.voip.Action
 import com.relayphone.voip.ActionID
+import com.relayphone.voip.ActionOrigin
+import com.relayphone.voip.ActionReceipt
 import com.relayphone.voip.AnswerBudget
 import com.relayphone.voip.Attempt
 import com.relayphone.voip.Audio
@@ -89,16 +91,22 @@ class TelecomPortTest {
         backend.open.complete(Unit)
         admitted.await()
 
-        val first = async { port.answer(incoming.id) }
-        val second = async { port.answer(incoming.id) }
+        val first = async { port.answerWithReceipt(incoming.id) }
+        val second = async { port.answerWithReceipt(incoming.id) }
         val answer = requests.receive() as Input.Request
         assertEquals(Action.Answer(incoming.id), answer.action)
+        assertEquals(ActionOrigin.APP, answer.origin)
         assertEquals(4_700.milliseconds, answer.effectiveDeadline)
         assertEquals(port.answerDeadline, answer.effectiveDeadline)
         port.settle(Effect.SettleAction(incoming.id, answer.id))
 
-        assertEquals(Outcome.Success(Unit), first.await())
-        assertEquals(Outcome.Success(Unit), second.await())
+        val confirmation = requests.receive() as Input.AnswerConfirmed
+        assertEquals(Input.AnswerConfirmed(incoming.id, answer.id), confirmation)
+        assertFalse(first.isCompleted)
+        port.completeAnswer(confirmation, Outcome.Success(Unit))
+        val receipt = Outcome.Success(ActionReceipt(answer.id, answer.action, ActionOrigin.APP))
+        assertEquals(receipt, first.await())
+        assertEquals(receipt, second.await())
         assertEquals(1, backend.answers)
         assertFalse(requests.tryReceive().isSuccess)
         val removal = async { port.remove(incoming, Effect.RequestRemoval(attempt, EndReason.LocalEnded)) }
@@ -109,18 +117,49 @@ class TelecomPortTest {
     }
 
     @Test
-    fun `an early system Answer waits for admission and shares a typed refusal with the app`() = runTest {
+    fun `an app retry keeps the first system Answer receipt and origin`() = runTest {
         val backend = FakeBackend()
         val requests = Channel<Input>(Channel.UNLIMITED)
         val port = TelecomPort(backend, { requests.trySend(it).isSuccess }, StandardTestDispatcher(testScheduler))
+        val report = async { port.reportIncoming(incoming, Effect.ReportIncoming(attempt)) {} }
+        backend.open.complete(Unit)
+        val callback = async { backend.callbacks.await().answer() }
+        val answer = requests.receive() as Input.Request
+        assertEquals(ActionOrigin.SYSTEM, answer.origin)
+        val app = async { port.answerWithReceipt(incoming.id) }
+        runCurrent()
+        assertFalse(app.isCompleted)
+        assertFalse(requests.tryReceive().isSuccess)
+
+        port.settle(Effect.SettleAction(incoming.id, answer.id))
+        val confirmation = requests.receive() as Input.AnswerConfirmed
+        assertEquals(Input.AnswerConfirmed(incoming.id, answer.id), confirmation)
+        assertFalse(callback.isCompleted)
+        port.completeAnswer(confirmation, Outcome.Success(Unit))
+        callback.await()
+        assertEquals(Outcome.Success(ActionReceipt(answer.id, answer.action, ActionOrigin.SYSTEM)), app.await())
+        assertFalse(requests.tryReceive().isSuccess)
+        assertEquals(0, backend.answers)
+        backend.close.complete(Unit)
+        report.await()
+    }
+
+    @Test
+    fun `an early system Answer waits for admission and shares a typed refusal with the app`() = runTest {
+        val backend = FakeBackend()
+        val requests = Channel<Input>(Channel.UNLIMITED)
+        val port = TelecomPort(backend, { requests.trySend(it).isSuccess },
+            StandardTestDispatcher(testScheduler), testScheduler.timeSource)
         var admitted = false
         val report = async { port.reportIncoming(incoming, Effect.ReportIncoming(attempt)) { admitted = true } }
         val callback = async { runCatching { backend.callbacks.await().answer() } }
         runCurrent()
         assertFalse(requests.tryReceive().isSuccess)
+        advanceTimeBy(800)
         backend.open.complete(Unit)
 
         val answer = requests.receive() as Input.Request
+        assertEquals(3_900.milliseconds, answer.effectiveDeadline)
         assertEquals(true, admitted)
         val app = async { port.answer(incoming.id) }
         runCurrent()

@@ -40,6 +40,7 @@ function completeEndReason(reason: EndExpectation, callID: WireID, systemFailure
   switch (reason.error) {
     case "refused": return { kind: "failed", error: { kind: "refused", reason: { kind: "notAllowed" } } };
     case "claimTimedOut": return { kind: "failed", error: claimTimedOut(callID) };
+    case "serverFailed": return { kind: "failed", error: { kind: "serverFailed" } };
     case "systemFailed":
       assert.ok(systemFailure, `Missing system failure input for ${callID}`);
       return { kind: "failed", error: { kind: "systemFailed", cause: systemFailure } };

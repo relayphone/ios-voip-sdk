@@ -2,6 +2,8 @@ package com.relayphone.voip.system
 
 import com.relayphone.voip.Action
 import com.relayphone.voip.ActionID
+import com.relayphone.voip.ActionOrigin
+import com.relayphone.voip.ActionReceipt
 import com.relayphone.voip.Call
 import com.relayphone.voip.CallError
 import com.relayphone.voip.CallID
@@ -21,8 +23,10 @@ import com.relayphone.voip.TimedStage
 import com.relayphone.voip.runtime.SystemPort
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -45,6 +49,7 @@ internal class TelecomPort<NativeID : Any>(
     private val backend: TelecomBackend<NativeID>,
     private val submit: (Input) -> Boolean,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val time: TimeSource = TimeSource.Monotonic,
 ) : SystemPort {
     override val platform = Platform.ANDROID
     override val answerDeadline = TELECOM_CALLBACK_LIMIT - CALLBACK_RESERVE
@@ -52,10 +57,18 @@ internal class TelecomPort<NativeID : Any>(
     private val sessions = Sessions<NativeID>()
     private val receipts = ConcurrentHashMap<ReceiptKey, Receipt>()
 
-    suspend fun answer(callID: CallID): Outcome<Unit, CallError> {
+    suspend fun answer(callID: CallID): Outcome<Unit, CallError> = when (val result = answerWithReceipt(callID)) {
+        is Outcome.Success -> Outcome.Success(Unit)
+        is Outcome.Failure -> result
+    }
+
+    suspend fun answerWithReceipt(callID: CallID): Outcome<ActionReceipt, CallError> {
         val session = sessions.find(callID) ?: return Outcome.Failure(CallError.UnknownCall(callID))
         val receipt = beginAnswer(session, Origin.APP) ?: return Outcome.Failure(CallError.BridgeUnavailable)
-        return receipt.result.await()
+        return when (val result = receipt.result.await()) {
+            is Outcome.Success -> Outcome.Success(receipt.performed)
+            is Outcome.Failure -> result
+        }
     }
 
     override suspend fun reportIncoming(
@@ -74,7 +87,7 @@ internal class TelecomPort<NativeID : Any>(
         try {
             withContext(dispatcher) {
                 backend.addCall(call, TelecomCallbacks(
-                    answer = { systemCallback(session) { systemAnswer(session) } },
+                    answer = { systemCallback(session, answering = true) { remaining -> systemAnswer(session, remaining) } },
                     disconnect = { systemCallback(session) { systemDisconnect(session) } },
                     setHeld = { held -> systemCallback(session) { systemHold(session, held) } },
                 )) { control ->
@@ -146,15 +159,19 @@ internal class TelecomPort<NativeID : Any>(
         return session.removal().await()
     }
 
-    private suspend fun systemCallback(session: Session<NativeID>, perform: suspend () -> Unit) {
+    private suspend fun systemCallback(
+        session: Session<NativeID>, answering: Boolean = false, perform: suspend (Duration) -> Unit,
+    ) {
+        val deadline = time.markNow() + answerDeadline
         val completed = withTimeoutOrNull(answerDeadline) {
             if (session.ready.await() == null) throw CallbackRejected()
-            perform()
+            perform(-deadline.elapsedNow())
             true
         }
         if (completed == null) {
             val error = CallError.DeadlineExceeded(TimedStage.SYSTEM_ACTION)
             synchronized(session) {
+                if (answering && session.answer?.acknowledged == true) return
                 session.answer?.let { completeAnswer(session, it, Outcome.Failure(error)) }
             }
             sessionLost(session.id, error)
@@ -167,7 +184,9 @@ internal class TelecomPort<NativeID : Any>(
         request(Action.End(session.id)).requireAccepted()
     }
 
-    private fun beginAnswer(session: Session<NativeID>, origin: Origin): Answer? {
+    private fun beginAnswer(
+        session: Session<NativeID>, origin: Origin, remaining: Duration = answerDeadline,
+    ): Answer? {
         val answer = synchronized(session) {
             if (session.closed || session.disconnectOrigin != null) return null
             session.answer?.let { return it }
@@ -176,7 +195,8 @@ internal class TelecomPort<NativeID : Any>(
                 receipts[it.key] = it.decision
             }
         }
-        if (!submit(Input.Request(Action.Answer(session.id), answer.key.actionID, effectiveDeadline = answerDeadline))) {
+        if (!submit(Input.Request(answer.performed.action, answer.key.actionID,
+                effectiveDeadline = remaining, origin = answer.performed.origin))) {
             answer.decision.complete(Outcome.Failure(CallError.BridgeUnavailable))
         }
         if (origin == Origin.APP) {
@@ -185,14 +205,16 @@ internal class TelecomPort<NativeID : Any>(
         return answer
     }
 
-    private suspend fun systemAnswer(session: Session<NativeID>) {
-        val answer = beginAnswer(session, Origin.SYSTEM) ?: throw CallbackRejected()
+    private suspend fun systemAnswer(session: Session<NativeID>, remaining: Duration) {
+        if (remaining <= Duration.ZERO) throw CallbackRejected()
+        val answer = beginAnswer(session, Origin.SYSTEM, remaining) ?: throw CallbackRejected()
         // An app Answer can echo here while its own native operation is still suspended.
         // Both paths await the reducer's decision, and only the app path calls answer().
         val decision = answer.decision.await()
         if (answer.origin == Origin.SYSTEM) {
             val result = if (decision is Outcome.Failure) decision else Outcome.Success(Unit)
             completeAnswer(session, answer, result)
+            if (answer.result.await() is Outcome.Failure) throw CallbackRejected()
         }
         decision.requireAccepted()
     }
@@ -219,10 +241,29 @@ internal class TelecomPort<NativeID : Any>(
 
     private fun completeAnswer(session: Session<NativeID>, answer: Answer, result: Outcome<Unit, CallError>) {
         synchronized(session) {
-            if (result is Outcome.Failure && session.answer === answer) session.answer = null
-            receipts.remove(answer.key)
-            answer.result.complete(result)
+            if (answer.result.isCompleted) return
+            if (result is Outcome.Success) {
+                if (answer.confirming) return
+                answer.confirming = true
+                if (submit(Input.AnswerConfirmed(session.id, answer.key.actionID))) return
+                finishAnswerReceipt(session, answer, Outcome.Failure(CallError.BridgeUnavailable))
+            } else finishAnswerReceipt(session, answer, result)
         }
+    }
+
+    override fun completeAnswer(confirmation: Input.AnswerConfirmed, result: Outcome<Unit, CallError>) {
+        val session = sessions.find(confirmation.callID) ?: return
+        synchronized(session) {
+            val answer = session.answer ?: return
+            if (answer.confirming && answer.key.actionID == confirmation.actionID) finishAnswerReceipt(session, answer, result)
+        }
+    }
+
+    private fun finishAnswerReceipt(session: Session<NativeID>, answer: Answer, result: Outcome<Unit, CallError>) {
+        answer.acknowledged = result is Outcome.Success
+        if (result is Outcome.Failure && session.answer === answer) session.answer = null
+        receipts.remove(answer.key)
+        answer.result.complete(result)
     }
 
     override suspend fun setActive(request: Effect.SetActive) {
@@ -291,7 +332,7 @@ internal class TelecomPort<NativeID : Any>(
         val receipt: Receipt = CompletableDeferred()
         receipts[key] = receipt
         return try {
-            if (submit(Input.Request(action, key.actionID, supported))) receipt.await()
+            if (submit(Input.Request(action, key.actionID, supported, origin = ActionOrigin.SYSTEM))) receipt.await()
             else Outcome.Failure(CallError.BridgeUnavailable)
         } finally {
             receipts.remove(key)
@@ -326,8 +367,13 @@ private enum class Origin { APP, SYSTEM }
 private class CallbackRejected : Exception()
 
 private class Answer(val key: ReceiptKey, val origin: Origin) {
+    val performed = ActionReceipt(
+        key.actionID, Action.Answer(key.callID), if (origin == Origin.APP) ActionOrigin.APP else ActionOrigin.SYSTEM,
+    )
     val decision: Receipt = CompletableDeferred()
     val result = CompletableDeferred<Outcome<Unit, CallError>>()
+    var confirming = false
+    var acknowledged = false
 }
 
 private class Session<NativeID : Any>(val id: CallID, val scope: CoroutineScope) {

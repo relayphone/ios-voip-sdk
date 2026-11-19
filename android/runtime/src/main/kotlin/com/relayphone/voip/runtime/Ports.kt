@@ -4,6 +4,7 @@ import com.relayphone.voip.AttemptID
 import com.relayphone.voip.Call
 import com.relayphone.voip.CallError
 import com.relayphone.voip.Effect
+import com.relayphone.voip.Input
 import com.relayphone.voip.Outcome
 import com.relayphone.voip.PlacementFailure
 import com.relayphone.voip.PlacementResult
@@ -57,6 +58,9 @@ public interface SystemPort {
 
     /** Returns the original End result to the requesting receipt. */
     public fun completeEnd(result: Effect.CompleteEnd)
+
+    /** Acknowledges an Answer callback after its confirmed receipt has been published. */
+    public fun completeAnswer(confirmation: Input.AnswerConfirmed, result: Outcome<Unit, CallError>) {}
 }
 
 /** The current result of reconciling a pending Answer claim. */

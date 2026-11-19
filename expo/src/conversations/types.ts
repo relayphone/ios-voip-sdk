@@ -578,7 +578,7 @@ export interface ConversationEventMap {
   /** An action the SDK already performed; no handler approval is requested. */
   readonly actionPerformed: {
     readonly conversationId: ConversationId;
-    readonly origin: ActionOrigin;
+    readonly origin: ActionOrigin | "remote";
     readonly action: PerformedAction;
   };
   /** Native report or filter result. */

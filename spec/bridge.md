@@ -56,6 +56,7 @@ Both snapshot paths return `{cursor,calls,completed?,pushHealth?,records?}`.
 | --- | --- | --- |
 | `record` | `record`, optional `correlation` | One v0 or v1 model envelope. Correlation may carry the applicable `callID`, `actionID`, `eventID` and `attemptID`. Include the target call and action ID for action-specific records when those IDs are known. Embedded IDs and correlation agree. |
 | `cleanup` | `callID`, `outcome` of `removed` or `failed` | The system removal attempt produced this outcome. This event leaves independent media and other work pending until completion. |
+| `actionPerformed` | `receipt` | The confirmed action's original `actionID`, v0 `action` and `origin` of `app`, `system` or `remote`. The action carries the canonical call ID. |
 | `terminalCompleted` | `callID` | The ended call's remaining adapter work finished. It may follow system removal or occur without a system removal attempt. |
 | `callRemoved` | `callID` | A completed terminal record left native retention. Native applies the monotonic age and count policy in the domain contract. |
 
@@ -67,7 +68,7 @@ frame when the frame's epoch is still current. A reset may return an even newer 
 from a retired epoch cannot move JavaScript back to it. The store replaces state, discards the
 invalidated journal and emits `resyncRequired` with the recovered snapshot.
 
-`snapshot` and `resyncRequired` are JavaScript observations. Native sends the four frame kinds
+`snapshot` and `resyncRequired` are JavaScript observations. Native sends the frame kinds
 above. Without a cursor, consumers first receive the current snapshot. `observe({after})`
 replays frames strictly after that cursor if the range remains available in the current
 epoch. An expired, foreign or future cursor receives `resyncRequired`. The JS replay buffer
@@ -84,26 +85,34 @@ operation. An operation with no input omits that field. A successful result is
 
 | Operation | Input | Successful value |
 | --- | --- | --- |
-| `start` | Canonical `id`, configured `lineID`, nonempty `parties`, initial `video` flag | `{kind:"performed",actionID,cursor}` |
+| `start` | Canonical `id`, configured `lineID`, nonempty `parties`, initial `video` flag | `{kind:"performed",receipt,cursor}` |
 | `perform` | `id` and discriminated `action` | The performed value for Answer, Join, Hold, Mute, Video or Tones. End returns `{kind:"end",cursor,outcome}`, with the v0 `endResult`. |
 | `bindRemote` | `id`, `remoteID` | Void, including the same binding repeated |
 | `receive` | `eventID`, target by canonical or remote ID, and `connected`, `ended`, `partiesChanged` or `videoRequested` event | `{kind:"applied"}`, `{kind:"buffered"}` or `{kind:"duplicate"}` |
-| `reportIncoming` | `callID`, `eventID`, `line`, `party` | `admitted`, `previewed` with preview reason, `filtered` with filter cause, `hidden` or `capacity` |
+| `reportIncoming` | `callID`, `eventID`, `line`, `party` | An admission decision or `{kind:"duplicate",original:decision}` |
 | `permissions.read` | `{kind:"microphone"}` or `{kind:"camera"}` | `granted`, `denied`, `restricted` or `notDetermined` |
 | `permissions.request` | Same permission selector | Same status after a foreground request |
 | `push.registration` | Omitted | v1 registration or `{kind:"unknown"}` |
 | `push.health` | Omitted | v1 health or `{kind:"unknown"}` |
 
 The matching successful `start` or `perform` reply includes a cursor at or after the
-revision that records completion. The readable state at that cursor includes the outcome.
+revision that records completion. A performed reply returns the same receipt as the
+`actionPerformed` frame. Publish that frame once after the confirmed state becomes readable.
+Its origin belongs to the original request, including when an app request shares a pending
+system Answer. Remote transport facts do not create action receipts.
 Start completes at placement and native start. Answer completes at authorized system
 settlement. Hold, Mute and Video complete on confirmation, and Tones completes on confirmation
 of the local send. Queueing work does not complete the action. A repeated local End returns
 the original receipt, whereas an End after remote termination returns the original reason with
-`alreadyEnded`. No new action ID is assigned for that second case.
+`alreadyEnded`. A repeated or already-ended End emits no new action frame.
 
 Use the domain rules for buffered events, deduplication and alias conflicts. `reportIncoming`
-reports native admission or its observed alternative and does not imply audible ringing.
+reports native admission or its observed alternative. A decision includes its canonical
+`callID` and is `admitted`, `previewed` with preview reason, `filtered` with filter cause,
+`ended` with the terminal reason, `hidden`, `capacity` or `refused` with a typed error.
+A duplicate returns the original decision and its call ID, including when the retry supplied
+a different call ID. A known event ID cannot
+admit another call. Admission alone conveys no evidence of audible ringing.
 Permission reads and push reads are safe queries. Only an explicit foreground permission
 request may prompt. A request needing a prompt while backgrounded fails with
 `permissionRequired` for that permission. Push reads report `unknown` when evidence is
@@ -116,6 +125,7 @@ an authority decision, `remoteIdentityConflict(remoteID)` for alias conflicts, a
 typed operation class with an optional numeric native diagnostic code. Use `bridgeUnavailable`
 for missing or incompatible bindings. Reject malformed protocol input before side effects.
 Do not convert native exception text into an error tag or transmit arbitrary diagnostic strings.
+Represent an explicit server failure as `{kind:"failed",error:{kind:"serverFailed"}}`.
 
 ## Placement handler
 
@@ -160,6 +170,6 @@ fixtures, with fake system, media and clock ports where necessary.
 | Attachment | Emit a call before attachment and a frame during attachment. Verify the snapshot and subsequent frame order, duplicate suppression, one active receiver per attachment and idempotent unsubscribe. |
 | Recovery | Skip a frame and replace the epoch. Verify authoritative snapshots cover the gap, covered frames remain idempotent, and a delayed old-epoch frame cannot regress state. |
 | Retention | Detach with both a completed terminal and a pending cleanup. Verify hydration order and counts after reattach, then deliver late cleanup and completion. Verify pressure expires only completed records. |
-| Commands | Drive the normal adapter entry points. Verify results echo the operation and correlate completion with confirmed state. Repeat a local End and End an already remote-ended call. Verify the original receipt or reason, and map platform failures by typed cause without parsing text. |
+| Commands | Drive the normal adapter entry points. Correlate completion with the original receipt, origin and confirmed state. Repeat a local End and End an already remote-ended call. Retry an invitation with a different call ID and verify the original decision and identity. Verify server and platform failures retain their typed causes. |
 | Queries | Verify permission reads and background requests do not prompt. Verify push results preserve registration, generation and delivery evidence while excluding token and credential values. |
 | Placement | Replace or detach a handler with pending work, then deliver its late result and duplicate completions. Advance a virtual clock across the deadline and verify cancellation, stale acknowledgements, and one native settlement only. |

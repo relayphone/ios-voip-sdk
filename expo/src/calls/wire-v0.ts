@@ -48,15 +48,16 @@ const nonRefusalError = union(
     object({ platform: literal('android'), ...systemFailure }),
   ) }),
   object({ kind: literal('bridgeUnavailable') }),
+  object({ kind: literal('serverFailed') }),
 );
-const error = union(nonRefusalError, object({ kind: literal('refused'), reason: refusalReason }));
+export const error = union(nonRefusalError, object({ kind: literal('refused'), reason: refusalReason }));
 const failedEnd = object({ kind: literal('failed'), error: union(nonRefusalError,
   object({ kind: literal('refused'), reason: object({ kind: literal('notAllowed') }) })) });
 const localEnd = object({ kind: literal('localDeclined', 'localEnded') });
 const filtered = object({ kind: literal('filtered'), cause: literal('doNotDisturb', 'blockList', 'unknown') });
-const endReason = union(localEnd, filtered, failedEnd,
+export const endReason = union(localEnd, filtered, failedEnd,
   object({ kind: literal('remoteEnded', 'unanswered', 'answeredElsewhere', 'declinedElsewhere') }));
-const previewReason = union(filtered, object({ kind: literal('answeredElsewhere', 'policy') }));
+export const previewReason = union(filtered, object({ kind: literal('answeredElsewhere', 'policy') }));
 const commonLifecycle = union(
   object({ kind: literal('placing', 'connecting') }),
   object({ kind: literal('connected', 'reconnecting'), connectedAt: timestamp }),
@@ -91,6 +92,10 @@ const action = union(
   object({ callID, ...actions.mute }), object({ callID, ...actions.video }),
   object({ callID, ...actions.tones }),
 );
+export const actionReceipt = object({
+  actionID, action, origin: literal('app', 'system', 'remote'),
+});
+export type ActionReceipt = Decoded<typeof actionReceipt>;
 const endResult = union(
   object({ kind: literal('ended'), receipt: object({ callID, actionID, reason: localEnd }) }),
   object({ kind: literal('alreadyEnded'), reason: endReason }),

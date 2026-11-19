@@ -56,7 +56,8 @@
     package enum ErrorKind: String, Codable, Sendable {
       case unknownCall, invalidTransition, unsupported, permissionRequired, refused
       case authorityUnavailable, claimTimedOut, placementFailed, deadlineExceeded, mediaFailed
-      case remoteIdentityConflict, invalidConfiguration, systemFailed, bridgeUnavailable
+      case remoteIdentityConflict, invalidConfiguration, systemFailed
+      case serverFailed, bridgeUnavailable
     }
 
     package enum Failure: Codable, Sendable {
@@ -73,6 +74,7 @@
       case remoteIdentityConflict(ID)
       case invalidConfiguration(BudgetField)
       case systemFailed(SystemCause)
+      case serverFailed
       case bridgeUnavailable
 
       package enum Feature: String, Codable, Sendable { case hold, video, tones, preview, merge }
@@ -126,6 +128,7 @@
         case .remoteIdentityConflict: .remoteIdentityConflict
         case .invalidConfiguration: .invalidConfiguration
         case .systemFailed: .systemFailed
+        case .serverFailed: .serverFailed
         case .bridgeUnavailable: .bridgeUnavailable
         }
       }
@@ -148,6 +151,9 @@
         case .remoteIdentityConflict: self = try .remoteIdentityConflict(object.payload(.remoteID))
         case .invalidConfiguration: self = try .invalidConfiguration(object.payload(.field))
         case .systemFailed: self = try .systemFailed(object.payload(.cause))
+        case .serverFailed:
+          try object.requireOnly(.kind)
+          self = .serverFailed
         case .bridgeUnavailable:
           try object.requireOnly(.kind)
           self = .bridgeUnavailable
@@ -173,7 +179,7 @@
         case .remoteIdentityConflict(let value): try object.encode(value, forKey: .remoteID)
         case .invalidConfiguration(let value): try object.encode(value, forKey: .field)
         case .systemFailed(let value): try object.encode(value, forKey: .cause)
-        case .bridgeUnavailable: break
+        case .serverFailed, .bridgeUnavailable: break
         }
       }
     }

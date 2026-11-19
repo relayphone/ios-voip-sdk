@@ -21,6 +21,17 @@
     "tokenID":"token-a","upload":{"kind":"pending"},"token":"raw-token-example"
   }}},
   {"kind":"command","operation":"push.health","input":{"credential":"raw-credential-example"}},
+  {"kind":"actionPerformed","cursor":{"epoch":"action-a","sequence":1},
+    "receipt":{"actionID":"answer-a","action":{"kind":"answer","callID":"call-a"}}},
+  {"kind":"actionPerformed","cursor":{"epoch":"action-a","sequence":1},
+    "receipt":{"actionID":"answer-a","origin":"unknown","action":{"kind":"answer","callID":"call-a"}}},
+  {"kind":"reply","operation":"reportIncoming","result":{"ok":true,"value":{"kind":"admitted"}}},
+  {"kind":"reply","operation":"reportIncoming","result":{"ok":true,"value":{
+    "kind":"duplicate","original":{"kind":"admitted"}
+  }}},
+  {"kind":"command","operation":"receive","input":{"kind":"ended","eventID":"server-failure",
+    "target":{"kind":"call","id":"incoming-a"},"reason":{"kind":"failed","error":{"kind":"serverFailed","message":"server error"}}
+  }},
   {"kind":"placementRequested","generation":1,"actionID":"place-a","remainingMs":500,
     "request":{"kind":"start","origin":"app","callID":"call-a",
       "line":{"accountID":"account-a","id":"personal","label":"Personal"},

@@ -77,7 +77,7 @@ const audioRoute = object({
   ),
 });
 
-const feature = literal(
+export const feature = literal(
   'hold', 'video', 'tones', 'preview', 'merge', 'prejoin', 'nativeAnswerAuthority', 'audioRoutes', 'push',
   'customPresentation', 'fullScreenIncoming', 'systemVideoUpgrade', 'systemVideoDowngrade', 'focusFiltering',
   'liveActivities', 'systemDialIntent',
