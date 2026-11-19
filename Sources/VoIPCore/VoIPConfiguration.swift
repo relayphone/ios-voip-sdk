@@ -85,6 +85,10 @@ public struct VoIPConfiguration: Hashable, Sendable {
   /// that arrives before its call's VoIP push is applied when the call arrives.
   public var retention: Duration
 
+  /// The maximum number of recent event IDs and unresolved server events to keep, counted
+  /// separately. Defaults to 256. Values below one use one.
+  public var eventHistoryLimit = 256
+
   /// Creates a configuration.
   ///
   /// - Parameters:

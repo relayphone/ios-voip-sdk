@@ -111,6 +111,12 @@ enum CallMachine {
     var permit: AnswerPermit?
   }
 
+  /// When a server event first arrived, before any buffering or replay.
+  struct ServerReceipt: Hashable, Sendable {
+    let receivedAt: Duration
+    let sequence: UInt64
+  }
+
   /// One call's state.
   struct State: Hashable, Sendable {
     /// The call as the app sees it. Its status always matches ``phase``.
@@ -127,6 +133,7 @@ enum CallMachine {
     var earlyProgress: EarlyProgress?
     var deferredMedia: DeferredMedia?
     var localEndReceipt: EndReceipt?
+    var retainedEndReceipt: ServerReceipt?
     var admissionAttempt: AttemptID?
     var removeAfterAdmission = false
     var startAttempt: AttemptID?
@@ -152,6 +159,13 @@ enum CallMachine {
       case .ended(let reason), .reporting(let reason?): return .alreadyEnded(reason)
       default: return nil
       }
+    }
+
+    mutating func expireRetainedEnd(at elapsed: Duration, after retention: Duration) {
+      guard let receipt = retainedEndReceipt, elapsed - receipt.receivedAt >= retention
+      else { return }
+      phase = .reporting(endOnPresent: nil)
+      retainedEndReceipt = nil
     }
 
     func endReceipt(for actionID: ActionID) -> EndReceipt {
@@ -210,7 +224,7 @@ enum CallMachine {
     /// The call's media couldn't be prepared.
     case mediaPreparationFailed
     /// The app's servers reported a fact about the call.
-    case server(ServerEvent)
+    case server(ServerEvent, receipt: ServerReceipt? = nil)
     /// A deadline's timer fired.
     case deadlineExpired(Deadline, generation: UInt64)
   }

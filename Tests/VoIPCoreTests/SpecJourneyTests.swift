@@ -16,9 +16,7 @@ private struct JourneyHeader: Decodable {
 
 private let pending: [String: String] = [
   "cross-line-waiting":
-    "No line identity on calls.",
-  "end-before-admission": "Alias-addressed ends cannot reach a call during pending admission.",
-  "outgoing-deferred-binding": "Remote alias binding and alias-addressed events are missing.",
+    "No line identity on calls."
 ]
 
 @Suite(.timeLimit(.minutes(1)))

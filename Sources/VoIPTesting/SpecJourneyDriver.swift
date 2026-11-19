@@ -176,14 +176,15 @@
         {
           try engine.provideMedia(id.callID)
         }
-      case .bindRemote(let id, _):
-        return "The engine has no remote alias binding for \(id.rawValue)."
+      case .bindRemote(let id, let remoteID):
+        do {
+          try start().bindRemote(remoteID.remoteCallID, to: id.callID)
+        } catch {
+          errors.append(.init(id: id.callID, kind: error.specKind))
+        }
       case .connected(let id, let eventID):
         start().receive(.connected, for: id.callID, eventID: eventID.eventID)
       case .remoteEnd(let target, let eventID, let reason):
-        guard case .call(let id) = target else {
-          return "The engine has no alias-addressed event intake."
-        }
         let event: ServerEvent
         switch reason {
         case .remoteEnded: event = .endedRemotely
@@ -193,7 +194,12 @@
         case .failed: return "The engine cannot receive a typed server failure."
         case .localDeclined, .localEnded, .filtered: throw DriverError.invalidRemoteEnd
         }
-        start().receive(event, for: id.callID, eventID: eventID.eventID)
+        switch target {
+        case .call(let id):
+          start().receive(event, for: id.callID, eventID: eventID.eventID)
+        case .remote(let id):
+          start().receive(event, forRemote: id.remoteCallID, eventID: eventID.eventID)
+        }
       case .advance(let milliseconds):
         try await advance(by: milliseconds.duration)
       }
@@ -390,8 +396,11 @@
       guard actual == expected.lifecycle else {
         return "\(id.rawValue): expected \(expected.lifecycle), observed \(actual)."
       }
-      if expected.lineID != nil || expected.remoteID != nil {
-        return "\(id.rawValue) has no observed line or remote alias."
+      if expected.lineID != nil {
+        return "\(id.rawValue) has no observed line."
+      }
+      if let remoteID = expected.remoteID, !call.remoteIDs.contains(remoteID.remoteCallID) {
+        return "\(id.rawValue) is missing the remote alias \(remoteID.rawValue)."
       }
       if let held = expected.held, held != call.isOnHold {
         return "\(id.rawValue): expected held=\(held), observed \(call.isOnHold)."
@@ -598,7 +607,7 @@
 
   extension SpecJourney.Configuration {
     package var sdkConfiguration: VoIPConfiguration {
-      return VoIPConfiguration(
+      var configuration = VoIPConfiguration(
         presentationPolicy: PresentationPolicy(
           previewsCallsAnsweredElsewhere: previewAnsweredElsewhere),
         supportsVideo: true,
@@ -609,13 +618,15 @@
           audioRecovery: budgets.audioRecovery.duration,
           connect: budgets.connection.duration, reconnect: budgets.reconnection.duration,
           outgoingNoAnswer: budgets.outgoingNoAnswer.duration),
-        retention: .seconds(120),
+        retention: budgets.retention?.lifetime.duration ?? .seconds(120),
         outgoingMedia: outgoingMedia == .whenProvided ? .whenProvided : .duringPlacement,
         answerBudget: AnswerBudget(
           total: budgets.answer.total.duration, claim: budgets.answer.claim.duration,
           reconciliation: budgets.answer.reconciliation.duration,
           settlementReserve: budgets.answer.settlementReserve.duration),
         maximumParticipatingCalls: maximumParticipatingCalls)
+      configuration.eventHistoryLimit = Int(budgets.retention?.terminalRecords ?? 256)
+      return configuration
     }
 
   }
@@ -623,6 +634,13 @@
   extension SpecV0.ID {
     package var callID: CallID { CallID(rawValue: rawValue) }
     package var eventID: EventID { EventID(rawValue: rawValue) }
+
+    fileprivate var remoteCallID: RemoteCallID {
+      guard let id = RemoteCallID(rawValue: rawValue) else {
+        preconditionFailure("A decoded spec ID has already been validated")
+      }
+      return id
+    }
   }
 
   extension SpecV0.Party {
@@ -649,6 +667,7 @@
       case .notAllowed: .invalidTransition
       case .refused: .systemFailed
       case .noParticipationSlot: .refused
+      case .remoteIdentityConflict: .remoteIdentityConflict
       }
     }
   }

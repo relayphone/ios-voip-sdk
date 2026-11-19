@@ -42,6 +42,8 @@ struct CommandError: Error {
       self.init(code: .unsupported, message: "This action isn't supported")
     case .noParticipationSlot:
       self.init(code: .conversation, message: "No call participation slot is available")
+    case .remoteIdentityConflict:
+      self.init(code: .conversation, message: "Another call owns the remote identifier")
     case .refused(let systemError):
       let message =
         systemError.map { "The system refused the action: \($0)" }

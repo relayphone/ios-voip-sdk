@@ -71,6 +71,7 @@ extension CallMachine {
     elapsed: Duration = .zero
   ) -> (State, [Effect]) {
     var step = Step(state: state, configuration: configuration, now: now, elapsed: elapsed)
+    step.state.expireRetainedEnd(at: elapsed, after: configuration.retention)
     step.apply(event)
     return step.result
   }
@@ -149,7 +150,7 @@ private struct Step {
     case .mediaPrepared: mediaPrepared()
     case .mediaPreparationFailed:
       if state.armed[.mediaPreparation] != nil { abandon(.media) }
-    case .server(let event): server(event)
+    case .server(let event, let receipt): server(event, receipt: receipt)
     case .deadlineExpired(let deadline, let generation):
       guard state.armed[deadline] == generation else { return }
       state.armed[deadline] = nil
@@ -489,7 +490,7 @@ private struct Step {
     emit(.performed(held.action, state.call))
   }
 
-  private mutating func server(_ event: ServerEvent) {
+  private mutating func server(_ event: ServerEvent, receipt: CallMachine.ServerReceipt? = nil) {
     let phase = state.phase
     switch event {
     case .partiesChanged(let parties):
@@ -545,20 +546,20 @@ private struct Step {
     case .answeredElsewhere:
       switch phase {
       case .reporting:
-        serverEnded(.answeredElsewhere)
+        serverEnded(.answeredElsewhere, receipt: receipt)
       case .ringing:
         answeredElsewhere(frameworkPresentsCall: true)
       case .preparing(let held) where held.action.isAnswer:
         answeredElsewhere(frameworkPresentsCall: true)
       case .connecting where !state.startedHere:
         answeredElsewhere(frameworkPresentsCall: true)
+      case _ where state.startAttempt != nil:
+        serverEnded(.answeredElsewhere, receipt: receipt)
       default:
         break
       }
-    case .endedRemotely: serverEnded(.endedRemotely)
-    case .declinedElsewhere: serverEnded(.declinedElsewhere)
-    case .unanswered: serverEnded(.unanswered)
-    case .failed: serverEnded(.failed(.server))
+    case .endedRemotely, .declinedElsewhere, .unanswered, .failed:
+      if let reason = event.endReason { serverEnded(reason, receipt: receipt) }
     }
   }
 
@@ -575,11 +576,18 @@ private struct Step {
 
   /// The app's servers reported that the call is over. While it is being reported, the reason
   /// waits for the calling framework's answer.
-  private mutating func serverEnded(_ reason: EndReason) {
+  private mutating func serverEnded(_ reason: EndReason, receipt: CallMachine.ServerReceipt?) {
     switch state.phase {
-    case .reporting(nil): enter(.reporting(endOnPresent: reason))
+    case .reporting(let retained):
+      if retained != nil {
+        guard let receipt, let previous = state.retainedEndReceipt,
+          receipt.sequence < previous.sequence
+        else { return }
+      }
+      enter(.reporting(endOnPresent: reason))
+      state.retainedEndReceipt = receipt
     case .previewing: end(reason, reportingEnd: false)
-    case .reporting, .ended: break
+    case .ended: break
     default: end(reason, reportingEnd: true)
     }
   }
@@ -732,6 +740,7 @@ private struct Step {
   private mutating func enter(_ phase: Phase) {
     state.phase = phase
     state.call.status = phase.status
+    state.retainedEndReceipt = nil
     if case .previewing(let reason) = phase { state.previewReason = reason }
   }
 

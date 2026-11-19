@@ -43,10 +43,7 @@ final class CallEngine {
       [:]
   /// When each ended call ended.
   private var endedAt: [CallID: Duration] = [:]
-  /// When each event ID was first seen.
-  private var seenEvents: [EventID: Duration] = [:]
-  /// Server events for calls this device doesn't know yet, in arrival order.
-  private var earlyEvents: [CallID: [EarlyEvent]] = [:]
+  private var serverEvents = ServerEventHistory()
   private var timers: [TimerKey: Timer] = [:]
   private var preparations: [CallID: Task<Void, Never>] = [:]
   private var videoTasks: [CallID: Task<Result<Void, ActionError>, Never>] = [:]
@@ -183,7 +180,8 @@ final class CallEngine {
     -> EndResult
   {
     try exclusively { () throws(ActionError) in
-      guard let state = states[id] else { throw .unknownCall }
+      guard var state = states[id] else { throw .unknownCall }
+      state.expireRetainedEnd(at: clock.now(), after: configuration.retention)
       if let result = state.endResult { return result }
       let receipt = state.endReceipt(for: actionID)
       handle(id, .localEnd(receipt))
@@ -302,9 +300,24 @@ final class CallEngine {
     exclusively { handle(id, .notPlaced) }
   }
 
+  func bindRemote(_ remoteID: RemoteCallID, to id: CallID) throws(ActionError) -> Snapshot {
+    try exclusively { () throws(ActionError) in
+      guard let state = states[id] else { throw .unknownCall }
+      if state.call.remoteIDs.contains(remoteID) { return }
+      guard !state.phase.isEnded else { throw .notAllowed(state.call.status) }
+      let target = ServerEventTarget.alias(remoteID)
+      guard resolve(target) == nil else { throw .remoteIdentityConflict(remoteID) }
+      states[id]?.call.remoteIDs.insert(remoteID)
+      for buffered in serverEvents.takeBuffered(for: target) {
+        handle(id, .server(buffered.event, receipt: buffered.receipt))
+      }
+    }
+    return published
+  }
+
   /// Applies a server event that the app learned about outside a VoIP push.
-  func receive(_ event: ServerEvent, for id: CallID, eventID: EventID) {
-    exclusively { serverEvent(event, for: id, eventID: eventID) }
+  func receive(_ event: ServerEvent, target: ServerEventTarget, eventID: EventID) {
+    exclusively { serverEvent(event, target: target, eventID: eventID) }
   }
 
   /// A deadline's timer fired. A timer whose deadline was disarmed or armed again since is stale
@@ -328,9 +341,7 @@ final class CallEngine {
   private func intake(_ push: VoIPPush, _ completion: PushCompletion) {
     switch push {
     case .incoming(let incoming, let eventID):
-      let isRepeated = seenEvents[eventID] != nil || states[incoming.id] != nil
-      if seenEvents[eventID] == nil { seenEvents[eventID] = clock.now() }
-      if isRepeated {
+      guard remember(eventID) != nil, states[incoming.id] == nil else {
         return satisfy(completion, parties: incoming.parties)
       }
       switch admit(incoming) {
@@ -347,7 +358,7 @@ final class CallEngine {
     case .serverEvent(let event, let id, let eventID):
       // Report at once, as for every push, then apply the event.
       satisfy(completion, parties: states[id]?.call.parties ?? [])
-      serverEvent(event, for: id, eventID: eventID)
+      serverEvent(event, target: .canonical(id), eventID: eventID)
     case .unrecognized:
       satisfy(completion, parties: [])
     }
@@ -419,20 +430,36 @@ final class CallEngine {
     order.append(call.id)
     endedAt[call.id] = clock.now()
     outcomes[call.id] = .refused(.atCapacity)
-    earlyEvents[call.id] = nil
+    _ = serverEvents.takeBuffered(for: .canonical(call.id))
     subscribers.yield(.ended(call))
     #if DEBUG && (os(macOS) || targetEnvironment(simulator))
       SimulatorLifecycle.record(call, .ended)
     #endif
   }
 
-  private func serverEvent(_ event: ServerEvent, for id: CallID, eventID: EventID) {
-    guard seenEvents[eventID] == nil else { return }
-    seenEvents[eventID] = clock.now()
-    if states[id] != nil {
-      handle(id, .server(event))
+  private func resolve(_ target: ServerEventTarget) -> CallID? {
+    switch target {
+    case .canonical(let id):
+      return states[id] == nil ? nil : id
+    case .alias(let remoteID):
+      return states.values.first {
+        !$0.phase.isEnded && $0.call.remoteIDs.contains(remoteID)
+      }?.call.id
+    }
+  }
+
+  private func remember(_ eventID: EventID) -> CallMachine.ServerReceipt? {
+    serverEvents.remember(eventID, at: clock.now(), limit: configuration.eventHistoryLimit)
+  }
+
+  private func serverEvent(_ event: ServerEvent, target: ServerEventTarget, eventID: EventID) {
+    guard let receipt = remember(eventID) else { return }
+    if let id = resolve(target) {
+      handle(id, .server(event, receipt: receipt))
     } else {
-      earlyEvents[id, default: []].append(EarlyEvent(event: event, receivedAt: clock.now()))
+      serverEvents.buffer(
+        event, target: target, id: eventID, receipt: receipt, limit: configuration.eventHistoryLimit
+      )
     }
   }
 
@@ -631,8 +658,15 @@ final class CallEngine {
     #if DEBUG && (os(macOS) || targetEnvironment(simulator))
       SimulatorLifecycle.record(state.call)
     #endif
+    var pending = serverEvents.takeBuffered(for: .canonical(id))
+    if case .reporting = state.phase {
+      for buffered in pending where buffered.event.endReason != nil {
+        handle(id, .server(buffered.event, receipt: buffered.receipt))
+      }
+      pending.removeAll { $0.event.endReason != nil }
+    }
     let reply = run(effects, for: id)
-    for early in earlyEvents.removeValue(forKey: id) ?? [] { handle(id, .server(early.event)) }
+    for buffered in pending { handle(id, .server(buffered.event, receipt: buffered.receipt)) }
     return reply
   }
 
@@ -955,7 +989,13 @@ final class CallEngine {
       do { try audio.updateVideo(for: call) } catch { handle(call.id, .audioConfigurationFailed) }
     }
     isBusy = false
-    let calls = order.compactMap { states[$0] }.filter { !$0.phase.isEnded }.map(\.call)
+    let calls = order.compactMap { id -> Call? in
+      guard let state = states[id] else { return nil }
+      switch state.phase {
+      case .reporting, .ended: return nil
+      default: return state.call
+      }
+    }
     guard calls != published.calls || isAudioActive != published.isAudioActive else { return }
     published = Snapshot(
       revision: published.revision + 1, calls: calls, isAudioActive: isAudioActive)
@@ -967,11 +1007,7 @@ final class CallEngine {
     let now = clock.now()
     let retention = configuration.retention
     answerReceipts = answerReceipts.filter { now - $0.value < retention }
-    seenEvents = seenEvents.filter { now - $0.value < retention }
-    earlyEvents = earlyEvents.compactMapValues { events in
-      let kept = events.filter { now - $0.receivedAt < retention }
-      return kept.isEmpty ? nil : kept
-    }
+    serverEvents.prune(at: now, after: retention)
     for (id, ended) in endedAt
     where now - ended >= retention && reportWaiters[id] == nil && states[id]?.startAttempt == nil {
       endedAt[id] = nil
@@ -1081,7 +1117,15 @@ final class CallEngine {
     package func provideMedia(_ id: CallID) throws(ActionError) { try engine.provideMedia(id) }
 
     package func receive(_ event: ServerEvent, for id: CallID, eventID: EventID) {
-      engine.receive(event, for: id, eventID: eventID)
+      engine.receive(event, target: .canonical(id), eventID: eventID)
+    }
+
+    package func receive(_ event: ServerEvent, forRemote id: RemoteCallID, eventID: EventID) {
+      engine.receive(event, target: .alias(id), eventID: eventID)
+    }
+
+    package func bindRemote(_ remoteID: RemoteCallID, to id: CallID) throws(ActionError) {
+      _ = try engine.bindRemote(remoteID, to: id)
     }
 
     package var timeUntilNextDeadline: Duration? { engine.timeUntilNextDeadline }
@@ -1110,11 +1154,6 @@ private struct Timer {
   let generation: UInt64
   let due: Duration
   let task: Task<Void, Never>
-}
-
-private struct EarlyEvent {
-  let event: ServerEvent
-  let receivedAt: Duration
 }
 
 /// The injected clock, measured from when the engine started.

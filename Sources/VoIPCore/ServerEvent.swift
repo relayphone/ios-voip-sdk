@@ -18,4 +18,15 @@ public enum ServerEvent: Hashable, Sendable {
   case unanswered
   /// The call failed on the app's servers.
   case failed
+
+  var endReason: EndReason? {
+    switch self {
+    case .endedRemotely: .endedRemotely
+    case .answeredElsewhere: .answeredElsewhere
+    case .declinedElsewhere: .declinedElsewhere
+    case .unanswered: .unanswered
+    case .failed: .failed(.server)
+    case .connecting, .connected, .reconnecting, .partiesChanged: nil
+    }
+  }
 }

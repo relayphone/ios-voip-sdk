@@ -1,4 +1,9 @@
 enum WireValues {
+  static func hashID(_ value: String, into hasher: inout Hasher) {
+    hasher.combine(value.utf8.count)
+    for byte in value.utf8 { hasher.combine(byte) }
+  }
+
   static func isID(_ value: String) -> Bool {
     let scalars = value.unicodeScalars
     guard let first = scalars.first, let last = scalars.last,
