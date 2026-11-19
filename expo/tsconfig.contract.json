@@ -2,16 +2,17 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
+    "rootDir": ".",
     "strict": true,
     "exactOptionalPropertyTypes": true
   },
   "include": [
     "src/calls/**/*.ts",
-    "src/__tests__/calls.types.ts",
+    "test/types/calls.types.ts",
     "src/conversations/**/*.ts",
-    "src/__tests__/conversations.types.ts",
+    "test/types/conversations.types.ts",
     "src/testing/**/*.ts",
-    "src/__tests__/testing.types.ts"
+    "test/types/testing.types.ts"
   ],
   "exclude": []
 }

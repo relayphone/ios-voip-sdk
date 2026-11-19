@@ -17,5 +17,5 @@
     "scripts/**/*.mts",
     "example/client/sync-sdk.mts"
   ],
-  "exclude": []
+  "exclude": ["test/types"]
 }

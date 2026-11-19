@@ -2,11 +2,11 @@ import {
   callID, credentialRef, e164, httpsURL, milliseconds, remoteCallID,
   type Action, type Call, type CallError, type CallingPolicy, type EndReason, type Handle,
   type Lifecycle, type PushHealth, type Result,
-} from '../calls/model.ts';
-import { createCallsHooks } from '../calls/react.ts';
-import type { CallsStore } from '../calls/store.ts';
+} from '../../src/calls/model.ts';
+import { createCallsHooks } from '../../src/calls/react.ts';
+import type { CallsStore } from '../../src/calls/store.ts';
 // @ts-expect-error The new store is internal until the native client is wired.
-import type { CallsStore as PublicCallsStore } from '../index.ts';
+export type { CallsStore as PublicCallsStore } from '../../src/index.ts';
 
 declare const store: CallsStore;
 declare const call: Call;

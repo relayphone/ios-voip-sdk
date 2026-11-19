@@ -1,8 +1,8 @@
-import type { NativeTransport } from "../conversations/transport";
+import type { NativeTransport } from "../../src/conversations/transport";
 // @ts-expect-error Transport details are internal.
-import type { NativeTransport as PublicTransport } from "../index";
+export type { NativeTransport as PublicTransport } from "../../src/index";
 /* eslint-disable no-void -- Compile-only expressions exercise the public contract. */
-import { receiveCallEnded } from "../api";
+import { receiveCallEnded } from "../../src/api";
 import type {
   ActionContext,
   Conversation,
@@ -30,7 +30,7 @@ import type {
   IncomingFilterReason,
   JSONValue,
   PreviewReason,
-} from "../conversations";
+} from "../../src/conversations";
 
 declare const api: ConversationsApi;
 const refusalCode: ConversationErrorCode = "refused";
@@ -265,7 +265,7 @@ type Same<Left, Right> = (<T>() => T extends Left ? 1 : 2) extends <
 >() => T extends Right ? 1 : 2
   ? true
   : false;
-const callerShape: Same<
+const callerContract: Same<
   Caller,
   {
     handleType: "phone" | "email" | "generic";
@@ -274,7 +274,7 @@ const callerShape: Same<
     hostContactID?: string;
   }
 > = true;
-void callerShape;
+void callerContract;
 const obsoleteCaller: Caller = {
   // @ts-expect-error Incoming callers no longer use the Participant id child.
   id: "legacy",
@@ -282,7 +282,7 @@ const obsoleteCaller: Caller = {
 void obsoleteCaller;
 
 // Match SDK #159's host/server end input and acceptance result.
-const endedShape: Same<
+const endPayloadContract: Same<
   CallEndedPayload,
   {
     eventId: string;
@@ -294,7 +294,7 @@ const receiveEndedSignature: Same<
   typeof receiveCallEnded,
   (payload: CallEndedPayload) => Promise<boolean>
 > = true;
-void endedShape;
+void endPayloadContract;
 void receiveEndedSignature;
 const ended: CallEndedPayload = {
   eventId: "end-event",
@@ -423,14 +423,14 @@ void api.startConversation({ to: { id: "callee" }, video: false });
 const nativeEndHandler: ConversationHandler = { start() {}, end() {} };
 void nativeEndHandler;
 // @ts-expect-error An iOS media adapter is webrtc or none.
-const obsoleteMedia: import("../index").MediaAdapter = "livekit";
+const obsoleteMedia: import("../../src/index").MediaAdapter = "livekit";
 void obsoleteMedia;
 // @ts-expect-error This native event does not exist.
-type ObsoleteEvent = ConversationEventMap["providerOwnershipLost"];
+export type ObsoleteEvent = ConversationEventMap["providerOwnershipLost"];
 // @ts-expect-error The module never emitted this event.
-type ObsoleteAudioEvent = ConversationEventMap["audioActivationFailed"];
+export type ObsoleteAudioEvent = ConversationEventMap["audioActivationFailed"];
 // @ts-expect-error The module never read this setting.
-const obsoleteConfig: import("../index").ConversationConfiguration = { audioActivationTimeoutMs: 1000 };
+const obsoleteConfig: import("../../src/index").ConversationConfiguration = { audioActivationTimeoutMs: 1000 };
 void obsoleteConfig;
 const joinFailure: ConversationEventMap["joinFailed"] = { conversationId: id, reason: { kind: "failed", failure: "notPlaced" } };
 void joinFailure;
@@ -471,8 +471,8 @@ void badVideoSource;
 // A server update may carry video without members.
 void api.reportConversation(id, { type: "updated", video: true });
 
-import { getMediaPermissions, requestMediaPermissions, conversationMediaReadiness } from "../index";
-import type { MediaKind, MediaPermissionResponse, MediaPermissions, ConversationMediaReadiness } from "../index";
+import { getMediaPermissions, requestMediaPermissions, conversationMediaReadiness } from "../../src/index";
+import type { MediaKind, MediaPermissionResponse, MediaPermissions, ConversationMediaReadiness } from "../../src/index";
 const mediaKinds: readonly MediaKind[] = ["microphone", "camera"];
 const allPermissions: Promise<MediaPermissions> = getMediaPermissions();
 const requestedPermissions: Promise<MediaPermissions> = requestMediaPermissions(mediaKinds);
@@ -488,7 +488,7 @@ void invalidPermissionExpiry;
 // @ts-expect-error Permission results are immutable.
 permissionResponse.status = "granted";
 
-import { setConversationVideo } from "../index";
+import { setConversationVideo } from "../../src/index";
 const exportedVideoChange: Promise<void> = setConversationVideo(id, false);
 void exportedVideoChange;
 // @ts-expect-error Updated video must be a boolean.
