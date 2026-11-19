@@ -46,6 +46,8 @@ public enum ActionError: Error, Hashable, Sendable {
   case noParticipationSlot
   /// This device doesn't know the call the action applies to.
   case unknownCall
+  /// Another live call already owns the remote identifier.
+  case remoteIdentityConflict(RemoteCallID)
   /// The calling framework refused the action, with the error it gave, which says why, or `nil`
   /// when it gave none.
   case refused(FrameworkError?)

@@ -24,10 +24,7 @@
       }
 
       package func hash(into hasher: inout Hasher) {
-        hasher.combine(rawValue.utf8.count)
-        for byte in rawValue.utf8 {
-          hasher.combine(byte)
-        }
+        WireValues.hashID(rawValue, into: &hasher)
       }
     }
 

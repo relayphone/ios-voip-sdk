@@ -9,6 +9,9 @@ public struct Call: Identifiable, Hashable, Sendable {
   /// The app's identifier for the call, the same on every device that rings for it.
   public let id: CallID
 
+  /// The service identifiers bound to this call.
+  public internal(set) var remoteIDs: Set<RemoteCallID> = []
+
   /// Whether the call arrived at this device, rather than being started here.
   public let isIncoming: Bool
 

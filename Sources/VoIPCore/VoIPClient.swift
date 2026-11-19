@@ -16,7 +16,7 @@ import Synchronization
 @Observable
 public final class VoIPClient {
   /// The calls on this device that haven't ended, in the order they began, including call
-  /// previews.
+  /// previews. Incoming calls waiting for system admission are omitted.
   public private(set) var calls: [Call] = []
 
   /// Whether the system activated the audio session for calls.
@@ -260,15 +260,38 @@ public final class VoIPClient {
   /// present because Do Not Disturb or a Focus filtered it or it shows as a call preview, such as
   /// the call ending, which the app's servers send over the app's own connection or with a regular
   /// push rather than a VoIP push. An event whose ID the SDK has already seen is ignored, so the
-  /// same event can arrive over several channels. An event for a call this device doesn't know
-  /// yet is kept for ``VoIPConfiguration/retention`` and applied when the call arrives.
+  /// same event can arrive over several channels. An event for an unknown call is kept within
+  /// ``VoIPConfiguration/retention`` and ``VoIPConfiguration/eventHistoryLimit`` and applied
+  /// when the call arrives.
   ///
   /// - Parameters:
   ///   - event: The server event.
   ///   - id: The call it concerns.
   ///   - eventID: The event's identifier.
   public func receive(_ event: ServerEvent, for id: CallID, eventID: EventID) async {
-    await engine.receive(event, for: id, eventID: eventID)
+    await engine.receive(event, target: .canonical(id), eventID: eventID)
+  }
+
+  /// Adds a service alias to a call and applies events already waiting for that alias.
+  ///
+  /// Bind after the SDK has received the invitation or emitted ``CallEvent/startRequested(_:)``
+  /// for an outgoing call. A call can have multiple aliases. Repeating a binding succeeds
+  /// while the SDK retains the call. Another call can bind the same alias after this call ends.
+  ///
+  /// - Throws: ``ActionError/unknownCall`` for an unknown call,
+  ///   ``ActionError/notAllowed(_:)`` when adding an alias to an ended call, or
+  ///   ``ActionError/remoteIdentityConflict(_:)`` when another live call owns the alias.
+  public func bindRemote(_ remoteID: RemoteCallID, to id: CallID) async throws(ActionError) {
+    apply(try await engine.bindRemote(remoteID, to: id))
+  }
+
+  /// Applies a server event addressed to a service alias. If the alias is unbound, the SDK
+  /// holds the event for the configured retention and history limit.
+  ///
+  /// Use the same ``EventID`` across channels and across canonical and alias deliveries of
+  /// the same event.
+  public func receive(_ event: ServerEvent, forRemote id: RemoteCallID, eventID: EventID) async {
+    await engine.receive(event, target: .alias(id), eventID: eventID)
   }
 
   private func apply(_ snapshot: Snapshot) {

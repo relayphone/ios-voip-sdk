@@ -7,6 +7,11 @@ Public API changes include migration guidance.
 
 ### Breaking
 
+- Swift apps with exhaustive `ActionError` switches must handle `remoteIdentityConflict`. The
+  observable `VoIPClient.calls` list includes incoming calls after system admission resolves.
+  Use `report(_:)` or the call events to observe the admission outcome. `CallID` and `EventID`
+  now compare exact UTF-8 bytes. Use the same spelling on every delivery of an ID.
+
 - Swift apps can pass a native `AnswerAuthority` to `VoIPClient.start` to claim Answer before
   media preparation, including on a cold launch. The default budget allocates 4,500 ms total,
   up to 2,500 ms for claim, 500 ms for one reconciliation, and 500 ms for system settlement.
@@ -51,6 +56,14 @@ Public API changes include migration guidance.
   as content-free, excluding them from source timing and frame-rate measurements.
 
 ### Added
+
+- Swift can bind service IDs such as a server call ID or LiveKit room with
+  `try await client.bindRemote(remoteID, to: callID)`. Keep using your app's canonical
+  `CallID` for actions and pass a validated `RemoteCallID(rawValue:)` to
+  `receive(_:forRemote:eventID:)` for alias-addressed events. Use the same `EventID` for
+  deliveries of the same event through either address. The SDK replays unresolved events
+  when their ID becomes known, within the retention duration and the new `eventHistoryLimit`
+  setting.
 
 - Swift apps can opt in to `HTTPAnswerAuthority` for the version 1 native Answer protocol.
   Provision the installation bearer as a generic password in the data protection Keychain,

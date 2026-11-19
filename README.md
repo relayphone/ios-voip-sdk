@@ -214,6 +214,23 @@ for await event in client.events() {
 Handle placement events independently of the task awaiting `request(.start(call))`. The Start
 request completes when the calling framework performs native Start after placement.
 
+If a service assigns its own ID during placement, bind it to the existing call. Use the
+app's ID for actions, placement and media provision. Use the alias for service events
+addressed to it.
+
+```swift
+if let remoteID = RemoteCallID(rawValue: serverCallID) {
+  try await client.bindRemote(remoteID, to: call.id)
+  await client.receive(.endedRemotely, forRemote: remoteID, eventID: EventID(rawValue: eventID))
+}
+```
+
+A call can have several aliases, such as a server call ID and a room ID. Binding the same
+alias twice succeeds. If another live call owns it, binding throws
+`ActionError.remoteIdentityConflict`. Events that arrive before binding are replayed in
+arrival order within the configured retention and event history limit. Keep an event's ID
+the same across deliveries, including when some deliveries use the app's ID.
+
 A stream from `events()` starts when the app subscribes, so it can miss the first events of a
 cold launch: the SDK reports the call of the VoIP push that launched the app as soon as PushKit
 delivers it. Code that must see every event is a `CallObserver`, passed to `start` as
