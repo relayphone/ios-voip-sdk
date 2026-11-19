@@ -8,12 +8,12 @@ export type JourneyEvents = Pick<JourneyResults, 'actions' | 'outcomes' | 'elsew
 export async function driveJourney(runID: string, api: JourneyApi, events: JourneyEvents,
   save: (result: JourneyResults) => void,
   timing = { now: () => Date.now(), pause: () => new Promise<void>(resolve => setTimeout(resolve, 100)) },
-): Promise<void> {
+) {
   const ids = journeyIDs(runID);
   const result: JourneyResults = { schemaVersion: 1, runID, stage: 'incoming', snapshots: [], handlers: [],
     ...events, completed: [] };
   const stage = (value: JourneyStage) => { result.stage = value; save(result); };
-  async function until<T>(label: string, read: () => Promise<T | undefined>): Promise<T> {
+  async function until<T>(label: string, read: () => Promise<T | undefined>) {
     const deadline = timing.now() + 30_000;
     while (timing.now() < deadline) {
       const value = await read();
@@ -22,12 +22,13 @@ export async function driveJourney(runID: string, api: JourneyApi, events: Journ
     }
     throw new Error(`Timed out waiting for ${label}`);
   }
-  async function snapshot(step: string, id: string, status: Conversation['status']): Promise<ConversationId> {
+  async function snapshot(step: string, id: string, status: Conversation['status']) {
     const call = await until(step, async () => (await api.getConversations())
       .find(call => call.id === id && call.status === status));
     const preview = call.status === 'previewing' ? call.previewReason : undefined;
     result.snapshots.push({ step, id: call.id, status: call.status, direction: call.direction,
-      previewReason: preview?.type, filterCause: preview?.type === 'filtered' ? preview.cause : undefined });
+      ...(preview && { previewReason: preview.type }),
+      ...(preview?.type === 'filtered' && { filterCause: preview.cause }) });
     return call.id;
   }
   async function end(name: keyof typeof ids, id: ConversationId) {
