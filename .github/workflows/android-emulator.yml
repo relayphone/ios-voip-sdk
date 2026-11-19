@@ -40,14 +40,21 @@ jobs:
           cp -R expo/example/client "$RUNNER_TEMP/android-example"
           cd "$RUNNER_TEMP/android-example"
           npm install --ignore-scripts --no-audit --no-fund "$RUNNER_TEMP/relayphone-ios-voip-sdk-"*.tgz
-          CI=1 node node_modules/expo/bin/cli prebuild --platform android --no-install
+          CI=1 VOIP_ANDROID_PUSH_TEST=1 node node_modules/expo/bin/cli prebuild --platform android --no-install
           cd android
-          NODE_ENV=production timeout --kill-after=15s 600s ./gradlew :app:assembleRelease \
+          mkdir -p app/src/androidTest/java
+          cp "$GITHUB_WORKSPACE/android/emulator/PushDeliveryTest.kt" app/src/androidTest/java/
+          cp "$GITHUB_WORKSPACE/android/emulator/push.gradle" app/
+          echo 'apply from: "push.gradle"' >> app/build.gradle
+          NODE_ENV=production timeout --kill-after=15s 660s ./gradlew :app:assembleRelease :app:assembleReleaseAndroidTest \
             -PreactNativeArchitectures=x86_64 --no-daemon --max-workers=2 --console=plain
+          mkdir "$RUNNER_TEMP/expo-apks"
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/expo-apks/"
+          cp app/build/outputs/apk/androidTest/release/app-release-androidTest.apk "$RUNNER_TEMP/expo-apks/"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: expo-android-release
-          path: ${{ runner.temp }}/android-example/android/app/build/outputs/apk/release/app-release.apk
+          path: ${{ runner.temp }}/expo-apks/
           if-no-files-found: error
   emulator:
     needs: expo-apk
@@ -121,6 +128,7 @@ jobs:
       - name: Run Telecom instrumentation and Expo incoming journey
         env:
           EXPO_CALL_JOURNEY_APK: ${{ runner.temp }}/expo-apk/app-release.apk
+          EXPO_PUSH_TEST_APK: ${{ runner.temp }}/expo-apk/app-release-androidTest.apk
         run: node emulator/run.ts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()

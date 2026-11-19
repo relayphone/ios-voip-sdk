@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <application>
+        <activity android:name="com.relayphone.voip.expo.IncomingCallActivity"
+            android:exported="false" android:excludeFromRecents="true" android:taskAffinity=""
+            android:showWhenLocked="true" android:turnScreenOn="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <receiver android:name="com.relayphone.voip.expo.DeclineIncomingCall" android:exported="false" />
+    </application>
+</manifest>

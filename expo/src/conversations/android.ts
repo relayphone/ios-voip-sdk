@@ -1,8 +1,9 @@
 import { literal, object, union, type Decoder } from "../calls/decode.ts";
 import { createCallsStore, type CallsSnapshot } from "../calls/store.ts";
-import { callID, type Call, type CallError, type CallingLine, type EndReason } from "../calls/model.ts";
-import { bridgeError, ended, incomingOutcome, performed } from "../calls/receipts.ts";
+import { callID, eventID, type Call, type CallError, type CallingLine, type EndReason } from "../calls/model.ts";
+import { bridgeError, ended, incomingOutcome, performed, type IncomingOutcome } from "../calls/receipts.ts";
 import { line as callingLine } from "../calls/wire-v0.ts";
+import { pushRegistration } from "../calls/wire-v1.ts";
 import type { NativeEvents, NativeTransport } from "./transport.ts";
 import type {
   Conversation, ConversationEnd, ConversationErrorCode, ConversationId, IncomingCallPayload, IncomingConversationOutcome,
@@ -26,7 +27,7 @@ const negotiated = object({
 });
 const permissionStatus = object({ kind: literal("granted", "denied", "restricted", "notDetermined") });
 const received = object({ kind: literal("applied", "buffered", "duplicate") });
-const unknownRegistration = object({ kind: literal("unknown") });
+const registration = union(pushRegistration, object({ kind: literal("unknown") }));
 const refused = object({ ok: literal(false), error: bridgeError });
 
 export interface AndroidBridge {
@@ -36,7 +37,7 @@ export interface AndroidBridge {
   detach(): void;
   snapshot(): string;
   command(request: string): Promise<string>;
-  addListener(name: "bridgeFrame", receive: (event: { json: string }) => void): Subscription;
+  addListener(name: "bridgeFrame" | "incomingPush", receive: (event: { json: string }) => void): Subscription;
 }
 
 export function bindAndroid(native: AndroidBridge) {
@@ -126,6 +127,34 @@ export function bindAndroid(native: AndroidBridge) {
   const permissions = async () => ({ microphone: await permission("microphone", false), camera: await permission("camera", false) });
   const receive = (id: string, event: RemoteEventInput, eventID = newID()) =>
     command("receive", received, { target: { kind: "call", id }, eventID, ...event });
+  function presentOutcome(eventId: string, serverCallId: string, outcome: IncomingOutcome) {
+    const decision = outcome.kind === "duplicate" ? outcome.original : outcome;
+    const id = conversationID(decision.callID);
+    let projected: IncomingConversationOutcome;
+    switch (decision.kind) {
+      case "admitted": projected = { status: "reported", id }; break;
+      case "capacity": projected = { status: "atCapacity" }; break;
+      case "filtered": projected = { status: "filtered", reason: decision.cause === "unknown" ? "other" : decision.cause }; break;
+      case "previewed": projected = { status: "previewed", id, reason: decision.reason.kind === "filtered"
+        ? { type: "filtered", cause: decision.reason.cause === "unknown" ? "other" : decision.reason.cause }
+        : { type: decision.reason.kind } }; break;
+      case "refused": {
+        const { code, message, nativeCode } = commandError(decision.error);
+        projected = { status: "failed", error: { code, message, ...(nativeCode !== undefined && { nativeCode }) } };
+        break;
+      }
+      default: projected = { status: "notShown" };
+    }
+    emit("conversationEvent", { type: "incomingConversationOutcome", payload: {
+      eventId, serverCallId, outcome: projected,
+    } });
+    return projected;
+  }
+  const pushOutcome = object({ eventId: eventID, serverCallId: callID, outcome: incomingOutcome });
+  native.addListener("incomingPush", ({ json }) => {
+    const { eventId, serverCallId, outcome } = pushOutcome(JSON.parse(json));
+    presentOutcome(eventId, serverCallId, outcome);
+  });
   const transport: NativeTransport = {
     get snapshot() { return current; },
     mediaAdapter: "none",
@@ -141,7 +170,7 @@ export function bindAndroid(native: AndroidBridge) {
     },
     getConversations: async () => current,
     getAudioRoutes: async () => ({ revision: 0, routes: [], current: null }),
-    getPushToken: async () => { await command("push.registration", unknownRegistration); return { revision: 0, token: null }; },
+    getPushToken: async () => { await command("push.registration", registration); return { revision: 0, token: null }; },
     setHandlerAttached(attached) { if (attached) unsupported("Call placement"); },
     settleAction() { unsupported("Call placement"); },
     startConversation: async () => unsupported("Outgoing calls"),
@@ -159,27 +188,7 @@ export function bindAndroid(native: AndroidBridge) {
       const outcome = await command("reportIncoming", incomingOutcome, {
         callID: payload.serverCallId, eventID: payload.eventId, line: configuredLine(), party: callerParty(payload.caller),
       });
-      const decision = outcome.kind === "duplicate" ? outcome.original : outcome;
-      const id = conversationID(decision.callID);
-      let projected: IncomingConversationOutcome;
-      switch (decision.kind) {
-        case "admitted": projected = { status: "reported", id }; break;
-        case "capacity": projected = { status: "atCapacity" }; break;
-        case "filtered": projected = { status: "filtered", reason: decision.cause === "unknown" ? "other" : decision.cause }; break;
-        case "previewed": projected = { status: "previewed", id, reason: decision.reason.kind === "filtered"
-          ? { type: "filtered", cause: decision.reason.cause === "unknown" ? "other" : decision.reason.cause }
-          : { type: decision.reason.kind } }; break;
-        case "refused": {
-          const { code, message, nativeCode } = commandError(decision.error);
-          projected = { status: "failed", error: { code, message, ...(nativeCode !== undefined && { nativeCode }) } };
-          break;
-        }
-        default: projected = { status: "notShown" };
-      }
-      emit("conversationEvent", { type: "incomingConversationOutcome", payload: {
-        eventId: payload.eventId, serverCallId: payload.serverCallId, outcome: projected,
-      } });
-      return projected;
+      return presentOutcome(payload.eventId, payload.serverCallId, outcome);
     },
     async reportConversation(id, report) {
       switch (report.type) {
@@ -270,7 +279,7 @@ function end(at: string, reason: EndReason) {
   }
 }
 function snapshot(state: CallsSnapshot, revision: number) {
-  const conversations = state.calls.map<Conversation>(call => {
+  const conversations = state.calls.filter(call => call.lifecycle.kind !== "reporting").map<Conversation>(call => {
     const base = {
       id: conversationID(call.id),
       members: call.parties.map(({ id, handle, displayName }) => ({ ...participant(handle), id, displayName })),

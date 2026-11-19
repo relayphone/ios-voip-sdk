@@ -62,9 +62,10 @@ internal class TelecomPort<NativeID : Any>(
         is Outcome.Failure -> result
     }
 
-    suspend fun answerWithReceipt(callID: CallID): Outcome<ActionReceipt, CallError> {
+    suspend fun answerWithReceipt(callID: CallID, actionOrigin: ActionOrigin = ActionOrigin.APP): Outcome<ActionReceipt, CallError> {
         val session = sessions.find(callID) ?: return Outcome.Failure(CallError.UnknownCall(callID))
-        val receipt = beginAnswer(session, Origin.APP) ?: return Outcome.Failure(CallError.BridgeUnavailable)
+        val receipt = beginAnswer(session, Origin.APP, actionOrigin = actionOrigin)
+            ?: return Outcome.Failure(CallError.BridgeUnavailable)
         return when (val result = receipt.result.await()) {
             is Outcome.Success -> Outcome.Success(receipt.performed)
             is Outcome.Failure -> result
@@ -186,11 +187,12 @@ internal class TelecomPort<NativeID : Any>(
 
     private fun beginAnswer(
         session: Session<NativeID>, origin: Origin, remaining: Duration = answerDeadline,
+        actionOrigin: ActionOrigin = if (origin == Origin.APP) ActionOrigin.APP else ActionOrigin.SYSTEM,
     ): Answer? {
         val answer = synchronized(session) {
             if (session.closed || session.disconnectOrigin != null) return null
             session.answer?.let { return it }
-            Answer(key(session.id), origin).also {
+            Answer(key(session.id), origin, actionOrigin).also {
                 session.answer = it
                 receipts[it.key] = it.decision
             }
@@ -366,10 +368,8 @@ private fun key(callID: CallID) = ReceiptKey(callID, ActionID(UUID.randomUUID().
 private enum class Origin { APP, SYSTEM }
 private class CallbackRejected : Exception()
 
-private class Answer(val key: ReceiptKey, val origin: Origin) {
-    val performed = ActionReceipt(
-        key.actionID, Action.Answer(key.callID), if (origin == Origin.APP) ActionOrigin.APP else ActionOrigin.SYSTEM,
-    )
+private class Answer(val key: ReceiptKey, val origin: Origin, actionOrigin: ActionOrigin) {
+    val performed = ActionReceipt(key.actionID, Action.Answer(key.callID), actionOrigin)
     val decision: Receipt = CompletableDeferred()
     val result = CompletableDeferred<Outcome<Unit, CallError>>()
     var confirming = false

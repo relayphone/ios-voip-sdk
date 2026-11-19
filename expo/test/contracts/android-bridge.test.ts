@@ -8,6 +8,7 @@ test('Android command replies require the echoed operation and its expected valu
   const callID = 'incoming-a';
   let answer: JSONValue = null;
   let operation = 'perform';
+  const receivers = new Map<string, (event: { json: string }) => void>();
   const native: AndroidBridge = {
     negotiate: () => JSON.stringify({ kind: 'negotiated', result: { ok: true, value: { version: 1 } } }),
     line: () => JSON.stringify({ id: 'personal', accountID: 'account-a', label: 'Personal' }),
@@ -22,7 +23,10 @@ test('Android command replies require the echoed operation and its expected valu
       }
       return JSON.stringify({ kind: 'reply', operation, result: { ok: true, value: answer } });
     },
-    addListener: () => ({ remove() {} }),
+    addListener(name, receive) {
+      receivers.set(name, receive);
+      return { remove() { receivers.delete(name); } };
+    },
   };
   const calls = bindAndroid(native);
   const incoming = await calls.reportIncomingConversation({
@@ -41,4 +45,13 @@ test('Android command replies require the echoed operation and its expected valu
   await assert.rejects(calls.joinConversation(incoming.id), TypeError);
   operation = 'perform';
   await calls.joinConversation(incoming.id);
+
+  const outcomes: string[] = [];
+  calls.addListener('conversationEvent', event => {
+    if (event.type === 'incomingConversationOutcome') outcomes.push(event.payload.eventId);
+  });
+  receivers.get('incomingPush')?.({ json: JSON.stringify({
+    eventId: 'push-a', serverCallId: callID, outcome: { kind: 'admitted', callID },
+  }) });
+  assert.deepEqual(outcomes, ['push-a']);
 });

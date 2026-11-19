@@ -9,9 +9,23 @@ import { driveJourney, type JourneyEvents } from './drive';
 export function Journeys() {
   const events = useRef<JourneyEvents>({ actions: [], outcomes: [], elsewhere: [] });
   const started = useRef(false);
-  calls.useConversationEvent('actionPerformed', event => events.current.actions.push({
-    id: event.conversationId, kind: event.action.kind, origin: event.origin,
-  }));
+  const conversations = calls.useConversations();
+  calls.useConversationEvent('actionPerformed', event => {
+    const { conversationId: id, action, origin } = event;
+    events.current.actions.push({ id, kind: action.kind, origin });
+    if (Platform.OS === 'android' && id.startsWith('fcm-test-')) {
+      void calls.getConversations().then(snapshot => {
+        const state = snapshot.find(call => call.id === id)?.status;
+        console.info(`VoIPPushExample ${id} ${action.kind} ${origin} ${state}`);
+      });
+    }
+  });
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    for (const call of conversations) {
+      if (call.id.startsWith('fcm-test-') && call.status === 'ringing') console.info(`VoIPPushExample ${call.id} ringing`);
+    }
+  }, [conversations]);
   calls.useConversationEvent('answeredElsewhere', event => events.current.elsewhere.push(event));
   calls.useConversationEvent('incomingConversationOutcome', event => {
     const preview = event.outcome.status === 'previewed' ? event.outcome.reason : undefined;
@@ -41,6 +55,7 @@ export function Journeys() {
     const listener = Linking.addEventListener('url', event => open(event.url));
     void Linking.getInitialURL().then(open);
     new File(Paths.document, 'javascript-journeys-ready.json').write('{"ready":true}');
+    if (Platform.OS === 'android') console.info('VoIPPushExample ready');
     return () => listener.remove();
   }, []);
   return null;

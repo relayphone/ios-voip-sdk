@@ -1,0 +1,7 @@
+[
+  {"receivedAt":"2026-11-17T23:59:59.999Z","eligible":false},
+  {"receivedAt":"2026-11-18T00:00:00.000Z","eligible":true},
+  {"receivedAt":"2026-11-18T00:00:44.999Z","eligible":true},
+  {"receivedAt":"2026-11-18T00:00:45.000Z","eligible":false},
+  {"receivedAt":"2026-11-18T00:00:45.001Z","eligible":false}
+]

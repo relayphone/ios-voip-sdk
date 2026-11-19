@@ -9,6 +9,7 @@ import kotlin.time.Instant
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
@@ -26,6 +27,47 @@ internal class CallBindingTest {
         put("action", message("answer"))
     }).toString()
     private val id = invitations.first().obj("input").read<CallID>("callID")
+
+    @Test
+    fun `push shares deduplication with foreground intake and keeps its original expiry`() = runTest {
+        val telecom = FakeSystem()
+        val binding = binding(telecom)
+        val push = PushEnvelope.decode(pushFixture, Instant.parse("2026-11-18T00:00:44.000Z"),
+            Instant.fromEpochMilliseconds(0)) as PushEnvelope.Invitation
+        val expired = push.copy(input = push.input.copy(ringDeadline = Instant.fromEpochMilliseconds(0)))
+        assertEquals(IncomingRefusal.Expired, (binding.reportPush(expired) as IncomingResult.Refused).reason)
+        assertEquals(0, telecom.reports)
+        assertEquals(IncomingResult.Admitted(push.input.callID), binding.reportPush(push))
+        val foreground = invitations.first()
+        val foregroundInput = JsonObject(foreground.obj("input") + ("eventID" to encode(push.input.eventID)))
+        val duplicate = binding.reply(JsonObject(foreground + ("input" to foregroundInput)).toString()).obj("value")
+        assertEquals("duplicate", duplicate.text("kind"))
+        assertEquals(push.input.callID.value, duplicate.obj("original").text("callID"))
+        val extended = push.input.copy(ringDeadline = Instant.fromEpochMilliseconds(30_000))
+        assertTrue(binding.reportPush(push.copy(input = extended)) is IncomingResult.Duplicate)
+        val repeat = binding.reportPush(push.copy(input = extended.copy(eventID = EventID("fresh"))))
+        assertTrue((repeat as IncomingResult.Refused).reason is IncomingRefusal.CallAlreadyExists)
+        assertEquals(1, telecom.reports)
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals("unanswered", binding.state.snapshot().getValue("calls").jsonArray.single().jsonObject
+            .obj("lifecycle").obj("reason").text("kind"))
+    }
+
+    @Test
+    fun `push bridge replies and snapshot agree without exposing token material`() = runTest {
+        val binding = binding(FakeSystem())
+        val health = readFixture("valid/pushHealthUnknown.json").obj("value")
+        binding.state.updatePush(health, "requiresPermission")
+        val snapshot = BridgeWire.decode(binding.state.snapshot().toString(), "snapshot")
+        assertEquals(health, snapshot.obj("pushHealth"))
+        assertEquals(health, binding.reply("""{"kind":"command","operation":"push.health"}""").obj("value"))
+        assertEquals(health.obj("registration"),
+            binding.reply("""{"kind":"command","operation":"push.registration"}""").obj("value"))
+        val fullScreen = snapshot.getValue("records").jsonArray.map { it.jsonObject.obj("value") }
+            .single { it.text("feature") == "fullScreenIncoming" }
+        assertEquals("requiresPermission", fullScreen.obj("availability").text("reason"))
+    }
 
     @Test
     fun `native decisions match fixtures and local End is acknowledged only once`() = runTest {

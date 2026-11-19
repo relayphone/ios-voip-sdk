@@ -11,10 +11,11 @@ internal class BridgeState(private val owner: Owner, private val authority: Bool
     private var scope: State? = null
     private var initialized = false
     private var sender: ((String) -> Unit)? = null
+    private var pushHealth: JsonObject? = null
+    private var pushCapabilities = emptyList<JsonObject>()
 
     private val records = buildJsonArray {
-        for (feature in listOf("hold", "video", "tones", "preview", "prejoin", "merge", "audioRoutes", "push",
-            "fullScreenIncoming", "nativeAnswerAuthority")) {
+        for (feature in listOf("hold", "video", "tones", "preview", "prejoin", "merge", "audioRoutes", "nativeAnswerAuthority")) {
             val availability = if (feature == "nativeAnswerAuthority" && authority)
                 message("available")
             else message("unavailable", "reason" to JsonPrimitive(if (feature == "nativeAnswerAuthority") "disabledByPolicy" else "notImplemented"))
@@ -50,7 +51,27 @@ internal class BridgeState(private val owner: Owner, private val authority: Bool
             }
         })
         put("completed", encode(scope?.completedTerminalCalls.orEmpty()))
-        put("records", records)
+        pushHealth?.let { put("pushHealth", it) }
+        put("records", JsonArray(records + pushCapabilities))
+    }
+
+    @Synchronized
+    fun push(operation: String): JsonObject =
+        if (operation == "push.registration") pushHealth?.obj("registration") ?: message("unknown")
+        else pushHealth ?: message("unknown")
+
+    @Synchronized
+    fun updatePush(health: JsonObject, fullScreenBlock: String?) {
+        val capabilities = listOf(capability("push", null),
+            capability("fullScreenIncoming", fullScreenBlock))
+        if (pushHealth != health) {
+            pushHealth = health
+            emit("record", "record" to model(1, "pushHealth", health))
+        }
+        if (pushCapabilities != capabilities) {
+            pushCapabilities = capabilities
+            capabilities.forEach { emit("record", "record" to it) }
+        }
     }
 
     @Synchronized
@@ -121,3 +142,9 @@ internal class BridgeState(private val owner: Owner, private val authority: Bool
 
 private fun model(version: Int, kind: String, value: JsonElement) =
     message(kind, "version" to JsonPrimitive(version), "value" to value)
+
+private fun capability(feature: String, block: String?) = model(1, "capability", buildJsonObject {
+    put("feature", feature)
+    put("availability", if (block == null) message("available")
+        else message("unavailable", "reason" to JsonPrimitive(block)))
+})

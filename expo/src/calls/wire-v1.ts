@@ -109,7 +109,7 @@ const unregistered = union(
   object({ ...registrationFields, kind: literal('registering', 'invalidated') }),
   object({ ...registrationFields, kind: literal('failed'), reason: literal('tokenUnavailable', 'permissionDenied', 'unknown') }),
 );
-const pushRegistration = union(registered, unregistered);
+export const pushRegistration = union(registered, unregistered);
 const healthFields = {
   readiness: union(
     object({ kind: literal('ready', 'unknown') }),

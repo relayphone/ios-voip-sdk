@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.ParcelUuid
 import androidx.core.telecom.CallsManager
 import com.relayphone.voip.ActionReceipt
+import com.relayphone.voip.ActionOrigin
 import com.relayphone.voip.CallError
 import com.relayphone.voip.CallID
 import com.relayphone.voip.Input
@@ -22,6 +23,8 @@ public class AndroidTelecomSystem private constructor(
     /** Answers using the same action receipt as a concurrent Telecom Answer callback. */
     public suspend fun answerWithReceipt(callID: CallID): Outcome<ActionReceipt, CallError> = port.answerWithReceipt(callID)
 
+    internal suspend fun answerFromNotification(callID: CallID) = port.answerWithReceipt(callID, ActionOrigin.SYSTEM)
+
     public companion object {
         /**
          * Registers once before starting the calling runtime. Route [submit] to that runtime's inbox.
@@ -31,12 +34,20 @@ public class AndroidTelecomSystem private constructor(
             context: Context,
             compatibilityBound: Int,
             submit: (Input) -> Boolean,
+        ): AndroidTelecomSystem = register(context, compatibilityBound, false, submit)
+
+        internal suspend fun register(
+            context: Context,
+            compatibilityBound: Int,
+            customIncomingPresentation: Boolean,
+            submit: (Input) -> Boolean,
         ): AndroidTelecomSystem = withContext(Dispatchers.IO) {
             require(compatibilityBound >= 33)
             val application = context.applicationContext
             val calls = CallsManager(application)
             calls.registerAppWithTelecom(CallsManager.CAPABILITY_BASELINE, compatibilityBound)
-            AndroidTelecomSystem(TelecomPort(CoreTelecomBackend(calls, AdmissionNotification(application)), submit))
+            val backend = CoreTelecomBackend(calls, AdmissionNotification(application), customIncomingPresentation)
+            AndroidTelecomSystem(TelecomPort(backend, submit))
         }
     }
 }

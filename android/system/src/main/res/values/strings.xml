@@ -1,3 +1,7 @@
 <resources>
     <string name="voip_call_channel">Calls</string>
+    <string name="voip_incoming_channel">Incoming calls</string>
+    <string name="voip_incoming_call">Incoming call</string>
+    <string name="voip_answer">Answer</string>
+    <string name="voip_decline">Decline</string>
 </resources>

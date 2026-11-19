@@ -41,7 +41,7 @@ const config: ExpoConfig = {
       "@relayphone/ios-voip-sdk",
       {
         mediaAdapter: "none",
-        android: { accountID: "example" },
+        android: { accountID: "example", fcm: process.env["VOIP_ANDROID_PUSH_TEST"] === "1" },
         sounds: ["./assets/sounds/ringtone.wav"],
         defaultRingtoneIos: "ringtone.wav",
         iconTemplateIos: "./assets/call-icon.png",

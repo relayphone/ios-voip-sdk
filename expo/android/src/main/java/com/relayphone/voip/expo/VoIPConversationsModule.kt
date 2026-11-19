@@ -1,21 +1,12 @@
 package com.relayphone.voip.expo
 
 import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
-import android.os.SystemClock
-import com.relayphone.voip.AccountID
-import com.relayphone.voip.CallingLine
-import com.relayphone.voip.LineID
 import com.relayphone.voip.CallError
 import com.relayphone.voip.MediaPermission
-import com.relayphone.voip.runtime.MonotonicClock
-import com.relayphone.voip.system.AndroidTelecomSystem
 import expo.modules.interfaces.permissions.PermissionsStatus
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
-import kotlin.time.Instant
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 
@@ -25,14 +16,19 @@ class VoIPConversationsModule : Module() {
 
     override fun definition() = ModuleDefinition {
         Name("VoIPConversations")
-        Events("bridgeFrame")
+        Events("bridgeFrame", "incomingPush")
         OnCreate {
-            synchronized(process) {
-                if (host == null) host = start(requireNotNull(appContext.reactContext).applicationContext)
-                service = checkNotNull(host)
+            service = CallHost.get(requireNotNull(appContext.reactContext))
+            CallHost.scope.launch { service.push.start() }
+        }
+        OnStartObserving("incomingPush") {
+            pushEvents = CallHost.scope.launch {
+                service.binding.pushOutcomes.collect { sendEvent("incomingPush", mapOf("json" to it.toString())) }
             }
         }
-        OnDestroy { service.binding.state.detach(sendFrame) }
+        OnStopObserving("incomingPush") { pushEvents?.cancel() }
+        OnActivityEntersForeground { CallHost.scope.launch { service.push.refresh() } }
+        OnDestroy { service.binding.state.detach(sendFrame); pushEvents?.cancel() }
         Function("negotiate") { source: String ->
             val selected = BridgeWire.negotiate(source)
             if (selected) negotiated = true
@@ -44,7 +40,10 @@ class VoIPConversationsModule : Module() {
         Function("detach") { service.binding.state.detach(sendFrame) }
         Function("snapshot") { check(negotiated); service.binding.state.snapshot().toString() }
         AsyncFunction("command") Coroutine { source: String ->
-            withContext(Dispatchers.Main.immediate) { service.binding.command(source, negotiated, ::permission) }
+            withContext(Dispatchers.Main.immediate) {
+                service.push.refresh()
+                service.binding.command(source, negotiated, ::permission)
+            }
         }
     }
 
@@ -68,26 +67,6 @@ class VoIPConversationsModule : Module() {
         }))
     }
 
-    private lateinit var service: Host
-
-    private data class Host(val line: CallingLine?, val binding: CallBinding)
-
-    private companion object {
-        val process = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        var host: Host? = null
-
-        fun start(context: Context): Host {
-            val manager = context.packageManager
-            val app = manager.getApplicationInfo(context.packageName, PackageManager.GET_META_DATA)
-            val line = app.metaData?.getString("com.relayphone.voip.accountID")?.removePrefix("voip:")?.let {
-                CallingLine(AccountID(it), LineID(it), app.metaData?.getString("com.relayphone.voip.label")?.removePrefix("voip:")
-                    ?: manager.getApplicationLabel(app).toString())
-            }
-            val clock = MonotonicClock { Instant.fromEpochMilliseconds(SystemClock.elapsedRealtime()) }
-            return Host(line, CallBinding(process, line, clock, NativeCallMedia.start()) { submit ->
-                val telecom = AndroidTelecomSystem.register(context, 34, submit)
-                CallSystem(telecom, telecom::answerWithReceipt)
-            })
-        }
-    }
+    private lateinit var service: CallHost
+    private var pushEvents: Job? = null
 }

@@ -4,6 +4,7 @@ import com.relayphone.voip.*
 import com.relayphone.voip.runtime.*
 import java.util.UUID
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.*
@@ -13,9 +14,11 @@ internal class CallBinding(
     private val line: CallingLine?,
     clock: MonotonicClock,
     private val registration: NativeCallMedia.Registration,
+    presentation: PresentationPort = PresentationPort {},
     connect: suspend ((Input) -> Boolean) -> CallSystem,
 ) : AuthorityPort {
     val state = BridgeState(if (registration.media == null) Owner.APPLICATION else Owner.NATIVE, registration.authority != null)
+    val pushOutcomes = MutableSharedFlow<JsonObject>(extraBufferCapacity = 16)
     private val ends = mutableMapOf<ActionID, CompletableDeferred<Outcome<EndResult, CallError>>>()
     private val processed = MutableStateFlow<RuntimeCursor?>(null)
     @Volatile private var runtime: CallRuntime? = null
@@ -33,7 +36,7 @@ internal class CallBinding(
             }
         }
         val result = CallRuntime.start(Configuration(Budgets(), OutgoingMedia.WHEN_PROVIDED, ConnectionAuthority.APPLICATION,
-            1, false), scope, system, this@CallBinding, registration.media ?: DefaultMedia, PresentationPort {}, clock)
+            1, false), scope, system, this@CallBinding, registration.media ?: DefaultMedia, presentation, clock)
         val calls = (result as Outcome.Success).value
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             calls.observe().collect { observation ->
@@ -47,7 +50,7 @@ internal class CallBinding(
         }
         runtime = calls
         registration.observers.forEach { it(calls) }
-        calls to telecom.answer
+        calls to telecom
     }
 
     override suspend fun claim(request: Effect.RequestClaim): AnswerDecision =
@@ -62,7 +65,7 @@ internal class CallBinding(
         val input = command["input"]?.jsonObject ?: JsonObject(emptyMap())
         val result = when {
             !negotiated -> failed(CallError.BridgeUnavailable)
-            operation == "push.health" || operation == "push.registration" -> ok(message("unknown"))
+            operation == "push.health" || operation == "push.registration" -> ok(state.push(operation))
             operation == "permissions.read" || operation == "permissions.request" -> {
                 val kind = if (input.text("kind") == "microphone") MediaPermission.MICROPHONE else MediaPermission.CAMERA
                 permission(kind, operation == "permissions.request")
@@ -73,8 +76,32 @@ internal class CallBinding(
         return envelope("reply", result, "operation" to JsonPrimitive(operation)).toString()
     }
 
+    suspend fun reportPush(push: PushEnvelope.Invitation): IncomingResult? {
+        val (calls) = ready.await()
+        val result = (calls.reportIncoming(push.input) as? Outcome.Success)?.value
+        if (result is IncomingResult.Decision) {
+            if (result is IncomingResult.Admitted)
+                NativeCallMedia.recordCredential(result.callID, push.credentialRef)
+            if (result !is IncomingResult.Refused || result.reason != IncomingRefusal.EventAlreadyUsed) {
+                settledCursor(calls)
+                pushOutcomes.tryEmit(buildJsonObject {
+                    put("eventId", encode(push.input.eventID))
+                    put("serverCallId", encode(push.input.callID))
+                    put("outcome", incoming(result))
+                })
+            }
+        }
+        return result
+    }
+
+    suspend fun notificationAction(id: CallID, answer: Boolean): Boolean {
+        val (calls, telecom) = ready.await()
+        if (answer) return telecom.notificationAnswer(id) is Outcome.Success
+        return calls.submit(Input.Request(Action.End(id), ActionID(UUID.randomUUID().toString()), origin = ActionOrigin.SYSTEM))
+    }
+
     private suspend fun callCommand(operation: String, input: JsonObject): Reply {
-        val (calls, answer) = try {
+        val (calls, telecom) = try {
             ready.await()
         } catch (_: SecurityException) {
             return failed(CallError.SystemFailed(SystemFailure(Platform.ANDROID, SystemOperation.ADMISSION)))
@@ -83,7 +110,7 @@ internal class CallBinding(
             "perform" -> {
                 val id = input.read<CallID>("id")
                 when (input.obj("action").text("kind")) {
-                    "answer" -> answer(id).reply { receipt ->
+                    "answer" -> telecom.answer(id).reply { receipt ->
                         message("performed", "receipt" to encode(receipt), "cursor" to settledCursor(calls))
                     }
                     "end" -> end(calls, id)
@@ -132,7 +159,11 @@ internal class CallBinding(
     }
 }
 
-internal data class CallSystem(val port: SystemPort, val answer: suspend (CallID) -> Outcome<ActionReceipt, CallError>)
+internal data class CallSystem(
+    val port: SystemPort,
+    val answer: suspend (CallID) -> Outcome<ActionReceipt, CallError>,
+    val notificationAnswer: suspend (CallID) -> Outcome<ActionReceipt, CallError> = answer,
+)
 
 private fun incoming(result: IncomingResult): JsonObject {
     val id = "callID" to encode(result.callID)

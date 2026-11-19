@@ -135,10 +135,10 @@ public sealed interface CommandReceipt {
 
 /** Inputs carry port confirmations and explicit authority. A request alone changes no control state. */
 public sealed interface Input {
-    /** A new invitation with an optional UTC expiry supplied by the service. */
+    /** A new invitation with an optional service expiry or a deadline anchored at native receipt. */
     public data class Incoming(
         public val callID: CallID, public val eventID: EventID, public val line: CallingLine,
-        public val party: Party, public val expiresAt: Instant? = null,
+        public val party: Party, public val expiresAt: Instant? = null, public val ringDeadline: Instant? = null,
     ) : Input
     public data class Admitted(public val attempt: Attempt) : Input
     /** The incoming platform setup resolved without opening a session. */

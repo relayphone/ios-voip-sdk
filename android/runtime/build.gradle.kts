@@ -20,6 +20,9 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     val fixtures = rootDir.resolve("../spec/bridge/fixtures")
+    val versioned = rootDir.resolve("../spec/v1/fixtures")
     inputs.dir(fixtures)
+    inputs.dir(versioned)
     systemProperty("spec.bridge", fixtures.resolve("valid"))
+    systemProperty("spec.v1", versioned)
 }

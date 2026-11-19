@@ -314,6 +314,30 @@ report transport progress through `VoIPClient.receive(_:for:eventID:)`.
 `mediaCredentials(for:)` for credentials kept out of JavaScript. A conversation has
 `media: "native"` after that media prepares it; don't connect its media again in JavaScript.
 
+## Android incoming calls from FCM
+
+Configure Firebase for the Android app. Set `android: { accountID: "...", fcm: true }` in the
+calling config plugin when the SDK owns the app's FCM service. Apps with an existing messaging
+service, including Expo Notifications, can keep it and call
+`VoIPFirebaseMessagingService.route(context, message)` from that service's callback. Continue
+normal message handling when it returns `false`. Call `recordToken(context, token)` from the
+existing service's token callback and use its returned installation, generation and token ID
+for authenticated upload. Feed the result back with `completeUpload` and call
+`invalidateToken` when revoking a token.
+
+Send a high-priority FCM data message with string fields `version: "1"`, `kind: "pushEnvelope"`
+and `value` containing the JSON-encoded value from the v1 push envelope. Use a message TTL no
+longer than the invitation lifetime. Request notification permission while the app is in the
+foreground. On Android 14 and later, check full-screen access and direct the user to Android's
+full-screen intent settings when needed. When full-screen access is blocked, an enabled call
+notification still offers Answer and Decline.
+
+JavaScript can use the conversation snapshot to connect media after a cold launch. Apps that
+prepare media during Answer can register a provider with Kotlin's `NativeCallMedia.register`
+from their application lifecycle listener and read the admitted call's opaque
+`credentialReference`. The bridge reports registration and presentation readiness with the
+v1 push health value and `fullScreenIncoming` capability. Host code handles raw tokens and uploads.
+
 ## Notifications, call previews and Focus
 
 For `callNotifications: true`, install `expo-notifications` with `npx expo install`, request the

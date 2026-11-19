@@ -10,7 +10,7 @@ import type { MediaAdapter } from "../../build/conversations/types";
 /** Options for the config plugin exported by `@relayphone/ios-voip-sdk/plugin`. */
 export type VoIPConversationsPluginProps = {
   /** Android's default calling line. The label defaults to the app name. */
-  android?: { accountID: string; label?: string };
+  android?: { accountID: string; label?: string; fcm?: boolean };
   /** WebRTC audio session integration, also used by LiveKit React Native. Defaults to webrtc. */
   mediaAdapter?: MediaAdapter;
   unhandledAction?: "fail" | "accept";
@@ -127,6 +127,12 @@ const withVoIPConversations: ConfigPlugin<
     for (const [key, value] of Object.entries({ accountID: android.accountID, label: android.label ?? config.name })) {
       AndroidConfig.Manifest.addMetaDataItemToMainApplication(application, `com.relayphone.voip.${key}`, `voip:${value}`);
     }
+    const messagingService = "com.relayphone.voip.expo.VoIPFirebaseMessagingService";
+    application.service = (application.service ?? []).filter(service => service.$["android:name"] !== messagingService);
+    if (android.fcm) application.service.push({
+      $: { "android:name": messagingService, "android:exported": "false" },
+      "intent-filter": [{ action: [{ $: { "android:name": "com.google.firebase.MESSAGING_EVENT" } }] }],
+    });
     return mod;
   });
   return withGradleProperties(config, mod => {
