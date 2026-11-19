@@ -216,18 +216,19 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
   let resumedAudioPublication: string | undefined;
   if (scenario === 'app-downgrade') {
     await request({ operation: 'video', enabled: true, source: 'app' });
-    // At least one complete fixed rate window now falls entirely after the duplicate request.
-    await delay(2 * videoGates.windowMs, undefined, { signal: budget.signal });
+    const duplicateObservedAtMs = performance.now();
+    // Capture fresh audio while video stays on. At least one complete fixed-rate video
+    // window must still fall entirely after the duplicate request.
+    await freshAudio('before-downgrade');
+    await waitThrough(duplicateObservedAtMs + 2 * videoGates.windowMs);
     const same = await freshVideo('same-value', epoch);
     assert.deepEqual(same.sdk.events, live.sdk.events, 'Same-value update emitted another SDK event');
     assert.equal(same.media.publication, live.media.publication, 'Same-value update replaced the track');
     assert.equal(same.media.epochs.length, live.media.epochs.length, 'Same-value update started another epoch');
-    await freshAudio('before-downgrade');
-    live = await freshVideo('before-downgrade-video', epoch);
     const actionAtMs = performance.now();
     epoch.peer.freeze();
     await Promise.all([request({ operation: 'video', enabled: false, source: 'app' }), epoch.peer.stop()]);
-    const off = await waitForEvent(live, 'changed', false, 'app');
+    const off = await waitForEvent(same, 'changed', false, 'app');
     downgradedBoundary = { ...off, actionAtMs, operation: 'stop' };
     await finishVideo(epoch, downgradedBoundary);
   } else if (scenario === 'hold-resume') {
