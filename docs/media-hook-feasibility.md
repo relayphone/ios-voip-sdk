@@ -79,6 +79,10 @@ transport. Unknown transports, hardware aggregate members, and route changes fai
 The job summary lists each running device's
 name, UID, transport, and verdict. A runner with no default devices reports `no host devices`.
 
+Use the Media hook feasibility workflow's `journey` input to run one named video journey
+on a branch. The `all` default runs the full `duplex` job. Pull requests still run both the
+host harness and full `duplex` job.
+
 For a local run, configure the lease CLI's connection and credentials using its own environment
 variables. The runner passes those values through and acquires an isolated simulator lease or
 attaches using the lease identifier and token supplied to the CLI. Set all of the following:
