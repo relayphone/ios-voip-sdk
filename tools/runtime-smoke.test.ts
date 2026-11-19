@@ -19,6 +19,7 @@ test('missing, repeated, stale or fabricated runtime boundaries cannot qualify',
     [entry, { ...ready, pid: 456 }], [entry, { ...ready, runID: 'old-run' }],
     [entry, { ...ready, uptimeNanoseconds: 99 }], [entry, { ...ready, sequence: 1 }],
     [{ ...entry, t_ms: 1 }, ready], [{ ...entry, uptimeNanoseconds: 0 }, ready],
+    [{ ...entry, uptimeNanoseconds: '100' }, ready], [entry, { ...ready, sequence: '5' }],
     [entry, { ...ready, boundarySource: 'push-registry' }],
   ]) assert.throws(() => assertRuntimeBoundaries(journal(...rows), identity));
 });

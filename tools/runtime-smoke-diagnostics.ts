@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process';
 import { run, type RunOptions } from './command.ts';
 
-const timeout = (error: unknown): boolean => error instanceof Error && /\bETIMEDOUT\b|\btimed out\b/i.test(error.message);
+const timeout = (cause: unknown) => cause instanceof Error && /\bETIMEDOUT\b|\btimed out\b/i.test(cause.message);
 
 /** Short, bounded probes never collect process arguments or environments. */
-function probe(command: string, args: readonly string[], options: RunOptions = {}): string {
+function probe(command: string, args: readonly string[], options: RunOptions = {}) {
   const result = spawnSync(command, args, { encoding: 'utf8', timeout: (options.timeout ?? 3) * 1000,
     killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 });
   if (result.error) throw result.error;
@@ -25,7 +25,7 @@ export class SmokeCommandFailure extends Error {
 
 /** Runs each smoke command once; only simulator command timeouts trigger health probes. */
 export function smokeCommand(stage: string, command: string, args: readonly string[], options: RunOptions = {},
-  execute: typeof run = run, inspect: typeof run = probe): string {
+  execute: typeof run = run, inspect: typeof run = probe) {
   try { return execute(command, args, options); } catch (error) {
     const simctl = command === 'xcrun' && args[0] === 'simctl';
     const cksim = /(?:^|\/)cksim$/.test(command);

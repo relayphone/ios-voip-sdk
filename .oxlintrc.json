@@ -84,6 +84,14 @@
       }
     },
     {
+      "files": ["tools/runtime-smoke*.ts"],
+      "rules": {
+        "anti-slop/no-unknown-parameters": "error",
+        "anti-slop/require-safety-comment-for-type-assertion": "error",
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    },
+    {
       "files": [
         "tools/{build-runtime,package-runtime,release,runtime-package}{,.test}.ts"
       ],
