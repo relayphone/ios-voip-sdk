@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { callID, type Action, type CallError, type Result } from '../../expo/src/calls/model.ts';
+import { isList, isRecord } from '../json-fields.ts';
+import { callID, type Action, type CallError } from '../../expo/src/calls/model.ts';
 import { createCallsStore, type CallsTransport, type Observation } from '../../expo/src/calls/store.ts';
 import { incomingOutcome, performed } from '../../expo/src/calls/receipts.ts';
 import { canonical, validateBridge } from './schema.ts';
@@ -10,9 +11,9 @@ import { decodeModelV1 } from './v1.ts';
 const fixtures = new URL('../../spec/bridge/fixtures/', import.meta.url);
 type Validity = 'valid' | 'invalid';
 
-function messages(name: string, validity: Validity = 'valid'): readonly unknown[] {
+function messages(name: string, validity: Validity = 'valid') {
   const decoded: unknown = JSON.parse(readFileSync(new URL(`${validity}/${name}`, fixtures), 'utf8'));
-  assert.ok(Array.isArray(decoded) && decoded.length > 0, 'A fixture must contain at least one message');
+  assert.ok(isList(decoded) && decoded.length > 0, 'A fixture must contain at least one message');
   return decoded;
 }
 
@@ -32,7 +33,7 @@ for (const validity of ['valid', 'invalid'] as const) {
 function fakeObservationTransport(initial: unknown, beforeHydration: readonly unknown[] = []) {
   validateBridge(initial, 'snapshot');
   let latest = initial;
-  let receive: ((frame: unknown) => void) | undefined;
+  let receive: Parameters<CallsTransport['attach']>[0] | undefined;
   let reads = 0;
   return {
     attach(listener) {
@@ -133,8 +134,9 @@ const unavailable = failure({ kind: 'bridgeUnavailable' });
 
 function versionReply(offer: unknown) {
   validateBridge(offer);
-  const { kind, versions } = offer as { kind: 'negotiate'; versions: readonly number[] };
-  assert.equal(kind, 'negotiate');
+  assert.ok(isRecord(offer) && 'kind' in offer && offer.kind === 'negotiate');
+  assert.ok('versions' in offer && isList(offer.versions));
+  const { versions } = offer;
   if (new Set(versions).size !== versions.length) throw new TypeError('Offered versions must be distinct');
   const highest = Math.max(...versions.filter(version => version === 1));
   return { kind: 'negotiated', result: highest === 1 ? success({ version: highest }) : unavailable };
@@ -173,7 +175,7 @@ function fakeCommandTransport() {
     assert.equal(decoded.kind, name);
     return decoded.value;
   };
-  function execute(command: CallCommand): Result<unknown, CallError> {
+  function execute(command: CallCommand) {
     switch (command.operation) {
       case 'start':
         calls.set(command.input.id, {});
@@ -241,6 +243,9 @@ function fakeCommandTransport() {
     },
     command(value: unknown) {
       validateBridge(value, 'command');
+      assert.ok(isRecord(value) && 'operation' in value);
+      assert.ok(value.operation !== 'placement.attach' && value.operation !== 'placement.settle');
+      // SAFETY: The bridge command schema validated the input for each non-placement operation.
       const command = value as CallCommand;
       return { kind: 'reply', operation: command.operation, result: negotiated ? execute(command) : unavailable };
     },
@@ -286,7 +291,9 @@ test('the store delivers and replays the original performed receipts in sequence
 test('the incoming decoder preserves terminal and refusal decisions through duplicates', () => {
   for (const reply of messages('admissions.json')) {
     validateBridge(reply, 'reply');
-    const { result } = reply as { result: { value: unknown } };
+    assert.ok(isRecord(reply) && 'result' in reply && isRecord(reply.result));
+    const { result } = reply;
+    assert.ok('ok' in result && result.ok === true && 'value' in result);
     assert.deepEqual(incomingOutcome(result.value), result.value);
   }
 });
@@ -300,7 +307,7 @@ type PlacementRequested = {
 };
 type PlacementCancelled = {
   kind: 'placementCancelled'; generation: number; actionID: string;
-  reason: 'replaced' | 'detached' | 'deadlineExceeded';
+  reason: 'replaced' | 'detached' | 'ended' | 'deadlineExceeded' | 'reset';
 };
 type PlacementEvent = PlacementRequested | PlacementCancelled;
 
@@ -317,6 +324,9 @@ function fakePlacementTransport(deliver: (event: PlacementEvent) => void) {
   return {
     command(value: unknown) {
       validateBridge(value, 'command');
+      assert.ok(isRecord(value) && 'operation' in value);
+      assert.ok(value.operation === 'placement.attach' || value.operation === 'placement.settle');
+      // SAFETY: The bridge command schema validated the attach or settle input for this operation.
       const { operation, input } = value as PlacementCommand;
       if (operation === 'placement.attach') {
         if (input.generation > generation) {
@@ -361,6 +371,9 @@ test('placement replacement and monotonic expiry cancel once and fence late sett
   for (let index = 0; index < transcript.length; index++) {
     const message = transcript[index];
     validateBridge(message);
+    assert.ok(isRecord(message) && 'kind' in message);
+    assert.ok(message.kind === 'command' || message.kind === 'placementRequested' || message.kind === 'placementCancelled');
+    // SAFETY: The bridge schema validated the complete message for these three kinds.
     const wire = message as { kind: 'command' } | PlacementEvent;
     switch (wire.kind) {
       case 'command': {

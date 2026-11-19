@@ -27,7 +27,7 @@ export function selectTransition(table: Transitions, state: State | 'absent', in
   return table.rules.find(rule => rule.from.includes(state) && satisfied.has(rule.guard)
     && (rule.input === input || triggerGroups[rule.input]?.includes(input)));
 }
-export function check(expected: Expectation, observed: Observation): void {
+export function check(expected: Expectation, observed: Observation) {
   switch (expected.kind) {
     case 'call': {
       const call = observed.calls.find(call => call.id === expected.callID);
@@ -67,13 +67,13 @@ export function check(expected: Expectation, observed: Observation): void {
   }
 }
 /** Executes an already decoded journey. Assertions never mutate the driver or infer missing evidence. */
-export function runJourney(journey: Journey, driver: JourneyDriver): Promise<void> {
+export function runJourney(journey: Journey, driver: JourneyDriver) {
   return runSteps(journey, driver, check);
 }
 export async function runSteps<Control, Assertion, Snapshot>(journey: Readonly<{
   configuration: Configuration;
   steps: readonly ({ kind: 'input'; input: Control } | { kind: 'expect'; expectation: Assertion })[];
-}>, driver: JourneyDriver<Control, Snapshot>, assertObservation: (expected: Assertion, observed: Snapshot) => void): Promise<void> {
+}>, driver: JourneyDriver<Control, Snapshot>, assertObservation: (expected: Assertion, observed: Snapshot) => void) {
   let failure: { error: unknown } | undefined;
   try {
     await driver.reset(journey.configuration);
@@ -89,7 +89,7 @@ export async function runSteps<Control, Assertion, Snapshot>(journey: Readonly<{
   }
   if (failure) throw failure.error;
 }
-export function loadCatalog(root = new URL('../../spec/', import.meta.url)): readonly Journey[] {
+export function loadCatalog(root = new URL('../../spec/', import.meta.url)) {
   decodeTransitions(JSON.parse(readFileSync(new URL('transitions.json', root), 'utf8')));
   const directory = new URL('journeys/', root);
   const journeys = readdirSync(directory).filter(name => name.endsWith('.json')).sort()

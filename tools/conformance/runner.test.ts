@@ -21,10 +21,10 @@ class ScriptedDriver implements JourneyDriver {
   closes = 0;
   observation: Observation = complete;
   failure: 'reset' | 'apply' | 'observe' | 'close' | undefined;
-  async reset(_: Configuration): Promise<void> { this.resets++; if (this.failure === 'reset') throw new Error('reset failed'); }
-  async apply(input: Input): Promise<void> { if (this.failure === 'apply') throw new Error('apply failed'); this.inputs.push(input); }
-  async observe(): Promise<Observation> { if (this.failure === 'observe') throw new Error('observe failed'); return this.observation; }
-  async close(): Promise<void> { this.closes++; if (this.failure === 'close') throw new Error('close failed'); }
+  async reset() { this.resets++; if (this.failure === 'reset') throw new Error('reset failed'); }
+  async apply(input: Input) { if (this.failure === 'apply') throw new Error('apply failed'); this.inputs.push(input); }
+  async observe() { if (this.failure === 'observe') throw new Error('observe failed'); return this.observation; }
+  async close() { this.closes++; if (this.failure === 'close') throw new Error('close failed'); }
 }
 
 test('runner sends only controls and configuration, checks real observations, and closes once', async () => {

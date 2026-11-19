@@ -16,9 +16,10 @@ for (const [kind, witnesses] of Object.entries({ valid: validV1, invalid: invali
   test(`v1 ${kind} type witnesses cover every fixture`, () => {
     assert.deepEqual(names, Object.keys(witnesses).map(name => name + '.json').sort());
   });
+  const byName = new Map<string, unknown>(Object.entries(witnesses));
   for (const name of names) test(`v1 ${kind}/${name} agrees with the decoder and type witness`, () => {
     const raw: unknown = JSON.parse(readFileSync(new URL(name, directory), 'utf8'));
-    assert.deepEqual(raw, witnesses[name.slice(0, -5) as keyof typeof witnesses]);
+    assert.deepEqual(raw, byName.get(name.slice(0, -5)));
     if (kind === 'invalid') assert.throws(() => decodeVersionedModel(raw));
     else {
       const decoded = decodeVersionedModel(raw);
