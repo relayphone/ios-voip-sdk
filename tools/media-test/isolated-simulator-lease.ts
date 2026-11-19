@@ -4,12 +4,17 @@ import { readdir, readFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
+import { measureLeaseAttempt, summarizeLeaseAttempts, type LeaseAttempt } from './lease-attempt.ts';
 import type { SimulatorLeaseAudio } from './simulator-media.ts';
 
 const execute = promisify(execFile);
 const maxProofAge = 120_000;
 const firstHeartbeatTimeout = 90_000;
 const pollInterval = 2_000;
+const proofReadTimeout = 10_000;
+const proofRefreshBudget = 30_000;
+const proofRefreshAttempts = 3;
+const proofRetryDelay = 1_000;
 const acquisitionWaitMinutes = 10;
 const acquisitionTimeout = acquisitionWaitMinutes * 60_000 + 15_000;
 const reattachmentBudget = 15 * 60_000;
@@ -102,7 +107,7 @@ export async function checkerPhaseLog(scratch: string,
 function readProof(
   view: Record<string, unknown>, id: string, now: number, waitingForHeartbeat: boolean, attached: boolean,
   config: LeaseConfiguration,
-): Proof | undefined {
+): { proof: Proof; expiresAt: number } | undefined {
   const lease = object(view.lease);
   if (lease.id !== id) throw new IsolatedLeaseRefusal('The lease response has a different lease identifier');
   const audio = object(lease.audio);
@@ -127,11 +132,14 @@ function readProof(
   if (sim.input !== proof.input || sim.output !== proof.output) {
     throw new IsolatedLeaseRefusal('The lease and simulator audio UIDs differ');
   }
-  return { ...proof, udid, leaseAudio: { isolated: true, virtualInputVerified: true, virtualOutputVerified: true } };
+  return {
+    proof: { ...proof, udid, leaseAudio: { isolated: true, virtualInputVerified: true, virtualOutputVerified: true } },
+    expiresAt: Math.min(proof.verifiedAt, sim.verifiedAt) + maxProofAge + 1,
+  };
 }
 
 type LeaseCommand = (file: string, args: string[], options: {
-  cwd: string; env: NodeJS.ProcessEnv; timeout: number; signal?: AbortSignal;
+  cwd: string; env: NodeJS.ProcessEnv; timeout: number; signal?: AbortSignal; killSignal?: NodeJS.Signals;
 }) => Promise<{ stdout: string; stderr: string }>;
 
 async function releaseHandle(env: NodeJS.ProcessEnv, { configDir, cliEnv }: LeaseConfiguration): Promise<NodeJS.ProcessEnv | undefined> {
@@ -203,12 +211,14 @@ export async function withIsolatedSimulatorLease<T>(
   check: (checker: string, udid: string, signal: AbortSignal) => Promise<string>,
   report: (line: string) => void,
   { command = execute, now = Date.now, elapsed = () => performance.now(),
-    pause = (ms, signal) => delay(ms, undefined, { signal }), shutdown, arm, prepareRelease }: {
+    pause = (ms, signal) => delay(ms, undefined, { signal }), shutdown, arm, prepareRelease,
+    reportAttempt = attempt => report('Isolated lease attempt ' + JSON.stringify(attempt)) }: {
     command?: LeaseCommand; now?: () => number; pause?: (ms: number, signal: AbortSignal) => Promise<void>;
     elapsed?: () => number;
     shutdown?: (udid: string) => Promise<string>;
     arm?: (proof: Proof, signal: AbortSignal) => Promise<AbortSignal>;
     prepareRelease?: () => void;
+    reportAttempt?: (attempt: LeaseAttempt) => void;
   } = {},
 ): Promise<T> {
   const { cli, checker, project, environment, cliEnv, cliErrorPrefix, cliSecretPattern } = config;
@@ -288,11 +298,26 @@ export async function withIsolatedSimulatorLease<T>(
   const polling = new AbortController();
   const pollSignal = AbortSignal.any([localSignal, polling.signal]);
   let monitor: Promise<void> | undefined;
+  let proofExpiry: ReturnType<typeof setTimeout> | undefined;
   let primaryFailure: unknown;
   let shutdownOnAbort: Promise<unknown> | undefined;
   let stopSimulator: (() => void) | undefined;
   let guard: AbortSignal | undefined;
   const trip = () => stop.abort(guard?.reason);
+  function proofAttempt<T>(stage: 'initial proof' | 'proof refresh', attempts: LeaseAttempt[], timeout: number,
+    cancellation: AbortSignal, parse: (view: Record<string, unknown>) => T,
+  ) {
+    return measureLeaseAttempt(stage, attempts.length + 1, cancellation, {
+      now, elapsed, redact: redactLeaseOutput,
+      report(entry) {
+        attempts.push(entry);
+        reportAttempt(entry);
+      },
+    }, async () => {
+      const { stdout } = await command(cli, ['lease'], { cwd, env, timeout, signal: cancellation, killSignal: 'SIGKILL' });
+      return stdout;
+    }, stdout => parse(json(stdout)));
+  }
   try {
     let acquiredProof: (Routes & { udid: string }) | undefined;
     if (!id) {
@@ -319,24 +344,32 @@ export async function withIsolatedSimulatorLease<T>(
     const leaseID = id;
     const heartbeat = AbortSignal.timeout(firstHeartbeatTimeout);
     const startupSignal = AbortSignal.any([localSignal, heartbeat]);
-    let proof: Proof | undefined;
+    const initialAttempts: LeaseAttempt[] = [];
+    let initial: ReturnType<typeof readProof>;
     try {
-      while (!proof) {
-        const view = json(await invoke(['lease'], 10_000, startupSignal));
-        proof = readProof(view, leaseID, now(), true, attached, config);
-        if (!proof) await pause(pollInterval, startupSignal);
+      while (!initial) {
+        const read = await proofAttempt('initial proof', initialAttempts, proofReadTimeout, startupSignal,
+          view => readProof(view, leaseID, now(), true, attached, config));
+        if ('failure' in read) {
+          startupSignal.throwIfAborted();
+          if (read.failure.outcome === 'parse failure') throw read.error;
+          throw new IsolatedLeaseRefusal(summarizeLeaseAttempts('initial proof', initialAttempts));
+        }
+        initial = read.value;
+        if (!initial) await pause(pollInterval, startupSignal);
       }
     } catch (error) {
       if (heartbeat.aborted && !localSignal.aborted) {
-        throw new IsolatedLeaseRefusal('lease.audio.isolated stayed false for 90 seconds without an isolation heartbeat');
+        throw new IsolatedLeaseRefusal('lease.audio.isolated stayed false for 90 seconds without an isolation heartbeat. '
+          + summarizeLeaseAttempts('initial proof', initialAttempts));
       }
       throw error;
     }
-    if (acquiredProof && (acquiredProof.udid !== proof.udid
-      || acquiredProof.input !== proof.input || acquiredProof.output !== proof.output)) {
+    const expected = initial.proof;
+    if (acquiredProof && (acquiredProof.udid !== expected.udid
+      || acquiredProof.input !== expected.input || acquiredProof.output !== expected.output)) {
       throw new IsolatedLeaseRefusal('The acquired simulator and lease audio proofs differ');
     }
-    const expected = proof;
     stopSimulator = () => {
       shutdownOnAbort = shutdown?.(expected.udid).catch(() => {
         report('Immediate simulator shutdown could not be confirmed. Releasing the isolated simulator lease.');
@@ -344,26 +377,61 @@ export async function withIsolatedSimulatorLease<T>(
     };
     localSignal.addEventListener('abort', stopSimulator, { once: true });
     localSignal.throwIfAborted();
+    let expiresAt = initial.expiresAt;
+    const expired = () => new IsolatedLeaseRefusal('The isolated simulator lease proof is older than 120 seconds');
+    function watchExpiry(deadline: number) {
+      expiresAt = deadline;
+      clearTimeout(proofExpiry);
+      proofExpiry = setTimeout(() => stop.abort(expired()), Math.max(0, deadline - now()));
+    }
+    watchExpiry(expiresAt);
     report(`Isolated simulator lease proof: ${JSON.stringify({
-      required: true, isolated: true, udid: proof.udid, input: proof.input, output: proof.output,
-      verifiedAt: proof.verifiedAt,
+      required: true, isolated: true, udid: expected.udid, input: expected.input, output: expected.output,
+      verifiedAt: expected.verifiedAt,
     })}`);
-    async function refreshProof(cancellation: AbortSignal) {
-      const view = json(await invoke(['lease'], 10_000, cancellation));
-      const updated = readProof(view, leaseID, now(), false, attached, config);
-      if (updated?.udid !== expected.udid || updated.input !== expected.input || updated.output !== expected.output) {
-        throw new IsolatedLeaseRefusal('The isolated simulator lease route changed during the run');
+
+    async function readRefreshedProof(): Promise<Proof> {
+      const deadline = elapsed() + proofRefreshBudget;
+      const attempts: LeaseAttempt[] = [];
+      for (let attempt = 1; attempt <= proofRefreshAttempts; attempt++) {
+        pollSignal.throwIfAborted();
+        const remaining = Math.max(1, Math.floor(deadline - elapsed()));
+        const read = await proofAttempt('proof refresh', attempts, Math.min(proofReadTimeout, remaining), pollSignal, view => {
+          const time = now();
+          if (time >= expiresAt) throw expired();
+          const updated = readProof(view, leaseID, time, false, attached, config);
+          if (updated?.proof.udid !== expected.udid || updated.proof.input !== expected.input
+            || updated.proof.output !== expected.output) {
+            throw new IsolatedLeaseRefusal('The isolated simulator lease route changed during the run');
+          }
+          return updated;
+        });
+        pollSignal.throwIfAborted();
+        if ('value' in read) {
+          watchExpiry(read.value.expiresAt);
+          return read.value.proof;
+        }
+        if (read.failure.outcome === 'parse failure') throw read.error;
+        if (attempt === proofRefreshAttempts || elapsed() + proofRetryDelay >= deadline) break;
+        await pause(proofRetryDelay, pollSignal);
+        if (elapsed() >= deadline) break;
       }
-      return updated;
+      throw new IsolatedLeaseRefusal(summarizeLeaseAttempts('proof refresh', attempts));
+    }
+
+    // The monitor and checker completion share the same in-flight read and retry budget.
+    let refresh: Promise<Proof> | undefined;
+    function refreshProof() {
+      return refresh ??= readRefreshedProof().finally(() => { refresh = undefined; });
     }
     monitor = (async () => {
       while (!pollSignal.aborted) {
         await pause(pollInterval, pollSignal);
-        await refreshProof(pollSignal);
+        await refreshProof();
       }
     })().catch(error => { if (!pollSignal.aborted) stop.abort(error); });
     if (arm) {
-      try { guard = await arm(proof, localSignal); }
+      try { guard = await arm(expected, localSignal); }
       catch (error) { stop.abort(error); throw error; }
       if (guard.aborted) trip();
       else guard.addEventListener('abort', trip, { once: true });
@@ -371,7 +439,7 @@ export async function withIsolatedSimulatorLease<T>(
     localSignal.throwIfAborted();
     let output: string;
     try {
-      output = await check(checker, proof.udid, localSignal);
+      output = await check(checker, expected.udid, localSignal);
     } catch (error) {
       localSignal.throwIfAborted();
       const diagnostic = error instanceof Error ? error.message : undefined;
@@ -381,7 +449,10 @@ export async function withIsolatedSimulatorLease<T>(
       throw new IsolatedLeaseRefusal('The host-side audio isolation checker did not confirm the proved slot');
     }
     report(output.trim());
-    proof = await refreshProof(localSignal);
+    const proof = await refreshProof().catch(error => {
+      stop.abort(error);
+      throw error;
+    });
     report(`Isolated simulator lease proof refreshed at ${new Date(proof.verifiedAt).toISOString()}.`);
     localSignal.throwIfAborted();
     const result = await run(proof, localSignal);
@@ -391,6 +462,7 @@ export async function withIsolatedSimulatorLease<T>(
     primaryFailure = localSignal.aborted ? localSignal.reason : error;
     throw primaryFailure;
   } finally {
+    clearTimeout(proofExpiry);
     polling.abort();
     await monitor;
     try {

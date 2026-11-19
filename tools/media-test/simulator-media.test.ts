@@ -5,7 +5,70 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { HostAudioGuardFailure, requireSimulatorMedia, SimulatorMediaRefusal, withSimulatorMediaAudio } from './simulator-media.ts';
+import type { LeaseAttempt } from './lease-attempt.ts';
+import { HostAudioGuardFailure, readSimulatorLaunchdPID, requireSimulatorMedia, SimulatorMediaRefusal, withSimulatorMediaAudio } from './simulator-media.ts';
+
+test('waits for the leased simulator to boot and retries a transient launchd PID failure', async () => {
+  const calls: string[][] = [];
+  const attempts: LeaseAttempt[] = [];
+  const signal = new AbortController().signal;
+  let time = 0;
+  const pid = await readSimulatorLaunchdPID('leased-simulator', signal, {
+    elapsed: () => time,
+    now: () => time,
+    reportAttempt: attempt => attempts.push(attempt),
+    pause: async ms => { time += ms; },
+    command: async (file, args, timeout, cancellation) => {
+      assert.equal(file, 'xcrun');
+      assert.equal(cancellation, signal);
+      calls.push([...args]);
+      assert.equal(timeout, args[1] === 'bootstatus' ? 75_000 : 5_000);
+      if (calls.length === 1) return '';
+      if (calls.length === 2) throw Object.assign(new Error(), { code: 1, stderr: 'launchd is still starting\nignored line' });
+      if (calls.length === 3) return 'pending';
+      return '42';
+    },
+  });
+  const read = ['simctl', 'spawn', 'leased-simulator', 'bin/launchctl', 'managerpid'];
+  assert.deepEqual(calls, [['simctl', 'bootstatus', 'leased-simulator', '-b'], read, read, read]);
+  assert.equal(time, 1_000);
+  assert.equal(pid, '42');
+  assert.deepEqual(attempts.map(({ startedAt, outcome }) => [startedAt, outcome]), [
+    ['1970-01-01T00:00:00.000Z', 'exit'], ['1970-01-01T00:00:00.500Z', 'parse failure'],
+    ['1970-01-01T00:00:01.000Z', 'success'],
+  ]);
+  assert.match(JSON.stringify(attempts[0]), /"code":1,"stderr":"launchd is still starting"/);
+});
+
+test('refuses a persistent launchd PID failure within the shared readiness deadline', async () => {
+  let time = 0;
+  const timeouts: number[] = [];
+  const failure = Object.assign(new Error(), { killed: true, code: null });
+  await assert.rejects(readSimulatorLaunchdPID('leased-simulator', new AbortController().signal, {
+    elapsed: () => time,
+    pause: async ms => { time += ms; },
+    command: async (_, args, timeout) => {
+      timeouts.push(timeout!);
+      time += timeout!;
+      if (args[1] === 'bootstatus') return '';
+      throw failure;
+    },
+  }), { message: 'Could not read the isolated simulator launchd PID. launchd PID: 3 attempts (timeout 5.0s, timeout 5.0s, timeout 4.0s)' });
+  assert.deepEqual(timeouts, [75_000, 5_000, 5_000, 4_000]);
+  assert.equal(time, 90_000);
+});
+
+test('refuses an unfinished simulator boot before reading the launchd PID', async () => {
+  const bootTimeout = new Error('bootstatus timed out');
+  const calls: string[] = [];
+  await assert.rejects(readSimulatorLaunchdPID('leased-simulator', new AbortController().signal, {
+    command: async (_, args) => {
+      calls.push(args[1]!);
+      throw bootTimeout;
+    },
+  }), { message: 'The isolated simulator did not finish booting', cause: bootTimeout });
+  assert.deepEqual(calls, ['bootstatus']);
+});
 
 test('local simulator media is refused before the guard or journey starts', async () => {
   const unexpected = async (): Promise<never> => assert.fail('Local simulator setup started');
@@ -118,25 +181,64 @@ test('the generic command launcher remains hosted-only with local lease configur
   assert.match(result.stderr, /host speakers and microphone.*hosted GitHub Actions/);
 });
 
+const localAuthorization = {
+  environment: {
+    ISOLATED_LEASE_CLI: '/lease',
+    ISOLATED_LEASE_CHECKER: '/checker',
+    ISOLATED_LEASE_CONFIG_DIR: '/lease-config',
+    ISOLATED_LEASE_CLI_ERROR_PREFIX: 'example-lease:',
+    ISOLATED_LEASE_CLI_SECRET_PATTERN: 'lease_secret_[A-Za-z0-9_-]+',
+    ISOLATED_LEASE_CLI_SCOPE_ENV: 'EXAMPLE_LEASE_KEY',
+    ISOLATED_LEASE_CLI_URL_ENV: 'EXAMPLE_URL',
+    ISOLATED_LEASE_CLI_LEASE_ID_ENV: 'EXAMPLE_LEASE_ID',
+    ISOLATED_LEASE_CLI_LEASE_TOKEN_ENV: 'EXAMPLE_LEASE_TOKEN',
+    ISOLATED_LEASE_INPUT_DEVICE_PREFIX: 'Lease Mic',
+    ISOLATED_LEASE_OUTPUT_DEVICE_PREFIX: 'Lease Speaker',
+    ISOLATED_LEASE_CHECKER_APP_ID: 'test.example.audio-check',
+    ISOLATED_LEASE_CHECKER_DIRECTORY_PREFIX: 'lease-audio-check.',
+  },
+};
+
 test('an entry point without verified destination binding cannot start on a local lease', async () => {
   const unexpected = async (): Promise<never> => assert.fail('Local simulator setup started');
   await assert.rejects(withSimulatorMediaAudio(unexpected, {
-    authorization: { environment: {
-      ISOLATED_LEASE_CLI: '/lease',
-      ISOLATED_LEASE_CHECKER: '/checker',
-      ISOLATED_LEASE_CONFIG_DIR: '/lease-config',
-      ISOLATED_LEASE_CLI_ERROR_PREFIX: 'example-lease:',
-      ISOLATED_LEASE_CLI_SECRET_PATTERN: 'lease_secret_[A-Za-z0-9_-]+',
-      ISOLATED_LEASE_CLI_SCOPE_ENV: 'EXAMPLE_LEASE_KEY',
-      ISOLATED_LEASE_CLI_URL_ENV: 'EXAMPLE_URL',
-      ISOLATED_LEASE_CLI_LEASE_ID_ENV: 'EXAMPLE_LEASE_ID',
-      ISOLATED_LEASE_CLI_LEASE_TOKEN_ENV: 'EXAMPLE_LEASE_TOKEN',
-      ISOLATED_LEASE_INPUT_DEVICE_PREFIX: 'Lease Mic',
-      ISOLATED_LEASE_OUTPUT_DEVICE_PREFIX: 'Lease Speaker',
-      ISOLATED_LEASE_CHECKER_APP_ID: 'test.example.audio-check',
-      ISOLATED_LEASE_CHECKER_DIRECTORY_PREFIX: 'lease-audio-check.',
-    } },
+    authorization: localAuthorization,
     start: unexpected,
     lease: unexpected,
   }), /must bind its destination to the isolated simulator lease/);
+});
+
+test('stderr and the lease receipt retain the same attempts on a refused run', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'lease-receipt-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const leaseReceipt = join(directory, 'nested', 'lease.json');
+  const stderr = t.mock.method(console, 'error', () => {});
+  const entry: LeaseAttempt = {
+    stage: 'proof refresh', attempt: 1, startedAt: '2026-11-19T17:00:00.000Z', durationMS: 10_000, outcome: 'timeout',
+  };
+  await assert.rejects(withSimulatorMediaAudio(async () => assert.fail('journey started'), {
+    authorization: localAuthorization, localDestination: 'check-lease', leaseReceipt,
+    lease: async (_config, _signal, _run, _check, _report, options) => {
+      options?.reportAttempt?.(entry);
+      throw new Error('proof refresh refused');
+    },
+  }), /proof refresh refused/);
+  assert.deepEqual(JSON.parse(await readFile(leaseReceipt, 'utf8')), { attempts: [entry] });
+  assert.deepEqual(stderr.mock.calls.map(call => call.arguments), [
+    ['Isolated lease attempt ' + JSON.stringify(entry)],
+  ]);
+});
+
+test('a receipt write error does not replace the refusal', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'lease-receipt-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const stderr = t.mock.method(console, 'error', () => {});
+  const refusal = new Error('proof refresh refused');
+  await assert.rejects(withSimulatorMediaAudio(async () => assert.fail('journey started'), {
+    authorization: localAuthorization, localDestination: 'check-lease', leaseReceipt: directory,
+    lease: async () => { throw refusal; },
+  }), error => error === refusal);
+  assert.deepEqual(stderr.mock.calls.map(call => call.arguments), [
+    ['Could not write the isolated lease attempt receipt'],
+  ]);
 });

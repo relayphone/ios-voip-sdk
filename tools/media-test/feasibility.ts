@@ -224,7 +224,10 @@ await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulato
       rmSync(harnessDirectory, { recursive: true, force: true });
     }
   }
-}, { localDestination: requestedSimulator ? { simulator: requestedSimulator } : undefined }).catch(error => {
+}, {
+  localDestination: requestedSimulator ? { simulator: requestedSimulator } : undefined,
+  leaseReceipt: output ? output + '.lease.json' : undefined,
+}).catch(error => {
   if (process.exitCode !== 124) throw error;
   console.error(error instanceof Error ? error.message : 'Media feasibility timed out');
   process.exit(124);

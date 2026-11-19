@@ -72,8 +72,11 @@ function fixture(views: unknown[], { acquisitionError, project, attached = false
             ...(project ? ['--project', project] : [])]);
           if (acquisitionError) throw acquisitionError;
           return { stdout: JSON.stringify({ lease: id, udid, audio }), stderr: '' };
-        case 'lease':
-          return { stdout: JSON.stringify(views.shift() ?? valid), stderr: '' };
+        case 'lease': {
+          const view = views.shift() ?? valid;
+          if (view instanceof Error) throw view;
+          return { stdout: JSON.stringify(view), stderr: '' };
+        }
         case 'down':
           return { stdout: '', stderr: downError ? `release: ${downError}\n` : '' };
         default:
@@ -274,6 +277,71 @@ test('shuts down and releases when a heartbeat reports lost isolation during the
   assert.deepEqual(events, ['up', 'lease', 'checker', 'lease', 'journey', 'lease', 'shutdown', 'down']);
 });
 
+const proofReadFailure = Object.assign(new Error('temporary failure'), { code: 'EIO' });
+
+test('retries two failed proof reads after the checker and admits the journey on the third', async () => {
+  const { start, events, reports } = fixture([valid, proofReadFailure, proofReadFailure, valid]);
+  await start(async () => { events.push('journey'); });
+  assert.deepEqual(events, ['up', 'lease', 'checker', 'lease', 'lease', 'lease', 'journey', 'down']);
+  assert.equal(reports.filter(line => line.includes('"outcome":"exit"')).length, 2);
+  assert.match(reports.join('\n'), /"attempt":3,.*"outcome":"success"/);
+});
+
+test('three failed proof reads stop the journey and release the lease', async () => {
+  const { start, events } = fixture([valid, valid, proofReadFailure, proofReadFailure, proofReadFailure]);
+  await assert.rejects(start(async (_, signal) => {
+    events.push('journey');
+    await delay(10_000, undefined, { signal });
+    assert.fail('journey was not aborted');
+  }), { message: 'proof refresh: 3 attempts (exit EIO, exit EIO, exit EIO)' });
+  assert.deepEqual(events, ['up', 'lease', 'checker', 'lease', 'journey', 'lease', 'lease', 'lease', 'shutdown', 'down']);
+});
+
+test('proof refresh caps command timeouts and backoffs at 30 seconds total', async () => {
+  const timeouts: number[] = [];
+  const reports: string[] = [];
+  let time = 0;
+  const attached = { ...config, environment: { EXAMPLE_LEASE_ID: id, EXAMPLE_LEASE_TOKEN: 'test' } };
+  await assert.rejects(withIsolatedSimulatorLease(attached, new AbortController().signal,
+    async () => assert.fail('journey was started'), async () => 'PASS: slot 2 isolated (both devices)',
+    line => reports.push(line), {
+      now: () => now,
+      elapsed: () => time,
+      pause: async (ms, signal) => {
+        if (ms === 2_000) await delay(ms, undefined, { signal });
+        else time += ms;
+      },
+      command: async (_, [verb], { timeout }) => {
+        if (verb === 'down') return { stdout: '', stderr: '' };
+        timeouts.push(timeout);
+        if (timeouts.length === 1) return { stdout: JSON.stringify(valid), stderr: '' };
+        time += timeout;
+        if (timeouts.length === 3) {
+          throw Object.assign(new Error(), { code: 1, stderr: 'lease_secret_sensitive diagnostic\nsecond line' });
+        }
+        throw Object.assign(new Error(), { killed: true, code: null });
+      },
+    }), { message: 'proof refresh: 3 attempts (timeout 10.0s, exit 1 "[redacted] diagnostic", timeout 8.0s)' });
+  assert.deepEqual(timeouts, [10_000, 10_000, 10_000, 8_000]);
+  assert.equal(time, 30_000);
+  assert.match(reports.join('\n'), /"attempt":1,"startedAt":"2026-11-18T/);
+  assert.match(reports.join('\n'), /"durationMS":10000,"outcome":"timeout"/);
+  assert.doesNotMatch(reports.join('\n'), /sensitive|second line/);
+});
+
+test('the simulator proof expiry stops a journey during a refresh backoff', async () => {
+  const expiring = {
+    ...valid, sims: [{ ...valid.sims[0], audio: { ...audio, verifiedAt: now - 119_800 } }],
+  };
+  const { start, events } = fixture([valid, expiring, proofReadFailure]);
+  await assert.rejects(start(async (_, signal) => {
+    events.push('journey');
+    await delay(10_000, undefined, { signal });
+    assert.fail('journey was not aborted');
+  }), /proof is older than 120 seconds/);
+  assert.deepEqual(events, ['up', 'lease', 'checker', 'lease', 'journey', 'lease', 'shutdown', 'down']);
+});
+
 test('releases after a journey error and reports release failures', async () => {
   const runError = new Error('journey failed');
   const { start, events, reports } = fixture([valid], { downError: 'backend unreachable' });
@@ -316,7 +384,7 @@ test('a checker pass cannot admit a journey with stale lease proof', async () =>
   const stale = { ...valid, lease: { id, audio: { ...valid.lease.audio, verifiedAt: now - 120_001 } } };
   const { start, events } = fixture([valid, stale]);
   await assert.rejects(start(async () => assert.fail('journey started')), /verifiedAt is older than 120 seconds/);
-  assert.deepEqual(events, ['up', 'lease', 'checker', 'lease', 'down']);
+  assert.deepEqual(events, ['up', 'lease', 'checker', 'lease', 'shutdown', 'down']);
 });
 
 test('retains checker phase logs on timeout', async t => {

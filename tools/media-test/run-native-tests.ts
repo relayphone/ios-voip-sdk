@@ -59,7 +59,7 @@ interface NativeTestOptions {
 export async function runNativeTests(options: NativeTestOptions) {
   return withSimulatorMediaAudio((signal, leased) =>
     runGuardedNativeTests({ ...options, simulator: leased ?? options.simulator }, signal),
-  { localDestination: { simulator: options.simulator } });
+  { localDestination: { simulator: options.simulator }, leaseReceipt: join(options.directory, 'isolated-lease.json') });
 }
 
 async function runGuardedNativeTests(options: NativeTestOptions, signal: AbortSignal) {
