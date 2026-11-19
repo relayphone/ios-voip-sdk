@@ -49,6 +49,53 @@ public sealed interface EndTarget {
     @Serializable @SerialName("remote") public data class Alias(@SerialName("id") public val id: RemoteCallID) : EndTarget
 }
 
+/** An application event that may arrive before its canonical call or remote alias is known. */
+@Serializable
+public sealed interface RemoteEvent {
+    public val eventID: EventID
+    public val target: EndTarget
+
+    @Serializable @SerialName("connected")
+    public data class Connected(override val eventID: EventID, override val target: EndTarget) : RemoteEvent
+
+    @Serializable @SerialName("ended")
+    public data class Ended(
+        override val eventID: EventID, override val target: EndTarget, public val reason: EndReason,
+    ) : RemoteEvent {
+        init { requireRemoteEnd(reason) }
+    }
+
+    @Serializable @SerialName("partiesChanged")
+    public data class PartiesChanged(
+        override val eventID: EventID, override val target: EndTarget, public val parties: List<Party>,
+    ) : RemoteEvent {
+        init { require(parties.isNotEmpty()) }
+    }
+
+    @Serializable @SerialName("videoRequested")
+    public data class VideoRequested(
+        override val eventID: EventID, override val target: EndTarget, public val enabled: Boolean,
+    ) : RemoteEvent
+}
+
+private fun requireRemoteEnd(reason: EndReason) {
+    require(reason != EndReason.LocalDeclined && reason != EndReason.LocalEnded && reason !is EndReason.Filtered)
+}
+
+/** The reducer's disposition of a delivered application event. */
+@Serializable
+public enum class ReceiveDisposition {
+    @SerialName("applied") APPLIED,
+    @SerialName("buffered") BUFFERED,
+    @SerialName("duplicate") DUPLICATE,
+}
+
+/** Immediate command decisions, evaluated on the same state as the transition. */
+public sealed interface CommandReceipt {
+    public data class Received(public val outcome: Outcome<ReceiveDisposition, CallError>) : CommandReceipt
+    public data class Bound(public val outcome: Outcome<Unit, CallError>) : CommandReceipt
+}
+
 /** Inputs carry port confirmations and explicit authority. A request alone changes no control state. */
 public sealed interface Input {
     /** A new invitation with an optional UTC expiry supplied by the service. */
@@ -71,6 +118,13 @@ public sealed interface Input {
         public val action: Action, public val id: ActionID, public val supported: Boolean = false,
         public val effectiveDeadline: Duration? = null,
     ) : Input
+    /** Starts an outgoing call with the supplied initial participants and video intent. */
+    public data class Start(
+        public val callID: CallID, public val line: CallingLine, public val parties: List<Party>,
+        public val video: Boolean, public val id: ActionID, public val effectiveDeadline: Duration? = null,
+    ) : Input {
+        init { require(parties.isNotEmpty()) }
+    }
     public data class Placed(public val attempt: Attempt, public val error: CallError.PlacementFailed? = null) : Input
     public data class AuthorityAllowed(public val attempt: Attempt, public val permit: AttemptID) : Input
     public data class AnswerRefused(public val attempt: Attempt, public val reason: RefusalReason) : Input
@@ -80,8 +134,9 @@ public sealed interface Input {
     public data class MediaFailed(public val attempt: Attempt, public val error: CallError.MediaFailed) : Input
     public data class Connected(public val callID: CallID, public val eventID: EventID, public val source: ConnectionAuthority) : Input
     public data class BindRemote(public val callID: CallID, public val remoteID: RemoteCallID) : Input
+    public data class Receive(public val event: RemoteEvent) : Input
     public data class RemoteEnd(public val target: EndTarget, public val eventID: EventID, public val reason: EndReason) : Input {
-        init { require(reason !in listOf(EndReason.LocalDeclined, EndReason.LocalEnded) && reason !is EndReason.Filtered) }
+        init { requireRemoteEnd(reason) }
     }
     public data class Applied(public val attempt: Attempt) : Input
     public data class ApplyFailed(public val attempt: Attempt, public val error: CallError) : Input
@@ -95,6 +150,8 @@ public sealed interface Input {
     /** The authority finished releasing a permit previously owned by the call. */
     public data class PermitReleased(public val attempt: Attempt, public val permit: AttemptID) : Input
     public data class FrameworkReset(public val failure: SystemFailure) : Input
+    /** Rechecks terminal retention after runtime-owned adapter work has finished. */
+    public data object AdapterIdle : Input
 }
 
 /** Ordered work for the engine. Effect deadlines use the reducer's monotonic time domain. */
@@ -129,9 +186,15 @@ public class State internal constructor(
     internal val releasedPermits: Map<PermitKey, Instant>,
     internal val actionIDs: Map<ActionID, Instant>,
     internal val generation: Long,
+    /** Retained ended calls whose adapter work has completed. */
+    public val completedTerminalCalls: Set<CallID>,
 ) {
-    public constructor(configuration: Configuration) : this(configuration, emptyMap(), emptyMap(), emptyMap(), emptyMap(), 0)
+    public constructor(configuration: Configuration) :
+        this(configuration, emptyMap(), emptyMap(), emptyMap(), emptyMap(), 0, emptySet())
     public val calls: Map<CallID, Call> get() = records.mapValues { it.value.call }
+    /** Retained terminal call IDs ordered by first terminal intent. */
+    public val terminalCallOrder: List<CallID>
+        get() = records.values.filter { it.terminalAt != null }.sortedWith(terminalOrder).map { it.call.id }
     public val participating: Set<CallID> get() = records.filterValues(Record::participating).keys
     public val systemRemoved: Set<CallID> get() = records.filterValues { it.removalEvidence == RemovalEvidence.REMOVED }.keys
     /** Calls whose platform setup failed before there was a session to remove. */
@@ -139,16 +202,24 @@ public class State internal constructor(
         get() = records.filterValues { it.removalEvidence == RemovalEvidence.NOT_APPLICABLE }.keys
 }
 
-public data class Transition(public val state: State, public val effects: List<Effect>)
+public data class Transition(
+    public val state: State, public val effects: List<Effect>, public val receipt: CommandReceipt? = null,
+    /** Newly completed calls, including any that expired from retention in this transition. */
+    public val terminalCompletions: List<CallID> = emptyList(),
+)
 
 internal data class Pending(val attempt: Attempt, val id: ActionID, val deadline: Instant)
 internal data class Control(val action: Action, val attempt: Attempt, val id: ActionID)
-internal data class SeenEvent(val at: Instant, val order: Long, val end: Input.RemoteEnd? = null)
+internal data class SeenEvent(val at: Instant, val order: Long, val pending: RemoteEvent? = null) {
+    val end: RemoteEvent.Ended? get() = pending as? RemoteEvent.Ended
+}
 internal data class PermitKey(val callID: CallID, val id: AttemptID)
 internal data class PermitRelease(val attempt: Attempt, val permit: AttemptID)
 internal data class Armed(val attempt: Attempt, val deadline: Instant)
 internal enum class RemovalEvidence { UNCONFIRMED, REMOVED, NOT_APPLICABLE }
 internal enum class OutgoingProgress { CONNECTED, PROVIDE_MEDIA }
+internal val terminalOrder: Comparator<Record> = compareBy({ it.terminalAt }, { it.cleanup?.generation })
+
 internal data class Record(
     val call: Call,
     val admission: Attempt? = null,

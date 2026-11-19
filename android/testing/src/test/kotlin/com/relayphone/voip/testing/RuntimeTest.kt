@@ -2,6 +2,7 @@ package com.relayphone.voip.testing
 
 import com.relayphone.voip.*
 import com.relayphone.voip.runtime.*
+import java.io.File
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
@@ -25,6 +26,13 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -32,6 +40,181 @@ import org.junit.jupiter.api.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RuntimeTest {
+    @Test
+    fun `bridge command fixtures resolve from the runtime and preserve Start participants and video`() = runTest {
+        val pairs = bridgeFixture("commands").chunked(2)
+        val (startCommand, started) = pairs.first { (command) -> command.text("operation") == "start" }
+        val input = startCommand.getValue("input").jsonObject
+        val id = CallID(input.text("id"))
+        val parties = Wire.json.decodeFromJsonElement<List<Party>>(input.getValue("parties"))
+        val multiple = parties + party.copy(id = PartyID("another"), displayName = "Another")
+        val action = ActionID(started.getValue("result").jsonObject.getValue("value").jsonObject.text("actionID"))
+        val ports = Ports(outgoing = { admitted ->
+            admitted()
+            awaitCancellation()
+        }, activate = {})
+        val runtime = start(ports)
+        try {
+            check(runtime.submit(Input.Start(id, line.copy(lineID = LineID(input.text("lineID"))), multiple, true, action)))
+            runCurrent()
+            check(runtime.submit(Input.ProvideMedia(id)))
+            runCurrent()
+            assertEquals(listOf(action), ports.settlements)
+            assertEquals(multiple, runtime.state.value.calls.getValue(id).parties)
+            assertTrue(runtime.state.value.calls.getValue(id).video)
+
+            for ((command, reply) in pairs) {
+                val operation = command.text("operation")
+                val result = reply.getValue("result").jsonObject
+                when (operation) {
+                    "bindRemote" -> {
+                        val binding = command.getValue("input").jsonObject
+                        val target = CallID(binding.text("id"))
+                        val alias = RemoteCallID(binding.text("remoteID"))
+                        when (val actual = runtime.bindRemote(target, alias)) {
+                            is Outcome.Success -> {
+                                assertEquals(JsonNull, result["value"])
+                                assertEquals(alias, runtime.state.value.calls.getValue(target).remoteID)
+                                assertEquals(actual, runtime.bindRemote(target, alias))
+                                val other = RemoteCallID("other-alias")
+                                assertEquals(Outcome.Failure(CallError.RemoteIdentityConflict(other)), runtime.bindRemote(target, other))
+                            }
+                            is Outcome.Failure -> assertEquals(result["error"], Wire.json.encodeToJsonElement(actual.error))
+                        }
+                    }
+                    "receive" -> {
+                        val event = Wire.json.decodeFromJsonElement<RemoteEvent>(command.getValue("input"))
+                        val actual = runtime.receive(event) as Outcome.Success
+                        assertEquals(result.getValue("value").jsonObject["kind"], Wire.json.encodeToJsonElement(actual.value))
+                        assertTrue(runtime.state.value.calls.getValue(id).lifecycle is Lifecycle.Connected)
+                    }
+                }
+            }
+        } finally {
+            runtime.close()
+        }
+        assertEquals(Outcome.Failure(CallError.BridgeUnavailable), runtime.bindRemote(id, RemoteCallID("closed")))
+    }
+
+    @Test
+    fun `receive buffers by alias and applies each event once in arrival order`() = runTest {
+        val transcript = bridgeFixture("commands")
+        val connected = transcript.first { it["operation"]?.jsonPrimitive?.content == "receive" }.getValue("input")
+        val event = Wire.json.decodeFromJsonElement<RemoteEvent>(connected) as RemoteEvent.Connected
+        val placement = CompletableDeferred<Unit>()
+        val ports = Ports(outgoing = { admitted ->
+            admitted()
+            awaitCancellation()
+        }, activate = {}, placement = placement)
+        val runtime = start(ports)
+        val alias = (event.target as EndTarget.Alias).id
+        val parties = mutableListOf(party.copy(displayName = "New name"))
+        try {
+            assertEquals(Outcome.Success(ReceiveDisposition.BUFFERED), runtime.receive(event))
+            assertEquals(Outcome.Success(ReceiveDisposition.DUPLICATE), runtime.receive(event))
+            assertEquals(Outcome.Success(ReceiveDisposition.BUFFERED),
+                runtime.receive(RemoteEvent.PartiesChanged(EventID("parties"), event.target, parties)))
+            parties.clear()
+            assertEquals(Outcome.Success(ReceiveDisposition.BUFFERED),
+                runtime.receive(RemoteEvent.PartiesChanged(EventID("parties-last"), event.target, listOf(party))))
+            assertEquals(Outcome.Failure(CallError.Unsupported(Feature.VIDEO)),
+                runtime.receive(RemoteEvent.VideoRequested(EventID("video"), event.target, false)))
+            check(runtime.submit(Input.Start(id, line, listOf(party), true, ActionID("start"))))
+            runCurrent()
+            assertEquals(Outcome.Success(Unit), runtime.bindRemote(id, alias))
+            assertEquals(Lifecycle.Placing, runtime.state.value.calls.getValue(id).lifecycle)
+            placement.complete(Unit)
+            runCurrent()
+            check(runtime.submit(Input.ProvideMedia(id)))
+            runCurrent()
+            val call = runtime.state.value.calls.getValue(id)
+            assertTrue(call.lifecycle is Lifecycle.Connected)
+            assertEquals(listOf(party), call.parties)
+            assertTrue(call.video)
+            assertEquals(Outcome.Success(ReceiveDisposition.DUPLICATE), runtime.receive(event))
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
+    fun `a buffered End prevents placement and produces no Telecom removal`() = runTest {
+        val ports = Ports(outgoing = { error("Unexpected native Start") })
+        val runtime = start(ports)
+        try {
+            val event = RemoteEvent.Ended(EventID("early-end"), EndTarget.Canonical(id), EndReason.RemoteEnded)
+            assertEquals(Outcome.Success(ReceiveDisposition.BUFFERED), runtime.receive(event))
+            val action = ActionID("start")
+            ports.mediaRelease.complete(Unit)
+            check(runtime.submit(Input.Start(id, line, listOf(party), false, action)))
+            runCurrent()
+            assertEquals(listOf(Effect.RejectAction(id, action, CallError.InvalidTransition(LifecycleKind.ENDING))),
+                ports.rejections)
+            assertEquals(EndReason.RemoteEnded, (runtime.lifecycles().getValue(id) as Lifecycle.Ended).reason)
+            assertEquals(listOf("media"), ports.cleanup)
+            assertEquals(setOf(id), runtime.state.value.systemRemovalNotApplicable)
+            assertEquals(setOf(id), runtime.state.value.completedTerminalCalls)
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
+    fun `bridge observations distinguish ended calls from completed adapter cleanup`() = runTest {
+        val fixture = bridgeFixture("observations")
+        val snapshot = fixture.first()
+        val calls = Wire.json.decodeFromJsonElement<List<Call>>(snapshot.getValue("calls"))
+        val (oldest, younger) = calls
+        val utc = object : Clock {
+            override fun now(): Instant = (oldest.lifecycle as Lifecycle.Ended).endedAt + testScheduler.currentTime.milliseconds
+        }
+        val ports = Ports()
+        val youngerRemoval = CompletableDeferred<Outcome<Unit, SystemFailure>>()
+        ports.removalByCall[younger.id] = youngerRemoval
+        val runtime = start(ports, utc)
+        val completed = mutableListOf<CallID>()
+        backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            runtime.events.filterIsInstance<RuntimeEvent.TerminalCompleted>().collect { completed += it.callID }
+        }
+        try {
+            ports.mediaRelease.complete(Unit)
+            for (call in calls.reversed()) {
+                check(runtime.submit(Input.Incoming(call.id, EventID("invite-${call.id.value}"), call.line, call.parties.single())))
+                runCurrent()
+                ports.admissions.getValue(call.id).invoke()
+                runCurrent()
+            }
+            for (call in calls) {
+                runtime.endFromServer(call.id)
+                runCurrent()
+                if (call == oldest) {
+                    advanceTimeBy(1_000)
+                    runCurrent()
+                }
+            }
+            youngerRemoval.complete(Outcome.Success(Unit))
+            advanceTimeBy(2)
+            runCurrent()
+            val state = runtime.state.value
+            assertEquals(calls, state.terminalCallOrder.map(state.calls::getValue))
+            val expected = snapshot.getValue("completed").jsonArray.map { CallID(it.jsonPrimitive.content) }
+            assertEquals(expected.toSet(), runtime.state.value.completedTerminalCalls)
+            assertEquals(expected, completed)
+
+            ports.systemRemoval.complete(Outcome.Success(Unit))
+            runCurrent()
+            assertEquals(setOf(oldest.id, younger.id), runtime.state.value.systemRemoved)
+            assertEquals(expected, completed)
+            advanceTimeBy(1)
+            runCurrent()
+            val late = fixture.first { it["kind"]?.jsonPrimitive?.content == "terminalCompleted" }
+            assertEquals(expected + CallID(late.text("callID")), completed)
+            assertEquals(completed.toSet(), runtime.state.value.completedTerminalCalls)
+        } finally {
+            runtime.close()
+        }
+    }
+
     @Test
     fun `admission comes from session entry and shutdown joins suspended sessions`() = runTest {
         val ports = Ports()
@@ -307,6 +490,9 @@ class RuntimeTest {
             runCurrent()
             assertTrue(failure.isCompleted)
             assertEquals(diagnostic, failure.await().failure)
+            assertTrue(id in runtime.state.value.calls)
+            advanceTimeBy(1)
+            runCurrent()
             assertFalse(id in runtime.state.value.calls)
         } finally {
             runtime.close()
@@ -444,6 +630,8 @@ class RuntimeTest {
         override val answerDeadline: Duration = 5.seconds,
         private val answerPermit: AttemptID? = null,
         private val outgoing: (suspend (() -> Unit) -> Outcome<Unit, SystemFailure>)? = null,
+        private val activate: () -> Unit = { error("Unexpected activation") },
+        private val placement: CompletableDeferred<Unit>? = null,
     ) : SystemPort, AuthorityPort, MediaPort, PresentationPort {
         override val platform = Platform.ANDROID
         val admissions = mutableMapOf<CallID, () -> Unit>()
@@ -452,6 +640,7 @@ class RuntimeTest {
         val cleanup = mutableListOf<String>()
         val mediaRelease = CompletableDeferred<Unit>()
         val systemRemoval = CompletableDeferred<Outcome<Unit, SystemFailure>>()
+        val removalByCall = mutableMapOf<CallID, CompletableDeferred<Outcome<Unit, SystemFailure>>>()
         val settlements = mutableListOf<ActionID>()
         val rejections = mutableListOf<Effect.RejectAction>()
         val releaseRequest = CompletableDeferred<Effect.ReleasePermit>()
@@ -473,7 +662,8 @@ class RuntimeTest {
 
         override suspend fun remove(call: Call, request: Effect.RequestRemoval): Outcome<Unit, SystemFailure> {
             cleanup += "system"
-            return systemRemoval.await().also { sessions.getValue(call.id).complete(Outcome.Success(Unit)) }
+            return (removalByCall[call.id] ?: systemRemoval).await()
+                .also { sessions.getValue(call.id).complete(Outcome.Success(Unit)) }
         }
 
         override suspend fun close(request: Effect.CloseMedia) {
@@ -485,7 +675,7 @@ class RuntimeTest {
             call: Call, request: Effect.NativeStart, admitted: () -> Unit,
         ): Outcome<Unit, SystemFailure> = checkNotNull(outgoing) { "Unexpected Start" }(admitted)
         override suspend fun apply(request: Effect.Apply): Outcome<Unit, CallError> = error("Unexpected control")
-        override suspend fun setActive(request: Effect.SetActive): Unit = error("Unexpected activation")
+        override suspend fun setActive(request: Effect.SetActive) = activate()
         override fun settle(result: Effect.SettleAction) {
             settlements += result.actionID
         }
@@ -496,6 +686,7 @@ class RuntimeTest {
         override fun completeEnd(result: Effect.CompleteEnd): Unit = error("Unexpected local End")
         override suspend fun place(call: Call, request: Effect.RequestPlacement): Outcome<Unit, CallError.PlacementFailed> {
             check(outgoing != null) { "Unexpected placement" }
+            placement?.await()
             return Outcome.Success(Unit)
         }
         override suspend fun claim(request: Effect.RequestClaim): AnswerDecision =
@@ -511,6 +702,12 @@ class RuntimeTest {
     }
 
     private companion object {
+        fun bridgeFixture(name: String): List<JsonObject> =
+            Wire.json.parseToJsonElement(File(System.getProperty("spec.bridge"), "valid/$name.json").readText())
+                .jsonArray.map { it.jsonObject }
+
+        fun JsonObject.text(field: String): String = getValue(field).jsonPrimitive.content
+
         val id = CallID("incoming")
         val other = CallID("other")
         val line = CallingLine(AccountID("account"), LineID("personal"), "Personal")

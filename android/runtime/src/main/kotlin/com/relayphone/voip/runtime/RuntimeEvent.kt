@@ -1,6 +1,7 @@
 package com.relayphone.voip.runtime
 
 import com.relayphone.voip.Attempt
+import com.relayphone.voip.CallID
 import com.relayphone.voip.Effect
 import com.relayphone.voip.SystemFailure
 
@@ -22,5 +23,10 @@ public sealed interface RuntimeEvent {
     /** The adapter finished a removal attempt without confirming platform removal. */
     public data class SystemRemovalFailed(
         override val sequence: Long, public val attempt: Attempt, public val failure: SystemFailure,
+    ) : RuntimeEvent
+
+    /** All adapter work owned by this terminal call has finished. */
+    public data class TerminalCompleted(
+        override val sequence: Long, public val callID: CallID,
     ) : RuntimeEvent
 }
