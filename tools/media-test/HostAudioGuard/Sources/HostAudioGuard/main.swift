@@ -7,7 +7,6 @@ private enum GuardError: Error, CustomStringConvertible {
   case propertySize(AudioObjectID, AudioObjectPropertySelector, UInt32)
   case unreadableAggregate(AudioObjectID)
   case active(Device, String)
-  case missingHostedDevicePins
   case unexpectedHostedDevice(Device)
   case invalidDeviceProperty(AudioObjectID, AudioObjectPropertySelector)
   case routeChanged(String)
@@ -23,12 +22,10 @@ private enum GuardError: Error, CustomStringConvertible {
       return "Could not resolve the sub-devices of aggregate audio device \(id)"
     case .active(let device, let endpoint):
       return
-        "Host audio active on default \(device.directions) device \(device.name) (\(device.id)) (\(endpoint))"
-    case .missingHostedDevicePins:
-      return "Hosted audio device identities require verification before simulator setup"
+        "Host audio active on default \(device.directionLabel) device \(device.name) (\(device.id)) (\(endpoint))"
     case .unexpectedHostedDevice(let device):
       return
-        "Default \(device.directions) device \(device.name) does not match a verified hosted audio route"
+        "Default \(device.directionLabel) device \(device.name) does not match a verified hosted audio route"
     case .invalidDeviceProperty(let id, let selector):
       return "Core Audio property \(selector) on object \(id) did not return an identity"
     case .routeChanged(let direction):
@@ -41,8 +38,10 @@ private enum GuardError: Error, CustomStringConvertible {
 
 private struct Device: Sendable {
   let id: AudioObjectID
-  let directions: String
+  let directions: [AudioDirection]
   let name: String
+
+  var directionLabel: String { directions.map(\.rawValue).joined(separator: " and ") }
 }
 
 private struct Violation: Error {
@@ -78,9 +77,9 @@ private final class DeviceEvents: Sendable {
 }
 
 private let system = AudioObjectID(kAudioObjectSystemObject)
-private let defaults: [(String, AudioObjectPropertySelector)] = [
-  ("input", kAudioHardwarePropertyDefaultInputDevice),
-  ("output", kAudioHardwarePropertyDefaultOutputDevice),
+private let defaults: [(AudioDirection, AudioObjectPropertySelector)] = [
+  (.input, kAudioHardwarePropertyDefaultInputDevice),
+  (.output, kAudioHardwarePropertyDefaultOutputDevice),
 ]
 private let running = kAudioDevicePropertyDeviceIsRunningSomewhere
 
@@ -120,15 +119,15 @@ private func identityString(
   return string?.isEmpty == false ? string : nil
 }
 
-private func identity(_ id: AudioObjectID) throws(GuardError) -> AudioDeviceIdentity {
-  guard let uid = try identityString(id, kAudioDevicePropertyDeviceUID) else {
-    throw .invalidDeviceProperty(id, kAudioDevicePropertyDeviceUID)
+private func identity(_ device: Device) throws(GuardError) -> AudioDeviceIdentity {
+  guard let uid = try identityString(device.id, kAudioDevicePropertyDeviceUID) else {
+    throw .invalidDeviceProperty(device.id, kAudioDevicePropertyDeviceUID)
   }
   var modelProperty = address(kAudioDevicePropertyModelUID)
   let model =
-    AudioObjectHasProperty(id, &modelProperty)
-    ? try identityString(id, kAudioDevicePropertyModelUID) : nil
-  return AudioDeviceIdentity(uid: uid, modelUID: model)
+    AudioObjectHasProperty(device.id, &modelProperty)
+    ? try identityString(device.id, kAudioDevicePropertyModelUID) : nil
+  return AudioDeviceIdentity(name: deviceName(device.id), uid: uid, modelUID: model)
 }
 
 private func subDevices(_ id: AudioObjectID) throws -> [AudioObjectID] {
@@ -197,31 +196,30 @@ private func monitor() async throws {
   var listeners = try defaults.map { direction, selector in
     try Listener(system, selector) {
       // A replacement default can run before its device listener is installed.
-      activity.routeChanged(.routeChanged(direction))
+      activity.routeChanged(.routeChanged(direction.rawValue))
       events.yield(.check)
     }
   }
   defer { events.finish() }
   let initialRoutes = try defaults.map { try read(system, $0.1) }
-  var roles: [AudioObjectID: [String]] = [:]
+  var roles: [AudioObjectID: [AudioDirection]] = [:]
   for ((direction, _), id) in zip(defaults, initialRoutes) where id != kAudioObjectUnknown {
     roles[id, default: []].append(direction)
   }
   let devices = roles.map { id, role in
-    Device(id: id, directions: role.joined(separator: " and "), name: deviceName(id))
+    Device(id: id, directions: role, name: deviceName(id))
   }
   func describe(
     _ device: Device, _ identity: AudioDeviceIdentity, _ transport: AudioTransport, verdict: String
   ) -> String {
     let model = identity.modelUID.map { String(reflecting: $0) } ?? "unavailable"
     return
-      "audio route: default \(device.directions) \(String(reflecting: device.name)), UID \(String(reflecting: identity.uid)), model UID \(model), transport \(transport.label), verdict \(verdict)"
+      "audio route: default \(device.directionLabel) \(String(reflecting: identity.name)), UID \(String(reflecting: identity.uid)), model UID \(model), transport \(transport.label), verdict \(verdict)"
   }
   for device in devices {
     report(
-      describe(device, try identity(device.id), try transport(device.id), verdict: "inventory"))
+      describe(device, try identity(device), try transport(device.id), verdict: "inventory"))
   }
-  if !devices.isEmpty && policy.needsHostedDevicePins { throw GuardError.missingHostedDevicePins }
   listeners += try devices.map { device in
     try Listener(device.id, running) {
       // A transition may arrive after short playback has already stopped.
@@ -243,8 +241,8 @@ private func monitor() async throws {
       return try subDevices(id)
     }
     if policy.isHosted {
-      let observedIdentity = try identity(device.id)
-      guard policy.allows(observedIdentity, route: route) else {
+      let observedIdentity = try identity(device)
+      guard policy.allows(observedIdentity, directions: device.directions, route: route) else {
         report(describe(device, observedIdentity, route.transport, verdict: "blocked at preflight"))
         throw GuardError.unexpectedHostedDevice(device)
       }
@@ -260,8 +258,8 @@ private func monitor() async throws {
       let runningNow = try read(device.id, running) != 0
       guard runningNow || pending[device.id] != nil else { continue }
       let route = try AudioRoute(device.id, transport: transport, members: subDevices)
-      let observedIdentity = try identity(device.id)
-      let allowed = policy.allows(observedIdentity, route: route)
+      let observedIdentity = try identity(device)
+      let allowed = policy.allows(observedIdentity, directions: device.directions, route: route)
       let row = describe(
         device, observedIdentity, route.transport, verdict: allowed ? "allowed" : "blocked")
       if reported.insert(row).inserted { report(row) }
@@ -276,7 +274,9 @@ private func monitor() async throws {
     }
     if let violation { throw violation }
     for ((direction, selector), initial) in zip(defaults, initialRoutes) {
-      if try read(system, selector) != initial { activity.routeChanged(.routeChanged(direction)) }
+      if try read(system, selector) != initial {
+        activity.routeChanged(.routeChanged(direction.rawValue))
+      }
     }
     try activity.checkRoutes()
   }

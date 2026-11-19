@@ -73,9 +73,10 @@ Run simulator media and video journeys on hosted GitHub Actions. The fixture use
 audio devices, which can activate the speakers and microphone on a local Mac. The runners
 refuse local and self-hosted starts before setup. Hosted admission requires `GITHUB_ACTIONS=true`
 and `RUNNER_ENVIRONMENT=github-hosted`. The Core Audio guard checks the default input and output
-before boot. A running hosted device must match a verified device UID and its model UID when
-available. Hosted guest devices can report a built-in transport. Unknown transports, hardware
-aggregate members, and route changes fail the run. The job summary lists each running device's
+before boot. The hosted input and output must each match the pinned name and UID for their
+direction. The guard logs a model UID when available. Hosted guest devices can report a built-in
+transport. Unknown transports, hardware aggregate members, and route changes fail the run.
+The job summary lists each running device's
 name, UID, transport, and verdict. A runner with no default devices reports `no host devices`.
 
 Wrap each simulator journey in one call to `withSimulatorMediaAudio` from

@@ -77,29 +77,38 @@ struct AudioRoute {
   }
 }
 
-struct AudioDeviceIdentity: Equatable, Sendable {
+enum AudioDirection: String, Sendable {
+  case input
+  case output
+}
+
+struct AudioDeviceIdentity: Sendable {
+  let name: String
   let uid: String
   let modelUID: String?
 }
 
 struct HostedAudioPolicy {
-  // Add identities only after observing them on the hosted runner.
-  private static let hostedDevices: [AudioDeviceIdentity] = []
-  private let pins: [AudioDeviceIdentity]
+  // GitHub-hosted macOS exposes two Apple guest audio endpoints with no model UID.
+  private static let hostedDeviceUIDs: [AudioDirection: String] = [
+    .input: "AVIODevice 2",
+    .output: "AVIODevice",
+  ]
   let isHosted: Bool
 
-  init(environment: [String: String], pins: [AudioDeviceIdentity]? = nil) {
+  init(environment: [String: String]) {
     isHosted =
       environment["GITHUB_ACTIONS"] == "true"
       && environment["RUNNER_ENVIRONMENT"] == "github-hosted"
-    self.pins = pins ?? Self.hostedDevices
   }
 
-  var needsHostedDevicePins: Bool { isHosted && pins.isEmpty }
-
-  func allows(_ identity: AudioDeviceIdentity, route: AudioRoute) -> Bool {
+  func allows(
+    _ identity: AudioDeviceIdentity, directions: [AudioDirection], route: AudioRoute
+  ) -> Bool {
     guard isHosted else { return route.hardware == nil }
-    guard pins.contains(identity) else { return false }
+    guard identity.name == "Apple Virtual Sound Device", !directions.isEmpty,
+      directions.allSatisfy({ Self.hostedDeviceUIDs[$0] == identity.uid })
+    else { return false }
     return route.transport == .builtIn || route.hardware == nil
   }
 }

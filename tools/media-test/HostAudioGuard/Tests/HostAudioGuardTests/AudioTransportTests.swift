@@ -61,34 +61,62 @@ func unsafeTransport(_ code: UInt32, _ label: String) {
 }
 
 private let hostedEnvironment = ["GITHUB_ACTIONS": "true", "RUNNER_ENVIRONMENT": "github-hosted"]
-private let exampleGuest = AudioDeviceIdentity(uid: "test-guest-uid", modelUID: "test-model")
 
 @Test(arguments: [
-  AudioDeviceIdentity(uid: "BuiltInMicrophoneDevice", modelUID: "Digital Mic"),
-  AudioDeviceIdentity(uid: "BuiltInSpeakerDevice", modelUID: "Speaker"),
+  (
+    AudioDirection.input,
+    AudioDeviceIdentity(
+      name: "MacBook Pro Microphone", uid: "BuiltInMicrophoneDevice", modelUID: "Digital Mic")
+  ),
+  (
+    AudioDirection.output,
+    AudioDeviceIdentity(
+      name: "MacBook Pro Speakers", uid: "BuiltInSpeakerDevice", modelUID: "Speaker")
+  ),
 ])
-func spoofedHostedEnvironmentRejectsMacBuiltInDevices(_ physical: AudioDeviceIdentity) throws {
+func spoofedHostedEnvironmentRejectsMacBuiltInDevices(
+  _ direction: AudioDirection, _ physical: AudioDeviceIdentity
+) throws {
   let builtIn = try AudioRoute(
     1, transport: { _ in AudioTransport(kAudioDeviceTransportTypeBuiltIn) }, members: { _ in [] })
   #expect(builtIn.transport == .builtIn)
   #expect(builtIn.hardware != nil)
-  #expect(!HostedAudioPolicy(environment: hostedEnvironment).allows(physical, route: builtIn))
-  let policy = HostedAudioPolicy(environment: hostedEnvironment, pins: [exampleGuest])
+  let policy = HostedAudioPolicy(environment: hostedEnvironment)
   #expect(policy.isHosted)
-  #expect(!policy.allows(physical, route: builtIn))
+  #expect(!policy.allows(physical, directions: [direction], route: builtIn))
 }
 
-@Test func hostedActivityRequiresThePinnedUIDAndModelAndAKnownTransport() throws {
-  let policy = HostedAudioPolicy(environment: hostedEnvironment, pins: [exampleGuest])
+@Test(arguments: [(AudioDirection.input, "AVIODevice 2"), (AudioDirection.output, "AVIODevice")])
+func hostedActivityRequiresThePinnedNameAndUIDForItsDirection(
+  _ direction: AudioDirection, _ uid: String
+) throws {
+  let name = "Apple Virtual Sound Device"
+  let guest = AudioDeviceIdentity(name: name, uid: uid, modelUID: nil)
+  let otherDirection: AudioDirection = direction == .input ? .output : .input
+  let policy = HostedAudioPolicy(environment: hostedEnvironment)
   for transport: AudioTransport in [.builtIn, .virtual, AudioTransport(.max)] {
     let route = try AudioRoute(1, transport: { _ in transport }, members: { _ in [] })
     #expect(
-      policy.allows(exampleGuest, route: route) == (transport == .builtIn || transport == .virtual))
-    #expect(!policy.allows(.init(uid: "other-uid", modelUID: exampleGuest.modelUID), route: route))
-    #expect(!policy.allows(.init(uid: exampleGuest.uid, modelUID: nil), route: route))
-    #expect(!policy.allows(.init(uid: exampleGuest.uid, modelUID: "other-model"), route: route))
+      policy.allows(guest, directions: [direction], route: route)
+        == (transport == .builtIn || transport == .virtual))
+    #expect(!policy.allows(guest, directions: [otherDirection], route: route))
+    #expect(!policy.allows(guest, directions: [.input, .output], route: route))
+    #expect(
+      !policy.allows(
+        .init(name: "other-name", uid: uid, modelUID: nil),
+        directions: [direction], route: route))
+    #expect(
+      !policy.allows(
+        .init(name: name, uid: "other-uid", modelUID: nil),
+        directions: [direction], route: route))
   }
   let aggregate = try AudioRoute(
     1, transport: { $0 == 1 ? .aggregate : .builtIn }, members: { _ in [2] })
-  #expect(!policy.allows(exampleGuest, route: aggregate))
+  #expect(!policy.allows(guest, directions: [direction], route: aggregate))
+  let builtIn = try AudioRoute(1, transport: { _ in .builtIn }, members: { _ in [] })
+  for environment in [[:], ["GITHUB_ACTIONS": "true", "RUNNER_ENVIRONMENT": "self-hosted"]] {
+    #expect(
+      !HostedAudioPolicy(environment: environment).allows(
+        guest, directions: [direction], route: builtIn))
+  }
 }
