@@ -5,12 +5,12 @@ import {
   usePushToken,
 } from "@relayphone/ios-voip-sdk";
 import { useRef, useState } from "react";
-import { Button, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Button, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Journeys } from "./journeys/Journeys";
 
 // Attach before React mounts. The example accepts local signaling without a media server.
-setConversationHandler({ join() {}, start() {} });
+if (Platform.OS === "ios") setConversationHandler({ join() {}, start() {} });
 
 export default function App() {
   const calls = useConversations();

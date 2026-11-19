@@ -155,6 +155,17 @@ export function preparePackage(repository: string) {
   }
   writeFileSync(join(vendor, manifestName), `${JSON.stringify(manifest, null, 2)}\n`);
   checkVendor(repository);
+  if (!existsSync(join(repository, 'expo/android/build.gradle'))) return;
+  const android = join(repository, 'expo/android/Vendor');
+  rmSync(android, { recursive: true, force: true });
+  const sources = ['core', 'runtime', 'system'].flatMap(target =>
+    filesIn(join(repository, 'android', target, 'src/main')).map(path => relative(repository, path)));
+  const schemas = ['bridge.schema.json', 'model.schema.json', 'v1/model.schema.json'].map(path => join('spec', path));
+  for (const path of [...sources, ...schemas]) {
+    const destination = join(android, path.replace(/^android\//u, ''));
+    mkdirSync(dirname(destination), { recursive: true });
+    copyFileSync(join(repository, path), destination);
+  }
 }
 
 function packageDirectory() {

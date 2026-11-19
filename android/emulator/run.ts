@@ -9,6 +9,27 @@ interface Emulator {
   stop(): Promise<void>;
 }
 
+function verifyExample(apk: string): void {
+  const packageName = 'com.example.voipconversations';
+  adb(['install', '-r', apk], 45_000);
+  adb(['shell', 'pm', 'grant', packageName, 'android.permission.POST_NOTIFICATIONS']);
+  const run = `android-${Date.now()}`;
+  adb(['shell', 'am', 'start', '-W', '-a', 'android.intent.action.VIEW',
+    '-d', `conversations-example://journey?runID=${run}`, packageName], 25_000);
+  const deadline = performance.now() + 60_000;
+  while (performance.now() < deadline) {
+    const line = adb(['logcat', '-d', '-s', 'ReactNativeJS:I']).split('\n').find(entry =>
+      entry.includes(`VoIPJourney ${run} `));
+    if (line?.includes(' passed')) {
+      console.log(line);
+      return;
+    }
+    if (line) throw new Error(line);
+    adb(['shell', 'sleep', '1']);
+  }
+  throw new Error('The Expo example did not report the calling journeys');
+}
+
 export async function verifyOnEmulator(
   start: (attempt: number) => Emulator,
   verify: () => void,
@@ -131,6 +152,7 @@ if (import.meta.main) {
           '--kill-after=15s', '240s', './gradlew', ':system:connectedDebugAndroidTest',
           '-Pandroid.enableAdditionalTestOutput=true', '--no-daemon', '--max-workers=2', '--console=plain',
         ], { stdio: 'inherit', env: { ...process.env, ANDROID_SERIAL: serial } });
+        if (process.env.EXPO_CALL_JOURNEY_APK) verifyExample(process.env.EXPO_CALL_JOURNEY_APK);
       } catch (error) {
         console.error('::error title=Product verification::Android instrumentation failed. See the Gradle log and test artifacts.');
         throw error;

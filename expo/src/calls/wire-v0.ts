@@ -14,7 +14,7 @@ const handle = union(
   object({ kind: literal('email'), address: text(1, 256, /^[^\s@]+@[^\s@]+$/u) }),
   object({ kind: literal('opaque'), value: text(1, 256, /\S/u) }),
 );
-const line = object({ accountID: id<'account'>(), id: lineID, label: text() });
+export const line = object({ accountID: id<'account'>(), id: lineID, label: text() });
 const party = object({ id: id<'party'>(), handle, displayName: text() });
 export const invitation = object({ callID, eventID, line, party });
 
@@ -96,7 +96,7 @@ export const actionReceipt = object({
   actionID, action, origin: literal('app', 'system', 'remote'),
 });
 export type ActionReceipt = Decoded<typeof actionReceipt>;
-const endResult = union(
+export const endResult = union(
   object({ kind: literal('ended'), receipt: object({ callID, actionID, reason: localEnd }) }),
   object({ kind: literal('alreadyEnded'), reason: endReason }),
 );

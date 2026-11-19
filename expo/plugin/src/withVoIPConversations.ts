@@ -1,4 +1,4 @@
-import { type ConfigPlugin, createRunOncePlugin } from "expo/config-plugins";
+import { AndroidConfig, type ConfigPlugin, createRunOncePlugin, withAndroidManifest, withGradleProperties } from "expo/config-plugins";
 
 import pkg from "../../package.json";
 import type { CallPreviewActivitiesOption } from "./withCallPreviewActivities.ts";
@@ -7,8 +7,10 @@ import { withVoIPConversationsIos } from "./withVoIPConversationsIos.ts";
 
 import type { MediaAdapter } from "../../build/conversations/types";
 
-/** iOS options for the config plugin exported by `@relayphone/ios-voip-sdk/plugin`. */
+/** Options for the config plugin exported by `@relayphone/ios-voip-sdk/plugin`. */
 export type VoIPConversationsPluginProps = {
+  /** Android's default calling line. The label defaults to the app name. */
+  android?: { accountID: string; label?: string };
   /** WebRTC audio session integration, also used by LiveKit React Native. Defaults to webrtc. */
   mediaAdapter?: MediaAdapter;
   unhandledAction?: "fail" | "accept";
@@ -119,8 +121,22 @@ const withVoIPConversations: ConfigPlugin<
 > = (config, props) => {
   const opts: VoIPConversationsPluginProps = props ?? {};
   config = withVoIPConversationsIos(config, opts);
-
-  return config;
+  const android = opts.android;
+  if (android) config = withAndroidManifest(config, mod => {
+    const application = AndroidConfig.Manifest.getMainApplicationOrThrow(mod.modResults);
+    for (const [key, value] of Object.entries({ accountID: android.accountID, label: android.label ?? config.name })) {
+      AndroidConfig.Manifest.addMetaDataItemToMainApplication(application, `com.relayphone.voip.${key}`, `voip:${value}`);
+    }
+    return mod;
+  });
+  return withGradleProperties(config, mod => {
+    for (const [key, minimum] of [["android.minSdkVersion", 26], ["android.compileSdkVersion", 37]] as const) {
+      const existing = mod.modResults.find(entry => entry.type === "property" && entry.key === key);
+      if (existing?.type === "property") existing.value = String(Math.max(Number(existing.value) || minimum, minimum));
+      else mod.modResults.push({ type: "property", key, value: String(minimum) });
+    }
+    return mod;
+  });
 };
 
 export default createRunOncePlugin(

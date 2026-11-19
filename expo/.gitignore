@@ -1,6 +1,7 @@
 build/
 plugin/build/
 ios/Vendor/
+android/Vendor/
 *.tgz
 example/client/ios/
 example/client/.expo/
