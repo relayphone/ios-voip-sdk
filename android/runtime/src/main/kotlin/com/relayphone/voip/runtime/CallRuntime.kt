@@ -1,6 +1,7 @@
 package com.relayphone.voip.runtime
 
 import com.relayphone.voip.Attempt
+import com.relayphone.voip.ActionReceipt
 import com.relayphone.voip.Call
 import com.relayphone.voip.CallError
 import com.relayphone.voip.CallID
@@ -228,7 +229,10 @@ public class CallRuntime private constructor(
             }
             transition.terminalCompletions.forEach { add(RuntimeEvent.TerminalCompleted(++eventSequence, it)) }
         }
-        publish(transition.state, input, removal, events)
+        publish(transition.state, input, removal, events, transition.actionPerformed.takeUnless { receiptsOnly })
+        if (input is Input.AnswerConfirmed && !receiptsOnly) {
+            system.completeAnswer(input, (transition.receipt as CommandReceipt.Answered).outcome)
+        }
         transition.effects.forEach { effect ->
             if (!receiptsOnly || effect is Effect.SettleAction || effect is Effect.RejectAction) {
                 execute(effect, previous)
@@ -348,14 +352,14 @@ public class CallRuntime private constructor(
 
     private fun publish(
         state: State, input: Input?, removal: RemovalCompletion? = null,
-        events: List<RuntimeEvent> = emptyList(),
+        events: List<RuntimeEvent> = emptyList(), action: ActionReceipt? = null,
     ) {
-        journal.publish(state, input, removal, events) { frame ->
+        journal.publish(state, input, removal, events, action) { frame ->
             when (frame) {
                 is RuntimeFrame.StateRevision -> current.value = frame.state
                 is RuntimeFrame.Event -> observations.tryEmit(frame.event)
                 is RuntimeFrame.TerminalCompleted -> observations.tryEmit(frame.event)
-                is RuntimeFrame.Cleanup -> Unit
+                is RuntimeFrame.Cleanup, is RuntimeFrame.ActionPerformed -> Unit
             }
         }
     }

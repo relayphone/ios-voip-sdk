@@ -11,6 +11,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.relayphone.voip.AccountID
 import com.relayphone.voip.Action
 import com.relayphone.voip.ActionID
+import com.relayphone.voip.ActionOrigin
 import com.relayphone.voip.AttemptID
 import com.relayphone.voip.Budgets
 import com.relayphone.voip.Call
@@ -38,6 +39,7 @@ import com.relayphone.voip.runtime.MediaPort
 import com.relayphone.voip.runtime.MonotonicClock
 import com.relayphone.voip.runtime.PresentationPort
 import com.relayphone.voip.runtime.Reconciliation
+import com.relayphone.voip.runtime.RuntimeFrame
 import com.relayphone.voip.runtime.SystemPort
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
@@ -46,6 +48,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -61,8 +64,15 @@ class TelecomJourneysTest {
             report(runtime)
             awaitTelecom("RINGING")
             awaitNotification(present = true)
-            assertEquals(Outcome.Success(Unit), system.answer(id))
+            val beforeAnswer = runtime.snapshot().cursor
+            val receipt = system.answerWithReceipt(id).success()
+            assertEquals(ActionOrigin.APP, receipt.origin)
+            assertEquals(Action.Answer(id), receipt.action)
             runtime.awaitLifecycle { it == Lifecycle.Connecting }
+            val frame = withTimeout(10.seconds) {
+                runtime.observe(beforeAnswer).filterIsInstance<RuntimeFrame.ActionPerformed>().first()
+            }
+            assertEquals(receipt, frame.receipt)
             awaitTelecom("ACTIVE")
             assertEquals(1, authority.claims.get())
             end(runtime)

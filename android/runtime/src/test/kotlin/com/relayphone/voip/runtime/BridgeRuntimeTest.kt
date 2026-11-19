@@ -2,6 +2,7 @@ package com.relayphone.voip.runtime
 
 import com.relayphone.voip.Action
 import com.relayphone.voip.ActionID
+import com.relayphone.voip.ActionReceipt
 import com.relayphone.voip.AttemptID
 import com.relayphone.voip.Budgets
 import com.relayphone.voip.Call
@@ -29,6 +30,7 @@ import com.relayphone.voip.RemoteEvent
 import com.relayphone.voip.RetentionBudget
 import com.relayphone.voip.SystemFailure
 import com.relayphone.voip.SystemOperation
+import com.relayphone.voip.TimedStage
 import com.relayphone.voip.Wire
 import java.io.File
 import kotlin.time.Clock
@@ -61,7 +63,7 @@ import org.junit.jupiter.api.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class BridgeRuntimeTest {
     private val commands = fixture("commands.json")
-    private val incoming = commands.single { it.stringOrNull("operation") == "reportIncoming" && it.string("kind") == "command" }
+    private val incoming = commands.first { it.stringOrNull("operation") == "reportIncoming" && it.string("kind") == "command" }
         .getValue("input").jsonObject.let {
             Input.Incoming(
                 CallID(it.string("callID")), EventID(it.string("eventID")),
@@ -78,8 +80,9 @@ internal class BridgeRuntimeTest {
             val suffix = ports.incomingReports
             val invitation = if (suffix == 0) incoming
                 else incoming.copy(callID = CallID("call-$suffix"), eventID = EventID("event-$suffix"))
+            val conflicting = invitation.copy(callID = CallID("different-call"))
             val first = async { runtime.reportIncoming(invitation) }
-            val duplicate = async { runtime.reportIncoming(invitation) }
+            val duplicate = async { runtime.reportIncoming(conflicting) }
             runCurrent()
             assertFalse(first.isCompleted)
             assertFalse(duplicate.isCompleted)
@@ -88,16 +91,17 @@ internal class BridgeRuntimeTest {
             ports.admission.complete(nativeResult)
             val expected = when (nativeResult) {
                 is Outcome.Success -> {
-                    assertEquals("admitted", commands.single {
+                    assertEquals("admitted", commands.first {
                         it.string("kind") == "reply" && it.stringOrNull("operation") == "reportIncoming"
                     }.getValue("result").jsonObject.getValue("value").jsonObject.string("kind"))
-                    IncomingResult.Admitted
+                    IncomingResult.Admitted(invitation.callID)
                 }
-                is Outcome.Failure -> IncomingResult.Refused(IncomingRefusal.SystemFailed(nativeResult.error))
+                is Outcome.Failure -> IncomingResult.Refused(invitation.callID, IncomingRefusal.SystemFailed(nativeResult.error))
             }
             assertEquals(Outcome.Success(expected), first.await())
             assertEquals(Outcome.Success(IncomingResult.Duplicate(expected)), duplicate.await())
-            assertEquals(Outcome.Success(IncomingResult.Duplicate(expected)), runtime.reportIncoming(invitation))
+            assertEquals(Outcome.Success(IncomingResult.Duplicate(expected)), runtime.reportIncoming(conflicting))
+            assertFalse(conflicting.callID in runtime.snapshot().state.calls)
             assertEquals(suffix + 1, ports.incomingReports)
             ports.admission = CompletableDeferred()
         }
@@ -114,7 +118,7 @@ internal class BridgeRuntimeTest {
         runCurrent()
         advanceTimeBy(500)
         ports.admission.complete(Outcome.Success(Unit))
-        assertEquals(Outcome.Success(IncomingResult.Refused(IncomingRefusal.Expired)), receipt.await())
+        assertEquals(Outcome.Success(IncomingResult.Refused(incoming.callID, IncomingRefusal.Expired)), receipt.await())
         val head = runtime.snapshot().cursor
         val frames = runtime.observe(initial.cursor).take(head.sequence.toInt()).toList()
         assertTrue(frames.filterIsInstance<RuntimeFrame.StateRevision>().none {
@@ -122,6 +126,75 @@ internal class BridgeRuntimeTest {
         })
         runCurrent()
         assertTrue(incoming.callID in runtime.snapshot().state.systemRemoved)
+        runtime.close()
+    }
+
+    @Test
+    fun `journal confirms the fixture actions with their original receipts after state`() = runTest {
+        val ports = Ports()
+        val runtime = start(ports, capacity = 128)
+        val scope = runtime.snapshot().cursor
+        val transcript = fixture("actions.json").map { it.getValue("receipt") }
+        val (answer, hold, end) = transcript.map { Wire.json.decodeFromJsonElement(ActionReceipt.serializer(), it) }
+        val id = incoming.callID
+        ports.admission.complete(Outcome.Success(Unit))
+        runtime.reportIncoming(incoming)
+        // A caller cannot confirm before the reducer authorizes the matching Answer.
+        runtime.submit(Input.AnswerConfirmed(id, answer.actionID))
+        runtime.submit(Input.Request(answer.action, answer.actionID, origin = answer.origin))
+        runCurrent()
+        assertEquals(Lifecycle.Connecting, runtime.snapshot().state.calls.getValue(id).lifecycle)
+        val beforeAnswer = runtime.snapshot().cursor
+        val before = runtime.observe(scope).take(beforeAnswer.sequence.toInt()).toList()
+        assertTrue(before.none { it is RuntimeFrame.ActionPerformed })
+        runtime.submit(Input.AnswerConfirmed(id, ActionID("unknown-answer")))
+        runtime.submit(Input.AnswerConfirmed(id, answer.actionID))
+        runtime.submit(Input.AnswerConfirmed(id, answer.actionID))
+        runtime.receive(RemoteEvent.Connected(EventID("connected-a"), EndTarget.Canonical(id)))
+        runtime.submit(Input.Request(hold.action, hold.actionID, supported = true, origin = hold.origin))
+        runCurrent()
+        runtime.submit(Input.Request(end.action, end.actionID, origin = end.origin))
+        runtime.submit(Input.Request(Action.End(id), ActionID("repeated-end")))
+        runCurrent()
+
+        val head = runtime.snapshot().cursor
+        val frames = runtime.observe(beforeAnswer).take((head.sequence - beforeAnswer.sequence).toInt()).toList()
+        val receipts = frames.filterIsInstance<RuntimeFrame.ActionPerformed>()
+        assertEquals(transcript, receipts.map { Wire.json.encodeToJsonElement(ActionReceipt.serializer(), it.receipt) })
+        val revisions = receipts.map { confirmed ->
+            frames.filterIsInstance<RuntimeFrame.StateRevision>().single {
+                it.cursor.sequence + 1 == confirmed.cursor.sequence
+            }.state.calls.getValue(id)
+        }
+        assertEquals(Lifecycle.Connecting, revisions[0].lifecycle)
+        assertTrue(revisions[1].held)
+        assertTrue(revisions[2].lifecycle is Lifecycle.Ending)
+        runtime.close()
+    }
+
+    @Test
+    fun `an Answer confirmation at its deadline is rejected without a performed frame`() = runTest {
+        val ports = Ports()
+        val runtime = start(ports, capacity = 128)
+        val id = incoming.callID
+        val actionID = ActionID("answer-deadline")
+        ports.admission.complete(Outcome.Success(Unit))
+        runtime.reportIncoming(incoming)
+        runtime.submit(Input.Request(Action.Answer(id), actionID))
+        runCurrent()
+        assertEquals(Lifecycle.Connecting, runtime.snapshot().state.calls.getValue(id).lifecycle)
+        val before = runtime.snapshot().cursor
+        advanceTimeBy(Budgets().answer.total.inWholeMilliseconds)
+        val confirmation = Input.AnswerConfirmed(id, actionID)
+        runtime.submit(confirmation)
+        runCurrent()
+
+        val error = CallError.DeadlineExceeded(TimedStage.SYSTEM_ACTION)
+        assertEquals(listOf(confirmation to Outcome.Failure(error)), ports.answers)
+        val head = runtime.snapshot().cursor
+        val frames = runtime.observe(before).take((head.sequence - before.sequence).toInt()).toList()
+        assertTrue(frames.none { it is RuntimeFrame.ActionPerformed })
+        assertEquals(Lifecycle.Ending(EndReason.Failed(error)), runtime.snapshot().state.calls.getValue(id).lifecycle)
         runtime.close()
     }
 
@@ -370,6 +443,7 @@ internal class BridgeRuntimeTest {
         val placementFinished = CompletableDeferred<Unit>()
         var admission = CompletableDeferred<Outcome<Unit, SystemFailure>>()
         val rejections = mutableListOf<Effect.RejectAction>()
+        val answers = mutableListOf<Pair<Input.AnswerConfirmed, Outcome<Unit, CallError>>>()
         var incomingReports = 0
         var outgoingReports = 0
         val mediaClose = CompletableDeferred<Unit>()
@@ -420,6 +494,9 @@ internal class BridgeRuntimeTest {
         override fun settle(result: Effect.SettleAction) = Unit
         override fun reject(result: Effect.RejectAction) { rejections += result }
         override fun completeEnd(result: Effect.CompleteEnd) = Unit
+        override fun completeAnswer(confirmation: Input.AnswerConfirmed, result: Outcome<Unit, CallError>) {
+            answers += confirmation to result
+        }
         override fun publish(call: Call) = Unit
     }
 

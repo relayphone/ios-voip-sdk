@@ -12,6 +12,7 @@ export const validTypeFixtures = {
   connected: { version: 0, kind: 'call', value: { ...call, lifecycle: { kind: 'connected', connectedAt: '2026-11-17T00:00:00.000Z' }, media: { owner: 'native', preparation: 'prepared', audio: 'active', transport: 'connected' } } },
   deferred: { version: 0, kind: 'call', value: { ...call, id: wireID('outgoing-a'), direction: 'outgoing', remoteID: wireID('remote-a'), lifecycle: { kind: 'dialing' } } },
   failed: { version: 0, kind: 'endReason', value: { kind: 'failed', error: { kind: 'claimTimedOut', actionID: wireID('answer-a') } } },
+  serverFailure: { version: 0, kind: 'endReason', value: { kind: 'failed', error: { kind: 'serverFailed' } } },
   answer: { version: 0, kind: 'action', value: { kind: 'answer', callID: wireID('call-α') } },
   opaque: { version: 0, kind: 'action', value: { kind: 'start', callID: wireID('short-code'), line, party: { ...party, handle: { kind: 'opaque', value: '123' } } } },
   budgets: { version: 0, kind: 'budgets', value: { ...budgets, retention: { lifetime: 7500, terminalRecords: 42 } } },

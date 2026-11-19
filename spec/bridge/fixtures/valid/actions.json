@@ -1,0 +1,11 @@
+[
+  {"kind":"actionPerformed","cursor":{"epoch":"actions-a","sequence":1},"receipt":{
+    "actionID":"answer-a","origin":"system","action":{"kind":"answer","callID":"incoming-a"}
+  }},
+  {"kind":"actionPerformed","cursor":{"epoch":"actions-a","sequence":2},"receipt":{
+    "actionID":"hold-a","origin":"remote","action":{"kind":"hold","callID":"incoming-a","held":true}
+  }},
+  {"kind":"actionPerformed","cursor":{"epoch":"actions-a","sequence":3},"receipt":{
+    "actionID":"end-a","origin":"app","action":{"kind":"end","callID":"incoming-a"}
+  }}
+]

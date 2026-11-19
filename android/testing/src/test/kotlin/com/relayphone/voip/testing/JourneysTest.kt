@@ -46,7 +46,7 @@ class JourneysTest {
         val requiredJourneys = setOf(
             "admission-rejected-isolated",
             "answer-not-allowed", "answer-refusal-preview", "answer-refusal", "answered-elsewhere",
-            "claim-timeout-reconcile", "cross-line-waiting", "end-after-server-end",
+            "claim-timeout-reconcile", "cross-line-waiting", "end-after-server-end", "end-after-server-failure",
             "early-connected-start-rejected", "end-before-admission", "end-before-start-admission",
             "hold-request-confirm", "incoming-killed-answer", "late-start-admission-after-end",
             "late-answer-permit", "local-server-end-race", "no-answer-direction",

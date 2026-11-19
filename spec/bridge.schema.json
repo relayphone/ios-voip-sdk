@@ -47,8 +47,14 @@
       "properties":{"callID":{"$ref":"#/$defs/id"},"actionID":{"$ref":"#/$defs/id"},"eventID":{"$ref":"#/$defs/id"},"attemptID":{"$ref":"#/$defs/id"}},
       "additionalProperties":false
     },
+    "actionReceipt": {
+      "type":"object",
+      "properties":{"actionID":{"$ref":"#/$defs/id"},"action":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/action"},"origin":{"enum":["app","system","remote"]}},
+      "required":["actionID","action","origin"],"additionalProperties":false
+    },
     "frame": {"oneOf":[
       {"type":"object","properties":{"kind":{"const":"record"},"cursor":{"$ref":"#/$defs/cursor"},"record":{"$ref":"#/$defs/record"},"correlation":{"$ref":"#/$defs/correlation"}},"required":["kind","cursor","record"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"actionPerformed"},"cursor":{"$ref":"#/$defs/cursor"},"receipt":{"$ref":"#/$defs/actionReceipt"}},"required":["kind","cursor","receipt"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"enum":["callRemoved","terminalCompleted"]},"cursor":{"$ref":"#/$defs/cursor"},"callID":{"$ref":"#/$defs/id"}},"required":["kind","cursor","callID"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"cleanup"},"cursor":{"$ref":"#/$defs/cursor"},"callID":{"$ref":"#/$defs/id"},"outcome":{"enum":["removed","failed"]}},"required":["kind","cursor","callID","outcome"],"additionalProperties":false}
     ]},
@@ -106,13 +112,19 @@
       {"type":"object","properties":{"kind":{"const":"command"},"operation":{"const":"placement.attach"},"input":{"$ref":"#/$defs/placementAttach"}},"required":["kind","operation","input"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"command"},"operation":{"const":"placement.settle"},"input":{"$ref":"#/$defs/placementSettle"}},"required":["kind","operation","input"],"additionalProperties":false}
     ]},
-    "performed": {"type":"object","properties":{"kind":{"const":"performed"},"actionID":{"$ref":"#/$defs/id"},"cursor":{"$ref":"#/$defs/cursor"}},"required":["kind","actionID","cursor"],"additionalProperties":false},
+    "performed": {"type":"object","properties":{"kind":{"const":"performed"},"receipt":{"$ref":"#/$defs/actionReceipt"},"cursor":{"$ref":"#/$defs/cursor"}},"required":["kind","receipt","cursor"],"additionalProperties":false},
     "endOutcome": {"type":"object","properties":{"kind":{"const":"end"},"cursor":{"$ref":"#/$defs/cursor"},"outcome":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/endResult"}},"required":["kind","cursor","outcome"],"additionalProperties":false},
     "received": {"type":"object","properties":{"kind":{"enum":["applied","buffered","duplicate"]}},"required":["kind"],"additionalProperties":false},
+    "incomingDecision": {"oneOf":[
+      {"type":"object","properties":{"kind":{"enum":["admitted","hidden","capacity"]},"callID":{"$ref":"#/$defs/id"}},"required":["kind","callID"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"previewed"},"callID":{"$ref":"#/$defs/id"},"reason":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/previewReason"}},"required":["kind","callID","reason"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"ended"},"callID":{"$ref":"#/$defs/id"},"reason":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/endReason"}},"required":["kind","callID","reason"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"filtered"},"callID":{"$ref":"#/$defs/id"},"cause":{"enum":["doNotDisturb","blockList","unknown"]}},"required":["kind","callID","cause"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"const":"refused"},"callID":{"$ref":"#/$defs/id"},"error":{"$ref":"#/$defs/error"}},"required":["kind","callID","error"],"additionalProperties":false}
+    ]},
     "incomingOutcome": {"oneOf":[
-      {"type":"object","properties":{"kind":{"enum":["admitted","hidden","capacity"]}},"required":["kind"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"previewed"},"reason":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/previewReason"}},"required":["kind","reason"],"additionalProperties":false},
-      {"type":"object","properties":{"kind":{"const":"filtered"},"cause":{"enum":["doNotDisturb","blockList","unknown"]}},"required":["kind","cause"],"additionalProperties":false}
+      {"$ref":"#/$defs/incomingDecision"},
+      {"type":"object","properties":{"kind":{"const":"duplicate"},"original":{"$ref":"#/$defs/incomingDecision"}},"required":["kind","original"],"additionalProperties":false}
     ]},
     "permissionState": {"type":"object","properties":{"kind":{"enum":["granted","denied","restricted","notDetermined"]}},"required":["kind"],"additionalProperties":false},
     "unknownPushState": {"type":"object","properties":{"kind":{"const":"unknown"}},"required":["kind"],"additionalProperties":false},

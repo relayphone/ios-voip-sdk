@@ -93,10 +93,13 @@ public enum class ReceiveDisposition {
 
 /** Result of reporting an invitation. A retry returns the first admission decision. */
 public sealed interface IncomingResult {
+    public val callID: CallID
     public sealed interface Decision : IncomingResult
-    public data object Admitted : Decision
-    public data class Refused(public val reason: IncomingRefusal) : Decision
-    public data class Duplicate(public val original: Decision) : IncomingResult
+    public data class Admitted(override val callID: CallID) : Decision
+    public data class Refused(override val callID: CallID, public val reason: IncomingRefusal) : Decision
+    public data class Duplicate(public val original: Decision) : IncomingResult {
+        override val callID: CallID get() = original.callID
+    }
 }
 
 /** A typed reason why an invitation did not reach ringing. */
@@ -120,6 +123,7 @@ public sealed interface PlacementResult {
 public sealed interface CommandReceipt {
     public data class Received(public val outcome: Outcome<ReceiveDisposition, CallError>) : CommandReceipt
     public data class Bound(public val outcome: Outcome<Unit, CallError>) : CommandReceipt
+    public data class Answered(public val outcome: Outcome<Unit, CallError>) : CommandReceipt
     public sealed interface Incoming : CommandReceipt {
         /** Await a native admission decision for this attempt. */
         public data class Pending(public val attempt: Attempt, public val duplicate: Boolean) : Incoming
@@ -150,11 +154,13 @@ public sealed interface Input {
     public data class Request(
         public val action: Action, public val id: ActionID, public val supported: Boolean = false,
         public val effectiveDeadline: Duration? = null,
+        public val origin: ActionOrigin = ActionOrigin.APP,
     ) : Input
     /** Starts an outgoing call with the supplied initial participants and video intent. */
     public data class Start(
         public val callID: CallID, public val line: CallingLine, public val parties: List<Party>,
         public val video: Boolean, public val id: ActionID, public val effectiveDeadline: Duration? = null,
+        public val origin: ActionOrigin = ActionOrigin.APP,
     ) : Input {
         init { require(parties.isNotEmpty()) }
     }
@@ -165,6 +171,8 @@ public sealed interface Input {
     public data class JoinPlacementLost(public val attempt: Attempt, public val error: CallError.PlacementFailed) : Input
     public data class AuthorityAllowed(public val attempt: Attempt, public val permit: AttemptID) : Input
     public data class AnswerRefused(public val attempt: Attempt, public val reason: RefusalReason) : Input
+    /** Telecom settled the same Answer after the reducer authorized it. */
+    public data class AnswerConfirmed(public val callID: CallID, public val actionID: ActionID) : Input
     public data class ReconciliationUnknown(public val attempt: Attempt) : Input
     public data class ProvideMedia(public val id: CallID) : Input
     public data class MediaPrepared(public val attempt: Attempt) : Input
@@ -250,13 +258,22 @@ public data class Transition(
     public val admission: AdmissionCompletion? = null,
     /** Platform removal result for a still-owned removal attempt. */
     public val removal: RemovalCompletion? = null,
+    /** The call action confirmed by this transition, if any. */
+    public val actionPerformed: ActionReceipt? = null,
 )
 
 public data class AdmissionCompletion(public val attempt: Attempt, public val decision: IncomingResult.Decision)
 public data class RemovalCompletion(public val attempt: Attempt, public val removed: Boolean)
 
-internal data class Pending(val attempt: Attempt, val id: ActionID, val deadline: Instant)
-internal data class Control(val action: Action, val attempt: Attempt, val id: ActionID)
+internal data class Pending(
+    val attempt: Attempt, val receipt: ActionReceipt, val deadline: Instant,
+) {
+    val id: ActionID get() = receipt.actionID
+}
+internal data class Control(val receipt: ActionReceipt, val attempt: Attempt) {
+    val action: Action get() = receipt.action
+    val id: ActionID get() = receipt.actionID
+}
 internal data class SeenEvent(
     val at: Instant, val order: Long, val pending: RemoteEvent? = null,
     val incoming: IncomingResult.Decision? = null,
@@ -278,10 +295,12 @@ internal data class Record(
     val retainedEnd: SeenEvent? = null,
     val placement: Pending? = null,
     val nativeStart: Effect.NativeStart? = null,
+    val startingAction: ActionReceipt? = null,
     val outgoingProgress: List<OutgoingProgress> = emptyList(),
     val joinAttempt: Attempt? = null,
     val previousPreview: PreviewReason? = null,
     val answer: Pending? = null,
+    val confirmingAnswer: Pending? = null,
     val reconciliation: Attempt? = null,
     val permit: AttemptID? = null,
     val permitAttempt: Attempt? = null,

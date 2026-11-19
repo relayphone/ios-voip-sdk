@@ -1,0 +1,11 @@
+[
+  {"kind":"reply","operation":"reportIncoming","result":{"ok":true,"value":{
+    "kind":"ended","callID":"incoming-a","reason":{"kind":"remoteEnded"}
+  }}},
+  {"kind":"reply","operation":"reportIncoming","result":{"ok":true,"value":{
+    "kind":"duplicate","original":{"kind":"ended","callID":"incoming-a","reason":{"kind":"remoteEnded"}}
+  }}},
+  {"kind":"reply","operation":"reportIncoming","result":{"ok":true,"value":{
+    "kind":"refused","callID":"incoming-a","error":{"kind":"systemFailed","cause":{"platform":"android","kind":"admission","code":42}}
+  }}}
+]

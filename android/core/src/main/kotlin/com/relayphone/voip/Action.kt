@@ -29,6 +29,22 @@ public sealed interface Action {
     ) : Action
 }
 
+/** The party that initiated a call action. */
+@Serializable
+public enum class ActionOrigin {
+    @SerialName("app") APP,
+    @SerialName("system") SYSTEM,
+    @SerialName("remote") REMOTE,
+}
+
+/** The original action and identity, published once on confirmation. */
+@Serializable
+public data class ActionReceipt(
+    public val actionID: ActionID,
+    public val action: Action,
+    public val origin: ActionOrigin,
+)
+
 /** Nonempty immutable DTMF sequence of the twelve keypad digits. */
 @JvmInline
 public value class DTMFSequence(public val value: String) {

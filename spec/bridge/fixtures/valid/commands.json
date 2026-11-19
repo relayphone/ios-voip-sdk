@@ -4,7 +4,10 @@
     "parties":[{"id":"alice","handle":{"kind":"phone","e164":"+12025550100"},"displayName":"Alice"}]
   }},
   {"kind":"reply","operation":"start","result":{"ok":true,"value":{
-    "kind":"performed","actionID":"start-a","cursor":{"epoch":"commands-a","sequence":1}
+    "kind":"performed","receipt":{"actionID":"start-a","origin":"app","action":{
+      "kind":"start","callID":"outbound-a","line":{"id":"personal","accountID":"account-a","label":"Personal"},
+      "party":{"id":"alice","handle":{"kind":"phone","e164":"+12025550100"},"displayName":"Alice"}
+    }},"cursor":{"epoch":"commands-a","sequence":1}
   }}},
   {"kind":"command","operation":"bindRemote","input":{"id":"outbound-a","remoteID":"remote-a"}},
   {"kind":"reply","operation":"bindRemote","result":{"ok":true,"value":null}},
@@ -30,7 +33,23 @@
     "callID":"incoming-a","eventID":"invite-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},
     "party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}
   }},
-  {"kind":"reply","operation":"reportIncoming","result":{"ok":true,"value":{"kind":"admitted"}}},
+  {"kind":"reply","operation":"reportIncoming","result":{"ok":true,"value":{"kind":"admitted","callID":"incoming-a"}}},
+  {"kind":"command","operation":"reportIncoming","input":{
+    "callID":"different-call","eventID":"invite-a","line":{"accountID":"account-a","id":"personal","label":"Personal"},
+    "party":{"id":"alice","handle":{"kind":"opaque","value":"sip:alice@example.test"},"displayName":"Alice"}
+  }},
+  {"kind":"reply","operation":"reportIncoming","result":{"ok":true,"value":{
+    "kind":"duplicate","original":{"kind":"admitted","callID":"incoming-a"}
+  }}},
+  {"kind":"command","operation":"receive","input":{"kind":"ended","eventID":"server-failure",
+    "target":{"kind":"call","id":"incoming-a"},"reason":{"kind":"failed","error":{"kind":"serverFailed"}}
+  }},
+  {"kind":"reply","operation":"receive","result":{"ok":true,"value":{"kind":"applied"}}},
+  {"kind":"command","operation":"perform","input":{"id":"incoming-a","action":{"kind":"end"}}},
+  {"kind":"reply","operation":"perform","result":{"ok":true,"value":{
+    "kind":"end","cursor":{"epoch":"commands-a","sequence":6},
+    "outcome":{"kind":"alreadyEnded","reason":{"kind":"failed","error":{"kind":"serverFailed"}}}
+  }}},
   {"kind":"command","operation":"permissions.read","input":{"kind":"microphone"}},
   {"kind":"reply","operation":"permissions.read","result":{"ok":true,"value":{"kind":"granted"}}},
   {"kind":"command","operation":"permissions.request","input":{"kind":"camera"}},

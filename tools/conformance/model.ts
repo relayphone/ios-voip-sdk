@@ -25,6 +25,7 @@ export type CallError =
   | { readonly kind: 'remoteIdentityConflict'; readonly remoteID: WireID }
   | { readonly kind: 'invalidConfiguration'; readonly field: keyof Budgets }
   | { readonly kind: 'systemFailed'; readonly cause: SystemFailure }
+  | { readonly kind: 'serverFailed' }
   | { readonly kind: 'bridgeUnavailable' };
 export type EndError = Exclude<CallError, { readonly kind: 'refused' }>
   | { readonly kind: 'refused'; readonly reason: { readonly kind: 'notAllowed' } };

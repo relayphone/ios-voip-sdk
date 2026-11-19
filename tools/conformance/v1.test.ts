@@ -103,7 +103,7 @@ test('capability conditions cover every feature once without overlapping Android
 });
 
 test('the catalog keeps the v0 journeys alongside the ten v1 journeys', () => {
-  assert.equal(loadCatalog(root).length, 20);
+  assert.equal(loadCatalog(root).length, 21);
   const journeys = loadCatalogV1(root);
   assert.deepEqual(journeys.map(journey => journey.id), [
     'dialing-text-before-connect', 'http-answer-allow', 'http-answer-late-permit-release',

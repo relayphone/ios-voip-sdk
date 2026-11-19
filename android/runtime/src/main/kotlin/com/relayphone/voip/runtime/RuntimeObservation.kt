@@ -1,5 +1,6 @@
 package com.relayphone.voip.runtime
 
+import com.relayphone.voip.ActionReceipt
 import com.relayphone.voip.CallID
 import com.relayphone.voip.Input
 import com.relayphone.voip.RemovalCompletion
@@ -42,6 +43,11 @@ public sealed interface RuntimeFrame : RuntimeObservation {
     /** A transient runtime event. The frame cursor identifies its position in the journal. */
     public data class Event(override val cursor: RuntimeCursor, public val event: RuntimeEvent) : RuntimeFrame
 
+    /** A confirmed action, after its state revision is visible. */
+    public data class ActionPerformed(
+        override val cursor: RuntimeCursor, public val receipt: ActionReceipt,
+    ) : RuntimeFrame
+
     /** Completion of a single native removal attempt, independent of other adapter work. */
     public data class Cleanup(
         override val cursor: RuntimeCursor, public val completion: RemovalCompletion,
@@ -65,10 +71,11 @@ internal class RuntimeJournal(initial: State, private val capacity: Int) {
 
     fun publish(
         state: State, input: Input?, cleanup: RemovalCompletion?, events: List<RuntimeEvent>,
+        action: ActionReceipt?,
         project: (RuntimeFrame) -> Unit,
     ) {
         val committed = synchronized(this) {
-            val batchSize = 1L + events.size + if (cleanup == null) 0 else 1
+            val batchSize = 1L + events.size + (if (cleanup == null) 0 else 1) + (if (action == null) 0 else 1)
             var cursor = latest.cursor
             if (cursor.sequence > MAX_SEQUENCE - batchSize) {
                 frames.fill(null)
@@ -84,6 +91,7 @@ internal class RuntimeJournal(initial: State, private val capacity: Int) {
             )
             val batch = buildList {
                 add(append { RuntimeFrame.StateRevision(it, state, input, completing) })
+                if (action != null) add(append { RuntimeFrame.ActionPerformed(it, action) })
                 if (cleanup != null) add(append { RuntimeFrame.Cleanup(it, cleanup) })
                 for (event in events) {
                     add(append {
