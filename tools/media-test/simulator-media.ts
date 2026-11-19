@@ -43,13 +43,15 @@ interface AudioGuard {
 }
 
 const execute = promisify(execFile);
-const source = fileURLToPath(new URL('./HostAudioGuard.swift', import.meta.url));
+const guardSources = ['main.swift', 'AudioTransport.swift'].map(
+  file => fileURLToPath(new URL(`./HostAudioGuard/Sources/HostAudioGuard/${file}`, import.meta.url)),
+);
 
 async function startAudioGuard(): Promise<AudioGuard> {
   const scratch = await mkdtemp(join(tmpdir(), 'host-audio-guard-'));
   const binary = join(scratch, 'guard');
   try {
-    await execute('xcrun', ['swiftc', '-swift-version', '6', '-warnings-as-errors', source, '-o', binary],
+    await execute('xcrun', ['swiftc', '-swift-version', '6', '-warnings-as-errors', ...guardSources, '-o', binary],
       { timeout: 60_000, killSignal: 'SIGKILL' });
   } catch (cause) {
     await rm(scratch, { recursive: true, force: true });
@@ -60,6 +62,7 @@ async function startAudioGuard(): Promise<AudioGuard> {
   const controller = new AbortController();
   const ready = Promise.withResolvers<string>();
   let diagnostic = '';
+  const allowed = new Set<string>();
   let clean = false;
   let finishing = false;
   const fail = (error: Error) => { ready.reject(error); controller.abort(error); };
@@ -72,6 +75,7 @@ async function startAudioGuard(): Promise<AudioGuard> {
       ready.resolve(line.slice('ready: '.length));
     }
     if (line === 'clean: host audio guard completed') clean = true;
+    if (line.startsWith('allowed: ')) allowed.add(line.slice('allowed: '.length));
   });
   const closed = new Promise<void>(resolve => child.once('close', code => {
     if (!finishing || code !== 0 || !clean) {
@@ -89,7 +93,7 @@ async function startAudioGuard(): Promise<AudioGuard> {
         try {
           await deadline(5_000, 'Core Audio guard verdict', () => closed);
           controller.signal.throwIfAborted();
-          return mode;
+          return [mode, ...allowed].join(', ');
         } finally {
           if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
           await rm(scratch, { recursive: true, force: true });

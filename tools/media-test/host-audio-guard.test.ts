@@ -36,11 +36,18 @@ test('the guard detects silent playback on the real output device', {
     let report = '';
     guard.stderr.setEncoding('utf8').on('data', chunk => { report += chunk; });
     const stdout = createInterface({ input: guard.stdout });
+    let outputTransport: string | undefined;
+    const readiness = Promise.withResolvers<string>();
+    stdout.on('line', line => {
+      if (line.startsWith('default output transport: ')) outputTransport = line.slice('default output transport: '.length);
+      if (line.startsWith('ready: ')) readiness.resolve(line);
+    });
     try {
       const ready = await Promise.race([
-        once(stdout, 'line').then(([line]) => line),
+        readiness.promise,
         guardClosed.then(() => { throw new Error(report.trim() || 'Guard exited before readiness'); }),
       ]);
+      assert.notEqual(outputTransport, undefined, 'Guard did not report the default output transport');
       if (ready === 'ready: no host devices') {
         guard.stdin.end();
         assert.deepEqual(await guardClosed, [0, null]);
@@ -48,11 +55,17 @@ test('the guard detects silent playback on the real output device', {
         return;
       }
       assert.equal(ready, 'ready: monitoring default host devices');
+      if (outputTransport !== 'built-in') {
+        guard.stdin.end();
+        assert.deepEqual(await guardClosed, [0, null]);
+        skip('default output is not built-in');
+        return;
+      }
       const player = spawn('/usr/bin/afplay', ['-v', '1', silence], { signal, stdio: 'ignore' });
       const [verdict, [exit]] = await Promise.all([guardClosed, once(player, 'close')]);
       assert.equal(exit, 0);
       assert.deepEqual(verdict, [1, null]);
-      assert.match(report, /^\d{4}-\d{2}-\d{2}T\S+Z Host audio active on default (?:input and )?output device .+/);
+      assert.match(report, /^\d{4}-\d{2}-\d{2}T\S+Z Host audio active on default (?:input and )?output device .+ \(built-in\)/);
       console.log(report.trim());
     } finally {
       stdout.close();

@@ -5,19 +5,30 @@ import Synchronization
 private enum GuardError: Error, CustomStringConvertible {
   case property(AudioObjectID, AudioObjectPropertySelector, OSStatus)
   case propertySize(AudioObjectID, AudioObjectPropertySelector, UInt32)
-  case active(Device)
+  case unreadableAggregate(AudioObjectID)
+  case active(Device, AudioRoute.Hardware)
   case routeChanged(String)
+  case aggregateChanged(AudioObjectID)
 
   var description: String {
     switch self {
     case .property(let device, let selector, let status):
-      "Core Audio property \(selector) on object \(device) failed (\(status))"
+      return "Core Audio property \(selector) on object \(device) failed (\(status))"
     case .propertySize(let device, let selector, let size):
-      "Core Audio property \(selector) on object \(device) returned \(size) bytes"
-    case .active(let device):
-      "Host audio active on default \(device.directions) device \(device.name) (\(device.id))"
+      return "Core Audio property \(selector) on object \(device) returned \(size) bytes"
+    case .unreadableAggregate(let id):
+      return "Could not resolve the sub-devices of aggregate audio device \(id)"
+    case .active(let device, let hardware):
+      let endpoint =
+        hardware.id == device.id
+        ? hardware.transport
+        : "aggregate contains \(deviceName(hardware.id)) (\(hardware.transport))"
+      return
+        "Host audio active on default \(device.directions) device \(device.name) (\(device.id)) (\(endpoint))"
     case .routeChanged(let direction):
-      "Default host audio \(direction) changed during monitoring"
+      return "Default host audio \(direction) changed during monitoring"
+    case .aggregateChanged(let id):
+      return "Host audio aggregate \(deviceName(id)) (\(id)) changed during monitoring"
     }
   }
 }
@@ -30,18 +41,32 @@ private struct Device: Sendable {
 
 private struct Violation: Error {
   let reason: GuardError
-  let time = Date.now
+  var time = Date.now
 }
 
-private final class ViolationLog: Sendable {
+private final class DeviceEvents: Sendable {
   private let first = Mutex<Violation?>(nil)
+  private let pending = Mutex<[AudioObjectID: Date]>([:])
 
-  func record(_ reason: GuardError) {
+  func routeChanged(_ reason: GuardError) {
     let violation = Violation(reason: reason)
     first.withLock { if $0 == nil { $0 = violation } }
   }
 
-  func check() throws(Violation) {
+  func recordActivity(_ id: AudioObjectID) {
+    let now = Date.now
+    pending.withLock { if $0[id] == nil { $0[id] = now } }
+  }
+
+  func takeActivity() -> [AudioObjectID: Date] {
+    pending.withLock { state in
+      let activity = state
+      state.removeAll(keepingCapacity: true)
+      return activity
+    }
+  }
+
+  func checkRoutes() throws(Violation) {
     if let violation = first.withLock({ $0 }) { throw violation }
   }
 }
@@ -59,16 +84,42 @@ private func address(_ selector: AudioObjectPropertySelector) -> AudioObjectProp
     mElement: kAudioObjectPropertyElementMain)
 }
 
-private func read(_ id: AudioObjectID, _ selector: AudioObjectPropertySelector) throws(GuardError)
-  -> UInt32
-{
+private func read(
+  _ id: AudioObjectID, _ selector: AudioObjectPropertySelector,
+  qualifier: UnsafeRawPointer? = nil, qualifierSize: UInt32 = 0
+) throws(GuardError) -> UInt32 {
   var property = address(selector)
   var value: UInt32 = 0
   var size = UInt32(MemoryLayout.size(ofValue: value))
-  let status = AudioObjectGetPropertyData(id, &property, 0, nil, &size, &value)
+  let status = AudioObjectGetPropertyData(id, &property, qualifierSize, qualifier, &size, &value)
   guard status == noErr else { throw .property(id, selector, status) }
   guard size == MemoryLayout.size(ofValue: value) else { throw .propertySize(id, selector, size) }
   return value
+}
+
+private func transport(_ id: AudioObjectID) throws(GuardError) -> AudioTransport {
+  AudioTransport(try read(id, kAudioDevicePropertyTransportType))
+}
+
+private func subDevices(_ id: AudioObjectID) throws -> [AudioObjectID] {
+  let selector = kAudioAggregateDevicePropertyFullSubDeviceList
+  var property = address(selector)
+  var list: Unmanaged<CFArray>?
+  var size = UInt32(MemoryLayout.size(ofValue: list))
+  let status = AudioObjectGetPropertyData(id, &property, 0, nil, &size, &list)
+  guard status == noErr else { throw GuardError.property(id, selector, status) }
+  guard size == MemoryLayout.size(ofValue: list), let uids = list?.takeRetainedValue() as? [String]
+  else { throw GuardError.unreadableAggregate(id) }
+  return try uids.map { uid in
+    var qualifier = uid as CFString
+    let member = try withUnsafePointer(to: &qualifier) {
+      try read(
+        system, kAudioHardwarePropertyTranslateUIDToDevice,
+        qualifier: $0, qualifierSize: UInt32(MemoryLayout<CFString>.size))
+    }
+    guard member != kAudioObjectUnknown else { throw GuardError.unreadableAggregate(id) }
+    return member
+  }
 }
 
 private func deviceName(_ id: AudioObjectID) -> String {
@@ -111,11 +162,11 @@ private func report(_ message: String, to file: FileHandle = .standardOutput) {
 
 private func monitor() async throws {
   let (stream, events) = AsyncStream<Event>.makeStream()
-  let violations = ViolationLog()
+  let activity = DeviceEvents()
   var listeners = try defaults.map { direction, selector in
     try Listener(system, selector) {
       // A replacement default can run before its device listener is installed.
-      violations.record(.routeChanged(direction))
+      activity.routeChanged(.routeChanged(direction))
       events.yield(.check)
     }
   }
@@ -131,23 +182,52 @@ private func monitor() async throws {
   listeners += try devices.map { device in
     try Listener(device.id, running) {
       // A transition may arrive after short playback has already stopped.
-      violations.record(.active(device))
+      activity.recordActivity(device.id)
       events.yield(.check)
     }
   }
+  var observedAggregates: Set<AudioObjectID> = []
+  for device in devices {
+    // Arm aggregate membership notifications before accepting activity on those routes.
+    _ = try AudioRoute(device.id, transport: transport) { id in
+      if observedAggregates.insert(id).inserted {
+        listeners.append(
+          try Listener(id, kAudioAggregateDevicePropertyFullSubDeviceList) {
+            activity.routeChanged(.aggregateChanged(id))
+            events.yield(.check)
+          })
+      }
+      return try subDevices(id)
+    }
+  }
 
+  var reported: Set<AudioObjectID> = []
   func check() throws {
-    try violations.check()
+    try activity.checkRoutes()
+    let pending = activity.takeActivity()
     for device in devices {
-      if try read(device.id, running) != 0 { violations.record(.active(device)) }
+      let runningNow = try read(device.id, running) != 0
+      guard runningNow || pending[device.id] != nil else { continue }
+      let route = try AudioRoute(device.id, transport: transport, members: subDevices)
+      if let hardware = route.hardware {
+        throw Violation(reason: .active(device, hardware), time: pending[device.id] ?? .now)
+      }
+      if reported.insert(device.id).inserted {
+        report("allowed: \(device.name) (\(route.transport.label))")
+      }
     }
     for ((direction, selector), initial) in zip(defaults, initialRoutes) {
-      if try read(system, selector) != initial { violations.record(.routeChanged(direction)) }
+      if try read(system, selector) != initial { activity.routeChanged(.routeChanged(direction)) }
     }
-    try violations.check()
+    try activity.checkRoutes()
   }
 
   try check()
+  if let output = initialRoutes.last, output != kAudioObjectUnknown {
+    report("default output transport: \(try transport(output).label)")
+  } else {
+    report("default output transport: none")
+  }
   report(devices.isEmpty ? "ready: no host devices" : "ready: monitoring default host devices")
   FileHandle.standardInput.readabilityHandler = { input in
     if input.availableData.isEmpty { events.yield(.stop) }
@@ -167,7 +247,7 @@ private func monitor() async throws {
     case .stop:
       try check()
       listeners.removeAll()
-      try violations.check()
+      try check()
       report("clean: host audio guard completed")
       return
     }
