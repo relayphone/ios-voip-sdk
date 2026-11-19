@@ -2,7 +2,8 @@ import CoreAudio
 import Foundation
 import Synchronization
 
-private enum GuardError: Error, CustomStringConvertible {
+enum GuardError: Error, CustomStringConvertible {
+  case invalidArguments
   case property(AudioObjectID, AudioObjectPropertySelector, OSStatus)
   case propertySize(AudioObjectID, AudioObjectPropertySelector, UInt32)
   case unreadableAggregate(AudioObjectID)
@@ -14,6 +15,8 @@ private enum GuardError: Error, CustomStringConvertible {
 
   var description: String {
     switch self {
+    case .invalidArguments:
+      return "Expected the isolated simulator UDID, launchd PID, input UID and output UID"
     case .property(let device, let selector, let status):
       return "Core Audio property \(selector) on object \(device) failed (\(status))"
     case .propertySize(let device, let selector, let size):
@@ -36,7 +39,7 @@ private enum GuardError: Error, CustomStringConvertible {
   }
 }
 
-private struct Device: Sendable {
+struct Device: Sendable {
   let id: AudioObjectID
   let directions: [AudioDirection]
   let name: String
@@ -83,13 +86,16 @@ private let defaults: [(AudioDirection, AudioObjectPropertySelector)] = [
 ]
 private let running = kAudioDevicePropertyDeviceIsRunningSomewhere
 
-private func address(_ selector: AudioObjectPropertySelector) -> AudioObjectPropertyAddress {
+func address(
+  _ selector: AudioObjectPropertySelector,
+  scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal
+) -> AudioObjectPropertyAddress {
   .init(
-    mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
+    mSelector: selector, mScope: scope,
     mElement: kAudioObjectPropertyElementMain)
 }
 
-private func read(
+func read(
   _ id: AudioObjectID, _ selector: AudioObjectPropertySelector,
   qualifier: UnsafeRawPointer? = nil, qualifierSize: UInt32 = 0
 ) throws(GuardError) -> UInt32 {
@@ -102,11 +108,11 @@ private func read(
   return value
 }
 
-private func transport(_ id: AudioObjectID) throws(GuardError) -> AudioTransport {
+func transport(_ id: AudioObjectID) throws(GuardError) -> AudioTransport {
   AudioTransport(try read(id, kAudioDevicePropertyTransportType))
 }
 
-private func identityString(
+func identityString(
   _ id: AudioObjectID, _ selector: AudioObjectPropertySelector
 ) throws(GuardError) -> String? {
   var property = address(selector)
@@ -185,7 +191,7 @@ private final class Listener {
   }
 }
 
-private func report(_ message: String, to file: FileHandle = .standardOutput) {
+func report(_ message: String, to file: FileHandle = .standardOutput) {
   file.write(Data("\(message)\n".utf8))
 }
 
@@ -314,7 +320,18 @@ private func monitor() async throws {
 }
 
 do {
-  try await monitor()
+  let arguments = CommandLine.arguments.dropFirst()
+  if arguments.isEmpty {
+    try await monitor()
+  } else if arguments.count == 4,
+    let udid = UUID(uuidString: arguments[1]), let launchd = pid_t(arguments[2])
+  {
+    try await monitorLeaseAudio(
+      udid: udid, launchd: launchd,
+      routes: LeaseAudioRoutes(input: arguments[3], output: arguments[4]))
+  } else {
+    throw GuardError.invalidArguments
+  }
 } catch {
   let timestamp = ISO8601DateFormatter()
   timestamp.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

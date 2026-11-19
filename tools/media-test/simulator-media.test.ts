@@ -13,7 +13,7 @@ test('local simulator media is refused before the guard or journey starts', asyn
     authorization: { environment: {} }, start: unexpected,
   }), {
     name: 'Error',
-    message: /host speakers and microphone.*not available yet.*hosted GitHub Actions/,
+    message: /host speakers and microphone.*hosted GitHub Actions/,
   });
   assert.throws(() => requireSimulatorMedia({ environment: { GITHUB_ACTIONS: 'false' } }), SimulatorMediaRefusal);
 });
@@ -37,8 +37,7 @@ test('a lease must prove isolation and both virtual audio routes', () => {
       environment: {}, leaseAudio: { ...isolated, [field]: false },
     }), /requires isolated audio and verified virtual input and output routes.*hosted GitHub Actions/);
   }
-  assert.throws(() => requireSimulatorMedia({ environment: {}, leaseAudio: isolated }),
-    /lease verification is not available yet.*hosted GitHub Actions/);
+  assert.doesNotThrow(() => requireSimulatorMedia({ environment: {}, leaseAudio: isolated }));
 });
 
 test('hosted CI arms the guard before the journey and records its verdict after cleanup', async t => {
@@ -96,12 +95,48 @@ test('the shipped entry points refuse a local invocation before setup', () => {
     ['feasibility.ts', 'unused-simulator', 'unused-app', 'unused-result'],
     ['run-native-tests.ts', '30', 'unused-results', 'unused-simulator', 'unused-spec', 'unused-host'],
     ['simulator-media.ts', 'unused-command'],
+    ['simulator-media.ts', '--check-lease'],
   ];
+  const environment = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('ISOLATED_LEASE_')));
   for (const [entry, ...args] of cases) {
     const result = spawnSync(process.execPath, [fileURLToPath(new URL(entry!, import.meta.url)), ...args], {
-      encoding: 'utf8', env: { ...process.env, GITHUB_ACTIONS: '' }, timeout: 5000,
+      encoding: 'utf8', env: { ...environment, GITHUB_ACTIONS: '' }, timeout: 5000,
     });
     assert.equal(result.status, 1, entry);
     assert.match(result.stdout + result.stderr, /host speakers and microphone.*hosted GitHub Actions/, entry);
   }
+});
+
+test('the generic command launcher remains hosted-only with local lease configuration', () => {
+  const result = spawnSync(process.execPath,
+    [fileURLToPath(new URL('./simulator-media.ts', import.meta.url)), '/usr/bin/true'], {
+      encoding: 'utf8', env: {
+        ...process.env, GITHUB_ACTIONS: '', ISOLATED_LEASE_CLI: '/unused-cli', ISOLATED_LEASE_CHECKER: '/unused-checker',
+      }, timeout: 5000,
+    });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /host speakers and microphone.*hosted GitHub Actions/);
+});
+
+test('an entry point without verified destination binding cannot start on a local lease', async () => {
+  const unexpected = async (): Promise<never> => assert.fail('Local simulator setup started');
+  await assert.rejects(withSimulatorMediaAudio(unexpected, {
+    authorization: { environment: {
+      ISOLATED_LEASE_CLI: '/lease',
+      ISOLATED_LEASE_CHECKER: '/checker',
+      ISOLATED_LEASE_CONFIG_DIR: '/lease-config',
+      ISOLATED_LEASE_CLI_ERROR_PREFIX: 'example-lease:',
+      ISOLATED_LEASE_CLI_SECRET_PATTERN: 'lease_secret_[A-Za-z0-9_-]+',
+      ISOLATED_LEASE_CLI_SCOPE_ENV: 'EXAMPLE_LEASE_KEY',
+      ISOLATED_LEASE_CLI_URL_ENV: 'EXAMPLE_URL',
+      ISOLATED_LEASE_CLI_LEASE_ID_ENV: 'EXAMPLE_LEASE_ID',
+      ISOLATED_LEASE_CLI_LEASE_TOKEN_ENV: 'EXAMPLE_LEASE_TOKEN',
+      ISOLATED_LEASE_INPUT_DEVICE_PREFIX: 'Lease Mic',
+      ISOLATED_LEASE_OUTPUT_DEVICE_PREFIX: 'Lease Speaker',
+      ISOLATED_LEASE_CHECKER_APP_ID: 'test.example.audio-check',
+      ISOLATED_LEASE_CHECKER_DIRECTORY_PREFIX: 'lease-audio-check.',
+    } },
+    start: unexpected,
+    lease: unexpected,
+  }), /must bind its destination to the isolated simulator lease/);
 });
