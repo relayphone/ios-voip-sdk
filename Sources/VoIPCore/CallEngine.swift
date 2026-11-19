@@ -1,4 +1,8 @@
-import Foundation
+#if SWIFT_PACKAGE
+  package import Foundation
+#else
+  import Foundation
+#endif
 
 /// Runs every call's state machine on ``VoIPActor`` and carries out its effects.
 ///
@@ -18,6 +22,7 @@ final class CallEngine {
   private let pushSource: (any PushSource)?
   private let configuration: VoIPConfiguration
   private let clock: EngineClock
+  private let wallNow: @Sendable () -> Date
   private let authority: (any AnswerAuthority)?
   private var answers: [CallID: AnswerExchange] = [:]
   private var answerReceipts: [ActionID: Duration] = [:]
@@ -67,6 +72,7 @@ final class CallEngine {
     clock: any Clock<Duration>,
     subscribers: Subscribers,
     authority: (any AnswerAuthority)? = nil,
+    wallNow: @escaping @Sendable () -> Date = { Date() },
     publish: @escaping @Sendable (Snapshot) -> Void
   ) {
     self.framework = framework
@@ -75,6 +81,7 @@ final class CallEngine {
     self.pushSource = pushSource
     self.configuration = configuration
     self.clock = EngineClock(clock)
+    self.wallNow = wallNow
     self.subscribers = subscribers
     self.authority = authority
     self.publish = publish
@@ -407,7 +414,7 @@ final class CallEngine {
     let reason = EndReason.failed(.atCapacity)
     let call = Call(
       id: incoming.id, isIncoming: true, parties: incoming.parties, status: .ended(reason),
-      hasVideo: incoming.hasVideo, metadata: incoming.metadata)
+      hasVideo: incoming.hasVideo, metadata: incoming.metadata, answerScope: incoming.answerScope)
     states[call.id] = CallMachine.State(call: call, phase: .ended(reason), policy: policy)
     order.append(call.id)
     endedAt[call.id] = clock.now()
@@ -803,10 +810,20 @@ final class CallEngine {
         return
       }
     }
-    preparations[call.id] = Task { [weak self, media] in
+    let permit = states[call.id]?.answer?.permit
+    preparations[call.id] = Task { [weak self, media, wallNow] in
       let event: CallMachine.Event
       do {
-        try await media.prepare(call)
+        let now = wallNow()
+        if let expiry = permit?.expiresAt, expiry <= now {
+          throw AnswerMediaPreparationError.expired
+        }
+        if let credentials = permit?.mediaCredentials {
+          guard credentials.expiresAt > now else { throw AnswerMediaPreparationError.expired }
+          try await media.prepare(call, answerCredentials: credentials)
+        } else {
+          try await media.prepare(call)
+        }
         event = .mediaPrepared
       } catch {
         event = .mediaPreparationFailed
@@ -837,7 +854,7 @@ final class CallEngine {
     guard let authority, let call = states[id]?.call else { return }
     let exchange =
       answers[id]
-      ?? AnswerExchange(attempt: attempt, call: call, authority: authority, now: clock.now)
+      ?? AnswerExchange(attempt: attempt, call: call, authority: authority, clock: clock)
     answers[id] = exchange
     let request = exchange.request(deadline: deadline)
     guard request.remaining > .zero else { return }
@@ -871,20 +888,26 @@ final class CallEngine {
     }
     let isCurrent = answers[id] === exchange
     if isCurrent, states[id]?.armed[stage] != nil {
-      if case .allow(let permit) = result, let expiry = permit.expiresAt, expiry <= clock.date() {
-        let cleanup = exchange.release(permit)
-        handle(
-          id,
-          .answerResolved(exchange.attempt.generation, stage: stage, .unavailable(.invalidResponse))
-        )
-        return cleanup
+      if case .allow(let permit) = result {
+        let now = wallNow()
+        if permit.expiresAt.map({ $0 <= now }) == true
+          || permit.mediaCredentials.map({ $0.expiresAt <= now }) == true
+        {
+          let cleanup = exchange.release(permit)
+          handle(
+            id,
+            .answerResolved(
+              exchange.attempt.generation, stage: stage, .unavailable(.invalidResponse))
+          )
+          return cleanup
+        }
+        exchange.adopt(permit)
       }
-      if case .allow(let permit) = result { exchange.adopt(permit) }
       handle(id, .answerResolved(exchange.attempt.generation, stage: stage, result))
     } else if case .allow(let permit) = result {
       if isCurrent, states[id]?.armed[.reconciliation] != nil {
         // The two replies can identify the same grant. Let reconciliation decide which to keep.
-        exchange.lateClaimPermit = permit
+        exchange.lateClaimPermit = AnswerPermit(id: permit.id)
       } else {
         return exchange.releaseUnlessAdopted(permit)
       }
@@ -1003,12 +1026,13 @@ final class CallEngine {
       framework: any CallingFramework, media: any CallMedia, push: any PushSource,
       configuration: VoIPConfiguration, clock: any Clock<Duration>,
       authority: (any AnswerAuthority)? = nil,
+      wallNow: @escaping @Sendable () -> Date = { Date() },
       observe: @escaping @VoIPActor @Sendable (CallEvent) -> Void
     ) {
       engine = CallEngine(
         framework: framework, media: media, audio: nil, pushSource: push,
         configuration: configuration, clock: clock, subscribers: Subscribers(observe: observe),
-        authority: authority, publish: { _ in })
+        authority: authority, wallNow: wallNow, publish: { _ in })
       engine.attach()
     }
 
@@ -1121,7 +1145,7 @@ private final class AnswerExchange {
   let attempt: CallMachine.AnswerAttempt
   let call: Call
   let authority: any AnswerAuthority
-  let now: @Sendable () -> Duration
+  let clock: EngineClock
   var tasks: [CallMachine.Deadline: Task<Void, Never>] = [:]
   var lateClaimPermit: AnswerPermit?
   private var adopted: AnswerPermit?
@@ -1129,20 +1153,21 @@ private final class AnswerExchange {
 
   init(
     attempt: CallMachine.AnswerAttempt, call: Call, authority: any AnswerAuthority,
-    now: @escaping @Sendable () -> Duration
+    clock: EngineClock
   ) {
     self.attempt = attempt
     self.call = call
     self.authority = authority
-    self.now = now
+    self.clock = clock
   }
 
   func request(deadline: Duration) -> AnswerRequest {
-    AnswerRequest(call: call, actionID: attempt.action, deadline: deadline, now: now)
+    AnswerRequest(
+      call: call, actionID: attempt.action, deadline: deadline, now: clock.now, sleep: clock.sleep)
   }
 
   func adopt(_ permit: AnswerPermit) {
-    adopted = permit
+    adopted = AnswerPermit(id: permit.id)
     if let lateClaimPermit { releaseUnlessAdopted(lateClaimPermit) }
     lateClaimPermit = nil
   }
@@ -1164,7 +1189,7 @@ private final class AnswerExchange {
   @discardableResult
   func release(_ permit: AnswerPermit) -> Task<Void, Never>? {
     guard releases.insert(Data(permit.id.utf8)).inserted else { return nil }
-    let now = now()
+    let now = clock.now()
     let answerDeadline = attempt.received + attempt.total
     let cleanup = now + .seconds(1)
     let request = request(deadline: now < answerDeadline ? min(cleanup, answerDeadline) : cleanup)

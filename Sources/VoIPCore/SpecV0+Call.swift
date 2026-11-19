@@ -79,7 +79,7 @@
       package init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         let value = try container.decode(String.self)
-        guard Self.isValid(value) else {
+        guard WireValues.isUTCMillisecondTimestamp(value) else {
           throw DecodingError.dataCorruptedError(
             in: container, debugDescription: "Expected a UTC millisecond timestamp")
         }
@@ -91,20 +91,6 @@
         try container.encode(rawValue)
       }
 
-      private static func isValid(_ value: String) -> Bool {
-        guard
-          let match = value.wholeMatch(
-            of: #/([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})\.[0-9]{3}Z/#
-          ), let year = Int(match.1), let month = Int(match.2), let day = Int(match.3),
-          let hour = Int(match.4), let minute = Int(match.5), let second = Int(match.6),
-          (1...12).contains(month), hour < 24, minute < 60, second < 60
-        else { return false }
-
-        let leapYear =
-          year.isMultiple(of: 4) && (!year.isMultiple(of: 100) || year.isMultiple(of: 400))
-        let monthLengths = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-        return (1...monthLengths[month - 1]).contains(day)
-      }
     }
 
     package struct Call: Codable, Sendable {

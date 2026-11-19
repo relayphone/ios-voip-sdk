@@ -18,10 +18,6 @@ private let pending: [String: String] = [
   "cross-line-waiting":
     "No line identity on calls.",
   "end-before-admission": "Alias-addressed ends cannot reach a call during pending admission.",
-  "http-answer-allow": "No native HTTP claim transport or permit handling.",
-  "http-answer-late-permit-release": "No native HTTP compensation for a stale permit.",
-  "http-answer-refused-elsewhere": "No native HTTP refusal mapping.",
-  "http-answer-timeout-reconcile": "No native HTTP deadline and reconciliation handling.",
   "outgoing-deferred-binding": "Remote alias binding and alias-addressed events are missing.",
 ]
 

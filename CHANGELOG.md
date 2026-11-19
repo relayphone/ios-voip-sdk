@@ -52,6 +52,14 @@ Public API changes include migration guidance.
 
 ### Added
 
+- Swift apps can opt in to `HTTPAnswerAuthority` for the version 1 native Answer protocol.
+  Provision the installation bearer as a generic password in the data protection Keychain,
+  then pass its service and account reference to `HTTPAnswerAuthority` before starting the
+  client. Attach an `AnswerScope` with the server's account and line to each incoming call,
+  or send `answerScope` in the default VoIP push format. The authority sends at most one HTTPS request
+  per stage and keeps the native receipt's idempotency key through reconciliation and release.
+  Implement `CallMedia.prepare(_:answerCredentials:)` if the service returns LiveKit credentials.
+
 - Call `try await client.end(id)` to read a typed End result. A local End returns its original
   receipt throughout the retention window. A call already ended by the server returns
   `alreadyEnded(originalReason)`.

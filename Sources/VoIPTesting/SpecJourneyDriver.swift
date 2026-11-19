@@ -37,26 +37,8 @@
 
     private init(_ settings: SpecJourney.Configuration) {
       authority = ScriptedAuthority(clock: clock)
-      let budgets = settings.budgets
       outgoingMedia = settings.outgoingMedia
-      configuration = VoIPConfiguration(
-        presentationPolicy: PresentationPolicy(
-          previewsCallsAnsweredElsewhere: settings.previewAnsweredElsewhere),
-        supportsVideo: true,
-        deadlines: Deadlines(
-          ring: budgets.incomingRing.duration, placement: budgets.placement.duration,
-          mediaPreparation: budgets.mediaPreparation.duration,
-          audioActivation: budgets.audioActivation.duration,
-          audioRecovery: budgets.audioRecovery.duration,
-          connect: budgets.connection.duration, reconnect: budgets.reconnection.duration,
-          outgoingNoAnswer: budgets.outgoingNoAnswer.duration),
-        retention: .seconds(120),
-        outgoingMedia: settings.outgoingMedia == .whenProvided ? .whenProvided : .duringPlacement,
-        answerBudget: AnswerBudget(
-          total: budgets.answer.total.duration, claim: budgets.answer.claim.duration,
-          reconciliation: budgets.answer.reconciliation.duration,
-          settlementReserve: budgets.answer.settlementReserve.duration),
-        maximumParticipatingCalls: settings.maximumParticipatingCalls)
+      configuration = settings.sdkConfiguration
     }
 
     /// Returns every failed expectation, labeled by its step. Decoding and driver errors throw.
@@ -597,7 +579,7 @@
   }
 
   extension SpecV0.Refusal {
-    fileprivate init(_ reason: AnswerRefusal) {
+    package init(_ reason: AnswerRefusal) {
       switch reason {
       case .answeredElsewhere: self = .answeredElsewhere
       case .declinedElsewhere: self = .declinedElsewhere
@@ -614,13 +596,37 @@
     }
   }
 
+  extension SpecJourney.Configuration {
+    package var sdkConfiguration: VoIPConfiguration {
+      return VoIPConfiguration(
+        presentationPolicy: PresentationPolicy(
+          previewsCallsAnsweredElsewhere: previewAnsweredElsewhere),
+        supportsVideo: true,
+        deadlines: Deadlines(
+          ring: budgets.incomingRing.duration, placement: budgets.placement.duration,
+          mediaPreparation: budgets.mediaPreparation.duration,
+          audioActivation: budgets.audioActivation.duration,
+          audioRecovery: budgets.audioRecovery.duration,
+          connect: budgets.connection.duration, reconnect: budgets.reconnection.duration,
+          outgoingNoAnswer: budgets.outgoingNoAnswer.duration),
+        retention: .seconds(120),
+        outgoingMedia: outgoingMedia == .whenProvided ? .whenProvided : .duringPlacement,
+        answerBudget: AnswerBudget(
+          total: budgets.answer.total.duration, claim: budgets.answer.claim.duration,
+          reconciliation: budgets.answer.reconciliation.duration,
+          settlementReserve: budgets.answer.settlementReserve.duration),
+        maximumParticipatingCalls: maximumParticipatingCalls)
+    }
+
+  }
+
   extension SpecV0.ID {
-    fileprivate var callID: CallID { CallID(rawValue: rawValue) }
-    fileprivate var eventID: EventID { EventID(rawValue: rawValue) }
+    package var callID: CallID { CallID(rawValue: rawValue) }
+    package var eventID: EventID { EventID(rawValue: rawValue) }
   }
 
   extension SpecV0.Party {
-    fileprivate func sdkParty() throws(HandleError) -> Party {
+    package func sdkParty() throws(HandleError) -> Party {
       let handle: Handle =
         switch self.handle {
         case .phone(let number): try Handle(kind: .phoneNumber, value: number)
@@ -648,7 +654,7 @@
   }
 
   extension Call {
-    fileprivate var specLifecycle: SpecJourney.Lifecycle {
+    package var specLifecycle: SpecJourney.Lifecycle {
       switch status {
       case .ringing: .ringing
       case .previewing(.answeredElsewhere): .previewing(.answeredElsewhere)
