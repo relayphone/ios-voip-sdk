@@ -7,11 +7,14 @@ import com.relayphone.voip.CallID
 import com.relayphone.voip.CommandReceipt
 import com.relayphone.voip.Configuration
 import com.relayphone.voip.Effect
+import com.relayphone.voip.IncomingResult
 import com.relayphone.voip.Input
 import com.relayphone.voip.Lifecycle
 import com.relayphone.voip.Now
 import com.relayphone.voip.Outcome
+import com.relayphone.voip.PlacementResult
 import com.relayphone.voip.ReceiveDisposition
+import com.relayphone.voip.RemovalCompletion
 import com.relayphone.voip.RemoteCallID
 import com.relayphone.voip.RemoteEvent
 import com.relayphone.voip.State
@@ -19,6 +22,7 @@ import com.relayphone.voip.SystemFailure
 import com.relayphone.voip.SystemFailureDetail
 import com.relayphone.voip.SystemOperation
 import com.relayphone.voip.reduce
+import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
@@ -33,6 +37,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -54,6 +59,7 @@ public class CallRuntime private constructor(
     private val monotonicClock: MonotonicClock,
     private val utcClock: Clock,
     private val timers: TimerPort,
+    replayCapacity: Int,
 ) {
     private val lifetime = Job(parent.coroutineContext[Job])
     private val scope = CoroutineScope(parent.coroutineContext + lifetime)
@@ -64,7 +70,10 @@ public class CallRuntime private constructor(
     private val calls = mutableMapOf<CallID, CallWork>()
     private val timerJobs = mutableMapOf<Attempt, Job>()
     private val startSetups = mutableMapOf<Attempt, StartSetup>()
+    private val placementJobs = mutableMapOf<Attempt, Job>()
+    private val admissions = mutableMapOf<Attempt, CompletableDeferred<IncomingResult.Decision?>>()
     private val current = MutableStateFlow(State(configuration))
+    private val journal = RuntimeJournal(current.value, replayCapacity)
     private var eventSequence = 0L
     private val observations = MutableSharedFlow<RuntimeEvent>(
         extraBufferCapacity = 64,
@@ -75,8 +84,8 @@ public class CallRuntime private constructor(
     public val state: StateFlow<State> = current.asStateFlow()
 
     /**
-     * Live observations with a bounded buffer. Use the first event as a baseline. A gap between
-     * subsequent sequence numbers means observations were dropped and the reader should reload [state].
+     * Live event projection with its own positions. Use [observe] for bounded replay and
+     * authoritative recovery alongside state revisions and cleanup results.
      */
     public val events: SharedFlow<RuntimeEvent> = observations.asSharedFlow()
 
@@ -88,17 +97,22 @@ public class CallRuntime private constructor(
                         is Message.Deliver -> deliver(message.input)
                         is Message.Command -> {
                             try {
-                                message.reply.complete(deliver(message.input))
+                                val receipt = deliver(message.input)
+                                if (message.input is Input.Placed && receipt is CommandReceipt.Placement && receipt.accepted) {
+                                    placementJobs.remove(message.input.attempt)?.cancel()
+                                }
+                                val admission = (receipt as? CommandReceipt.Incoming.Pending)?.let {
+                                    admissions.getOrPut(it.attempt) { CompletableDeferred() }
+                                }
+                                message.reply.complete(receipt?.let { CommandReply(it, admission) })
                             } finally {
                                 message.reply.complete(null)
                             }
                         }
                         is Message.StartSetupResolved -> deliver(requireNotNull(startSetups.remove(message.attempt)?.result()))
                         is Message.Finished -> finish(message)
-                        is Message.RemovalFailed -> {
-                            deliver(Input.SystemRemovalFailed(message.attempt))
-                            observe { sequence -> RuntimeEvent.SystemRemovalFailed(sequence, message.attempt, message.failure) }
-                        }
+                        is Message.RemovalFailed ->
+                            deliver(Input.SystemRemovalFailed(message.attempt), removalFailure = message.failure)
                     }
                 }
             } finally {
@@ -111,30 +125,53 @@ public class CallRuntime private constructor(
     public fun submit(input: Input): Boolean =
         accepting.get() && inbox.trySend(Message.Deliver(input.copyParties())).isSuccess
 
+    /** Reads the authoritative state and cursor without starting adapter work. */
+    public fun snapshot(): RuntimeSnapshot = journal.snapshot()
+
+    /** Observes a snapshot and subsequent frames, or replays strictly after [after]. */
+    public fun observe(after: RuntimeCursor? = null): Flow<RuntimeObservation> = journal.observe(after)
+
+    /** Reports an invitation and waits for the decision of its original admission attempt. */
+    public suspend fun reportIncoming(input: Input.Incoming): Outcome<IncomingResult, CallError> {
+        val reply = command(input) ?: return Outcome.Failure(CallError.BridgeUnavailable)
+        return when (val receipt = reply.receipt as CommandReceipt.Incoming) {
+            is CommandReceipt.Incoming.Resolved -> Outcome.Success(receipt.result)
+            is CommandReceipt.Incoming.Pending -> {
+                val result = requireNotNull(reply.admission).await()
+                    ?: return Outcome.Failure(CallError.BridgeUnavailable)
+                Outcome.Success(if (receipt.duplicate) IncomingResult.Duplicate(result) else result)
+            }
+        }
+    }
+
+    /** Acknowledges a placement settlement only if the reducer accepted its current attempt. */
+    public suspend fun settlePlacement(attempt: Attempt, result: PlacementResult): Boolean =
+        (command(Input.Placed(attempt, result))?.receipt as? CommandReceipt.Placement)?.accepted == true
+
     /** Receives an application event and returns its authoritative disposition or a typed failure. */
     public suspend fun receive(event: RemoteEvent): Outcome<ReceiveDisposition, CallError> =
         when (val receipt = command(Input.Receive(event))) {
             null -> Outcome.Failure(CallError.BridgeUnavailable)
-            else -> (receipt as CommandReceipt.Received).outcome
+            else -> (receipt.receipt as CommandReceipt.Received).outcome
         }
 
     /** Binds a remote identity and applies any buffered events before resolving. */
     public suspend fun bindRemote(callID: CallID, remoteID: RemoteCallID): Outcome<Unit, CallError> =
         when (val receipt = command(Input.BindRemote(callID, remoteID))) {
             null -> Outcome.Failure(CallError.BridgeUnavailable)
-            else -> (receipt as CommandReceipt.Bound).outcome
+            else -> (receipt.receipt as CommandReceipt.Bound).outcome
         }
 
-    private suspend fun command(input: Input): CommandReceipt? {
-        val reply = CompletableDeferred<CommandReceipt?>()
+    private suspend fun command(input: Input): CommandReply? {
+        val reply = CompletableDeferred<CommandReply?>()
         if (!accepting.get() || inbox.trySend(Message.Command(input.copyParties(), reply)).isFailure) return null
         return reply.await()
     }
 
     private fun Input.copyParties(): Input = when (this) {
-        is Input.Start -> copy(parties = parties.toList())
+        is Input.Start -> copy(parties = Collections.unmodifiableList(parties.toList()))
         is Input.Receive -> when (val value = event) {
-            is RemoteEvent.PartiesChanged -> copy(event = value.copy(parties = value.parties.toList()))
+            is RemoteEvent.PartiesChanged -> copy(event = value.copy(parties = Collections.unmodifiableList(value.parties.toList())))
             else -> this
         }
         else -> this
@@ -163,23 +200,42 @@ public class CallRuntime private constructor(
             calls.clear()
             timerJobs.clear()
             startSetups.clear()
-            current.value = State(current.value.configuration)
+            placementJobs.clear()
+            admissions.values.forEach { it.complete(null) }
+            admissions.clear()
+            publish(State(current.value.configuration), null)
         }
     }
 
-    private fun deliver(input: Input, receiptsOnly: Boolean = false): CommandReceipt? {
+    private fun deliver(
+        input: Input, receiptsOnly: Boolean = false, removalFailure: SystemFailure? = null,
+    ): CommandReceipt? {
         val previous = current.value
         val now = Now(monotonic = monotonicClock.now(), utc = utcClock.now())
         val pendingAdapterWork = calls.filterValues { it.jobs.isNotEmpty() }.keys
         val transition = reduce(previous, input, now, pendingAdapterWork)
-        current.value = transition.state
+        val removal = transition.removal
+        val events = if (receiptsOnly) emptyList() else buildList {
+            if (removalFailure != null && removal != null) {
+                add(RuntimeEvent.SystemRemovalFailed(++eventSequence, removal.attempt, removalFailure))
+            }
+            for (effect in transition.effects) {
+                when (effect) {
+                    is Effect.ClaimTimedOut -> add(RuntimeEvent.ClaimTimedOut(++eventSequence, effect))
+                    is Effect.TonesPerformed -> add(RuntimeEvent.TonesPerformed(++eventSequence, effect))
+                    else -> Unit
+                }
+            }
+            transition.terminalCompletions.forEach { add(RuntimeEvent.TerminalCompleted(++eventSequence, it)) }
+        }
+        publish(transition.state, input, removal, events)
         transition.effects.forEach { effect ->
             if (!receiptsOnly || effect is Effect.SettleAction || effect is Effect.RejectAction) {
                 execute(effect, previous)
             }
         }
-        if (!receiptsOnly) transition.terminalCompletions.forEach { id ->
-            observe { sequence -> RuntimeEvent.TerminalCompleted(sequence, id) }
+        transition.admission?.let { (attempt, decision) ->
+            admissions.remove(attempt)?.complete(decision)
         }
         return transition.receipt
     }
@@ -203,9 +259,8 @@ public class CallRuntime private constructor(
             }
             is Effect.RequestPlacement -> {
                 val call = projection(effect.attempt, previous)
-                launch(effect.attempt) {
-                    val error = (authority.place(call, effect) as? Outcome.Failure)?.error
-                    submit(Input.Placed(effect.attempt, error))
+                placementJobs[effect.attempt] = launch(effect.attempt) {
+                    submit(Input.Placed(effect.attempt, authority.placeCall(call, effect)))
                 }
             }
             is Effect.RequestClaim -> launch(effect.attempt) {
@@ -214,7 +269,7 @@ public class CallRuntime private constructor(
             is Effect.Reconcile -> launch(effect.attempt) {
                 completeClaim(effect.attempt, authority.reconcile(effect))
             }
-            is Effect.ClaimTimedOut -> observe { RuntimeEvent.ClaimTimedOut(it, effect) }
+            is Effect.ClaimTimedOut, is Effect.TonesPerformed -> Unit
             is Effect.ReleasePermit -> launch(effect.attempt, WorkKind.CLEANUP) {
                 authority.release(effect)
                 submit(Input.PermitReleased(effect.attempt, effect.permit))
@@ -255,7 +310,6 @@ public class CallRuntime private constructor(
             is Effect.SettleAction -> system.settle(effect)
             is Effect.RejectAction -> system.reject(effect)
             is Effect.CompleteEnd -> system.completeEnd(effect)
-            is Effect.TonesPerformed -> observe { RuntimeEvent.TonesPerformed(it, effect) }
             is Effect.Publish -> presentation.publish(effect.call)
             is Effect.ArmTimer -> {
                 timerJobs[effect.attempt] = launch(effect.attempt, WorkKind.TIMER) {
@@ -292,8 +346,18 @@ public class CallRuntime private constructor(
     private fun projection(attempt: Attempt, previous: State): Call =
         current.value.calls[attempt.callID] ?: previous.calls.getValue(attempt.callID)
 
-    private inline fun observe(event: (Long) -> RuntimeEvent) {
-        observations.tryEmit(event(++eventSequence))
+    private fun publish(
+        state: State, input: Input?, removal: RemovalCompletion? = null,
+        events: List<RuntimeEvent> = emptyList(),
+    ) {
+        journal.publish(state, input, removal, events) { frame ->
+            when (frame) {
+                is RuntimeFrame.StateRevision -> current.value = frame.state
+                is RuntimeFrame.Event -> observations.tryEmit(frame.event)
+                is RuntimeFrame.TerminalCompleted -> observations.tryEmit(frame.event)
+                is RuntimeFrame.Cleanup -> Unit
+            }
+        }
     }
 
     private fun completeClaim(attempt: Attempt, result: Reconciliation) {
@@ -326,6 +390,7 @@ public class CallRuntime private constructor(
     private suspend fun finish(message: Message.Finished) {
         val id = message.attempt.callID
         val call = calls.getValue(id)
+        placementJobs.remove(message.attempt, message.job)
         if (call.jobs.remove(message.job) == WorkKind.TIMER) {
             timerJobs.remove(message.attempt, message.job)
         }
@@ -356,9 +421,13 @@ public class CallRuntime private constructor(
 
     private enum class WorkKind { OPERATION, SESSION, CLEANUP, TIMER }
 
+    private data class CommandReply(
+        val receipt: CommandReceipt, val admission: CompletableDeferred<IncomingResult.Decision?>?,
+    )
+
     private sealed interface Message {
         data class Deliver(val input: Input) : Message
-        data class Command(val input: Input, val reply: CompletableDeferred<CommandReceipt?>) : Message
+        data class Command(val input: Input, val reply: CompletableDeferred<CommandReply?>) : Message
         data class StartSetupResolved(val attempt: Attempt) : Message
         data class Finished(val attempt: Attempt, val job: Job) : Message
         data class RemovalFailed(val attempt: Attempt, val failure: SystemFailure) : Message
@@ -376,10 +445,14 @@ public class CallRuntime private constructor(
             monotonicClock: MonotonicClock,
             utcClock: Clock = Clock.System,
             timers: TimerPort = CoroutineTimers(monotonicClock),
+            replayCapacity: Int = 64,
         ): Outcome<CallRuntime, CallError> = when (val validation = configuration.budgets.answer.validateFor(system.answerDeadline)) {
             is Outcome.Failure -> validation
             is Outcome.Success -> Outcome.Success(
-                CallRuntime(configuration, scope, system, authority, media, presentation, monotonicClock, utcClock, timers),
+                CallRuntime(
+                    configuration, scope, system, authority, media, presentation, monotonicClock, utcClock, timers,
+                    replayCapacity,
+                ),
             )
         }
     }

@@ -1,5 +1,6 @@
 package com.relayphone.voip
 
+import java.util.Collections
 import kotlin.time.Duration
 import kotlin.time.Instant
 import kotlinx.serialization.SerialName
@@ -90,10 +91,42 @@ public enum class ReceiveDisposition {
     @SerialName("duplicate") DUPLICATE,
 }
 
+/** Result of reporting an invitation. A retry returns the first admission decision. */
+public sealed interface IncomingResult {
+    public sealed interface Decision : IncomingResult
+    public data object Admitted : Decision
+    public data class Refused(public val reason: IncomingRefusal) : Decision
+    public data class Duplicate(public val original: Decision) : IncomingResult
+}
+
+/** A typed reason why an invitation did not reach ringing. */
+public sealed interface IncomingRefusal {
+    public data object Expired : IncomingRefusal
+    public data object EventAlreadyUsed : IncomingRefusal
+    public data class CallAlreadyExists(public val state: LifecycleKind) : IncomingRefusal
+    public data class Ended(public val reason: EndReason) : IncomingRefusal
+    public data class Previewed(public val reason: PreviewReason) : IncomingRefusal
+    public data class SystemFailed(public val failure: SystemFailure) : IncomingRefusal
+}
+
+/** The placement authority's settlement for one attempt. */
+public sealed interface PlacementResult {
+    public data class Placed(public val remoteID: RemoteCallID? = null) : PlacementResult
+    public data class Refused(public val reason: RefusalReason) : PlacementResult
+    public data class Failed(public val cause: PlacementFailure) : PlacementResult
+}
+
 /** Immediate command decisions, evaluated on the same state as the transition. */
 public sealed interface CommandReceipt {
     public data class Received(public val outcome: Outcome<ReceiveDisposition, CallError>) : CommandReceipt
     public data class Bound(public val outcome: Outcome<Unit, CallError>) : CommandReceipt
+    public sealed interface Incoming : CommandReceipt {
+        /** Await a native admission decision for this attempt. */
+        public data class Pending(public val attempt: Attempt, public val duplicate: Boolean) : Incoming
+        public data class Resolved(public val result: IncomingResult) : Incoming
+    }
+    /** Whether a settlement matched a live placement attempt within its deadline. */
+    public data class Placement(public val accepted: Boolean) : CommandReceipt
 }
 
 /** Inputs carry port confirmations and explicit authority. A request alone changes no control state. */
@@ -125,7 +158,11 @@ public sealed interface Input {
     ) : Input {
         init { require(parties.isNotEmpty()) }
     }
-    public data class Placed(public val attempt: Attempt, public val error: CallError.PlacementFailed? = null) : Input
+    public data class Placed(
+        public val attempt: Attempt, public val result: PlacementResult = PlacementResult.Placed(),
+    ) : Input
+    /** Reports a preview join failing after its placement has already been accepted. */
+    public data class JoinPlacementLost(public val attempt: Attempt, public val error: CallError.PlacementFailed) : Input
     public data class AuthorityAllowed(public val attempt: Attempt, public val permit: AttemptID) : Input
     public data class AnswerRefused(public val attempt: Attempt, public val reason: RefusalReason) : Input
     public data class ReconciliationUnknown(public val attempt: Attempt) : Input
@@ -157,7 +194,9 @@ public sealed interface Input {
 /** Ordered work for the engine. Effect deadlines use the reducer's monotonic time domain. */
 public sealed interface Effect {
     public data class ReportIncoming(public val attempt: Attempt) : Effect
-    public data class RequestPlacement(public val attempt: Attempt, public val actionID: ActionID) : Effect
+    public data class RequestPlacement(
+        public val attempt: Attempt, public val actionID: ActionID, public val deadline: Instant,
+    ) : Effect
     public data class NativeStart(public val attempt: Attempt, public val actionID: ActionID) : Effect
     public data class RequestClaim(public val attempt: Attempt, public val actionID: ActionID) : Effect
     public data class ClaimTimedOut(public val attempt: Attempt, public val error: CallError.ClaimTimedOut) : Effect
@@ -186,12 +225,13 @@ public class State internal constructor(
     internal val releasedPermits: Map<PermitKey, Instant>,
     internal val actionIDs: Map<ActionID, Instant>,
     internal val generation: Long,
-    /** Retained ended calls whose adapter work has completed. */
-    public val completedTerminalCalls: Set<CallID>,
+    completedTerminalCalls: Set<CallID>,
 ) {
     public constructor(configuration: Configuration) :
         this(configuration, emptyMap(), emptyMap(), emptyMap(), emptyMap(), 0, emptySet())
     public val calls: Map<CallID, Call> get() = records.mapValues { it.value.call }
+    /** Retained ended calls whose adapter work has completed. */
+    public val completedTerminalCalls: Set<CallID> = Collections.unmodifiableSet(completedTerminalCalls)
     /** Retained terminal call IDs ordered by first terminal intent. */
     public val terminalCallOrder: List<CallID>
         get() = records.values.filter { it.terminalAt != null }.sortedWith(terminalOrder).map { it.call.id }
@@ -206,11 +246,21 @@ public data class Transition(
     public val state: State, public val effects: List<Effect>, public val receipt: CommandReceipt? = null,
     /** Newly completed calls, including any that expired from retention in this transition. */
     public val terminalCompletions: List<CallID> = emptyList(),
+    /** Final decision for the native operation started by an incoming command. */
+    public val admission: AdmissionCompletion? = null,
+    /** Platform removal result for a still-owned removal attempt. */
+    public val removal: RemovalCompletion? = null,
 )
+
+public data class AdmissionCompletion(public val attempt: Attempt, public val decision: IncomingResult.Decision)
+public data class RemovalCompletion(public val attempt: Attempt, public val removed: Boolean)
 
 internal data class Pending(val attempt: Attempt, val id: ActionID, val deadline: Instant)
 internal data class Control(val action: Action, val attempt: Attempt, val id: ActionID)
-internal data class SeenEvent(val at: Instant, val order: Long, val pending: RemoteEvent? = null) {
+internal data class SeenEvent(
+    val at: Instant, val order: Long, val pending: RemoteEvent? = null,
+    val incoming: IncomingResult.Decision? = null,
+) {
     val end: RemoteEvent.Ended? get() = pending as? RemoteEvent.Ended
 }
 internal data class PermitKey(val callID: CallID, val id: AttemptID)
@@ -223,6 +273,7 @@ internal val terminalOrder: Comparator<Record> = compareBy({ it.terminalAt }, { 
 internal data class Record(
     val call: Call,
     val admission: Attempt? = null,
+    val invitationEvent: EventID? = null,
     val invitationDeadline: Instant? = null,
     val retainedEnd: SeenEvent? = null,
     val placement: Pending? = null,
