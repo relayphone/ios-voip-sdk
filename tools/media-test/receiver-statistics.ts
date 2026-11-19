@@ -4,13 +4,14 @@ import type { TransportSnapshot } from './transport.ts';
 type RoomStatistics = Awaited<ReturnType<Room['getRtcStats']>>;
 
 export function senderAudioStatistics(stats: Pick<RoomStatistics, 'publisherStats'>) {
-  const rows = stats.publisherStats.flatMap(({ stats }) => stats.case === 'outboundRtp' &&
-    stats.value.stream?.kind === 'audio' && stats.value.rtc?.id && stats.value.rtc.timestamp !== undefined &&
-    stats.value.sent?.packetsSent !== undefined && stats.value.sent.bytesSent !== undefined ? [{
-      streamID: stats.value.rtc.id, ssrc: stats.value.stream.ssrc, timestamp: Number(stats.value.rtc.timestamp),
-      packetsSent: Number(stats.value.sent.packetsSent), bytesSent: Number(stats.value.sent.bytesSent),
-    }] : []);
-  return rows.length === 1 ? rows[0] : undefined;
+  return stats.publisherStats.flatMap(({ stats }) => {
+    if (stats.case !== 'outboundRtp') return [];
+    const { rtc, stream, sent } = stats.value;
+    if (stream?.kind !== 'audio' || !rtc?.id || rtc.timestamp === undefined ||
+        sent?.packetsSent === undefined || sent.bytesSent === undefined) return [];
+    return [{ streamID: rtc.id, ssrc: stream.ssrc, timestamp: Number(rtc.timestamp),
+      packetsSent: Number(sent.packetsSent), bytesSent: Number(sent.bytesSent) }];
+  });
 }
 /** Uses the pinned SDK's public receiver statistics API, not signal-derived loss estimates. */
 export async function receiverStatistics(room: Pick<Room, 'getRtcStats'>, sample: () => number,

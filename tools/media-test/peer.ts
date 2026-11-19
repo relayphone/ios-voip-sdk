@@ -21,7 +21,7 @@ interface SenderPacing {
   publication: string;
   startedAtMs: number;
   frames: SenderFrame[];
-  rtp: { observedAtMs: number; counters: NonNullable<ReturnType<typeof senderAudioStatistics>> }[];
+  rtp: { observedAtMs: number; streams: ReturnType<typeof senderAudioStatistics> }[];
   droppedFrames: number;
   droppedRtpRows: number;
 }
@@ -132,9 +132,9 @@ export class MediaPeer {
         try {
           const row = await this.readStatistics(this.room, () => this.receivedSamples, pacing && (stats => {
             if (pacing !== this.senderPacing) return;
-            const counters = senderAudioStatistics(stats);
-            if (!counters || pacing.rtp.at(-1)?.counters.timestamp === counters.timestamp) return;
-            if (pacing.rtp.length < 128) pacing.rtp.push({ observedAtMs: performance.now(), counters });
+            // A room stats report can contain the retired and replacement RTP streams.
+            // Keep them separate so the receipt can show which stream advanced.
+            if (pacing.rtp.length < 128) pacing.rtp.push({ observedAtMs: performance.now(), streams: senderAudioStatistics(stats) });
             else pacing.droppedRtpRows++;
           }));
           const previous = this.transport.at(-1);

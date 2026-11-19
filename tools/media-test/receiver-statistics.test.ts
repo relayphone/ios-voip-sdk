@@ -22,13 +22,17 @@ test('missing receiver counters are unavailable, never invented zero loss', asyn
   assert.equal(await receiverStatistics(room('publisherStats', true), () => 48000), null);
 });
 
-test('sender counters identify the sole outbound audio RTP stream', async () => {
-  const row = { stats: { case: 'outboundRtp', value: { stream: { kind: 'audio', ssrc: 5 },
-    rtc: { id: 'source', timestamp: 10n }, sent: { packetsSent: 30n, bytesSent: 600n } } } };
+test('sender counters keep retired and replacement audio streams separate', async () => {
+  const row = (id: string, ssrc: number, packetsSent: bigint, kind = 'audio') => ({ stats: {
+    case: 'outboundRtp', value: { stream: { kind, ssrc }, rtc: { id, timestamp: 10n },
+      sent: { packetsSent, bytesSent: packetsSent * 20n } },
+  } });
   const stats = await room('subscriberStats').getRtcStats();
   const inspect = (rows: unknown[]) => senderAudioStatistics({ ...stats,
     publisherStats: rows as typeof stats.publisherStats });
-  assert.deepEqual(inspect([row]), { streamID: 'source', ssrc: 5, timestamp: 10, packetsSent: 30, bytesSent: 600 });
-  assert.equal(inspect([]), undefined);
-  assert.equal(inspect([row, row]), undefined);
+  assert.deepEqual(inspect([row('retired', 5, 30n), row('replacement', 6, 12n), row('camera', 7, 5n, 'video')]), [
+    { streamID: 'retired', ssrc: 5, timestamp: 10, packetsSent: 30, bytesSent: 600 },
+    { streamID: 'replacement', ssrc: 6, timestamp: 10, packetsSent: 12, bytesSent: 240 },
+  ]);
+  assert.deepEqual(inspect([]), []);
 });

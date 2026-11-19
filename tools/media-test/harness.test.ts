@@ -184,7 +184,13 @@ test('renewing far-end audio replaces its receiver without replacing the room or
     assert.ok(sender && sender.markerId === marker.id && sender.publication === publication);
     assert.equal(sender.frames[0]?.offsetSamples, 0);
     assert.ok(sender.frames.some(frame => frame.acceptedAtMs !== undefined && frame.acceptedAtMs >= frame.submittedAtMs));
-    assert.ok(sender.rtp.some(row => row.counters.packetsSent > 0));
+    const firstPackets = new Map<string, number>();
+    const hasPacketProgress = sender.rtp.some(row => row.streams.some(stream => {
+      const first = firstPackets.get(stream.streamID);
+      if (first === undefined) firstPackets.set(stream.streamID, stream.packetsSent);
+      return first !== undefined && stream.packetsSent > first;
+    }));
+    assert.ok(hasPacketProgress, `No outbound audio RTP progress: ${JSON.stringify(sender.rtp.slice(0, 4))}`);
     assert.equal(harness.status().activeTrackSid, before.activeTrackSid);
     assert.equal(harness.status().serverPid, before.serverPid);
     assert.ok(harness.status().connected && app.status().connected);

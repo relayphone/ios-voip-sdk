@@ -73,17 +73,19 @@ jobs:
           perl -e 'alarm 300; exec @ARGV' pod install
           node "$GITHUB_WORKSPACE/tools/expo-journey-bundle.ts" "$PWD" --media
       - name: Set the daily package cache scope
+        if: ${{ !inputs.journey || inputs.journey == 'all' }}
         id: package-cache-scope
         run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
       # Limit reuse to one day; GitHub evicts caches after seven inactive days.
       - name: Restore SwiftPM checkouts and binary artifacts
+        if: ${{ !inputs.journey || inputs.journey == 'all' }}
         id: packages
         uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: |
             ${{ runner.temp }}/media-source-packages
             ${{ runner.temp }}/media-example-source-packages
-          key: media-swiftpm-v1${{ inputs.journey && inputs.journey != 'all' && '-example' || '' }}-${{ runner.os }}-${{ runner.arch }}-xcode27.1-${{ steps.package-cache-scope.outputs.day }}-${{ hashFiles('MediaTesting/Package.resolved', 'expo/package-lock.json', 'expo/example/client/package-lock.json', 'expo/example/client/ios/Podfile.lock') }}
+          key: media-swiftpm-v1-${{ runner.os }}-${{ runner.arch }}-xcode27.1-${{ steps.package-cache-scope.outputs.day }}-${{ hashFiles('MediaTesting/Package.resolved', 'expo/package-lock.json', 'expo/example/client/package-lock.json', 'expo/example/client/ios/Podfile.lock') }}
       - name: Resolve optional Swift package dependencies
         if: ${{ !inputs.journey || inputs.journey == 'all' }}
         working-directory: MediaTesting
@@ -98,7 +100,7 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/media-build" -clonedSourcePackagesDirPath "$RUNNER_TEMP/media-example-source-packages" \
             -skipPackageUpdates > "$RUNNER_TEMP/media-example-resolution.log" 2>&1
       - name: Save resolved SwiftPM checkouts and binary artifacts
-        if: steps.packages.outputs.cache-hit != 'true'
+        if: ${{ steps.packages.outputs.cache-primary-key && steps.packages.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: |
