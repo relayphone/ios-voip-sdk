@@ -1,0 +1,15 @@
+{
+  "extends": ["../../../.oxlintrc.json"],
+  "overrides": [
+    {
+      "files": ["receipt.ts"],
+      "rules": {
+        "anti-slop/no-conditional-empty-object-spread": "error",
+        // Serialized receipts need runtime checks at the boundary.
+        "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }],
+        "anti-slop/require-safety-comment-for-type-assertion": "error",
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    }
+  ]
+}

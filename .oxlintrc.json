@@ -1,6 +1,7 @@
 {
   "extends": [
-    "./tools/node_modules/@interfere/landmines/configs/recommended.json"
+    // Published SDK and plugin declarations keep explicit return types for deliberate API changes.
+    "./tools/oxlint/landmines-recommended.json"
   ],
   "jsPlugins": [
     "./tools/oxlint/anti-slop/index.ts"
