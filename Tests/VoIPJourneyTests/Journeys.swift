@@ -320,7 +320,10 @@
         // to deliver a reset while the join action is still pending.
         app = try await App(framework: resetFramework)
       } else {
-        app = try await App(configuration: VoIPConfiguration(maximumCalls: 1))
+        // The refusal case needs the Join to reach the framework's conversation-group limit.
+        app = try await App(
+          configuration: VoIPConfiguration(
+            maximumCalls: 1, maximumParticipatingCalls: failure == .refused ? 2 : 1))
       }
       defer { app.stop() }
       let id = newCallID("join-failure")
