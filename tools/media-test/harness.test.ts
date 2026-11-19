@@ -177,9 +177,14 @@ test('renewing far-end audio replaces its receiver without replacing the room or
     await waitFor('New audio subscription', () => app.status().readerLive && app.status().activeTrackSid === publication || undefined);
     app.beginCapture();
     const marker = createMarker('new-downlink');
-    await harness.act({ type: 'publish', markerId: marker.id });
+    await harness.act({ type: 'publish', markerId: marker.id, observePacing: true });
     await until(() => app.status().receivedSamples >= 48_000 * 3);
     assert.ok(detectMarker(Float32Array.from(app.capture().channels[0]!), 48_000, marker));
+    const sender = harness.downlinkPacing();
+    assert.ok(sender && sender.markerId === marker.id && sender.publication === publication);
+    assert.equal(sender.frames[0]?.offsetSamples, 0);
+    assert.ok(sender.frames.some(frame => frame.acceptedAtMs !== undefined && frame.acceptedAtMs >= frame.submittedAtMs));
+    assert.ok(sender.rtp.some(row => row.counters.packetsSent > 0));
     assert.equal(harness.status().activeTrackSid, before.activeTrackSid);
     assert.equal(harness.status().serverPid, before.serverPid);
     assert.ok(harness.status().connected && app.status().connected);

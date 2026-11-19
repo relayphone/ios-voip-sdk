@@ -3,11 +3,28 @@ import { AudioFrame, AudioSource, AudioStream, ConnectionState, LocalAudioTrack,
 import { createMarker, emissionSamples } from '../../expo/src/testing/marker.ts';
 import type { PCMCapture } from './marker-evidence.ts';
 import { setTimeout as delay } from 'node:timers/promises';
-import { receiverStatistics } from './receiver-statistics.ts';
+import { receiverStatistics, senderAudioStatistics } from './receiver-statistics.ts';
 import { HOST_RECEIVER_STATS_POLL_MS, type TransportSnapshot } from './transport.ts';
 import { deadline } from './fixture-runtime.ts';
 import { PeerLifecycle } from './peer-lifecycle.ts';
 import { PeerReconnect } from './peer-reconnect.ts';
+
+interface SenderFrame {
+  offsetSamples: number;
+  submittedAtMs: number;
+  queuedBeforeMs: number;
+  acceptedAtMs?: number;
+}
+
+interface SenderPacing {
+  markerId: string;
+  publication: string;
+  startedAtMs: number;
+  frames: SenderFrame[];
+  rtp: { observedAtMs: number; counters: NonNullable<ReturnType<typeof senderAudioStatistics>> }[];
+  droppedFrames: number;
+  droppedRtpRows: number;
+}
 
 /** One real far-end participant; observations remain independent of publication control. */
 export class MediaPeer {
@@ -15,8 +32,10 @@ export class MediaPeer {
   private videoPeer?: VideoPeer;
   private videoOpening = false;
   private source = new AudioSource(48_000, 1, 100);
+  private audioPublication?: string;
   private running = true;
   private emission: Int16Array | undefined;
+  private senderPacing?: SenderPacing;
   private cursor = 0;
   private publishing: Promise<void> | undefined;
   private readers: Promise<void>[] = [];
@@ -109,8 +128,15 @@ export class MediaPeer {
     this.statistics = (async () => {
       while (this.running) {
         const generation = this.captureGeneration;
+        const pacing = this.senderPacing;
         try {
-          const row = await this.readStatistics(this.room, () => this.receivedSamples);
+          const row = await this.readStatistics(this.room, () => this.receivedSamples, pacing && (stats => {
+            if (pacing !== this.senderPacing) return;
+            const counters = senderAudioStatistics(stats);
+            if (!counters || pacing.rtp.at(-1)?.counters.timestamp === counters.timestamp) return;
+            if (pacing.rtp.length < 128) pacing.rtp.push({ observedAtMs: performance.now(), counters });
+            else pacing.droppedRtpRows++;
+          }));
           const previous = this.transport.at(-1);
           if (this.running && generation === this.captureGeneration && row &&
               (!previous || row.streamID !== previous.streamID || row.timestamp > previous.timestamp)) this.transport.push(row);
@@ -121,9 +147,18 @@ export class MediaPeer {
     await deadline(15_000, 'Peer publish', () => this.publishAudio());
     this.publishing = (async () => {
       while (this.running) {
+        const pacing = this.senderPacing;
+        let frame: SenderFrame | undefined;
+        if (pacing) {
+          if (pacing.frames.length < 1200) {
+            frame = { offsetSamples: this.cursor, submittedAtMs: performance.now(), queuedBeforeMs: this.source.queuedDuration };
+            pacing.frames.push(frame);
+          } else pacing.droppedFrames++;
+        }
         const pcm = this.emission?.slice(this.cursor, this.cursor + 480) ?? new Int16Array(480);
         this.cursor = this.emission ? (this.cursor + 480) % this.emission.length : 0;
         await this.source.captureFrame(new AudioFrame(pcm, 48_000, 1, 480));
+        if (frame) frame.acceptedAtMs = performance.now();
       }
     })().catch(() => { this.publicationFailed = true; });
   }
@@ -140,6 +175,7 @@ export class MediaPeer {
       const publication = await participant.publishTrack(track,
         new TrackPublishOptions({ source: TrackSource.SOURCE_MICROPHONE }));
       if (!publication.sid) throw Error('Missing peer audio publication identity');
+      this.audioPublication = publication.sid;
       return publication.sid;
     } catch (error) { await track.close(false); throw error; }
   }
@@ -162,12 +198,20 @@ export class MediaPeer {
     return { retired, publication };
   }
 
-  publish(markerId: string): void {
+  publish(markerId: string, observePacing = false): void {
     if (!this.status().connected || this.publicationFailed) throw Error('Peer is unavailable');
     this.emission = Int16Array.from(emissionSamples(createMarker(markerId), 48_000, 48_000 / 50 * 51), value => Math.round(value * 32767));
     this.cursor = 0; this.source.clearQueue();
+    this.senderPacing = observePacing && this.audioPublication ? {
+      markerId, publication: this.audioPublication, startedAtMs: performance.now(), frames: [], rtp: [], droppedFrames: 0, droppedRtpRows: 0,
+    } : undefined;
   }
-  hold(): void { if (!this.running) throw Error('Peer is closed'); this.emission = undefined; this.cursor = 0; this.source.clearQueue(); }
+  downlinkPacing() {
+    const pacing = this.senderPacing;
+    return pacing && { ...pacing, observedAtMs: performance.now(), sampleRate: 48_000, frameSamples: 480,
+      frames: pacing.frames.map(frame => ({ ...frame })), rtp: pacing.rtp.slice() };
+  }
+  hold(): void { if (!this.running) throw Error('Peer is closed'); this.emission = undefined; this.senderPacing = undefined; this.cursor = 0; this.source.clearQueue(); }
   beginCapture(): void { this.received = []; this.receivedSamples = 0; this.energy = 0; this.transport = []; this.captureGeneration++; }
   capture(): PCMCapture { return { sampleRate: 48_000, channels: [this.received.slice()], formatChanged: false, transport: this.transport.slice() }; }
   /** Survives beginCapture(), so resetting a phase cannot erase teardown evidence. */

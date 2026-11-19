@@ -75,8 +75,10 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     phaseIds.push(phaseId, downId);
     const startedAtMs = performance.now();
     await harness.act({ type: 'capture' });
-    await harness.act({ type: 'publish', markerId: downId });
+    await harness.act({ type: 'publish', markerId: downId, observePacing: true });
+    const phaseSentAtMs = performance.now();
     const phase = await request({ operation: 'beginPhase', phaseId });
+    const phaseReceivedAtMs = performance.now();
     const capture = { host: harness.status(), native: readJourneyAudio(phase) };
     try {
       if (expectedDownlink) {
@@ -89,21 +91,27 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
         return hasDuplexSamples(capture.native, capture.host) ? true : undefined;
       });
       const snapshotRequestedAtMs = performance.now();
-      const pcm = readJourneyAudio(await request({ operation: 'audioSnapshot' }));
+      const snapshot = await request({ operation: 'audioSnapshot' });
+      const pcm = readJourneyAudio(snapshot);
       assert.ok(hasDuplexSamples(pcm, harness.status()), 'Duplex capture lost coverage between snapshots');
       if (expectedDownlink) {
         assert.equal(pcm.remoteAudioPublication, expectedDownlink, 'Resumed PCM came from a different downlink');
       }
       const capturedAtMs = performance.now();
+      const downlink = { clockID, nativeClockID: snapshot.clockId, sender: harness.downlinkPacing(),
+        phase: { sentAtMs: phaseSentAtMs, receivedAtMs: phaseReceivedAtMs, nativeAtMs: phase.phaseAtMs },
+        capture: { sentAtMs: snapshotRequestedAtMs, receivedAtMs: capturedAtMs, nativeAtMs: snapshot.observedAtMs },
+        decoded: { callbacks: pcm.decoded.observation, rtp: pcm.decoded.pcm?.transport },
+        output: { callbacks: pcm.output.observation, rtp: pcm.output.pcm?.transport } };
       const { markers, uplinkCapture } = await assertDuplexAudio(pcm, harness, { up: createMarker(phaseId), down: createMarker(downId) });
       keep(label, { phaseId, remoteAudioPublication: pcm.remoteAudioPublication,
-        startedAtMs, snapshotRequestedAtMs, capturedAtMs, analyzedAtMs: performance.now(), uplinkCapture, markers });
+        startedAtMs, snapshotRequestedAtMs, capturedAtMs, analyzedAtMs: performance.now(), uplinkCapture, downlink, markers });
       for (const marker of Object.values(markers)) {
         assert.ok(marker.clean && marker.complete && marker.postRollObserved, `${label}: missing clean fresh audio`);
       }
       deadlineCheck();
     } catch (error) {
-      keep(`${label}-capture`, { phaseId, startedAtMs, observedAtMs: performance.now(), ...capture });
+      keep(`${label}-capture`, { phaseId, startedAtMs, observedAtMs: performance.now(), sender: harness.downlinkPacing(), ...capture });
       throw error;
     }
   }
