@@ -1,6 +1,6 @@
 /* eslint-disable no-void -- Compile-only expressions exercise the testing contract. */
-import { createMediaTest, MediaTestError } from "../testing/index.ts";
-import type { MediaTest, MediaTestOptions, MediaTestResult, MediaPhase, MediaCapability } from "../testing/index.ts";
+import { createMediaTest, MediaTestError } from "../../src/testing/index.ts";
+import type { MediaTest, MediaTestOptions, MediaTestResult, MediaPhase, MediaCapability } from "../../src/testing/index.ts";
 
 declare const media: MediaTest;
 declare const options: MediaTestOptions;
