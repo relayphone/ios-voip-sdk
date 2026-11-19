@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { configureInspectorFixture, inspectorFixtureJournal, inspectorJourneyBudgetSeconds, inspectorUnansweredSeconds } from './inspector-fixture.ts';
+import { configureInspectorFixture, inspectorFixtureJournal, inspectorJourneyBudgetSeconds, inspectorUnansweredSeconds } from './inspector-journey.fixture.ts';
 import { manifest, requiredFiles, validate } from './runtime-package.ts';
 
 test('the disposable fixture outlives the UI budget while preserving other profile inputs and package integrity', () => {

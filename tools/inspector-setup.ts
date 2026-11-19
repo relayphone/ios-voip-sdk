@@ -1,5 +1,6 @@
 // Bounded setup of a disposable simulator owned by the Inspector journey.
 import { spawnSync } from 'node:child_process';
+import { isString } from './json-fields.ts';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 export interface SetupResult {
@@ -16,12 +17,13 @@ interface SetupOptions {
   report: (message: string) => void;
 }
 
-function execute(args: readonly string[], timeout: number): SetupResult {
+function execute(args: readonly string[], timeout: number) {
   const result = spawnSync('xcrun', ['simctl', ...args], {
     encoding: 'utf8', timeout, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024,
   });
-  return { status: result.status, signal: result.signal, stderr: result.stderr ?? '',
-    errorCode: (result.error as NodeJS.ErrnoException | undefined)?.code };
+  const error = result.error;
+  const errorCode = error && 'code' in error && isString(error.code) ? error.code : undefined;
+  return { status: result.status, signal: result.signal, stderr: result.stderr ?? '', errorCode };
 }
 
 export class SimulatorSetupFailure extends Error {
@@ -35,19 +37,19 @@ export class SimulatorSetupFailure extends Error {
 }
 
 /** Only known service/transport failures may retry; invalid apps and unknown failures stop. */
-export function transientSetupFailure(result: SetupResult): boolean {
+export function transientSetupFailure(result: SetupResult) {
   return result.errorCode === 'ETIMEDOUT'
     || /\b(?:operation timed out|connection timed out|connection interrupted|connection invalid|CoreSimulatorService connection became invalid|failed to connect to installd|unable to boot device in current state: Shutdown)\b/i.test(result.stderr);
 }
 
 /** Waits for boot completion before every install attempt; erases only this owned device once. */
-export async function setupInspectorSimulator(device: string, app: string, options: SetupOptions): Promise<void> {
+export async function setupInspectorSimulator(device: string, app: string, options: SetupOptions) {
   const run = options.execute ?? execute;
   const delay = options.delay ?? sleep;
   const now = options.now ?? (() => performance.now());
   const deadline = now() + 12 * 60_000;
   const attempts = new Map<Phase, number>();
-  const command = (phase: Phase, args: readonly string[], limit: number): void => {
+  const command = (phase: Phase, args: readonly string[], limit: number) => {
     const remaining = deadline - now();
     const result = remaining <= 0
       ? { status: null, signal: null, stderr: 'Simulator setup budget exhausted', errorCode: 'SETUP_DEADLINE' }
