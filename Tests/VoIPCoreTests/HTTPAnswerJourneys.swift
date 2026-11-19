@@ -144,7 +144,8 @@ final class HTTPAnswerJourneyDriver {
       try #require(engine != nil)
       let incoming = IncomingCall(
         id: id.callID, parties: [try party.sdkParty()],
-        answerScope: .init(accountID: line.accountID.rawValue, lineID: line.id.rawValue))
+        answerScope: .init(accountID: line.accountID.rawValue, lineID: line.id.rawValue),
+        line: line.callingLine)
       push.deliver(.incoming(incoming, eventID: eventID.eventID))
     case .provideMedia(let id):
       #expect(id.callID == installedCall, message)
@@ -214,6 +215,7 @@ final class HTTPAnswerJourneyDriver {
       let actual = try #require(engine.calls.first { $0.id == expected.callID.callID })
       #expect(actual.specLifecycle == expected.lifecycle, message)
       if let line = expected.lineID {
+        #expect(actual.line.id == line.lineID, message)
         #expect(actual.answerScope?.lineID == line.rawValue, message)
       }
     case .count(let id, let metric, let value):

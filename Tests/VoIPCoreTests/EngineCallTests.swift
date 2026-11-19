@@ -165,12 +165,14 @@ extension EngineTests {
 
     @Test func joinOfACallThatEndedBeforeThisDeviceKnewItFails() async throws {
       let h = try Harness()
+      try await h.connect(otherCallID)
+      let records = await h.records
       await h.client.receive(.endedRemotely, for: callID, eventID: e2)
       await #expect(throws: ActionError.notAllowed(.ended(.endedRemotely))) {
         try await h.client.join(incoming(callID, .preview))
       }
       #expect(try await h.next() == .ended(callID, .endedRemotely))
-      #expect(await h.records.isEmpty)
+      #expect(await h.records == records)
       try await h.expectNoEvents()
     }
 
@@ -316,7 +318,7 @@ extension EngineTests {
     }
 
     @Test func audioActivationStartsMediaOnceForEveryCall() async throws {
-      let h = try Harness()
+      let h = try Harness(configuration: VoIPConfiguration(maximumParticipatingCalls: 2))
       try await h.ring()
       try await h.ring(IncomingCall(id: otherCallID, parties: [alice]), eventID: e2)
       try await h.answer(callID)

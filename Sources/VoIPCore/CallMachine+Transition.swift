@@ -12,9 +12,7 @@ extension CallMachine {
     switch origin {
     case .incoming(let incoming):
       let policy = incoming.presentationPolicy ?? configuration.presentationPolicy
-      let call = Call(
-        id: incoming.id, isIncoming: true, parties: incoming.parties, status: .ringing,
-        hasVideo: incoming.hasVideo, metadata: incoming.metadata, answerScope: incoming.answerScope)
+      let call = Call(incoming, status: .ringing)
       switch policy.incoming {
       case .ring:
         var step = Step(
@@ -42,9 +40,7 @@ extension CallMachine {
       step.emit(.startRequested(step.state.call))
       return step.result
     case .joining(let incoming):
-      let call = Call(
-        id: incoming.id, isIncoming: true, parties: incoming.parties, status: .ringing,
-        hasVideo: incoming.hasVideo, metadata: incoming.metadata, answerScope: incoming.answerScope)
+      let call = Call(incoming, status: .ringing)
       let step = Step(
         call: call, phase: .previewing(.policy),
         policy: incoming.presentationPolicy ?? configuration.presentationPolicy,
@@ -805,6 +801,6 @@ extension Call {
   fileprivate init(_ outgoing: OutgoingCall) {
     self.init(
       id: outgoing.id, isIncoming: false, parties: outgoing.parties, status: .dialing,
-      hasVideo: outgoing.hasVideo, metadata: outgoing.metadata)
+      hasVideo: outgoing.hasVideo, metadata: outgoing.metadata, line: outgoing.line)
   }
 }

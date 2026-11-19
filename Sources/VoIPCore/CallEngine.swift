@@ -26,6 +26,8 @@ final class CallEngine {
   private let authority: (any AnswerAuthority)?
   private var answers: [CallID: AnswerExchange] = [:]
   private var answerReceipts: [ActionID: Duration] = [:]
+  /// App Answer and Resume requests waiting for the framework to perform the action.
+  private var pendingParticipation: [CallID: ParticipationRequest] = [:]
   private let subscribers: Subscribers
   private let publish: @Sendable (Snapshot) -> Void
 
@@ -154,14 +156,21 @@ final class CallEngine {
       try result.get()
       return
     }
-    let call = try exclusively { () throws(ActionError) -> Call? in
+    let (call, reservation) = try exclusively { () throws(ActionError) -> (Call?, ActionID?) in
       guard let state = states[id] else { throw .unknownCall }
-      if needsParticipationSlot(action, state: state), !participationSlotAvailable {
-        throw .noParticipationSlot
+      let needsSlot = needsParticipationSlot(action, state: state)
+      if needsSlot {
+        guard pendingParticipation[id] == nil else { throw .notAllowed(state.call.status) }
+        guard participationSlotAvailable else { throw .noParticipationSlot }
       }
-      return try requested(handle(id, .requested(action)), for: id)
+      let call = try requested(handle(id, .requested(action)), for: id)
+      // Join owns its reservation through the machine's requesting phase.
+      guard call != nil, needsSlot, !action.isJoin else { return (call, nil) }
+      let reservation = ActionID(rawValue: UUID())
+      pendingParticipation[id] = ParticipationRequest(action: action, reservation: reservation)
+      return (call, reservation)
     }
-    try await send(action, for: call)
+    try await send(action, for: call, reservation: reservation)
   }
 
   func start(
@@ -247,11 +256,15 @@ final class CallEngine {
     let id = incoming.id
     let action = Action.join(id)
     let call = try exclusively { () throws(ActionError) -> Call? in
+      if states[id] == nil {
+        // Replay a retained end even when there is no slot to place a Join.
+        guard participationSlotAvailable || serverEvents.hasBufferedEnd(for: .canonical(id))
+        else { throw .noParticipationSlot }
+        begin(.joining(incoming))
+      }
       if needsParticipationSlot(action, state: states[id]), !participationSlotAvailable {
         throw .noParticipationSlot
       }
-      if states[id] == nil { begin(.joining(incoming)) }
-      guard states[id] != nil else { throw .unknownCall }
       return try requested(handle(id, .requested(action)), for: id)
     }
     try await send(action, for: call)
@@ -266,12 +279,19 @@ final class CallEngine {
 
   /// Asks the calling framework to accept a request, and returns the call to where it was if it
   /// refuses.
-  private func send(_ action: Action, for call: Call?) async throws(ActionError) {
+  private func send(_ action: Action, for call: Call?, reservation: ActionID? = nil)
+    async throws(ActionError)
+  {
     guard let call else { return }
     do throws(ActionError) {
       try await framework.request(action, for: call)
     } catch {
-      serially { self.handle(call.id, .requestFailed(action)) }
+      serially {
+        if let reservation, self.pendingParticipation[call.id]?.reservation == reservation {
+          self.pendingParticipation[call.id] = nil
+        }
+        self.handle(call.id, .requestFailed(action))
+      }
       throw error
     }
   }
@@ -423,9 +443,7 @@ final class CallEngine {
   /// Ends an incoming call that would ring beyond the configuration's maximum number of calls.
   private func refuseAtCapacity(_ incoming: IncomingCall, policy: PresentationPolicy) {
     let reason = EndReason.failed(.atCapacity)
-    let call = Call(
-      id: incoming.id, isIncoming: true, parties: incoming.parties, status: .ended(reason),
-      hasVideo: incoming.hasVideo, metadata: incoming.metadata, answerScope: incoming.answerScope)
+    let call = Call(incoming, status: .ended(reason))
     states[call.id] = CallMachine.State(call: call, phase: .ended(reason), policy: policy)
     order.append(call.id)
     endedAt[call.id] = clock.now()
@@ -497,9 +515,14 @@ final class CallEngine {
   }
 
   private var participationSlotAvailable: Bool {
-    authority == nil
-      || states.values.lazy.filter(\.reservesParticipation).count
-        < configuration.maximumParticipatingCalls
+    participatingCallIDs.count < configuration.maximumParticipatingCalls
+  }
+
+  fileprivate var participatingCallIDs: Set<CallID> {
+    Set(
+      states.values.lazy.filter {
+        $0.reservesParticipation || self.pendingParticipation[$0.call.id] != nil
+      }.map { $0.call.id })
   }
 
   private func needsParticipationSlot(_ action: Action, state: CallMachine.State?) -> Bool {
@@ -508,7 +531,8 @@ final class CallEngine {
     case .start: state == nil
     case .join: state == nil || state?.phase.isPreviewing == true
     case .hold(_, onHold: false):
-      state?.phase.isTakingPart == true && state?.call.isOnHold == true
+      state?.phase.isActive == true && state?.awaitsNativeStart == false
+        && state?.call.isOnHold == true && state?.reservesParticipation == false
         && configuration.capabilities.contains(.holding)
     default: false
     }
@@ -534,6 +558,8 @@ final class CallEngine {
         answerReceipts[oldest.key] = nil
       }
     }
+    // The framework receipt takes over the request's reservation in this same engine turn.
+    if pendingParticipation[id]?.action == action { pendingParticipation[id] = nil }
     if needsParticipationSlot(action, state: state), !participationSlotAvailable {
       framework.fail(actionID)
       if action.isAnswer, let state {
@@ -676,6 +702,7 @@ final class CallEngine {
     let (next, effects) = CallMachine.transition(
       state, event, configuration: configuration, now: clock.date(), elapsed: clock.now())
     states[id] = next
+    if next.phase.isEnded || next.phase.isPreviewing { pendingParticipation[id] = nil }
     #if DEBUG && (os(macOS) || targetEnvironment(simulator))
       let kind: SimulatorLifecycle.Event.Kind =
         next.phase.isEnded && !state.phase.isEnded
@@ -1075,7 +1102,7 @@ final class CallEngine {
     package var calls: [Call] { engine.states.values.map(\.call) }
 
     package var participating: Set<CallID> {
-      Set(engine.states.values.lazy.filter(\.reservesParticipation).map { $0.call.id })
+      engine.participatingCallIDs
     }
 
     package func phase(for id: CallID) -> Phase {
@@ -1143,6 +1170,11 @@ struct Snapshot: Sendable {
   let revision: UInt64
   let calls: [Call]
   let isAudioActive: Bool
+}
+
+private struct ParticipationRequest {
+  let action: Action
+  let reservation: ActionID
 }
 
 private struct TimerKey: Hashable {

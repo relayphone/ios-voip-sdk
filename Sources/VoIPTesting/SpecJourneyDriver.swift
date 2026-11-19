@@ -94,8 +94,9 @@
           endResults.removeAll()
           admittedReports.removeAll()
         }
-      case .incoming(let id, let eventID, _, let party, let deferAdmission):
-        let incoming = IncomingCall(id: id.callID, parties: [try party.sdkParty()])
+      case .incoming(let id, let eventID, let line, let party, let deferAdmission):
+        let incoming = IncomingCall(
+          id: id.callID, parties: [try party.sdkParty()], line: line.callingLine)
         let delivery = VoIPPush.incoming(incoming, eventID: eventID.eventID)
         if deferAdmission { framework.presentationOutcome = nil }
         if engine == nil {
@@ -276,8 +277,9 @@
       actionCount += 1
       let request: Action
       switch action {
-      case .start(_, _, let party):
-        request = .start(OutgoingCall(id: id, parties: [try party.sdkParty()]))
+      case .start(_, let line, let party):
+        request = .start(
+          OutgoingCall(id: id, parties: [try party.sdkParty()], line: line.callingLine))
       case .answer: request = .answer(id)
       case .join: request = .join(id)
       case .end: request = .end(id)
@@ -396,8 +398,9 @@
       guard actual == expected.lifecycle else {
         return "\(id.rawValue): expected \(expected.lifecycle), observed \(actual)."
       }
-      if expected.lineID != nil {
-        return "\(id.rawValue) has no observed line."
+      if let lineID = expected.lineID?.lineID, call.line.id != lineID {
+        return "\(id.rawValue): expected line \(lineID.rawValue), "
+          + "observed \(call.line.id.rawValue)."
       }
       if let remoteID = expected.remoteID, !call.remoteIDs.contains(remoteID.remoteCallID) {
         return "\(id.rawValue) is missing the remote alias \(remoteID.rawValue)."

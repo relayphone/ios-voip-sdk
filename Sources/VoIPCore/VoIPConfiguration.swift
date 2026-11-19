@@ -72,7 +72,8 @@ public struct VoIPConfiguration: Hashable, Sendable {
   /// Bounds the native Answer claim, reconciliation and settlement.
   public var answerBudget: AnswerBudget
 
-  /// The participation limit when a native Answer authority is installed. Defaults to one.
+  /// The participation limit shared by all lines, including pending placement and Answer work.
+  /// Defaults to one. Ringing calls that haven't begun Answer and held calls don't count.
   public var maximumParticipatingCalls: Int
 
   /// When outgoing media is prepared. Defaults to ``OutgoingMedia/duringPlacement``.
@@ -104,7 +105,7 @@ public struct VoIPConfiguration: Hashable, Sendable {
   ///   - retention: How long the SDK remembers ended calls and early server events.
   ///   - outgoingMedia: When outgoing media is prepared.
   ///   - answerBudget: Times available to native Answer.
-  ///   - maximumParticipatingCalls: The participation limit with a native Answer authority.
+  ///   - maximumParticipatingCalls: The participation limit across all calling lines.
   public init(
     capabilities: Capabilities = [.holding, .playingTones],
     presentationPolicy: PresentationPolicy = PresentationPolicy(),

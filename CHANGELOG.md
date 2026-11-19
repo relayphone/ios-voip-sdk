@@ -7,6 +7,12 @@ Public API changes include migration guidance.
 
 ### Breaking
 
+- Swift enforces `maximumParticipatingCalls` across all calling lines, including apps without
+  an Answer authority. The default allows one participating call. Hold or end the current
+  call before answering a waiting call, starting another call, joining a preview, or resuming
+  a held call. Handle `ActionError.noParticipationSlot` when requesting these actions. The
+  native presentation limit remains `maximumCalls`.
+
 - Swift apps with exhaustive `ActionError` switches must handle `remoteIdentityConflict`. The
   observable `VoIPClient.calls` list includes incoming calls after system admission resolves.
   Use `report(_:)` or the call events to observe the admission outcome. `CallID` and `EventID`
@@ -19,8 +25,7 @@ Public API changes include migration guidance.
   into the authority and return a typed refusal or permit. Handle `answerClaimTimedOut` and
   `answerFailed` in exhaustive `CallEvent` switches and the new Answer cases in error switches.
   Custom frameworks can declare their effective Answer deadline and supply a shorter deadline
-  for an individual receipt using `FrameworkEvent.performAnswer`. With an authority installed,
-  the SDK also checks `maximumParticipatingCalls` before reserving a participation slot.
+  for an individual receipt using `FrameworkEvent.performAnswer`.
   Apps without an authority continue to prepare media directly.
 
 - Swift `request(.start(call))` now completes when the system performs Start after placement.
@@ -56,6 +61,11 @@ Public API changes include migration guidance.
   as content-free, excluding them from source timing and frame-rate measurements.
 
 ### Added
+
+- Swift calls expose an immutable `Call.line`. Pass a `CallingLine` with an `AccountID`, `LineID`
+  and display label when reporting, joining or starting a call on a specific line. Default-format
+  VoIP pushes accept `line` with `accountID`, `id` and `label`. Existing callers that omit the line
+  use `CallingLine.default`. Continue supplying `answerScope` for the built-in HTTP authority.
 
 - Swift can bind service IDs such as a server call ID or LiveKit room with
   `try await client.bindRemote(remoteID, to: callID)`. Keep using your app's canonical

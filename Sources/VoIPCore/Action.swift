@@ -42,7 +42,8 @@ public enum ActionError: Error, Hashable, Sendable {
   case notAllowed(CallStatus)
   /// The action needs a capability that the configuration turns off, such as merging.
   case unsupported
-  /// No participation slot is available for this action.
+  /// The SDK refused the action because all participation slots are occupied.
+  /// Corresponds to `refused(notAllowed)` in the shared call contract.
   case noParticipationSlot
   /// This device doesn't know the call the action applies to.
   case unknownCall

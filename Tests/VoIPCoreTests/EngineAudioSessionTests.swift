@@ -169,7 +169,7 @@ extension EngineTests {
     }
 
     @Test func aResetConfiguresTheSessionForTheNewestCallNotOnHold() async throws {
-      let h = try Harness()
+      let h = try Harness(configuration: VoIPConfiguration(maximumParticipatingCalls: 2))
       try await h.connect(callID)
       try await h.ring(IncomingCall(id: otherCallID, parties: [alice]), eventID: e2)
       try await h.answer(otherCallID)

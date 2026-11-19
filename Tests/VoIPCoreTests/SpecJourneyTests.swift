@@ -14,11 +14,6 @@ private struct JourneyHeader: Decodable {
   let version: Int
 }
 
-private let pending: [String: String] = [
-  "cross-line-waiting":
-    "No line identity on calls."
-]
-
 @Suite(.timeLimit(.minutes(1)))
 struct SpecJourneyTests {
   @Test func sharedJourneys() async throws {
@@ -29,7 +24,7 @@ struct SpecJourneyTests {
     .sorted { $0.lastPathComponent < $1.lastPathComponent }
     try #require(!files.isEmpty)
     let v0IDs = files.map { $0.deletingPathExtension().lastPathComponent }
-    // The v0 driver cannot decode v1 steps. Read their headers for pending-list validation.
+    // The v0 driver cannot decode v1 steps. Read their headers to validate catalog IDs.
     let v1IDs = try FileManager.default.contentsOfDirectory(
       at: v1Catalog, includingPropertiesForKeys: nil
     )
@@ -42,19 +37,12 @@ struct SpecJourneyTests {
     }
     let ids = v0IDs + v1IDs
     try #require(Set(ids).count == ids.count, "Duplicate journey IDs")
-    #expect(Set(pending.keys).isSubset(of: Set(ids)), "Unknown pending journey IDs")
     for (id, file) in zip(v0IDs, files) {
       let journey = try JSONDecoder().decode(SpecJourney.self, from: Data(contentsOf: file))
       try #require(journey.id.rawValue == id, "Journey ID must match its filename")
       let differences = try await SpecJourneyDriver.run(journey)
       let details = "\(id)\n\(differences.joined(separator: "\n"))"
-      if let reason = pending[id] {
-        withKnownIssue(Comment(rawValue: "\(id) — \(reason)")) {
-          #expect(differences.isEmpty, Comment(rawValue: details))
-        }
-      } else {
-        #expect(differences.isEmpty, Comment(rawValue: details))
-      }
+      #expect(differences.isEmpty, Comment(rawValue: details))
     }
   }
 }
