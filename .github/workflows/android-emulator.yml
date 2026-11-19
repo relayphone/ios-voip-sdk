@@ -129,7 +129,7 @@ jobs:
           timeout --kill-after=5s 45s "$sdk_tools/avdmanager" create avd --name telecom \
             --package "system-images;android-$API;google_apis;x86_64" --device pixel_6 <<< no
           test -f "$ANDROID_AVD_HOME/telecom.avd/config.ini"
-      - name: Run Telecom instrumentation and Expo incoming journey
+      - name: Run Telecom instrumentation and Expo call journeys
         env:
           EXPO_CALL_JOURNEY_APK: ${{ runner.temp }}/expo-apk/app-release.apk
           EXPO_PUSH_TEST_APK: ${{ runner.temp }}/expo-apk/app-release-androidTest.apk

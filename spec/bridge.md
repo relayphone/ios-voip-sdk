@@ -88,7 +88,7 @@ operation. An operation with no input omits that field. A successful result is
 | `start` | Canonical `id`, configured `lineID`, nonempty `parties`, initial `video` flag | `{kind:"performed",receipt,cursor}` |
 | `perform` | `id` and discriminated `action` | The performed value for Answer, Join, Hold, Mute, Video or Tones. End returns `{kind:"end",cursor,outcome}`, with the v0 `endResult`. |
 | `bindRemote` | `id`, `remoteID` | Void, including the same binding repeated |
-| `receive` | `eventID`, target by canonical or remote ID, and `connected`, `ended`, `partiesChanged` or `videoRequested` event | `{kind:"applied"}`, `{kind:"buffered"}` or `{kind:"duplicate"}` |
+| `receive` | `eventID`, target by canonical or remote ID, and `connecting`, `connected`, `ended`, `partiesChanged` or `videoRequested` event | `{kind:"applied"}`, `{kind:"buffered"}` or `{kind:"duplicate"}` |
 | `reportIncoming` | `callID`, `eventID`, `line`, `party` | An admission decision or `{kind:"duplicate",original:decision}` |
 | `permissions.read` | `{kind:"microphone"}` or `{kind:"camera"}` | `granted`, `denied`, `restricted` or `notDetermined` |
 | `permissions.request` | Same permission selector | Same status after a foreground request |
@@ -102,7 +102,9 @@ Its origin belongs to the original request, including when an app request shares
 system Answer. Remote transport facts do not create action receipts.
 Start completes at placement and native start. Answer completes at authorized system
 settlement. Hold, Mute and Video complete on confirmation, and Tones completes on confirmation
-of the local send. Queueing work does not complete the action. A repeated local End returns
+of the local send. Queueing work does not complete the action. An outgoing connecting report
+advances a dialing call and starts the connection budget. Reports from the placement
+handler are held until native start succeeds. A repeated local End returns
 the original receipt, whereas an End after remote termination returns the original reason with
 `alreadyEnded`. A repeated or already-ended End emits no new action frame.
 

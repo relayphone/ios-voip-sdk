@@ -19,6 +19,7 @@ internal class CallBinding(
 ) : AuthorityPort {
     val state = BridgeState(if (registration.media == null) Owner.APPLICATION else Owner.NATIVE, registration.authority != null)
     val pushOutcomes = MutableSharedFlow<JsonObject>(extraBufferCapacity = 16)
+    private val placement = PlacementChannel(clock) { runtime?.snapshot()?.state }
     private val ends = mutableMapOf<ActionID, CompletableDeferred<Outcome<EndResult, CallError>>>()
     private val processed = MutableStateFlow<RuntimeCursor?>(null)
     @Volatile private var runtime: CallRuntime? = null
@@ -35,7 +36,7 @@ internal class CallBinding(
                 ends[result.actionID]?.complete(Outcome.Success(result.result))
             }
         }
-        val result = CallRuntime.start(Configuration(Budgets(), OutgoingMedia.WHEN_PROVIDED, ConnectionAuthority.APPLICATION,
+        val result = CallRuntime.start(Configuration(Budgets(), OutgoingMedia.DURING_PLACEMENT, ConnectionAuthority.APPLICATION,
             1, false), scope, system, this@CallBinding, registration.media ?: DefaultMedia, presentation, clock)
         val calls = (result as Outcome.Success).value
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -53,13 +54,21 @@ internal class CallBinding(
         calls to telecom
     }
 
+    override suspend fun placeCall(call: Call, request: Effect.RequestPlacement): PlacementResult =
+        placement.request(call, request)
+
     override suspend fun claim(request: Effect.RequestClaim): AnswerDecision =
         registration.authority?.claim(request) ?: AnswerDecision.Allow(AttemptID(UUID.randomUUID().toString()))
     override suspend fun reconcile(request: Effect.Reconcile): Reconciliation =
         registration.authority?.reconcile(request) ?: Reconciliation.Unknown
     override suspend fun release(request: Effect.ReleasePermit) { registration.authority?.release(request) }
 
-    suspend fun command(source: String, negotiated: Boolean, permission: suspend (MediaPermission, Boolean) -> Reply): String {
+    fun detachPlacement(receiver: PlacementReceiver) = placement.detach(receiver)
+
+    suspend fun command(
+        source: String, negotiated: Boolean, receiver: PlacementReceiver,
+        permission: suspend (MediaPermission, Boolean) -> Reply,
+    ): String {
         val command = BridgeWire.decode(source, "command")
         val operation = command.text("operation")
         val input = command["input"]?.jsonObject ?: JsonObject(emptyMap())
@@ -70,8 +79,11 @@ internal class CallBinding(
                 val kind = if (input.text("kind") == "microphone") MediaPermission.MICROPHONE else MediaPermission.CAMERA
                 permission(kind, operation == "permissions.request")
             }
-            operation == "start" || operation.startsWith("placement.") -> failed(CallError.BridgeUnavailable)
-            else -> callCommand(operation, input)
+            operation == "placement.attach" -> {
+                placement.attach(receiver, input.read("generation"), input.read("attached"))
+                ok(JsonNull)
+            }
+            else -> callCommand(operation, input, receiver)
         }
         return envelope("reply", result, "operation" to JsonPrimitive(operation)).toString()
     }
@@ -101,31 +113,41 @@ internal class CallBinding(
         return calls.submit(Input.Request(Action.End(id), ActionID(UUID.randomUUID().toString()), origin = ActionOrigin.SYSTEM))
     }
 
-    private suspend fun callCommand(operation: String, input: JsonObject): Reply {
+    private suspend fun callCommand(operation: String, input: JsonObject, receiver: PlacementReceiver): Reply {
         val (calls, telecom) = try {
             ready.await()
         } catch (_: SecurityException) {
-            return failed(CallError.SystemFailed(SystemFailure(Platform.ANDROID, SystemOperation.ADMISSION)))
+            val kind = if (operation == "start") SystemOperation.START else SystemOperation.ADMISSION
+            return failed(CallError.SystemFailed(SystemFailure(Platform.ANDROID, kind)))
         }
         return when (operation) {
+            "start" -> {
+                if (input.read<Boolean>("video")) return failed(CallError.Unsupported(Feature.VIDEO))
+                if (line == null || input.read<LineID>("lineID") != line.lineID) {
+                    return failed(CallError.InvalidConfiguration(ConfigurationField.PLACEMENT))
+                }
+                performed(calls, calls.startOutgoing(input.read("id"), line, input.read("parties")))
+            }
+            "placement.settle" -> {
+                val accepted = placement.settle(calls, receiver, input)
+                ok(message(if (accepted) "accepted" else "stale"))
+            }
             "perform" -> {
                 val id = input.read<CallID>("id")
-                when (input.obj("action").text("kind")) {
-                    "answer" -> telecom.answer(id).reply { receipt ->
-                        message("performed", "receipt" to encode(receipt), "cursor" to settledCursor(calls))
-                    }
+                val action = input.obj("action")
+                when (action.text("kind")) {
+                    "answer" -> performed(calls, telecom.answer(id))
                     "end" -> end(calls, id)
-                    "hold" -> failed(CallError.Unsupported(Feature.HOLD))
+                    "hold" -> performed(calls, calls.setHeld(id, action.read("held")))
+                    "mute" -> failed(CallError.Unsupported(Feature.MUTE))
                     "join" -> failed(CallError.Unsupported(Feature.PREVIEW))
                     "video" -> failed(CallError.Unsupported(Feature.VIDEO))
                     "tones" -> failed(CallError.Unsupported(Feature.TONES))
                     else -> failed(CallError.BridgeUnavailable)
                 }
             }
-            "receive" -> when (val event = Wire.json.decodeFromJsonElement<RemoteEvent>(input)) {
-                is RemoteEvent.Connected -> failed(CallError.BridgeUnavailable)
-                else -> calls.receive(event).reply { settledCursor(calls); message(encode(it).jsonPrimitive.content) }
-            }
+            "receive" -> calls.receive(Wire.json.decodeFromJsonElement<RemoteEvent>(input))
+                .reply { settledCursor(calls); message(encode(it).jsonPrimitive.content) }
             "bindRemote" -> calls.bindRemote(input.read("id"), input.read("remoteID")).reply { settledCursor(calls); JsonNull }
             "reportIncoming" -> {
                 if (line == null || input.read<CallingLine>("line") != line) {
@@ -137,6 +159,9 @@ internal class CallBinding(
             else -> error("Unknown bridge operation")
         }
     }
+
+    private suspend fun performed(calls: CallRuntime, result: Outcome<ActionReceipt, CallError>): Reply =
+        result.reply { message("performed", "receipt" to encode(it), "cursor" to settledCursor(calls)) }
 
     private suspend fun end(calls: CallRuntime, id: CallID): Reply {
         val actionID = ActionID(UUID.randomUUID().toString())

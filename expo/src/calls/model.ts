@@ -16,7 +16,7 @@ export type LineID = ID<'line'>;
 export type DTMFDigit = ReturnType<typeof import('./decode.ts').digit>;
 export type Result<Value, Error> = { readonly ok: true; readonly value: Value }
   | { readonly ok: false; readonly error: Error };
-export type CallError = Exclude<WireCallError, { readonly kind: 'unsupported' }>
+export type CallError = WireCallError
   | { readonly kind: 'unsupported'; readonly feature: Feature };
 
 export const accountID = id<'account'>();

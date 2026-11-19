@@ -13,11 +13,12 @@ import kotlinx.serialization.json.*
 class VoIPConversationsModule : Module() {
     private val sendFrame: (String) -> Unit = { sendEvent("bridgeFrame", mapOf("json" to it)) }
     private val sendToken: (Map<String, Any?>) -> Unit = { sendEvent("pushTokenUpdated", it) }
+    private val placement = PlacementReceiver { sendEvent("placementFrame", mapOf("json" to it)) }
     @Volatile private var negotiated = false
 
     override fun definition() = ModuleDefinition {
         Name("VoIPConversations")
-        Events("bridgeFrame", "incomingPush", "pushTokenUpdated")
+        Events("bridgeFrame", "placementFrame", "incomingPush", "pushTokenUpdated")
         OnCreate {
             service = CallHost.get(requireNotNull(appContext.reactContext))
             CallHost.scope.launch { service.push.start() }
@@ -34,7 +35,10 @@ class VoIPConversationsModule : Module() {
         OnDestroy {
             service.binding.state.detach(sendFrame)
             pushEvents?.cancel()
-            CallHost.scope.launch { service.push.tokenObservers.remove(sendToken) }
+            CallHost.scope.launch {
+                service.binding.detachPlacement(placement)
+                service.push.tokenObservers.remove(sendToken)
+            }
         }
         Function("negotiate") { source: String ->
             val selected = BridgeWire.negotiate(source)
@@ -52,7 +56,7 @@ class VoIPConversationsModule : Module() {
         AsyncFunction("command") Coroutine { source: String ->
             withContext(Dispatchers.Main.immediate) {
                 service.push.refresh()
-                service.binding.command(source, negotiated, ::permission)
+                service.binding.command(source, negotiated, placement, ::permission)
             }
         }
     }

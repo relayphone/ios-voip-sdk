@@ -84,7 +84,7 @@
     "bindRemoteInput": {"type":"object","properties":{"id":{"$ref":"#/$defs/id"},"remoteID":{"$ref":"#/$defs/id"}},"required":["id","remoteID"],"additionalProperties":false},
     "target": {"type":"object","properties":{"kind":{"enum":["call","remote"]},"id":{"$ref":"#/$defs/id"}},"required":["kind","id"],"additionalProperties":false},
     "remoteEvent": {"oneOf":[
-      {"type":"object","properties":{"kind":{"const":"connected"},"eventID":{"$ref":"#/$defs/id"},"target":{"$ref":"#/$defs/target"}},"required":["kind","eventID","target"],"additionalProperties":false},
+      {"type":"object","properties":{"kind":{"enum":["connecting","connected"]},"eventID":{"$ref":"#/$defs/id"},"target":{"$ref":"#/$defs/target"}},"required":["kind","eventID","target"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"ended"},"eventID":{"$ref":"#/$defs/id"},"target":{"$ref":"#/$defs/target"},"reason":{"$ref":"https://relayphone.github.io/voip-sdk/spec/v0/model.schema.json#/$defs/remoteEnd"}},"required":["kind","eventID","target","reason"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"partiesChanged"},"eventID":{"$ref":"#/$defs/id"},"target":{"$ref":"#/$defs/target"},"parties":{"$ref":"#/$defs/parties"}},"required":["kind","eventID","target","parties"],"additionalProperties":false},
       {"type":"object","properties":{"kind":{"const":"videoRequested"},"eventID":{"$ref":"#/$defs/id"},"target":{"$ref":"#/$defs/target"},"enabled":{"type":"boolean"}},"required":["kind","eventID","target","enabled"],"additionalProperties":false}

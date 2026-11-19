@@ -1,0 +1,15 @@
+[
+  {"kind":"command","operation":"receive","input":{"kind":"connecting","eventID":"connecting-a","target":{"kind":"call","id":"outbound-a"}}},
+  {"kind":"reply","operation":"receive","result":{"ok":true,"value":{"kind":"applied"}}},
+  {"kind":"command","operation":"perform","input":{"id":"outbound-a","action":{"kind":"hold","held":true}}},
+  {"kind":"reply","operation":"perform","result":{"ok":true,"value":{
+    "kind":"performed","receipt":{"actionID":"hold-a","origin":"app","action":{"kind":"hold","callID":"outbound-a","held":true}},
+    "cursor":{"epoch":"commands-a","sequence":3}
+  }}},
+  {"kind":"command","operation":"perform","input":{"id":"outbound-a","action":{"kind":"hold","held":false}}},
+  {"kind":"reply","operation":"perform","result":{"ok":true,"value":{
+    "kind":"performed","receipt":{"actionID":"resume-a","origin":"app","action":{"kind":"hold","callID":"outbound-a","held":false}},
+    "cursor":{"epoch":"commands-a","sequence":4}
+  }}},
+  {"kind":"reply","operation":"start","result":{"ok":false,"error":{"kind":"systemFailed","cause":{"kind":"start","platform":"android","code":42}}}}
+]

@@ -56,6 +56,9 @@ public sealed interface RemoteEvent {
     public val eventID: EventID
     public val target: EndTarget
 
+    @Serializable @SerialName("connecting")
+    public data class Connecting(override val eventID: EventID, override val target: EndTarget) : RemoteEvent
+
     @Serializable @SerialName("connected")
     public data class Connected(override val eventID: EventID, override val target: EndTarget) : RemoteEvent
 
@@ -117,6 +120,7 @@ public sealed interface PlacementResult {
     public data class Placed(public val remoteID: RemoteCallID? = null) : PlacementResult
     public data class Refused(public val reason: RefusalReason) : PlacementResult
     public data class Failed(public val cause: PlacementFailure) : PlacementResult
+    public data object Expired : PlacementResult
 }
 
 /** Immediate command decisions, evaluated on the same state as the transition. */
@@ -204,6 +208,7 @@ public sealed interface Effect {
     public data class ReportIncoming(public val attempt: Attempt) : Effect
     public data class RequestPlacement(
         public val attempt: Attempt, public val actionID: ActionID, public val deadline: Instant,
+        public val origin: ActionOrigin = ActionOrigin.APP,
     ) : Effect
     public data class NativeStart(public val attempt: Attempt, public val actionID: ActionID) : Effect
     public data class RequestClaim(public val attempt: Attempt, public val actionID: ActionID) : Effect
@@ -284,7 +289,7 @@ internal data class PermitKey(val callID: CallID, val id: AttemptID)
 internal data class PermitRelease(val attempt: Attempt, val permit: AttemptID)
 internal data class Armed(val attempt: Attempt, val deadline: Instant)
 internal enum class RemovalEvidence { UNCONFIRMED, REMOVED, NOT_APPLICABLE }
-internal enum class OutgoingProgress { CONNECTED, PROVIDE_MEDIA }
+internal enum class OutgoingProgress { CONNECTING, CONNECTED, PROVIDE_MEDIA }
 internal val terminalOrder: Comparator<Record> = compareBy({ it.terminalAt }, { it.cleanup?.generation })
 
 internal data class Record(
