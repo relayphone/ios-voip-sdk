@@ -159,6 +159,29 @@ test('snapshot cannot renew an existing phase anchor', async () => {
   } finally { f.cleanup(); }
 });
 
+test('the audio snapshot transfers both PCM observers and preserves the phase anchor', async () => {
+  const f = fixture();
+  const downlink = [[0.13, -0.24], [0.32, -0.41]];
+  const output = [[0.52, -0.61]];
+  try {
+    f.ready(); await f.mailbox.connect(budget());
+    f.serve(command => f.write('response', { ...f.state, commandId: command.id, phaseId: 'pcm',
+      observedAtMs: command.operation === 'beginPhase' ? 120 : 140, phaseAtMs: 120,
+      ...(command.operation === 'audioSnapshot' ? {
+        decoded: { pcm: { channels: downlink } }, output: { pcm: { channels: output } },
+      } : {}),
+    }));
+    const phase = await f.mailbox.request({ operation: 'beginPhase', phaseId: 'pcm' }, budget());
+    const snapshot = await f.mailbox.request({ operation: 'audioSnapshot' }, budget());
+    assert.equal(snapshot.phaseAtMs, phase.phaseAtMs);
+    assert.deepEqual(snapshot.evidence, {
+      ...f.state, commandId: f.received.at(-1)!.id, phaseId: 'pcm', observedAtMs: 140, phaseAtMs: 120,
+      decoded: { pcm: { channels: downlink.map(samples => Float32Array.from(samples)) } },
+      output: { pcm: { channels: output.map(samples => Float32Array.from(samples)) } },
+    });
+  } finally { f.cleanup(); }
+});
+
 test('expired and canceled queued work does not overwrite a published command', async () => {
   const f = fixture();
   try {

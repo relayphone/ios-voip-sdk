@@ -4,7 +4,7 @@ import type { MediaMarker } from '../../expo/src/testing/types.ts';
 
 export interface PCMCapture {
   readonly sampleRate: number;
-  readonly channels: readonly (readonly number[])[];
+  readonly channels: readonly (readonly number[] | Float32Array)[];
   readonly formatChanged: boolean;
   readonly transport?: readonly TransportSnapshot[];
 }
@@ -22,7 +22,7 @@ export function measureMarker(capture: PCMCapture, marker: MediaMarker, counterC
   const edgeTolerance = counterCoverage === 'host-poll'
     ? Math.floor(capture.sampleRate * HOST_RECEIVER_STATS_POLL_MS / 1000) : 0;
   const channels = capture.channels.map(samples => {
-    const pcm = Float32Array.from(samples);
+    const pcm = samples instanceof Float32Array ? samples : Float32Array.from(samples);
     let detection: import('../../expo/src/testing/types.ts').MarkerDetection | null = null;
     const cycles = [];
     let clean = false;

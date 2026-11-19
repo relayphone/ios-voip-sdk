@@ -88,6 +88,7 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
         capture.native = readJourneyAudio(await request({ operation: 'audioProgress' }));
         return hasDuplexSamples(capture.native, capture.host) ? true : undefined;
       });
+      const snapshotRequestedAtMs = performance.now();
       const pcm = readJourneyAudio(await request({ operation: 'audioSnapshot' }));
       assert.ok(hasDuplexSamples(pcm, harness.status()), 'Duplex capture lost coverage between snapshots');
       if (expectedDownlink) {
@@ -96,7 +97,7 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
       const capturedAtMs = performance.now();
       const { markers, uplinkCapture } = await assertDuplexAudio(pcm, harness, { up: createMarker(phaseId), down: createMarker(downId) });
       keep(label, { phaseId, remoteAudioPublication: pcm.remoteAudioPublication,
-        startedAtMs, capturedAtMs, analyzedAtMs: performance.now(), uplinkCapture, markers });
+        startedAtMs, snapshotRequestedAtMs, capturedAtMs, analyzedAtMs: performance.now(), uplinkCapture, markers });
       for (const marker of Object.values(markers)) {
         assert.ok(marker.clean && marker.complete && marker.postRollObserved, `${label}: missing clean fresh audio`);
       }

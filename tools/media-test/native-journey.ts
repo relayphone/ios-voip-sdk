@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { addAbortListener } from 'node:events';
 import { rmSync } from 'node:fs';
 import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { Worker } from 'node:worker_threads';
 import { createMarker } from '../../expo/src/testing/marker.ts';
 import type { MediaTestOptions } from '../../expo/src/testing/types.ts';
 import { nativeJourneyFailure } from './native-video-evidence.ts';
@@ -38,13 +40,36 @@ function timestamp(value: unknown): number {
   return value;
 }
 // The mailbox shares an event loop with the media senders and heartbeat timers.
-async function read(path: string, signal: AbortSignal): Promise<unknown> {
-  try { return JSON.parse(await readFile(path, { encoding: 'utf8', signal })) as unknown; }
+async function read(path: string, signal: AbortSignal, audioBudget?: NativeJourneyBudget): Promise<unknown> {
+  try {
+    if (audioBudget) return await decodeAudioSnapshot(await readFile(path, { signal }), audioBudget);
+    return JSON.parse(await readFile(path, { encoding: 'utf8', signal })) as unknown;
+  }
   catch (error) {
     signal.throwIfAborted();
+    if (audioBudget && performance.now() >= audioBudget.deadlineMs) throw Error('Native journey deadline exceeded');
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return undefined;
     throw Error('Cannot decode native journey reply');
   }
+}
+
+/** Decode and pack the large native PCM snapshot without blocking the host media loop. */
+async function decodeAudioSnapshot(bytes: Buffer, budget: NativeJourneyBudget): Promise<unknown> {
+  const remainingMs = budget.deadlineMs - performance.now();
+  if (remainingMs <= 0) throw Error('Native journey deadline exceeded');
+  const signal = AbortSignal.any([budget.signal, AbortSignal.timeout(Math.ceil(remainingMs))]);
+  signal.throwIfAborted();
+  const buffer = bytes.buffer instanceof ArrayBuffer && bytes.byteLength === bytes.buffer.byteLength
+    ? bytes.buffer : Uint8Array.from(bytes).buffer;
+  const worker = new Worker(new URL('./native-audio-snapshot-worker.ts', import.meta.url),
+    { workerData: buffer, transferList: [buffer], execArgv: [] });
+  const result = Promise.withResolvers<unknown>();
+  worker.once('message', result.resolve);
+  worker.once('error', result.reject);
+  worker.once('exit', code => result.reject(Error(`Native audio snapshot worker exited before a result (${code})`)));
+  const abort = addAbortListener(signal, () => result.reject(signal.reason));
+  try { return await result.promise; }
+  finally { abort[Symbol.dispose](); await worker.terminate(); }
 }
 function envelope(value: unknown, options: MediaTestOptions): NativeJourneyReply {
   const row = object(value);
@@ -155,7 +180,7 @@ export function prepareNativeJourney(directory: string, options: MediaTestOption
           await rename(temporary, paths.command);
           const reply = await poll(budget, async () => {
             await assertNoFailure(budget.signal);
-            const value = await read(paths.response, budget.signal);
+            const value = await read(paths.response, budget.signal, action.operation === 'audioSnapshot' ? budget : undefined);
             if (value === undefined) return;
             const row = object(value);
             if (!uuid(row.commandId) || row.commandId.toLowerCase() !== id) return;
