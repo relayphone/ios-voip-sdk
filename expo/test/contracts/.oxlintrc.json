@@ -1,0 +1,14 @@
+{
+  "extends": ["../../../.oxlintrc.json"],
+  "overrides": [
+    {
+      "files": ["calls-*.test.ts"],
+      "rules": {
+        "anti-slop/no-conditional-empty-object-spread": "error",
+        "anti-slop/no-unknown-parameters": "error",
+        "landmines-testing/no-flake-masking": "error",
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    }
+  ]
+}

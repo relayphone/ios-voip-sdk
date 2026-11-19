@@ -1,4 +1,4 @@
-import { id, union, type Decoded, type ID } from './decode.ts';
+import { hasControlCharacters, id, union, type Decoded, type ID } from './decode.ts';
 import { wireV0, type AnswerBudget, type CallError as WireCallError, type WireCall } from './wire-v0.ts';
 import { wireV1, type Capability, type Feature, type MediaObservation } from './wire-v1.ts';
 
@@ -27,10 +27,11 @@ export const credentialRef = id<'credential'>();
 export type HTTPSURL = ID<'httpsURL'>;
 export function httpsURL(input: string): HTTPSURL {
   const url = new URL(input);
-  if (input.trim() !== input || /[\u0000-\u001f\u007f-\u009f]/u.test(input) || !/^https:\/\//iu.test(input) ||
+  if (input.trim() !== input || hasControlCharacters(input) || !/^https:\/\//iu.test(input) ||
       url.protocol !== 'https:' || url.username || url.password) {
     throw new TypeError('Expected an HTTPS endpoint without embedded credentials');
   }
+  // SAFETY: The original string passed URL parsing and the HTTPS, credential and character checks.
   return input as HTTPSURL;
 }
 
