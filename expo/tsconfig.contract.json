@@ -3,7 +3,8 @@
   "compilerOptions": {
     "noEmit": true,
     "strict": true,
-    "exactOptionalPropertyTypes": true
+    "exactOptionalPropertyTypes": true,
+    "noPropertyAccessFromIndexSignature": true
   },
   "include": [
     "src/calls/**/*.ts",
