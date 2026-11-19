@@ -70,8 +70,9 @@ jobs:
           xcode: "false"
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm ci --prefix media-test --no-audit --no-fund
-      - run: npx tsc --project .
-      - run: node --test
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run lint
 
   host-tests:
     name: Swift tests and formatting

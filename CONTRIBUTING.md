@@ -17,8 +17,17 @@ swift format lint --strict --recursive --parallel Package.swift Sources Tests Ex
 `swift format --in-place --recursive --parallel` with the same paths fixes most findings.
 
 The TypeScript tools in `tools/` build, package and smoke-test the standalone simulator runtime.
-They run with Node.js 24 and need no build step; `npm ci`, `npx tsc --project .` and `node --test`
-in `tools/` check them.
+They run with Node.js 24 and need no build step. From `tools/`, run:
+
+```sh
+npm ci
+npm ci --prefix media-test
+npm run typecheck
+npm test
+npm run lint
+```
+
+The lint command covers `tools/`, `expo/` and `exact/`.
 
 The [CI workflow](.github/workflows/ci.yml) runs all of these, builds every library and the
 example for devices and the simulator, checks that the example's device build leaves out the
