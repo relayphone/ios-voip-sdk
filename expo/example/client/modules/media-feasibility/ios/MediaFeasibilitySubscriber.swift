@@ -234,6 +234,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       manager.audioSession.isAutomaticConfigurationEnabled = false
       manager.set(engineObservers: [manager.audioSession, manager.mixer, hooks])
       try manager.setEngineAvailability(.none)
+      // The marker joins downstream of the hardware input, so mute the mixed capture.
+      try manager.set(microphoneMuteMode: .inputMixer)
       room.add(delegate: self)
       probe.startup.record(.roomConnectRequested)
       do {
