@@ -1,0 +1,25 @@
+{
+  "extends": ["../../../.oxlintrc.json"],
+  "overrides": [
+    {
+      "files": ["withVoIPConversationsIos.ts", "withFocusFilter.ts"],
+      "rules": {
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    },
+    {
+      "files": ["withVoIPConversationsIos.ts"],
+      "rules": {
+        "anti-slop/no-conditional-empty-object-spread": "error",
+        "anti-slop/require-safety-comment-for-type-assertion": "error"
+      }
+    },
+    {
+      "files": ["withFocusFilter.ts"],
+      "rules": {
+        // The entitlement reader checks that App Group entries are strings.
+        "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }]
+      }
+    }
+  ]
+}
