@@ -30,7 +30,11 @@ enum SystemError {
     case IncomingCall.callUUIDAlreadyExists: .presented
     case IncomingCall.filteredByDoNotDisturb: .filtered(.doNotDisturb)
     case IncomingCall.filteredByBlockList: .filtered(.blockList)
-    default: .refused(.refused)
+    default:
+      .refused(
+        .systemFailed(
+          SystemFailure(
+            platform: .ios, operation: .admission, diagnostic: .framework(FrameworkError(error)))))
     }
   }
 

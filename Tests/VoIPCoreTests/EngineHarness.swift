@@ -205,6 +205,13 @@ final class Harness {
     return action
   }
 
+  /// Launches an app Start and waits until the app is asked to place it.
+  func beginStart(_ outgoing: OutgoingCall) async throws -> Task<Void, any Error> {
+    let request = Task { try await client.request(.start(outgoing)) }
+    #expect(try await next() == .startRequested(outgoing.id))
+    return request
+  }
+
   /// Rings, answers and connects a call.
   func connect(_ id: CallID = callID) async throws {
     try await ring(IncomingCall(id: id, parties: [alice]), eventID: EventID(rawValue: id.rawValue))

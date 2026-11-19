@@ -18,6 +18,17 @@ test('legacy duplex replay retains uncertainty rather than inferring activation 
   assert.throws(() => assertNativePassed(replay), /Native media check failed at duplex; startup=preparationCompletionUnobserved/);
 });
 
+test('a failed preparation retains phase timings and excludes raw connection error details', () => {
+  const replay = report([
+    row('prepareEntered', 10), row('roomConnectRequested', 11),
+    row('roomConnectFailed', 2021, { errorType: 'private error detail' }),
+  ]);
+  assert.deepEqual(diagnoseNativeStartup(replay), { clockID, boundary: 'preparationCompletionUnobserved', preparation: [
+    { stage: 'prepareEntered', atMs: 10 }, { stage: 'roomConnectRequested', atMs: 11 },
+    { stage: 'roomConnectFailed', atMs: 2021 },
+  ] });
+});
+
 test('serialized receipts distinguish delivery, queue consumption and actual engine outcome', () => {
   const observations = [row('prepareCompleted', 10)];
   assert.equal(diagnoseNativeStartup(report(observations)).boundary, 'activationNeverDelivered');

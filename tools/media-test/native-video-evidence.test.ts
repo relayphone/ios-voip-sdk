@@ -67,6 +67,8 @@ test('host failure errors include only allowlisted operation/category and numeri
   assert.equal(error.operation, 'prepare'); assert.equal(error.category, 'livekit'); assert.equal(error.code, 101);
   assert.match(error.message, /reported failure: prepare\/livekit\/101/);
   assert.ok(!error.stack!.includes('fixture-token-secret'));
+  assert.match(nativeJourneyFailure({ operation: 'prepare', category: 'cancelled', code: 1 }, 'attempt').message,
+    /reported failure: prepare\/cancelled\/1/);
   for (const invalid of [
     { operation: 'fixture-token-secret', category: 'url', code: 1 },
     { operation: 'prepare', category: 'fixture-token-secret', code: 1 },

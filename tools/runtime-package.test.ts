@@ -5,10 +5,10 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { gunzipSync } from 'node:zlib';
 import { packageRuntime } from './package-runtime.ts';
-import { archive, isVersion, manifest, requiredFiles, sha256, sourceDigest, validate } from './runtime-package.ts';
+import { archive, hasBuildInfo, isVersion, manifest, requiredFiles, sha256, sourceDigest, validate } from './runtime-package.ts';
 
 /** A package with placeholder files and a correct manifest, in a new temporary directory. */
-function makePackage(): { root: string; directory: string } {
+function makePackage() {
   const root = mkdtempSync(join(tmpdir(), 'runtime-package-'));
   const directory = join(root, 'package');
   mkdirSync(join(directory, 'profiles'), { recursive: true });
@@ -16,16 +16,15 @@ function makePackage(): { root: string; directory: string } {
     writeFileSync(join(directory, name), name === 'VERSION' ? '0.1.2\n' : `placeholder ${name}`);
   }
   chmodSync(join(directory, 'cksim'), 0o755);
-  writeFileSync(join(directory, 'build-info.json'), JSON.stringify({
-    schemaVersion: 1, version: '0.1.2', sourceDateEpoch: 1_790_000_000, files: manifest(directory),
-  }));
-  return { root, directory };
+  const info = { schemaVersion: 1, version: '0.1.2', sourceDateEpoch: 1_790_000_000, files: manifest(directory) };
+  writeFileSync(join(directory, 'build-info.json'), JSON.stringify(info));
+  return { root, directory, info };
 }
 
 interface Entry { name: string; mode: number; uid: number; gid: number; size: number; mtime: number; type: string }
 
 /** The entries of a gzip-compressed ustar archive. */
-function entries(data: Buffer): Entry[] {
+function entries(data: Buffer) {
   const tar = gunzipSync(data);
   const result: Entry[] = [];
   for (let offset = 0; offset + 512 <= tar.length;) {
@@ -59,19 +58,44 @@ test('a complete package validates and a changed or escaping file does not', () 
 
     const other = makePackage();
     writeFileSync(join(other.root, 'outside.dylib'), 'outside');
-    const info = JSON.parse(readFileSync(join(other.directory, 'build-info.json'), 'utf8'));
-    info.files['../outside.dylib'] = sha256('outside');
-    writeFileSync(join(other.directory, 'build-info.json'), JSON.stringify(info));
+    other.info.files['../outside.dylib'] = sha256('outside');
+    writeFileSync(join(other.directory, 'build-info.json'), JSON.stringify(other.info));
     assert.throws(() => validate(other.directory), /Runtime package checksum mismatch: \.\.\/outside\.dylib/);
     rmSync(other.root, { recursive: true });
 
     const incomplete = makePackage();
     rmSync(join(incomplete.directory, 'cksim'));
-    const partial = JSON.parse(readFileSync(join(incomplete.directory, 'build-info.json'), 'utf8'));
-    delete partial.files.cksim;
-    writeFileSync(join(incomplete.directory, 'build-info.json'), JSON.stringify(partial));
+    delete incomplete.info.files['cksim'];
+    writeFileSync(join(incomplete.directory, 'build-info.json'), JSON.stringify(incomplete.info));
     assert.throws(() => validate(incomplete.directory), /Incomplete or unsupported runtime package/);
     rmSync(incomplete.root, { recursive: true });
+  } finally {
+    rmSync(root, { recursive: true });
+  }
+});
+
+test('a checksum-valid package can be inspected without release provenance', () => {
+  const { root, directory, info } = makePackage();
+  try {
+    const path = join(directory, 'build-info.json');
+    assert.equal(hasBuildInfo(validate(directory)), false);
+    const qualified = {
+      ...info,
+      profile: 'ios-27.0',
+      sourceCommit: 'a'.repeat(40),
+      sourceDirty: false,
+      sourceInputsSHA256: 'b'.repeat(64),
+      toolchain: { xcode: 'Xcode 27.1', swift: 'Swift 6.4', clang: 'clang 21' },
+      sdk: { version: '27.0', build: '24A5355q' },
+      sdkPath: '/sdk',
+      architectures: ['arm64', 'x86_64'],
+    };
+    writeFileSync(path, JSON.stringify(qualified));
+    assert.equal(hasBuildInfo(validate(directory)), true);
+    writeFileSync(path, JSON.stringify({ ...qualified, architectures: ['arm64', 1] }));
+    assert.equal(hasBuildInfo(validate(directory)), false);
+    writeFileSync(path, JSON.stringify({ ...qualified, files: null }));
+    assert.throws(() => validate(directory), /Incomplete or unsupported runtime package/);
   } finally {
     rmSync(root, { recursive: true });
   }

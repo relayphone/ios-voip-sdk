@@ -1,7 +1,9 @@
 #if os(iOS) && targetEnvironment(simulator)
   import AVFAudio
   import CKSimProtocol
+  import Dispatch
   import Foundation
+  import Synchronization
   import Testing
   import VoIPAudio
   import VoIPCore
@@ -329,19 +331,29 @@
           presentationPolicy: PresentationPolicy(incoming: .preview)))
       try await app.expect([.previewStarted(id, .policy)])
 
+      let expectedBusyMedia: [FakeMedia.Record]?
       if failure == .refused {
         // An outgoing call reserves the only conversation group, so the framework refuses
         // another start request (including a join).
         let busy = newCallID("busy")
-        try await app.client.request(.start(OutgoingCall(id: busy, parties: [caller])))
+        let action = Action.start(OutgoingCall(id: busy, parties: [caller]))
+        let request = Task { try await app.client.request(action) }
         try await app.expect([.startRequested(busy)])
+        await app.client.confirmPlaced(busy)
+        try await request.value
+        try await app.expect([.performed(action, .dialing), .audioActivated])
+        // The refused join must leave the busy call's media alone until that call ends.
+        expectedBusyMedia = await app.media.records + [.deactivate]
         await #expect(throws: ActionError.self) {
           try await app.client.request(.join(id))
         }
         try await app.expect([.joinFailed(id, .policy, failure), .previewStarted(id, .policy)])
-        await app.client.confirmNotPlaced(busy)
-        try await app.expect([.ended(busy, .failed(.notPlaced))])
+        _ = try await app.client.end(busy)
+        try await app.expect([
+          .performed(.end(busy), .ended(.localEnded)), .ended(busy, .localEnded), .audioDeactivated,
+        ])
       } else {
+        expectedBusyMedia = nil
         try await app.client.request(.join(id))
         try await app.expect([.joinRequested(id)])
         switch failure {
@@ -375,7 +387,12 @@
         app.call(id)?.status == .previewing(.policy)
       }
       try await app.until("the system to remove the calls") { try await app.system.calls().isEmpty }
-      #expect(await app.media.records.allSatisfy { $0.kind == .prepare })
+      let mediaRecords = await app.media.records
+      if let expectedBusyMedia {
+        #expect(mediaRecords == expectedBusyMedia)
+      } else {
+        #expect(mediaRecords.allSatisfy { $0.kind == .prepare })
+      }
       app.expectNoMoreEvents()
     }
 
@@ -423,14 +440,15 @@
       defer { app.stop() }
       let id = newCallID("outgoing")
       let bob = try Party(handle: Handle(kind: .phoneNumber, value: "+442071838750"))
-      try await app.client.request(.start(OutgoingCall(id: id, parties: [bob])))
+      let action = Action.start(OutgoingCall(id: id, parties: [bob]))
+      let request = Task { try await app.client.request(action) }
       try await app.expect([.startRequested(id)])
-      #expect(try await app.system.calls().map(\.outgoing) == [true])
+      #expect(try await app.system.calls().isEmpty)
 
       await app.client.confirmPlaced(id)
-      try await app.expect([
-        .performed(.start(OutgoingCall(id: id, parties: [bob])), .dialing), .audioActivated,
-      ])
+      try await request.value
+      try await app.expect([.performed(action, .dialing), .audioActivated])
+      #expect(try await app.system.calls().map(\.outgoing) == [true])
       await app.client.receive(.connected, for: id, eventID: EventID(rawValue: "connected-\(id)"))
       try await app.until("the call to connect") { app.call(id)?.status == .connected }
       try await app.until("the system to see the call connected") {
@@ -455,19 +473,23 @@
       defer { app.stop() }
       let id = newCallID("not-placed")
       let bob = try Party(handle: Handle(kind: .phoneNumber, value: "+442071838750"))
-      try await app.client.request(.start(OutgoingCall(id: id, parties: [bob])))
+      let request = Task {
+        try await app.client.request(.start(OutgoingCall(id: id, parties: [bob])))
+      }
       try await app.expect([.startRequested(id)])
 
-      // The app's servers refuse the call, so the app fails it rather than waiting for the
-      // placement deadline, and the system's start fails with it.
+      // The app's servers refuse placement before the SDK submits the native Start.
       await app.client.confirmNotPlaced(id)
+      await #expect(throws: ActionError.notAllowed(.ended(.failed(.notPlaced)))) {
+        try await request.value
+      }
       try await app.expect([.ended(id, .failed(.notPlaced))])
       try await app.until("the system to end the call") { try await app.system.calls().isEmpty }
       let uuid = deviceUUID(for: id).uuidString
       let starts = try await app.system.journal().filter {
         $0.event == "action.settled" && $0.kind == "start" && $0.callUUID == uuid
       }
-      #expect(starts.map(\.fulfilled) == [false])
+      #expect(starts.isEmpty)
       #expect(await app.media.records.isEmpty)
       app.expectNoMoreEvents()
     }
@@ -602,6 +624,35 @@
           .activate, .deactivate, .activate, .deactivate,
         ])
       try await app.expectPushesFinished(pushIDs)
+      app.expectNoMoreEvents()
+    }
+
+    @Test func aWaitingCallIsPresentedWhileItsReportLogIsBlocked() async throws {
+      let (active, waiting) = (newCallID("logging-active"), newCallID("logging-waiting"))
+      let entered = Mutex(false)
+      let release = DispatchSemaphore(value: 0)
+      defer { release.signal() }
+
+      // Keep the synchronous log sink blocked until the report has reached the SDK and PushKit.
+      let reports = IncomingReportLog { id in
+        guard id == waiting else { return }
+        entered.withLock { $0 = true }
+        release.wait()
+      }
+      let app = try await App(reports: reports)
+      defer { app.stop() }
+      let pushes = try await answerAndConnect(active, thenRing: waiting, in: app)
+      try await app.until("the waiting call's adapter log to begin") { entered.withLock { $0 } }
+      #expect(reports.waitTimedOut(for: waiting) == false)
+      try await app.expectPushesFinished(pushes)
+
+      await app.client.receive(
+        .endedRemotely, for: waiting, eventID: EventID(rawValue: "end-\(waiting)"))
+      try await app.expect([.ended(waiting, .endedRemotely)])
+      await app.client.receive(
+        .endedRemotely, for: active, eventID: EventID(rawValue: "end-\(active)"))
+      try await app.expect([.ended(active, .endedRemotely), .audioDeactivated])
+      try await app.until("both system calls to end") { try await app.system.calls().isEmpty }
       app.expectNoMoreEvents()
     }
 

@@ -23,12 +23,16 @@ final class CallEngine {
 
   /// Every call this device knows, including ended calls until the retention passes.
   private(set) var states: [CallID: CallMachine.State] = [:]
+  private var attemptGeneration: UInt64 = 0
   /// The known calls in the order they began.
   private var order: [CallID] = []
   /// How each incoming call appeared after its first report.
   private var outcomes: [CallID: PresentationOutcome] = [:]
   /// Callbacks waiting for an incoming call's first report to complete.
   private var reportWaiters: [CallID: [@VoIPActor (PresentationOutcome) -> Void]] = [:]
+  private var startWaiters:
+    [CallMachine.AttemptID: @VoIPActor (Result<Void, ActionError>) -> Void] =
+      [:]
   /// When each ended call ended.
   private var endedAt: [CallID: Duration] = [:]
   /// When each event ID was first seen.
@@ -123,32 +127,45 @@ final class CallEngine {
     }
   }
 
-  /// Requests an action, returning once the calling framework accepted it or the SDK performed it.
+  /// Requests an action. Start awaits native admission after the app places the call.
   func request(_ action: Action) async throws(ActionError) {
     let id = action.callID
     if case .end = action {
       _ = try end(id)
       return
     }
-    let call = try exclusively { () throws(ActionError) -> Call? in
-      let reply: Reply
-      if states[id] != nil {
-        reply = handle(id, .requested(action))
-      } else if case .start(let outgoing) = action {
-        reply = begin(.outgoing(outgoing))
-      } else {
-        throw .unknownCall
+    if case .start(let outgoing) = action {
+      let result = await withCheckedContinuation { continuation in
+        start(outgoing) { continuation.resume(returning: $0) }
       }
-      return try requested(reply, for: id)
+      try result.get()
+      return
+    }
+    let call = try exclusively { () throws(ActionError) -> Call? in
+      guard states[id] != nil else { throw .unknownCall }
+      return try requested(handle(id, .requested(action)), for: id)
     }
     try await send(action, for: call)
   }
 
-  func end(_ id: CallID) throws(ActionError) -> EndResult {
+  func start(
+    _ outgoing: OutgoingCall, completion: @escaping @VoIPActor (Result<Void, ActionError>) -> Void
+  ) {
+    exclusively {
+      if let state = states[outgoing.id] {
+        return completion(.failure(.notAllowed(state.call.status)))
+      }
+      begin(.outgoing(outgoing), startCompletion: completion)
+    }
+  }
+
+  func end(_ id: CallID, actionID: ActionID = ActionID(rawValue: UUID())) throws(ActionError)
+    -> EndResult
+  {
     try exclusively { () throws(ActionError) in
       guard let state = states[id] else { throw .unknownCall }
       if let result = state.endResult { return result }
-      let receipt = state.endReceipt(for: ActionID(rawValue: UUID()))
+      let receipt = state.endReceipt(for: actionID)
       handle(id, .localEnd(receipt))
       return .ended(receipt)
     }
@@ -240,7 +257,10 @@ final class CallEngine {
 
   /// Records that the app placed a call that it was asked to start or join.
   func confirmPlaced(_ id: CallID) {
-    exclusively { handle(id, .placed) }
+    exclusively {
+      if case .placingStart = states[id]?.phase, expireIfDue(.placement, for: id) { return }
+      handle(id, .placed)
+    }
   }
 
   func provideMedia(_ id: CallID) throws(ActionError) {
@@ -425,7 +445,13 @@ final class CallEngine {
       stopAudio()
       subscribers.yield(.audioDeactivated)
     case .reset:
-      for id in liveCalls { handle(id, .frameworkReset) }
+      for id in order {
+        guard let state = states[id],
+          !state.phase.isEnded || state.admissionAttempt != nil || state.startAttempt != nil
+        else { continue }
+        handle(id, .frameworkReset)
+        if state.admissionAttempt != nil { finishReport(id, .refused(.frameworkReset)) }
+      }
     }
   }
 
@@ -502,19 +528,24 @@ final class CallEngine {
   }
 
   @discardableResult
-  private func begin(_ origin: CallMachine.Origin) -> Reply {
+  private func begin(
+    _ origin: CallMachine.Origin,
+    startCompletion: (@VoIPActor (Result<Void, ActionError>) -> Void)? = nil
+  ) -> Reply {
+    attemptGeneration += 1
     guard
       let (state, effects) = CallMachine.begin(
-        origin, configuration: configuration, now: clock.date())
+        origin, attempt: .init(generation: attemptGeneration),
+        configuration: configuration, now: clock.date())
     else { return Reply() }
     let id = state.call.id
+    if let attempt = state.startAttempt { startWaiters[attempt] = startCompletion }
     states[id] = state
     order.append(id)
     #if DEBUG && (os(macOS) || targetEnvironment(simulator))
       SimulatorLifecycle.record(state.call)
     #endif
     let reply = run(effects, for: id)
-    settle(id)
     for early in earlyEvents.removeValue(forKey: id) ?? [] { handle(id, .server(early.event)) }
     return reply
   }
@@ -532,17 +563,30 @@ final class CallEngine {
         : next.call.connectedAt != nil && state.call.connectedAt == nil ? .connected : .state
       SimulatorLifecycle.record(next.call, kind)
     #endif
-    if next.phase.isEnded || next.phase.isPreviewing,
-      preparedCalls.remove(id) != nil
-    {
-      media.release(next.call)
-    }
-    settle(id)
     return run(effects, for: id)
   }
 
-  private func reportCompleted(_ id: CallID, _ outcome: PresentationOutcome) {
-    handle(id, .reportCompleted(outcome))
+  private func reportCompleted(
+    _ id: CallID, attempt: CallMachine.AttemptID, outcome: PresentationOutcome
+  ) {
+    guard states[id]?.admissionAttempt == attempt else { return }
+    let resolved: PresentationOutcome
+    switch outcome {
+    case .refused(.systemFailed(let failure)) where failure.operation == .admission:
+      handle(id, .admissionFailed(attempt, failure))
+      resolved = outcome
+    case .refused(.refused):
+      let failure = SystemFailure(platform: framework.platform, operation: .admission)
+      handle(id, .admissionFailed(attempt, failure))
+      resolved = .refused(.systemFailed(failure))
+    default:
+      handle(id, .reportCompleted(outcome))
+      resolved = outcome
+    }
+    finishReport(id, resolved)
+  }
+
+  private func finishReport(_ id: CallID, _ outcome: PresentationOutcome) {
     // The policy may preview a call that the system filtered, or that was answered elsewhere
     // while it was being reported.
     let appearance: PresentationOutcome =
@@ -551,17 +595,64 @@ final class CallEngine {
     for waiter in reportWaiters.removeValue(forKey: id) ?? [] { waiter(appearance) }
   }
 
+  fileprivate func startCompleted(
+    _ outgoing: OutgoingCall, attempt: CallMachine.AttemptID, result: Result<ActionID, ActionError>
+  ) {
+    let id = outgoing.id
+    guard states[id]?.startAttempt == attempt else {
+      if case .success(let action) = result { framework.fail(action) }
+      return
+    }
+    // The platform callback and the timer may be queued together at the no-answer deadline.
+    expireIfDue(.ring, for: id)
+    switch result {
+    case .success(let action):
+      handle(id, .startAdmitted(attempt, action, outgoing))
+      if isAudioActive, states[id]?.startedHere == true { handle(id, .audioActivated) }
+    case .failure(let error):
+      let diagnostic: SystemFailure.Diagnostic? =
+        if case .refused(let detail?) = error { .framework(detail) } else { nil }
+      handle(
+        id,
+        .startFailed(
+          attempt,
+          .init(
+            platform: framework.platform, operation: .start, diagnostic: diagnostic)))
+    }
+  }
+
+  @discardableResult
+  private func expireIfDue(_ deadline: CallMachine.Deadline, for id: CallID) -> Bool {
+    let key = TimerKey(id: id, deadline: deadline)
+    guard let timer = timers[key], timer.due <= clock.now() else { return false }
+    timers.removeValue(forKey: key)?.task.cancel()
+    handle(id, .deadlineExpired(deadline, generation: timer.generation))
+    return true
+  }
+
   /// Carries out a transition's effects in order.
   private func run(_ effects: [CallMachine.Effect], for id: CallID) -> Reply {
+    settle(id)
+
     var reply = Reply()
     for effect in effects {
       switch effect {
       case .reportIncoming(let call):
+        guard let attempt = states[id]?.admissionAttempt else { preconditionFailure() }
         framework.reportIncoming(call) { [weak self] outcome in
           guard let self else { return }
-          serially { self.reportCompleted(call.id, outcome) }
+          serially { self.reportCompleted(call.id, attempt: attempt, outcome: outcome) }
         }
       case .request(let action): reply.request = action
+      case .requestStart(let attempt, let outgoing, let call):
+        framework.requestStart(outgoing, for: call) { [weak self] result in
+          guard let self else { return }
+          serially { self.startCompleted(outgoing, attempt: attempt, result: result) }
+        }
+      case .removeLateStart(let action, let reason):
+        framework.removeLateStart(action, for: id, reason: reason)
+      case .settleStart(let attempt, let error):
+        startWaiters.removeValue(forKey: attempt)?(error.map { .failure($0) } ?? .success(()))
       case .reject(_, let error): reply.rejection = error
       case .fulfill(let action): framework.fulfill(action)
       case .fail(let action): framework.fail(action)
@@ -588,6 +679,11 @@ final class CallEngine {
   /// Keeps the engine's records in step with a call's new phase.
   private func settle(_ id: CallID) {
     guard let state = states[id] else { return }
+    if state.phase.isEnded || state.phase.isPreviewing,
+      preparedCalls.remove(id) != nil
+    {
+      media.release(state.call)
+    }
     if !state.phase.isPreparing, state.deferredMedia != .preparing {
       preparations.removeValue(forKey: id)?.cancel()
     }
@@ -629,6 +725,11 @@ final class CallEngine {
       guard let self, !Task.isCancelled else { return }
       serially {
         if case .mediaPrepared = event { self.preparedCalls.insert(call.id) }
+        if case .preparingStart = self.states[call.id]?.phase,
+          self.expireIfDue(.mediaPreparation, for: call.id)
+        {
+          return
+        }
         self.handle(call.id, event)
         if case .mediaPrepared = event, self.isAudioActive {
           if self.states[call.id]?.deferredMedia == .prepared {
@@ -696,7 +797,8 @@ final class CallEngine {
       let kept = events.filter { now - $0.receivedAt < retention }
       return kept.isEmpty ? nil : kept
     }
-    for (id, ended) in endedAt where now - ended >= retention && reportWaiters[id] == nil {
+    for (id, ended) in endedAt
+    where now - ended >= retention && reportWaiters[id] == nil && states[id]?.startAttempt == nil {
       endedAt[id] = nil
       states[id] = nil
       videoTasks[id] = nil
@@ -758,7 +860,8 @@ final class CallEngine {
         engine.states.values.lazy.filter { state in
           guard !state.call.isOnHold else { return false }
           switch state.phase {
-          case .requesting, .placing, .preparing, .dialing, .connecting, .connected, .reconnecting:
+          case .requesting, .placing, .preparing, .placingStart, .preparingStart, .dialing,
+            .connecting, .connected, .reconnecting:
             return true
           case .reporting, .ringing, .previewing, .ended:
             return false
@@ -769,7 +872,7 @@ final class CallEngine {
     package func phase(for id: CallID) -> Phase {
       switch engine.states[id]?.phase {
       case .reporting: .reporting
-      case .requesting, .placing: .placing
+      case .requesting, .placing, .placingStart: .placing
       default: .visible
       }
     }
@@ -778,7 +881,23 @@ final class CallEngine {
       try await engine.request(action)
     }
 
-    package func end(_ id: CallID) throws(ActionError) -> EndResult { try engine.end(id) }
+    package func start(
+      _ outgoing: OutgoingCall, completion: @escaping @VoIPActor (Result<Void, ActionError>) -> Void
+    ) {
+      engine.start(outgoing, completion: completion)
+    }
+
+    /// Replays admission with a generation that was never assigned to this call.
+    package func replayStaleStartAdmission(_ outgoing: OutgoingCall, action: ActionID) {
+      engine.startCompleted(outgoing, attempt: .init(generation: 0), result: .success(action))
+    }
+
+    package func end(_ id: CallID, actionID: ActionID = ActionID(rawValue: UUID()))
+      throws(ActionError)
+      -> EndResult
+    {
+      try engine.end(id, actionID: actionID)
+    }
 
     package func setVideo(_ id: CallID, enabled: Bool) async throws(ActionError) {
       try await engine.setVideo(id, enabled: enabled, source: .app)
@@ -845,11 +964,14 @@ private struct EngineClock: Sendable {
 }
 
 extension CallMachine.Phase {
-  fileprivate var isEnded: Bool {
+  var isEnded: Bool {
     if case .ended = self { true } else { false }
   }
 
   fileprivate var isPreparing: Bool {
-    if case .preparing = self { true } else { false }
+    switch self {
+    case .preparing, .preparingStart: true
+    default: false
+    }
   }
 }

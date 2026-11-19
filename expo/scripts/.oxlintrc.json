@@ -1,0 +1,8 @@
+{
+  "extends": ["../../.oxlintrc.json"],
+  "rules": {
+    // Package manifests are JSON and need runtime field checks.
+    "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }],
+    "landmines-types/no-explicit-return-types": "error"
+  }
+}

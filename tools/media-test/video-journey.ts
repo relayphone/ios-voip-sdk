@@ -3,16 +3,16 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { dispose } from '@livekit/rtc-node';
 import type { ConversationId } from '../../expo/src/conversations/types.ts';
 import { createMarker } from '../../expo/src/testing/marker.ts';
 import { command, deadline } from './fixture-runtime.ts';
-import { startHarness, type MediaHarness } from './harness.ts';
+import type { MediaHarness } from './harness.ts';
 import { prepareNativeJourney, type NativeJourneyBudget } from './native-journey.ts';
 import { sampleNativeVideoClock } from './native-synthetic-video.ts';
 import { NativeJourneyFailure, type NativeVideoEvent } from './native-video-evidence.ts';
 import { assertNativeTeardown } from './result-receipt.ts';
 import { observeSilence } from './silence-window.ts';
+import { withSimulatorMediaAudio } from './simulator-media.ts';
 import { diagnoseNativeStartup } from './startup-diagnostics.ts';
 import { assertDuplexAudio, assertLocalAudioDeparture, hasDuplexSamples, hasUplinkSamples, heldOutputReceipt, readAudioRoute, readJourneyAudio } from './video-journey-audio.ts';
 import { appParticipant, assertRemoteProducer, assessJourneyVideo, readVideoSnapshot, remoteUplinkCoverage, type VideoSnapshot } from './video-journey-evidence.ts';
@@ -338,73 +338,106 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
   await request({ operation: 'close' });
 }
 
-const [simulator, app, output, selection] = process.argv.slice(2);
-assert.ok(simulator && app && output && cases.some(name => name === selection),
-  'Usage: video-journey.ts <simulator> <app> <result> <initial-local|app-downgrade|server-remote|hold-resume>');
-const scenario = selection as JourneyCase;
-const report: Report = { scenario, verdict: 'failed', checkpoints: [] };
-const fixtureId = randomUUID(), conversationId = randomUUID() as ConversationId, clockID = randomUUID();
-const bundle = 'com.example.voipconversations';
-const simctl = (...args: string[]) => command('xcrun', ['simctl', ...args]);
-const harnessDirectory = output + '.harness';
-let harness: MediaHarness | undefined, fixtureFile: string | undefined;
-let watchdog: ReturnType<typeof setTimeout> | undefined;
-let failure: unknown;
-let journeyCompleted = false;
-const hardStop = () => {
-  harness?.abort();
-  writeFileSync(output, JSON.stringify(report, null, 2));
-  process.exit(124);
-};
-process.once('SIGALRM', hardStop);
-try {
-  try { await simctl('terminate', simulator, bundle); } catch { /* First launch has no running app. */ }
-  await simctl('install', simulator, app);
-  await simctl('privacy', simulator, 'grant', 'microphone', bundle);
-  const directory = join(await simctl('get_app_container', simulator, bundle, 'data'), 'Documents');
-  mkdirSync(directory, { recursive: true });
-  fixtureFile = join(directory, 'media-fixture.json');
-  const mailbox = prepareNativeJourney(directory, { fixtureId, conversationId });
-  harness = await startHarness(harnessDirectory, fixtureId);
-  watchdog = setTimeout(hardStop, 180_000).unref();
-  const initialPeer = await harness.openVideo(clockID);
-  await initialPeer.observe(appParticipant, 1);
-  await harness.act({ type: 'publish', markerId: randomUUID() });
-  writeFileSync(fixtureFile, JSON.stringify({ ...harness.credentials(appParticipant), control: 'http://127.0.0.1',
-    profile: 'tones-v2', uplinkFrequencies: createMarker(randomUUID()).frequencies,
-    journey: { fixtureId, conversationId, initialVideo: scenario === 'initial-local' || scenario === 'hold-resume', syntheticVideo: fixtureId },
-  }), { mode: 0o600 });
-  await simctl('launch', '--terminate-running-process', simulator, bundle);
-  const budget = { deadlineMs: performance.now() + 30_000, signal: AbortSignal.timeout(30_000) };
-  await runJourney(harness, mailbox, { scenario, conversationId, clockID, initialPeer, report, budget });
-  journeyCompleted = true;
-} catch (error) {
-  failure = error;
-  if (fixtureFile) {
-    try {
-      const checkpoint: unknown = JSON.parse(readFileSync(join(dirname(fixtureFile), 'media-journey-failure.json'), 'utf8'));
-      const code = error instanceof NativeJourneyFailure
-        ? { operation: error.operation, category: error.category, code: error.code }
-        : undefined;
-      report.checkpoints.push({ phase: 'native-failure', evidence: { ...diagnoseNativeStartup(checkpoint), failure: code } });
-    } catch { /* A failure before the app launches has no native checkpoint. */ }
-  }
-} finally {
+await withSimulatorMediaAudio(async guardSignal => {
+  const watchdogAbort = new AbortController();
+  const signal = AbortSignal.any([guardSignal, watchdogAbort.signal]);
+  const { startHarness } = await import('./harness.ts');
+  const { dispose } = await import('@livekit/rtc-node');
+  const [simulator, app, output, selection] = process.argv.slice(2);
+  assert.ok(simulator && app && output && cases.some(name => name === selection),
+    'Usage: video-journey.ts <simulator> <app> <result> <initial-local|app-downgrade|server-remote|hold-resume>');
+  const scenario = selection as JourneyCase;
+  const report: Report = { scenario, verdict: 'failed', checkpoints: [] };
+  const fixtureId = randomUUID(), conversationId = randomUUID() as ConversationId, clockID = randomUUID();
+  const bundle = 'com.example.voipconversations';
+  const simctl = (...args: string[]) => command('xcrun', ['simctl', ...args], 120_000, signal);
+  const harnessDirectory = output + '.harness';
+  let harness: MediaHarness | undefined, fixtureFile: string | undefined;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  let failure: unknown;
+  let journeyCompleted = false;
+  let launchAttempted = false;
+  const terminate = () => launchAttempted
+    ? command('xcrun', ['simctl', 'terminate', simulator, bundle])
+        .catch(() => { /* The app may have already exited. */ })
+    : undefined;
+  let terminationOnAbort: ReturnType<typeof terminate>;
+  const stop = () => {
+    terminationOnAbort = terminate();
+    harness?.abort();
+  };
+  const hardStop = () => {
+    process.exitCode = 124;
+    watchdogAbort.abort(new Error('Video journey exceeded its run deadline'));
+  };
+  signal.addEventListener('abort', stop, { once: true });
+  process.once('SIGALRM', hardStop);
   try {
-    if (fixtureFile) {
-      rmSync(fixtureFile, { force: true });
-      try { await simctl('terminate', simulator, bundle); } catch { /* Already exited. */ }
-    }
-    try { await harness?.stop(); } finally { await deadline(10_000, 'RTC disposal', dispose); }
-    rmSync(harnessDirectory, { recursive: true, force: true });
-    if (journeyCompleted) report.verdict = 'passed';
+    signal.throwIfAborted();
+    try { await simctl('terminate', simulator, bundle); } catch { /* First launch has no running app. */ }
+    await simctl('install', simulator, app);
+    await simctl('privacy', simulator, 'grant', 'microphone', bundle);
+    const directory = join(await simctl('get_app_container', simulator, bundle, 'data'), 'Documents');
+    mkdirSync(directory, { recursive: true });
+    fixtureFile = join(directory, 'media-fixture.json');
+    const mailbox = prepareNativeJourney(directory, { fixtureId, conversationId });
+    signal.throwIfAborted();
+    harness = await startHarness(harnessDirectory, fixtureId);
+    signal.throwIfAborted();
+    watchdog = setTimeout(hardStop, 180_000).unref();
+    const initialPeer = await harness.openVideo(clockID);
+    await initialPeer.observe(appParticipant, 1);
+    await harness.act({ type: 'publish', markerId: randomUUID() });
+    signal.throwIfAborted();
+    writeFileSync(fixtureFile, JSON.stringify({ ...harness.credentials(appParticipant), control: 'http://127.0.0.1',
+      profile: 'tones-v2', uplinkFrequencies: createMarker(randomUUID()).frequencies,
+      journey: { fixtureId, conversationId, initialVideo: scenario === 'initial-local' || scenario === 'hold-resume', syntheticVideo: fixtureId },
+    }), { mode: 0o600 });
+    launchAttempted = true;
+    await simctl('launch', '--terminate-running-process', simulator, bundle);
+    const budget = { deadlineMs: performance.now() + 30_000, signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) };
+    await runJourney(harness, mailbox, { scenario, conversationId, clockID, initialPeer, report, budget });
+    journeyCompleted = true;
   } catch (error) {
-    if (journeyCompleted) failure = error;
-    else console.error('Video journey cleanup failed');
+    failure = error;
+    if (fixtureFile) {
+      try {
+        const checkpoint: unknown = JSON.parse(readFileSync(join(dirname(fixtureFile), 'media-journey-failure.json'), 'utf8'));
+        const code = error instanceof NativeJourneyFailure
+          ? { operation: error.operation, category: error.category, code: error.code }
+          : undefined;
+        report.checkpoints.push({ phase: 'native-failure', evidence: { ...diagnoseNativeStartup(checkpoint), failure: code } });
+      } catch { /* A failure before the app launches has no native checkpoint. */ }
+    }
   } finally {
-    clearTimeout(watchdog);
-    process.removeListener('SIGALRM', hardStop);
-    writeFileSync(output, JSON.stringify(report, null, 2));
+    try {
+      try {
+        if (fixtureFile) rmSync(fixtureFile, { force: true });
+        await terminationOnAbort;
+        // The first termination can race an interrupted launch.
+        await terminate();
+      } finally {
+        try { await harness?.stop(); } finally { await deadline(10_000, 'RTC disposal', dispose); }
+      }
+      if (journeyCompleted) {
+        signal.throwIfAborted();
+        report.verdict = 'passed';
+      }
+    } catch (error) {
+      harness?.abort();
+      if (journeyCompleted) failure = error;
+      else console.error('Video journey cleanup failed');
+    } finally {
+      clearTimeout(watchdog);
+      process.removeListener('SIGALRM', hardStop);
+      signal.removeEventListener('abort', stop);
+      try { rmSync(harnessDirectory, { recursive: true, force: true }); }
+      finally { writeFileSync(output, JSON.stringify(report, null, 2)); }
+    }
   }
-}
-if (report.verdict === 'failed') throw failure;
+  if (report.verdict === 'failed') throw failure;
+}).catch(error => {
+  if (process.exitCode !== 124) throw error;
+  console.error('Video journey exceeded its run deadline');
+  process.exit(124);
+});

@@ -101,9 +101,9 @@ extension EngineTests {
     private func dial(deadlines: Deadlines = Deadlines()) async throws -> Harness {
       let h = try Harness(
         configuration: VoIPConfiguration(deadlines: deadlines, outgoingMedia: .whenProvided))
-      try await h.client.request(.start(outgoing))
-      #expect(try await h.next() == .startRequested(callID))
+      let request = try await h.beginStart(outgoing)
       await h.client.confirmPlaced(callID)
+      try await request.value
       #expect(try await h.next() == .performed(.start(outgoing), .dialing))
       await h.until { $0.calls.first?.status == .dialing }
       #expect(await h.media.records.isEmpty)

@@ -13,9 +13,14 @@ export const requiredFiles = [
   'profiles/ios-27.0.json',
 ] as const;
 
-export interface BuildInfo {
+interface RuntimeManifest {
   schemaVersion: 1;
   version: string;
+  /** Every other file in the package and its SHA-256. */
+  files: Record<string, string>;
+}
+
+export interface BuildInfo extends RuntimeManifest {
   profile: string;
   sourceCommit: string;
   sourceDirty: boolean;
@@ -25,21 +30,62 @@ export interface BuildInfo {
   sdk: { version: string; build: string };
   sdkPath: string;
   architectures: string[];
-  /** Every other file in the package and its SHA-256. */
-  files: Record<string, string>;
 }
 
-export function sha256(data: Uint8Array | string): string {
+function isChecksumMap(value: unknown): value is RuntimeManifest['files'] {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    && requiredFiles.every(name => Object.hasOwn(value, name))
+    && Object.values(value).every((digest: unknown): digest is string => typeof digest === 'string');
+}
+
+function isRuntimeManifest(value: unknown): value is RuntimeManifest {
+  return value !== null && typeof value === 'object'
+    && 'schemaVersion' in value && value.schemaVersion === 1
+    && 'version' in value && typeof value.version === 'string'
+    && 'files' in value && isChecksumMap(value.files);
+}
+
+function hasToolchain(value: unknown): value is BuildInfo['toolchain'] {
+  return value !== null && typeof value === 'object'
+    && 'xcode' in value && typeof value.xcode === 'string'
+    && 'swift' in value && typeof value.swift === 'string'
+    && 'clang' in value && typeof value.clang === 'string';
+}
+
+function hasSDK(value: unknown): value is BuildInfo['sdk'] {
+  return value !== null && typeof value === 'object'
+    && 'version' in value && typeof value.version === 'string'
+    && 'build' in value && typeof value.build === 'string';
+}
+
+export function hasBuildInfo(info: RuntimeManifest): info is BuildInfo {
+  return 'profile' in info && typeof info.profile === 'string'
+    && 'sourceCommit' in info && typeof info.sourceCommit === 'string'
+    && 'sourceDirty' in info && typeof info.sourceDirty === 'boolean'
+    && 'sourceInputsSHA256' in info && typeof info.sourceInputsSHA256 === 'string'
+    && 'sourceDateEpoch' in info && isSourceDateEpoch(info.sourceDateEpoch)
+    && 'toolchain' in info && hasToolchain(info.toolchain)
+    && 'sdk' in info && hasSDK(info.sdk)
+    && 'sdkPath' in info && typeof info.sdkPath === 'string'
+    && 'architectures' in info && Array.isArray(info.architectures)
+    && info.architectures.every((arch: unknown): arch is string => typeof arch === 'string');
+}
+
+export function isSourceDateEpoch(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+export function sha256(data: Uint8Array | string) {
   return createHash('sha256').update(data).digest('hex');
 }
 
 /** Whether the text is a version such as `1.2.3`, without leading zeros. */
-export function isVersion(text: string): boolean {
+export function isVersion(text: string) {
   return /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$/.test(text);
 }
 
 /** Every file under the directory, as sorted paths relative to it with `/` separators. */
-export function listFiles(directory: string): string[] {
+export function listFiles(directory: string) {
   const files: string[] = [];
   const visit = (folder: string) => {
     for (const name of readdirSync(folder).sort()) {
@@ -55,14 +101,14 @@ export function listFiles(directory: string): string[] {
 }
 
 /** The digest of every file in the package, which `build-info.json` records. */
-export function manifest(directory: string): Record<string, string> {
+export function manifest(directory: string) {
   return Object.fromEntries(
     listFiles(directory).map(name => [name, sha256(readFileSync(join(directory, name)))]),
   );
 }
 
 /** The digest of the sources a package was built from, each named by its path. */
-export function sourceDigest(root: string, paths: readonly string[]): string {
+export function sourceDigest(root: string, paths: readonly string[]) {
   const hash = createHash('sha256');
   for (const path of [...paths].sort()) {
     hash.update(path).update('\0').update(readFileSync(join(root, path))).update('\0');
@@ -71,20 +117,17 @@ export function sourceDigest(root: string, paths: readonly string[]): string {
 }
 
 /** Checks that a package is complete and that every file matches its recorded digest. */
-export function validate(directory: string): BuildInfo {
+export function validate(directory: string) {
   const root = realpathSync(directory);
-  let info: BuildInfo;
+  let info: unknown;
   let version: string;
   try {
-    info = JSON.parse(readFileSync(join(root, 'build-info.json'), 'utf8')) as BuildInfo;
+    info = JSON.parse(readFileSync(join(root, 'build-info.json'), 'utf8'));
     version = readFileSync(join(root, 'VERSION'), 'utf8').trim();
   } catch {
     throw new Error('Incomplete or unsupported runtime package.');
   }
-  if (
-    info.schemaVersion !== 1 || !isVersion(version) || info.version !== version ||
-    typeof info.files !== 'object' || !requiredFiles.every(name => name in info.files)
-  ) {
+  if (!isRuntimeManifest(info) || !isVersion(version) || info.version !== version) {
     throw new Error('Incomplete or unsupported runtime package.');
   }
   for (const [name, digest] of Object.entries(info.files)) {
@@ -101,7 +144,7 @@ export function validate(directory: string): BuildInfo {
 }
 
 /** One ustar header block. */
-function header(name: string, mode: number, size: number, mtime: number, directory: boolean): Buffer {
+function header(name: string, mode: number, size: number, mtime: number, directory: boolean) {
   const block = Buffer.alloc(512);
   let prefix = '';
   let base = name;
@@ -135,7 +178,7 @@ function header(name: string, mode: number, size: number, mtime: number, directo
  * A gzip-compressed ustar archive of the directory, with every entry's owner, time and mode
  * normalized, so that archiving the same files again gives the same bytes.
  */
-export function archive(directory: string, mtime: number): Buffer {
+export function archive(directory: string, mtime: number) {
   const parts: Buffer[] = [];
   const directories = new Set<string>(['.']);
   for (const name of listFiles(directory)) {

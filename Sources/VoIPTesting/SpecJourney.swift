@@ -132,6 +132,7 @@
       private enum Kind: String, Decodable {
         case process, incoming, authority, action, placed, provideMedia, bindRemote, connected
         case remoteEnd, advance, admitted, admissionFailed, latePermit, holdApplied
+        case startAdmitted, startFailed
       }
 
       case process(running: Bool, javascriptAttached: Bool)
@@ -139,7 +140,9 @@
         callID: ID, eventID: ID, line: SpecV0.Line, party: SpecV0.Party, deferAdmission: Bool)
       case authority(callID: ID, claim: Claim, reconciliation: Reconciliation)
       case action(origin: Origin, action: SpecV0.Action, deferConfirmation: Bool)
-      case placed(callID: ID)
+      case placed(callID: ID, deferStartAdmission: Bool)
+      case startAdmitted(callID: ID, stale: Bool)
+      case startFailed(callID: ID, failure: SpecV0.Failure.SystemCause)
       case provideMedia(callID: ID)
       case admitted(callID: ID)
       case admissionFailed(callID: ID, failure: SpecV0.Failure.SystemCause)
@@ -182,8 +185,18 @@
             origin: try object.decode(.origin), action: action, deferConfirmation: deferConfirmation
           )
         case .placed:
-          try object.requireOnly(.kind, .callID)
-          self = .placed(callID: try object.decode(.callID))
+          try object.requireOnly(.kind, .callID, .deferStartAdmission)
+          self = .placed(
+            callID: try object.decode(.callID),
+            deferStartAdmission: try object.flag(.deferStartAdmission))
+        case .startAdmitted:
+          try object.requireOnly(.kind, .callID, .stale)
+          self = .startAdmitted(callID: try object.decode(.callID), stale: try object.flag(.stale))
+        case .startFailed:
+          try object.requireOnly(.kind, .callID, .failure)
+          let failure: SpecV0.Failure.SystemCause = try object.decode(.failure)
+          guard failure.kind == .start else { throw object.invalid("Expected a Start failure") }
+          self = .startFailed(callID: try object.decode(.callID), failure: failure)
         case .provideMedia:
           try object.requireOnly(.kind, .callID)
           self = .provideMedia(callID: try object.decode(.callID))
@@ -373,7 +386,9 @@
 
   extension SpecV0.Key {
     fileprivate static let deferAdmission: Self = "deferAdmission"
+    fileprivate static let deferStartAdmission: Self = "deferStartAdmission"
     fileprivate static let deferConfirmation: Self = "deferConfirmation"
+    fileprivate static let stale: Self = "stale"
     fileprivate static let failure: Self = "failure"
     fileprivate static let result: Self = "result"
   }

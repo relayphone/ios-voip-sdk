@@ -102,11 +102,13 @@ test('capability conditions cover every feature once without overlapping Android
   ] }), /Overlapping Android conditions/);
 });
 
-test('the catalog keeps the v0 journeys alongside the six v1 journeys', () => {
-  assert.equal(loadCatalog(root).length, 19);
+test('the catalog keeps the v0 journeys alongside the ten v1 journeys', () => {
+  assert.equal(loadCatalog(root).length, 20);
   const journeys = loadCatalogV1(root);
   assert.deepEqual(journeys.map(journey => journey.id), [
-    'dialing-text-before-connect', 'prejoin-promote', 'refused-post-fallback', 'retention-pressure-late-removal',
+    'dialing-text-before-connect', 'http-answer-allow', 'http-answer-late-permit-release',
+    'http-answer-refused-elsewhere', 'http-answer-timeout-reconcile', 'prejoin-promote',
+    'refused-post-fallback', 'retention-pressure-late-removal',
     'token-rotation-stale-upload', 'unsupported-tones',
   ]);
   assert.throws(() => decodeJourneyV1({ ...journeys[0], version: 0 }));

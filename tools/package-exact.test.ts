@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { exactSdkTargets, prepareExactPackage } from './package-exact.ts';
 
-function fixture(t: TestContext): string {
+function fixture(t: TestContext) {
   const root = mkdtempSync(join(tmpdir(), 'voip-exact-test-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   for (const target of exactSdkTargets) {
@@ -19,10 +19,16 @@ function fixture(t: TestContext): string {
   return root;
 }
 
+function isRecord(value: unknown): value is object {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 test('prepares the vendored sources and names them in the manifest', t => {
   const root = fixture(t);
   const sources = prepareExactPackage(root);
-  const manifest = JSON.parse(readFileSync(join(root, 'exact/exact.json'), 'utf8'));
+  const manifest: unknown = JSON.parse(readFileSync(join(root, 'exact/exact.json'), 'utf8'));
+  assert.ok(isRecord(manifest) && 'sources' in manifest && isRecord(manifest.sources));
+  assert.ok('swift' in manifest.sources && 'implements' in manifest && 'start' in manifest);
   assert.deepEqual(manifest.sources.swift, sources);
   assert.deepEqual(sources.slice(-2), ['apple/Bridge/Bridge.swift', 'apple/Module.swift']);
   assert.equal(manifest.implements, '@exact/calls@^1.0');

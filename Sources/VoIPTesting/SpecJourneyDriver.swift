@@ -7,6 +7,7 @@
   package final class SpecJourneyDriver {
     private let clock = TestClock()
     private let framework = FakeCallingFramework()
+    private var admittedReports: [CallID: @VoIPActor (PresentationOutcome) -> Void] = [:]
     private let media = FakeMedia()
     private let authority = ScriptedAuthority()
     private let events = EventLog()
@@ -19,6 +20,9 @@
     private var mediaProvided: Set<CallID> = []
     private var pendingHolds: [Action] = []
     private var endResults: [CallID: EndResult] = [:]
+    private var actionCount = 0
+    private var endActionIDs: [ActionID: String] = [:]
+    private var startSettlements: [CallID: Int] = [:]
     private var audioActive = false
     private var errors: [(id: CallID, kind: SpecV0.ErrorKind, observed: Bool)] = []
 
@@ -86,6 +90,7 @@
           mediaProvided.removeAll()
           pendingHolds.removeAll()
           endResults.removeAll()
+          admittedReports.removeAll()
         }
       case .incoming(let id, let eventID, _, let party, let deferAdmission):
         let incoming = IncomingCall(id: id.callID, parties: [try party.sdkParty()])
@@ -98,12 +103,20 @@
         }
         framework.presentationOutcome = .presented
       case .admitted(let id):
-        guard framework.waitingCalls.contains(where: { $0.id == id.callID }) else {
+        guard let complete = framework.takeReportCompletion(of: id.callID) else {
           return "\(id.rawValue) has no pending system admission."
         }
-        framework.completeReports(of: id.callID, with: .presented)
-      case .admissionFailed(let id, _):
-        return "The engine has no per-attempt system failure input for \(id.rawValue)."
+        admittedReports[id.callID] = complete
+        complete(.presented)
+      case .admissionFailed(let id, let cause):
+        guard
+          let complete = framework.takeReportCompletion(of: id.callID)
+            ?? admittedReports.removeValue(forKey: id.callID)
+        else { return "\(id.rawValue) has no system admission to refuse." }
+        let failure = SystemFailure(
+          platform: cause.platform == .ios ? .ios : .android, operation: .admission,
+          diagnostic: cause.code.map(SystemFailure.Diagnostic.code))
+        complete(.refused(.systemFailed(failure)))
       case .authority(let id, let claim, let reconciliation):
         authority.script(id.callID, claim: claim, reconciliation: reconciliation)
       case .latePermit(let id):
@@ -119,8 +132,36 @@
           return "\(id.rawValue) has no Hold request awaiting confirmation."
         }
         framework.perform(pendingHolds.remove(at: index))
-      case .placed(let id):
+      case .placed(let id, let deferStartAdmission):
+        if deferStartAdmission { framework.requestResult = .accept }
         start().confirmPlaced(id.callID)
+        await synchronize()
+        framework.requestResult = .perform
+      case .startAdmitted(let id, let stale):
+        if stale {
+          guard
+            let outgoing = framework.records.reversed().compactMap({ record -> OutgoingCall? in
+              if case .request(.start(let outgoing), _) = record, outgoing.id == id.callID {
+                return outgoing
+              }
+              return nil
+            }).first
+          else { return "\(id.rawValue) has no native Start to replay." }
+          start().replayStaleStartAdmission(outgoing, action: ActionID(rawValue: UUID()))
+        } else {
+          guard let complete = framework.takeStartCompletion(of: id.callID) else {
+            return "\(id.rawValue) has no pending native Start."
+          }
+          complete(.success(()))
+        }
+      case .startFailed(let id, let failure):
+        guard let complete = framework.takeStartCompletion(of: id.callID) else {
+          return "\(id.rawValue) has no pending native Start."
+        }
+        framework.platform = failure.platform == .ios ? .ios : .android
+        let detail = failure.code.map { FrameworkError(domain: "spec.start", code: Int($0)) }
+        complete(.failure(.refused(detail)))
+        framework.platform = .ios
       case .provideMedia(let id):
         mediaProvided.insert(id.callID)
         let engine = start()
@@ -194,6 +235,7 @@
       deferConfirmation: Bool
     ) async throws {
       let id = action.callID.callID
+      actionCount += 1
       let request: Action
       switch action {
       case .start(_, _, let party):
@@ -214,6 +256,11 @@
       }
       if origin == .system {
         framework.perform(request)
+      } else if case .start(let outgoing) = request {
+        engine.start(outgoing) { [weak self] result in
+          self?.startSettlements[id, default: 0] += 1
+          if case .failure(let error) = result { self?.errors.append((id, error.specKind, false)) }
+        }
       } else {
         let recordStart = framework.records.count
         if deferConfirmation { framework.requestResult = .accept }
@@ -221,7 +268,9 @@
         do {
           if case .end = request {
             endResults[id] = nil
-            endResults[id] = try engine.end(id)
+            let actionID = ActionID(rawValue: UUID())
+            endActionIDs[actionID] = "request-\(actionCount)"
+            endResults[id] = try engine.end(id, actionID: actionID)
             return
           }
           try await engine.request(request)
@@ -270,7 +319,7 @@
         return systemEnds(for: id.callID).contains(cause)
           ? nil : "\(id.rawValue) has no system End with cause \(cause)."
       case .endResult(let id, let result):
-        return endResults[id.callID]?.matches(result) == true
+        return endResults[id.callID]?.matches(result, actionIDs: endActionIDs) == true
           ? nil : "\(id.rawValue) has no typed End result matching \(result)."
       case .error(let id, let kind, let reason):
         // Legacy errors carry no spec refusal reason.
@@ -342,14 +391,16 @@
             guard case .perform(let actionID, let action) = event, action.callID == id else {
               return nil
             }
+            if case .start = action, startSettlements[id] != nil { return nil }
             return actionID
           })
-        return framework.records.count {
-          switch $0 {
-          case .fulfill(let action), .fail(let action): actions.contains(action)
-          default: false
+        return startSettlements[id, default: 0]
+          + framework.records.count {
+            switch $0 {
+            case .fulfill(let action), .fail(let action): actions.contains(action)
+            default: false
+            }
           }
-        }
       case .placements:
         return events.values.count {
           switch $0 {
@@ -480,11 +531,11 @@
   }
 
   extension EndResult {
-    fileprivate func matches(_ expected: SpecV0.EndResult) -> Bool {
+    fileprivate func matches(_ expected: SpecV0.EndResult, actionIDs: [ActionID: String]) -> Bool {
       switch (self, expected) {
       case (.ended(let actual), .ended(let expected)):
         actual.callID.rawValue.utf8.elementsEqual(expected.callID.rawValue.utf8)
-          && actual.actionID.rawValue.uuidString.utf8.elementsEqual(expected.actionID.rawValue.utf8)
+          && actionIDs[actual.actionID] == expected.actionID.rawValue
           && (expected.reason == .localDeclined
             ? actual.reason == .localDeclined
             : actual.reason == .localEnded)
@@ -511,7 +562,8 @@
       case .audioActivationTimedOut, .audioRecoveryTimedOut, .connectTimedOut,
         .reconnectTimedOut, .actionTimedOut:
         .deadlineExceeded
-      case .refused, .atCapacity, .audioSession, .frameworkReset, .server: .systemFailed
+      case .refused, .systemFailed, .atCapacity, .audioSession, .frameworkReset, .server:
+        .systemFailed
       }
     }
   }

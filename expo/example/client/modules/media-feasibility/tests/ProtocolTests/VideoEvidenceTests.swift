@@ -4,6 +4,12 @@ import Testing
 @testable import MediaJourneyProtocol
 
 struct VideoEvidenceTests {
+  @Test func preparationCancellationHasAnAllowlistedCategory() {
+    let failure = MediaJourneyFailure(CancellationError(), operation: .prepare)
+    #expect(failure.operation == .prepare)
+    #expect(failure.category == .cancelled)
+  }
+
   @Test func videoControlsRequireOriginCurrentPhaseAndNoTerminalArming() throws {
     let helper = ProtocolTests()
     var session = try MediaJourneySession(

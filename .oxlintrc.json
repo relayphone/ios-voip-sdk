@@ -1,0 +1,127 @@
+{
+  "extends": [
+    // Published SDK and plugin declarations keep explicit return types for deliberate API changes.
+    "./tools/oxlint/landmines-recommended.json"
+  ],
+  "jsPlugins": [
+    "./tools/oxlint/anti-slop/index.ts"
+  ],
+  "ignorePatterns": [
+    "tools/oxlint/anti-slop/**",
+    "expo/build/**",
+    "expo/build-scripts/**",
+    "expo/plugin/build/**",
+    "expo/ios/Vendor/**",
+    "expo/example/client/.expo/**",
+    "expo/example/client/ios/**",
+    "expo/example/client/android/**",
+    "exact/Vendor/**"
+  ],
+  "categories": { "correctness": "error" },
+  "rules": {
+    // Preserve warning-level reporting for existing findings during cleanup.
+    "eslint/no-unused-vars": "warn",
+    "eslint/no-unsafe-finally": "warn",
+    "eslint/no-control-regex": "warn",
+    "unicorn/no-useless-spread": "warn",
+    "anti-slop/no-array-filter-map": "error",
+    "anti-slop/no-reduce-accumulator-copy": "error",
+    "anti-slop/no-chained-type-assertions": "warn",
+    "anti-slop/no-conditional-empty-object-spread": "warn",
+    "anti-slop/no-known-value-widening": "warn",
+    "anti-slop/no-module-mocking": "error",
+    "anti-slop/no-object-parameters": "warn",
+    "anti-slop/no-reflect-apply": "warn",
+    "anti-slop/no-reflect-get": "warn",
+    "anti-slop/no-runtime-typeof": "warn",
+    "anti-slop/no-unsafe-dictionary-type": "warn",
+    "anti-slop/no-shape-in-symbol-names": "warn",
+    "anti-slop/no-unknown-parameters": "warn",
+    "anti-slop/no-unknown-returns": "warn",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-widen-then-assert": "error",
+    // Keep guards and their dependent steps together in state transitions and ordered evidence checks.
+    "anti-slop/require-readable-spacing": "off",
+    "anti-slop/require-safety-comment-for-type-assertion": "warn",
+    "landmines-testing/no-fixed-sleep": "warn",
+    "landmines-testing/no-flake-masking": "warn",
+    "landmines-testing/no-test-doubles": "warn",
+    "landmines-testing/no-unsignaled-poll": "error",
+    "landmines-testing/strict-msw": "error",
+    // Keep evidence-ordering invariants and safety comments for required interop assertions beside the code.
+    "landmines-style/no-comments": "off",
+    "landmines-structure/colocated-tests": "error",
+    "landmines-structure/package-exports": "error",
+    "landmines-structure/test-file-names": "warn",
+    "landmines-types/no-explicit-return-types": "warn"
+  },
+  "overrides": [
+    {
+      "files": [
+        "tools/command.ts",
+        "tools/json-fields.ts",
+        "tools/simulator-{app,runtime,test-result}{,.test}.ts",
+        "tools/command.test.ts"
+      ],
+      "rules": {
+        "landmines-types/no-explicit-return-types": "error",
+        "anti-slop/require-safety-comment-for-type-assertion": "error",
+        "anti-slop/no-runtime-typeof": "error"
+      }
+    },
+    {
+      "files": ["tools/json-fields.ts"],
+      "rules": {
+        // JSON guards must check primitive and object types at the input boundary.
+        "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }]
+      }
+    },
+    {
+      "files": ["tools/package-exact.ts", "tools/package-exact.test.ts"],
+      "rules": {
+        "anti-slop/no-shape-in-symbol-names": "error",
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    },
+    {
+      "files": [
+        "tools/{build-runtime,package-runtime,release,runtime-package}{,.test}.ts"
+      ],
+      "rules": {
+        "landmines-types/no-explicit-return-types": "error",
+        "anti-slop/no-known-value-widening": "error",
+        "anti-slop/require-safety-comment-for-type-assertion": "error",
+        "anti-slop/no-runtime-typeof": "error"
+      }
+    },
+    {
+      "files": ["tools/runtime-package.ts"],
+      "rules": {
+        // Runtime package metadata needs field-level guards before it can qualify a release.
+        "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }]
+      }
+    },
+    {
+      "files": ["tools/package-exact.test.ts"],
+      "rules": {
+        // The manifest test validates JSON fields at runtime.
+        "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }]
+      }
+    },
+    {
+      "files": ["tools/api-compatibility{,.test}.ts", "tools/check-package-isolation.ts"],
+      "rules": {
+        "landmines-types/no-explicit-return-types": "error",
+        "anti-slop/no-known-value-widening": "error",
+        "anti-slop/no-runtime-typeof": "error"
+      }
+    },
+    {
+      "files": ["tools/check-package-isolation.ts"],
+      "rules": {
+        // SwiftPM lockfile guards establish pin identity and version types before checking dependencies.
+        "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }]
+      }
+    }
+  ]
+}

@@ -1,5 +1,46 @@
 import Foundation
 
+/// An admission or Start failure reported by the calling framework.
+public struct SystemFailure: Hashable, Sendable {
+  /// The platform that refused the operation.
+  public enum Platform: Hashable, Sendable {
+    /// An iOS calling-framework adapter.
+    case ios
+    /// An Android calling-framework adapter.
+    case android
+  }
+
+  /// The operation that the platform refused.
+  public enum Operation: Hashable, Sendable {
+    /// Reporting an incoming call.
+    case admission
+    /// Starting an outgoing call.
+    case start
+  }
+
+  /// The available platform diagnostic.
+  public enum Diagnostic: Hashable, Sendable {
+    /// A native error with its domain, code and underlying errors.
+    case framework(FrameworkError)
+    /// A platform-specific error code.
+    case code(Int32)
+  }
+
+  /// The platform that produced the failure.
+  public let platform: Platform
+  /// The operation that failed.
+  public let operation: Operation
+  /// The diagnostic supplied by the adapter, if available.
+  public let diagnostic: Diagnostic?
+
+  /// Creates a failure for the refused platform operation.
+  public init(platform: Platform, operation: Operation, diagnostic: Diagnostic? = nil) {
+    self.platform = platform
+    self.operation = operation
+    self.diagnostic = diagnostic
+  }
+}
+
 /// The error with which the calling framework refused something, by its domain and code.
 ///
 /// LiveCommunicationKit passes on the errors of the system's call service, which keep CallKit's

@@ -17,8 +17,17 @@ swift format lint --strict --recursive --parallel Package.swift Sources Tests Ex
 `swift format --in-place --recursive --parallel` with the same paths fixes most findings.
 
 The TypeScript tools in `tools/` build, package and smoke-test the standalone simulator runtime.
-They run with Node.js 24 and need no build step; `npm ci`, `npx tsc --project .` and `node --test`
-in `tools/` check them.
+They run with Node.js 24 and need no build step. From `tools/`, run:
+
+```sh
+npm ci
+npm ci --prefix media-test
+npm run typecheck
+npm test
+npm run lint
+```
+
+The lint command covers `tools/`, `expo/` and `exact/`.
 
 The [CI workflow](.github/workflows/ci.yml) runs all of these, builds every library and the
 example for devices and the simulator, checks that the example's device build leaves out the
@@ -49,4 +58,4 @@ not retried. A successful infrastructure retry leaves the job green while preser
 
 Keep changes focused, describe the behavior and include the checks you ran. Add or update tests and documentation where appropriate. For public API changes, add migration notes to [CHANGELOG.md](CHANGELOG.md). Do not commit generated native projects, credentials or private device traces.
 
-See the [code of conduct](CODE_OF_CONDUCT.md) and [security policy](SECURITY.md). This repository does not yet have a license; see the [README](README.md#license).
+See the [code of conduct](CODE_OF_CONDUCT.md) and [security policy](SECURITY.md). Contributions are licensed under the repository's [MIT license](LICENSE).

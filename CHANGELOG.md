@@ -7,6 +7,23 @@ Public API changes include migration guidance.
 
 ### Breaking
 
+- Swift `request(.start(call))` now completes when the system performs Start after placement.
+  Handle `startRequested` in a separate event consumer, then confirm placement there.
+  Deferred media provision and Connected reports received while Start is pending are applied
+  on admission. End and no-answer expiry reject the pending request with
+  `ActionError.notAllowed` carrying the terminal call status. Custom `CallingFramework`
+  adapters must implement `requestStart(_:for:completion:)` and complete it from the
+  matching native Start action or setup failure. Adapters can override
+  `removeLateStart(_:for:reason:)` to tie queued removal to that exact native action.
+
+- Swift reports native admission and Start refusals as `CallFailure.systemFailed(SystemFailure)`.
+  Handle the new case when switching on `CallFailure`, and use its operation, platform, and
+  diagnostic to distinguish these refusals. Custom `CallingFramework` adapters can return
+  `.refused(.systemFailed(failure))` from an incoming report to retain the native error. Legacy
+  `.refused(.refused)` reports produce an admission failure without a diagnostic. A refused
+  LiveCommunicationKit Start returns `ActionError.refused` with the native error, including
+  when the native error is an unknown conversation.
+
 - Swift `EndReason.endedHere` is now `localDeclined` for a ringing incoming call and
   `localEnded` for other local ends. Update switches to handle both. `request(.end(id))`
   now ends the call before system removal and returns successfully for retained ended calls.
@@ -58,6 +75,10 @@ Public API changes include migration guidance.
 
 - The optional media test kit provides simulator-only buffer video capture, deterministic pixel
   markers, bounded source/decoder ledgers and calibration measurements for video timing and drain.
+
+### Changed
+
+- The SDK, its React Native package and its Exact package are licensed under MIT.
 
 ## 0.8.0 (2026-11-16)
 

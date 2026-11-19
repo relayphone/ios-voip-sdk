@@ -12,6 +12,7 @@ typealias State = CallMachine.State
 let callID = CallID(rawValue: "call-1")
 let otherCallID = CallID(rawValue: "call-2")
 let epoch = Date(timeIntervalSince1970: 1_800_000_000)
+let attempt = CallMachine.AttemptID(generation: 1)
 let later = epoch.addingTimeInterval(5)
 
 let alice: Party = {
@@ -71,7 +72,7 @@ enum Start: String, CaseIterable, Sendable, CustomTestStringConvertible {
   case reportingEndedRemotely
   case ringing
   case previewing
-  case requestingStart
+  case placingAppStart
   case requestingJoin
   case placingStart
   case placingJoin
@@ -100,9 +101,9 @@ enum Start: String, CaseIterable, Sendable, CustomTestStringConvertible {
     case .reportingEndedRemotely: return (ringingCall, [.server(.endedRemotely)])
     case .ringing: return (ringingCall, [.reportCompleted(.presented)])
     case .previewing: return (previewCall, [])
-    case .requestingStart: return (.outgoing(outgoing), [])
+    case .placingAppStart: return (.outgoing(outgoing), [])
     case .requestingJoin: return (previewCall, [.requested(join)])
-    case .placingStart: return (.outgoing(outgoing), [.performed(a1, startAction)])
+    case .placingStart: return (.systemStart(a1, outgoing), [])
     case .placingJoin: return (previewCall, [.requested(join), .performed(a1, join)])
     default: break
     }
@@ -131,7 +132,7 @@ enum Start: String, CaseIterable, Sendable, CustomTestStringConvertible {
   ) throws -> State {
     let (origin, events) = path(policy: policy)
     var (state, _) = try #require(
-      CallMachine.begin(origin, configuration: configuration, now: epoch))
+      CallMachine.begin(origin, attempt: attempt, configuration: configuration, now: epoch))
     for event in events {
       (state, _) = CallMachine.transition(state, event, configuration: configuration, now: epoch)
     }
@@ -143,6 +144,9 @@ enum Start: String, CaseIterable, Sendable, CustomTestStringConvertible {
 enum Shape: Hashable, Sendable {
   case reportIncoming
   case request(Action)
+  case requestStart
+  case removeLateStart
+  case settleStart(ActionError?)
   case reject(Action, ActionError)
   case fulfill(ActionID)
   case fail(ActionID)
@@ -168,6 +172,9 @@ enum Shape: Hashable, Sendable {
     switch effect {
     case .reportIncoming: self = .reportIncoming
     case .request(let action): self = .request(action)
+    case .requestStart: self = .requestStart
+    case .removeLateStart: self = .removeLateStart
+    case .settleStart(_, let error): self = .settleStart(error)
     case .reject(let action, let error): self = .reject(action, error)
     case .fulfill(let id): self = .fulfill(id)
     case .fail(let id): self = .fail(id)

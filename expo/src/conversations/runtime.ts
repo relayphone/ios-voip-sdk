@@ -8,18 +8,18 @@ export class RevisionStore<Value> {
   private readonly listeners = new Set<() => void>();
   private value: Value;
   constructor(value: Value) { this.value = value; }
-  readonly peek = (): Value => this.value;
-  readonly read = (): Value => {
+  readonly peek = () => this.value;
+  readonly read = () => {
     if (this.revision < 0 && this.failure) throw this.failure;
     return this.value;
   };
-  readonly subscribe = (listener: () => void): (() => void) => {
+  readonly subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
     };
   };
-  accept(revision: number, value: Value): void {
+  accept(revision: number, value: Value) {
     if (!Number.isSafeInteger(revision) || revision < 0)
       throw new Error("Invalid native revision");
     if (revision <= this.revision) return;
@@ -28,23 +28,26 @@ export class RevisionStore<Value> {
     this.failure = undefined;
     this.listeners.forEach((listener) => listener());
   }
-  fail(error: unknown): void {
+  fail(error: unknown) {
     this.failure = error;
     this.listeners.forEach((listener) => listener());
   }
 }
-function immutable<Value>(value: Value): Value {
-  if (value !== null && typeof value === "object" && Object.isFrozen(value))
-    return value;
-  if (Array.isArray(value)) return Object.freeze(value.map(immutable)) as Value;
-  if (value !== null && typeof value === "object")
-    return Object.freeze(
-      Object.fromEntries(
-        Object.entries(value).map(([key, entry]) => [key, immutable(entry)])
-      )
-    ) as Value;
-  return value;
+function isObject<Value>(value: Value): value is Value & object {
+  return value !== null && typeof value === "object";
 }
+
+const immutable: <Value>(value: Value) => Value = <Value>(value: Value) => {
+  if (!isObject(value) || Object.isFrozen(value)) return value;
+  if (Array.isArray(value)) {
+    const entries: readonly unknown[] = value;
+    // SAFETY: Copying a native snapshot array visits each element and preserves its typed data.
+    return Object.freeze(entries.map(immutable)) as Value;
+  }
+  const entries: [string, unknown][] = Object.entries(value);
+  // SAFETY: Native snapshots are JSON records. The copy keeps every field and recursively copies its value.
+  return Object.freeze(Object.fromEntries(entries.map(([key, entry]) => [key, immutable(entry)]))) as Value;
+};
 
 /** Handler generations prevent a replaced or cancelled promise settling native work. */
 export class HandlerDispatcher {
@@ -53,7 +56,7 @@ export class HandlerDispatcher {
   private readonly pending = new Map<string, AbortController>();
   private readonly bridge: Pick<NativeTransport, "setHandlerAttached" | "settleAction">;
   constructor(bridge: Pick<NativeTransport, "setHandlerAttached" | "settleAction">) { this.bridge = bridge; }
-  set(handler: ConversationHandler | null): void {
+  set(handler: ConversationHandler | null) {
     const generation = ++this.generation;
     const pending = [...this.pending.values()];
     this.pending.clear();
@@ -62,13 +65,13 @@ export class HandlerDispatcher {
     if (generation === this.generation)
       this.bridge.setHandlerAttached(handler !== null, generation);
   }
-  cancel(actionID: string, generation: number, reason: string): void {
+  cancel(actionID: string, generation: number, reason: string) {
     const key = `${generation}:${actionID}`;
     const controller = this.pending.get(key);
     this.pending.delete(key);
     controller?.abort(reason);
   }
-  dispatch(action: HandlerAction): void {
+  dispatch(action: HandlerAction) {
     if (
       !Number.isFinite(Date.parse(action.deadline)) ||
       Date.parse(action.deadline) <= Date.now()
@@ -123,14 +126,15 @@ export class HandlerDispatcher {
 export function reconcile(
   previous: readonly Conversation[],
   next: readonly Conversation[]
-): readonly Conversation[] {
+) {
   const byId = new Map(
     previous.map((conversation) => [conversation.id, conversation])
   );
-  return next.map((conversation) => {
+  const conversations: readonly Conversation[] = next.map((conversation) => {
     const prior = byId.get(conversation.id);
     return prior && JSON.stringify(prior) === JSON.stringify(conversation)
       ? prior
       : conversation;
   });
+  return conversations;
 }

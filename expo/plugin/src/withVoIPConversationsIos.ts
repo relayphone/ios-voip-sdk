@@ -43,7 +43,7 @@ const withPermissions: ConfigPlugin<{
   video?: boolean;
 }> = (config, { cameraPermission, microphonePermission, supportsVideo, video }) => {
   return IOSConfig.Permissions.createPermissionsPlugin({
-    ...(supportsVideo || video ? { NSCameraUsageDescription: CAMERA_USAGE } : {}),
+    ...((supportsVideo || video) && { NSCameraUsageDescription: CAMERA_USAGE }),
     NSMicrophoneUsageDescription: MICROPHONE_USAGE,
   })(config, {
     NSCameraUsageDescription: cameraPermission,
@@ -71,9 +71,7 @@ const withPushNotificationEntitlement: ConfigPlugin = (config) => {
 const withBackgroundModes: ConfigPlugin = (config) => {
   return withInfoPlist(config, (config) => {
     const existingModes = config.modResults.UIBackgroundModes;
-    const modes = Array.isArray(existingModes)
-      ? (existingModes as string[])
-      : [];
+    const modes = Array.isArray(existingModes) ? existingModes : [];
 
     const newModes = new Set([...modes, ...BACKGROUND_MODES]);
     config.modResults.UIBackgroundModes = [...newModes];
@@ -88,12 +86,11 @@ const withBackgroundModes: ConfigPlugin = (config) => {
 const withSiriIntents: ConfigPlugin = (config) => {
   return withInfoPlist(config, (config) => {
     const existingIntents = config.modResults.NSUserActivityTypes;
-    const intents = Array.isArray(existingIntents)
-      ? (existingIntents as string[]).filter((intent) =>
-          intent !== "INStartAudioCallIntent" && intent !== "INStartVideoCallIntent")
-      : [];
+    const intents = Array.isArray(existingIntents) ? existingIntents : [];
 
-    const newIntents = new Set([...intents, ...SIRI_INTENTS]);
+    const retained = intents.filter(intent =>
+      intent !== "INStartAudioCallIntent" && intent !== "INStartVideoCallIntent");
+    const newIntents = new Set([...retained, ...SIRI_INTENTS]);
     config.modResults.NSUserActivityTypes = [...newIntents];
 
     return config;
@@ -365,8 +362,8 @@ const withIconTemplate: ConfigPlugin<{
  * Fails for the removed `callingFramework` option. Calls are always presented with
  * LiveCommunicationKit.
  */
-function rejectRemovedOptions(props: VoIPConversationsPluginProps): void {
-  if ((props as { callingFramework?: unknown }).callingFramework !== undefined) {
+function rejectRemovedOptions(props: VoIPConversationsPluginProps) {
+  if ("callingFramework" in props && props.callingFramework !== undefined) {
     throw new Error(
       `${ERROR_MSG_PREFIX}The "callingFramework" option was removed: iOS calls are always ` +
         `presented with LiveCommunicationKit. Remove the option from the plugin's configuration.`,

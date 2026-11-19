@@ -211,6 +211,9 @@ for await event in client.events() {
 }
 ```
 
+Handle placement events independently of the task awaiting `request(.start(call))`. The Start
+request completes when the calling framework performs native Start after placement.
+
 A stream from `events()` starts when the app subscribes, so it can miss the first events of a
 cold launch: the SDK reports the call of the VoIP push that launched the app as soon as PushKit
 delivers it. Code that must see every event is a `CallObserver`, passed to `start` as
@@ -586,4 +589,4 @@ system does.
 
 ## License
 
-None yet. A license will be added before the beta release. The v0.1 release was published with an MIT license file.
+MIT. See [LICENSE](LICENSE). Parts of the React Native package derive from MIT-licensed code; their notice is in [expo/NOTICE.md](expo/NOTICE.md).

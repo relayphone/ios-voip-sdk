@@ -41,7 +41,7 @@
   /// No descriptions, raw domains, URLs or userInfo cross the fixture boundary.
   struct MediaJourneyFailure: Codable {
     enum Operation: String, Codable { case prepare, connect, video, command }
-    enum Category: String, Codable { case livekit, url, osStatus, posix, cocoa, other }
+    enum Category: String, Codable { case cancelled, livekit, url, osStatus, posix, cocoa, other }
     let operation: Operation
     let category: Category
     let code: Int
@@ -50,6 +50,7 @@
       let native = error as NSError
       code = native.code
       switch native.domain {
+      case _ where error is CancellationError: category = .cancelled
       case "io.livekit.swift-sdk": category = .livekit
       case NSURLErrorDomain: category = .url
       case NSOSStatusErrorDomain: category = .osStatus

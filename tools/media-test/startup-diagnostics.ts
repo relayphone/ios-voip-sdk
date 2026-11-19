@@ -1,17 +1,23 @@
 export type StartupBoundary = 'unavailable' | 'preparationCompletionUnobserved' | 'activationNeverDelivered'
   | 'activationEnqueueUnobserved' | 'activationDropped' | 'activationStreamTerminated'
   | 'activationNotConsumed' | 'engineOutcomeUnobserved' | 'engineNotRunning' | 'engineRunning';
+interface PreparationObservation {
+  readonly stage: typeof preparationStages[number];
+  readonly atMs: number;
+}
 export interface StartupDiagnostics {
   readonly boundary: StartupBoundary;
   readonly clockID?: string;
   readonly lastAudioActivatedAtMs?: number;
   readonly lastAudioDeactivatedAtMs?: number;
+  readonly preparation?: readonly PreparationObservation[];
 }
 const object = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 const time = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
-const stages = ['prepareEntered', 'roomConnectRequested', 'roomConnectCompleted', 'roomConnectFailed',
-  'captureOptionsApplied', 'prepareCompleted', 'activationEntered', 'activationEnqueued', 'activationHandlerEntered',
+const preparationStages = ['prepareEntered', 'roomConnectRequested', 'roomConnectCompleted', 'roomConnectFailed',
+  'captureOptionsApplied'] as const;
+const stages = [...preparationStages, 'prepareCompleted', 'activationEntered', 'activationEnqueued', 'activationHandlerEntered',
   'engineAvailabilityObserved', 'tapInstalled', 'firstCallback'] as const;
 
 /** Diagnostic interpretation only: this never qualifies media or changes a success gate. */
@@ -21,6 +27,7 @@ export function diagnoseNativeStartup(value: unknown): StartupDiagnostics {
       !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(startup.clockID) ||
       !Array.isArray(startup.observations) || startup.observations.length > 13) return { boundary: 'unavailable' };
   const events = new Map<string, Record<string, unknown>>();
+  const preparation: PreparationObservation[] = [];
   let prior = 0;
   for (const value of startup.observations) {
     const row = object(value), event = object(row?.event), keys = event ? Object.keys(event) : [];
@@ -33,6 +40,8 @@ export function diagnoseNativeStartup(value: unknown): StartupDiagnostics {
     const key = name === 'tapInstalled' || name === 'firstCallback' ? `${name}:${associated._0}` : name!;
     if (events.has(key)) return { boundary: 'unavailable' };
     events.set(key, associated);
+    const stage = preparationStages.find(stage => stage === name);
+    if (stage) preparation.push({ stage, atMs: row.atMs });
   }
   const activated = startup.lastAudioActivatedAtMs, deactivated = startup.lastAudioDeactivatedAtMs;
   if (activated !== undefined && activated !== null && !time(activated) ||
@@ -41,7 +50,9 @@ export function diagnoseNativeStartup(value: unknown): StartupDiagnostics {
     ...(time(activated) ? { lastAudioActivatedAtMs: activated } : {}),
     ...(time(deactivated) ? { lastAudioDeactivatedAtMs: deactivated } : {}) };
   const result = (boundary: StartupBoundary): StartupDiagnostics => ({ ...base, boundary });
-  if (!events.has('prepareCompleted')) return result('preparationCompletionUnobserved');
+  if (!events.has('prepareCompleted')) return {
+    ...result('preparationCompletionUnobserved'), ...(preparation.length ? { preparation } : {}),
+  };
   if (!events.has('activationEntered')) return result('activationNeverDelivered');
   const enqueue = events.get('activationEnqueued')?._0;
   if (enqueue === 'dropped') return result('activationDropped');

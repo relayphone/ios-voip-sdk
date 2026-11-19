@@ -23,7 +23,7 @@ export default function App() {
   const running = useRef(false);
   useConversationEvent("callNotificationRoute", (route) => setMessage(route.type === "callBack"
     ? `Call back ${route.caller.displayName ?? route.caller.id}` : "Joining from a call notification"));
-  async function perform(work: () => Promise<unknown>) {
+  async function perform(work: () => Promise<void>) {
     if (running.current) return;
     running.current = true; setBusy(true);
     try { await work(); setMessage("Completed"); }

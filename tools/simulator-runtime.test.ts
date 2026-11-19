@@ -23,5 +23,11 @@ test('rejects an unavailable runtime even if its path exists', () => {
 
 test('rejects missing or unmounted runtime paths before boot', () => {
   assert.throws(() => requireSimulatorRuntime(inventory({ ...runtime, bundlePath: '' }), () => true), /path is missing/);
+  assert.throws(() => requireSimulatorRuntime(inventory({ ...runtime, bundlePath: 27 }), () => true), /path is missing/);
   assert.throws(() => requireSimulatorRuntime(inventory(runtime), () => false), /path is missing/);
+});
+
+test('rejects incomplete simulator runtime inventories', () => {
+  assert.throws(() => requireSimulatorRuntime('{"runtimes":null}', () => true), /Invalid simulator runtime inventory/);
+  assert.throws(() => requireSimulatorRuntime(inventory({ ...runtime, version: null }), () => true), /Invalid simulator runtime inventory/);
 });

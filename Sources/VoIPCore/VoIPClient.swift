@@ -112,9 +112,11 @@ public final class VoIPClient {
 
   /// Requests an action on a call.
   ///
-  /// Starting a call creates it; it then waits for the app to place it, which the app confirms
-  /// with ``confirmPlaced(_:)``, or with ``confirmNotPlaced(_:)`` when it can't. Joining a call
-  /// from its preview waits in the same way. An End uses ``end(_:)`` and discards the result.
+  /// Start creates the call and emits ``CallEvent/startRequested(_:)``. Handle that event
+  /// independently of this request and confirm placement via ``confirmPlaced(_:)`` or
+  /// ``confirmNotPlaced(_:)``. The Start request completes when the system performs Start.
+  /// If the call ends first, Start rejects with ``ActionError/notAllowed(_:)`` and the
+  /// terminal status. An End uses ``end(_:)`` and discards the result.
   ///
   /// - Parameter action: The action to request.
   /// - Throws: ``ActionError/unknownCall`` when this device doesn't know the call,
@@ -142,8 +144,9 @@ public final class VoIPClient {
   /// Confirms that the app placed a call it was asked to start or join, after
   /// ``CallEvent/startRequested(_:)`` or ``CallEvent/joinRequested(_:)``.
   ///
-  /// A deferred outgoing call starts dialing immediately. Other calls prepare media before
-  /// completing Start or Join. A call that isn't placed before ``Deadlines/placement`` ends with
+  /// A deferred outgoing call starts dialing immediately. An app-originated call can dial while
+  /// native Start is pending. Eager calls prepare media before requesting native Start or
+  /// completing a system Start or Join. A call that isn't placed before ``Deadlines/placement`` ends with
   /// ``CallFailure/notPlaced``, or returns to its call preview.
   ///
   /// - Parameter id: The call the app placed.
@@ -154,7 +157,8 @@ public final class VoIPClient {
   /// Begins media preparation for a placed outgoing call using the `.whenProvided` policy.
   ///
   /// Supply any credentials to your native ``CallMedia`` adapter before calling this method.
-  /// The preparation deadline starts here. Repeating the call once preparation has started
+  /// When native Start is pending, the SDK saves the first provision and begins preparation
+  /// after admission. The preparation deadline starts with preparation. Repeating the call
   /// has no effect. Connection still requires an explicit ``ServerEvent/connected`` report.
   ///
   /// - Parameter id: The placed outgoing call.

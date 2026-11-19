@@ -1,0 +1,8 @@
+{
+  "extends": ["../../../.oxlintrc.json"],
+  "rules": {
+    "anti-slop/no-shape-in-symbol-names": "error",
+    "eslint/no-unused-vars": "error",
+    "landmines-structure/test-file-names": "error"
+  }
+}

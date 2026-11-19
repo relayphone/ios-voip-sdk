@@ -17,16 +17,16 @@ export interface SimulatorApp {
 }
 
 /** The simulator architecture of this Mac. */
-export function simulatorArchitecture(): string {
+export function simulatorArchitecture() {
   return arch() === 'x64' ? 'x86_64' : 'arm64';
 }
 
-function escape(text: string): string {
+function escape(text: string) {
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
 /** The Info.plist of a simulator app with one scene. */
-export function infoPlist(app: SimulatorApp): string {
+export function infoPlist(app: SimulatorApp) {
   const string = (key: string, value: string) =>
     `  <key>${key}</key>\n  <string>${escape(value)}</string>\n`;
   return (
@@ -51,7 +51,7 @@ export function infoPlist(app: SimulatorApp): string {
 }
 
 /** Compiles the sources into a signed simulator app. */
-export function buildSimulatorApp(app: SimulatorApp, execute: typeof run = run): void {
+export function buildSimulatorApp(app: SimulatorApp, execute: typeof run = run) {
   mkdirSync(app.bundle, { recursive: false });
   const sdk = execute('xcrun', ['--sdk', 'iphonesimulator', '--show-sdk-path']);
   execute('xcrun', [

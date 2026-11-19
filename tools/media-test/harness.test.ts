@@ -261,7 +261,11 @@ test('reconnect capture waits for decoded samples and counters beyond the nomina
   const measured = measureMarker(capture, marker);
   assert.ok(measured.clean && measured.complete && measured.postRollObserved, markerReport(marker.id, measured));
 });
-test('JSON CLI supports clean stop and cleanup after a daemon crash', async () => {
+const cliTests = {
+  skip: (process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted') &&
+    'The CLI requires hosted CI',
+};
+test('JSON CLI supports clean stop and cleanup after a daemon crash', cliTests, async () => {
   const dir = directory('cli'), cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
   const call = (...args: string[]) => command(process.execPath, [cli, ...args.slice(0, 1), dir, ...args.slice(1)], 180_000);
   for (const crash of [false, true]) {
@@ -314,7 +318,7 @@ test('untrusted JSON commands reject invalid publication controls', () => {
   assert.deepEqual(parseAction({ type: 'reconnect' }), { type: 'reconnect' });
 });
 
-test('a killed invoking runner cannot leave its daemon or server running', async () => {
+test('a killed invoking runner cannot leave its daemon or server running', cliTests, async () => {
   const dir = directory('runner-crash'), cli = fileURLToPath(new URL('./cli.ts', import.meta.url));
   const runnerFile = join(dir, 'runner.ts');
   writeFileSync(runnerFile, `import { execFileSync } from 'node:child_process';

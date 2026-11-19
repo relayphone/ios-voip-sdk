@@ -39,11 +39,7 @@ final class ActionWaiter {
     switch event {
     case .ended(let call):
       if case .ended(.failed) = call.status {
-        failure =
-          failure
-          ?? CommandError(
-            code: .conversation,
-            message: "The conversation failed before the SDK carried out the request")
+        failure = failure ?? .failedBeforePerformance
       }
     case .joinFailed:
       failure =

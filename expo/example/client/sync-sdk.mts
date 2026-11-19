@@ -9,7 +9,7 @@ const compiled = join(directory, 'build-scripts/prepare-package.mjs');
 const checkout = existsSync(join(dirname(directory), 'VERSION')) &&
   existsSync(join(dirname(directory), 'Sources/VoIPCore'));
 
-function run(command: string, args: string[]): void {
+function run(command: string, args: string[]) {
   const result = spawnSync(command, args, { stdio: 'inherit', timeout: 120_000 });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`SDK preparation failed (${result.status ?? result.signal})`);
