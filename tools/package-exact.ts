@@ -12,12 +12,12 @@ export const exactSdkTargets = ['VoIPCore', 'VoIPLiveCommunicationKit', 'VoIPPus
 /** The commit of relayphone/exact's voip/integration branch this package compiles against. */
 export const exactCommit = 'cd06c16c4708e7e59d1b61e333f2ef09a0170526';
 
-function swiftFiles(directory: string): string[] {
+function swiftFiles(directory: string) {
   return readdirSync(directory).filter(file => file.endsWith('.swift')).sort();
 }
 
 /** Copies the SDK's Swift into `exact/Vendor` and writes `exact/exact.json`; returns its sources. */
-export function prepareExactPackage(checkout: string): string[] {
+export function prepareExactPackage(checkout: string) {
   const root = join(checkout, 'exact');
   const vendor = join(root, 'Vendor');
   rmSync(vendor, { recursive: true, force: true });
@@ -39,7 +39,7 @@ export function prepareExactPackage(checkout: string): string[] {
     targets: ['ios'],
     start: 'launch',
     entitlements: ['aps-environment'],
-    shapes: {},
+    'shapes': {},
     options: {},
     names: [],
     views: [],
@@ -53,7 +53,7 @@ export function prepareExactPackage(checkout: string): string[] {
 }
 
 /** Compiles the package with the flags Exact's Apple build gives a package, against Exact's seam. */
-export function compileExactPackage(checkout: string, sources: readonly string[]): void {
+export function compileExactPackage(checkout: string, sources: readonly string[]) {
   const temporary = mkdtempSync(join(tmpdir(), 'voip-exact-'));
   try {
     const seam = join(temporary, 'ExactPackage.swift');
