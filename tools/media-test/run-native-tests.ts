@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { runTestProcess, type TestProcessReadiness, type TestProcessResult } from './test-process.ts';
-import { SimulatorMediaRefusal, withSimulatorMediaAudio } from './simulator-media.ts';
+import { IsolatedLeaseRefusal } from './isolated-simulator-lease.ts';
+import { HostAudioGuardFailure, SimulatorMediaRefusal, withSimulatorMediaAudio } from './simulator-media.ts';
 
 const execute = promisify(execFile);
 interface TestTarget {
@@ -56,7 +57,9 @@ interface NativeTestOptions {
 
 /** Runs prebuilt tests directly, avoiding xcodebuild's separate result-collection teardown. */
 export async function runNativeTests(options: NativeTestOptions) {
-  return withSimulatorMediaAudio(signal => runGuardedNativeTests(options, signal));
+  return withSimulatorMediaAudio((signal, leased) =>
+    runGuardedNativeTests({ ...options, simulator: leased ?? options.simulator }, signal),
+  { localDestination: { simulator: options.simulator } });
 }
 
 async function runGuardedNativeTests(options: NativeTestOptions, signal: AbortSignal) {
@@ -81,13 +84,14 @@ async function runGuardedNativeTests(options: NativeTestOptions, signal: AbortSi
 
 if (import.meta.main) {
   const [seconds, directory, simulator, specification, host, only] = process.argv.slice(2);
-  if (!seconds || !directory || !simulator || !specification || !host) throw Error('Usage: run-native-tests.ts <seconds> <directory> <simulator> <specification> <host> [module.suite]');
+  if (!seconds || !directory || !simulator || !specification || !host) throw Error('Usage: run-native-tests.ts <seconds> <directory> <simulator|lease> <specification> <host> [module.suite]');
   try {
     const result = await runNativeTests({ timeoutMS: Number(seconds) * 1000, directory, simulator, specification, host, only });
     process.stdout.write(result.log); process.stderr.write(result.stderr);
     process.exitCode = result.success ? 0 : result.reason === 'timeout' ? 142 : 1;
   } catch (error) {
-    console.error(error instanceof SimulatorMediaRefusal ? error.message : 'Native test launch failed');
+    console.error(error instanceof SimulatorMediaRefusal || error instanceof IsolatedLeaseRefusal ||
+      error instanceof HostAudioGuardFailure ? error.message : 'Native test launch failed');
     process.exitCode = 1;
   }
 }
