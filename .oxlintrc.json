@@ -77,6 +77,13 @@
       }
     },
     {
+      "files": ["tools/{expo-package,package-expo}{,.test}.ts", "tools/expo-plugin-load.ts"],
+      "rules": {
+        "anti-slop/no-runtime-typeof": "error",
+        "landmines-types/no-explicit-return-types": "error"
+      }
+    },
+    {
       "files": ["tools/package-exact.ts", "tools/package-exact.test.ts"],
       "rules": {
         "anti-slop/no-shape-in-symbol-names": "error",

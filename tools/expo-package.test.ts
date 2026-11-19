@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { checkDistribution, checkVendor, checkVersion, preparePackage, sdkTargets, sdkSourceDirectory } from '../expo/scripts/prepare-package.mts';
 
-function fixture(t: { after: (cleanup: () => void) => void }): string {
+function fixture(t: { after: (cleanup: () => void) => void }) {
   const root = mkdtempSync(join(tmpdir(), 'voip-expo-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, 'expo/ios'), { recursive: true });
@@ -14,7 +14,7 @@ function fixture(t: { after: (cleanup: () => void) => void }): string {
   return root;
 }
 
-function sourceFixture(t: { after: (cleanup: () => void) => void }): string {
+function sourceFixture(t: { after: (cleanup: () => void) => void }) {
   const root = fixture(t);
   for (const target of sdkTargets) {
     mkdirSync(sdkSourceDirectory(root, target), { recursive: true });

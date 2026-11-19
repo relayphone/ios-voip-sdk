@@ -5,17 +5,18 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { checkDistribution, checkVersion } from '../expo/scripts/prepare-package.mts';
 import { isMain, main, repository, run } from './command.ts';
+import { isRecord } from './json-fields.ts';
 import { isVersion, sha256 } from './runtime-package.ts';
 
 /** Checks the packed version and every vendored SDK source, rather than the checkout copy. */
-export function verifyExpoArchive(archive: string, version: string): void {
+export function verifyExpoArchive(archive: string, version: string) {
   if (!isVersion(version)) throw new Error('Invalid package release version');
   const temporary = mkdtempSync(join(tmpdir(), 'voip-package-'));
   try {
     run('tar', ['-xzf', resolve(archive), '-C', temporary]);
     const distribution = join(temporary, 'package');
     const manifest: unknown = JSON.parse(readFileSync(join(distribution, 'package.json'), 'utf8'));
-    if (!manifest || typeof manifest !== 'object' || !('version' in manifest) || manifest.version !== version) {
+    if (!isRecord(manifest) || !('version' in manifest) || manifest.version !== version) {
       throw new Error('Packed package version must equal VERSION');
     }
     checkDistribution(distribution);
@@ -25,7 +26,7 @@ export function verifyExpoArchive(archive: string, version: string): void {
 }
 
 /** Runs prepack, verifies its tarball and adds it to the release checksums. */
-export function packageExpo(checkout: string, output: string): string {
+export function packageExpo(checkout: string, output: string) {
   checkVersion(checkout);
   const version = readFileSync(join(checkout, 'VERSION'), 'utf8').trim();
   const name = `relayphone-ios-voip-sdk-${version}.tgz`;
