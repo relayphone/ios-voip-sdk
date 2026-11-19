@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -142,6 +142,91 @@ test('a timed-out request uses its configured project and releases the same pend
   await assert.rejects(start(async () => assert.fail('journey started')), /still waiting for a Mac/);
   assert.deepEqual(events, ['up', 'down']);
   assert.equal(keys.size, 1);
+});
+
+const transportError = 'cannot reach https://leases.example.test: Transport error';
+const heartbeatFailure = Object.assign(new Error('heartbeat failed'), { stderr: `xcr: ${transportError}\n` });
+
+test('reattaches to the same pending lease after a transport error and only releases after the journey', async () => {
+  const original = { XCR_CONFIG_DIR: '/lease-config', XCR_URL: 'https://leases.example.test', XCR_TOKEN: 'test-token' };
+  const order: string[] = [];
+  const environments: NodeJS.ProcessEnv[] = [];
+  const directories: string[] = [];
+  const acquired = { lease: id, udid, audio };
+  const result = await withIsolatedSimulatorLease({ ...config, project: 'media', environment: original },
+    new AbortController().signal, async () => { order.push('journey'); return true; },
+    async () => { order.push('checker'); return 'PASS: slot 2 isolated (both devices)'; }, () => {}, {
+      now: () => now,
+      command: async (_, args, { cwd, env }) => {
+        order.push(args[0]!);
+        if (args[0] === 'up') {
+          environments.push(env);
+          directories.push(cwd);
+          assert.deepEqual(args, ['up', '--audio', 'isolated', '--platform', 'ios-sim', '--wait', '10', '--project', 'media']);
+          if (environments.length === 1) throw heartbeatFailure;
+          return { stdout: JSON.stringify(acquired), stderr: '' };
+        }
+        return { stdout: JSON.stringify(valid), stderr: '' };
+      },
+      pause: (ms, signal) => delay(environments.length === 1 ? 0 : ms, undefined, { signal }),
+    });
+  assert.equal(result, true);
+  assert.deepEqual(order, ['up', 'up', 'lease', 'checker', 'lease', 'journey', 'down']);
+  assert.equal(environments[0], environments[1]);
+  assert.equal(environments[0]?.XCR_CONFIG_DIR, original.XCR_CONFIG_DIR);
+  assert.equal(environments[0]?.XCR_URL, original.XCR_URL);
+  assert.equal(environments[0]?.XCR_TOKEN, original.XCR_TOKEN);
+  assert.deepEqual(directories, [process.cwd(), process.cwd()]);
+});
+
+test('stops reattaching at fifteen minutes and then releases the pending lease', async () => {
+  let time = 0;
+  const calls: [string, number][] = [];
+  await assert.rejects(withIsolatedSimulatorLease(config, new AbortController().signal,
+    async () => assert.fail('journey started'), async () => assert.fail('checker started'), () => {}, {
+      elapsed: () => time,
+      pause: async ms => { time += ms; },
+      command: async (_, [verb], { timeout }) => {
+        calls.push([verb!, timeout]);
+        if (verb === 'up') { time += 600_000; throw heartbeatFailure; }
+        return { stdout: '', stderr: '' };
+      },
+    }), /transport retry deadline expired/);
+  assert.deepEqual(calls, [['up', 615_000], ['up', 298_000], ['down', 30_000]]);
+});
+
+test('release retries the same authenticated lease after the CLI clears its record', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'sim-lease-config-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const leases = join(directory, 'leases.json');
+  const log: string[] = [];
+  const savedToken = 'xcl_savedtesttoken';
+  let releases = 0;
+  await withIsolatedSimulatorLease({ ...config, environment: { XCR_CONFIG_DIR: directory, XCR_URL: 'https://leases.example.test' } },
+    new AbortController().signal, async () => {}, async () => 'PASS: slot 2 isolated (both devices)',
+    line => log.push(line), {
+      now: () => now,
+      command: async (_, [verb], { env }) => {
+        if (verb === 'up') {
+          await writeFile(leases, JSON.stringify({ [env.XCR_LEASE_KEY!]: { leaseId: id, token: savedToken } }));
+          return { stdout: JSON.stringify({ lease: id, udid, audio }), stderr: '' };
+        }
+        if (verb === 'lease') return { stdout: JSON.stringify(valid), stderr: '' };
+        if (++releases === 1) {
+          assert.equal(env.XCR_LEASE_ID, undefined);
+          await unlink(leases);
+          return { stdout: '', stderr: `release: ${transportError}\n` };
+        }
+        assert.equal(env.XCR_LEASE_ID, id);
+        assert.equal(env.XCR_LEASE_TOKEN, savedToken);
+        assert.equal(env.XCR_CONFIG_DIR, directory);
+        if (releases === 2) throw Object.assign(new Error('timed out'), { killed: true });
+        return { stdout: '', stderr: '' };
+      },
+      pause: (ms, signal) => delay(releases ? 0 : ms, undefined, { signal }),
+    });
+  assert.equal(releases, 3);
+  assert.doesNotMatch(log.join('\n'), new RegExp(savedToken));
 });
 
 test('refuses a checker failure or a pass for a different audio slot', async () => {

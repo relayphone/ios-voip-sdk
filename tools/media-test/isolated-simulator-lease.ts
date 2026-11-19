@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
@@ -12,11 +13,20 @@ const firstHeartbeatTimeout = 90_000;
 const pollInterval = 2_000;
 const acquisitionWaitMinutes = 10;
 const acquisitionTimeout = acquisitionWaitMinutes * 60_000 + 15_000;
+const reattachmentBudget = 15 * 60_000;
+const releaseBudget = 90_000;
+const transportRetryDelay = 2_000;
 const udidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const inputPattern = /^xcr Mic ([1-9]\d*)_UID$/;
 const outputPattern = /^xcr Speaker ([1-9]\d*)_UID$/;
 
 export class IsolatedLeaseRefusal extends Error {}
+class LeaseTransportError extends IsolatedLeaseRefusal {}
+
+function cliFailure(message: string): IsolatedLeaseRefusal {
+  return /cannot reach .*Transport error/i.test(message)
+    ? new LeaseTransportError(message) : new IsolatedLeaseRefusal(message);
+}
 
 function redactLeaseOutput(output: string): string {
   return output.replace(/\b(xc[lhcpdj])_[A-Za-z0-9_-]{8,}/g, '$1_[redacted]');
@@ -120,8 +130,21 @@ function readProof(
 }
 
 type LeaseCommand = (file: string, args: string[], options: {
-  env: NodeJS.ProcessEnv; timeout: number; signal?: AbortSignal;
+  cwd: string; env: NodeJS.ProcessEnv; timeout: number; signal?: AbortSignal;
 }) => Promise<{ stdout: string; stderr: string }>;
+
+async function releaseHandle(env: NodeJS.ProcessEnv): Promise<NodeJS.ProcessEnv | undefined> {
+  if (env.XCR_LEASE_ID) return env;
+  const directory = env.XCR_CONFIG_DIR ?? join(homedir(), '.config/xcr');
+  const readState = async (file: string) => {
+    try { return json(await readFile(join(directory, file), 'utf8')); }
+    catch { return {}; }
+  };
+  const saved = object((await readState('leases.json'))[env.XCR_LEASE_KEY!]);
+  const url = env.XCR_URL ?? (await readState('config.json')).url;
+  if (typeof saved.leaseId !== 'string' || typeof saved.token !== 'string' || typeof url !== 'string') return;
+  return { ...env, XCR_URL: url, XCR_LEASE_ID: saved.leaseId, XCR_LEASE_TOKEN: saved.token, XCR_ALLOW_RELEASE: '1' };
+}
 
 export interface LeaseConfiguration {
   cli: string;
@@ -145,8 +168,10 @@ export async function withIsolatedSimulatorLease<T>(
   run: (proof: Proof, signal: AbortSignal) => Promise<T>,
   check: (checker: string, udid: string, signal: AbortSignal) => Promise<string>,
   report: (line: string) => void,
-  { command = execute, now = Date.now, pause = (ms, signal) => delay(ms, undefined, { signal }), shutdown, arm, prepareRelease }: {
+  { command = execute, now = Date.now, elapsed = () => performance.now(),
+    pause = (ms, signal) => delay(ms, undefined, { signal }), shutdown, arm, prepareRelease }: {
     command?: LeaseCommand; now?: () => number; pause?: (ms: number, signal: AbortSignal) => Promise<void>;
+    elapsed?: () => number;
     shutdown?: (udid: string) => Promise<string>;
     arm?: (proof: Proof, signal: AbortSignal) => Promise<AbortSignal>;
     prepareRelease?: () => void;
@@ -158,15 +183,16 @@ export async function withIsolatedSimulatorLease<T>(
     throw new IsolatedLeaseRefusal('An existing isolated simulator lease requires both its identifier and its token');
   }
   // Scope acquisition and cleanup to this run, including when acquisition fails after creating a lease.
-  const env = id ? { ...environment, XCR_ALLOW_RELEASE: '1' }
+  const env: NodeJS.ProcessEnv = id ? { ...environment, XCR_ALLOW_RELEASE: '1' }
     : { ...environment, XCR_LEASE_KEY: randomUUID() };
-  async function invoke(args: string[], timeout: number, cancellation?: AbortSignal): Promise<string> {
+  const cwd = process.cwd();
+  async function invoke(args: string[], timeout: number, cancellation?: AbortSignal, commandEnv = env): Promise<string> {
     const acquiring = args[0] === 'up';
     try {
-      const result = await command(cli, args, { env, timeout, signal: cancellation });
+      const result = await command(cli, args, { cwd, env: commandEnv, timeout, signal: cancellation });
       if (acquiring) report(redactLeaseOutput([result.stderr.trim(), result.stdout.trim()].filter(Boolean).join('\n')));
       const releaseError = args[0] === 'down' && /^release: (.+)$/m.exec(result.stderr)?.[1];
-      if (releaseError) throw new IsolatedLeaseRefusal(`Could not release isolated simulator lease: ${releaseError}`);
+      if (releaseError) throw cliFailure(`Could not release isolated simulator lease: ${redactLeaseOutput(releaseError)}`);
       return result.stdout;
     } catch (error) {
       if (error instanceof IsolatedLeaseRefusal) throw error;
@@ -176,10 +202,48 @@ export async function withIsolatedSimulatorLease<T>(
       if (acquiring && (stderr || stdout)) report([stderr, stdout].filter(Boolean).join('\n'));
       cancellation?.throwIfAborted();
       const diagnostic = /^xcr: (.+)$/m.exec(stderr)?.[1] ?? stderr;
+      if (args[0] === 'down' && failure.killed === true) {
+        throw new LeaseTransportError(`Isolated simulator lease release command timed out${reason(diagnostic)}`);
+      }
       const details = acquiring && failure.killed === true
         ? `acquisition command timed out${reason(diagnostic)}` : diagnostic || failure.code;
-      throw new IsolatedLeaseRefusal(`Isolated simulator lease CLI failed (${args[0]})${reason(details)}`);
+      throw cliFailure(`Isolated simulator lease CLI failed (${args[0]})${reason(details)}`);
     }
+  }
+
+  async function retryTransport<T>(
+    budget: number, cancellation: AbortSignal, operation: (remaining: number) => Promise<T>,
+  ): Promise<T> {
+    const deadline = elapsed() + budget;
+    let failure: LeaseTransportError | undefined;
+    while (elapsed() < deadline) {
+      cancellation.throwIfAborted();
+      try { return await operation(Math.max(1, Math.floor(deadline - elapsed()))); }
+      catch (error) {
+        if (!(error instanceof LeaseTransportError)) throw error;
+        failure = error;
+      }
+      const wait = Math.min(transportRetryDelay, deadline - elapsed());
+      if (wait > 0) await pause(wait, cancellation);
+    }
+    throw new IsolatedLeaseRefusal(`Isolated simulator lease transport retry deadline expired${reason(failure?.message)}`);
+  }
+
+  async function release() {
+    // The CLI clears its local lease record even when the DELETE request fails.
+    const handle = await releaseHandle(env);
+    let commandEnv = env;
+    return retryTransport(releaseBudget, new AbortController().signal, async remaining => {
+      try { await invoke(['down'], Math.min(remaining, 30_000), undefined, commandEnv); }
+      catch (error) {
+        if (!(error instanceof LeaseTransportError) || !handle) {
+          throw new IsolatedLeaseRefusal(error instanceof Error ? error.message : String(error));
+        }
+        commandEnv = handle;
+        report('Lease release transport failed. Retrying cleanup for the same lease.');
+        throw error;
+      }
+    });
   }
 
   const stop = new AbortController();
@@ -198,7 +262,13 @@ export async function withIsolatedSimulatorLease<T>(
       report(`[${new Date(now()).toISOString()}] Requesting an isolated simulator lease with a ten-minute wait`);
       const args = ['up', '--audio', 'isolated', '--platform', 'ios-sim', '--wait', String(acquisitionWaitMinutes)];
       if (project) args.push('--project', project);
-      const acquired = json(await invoke(args, acquisitionTimeout, localSignal));
+      const acquired = json(await retryTransport(reattachmentBudget, localSignal, async remaining => {
+        try { return await invoke(args, Math.min(remaining, acquisitionTimeout), localSignal); }
+        catch (error) {
+          if (error instanceof LeaseTransportError) report('Lease heartbeat transport failed. Reattaching to the queued lease.');
+          throw error;
+        }
+      }));
       if (typeof acquired.lease !== 'string' || !acquired.lease) {
         throw new IsolatedLeaseRefusal('Acquisition returned no isolated simulator lease identifier');
       }
@@ -289,7 +359,7 @@ export async function withIsolatedSimulatorLease<T>(
     try {
       await shutdownOnAbort;
       prepareRelease?.();
-      try { await invoke(['down'], 30_000); }
+      try { await release(); }
       catch (error) {
         if (!primaryFailure) throw error;
         report(error instanceof Error ? error.message : String(error));

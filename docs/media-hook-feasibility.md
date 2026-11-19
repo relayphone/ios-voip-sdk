@@ -85,8 +85,9 @@ the absolute path of its executable host-side isolation checker. Configure the C
 connection and credentials in the environment. The runner acquires an isolated simulator
 lease or uses the lease identifier and credentials supplied in the CLI's environment.
 Set `ISOLATED_LEASE_PROJECT` to select a project when acquiring a lease. An acquisition
-keeps its place in the queue for up to ten minutes and reports the CLI output. The runner
-releases the request if the wait expires.
+waits up to ten minutes in the queue and reports the CLI output. On a transport error,
+the runner reconnects to the same request within a total fifteen-minute deadline.
+Cleanup retries transport failures for the same lease.
 Run on the Mac that owns the leased simulator. The lease and its selected simulator must
 both report matching virtual input and output UIDs verified within the last 120 seconds.
 The host-side checker verifies those routes before the journey launches or installs its app.
