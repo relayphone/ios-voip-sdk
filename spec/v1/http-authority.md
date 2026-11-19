@@ -139,7 +139,7 @@ relies on server-side expiry and fencing.
 
 ## Conformance
 
-The four HTTP journeys are version 1 and pending on iOS and Android. The TypeScript tools
+Swift runs the four version 1 HTTP journeys. Android conformance is pending. The TypeScript tools
 verify their document shapes, and the fixture suite verifies HTTP messages. Each native
 driver must inject a virtual clock, a secure-store fake and the HTTP client boundary of
 the built-in authority. Use UTC `2026-11-18T00:00:00.000Z` at monotonic zero and the base

@@ -27,6 +27,49 @@ public struct AnswerRequest: Sendable {
 
   let deadline: Duration
   let now: @Sendable () -> Duration
+  let sleep: (@Sendable (Duration) async throws -> Void)?
+
+  init(
+    call: Call, actionID: ActionID, deadline: Duration, now: @escaping @Sendable () -> Duration,
+    sleep: (@Sendable (Duration) async throws -> Void)? = nil
+  ) {
+    self.call = call
+    self.actionID = actionID
+    self.deadline = deadline
+    self.now = now
+    self.sleep = sleep
+  }
+}
+
+/// The account and line of an incoming invitation, as supplied by the app's service.
+public struct AnswerScope: Hashable, Sendable, Decodable {
+  /// The account that owns the invitation.
+  public let accountID: String
+  /// The line on that account that received the call.
+  public let lineID: String
+
+  /// Creates a scope using the service's exact account and line identifiers.
+  public init(accountID: String, lineID: String) {
+    self.accountID = accountID
+    self.lineID = lineID
+  }
+}
+
+/// LiveKit credentials from a native Answer grant. Keep these values in the native media provider.
+public struct AnswerMediaCredentials: Hashable, Sendable, CustomStringConvertible {
+  /// The secure WebSocket endpoint.
+  public let url: URL
+  /// The authorized room.
+  public let room: String
+  /// This installation's participant identity.
+  public let identity: String
+  /// The room-scoped bearer token.
+  public let token: String
+  /// When the credential expires.
+  public let expiresAt: Date
+
+  /// A redacted description for native diagnostics.
+  public var description: String { "AnswerMediaCredentials(redacted)" }
 }
 
 /// A service grant for an Answer.
@@ -35,11 +78,17 @@ public struct AnswerPermit: Hashable, Sendable {
   public let id: String
   /// The service's expiry, if supplied.
   public let expiresAt: Date?
+  let mediaCredentials: AnswerMediaCredentials?
 
   /// Creates a grant with its service identifier and optional expiry.
   public init(id: String, expiresAt: Date? = nil) {
+    self.init(id: id, expiresAt: expiresAt, mediaCredentials: nil)
+  }
+
+  init(id: String, expiresAt: Date?, mediaCredentials: AnswerMediaCredentials?) {
     self.id = id
     self.expiresAt = expiresAt
+    self.mediaCredentials = mediaCredentials
   }
 }
 
@@ -54,7 +103,7 @@ public enum AnswerDecision: Hashable, Sendable {
 }
 
 /// Why the service refused an Answer.
-public enum AnswerRefusal: String, Hashable, Sendable {
+public enum AnswerRefusal: String, Decodable, Hashable, Sendable {
   /// Another device or service already answered.
   case answeredElsewhere
   /// Another device or service already declined.
@@ -64,7 +113,7 @@ public enum AnswerRefusal: String, Hashable, Sendable {
 }
 
 /// Why the native authority could not obtain a decision.
-public enum AnswerAuthorityFailure: Hashable, Sendable {
+public enum AnswerAuthorityFailure: Error, Hashable, Sendable {
   /// Native credentials could not be used.
   case credentialsUnavailable
   /// The service could not be reached.

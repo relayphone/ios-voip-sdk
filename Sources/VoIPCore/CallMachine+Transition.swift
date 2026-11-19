@@ -14,7 +14,7 @@ extension CallMachine {
       let policy = incoming.presentationPolicy ?? configuration.presentationPolicy
       let call = Call(
         id: incoming.id, isIncoming: true, parties: incoming.parties, status: .ringing,
-        hasVideo: incoming.hasVideo, metadata: incoming.metadata)
+        hasVideo: incoming.hasVideo, metadata: incoming.metadata, answerScope: incoming.answerScope)
       switch policy.incoming {
       case .ring:
         var step = Step(
@@ -44,7 +44,7 @@ extension CallMachine {
     case .joining(let incoming):
       let call = Call(
         id: incoming.id, isIncoming: true, parties: incoming.parties, status: .ringing,
-        hasVideo: incoming.hasVideo, metadata: incoming.metadata)
+        hasVideo: incoming.hasVideo, metadata: incoming.metadata, answerScope: incoming.answerScope)
       let step = Step(
         call: call, phase: .previewing(.policy),
         policy: incoming.presentationPolicy ?? configuration.presentationPolicy,

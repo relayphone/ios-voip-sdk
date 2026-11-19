@@ -46,6 +46,9 @@ public struct Call: Identifiable, Hashable, Sendable {
   /// ```
   public var metadata: [String: JSONValue]
 
+  /// The service's account and line, when supplied with the incoming invitation.
+  public let answerScope: AnswerScope?
+
   /// Creates a call.
   ///
   /// - Parameters:
@@ -59,6 +62,7 @@ public struct Call: Identifiable, Hashable, Sendable {
   ///   - answeredAt: When the user answered the call on this device.
   ///   - connectedAt: When the call first connected on this device.
   ///   - metadata: Values the app attached to the call.
+  ///   - answerScope: The incoming invitation's account and line.
   public init(
     id: CallID,
     isIncoming: Bool,
@@ -69,7 +73,8 @@ public struct Call: Identifiable, Hashable, Sendable {
     hasVideo: Bool = false,
     answeredAt: Date? = nil,
     connectedAt: Date? = nil,
-    metadata: [String: JSONValue] = [:]
+    metadata: [String: JSONValue] = [:],
+    answerScope: AnswerScope? = nil
   ) {
     self.id = id
     self.isIncoming = isIncoming
@@ -81,6 +86,7 @@ public struct Call: Identifiable, Hashable, Sendable {
     self.answeredAt = answeredAt
     self.connectedAt = connectedAt
     self.metadata = metadata
+    self.answerScope = answerScope
   }
 }
 
@@ -102,6 +108,9 @@ public struct IncomingCall: Hashable, Sendable {
   /// ``VoIPConfiguration/presentationPolicy`` when set.
   public var presentationPolicy: PresentationPolicy?
 
+  /// The account and line used by ``HTTPAnswerAuthority``.
+  public var answerScope: AnswerScope?
+
   /// Creates an incoming call.
   ///
   /// - Parameters:
@@ -111,18 +120,21 @@ public struct IncomingCall: Hashable, Sendable {
   ///   - metadata: Values the app attaches to the call.
   ///   - presentationPolicy: How this call appears on this device, when it differs from the
   ///     configuration's policy.
+  ///   - answerScope: The incoming invitation's account and line.
   public init(
     id: CallID,
     parties: [Party],
     hasVideo: Bool = false,
     metadata: [String: JSONValue] = [:],
-    presentationPolicy: PresentationPolicy? = nil
+    presentationPolicy: PresentationPolicy? = nil,
+    answerScope: AnswerScope? = nil
   ) {
     self.id = id
     self.parties = parties
     self.hasVideo = hasVideo
     self.metadata = metadata
     self.presentationPolicy = presentationPolicy
+    self.answerScope = answerScope
   }
 }
 
