@@ -2,11 +2,32 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { isMain, main, repository } from './command.ts';
 
+interface ResolvedPin {
+  identity: string;
+  state: { version?: string };
+}
+
+function isResolvedState(value: unknown): value is ResolvedPin['state'] {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    && (!('version' in value) || typeof value.version === 'string');
+}
+
+function isResolvedPin(value: unknown): value is ResolvedPin {
+  return value !== null && typeof value === 'object'
+    && 'identity' in value && typeof value.identity === 'string'
+    && 'state' in value && isResolvedState(value.state);
+}
+
+function isResolvedPackage(value: unknown): value is { pins: ResolvedPin[] } {
+  return value !== null && typeof value === 'object'
+    && 'pins' in value && Array.isArray(value.pins) && value.pins.every(isResolvedPin);
+}
+
 /** Resolve real manifests in an empty checkout so prior pins/artifacts cannot hide a regression. */
-export function checkPackageIsolation(mode: 'production' | 'media'): void {
+export function checkPackageIsolation(mode: 'production' | 'media') {
   const scratch = mkdtempSync(join(tmpdir(), 'voip-resolution-'));
   const checkout = join(scratch, 'sdk');
   try {
@@ -16,7 +37,7 @@ export function checkPackageIsolation(mode: 'production' | 'media'): void {
       mkdirSync(dirname(destination), { recursive: true });
       cpSync(join(repository, path), destination, {
         recursive: true, filter: file => !['.build', '.swiftpm', 'Package.resolved', '.DS_Store']
-          .includes(file.split('/').at(-1)!),
+          .includes(basename(file)),
       });
     }
     const directory = join(checkout, mode === 'production' ? 'tools/fixtures/production-consumer' : 'MediaTesting');
@@ -27,8 +48,9 @@ export function checkPackageIsolation(mode: 'production' | 'media'): void {
     assert.ifError(result.error);
     assert.equal(result.status, 0, output);
     const lockfile = join(directory, 'Package.resolved');
-    const resolved: { pins: { identity: string; state: { version?: string } }[] } =
+    const resolved: unknown =
       existsSync(lockfile) ? JSON.parse(readFileSync(lockfile, 'utf8')) : { pins: [] };
+    if (!isResolvedPackage(resolved)) throw new Error('Invalid Swift package resolution');
     const livekit = resolved.pins.find(pin => pin.identity === 'client-sdk-swift');
     if (mode === 'media') {
       assert.equal(livekit?.state.version, '2.19.0', 'The optional package must resolve pinned LiveKit');
