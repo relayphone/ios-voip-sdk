@@ -112,10 +112,18 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
   }
   async function freshVideo(label: string, epoch: Epoch, terminal?: Parameters<typeof assessJourneyVideo>[5]) {
     const firstDeadline = hostVideoBoundary(epoch.enable.event.atMs, epoch.enable.sample.bracket).latest + videoGates.firstMs;
+    let priorPoll: { startedAtMs: number; sampledAtMs: number; assessedAtMs: number } | undefined;
     return until(label, async () => {
-      const state = await sample(), receipts = measure(state, epoch, terminal);
+      const startedAtMs = performance.now();
+      const state = await sample();
+      const sampledAtMs = performance.now();
+      const receipts = measure(state, epoch, terminal);
+      const previousPoll = priorPoll;
+      const currentPoll = { startedAtMs, sampledAtMs, assessedAtMs: performance.now() };
+      priorPoll = currentPoll;
       const preserve = () => keep(label, { sdk: state.sdk, native: state.media, bracket: state.bracket,
-        host: epoch.peer.observation(), farEndSource: epoch.peer.sourceReceipt(), receipts });
+        host: epoch.peer.observation(), farEndSource: epoch.peer.sourceReceipt(), receipts,
+        polling: { previous: previousPoll, current: currentPoll } });
       if (!receipts?.up || receipts.up.firstMs === null || receipts.down.firstMs === null) {
         if (performance.now() > firstDeadline) {
           preserve();
@@ -151,6 +159,7 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     assert.ok(remote || host, 'Missing terminal uplink observation');
     const receipts = assessJourneyVideo(state, epoch.enable, epoch.number, downlink, host, terminal);
     keep('terminal-video', { sdk: state.sdk, native: state.media, host, downlink, receipts,
+      timing: { actionAtMs: end.actionAtMs, boundary: end.sample.bracket, observed: state.bracket },
       ...(remote ? { uplinkAfterLeave: remoteUplinkCoverage } : {}) });
     assert.ok(receipts.down.offPassed && (remote || receipts.up?.offPassed), 'Terminal video gate failed');
     assert.ok(!state.media.actions.some(a => a.kind === 'roomReconnecting' ||

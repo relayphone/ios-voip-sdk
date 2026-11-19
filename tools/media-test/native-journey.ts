@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { rmSync } from 'node:fs';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createMarker } from '../../expo/src/testing/marker.ts';
@@ -36,9 +37,11 @@ function timestamp(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw Error('Invalid native journey time');
   return value;
 }
-function read(path: string): unknown {
-  try { return JSON.parse(readFileSync(path, 'utf8')) as unknown; }
+// The mailbox shares an event loop with the media senders and heartbeat timers.
+async function read(path: string, signal: AbortSignal): Promise<unknown> {
+  try { return JSON.parse(await readFile(path, { encoding: 'utf8', signal })) as unknown; }
   catch (error) {
+    signal.throwIfAborted();
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return undefined;
     throw Error('Cannot decode native journey reply');
   }
@@ -102,16 +105,16 @@ export function prepareNativeJourney(directory: string, options: MediaTestOption
       throw Error('Native journey deadline exceeded');
     if (poisoned || closed) throw Error('Native journey mailbox closed');
   }
-  async function poll<T>(budget: NativeJourneyBudget, attempt: () => T | undefined): Promise<T> {
+  async function poll<T>(budget: NativeJourneyBudget, attempt: () => Promise<T | undefined>): Promise<T> {
     while (true) {
       check(budget);
-      const value = attempt();
+      const value = await attempt();
       if (value !== undefined) { check(budget); return value; }
       await delay(Math.min(20, Math.max(0, budget.deadlineMs - performance.now())), undefined, { signal: budget.signal });
     }
   }
-  function assertNoFailure() {
-    const failure = read(paths.failure);
+  async function assertNoFailure(signal: AbortSignal) {
+    const failure = await read(paths.failure, signal);
     if (failure !== undefined) throw nativeJourneyFailure(object(failure).failure, 'attempt');
   }
   return Object.freeze({
@@ -120,9 +123,9 @@ export function prepareNativeJourney(directory: string, options: MediaTestOption
         check(budget);
         if (current) throw Error('Native journey already connected');
         try {
-          current = await poll(budget, () => {
-            assertNoFailure();
-            const value = read(paths.ready);
+          current = await poll(budget, async () => {
+            await assertNoFailure(budget.signal);
+            const value = await read(paths.ready, budget.signal);
             if (value === undefined) return;
             const reply = envelope(value, scope), row = object(value);
             if (reply.phaseId !== null || row.commandId != null) throw Error('Stale native journey ready reply');
@@ -145,13 +148,14 @@ export function prepareNativeJourney(directory: string, options: MediaTestOption
           ...(action.operation === 'video' ? { videoSource: action.source } : {}) };
         const temporary = join(directory, `media-journey-command-${id}.json`);
         try {
-          writeFileSync(temporary, JSON.stringify(command), { mode: 0o600, flag: 'wx' });
+          await writeFile(temporary, JSON.stringify(command), { mode: 0o600, flag: 'wx', signal: budget.signal });
           // The previous request already consumed its response. A large PCM snapshot should be read only once.
-          rmSync(paths.response, { force: true });
-          renameSync(temporary, paths.command);
-          const reply = await poll(budget, () => {
-            assertNoFailure();
-            const value = read(paths.response);
+          await rm(paths.response, { force: true });
+          check(budget);
+          await rename(temporary, paths.command);
+          const reply = await poll(budget, async () => {
+            await assertNoFailure(budget.signal);
+            const value = await read(paths.response, budget.signal);
             if (value === undefined) return;
             const row = object(value);
             if (!uuid(row.commandId) || row.commandId.toLowerCase() !== id) return;
@@ -170,7 +174,7 @@ export function prepareNativeJourney(directory: string, options: MediaTestOption
           // A published command may already have changed native state. Never reuse an uncertain session.
           poisoned = true;
           throw error;
-        } finally { rmSync(temporary, { force: true }); }
+        } finally { await rm(temporary, { force: true }); }
       });
     },
   });
