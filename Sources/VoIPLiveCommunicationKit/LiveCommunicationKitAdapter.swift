@@ -10,7 +10,7 @@
   /// The calling framework that presents calls with LiveCommunicationKit, Apple's framework for
   /// presenting VoIP calls on the system's call screen, in Recents and on connected devices.
   ///
-  /// Pass it to `VoIPClient.start(framework:media:push:audio:observers:configuration:clock:)`.
+  /// Pass it to `VoIPClient.start(framework:media:push:audio:observers:configuration:clock:answerAuthority:)`.
   /// The adapter creates the app's one `ConversationManager`, names each call to the system by
   /// `deviceUUID(for:)`, and maps between the SDK's calls and LiveCommunicationKit's
   /// conversations:
@@ -374,7 +374,7 @@
     private func receive(_ event: SystemEvent) {
       guard let onEvent else { return }
       switch event {
-      case .perform(let id, let systemAction):
+      case .perform(let id, let systemAction, let received, let allowance):
         if let start = pendingStarts[id] {
           guard start.submission != .endedWhileSubmitting else {
             return complete(id, fulfilled: false)
@@ -389,7 +389,12 @@
         guard let action = action(for: systemAction, id: id) else {
           return complete(id, fulfilled: false)
         }
-        onEvent(.perform(id, action))
+        if case .answer(let callID) = action {
+          let elapsed = received.duration(to: .now)
+          onEvent(.performAnswer(id, callID, remaining: allowance - elapsed, elapsed: elapsed))
+        } else {
+          onEvent(.perform(id, action))
+        }
       case .actionTimedOut(let id):
         if pendingStarts[id] != nil {
           startEnded(id)

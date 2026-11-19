@@ -40,6 +40,8 @@ enum Seen: Hashable, Sendable, CustomTestStringConvertible {
   case startRequested(CallID)
   case joinRequested(CallID)
   case joinFailed(CallID, PreviewReason, JoinFailure)
+  case answerClaimTimedOut(CallID, ActionID)
+  case answerFailed(CallID, ActionID, AnswerFailure)
   case performed(Action, CallStatus)
   case videoChanged(CallID, Bool, VideoChangeSource)
   case audioActivated
@@ -63,6 +65,9 @@ enum Seen: Hashable, Sendable, CustomTestStringConvertible {
         preconditionFailure("A failed join returns to a preview")
       }
       self = .joinFailed(call.id, reason, failure)
+    case .answerClaimTimedOut(let call, let action): self = .answerClaimTimedOut(call.id, action)
+    case .answerFailed(let call, let action, let failure):
+      self = .answerFailed(call.id, action, failure)
     case .performed(let action, let call): self = .performed(action, call.status)
     case .videoChanged(let call, let source): self = .videoChanged(call.id, call.hasVideo, source)
     case .audioActivated: self = .audioActivated

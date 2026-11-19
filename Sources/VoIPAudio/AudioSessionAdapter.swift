@@ -7,7 +7,7 @@
 /// routes that calls can use.
 ///
 /// Create it when the app launches, pass it to
-/// `VoIPClient.start(framework:media:push:audio:observers:configuration:clock:)`, and show
+/// `VoIPClient.start(framework:media:push:audio:observers:configuration:clock:answerAuthority:)`, and show
 /// ``routes`` in the app's audio route picker:
 ///
 /// ```swift

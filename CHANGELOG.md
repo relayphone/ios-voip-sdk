@@ -7,6 +7,17 @@ Public API changes include migration guidance.
 
 ### Breaking
 
+- Swift apps can pass a native `AnswerAuthority` to `VoIPClient.start` to claim Answer before
+  media preparation, including on a cold launch. The default budget allocates 4,500 ms total,
+  up to 2,500 ms for claim, 500 ms for one reconciliation, and 500 ms for system settlement.
+  Any media preparation after authorization shares that budget. Move service ownership checks
+  into the authority and return a typed refusal or permit. Handle `answerClaimTimedOut` and
+  `answerFailed` in exhaustive `CallEvent` switches and the new Answer cases in error switches.
+  Custom frameworks can declare their effective Answer deadline and supply a shorter deadline
+  for an individual receipt using `FrameworkEvent.performAnswer`. With an authority installed,
+  the SDK also checks `maximumParticipatingCalls` before reserving a participation slot.
+  Apps without an authority continue to prepare media directly.
+
 - Swift `request(.start(call))` now completes when the system performs Start after placement.
   Handle `startRequested` in a separate event consumer, then confirm placement there.
   Deferred media provision and Connected reports received while Start is pending are applied

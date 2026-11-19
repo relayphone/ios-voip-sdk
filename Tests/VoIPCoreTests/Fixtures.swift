@@ -154,6 +154,7 @@ enum Shape: Hashable, Sendable {
   case reportOutgoing(connected: Bool)
   case reportEnded(EndReason)
   case prepareMedia
+  case requestAnswer(Deadline)
   case arm(Deadline)
   case disarm(Deadline)
   case presented
@@ -161,6 +162,8 @@ enum Shape: Hashable, Sendable {
   case startRequested
   case joinRequested
   case joinFailed(JoinFailure)
+  case answerClaimTimedOut
+  case answerFailed(AnswerFailure)
   case performed(Action)
   case audioActivated
   case audioDeactivated
@@ -182,7 +185,8 @@ enum Shape: Hashable, Sendable {
     case .reportOutgoing(_, let connected): self = .reportOutgoing(connected: connected)
     case .reportEnded(_, let reason): self = .reportEnded(reason)
     case .prepareMedia: self = .prepareMedia
-    case .arm(let deadline, _, _): self = .arm(deadline)
+    case .requestAnswer(_, let stage, _): self = .requestAnswer(stage)
+    case .arm(let deadline, _, _), .armAt(let deadline, _, _): self = .arm(deadline)
     case .disarm(let deadline, _): self = .disarm(deadline)
     case .emit(let event):
       switch event {
@@ -191,6 +195,8 @@ enum Shape: Hashable, Sendable {
       case .startRequested: self = .startRequested
       case .joinRequested: self = .joinRequested
       case .joinFailed(_, let failure): self = .joinFailed(failure)
+      case .answerClaimTimedOut: self = .answerClaimTimedOut
+      case .answerFailed(_, _, let failure): self = .answerFailed(failure)
       case .performed(let action, _): self = .performed(action)
       case .videoChanged:
         preconditionFailure("Video changes are driven by the engine, not the reducer")
@@ -218,7 +224,8 @@ extension Effect {
       switch event {
       case .presented(let call), .previewStarted(let call), .startRequested(let call),
         .joinRequested(let call), .joinFailed(let call, _), .performed(_, let call),
-        .ended(let call), .videoChanged(let call, _):
+        .ended(let call), .videoChanged(let call, _), .answerClaimTimedOut(let call, _),
+        .answerFailed(let call, _, _):
         [call]
       case .audioActivated, .audioDeactivated, .audioInterrupted, .mediaServicesReset: []
       }
