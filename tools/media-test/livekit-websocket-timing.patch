@@ -1,0 +1,81 @@
+--- a/Sources/LiveKit/Core/SignalClient.swift
++++ b/Sources/LiveKit/Core/SignalClient.swift
+@@ -193,5 +193,6 @@
+             let socket = try await WebSocket(url: url,
+                                              headers: [(name: "Authorization", value: "Bearer \(token)")],
+-                                             timeoutInterval: connectOptions?.socketConnectTimeoutInterval ?? .defaultSocketConnect)
++                                             timeoutInterval: connectOptions?.socketConnectTimeoutInterval ?? .defaultSocketConnect,
++                                             connectSpan: connectSpan)
+             try Task.checkCancellation()
+             connectSpan?.record("ws_open")
+--- a/Sources/LiveKit/Support/Network/WebSocket.swift
++++ b/Sources/LiveKit/Support/Network/WebSocket.swift
+@@ -55,5 +55,5 @@
+     }
+
+-    init(url: URL, headers: [(name: String, value: String)], timeoutInterval: TimeInterval) async throws {
++    init(url: URL, headers: [(name: String, value: String)], timeoutInterval: TimeInterval, connectSpan: Span? = nil) async throws {
+         let request = Self.makeRequest(url: url, headers: headers, timeoutInterval: timeoutInterval)
+
+@@ -64,5 +64,5 @@
+         #endif
+
+-        delegate = Delegate()
++        delegate = Delegate(connectSpan: connectSpan)
+         urlSession = URLSession(configuration: Self.makeSessionConfiguration(),
+                                 delegate: delegate, delegateQueue: nil)
+@@ -72,4 +72,5 @@
+             try await withCheckedThrowingContinuation { continuation in
+                 delegate.setConnectContinuation(continuation)
++                connectSpan?.record("ws_task_resumed")
+                 task.resume()
+             }
+@@ -145,4 +146,42 @@
+         private let _continuation = StateSync<CheckedContinuation<Void, Error>?>(nil)
+
++        private let connectSpan: Span?
++
++        init(connectSpan: Span?) {
++            self.connectSpan = connectSpan
++        }
++
++        func urlSession(_: URLSession, task _: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
++            guard let connectSpan else { return }
++            // Project Foundation's wall-clock dates onto the span's uptime clock.
++            let before = ProcessInfo.processInfo.systemUptime
++            let wallTime = Date()
++            let after = ProcessInfo.processInfo.systemUptime
++            connectSpan.record("ws_metrics_received", at: after)
++            guard let transaction = metrics.transactionMetrics.last else { return }
++            connectSpan.record("ws_metrics_clock_sample_start", at: before)
++            let uptime = (before + after) / 2
++            let dates = [
++                ("ws_dns_start", transaction.domainLookupStartDate),
++                ("ws_dns_end", transaction.domainLookupEndDate),
++                ("ws_tcp_start", transaction.connectStartDate),
++                ("ws_tcp_end", transaction.connectEndDate),
++                ("ws_upgrade_request", transaction.requestStartDate),
++                ("ws_upgrade_response", transaction.responseEndDate),
++            ]
++            for (label, date) in dates {
++                guard let date else { continue }
++                let time = uptime + date.timeIntervalSince(wallTime)
++                if time >= connectSpan.start, time <= after { connectSpan.record(label, at: time) }
++            }
++            if metrics.transactionMetrics.count > 1 { connectSpan.record("ws_multiple_transactions", at: uptime) }
++            if transaction.isProxyConnection {
++                connectSpan.record("ws_proxy", at: uptime)
++            } else if let remoteAddress = transaction.remoteAddress {
++                let isIPv6 = remoteAddress.contains(":") && !remoteAddress.lowercased().hasPrefix("::ffff:")
++                connectSpan.record(isIPv6 ? "ws_ipv6" : "ws_ipv4", at: uptime)
++            }
++        }
++
+         func setConnectContinuation(_ continuation: CheckedContinuation<Void, Error>) {
+             _continuation.mutate { $0 = continuation }
+@@ -157,4 +196,5 @@
+
+         func urlSession(_: URLSession, webSocketTask _: URLSessionWebSocketTask, didOpenWithProtocol _: String?) {
++            connectSpan?.record("ws_native_open")
+             _continuation.mutate {
+                 $0?.resume()

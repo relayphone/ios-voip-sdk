@@ -53,7 +53,7 @@ jobs:
           npm run prebuild -- --no-install
           cd ios
           perl -e 'alarm 300; exec @ARGV' pod install
-          node "$GITHUB_WORKSPACE/tools/expo-journey-bundle.ts" "$PWD"
+          node "$GITHUB_WORKSPACE/tools/expo-journey-bundle.ts" "$PWD" --media
       - name: Set the daily package cache scope
         id: package-cache-scope
         run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"

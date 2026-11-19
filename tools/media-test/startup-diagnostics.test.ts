@@ -33,13 +33,26 @@ test('connection diagnostics retain only allowlisted steps and the native cancel
   const replay = report([row('prepareEntered', 10), row('roomConnectRequested', 11), row('roomConnectFailed', 2100)]);
   replay.roomConnectionCancelledAtMs = 2011;
   replay.roomConnectionSteps = [
-    { stage: 'ws_open', elapsedMs: 12, url: 'private value' },
-    { stage: 'private value', elapsedMs: 13 },
+    { stage: 'ws_task_resumed', elapsedMs: 1 },
+    { stage: 'ws_dns_start', elapsedMs: 3 },
+    { stage: 'ws_dns_end', elapsedMs: 3 },
+    { stage: 'ws_tcp_start', elapsedMs: 4 },
+    { stage: 'ws_tcp_end', elapsedMs: 6 },
+    { stage: 'ws_upgrade_request', elapsedMs: 7, url: 'private value' },
+    { stage: 'ws_upgrade_response', elapsedMs: 11 },
+    { stage: 'ws_ipv4', elapsedMs: 12, address: '127.0.0.1' },
+    { stage: 'ws_native_open', elapsedMs: 13 },
+    { stage: 'ws_open', elapsedMs: 14 },
+    { stage: 'private value', elapsedMs: 15 },
     { stage: 'pc_created', elapsedMs: 18 },
   ];
   const result = diagnoseNativeStartup(replay);
   assert.deepEqual(result.roomConnectionSteps, [
-    { stage: 'ws_open', elapsedMs: 12 }, { stage: 'pc_created', elapsedMs: 18 },
+    { stage: 'ws_task_resumed', elapsedMs: 1 }, { stage: 'ws_dns_start', elapsedMs: 3 },
+    { stage: 'ws_dns_end', elapsedMs: 3 }, { stage: 'ws_tcp_start', elapsedMs: 4 }, { stage: 'ws_tcp_end', elapsedMs: 6 },
+    { stage: 'ws_upgrade_request', elapsedMs: 7 }, { stage: 'ws_upgrade_response', elapsedMs: 11 },
+    { stage: 'ws_ipv4', elapsedMs: 12 }, { stage: 'ws_native_open', elapsedMs: 13 },
+    { stage: 'ws_open', elapsedMs: 14 }, { stage: 'pc_created', elapsedMs: 18 },
   ]);
   assert.equal(result.roomConnectionCancelledAtMs, 2011);
 });

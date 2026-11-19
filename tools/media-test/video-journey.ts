@@ -181,6 +181,7 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
   }
 
   const ready = await mailbox.connect(budget);
+  keep('startup', diagnoseNativeStartup(ready.evidence));
   await request({ operation: 'beginPhase', phaseId: randomUUID() });
   const initial = await sample();
   const [first] = initial.sdk.events;

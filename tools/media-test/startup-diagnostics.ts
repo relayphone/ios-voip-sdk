@@ -24,7 +24,10 @@ const object = (value: unknown): Record<string, unknown> | undefined =>
 const time = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const preparationStages = ['prepareEntered', 'roomConnectRequested', 'roomConnectCompleted', 'roomConnectFailed',
   'captureOptionsApplied'] as const;
-const roomConnectionStages = ['ws_open', 'join_recv', 'pc_created', 'offer_sent', 'answer_sent',
+const roomConnectionStages = ['ws_task_resumed', 'ws_dns_start', 'ws_dns_end', 'ws_tcp_start', 'ws_tcp_end',
+  'ws_upgrade_request', 'ws_upgrade_response', 'ws_metrics_clock_sample_start', 'ws_metrics_received',
+  'ws_native_open', 'ws_ipv4', 'ws_ipv6', 'ws_proxy',
+  'ws_multiple_transactions', 'ws_open', 'join_recv', 'pc_created', 'offer_sent', 'answer_sent',
   'pc_connected', 'room_connected'] as const;
 const stages = [...preparationStages, 'prepareCompleted', 'activationEntered', 'activationEnqueued', 'activationHandlerEntered',
   'engineAvailabilityObserved', 'tapInstalled', 'firstCallback'] as const;
@@ -58,7 +61,7 @@ export function diagnoseNativeStartup(value: unknown): StartupDiagnostics {
   const began = payload?.roomConnectionBeganAtMs, cancelled = payload?.roomConnectionCancelledAtMs;
   const roomConnection = payload?.roomConnectionSteps;
   const roomConnectionSteps: RoomConnectionObservation[] | undefined =
-    Array.isArray(roomConnection) && roomConnection.length <= 16 ? roomConnection.flatMap(value => {
+    Array.isArray(roomConnection) && roomConnection.length <= 32 ? roomConnection.flatMap(value => {
       const row = object(value);
       const stage = roomConnectionStages.find(label => label === row?.stage);
       return stage && time(row?.elapsedMs) ? [{ stage, elapsedMs: row.elapsedMs }] : [];

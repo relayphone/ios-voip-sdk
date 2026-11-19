@@ -57,6 +57,20 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
   private final class RoomConnectionTrace: Tracing {
     struct Step: Encodable {
       enum Stage: String, Encodable {
+        case webSocketResumed = "ws_task_resumed"
+        case dnsStarted = "ws_dns_start"
+        case dnsFinished = "ws_dns_end"
+        case tcpStarted = "ws_tcp_start"
+        case tcpConnected = "ws_tcp_end"
+        case upgradeRequested = "ws_upgrade_request"
+        case upgradeReceived = "ws_upgrade_response"
+        case metricsClockSampleStarted = "ws_metrics_clock_sample_start"
+        case metricsReceived = "ws_metrics_received"
+        case nativeWebSocketOpened = "ws_native_open"
+        case signalingIPv4 = "ws_ipv4"
+        case signalingIPv6 = "ws_ipv6"
+        case signalingProxy = "ws_proxy"
+        case multipleTransactions = "ws_multiple_transactions"
         case webSocketOpened = "ws_open"
         case joinReceived = "join_recv"
         case peerConnectionCreated = "pc_created"
@@ -88,7 +102,8 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
           Step.Stage(rawValue: entry.label).map {
             Step(stage: $0, elapsedMs: (entry.time - span.start) * 1000)
           }
-        }.prefix(16))
+        }.prefix(32)
+      ).sorted { $0.elapsedMs < $1.elapsedMs }
     }
 
     var beganAtMs: Double? { connect.withLock { $0?.atMs } }

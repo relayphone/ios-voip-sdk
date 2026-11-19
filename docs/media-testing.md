@@ -556,6 +556,9 @@ timestamps without using them as event or latency anchors. Unsafe numeric eviden
 The simulator driver runs initial video and local end, app upgrade and downgrade with a
 duplicate request, server upgrade and remote end, and hold and resume. Each invocation
 uses the same build and has its own 30-second acquisition and 180-second process budgets.
+The media feasibility build records LiveKit's signaling task start, name lookup, TCP connect,
+WebSocket upgrade, and native open callback when Foundation reports them. The fixture uses
+an IPv4 loopback listener and URL. Receipts include the observed address family and timing.
 Each reuses the audio Room and requires clean fresh duplex audio. Each audio phase starts
 one capture with new markers. The host, native decoder and native output each retain
 up to four seconds. The driver waits for actual native RTP counters to cover the end
