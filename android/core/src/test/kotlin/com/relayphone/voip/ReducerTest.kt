@@ -128,7 +128,7 @@ class ReducerTest {
             val join = beginJoin()
             val media = send(Input.Placed(join)).only<Effect.PrepareMedia>().attempt
             send(Input.MediaPrepared(media))
-            send(Input.Placed(join, placementError))
+            send(Input.JoinPlacementLost(join, placementError))
         }
         scenario(previews = true).apply {
             val media = send(Input.Placed(beginJoin())).only<Effect.PrepareMedia>().attempt
@@ -303,7 +303,7 @@ class ReducerTest {
         val join = scenario.send(Input.Request(Action.Join(id), ActionID("join"))).only<Effect.RequestPlacement>()
         val media = scenario.send(Input.Placed(join.attempt)).only<Effect.PrepareMedia>()
         assertEquals(ActionID("join"), scenario.send(Input.MediaPrepared(media.attempt)).only<Effect.SettleAction>().actionID)
-        val failure = scenario.send(Input.Placed(join.attempt, CallError.PlacementFailed(PlacementFailure.HANDLER_FAILED)))
+        val failure = scenario.send(Input.JoinPlacementLost(join.attempt, CallError.PlacementFailed(PlacementFailure.HANDLER_FAILED)))
         assertEquals(media.attempt, failure.only<Effect.CloseMedia>().mediaAttempt)
         assertEquals(preview, scenario.call.lifecycle)
         assertTrue(scenario.send(Input.MediaPrepared(media.attempt)).isEmpty())

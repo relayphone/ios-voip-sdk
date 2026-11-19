@@ -5,6 +5,8 @@ import com.relayphone.voip.Call
 import com.relayphone.voip.CallError
 import com.relayphone.voip.Effect
 import com.relayphone.voip.Outcome
+import com.relayphone.voip.PlacementFailure
+import com.relayphone.voip.PlacementResult
 import com.relayphone.voip.Platform
 import com.relayphone.voip.RefusalReason
 import com.relayphone.voip.SystemFailure
@@ -74,8 +76,16 @@ public sealed interface AnswerDecision : Reconciliation {
 
 /** Native placement and Answer authority. All results belong to the supplied generation. */
 public interface AuthorityPort {
-    /** Resolves application placement without waiting for the remote party to connect. */
-    public suspend fun place(call: Call, request: Effect.RequestPlacement): Outcome<Unit, CallError.PlacementFailed>
+    /** Resolves application placement without waiting for connection. The deadline uses the runtime clock. */
+    public suspend fun placeCall(call: Call, request: Effect.RequestPlacement): PlacementResult =
+        when (val legacy = place(call, request)) {
+            is Outcome.Success -> PlacementResult.Placed()
+            is Outcome.Failure -> PlacementResult.Failed(legacy.error.cause)
+        }
+
+    /** Compatibility entry point for authorities that only report success or failure. */
+    public suspend fun place(call: Call, request: Effect.RequestPlacement): Outcome<Unit, CallError.PlacementFailed> =
+        Outcome.Failure(CallError.PlacementFailed(PlacementFailure.HANDLER_FAILED))
 
     /** Claims Answer for this receipt. Cancellation must release any permit the port cannot return. */
     public suspend fun claim(request: Effect.RequestClaim): AnswerDecision

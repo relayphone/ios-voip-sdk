@@ -1,5 +1,6 @@
 package com.relayphone.voip
 
+import java.util.Collections
 import kotlin.time.Duration
 import kotlin.time.Instant
 
@@ -30,19 +31,29 @@ private class Reduction(
     private var completed = state.completedTerminalCalls
     private val terminalCompletions = mutableListOf<CallID>()
     private var receipt: CommandReceipt? = null
+    private var admission: AdmissionCompletion? = null
+    private var removal: RemovalCompletion? = null
     private val effects = mutableListOf<Effect>()
 
     fun run(input: Input): Transition {
         prune()
         when (input) {
-            is Input.Incoming -> incoming(input)
+            is Input.Incoming -> receipt = incoming(input)
             is Input.Admitted -> admitted(input)
             is Input.AdmissionFailed -> admissionFailed(input)
             is Input.StartAdmitted -> startAdmitted(input)
             is Input.StartFailed -> startFailed(input)
             is Input.Request -> request(input)
             is Input.Start -> start(input)
-            is Input.Placed -> placed(input)
+            is Input.Placed -> receipt = CommandReceipt.Placement(placed(input))
+            is Input.JoinPlacementLost -> on(input.attempt) { record ->
+                if (record.call.lifecycle == Lifecycle.Connecting && record.joinAttempt == input.attempt &&
+                    !expireDue(record, TimerKind.CONNECTION)
+                ) {
+                    trace(Rule.JOIN_FAILED)
+                    failAttempt(record, input.error)
+                }
+            }
             is Input.AuthorityAllowed -> allowed(input)
             is Input.AnswerRefused -> answerRefused(input)
             is Input.ReconciliationUnknown -> on(input.attempt) { record ->
@@ -119,41 +130,86 @@ private class Reduction(
         // Admit a buffered end before the invitation consumes a slot in the event history.
         return Transition(
             State(policy, records, events.tail(), releasedPermits, actionIDs, generation, completed),
-            effects.toList(), receipt, terminalCompletions.toList(),
+            effects.toList(), receipt, terminalCompletions.toList(), admission, removal,
         )
     }
 
-    private fun incoming(input: Input.Incoming) {
-        if (!remember(input.eventID) || input.callID in records) return
+    private fun incoming(input: Input.Incoming): CommandReceipt.Incoming {
+        fun resolved(result: IncomingResult) = CommandReceipt.Incoming.Resolved(result)
+        val seen = events[input.eventID]
+        seen?.incoming?.let { return resolved(IncomingResult.Duplicate(it)) }
+        val original = records.values.firstOrNull { it.invitationEvent == input.eventID }
+        original?.admission?.let { return CommandReceipt.Incoming.Pending(it, duplicate = true) }
+        if (!remember(input.eventID)) return resolved(IncomingResult.Refused(IncomingRefusal.EventAlreadyUsed))
+
+        val existing = records[input.callID]
         val remaining = input.expiresAt?.minus(clocks.utc)
-        if (remaining != null && remaining <= Duration.ZERO) return
+        val refusal = when {
+            existing != null -> IncomingRefusal.CallAlreadyExists(existing.call.lifecycle.kind)
+            remaining != null && remaining <= Duration.ZERO -> IncomingRefusal.Expired
+            else -> null
+        }
+        if (refusal != null) {
+            val decision = IncomingResult.Refused(refusal)
+            rememberAdmission(input.eventID, decision)
+            return resolved(decision)
+        }
         trace(Rule.INCOMING)
         val attempt = attempt(input.callID)
         val record = Record(
             createCall(input.callID, input.line, listOf(input.party), Direction.INCOMING, Lifecycle.Reporting),
-            admission = attempt, invitationDeadline = remaining?.let { now + it },
+            admission = attempt, invitationEvent = input.eventID, invitationDeadline = remaining?.let { now + it },
         )
         put(record)
         drain(input.callID, EndTarget.Canonical(input.callID))
         effects += Effect.ReportIncoming(attempt)
+        return CommandReceipt.Incoming.Pending(attempt, duplicate = false)
+    }
+
+    private fun rememberAdmission(eventID: EventID, decision: IncomingResult.Decision) {
+        // The initial entry may have expired while the native operation was pending.
+        val entry = events[eventID] ?: SeenEvent(now, ++generation)
+        events = events + (eventID to entry.copy(incoming = decision))
+    }
+
+    private fun resolveAdmission(record: Record, decision: IncomingResult.Decision): Record {
+        val attempt = requireNotNull(record.admission)
+        rememberAdmission(requireNotNull(record.invitationEvent), decision)
+        admission = AdmissionCompletion(attempt, decision)
+        return record.copy(admission = null, invitationEvent = null)
     }
 
     private fun admitted(input: Input.Admitted) = on(input.attempt) { record ->
         if (record.admission != input.attempt) return@on
-        val admitted = record.copy(admission = null)
         if (record.call.lifecycle != Lifecycle.Reporting) {
+            val refusal = when (val lifecycle = record.call.lifecycle) {
+                is Lifecycle.Previewing -> IncomingRefusal.Previewed(lifecycle.reason)
+                is Lifecycle.Ended -> IncomingRefusal.Ended(lifecycle.reason)
+                is Lifecycle.Ending -> IncomingRefusal.Ended(lifecycle.reason)
+                else -> IncomingRefusal.CallAlreadyExists(lifecycle.kind)
+            }
+            val admitted = resolveAdmission(record, IncomingResult.Refused(refusal))
             if (!record.live) trace(Rule.LATE_ADMISSION)
             val reason = if (record.live) EndReason.AnsweredElsewhere else record.reason
             val current = !record.live || record.call.lifecycle is Lifecycle.Previewing
             put(requestRemoval(admitted, attempt(record.call.id), reason, current))
             return@on
         }
-        val end = admitted.retainedEnd?.takeIf { withinRetention(it.at) }?.end?.reason
+        val end = record.retainedEnd?.takeIf { withinRetention(it.at) }?.end?.reason
         if (end != null) {
-            trace(if (preview(end)) Rule.ADMITTED_RETAINED_PREVIEW else Rule.ADMITTED_RETAINED_END)
+            val previews = preview(end)
+            val refusal = if (previews) IncomingRefusal.Previewed(PreviewReason.AnsweredElsewhere)
+                else IncomingRefusal.Ended(end)
+            val admitted = resolveAdmission(record, IncomingResult.Refused(refusal))
+            trace(if (previews) Rule.ADMITTED_RETAINED_PREVIEW else Rule.ADMITTED_RETAINED_END)
             remoteFinish(admitted, end)
+        } else if (record.invitationDeadline?.let { now >= it } == true) {
+            trace(Rule.NO_ANSWER)
+            val expired = resolveAdmission(record, IncomingResult.Refused(IncomingRefusal.Expired))
+            finish(expired, EndReason.Unanswered)
         } else {
             trace(Rule.ADMITTED)
+            val admitted = resolveAdmission(record, IncomingResult.Admitted)
             val deadline = minOf(now + budgets.incomingRing, admitted.invitationDeadline ?: Instant.DISTANT_FUTURE)
             val ringing = admitted.copy(call = admitted.call.copy(lifecycle = Lifecycle.Ringing))
             put(arm(ringing.copy(retainedEnd = null), TimerKind.NO_ANSWER, deadline), publish = true)
@@ -166,7 +222,7 @@ private class Reduction(
             trace(Rule.STALE_SYSTEM_FAILURE)
             return
         }
-        val retired = record.copy(admission = null)
+        val retired = resolveAdmission(record, IncomingResult.Refused(IncomingRefusal.SystemFailed(input.failure)))
         if (record.call.lifecycle != Lifecycle.Reporting) {
             put(if (record.live) retired else retired.copy(removal = null, removalEvidence = RemovalEvidence.NOT_APPLICABLE))
             return
@@ -275,34 +331,47 @@ private class Reduction(
         )
         put(arm(placing, TimerKind.PLACEMENT, deadline))
         if (rule == Rule.START) drain(record.call.id, EndTarget.Canonical(record.call.id))
-        if (records[record.call.id]?.placement?.attempt == attempt) effects += Effect.RequestPlacement(attempt, id)
+        if (records[record.call.id]?.placement?.attempt == attempt) effects += Effect.RequestPlacement(attempt, id, deadline)
     }
 
-    private fun placed(input: Input.Placed) = on(input.attempt) { record ->
-        val error = input.error
-        if (record.call.lifecycle == Lifecycle.Connecting && error != null && record.joinAttempt == input.attempt) {
-            if (!expireDue(record, TimerKind.CONNECTION)) {
-                trace(Rule.JOIN_FAILED)
-                failAttempt(record, error)
-            }
-            return@on
-        }
+    private fun placed(input: Input.Placed): Boolean {
+        val record = records[input.attempt.callID] ?: return false
         if (record.call.lifecycle != Lifecycle.Placing || record.placement?.attempt != input.attempt ||
-            (error == null && record.mediaAttempt != null) || expireDue(record, TimerKind.PLACEMENT)
-        ) return@on
-        when {
-            error != null -> {
-                if (record.previousPreview != null) trace(Rule.JOIN_FAILED)
-                failAttempt(record, error)
-            }
-            record.previousPreview != null || policy.outgoingMedia == OutgoingMedia.DURING_PLACEMENT -> {
-                trace(if (record.previousPreview != null) Rule.PLACED_JOIN else Rule.PLACED_EAGER)
-                prepare(record, record.placement.deadline)
-            }
-            else -> {
-                trace(Rule.PLACED_OUTGOING)
-                nativeStart(record)
-            }
+            record.mediaAttempt != null || expireDue(record, TimerKind.PLACEMENT)
+        ) return false
+        when (val result = input.result) {
+            is PlacementResult.Failed -> failPlacement(record, CallError.PlacementFailed(result.cause))
+            is PlacementResult.Refused -> failPlacement(record, CallError.Refused(result.reason))
+            is PlacementResult.Placed -> placeWithAlias(record, result.remoteID)
+        }
+        return true
+    }
+
+    private fun failPlacement(record: Record, error: CallError) {
+        if (record.previousPreview != null) trace(Rule.JOIN_FAILED)
+        val reason = when ((error as? CallError.Refused)?.reason) {
+            RefusalReason.AnsweredElsewhere -> EndReason.AnsweredElsewhere
+            RefusalReason.DeclinedElsewhere -> EndReason.DeclinedElsewhere
+            else -> EndReason.Failed(error)
+        }
+        finish(record, reason, error, record.previousPreview)
+    }
+
+    private fun placeWithAlias(record: Record, remoteID: RemoteCallID?) {
+        val callID = record.call.id
+        if (remoteID != null) {
+            val binding = bindAlias(record, remoteID)
+            if (binding is Outcome.Failure) return failPlacement(record, binding.error)
+        }
+        // A buffered terminal event may cancel placement while the alias is being bound.
+        val current = records.getValue(callID)
+        val placement = current.placement ?: return
+        if (current.previousPreview != null || policy.outgoingMedia == OutgoingMedia.DURING_PLACEMENT) {
+            trace(if (current.previousPreview != null) Rule.PLACED_JOIN else Rule.PLACED_EAGER)
+            prepare(current, placement.deadline)
+        } else {
+            trace(Rule.PLACED_OUTGOING)
+            nativeStart(current)
         }
     }
 
@@ -486,20 +555,26 @@ private class Reduction(
     private fun bind(input: Input.BindRemote): Outcome<Unit, CallError> {
         val record = records[input.callID] ?: return Outcome.Failure(CallError.UnknownCall(input.callID))
         if (record.call.remoteID == input.remoteID) return Outcome.Success(Unit)
+        val outcome = bindAlias(record, input.remoteID)
+        if (outcome is Outcome.Success) effects += Effect.Publish(records.getValue(input.callID).call)
+        return outcome
+    }
+
+    private fun bindAlias(record: Record, remoteID: RemoteCallID): Outcome<Unit, CallError> {
+        if (record.call.remoteID == remoteID) return Outcome.Success(Unit)
         if (!record.live) return Outcome.Failure(CallError.InvalidTransition(record.call.lifecycle.kind))
-        if (record.call.remoteID != null || records.values.any { it.live && it.call.remoteID == input.remoteID }) {
-            return Outcome.Failure(CallError.RemoteIdentityConflict(input.remoteID))
+        if (record.call.remoteID != null || records.values.any { it.live && it.call.remoteID == remoteID }) {
+            return Outcome.Failure(CallError.RemoteIdentityConflict(remoteID))
         }
         trace(Rule.BIND)
-        put(record.copy(call = record.call.copy(remoteID = input.remoteID)))
-        drain(input.callID, EndTarget.Alias(input.remoteID))
-        effects += Effect.Publish(records.getValue(input.callID).call)
+        put(record.copy(call = record.call.copy(remoteID = remoteID)))
+        drain(record.call.id, EndTarget.Alias(remoteID))
         return Outcome.Success(Unit)
     }
 
     private fun receive(event: RemoteEvent): Outcome<ReceiveDisposition, CallError> {
         if (event is RemoteEvent.VideoRequested) return Outcome.Failure(CallError.Unsupported(Feature.VIDEO))
-        if (event.eventID in events) return Outcome.Success(ReceiveDisposition.DUPLICATE)
+        if (eventKnown(event.eventID)) return Outcome.Success(ReceiveDisposition.DUPLICATE)
         val record = when (val target = event.target) {
             is EndTarget.Canonical -> records[target.id]
             is EndTarget.Alias -> records.values.firstOrNull { it.live && it.call.remoteID == target.id }
@@ -534,13 +609,16 @@ private class Reduction(
                 when {
                     record.call.lifecycle == Lifecycle.Placing && record.previousPreview == null ->
                         bufferOutgoingProgress(record, OutgoingProgress.CONNECTED)
+                    record.call.lifecycle == Lifecycle.Placing -> put(record.copy(bufferedConnection = true))
                     record.answer != null -> put(record.copy(bufferedConnection = true))
                     else -> connect(record)
                 }
             }
             is RemoteEvent.Ended -> applyRemoteEnd(record, seen.copy(pending = event), event.reason)
             is RemoteEvent.PartiesChanged -> if (record.call.parties != event.parties) {
-                put(record.copy(call = record.call.copy(parties = event.parties.toList())), publish = true)
+                put(record.copy(call = record.call.copy(
+                    parties = Collections.unmodifiableList(event.parties.toList()),
+                )), publish = true)
             }
             is RemoteEvent.VideoRequested -> error("Unsupported requests cannot reach a call")
         }
@@ -764,6 +842,7 @@ private class Reduction(
 
     private fun removalCompleted(attempt: Attempt, removed: Boolean) = on(attempt) { record ->
         if (attempt !in record.removals) return@on
+        removal = RemovalCompletion(attempt, removed)
         val updated = record.copy(removals = record.removals - attempt)
         if (attempt != record.removal) {
             put(updated)
@@ -829,10 +908,13 @@ private class Reduction(
     }
 
     private fun remember(id: EventID, pending: RemoteEvent? = null): Boolean {
-        if (id in events) return false
+        if (eventKnown(id)) return false
         events = events + (id to SeenEvent(now, ++generation, pending))
         return true
     }
+
+    private fun eventKnown(id: EventID): Boolean =
+        id in events || records.values.any { it.admission != null && it.invitationEvent == id }
 
     private fun rememberAction(id: ActionID): Boolean {
         if (id in actionIDs || records.values.any { it.pending(id) }) return false
@@ -873,7 +955,7 @@ private class Reduction(
     private fun createCall(
         id: CallID, line: CallingLine, parties: List<Party>, direction: Direction, lifecycle: Lifecycle, video: Boolean = false,
     ): Call =
-        Call(id, line, direction, parties.toList(), lifecycle, held = false, muted = false, video = video,
+        Call(id, line, direction, Collections.unmodifiableList(parties.toList()), lifecycle, held = false, muted = false, video = video,
             Media(Owner.NATIVE, Preparation.UNPROVIDED, Audio.INACTIVE, Transport.DISCONNECTED))
 }
 
