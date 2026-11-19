@@ -125,4 +125,26 @@ struct VideoEvidenceTests {
             ? .livekit : domain == NSURLErrorDomain ? .url : .other))
     }
   }
+
+  @Test func wrappedNetworkFailuresRetainThreeSanitizedCauses() throws {
+    let secret = "fixture-token-secret"
+    let fourth = NSError(domain: NSCocoaErrorDomain, code: 4)
+    let system = NSError(
+      domain: NSPOSIXErrorDomain, code: 61, userInfo: [NSUnderlyingErrorKey: fourth])
+    let url = NSError(
+      domain: NSURLErrorDomain, code: -1004,
+      userInfo: [
+        NSUnderlyingErrorKey: system, NSURLErrorFailingURLErrorKey: URL(filePath: "/\(secret)"),
+      ])
+    let wrapper = NSError(domain: secret, code: 1, userInfo: [NSUnderlyingErrorKey: url])
+    let error = NSError(
+      domain: "io.livekit.swift-sdk", code: 202, userInfo: [NSUnderlyingErrorKey: wrapper])
+    let encoded = try JSONEncoder().encode(MediaJourneyFailure(error, operation: .prepare))
+    let failure = try JSONDecoder().decode(MediaJourneyFailure.self, from: encoded)
+    #expect(failure.category == .livekit)
+    #expect(failure.code == 202)
+    #expect(failure.underlying?.map(\.category) == [.other, .url, .posix])
+    #expect(failure.underlying?.map(\.code) == [1, -1004, 61])
+    #expect(!String(decoding: encoded, as: UTF8.self).contains(secret))
+  }
 }

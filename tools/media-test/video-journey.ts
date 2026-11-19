@@ -77,7 +77,7 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
       await until(`${label} duplex samples with RTP coverage`, async () => {
         capture.host = harness.status();
         if (!hasUplinkSamples(capture.host)) return;
-        capture.native = readJourneyAudio(await request({ operation: 'snapshot' }));
+        capture.native = readJourneyAudio(await request({ operation: 'audioProgress' }));
         return hasDuplexSamples(capture.native, capture.host) ? true : undefined;
       });
       const pcm = readJourneyAudio(await request({ operation: 'audioSnapshot' }));
@@ -92,12 +92,11 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
       for (const marker of Object.values(markers)) {
         assert.ok(marker.clean && marker.complete && marker.postRollObserved, `${label}: missing clean fresh audio`);
       }
+      deadlineCheck();
     } catch (error) {
       keep(`${label}-capture`, { phaseId, startedAtMs, observedAtMs: performance.now(), ...capture });
       throw error;
     }
-    deadlineCheck();
-    return sample();
   }
   async function startVideo(enable: Boundary, peer: VideoPeer, number: number): Promise<Epoch> {
     await peer.publish(number);
@@ -178,7 +177,8 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
   const originalRoute = readAudioRoute(readJourneyAudio(initial.reply), startsWithVideo);
   let enabled: Boundary = { event: first, sample: initial };
   if (!startsWithVideo) {
-    const audio = await freshAudio('before-upgrade');
+    await freshAudio('before-upgrade');
+    const audio = await sample();
     assert.ok(audio.media.publication === null && audio.media.remotePublications.length === 0 &&
       audio.media.epochs.length === 0 && audio.media.receivers.length === 0 && !initialPeer.observation(), 'Audio call began with video');
     const source = scenario === 'app-downgrade' ? 'app' : 'server';
@@ -215,9 +215,6 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     const off = await waitForEvent(live, 'changed', false, 'app');
     downgradedBoundary = { ...off, actionAtMs, operation: 'stop' };
     await finishVideo(epoch, downgradedBoundary);
-    const downgraded = await freshAudio('after-downgrade');
-    assert.deepEqual(readAudioRoute(readJourneyAudio(downgraded.reply), false), originalRoute, 'Downgrade did not restore the observed route');
-    live = downgraded;
   } else if (scenario === 'hold-resume') {
     await freshAudio('before-hold');
     live = await freshVideo('before-hold-video', epoch);
@@ -288,10 +285,15 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
   }
 
   const videoAtEnd = scenario !== 'app-downgrade', remote = scenario === 'server-remote';
+  // For app downgrade, this is the first audio capture after the confirmed
+  // change and the final audio capture before end.
   await freshAudio('before-end', resumedAudioPublication);
   const armed = await request({ operation: 'armTeardown' });
   if (videoAtEnd) live = await freshVideo('before-end-video', epoch);
-  else live = await sample();
+  else {
+    live = await sample();
+    assert.deepEqual(readAudioRoute(readJourneyAudio(live.reply), false), originalRoute, 'Downgrade did not restore the observed route');
+  }
   const actionAtMs = performance.now();
   let departedSource: VideoSourceReceipt | undefined;
   if (remote) {
@@ -404,7 +406,7 @@ await withSimulatorMediaAudio(async guardSignal => {
       try {
         const checkpoint: unknown = JSON.parse(readFileSync(join(dirname(fixtureFile), 'media-journey-failure.json'), 'utf8'));
         const code = error instanceof NativeJourneyFailure
-          ? { operation: error.operation, category: error.category, code: error.code }
+          ? { operation: error.operation, category: error.category, code: error.code, underlying: error.underlying }
           : undefined;
         report.checkpoints.push({ phase: 'native-failure', evidence: { ...diagnoseNativeStartup(checkpoint), failure: code } });
       } catch { /* A failure before the app launches has no native checkpoint. */ }

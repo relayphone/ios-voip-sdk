@@ -89,10 +89,14 @@ struct ProtocolTests {
           session, .beginPhase, phase: "replayed", frequencies: Array(repeating: 650, count: 12)))
     }
     try session.accept(command(session, .snapshot, phase: "live"))
-    #expect(throws: MediaJourneySession.Failure.invalidPhase) {
-      try session.accept(command(session, .audioSnapshot, phase: "stale"))
+    for operation in [MediaJourneyCommand.Operation.audioProgress, .audioSnapshot] {
+      #expect(throws: MediaJourneySession.Failure.invalidPhase) {
+        try session.accept(command(session, operation, phase: "stale"))
+      }
+      let current = command(session, operation, phase: "live")
+      try session.accept(current)
+      #expect(throws: MediaJourneySession.Failure.staleCommand) { try session.accept(current) }
     }
-    try session.accept(command(session, .audioSnapshot, phase: "live"))
     try session.accept(command(session, .end, phase: "live"))
   }
   @Test func snapshotPollingRetainsReplayProtectionForTheFullJourneyBudget() throws {

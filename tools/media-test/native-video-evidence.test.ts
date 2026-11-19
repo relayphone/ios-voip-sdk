@@ -62,10 +62,13 @@ test('missing, foreign, unordered, overflowing and ambiguous native evidence fai
 
 test('host failure errors include only allowlisted operation/category and numeric code', () => {
   const error = nativeJourneyFailure({ operation: 'prepare', category: 'livekit', code: 101,
-    message: 'fixture-token-secret', domain: 'fixture-token-secret' }, 'attempt');
+    message: 'fixture-token-secret', domain: 'fixture-token-secret',
+    underlying: [{ category: 'url', code: -1004, message: 'fixture-token-secret' }],
+  }, 'attempt');
   assert.ok(error instanceof NativeJourneyFailure);
   assert.equal(error.operation, 'prepare'); assert.equal(error.category, 'livekit'); assert.equal(error.code, 101);
   assert.match(error.message, /reported failure: prepare\/livekit\/101/);
+  assert.deepEqual(error.underlying, [{ category: 'url', code: -1004 }]);
   assert.ok(!error.stack!.includes('fixture-token-secret'));
   assert.match(nativeJourneyFailure({ operation: 'prepare', category: 'cancelled', code: 1 }, 'attempt').message,
     /reported failure: prepare\/cancelled\/1/);
@@ -74,5 +77,9 @@ test('host failure errors include only allowlisted operation/category and numeri
     { operation: 'prepare', category: 'fixture-token-secret', code: 1 },
     { operation: 'video', category: 'other', code: Infinity },
   ]) assert.throws(() => nativeJourneyFailure(invalid, 'command'), /Invalid native failure code/);
+  for (const invalid of [null, [{ category: 'secret', code: 1 }], Array(4).fill({ category: 'url', code: -1004 })]) {
+    assert.throws(() => nativeJourneyFailure({ operation: 'prepare', category: 'livekit', code: 202,
+      underlying: invalid }, 'attempt'), /Invalid native failure code/);
+  }
   assert.match(nativeJourneyFailure(undefined, 'command').message, /command rejected/);
 });

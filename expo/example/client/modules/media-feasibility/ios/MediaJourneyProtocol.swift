@@ -54,7 +54,8 @@
 
   struct MediaJourneyCommand: Decodable {
     enum Operation: String, Decodable {
-      case beginPhase, snapshot, audioSnapshot, mute, hold, video, armTeardown, end, close
+      case beginPhase, snapshot, audioProgress, audioSnapshot, mute, hold, video, armTeardown,
+        end, close
     }
     let id: UUID
     let sessionId: UUID
@@ -108,7 +109,7 @@
         else { throw .invalidPhase }
         phaseId = phase
         phases.insert(phase)
-      case .snapshot, .audioSnapshot:
+      case .snapshot, .audioProgress, .audioSnapshot:
         guard let phaseId, command.phaseId == phaseId else { throw .invalidPhase }
       case .armTeardown:
         guard !terminalArmed, let phaseId, command.phaseId == phaseId else { throw .invalidPhase }

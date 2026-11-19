@@ -560,7 +560,9 @@ Each reuses the audio Room and requires clean fresh duplex audio. Each audio pha
 one capture with new markers. The host retains three seconds of uplink. The native
 decoder and output each retain four seconds and wait for an actual RTP counter to
 cover the end of those samples before returning PCM for analysis. A complete clean
-cycle and its post-roll must qualify at each observation point. Hold requires both
+cycle and its post-roll must qualify at each observation point. Audio polling and PCM
+responses omit the video ledgers. In the downgrade scenario, one fresh capture
+verifies audio after downgrade and immediately before local end. Hold requires both
 video gates to suppress output while both sources advance, as well as native output
 and far-end audio evidence. When the system deactivates the last held call's audio, the
 native receipt records the SDK deactivation and a continuously observed stopped engine

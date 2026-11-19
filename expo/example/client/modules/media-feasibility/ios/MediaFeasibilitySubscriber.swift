@@ -623,7 +623,9 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
       let syntheticVideo: MediaSyntheticVideo.Snapshot?
       let failure: MediaJourneyFailure?
     }
-    private func journeySnapshot(command: UUID?, includePCM: Bool = false) -> JourneySnapshot? {
+    private func journeySnapshot(
+      command: UUID?, includePCM: Bool = false, includeVideoLedger: Bool = true
+    ) -> JourneySnapshot? {
       guard let session = journeySession else { return nil }
       let video = sdkVideoEvidence()
       let audioSession = AVAudioSession.sharedInstance()
@@ -676,7 +678,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
           default: $0.portType.rawValue
           }
         }.sorted(),
-        video: video, syntheticVideo: syntheticVideoEvidence,
+        video: video, syntheticVideo: includeVideoLedger ? syntheticVideoEvidence : nil,
         failure: journeyFailure)
     }
     private func runJourney(_ client: VoIPClient) async throws {
@@ -764,7 +766,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
               resetJourneyCapture()
               journeyTicks = []
               journeyTicksDropped = 0
-            case .snapshot, .audioSnapshot: break
+            case .snapshot, .audioProgress, .audioSnapshot: break
             case .mute:
               try await client.request(.mute(callID, muted: command.enabled == true))
               try await until { self.publicationMuted == (command.enabled == true) }
@@ -798,11 +800,15 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
               syntheticVideo?.closeReceivers()
             }
             recordTransport()
-            if command.operation != .audioSnapshot {
+            let includeVideoLedger =
+              command.operation != .audioProgress && command.operation != .audioSnapshot
+            if includeVideoLedger {
               syntheticVideoEvidence = await syntheticVideo?.snapshot()
             }
             try JSONEncoder().encode(
-              journeySnapshot(command: command.id, includePCM: command.operation == .audioSnapshot)
+              journeySnapshot(
+                command: command.id, includePCM: command.operation == .audioSnapshot,
+                includeVideoLedger: includeVideoLedger)
             ).write(
               to: directory.appending(path: "media-journey-response.json"), options: .atomic)
             if command.operation == .close { return }

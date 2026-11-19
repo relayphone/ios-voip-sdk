@@ -40,20 +40,32 @@ export function readNativeVideoEvidence(reply: NativeJourneyReply): NativeVideoE
 }
 
 type Operation = 'prepare' | 'connect' | 'video' | 'command';
-type Category = 'cancelled' | 'livekit' | 'url' | 'osStatus' | 'posix' | 'cocoa' | 'other';
+const categories = ['cancelled', 'livekit', 'url', 'osStatus', 'posix', 'cocoa', 'other'] as const;
+type Category = typeof categories[number];
+type FailureCause = { readonly category: Category; readonly code: number };
 export class NativeJourneyFailure extends Error {
   readonly operation: Operation; readonly category: Category; readonly code: number;
-  constructor(operation: Operation, category: Category, code: number, context: 'command' | 'attempt') {
+  readonly underlying?: readonly FailureCause[];
+  constructor(operation: Operation, { category, code }: FailureCause, context: 'command' | 'attempt',
+    underlying?: readonly FailureCause[]) {
     super(`Native journey ${context === 'command' ? 'command rejected' : 'reported failure'}: ${operation}/${category}/${code}`);
     this.operation = operation; this.category = category; this.code = code;
+    this.underlying = underlying;
   }
+}
+function failureCause(value: unknown): FailureCause {
+  const { category, code } = object(value);
+  const allowed = categories.find(candidate => candidate === category);
+  if (!allowed || typeof code !== 'number' || !Number.isSafeInteger(code)) throw Error('Invalid native failure code');
+  return { category: allowed, code };
 }
 /** Only allowlisted enums and a numeric code may appear in the host error. */
 export function nativeJourneyFailure(value: unknown, context: 'command' | 'attempt'): Error {
   if (value === undefined) return Error(`Native journey ${context === 'command' ? 'command rejected' : 'reported failure'}`);
   const row = object(value);
   if (typeof row.operation !== 'string' || !['prepare', 'connect', 'video', 'command'].includes(row.operation) ||
-      typeof row.category !== 'string' || !['cancelled', 'livekit', 'url', 'osStatus', 'posix', 'cocoa', 'other'].includes(row.category) ||
-      typeof row.code !== 'number' || !Number.isSafeInteger(row.code)) throw Error('Invalid native failure code');
-  return new NativeJourneyFailure(row.operation as Operation, row.category as Category, row.code, context);
+      row.underlying !== undefined && (!Array.isArray(row.underlying) || row.underlying.length > 3))
+    throw Error('Invalid native failure code');
+  return new NativeJourneyFailure(row.operation as Operation, failureCause(row), context,
+    row.underlying?.map(failureCause));
 }
