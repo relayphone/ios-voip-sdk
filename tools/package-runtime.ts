@@ -4,12 +4,12 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { isMain, main } from './command.ts';
-import { archive, sha256, validate } from './runtime-package.ts';
+import { archive, isSourceDateEpoch, sha256, validate } from './runtime-package.ts';
 
 /** Writes the archive and its checksum, and returns the archive's name. */
-export function packageRuntime(distribution: string, output: string): string {
+export function packageRuntime(distribution: string, output: string) {
   const info = validate(distribution);
-  if (!Number.isSafeInteger(info.sourceDateEpoch) || info.sourceDateEpoch < 0) {
+  if (!('sourceDateEpoch' in info) || !isSourceDateEpoch(info.sourceDateEpoch)) {
     throw new Error('Invalid source date epoch');
   }
   if (existsSync(output)) throw new Error(`Output already exists: ${output}`);

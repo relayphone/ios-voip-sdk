@@ -5,7 +5,7 @@ import type { BuildInfo } from './runtime-package.ts';
 
 const commit = 'a'.repeat(40);
 
-function source(changes: Partial<Source> = {}): Source {
+function source(changes: Partial<Source> = {}) {
   return {
     version: '0.1.2',
     type: () => 'tag',
@@ -15,17 +15,17 @@ function source(changes: Partial<Source> = {}): Source {
     dirty: () => false,
     commitTime: () => 1_790_000_000,
     ...changes,
-  };
+  } satisfies Source;
 }
 
-function info(changes: Partial<BuildInfo> = {}): BuildInfo {
+function info(changes: Partial<BuildInfo> = {}) {
   return {
     schemaVersion: 1, version: '0.1.2', profile: 'ios-27.0', sourceCommit: commit, sourceDirty: false,
     sourceInputsSHA256: 'b'.repeat(64), sourceDateEpoch: 1_790_000_000,
     toolchain: { xcode: 'Xcode 27.1', swift: 'Swift 6.4', clang: 'clang 21' },
     sdk: { version: '27.0', build: '24A5355q' }, sdkPath: '/sdk', architectures: ['x86_64', 'arm64'],
     files: {}, ...changes,
-  };
+  } satisfies BuildInfo;
 }
 
 test('an annotated version tag merged into main can be released', () => {

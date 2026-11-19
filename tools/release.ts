@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { isMain, main, option, repository, run } from './command.ts';
-import { type BuildInfo, isVersion, validate } from './runtime-package.ts';
+import { type BuildInfo, hasBuildInfo, isVersion, validate } from './runtime-package.ts';
 
 export interface ReleaseCheck {
   version: string;
@@ -30,7 +30,7 @@ export interface Source {
   commitTime(commit: string): number;
 }
 
-export function gitSource(): Source {
+export function gitSource() {
   const git = (...args: string[]) => run('git', args);
   return {
     version: readFileSync(join(repository, 'VERSION'), 'utf8').trim(),
@@ -47,11 +47,11 @@ export function gitSource(): Source {
     },
     dirty: () => git('status', '--porcelain') !== '',
     commitTime: commit => Number(git('show', '-s', '--format=%ct', commit)),
-  };
+  } satisfies Source;
 }
 
 /** Checks the tag, the checkout and, if given, the package built from it. */
-export function check(tag: string, source: Source, mainRef = 'origin/main', info?: BuildInfo): ReleaseCheck {
+export function check(tag: string, source: Source, mainRef = 'origin/main', info?: BuildInfo) {
   const { version } = source;
   if (!isVersion(version) || tag !== `v${version}`) throw new Error('Release tag must match VERSION exactly');
   const ref = `refs/tags/${tag}`;
@@ -68,24 +68,24 @@ export function check(tag: string, source: Source, mainRef = 'origin/main', info
       throw new Error('Runtime package source date differs from release');
     }
     for (const key of ['xcode', 'swift', 'clang'] as const) {
-      if (typeof info.toolchain?.[key] !== 'string' || !info.toolchain[key].trim()) {
+      if (!info.toolchain[key].trim()) {
         throw new Error(`Runtime package is missing toolchain ${key}`);
       }
     }
     for (const key of ['version', 'build'] as const) {
-      if (typeof info.sdk?.[key] !== 'string' || !info.sdk[key].trim()) {
+      if (!info.sdk[key].trim()) {
         throw new Error(`Runtime package is missing SDK ${key}`);
       }
     }
-    if ([...(info.architectures ?? [])].sort().join() !== 'arm64,x86_64') {
+    if ([...info.architectures].sort().join() !== 'arm64,x86_64') {
       throw new Error('Release requires arm64 and x86_64 simulator slices');
     }
   }
-  return { version, tag, sourceCommit: commit, mainRef, packageVerified: info !== undefined };
+  return { version, tag, sourceCommit: commit, mainRef, packageVerified: info !== undefined } satisfies ReleaseCheck;
 }
 
 /** The release notes, which link the changelog at the tag and the run that built and tested it. */
-export function notes(tag: string, sourceCommit: string, repository: string, run: string): string {
+export function notes(tag: string, sourceCommit: string, repository: string, run: string) {
   return (
     `Changes: [CHANGELOG.md](${repository}/blob/${tag}/CHANGELOG.md)\n\n` +
     'The CI-built runtime passed the runtime tests and a smoke test of this package before ' +
@@ -103,6 +103,7 @@ if (isMain(import.meta.url)) {
     const [command, tag] = process.argv.slice(2);
     const packagePath = option(process.argv, 'package');
     const info = packagePath ? validate(resolve(packagePath)) : undefined;
+    if (info && !hasBuildInfo(info)) throw new Error('Incomplete runtime package build provenance');
     if (command === 'check' && tag) {
       const result = check(tag, gitSource(), option(process.argv, 'main-ref'), info);
       console.log(JSON.stringify(result, null, 2));
