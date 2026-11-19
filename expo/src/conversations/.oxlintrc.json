@@ -1,0 +1,21 @@
+{
+  "extends": ["../../../.oxlintrc.json"],
+  "rules": {
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    // Native error payloads and snapshots need runtime checks.
+    "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }],
+    "anti-slop/no-unknown-parameters": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/require-safety-comment-for-type-assertion": "error",
+    "landmines-types/no-explicit-return-types": "error"
+  },
+  "overrides": [
+    {
+      "files": ["runtime.ts"],
+      "rules": {
+        // Snapshot readers rethrow the original rejection, which can be any JavaScript value.
+        "anti-slop/no-unknown-parameters": "warn"
+      }
+    }
+  ]
+}
