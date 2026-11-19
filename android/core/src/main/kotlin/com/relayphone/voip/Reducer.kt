@@ -7,10 +7,17 @@ import kotlin.time.Instant
 public fun reduce(state: State, input: Input, now: Now): Transition =
     reduce(state, input, now) {}
 
-internal fun reduce(state: State, input: Input, now: Now, trace: (Rule) -> Unit): Transition =
-    Reduction(state, now, trace).run(input)
+/** Applies one input while keeping terminals with outstanding adapter jobs out of retention. */
+public fun reduce(state: State, input: Input, now: Now, pendingAdapterWork: Set<CallID>): Transition =
+    Reduction(state, now, {}, pendingAdapterWork).run(input)
 
-private class Reduction(state: State, private val clocks: Now, private val trace: (Rule) -> Unit) {
+internal fun reduce(state: State, input: Input, now: Now, trace: (Rule) -> Unit): Transition =
+    Reduction(state, now, trace, emptySet()).run(input)
+
+private class Reduction(
+    state: State, private val clocks: Now, private val trace: (Rule) -> Unit,
+    private val pendingAdapterWork: Set<CallID>,
+) {
     private val now = clocks.monotonic
     private val policy = state.configuration
     private val budgets = policy.budgets
@@ -20,6 +27,9 @@ private class Reduction(state: State, private val clocks: Now, private val trace
     private var releasedPermits = state.releasedPermits.filterValues(::withinRetention)
     private var actionIDs = state.actionIDs.filterValues(::withinRetention)
     private var generation = state.generation
+    private var completed = state.completedTerminalCalls
+    private val terminalCompletions = mutableListOf<CallID>()
+    private var receipt: CommandReceipt? = null
     private val effects = mutableListOf<Effect>()
 
     fun run(input: Input): Transition {
@@ -31,6 +41,7 @@ private class Reduction(state: State, private val clocks: Now, private val trace
             is Input.StartAdmitted -> startAdmitted(input)
             is Input.StartFailed -> startFailed(input)
             is Input.Request -> request(input)
+            is Input.Start -> start(input)
             is Input.Placed -> placed(input)
             is Input.AuthorityAllowed -> allowed(input)
             is Input.AnswerRefused -> answerRefused(input)
@@ -51,8 +62,13 @@ private class Reduction(state: State, private val clocks: Now, private val trace
                 }
             }
             is Input.Connected -> connected(input)
-            is Input.BindRemote -> bind(input)
-            is Input.RemoteEnd -> remoteEnd(input)
+            is Input.BindRemote -> {
+                val outcome = bind(input)
+                if (outcome is Outcome.Failure) reject(input.callID, null, outcome.error)
+                receipt = CommandReceipt.Bound(outcome)
+            }
+            is Input.Receive -> receipt = CommandReceipt.Received(receive(input.event))
+            is Input.RemoteEnd -> receive(RemoteEvent.Ended(input.eventID, input.target, input.reason))
             is Input.Applied -> controlResult(input.attempt, null)
             is Input.ApplyFailed -> controlResult(input.attempt, input.error)
             is Input.TimerExpired -> expired(input)
@@ -97,10 +113,14 @@ private class Reduction(state: State, private val clocks: Now, private val trace
                     finish(it, EndReason.Failed(error), error)
                 }
             }
+            Input.AdapterIdle -> Unit
         }
         prune()
         // Admit a buffered end before the invitation consumes a slot in the event history.
-        return Transition(State(policy, records, events.tail(), releasedPermits, actionIDs, generation), effects.toList())
+        return Transition(
+            State(policy, records, events.tail(), releasedPermits, actionIDs, generation, completed),
+            effects.toList(), receipt, terminalCompletions.toList(),
+        )
     }
 
     private fun incoming(input: Input.Incoming) {
@@ -110,10 +130,11 @@ private class Reduction(state: State, private val clocks: Now, private val trace
         trace(Rule.INCOMING)
         val attempt = attempt(input.callID)
         val record = Record(
-            createCall(input.callID, input.line, input.party, Direction.INCOMING, Lifecycle.Reporting),
+            createCall(input.callID, input.line, listOf(input.party), Direction.INCOMING, Lifecycle.Reporting),
             admission = attempt, invitationDeadline = remaining?.let { now + it },
         )
-        put(buffered(EndTarget.Canonical(input.callID)).fold(record, ::retain))
+        put(record)
+        drain(input.callID, EndTarget.Canonical(input.callID))
         effects += Effect.ReportIncoming(attempt)
     }
 
@@ -208,16 +229,12 @@ private class Reduction(state: State, private val clocks: Now, private val trace
 
     private fun request(input: Input.Request) {
         val action = input.action
-        val record = records[action.callID]
-        if (action !is Action.End) {
-            if (input.id in actionIDs || records.values.any { it.pending(input.id) }) return
-            actionIDs = (actionIDs + (input.id to now)).tail()
-        }
-        if (action is Action.Start && record == null) {
-            if (!slotAvailable()) return reject(input, CallError.Refused(RefusalReason.NotAllowed))
-            placement(Record(createCall(action.callID, action.line, action.party, Direction.OUTGOING, Lifecycle.Placing)), input)
+        if (action is Action.Start) {
+            start(Input.Start(action.callID, action.line, listOf(action.party), false, input.id, input.effectiveDeadline))
             return
         }
+        val record = records[action.callID]
+        if (action !is Action.End && !rememberAction(input.id)) return
         if (record == null) return reject(input, CallError.UnknownCall(action.callID))
         when (action) {
             is Action.Start -> reject(input, CallError.InvalidTransition(record.call.lifecycle.kind))
@@ -225,7 +242,10 @@ private class Reduction(state: State, private val clocks: Now, private val trace
                 val preview = record.call.lifecycle as? Lifecycle.Previewing
                     ?: return reject(input, CallError.InvalidTransition(record.call.lifecycle.kind))
                 if (!slotAvailable()) return reject(input, CallError.Refused(RefusalReason.NotAllowed))
-                placement(record.copy(previousPreview = preview.reason, removal = null, removalEvidence = RemovalEvidence.UNCONFIRMED), input)
+                placement(
+                    record.copy(previousPreview = preview.reason, removal = null, removalEvidence = RemovalEvidence.UNCONFIRMED),
+                    input.id, input.effectiveDeadline, Rule.JOIN,
+                )
             }
             is Action.Answer -> answer(record, input)
             is Action.End -> end(record, input.id)
@@ -233,17 +253,29 @@ private class Reduction(state: State, private val clocks: Now, private val trace
         }
     }
 
-    private fun placement(record: Record, input: Input.Request) {
+    private fun start(input: Input.Start) {
+        if (!rememberAction(input.id)) return
+        val existing = records[input.callID]
+        if (existing != null) {
+            return reject(input.callID, input.id, CallError.InvalidTransition(existing.call.lifecycle.kind))
+        }
+        if (!slotAvailable()) return reject(input.callID, input.id, CallError.Refused(RefusalReason.NotAllowed))
+        val call = createCall(input.callID, input.line, input.parties, Direction.OUTGOING, Lifecycle.Placing, input.video)
+        placement(Record(call), input.id, input.effectiveDeadline, Rule.START)
+    }
+
+    private fun placement(record: Record, id: ActionID, effectiveDeadline: Duration?, rule: Rule) {
         val attempt = attempt(record.call.id)
-        val allowance = minOf(budgets.placement, input.effectiveDeadline ?: budgets.placement)
-        if (allowance <= Duration.ZERO) return reject(input, CallError.DeadlineExceeded(TimedStage.PLACEMENT))
-        trace(if (input.action is Action.Join) Rule.JOIN else Rule.START)
+        val allowance = minOf(budgets.placement, effectiveDeadline ?: budgets.placement)
+        if (allowance <= Duration.ZERO) return reject(record.call.id, id, CallError.DeadlineExceeded(TimedStage.PLACEMENT))
+        trace(rule)
         val deadline = now + allowance
         val placing = record.copy(
-            call = record.call.copy(lifecycle = Lifecycle.Placing), placement = Pending(attempt, input.id, deadline),
+            call = record.call.copy(lifecycle = Lifecycle.Placing), placement = Pending(attempt, id, deadline),
         )
         put(arm(placing, TimerKind.PLACEMENT, deadline))
-        effects += Effect.RequestPlacement(attempt, input.id)
+        if (rule == Rule.START) drain(record.call.id, EndTarget.Canonical(record.call.id))
+        if (records[record.call.id]?.placement?.attempt == attempt) effects += Effect.RequestPlacement(attempt, id)
     }
 
     private fun placed(input: Input.Placed) = on(input.attempt) { record ->
@@ -390,8 +422,9 @@ private class Reduction(state: State, private val clocks: Now, private val trace
 
     private fun connecting(record: Record, pending: Pending) {
         effects += Effect.SettleAction(record.call.id, pending.id, pending.deadline)
-        put(arm(record.copy(call = record.call.copy(lifecycle = Lifecycle.Connecting)),
-            TimerKind.CONNECTION, now + budgets.connection), publish = true)
+        val ready = record.copy(call = record.call.copy(lifecycle = Lifecycle.Connecting))
+        if (ready.bufferedConnection) commitConnected(ready)
+        else put(arm(ready, TimerKind.CONNECTION, now + budgets.connection), publish = true)
     }
 
     private fun connected(input: Input.Connected) {
@@ -450,49 +483,75 @@ private class Reduction(state: State, private val clocks: Now, private val trace
         put(connected, publish = true)
     }
 
-    private fun bind(input: Input.BindRemote) {
-        val record = records[input.callID]
-        when {
-            record == null -> reject(input.callID, null, CallError.UnknownCall(input.callID))
-            !record.live -> reject(input.callID, null, CallError.InvalidTransition(record.call.lifecycle.kind))
-            record.call.remoteID == input.remoteID -> Unit
-            record.call.remoteID != null || records.values.any { it.live && it.call.remoteID == input.remoteID } ->
-                reject(input.callID, null, CallError.RemoteIdentityConflict(input.remoteID))
-            else -> {
-                trace(Rule.BIND)
-                put(record.copy(call = record.call.copy(remoteID = input.remoteID)))
-                buffered(EndTarget.Alias(input.remoteID)).forEach { event ->
-                    applyRemote(records.getValue(input.callID), event)
-                }
-                effects += Effect.Publish(records.getValue(input.callID).call)
-            }
+    private fun bind(input: Input.BindRemote): Outcome<Unit, CallError> {
+        val record = records[input.callID] ?: return Outcome.Failure(CallError.UnknownCall(input.callID))
+        if (record.call.remoteID == input.remoteID) return Outcome.Success(Unit)
+        if (!record.live) return Outcome.Failure(CallError.InvalidTransition(record.call.lifecycle.kind))
+        if (record.call.remoteID != null || records.values.any { it.live && it.call.remoteID == input.remoteID }) {
+            return Outcome.Failure(CallError.RemoteIdentityConflict(input.remoteID))
         }
+        trace(Rule.BIND)
+        put(record.copy(call = record.call.copy(remoteID = input.remoteID)))
+        drain(input.callID, EndTarget.Alias(input.remoteID))
+        effects += Effect.Publish(records.getValue(input.callID).call)
+        return Outcome.Success(Unit)
     }
 
-    private fun remoteEnd(input: Input.RemoteEnd) {
-        if (input.eventID in events) return
-        val record = when (val target = input.target) {
+    private fun receive(event: RemoteEvent): Outcome<ReceiveDisposition, CallError> {
+        if (event is RemoteEvent.VideoRequested) return Outcome.Failure(CallError.Unsupported(Feature.VIDEO))
+        if (event.eventID in events) return Outcome.Success(ReceiveDisposition.DUPLICATE)
+        val record = when (val target = event.target) {
             is EndTarget.Canonical -> records[target.id]
             is EndTarget.Alias -> records.values.firstOrNull { it.live && it.call.remoteID == target.id }
         }
-        remember(input.eventID, input.takeUnless { record?.live == false })
-        if (record == null) {
-            trace(Rule.BUFFER_UNKNOWN_END)
-            return
+        val pending = when {
+            record != null -> null
+            event is RemoteEvent.PartiesChanged -> event.copy(parties = event.parties.toList())
+            else -> event
         }
-        if (!record.live) return
-        applyRemote(record, events.getValue(input.eventID))
-        events = events + (input.eventID to events.getValue(input.eventID).copy(end = null))
+        remember(event.eventID, pending)
+        if (record == null) {
+            if (event is RemoteEvent.Ended) trace(Rule.BUFFER_UNKNOWN_END)
+            return Outcome.Success(ReceiveDisposition.BUFFERED)
+        }
+        applyRemote(record, event, events.getValue(event.eventID))
+        return Outcome.Success(ReceiveDisposition.APPLIED)
     }
 
-    private fun applyRemote(record: Record, event: SeenEvent) {
+    private fun drain(callID: CallID, target: EndTarget) {
+        val matching = events.values.filter { it.pending?.target == target }
+        for (seen in matching) {
+            val event = requireNotNull(seen.pending)
+            events = events + (event.eventID to seen.copy(pending = null))
+            applyRemote(records.getValue(callID), event, seen)
+        }
+    }
+
+    private fun applyRemote(record: Record, event: RemoteEvent, seen: SeenEvent) {
         if (!record.live) return
+        when (event) {
+            is RemoteEvent.Connected -> if (policy.connectionAuthority == ConnectionAuthority.APPLICATION) {
+                when {
+                    record.call.lifecycle == Lifecycle.Placing && record.previousPreview == null ->
+                        bufferOutgoingProgress(record, OutgoingProgress.CONNECTED)
+                    record.answer != null -> put(record.copy(bufferedConnection = true))
+                    else -> connect(record)
+                }
+            }
+            is RemoteEvent.Ended -> applyRemoteEnd(record, seen.copy(pending = event), event.reason)
+            is RemoteEvent.PartiesChanged -> if (record.call.parties != event.parties) {
+                put(record.copy(call = record.call.copy(parties = event.parties.toList())), publish = true)
+            }
+            is RemoteEvent.VideoRequested -> error("Unsupported requests cannot reach a call")
+        }
+    }
+
+    private fun applyRemoteEnd(record: Record, event: SeenEvent, reason: EndReason) {
         if (record.call.lifecycle == Lifecycle.Reporting) {
             val retained = retain(record, event)
             if (retained !== record) trace(Rule.RETAIN_REPORTING_END)
             put(retained)
         } else {
-            val reason = requireNotNull(event.end).reason
             trace(when {
                 record.nativeStart != null -> Rule.END_BEFORE_START_ADMISSION
                 record.call.lifecycle == Lifecycle.Ringing && preview(reason) -> Rule.ELSEWHERE_PREVIEW
@@ -677,9 +736,12 @@ private class Reduction(state: State, private val clocks: Now, private val trace
             releasePermit(permit, owner)
             PermitRelease(owner, permit)
         } ?: record.releasingPermit
-        val removing = if (removeFromSystem && record.nativeStart == null) {
-            requestRemoval(cancelled, attempt, reason)
-        } else cancelled
+        val awaitingPlacement = record.call.direction == Direction.OUTGOING && record.call.lifecycle == Lifecycle.Placing
+        val removing = when {
+            awaitingPlacement -> cancelled.copy(removalEvidence = RemovalEvidence.NOT_APPLICABLE)
+            removeFromSystem && record.nativeStart == null -> requestRemoval(cancelled, attempt, reason)
+            else -> cancelled
+        }
         val next = preview?.let { Lifecycle.Previewing(it) } ?: Lifecycle.Ending(reason)
         put(removing.copy(
             call = record.call.copy(lifecycle = next, media = record.call.media.copy(
@@ -759,12 +821,6 @@ private class Reduction(state: State, private val clocks: Now, private val trace
         effects += Effect.ReleasePermit(permit, attempt)
     }
 
-    private fun buffered(target: EndTarget): List<SeenEvent> {
-        val matching = events.filterValues { it.end?.target == target }
-        events = events.mapValues { (id, event) -> if (id in matching) event.copy(end = null) else event }
-        return matching.values.toList()
-    }
-
     private fun retain(record: Record, event: SeenEvent): Record {
         val retained = record.retainedEnd
         return if (retained == null || !withinRetention(retained.at) || event.order < retained.order) {
@@ -772,18 +828,29 @@ private class Reduction(state: State, private val clocks: Now, private val trace
         } else record
     }
 
-    private fun remember(id: EventID, end: Input.RemoteEnd? = null): Boolean {
+    private fun remember(id: EventID, pending: RemoteEvent? = null): Boolean {
         if (id in events) return false
-        events = events + (id to SeenEvent(now, ++generation, end))
+        events = events + (id to SeenEvent(now, ++generation, pending))
+        return true
+    }
+
+    private fun rememberAction(id: ActionID): Boolean {
+        if (id in actionIDs || records.values.any { it.pending(id) }) return false
+        actionIDs = (actionIDs + (id to now)).tail()
         return true
     }
 
     private fun prune() {
-        val retained = records.values.filter(Record::canPrune)
+        val eligible = records.values.filter { it.canPrune && it.call.id !in pendingAdapterWork }
+        val newlyCompleted = eligible.map { it.call.id } - completed
+        terminalCompletions.addAll(newlyCompleted)
+        val retained = eligible
             .filter { withinRetention(requireNotNull(it.terminalAt)) }
-            .sortedWith(compareBy({ it.terminalAt }, { it.cleanup?.generation }))
+            .sortedWith(terminalOrder)
             .takeLast(retention.terminalRecords).map { it.call.id }.toSet()
-        records = records.filterValues { !it.canPrune || it.call.id in retained }
+        val expired = eligible.map { it.call.id }.toSet() - retained
+        records = records - expired
+        completed = (completed + newlyCompleted) - expired
     }
 
     private fun attempt(id: CallID): Attempt = Attempt(id, ++generation)
@@ -803,8 +870,10 @@ private class Reduction(state: State, private val clocks: Now, private val trace
         if (record.call.lifecycle is Lifecycle.Ended && records[attempt.callID] === record) trace(Rule.LATE)
     }
 
-    private fun createCall(id: CallID, line: CallingLine, party: Party, direction: Direction, lifecycle: Lifecycle): Call =
-        Call(id, line, direction, listOf(party), lifecycle, held = false, muted = false, video = false,
+    private fun createCall(
+        id: CallID, line: CallingLine, parties: List<Party>, direction: Direction, lifecycle: Lifecycle, video: Boolean = false,
+    ): Call =
+        Call(id, line, direction, parties.toList(), lifecycle, held = false, muted = false, video = video,
             Media(Owner.NATIVE, Preparation.UNPROVIDED, Audio.INACTIVE, Transport.DISCONNECTED))
 }
 

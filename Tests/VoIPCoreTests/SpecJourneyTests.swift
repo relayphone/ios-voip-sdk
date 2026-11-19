@@ -15,20 +15,8 @@ private struct JourneyHeader: Decodable {
 }
 
 private let pending: [String: String] = [
-  "answer-not-allowed": "No native claim port or typed notAllowed refusal.",
-  "answer-refusal": "No native claim port to end the call with the refusal's ownership reason.",
-  "answer-refusal-preview": "No native claim port to apply preview policy to an ownership refusal.",
-  "claim-timeout-reconcile": "No native claim budget or reconciliation port.",
   "cross-line-waiting":
-    "No line identity or shared participation slot to refuse a second Answer or Start.",
-  "end-before-admission": "Alias-addressed ends cannot reach a call during pending admission.",
-  "http-answer-allow": "No native HTTP claim transport or permit handling.",
-  "http-answer-late-permit-release": "No native HTTP compensation for a stale permit.",
-  "http-answer-refused-elsewhere": "No native HTTP refusal mapping.",
-  "http-answer-timeout-reconcile": "No native HTTP deadline and reconciliation handling.",
-  "incoming-killed-answer": "Native Answer prepares media without a service claim.",
-  "late-answer-permit": "No native claim deadline, reconciliation, or stale permit release.",
-  "outgoing-deferred-binding": "Remote alias binding and alias-addressed events are missing.",
+    "No line identity on calls."
 ]
 
 @Suite(.timeLimit(.minutes(1)))

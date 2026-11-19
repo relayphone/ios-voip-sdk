@@ -4,12 +4,16 @@ import com.relayphone.voip.Attempt
 import com.relayphone.voip.Call
 import com.relayphone.voip.CallError
 import com.relayphone.voip.CallID
+import com.relayphone.voip.CommandReceipt
 import com.relayphone.voip.Configuration
 import com.relayphone.voip.Effect
 import com.relayphone.voip.Input
 import com.relayphone.voip.Lifecycle
 import com.relayphone.voip.Now
 import com.relayphone.voip.Outcome
+import com.relayphone.voip.ReceiveDisposition
+import com.relayphone.voip.RemoteCallID
+import com.relayphone.voip.RemoteEvent
 import com.relayphone.voip.State
 import com.relayphone.voip.SystemFailure
 import com.relayphone.voip.SystemFailureDetail
@@ -18,6 +22,7 @@ import com.relayphone.voip.reduce
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -52,7 +57,9 @@ public class CallRuntime private constructor(
 ) {
     private val lifetime = Job(parent.coroutineContext[Job])
     private val scope = CoroutineScope(parent.coroutineContext + lifetime)
-    private val inbox = Channel<Message>(Channel.UNLIMITED)
+    private val inbox = Channel<Message>(Channel.UNLIMITED, onUndeliveredElement = { message ->
+        if (message is Message.Command) message.reply.complete(null)
+    })
     private val accepting = AtomicBoolean(true)
     private val calls = mutableMapOf<CallID, CallWork>()
     private val timerJobs = mutableMapOf<Attempt, Job>()
@@ -79,6 +86,13 @@ public class CallRuntime private constructor(
                 for (message in inbox) {
                     when (message) {
                         is Message.Deliver -> deliver(message.input)
+                        is Message.Command -> {
+                            try {
+                                message.reply.complete(deliver(message.input))
+                            } finally {
+                                message.reply.complete(null)
+                            }
+                        }
                         is Message.StartSetupResolved -> deliver(requireNotNull(startSetups.remove(message.attempt)?.result()))
                         is Message.Finished -> finish(message)
                         is Message.RemovalFailed -> {
@@ -94,7 +108,37 @@ public class CallRuntime private constructor(
     }
 
     /** Queues input from any port or caller. Returns false after shutdown. */
-    public fun submit(input: Input): Boolean = accepting.get() && inbox.trySend(Message.Deliver(input)).isSuccess
+    public fun submit(input: Input): Boolean =
+        accepting.get() && inbox.trySend(Message.Deliver(input.copyParties())).isSuccess
+
+    /** Receives an application event and returns its authoritative disposition or a typed failure. */
+    public suspend fun receive(event: RemoteEvent): Outcome<ReceiveDisposition, CallError> =
+        when (val receipt = command(Input.Receive(event))) {
+            null -> Outcome.Failure(CallError.BridgeUnavailable)
+            else -> (receipt as CommandReceipt.Received).outcome
+        }
+
+    /** Binds a remote identity and applies any buffered events before resolving. */
+    public suspend fun bindRemote(callID: CallID, remoteID: RemoteCallID): Outcome<Unit, CallError> =
+        when (val receipt = command(Input.BindRemote(callID, remoteID))) {
+            null -> Outcome.Failure(CallError.BridgeUnavailable)
+            else -> (receipt as CommandReceipt.Bound).outcome
+        }
+
+    private suspend fun command(input: Input): CommandReceipt? {
+        val reply = CompletableDeferred<CommandReceipt?>()
+        if (!accepting.get() || inbox.trySend(Message.Command(input.copyParties(), reply)).isFailure) return null
+        return reply.await()
+    }
+
+    private fun Input.copyParties(): Input = when (this) {
+        is Input.Start -> copy(parties = parties.toList())
+        is Input.Receive -> when (val value = event) {
+            is RemoteEvent.PartiesChanged -> copy(event = value.copy(parties = value.parties.toList()))
+            else -> this
+        }
+        else -> this
+    }
 
     /** Cancels and joins all port work, settles pending native setup results and clears [state]. */
     public suspend fun close() {
@@ -123,16 +167,21 @@ public class CallRuntime private constructor(
         }
     }
 
-    private fun deliver(input: Input, receiptsOnly: Boolean = false) {
+    private fun deliver(input: Input, receiptsOnly: Boolean = false): CommandReceipt? {
         val previous = current.value
         val now = Now(monotonic = monotonicClock.now(), utc = utcClock.now())
-        val transition = reduce(previous, input, now)
+        val pendingAdapterWork = calls.filterValues { it.jobs.isNotEmpty() }.keys
+        val transition = reduce(previous, input, now, pendingAdapterWork)
         current.value = transition.state
         transition.effects.forEach { effect ->
             if (!receiptsOnly || effect is Effect.SettleAction || effect is Effect.RejectAction) {
                 execute(effect, previous)
             }
         }
+        if (!receiptsOnly) transition.terminalCompletions.forEach { id ->
+            observe { sequence -> RuntimeEvent.TerminalCompleted(sequence, id) }
+        }
+        return transition.receipt
     }
 
     private fun execute(effect: Effect, previous: State) {
@@ -285,6 +334,7 @@ public class CallRuntime private constructor(
             calls.remove(id)
             call.job.complete()
             call.job.join()
+            if (lifecycle is Lifecycle.Ended) deliver(Input.AdapterIdle)
         }
     }
 
@@ -308,6 +358,7 @@ public class CallRuntime private constructor(
 
     private sealed interface Message {
         data class Deliver(val input: Input) : Message
+        data class Command(val input: Input, val reply: CompletableDeferred<CommandReceipt?>) : Message
         data class StartSetupResolved(val attempt: Attempt) : Message
         data class Finished(val attempt: Attempt, val job: Job) : Message
         data class RemovalFailed(val attempt: Attempt, val failure: SystemFailure) : Message

@@ -7,6 +7,22 @@ Public API changes include migration guidance.
 
 ### Breaking
 
+- Swift apps with exhaustive `ActionError` switches must handle `remoteIdentityConflict`. The
+  observable `VoIPClient.calls` list includes incoming calls after system admission resolves.
+  Use `report(_:)` or the call events to observe the admission outcome. `CallID` and `EventID`
+  now compare exact UTF-8 bytes. Use the same spelling on every delivery of an ID.
+
+- Swift apps can pass a native `AnswerAuthority` to `VoIPClient.start` to claim Answer before
+  media preparation, including on a cold launch. The default budget allocates 4,500 ms total,
+  up to 2,500 ms for claim, 500 ms for one reconciliation, and 500 ms for system settlement.
+  Any media preparation after authorization shares that budget. Move service ownership checks
+  into the authority and return a typed refusal or permit. Handle `answerClaimTimedOut` and
+  `answerFailed` in exhaustive `CallEvent` switches and the new Answer cases in error switches.
+  Custom frameworks can declare their effective Answer deadline and supply a shorter deadline
+  for an individual receipt using `FrameworkEvent.performAnswer`. With an authority installed,
+  the SDK also checks `maximumParticipatingCalls` before reserving a participation slot.
+  Apps without an authority continue to prepare media directly.
+
 - Swift `request(.start(call))` now completes when the system performs Start after placement.
   Handle `startRequested` in a separate event consumer, then confirm placement there.
   Deferred media provision and Connected reports received while Start is pending are applied
@@ -40,6 +56,22 @@ Public API changes include migration guidance.
   as content-free, excluding them from source timing and frame-rate measurements.
 
 ### Added
+
+- Swift can bind service IDs such as a server call ID or LiveKit room with
+  `try await client.bindRemote(remoteID, to: callID)`. Keep using your app's canonical
+  `CallID` for actions and pass a validated `RemoteCallID(rawValue:)` to
+  `receive(_:forRemote:eventID:)` for alias-addressed events. Use the same `EventID` for
+  deliveries of the same event through either address. The SDK replays unresolved events
+  when their ID becomes known, within the retention duration and the new `eventHistoryLimit`
+  setting.
+
+- Swift apps can opt in to `HTTPAnswerAuthority` for the version 1 native Answer protocol.
+  Provision the installation bearer as a generic password in the data protection Keychain,
+  then pass its service and account reference to `HTTPAnswerAuthority` before starting the
+  client. Attach an `AnswerScope` with the server's account and line to each incoming call,
+  or send `answerScope` in the default VoIP push format. The authority sends at most one HTTPS request
+  per stage and keeps the native receipt's idempotency key through reconciliation and release.
+  Implement `CallMedia.prepare(_:answerCredentials:)` if the service returns LiveKit credentials.
 
 - Call `try await client.end(id)` to read a typed End result. A local End returns its original
   receipt throughout the retention window. A call already ended by the server returns

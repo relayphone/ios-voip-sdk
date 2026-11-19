@@ -11,6 +11,9 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     val journeys = rootDir.resolve("../spec/journeys")
+    val bridge = rootDir.resolve("../spec/bridge/fixtures")
     inputs.dir(journeys)
+    inputs.dir(bridge)
     systemProperty("spec.journeys", journeys)
+    systemProperty("spec.bridge", bridge)
 }

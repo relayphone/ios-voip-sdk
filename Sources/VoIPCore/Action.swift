@@ -42,8 +42,12 @@ public enum ActionError: Error, Hashable, Sendable {
   case notAllowed(CallStatus)
   /// The action needs a capability that the configuration turns off, such as merging.
   case unsupported
+  /// No participation slot is available for this action.
+  case noParticipationSlot
   /// This device doesn't know the call the action applies to.
   case unknownCall
+  /// Another live call already owns the remote identifier.
+  case remoteIdentityConflict(RemoteCallID)
   /// The calling framework refused the action, with the error it gave, which says why, or `nil`
   /// when it gave none.
   case refused(FrameworkError?)

@@ -69,16 +69,54 @@ destination on the real output mixer.
 
 ### Running media journeys
 
-Run simulator media and video journeys on hosted GitHub Actions. The fixture uses the simulator's
-audio devices, which can activate the speakers and microphone on a local Mac. The runners
-refuse local and self-hosted starts before setup. Hosted admission requires `GITHUB_ACTIONS=true`
-and `RUNNER_ENVIRONMENT=github-hosted`. The Core Audio guard checks the default input and output
-before boot. Each hosted default device must be named Apple Virtual Sound Device and report
+Run simulator media and video journeys on hosted GitHub Actions or on an isolated simulator lease.
+Hosted admission requires `GITHUB_ACTIONS=true` and `RUNNER_ENVIRONMENT=github-hosted`. The Core
+Audio guard checks the default input and output before simulator setup. Each hosted default
+device must be named Apple Virtual Sound Device and report
 either `AVIODevice` or `AVIODevice 2`. The two UIDs can swap directions between runs. The guard
 logs a model UID when available. Hosted guest devices can report a built-in
 transport. Unknown transports, hardware aggregate members, and route changes fail the run.
 The job summary lists each running device's
 name, UID, transport, and verdict. A runner with no default devices reports `no host devices`.
+
+For a local run, configure the lease CLI's connection and credentials using its own environment
+variables. The runner passes those values through and acquires an isolated simulator lease or
+attaches using the lease identifier and token supplied to the CLI. Set all of the following:
+
+| Variable | Value |
+| --- | --- |
+| `ISOLATED_LEASE_CLI` | Lease CLI executable that supports audio isolation |
+| `ISOLATED_LEASE_CONFIG_DIR` | Absolute path to the directory the CLI uses for `config.json` and `leases.json` |
+| `ISOLATED_LEASE_CLI_ERROR_PREFIX` | Prefix of the CLI's error lines on stderr |
+| `ISOLATED_LEASE_CLI_SECRET_PATTERN` | Regular expression that matches CLI credentials to redact from logs |
+| `ISOLATED_LEASE_CLI_SCOPE_ENV` | Name of the CLI variable for the lease state key |
+| `ISOLATED_LEASE_CLI_URL_ENV` | Name of the CLI variable for the backend URL |
+| `ISOLATED_LEASE_CLI_LEASE_ID_ENV`, `ISOLATED_LEASE_CLI_LEASE_TOKEN_ENV` | Names of the CLI variables for attaching to an existing lease |
+| `ISOLATED_LEASE_INPUT_DEVICE_PREFIX`, `ISOLATED_LEASE_OUTPUT_DEVICE_PREFIX` | Device UID prefixes, such as `Lease Mic` and `Lease Speaker` for UIDs ending in ` 2_UID` |
+| `ISOLATED_LEASE_CHECKER` | Absolute path to the executable host-side isolation checker |
+| `ISOLATED_LEASE_CHECKER_APP_ID` | Bundle identifier used by the checker's test app |
+| `ISOLATED_LEASE_CHECKER_DIRECTORY_PREFIX` | Prefix of the checker's temporary directory under `TMPDIR` |
+
+Set `ISOLATED_LEASE_PROJECT` to select a project when acquiring a lease. An acquisition
+waits up to ten minutes in the queue and reports the CLI output. On a transport error,
+the runner reconnects to the same request within a total fifteen-minute deadline.
+Cleanup retries transport failures for the same lease.
+Run on the Mac that owns the leased simulator. The lease and its selected simulator must
+both report matching virtual input and output UIDs verified within the last 120 seconds.
+The host-side checker verifies those routes before the journey launches or installs its app.
+Both the playback and recording checks must pass. On timeout, the runner keeps the checker
+phase logs and refuses the journey.
+
+Pass `lease` as the simulator argument to `feasibility.ts`, `run-native-tests.ts`, or
+`video-journey.ts` to use
+the verified simulator. Use `node tools/media-test/simulator-media.ts --check-lease` to
+verify and release a lease before running a journey. Manually
+routed simulator clones are refused. The local Core Audio guard tracks the leased
+simulator's process tree and app executable. Those processes may use only the lease's
+verified input and output. Other Mac processes can use audio normally. The guard
+records the PID, executable and direction of each process using an offending device.
+An audio guard trip or loss of lease proof stops the run and shuts down the leased
+simulator. The runner releases the lease on success or failure.
 
 Wrap each simulator journey in one call to `withSimulatorMediaAudio` from
 `tools/media-test/simulator-media.ts`.
@@ -86,18 +124,15 @@ Wrap each simulator journey in one call to `withSimulatorMediaAudio` from
 ```ts
 import { withSimulatorMediaAudio } from './simulator-media.ts';
 
-await withSimulatorMediaAudio(signal => runJourney(signal));
+await withSimulatorMediaAudio(
+  (signal, simulator) => runJourney(signal, simulator ?? requestedSimulator),
+  { localDestination: { simulator: requestedSimulator } },
+);
 ```
 
 Start simulator setup inside the callback, pass its abort signal to commands and waits, and
 finish simulator cleanup before the callback returns. The wrapper checks admission before
 invoking the callback and keeps the guard active until cleanup finishes.
-
-The future simulator lease adapter must verify `audio.isolated` and prove that the simulator uses
-its own virtual input and output devices. The local `SimulatorLeaseAudio` type names these
-checks `isolated`, `virtualInputVerified`, and `virtualOutputVerified`. The adapter will map
-them once the lease format is available. The current preflight refuses all local lease runs
-until that adapter ships. Approved lease runs will use the same Core Audio guard.
 
 ## Marker qualification
 

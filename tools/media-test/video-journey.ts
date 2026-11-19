@@ -349,14 +349,16 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
   await request({ operation: 'close' });
 }
 
-await withSimulatorMediaAudio(async guardSignal => {
+const [requestedSimulator, app, output, selection] = process.argv.slice(2);
+
+await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulatorApp) => {
   const watchdogAbort = new AbortController();
   const signal = AbortSignal.any([guardSignal, watchdogAbort.signal]);
   const { startHarness } = await import('./harness.ts');
   const { dispose } = await import('@livekit/rtc-node');
-  const [simulator, app, output, selection] = process.argv.slice(2);
-  assert.ok(simulator && app && output && cases.some(name => name === selection),
-    'Usage: video-journey.ts <simulator> <app> <result> <initial-local|app-downgrade|server-remote|hold-resume>');
+  assert.ok(requestedSimulator && app && output && cases.some(name => name === selection),
+    'Usage: video-journey.ts <simulator|lease> <app> <result> <initial-local|app-downgrade|server-remote|hold-resume>');
+  const simulator = leasedSimulator ?? requestedSimulator;
   const scenario = selection as JourneyCase;
   const report: Report = { scenario, verdict: 'failed', checkpoints: [] };
   const fixtureId = randomUUID(), conversationId = randomUUID() as ConversationId, clockID = randomUUID();
@@ -405,7 +407,8 @@ await withSimulatorMediaAudio(async guardSignal => {
       journey: { fixtureId, conversationId, initialVideo: scenario === 'initial-local' || scenario === 'hold-resume', syntheticVideo: fixtureId },
     }), { mode: 0o600 });
     launchAttempted = true;
-    await simctl('launch', '--terminate-running-process', simulator, bundle);
+    const launched = await simctl('launch', '--terminate-running-process', simulator, bundle);
+    if (trackSimulatorApp) trackSimulatorApp(Number(/:\s*(\d+)\s*$/.exec(launched)?.[1]));
     const budget = { deadlineMs: performance.now() + 30_000, signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]) };
     await runJourney(harness, mailbox, { scenario, conversationId, clockID, initialPeer, report, budget });
     journeyCompleted = true;
@@ -447,7 +450,7 @@ await withSimulatorMediaAudio(async guardSignal => {
     }
   }
   if (report.verdict === 'failed') throw failure;
-}).catch(error => {
+}, { localDestination: requestedSimulator ? { simulator: requestedSimulator } : undefined }).catch(error => {
   if (process.exitCode !== 124) throw error;
   console.error('Video journey exceeded its run deadline');
   process.exit(124);

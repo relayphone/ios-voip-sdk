@@ -62,9 +62,9 @@ any emitted phase's marker over their observation interval. An empty capture doe
 
 ## JSON CLI
 
-The CLI requires hosted GitHub Actions because its credentials and controls can drive an iOS
-simulator media fixture. The [running rules](../../docs/media-hook-feasibility.md#running-media-journeys)
-describe the host audio guard and the future isolated lease requirement.
+The standalone harness CLI requires hosted GitHub Actions. Run a local fixture within
+the guarded journey entry points described in the
+[media journey instructions](../../docs/media-hook-feasibility.md#running-media-journeys).
 
 Run these commands from one long-lived journey runner or shell. `start` returns JSON status and
 keeps the service alive until `stop`, runner death, a termination signal or its 180-second safety
@@ -122,11 +122,11 @@ media teardown.
 Replies retain the original snapshot as untrusted `evidence`. This transport validates identity
 and timing envelopes only. It does not certify PCM coverage, processing, SDK end state or native
 release. The feasibility runner checks audio in its own invocation. The SDK-driven video
-driver runs separate bounded scenarios with the same build. The driver requires hosted GitHub
-Actions and records the host audio guard verdict:
+driver runs separate bounded scenarios with the same build. It records the host audio guard
+verdict on hosted GitHub Actions and on a verified local isolated lease:
 
 ```sh
-node tools/media-test/video-journey.ts <simulator> <app> <result> <scenario>
+node tools/media-test/video-journey.ts <simulator|lease> <app> <result> <scenario>
 ```
 
 The scenarios are `initial-local`, `app-downgrade`, `server-remote` and `hold-resume`.

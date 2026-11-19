@@ -30,7 +30,7 @@ import os
 /// ```
 ///
 /// The observers follow calls from the moment the client starts: the module passes them to
-/// `VoIPClient.start(framework:media:push:audio:observers:configuration:clock:)` after its own.
+/// `VoIPClient.start(framework:media:push:audio:observers:configuration:clock:answerAuthority:)` after its own.
 /// Use one to leave a call's media when the call ends, and to report the call's transport with
 /// `VoIPClient.receive(_:for:eventID:)`, such as `.connected` once the media connected.
 ///

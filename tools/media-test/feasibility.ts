@@ -16,12 +16,14 @@ import { observeSilence, SilenceObservationError, type SilenceWindow } from './s
 import { assertNativePassed, assertNativeTeardown, writeUnobservedResult } from './result-receipt.ts';
 import { diagnoseNativeStartup } from './startup-diagnostics.ts';
 
-await withSimulatorMediaAudio(async guardSignal => {
+const [requestedSimulator, app, output] = process.argv.slice(2);
+
+await withSimulatorMediaAudio(async (guardSignal, leasedSimulator, trackSimulatorApp) => {
   const watchdogAbort = new AbortController();
   const signal = AbortSignal.any([guardSignal, watchdogAbort.signal]);
-  const [simulator, app, output] = process.argv.slice(2);
   const processing = "synthetic";
-  assert.ok(simulator && app && output, 'Usage: feasibility.ts <simulator> <app> <result>');
+  assert.ok(requestedSimulator && app && output, 'Usage: feasibility.ts <simulator|lease> <app> <result>');
+  const simulator = leasedSimulator ?? requestedSimulator;
   const { startHarness } = await import('./harness.ts');
   const { dispose } = await import('@livekit/rtc-node');
   // Report only phase names and timing, never command arguments, tokens or server config.
@@ -176,7 +178,8 @@ await withSimulatorMediaAudio(async guardSignal => {
       profile: "tones-v2", uplinkFrequencies: uplink.frequencies,
     }), { mode: 0o600 });
     launchAttempted = true;
-    await simctl('launch', '--terminate-running-process', simulator, bundle);
+    const launched = await simctl('launch', '--terminate-running-process', simulator, bundle);
+    if (trackSimulatorApp) trackSimulatorApp(Number(/:\s*(\d+)\s*$/.exec(launched)?.[1]));
     resultDeadlineMs = performance.now() + 30_000;
     resultPhase.resolve();
     await phase('example.result', async () => {
@@ -242,7 +245,7 @@ await withSimulatorMediaAudio(async guardSignal => {
       rmSync(harnessDirectory, { recursive: true, force: true });
     }
   }
-}).catch(error => {
+}, { localDestination: requestedSimulator ? { simulator: requestedSimulator } : undefined }).catch(error => {
   if (process.exitCode !== 124) throw error;
   console.error(error instanceof Error ? error.message : 'Media feasibility timed out');
   process.exit(124);

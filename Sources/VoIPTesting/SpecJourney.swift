@@ -34,6 +34,7 @@
       package let budgets: SpecV0.Budgets
       package let outgoingMedia: OutgoingMedia
       package let connectionAuthority: ConnectionAuthority
+      package let maximumParticipatingCalls: Int
       package let previewAnsweredElsewhere: Bool
 
       package init(from decoder: any Decoder) throws {
@@ -43,6 +44,7 @@
           .previewAnsweredElsewhere)
         let maximum: Int = try object.decode(.maximumParticipatingCalls)
         guard maximum == 1 else { throw object.invalid("Expected one participating slot") }
+        maximumParticipatingCalls = maximum
         budgets = try object.decode(.budgets)
         outgoingMedia = try object.decode(.outgoingMedia)
         connectionAuthority = try object.decode(.connectionAuthority)

@@ -40,6 +40,10 @@ struct CommandError: Error {
         code: .invalidArguments, message: "The conversation's status doesn't allow this action")
     case .unsupported:
       self.init(code: .unsupported, message: "This action isn't supported")
+    case .noParticipationSlot:
+      self.init(code: .conversation, message: "No call participation slot is available")
+    case .remoteIdentityConflict:
+      self.init(code: .conversation, message: "Another call owns the remote identifier")
     case .refused(let systemError):
       let message =
         systemError.map { "The system refused the action: \($0)" }
@@ -157,7 +161,7 @@ extension CallFailure {
   /// The TypeScript API's `EndedFailureKind`, which names the SDK's case.
   var kind: String {
     switch self {
-    case .refused, .systemFailed: "refused"
+    case .refused, .systemFailed, .answerAuthorization: "refused"
     case .atCapacity: "atCapacity"
     case .notPlaced: "notPlaced"
     case .media: "media"

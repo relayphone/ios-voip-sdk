@@ -50,7 +50,7 @@ public enum CallListChoice: String, Hashable, Sendable {
 /// A call the platform started, such as one a VoIP push rang, is reported so that it joins the
 /// list.
 ///
-/// Pass the bridge to ``VoIPClient/start(framework:media:push:audio:observers:configuration:clock:)``
+/// Pass the bridge to ``VoIPClient/start(framework:media:push:audio:observers:configuration:clock:answerAuthority:)``
 /// in `observers`, so that it sees the first events of a cold launch.
 @MainActor
 public final class CallListBridge: CallObserver {

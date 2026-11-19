@@ -11,7 +11,7 @@
 /// people the Focus allows, and adds it quietly to Notification Center for everyone else.
 ///
 /// Create the notifier when the app launches, and pass it to
-/// `VoIPClient.start(framework:media:push:audio:observers:configuration:clock:)` as an observer,
+/// `VoIPClient.start(framework:media:push:audio:observers:configuration:clock:answerAuthority:)` as an observer,
 /// so that it sees the call of the VoIP push that cold-launched the app. On iOS it posts with
 /// ``UserNotificationsAdapter`` by default:
 ///

@@ -132,6 +132,24 @@ import VoIPTesting
     #expect(rig.media.records.isEmpty)
   }
 
+  @Test @VoIPActor func bufferedAliasEndRejectsPendingStart() async throws {
+    let rig = SystemFailureRig()
+    let alias = try #require(RemoteCallID(rawValue: "pending-start"))
+    rig.engine.receive(.answeredElsewhere, forRemote: alias, eventID: e1)
+    let complete = try await rig.placePendingStart()
+    try rig.engine.bindRemote(alias, to: callID)
+
+    #expect(rig.status(callID) == .ended(.answeredElsewhere))
+    #expect(throws: ActionError.notAllowed(.ended(.answeredElsewhere))) {
+      try rig.startResults.first?.get()
+    }
+    #expect(rig.reportsEnded.isEmpty)
+    complete(.success(()))
+    #expect(rig.startResults.count == 1)
+    #expect(rig.framework.records.last == .reportEnded(callID, .answeredElsewhere))
+    #expect(rig.ended == [callID])
+  }
+
   @Test(arguments: [false, true])
   @VoIPActor func ignoresOldStartResultDuringReplacement(admitted: Bool) async throws {
     let rig = SystemFailureRig()

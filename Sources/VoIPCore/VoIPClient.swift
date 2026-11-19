@@ -11,12 +11,12 @@ import Synchronization
 ///
 /// Code that must see every event from the moment the client starts, including those of the VoIP
 /// push that cold-launched the app, is a ``CallObserver`` passed to
-/// ``start(framework:media:push:audio:observers:configuration:clock:)``.
+/// ``start(framework:media:push:audio:observers:configuration:clock:answerAuthority:)``.
 @MainActor
 @Observable
 public final class VoIPClient {
   /// The calls on this device that haven't ended, in the order they began, including call
-  /// previews.
+  /// previews. Incoming calls waiting for system admission are omitted.
   public private(set) var calls: [Call] = []
 
   /// Whether the system activated the audio session for calls.
@@ -64,8 +64,10 @@ public final class VoIPClient {
   ///     and the push source, and keeps them for its life.
   ///   - configuration: How the SDK presents and controls calls.
   ///   - clock: The clock that times deadlines and retention. Tests pass a `TestClock`.
+  ///   - answerAuthority: The optional native service that authorizes Answer before preparation.
   /// - Returns: The running client.
-  /// - Throws: ``StartupError/alreadyStarted`` when another client is running.
+  /// - Throws: ``StartupError/alreadyStarted`` when another client is running, or
+  ///   ``StartupError/invalidAnswerBudget`` if the authority's budget cannot fit the framework.
   public static func start(
     framework: any CallingFramework,
     media: any CallMedia,
@@ -73,8 +75,14 @@ public final class VoIPClient {
     audio: (any AudioSession)? = nil,
     observers: [any CallObserver] = [],
     configuration: VoIPConfiguration = VoIPConfiguration(),
-    clock: any Clock<Duration> = ContinuousClock()
+    clock: any Clock<Duration> = ContinuousClock(),
+    answerAuthority: (any AnswerAuthority)? = nil
   ) throws(StartupError) -> VoIPClient {
+    if answerAuthority != nil,
+      !configuration.answerBudget.isValid(effectiveDeadline: framework.effectiveAnswerDeadline)
+    {
+      throw .invalidAnswerBudget
+    }
     let claimed = isRunning.withLock { isRunning in
       defer { isRunning = true }
       return !isRunning
@@ -85,6 +93,7 @@ public final class VoIPClient {
     let engine = CallEngine(
       framework: framework, media: media, audio: audio, pushSource: push,
       configuration: configuration, clock: clock, subscribers: subscribers,
+      authority: answerAuthority,
       publish: { continuation.yield($0) })
     let client = VoIPClient(
       engine: engine, subscribers: subscribers, observers: observers, snapshots: snapshots)
@@ -101,7 +110,7 @@ public final class VoIPClient {
   /// subscribes are not kept; the SDK performs actions without waiting for the app, and
   /// ``calls`` holds the current state.
   ///
-  /// A stream created after ``start(framework:media:push:audio:observers:configuration:clock:)``
+  /// A stream created after ``start(framework:media:push:audio:observers:configuration:clock:answerAuthority:)``
   /// returns can miss the first events of a cold launch, because the SDK may report the call of
   /// the VoIP push that launched the app before the app subscribes. To receive every event from
   /// the start, create the stream in the ``CallObserver/attach(to:)`` of an observer passed to
@@ -251,15 +260,38 @@ public final class VoIPClient {
   /// present because Do Not Disturb or a Focus filtered it or it shows as a call preview, such as
   /// the call ending, which the app's servers send over the app's own connection or with a regular
   /// push rather than a VoIP push. An event whose ID the SDK has already seen is ignored, so the
-  /// same event can arrive over several channels. An event for a call this device doesn't know
-  /// yet is kept for ``VoIPConfiguration/retention`` and applied when the call arrives.
+  /// same event can arrive over several channels. An event for an unknown call is kept within
+  /// ``VoIPConfiguration/retention`` and ``VoIPConfiguration/eventHistoryLimit`` and applied
+  /// when the call arrives.
   ///
   /// - Parameters:
   ///   - event: The server event.
   ///   - id: The call it concerns.
   ///   - eventID: The event's identifier.
   public func receive(_ event: ServerEvent, for id: CallID, eventID: EventID) async {
-    await engine.receive(event, for: id, eventID: eventID)
+    await engine.receive(event, target: .canonical(id), eventID: eventID)
+  }
+
+  /// Adds a service alias to a call and applies events already waiting for that alias.
+  ///
+  /// Bind after the SDK has received the invitation or emitted ``CallEvent/startRequested(_:)``
+  /// for an outgoing call. A call can have multiple aliases. Repeating a binding succeeds
+  /// while the SDK retains the call. Another call can bind the same alias after this call ends.
+  ///
+  /// - Throws: ``ActionError/unknownCall`` for an unknown call,
+  ///   ``ActionError/notAllowed(_:)`` when adding an alias to an ended call, or
+  ///   ``ActionError/remoteIdentityConflict(_:)`` when another live call owns the alias.
+  public func bindRemote(_ remoteID: RemoteCallID, to id: CallID) async throws(ActionError) {
+    apply(try await engine.bindRemote(remoteID, to: id))
+  }
+
+  /// Applies a server event addressed to a service alias. If the alias is unbound, the SDK
+  /// holds the event for the configured retention and history limit.
+  ///
+  /// Use the same ``EventID`` across channels and across canonical and alias deliveries of
+  /// the same event.
+  public func receive(_ event: ServerEvent, forRemote id: RemoteCallID, eventID: EventID) async {
+    await engine.receive(event, target: .alias(id), eventID: eventID)
   }
 
   private func apply(_ snapshot: Snapshot) {
@@ -274,6 +306,8 @@ public final class VoIPClient {
 public enum StartupError: Error, Hashable, Sendable {
   /// Another client is running in this process, which has one calling framework provider.
   case alreadyStarted
+  /// The configured native Answer durations exceed the bounds or leave no preparation time.
+  case invalidAnswerBudget
 }
 
 /// The streams of everyone who subscribed to call events.

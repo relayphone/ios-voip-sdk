@@ -13,6 +13,38 @@ public struct CallID: RawRepresentable, Hashable, Sendable {
   public init(rawValue: String) {
     self.rawValue = rawValue
   }
+
+  public static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.rawValue.utf8.elementsEqual(rhs.rawValue.utf8)
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    WireValues.hashID(rawValue, into: &hasher)
+  }
+}
+
+/// A service's alias for an app call, such as a server-assigned call ID or a room ID.
+///
+/// Bind it with ``VoIPClient/bindRemote(_:to:)`` and keep using the canonical ``CallID``
+/// for actions on the call. Aliases are compared by their exact UTF-8 bytes.
+public struct RemoteCallID: RawRepresentable, Hashable, Sendable {
+  /// The exact identifier supplied by the service.
+  public let rawValue: String
+
+  /// Creates an alias of 1–256 Unicode scalars, without control characters or leading or
+  /// trailing whitespace.
+  public init?(rawValue: String) {
+    guard WireValues.isID(rawValue) else { return nil }
+    self.rawValue = rawValue
+  }
+
+  public static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.rawValue.utf8.elementsEqual(rhs.rawValue.utf8)
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    WireValues.hashID(rawValue, into: &hasher)
+  }
 }
 
 /// The app's identifier for one server event or VoIP push, used to recognise a repeated delivery
@@ -24,6 +56,14 @@ public struct EventID: RawRepresentable, Hashable, Sendable {
   /// Creates an event ID from the app's identifier.
   public init(rawValue: String) {
     self.rawValue = rawValue
+  }
+
+  public static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.rawValue.utf8.elementsEqual(rhs.rawValue.utf8)
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    WireValues.hashID(rawValue, into: &hasher)
   }
 }
 

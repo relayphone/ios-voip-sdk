@@ -14,7 +14,7 @@ extension CallMachine {
       let policy = incoming.presentationPolicy ?? configuration.presentationPolicy
       let call = Call(
         id: incoming.id, isIncoming: true, parties: incoming.parties, status: .ringing,
-        hasVideo: incoming.hasVideo, metadata: incoming.metadata)
+        hasVideo: incoming.hasVideo, metadata: incoming.metadata, answerScope: incoming.answerScope)
       switch policy.incoming {
       case .ring:
         var step = Step(
@@ -44,7 +44,7 @@ extension CallMachine {
     case .joining(let incoming):
       let call = Call(
         id: incoming.id, isIncoming: true, parties: incoming.parties, status: .ringing,
-        hasVideo: incoming.hasVideo, metadata: incoming.metadata)
+        hasVideo: incoming.hasVideo, metadata: incoming.metadata, answerScope: incoming.answerScope)
       let step = Step(
         call: call, phase: .previewing(.policy),
         policy: incoming.presentationPolicy ?? configuration.presentationPolicy,
@@ -67,9 +67,11 @@ extension CallMachine {
   /// Events are for this call. An event that doesn't apply to the call's phase leaves it
   /// unchanged, except that a framework action is failed and an app request is rejected.
   static func transition(
-    _ state: State, _ event: Event, configuration: VoIPConfiguration, now: Date
+    _ state: State, _ event: Event, configuration: VoIPConfiguration, now: Date,
+    elapsed: Duration = .zero
   ) -> (State, [Effect]) {
-    var step = Step(state: state, configuration: configuration, now: now)
+    var step = Step(state: state, configuration: configuration, now: now, elapsed: elapsed)
+    step.state.expireRetainedEnd(at: elapsed, after: configuration.retention)
     step.apply(event)
     return step.result
   }
@@ -86,15 +88,20 @@ private struct Step {
   var state: CallMachine.State
   let configuration: VoIPConfiguration
   let now: Date
+  let elapsed: Duration
   private var settlements: [Effect] = []
   private var timers: [Effect] = []
   private var outputs: [Effect] = []
   private var events: [Effect] = []
 
-  init(state: CallMachine.State, configuration: VoIPConfiguration, now: Date) {
+  init(
+    state: CallMachine.State, configuration: VoIPConfiguration, now: Date,
+    elapsed: Duration = .zero
+  ) {
     self.state = state
     self.configuration = configuration
     self.now = now
+    self.elapsed = elapsed
   }
 
   init(
@@ -120,8 +127,13 @@ private struct Step {
     case .startAdmitted(let attempt, let id, let outgoing): startAdmitted(attempt, id, outgoing)
     case .startFailed(let attempt, let failure): startFailed(attempt, failure)
     case .performed(let id, let action): perform(id, action)
+    case .answerRequested(let attempt): requestAnswer(attempt)
+    case .answerResolved(let attempt, let stage, let decision):
+      resolveAnswer(attempt, stage: stage, decision: decision)
     case .actionTimedOut(let id):
-      if state.phase.held?.id == id { abandon(.actionTimedOut) }
+      if state.phase.held?.id == id || state.answer?.attempt.action == id {
+        abandon(.actionTimedOut)
+      }
     case .audioActivated:
       disarm(.audioActivation)
       disarm(.audioRecovery)
@@ -138,7 +150,7 @@ private struct Step {
     case .mediaPrepared: mediaPrepared()
     case .mediaPreparationFailed:
       if state.armed[.mediaPreparation] != nil { abandon(.media) }
-    case .server(let event): server(event)
+    case .server(let event, let receipt): server(event, receipt: receipt)
     case .deadlineExpired(let deadline, let generation):
       guard state.armed[deadline] == generation else { return }
       state.armed[deadline] = nil
@@ -242,6 +254,68 @@ private struct Step {
     if !state.startProgress.contains(progress) { state.startProgress.append(progress) }
   }
 
+  private mutating func requestAnswer(_ attempt: CallMachine.AnswerAttempt) {
+    if state.answer?.attempt.action == attempt.action { return }
+    guard state.phase == .ringing, state.answer == nil else { return fail(attempt.action) }
+    let budget = configuration.answerBudget
+    guard budget.fits(attempt.total) else {
+      fail(attempt.action)
+      emit(.answerFailed(state.call, attempt.action, .invalidBudget))
+      return
+    }
+    state.answer = .init(attempt: attempt)
+    disarm(.ring)
+    let due = attempt.received + budget.claim
+    arm(.claim, at: due)
+    output(.requestAnswer(attempt, stage: .claim, due: due))
+  }
+
+  private mutating func claimExpired() {
+    guard let answer = state.answer, answer.permit == nil else { return }
+    let attempt = answer.attempt
+    // Both stages use the original receipt, even if the runtime delivered this timer late.
+    let budget = configuration.answerBudget
+    let due = attempt.received + budget.claim + budget.reconciliation
+    output(.emit(.answerClaimTimedOut(state.call, attempt.action)))
+    guard elapsed < due else { return rejectAnswer(.claimTimedOut) }
+    arm(.reconciliation, at: due)
+    output(.requestAnswer(attempt, stage: .reconciliation, due: due))
+  }
+
+  private mutating func resolveAnswer(
+    _ attempt: CallMachine.AttemptID, stage: Deadline, decision: AnswerDecision?
+  ) {
+    guard state.answer?.attempt.generation == attempt, state.armed[stage] != nil,
+      let answer = state.answer
+    else { return }
+    switch decision {
+    case .allow(let permit):
+      disarm(stage)
+      state.answer?.permit = permit
+      let preparationDue =
+        answer.attempt.received + answer.attempt.total
+        - configuration.answerBudget.settlementReserve
+      arm(
+        .mediaPreparation,
+        at: min(elapsed + configuration.deadlines.mediaPreparation, preparationDue))
+      output(.prepareMedia(state.call))
+    case .refuse(let reason): rejectAnswer(.refused(reason))
+    case .unavailable(let cause) where stage == .claim: rejectAnswer(.unavailable(cause))
+    case .unavailable, nil: rejectAnswer(.claimTimedOut)
+    }
+  }
+
+  private mutating func rejectAnswer(_ failure: AnswerFailure) {
+    guard let answer = state.answer else { return }
+    let id = answer.attempt.action
+    switch failure {
+    case .refused(.answeredElsewhere): answeredElsewhere(frameworkPresentsCall: true)
+    case .refused(.declinedElsewhere): end(.declinedElsewhere, reportingEnd: true)
+    default: end(.failed(.answerAuthorization(failure)), reportingEnd: true)
+    }
+    output(.emit(.answerFailed(state.call, id, failure)))
+  }
+
   private mutating func perform(_ id: ActionID, _ action: Action) {
     let capabilities = configuration.capabilities
     switch (state.phase, action) {
@@ -287,7 +361,9 @@ private struct Step {
     case .start, .end:
       reject(action, .notAllowed(state.call.status))
     case .answer:
-      guard phase == .ringing else { return reject(action, .notAllowed(state.call.status)) }
+      guard phase == .ringing, state.answer == nil else {
+        return reject(action, .notAllowed(state.call.status))
+      }
       output(.request(action))
     case .join:
       guard phase.isPreviewing else { return reject(action, .notAllowed(state.call.status)) }
@@ -374,6 +450,12 @@ private struct Step {
   }
 
   private mutating func mediaPrepared() {
+    if let answer = state.answer, answer.permit != nil {
+      state.answer = nil
+      state.call.answeredAt = now
+      let held = CallMachine.HeldAction(id: answer.attempt.action, action: .answer(state.call.id))
+      enter(.preparing(held))
+    }
     if case .preparingStart(let outgoing) = state.phase {
       disarm(.mediaPreparation)
       openNativeStart(outgoing)
@@ -408,7 +490,7 @@ private struct Step {
     emit(.performed(held.action, state.call))
   }
 
-  private mutating func server(_ event: ServerEvent) {
+  private mutating func server(_ event: ServerEvent, receipt: CallMachine.ServerReceipt? = nil) {
     let phase = state.phase
     switch event {
     case .partiesChanged(let parties):
@@ -416,6 +498,7 @@ private struct Step {
       state.call.parties = parties
       if !phase.isPreviewing { output(.update(state.call)) }
     case .connecting:
+      if state.answer != nil { state.earlyProgress = state.earlyProgress ?? .connecting }
       // Deferred outgoing calls keep their no-answer timer until an explicit connected report.
       if !state.call.isIncoming && configuration.outgoingMedia == .whenProvided { return }
       switch phase {
@@ -429,6 +512,10 @@ private struct Step {
         break
       }
     case .connected:
+      if state.answer != nil {
+        state.earlyProgress = .connected
+        return
+      }
       if state.startAttempt != nil && !phase.isEnded {
         bufferStartProgress(.connected)
         return
@@ -459,20 +546,20 @@ private struct Step {
     case .answeredElsewhere:
       switch phase {
       case .reporting:
-        serverEnded(.answeredElsewhere)
+        serverEnded(.answeredElsewhere, receipt: receipt)
       case .ringing:
         answeredElsewhere(frameworkPresentsCall: true)
       case .preparing(let held) where held.action.isAnswer:
         answeredElsewhere(frameworkPresentsCall: true)
       case .connecting where !state.startedHere:
         answeredElsewhere(frameworkPresentsCall: true)
+      case _ where state.startAttempt != nil:
+        serverEnded(.answeredElsewhere, receipt: receipt)
       default:
         break
       }
-    case .endedRemotely: serverEnded(.endedRemotely)
-    case .declinedElsewhere: serverEnded(.declinedElsewhere)
-    case .unanswered: serverEnded(.unanswered)
-    case .failed: serverEnded(.failed(.server))
+    case .endedRemotely, .declinedElsewhere, .unanswered, .failed:
+      if let reason = event.endReason { serverEnded(reason, receipt: receipt) }
     }
   }
 
@@ -489,11 +576,18 @@ private struct Step {
 
   /// The app's servers reported that the call is over. While it is being reported, the reason
   /// waits for the calling framework's answer.
-  private mutating func serverEnded(_ reason: EndReason) {
+  private mutating func serverEnded(_ reason: EndReason, receipt: CallMachine.ServerReceipt?) {
     switch state.phase {
-    case .reporting(nil): enter(.reporting(endOnPresent: reason))
+    case .reporting(let retained):
+      if retained != nil {
+        guard let receipt, let previous = state.retainedEndReceipt,
+          receipt.sequence < previous.sequence
+        else { return }
+      }
+      enter(.reporting(endOnPresent: reason))
+      state.retainedEndReceipt = receipt
     case .previewing: end(reason, reportingEnd: false)
-    case .reporting, .ended: break
+    case .ended: break
     default: end(reason, reportingEnd: true)
     }
   }
@@ -501,6 +595,8 @@ private struct Step {
   private mutating func expire(_ deadline: Deadline) {
     switch deadline {
     case .ring: end(.unanswered, reportingEnd: true)
+    case .claim: claimExpired()
+    case .reconciliation: rejectAnswer(.claimTimedOut)
     case .placement: abandon(.notPlaced)
     case .mediaPreparation: abandon(.media)
     case .audioActivation: end(.failed(.audioActivationTimedOut), reportingEnd: true)
@@ -514,6 +610,7 @@ private struct Step {
   /// media services reset while it took part.
   private mutating func audioConfigurationFailed() {
     switch state.phase {
+    case .ringing where state.answer?.permit != nil: abandon(.audioSession)
     case .preparing, .preparingStart: abandon(.audioSession)
     case let phase where phase.isTakingPart: end(.failed(.audioSession), reportingEnd: true)
     default: break
@@ -575,6 +672,8 @@ private struct Step {
     afterJoin failure: JoinFailure? = nil
   ) {
     if let held = state.phase.held { fail(held.id) }
+    if let answer = state.answer { fail(answer.attempt.action) }
+    state.answer = nil
     disarmAll()
     if let endReason { output(.reportEnded(state.call.id, endReason)) }
     state.startedHere = false
@@ -612,6 +711,8 @@ private struct Step {
     performed action: Action? = nil
   ) {
     if let held = state.phase.held { fail(held.id) }
+    if let answer = state.answer { fail(answer.attempt.action) }
+    state.answer = nil
     let startAttempt = state.startAttempt
     if let startAttempt {
       settlements.append(.settleStart(startAttempt, .notAllowed(.ended(reason))))
@@ -639,13 +740,11 @@ private struct Step {
   private mutating func enter(_ phase: Phase) {
     state.phase = phase
     state.call.status = phase.status
+    state.retainedEndReceipt = nil
     if case .previewing(let reason) = phase { state.previewReason = reason }
   }
 
   mutating func arm(_ deadline: Deadline) {
-    disarm(deadline)
-    state.lastGeneration += 1
-    state.armed[deadline] = state.lastGeneration
     let duration =
       if deadline == .ring, !state.call.isIncoming,
         let noAnswer = configuration.deadlines.outgoingNoAnswer
@@ -654,7 +753,21 @@ private struct Step {
       } else {
         configuration.deadlines[deadline]
       }
+    arm(deadline, after: duration)
+  }
+
+  private mutating func arm(_ deadline: Deadline, after duration: Duration) {
+    disarm(deadline)
+    state.lastGeneration += 1
+    state.armed[deadline] = state.lastGeneration
     timers.append(.arm(deadline, after: duration, generation: state.lastGeneration))
+  }
+
+  private mutating func arm(_ deadline: Deadline, at due: Duration) {
+    disarm(deadline)
+    state.lastGeneration += 1
+    state.armed[deadline] = state.lastGeneration
+    timers.append(.armAt(deadline, due: due, generation: state.lastGeneration))
   }
 
   private mutating func disarm(_ deadline: Deadline) {

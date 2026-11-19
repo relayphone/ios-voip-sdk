@@ -26,6 +26,12 @@ public protocol CallMedia: Sendable {
   /// - Parameter call: The call whose media to prepare.
   func prepare(_ call: Call) async throws
 
+  /// Prepares an authorized Answer with credentials supplied by the service.
+  ///
+  /// As with ``prepare(_:)``, keep audio closed until activation. Consume the credentials
+  /// in native code. The default throws when the media provider does not accept credentials.
+  func prepare(_ call: Call, answerCredentials: AnswerMediaCredentials) async throws
+
   /// Starts using the microphone and speaker, now that the system activated the audio session.
   func activate()
 
@@ -51,7 +57,14 @@ public protocol CallMedia: Sendable {
   func release(_ call: Call)
 }
 
+enum AnswerMediaPreparationError: Error { case unsupported, expired }
+
 extension CallMedia {
+  /// Fails preparation when the provider has no implementation for service credentials.
+  public func prepare(_ call: Call, answerCredentials: AnswerMediaCredentials) async throws {
+    throw AnswerMediaPreparationError.unsupported
+  }
+
   /// Media without packet telemetry produces no observations.
   public func transportEvents() -> AsyncStream<MediaTransportEvent> {
     AsyncStream { $0.finish() }

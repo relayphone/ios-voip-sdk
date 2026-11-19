@@ -933,7 +933,7 @@ public final class MediaFeasibilitySubscriber: ExpoAppDelegateSubscriber {
         status = .ended
         if case .failed(let cause) = reason {
           switch cause {
-          case .refused, .systemFailed: failure = .refused
+          case .refused, .systemFailed, .answerAuthorization: failure = .refused
           case .atCapacity: failure = .atCapacity
           case .notPlaced: failure = .notPlaced
           case .media: failure = .media

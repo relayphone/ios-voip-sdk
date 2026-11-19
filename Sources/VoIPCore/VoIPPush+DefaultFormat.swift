@@ -22,7 +22,8 @@ extension VoIPPush {
   /// parentheses, hyphens and periods, which are removed; it must then be in E.164 format.
   /// `hasVideo` and `metadata` are optional. `metadata` is an object of any JSON values, which
   /// becomes the call's ``IncomingCall/metadata``; a `metadata` that isn't an object is ignored.
-  /// The older `incoming_call` key is accepted too.
+  /// For the built-in Answer authority, include an `answerScope` object with `accountID` and
+  /// `lineID` inside `incomingCall`. The older `incoming_call` key is accepted too.
   ///
   /// A server event is a `callEnded` message whose body is a JSON string:
   ///
@@ -81,7 +82,7 @@ private struct IncomingCallBody: Decodable {
   private enum CodingKeys: String, CodingKey {
     case eventID = "eventId"
     case serverCallID = "serverCallId"
-    case caller, hasVideo, metadata
+    case caller, hasVideo, metadata, answerScope
   }
 
   init(from decoder: any Decoder) throws {
@@ -92,7 +93,8 @@ private struct IncomingCallBody: Decodable {
     incoming = IncomingCall(
       id: callID, parties: [caller.party],
       hasVideo: (try? values.decode(Bool.self, forKey: .hasVideo)) ?? false,
-      metadata: (try? values.decode([String: JSONValue].self, forKey: .metadata)) ?? [:])
+      metadata: (try? values.decode([String: JSONValue].self, forKey: .metadata)) ?? [:],
+      answerScope: try? values.decode(AnswerScope.self, forKey: .answerScope))
   }
 }
 

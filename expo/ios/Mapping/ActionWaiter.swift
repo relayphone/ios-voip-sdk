@@ -41,6 +41,13 @@ final class ActionWaiter {
       if case .ended(.failed) = call.status {
         failure = failure ?? .failedBeforePerformance
       }
+    case .answerFailed(_, _, let failure):
+      if case .refused(let reason) = failure {
+        self.failure = CommandError(
+          code: .conversation, message: "Answer refused: \(reason.rawValue)")
+      } else {
+        self.failure = .failedBeforePerformance
+      }
     case .joinFailed:
       failure =
         failure
@@ -61,7 +68,9 @@ final class ActionWaiter {
     case .performed(let performed, _): performed == action
     case .ended(let call), .previewStarted(let call), .joinFailed(let call, _):
       call.id == action.callID
-    case .presented, .startRequested, .joinRequested, .audioActivated, .audioDeactivated,
+    case .answerFailed(let call, _, _): action == .answer(call.id)
+    case .answerClaimTimedOut, .presented, .startRequested, .joinRequested, .audioActivated,
+      .audioDeactivated,
       .audioInterrupted, .mediaServicesReset, .videoChanged:
       false
     }

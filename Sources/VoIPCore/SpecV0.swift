@@ -8,13 +8,7 @@
       package init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         let value = try container.decode(String.self)
-        let scalars = value.unicodeScalars
-        let validEdges = [scalars.first, scalars.last].allSatisfy {
-          $0.map { !SpecV0.isWireWhitespace($0) } ?? false
-        }
-        guard validEdges, scalars.count <= 256,
-          !scalars.contains(where: { $0.value <= 0x1F || (0x7F...0x9F).contains($0.value) })
-        else {
+        guard WireValues.isID(value) else {
           throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid wire ID")
         }
         rawValue = value
@@ -30,10 +24,7 @@
       }
 
       package func hash(into hasher: inout Hasher) {
-        hasher.combine(rawValue.utf8.count)
-        for byte in rawValue.utf8 {
-          hasher.combine(byte)
-        }
+        WireValues.hashID(rawValue, into: &hasher)
       }
     }
 
@@ -105,13 +96,13 @@
           let value = try object.text(.address)
           let parts = value.unicodeScalars.split(separator: "@", omittingEmptySubsequences: false)
           guard parts.count == 2, parts.allSatisfy({ !$0.isEmpty }),
-            !value.unicodeScalars.contains(where: SpecV0.isWireWhitespace)
+            !value.unicodeScalars.contains(where: WireValues.isWhitespace)
           else { throw object.invalid("Invalid email handle") }
           self = .email(value)
         case .opaque:
           try object.requireOnly(.kind, .value)
           let value = try object.text(.value)
-          guard value.unicodeScalars.contains(where: { !SpecV0.isWireWhitespace($0) }) else {
+          guard value.unicodeScalars.contains(where: { !WireValues.isWhitespace($0) }) else {
             throw object.invalid("Blank opaque handle")
           }
           self = .opaque(value)
@@ -282,15 +273,6 @@
         connection = try object.decode(.connection)
         reconnection = try object.decode(.reconnection)
         retention = try object.optional(.retention)
-      }
-    }
-
-    private static func isWireWhitespace(_ scalar: Unicode.Scalar) -> Bool {
-      switch scalar.value {
-      case 0x09...0x0D, 0x20, 0xA0, 0x1680, 0x2000...0x200A, 0x2028, 0x2029, 0x202F,
-        0x205F, 0x3000, 0xFEFF:
-        true
-      default: false
       }
     }
 
