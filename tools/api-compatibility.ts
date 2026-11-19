@@ -4,13 +4,32 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isMain, main, repository, run } from './command.ts';
 
+interface ReleaseVersion {
+  major: number;
+  minor: number;
+  patch: number;
+}
+
+function parseVersion(text: string) {
+  const [, major, minor, patch] = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(text) ?? [];
+  if (major === undefined || minor === undefined || patch === undefined) return;
+  return { major: Number(major), minor: Number(minor), patch: Number(patch) } satisfies ReleaseVersion;
+}
+
+function requireVersion(version: string) {
+  const text = version.trim();
+  const parts = parseVersion(text);
+  if (!parts) throw new Error('VERSION must contain a release version such as 0.2.1');
+  return { text, parts };
+}
+
+function compareVersions(left: ReleaseVersion, right: ReleaseVersion) {
+  return left.major - right.major || left.minor - right.minor || left.patch - right.patch;
+}
+
 /** The last release is the annotated v-prefixed tag matching VERSION. */
-export function releaseTag(version: string): string {
-  const value = version.trim();
-  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value)) {
-    throw new Error('VERSION must contain a release version such as 0.2.1');
-  }
-  return `v${value}`;
+export function releaseTag(version: string) {
+  return `v${requireVersion(version).text}`;
 }
 
 /**
@@ -18,44 +37,38 @@ export function releaseTag(version: string): string {
  * A release PR raises VERSION before its tag exists: it is compared with the newest earlier
  * release, and its breaks are documented under the new release's own section.
  */
-export function baseline(version: string, tags: readonly string[]): { tag: string; section: string } {
-  const tag = releaseTag(version);
+export function baseline(version: string, tags: readonly string[]) {
+  const target = requireVersion(version);
+  const tag = `v${target.text}`;
   if (tags.includes(tag)) return { tag, section: 'Unreleased' };
-  const parts = (value: string) => value.slice(1).split('.').map(Number);
-  const target = parts(tag);
-  const earlier = (value: number[]) => {
-    for (let index = 0; index < 3; index++) {
-      if (value[index] !== target[index]) return value[index]! < target[index]!;
-    }
-    return false;
-  };
-  const previous = tags
-    .filter(candidate => /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(candidate))
-    .filter(candidate => earlier(parts(candidate)))
-    .sort((a, b) => {
-      const [x, y] = [parts(a), parts(b)];
-      return y[0]! - x[0]! || y[1]! - x[1]! || y[2]! - x[2]!;
-    })[0];
+
+  let previous: { tag: string; parts: ReleaseVersion } | undefined;
+  for (const candidate of tags) {
+    if (!candidate.startsWith('v')) continue;
+    const parts = parseVersion(candidate.slice(1));
+    if (!parts || compareVersions(parts, target.parts) >= 0) continue;
+    if (!previous || compareVersions(parts, previous.parts) > 0) previous = { tag: candidate, parts };
+  }
   if (!previous) throw new Error(`No release tag precedes ${tag}`);
-  return { tag: previous, section: version.trim() };
+  return { tag: previous.tag, section: target.text };
 }
 
 /** Recognize the repository's ATX headings, excluding fenced code examples. */
-export function hasBreakingHeading(changelog: string, section = 'Unreleased'): boolean {
+export function hasBreakingHeading(changelog: string, section = 'Unreleased') {
   let unreleased = false;
   let fence: string | undefined;
   for (const line of changelog.split(/\r?\n/)) {
     const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
     if (fence !== undefined) {
-      if (marker?.startsWith(fence[0]!) && marker.length >= fence.length &&
+      if (marker?.startsWith(fence.charAt(0)) && marker.length >= fence.length &&
           line.trim() === marker) fence = undefined;
       continue;
     }
     if (marker) { fence = marker; continue; }
-    const heading = /^ {0,3}(#{1,6})[ \t]+(.+?)\s*$/.exec(line);
-    if (!heading) continue;
-    const level = heading[1]!.length;
-    const title = heading[2]!.replace(/[ \t]+#+$/, '').trim();
+    const [, hashes, text] = /^ {0,3}(#{1,6})[ \t]+(.+?)\s*$/.exec(line) ?? [];
+    if (!hashes || text === undefined) continue;
+    const level = hashes.length;
+    const title = text.replace(/[ \t]+#+$/, '').trim();
     if (level <= 2) unreleased = level === 2 && (title === section || title.startsWith(`${section} (`));
     if (unreleased && level === 3 && title === 'Breaking') return true;
   }
@@ -71,7 +84,7 @@ export interface Assessment {
 /** A documented break can excuse API diagnostics, never a failed build or tool invocation. */
 export function assess(
   status: number | null, output: string, changelog: string, version: string, section = 'Unreleased',
-): Assessment {
+) {
   const lines = output.split(/\r?\n/);
   const breaks = [...new Set(lines.filter(line => line.includes('API breakage:')).map(line =>
     line.slice(line.indexOf('API breakage:')).replace(/ \[#api-digester-breaking-change\]$/, '').trim(),
@@ -87,11 +100,11 @@ export function assess(
     kind = version.trim().startsWith('0.') && hasBreakingHeading(changelog, section)
       ? 'documented' : 'undocumented';
   }
-  return { kind, breaks, output };
+  return { kind, breaks, output } satisfies Assessment;
 }
 
 /** List the actual diagnostics in the job summary, quoted to preserve Markdown identifiers. */
-export function summary(tag: string, result: Assessment, section = 'Unreleased'): string {
+export function summary(tag: string, result: Assessment, section = 'Unreleased') {
   const outcome: Record<Assessment['kind'], string> = {
     compatible: 'No API breaks detected.',
     documented: `Pre-1.0 API breaks allowed by the ${section} Breaking heading.`,

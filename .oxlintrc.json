@@ -69,6 +69,21 @@
         // The manifest test validates JSON fields at runtime.
         "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }]
       }
+    },
+    {
+      "files": ["tools/api-compatibility{,.test}.ts", "tools/check-package-isolation.ts"],
+      "rules": {
+        "landmines-types/no-explicit-return-types": "error",
+        "anti-slop/no-known-value-widening": "error",
+        "anti-slop/no-runtime-typeof": "error"
+      }
+    },
+    {
+      "files": ["tools/check-package-isolation.ts"],
+      "rules": {
+        // SwiftPM lockfile guards establish pin identity and version types before checking dependencies.
+        "anti-slop/no-runtime-typeof": ["error", { "allowInTypeGuards": true }]
+      }
     }
   ]
 }
