@@ -1,7 +1,8 @@
 import * as calls from '@relayphone/ios-voip-sdk';
 import { File, Paths } from 'expo-file-system';
 import { useEffect, useRef } from 'react';
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
+import { driveAndroidJourney } from './android';
 import { driveJourney, type JourneyEvents } from './drive';
 
 /** An explicit deep link runs the example's headless integration checks. */
@@ -26,6 +27,13 @@ export function Journeys() {
       const runID = parsed.searchParams.get('runID');
       if (!runID || !/^[a-zA-Z0-9-]+$/.test(runID)) return;
       started.current = true;
+      if (Platform.OS === 'android') {
+        void driveAndroidJourney(runID, events.current).then(
+          () => console.info(`VoIPJourney ${runID} passed`),
+          error => console.error(`VoIPJourney ${runID} failed: ${String(error)}`),
+        );
+        return;
+      }
       const output = new File(Paths.document, 'javascript-journeys.json');
       void driveJourney(runID, calls, events.current, result => output.write(JSON.stringify(result)))
         .catch(error => console.error('JavaScript journey failed', error));

@@ -96,7 +96,7 @@ export const actionReceipt = object({
   actionID, action, origin: literal('app', 'system', 'remote'),
 });
 export type ActionReceipt = Decoded<typeof actionReceipt>;
-const endResult = union(
+export const endResult = union(
   object({ kind: literal('ended'), receipt: object({ callID, actionID, reason: localEnd }) }),
   object({ kind: literal('alreadyEnded'), reason: endReason }),
 );

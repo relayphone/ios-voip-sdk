@@ -1,9 +1,10 @@
 import { id, integer, literal, object, union, type Decoded } from './decode.ts';
-import { actionReceipt, callID, endReason, error, previewReason } from './wire-v0.ts';
+import { actionReceipt, callID, endReason, endResult, error, previewReason } from './wire-v0.ts';
 import { feature } from './wire-v1.ts';
 
 export const cursor = object({ epoch: id<'epoch'>(), sequence: integer() });
 export const performed = object({ kind: literal('performed'), cursor, receipt: actionReceipt });
+export const ended = object({ kind: literal('end'), cursor, outcome: endResult });
 export type Performed = Decoded<typeof performed>;
 
 const bridgeError = union(error, object({ kind: literal('unsupported'), feature }));

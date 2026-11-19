@@ -9,6 +9,7 @@ const config: ExpoConfig = {
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/icon.png",
+  android: { package: BUNDLE_ID },
   ios: {
     supportsTablet: true,
     bundleIdentifier: BUNDLE_ID,
@@ -40,6 +41,7 @@ const config: ExpoConfig = {
       "@relayphone/ios-voip-sdk",
       {
         mediaAdapter: "none",
+        android: { accountID: "example" },
         sounds: ["./assets/sounds/ringtone.wav"],
         defaultRingtoneIos: "ringtone.wav",
         iconTemplateIos: "./assets/call-icon.png",

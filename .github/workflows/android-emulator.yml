@@ -2,10 +2,10 @@ name: Android Emulator
 
 on:
   pull_request:
-    paths: ['android/**']
+    paths: ['android/**', 'expo/**', 'spec/**', '.github/workflows/android-emulator.yml']
   push:
     branches: [main]
-    paths: ['android/**']
+    paths: ['android/**', 'expo/**', 'spec/**', '.github/workflows/android-emulator.yml']
 
 permissions:
   contents: read
@@ -15,7 +15,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  expo-apk:
+    name: Build Expo Release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '26'
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
+      - name: Build the packed Expo example
+        run: |
+          timeout --kill-after=10s 240s "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-37.0" "build-tools;36.0.0" "ndk;27.1.12297006" "cmake;3.22.1"
+          npm ci --prefix expo --ignore-scripts --no-audit --no-fund
+          npm pack ./expo --pack-destination "$RUNNER_TEMP"
+          cp -R expo/example/client "$RUNNER_TEMP/android-example"
+          cd "$RUNNER_TEMP/android-example"
+          npm install --ignore-scripts --no-audit --no-fund "$RUNNER_TEMP/relayphone-ios-voip-sdk-"*.tgz
+          CI=1 node node_modules/expo/bin/cli prebuild --platform android --no-install
+          cd android
+          NODE_ENV=production timeout --kill-after=15s 600s ./gradlew :app:assembleRelease \
+            -PreactNativeArchitectures=x86_64 --no-daemon --max-workers=2 --console=plain
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: expo-android-release
+          path: ${{ runner.temp }}/android-example/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
   emulator:
+    needs: expo-apk
     name: API ${{ matrix.api }} (4g-4cpu)
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -54,6 +89,10 @@ jobs:
       - name: Build instrumentation APKs
         if: ${{ hashFiles('android/system/build.gradle.kts') != '' }}
         run: timeout --kill-after=15s 360s ./gradlew :system:assembleDebugAndroidTest --no-daemon --max-workers=2 --console=plain
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: expo-android-release
+          path: ${{ runner.temp }}/expo-apk
       - name: Provision KVM and the pinned system image (infrastructure)
         env:
           API: ${{ matrix.api }}
@@ -79,7 +118,9 @@ jobs:
           timeout --kill-after=5s 45s "$sdk_tools/avdmanager" create avd --name telecom \
             --package "system-images;android-$API;google_apis;x86_64" --device pixel_6 <<< no
           test -f "$ANDROID_AVD_HOME/telecom.avd/config.ini"
-      - name: Warm emulator and run instrumentation
+      - name: Run Telecom instrumentation and Expo incoming journey
+        env:
+          EXPO_CALL_JOURNEY_APK: ${{ runner.temp }}/expo-apk/app-release.apk
         run: node emulator/run.ts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()

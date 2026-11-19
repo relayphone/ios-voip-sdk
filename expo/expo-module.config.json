@@ -1,6 +1,7 @@
 {
   "platforms": [
-    "apple"
+    "apple",
+    "android"
   ],
   "apple": {
     "modules": [
@@ -8,6 +9,11 @@
     ],
     "appDelegateSubscribers": [
       "VoIPConversationsAppDelegateSubscriber"
+    ]
+  },
+  "android": {
+    "modules": [
+      "com.relayphone.voip.expo.VoIPConversationsModule"
     ]
   }
 }
