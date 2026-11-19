@@ -3,6 +3,7 @@ import CoreAudio
 enum AudioTransport: Equatable {
   case virtual
   case aggregate
+  case builtIn
   case hardware(String)
 
   init(_ code: UInt32) {
@@ -10,7 +11,7 @@ enum AudioTransport: Equatable {
       switch code {
       case kAudioDeviceTransportTypeVirtual: .virtual
       case kAudioDeviceTransportTypeAggregate, kAudioDeviceTransportTypeAutoAggregate: .aggregate
-      case kAudioDeviceTransportTypeBuiltIn: .hardware("built-in")
+      case kAudioDeviceTransportTypeBuiltIn: .builtIn
       case kAudioDeviceTransportTypeUSB: .hardware("USB")
       case kAudioDeviceTransportTypeBluetooth: .hardware("Bluetooth")
       case kAudioDeviceTransportTypeBluetoothLE: .hardware("Bluetooth LE")
@@ -28,6 +29,7 @@ enum AudioTransport: Equatable {
     switch self {
     case .virtual: "virtual"
     case .aggregate: "aggregate"
+    case .builtIn: "built-in"
     case .hardware(let label): label
     }
   }
@@ -57,6 +59,8 @@ struct AudioRoute {
     switch transport {
     case .virtual:
       hardware = nil
+    case .builtIn:
+      hardware = Hardware(id: id, transport: transport.label)
     case .hardware(let label):
       hardware = Hardware(id: id, transport: label)
     case .aggregate:
@@ -70,5 +74,32 @@ struct AudioRoute {
       }
       hardware = nil
     }
+  }
+}
+
+struct AudioDeviceIdentity: Equatable, Sendable {
+  let uid: String
+  let modelUID: String?
+}
+
+struct HostedAudioPolicy {
+  // Add identities only after observing them on the hosted runner.
+  private static let hostedDevices: [AudioDeviceIdentity] = []
+  private let pins: [AudioDeviceIdentity]
+  let isHosted: Bool
+
+  init(environment: [String: String], pins: [AudioDeviceIdentity]? = nil) {
+    isHosted =
+      environment["GITHUB_ACTIONS"] == "true"
+      && environment["RUNNER_ENVIRONMENT"] == "github-hosted"
+    self.pins = pins ?? Self.hostedDevices
+  }
+
+  var needsHostedDevicePins: Bool { isHosted && pins.isEmpty }
+
+  func allows(_ identity: AudioDeviceIdentity, route: AudioRoute) -> Bool {
+    guard isHosted else { return route.hardware == nil }
+    guard pins.contains(identity) else { return false }
+    return route.transport == .builtIn || route.hardware == nil
   }
 }

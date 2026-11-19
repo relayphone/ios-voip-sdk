@@ -26,7 +26,7 @@ export class HostAudioGuardFailure extends Error {}
 export function requireSimulatorMedia({ environment, leaseAudio }: Authorization = {
   environment: process.env,
 }): void {
-  if (environment.GITHUB_ACTIONS === 'true') return;
+  if (environment.GITHUB_ACTIONS === 'true' && environment.RUNNER_ENVIRONMENT === 'github-hosted') return;
   const runOnCI = 'Run simulator media and video journeys on hosted GitHub Actions.';
   if (!leaseAudio) {
     throw new SimulatorMediaRefusal(`Simulator media can activate the host speakers and microphone. Isolated simulator leases are not available yet. ${runOnCI}`);
@@ -47,7 +47,7 @@ const guardSources = ['main.swift', 'AudioTransport.swift'].map(
   file => fileURLToPath(new URL(`./HostAudioGuard/Sources/HostAudioGuard/${file}`, import.meta.url)),
 );
 
-async function startAudioGuard(): Promise<AudioGuard> {
+async function startAudioGuard(reportDevice: (line: string) => void): Promise<AudioGuard> {
   const scratch = await mkdtemp(join(tmpdir(), 'host-audio-guard-'));
   const binary = join(scratch, 'guard');
   try {
@@ -62,7 +62,6 @@ async function startAudioGuard(): Promise<AudioGuard> {
   const controller = new AbortController();
   const ready = Promise.withResolvers<string>();
   let diagnostic = '';
-  const allowed = new Set<string>();
   let clean = false;
   let finishing = false;
   const fail = (error: Error) => { ready.reject(error); controller.abort(error); };
@@ -75,7 +74,10 @@ async function startAudioGuard(): Promise<AudioGuard> {
       ready.resolve(line.slice('ready: '.length));
     }
     if (line === 'clean: host audio guard completed') clean = true;
-    if (line.startsWith('allowed: ')) allowed.add(line.slice('allowed: '.length));
+    if (line.startsWith('audio route: ')) {
+      try { reportDevice(line.slice('audio route: '.length)); }
+      catch (cause) { fail(new Error('Could not report the Core Audio route', { cause })); }
+    }
   });
   const closed = new Promise<void>(resolve => child.once('close', code => {
     if (!finishing || code !== 0 || !clean) {
@@ -93,7 +95,7 @@ async function startAudioGuard(): Promise<AudioGuard> {
         try {
           await deadline(5_000, 'Core Audio guard verdict', () => closed);
           controller.signal.throwIfAborted();
-          return [mode, ...allowed].join(', ');
+          return mode;
         } finally {
           if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
           await rm(scratch, { recursive: true, force: true });
@@ -111,21 +113,22 @@ async function startAudioGuard(): Promise<AudioGuard> {
 export async function withSimulatorMediaAudio<T>(
   run: (signal: AbortSignal) => Promise<T>,
   { authorization = { environment: process.env }, start = startAudioGuard }:
-    { authorization?: Authorization; start?: () => Promise<AudioGuard> } = {},
+    { authorization?: Authorization; start?: (reportDevice: (line: string) => void) => Promise<AudioGuard> } = {},
 ): Promise<T> {
   requireSimulatorMedia(authorization);
-  const report = (verdict: string) => {
-    console.error(`Core Audio guard ${verdict}`);
+  const record = (line: string) => {
+    console.error(line);
     const summary = authorization.environment.GITHUB_STEP_SUMMARY;
-    if (summary) appendFileSync(summary, `\nCore Audio guard ${verdict}\n`);
+    if (summary) appendFileSync(summary, `\n${line}\n`);
   };
+  const report = (verdict: string) => record(`Core Audio guard ${verdict}`);
   function fail(cause: unknown): never {
     const failure = new HostAudioGuardFailure(cause instanceof Error ? cause.message : String(cause), { cause });
     report(`failed: ${failure.message}`);
     throw failure;
   }
   let guard: AudioGuard;
-  try { guard = await start(); }
+  try { guard = await start(line => record(`Core Audio route ${line}`)); }
   catch (error) { return fail(error); }
   try {
     guard.signal.throwIfAborted();

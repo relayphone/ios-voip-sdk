@@ -18,6 +18,18 @@ test('local simulator media is refused before the guard or journey starts', asyn
   assert.throws(() => requireSimulatorMedia({ environment: { GITHUB_ACTIONS: 'false' } }), SimulatorMediaRefusal);
 });
 
+test('self-hosted Actions and Actions without a hosted runner identity refuse before the guard', async () => {
+  const unexpected = async (): Promise<never> => assert.fail('Unverified simulator setup started');
+  for (const environment of [
+    { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'self-hosted' },
+    { GITHUB_ACTIONS: 'true' },
+  ]) {
+    await assert.rejects(withSimulatorMediaAudio(unexpected, {
+      authorization: { environment }, start: unexpected,
+    }), SimulatorMediaRefusal);
+  }
+});
+
 test('a lease must prove isolation and both virtual audio routes', () => {
   const isolated = { isolated: true, virtualInputVerified: true, virtualOutputVerified: true };
   for (const field of ['isolated', 'virtualInputVerified', 'virtualOutputVerified'] as const) {
@@ -40,7 +52,7 @@ test('hosted CI arms the guard before the journey and records its verdict after 
     order.push('journey');
     return 42;
   }, {
-    authorization: { environment: { GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary } },
+    authorization: { environment: { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', GITHUB_STEP_SUMMARY: summary } },
     start: async () => {
       order.push('arm');
       return { signal: guardSignal, finish: async () => { order.push('finish'); return 'no host devices'; } };
@@ -62,10 +74,18 @@ test('a guard trip aborts the journey and takes precedence over its result', asy
     controller.abort(trip);
     await tripped;
   }, {
-    authorization: { environment: { GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary } },
-    start: async () => ({ signal: controller.signal, finish: async () => 'no host devices' }),
+    authorization: { environment: { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', GITHUB_STEP_SUMMARY: summary } },
+    start: async reportDevice => ({
+      signal: controller.signal,
+      finish: async () => {
+        reportDevice('default output MacBook Pro Speakers, UID "BuiltInSpeakerDevice", transport built-in, verdict blocked');
+        return 'monitoring default host devices';
+      },
+    }),
   }), (error: unknown) => error instanceof HostAudioGuardFailure && error.cause === trip);
-  assert.match(await readFile(summary, 'utf8'), /Core Audio guard failed: .*Host audio active/);
+  const report = await readFile(summary, 'utf8');
+  assert.match(report, /Core Audio guard failed: .*Host audio active/);
+  assert.match(report, /MacBook Pro Speakers, UID "BuiltInSpeakerDevice", transport built-in, verdict blocked/);
 });
 
 test('the shipped entry points refuse a local invocation before setup', () => {

@@ -29,6 +29,8 @@ jobs:
         run: |
           perl -e 'alarm 120; exec @ARGV' swift test --package-path tools/media-test/HostAudioGuard \
             --scratch-path "$RUNNER_TEMP/host-audio-guard-tests" --jobs 2
+      - name: Verify the hosted Core Audio routes
+        run: node tools/media-test/simulator-media.ts /usr/bin/true
       - name: Test the example command protocol
         run: |
           perl -e 'alarm 120; exec @ARGV' swift test --package-path expo/example/client/modules/media-feasibility \

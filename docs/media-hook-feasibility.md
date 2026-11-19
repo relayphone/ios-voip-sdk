@@ -71,11 +71,12 @@ destination on the real output mixer.
 
 Run simulator media and video journeys on hosted GitHub Actions. The fixture uses the simulator's
 audio devices, which can activate the speakers and microphone on a local Mac. The runners
-refuse local starts before setup. On hosted macOS, the Core Audio guard checks the default input
-and output before boot and fails on hardware activity, unknown transports, or a default-route
-change. Virtual devices and aggregates with only virtual members can run. The job summary names
-the active permitted devices and their transports. A runner with no default devices reports
-`no host devices`.
+refuse local and self-hosted starts before setup. Hosted admission requires `GITHUB_ACTIONS=true`
+and `RUNNER_ENVIRONMENT=github-hosted`. The Core Audio guard checks the default input and output
+before boot. A running hosted device must match a verified device UID and its model UID when
+available. Hosted guest devices can report a built-in transport. Unknown transports, hardware
+aggregate members, and route changes fail the run. The job summary lists each running device's
+name, UID, transport, and verdict. A runner with no default devices reports `no host devices`.
 
 Wrap each simulator journey in one call to `withSimulatorMediaAudio` from
 `tools/media-test/simulator-media.ts`.

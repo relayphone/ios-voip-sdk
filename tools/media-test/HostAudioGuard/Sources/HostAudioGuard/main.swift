@@ -6,7 +6,10 @@ private enum GuardError: Error, CustomStringConvertible {
   case property(AudioObjectID, AudioObjectPropertySelector, OSStatus)
   case propertySize(AudioObjectID, AudioObjectPropertySelector, UInt32)
   case unreadableAggregate(AudioObjectID)
-  case active(Device, AudioRoute.Hardware)
+  case active(Device, String)
+  case missingHostedDevicePins
+  case unexpectedHostedDevice(Device)
+  case invalidDeviceProperty(AudioObjectID, AudioObjectPropertySelector)
   case routeChanged(String)
   case aggregateChanged(AudioObjectID)
 
@@ -18,13 +21,16 @@ private enum GuardError: Error, CustomStringConvertible {
       return "Core Audio property \(selector) on object \(device) returned \(size) bytes"
     case .unreadableAggregate(let id):
       return "Could not resolve the sub-devices of aggregate audio device \(id)"
-    case .active(let device, let hardware):
-      let endpoint =
-        hardware.id == device.id
-        ? hardware.transport
-        : "aggregate contains \(deviceName(hardware.id)) (\(hardware.transport))"
+    case .active(let device, let endpoint):
       return
         "Host audio active on default \(device.directions) device \(device.name) (\(device.id)) (\(endpoint))"
+    case .missingHostedDevicePins:
+      return "Hosted audio device identities require verification before simulator setup"
+    case .unexpectedHostedDevice(let device):
+      return
+        "Default \(device.directions) device \(device.name) does not match a verified hosted audio route"
+    case .invalidDeviceProperty(let id, let selector):
+      return "Core Audio property \(selector) on object \(id) did not return an identity"
     case .routeChanged(let direction):
       return "Default host audio \(direction) changed during monitoring"
     case .aggregateChanged(let id):
@@ -101,6 +107,30 @@ private func transport(_ id: AudioObjectID) throws(GuardError) -> AudioTransport
   AudioTransport(try read(id, kAudioDevicePropertyTransportType))
 }
 
+private func identityString(
+  _ id: AudioObjectID, _ selector: AudioObjectPropertySelector
+) throws(GuardError) -> String? {
+  var property = address(selector)
+  var value: Unmanaged<CFString>?
+  var size = UInt32(MemoryLayout.size(ofValue: value))
+  let status = AudioObjectGetPropertyData(id, &property, 0, nil, &size, &value)
+  guard status == noErr else { throw .property(id, selector, status) }
+  guard size == MemoryLayout.size(ofValue: value) else { throw .propertySize(id, selector, size) }
+  let string = value?.takeRetainedValue() as String?
+  return string?.isEmpty == false ? string : nil
+}
+
+private func identity(_ id: AudioObjectID) throws(GuardError) -> AudioDeviceIdentity {
+  guard let uid = try identityString(id, kAudioDevicePropertyDeviceUID) else {
+    throw .invalidDeviceProperty(id, kAudioDevicePropertyDeviceUID)
+  }
+  var modelProperty = address(kAudioDevicePropertyModelUID)
+  let model =
+    AudioObjectHasProperty(id, &modelProperty)
+    ? try identityString(id, kAudioDevicePropertyModelUID) : nil
+  return AudioDeviceIdentity(uid: uid, modelUID: model)
+}
+
 private func subDevices(_ id: AudioObjectID) throws -> [AudioObjectID] {
   let selector = kAudioAggregateDevicePropertyFullSubDeviceList
   var property = address(selector)
@@ -161,6 +191,7 @@ private func report(_ message: String, to file: FileHandle = .standardOutput) {
 }
 
 private func monitor() async throws {
+  let policy = HostedAudioPolicy(environment: ProcessInfo.processInfo.environment)
   let (stream, events) = AsyncStream<Event>.makeStream()
   let activity = DeviceEvents()
   var listeners = try defaults.map { direction, selector in
@@ -179,6 +210,18 @@ private func monitor() async throws {
   let devices = roles.map { id, role in
     Device(id: id, directions: role.joined(separator: " and "), name: deviceName(id))
   }
+  func describe(
+    _ device: Device, _ identity: AudioDeviceIdentity, _ transport: AudioTransport, verdict: String
+  ) -> String {
+    let model = identity.modelUID.map { String(reflecting: $0) } ?? "unavailable"
+    return
+      "audio route: default \(device.directions) \(String(reflecting: device.name)), UID \(String(reflecting: identity.uid)), model UID \(model), transport \(transport.label), verdict \(verdict)"
+  }
+  for device in devices {
+    report(
+      describe(device, try identity(device.id), try transport(device.id), verdict: "inventory"))
+  }
+  if !devices.isEmpty && policy.needsHostedDevicePins { throw GuardError.missingHostedDevicePins }
   listeners += try devices.map { device in
     try Listener(device.id, running) {
       // A transition may arrive after short playback has already stopped.
@@ -189,7 +232,7 @@ private func monitor() async throws {
   var observedAggregates: Set<AudioObjectID> = []
   for device in devices {
     // Arm aggregate membership notifications before accepting activity on those routes.
-    _ = try AudioRoute(device.id, transport: transport) { id in
+    let route = try AudioRoute(device.id, transport: transport) { id in
       if observedAggregates.insert(id).inserted {
         listeners.append(
           try Listener(id, kAudioAggregateDevicePropertyFullSubDeviceList) {
@@ -199,23 +242,39 @@ private func monitor() async throws {
       }
       return try subDevices(id)
     }
+    if policy.isHosted {
+      let observedIdentity = try identity(device.id)
+      guard policy.allows(observedIdentity, route: route) else {
+        report(describe(device, observedIdentity, route.transport, verdict: "blocked at preflight"))
+        throw GuardError.unexpectedHostedDevice(device)
+      }
+    }
   }
 
-  var reported: Set<AudioObjectID> = []
+  var reported: Set<String> = []
   func check() throws {
     try activity.checkRoutes()
     let pending = activity.takeActivity()
+    var violation: Violation?
     for device in devices {
       let runningNow = try read(device.id, running) != 0
       guard runningNow || pending[device.id] != nil else { continue }
       let route = try AudioRoute(device.id, transport: transport, members: subDevices)
-      if let hardware = route.hardware {
-        throw Violation(reason: .active(device, hardware), time: pending[device.id] ?? .now)
-      }
-      if reported.insert(device.id).inserted {
-        report("allowed: \(device.name) (\(route.transport.label))")
+      let observedIdentity = try identity(device.id)
+      let allowed = policy.allows(observedIdentity, route: route)
+      let row = describe(
+        device, observedIdentity, route.transport, verdict: allowed ? "allowed" : "blocked")
+      if reported.insert(row).inserted { report(row) }
+      if !allowed && violation == nil {
+        let endpoint =
+          route.hardware.flatMap { hardware in
+            hardware.id == device.id
+              ? nil : "aggregate contains \(deviceName(hardware.id)) (\(hardware.transport))"
+          } ?? route.transport.label
+        violation = Violation(reason: .active(device, endpoint), time: pending[device.id] ?? .now)
       }
     }
+    if let violation { throw violation }
     for ((direction, selector), initial) in zip(defaults, initialRoutes) {
       if try read(system, selector) != initial { activity.routeChanged(.routeChanged(direction)) }
     }
