@@ -37,11 +37,10 @@ struct CommandError: Error {
       self = .unknownConversation
     case .notAllowed:
       self.init(
-        code: .invalidArguments, message: "The conversation's status doesn't allow this action")
+        code: .invalidArguments,
+        message: "The conversation's status or participation limit doesn't allow this action")
     case .unsupported:
       self.init(code: .unsupported, message: "This action isn't supported")
-    case .noParticipationSlot:
-      self.init(code: .conversation, message: "No call participation slot is available")
     case .remoteIdentityConflict:
       self.init(code: .conversation, message: "Another call owns the remote identifier")
     case .refused(let systemError):

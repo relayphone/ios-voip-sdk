@@ -53,7 +53,7 @@ struct EngineAnswerAuthorityTests {
     let claim = try #require(rig.engine.answerTask(callID))
     try await rig.clock.waitForSleepers(count: 3)
     #expect(rig.engine.participating == [callID])
-    await #expect(throws: ActionError.noParticipationSlot) {
+    await #expect(throws: ActionError.notAllowed(.ringing)) {
       try await rig.engine.request(.answer(otherCallID))
     }
     #expect(rig.authority.claims.map(\.call.id) == [callID])

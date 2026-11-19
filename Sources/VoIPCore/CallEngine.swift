@@ -143,7 +143,9 @@ final class CallEngine {
   }
 
   /// Requests an action. Start awaits native admission after the app places the call.
-  func request(_ action: Action) async throws(ActionError) {
+  func request(_ action: Action, onPolicyRefusal: (@VoIPActor () -> Void)? = nil)
+    async throws(ActionError)
+  {
     let id = action.callID
     if case .end = action {
       _ = try end(id)
@@ -151,7 +153,7 @@ final class CallEngine {
     }
     if case .start(let outgoing) = action {
       let result = await withCheckedContinuation { continuation in
-        start(outgoing) { continuation.resume(returning: $0) }
+        start(outgoing, onPolicyRefusal: onPolicyRefusal) { continuation.resume(returning: $0) }
       }
       try result.get()
       return
@@ -161,7 +163,10 @@ final class CallEngine {
       let needsSlot = needsParticipationSlot(action, state: state)
       if needsSlot {
         guard pendingParticipation[id] == nil else { throw .notAllowed(state.call.status) }
-        guard participationSlotAvailable else { throw .noParticipationSlot }
+        guard participationSlotAvailable else {
+          onPolicyRefusal?()
+          throw .notAllowed(state.call.status)
+        }
       }
       let call = try requested(handle(id, .requested(action)), for: id)
       // Join owns its reservation through the machine's requesting phase.
@@ -174,13 +179,17 @@ final class CallEngine {
   }
 
   func start(
-    _ outgoing: OutgoingCall, completion: @escaping @VoIPActor (Result<Void, ActionError>) -> Void
+    _ outgoing: OutgoingCall, onPolicyRefusal: (@VoIPActor () -> Void)? = nil,
+    completion: @escaping @VoIPActor (Result<Void, ActionError>) -> Void
   ) {
     exclusively {
       if let state = states[outgoing.id] {
         return completion(.failure(.notAllowed(state.call.status)))
       }
-      guard participationSlotAvailable else { return completion(.failure(.noParticipationSlot)) }
+      guard participationSlotAvailable else {
+        onPolicyRefusal?()
+        return completion(.failure(.notAllowed(.dialing)))
+      }
       begin(.outgoing(outgoing), startCompletion: completion)
     }
   }
@@ -259,11 +268,11 @@ final class CallEngine {
       if states[id] == nil {
         // Replay a retained end even when there is no slot to place a Join.
         guard participationSlotAvailable || serverEvents.hasBufferedEnd(for: .canonical(id))
-        else { throw .noParticipationSlot }
+        else { throw .notAllowed(.previewing(.policy)) }
         begin(.joining(incoming))
       }
-      if needsParticipationSlot(action, state: states[id]), !participationSlotAvailable {
-        throw .noParticipationSlot
+      if let state = states[id], state.phase.isPreviewing, !participationSlotAvailable {
+        throw .notAllowed(state.call.status)
       }
       return try requested(handle(id, .requested(action)), for: id)
     }
@@ -1113,14 +1122,19 @@ final class CallEngine {
       }
     }
 
-    package func request(_ action: Action) async throws(ActionError) {
-      try await engine.request(action)
+    /// The policy callback preserves the shared contract's refusal kind when Swift projects it
+    /// to the same `ActionError.notAllowed` case as an invalid transition.
+    package func request(_ action: Action, onPolicyRefusal: (@VoIPActor () -> Void)? = nil)
+      async throws(ActionError)
+    {
+      try await engine.request(action, onPolicyRefusal: onPolicyRefusal)
     }
 
     package func start(
-      _ outgoing: OutgoingCall, completion: @escaping @VoIPActor (Result<Void, ActionError>) -> Void
+      _ outgoing: OutgoingCall, onPolicyRefusal: (@VoIPActor () -> Void)? = nil,
+      completion: @escaping @VoIPActor (Result<Void, ActionError>) -> Void
     ) {
-      engine.start(outgoing, completion: completion)
+      engine.start(outgoing, onPolicyRefusal: onPolicyRefusal, completion: completion)
     }
 
     /// Replays admission with a generation that was never assigned to this call.

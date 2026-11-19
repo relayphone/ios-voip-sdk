@@ -10,8 +10,9 @@ Public API changes include migration guidance.
 - Swift enforces `maximumParticipatingCalls` across all calling lines, including apps without
   an Answer authority. The default allows one participating call. Hold or end the current
   call before answering a waiting call, starting another call, joining a preview, or resuming
-  a held call. Handle `ActionError.noParticipationSlot` when requesting these actions. The
-  native presentation limit remains `maximumCalls`.
+  a held call. A full slot returns `ActionError.notAllowed` with the target call's status
+  (`.dialing` for a requested Start), corresponding to `refused(notAllowed)` in the shared
+  contract. The native presentation limit remains `maximumCalls`.
 
 - Swift apps with exhaustive `ActionError` switches must handle `remoteIdentityConflict`. The
   observable `VoIPClient.calls` list includes incoming calls after system admission resolves.

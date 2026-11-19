@@ -25,12 +25,24 @@ struct EngineParticipationTests {
     await rig.engine.synchronize()
     rig.engine.receive(.connected, for: callID, eventID: e1)
     #expect(rig.call(callID)?.status == .connected)
+    let previewID = CallID(rawValue: "waiting-preview")
+    rig.invite(previewID, on: second, policy: .init(incoming: .preview))
     let recordsBeforeRefusal = rig.framework.records
-    await #expect(throws: ActionError.noParticipationSlot) {
+    await #expect(throws: ActionError.notAllowed(.ringing)) {
       try await rig.engine.request(.answer(otherCallID))
+    }
+    await #expect(throws: ActionError.notAllowed(.previewing(.policy))) {
+      try await rig.engine.request(.join(previewID))
+    }
+    let outgoing = OutgoingCall(
+      id: CallID(rawValue: "blocked-start"), parties: [alice], line: second)
+    await #expect(throws: ActionError.notAllowed(.dialing)) {
+      try await rig.engine.request(.start(outgoing))
     }
     #expect(rig.framework.records == recordsBeforeRefusal)
     #expect(rig.call(otherCallID)?.status == .ringing)
+    #expect(rig.call(previewID)?.status == .previewing(.policy))
+    #expect(rig.call(outgoing.id) == nil)
     #expect(rig.engine.participating == [callID])
 
     try await rig.engine.request(.hold(callID, onHold: true))
@@ -40,7 +52,7 @@ struct EngineParticipationTests {
     await rig.engine.synchronize()
     #expect(rig.call(otherCallID)?.status == .connecting)
     #expect(rig.engine.participating == [otherCallID])
-    await #expect(throws: ActionError.noParticipationSlot) {
+    await #expect(throws: ActionError.notAllowed(.connected)) {
       try await rig.engine.request(.hold(callID, onHold: false))
     }
 
@@ -72,7 +84,7 @@ struct EngineParticipationTests {
     #expect(rig.call(otherCallID)?.status == .ringing)
     #expect(rig.engine.participating == [otherCallID])
     let recordsWhileAwaitingReceipt = rig.framework.records
-    await #expect(throws: ActionError.noParticipationSlot) {
+    await #expect(throws: ActionError.notAllowed(.ringing)) {
       try await rig.engine.request(.answer(callID))
     }
     #expect(rig.framework.records == recordsWhileAwaitingReceipt)
@@ -96,7 +108,7 @@ struct EngineParticipationTests {
     #expect(placement == nil)
 
     let recordsBeforeRefusal = rig.framework.records
-    await #expect(throws: ActionError.noParticipationSlot) {
+    await #expect(throws: ActionError.notAllowed(.ringing)) {
       try await rig.engine.request(.answer(otherCallID))
     }
     #expect(rig.framework.records == recordsBeforeRefusal)
@@ -125,7 +137,7 @@ struct EngineParticipationTests {
     try await rig.engine.request(.join(callID))
     rig.framework.perform(.hold(callID, onHold: true))
     #expect(rig.engine.participating == [callID])
-    await #expect(throws: ActionError.noParticipationSlot) {
+    await #expect(throws: ActionError.notAllowed(.ringing)) {
       try await rig.engine.request(.answer(otherCallID))
     }
 

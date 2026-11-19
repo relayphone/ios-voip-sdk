@@ -185,6 +185,18 @@ extension EngineTests {
       try await h.expectNoEvents()
     }
 
+    @Test func joinOfAnUnknownPreviewWithNoSlotIsNotAllowed() async throws {
+      let h = try Harness()
+      try await h.connect()
+      let records = await h.records
+      await #expect(throws: ActionError.notAllowed(.previewing(.policy))) {
+        try await h.client.join(incoming(otherCallID, .preview))
+      }
+      #expect(await h.records == records)
+      try await h.expectNoEvents()
+      #expect(h.client.calls.allSatisfy { $0.id != otherCallID })
+    }
+
     @Test func outgoingCallIsPlacedAndConnects() async throws {
       let h = try Harness()
       let request = try await h.beginStart(outgoing)

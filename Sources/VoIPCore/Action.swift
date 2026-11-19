@@ -37,14 +37,11 @@ public enum Action: Hashable, Sendable {
 
 /// Why the SDK refused an action.
 public enum ActionError: Error, Hashable, Sendable {
-  /// The action doesn't apply to a call with this status, such as answering a call that isn't
-  /// ringing.
+  /// The SDK cannot perform the action in the current call state or participation policy.
+  /// The status describes the target call or the initial status requested for a new call.
   case notAllowed(CallStatus)
   /// The action needs a capability that the configuration turns off, such as merging.
   case unsupported
-  /// The SDK refused the action because all participation slots are occupied.
-  /// Corresponds to `refused(notAllowed)` in the shared call contract.
-  case noParticipationSlot
   /// This device doesn't know the call the action applies to.
   case unknownCall
   /// Another live call already owns the remote identifier.

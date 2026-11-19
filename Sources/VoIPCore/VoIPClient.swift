@@ -129,9 +129,8 @@ public final class VoIPClient {
   ///
   /// - Parameter action: The action to request.
   /// - Throws: ``ActionError/unknownCall`` when this device doesn't know the call,
-  ///   ``ActionError/notAllowed(_:)`` when the call's status doesn't allow the action,
-  ///   ``ActionError/noParticipationSlot`` when Start, Answer, Join or resuming a held call
-  ///   would exceed the participation limit, ``ActionError/unsupported`` when the configuration's
+  ///   ``ActionError/notAllowed(_:)`` when the call's status doesn't allow the action or
+  ///   participation is full, ``ActionError/unsupported`` when the configuration's
   ///   capabilities don't include the action, or
   ///   ``ActionError/refused(_:)`` with the system's error when the calling framework refuses
   ///   it. A start that the calling framework refuses ends the call; a join returns to its
@@ -238,8 +237,8 @@ public final class VoIPClient {
   ///
   /// - Parameter call: The call to join, with the details that the device knows of it. Its
   ///   presentation policy decides what happens if the call is answered elsewhere.
-  /// - Throws: ``ActionError/notAllowed(_:)`` when the call can't be joined in its status, such
-  ///   as a call that ended, ``ActionError/noParticipationSlot`` when participation is full, or
+  /// - Throws: ``ActionError/notAllowed(_:)`` when the call's status or the participation limit
+  ///   prevents the join, or
   ///   ``ActionError/refused(_:)`` with the system's error when the calling framework refuses.
   public func join(_ call: IncomingCall) async throws(ActionError) {
     try await engine.join(call)
