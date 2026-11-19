@@ -2,16 +2,17 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isMain, main, run } from './command.ts';
+import { isList, isRecord, isString } from './json-fields.ts';
 
 interface ResultSummary {
-  failedTests?: unknown;
-  testFailures?: { failureText?: unknown }[];
+  failedTests: number;
+  failures: readonly unknown[];
 }
 export type FailureClassification = 'product:tests' | 'infra:runner-hang' | 'infra:test-host-restart';
 export interface SystemMemoryFailure { process: string; file: string }
 
 /** Reads crash evidence from unrelated simulator services, not the SDK or its fixtures. */
-export function systemMemoryFailures(directory: string): SystemMemoryFailure[] {
+export function systemMemoryFailures(directory: string) {
   const services = new Set(['containermanager', 'siriactionsd', 'donotdisturbd', 'SpringBoard', 'testmanagerd']);
   const failures: SystemMemoryFailure[] = [];
   const visit = (folder: string) => {
@@ -22,10 +23,14 @@ export function systemMemoryFailures(directory: string): SystemMemoryFailure[] {
       try {
         const raw = readFileSync(file, 'utf8');
         const newline = raw.indexOf('\n');
-        const header = JSON.parse(raw.slice(0, newline)) as { app_name?: unknown; is_first_party?: unknown };
-        const body = JSON.parse(raw.slice(newline + 1)) as { exception?: { signal?: unknown; subtype?: unknown } };
-        if (header.is_first_party === 1 && typeof header.app_name === 'string' && services.has(header.app_name)
-          && body.exception?.signal === 'SIGBUS' && typeof body.exception.subtype === 'string'
+        if (newline < 0) continue;
+        const header: unknown = JSON.parse(raw.slice(0, newline));
+        const body: unknown = JSON.parse(raw.slice(newline + 1));
+        if (isRecord(header) && 'is_first_party' in header && header.is_first_party === 1
+          && 'app_name' in header && isString(header.app_name) && services.has(header.app_name)
+          && isRecord(body) && 'exception' in body && isRecord(body.exception)
+          && 'signal' in body.exception && body.exception.signal === 'SIGBUS'
+          && 'subtype' in body.exception && isString(body.exception.subtype)
           && body.exception.subtype.startsWith('KERN_MEMORY_ERROR at ')) {
           failures.push({ process: header.app_name, file: entry.name });
         }
@@ -36,34 +41,46 @@ export function systemMemoryFailures(directory: string): SystemMemoryFailure[] {
   return failures;
 }
 
-function hostRestartCandidate(summary: ResultSummary, log: string): boolean {
-  return Number.isSafeInteger(summary.failedTests) && Number(summary.failedTests) > 0
-    && Array.isArray(summary.testFailures) && summary.testFailures.length === summary.failedTests
-    && summary.testFailures.every(failure => failure?.failureText === 'Test crashed with signal bus.')
+function readSummary(text: string) {
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { return; }
+  if (!isRecord(parsed) || !('failedTests' in parsed) || !Number.isSafeInteger(parsed.failedTests)) return;
+  const failures = 'testFailures' in parsed ? parsed.testFailures : [];
+  if (!isList(failures)) return;
+  return { failedTests: Number(parsed.failedTests), failures } satisfies ResultSummary;
+}
+
+const assertionFailure = /Expectation failed:|recorded an issue|XCTAssert\w*.*failed|Assertion Failure/;
+
+function hostRestartCandidate(summary: ResultSummary, log: string) {
+  return summary.failedTests > 0 && summary.failures.length === summary.failedTests
+    && summary.failures.every(failure => isRecord(failure) && 'failureText' in failure
+      && failure.failureText === 'Test crashed with signal bus.')
     && log.includes('Restarting after unexpected exit, crash, or test timeout')
     && log.includes('unable to connect to "com.apple.instruments.deviceservice.lockdown"')
-    && !/Expectation failed:|recorded an issue|XCTAssert\w*.*failed|Assertion Failure/.test(log);
+    && !assertionFailure.test(log);
+}
+
+function isConnectionHang(summary: ResultSummary, log: string) {
+  return summary.failedTests === 0 && summary.failures.length === 0
+    && log.includes('hung before establishing connection') && !assertionFailure.test(log);
 }
 
 /** A named test interrupted by a corroborated simulator-wide memory failure is not an assertion. */
-export function classifySimulatorFailure(summary: string, log: string, systemFailures: readonly SystemMemoryFailure[] = []): FailureClassification {
-  let parsed: ResultSummary;
-  try { parsed = JSON.parse(summary) as ResultSummary; } catch { return 'product:tests'; }
-  if (!parsed || typeof parsed !== 'object') return 'product:tests';
-  if (/Expectation failed:|recorded an issue|XCTAssert\w*.*failed|Assertion Failure/.test(log)) return 'product:tests';
-  if ((!parsed.testFailures || Array.isArray(parsed.testFailures) && parsed.testFailures.length === 0)
-    && runnerHungBeforeConnecting(summary, log)) return 'infra:runner-hang';
+export function classifySimulatorFailure(summary: string, log: string, systemFailures: readonly SystemMemoryFailure[] = []) {
+  const parsed = readSummary(summary);
+  if (!parsed || assertionFailure.test(log)) return 'product:tests' satisfies FailureClassification;
+  if (isConnectionHang(parsed, log)) return 'infra:runner-hang' satisfies FailureClassification;
   if (hostRestartCandidate(parsed, log) && new Set(systemFailures.map(failure => failure.process)).size >= 2) {
-    return 'infra:test-host-restart';
+    return 'infra:test-host-restart' satisfies FailureClassification;
   }
-  return 'product:tests';
+  return 'product:tests' satisfies FailureClassification;
 }
 
 /** The #266 retry rule: no failed tests, and a runner that hung before connecting. */
-export function runnerHungBeforeConnecting(summary: string, log: string): boolean {
-  const count: unknown = (JSON.parse(summary) as { failedTests?: unknown }).failedTests;
-  return Number.isSafeInteger(count) && Number(count) === 0
-    && log.includes('hung before establishing connection');
+export function runnerHungBeforeConnecting(summary: string, log: string) {
+  const parsed = readSummary(summary);
+  return parsed !== undefined && isConnectionHang(parsed, log);
 }
 
 if (isMain(import.meta.url)) {
@@ -73,7 +90,8 @@ if (isMain(import.meta.url)) {
     const result = readFileSync(summary, 'utf8');
     const output = readFileSync(log, 'utf8');
     const evidence: SystemMemoryFailure[] = [];
-    if (hostRestartCandidate(JSON.parse(result) as ResultSummary, output)) {
+    const parsed = readSummary(result);
+    if (parsed && hostRestartCandidate(parsed, output)) {
       const scratch = mkdtempSync(join(tmpdir(), 'simulator-test-diagnostics-'));
       try {
         run('xcrun', ['xcresulttool', 'export', 'diagnostics', '--path', bundle,
