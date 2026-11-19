@@ -1,6 +1,8 @@
 import type { ExpoConfig } from "expo/config";
+import { AndroidConfig, withAndroidManifest } from "expo/config-plugins";
 
 const BUNDLE_ID = "com.example.voipconversations";
+const pushTest = process.env["VOIP_ANDROID_PUSH_TEST"] === "1";
 
 const config: ExpoConfig = {
   name: "VoIP Example",
@@ -41,7 +43,7 @@ const config: ExpoConfig = {
       "@relayphone/ios-voip-sdk",
       {
         mediaAdapter: "none",
-        android: { accountID: "example", fcm: process.env["VOIP_ANDROID_PUSH_TEST"] === "1" },
+        android: { accountID: "example", fcm: pushTest },
         sounds: ["./assets/sounds/ringtone.wav"],
         defaultRingtoneIos: "ringtone.wav",
         iconTemplateIos: "./assets/call-icon.png",
@@ -61,4 +63,8 @@ const config: ExpoConfig = {
   ],
 };
 
-export default config;
+export default pushTest ? withAndroidManifest(config, mod => {
+  const application = AndroidConfig.Manifest.getMainApplicationOrThrow(mod.modResults);
+  AndroidConfig.Manifest.addMetaDataItemToMainApplication(application, "firebase_messaging_auto_init_enabled", "false");
+  return mod;
+}) : config;

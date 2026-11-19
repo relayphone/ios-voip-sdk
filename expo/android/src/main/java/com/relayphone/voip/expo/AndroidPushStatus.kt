@@ -10,12 +10,14 @@ import com.relayphone.voip.Wire
 import java.io.File
 import java.io.FileNotFoundException
 import java.util.UUID
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 
 internal class AndroidPushStatus(
     private val context: Context, private val state: BridgeState, private val presentation: IncomingCallNotification,
+    private val fcmEnabled: Boolean,
 ) {
     @Serializable
     private data class Installation(val id: String, val fcm: PushRegistration.Saved = PushRegistration.Saved())
@@ -27,22 +29,77 @@ internal class AndroidPushStatus(
         Installation(UUID.randomUUID().toString()).also(::save)
     }
     val registration = PushRegistration(installed.id, "fcm", installed.fcm) { save(installed.copy(fcm = it)) }
-    private var started = false
+    private var requested = false
+    private var pendingRead: CompletableDeferred<Unit>? = null
+    private var token: String? = null
+    private var revision = 0L
+
+    // Accessed on the main dispatcher alongside registration changes.
+    val tokenObservers = mutableSetOf<(Map<String, Any?>) -> Unit>()
+
+    private fun firebaseAvailable() = FirebaseApp.getApps(context).any { it.name == FirebaseApp.DEFAULT_APP_NAME }
 
     fun start() {
-        if (started) return
-        started = true
+        if (requested || !fcmEnabled) {
+            refresh()
+            return
+        }
         val attempt = registration.begin()
-        if (FirebaseApp.getApps(context).any { it.name == FirebaseApp.DEFAULT_APP_NAME }) {
+        if (firebaseAvailable()) {
+            requested = true
+            pendingRead = CompletableDeferred()
             FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
                 CallHost.scope.launch {
-                    registration.complete(attempt, if (task.isSuccessful) task.result else null)
-                    refresh()
+                    val value = if (task.isSuccessful) task.result else null
+                    if (registration.complete(attempt, value)) {
+                        refresh()
+                        updateToken(value)
+                    }
                 }
             }
         } else registration.complete(attempt, null)
         refresh()
     }
+
+    suspend fun getToken(): Map<String, Any?> {
+        if (!fcmEnabled || !firebaseAvailable()) return tokenSnapshot(null)
+        start()
+        pendingRead?.await()
+        return tokenSnapshot(token.takeIf { firebaseAvailable() })
+    }
+
+    fun recordToken(value: String): FcmTokenRegistration {
+        val target = registration.changed(value)
+        refresh()
+        if (fcmEnabled && firebaseAvailable()) {
+            requested = true
+            updateToken(value)
+        }
+        return target
+    }
+
+    fun invalidateToken() {
+        registration.invalidate()
+        requested = true
+        refresh()
+        updateToken(null)
+    }
+
+    private fun updateToken(value: String?) {
+        if (token != value) {
+            token = value
+            revision++
+            val snapshot = tokenSnapshot(value)
+            tokenObservers.toList().forEach { it(snapshot) }
+        }
+        pendingRead?.complete(Unit)
+        pendingRead = null
+    }
+
+    private fun tokenSnapshot(value: String?) = mapOf(
+        "revision" to revision,
+        "token" to value?.let { mapOf("type" to "fcm", "value" to it) },
+    )
 
     fun refresh() {
         val blocked = presentation.readiness()

@@ -7,7 +7,9 @@ import java.io.File
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -37,6 +39,10 @@ internal class CallBindingTest {
         val expired = push.copy(input = push.input.copy(ringDeadline = Instant.fromEpochMilliseconds(0)))
         assertEquals(IncomingRefusal.Expired, (binding.reportPush(expired) as IncomingResult.Refused).reason)
         assertEquals(0, telecom.reports)
+        val outcomes = mutableListOf<JsonObject>()
+        backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            binding.pushOutcomes.collect { outcomes.add(it) }
+        }
         assertEquals(IncomingResult.Admitted(push.input.callID), binding.reportPush(push))
         val foreground = invitations.first()
         val foregroundInput = JsonObject(foreground.obj("input") + ("eventID" to encode(push.input.eventID)))
@@ -48,6 +54,8 @@ internal class CallBindingTest {
         val repeat = binding.reportPush(push.copy(input = extended.copy(eventID = EventID("fresh"))))
         assertTrue((repeat as IncomingResult.Refused).reason is IncomingRefusal.CallAlreadyExists)
         assertEquals(1, telecom.reports)
+        runCurrent()
+        assertEquals(listOf(push.input.eventID.value), outcomes.map { it.text("eventId") })
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals("unanswered", binding.state.snapshot().getValue("calls").jsonArray.single().jsonObject

@@ -23,7 +23,9 @@ internal class CallHost private constructor(context: Context) {
         val telecom = AndroidTelecomSystem.register(context, 34, true, submit)
         CallSystem(telecom, telecom::answerWithReceipt, telecom::answerFromNotification)
     }
-    val push by lazy { AndroidPushStatus(context, binding.state, presentation) }
+    val push by lazy {
+        AndroidPushStatus(context, binding.state, presentation, app.metaData?.getBoolean("com.relayphone.voip.fcm") == true)
+    }
 
     suspend fun act(key: String?, answer: Boolean): Boolean {
         val id = presentation.take(key) ?: return false

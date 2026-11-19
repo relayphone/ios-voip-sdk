@@ -316,8 +316,17 @@ report transport progress through `VoIPClient.receive(_:for:eventID:)`.
 
 ## Android incoming calls from FCM
 
-Configure Firebase for the Android app. Set `android: { accountID: "...", fcm: true }` in the
-calling config plugin when the SDK owns the app's FCM service. Apps with an existing messaging
+The Android package includes `firebase-messaging` as a Gradle `api` dependency in all builds.
+To enable FCM in an Expo app, register its Android package name in Firebase and set
+`expo.android.googleServicesFile` to the project's `google-services.json` in the Expo app config.
+Expo prebuild copies the file and applies the Google Services Gradle plugin. In a manually
+maintained native project, put the file in `android/app/` and apply
+`com.google.gms.google-services` to the app module.
+
+Set `android: { accountID: "...", fcm: true }` in the calling config plugin when the SDK owns
+the app's FCM service. With a default Firebase app, `usePushToken()` and `pushTokenUpdated`
+deliver `{ type: "fcm", value }` for upload from JavaScript. They report `null` when FCM is off,
+Firebase is unavailable, or the token is invalidated. Apps with an existing messaging
 service, including Expo Notifications, can keep it and call
 `VoIPFirebaseMessagingService.route(context, message)` from that service's callback. Continue
 normal message handling when it returns `false`. Call `recordToken(context, token)` from the
@@ -336,7 +345,7 @@ JavaScript can use the conversation snapshot to connect media after a cold launc
 prepare media during Answer can register a provider with Kotlin's `NativeCallMedia.register`
 from their application lifecycle listener and read the admitted call's opaque
 `credentialReference`. The bridge reports registration and presentation readiness with the
-v1 push health value and `fullScreenIncoming` capability. Host code handles raw tokens and uploads.
+v1 push health value and `fullScreenIncoming` capability. Host code authenticates uploads.
 
 ## Notifications, call previews and Focus
 

@@ -79,17 +79,18 @@ internal class CallBinding(
     suspend fun reportPush(push: PushEnvelope.Invitation): IncomingResult? {
         val (calls) = ready.await()
         val result = (calls.reportIncoming(push.input) as? Outcome.Success)?.value
+        if (result is IncomingResult.Refused &&
+            (result.reason is IncomingRefusal.CallAlreadyExists || result.reason == IncomingRefusal.EventAlreadyUsed)
+        ) return result
         if (result is IncomingResult.Decision) {
             if (result is IncomingResult.Admitted)
                 NativeCallMedia.recordCredential(result.callID, push.credentialRef)
-            if (result !is IncomingResult.Refused || result.reason != IncomingRefusal.EventAlreadyUsed) {
-                settledCursor(calls)
-                pushOutcomes.tryEmit(buildJsonObject {
-                    put("eventId", encode(push.input.eventID))
-                    put("serverCallId", encode(push.input.callID))
-                    put("outcome", incoming(result))
-                })
-            }
+            settledCursor(calls)
+            pushOutcomes.tryEmit(buildJsonObject {
+                put("eventId", encode(push.input.eventID))
+                put("serverCallId", encode(push.input.callID))
+                put("outcome", incoming(result))
+            })
         }
         return result
     }

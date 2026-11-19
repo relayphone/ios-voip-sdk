@@ -42,14 +42,12 @@ open class VoIPFirebaseMessagingService : FirebaseMessagingService() {
         /** Record a provider token and obtain the identity for the host's authenticated upload. */
         suspend fun recordToken(context: Context, token: String): FcmTokenRegistration =
             withContext(Dispatchers.Main.immediate) {
-                CallHost.get(context).push.let { push ->
-                    push.registration.changed(token).also { push.refresh() }
-                }
+                CallHost.get(context).push.recordToken(token)
             }
 
         /** Fence the previous local generation after the host invalidates the token. */
         suspend fun invalidateToken(context: Context) = withContext(Dispatchers.Main.immediate) {
-            CallHost.get(context).push.let { it.registration.invalidate(); it.refresh() }
+            CallHost.get(context).push.invalidateToken()
         }
 
         /** Apply a matching upload completion from the host's authenticated service. */

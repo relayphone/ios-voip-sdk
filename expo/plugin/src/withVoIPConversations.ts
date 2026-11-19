@@ -128,6 +128,7 @@ const withVoIPConversations: ConfigPlugin<
       AndroidConfig.Manifest.addMetaDataItemToMainApplication(application, `com.relayphone.voip.${key}`, `voip:${value}`);
     }
     const messagingService = "com.relayphone.voip.expo.VoIPFirebaseMessagingService";
+    AndroidConfig.Manifest.addMetaDataItemToMainApplication(application, "com.relayphone.voip.fcm", String(android.fcm === true));
     application.service = (application.service ?? []).filter(service => service.$["android:name"] !== messagingService);
     if (android.fcm) application.service.push({
       $: { "android:name": messagingService, "android:exported": "false" },

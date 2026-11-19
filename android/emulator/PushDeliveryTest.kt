@@ -9,10 +9,13 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.service.notification.StatusBarNotification
 import androidx.test.platform.app.InstrumentationRegistry
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.RemoteMessage
 import com.relayphone.voip.expo.VoIPFirebaseMessagingService
 import java.time.Instant
 import java.time.format.DateTimeFormatterBuilder
+import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -44,8 +47,19 @@ class PushDeliveryTest {
         await("cold notification removed") { active(cold) == null }
         assertFalse(logs().contains("VoIPPushExample ready"))
 
+        FirebaseApp.initializeApp(context, FirebaseOptions.Builder()
+            .setApplicationId("1:1234567890:android:1234567890abcdef")
+            .setApiKey("example-test-key")
+            .setProjectId("demo-voip-example")
+            .build())
+        service.onNewToken("expo-example-fcm-initial")
         shell("am start -W -n ${context.packageName}/.MainActivity")
         await("JavaScript listeners") { logs().contains("VoIPPushExample ready") }
+        await("JavaScript token hydration") { logs().contains("VoIPPushExample token read initial") }
+        service.onNewToken("expo-example-fcm-rotated")
+        await("JavaScript token rotation event") { logs().contains("VoIPPushExample token event rotated") }
+        runBlocking { VoIPFirebaseMessagingService.invalidateToken(context) }
+        await("JavaScript token invalidation event") { logs().contains("VoIPPushExample token event invalidated") }
         shell("input keyevent KEYCODE_HOME")
         await("launcher foreground") { device.rootInActiveWindow?.packageName?.toString()?.let { it != context.packageName } == true }
 

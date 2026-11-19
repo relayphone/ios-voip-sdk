@@ -1,9 +1,8 @@
 import { literal, object, union, type Decoder } from "../calls/decode.ts";
-import { createCallsStore, type CallsSnapshot } from "../calls/store.ts";
+import { createCallsStore } from "../calls/store.ts";
 import { callID, eventID, type Call, type CallError, type CallingLine, type EndReason } from "../calls/model.ts";
 import { bridgeError, ended, incomingOutcome, performed, type IncomingOutcome } from "../calls/receipts.ts";
 import { line as callingLine } from "../calls/wire-v0.ts";
-import { pushRegistration } from "../calls/wire-v1.ts";
 import type { NativeEvents, NativeTransport } from "./transport.ts";
 import type {
   Conversation, ConversationEnd, ConversationErrorCode, ConversationId, IncomingCallPayload, IncomingConversationOutcome,
@@ -27,8 +26,13 @@ const negotiated = object({
 });
 const permissionStatus = object({ kind: literal("granted", "denied", "restricted", "notDetermined") });
 const received = object({ kind: literal("applied", "buffered", "duplicate") });
-const registration = union(pushRegistration, object({ kind: literal("unknown") }));
 const refused = object({ ok: literal(false), error: bridgeError });
+
+export interface AndroidBridgeEvents {
+  bridgeFrame: { json: string };
+  incomingPush: { json: string };
+  pushTokenUpdated: NativeEvents["pushTokenUpdated"];
+}
 
 export interface AndroidBridge {
   negotiate(offer: string): string;
@@ -37,7 +41,8 @@ export interface AndroidBridge {
   detach(): void;
   snapshot(): string;
   command(request: string): Promise<string>;
-  addListener(name: "bridgeFrame" | "incomingPush", receive: (event: { json: string }) => void): Subscription;
+  getPushToken(): Promise<NativeEvents["pushTokenUpdated"]>;
+  addListener<Name extends keyof AndroidBridgeEvents>(name: Name, receive: (event: AndroidBridgeEvents[Name]) => void): Subscription;
 }
 
 export function bindAndroid(native: AndroidBridge) {
@@ -87,11 +92,12 @@ export function bindAndroid(native: AndroidBridge) {
   }
 
   let revision = 0;
-  let latest = store.snapshot();
+  const visibleCalls = () => store.snapshot().calls.filter(call => call.lifecycle.kind !== "reporting");
+  let latest = visibleCalls();
   let current = snapshot(latest, revision);
   store.subscribe(observation => {
-    const next = store.snapshot();
-    if (next.calls !== latest.calls) {
+    const next = visibleCalls();
+    if (next.length !== latest.length || next.some((call, index) => call !== latest[index])) {
       latest = next;
       current = snapshot(next, ++revision);
       emit("conversationsChanged", current);
@@ -155,6 +161,7 @@ export function bindAndroid(native: AndroidBridge) {
     const { eventId, serverCallId, outcome } = pushOutcome(JSON.parse(json));
     presentOutcome(eventId, serverCallId, outcome);
   });
+  native.addListener("pushTokenUpdated", value => emit("pushTokenUpdated", value));
   const transport: NativeTransport = {
     get snapshot() { return current; },
     mediaAdapter: "none",
@@ -170,7 +177,7 @@ export function bindAndroid(native: AndroidBridge) {
     },
     getConversations: async () => current,
     getAudioRoutes: async () => ({ revision: 0, routes: [], current: null }),
-    getPushToken: async () => { await command("push.registration", registration); return { revision: 0, token: null }; },
+    getPushToken: () => native.getPushToken(),
     setHandlerAttached(attached) { if (attached) unsupported("Call placement"); },
     settleAction() { unsupported("Call placement"); },
     startConversation: async () => unsupported("Outgoing calls"),
@@ -278,8 +285,8 @@ function end(at: string, reason: EndReason) {
     default: return { at, reason: reason.kind } satisfies ConversationEnd;
   }
 }
-function snapshot(state: CallsSnapshot, revision: number) {
-  const conversations = state.calls.filter(call => call.lifecycle.kind !== "reporting").map<Conversation>(call => {
+function snapshot(calls: readonly Call[], revision: number) {
+  const conversations = calls.map<Conversation>(call => {
     const base = {
       id: conversationID(call.id),
       members: call.parties.map(({ id, handle, displayName }) => ({ ...participant(handle), id, displayName })),

@@ -31,11 +31,12 @@ internal class PushRegistration(
 
     fun begin(): UUID = UUID.randomUUID().also { pending = it }
 
-    fun complete(attempt: UUID, token: String?) {
-        if (pending != attempt) return
+    fun complete(attempt: UUID, token: String?): Boolean {
+        if (pending != attempt) return false
         pending = null
         if (token != null) changed(token)
         else failed = true
+        return true
     }
 
     fun changed(token: String): FcmTokenRegistration {

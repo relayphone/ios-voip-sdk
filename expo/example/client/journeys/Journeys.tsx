@@ -10,6 +10,23 @@ export function Journeys() {
   const events = useRef<JourneyEvents>({ actions: [], outcomes: [], elsewhere: [] });
   const started = useRef(false);
   const conversations = calls.useConversations();
+  const token = calls.usePushToken();
+  const sawRotation = useRef(false);
+  useEffect(() => {
+    if (Platform.OS === 'android' && token?.type === 'fcm' && token.value === 'expo-example-fcm-initial') {
+      console.info('VoIPPushExample token read initial');
+    }
+  }, [token]);
+  calls.useConversationEvent('pushTokenUpdated', value => {
+    if (Platform.OS !== 'android') return;
+    if (value?.type === 'fcm' && value.value === 'expo-example-fcm-rotated') {
+      sawRotation.current = true;
+      console.info('VoIPPushExample token event rotated');
+    } else if (value === null && sawRotation.current) {
+      sawRotation.current = false;
+      console.info('VoIPPushExample token event invalidated');
+    }
+  });
   calls.useConversationEvent('actionPerformed', event => {
     const { conversationId: id, action, origin } = event;
     events.current.actions.push({ id, kind: action.kind, origin });

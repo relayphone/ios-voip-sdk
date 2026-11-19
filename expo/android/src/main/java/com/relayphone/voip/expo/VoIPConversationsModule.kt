@@ -12,11 +12,12 @@ import kotlinx.serialization.json.*
 
 class VoIPConversationsModule : Module() {
     private val sendFrame: (String) -> Unit = { sendEvent("bridgeFrame", mapOf("json" to it)) }
+    private val sendToken: (Map<String, Any?>) -> Unit = { sendEvent("pushTokenUpdated", it) }
     @Volatile private var negotiated = false
 
     override fun definition() = ModuleDefinition {
         Name("VoIPConversations")
-        Events("bridgeFrame", "incomingPush")
+        Events("bridgeFrame", "incomingPush", "pushTokenUpdated")
         OnCreate {
             service = CallHost.get(requireNotNull(appContext.reactContext))
             CallHost.scope.launch { service.push.start() }
@@ -27,8 +28,14 @@ class VoIPConversationsModule : Module() {
             }
         }
         OnStopObserving("incomingPush") { pushEvents?.cancel() }
+        OnStartObserving("pushTokenUpdated") { CallHost.scope.launch { service.push.tokenObservers.add(sendToken) } }
+        OnStopObserving("pushTokenUpdated") { CallHost.scope.launch { service.push.tokenObservers.remove(sendToken) } }
         OnActivityEntersForeground { CallHost.scope.launch { service.push.refresh() } }
-        OnDestroy { service.binding.state.detach(sendFrame); pushEvents?.cancel() }
+        OnDestroy {
+            service.binding.state.detach(sendFrame)
+            pushEvents?.cancel()
+            CallHost.scope.launch { service.push.tokenObservers.remove(sendToken) }
+        }
         Function("negotiate") { source: String ->
             val selected = BridgeWire.negotiate(source)
             if (selected) negotiated = true
@@ -39,6 +46,9 @@ class VoIPConversationsModule : Module() {
         Function("attach") { check(negotiated); service.binding.state.attach(sendFrame).toString() }
         Function("detach") { service.binding.state.detach(sendFrame) }
         Function("snapshot") { check(negotiated); service.binding.state.snapshot().toString() }
+        AsyncFunction("getPushToken") Coroutine { ->
+            withContext(Dispatchers.Main.immediate) { service.push.getToken() }
+        }
         AsyncFunction("command") Coroutine { source: String ->
             withContext(Dispatchers.Main.immediate) {
                 service.push.refresh()

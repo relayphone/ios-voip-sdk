@@ -22,10 +22,13 @@ extension EngineTests {
       }
       #expect(Reported.classify(records) == [.report(callID)])
       #expect(finished.isEmpty)
+      try await h.expectNoEvents()
+      #expect(!h.client.calls.contains { $0.id == callID })
 
       await onVoIPActor { framework.completeReports(of: callID, with: .presented) }
       #expect(await push.finished == [delivery])
       #expect(try await h.next() == .presented(callID))
+      await h.until { $0.calls.contains { $0.id == callID && $0.status == .ringing } }
     }
 
     /// One row of the push table: what this device already has, the push, and what the SDK
