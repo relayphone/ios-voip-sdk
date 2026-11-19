@@ -35,6 +35,14 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     budget.signal.throwIfAborted();
     assert.ok(performance.now() < budget.deadlineMs, '30-second video journey acquisition expired');
   };
+  const waitThrough = async (boundaryMs: number) => {
+    let remainingMs = boundaryMs - performance.now();
+    while (remainingMs > 0) {
+      await delay(Math.ceil(remainingMs), undefined, { signal: budget.signal });
+      deadlineCheck();
+      remainingMs = boundaryMs - performance.now();
+    }
+  };
   const request = (action: Parameters<typeof mailbox.request>[0]) => mailbox.request(action, budget);
   const sample = async () => {
     const { reply, bracket } = await sampleNativeVideoClock(mailbox, budget, clockID);
@@ -150,10 +158,7 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
     const { operation, ...end } = terminal;
     const remote = departedSource !== undefined;
     const coverage = hostVideoBoundary(end.event.atMs, end.sample.bracket).latest + videoGates.drainMs;
-    while (performance.now() < coverage) {
-      await delay(Math.ceil(coverage - performance.now()), undefined, { signal: budget.signal });
-      deadlineCheck();
-    }
+    await waitThrough(coverage);
     const state = await sample(), downlink = departedSource ?? epoch.peer.sourceReceipt();
     const host = remote ? undefined : epoch.peer.observation();
     assert.ok(remote || host, 'Missing terminal uplink observation');
@@ -318,7 +323,7 @@ async function runJourney(harness: MediaHarness, mailbox: ReturnType<typeof prep
   const ended = await waitForEvent(live, 'ended', videoAtEnd);
   if (!remote) {
     const departed = await until('far-end audio departure', () => harness.observation().lifecycle.afterDisconnect ?? undefined);
-    await delay(Math.max(0, departed.startedAtMs + 1000 - performance.now()), undefined, { signal: budget.signal });
+    await waitThrough(departed.startedAtMs + 1000);
     keep('terminal-audio', assertLocalAudioDeparture(harness, actionAtMs, phaseIds));
   }
   const final = videoAtEnd ? await finishVideo(epoch, { ...ended, actionAtMs, operation: 'stop' }, departedSource) : await sample();
