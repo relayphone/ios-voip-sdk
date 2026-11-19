@@ -4,18 +4,33 @@
   import Testing
 
   extension RuntimeSuites {
-    /// When the runtime activates and deactivates audio for a LiveCommunicationKit app. The
-    /// runtime schedules audio in real time, so these check order and lower bounds: a timer never
-    /// fires early.
+    /// When the simulator runtime activates and deactivates audio for a LiveCommunicationKit app.
     @Suite @MainActor struct LCKAudio {
-      /// Audio activates `delay` milliseconds after the action settles, not when it's delivered.
-      private func expectAudio(
-        _ session: LCKSession, after settled: Entry, by delay: Int,
+      private func checkActivation(
+        _ activated: Entry, after settled: Entry, in rows: [Entry], scenario: String,
+        delayMS: Double? = nil,
         sourceLocation: SourceLocation = #_sourceLocation
-      ) async throws {
-        let activated = try await session.callback("didActivate", sourceLocation: sourceLocation)
+      ) throws {
         #expect(activated.sequence > settled.sequence, sourceLocation: sourceLocation)
-        #expect(activated.time - settled.time >= delay - 2, sourceLocation: sourceLocation)
+        let actionID = try #require(settled.actionID, sourceLocation: sourceLocation)
+        let settlement = rows.first { $0.event == "action.settled" && $0.actionID == actionID }
+        let activation = rows.first { $0.event == "audio.activated" }
+        let runtimeSettled = try #require(settlement, sourceLocation: sourceLocation)
+        let runtimeActivated = try #require(activation, sourceLocation: sourceLocation)
+        #expect(runtimeActivated.sequence > runtimeSettled.sequence, sourceLocation: sourceLocation)
+        #expect(activated.sequence > runtimeActivated.sequence, sourceLocation: sourceLocation)
+
+        // The runtime starts its timer inside fulfill(), before the fixture logs settlement.
+        let runtimeMS =
+          Double(
+            Int64(runtimeActivated.uptimeNanoseconds) - Int64(runtimeSettled.uptimeNanoseconds))
+          / 1_000_000
+        let callbackMS = activated.time - settled.time
+        NSLog("LCK_AUDIO_TIMING \(scenario) \(runtimeMS) \(callbackMS)")
+        if let delayMS {
+          // Allow one millisecond for the runtime's dispatch timer leeway.
+          #expect(runtimeMS >= delayMS - 1, sourceLocation: sourceLocation)
+        }
       }
 
       @Test func aJoinActivatesAudioAfterItSettles() async throws {
@@ -27,7 +42,9 @@
             $0.kind == "Join" && $0.actionID == actions.first?.uuidString
           }
           try await session.expect(["A": "joined"])
-          try await expectAudio(session, after: settled, by: 290)
+          let activated = try await session.callback("didActivate")
+          try checkActivation(
+            activated, after: settled, in: session.entries(), scenario: "join", delayMS: 290)
         }
       }
 
@@ -38,7 +55,9 @@
             $0.kind == "Start" && $0.callUUID == session.app.id("A").uuidString
           }
           let settled = try await session.callback("settled") { $0.actionID == started.actionID }
-          try await expectAudio(session, after: settled, by: 230)
+          let activated = try await session.callback("didActivate")
+          try checkActivation(
+            activated, after: settled, in: session.entries(), scenario: "start", delayMS: 230)
         }
       }
 
@@ -54,11 +73,15 @@
             try await session.system { .mute($0.id("A"), muted: true) }.map(\.uuidString))
           try await session.callback("settled") { mute.contains($0.actionID ?? "") }
           let activated = try await session.callback("didActivate")
-          #expect(activated.time - joined.time >= 288, "Audio waits for the Join")
+          try checkActivation(
+            activated, after: joined, in: session.entries(), scenario: "mute-during-join",
+            delayMS: 290)
           try await Task.sleep(for: .milliseconds(350))
           let rows = try session.entries()
-          #expect(rows.count { $0.event == "lck.fixture.didActivate" } == 1)
-          #expect(!rows.contains { $0.event == "lck.fixture.didDeactivate" })
+          let activations = rows.count { $0.event == "lck.fixture.didActivate" }
+          let deactivated = rows.contains { $0.event == "lck.fixture.didDeactivate" }
+          #expect(activations == 1)
+          #expect(!deactivated)
         }
       }
 
@@ -88,19 +111,20 @@
           let join = try #require(settled.first { $0.kind == "Join" })
           #expect(
             join.sequence < late.sequence, "The Join settles while the other action is pending")
-          let last = try #require(settled.map(\.sequence).max())
+          let lastSettlement = settled.max { $0.sequence < $1.sequence }
+          let last = try #require(lastSettlement)
           let joined = try #require(
             rows.first {
               $0.event == "lck.fixture.changed" && $0.callUUID == session.app.id("B").uuidString
                 && $0.state == "joined"
             })
-          #expect(joined.sequence > last && activated.sequence > last)
+          #expect(joined.sequence > last.sequence)
           #expect(
             rows.contains {
               $0.event == "lck.fixture.didDeactivate" && $0.sequence < activated.sequence
             },
             "Audio deactivates before it activates for B")
-          #expect(activated.time - late.time >= 113)
+          try checkActivation(activated, after: last, in: rows, scenario: control, delayMS: 115)
         }
       }
 
@@ -108,9 +132,16 @@
         try await withLCKSession { session in
           try await session.pair()
           let handoff = try session.runtime.cursor()
-          _ = try await session.composite()
+          let handoffActions = try await session.composite()
           try await session.expect(["A": "paused", "B": "joined"])
-          try await session.callback("didActivate", after: handoff)
+          let activated = try await session.callback("didActivate", after: handoff)
+          let handoffRows = try session.entries(after: handoff)
+          let handoffSettlement = handoffRows.last {
+            $0.event == "lck.fixture.settled" && handoffActions.contains($0.actionID ?? "")
+          }
+          let handoffSettled = try #require(handoffSettlement)
+          try checkActivation(
+            activated, after: handoffSettled, in: handoffRows, scenario: "late-resume-handoff")
           session.app.settle("Pause", .delay(milliseconds: 300), nth: 1)
           let start = try session.runtime.cursor()
           try await session.app.pause("A", false)
