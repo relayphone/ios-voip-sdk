@@ -44,7 +44,7 @@ export function addFocusFilterSources(
     projectName,
     sources,
   }: { projectRoot: string; projectName: string; sources: string[] },
-): XcodeProject {
+) {
   const names = sources.map((source) => basename(source));
   if (new Set(names).size !== names.length) {
     throw new Error(
